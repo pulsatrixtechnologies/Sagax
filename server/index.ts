@@ -545,6 +545,7 @@ import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
+import { createOrgRoutes, type OrgState } from "./org-routes.ts";
 
 const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
 const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
@@ -13035,6 +13036,26 @@ ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: (
 // its file, so New bot cannot disagree with it. No organization: none.
 const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
+const orgState: OrgState = {
+  org: null,
+  invites: [],
+  get signIn() {
+    if (!cfg.signIn) cfg.signIn = { admins: [], members: [] };
+    if (!cfg.signIn.admins) cfg.signIn.admins = [];
+    if (!cfg.signIn.members) cfg.signIn.members = [];
+    return cfg.signIn as { admins: string[]; members: string[] };
+  },
+};
+ROUTES.push(createOrgRoutes({
+  state: orgState,
+  actorId: (auth) => {
+    if (auth.kind === "session") return (auth.session.email ?? auth.session.userId ?? auth.session.id).trim();
+    return (cfg.profile?.email ?? "local-owner").trim();
+  },
+  persist: () => {
+    saveConfig({ signIn: { admins: orgState.signIn.admins, members: orgState.signIn.members } });
+  },
+}));
 
 const toolResults = new ToolResults();
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
