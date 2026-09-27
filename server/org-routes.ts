@@ -70,6 +70,7 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
       if (typeof body?.name !== "string" || !host) return json(res, 400, { error: "name and host are required" });
       try {
         const result = createOrgRoute(deps.state, { name: body.name, ownerUserId: deps.actorId(auth), host });
+        if (result.status === 200) deps.persist?.();
         return json(res, result.status, result.body ?? {});
       } catch (error) {
         return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
@@ -84,6 +85,7 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
         now: now(),
         token: token(),
       });
+      if (result.status === 200) deps.persist?.();
       return json(res, result.status, result.body ?? {});
     }
     const accept = /^\/api\/org\/invites\/([^/]+)\/accept$/.exec(path);

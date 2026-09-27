@@ -358,6 +358,23 @@ const appConfigSchema = z.object({
   /** Who may sign in with an emailed code (server/account-signin.ts):
    * addresses or `@domain` entries; admins get every scope, members chat only. */
   signIn: z.object({ admins: z.array(z.string().max(320)).max(500).optional(), members: z.array(z.string().max(320)).max(5000).optional() }).optional(),
+  /** Fleet organization on this host. Members stay in signIn.members. */
+  org: z.object({
+    name: z.string().min(1),
+    host: z.union([
+      z.object({ kind: z.literal("this-computer") }),
+      z.object({ kind: z.literal("server"), url: z.string().min(1) }),
+    ]),
+    ownerUserId: z.string().min(1),
+  }).optional(),
+  invites: z.array(z.object({
+    token: z.string().min(1),
+    email: z.string().max(320),
+    createdAt: z.number(),
+    expiresAt: z.number(),
+    usedAt: z.number().optional(),
+    revokedAt: z.number().optional(),
+  })).max(5000).optional(),
   defaultModelSelection: defaultModelSelectionSchema.optional(),
   automaticRecovery: automaticRecoverySchema.optional(),
   newBotDefaults: newBotDefaultsSchema.optional(),
@@ -479,13 +496,26 @@ const appConfigSchema = z.object({
 const storedAppConfigSchema = appConfigSchema.extend({
   browserProfiles: storedBrowserProfilesSchema.optional(),
 });
-const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true })
+const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, org: true, invites: true })
   .extend({ threads: threadsPatchSchema.optional(), newBots: newBotsPatchSchema.optional() });
 const jsonObjectSchema = z.record(z.string(), z.json());
 
 export interface AppConfig {
   customDomain?: string;
   signIn?: { admins?: string[]; members?: string[] };
+  org?: {
+    name: string;
+    host: { kind: "this-computer" } | { kind: "server"; url: string };
+    ownerUserId: string;
+  };
+  invites?: Array<{
+    token: string;
+    email: string;
+    createdAt: number;
+    expiresAt: number;
+    usedAt?: number;
+    revokedAt?: number;
+  }>;
   /** Preferred selection for newly created bots; existing bots keep theirs. */
   defaultModelSelection?: ModelSelection;
   /** Off by default; one backup attempt only before any work starts. */
@@ -1068,6 +1098,8 @@ export function saveConfig(
   if (checkedPatch.language !== undefined) disk.language = checkedPatch.language;
   if (checkedPatch.customDomain !== undefined) disk.customDomain = checkedPatch.customDomain;
   if (checkedPatch.signIn !== undefined) disk.signIn = checkedPatch.signIn;
+  if (checkedPatch.org !== undefined) disk.org = checkedPatch.org;
+  if (checkedPatch.invites !== undefined) disk.invites = checkedPatch.invites;
   // Replace the section so clearing a backup cannot revive the old selection.
   if (checkedPatch.automaticRecovery !== undefined) disk.automaticRecovery = checkedPatch.automaticRecovery;
   // A selection is replaced as one value, so changing engines also clears

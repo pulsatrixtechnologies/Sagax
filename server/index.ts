@@ -13037,8 +13037,16 @@ ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: (
 const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
 const orgState: OrgState = {
-  org: null,
-  invites: [],
+  get org() {
+    return cfg.org ?? null;
+  },
+  set org(value) {
+    cfg.org = value ?? undefined;
+  },
+  get invites() {
+    if (!cfg.invites) cfg.invites = [];
+    return cfg.invites;
+  },
   get signIn() {
     if (!cfg.signIn) cfg.signIn = { admins: [], members: [] };
     if (!cfg.signIn.admins) cfg.signIn.admins = [];
@@ -13053,7 +13061,11 @@ ROUTES.push(createOrgRoutes({
     return (cfg.profile?.email ?? "local-owner").trim();
   },
   persist: () => {
-    saveConfig({ signIn: { admins: orgState.signIn.admins, members: orgState.signIn.members } });
+    saveConfig({
+      ...(orgState.org ? { org: orgState.org } : {}),
+      invites: orgState.invites,
+      signIn: { admins: orgState.signIn.admins, members: orgState.signIn.members },
+    });
   },
 }));
 

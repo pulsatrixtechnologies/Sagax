@@ -350,6 +350,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/webhooks$/ },
   // configured-or-not booleans; the handler strips the few identifying fields for clients
   { methods: ["GET"], path: /^\/api\/config$/ },
+  // Accepting an invite is how a person who is not yet a member joins.
+  // Creating the org and issuing invites stay admin (owner/admin in the handler).
+  { methods: ["POST"], path: /^\/api\/org\/invites\/[^/]+\/accept$/ },
 ];
 
 export function requiredScope(method: string, path: string, features: { sharedComputers?: boolean } = {}): Scope {
