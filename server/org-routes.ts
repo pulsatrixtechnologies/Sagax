@@ -31,12 +31,20 @@ export function issueInviteRoute(state: OrgState, input: { actorId: string; emai
   return { status: 200, body: { invite: { token: invite.token, email: invite.email, expiresAt: invite.expiresAt } } };
 }
 
-export function acceptInviteRoute(state: OrgState, input: { token: string; userId: string; now: number }) {
+function sameEmail(a: string, b: string) {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+export function acceptInviteRoute(state: OrgState, input: { token: string; userId: string; now: number; sessionEmail?: string }) {
   const found = state.invites.find((invite) => invite.token === input.token);
   if (!found) return { status: 200, body: { status: "used" as const } };
+  if (!sameEmail(input.userId, found.email)) return { status: 403 };
+  if (input.sessionEmail !== undefined && input.sessionEmail !== "" && !sameEmail(input.sessionEmail, found.email)) {
+    return { status: 403 };
+  }
   const accepted = acceptInvite(found, input.now);
   if (!accepted.ok) return { status: 200, body: { status: accepted.status } };
-  const lists = memberListsAfterAccept({ members: state.signIn.members, email: input.userId });
+  const lists = memberListsAfterAccept({ members: state.signIn.members, email: found.email });
   if (lists.alreadyMember) return { status: 200, body: { status: "already-member" as const } };
   state.invites[state.invites.indexOf(found)] = accepted.invite;
   state.signIn.members = lists.members;
@@ -92,12 +100,14 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
     if (!accept) return PASS;
     const body = await readBody(req);
     if (typeof body?.userId !== "string") return json(res, 400, { error: "userId is required" });
+    const sessionEmail = auth.kind === "session" ? auth.session.email : undefined;
     const result = acceptInviteRoute(deps.state, {
       token: decodeURIComponent(accept[1]!),
       userId: body.userId,
       now: now(),
+      sessionEmail,
     });
-    if (result.body.status === "joined") deps.persist?.();
-    return json(res, result.status, result.body);
+    if (result.body?.status === "joined") deps.persist?.();
+    return json(res, result.status, result.body ?? {});
   };
 }
