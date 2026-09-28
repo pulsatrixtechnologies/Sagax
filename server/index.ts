@@ -13655,6 +13655,12 @@ function actorPrincipalId(auth: RequestAuth): string {
   if (auth.kind === "loopback" && auth.trust === "service") return "";
   return localPrincipalId();
 }
+/** Whose channels a request may see. The operator's own phone, paired from
+ * this computer, is the operator: unfiltered, like loopback. */
+function channelFilterViewerId(auth: RequestAuth): string | undefined {
+  const viewerId = channelViewerId(auth);
+  return viewerId && viewerId === localPrincipalId() ? undefined : viewerId;
+}
 /** The actor's sign-in email: sign-in lists and invites stay in emails. */
 function actorEmail(auth: RequestAuth): string | undefined {
   if (auth.kind === "session") return auth.session.email?.trim().toLowerCase() || undefined;
@@ -14069,7 +14075,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // routines and files exactly as they reach an id that does not exist.
     // Lists and live frames are narrowed where they are built, below.
     const visible = visibleTo(viewerFor(auth));
-    const viewerId = channelViewerId(auth);
+    const viewerId = channelFilterViewerId(auth);
     if (!visible.everything) {
       const subject = pathSubject(path);
       if (subject && !subjectVisible(subject, visible)) return json(res, 404, { error: notFoundFor(subject) });
@@ -17257,7 +17263,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!current.auth) return json(res, current.status, { error: current.error });
       const currentVisible = visibleTo(viewerFor(current.auth));
       if (threadId && !currentVisible.thread(threadId)) return json(res, 404, { error: "no such conversation" });
-      const searchViewerId = channelViewerId(current.auth);
+      const searchViewerId = channelFilterViewerId(current.auth);
       const hits = found
         .filter((hit) => currentVisible.thread(hit.threadId) && searchHitVisibleNow(hit.threadId, searchViewerId))
         .slice(0, limit)

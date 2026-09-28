@@ -1187,7 +1187,8 @@ describe("harness HTTP API", () => {
     const myMessages = bots.find((b: any) => b.id === second.body.bot.id)?.messages ?? [];
     // The opaque person key is the same for both lines: one session, one person.
     const personKey = theirMessages.find((m: any) => m.text === "from the paired person")?.sender?.id;
-    expect(personKey).toMatch(/^p_[\w-]{22}$/);
+    // A paired session carries its principal (server/principals.ts) as its person key.
+    expect(personKey).toMatch(/^pr_[0-9a-f-]{36}$/);
     expect(theirMessages.find((m: any) => m.text === "from the paired person")?.sender).toEqual({ name: "Safari on Mac", id: personKey });
     expect(theirMessages.find((m: any) => m.text === "and one more")?.sender).toEqual({ name: "Safari on Mac", id: personKey });
     expect(myMessages.find((m: any) => m.text === "from the owner")?.sender).toBeUndefined();
