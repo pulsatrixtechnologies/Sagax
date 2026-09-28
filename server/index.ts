@@ -550,6 +550,7 @@ import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createOrgRoutes, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
+import { channelTurnGate, createWorkerRoutes, type Worker } from "./workers.ts";
 
 const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
 const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
@@ -3662,6 +3663,8 @@ const channelTaskBlocked = (group: GroupRecord) =>
 // Recovery can synchronously emit room changes. Load coordination state
 // before registering store listeners or recovering interrupted routines.
 const groupQueues = new Map<string, Promise<void>>();
+let registeredWorkers: Worker[] = [];
+let queuedWorkerTurns: string[] = [];
 function roomHandoffProblem(node: Pick<RoomHandoff, "groupId" | "threadId" | "botId"> & Partial<Pick<RoomHandoff, "kind">>, parent?: Pick<RoomHandoff, "groupId" | "threadId" | "botId">): string | undefined {
   const group = node.groupId ? store.group(node.groupId) : undefined;
   const bot = store.bot(node.botId);
@@ -11438,6 +11441,29 @@ function startGroupTurn(
     return message;
   }
 
+  // Offline machine: the user line is already in the transcript. Queue it
+  // and tell the channel machine-offline. Do not start the local runner
+  // for that bot, and do not fall back to the fleet host.
+  const speakers = goalCoordinator ? [goalCoordinator] : responders;
+  const gate = channelTurnGate({
+    bots: speakers.map((bot) => ({ id: bot.id, host: bot.host })),
+    workers: registeredWorkers,
+    messageId: message.id,
+    queued: queuedWorkerTurns,
+  });
+  queuedWorkerTurns = gate.queued;
+  if (gate.status === "machine-offline") {
+    store.appendMessage(threadId, {
+      role: "bot",
+      kind: "activity",
+      tool: { name: "machine-offline", ok: false },
+    });
+    if (gate.startedIds.length === 0) return message;
+  }
+  if (!goalCoordinator) {
+    responders = responders.filter((bot) => gate.startedIds.includes(bot.id));
+  }
+
   // The snippet is only the fallback name here too. The member about to
   // answer supplies the same cheap one-shot the bot path uses, and the
   // swap lands only while the row still carries the snippet — a rename by
@@ -13204,6 +13230,11 @@ ROUTES.push(createDirectGrantRoutes({
   bot: (id) => store.bot(id),
   patchBot: (id, patch) => store.patchBot(id, patch),
   actorId: channelActorId,
+}));
+ROUTES.push(createWorkerRoutes({
+  workers: () => registeredWorkers,
+  replace: (workers) => { registeredWorkers = workers; },
+  userId: channelActorId,
 }));
 ROUTES.push(createOrgRoutes({
   state: orgState,

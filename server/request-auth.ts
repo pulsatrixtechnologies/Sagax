@@ -355,6 +355,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // Creating the org and issuing invites stay admin (owner/admin in the handler).
   { methods: ["POST"], path: /^\/api\/org\/invites\/[^/]+\/accept$/ },
   { methods: ["GET"], path: /^\/api\/org$/ },
+  // A member's machine checks in as a worker. The handler binds it to the session user.
+  { methods: ["POST"], path: /^\/api\/workers$/ },
 ];
 
 export function requiredScope(method: string, path: string, features: { sharedComputers?: boolean } = {}): Scope {
