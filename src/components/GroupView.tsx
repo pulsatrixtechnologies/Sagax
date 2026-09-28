@@ -44,6 +44,7 @@ import { GroupCallButton, GroupCallOverlay } from "./GroupCallView";
 
 import { ApprovalCard } from "./ApprovalCard";
 import { QuestionCard } from "./QuestionCard";
+import { ChannelMembers } from "./ChannelMembers";
 import { ManageMembersPanel } from "./ManageMembersPanel";
 import { groupActivityRuns } from "@/lib/activity-runs";
 import { ActivityRun } from "./ActivityRun";
@@ -1217,6 +1218,20 @@ export function GroupView({ group }: { group: Group }) {
           )}
         </div>
       </div>
+
+      {!group.dm && (
+        <div className="w-full px-5 pb-2">
+          <ChannelMembers
+            humans={(group.humanIds ?? []).map((id) => ({ id }))}
+            bots={group.memberIds.map((id) => ({
+              id,
+              name: state.bots.find((bot) => bot.id === id)?.name || id,
+            }))}
+            canAddHuman={false}
+            canAddBot={false}
+          />
+        </div>
+      )}
 
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
 
