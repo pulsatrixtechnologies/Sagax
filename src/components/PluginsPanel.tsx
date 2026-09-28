@@ -549,7 +549,7 @@ export function PluginsPanel() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px] sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6"
       onMouseDown={(event) => event.target === event.currentTarget && close()}
     >
       <div
@@ -559,11 +559,11 @@ export function PluginsPanel() {
         aria-modal="true"
         aria-labelledby="plugins-title"
         tabIndex={-1}
-        className="animate-pop-in flex h-[min(780px,calc(100dvh-2rem))] w-full max-w-[1040px] flex-col overflow-hidden rounded-[24px] border border-hairline/50 bg-panel shadow-2xl shadow-black/50"
+        className="animate-pop-in flex h-[min(700px,calc(100dvh-96px))] w-[min(800px,calc(100vw-40px))] flex-col overflow-hidden rounded-[14px] border border-border bg-elevated"
       >
-        <header className="flex items-start justify-between gap-4 px-6 pb-3 pt-6 sm:px-8 sm:pt-7">
+        <header className="flex items-start justify-between gap-4 px-6 pb-3 pt-6 sm:px-8">
           <div>
-            <h2 id="plugins-title" className="text-[22px] font-semibold tracking-[-0.01em] text-ink">{t("connectors.title")}</h2>
+            <h2 id="plugins-title" className="text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">{t("connectors.title")}</h2>
             <p className="mt-1 text-[13px] text-ink-secondary">{t("connectors.subtitle")}</p>
           </div>
           <div className="flex items-center gap-1">
@@ -571,7 +571,7 @@ export function PluginsPanel() {
               <button
                 onClick={() => void loadConnectionInventory(true)}
                 disabled={refreshing}
-                className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
+                className="ui-icon-button disabled:opacity-50"
                 title={t("connectors.refreshTitle")}
               >
                 <RefreshCw size={17} className={cn(refreshing && "animate-spin")} />
@@ -580,15 +580,15 @@ export function PluginsPanel() {
             <button data-tour="apps-close"
               onClick={close}
               aria-label={t("connectors.closeAria")}
-              className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink"
+              className="flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary"
             >
-              <X size={21} />
+              <X size={18} />
             </button>
           </div>
         </header>
 
-        <div className="border-b border-hairline/40 px-6 sm:px-8">
-          <div className="flex gap-6" role="tablist" aria-label={t("connectors.typeAria")}>
+        <div className="px-6 sm:px-8">
+          <div className="flex gap-1" role="tablist" aria-label={t("connectors.typeAria")}>
             {(["apps", "mcp"] as const).map((item) => (
               <button
                 key={item}
@@ -597,8 +597,8 @@ export function PluginsPanel() {
                 aria-selected={surface === item}
                 onClick={() => dispatch({ type: "togglePlugins", open: true, surface: item })}
                 className={cn(
-                  "border-b-2 px-0.5 pb-3 pt-1 text-[13.5px] font-medium transition-colors",
-                  surface === item ? "border-accent text-ink" : "border-transparent text-ink-secondary hover:text-ink",
+                  "h-6 rounded-full px-2 text-[13px] leading-[18px] transition-colors",
+                  surface === item ? "bg-hover text-ink" : "text-ink-tertiary hover:text-ink",
                 )}
               >
                 {item === "apps" ? t("connectors.tab.apps") : t("connectors.tab.mcp")}
@@ -621,14 +621,14 @@ export function PluginsPanel() {
         )}
 
         <div className="flex flex-col gap-3 px-6 pb-4 pt-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <div className="flex w-fit rounded-xl bg-raised/70 p-1" role="tablist" aria-label={t("connectors.viewAria")}>
+          <div className="flex h-7 w-fit items-center rounded-full bg-hover p-0.5" role="tablist" aria-label={t("connectors.viewAria")}>
             <button
               role="tab"
               aria-selected={tab === "marketplace"}
               onClick={() => setTab("marketplace")}
               className={cn(
-                "rounded-lg px-4 py-2 text-[13.5px] transition-colors",
-                tab === "marketplace" ? "bg-card text-ink shadow-sm" : "text-ink-secondary hover:text-ink",
+                "h-full rounded-full px-3 text-[13px] text-ink-secondary transition-colors",
+                tab === "marketplace" ? "bg-hover text-ink" : "hover:text-ink",
               )}
             >
               {t("connectors.tab.marketplace")}
@@ -638,21 +638,21 @@ export function PluginsPanel() {
               aria-selected={tab === "connected"}
               onClick={() => setTab("connected")}
               className={cn(
-                "rounded-lg px-4 py-2 text-[13.5px] transition-colors",
-                tab === "connected" ? "bg-card text-ink shadow-sm" : "text-ink-secondary hover:text-ink",
+                "h-full rounded-full px-3 text-[13px] text-ink-secondary transition-colors",
+                tab === "connected" ? "bg-hover text-ink" : "hover:text-ink",
               )}
             >
               {t("connectors.tab.connected")}{connectedCount > 0 ? ` ${connectedCount}` : ""}
             </button>
           </div>
-          <label className="flex h-11 w-full items-center gap-2.5 rounded-xl bg-raised/70 px-3.5 sm:w-[320px]">
+          <label className="flex w-full items-center gap-2.5 rounded-[14px] border border-transparent bg-hover px-4 py-3 focus-within:border-border-strong sm:w-[320px]">
             <Search size={17} className="shrink-0 text-ink-secondary" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={t("connectors.searchPlaceholder")}
               aria-label={t("connectors.searchPlaceholder")}
-              className="min-w-0 flex-1 bg-transparent text-[14px] text-ink placeholder:text-ink-secondary focus:outline-none"
+              className="min-w-0 flex-1 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
             />
           </label>
         </div>
@@ -737,7 +737,7 @@ export function PluginsPanel() {
                   </span>
                 )}
               </div>
-              <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 md:grid-cols-2">
               {visible.map((card) => {
               const serviceStatus = status[card.slug];
               const pending = serviceStatus?.pending;
@@ -756,14 +756,14 @@ export function PluginsPanel() {
               return (
                 <div
                   key={card.slug}
-                  className="min-h-[88px] border-b border-hairline/35 px-1 py-4"
+                  className="rounded-2xl p-3 hover:bg-ink/5"
                 >
                   <div className="flex items-center gap-3">
                     <ServiceIcon card={card} />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[14px] font-medium text-ink">{card.label}</div>
+                      <div className="truncate text-[13px] font-medium leading-[18px] text-ink">{card.label}</div>
                       <div
-                        className="mt-0.5 truncate text-[12.5px] text-ink-secondary"
+                        className="truncate text-[12px] leading-[18px] text-ink-tertiary"
                         title={unavailableReason ?? undefined}
                       >
                         {unavailableReason ?? (
@@ -797,7 +797,7 @@ export function PluginsPanel() {
                           setAliasDraft("");
                         }
                       }}
-                      className="flex min-w-[88px] items-center justify-center gap-1.5 rounded-full bg-raised px-3 py-2 text-[12.5px] text-ink transition-colors hover:bg-raised-hover disabled:opacity-40"
+                      className="ui-button min-w-[88px] disabled:opacity-40"
                     >
                       {unavailableReason ? (
                         t("connectors.selfHostOnly")
@@ -898,12 +898,12 @@ export function PluginsPanel() {
                         aria-label={accounts.length > 0
                           ? t("connectors.aliasAriaAnother", { service: card.label })
                           : t("connectors.aliasAriaNew", { service: card.label })}
-                        className="min-w-0 flex-1 rounded-lg bg-raised px-3 py-2 text-[12px] text-ink placeholder:text-ink-secondary focus:outline-none focus:ring-1 focus:ring-accent"
+                        className="min-w-0 flex-1 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none"
                       />
                       <button
                         type="submit"
                         disabled={busy || !aliasDraft.trim()}
-                        className="rounded-lg bg-accent px-3 py-2 text-[12px] font-medium text-white disabled:opacity-40"
+                        className="rounded-lg bg-accent px-3 py-2 text-[12px] font-medium text-accent-ink disabled:opacity-40"
                       >
                         {t("connectors.action.continue")}
                       </button>
@@ -928,7 +928,7 @@ export function PluginsPanel() {
                   type="button"
                   disabled={refreshing}
                   onClick={() => void loadConnectionInventory(true)}
-                  className="mt-4 flex items-center gap-1.5 rounded-lg bg-raised px-3 py-2 text-[12.5px] text-ink transition-colors hover:bg-raised-hover disabled:opacity-50"
+                  className="ui-button mt-4 disabled:opacity-50"
                 >
                   <RefreshCw size={13} className={cn(refreshing && "animate-spin")} />
                   {t("connectors.action.retry")}

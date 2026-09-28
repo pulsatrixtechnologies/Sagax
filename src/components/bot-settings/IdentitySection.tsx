@@ -26,12 +26,15 @@ export function IdentitySection({
   activeState,
   mascotMotion,
   namePlaceholder,
+  showAvatar = true,
 }: {
   bot: Bot;
   patch: (patch: BotPatch) => void;
   activeState: MausState;
   mascotMotion: { kind: Exclude<MausMotion, "none">; nonce: number } | null;
   namePlaceholder?: string;
+  /** The bot panel shows the avatar card at its top, above the tabs. */
+  showAvatar?: boolean;
 }) {
   const [instructionsOpen, setInstructionsOpen] = useState(false);
   const { draft } = useBotEditor();
@@ -39,7 +42,7 @@ export function IdentitySection({
 
   return (
     <div className="flex flex-col gap-4">
-      <BotProfileAvatarCard bot={bot} activeState={activeState} mascotMotion={mascotMotion} onPatch={patch} />
+      {showAvatar && <BotProfileAvatarCard bot={bot} activeState={activeState} mascotMotion={mascotMotion} onPatch={patch} />}
       <PackageProvenance bot={bot} />
 
       <div>

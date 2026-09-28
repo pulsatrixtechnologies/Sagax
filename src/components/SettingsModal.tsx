@@ -152,7 +152,7 @@ function ProfileFields() {
   const initials = (name.trim() || email.trim() || "?").slice(0, 1).toUpperCase();
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-3 rounded-xl border border-hairline/40 px-3 py-2.5">
+      <div className="flex items-center gap-3 rounded-[14px] border-[0.5px] border-border px-3.5 py-2.5">
         <div className="relative">
           <button
             type="button"
@@ -164,9 +164,9 @@ function ProfileFields() {
             {avatarUrl ? <img src={avatarUrl} alt="" className="size-full object-cover" /> : initials}
           </button>
           {menuOpen && (
-            <div className="absolute left-0 top-full z-10 mt-2 w-40 rounded-xl border border-hairline/50 bg-menu py-1 shadow-xl">
-              <button type="button" onClick={() => { setMenuOpen(false); fileRef.current?.click(); }} className="block w-full px-3 py-2 text-left text-[13px] text-ink hover:bg-raised">Upload photo</button>
-              {avatarUrl && <button type="button" onClick={() => { setAvatarUrl(""); setMenuOpen(false); save({ avatarUrl: "" }); }} className="block w-full px-3 py-2 text-left text-[13px] text-ink hover:bg-raised">Remove photo</button>}
+            <div className="absolute left-0 top-full z-10 mt-2 flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]">
+              <button type="button" onClick={() => { setMenuOpen(false); fileRef.current?.click(); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">Upload photo</button>
+              {avatarUrl && <button type="button" onClick={() => { setAvatarUrl(""); setMenuOpen(false); save({ avatarUrl: "" }); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">Remove photo</button>}
             </div>
           )}
           <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label="Upload avatar" onChange={(event) => { choosePhoto(event.target.files?.[0]); event.target.value = ""; }} />
@@ -284,7 +284,7 @@ function NewBotEffortRow() {
         disabled={saving}
         aria-label={t("settings.newBotEffort.aria")}
         onChange={(event) => void save(event.target.value)}
-        className="min-h-8 w-full max-w-[240px] rounded-lg border border-hairline/40 bg-inset px-2.5 py-1.5 text-[13px] text-ink focus:border-focus disabled:cursor-wait disabled:opacity-50"
+        className="w-full max-w-[240px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none disabled:cursor-wait disabled:opacity-50"
       >
         <option value="">{t("settings.newBotEffort.default")}</option>
         {EFFORT_LEVELS.map((level) => (
@@ -402,7 +402,7 @@ function LanguageRow() {
         disabled={saving}
         aria-label={t("settings.language.aria")}
         onChange={(event) => void save(event.target.value)}
-        className="min-h-8 w-full max-w-[240px] rounded-lg border border-hairline/40 bg-inset px-2.5 py-1.5 text-[13px] text-ink focus:border-focus disabled:cursor-wait disabled:opacity-50"
+        className="w-full max-w-[240px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none disabled:cursor-wait disabled:opacity-50"
       >
         <option value="">{t("settings.language.system")}</option>
         {localeChoices.map(({ code, label }) => (
@@ -437,7 +437,7 @@ function SidebarDensityRow() {
         aria-label={t("sidebar.density.chooseAria")}
         value={density}
         onChange={(event) => choose(event.target.value as SidebarDensity)}
-        className="rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[13px] text-ink"
+        className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
       >
         <option value="comfortable">{t("sidebar.density.comfortable")}</option>
         <option value="compact">{t("sidebar.density.compact")}</option>
@@ -716,15 +716,15 @@ export function SettingsModal() {
         aria-modal="true"
         aria-labelledby="app-settings-title"
         tabIndex={-1}
-        className="flex h-[min(720px,88dvh)] max-h-[calc(100dvh-24px)] w-full max-w-[min(960px,92vw)] overflow-hidden rounded-2xl border border-hairline/50 bg-panel shadow-2xl outline-none"
+        className="flex h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))] overflow-hidden rounded-[14px] border border-border bg-app outline-none"
       >
         {/* section nav */}
         <span id="app-settings-title" className="sr-only">{t("settings.title")}</span>
-        <nav className="hidden min-h-0 w-[200px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-hairline/40 bg-app/30 p-2.5 sm:flex">
+        <nav className="hidden min-h-0 w-[198px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-hairline-weak bg-panel px-3 py-4 sm:flex">
           <div className="shrink-0 px-2 py-2 text-[13px] font-semibold text-ink">
             {t("settings.title")}
           </div>
-          <div className="mb-2 mt-1 flex min-h-8 shrink-0 items-center gap-2 rounded-lg border border-transparent bg-control/70 px-2.5 py-2 focus-within:border-focus">
+          <div className="mb-2 mt-1 flex shrink-0 items-center gap-2 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 focus-within:border-border-strong">
             <Search size={14} className="shrink-0 text-ink-secondary" />
             <input
               data-settings-search
@@ -738,7 +738,7 @@ export function SettingsModal() {
               }}
               placeholder={t("settings.search")}
               aria-label={t("settings.searchAria")}
-              className="w-full bg-transparent text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
+              className="w-full bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
             />
           </div>
           {visibleSections.length === 0 && (
@@ -752,8 +752,8 @@ export function SettingsModal() {
               onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: id })}
               aria-current={section === id ? "page" : undefined}
               className={cn(
-                "flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors motion-reduce:transition-none",
-                section === id ? "bg-control text-ink" : "text-ink-secondary hover:bg-control/50 hover:text-ink",
+                "flex items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] leading-[18px] text-ink transition-colors motion-reduce:transition-none",
+                section === id ? "bg-selected" : "hover:bg-hover",
               )}
             >
               <Icon size={15} className="shrink-0" />
@@ -762,8 +762,16 @@ export function SettingsModal() {
           ))}
         </nav>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline/30 px-3 py-2.5 sm:px-4">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <button
+            onClick={() => dispatch({ type: "toggleAppSettings", open: false })}
+            aria-label={t("settings.close")}
+            title={`${t("settings.close")} (${shortcutLabel("close-panel")})`}
+            className="absolute right-2.5 top-2.5 z-10 flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary"
+          >
+            <X size={18} />
+          </button>
+          <div className="shrink-0 px-4 pb-1 pr-12 pt-3 sm:hidden">
             <select
               aria-label={t("settings.title")}
               value={section}
@@ -771,26 +779,19 @@ export function SettingsModal() {
                 setQuery("");
                 dispatch({ type: "toggleAppSettings", open: true, section: event.target.value as AppSettingsSection });
               }}
-              className="min-w-0 rounded-lg bg-control px-3 py-2 text-[14px] text-ink sm:hidden"
+              className="w-full min-w-0 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none sm:hidden"
             >
               {availableSections.map(({ id, labelKey }) => (
                 <option key={id} value={id}>{t(labelKey)}</option>
               ))}
             </select>
-            <span className="hidden text-[13px] font-semibold text-ink sm:block">
-              {sectionLabelKey ? t(sectionLabelKey) : null}
-            </span>
-            <button
-              onClick={() => dispatch({ type: "toggleAppSettings", open: false })}
-              aria-label={t("settings.close")}
-              title={`${t("settings.close")} (${shortcutLabel("close-panel")})`}
-              className="ui-icon-button shrink-0"
-            >
-              <X size={18} />
-            </button>
           </div>
 
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-3 py-3 sm:px-4 sm:pb-4">
+          <div className="flex flex-1 flex-col overflow-y-auto">
+            <h2 className="hidden px-8 pb-1.5 pt-8 text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink sm:block">
+              {sectionLabelKey ? t(sectionLabelKey) : null}
+            </h2>
+            <div className="flex flex-col gap-3 px-4 pb-7 pt-[22px] sm:px-8">
             <LicenseExpiryBanner config={state.config} />
             {section === "desktopWorkspaces" && <ConnectedWorkspacesSettings />}
             {section === "organization" && window.ogb && !remoteActive && <OrganizationSettings />}
@@ -801,7 +802,7 @@ export function SettingsModal() {
                 <Card title={t("settings.profile.title")} subtitle={t("settings.profile.sharedSubtitle")}>
                   <ProfileFields />
                 </Card>
-                <div>
+                <div className="rounded-[14px] border-[0.5px] border-border py-2">
                   <LanguageRow />
                   <NewBotEffortRow />
                   <AnalyticsRow />
@@ -813,7 +814,7 @@ export function SettingsModal() {
                 <ThreadConcurrencySettings />
                 <AutomaticRecoverySettings />
                 <ThreadCleanupSettings />
-                <div>
+                <div className="rounded-[14px] border-[0.5px] border-border py-2">
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
                   <DiagnosticsRow />
@@ -826,7 +827,7 @@ export function SettingsModal() {
                 <Card title={t("settings.skin.title")} subtitle={t("settings.skin.subtitle")}>
                   <SkinPicker />
                 </Card>
-                <div>
+                <div className="rounded-[14px] border-[0.5px] border-border py-2">
                   <SidebarDensityRow />
                   <ShowThreadsRow />
                   <NotificationSoundsRow />
@@ -853,18 +854,18 @@ export function SettingsModal() {
                       {t("settings.connections.ready")}
                     </div>
                   ) : null}
-                  <div className="text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{t("keys.providers.title")}</div>
+                  <div className="px-2 text-[12px] leading-4 text-ink-secondary">{t("keys.providers.title")}</div>
                   <p className="-mt-3 text-[12px] leading-relaxed text-ink-secondary">{t("keys.providers.subtitle")}</p>
                   <ApiKeyRow section="anthropic" testProvider="anthropic" />
                   <ApiKeyRow section="openaiCompat" testProvider="openaiCompat" />
                   <OpenAiCompatUrl />
                   <ApiKeyRow section="xai" testProvider="xai" />
                   <ApiKeyRow section="mistral" testProvider="mistral" />
-                  <div className="pt-2 text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{t("keys.integrations.title")}</div>
+                  <div className="px-2 pt-2 text-[12px] leading-4 text-ink-secondary">{t("keys.integrations.title")}</div>
                   <ApiKeyRow section="box" />
                   <VpsConnection />
                   <ApiKeyRow section="opencodeGo" />
-                  <details className="rounded-lg border border-hairline/40 bg-inset px-3 py-2">
+                  <details className="rounded-[14px] border-[0.5px] border-border px-3.5 py-2.5">
                     <summary className="cursor-pointer text-[13px] text-ink-secondary">{t("settings.connections.selfHost")}</summary>
                     <div className="mt-3">
                       <ApiKeyRow section="composio" />
@@ -901,6 +902,7 @@ export function SettingsModal() {
             {section === "people" && <PeopleSection />}
             {section === "activity" && <ActivitySection />}
             {section === "workspaces" && <WorkspacesSection />}
+            </div>
           </div>
         </div>
       </div>

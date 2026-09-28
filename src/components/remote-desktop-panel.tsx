@@ -247,7 +247,7 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
           type="button"
           onClick={() => void open()}
           disabled={pending}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
         >
           {pending ? <Loader2 size={15} className="animate-spin" /> : <Monitor size={15} />}
           {pending ? "Opening…" : "Take control"}
@@ -310,7 +310,7 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
             <button
               type="button"
               onClick={() => setCreatingRoutine(true)}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent py-2 text-[13px] font-medium text-white hover:brightness-110"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent py-2 text-[13px] font-medium text-accent-ink hover:brightness-110"
             >
               <Plus size={14} />
               Create schedule

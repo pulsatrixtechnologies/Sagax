@@ -15,7 +15,6 @@ import { RemoteAgentSettingsPanel } from "@/components/RemoteAgentSettingsPanel"
 import { NewBotDialog } from "@/components/NewBotDialog";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
 import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
-import { ComputerPanel } from "@/components/ComputerPanel";
 import { RemoteDesktopPanel } from "@/components/remote-desktop-panel";
 import { InspectorPanel } from "@/components/InspectorPanel";
 import { SettingsModal } from "@/components/SettingsModal";
@@ -312,21 +311,15 @@ function Shell() {
           (Computer panel, then the usage chip): every re-render mounts a
           fresh settings panel and never removes the previous one, so the
           panels pile up and Close stops working. */}
-      {state.settingsOpen && bot && (
-        remoteClient
-          ? <RemoteAgentSettingsPanel bot={bot} />
-          : <BotSettingsDialog key={`settings:${bot.id}`} bot={bot} />
+      {/* One tabbed bot panel (Details, Media, Computer, Advanced) on the
+          desktop; its Computer tab is the store's computer view, so both
+          flags render the same panel under one key. */}
+      {!remoteClient && (state.settingsOpen || state.computerOpen) && bot && (
+        <BotSettingsDialog key={`panel:${bot.id}`} bot={bot} onOpenVmWorkspace={openLocalVmWorkspace} />
       )}
-      {state.computerOpen && bot && (
-        remoteClient ? (
-          <RemoteDesktopPanel key={`computer:${bot.id}`} bot={bot} />
-        ) : (
-          <ComputerPanel
-            key={`computer:${bot.id}`}
-            bot={bot}
-            onOpenVmWorkspace={openLocalVmWorkspace}
-          />
-        )
+      {remoteClient && state.settingsOpen && bot && <RemoteAgentSettingsPanel bot={bot} />}
+      {remoteClient && state.computerOpen && bot && (
+        <RemoteDesktopPanel key={`computer:${bot.id}`} bot={bot} />
       )}
       {!remoteClient && state.inspectorOpen && bot && <InspectorPanel key={bot.threadId} bot={bot} />}
       {state.appSettingsOpen && <SettingsModal />}

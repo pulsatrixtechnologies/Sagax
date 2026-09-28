@@ -22,6 +22,7 @@ const COLORS = [
   "yellow",
   "teal",
   "coral",
+  "white",
 ] as const satisfies readonly MausColor[];
 
 const requiredText = (max: number) =>

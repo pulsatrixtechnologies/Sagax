@@ -24,7 +24,7 @@ import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
-import { normalizeState } from "@/lib/mascot";
+import { MAUS_COLORS, normalizeState, type MausColor } from "@/lib/mascot";
 import { effectiveDefaultResponder, groupResponseHint } from "@/lib/group-routing";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { Composer } from "./Composer";
@@ -129,10 +129,11 @@ export function RoomToolChip({ message, roomId }: { message: Message; roomId?: s
   );
 }
 
-/** 16px profile avatar + name, shown once per sender cluster. */
+/** 16px profile avatar + name in the bot's color, shown once per sender cluster. */
 function ClusterLabel({ bot, name, color }: { bot?: Bot; name: string; color: string }) {
+  const tint = MAUS_COLORS[(bot?.color ?? color) as MausColor] ?? color;
   return (
-    <div className="mt-1 flex items-center gap-1.5 pl-0.5">
+    <div className="mb-1 ml-1.5 mt-3 flex items-center gap-1.5 px-1.5">
       <BotAvatar
         bot={bot ?? { name, color: color as Bot["color"] }}
         state={normalizeState(bot?.mascotExpression) ?? "happy"}
@@ -141,7 +142,7 @@ function ClusterLabel({ bot, name, color }: { bot?: Bot; name: string; color: st
         motionKey={0}
         animated={false}
       />
-      <span className="text-[11px] font-medium text-ink-secondary">{name}</span>
+      <span className="text-[12px] font-normal leading-4" style={{ color: tint }}>{name}</span>
     </div>
   );
 }
@@ -309,12 +310,12 @@ const Transcript = memo(function Transcript({
                 )}
                 <div
                   className={cn(
-                    "w-fit max-w-[min(42rem,78%)] rounded-2xl text-[15px] leading-relaxed",
+                    "w-fit max-w-[min(80%,560px,calc(100%-82px))] rounded-[18px] text-[15px] leading-relaxed",
                     !user && m.id === emergingId && "turn-answer",
                     // A bot message that is only attachments is just the files: no bubble.
                     !user && !m.text?.trim() && !m.replyToId && m.attachments?.length
                       ? "text-ink"
-                      : user ? "chat-text whitespace-pre-wrap bg-bubble-user px-4 py-2.5 text-ink" : "bg-card px-4 py-2.5 text-ink",
+                      : user ? "chat-text whitespace-pre-wrap bg-bubble-user px-3 py-[7px] text-ink" : "bg-card px-3 py-[7px] text-ink",
                   )}
                   title={new Date(m.at).toLocaleString()}
                 >
@@ -650,7 +651,7 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
     >
       <div className="rounded-t-3xl border-b border-hairline/40 bg-panel/70 px-5 py-5 sm:px-7">
         <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-sm font-bold text-white">1</span>
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-sm font-bold text-accent-ink">1</span>
           <div>
             <h1 id="room-setup-title" className="text-xl font-semibold tracking-tight text-ink">{t("room.setup.title", { name: group.name })}</h1>
             <p className="mt-1 max-w-[560px] text-[13.5px] leading-relaxed text-ink-secondary">
@@ -868,7 +869,7 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-white hover:brightness-110 disabled:opacity-50"
+            className="flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
             {t("room.setup.save")}

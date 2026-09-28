@@ -21,12 +21,12 @@ export function RoutineList({ routines, loading, error, onOpen, onToggle }: {
     {loading && <p role="status" className="flex items-center gap-2 p-3 text-[12px] text-ink-secondary"><Loader2 size={14} className="animate-spin" />{t("routines.loading")}</p>}
     {!loading && !error && sorted.length === 0 && <div className="rounded-xl border border-dashed border-hairline/50 p-5 text-center text-[13px] text-ink-secondary"><Repeat2 size={20} className="mx-auto mb-2 opacity-60" />{t("routines.empty")}</div>}
     {sorted.length > 0 && (
-      <div className="overflow-hidden rounded-xl border border-hairline/40">
+      <div className="flex flex-col gap-0.5">
         {sorted.map((routine) => (
-          <div key={routine.id} className="flex items-center gap-3 border-b border-hairline/30 px-3 py-2.5 last:border-b-0">
+          <div key={routine.id} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover">
             <button type="button" onClick={() => onOpen(routine)} className="min-w-0 flex-1 text-left">
-              <span className="block truncate text-[14px] font-semibold text-ink">{routine.name}</span>
-              <span className="mt-0.5 block truncate text-[12px] text-ink-secondary">{routineScheduleState(routine)}</span>
+              <span className="block truncate text-[13px] leading-[18px] text-ink">{routine.name}</span>
+              <span className="block truncate text-[13px] leading-[18px] text-ink-secondary">{routineScheduleState(routine)}</span>
             </button>
             <Switch
               checked={routine.enabled}

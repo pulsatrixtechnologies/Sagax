@@ -39,7 +39,7 @@ export function PhonePreview({ className }: { className?: string }) {
               <div className="text-[8px] font-medium text-ink">Run: book-slot</div>
               <div className="mt-0.5 text-[7.5px] text-ink-secondary">clinic.example · 3:00 pm</div>
               <div className="mt-1.5 flex gap-1">
-                <span className="flex flex-1 items-center justify-center gap-0.5 rounded-md bg-accent py-1 text-[8px] font-semibold text-white">
+                <span className="flex flex-1 items-center justify-center gap-0.5 rounded-md bg-accent py-1 text-[8px] font-semibold text-accent-ink">
                   <Check size={8} strokeWidth={3} /> Allow
                 </span>
                 <span className="flex flex-1 items-center justify-center gap-0.5 rounded-md bg-raised py-1 text-[8px] font-medium text-ink">

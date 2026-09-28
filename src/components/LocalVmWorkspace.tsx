@@ -463,7 +463,7 @@ function LocalVmPane({
             type="button"
             onClick={onRelease}
             disabled={controlPending}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-2 text-[12px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-2 text-[12px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
           >
             {controlPending ? <Loader2 size={13} className="animate-spin" /> : <Hand size={13} />}
             Hand back

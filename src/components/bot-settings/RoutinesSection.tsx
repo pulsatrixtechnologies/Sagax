@@ -37,9 +37,9 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn }: { bot: Bo
   return <div className="flex flex-col gap-3">
     <div className="flex items-center gap-2">
       <CalendarClock size={16} className="text-ink-secondary" />
-      <h2 className="min-w-0 flex-1 text-[13px] font-medium text-ink">{t("computer.tab.routines")}</h2>
-      <button type="button" onClick={() => setEditing("new")} aria-label={t("computer.routines.create")} title={t("computer.routines.create")} className="flex size-8 items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink hover:bg-raised"><Plus size={15} /></button>
-      <button type="button" onClick={() => dispatch({ type: "showRoutines", section: "logs", botId: bot.id })} aria-label={t("routines.logs")} title={t("routines.logs")} className="flex size-8 items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink hover:bg-raised"><FileText size={14} /></button>
+      <h2 className="min-w-0 flex-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{t("computer.tab.routines")}</h2>
+      <button type="button" onClick={() => setEditing("new")} aria-label={t("computer.routines.create")} title={t("computer.routines.create")} className="ui-icon-button"><Plus size={15} /></button>
+      <button type="button" onClick={() => dispatch({ type: "showRoutines", section: "logs", botId: bot.id })} aria-label={t("routines.logs")} title={t("routines.logs")} className="ui-icon-button"><FileText size={14} /></button>
     </div>
     <RoutineList routines={routines} runs={runs} loading={state.routinesLoadState === "loading" && routines.length === 0} error={state.routinesLoadState === "error"} onOpen={(routine) => setDetailId(routine.id)} onToggle={toggle} />
     {editing === "new" && <RoutineEditor key={`${bot.id}-new`} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} onClose={() => setEditing(null)} />}

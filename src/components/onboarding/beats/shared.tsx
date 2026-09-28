@@ -34,7 +34,7 @@ export function PrimaryButton({
       data-primary=""
       {...rest}
       className={cn(
-        "w-full shrink-0 rounded-lg bg-accent py-2.5 text-[15px] font-medium text-white transition-[transform,opacity] duration-150 active:scale-[0.98] disabled:opacity-40",
+        "w-full shrink-0 rounded-lg bg-accent py-2.5 text-[15px] font-medium text-accent-ink transition-[transform,opacity] duration-150 active:scale-[0.98] disabled:opacity-40",
         className,
       )}
     >

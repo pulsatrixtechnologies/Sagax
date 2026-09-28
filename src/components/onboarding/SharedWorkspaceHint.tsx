@@ -58,7 +58,7 @@ export function SharedWorkspaceHint({
         <button
           type="button"
           onClick={close}
-          className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white transition-transform duration-150 active:scale-[0.98]"
+          className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-ink transition-transform duration-150 active:scale-[0.98]"
         >
           {t("onboarding.spot.gotIt")}
         </button>

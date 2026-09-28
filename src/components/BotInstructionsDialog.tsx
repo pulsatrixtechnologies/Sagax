@@ -52,7 +52,7 @@ export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: B
 
   const content = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px] sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6"
       onMouseDown={(event) => event.target === event.currentTarget && close()}
     >
       <div
@@ -61,7 +61,7 @@ export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: B
         aria-modal="true"
         aria-labelledby="bot-instructions-title"
         tabIndex={-1}
-        className="animate-pop-in flex max-h-[min(760px,calc(100dvh-2rem))] w-full max-w-[760px] flex-col overflow-hidden rounded-[24px] border border-hairline/50 bg-panel shadow-2xl shadow-black/50 outline-none"
+        className="animate-pop-in flex max-h-[min(760px,calc(100dvh-2rem))] w-full max-w-[760px] flex-col overflow-hidden rounded-[14px] border border-border bg-elevated outline-none"
       >
         <header className="flex items-start justify-between gap-4 border-b border-hairline/40 px-6 pb-4 pt-6 sm:px-8 sm:pt-7">
           <div className="flex min-w-0 items-center gap-3">
@@ -78,7 +78,7 @@ export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: B
                 <BookOpen size={15} />
                 <span className="text-[11px] font-semibold uppercase tracking-[0.08em]">Bot instructions</span>
               </div>
-              <h2 id="bot-instructions-title" className="mt-0.5 truncate text-[20px] font-semibold tracking-[-0.01em] text-ink">
+              <h2 id="bot-instructions-title" className="mt-0.5 truncate text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">
                 {bot.name}
               </h2>
               {bot.title && <p className="mt-0.5 truncate text-[12.5px] text-ink-secondary">{bot.title}</p>}
@@ -88,9 +88,9 @@ export function BotInstructionsDialog({ bot, onClose, inline = false }: { bot: B
             type="button"
             onClick={close}
             aria-label="Close bot instructions"
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-ink-secondary hover:bg-raised hover:text-ink"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary"
           >
-            <X size={19} />
+            <X size={18} />
           </button>
         </header>
 

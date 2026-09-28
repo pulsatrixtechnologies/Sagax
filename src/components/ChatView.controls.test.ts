@@ -167,9 +167,9 @@ describe("thread control placement", () => {
   it("keeps the selected thread's model in the composer and permissions inside the composer pill", () => {
     const markup = renderToStaticMarkup(createElement(ChatView, { bot }));
     expect(markup.match(/data-test-model-control/g)).toHaveLength(1);
-    expect(markup.indexOf("data-test-model-control")).toBeGreaterThan(markup.indexOf("rounded-3xl bg-composer"));
-    expect(markup.indexOf("rounded-3xl bg-composer")).toBeGreaterThan(-1);
-    expect(markup.indexOf("data-test-approval-control")).toBeGreaterThan(markup.indexOf("rounded-3xl bg-composer"));
+    expect(markup.indexOf("data-test-model-control")).toBeGreaterThan(markup.indexOf('data-tour="composer"'));
+    expect(markup.indexOf('data-tour="composer"')).toBeGreaterThan(-1);
+    expect(markup.indexOf("data-test-approval-control")).toBeGreaterThan(markup.indexOf('data-tour="composer"'));
     expect(markup.indexOf("data-test-approval-control")).toBeLessThan(markup.indexOf("<textarea"));
     expect(markup).not.toContain('aria-label="Thread settings"');
     expect(fixture.model).toMatchObject({ threadId: "selected", bot: { busy: false, modelSelection: { model: "thread-model" } } });

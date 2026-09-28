@@ -35,7 +35,7 @@ export function BotPickerList({
           <span
             className={cn(
               "flex size-[18px] shrink-0 items-center justify-center rounded-full border",
-              picked.has(b.id) ? "border-accent bg-accent text-white" : "border-hairline/60",
+              picked.has(b.id) ? "border-accent bg-accent text-accent-ink" : "border-hairline/60",
             )}
           >
             {picked.has(b.id) && <Check size={12} />}

@@ -37,7 +37,7 @@ export function OverviewSection({
         </div>
       )}
 
-      <div className="rounded-xl border border-hairline/40 p-4">
+      <div className="rounded-xl bg-hover p-3">
         <div className="text-[13px] font-medium text-ink">{overview.who.name}</div>
         {overview.who.title && <div className="mt-0.5 text-[13px] text-ink-secondary">{overview.who.title}</div>}
         {overview.who.blurb && <p className="mt-2 text-[13px] leading-relaxed text-ink">{overview.who.blurb}</p>}
@@ -55,7 +55,7 @@ export function OverviewSection({
         )}
       </div>
 
-      <div className="rounded-xl border border-hairline/40 p-4">
+      <div className="rounded-xl bg-hover p-3">
         <div className="text-[13px] font-medium text-ink">Does</div>
         {overview.does.length === 0 ? (
           <p className="mt-2 text-[13px] text-ink-secondary">Nothing scheduled or learned yet.</p>
@@ -68,7 +68,7 @@ export function OverviewSection({
         )}
       </div>
 
-      <div className="rounded-xl border border-hairline/40 p-4">
+      <div className="rounded-xl bg-hover p-3">
         <div className="text-[13px] font-medium text-ink">Can reach</div>
         {overview.reaches.length === 0 ? (
           <p className="mt-2 text-[13px] text-ink-secondary">Nothing yet.</p>
@@ -81,7 +81,7 @@ export function OverviewSection({
         )}
       </div>
 
-      <div className="rounded-xl border border-hairline/40 p-4">
+      <div className="rounded-xl bg-hover p-3">
         <div className="text-[13px] font-medium text-ink">Won&rsquo;t</div>
         <ul className="mt-2 flex flex-col gap-1.5 text-[13px] leading-relaxed text-ink">
           {overview.wont.map((line, i) => (
@@ -97,7 +97,7 @@ export function OverviewSection({
         onToggle={() => setPromptOpen((current) => !current)}
       />
 
-      <div className="rounded-xl border border-hairline/40 p-4">
+      <div className="rounded-xl bg-hover p-3">
         <div className="flex items-baseline justify-between gap-3">
           <div className="text-[13px] font-medium text-ink">Recent changes</div>
           <button

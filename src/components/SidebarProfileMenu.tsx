@@ -186,7 +186,11 @@ function useUpdateItem(): UpdateEntry | null {
   };
 }
 
-export function SidebarProfileMenu() {
+export function SidebarProfileMenu({ avatarOnly = false }: {
+  /** just the avatar, beside the apps pill the way Grok Bot lays out its
+   * footer; the name moves to the tooltip and the menu keeps its width */
+  avatarOnly?: boolean;
+} = {}) {
   const { state, dispatch } = useStore();
   const phone = useSidebarPhoneStatus();
   const update = useUpdateItem();
@@ -245,7 +249,33 @@ export function SidebarProfileMenu() {
       <SidebarPopoverMenu
         items={items}
         ariaLabel={name}
-        renderTrigger={({ open }) => (
+        menuClassName={avatarOnly ? "left-0 w-64" : undefined}
+        renderTrigger={({ open }) => avatarOnly ? (
+          <span
+            ref={triggerRef}
+            title={name}
+            className={cn(
+              "relative flex size-9 items-center justify-center rounded-full transition-[filter]",
+              open ? "ring-2 ring-accent/60" : "hover:brightness-90",
+            )}
+          >
+            {profile?.avatarUrl ? (
+              <img src={profile.avatarUrl} alt="" className="size-9 rounded-full object-cover" />
+            ) : (
+              <InitialsAvatar initials={profileInitials(profile)} size={36} />
+            )}
+            {update && updateNoteworthy(update.phase, update.pending) && (
+              <span
+                title={update.label}
+                aria-label={update.label}
+                className={cn(
+                  "absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-panel",
+                  update.phase === "error" ? "bg-danger" : "bg-accent",
+                )}
+              />
+            )}
+          </span>
+        ) : (
           <span
             ref={triggerRef}
             className={cn(

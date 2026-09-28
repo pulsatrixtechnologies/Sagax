@@ -37,7 +37,7 @@ export function OrgDirectory({
               className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50"
             />
           </label>
-          <button type="submit" className="w-fit rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:brightness-110">
+          <button type="submit" className="w-fit rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110">
             Créer l'organisation
           </button>
         </form>

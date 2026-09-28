@@ -1455,7 +1455,7 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
         // One draw per change of what the still face shows, then park.
         if (p.paused) {
           e.last = now
-          const still = `${p.state}|${p.expression ?? ''}|${paintRef.current}`
+          const still = `${p.state}|${p.expression ?? ''}|${p.gaze?.x ?? 0},${p.gaze?.y ?? 0}|${paintRef.current}`
           if (e.pausedPaint !== still) {
             e.pausedPaint = still
             draw(e, now, 0)

@@ -20,13 +20,14 @@ import {
   Moon,
   Power,
   ChevronLeft,
-  ChevronsRight,
+  PanelRight,
 } from "lucide-react";
 import { api, ApiError, currentTaskBot, useStore, type Bot } from "@/state/store";
 import { effectivePlace } from "@/lib/place";
 import type { CloudBackend } from "../../shared/wire";
 import { ApiKeyRow } from "./ApiKeys";
 import { cn } from "@/lib/cn";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useCaptionChrome } from "@/components/DesktopCapabilities";
 import { usePageVisible } from "@/lib/page-visible";
 import { CloudScreenPreview } from "./CloudScreenPreview";
@@ -141,9 +142,13 @@ function readPanelWidth(): number {
 export function ComputerPanel({
   bot: profileBot,
   onOpenVmWorkspace,
+  embedded = false,
 }: {
   bot: Bot;
   onOpenVmWorkspace?: (botId: string) => void;
+  /** Rendered as the Computer tab of the bot panel: no column of its own,
+   * no header or resize handle, just the body. */
+  embedded?: boolean;
 }) {
   // Docked flush under the Windows caption corner: drop the header 16px.
   const { padClass } = useCaptionChrome();
@@ -1148,55 +1153,8 @@ export function ComputerPanel({
     error: t("computer.phase.error"),
   } satisfies Record<Exclude<Phase, "ready" | "local" | "vm">, string>;
 
-  return (
-    <>
-    <aside
-      className="animate-panel-in relative flex h-full shrink-0 flex-col border-l border-hairline/40 bg-panel"
-      style={{ width: panelWidth }}
-    >
-      <div
-        ref={separatorRef}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t("computer.resizeAria")}
-        aria-valuemin={PANEL_MIN_WIDTH}
-        aria-valuemax={PANEL_MAX_WIDTH}
-        aria-valuenow={separatorWidth ?? undefined}
-        tabIndex={0}
-        onKeyDown={onSeparatorKeyDown}
-        onPointerDown={onResizeStart}
-        onPointerMove={onResizeMove}
-        onPointerUp={onResizeEnd}
-        onPointerCancel={onResizeEnd}
-        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize hover:bg-accent/40 focus-visible:bg-accent/60"
-      />
-      {/* Header */}
-      <div className={cn("relative flex h-11 shrink-0 items-center justify-center px-12", padClass)}>
-        <button
-          type="button"
-          onClick={() => {
-            dispatch({ type: "toggleComputer", open: false });
-            dispatch({ type: "toggleSettings", open: true });
-          }}
-          aria-label="Back"
-          title="Back"
-          className="absolute left-2.5 flex size-8 items-center justify-center rounded-full bg-raised text-ink-secondary hover:text-ink"
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <span className="truncate text-[14px] font-semibold text-ink">Computer</span>
-        <button
-          type="button"
-          onClick={() => dispatch({ type: "toggleComputer", open: false })}
-          aria-label="Close"
-          title="Close"
-          className="absolute right-2.5 flex size-8 items-center justify-center rounded-full bg-raised text-ink-secondary hover:text-ink"
-        >
-          <ChevronsRight size={16} />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-5 pb-5">
+  const body = (
+      <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
           {/* Screen preview */}
           <div className="mb-1.5 mt-2 flex items-center justify-between text-[13px] text-ink-secondary">
             <span>{t("computer.screenOf", { name: bot.name })}</span>
@@ -1208,7 +1166,7 @@ export function ComputerPanel({
             )}
             {computerStatusCurrent && bot.computer === "cloud" && cloudBackend === "vps" && (phase === "ready" || phase === "starting") && <span className="text-[11px]">{t("computer.badge.vps")}</span>}
         </div>
-        <div className="relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-xl bg-card">
+        <div className="relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-md bg-card">
           {cloudPreviewReady || (bot.computer === "cloud" && phase === "starting") ? (
             <CloudScreenPreview
               key={`${bot.id}:${bot.threadId}:${bot.computer}:${cloudBackend}`}
@@ -1315,7 +1273,7 @@ export function ComputerPanel({
                   <button
                     onClick={() => void runVmAction(vmStatus.container === "missing" ? "vm-create" : "vm-recreate")}
                     disabled={pending !== null}
-                    className="mt-1 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+                    className="mt-1 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
                   >
                     {(pending === "vm-create" || pending === "vm-recreate") && (
                       <Loader2 size={13} className="mr-1.5 inline animate-spin" />
@@ -1357,7 +1315,7 @@ export function ComputerPanel({
                 <button
                   onClick={() => void replaceVpsComputer()}
                   disabled={pending === "vps-replace"}
-                  className="mt-1 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+                  className="mt-1 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
                 >
                   {pending === "vps-replace" && <Loader2 size={13} className="mr-1.5 inline animate-spin" />}
                   {t("computer.replaceVps")}
@@ -1425,7 +1383,7 @@ export function ComputerPanel({
                   phase === "vm" || cloudPreviewReady ? void openDesktop() : controlAction("take")
                 }
                 disabled={controlPending || pending === "join"}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
               >
                 {pending === "join" ? <Loader2 size={14} className="animate-spin" /> : <Hand size={14} />}
                 {t("computer.takeControl")}
@@ -1453,7 +1411,7 @@ export function ComputerPanel({
                 void window.ogb?.desktopViewer?.close(bot.id);
               }}
               disabled={controlPending}
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
             >
               <Hand size={14} />
               {t("computer.handBack")}
@@ -1540,17 +1498,67 @@ export function ComputerPanel({
           <MacLocalControl />
         </>}
 
-        <div className="mt-6">
+        {!embedded && <div className="mt-6">
           <RoutinesSection key={bot.id} bot={bot} routines={botRoutines} runs={state.routineRuns} defaultRunOn={cloudRoutineReady ? "cloud" : "maus"} />
-        </div>
+        </div>}
         {androidConnected && (
           <div className="mt-6">
             <AndroidDevicePanel status={androidStatus} />
           </div>
         )}
       </div>
+  );
 
-    </aside>
+  return (
+    <>
+    {embedded ? null : <aside
+      className="animate-panel-in relative flex h-full shrink-0 flex-col border-l-[0.5px] border-hairline-weak bg-panel"
+      style={{ width: panelWidth }}
+    >
+      <div
+        ref={separatorRef}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t("computer.resizeAria")}
+        aria-valuemin={PANEL_MIN_WIDTH}
+        aria-valuemax={PANEL_MAX_WIDTH}
+        aria-valuenow={separatorWidth ?? undefined}
+        tabIndex={0}
+        onKeyDown={onSeparatorKeyDown}
+        onPointerDown={onResizeStart}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizeEnd}
+        onPointerCancel={onResizeEnd}
+        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize hover:bg-accent/40 focus-visible:bg-accent/60"
+      />
+      {/* Header */}
+      <div className={cn("relative flex h-11 shrink-0 items-center justify-center px-12", padClass)}>
+        <button
+          type="button"
+          onClick={() => {
+            dispatch({ type: "toggleComputer", open: false });
+            dispatch({ type: "toggleSettings", open: true });
+          }}
+          aria-label="Back"
+          title="Back"
+          className="absolute left-2.5 flex size-8 items-center justify-center rounded-full bg-raised text-ink-secondary hover:text-ink"
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <span className="truncate text-[14px] font-semibold text-ink">Computer</span>
+        <button
+          type="button"
+          onClick={() => dispatch({ type: "toggleComputer", open: false })}
+          aria-label="Close"
+          title="Close"
+          className={cn(CIRCLE_BUTTON, "absolute right-2.5")}
+        >
+          <PanelRight size={18} strokeWidth={1.75} />
+        </button>
+      </div>
+      {body}
+    </aside>}
+    {embedded && body}
     <LocalComputerAutoWarning
       open={localAutoWarningTarget !== null}
       onCancel={() => setLocalAutoWarningTarget(null)}

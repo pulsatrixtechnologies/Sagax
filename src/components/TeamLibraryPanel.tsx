@@ -625,7 +625,7 @@ export function TeamLibraryPanel({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px] sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6"
       onMouseDown={(event) => event.target === event.currentTarget && !importing && onClose()}
     >
       <div
@@ -634,9 +634,9 @@ export function TeamLibraryPanel({
         aria-modal="true"
         aria-labelledby="team-library-title"
         tabIndex={-1}
-        className="animate-pop-in flex h-[min(780px,calc(100dvh-2rem))] w-full max-w-[1040px] flex-col overflow-hidden rounded-[24px] border border-hairline/50 bg-panel shadow-2xl shadow-black/50 outline-none"
+        className="animate-pop-in flex h-[min(700px,calc(100dvh-96px))] w-[min(800px,calc(100vw-40px))] flex-col overflow-hidden rounded-[14px] border border-border bg-elevated outline-none"
       >
-        <header className="flex items-start justify-between gap-4 px-6 pb-3 pt-6 sm:px-8 sm:pt-7">
+        <header className="flex items-start justify-between gap-4 px-6 pb-3 pt-6 sm:px-8">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               {pending && (
@@ -653,7 +653,7 @@ export function TeamLibraryPanel({
                   <ArrowLeft size={18} />
                 </button>
               )}
-              <h2 id="team-library-title" className="truncate text-[22px] font-semibold tracking-[-0.01em] text-ink">
+              <h2 id="team-library-title" className="truncate text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">
                 {pending ? pending.name : "Templates"}
               </h2>
             </div>
@@ -686,10 +686,10 @@ export function TeamLibraryPanel({
             <button
               onClick={onClose}
               disabled={importing}
-              className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
+              className="flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary disabled:opacity-50"
               aria-label="Close templates"
             >
-              <X size={21} />
+              <X size={18} />
             </button>
           </div>
         </header>
@@ -718,7 +718,7 @@ export function TeamLibraryPanel({
                     onClick={() => void addOrgPackage(pendingOrg)}
                     disabled={importing}
                     aria-label={t("orgLibrary.addAria", { name: pendingOrg.name })}
-                    className="flex shrink-0 items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[13.5px] font-medium text-white hover:bg-accent/90 disabled:opacity-60"
+                    className="flex shrink-0 items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[13.5px] font-medium text-accent-ink hover:bg-accent/90 disabled:opacity-60"
                   >
                     {importing && <Loader2 size={15} className="animate-spin" />}
                     {importing ? t("orgLibrary.adding") : t("orgLibrary.add")}
@@ -731,7 +731,7 @@ export function TeamLibraryPanel({
               ) : <button
                 onClick={() => void importTeam()}
                 disabled={importing}
-                className="flex shrink-0 items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[13.5px] font-medium text-white hover:bg-accent/90 disabled:opacity-60"
+                className="flex shrink-0 items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[13.5px] font-medium text-accent-ink hover:bg-accent/90 disabled:opacity-60"
               >
                 {importing && <Loader2 size={15} className="animate-spin" />}
                 {importing
@@ -743,7 +743,7 @@ export function TeamLibraryPanel({
         ) : (
           <>
             <div className="flex flex-col gap-3 px-6 pb-4 pt-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-              <div className="flex w-fit rounded-xl bg-raised/70 p-1" role="tablist" aria-label="Template source">
+              <div className="flex h-7 w-fit max-w-full items-center overflow-x-auto rounded-full bg-hover p-0.5" role="tablist" aria-label="Template source">
                 {orgListing?.organization && (
                   <button
                     role="tab"
@@ -754,8 +754,8 @@ export function TeamLibraryPanel({
                       setError("");
                     }}
                     className={cn(
-                      "max-w-[220px] truncate rounded-lg px-4 py-2 text-[13.5px] transition-colors",
-                      tab === "org" ? "bg-card text-ink shadow-sm" : "text-ink-secondary hover:text-ink",
+                      "max-w-[220px] truncate h-full shrink-0 rounded-full px-3 text-[13px] text-ink-secondary transition-colors",
+                      tab === "org" ? "bg-hover text-ink" : "hover:text-ink",
                     )}
                   >
                     {t("orgLibrary.tab", { name: orgListing.organization.name })}
@@ -770,8 +770,8 @@ export function TeamLibraryPanel({
                     setError("");
                   }}
                   className={cn(
-                    "rounded-lg px-4 py-2 text-[13.5px] transition-colors",
-                    tab === "explore" ? "bg-card text-ink shadow-sm" : "text-ink-secondary hover:text-ink",
+                    "h-full shrink-0 rounded-full px-3 text-[13px] text-ink-secondary transition-colors",
+                    tab === "explore" ? "bg-hover text-ink" : "hover:text-ink",
                   )}
                 >
                   Explore
@@ -785,8 +785,8 @@ export function TeamLibraryPanel({
                     setError("");
                   }}
                   className={cn(
-                    "rounded-lg px-4 py-2 text-[13.5px] transition-colors",
-                    tab === "import" ? "bg-card text-ink shadow-sm" : "text-ink-secondary hover:text-ink",
+                    "h-full shrink-0 rounded-full px-3 text-[13px] text-ink-secondary transition-colors",
+                    tab === "import" ? "bg-hover text-ink" : "hover:text-ink",
                   )}
                 >
                   Import
@@ -800,8 +800,8 @@ export function TeamLibraryPanel({
                     setError("");
                   }}
                   className={cn(
-                    "rounded-lg px-4 py-2 text-[13.5px] transition-colors",
-                    tab === "scout" ? "bg-card text-ink shadow-sm" : "text-ink-secondary hover:text-ink",
+                    "h-full shrink-0 rounded-full px-3 text-[13px] text-ink-secondary transition-colors",
+                    tab === "scout" ? "bg-hover text-ink" : "hover:text-ink",
                   )}
                 >
                   From a folder
@@ -815,15 +815,15 @@ export function TeamLibraryPanel({
                     setError("");
                   }}
                   className={cn(
-                    "rounded-lg px-4 py-2 text-[13.5px] transition-colors",
-                    tab === "share" ? "bg-card text-ink shadow-sm" : "text-ink-secondary hover:text-ink",
+                    "h-full shrink-0 rounded-full px-3 text-[13px] text-ink-secondary transition-colors",
+                    tab === "share" ? "bg-hover text-ink" : "hover:text-ink",
                   )}
                 >
                   {t("teamLibrary.shareTab")}
                 </button>
               </div>
               {tab === "explore" && (
-                <label className="flex h-11 w-full items-center gap-2.5 rounded-xl bg-raised/70 px-3.5 sm:w-[320px]">
+                <label className="flex w-full items-center gap-2.5 rounded-[14px] border border-transparent bg-hover px-4 py-3 focus-within:border-border-strong sm:w-[320px]">
                   <Search size={17} className="shrink-0 text-ink-secondary" />
                   <input
                     value={search}
@@ -880,7 +880,7 @@ export function TeamLibraryPanel({
                           <button
                             onClick={() => void loadLibraryTeam(entry)}
                             disabled={busySlug !== null}
-                            className="flex min-w-[72px] items-center justify-center gap-1.5 rounded-full bg-raised px-3.5 py-2 text-[12.5px] text-ink hover:bg-raised-hover disabled:opacity-40"
+                            className="ui-button min-w-[72px] disabled:opacity-40"
                           >
                             {busySlug === entry.slug && <Loader2 size={13} className="animate-spin" />}
                             {busySlug === entry.slug ? "Loading" : "Load"}
@@ -949,12 +949,12 @@ export function TeamLibraryPanel({
                           onKeyDown={(event) => event.key === "Enter" && void loadGithubTeam()}
                           placeholder="github.com/owner/repo"
                           aria-label="GitHub team URL"
-                          className="min-w-0 flex-1 rounded-xl bg-raised/80 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
+                          className="min-w-0 flex-1 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none"
                         />
                         <button
                           onClick={() => void loadGithubTeam()}
                           disabled={!githubUrl.trim() || githubLoading}
-                          className="flex items-center gap-1.5 rounded-full bg-accent px-4 py-2.5 text-[13px] font-medium text-white hover:bg-accent/90 disabled:opacity-40"
+                          className="flex items-center gap-1.5 rounded-full bg-accent px-4 py-2.5 text-[13px] font-medium text-accent-ink hover:bg-accent/90 disabled:opacity-40"
                         >
                           {githubLoading && <Loader2 size={13} className="animate-spin" />}
                           Load
@@ -983,7 +983,7 @@ export function TeamLibraryPanel({
                           <button
                             onClick={() => setSharing(team.name)}
                             aria-label={t("teamLibrary.shareTeamAria", { name: team.name || t("teamLibrary.general") })}
-                            className="flex items-center gap-1.5 rounded-full bg-raised px-3.5 py-2 text-[12.5px] text-ink hover:bg-raised-hover"
+                            className="ui-button"
                           >
                             <Share2 size={13} />
                             {t("teamLibrary.shareTeam")}
@@ -1009,13 +1009,13 @@ export function TeamLibraryPanel({
                       onKeyDown={(event) => event.key === "Enter" && scoutTarget && void runScout(scoutTarget)}
                       placeholder="/path/to/your/project"
                       aria-label="Project folder to scout"
-                      className="min-w-0 flex-1 rounded-xl bg-raised/80 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
+                      className="min-w-0 flex-1 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none"
                     />
                     {Boolean(window.ogb?.pickFolder) && (
                       <button
                         onClick={() => void pickScoutFolder()}
                         disabled={scouting}
-                        className="flex items-center justify-center gap-1.5 rounded-full bg-raised px-4 py-2.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-40"
+                        className="ui-button disabled:opacity-40"
                       >
                         <FolderOpen size={14} />
                         Browse
@@ -1024,7 +1024,7 @@ export function TeamLibraryPanel({
                     <button
                       onClick={() => void runScout(scoutTarget)}
                       disabled={!scoutTarget || scouting}
-                      className="flex items-center justify-center gap-1.5 rounded-full bg-accent px-4 py-2.5 text-[13px] font-medium text-white hover:bg-accent/90 disabled:opacity-40"
+                      className="flex items-center justify-center gap-1.5 rounded-full bg-accent px-4 py-2.5 text-[13px] font-medium text-accent-ink hover:bg-accent/90 disabled:opacity-40"
                     >
                       {scouting ? <Loader2 size={14} className="animate-spin" /> : <Compass size={14} />}
                       {scouting ? "Scouting…" : "Scout"}
@@ -1117,12 +1117,12 @@ export function TeamLibraryPanel({
                           value={roomName}
                           onChange={(event) => setRoomName(event.target.value)}
                           aria-label="Group chat name"
-                          className="min-w-0 flex-1 rounded-xl bg-raised/80 px-3 py-2.5 text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
+                          className="min-w-0 flex-1 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none"
                         />
                         <button
                           onClick={() => void createProject()}
                           disabled={creating}
-                          className="flex shrink-0 items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[13.5px] font-medium text-white hover:bg-accent/90 disabled:opacity-60"
+                          className="flex shrink-0 items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[13.5px] font-medium text-accent-ink hover:bg-accent/90 disabled:opacity-60"
                         >
                           {creating && <Loader2 size={15} className="animate-spin" />}
                           {creating ? "Creating…" : "Create group chat"}

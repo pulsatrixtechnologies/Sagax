@@ -24,7 +24,7 @@ describe("settings primitives", () => {
       title: "Profile",
       children: createElement(Switch, { checked: true, disabled: true, "aria-label": "Analytics" }),
     }));
-    expect(html).toContain("border-hairline/40");
+    expect(html).toContain("rounded-[14px] border-[0.5px] border-border");
     expect(html).not.toContain("bg-card");
     expect(html).toContain('type="button" role="switch" aria-checked="true"');
     expect(html).toContain('aria-label="Analytics"');

@@ -75,7 +75,7 @@ export function DeviceSignInProgress({ auth }: { auth: DeviceSignInStatus }) {
           {copied ? <Check size={15} className="text-success" /> : <Copy size={15} />}
         </button>
       </div>
-      <a href={link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110">
+      <a href={link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110">
         {t("engineSetup.device.openChatGPT")} <ExternalLink size={13} />
       </a>
       <p role="status" className="flex items-center gap-1.5 text-[11.5px] text-ink-secondary">
@@ -173,7 +173,7 @@ export function CodexDeviceSignIn({ instanceId }: { instanceId: string }) {
           {busy ? t("engineSetup.device.cancelling") : t("engineSetup.device.cancel")}
         </button>
       ) : auth?.phase !== "succeeded" && (
-        <button type="button" disabled={busy} onClick={() => void start()} className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110 disabled:opacity-50">
+        <button type="button" disabled={busy} onClick={() => void start()} className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50">
           {busy ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
           {busy ? t("engineSetup.device.starting") : t("engineSetup.device.start")}
         </button>

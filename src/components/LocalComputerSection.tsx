@@ -808,7 +808,7 @@ function ActionButton({
       disabled={pending !== null}
       className={cn(
         "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium disabled:opacity-50",
-        danger ? "bg-danger/15 text-danger hover:bg-danger/20" : "bg-accent text-white hover:brightness-110",
+        danger ? "bg-danger/15 text-danger hover:bg-danger/20" : "bg-accent text-accent-ink hover:brightness-110",
       )}
     >
       {pending === action && <Loader2 size={13} className="animate-spin" />}

@@ -195,7 +195,7 @@ export function Terminal({ playing, onCue, onEnded, label }: SceneProps) {
                 <div className="mt-0.5 h-1 w-24 rounded bg-ink-secondary/40" />
                 <div className="mt-2 flex h-[18px] w-full items-center rounded-md border border-hairline/40 bg-inset px-2 text-[8px] text-ink-secondary">Your name</div>
                 <div className="mt-1 flex h-[18px] w-full items-center rounded-md border border-hairline/40 bg-inset px-2 text-[8px] text-ink-secondary">you@example.com</div>
-                <div className="mt-1 flex h-[18px] w-full items-center justify-center rounded-md bg-accent text-[8.5px] font-medium text-white">Continue</div>
+                <div className="mt-1 flex h-[18px] w-full items-center justify-center rounded-md bg-accent text-[8.5px] font-medium text-accent-ink">Continue</div>
               </div>
             </div>
           </div>

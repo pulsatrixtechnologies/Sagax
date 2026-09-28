@@ -259,7 +259,7 @@ export function QuestionCard({
           <button
             onClick={submit}
             disabled={!complete}
-            className="rounded-full bg-accent px-3.5 py-1.5 text-[13.5px] font-medium text-white transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-full bg-accent px-3.5 py-1.5 text-[13.5px] font-medium text-accent-ink transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {questions.length > 1 ? t("question.submitAll") : t("question.submit")}
           </button>

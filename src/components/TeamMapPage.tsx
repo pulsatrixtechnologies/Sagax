@@ -167,7 +167,7 @@ function SectionContextDialog({ section, label, onClose }: { section: string; la
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px] sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6"
       onMouseDown={(event) => event.target === event.currentTarget && requestClose()}
     >
       <div
@@ -176,13 +176,13 @@ function SectionContextDialog({ section, label, onClose }: { section: string; la
         aria-modal="true"
         aria-labelledby="section-context-title"
         tabIndex={-1}
-        className="animate-pop-in flex max-h-[min(680px,calc(100dvh-2rem))] w-full max-w-[680px] flex-col overflow-hidden rounded-[24px] border border-hairline/50 bg-panel shadow-2xl shadow-black/50 outline-none"
+        className="animate-pop-in flex max-h-[min(680px,calc(100dvh-2rem))] w-full max-w-[680px] flex-col overflow-hidden rounded-[14px] border border-border bg-elevated outline-none"
       >
         <header className="flex items-start justify-between gap-4 border-b border-hairline/40 px-6 pb-4 pt-6 sm:px-8 sm:pt-7">
           <div>
             <div className="flex items-center gap-2">
               <BookOpen size={19} className="text-accent" />
-              <h2 id="section-context-title" className="text-[20px] font-semibold tracking-[-0.01em] text-ink">
+              <h2 id="section-context-title" className="text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">
                 {t("team.instructionsTitle", { name: label })}
               </h2>
             </div>
@@ -194,9 +194,9 @@ function SectionContextDialog({ section, label, onClose }: { section: string; la
             onClick={requestClose}
             disabled={saving}
             aria-label={t("team.instructionsClose")}
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary disabled:opacity-40"
           >
-            <X size={19} />
+            <X size={18} />
           </button>
         </header>
 
@@ -213,7 +213,7 @@ function SectionContextDialog({ section, label, onClose }: { section: string; la
                 onChange={(event) => setText(event.target.value)}
                 placeholder={"Goals\n- Ship the Windows onboarding refresh\n\nDecisions\n- Keep customer data local\n\nPreferences\n- Use concise weekly updates"}
                 aria-label={t("team.instructionsTitle", { name: label })}
-                className="min-h-[280px] w-full resize-y rounded-xl border border-hairline/60 bg-inset px-4 py-3 font-mono text-[12.5px] leading-relaxed text-ink outline-none placeholder:text-ink-secondary/55 focus:border-accent/50"
+                className="min-h-[280px] w-full resize-y rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none placeholder:text-ink-secondary focus:border-border-strong"
               />
               <div className="mt-2 flex items-start justify-between gap-4 text-[11.5px] text-ink-secondary">
                 <span>
@@ -236,7 +236,7 @@ function SectionContextDialog({ section, label, onClose }: { section: string; la
           <button
             onClick={() => void save()}
             disabled={loading || saving || !dirty || bytes > maxBytes}
-            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-40"
+            className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {t("team.instructionsSave")}
@@ -320,7 +320,7 @@ export function TeamMapPage() {
         <div>
           <div className="flex items-center gap-2.5">
             <Network size={18} className="text-ink-secondary" />
-            <h1 className="text-[17px] font-semibold">Team map</h1>
+            <h1 className="text-[17px] font-semibold leading-6 tracking-[-0.008em]">Team map</h1>
             <span className="ml-1 text-[11px] text-ink-secondary">{t("canvas.botCount", { count: bots.length })}</span>
           </div>
           <p className="mt-1 text-[12px] text-ink-secondary">{t("canvas.description")}</p>
@@ -331,12 +331,12 @@ export function TeamMapPage() {
             if (event.key === "Escape") { event.currentTarget.removeAttribute("open"); event.currentTarget.querySelector("summary")?.focus(); }
           }}>
             <summary aria-label="Add to team map" className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-3 text-[12px] font-medium text-ink hover:bg-raised [&::-webkit-details-marker]:hidden"><Plus size={15} /> Add</summary>
-            <div className="absolute right-0 top-full z-40 mt-2 w-52 rounded-xl border border-hairline/60 bg-panel p-1.5 shadow-xl" onClick={(event) => {
+            <div className="absolute right-0 top-full z-40 mt-2 flex w-52 min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]" onClick={(event) => {
               const details = event.currentTarget.closest("details"); details?.querySelector("summary")?.focus(); details?.removeAttribute("open");
             }}>
-              <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[12px] hover:bg-control" onClick={() => setTeamEditor({})}><Users size={14} />{t("team.create")}</button>
-              <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[12px] hover:bg-control" onClick={() => { setComputersOpen(true); setCreateComputerRequest((value) => value + 1); }}><Box size={14} />Box computer</button>
-              <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[12px] hover:bg-control" onClick={() => dispatch({ type: "toggleAppSettings", section: "computer", open: true })}><Monitor size={14} />Local VM…</button>
+              <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover" onClick={() => setTeamEditor({})}><Users size={16} />{t("team.create")}</button>
+              <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover" onClick={() => { setComputersOpen(true); setCreateComputerRequest((value) => value + 1); }}><Box size={16} />Box computer</button>
+              <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover" onClick={() => dispatch({ type: "toggleAppSettings", section: "computer", open: true })}><Monitor size={16} />Local VM…</button>
             </div>
           </details>
         </div>}

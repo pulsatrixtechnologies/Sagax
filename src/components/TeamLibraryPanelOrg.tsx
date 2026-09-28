@@ -96,7 +96,7 @@ function OrgPackageCard({
             onClick={() => onAdd(entry)}
             disabled={busy !== null}
             aria-label={t("orgLibrary.addAria", { name: entry.name })}
-            className="flex min-w-[72px] items-center justify-center gap-1.5 rounded-full bg-accent px-3.5 py-2 text-[12.5px] font-medium text-white hover:bg-accent/90 disabled:opacity-40"
+            className="flex min-w-[72px] items-center justify-center gap-1.5 rounded-full bg-accent px-3.5 py-2 text-[12.5px] font-medium text-accent-ink hover:bg-accent/90 disabled:opacity-40"
           >
             {adding && <Loader2 size={13} className="animate-spin" />}
             {adding ? t("orgLibrary.adding") : t("orgLibrary.add")}

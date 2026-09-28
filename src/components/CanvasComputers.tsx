@@ -207,7 +207,7 @@ export function CanvasComputers({ open, createRequest, drop, sections, onClose, 
           <p className="text-[11px] leading-relaxed text-ink-secondary">Creates a cloud machine in your connected boat.dev account. Your Box plan and usage charges apply. It stays unassigned until you choose a team.</p>
           <div className="flex justify-end gap-1">
             <button type="button" className={control} disabled={busy !== null} onClick={() => setCreating(false)}>Cancel</button>
-            <button type="submit" className="flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12px] font-medium text-white disabled:opacity-40" disabled={!inventory?.configured || !name.trim() || busy !== null}>
+            <button type="submit" className="flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12px] font-medium text-accent-ink disabled:opacity-40" disabled={!inventory?.configured || !name.trim() || busy !== null}>
               {busy === "create" && <Loader2 size={13} className="animate-spin" />}Create Box
             </button>
           </div>

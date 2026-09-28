@@ -10,6 +10,7 @@ import {
   type MausAvatarProps,
 } from "./Avatar";
 import { MASCOT_BODIES } from "../../shared/mascot-bodies";
+import { MAUS_COLORS } from "@/lib/mascot";
 
 const render = (props: Partial<MausAvatarProps>) =>
   renderToStaticMarkup(createElement(MausAvatar, { color: "green", animated: false, ...props }));
@@ -39,11 +40,14 @@ describe("MausAvatar body", () => {
     );
   });
 
-  it("paints the body with the per-bot gradient, never a flat black fill", () => {
+  it("paints the body in the bot's own color, one flat tone, never black", () => {
     const markup = render({ bodyId: "circle" });
-    expect(markup).not.toContain('fill="#000000"');
     expect(markup).not.toContain("{{GRADIENT}}");
-    expect(markup).toContain("url(#");
+    // the body path takes the fill; the eyes are the only black paths
+    expect(markup).toMatch(/<path fill="url\(#[^"]+-grad\)"/);
+    const stops = [...markup.matchAll(/<stop [^>]*stop-color="([^"]+)"/g)].map((match) => match[1]);
+    expect(stops.length).toBeGreaterThan(0);
+    expect(new Set(stops)).toEqual(new Set([MAUS_COLORS.green]));
   });
 });
 

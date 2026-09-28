@@ -27,6 +27,10 @@ export const MOUTH_WEIGHT = 11;
  */
 const POINTER_GAZE = { forward: 1, authored: 0.25 };
 
+/** Where a resting mascot looks when nobody pins a gaze: off to the right,
+ * the way Grok Bot's mascots glance toward the conversation. */
+const RESTING_GAZE = { x: 0.7, y: 0 };
+
 /**
  * What a one-shot motion does while it plays: CursorAvatar animates the body
  * per state, so borrowing the state for a beat moves body and face together.
@@ -54,28 +58,14 @@ const MOTION_FACE: MotionFaces = {
 /** How long a one-shot motion holds its state before the bot's own returns. */
 const MOTION_FACE_MS = 1400;
 
-/** Channel-wise mix of a hex color toward another, t in 0..1. */
-function mix(hex: string, toward: string, t: number): string {
-  const a = Number.parseInt(hex.slice(1), 16);
-  const b = Number.parseInt(toward.slice(1), 16);
-  const channel = (shift: number) => {
-    const va = (a >> shift) & 0xff;
-    const vb = (b >> shift) & 0xff;
-    return Math.round(va + (vb - va) * t);
-  };
-  return `#${[channel(16), channel(8), channel(0)]
-    .map((part) => part.toString(16).padStart(2, "0"))
-    .join("")}`;
-}
-
 /**
- * Bot color -> the mascot's three-stop body gradient (highlight, base,
- * shadow), with the same light/dark spread as the pack's default green
- * ["#9FE6B5", "#3FAE6E", "#1C7A4C"].
+ * Bot color -> the mascot's body fill. The renderer takes three stops
+ * (highlight, base, shadow); all three are the bot's color, so the body
+ * is one flat, uniform color the way Grok Bot draws its mascots.
  */
 const gradientFor = (color: MausColor): [string, string, string] => {
   const fill = MAUS_COLORS[color] ?? MAUS_COLORS.green;
-  return [mix(fill, "#ffffff", 0.55), fill, mix(fill, "#000000", 0.42)];
+  return [fill, fill, fill];
 };
 
 export type MausAvatarHandle = CursorAvatarHandle;
@@ -185,7 +175,7 @@ function MausAvatarComponent(
         gradient={gradientFor(color)}
         title={label ?? null}
         lookAround={lookAround ?? (forward ? 0 : 1)}
-        gaze={{ x: (gaze?.x ?? 0) + pointer.x, y: (gaze?.y ?? 0) + pointer.y }}
+        gaze={{ x: (gaze?.x ?? RESTING_GAZE.x) + pointer.x, y: (gaze?.y ?? RESTING_GAZE.y) + pointer.y }}
         turn={turn}
         spring={spring}
         eyeScale={eyeScale}

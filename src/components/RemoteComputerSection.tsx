@@ -208,7 +208,7 @@ export function RemoteComputerSection() {
           <button
             type="submit"
             disabled={busy || (serverMode ? !serverLink.trim() : endpoint.trim() === "" || code.length !== 6)}
-            className="flex w-fit items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+            className="flex w-fit items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Laptop size={14} />}
             {serverMode ? t("remote.client.server.connect") : t("remote.client.pair")}

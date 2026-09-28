@@ -57,6 +57,7 @@ export const MAUS_COLOR_NAMES = [
   "yellow",
   "teal",
   "coral",
+  "white",
 ] as const;
 
 export type MausColor = (typeof MAUS_COLOR_NAMES)[number];
@@ -72,6 +73,7 @@ export const MAUS_COLORS = {
   yellow: "#D8A729",
   teal: "#01A492",
   coral: "#E5634E",
+  white: "#F4F4F4",
 } satisfies Record<MausColor, string>;
 
 export const MAUS_MOTIONS = [

@@ -267,7 +267,7 @@ export function AvatarImageGenerator({
             }
           }}
           disabled={busy || !configured || unsaved}
-          className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
         >
           {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
           {generating ? "Generating…" : "Generate avatar"}

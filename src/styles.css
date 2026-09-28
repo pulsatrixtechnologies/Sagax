@@ -121,6 +121,29 @@
     "Segoe UI", system-ui, sans-serif;
 }
 
+/* Grok-style layering. These derive from each skin's own ink and panel, so
+   `inline` keeps them resolving where they are used (under [data-skin])
+   instead of once on :root. On the default skin they land on Grok Bot's
+   dark values: elevated #181818, hairline-weak #fcfcfc1a, border #fcfcfc26,
+   border-strong #fcfcfc4d, ink-tertiary #fcfcfc8f. Depth comes from these
+   surfaces and hairlines, not from drop shadows. */
+@theme inline {
+  --color-elevated: color-mix(in srgb, var(--color-ink) 3%, var(--color-panel));
+  --color-hover: #7777772c;
+  --color-selected: #77777752;
+  --color-elevated-hover: color-mix(in srgb, #777777 20%, var(--color-elevated));
+  --color-hairline-weak: color-mix(in srgb, var(--color-ink) 10%, transparent);
+  --color-border: color-mix(in srgb, var(--color-ink) 15%, transparent);
+  --color-border-strong: color-mix(in srgb, var(--color-ink) 30%, transparent);
+  --color-ink-tertiary: color-mix(in srgb, var(--color-ink) 56%, transparent);
+}
+
+/* The text color that reads on the accent fill. It lives on :root (each skin
+   sets its own), so it needs an explicit utility. */
+@utility text-accent-ink {
+  color: var(--color-accent-ink);
+}
+
 /* Tokens that no utility generates — declared outside `@theme` so Tailwind
    can't tree-shake them away, and so a skin can redefine them freely. */
 :root {
@@ -586,38 +609,45 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    min-height: 2rem;
-    border-radius: var(--radius-lg, 0.5rem);
+    gap: 0.375rem;
     font-size: 13px;
-    font-weight: 500;
-    line-height: 1.25rem;
+    font-weight: 400;
+    line-height: 18px;
     transition: background-color 120ms ease, color 120ms ease;
   }
+  /* Grok Bot's pill button: 30px, fully round, no border. Secondary is a
+     translucent gray; .ui-button-primary is the white pill. */
   .ui-button {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid var(--color-hairline);
-    background: var(--color-control);
+    height: 30px;
+    padding: 0 13px;
+    border-radius: 9999px;
+    background: var(--color-hover);
     color: var(--color-ink);
+  }
+  .ui-button-primary {
+    background: var(--color-ink);
+    color: var(--color-app);
   }
   .ui-icon-button {
-    width: 2rem;
-    padding: 0.375rem;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
     color: var(--color-ink-secondary);
   }
-  .ui-button:enabled:hover,
-  .ui-icon-button:enabled:hover {
-    background: var(--color-raised-hover);
-    color: var(--color-ink);
+  .ui-button:enabled:hover {
+    background: var(--color-selected);
   }
-  .ui-button:enabled:active,
-  .ui-icon-button:enabled:active {
-    background: var(--color-raised);
+  .ui-button-primary:enabled:hover {
+    background: color-mix(in srgb, var(--color-ink) 60%, transparent);
+  }
+  .ui-icon-button:enabled:hover {
+    background: var(--color-hover);
+    color: var(--color-ink);
   }
   .ui-button:disabled,
   .ui-icon-button:disabled {
     cursor: not-allowed;
-    opacity: 0.45;
+    opacity: 0.56;
   }
   @media (prefers-reduced-motion: reduce) {
     .ui-button,
@@ -648,16 +678,17 @@ body {
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
+/* Grok's thin rounded thumb: a faint wash of the ink color. */
 ::-webkit-scrollbar-thumb {
-  background: var(--color-scrollbar);
-  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-ink) 14%, transparent);
+  border-radius: 9999px;
 }
 /* the thumb was inert — it never acknowledged the pointer */
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-raised-hover);
+  background: color-mix(in srgb, var(--color-ink) 21%, transparent);
 }
 ::-webkit-scrollbar-track {
   background: transparent;

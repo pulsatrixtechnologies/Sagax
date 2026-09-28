@@ -329,7 +329,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
                 type="button"
                 disabled={working === reviewing.skill.name}
                 onClick={() => void enableReviewed()}
-                className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
+                className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-accent-ink disabled:opacity-40"
               >
                 Enable reviewed skill
               </button>

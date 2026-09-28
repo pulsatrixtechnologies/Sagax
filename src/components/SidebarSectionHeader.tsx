@@ -73,7 +73,7 @@ export function SidebarSectionHeader({
 
   return (
     <div
-      className={cn("px-1 pb-1", dragging && "opacity-40")}
+      className={cn("pb-0.5", dragging && "opacity-40")}
       data-section={name}
       tabIndex={onContextMenu ? -1 : undefined}
       onContextMenu={onContextMenu}
@@ -97,15 +97,15 @@ export function SidebarSectionHeader({
                 ? t("sidebar.section.expand", { name })
                 : t("sidebar.section.collapse", { name })
           }
-          className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-raised/40"
+          className="group/section flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-2 pb-1.5 pt-2 text-left transition-colors hover:bg-hover"
         >
-          <span className="truncate text-[13px] font-medium text-ink-secondary">{name}</span>
+          <span className="truncate text-[12px] leading-4 text-ink-secondary">{name}</span>
           {marks}
-          <Chevron size={14} strokeWidth={2} className="ml-auto shrink-0 text-ink-secondary" aria-hidden="true" />
+          <Chevron size={14} strokeWidth={2} className={cn("ml-auto shrink-0 text-ink-secondary transition-opacity", !collapsed && "opacity-0 group-hover/section:opacity-100 group-focus-visible/section:opacity-100")} aria-hidden="true" />
         </button>
       ) : (
-        <div className="flex min-w-0 items-center gap-2 px-2 py-1">
-          <span className="truncate text-[13px] font-medium text-ink-secondary">{name}</span>
+        <div className="flex h-[30px] min-w-0 items-center gap-2 px-2 pb-1.5 pt-2">
+          <span className="truncate text-[12px] leading-4 text-ink-secondary">{name}</span>
           {marks}
         </div>
       )}

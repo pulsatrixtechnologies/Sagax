@@ -44,7 +44,7 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
         role="dialog"
         aria-modal="true"
         aria-labelledby="about-dialog-title"
-        className="w-full max-w-[360px] rounded-2xl border border-hairline/50 bg-panel p-6 text-center shadow-2xl"
+        className="w-full max-w-[360px] rounded-[14px] border border-border bg-elevated p-6 text-center"
       >
         <img src="/app-icon.svg" alt="" width={56} height={56} className="mx-auto size-14" />
         <h2 id="about-dialog-title" className="mt-3 text-[17px] font-semibold text-ink">

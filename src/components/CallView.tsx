@@ -181,7 +181,7 @@ export function CallTargetButton({
                 setHelpOpen(false);
                 void window.ogb?.workspaces?.menu();
               }}
-              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:brightness-110"
+              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:brightness-110"
             >
               Choose This computer
             </button>
@@ -194,7 +194,7 @@ export function CallTargetButton({
                 if (setupBotId && setupBotId !== targetId) dispatch({ type: "select", id: setupBotId });
                 dispatch({ type: "toggleSettings", open: true, section: "voice" });
               }}
-              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:brightness-110"
+              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:brightness-110"
             >
               Open agent settings
             </button>
