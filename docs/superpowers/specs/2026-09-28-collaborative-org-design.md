@@ -96,7 +96,12 @@ Tout passe par une seule fonction `can(principal, action, resource)`. Elle sert 
 
 - Le serveur émet lui-même les codes à usage unique (OTP) de connexion et les liens d'invitation.
 - Fournisseurs: `smtp` (hôte, port, TLS, utilisateur, mot de passe, adresse d'expédition) ou `sendgrid` (clé API Twilio SendGrid, adresse d'expédition). Un seul actif à la fois.
-- La configuration se fait dans les réglages web du serveur, par un admin. Les secrets sont en écriture seule, comme les autres clés de l'app. Un bouton « Envoyer un courriel de test » valide la configuration.
+- Deux façons de configurer, au choix de l'opérateur:
+  - **Docker:** variables d'environnement dans `.env` ou `compose.yaml`, lues au démarrage. `OMB_MAIL_PROVIDER` (`smtp` ou `sendgrid`), `OMB_MAIL_FROM`; pour SMTP `OMB_SMTP_HOST`, `OMB_SMTP_PORT`, `OMB_SMTP_SECURE` (`tls`, `starttls` ou `none`), `OMB_SMTP_USER`, `OMB_SMTP_PASSWORD`; pour SendGrid `OMB_SENDGRID_API_KEY`. Chaque secret accepte aussi une variante `_FILE` (chemin d'un Docker secret).
+  - **Web:** les réglages du serveur, par un admin. Les secrets sont en écriture seule, comme les autres clés de l'app.
+- Priorité: une valeur venue de l'environnement gagne. Le réglage web l'affiche en lecture seule, avec la mention « configuré par Docker ». Les champs absents de l'environnement restent modifiables sur le web.
+- Un bouton « Envoyer un courriel de test » valide la configuration, d'où qu'elle vienne.
+- `.env.example` liste ces variables, vides, avec un commentaire.
 - Sans fournisseur configuré: pas de connexion par courriel ni d'invitation par courriel. L'appairage par code reste possible.
 - Code: 8 chiffres, valide 10 minutes, 5 essais au plus, limité par adresse et par source.
 
