@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { canSeeChannel, canSeeDirectBot, channelViewerId, seesChannel } from "./channel-visibility.ts";
+import {
+  canSeeChannel,
+  canSeeDirectBot,
+  channelViewerId,
+  liveFramesNeedChannelFilter,
+  seesBotForViewer,
+  seesChannel,
+  seesChannelFrame,
+} from "./channel-visibility.ts";
 
 describe("channel visibility", () => {
   it("hides a channel from someone who was not added", () => {
@@ -20,5 +28,31 @@ describe("channel visibility", () => {
     expect(seesChannel({ humanIds: ["jc"] }, viewerId)).toBe(false);
     expect(seesChannel({ humanIds: ["jc", "ada@example.test"] }, viewerId)).toBe(true);
   });
+  it("filters live frames for a signed-in admin and not for loopback", () => {
+    expect(liveFramesNeedChannelFilter("ada@example.test")).toBe(true);
+    expect(liveFramesNeedChannelFilter(undefined)).toBe(false);
+  });
+  it("keeps a channel speaker visible even without a direct grant", () => {
+    expect(seesChannelFrame({
+      humanIds: ["jc", "zachary@example.test"],
+      viewerId: "zachary@example.test",
+      speakingOwnerUserId: "jc",
+      speakingDirectGrants: [],
+    })).toBe(true);
+    expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "zachary@example.test", directGrants: [] })).toBe(false);
+    expect(seesBotForViewer({
+      viewerId: "zachary@example.test",
+      ownerUserId: "jc",
+      directGrants: [],
+      inChannels: [{ humanIds: ["jc", "zachary@example.test"] }],
+    })).toBe(true);
+    expect(seesBotForViewer({
+      viewerId: "zachary@example.test",
+      ownerUserId: "jc",
+      directGrants: [],
+      inChannels: [{ humanIds: ["jc"] }],
+    })).toBe(false);
+  });
 });
+
 

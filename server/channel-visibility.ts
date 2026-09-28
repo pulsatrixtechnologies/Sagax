@@ -34,3 +34,33 @@ export function seesChannel(group: { humanIds?: string[] }, viewerId: string | u
   if (!viewerId) return true;
   return canSeeChannel({ humanIds: group.humanIds ?? [], viewerId });
 }
+
+/** Signed-in viewers, including admin, have live frames filtered. Loopback
+ * and a session with no user id do not. */
+export function liveFramesNeedChannelFilter(viewerId: string | undefined): boolean {
+  return Boolean(viewerId);
+}
+
+/** A channel frame is judged only by humanIds. The speaking bot's Direct
+ * grants are not consulted. */
+export function seesChannelFrame(input: {
+  humanIds: string[];
+  viewerId: string;
+  speakingOwnerUserId?: string;
+  speakingDirectGrants?: string[];
+}): boolean {
+  return canSeeChannel({ humanIds: input.humanIds, viewerId: input.viewerId });
+}
+
+/** Direct or a channel the viewer can see. Direct is not a gate on every bot. */
+export function seesBotForViewer(input: {
+  viewerId: string | undefined;
+  ownerUserId?: string;
+  directGrants: string[];
+  inChannels: { humanIds?: string[] }[];
+}): boolean {
+  if (!input.viewerId) return true;
+  if (!input.ownerUserId) return true;
+  if (canSeeDirectBot({ ownerUserId: input.ownerUserId, viewerId: input.viewerId, directGrants: input.directGrants })) return true;
+  return input.inChannels.some((group) => seesChannel(group, input.viewerId));
+}

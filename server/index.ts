@@ -540,7 +540,7 @@ import {
   type PhoneSecretContext,
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
-import { canSeeDirectBot, channelViewerId, seesChannel } from "./channel-visibility.ts";
+import { channelViewerId, liveFramesNeedChannelFilter, seesBotForViewer, seesChannel, seesChannelFrame } from "./channel-visibility.ts";
 import { roleOf, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
@@ -4543,7 +4543,9 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
   for (const client of Array.from(sseClients)) {
     if (!wants(client, kind)) continue;
     // Admin-only frames (clientFrame null) never reach members, and a member never falls back to the admin frame.
-    const out = client.admin ? frame : clientFrame === null ? null : memberFrame(client, seq, payload, clientFrame);
+    // A signed-in admin has a viewerId and goes through memberFrame so hidden
+    // channels stay hidden. Loopback (no viewerId) still gets the raw frame.
+    const out = sseFrameFor(client, seq, payload, frame, clientFrame);
     if (out === null) continue;
     // Screen frames are replaceable and durable events are not: see
     // ./sse-fanout.ts for the backpressure/bound decision this makes.
@@ -4556,10 +4558,22 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
 /** The frame a non-admin stream gets: the shared client frame, unless a bot
  * is restricted and this member may not see all of what the frame carries —
  * then narrowed (bot-visibility.ts), withdrawn, or nothing at all (null). */
+function sseFrameFor(
+  client: SseClient,
+  seq: number,
+  payload: Record<string, unknown> | null,
+  frame: string | null,
+  clientFrame: string | null,
+): string | null {
+  if (client.admin && (!liveFramesNeedChannelFilter(client.viewerId) || clientFrame === null)) return frame;
+  if (clientFrame === null || !payload) return clientFrame;
+  return memberFrame(client, seq, payload, clientFrame);
+}
+
 function memberFrame(client: SseClient, seq: number, payload: Record<string, unknown>, clientFrame: string | null): string | null {
   // A frame kept from clients altogether stays kept: never the admin copy.
   if (clientFrame === null) return null;
-  if (client.viewerId && !memberSeesFrame(payload, client.viewerId)) return null;
+  if (liveFramesNeedChannelFilter(client.viewerId) && client.viewerId && !memberSeesFrame(payload, client.viewerId)) return null;
   if (client.viewer.kind === "all") return clientFrame;
   const visible = visibleTo(client.viewer);
   if (visible.everything) {
@@ -13083,14 +13097,17 @@ function channelActorId(auth: RequestAuth): string {
   return (cfg.profile?.email ?? "local-owner").trim();
 }
 
-function seesDirectBot(bot: { ownerUserId?: unknown; directGrants?: unknown }, viewerId: string | undefined): boolean {
-  if (!viewerId) return true;
-  const ownerUserId = typeof bot.ownerUserId === "string" ? bot.ownerUserId : "";
-  if (!ownerUserId) return true;
+function listedBotVisible(bot: { id: string; ownerUserId?: unknown; directGrants?: unknown }, viewerId: string | undefined): boolean {
+  const ownerUserId = typeof bot.ownerUserId === "string" ? bot.ownerUserId : undefined;
   const directGrants = Array.isArray(bot.directGrants)
     ? bot.directGrants.filter((id): id is string => typeof id === "string")
     : [];
-  return canSeeDirectBot({ ownerUserId, viewerId, directGrants });
+  return seesBotForViewer({
+    viewerId,
+    ownerUserId,
+    directGrants,
+    inChannels: store.groups.filter((group) => group.memberIds.includes(bot.id)),
+  });
 }
 
 function subjectSeesChannel(subject: PathSubject, viewerId: string): boolean {
@@ -13104,7 +13121,7 @@ function subjectSeesChannel(subject: PathSubject, viewerId: string): boolean {
   }
   if (subject.kind === "bot") {
     const bot = store.bot(subject.id);
-    return !bot || seesDirectBot(bot, viewerId);
+    return !bot || listedBotVisible(bot, viewerId);
   }
   return true;
 }
@@ -13114,17 +13131,26 @@ function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): bo
   const groupId = typeof payload.groupId === "string" ? payload.groupId : typeof groupField === "string" ? groupField : undefined;
   if (typeof groupId === "string") {
     const group = store.group(groupId);
-    if (group && !seesChannel(group, viewerId)) return false;
+    if (group) {
+      return seesChannelFrame({
+        humanIds: group.humanIds ?? [],
+        viewerId,
+        speakingOwnerUserId: typeof payload.botId === "string"
+          ? (store.bot(payload.botId) as { ownerUserId?: string } | undefined)?.ownerUserId
+          : undefined,
+        speakingDirectGrants: [],
+      });
+    }
+  }
+  if (typeof payload.threadId === "string") {
+    const group = store.groupByThread(payload.threadId);
+    if (group) return seesChannel(group, viewerId);
   }
   const botField = payload.bot && typeof payload.bot === "object" ? (payload.bot as { id?: unknown }).id : undefined;
   const botId = typeof payload.botId === "string" ? payload.botId : typeof botField === "string" ? botField : undefined;
   if (typeof botId === "string") {
     const bot = store.bot(botId);
-    if (bot && !seesDirectBot(bot, viewerId)) return false;
-  }
-  if (typeof payload.threadId === "string") {
-    const group = store.groupByThread(payload.threadId);
-    if (group && !seesChannel(group, viewerId)) return false;
+    if (bot && !listedBotVisible(bot, viewerId)) return false;
   }
   return true;
 }
@@ -16105,7 +16131,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         viewer,
         // What this person's hydration (GET /api/bots, narrowed the same way) showed them.
         seen: viewer.kind === "all" ? { bots: new Set(), groups: new Set() } : {
-          bots: new Set(store.bots.filter((bot) => visibleNow.bot(bot.id) && seesDirectBot(bot, viewerId)).map((bot) => bot.id)),
+          bots: new Set(store.bots.filter((bot) => visibleNow.bot(bot.id) && listedBotVisible(bot, viewerId)).map((bot) => bot.id)),
           groups: new Set(store.groups.filter((group) => visibleNow.group(group.id) && seesChannel(group, viewerId)).map((group) => group.id)),
         },
       };
@@ -16154,11 +16180,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (resumed) {
         for (const buffered of replayBuffer) {
           if (buffered.seq <= since || !wants(client, buffered.kind)) continue;
-          const frame = client.admin
-            ? buffered.frame
-            : buffered.payload
-              ? memberFrame(client, buffered.seq, buffered.payload, buffered.clientFrame)
-              : buffered.clientFrame;
+          const frame = sseFrameFor(client, buffered.seq, buffered.payload, buffered.frame, buffered.clientFrame);
           if (frame) res.write(frame);
         }
       }
@@ -16210,7 +16232,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // bot record carrying no tasks, where publicBot() always sent [].
       // A member on a workspace with a restricted bot gets only what they may
       // see (bot-visibility.ts); for everyone else these filters keep all.
-      const shownBots = store.bots.filter((bot) => visible.bot(bot.id) && seesDirectBot(bot, viewerId));
+      const shownBots = store.bots.filter((bot) => visible.bot(bot.id) && listedBotVisible(bot, viewerId));
       const queued = publicBotQueuedMessages();
       return json(res, 200, {
         bots: shownBots.map((bot) => memberBot({
