@@ -183,15 +183,24 @@ export function turnsOpenForMembership(input: {
   return ids;
 }
 
-/** A pull socket closes for the ids that pull holds, including after the
- * response has finished. Registration does not fail inflight ids. */
+/** A finished pull response is not a drop, even if the socket closes after
+ * it. Registration is not a drop. An explicit drop, or a close before the
+ * response finishes, fails the pulled ids. */
+export function pullCloseFailsTurn(input: { responseFinished: boolean }): boolean {
+  return !input.responseFinished;
+}
+
 export function failPulledTurnsOnClose(input: {
-  source: "register" | "pull";
+  source: "register" | "pull" | "drop";
+  responseFinished?: boolean;
   pulledIds: readonly string[];
   partials: Readonly<Record<string, string>>;
   messages: OpenTurnMessage[];
 }): { failedIds: string[]; partials: Record<string, string>; messages: OpenTurnMessage[] } {
-  if (input.source !== "pull") {
+  const fail = input.source === "drop" || (input.source === "pull" && pullCloseFailsTurn({
+    responseFinished: input.responseFinished === true,
+  }));
+  if (!fail) {
     return { failedIds: [], partials: { ...input.partials }, messages: input.messages };
   }
   let messages = input.messages;
@@ -213,14 +222,41 @@ export function failPulledTurnsOnClose(input: {
   return { failedIds, partials, messages };
 }
 
-/** The pull socket's close fails that pull. A finished response does not swallow it. */
+/** Close after a finished pull response does not fail the turn.
+ * Close before the response does. */
 export function bindWorkerSocket(input: {
   socket: { once(event: "close", listener: () => void): void };
+  response: { once(event: string, listener: () => void): unknown };
   onClose: () => void;
 }): void {
+  let responseFinished = false;
+  input.response.once("finish", () => {
+    responseFinished = true;
+  });
   input.socket.once("close", () => {
+    if (!pullCloseFailsTurn({ responseFinished })) return;
     input.onClose();
   });
+}
+
+/** A pulled turn fails when its author cancels. Anyone else leaves it. */
+export function failPulledOnAuthorCancel(input: {
+  messageId: string;
+  authorId: string;
+  heldAuthorId: string | undefined;
+  partial: string;
+  messages: OpenTurnMessage[];
+}): { failed: boolean; messages: OpenTurnMessage[] } {
+  if (!input.authorId || input.heldAuthorId !== input.authorId) {
+    return { failed: false, messages: input.messages };
+  }
+  const result = failOpenTurn({
+    queued: [],
+    messageId: input.messageId,
+    partial: input.partial,
+    messages: input.messages,
+  });
+  return { failed: true, messages: result.messages };
 }
 
 /** A channel turn waiting for one device. `userId` is who owned that device when the turn was held. */
@@ -376,10 +412,12 @@ export interface WorkerRouteDeps {
   /** The caller that just registered this device, so approval delivery can
    * tell that session from the owner's other sessions. */
   rememberDevice?(input: { sessionId?: string; userId: string; deviceId: string }): void;
-  /** Ids the device just took. They are in a turn until the socket closes. */
-  onTurnPulled?(input: { deviceId: string; userId: string; messageIds: string[] }): void;
-  /** The pull socket dropped. `messageIds` are the ids that pull holds, not every inflight id. */
+  /** Ids the device just took. They are in a turn until cancel, membership removal, or an explicit drop. */
+  onTurnPulled?(input: { deviceId: string; userId: string; messageIds: string[]; authorIds: string[] }): void;
+  /** The pull socket dropped before the response finished, or a device posted an explicit drop. */
   onWorkerSocketClose?(input: { deviceId: string; userId: string; messageIds: string[] }): void;
+  /** The author cancelled a message. The caller fails it only when that author holds the pulled turn. */
+  onAuthorCancel?(input: { messageId: string; authorId: string }): void;
 }
 
 export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
@@ -403,18 +441,21 @@ export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
     }
     const pull = path.match(/^\/api\/workers\/([\w-]+)\/pull$/);
     if (pull) {
+      const beforeQueue = deps.queued();
       const result = pullQueuedForSession({
         deviceId: pull[1]!,
         userId: deps.userId(auth),
         workers: deps.workers(),
-        queued: deps.queued(),
+        queued: beforeQueue,
       });
       if (result.status === 403) return json(res, 403, { error: result.error });
       deps.replaceQueued(result.queued);
       if (result.ids.length) {
-        deps.onTurnPulled?.({ deviceId: pull[1]!, userId: deps.userId(auth), messageIds: result.ids });
+        const authorIds = result.ids.map((id) => beforeQueue.find((item) => item.messageId === id)?.authorId ?? "");
+        deps.onTurnPulled?.({ deviceId: pull[1]!, userId: deps.userId(auth), messageIds: result.ids, authorIds });
         bindWorkerSocket({
           socket: req.socket,
+          response: res,
           onClose() {
             deps.onWorkerSocketClose?.({
               deviceId: pull[1]!,
@@ -426,11 +467,23 @@ export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
       }
       return json(res, 200, { ids: result.ids });
     }
+    const drop = path.match(/^\/api\/workers\/([\w-]+)\/drop$/);
+    if (drop) {
+      const body = await readBody(req);
+      const messageId = typeof body?.messageId === "string" ? body.messageId : "";
+      if (!messageId) return json(res, 400, { error: "messageId is required" });
+      const owned = deps.workers().find((worker) => worker.deviceId === drop[1]! && worker.userId === deps.userId(auth));
+      if (!owned) return json(res, 403, { error: "forbidden" });
+      deps.onWorkerSocketClose?.({ deviceId: drop[1]!, userId: deps.userId(auth), messageIds: [messageId] });
+      return json(res, 200, { dropped: messageId });
+    }
     const cancel = path.match(/^\/api\/workers\/queue\/([\w-]+)\/cancel$/);
     if (cancel) {
       const before = deps.queued();
-      const next = cancelQueued(cancel[1]!, deps.authorId(auth), before);
+      const authorId = deps.authorId(auth);
+      const next = cancelQueued(cancel[1]!, authorId, before);
       deps.replaceQueued(next);
+      deps.onAuthorCancel?.({ messageId: cancel[1]!, authorId });
       return json(res, 200, { removed: before.length - next.length });
     }
     return PASS;

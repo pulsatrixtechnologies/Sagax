@@ -4,6 +4,7 @@ import { turnDestination } from "./turn-route.ts";
 import {
   bindWorkerSocket,
   cancelQueued,
+  failPulledOnAuthorCancel,
   channelTurnGate,
   failTurn,
   failTurnOnMembershipRemoval,
@@ -435,15 +436,35 @@ describe("workers", () => {
     expect(registered.messages).toBe(messages);
     expect(registered.partials.m1).toBe(partial);
     let close = () => {};
+    let finish = () => {};
     const calls: string[] = [];
     bindWorkerSocket({
       socket: { once(_event, listener) { close = listener; } },
+      response: { once(_event, listener) { finish = listener; } },
       onClose() { calls.push("pull"); },
     });
+    finish();
     close();
-    expect(calls).toEqual(["pull"]);
-    const pulled = failPulledTurnsOnClose({
+    expect(calls).toEqual([]);
+    const finished = failPulledTurnsOnClose({
       source: "pull",
+      responseFinished: true,
+      pulledIds: ["m1"],
+      partials,
+      messages,
+    });
+    expect(finished.failedIds).toEqual([]);
+    expect(finished.messages).toBe(messages);
+    let dropClose = () => {};
+    bindWorkerSocket({
+      socket: { once(_event, listener) { dropClose = listener; } },
+      response: { once() {} },
+      onClose() { calls.push("drop"); },
+    });
+    dropClose();
+    expect(calls).toEqual(["drop"]);
+    const pulled = failPulledTurnsOnClose({
+      source: "drop",
       pulledIds: ["m1"],
       partials,
       messages,
@@ -456,6 +477,29 @@ describe("workers", () => {
     expect(pulled.messages.find((message) => message.id === "m1")?.card).toBe(card);
     expect(pulled.messages.find((message) => message.id === "m2")?.status).toBeUndefined();
     expect(card).toEqual({ tool: "Bash" });
+    const cancelled = failPulledOnAuthorCancel({
+      messageId: "m1",
+      authorId: "p_zach",
+      heldAuthorId: "p_zach",
+      partial,
+      messages,
+    });
+    expect(cancelled.failed).toBe(true);
+    expect(cancelled.messages.find((message) => message.id === "m1")?.status).toBe("failed");
+    expect(failPulledOnAuthorCancel({
+      messageId: "m1",
+      authorId: "ada",
+      heldAuthorId: "p_zach",
+      partial,
+      messages,
+    }).failed).toBe(false);
+    const machine = turnDestination({
+      host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" },
+      workerOnline: true,
+    });
+    const fleetCalls: string[] = [];
+    expect(invokeFleetRunner({ destination: machine, run: () => fleetCalls.push("fleet") })).toBe(false);
+    expect(fleetCalls).toEqual([]);
   });
 
   it("registers the session user for the posted deviceId and replaces that device", () => {
@@ -482,6 +526,7 @@ describe("workers", () => {
   it("lets a session register, pull, and cancel a worker queue at client scope", () => {
     expect(requiredScope("POST", "/api/workers")).toBe("client");
     expect(requiredScope("POST", "/api/workers/laptop/pull")).toBe("client");
+    expect(requiredScope("POST", "/api/workers/laptop/drop")).toBe("client");
     expect(requiredScope("POST", "/api/workers/queue/m1/cancel")).toBe("client");
   });
 });

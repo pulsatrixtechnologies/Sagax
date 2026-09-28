@@ -9,7 +9,7 @@ export interface OrgRecord {
 export function createOrg(input: { name: string; ownerUserId: string; host: OrgRecord["host"] }): OrgRecord {
   const name = input.name.trim();
   if (!name) throw new Error("name is required");
-  return { name, ownerUserId: input.ownerUserId, host: input.host };
+  return { name, ownerUserId: input.ownerUserId.trim().toLowerCase(), host: input.host };
 }
 
 export function issueInvite(input: { email: string; now: number; token: string }): OrgInvite {
@@ -23,6 +23,7 @@ export function issueInvite(input: { email: string; now: number; token: string }
 
 export function memberListsAfterAccept(input: { members: string[]; email: string }) {
   const email = input.email.trim().toLowerCase();
-  if (input.members.includes(email)) return { members: input.members, alreadyMember: true };
-  return { members: [...input.members, email], alreadyMember: false };
+  const members = input.members.map((id) => id.trim().toLowerCase()).filter(Boolean);
+  if (members.includes(email)) return { members, alreadyMember: true };
+  return { members: [...members, email], alreadyMember: false };
 }

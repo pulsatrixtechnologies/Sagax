@@ -359,6 +359,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // Pull and cancel stay on that session: registering does not run the queued turns.
   { methods: ["POST"], path: /^\/api\/workers$/ },
   { methods: ["POST"], path: /^\/api\/workers\/[\w-]+\/pull$/ },
+  { methods: ["POST"], path: /^\/api\/workers\/[\w-]+\/drop$/ },
   { methods: ["POST"], path: /^\/api\/workers\/queue\/[\w-]+\/cancel$/ },
 ];
 
@@ -380,8 +381,9 @@ export function clientBotPatchViolation(body: unknown): string | null {
   return null;
 }
 
-/** Same for a room: name and reading state, never its folder or who answers. */
-const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinnedMessageId", "section"]);
+/** Same for a room: name, reading state, and the roster. humanIds and
+ * memberIds are not refused here. canEditHumans and canPlaceBot decide them. */
+const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinnedMessageId", "section", "humanIds", "memberIds"]);
 export function clientGroupPatchViolation(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
   for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key)) return key;

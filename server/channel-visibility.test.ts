@@ -5,6 +5,7 @@ import {
   channelViewerId,
   liveFramesNeedChannelFilter,
   sseFrameProjection,
+  searchHitVisible,
   seesBotForViewer,
   seesChannel,
   seesChannelFrame,
@@ -57,6 +58,45 @@ describe("channel visibility", () => {
       directGrants: [],
       inChannels: [{ humanIds: ["jc"] }],
     })).toBe(false);
+  });
+  it("hides a bot with no owner from a signed-in viewer who was not given it", () => {
+    expect(seesBotForViewer({
+      viewerId: "zachary@example.test",
+      directGrants: [],
+      inChannels: [],
+    })).toBe(false);
+    expect(seesBotForViewer({
+      viewerId: "zachary@example.test",
+      directGrants: ["Zachary@example.test"],
+      inChannels: [],
+    })).toBe(true);
+    expect(seesBotForViewer({
+      viewerId: undefined,
+      directGrants: [],
+      inChannels: [],
+    })).toBe(true);
+  });
+  it("drops search hits from a channel or bot the viewer was not given", () => {
+    expect(searchHitVisible({
+      viewerId: "zachary@example.test",
+      channel: { humanIds: ["jc"] },
+      bot: null,
+    })).toBe(false);
+    expect(searchHitVisible({
+      viewerId: "zachary@example.test",
+      channel: null,
+      bot: { ownerUserId: "jc", directGrants: [], inChannels: [{ humanIds: ["jc"] }] },
+    })).toBe(false);
+    expect(searchHitVisible({
+      viewerId: "zachary@example.test",
+      channel: { humanIds: ["jc", "zachary@example.test"] },
+      bot: null,
+    })).toBe(true);
+    expect(searchHitVisible({
+      viewerId: "jc",
+      channel: null,
+      bot: { ownerUserId: "jc", directGrants: [], inChannels: [] },
+    })).toBe(true);
   });
 });
 

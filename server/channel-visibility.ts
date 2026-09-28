@@ -5,12 +5,18 @@ the owner's own bot always, and anyone else only when they are in
 `directGrants`. An empty grant list hides the bot from everyone except
 the owner. Pure: no store. */
 
+function actorKey(id: string): string {
+  return id.trim().toLowerCase();
+}
+
 export function canSeeChannel(input: { humanIds: string[]; viewerId: string }): boolean {
-  return input.humanIds.includes(input.viewerId);
+  const viewer = actorKey(input.viewerId);
+  return input.humanIds.some((id) => actorKey(id) === viewer);
 }
 
 export function canSeeDirectBot(input: { ownerUserId: string; viewerId: string; directGrants: string[] }): boolean {
-  return input.viewerId === input.ownerUserId || input.directGrants.includes(input.viewerId);
+  const viewer = actorKey(input.viewerId);
+  return viewer === actorKey(input.ownerUserId) || input.directGrants.some((id) => actorKey(id) === viewer);
 }
 
 /** Signed-in owner, admin, or member: email, else userId. Loopback and a
@@ -21,9 +27,9 @@ export function channelViewerId(auth: {
   session?: { email?: string; userId?: string };
 }): string | undefined {
   if (auth.kind !== "session") return undefined;
-  const email = auth.session?.email?.trim();
+  const email = auth.session?.email?.trim().toLowerCase();
   if (email) return email;
-  const userId = auth.session?.userId?.trim();
+  const userId = auth.session?.userId?.trim().toLowerCase();
   if (userId && !userId.startsWith("portal:")) return userId;
   return undefined;
 }
@@ -59,7 +65,9 @@ export function seesChannelFrame(input: {
   return canSeeChannel({ humanIds: input.humanIds, viewerId: input.viewerId });
 }
 
-/** Direct or a channel the viewer can see. Direct is not a gate on every bot. */
+/** Direct or a channel the viewer can see. A missing owner is not a pass:
+ * a signed-in viewer still needs to be the owner, a direct grant, or a
+ * human in a channel that contains the bot. No viewer id sees every bot. */
 export function seesBotForViewer(input: {
   viewerId: string | undefined;
   ownerUserId?: string;
@@ -67,7 +75,26 @@ export function seesBotForViewer(input: {
   inChannels: { humanIds?: string[] }[];
 }): boolean {
   if (!input.viewerId) return true;
-  if (!input.ownerUserId) return true;
-  if (canSeeDirectBot({ ownerUserId: input.ownerUserId, viewerId: input.viewerId, directGrants: input.directGrants })) return true;
+  if (input.ownerUserId && canSeeDirectBot({ ownerUserId: input.ownerUserId, viewerId: input.viewerId, directGrants: input.directGrants })) return true;
+  if (!input.ownerUserId && input.directGrants.some((id) => actorKey(id) === actorKey(input.viewerId!))) return true;
   return input.inChannels.some((group) => seesChannel(group, input.viewerId));
+}
+
+/** Same rules as the channel list and the bot list. A missing subject is
+ * hidden from a signed-in viewer. */
+export function searchHitVisible(input: {
+  viewerId: string | undefined;
+  channel: { humanIds?: string[] } | null;
+  bot: { ownerUserId?: string; directGrants: string[]; inChannels: { humanIds?: string[] }[] } | null;
+}): boolean {
+  if (input.bot) {
+    return seesBotForViewer({
+      viewerId: input.viewerId,
+      ownerUserId: input.bot.ownerUserId,
+      directGrants: input.bot.directGrants,
+      inChannels: input.bot.inChannels,
+    });
+  }
+  if (input.channel) return seesChannel(input.channel, input.viewerId);
+  return !input.viewerId;
 }

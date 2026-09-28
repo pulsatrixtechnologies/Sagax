@@ -1,5 +1,16 @@
 // Presentational roster. The booleans only hide controls. Ajouter calls the matching callback.
 
+export function channelRosterActions(input: {
+  actorRole: "owner" | "admin" | "member" | null;
+  actorId: string;
+  bots: { id: string; ownerUserId?: string }[];
+}): { canAddHuman: boolean; canAddBot: boolean } {
+  const actor = input.actorId.trim().toLowerCase();
+  const canAddHuman = input.actorRole === "owner" || input.actorRole === "admin";
+  const canAddBot = actor !== "" && input.bots.some((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actor);
+  return { canAddHuman, canAddBot };
+}
+
 export function ChannelMembers(props: {
   humans: { id: string }[];
   bots: { id: string; name: string }[];

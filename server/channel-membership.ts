@@ -2,7 +2,7 @@ import type { OrgRole } from "./org-directory.ts";
 
 /** True only when the actor owns the bot. An admin is not an exception. */
 export function canPlaceBot(input: { actorId: string; ownerUserId: string }): boolean {
-  return input.actorId === input.ownerUserId;
+  return input.actorId.trim().toLowerCase() === input.ownerUserId.trim().toLowerCase();
 }
 
 /** The id canPlaceBot compares against. A recorded owner wins. Otherwise

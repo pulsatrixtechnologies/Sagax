@@ -110,6 +110,7 @@ describe("scopes", () => {
       ["GET", "/api/org"],
       ["POST", "/api/workers"],
       ["POST", "/api/workers/laptop/pull"],
+      ["POST", "/api/workers/laptop/drop"],
       ["POST", "/api/workers/queue/m1/cancel"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
@@ -136,7 +137,7 @@ describe("scopes", () => {
     expect(clientBotPatchViolation([])).toBe("body");
     expect(clientGroupPatchViolation({ name: "Ops", unread: false })).toBeNull();
     expect(clientGroupPatchViolation({ cwd: "/tmp" })).toBe("cwd");
-    expect(clientGroupPatchViolation({ memberIds: [] })).toBe("memberIds");
+    expect(clientGroupPatchViolation({ memberIds: ["bot"], humanIds: ["ada@example.test"] })).toBeNull();
   });
 });
 

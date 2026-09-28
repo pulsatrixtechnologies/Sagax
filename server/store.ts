@@ -1686,7 +1686,7 @@ export class Store {
     profile: Partial<
       Pick<
         BotRecord,
-        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "modelSelection" | "section" | "cwd" | "visibility"
+        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "modelSelection" | "section" | "cwd" | "visibility" | "ownerUserId"
       >
     > = {},
     opts: {
@@ -1717,6 +1717,7 @@ export class Store {
       resumeCursors: {},
       createdAt: Date.now(),
       host: { kind: "fleet" },
+      ...(profile.ownerUserId?.trim() ? { ownerUserId: profile.ownerUserId.trim().toLowerCase() } : {}),
     };
     if (section) bot.section = section;
     if (profile.cwd) bot.cwd = profile.cwd;

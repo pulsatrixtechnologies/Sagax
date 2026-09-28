@@ -323,6 +323,9 @@ export interface WireBot {
   /** User ids this bot's owner opened Direct to. Absent or empty: only the
    * owner sees the bot in Direct. */
   directGrants?: string[];
+  /** Lowercased user id of the person who created the bot. Absent on older
+   * records: the org owner is the owner. */
+  ownerUserId?: string;
   /** Where this bot's turns run. Missing on older bots.json means fleet. */
   host?: { kind: "fleet" } | { kind: "machine"; userId: string; deviceId: string };
 }

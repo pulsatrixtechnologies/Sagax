@@ -13,7 +13,7 @@ export function grantDirect(input: {
   userId: string;
   grants: DirectGrant[];
 }): { ok: true; grants: DirectGrant[] } | { ok: false; error: "not-owner" } {
-  if (input.actorId !== input.ownerUserId) return { ok: false, error: "not-owner" };
+  if (input.actorId.trim().toLowerCase() !== input.ownerUserId.trim().toLowerCase()) return { ok: false, error: "not-owner" };
   if (input.grants.some((grant) => grant.botId === input.botId && grant.userId === input.userId)) {
     return { ok: true, grants: input.grants };
   }

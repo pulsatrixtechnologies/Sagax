@@ -540,10 +540,10 @@ import {
   type PhoneSecretContext,
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
-import { channelViewerId, liveFramesNeedChannelFilter, seesBotForViewer, seesChannel, seesChannelFrame, sseFrameProjection } from "./channel-visibility.ts";
+import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, seesChannelFrame, sseFrameProjection } from "./channel-visibility.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
-import { roleOf, type OrgRole } from "./org-directory.ts";
+import { ownerUserIdAfterProfileEmail, roleOf, signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -557,6 +557,7 @@ import {
   createWorkerRoutes,
   destinationForBot,
   enqueueOfflineTurn,
+  failPulledOnAuthorCancel,
   failTurnOnMembershipRemoval,
   failTurnOnWorkerClose,
   memberIdsDropBot,
@@ -619,10 +620,19 @@ function signInAllowList() {
   const current = loadConfig().signIn;
   return { admins: parseAllowList(current?.admins?.join(",")), members: parseAllowList(current?.members?.join(",")) };
 }
+function emailSignInAllowList() {
+  const list = signInAllowList();
+  return signInListWithOpenInvites({
+    admins: list.admins,
+    members: list.members,
+    invites: loadConfig().invites ?? [],
+    now: Date.now(),
+  });
+}
 const sessions = new SessionRegistry({
   file: join(DATA_DIR, "sessions.json"),
   emailScopesSnapshot: () => {
-    const membership = signInAllowList();
+    const membership = emailSignInAllowList();
     return (email) => allowedScopes(email, membership);
   },
   portalMembership: hostedWorkspaceConfiguration()?.portalMembership === true,
@@ -684,7 +694,7 @@ const customDomainVerifier = createCustomDomainVerifier({ environmentId: ENVIRON
 // "Sign in with your email" on /pair: the allow-list is read per call so a
 // Settings change or an env bootstrap applies without a restart.
 const emailSignIn = createEmailSignIn({
-  allow: signInAllowList,
+  allow: emailSignInAllowList,
 });
 let customDomainRevision = 0;
 function savedCustomDomain(): string | null {
@@ -3705,6 +3715,7 @@ const deviceOwnerSession = new Map<string, string>();
 let queuedWorkerTurns: DeviceQueuedTurn[] = [];
 /** Message ids a device already pulled and has not finished. */
 const inflightWorkerTurns = new Map<string, string[]>();
+const inflightWorkerAuthors = new Map<string, string>();
 
 function groupThreadIds(group: GroupRecord): string[] {
   return [group.threadId, ...store.groupTasks(group.id).map((task) => task.threadId)];
@@ -3766,6 +3777,7 @@ function openTurnMessage(message: Message): OpenTurnMessage {
 }
 
 function forgetInflight(messageId: string): void {
+  inflightWorkerAuthors.delete(messageId);
   for (const [deviceId, ids] of inflightWorkerTurns) {
     const next = ids.filter((id) => id !== messageId);
     if (next.length) inflightWorkerTurns.set(deviceId, next);
@@ -3842,7 +3854,7 @@ function failTurnIfMemberLeft(group: GroupRecord, beforeHumanIds: string[], befo
   }
 }
 
-function failWorkerTurns(messageIds: readonly string[]): void {
+function failWorkerTurns(messageIds: readonly string[], detail = "The turn failed because the worker dropped."): void {
   for (const messageId of messageIds) {
     const located = locateChannelMessage(messageId);
     const partial = located ? partialAlreadyWritten(located.messages, messageId) : "";
@@ -3858,7 +3870,7 @@ function failWorkerTurns(messageIds: readonly string[]): void {
       messageId,
       threadId: located?.threadId ?? null,
       result,
-      detail: "The turn failed because the worker dropped.",
+      detail,
     });
   }
 }
@@ -4771,11 +4783,6 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
   }
 }
 
-function recordedOwnerUserId(bot: BotRecord): string | undefined {
-  const value = (bot as { ownerUserId?: unknown }).ownerUserId;
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
 function approvalHostOf(bot: BotRecord): BotHost {
   const host = bot.host;
   if (host?.kind === "machine" && host.userId && host.deviceId) return host;
@@ -4783,11 +4790,7 @@ function approvalHostOf(bot: BotRecord): BotHost {
 }
 
 function approvalOwnerId(bot: BotRecord): string {
-  return ownerUserIdForPlacement({
-    recordedOwnerUserId: recordedOwnerUserId(bot),
-    orgOwnerUserId: cfg.org?.ownerUserId,
-    localOperatorId: (cfg.profile?.email ?? "local-owner").trim(),
-  });
+  return effectiveBotOwner(bot);
 }
 
 function approvalOwnerName(ownerUserId: string): string {
@@ -13618,18 +13621,49 @@ function channelActorId(auth: RequestAuth): string {
   if (auth.kind === "session") return (auth.session.email ?? auth.session.userId ?? auth.session.id).trim();
   return (cfg.profile?.email ?? "local-owner").trim();
 }
+function creatingBotOwnerId(auth: RequestAuth): string {
+  return channelActorId(auth).trim().toLowerCase();
+}
 
-function listedBotVisible(bot: { id: string; ownerUserId?: unknown; directGrants?: unknown }, viewerId: string | undefined): boolean {
-  const ownerUserId = typeof bot.ownerUserId === "string" ? bot.ownerUserId : undefined;
-  const directGrants = Array.isArray(bot.directGrants)
+function recordedBotOwner(bot: { ownerUserId?: unknown }): string | undefined {
+  return typeof bot.ownerUserId === "string" && bot.ownerUserId.trim() ? bot.ownerUserId.trim().toLowerCase() : undefined;
+}
+function effectiveBotOwner(bot: { ownerUserId?: unknown }): string {
+  return ownerUserIdForPlacement({
+    recordedOwnerUserId: recordedBotOwner(bot),
+    orgOwnerUserId: orgState.org?.ownerUserId?.trim().toLowerCase(),
+    localOperatorId: (cfg.profile?.email ?? "local-owner").trim().toLowerCase(),
+  });
+}
+function botDirectGrants(bot: { directGrants?: unknown }): string[] {
+  return Array.isArray(bot.directGrants)
     ? bot.directGrants.filter((id): id is string => typeof id === "string")
     : [];
+}
+function listedBotVisible(bot: { id: string; ownerUserId?: unknown; directGrants?: unknown }, viewerId: string | undefined): boolean {
   return seesBotForViewer({
     viewerId,
-    ownerUserId,
-    directGrants,
+    ownerUserId: effectiveBotOwner(bot),
+    directGrants: botDirectGrants(bot),
     inChannels: store.groups.filter((group) => group.memberIds.includes(bot.id)),
   });
+}
+function searchHitVisibleNow(threadId: string, viewerId: string | undefined): boolean {
+  const bot = store.botByThread(threadId);
+  if (bot) {
+    return searchHitVisible({
+      viewerId,
+      channel: null,
+      bot: {
+        ownerUserId: effectiveBotOwner(bot),
+        directGrants: botDirectGrants(bot),
+        inChannels: store.groups.filter((group) => group.memberIds.includes(bot.id)),
+      },
+    });
+  }
+  const group = store.groupByThread(threadId);
+  if (group) return searchHitVisible({ viewerId, channel: group, bot: null });
+  return searchHitVisible({ viewerId, channel: null, bot: null });
 }
 
 function subjectSeesChannel(subject: PathSubject, viewerId: string): boolean {
@@ -13695,15 +13729,15 @@ function channelActorRole(auth: RequestAuth): OrgRole | null {
 
 function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already: ReadonlySet<string>): string | null {
   const actorId = channelActorId(auth);
-  const localOperatorId = (cfg.profile?.email ?? "local-owner").trim();
   for (const id of botIds) {
     if (typeof id !== "string" || already.has(id)) continue;
-    const recorded = (store.bot(id) as { ownerUserId?: unknown } | undefined)?.ownerUserId;
-    const ownerUserId = ownerUserIdForPlacement({
-      recordedOwnerUserId: typeof recorded === "string" && recorded ? recorded : undefined,
-      orgOwnerUserId: orgState.org?.ownerUserId,
-      localOperatorId,
-    });
+    const bot = typeof id === "string" ? store.bot(id) : undefined;
+    const ownerUserId = bot
+      ? effectiveBotOwner(bot)
+      : ownerUserIdForPlacement({
+        orgOwnerUserId: orgState.org?.ownerUserId?.trim().toLowerCase(),
+        localOperatorId: (cfg.profile?.email ?? "local-owner").trim().toLowerCase(),
+      });
     if (!canPlaceBot({ actorId, ownerUserId })) {
       return "forbidden: only the bot owner can place it in a channel";
     }
@@ -13736,13 +13770,30 @@ ROUTES.push(createWorkerRoutes({
     else if (userId) loopbackDeviceIds.set(userId, deviceId);
     deviceOwnerSession.set(deviceId, sessionId ?? "");
   },
-  onTurnPulled: ({ deviceId, messageIds }) => {
+  onTurnPulled: ({ deviceId, messageIds, authorIds }) => {
     if (!messageIds.length) return;
     const prev = inflightWorkerTurns.get(deviceId) ?? [];
-    inflightWorkerTurns.set(deviceId, [...prev, ...messageIds.filter((id) => !prev.includes(id))]);
+    const added = messageIds.filter((id) => !prev.includes(id));
+    inflightWorkerTurns.set(deviceId, [...prev, ...added]);
+    for (const id of added) {
+      const author = authorIds[messageIds.indexOf(id)] ?? "";
+      if (author) inflightWorkerAuthors.set(id, author);
+    }
   },
-  onWorkerSocketClose: ({ messageIds }) => {
-    failWorkerTurns(messageIds);
+  onWorkerSocketClose: ({ deviceId, messageIds }) => {
+    const held = new Set(inflightWorkerTurns.get(deviceId) ?? []);
+    failWorkerTurns(messageIds.filter((id) => held.has(id)));
+  },
+  onAuthorCancel: ({ messageId, authorId }) => {
+    const decision = failPulledOnAuthorCancel({
+      messageId,
+      authorId,
+      heldAuthorId: inflightWorkerAuthors.get(messageId),
+      partial: "",
+      messages: [],
+    });
+    if (!decision.failed) return;
+    failWorkerTurns([messageId], "The turn failed because the author cancelled.");
   },
 }));
 ROUTES.push(createOrgRoutes({
@@ -16075,6 +16126,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             description: instructions,
             modelSelection: selection,
             section: chief.section,
+            ownerUserId: creatingBotOwnerId(auth),
             ...(cwd !== undefined ? { cwd } : {}),
             // exactly the Chief's audience: a restricted Chief never makes a bot everyone sees
             ...(chief.visibility ? { visibility: chief.visibility } : {}),
@@ -17151,8 +17203,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!current.auth) return json(res, current.status, { error: current.error });
       const currentVisible = visibleTo(viewerFor(current.auth));
       if (threadId && !currentVisible.thread(threadId)) return json(res, 404, { error: "no such conversation" });
+      const searchViewerId = channelViewerId(current.auth);
       const hits = found
-        .filter((hit) => currentVisible.thread(hit.threadId))
+        .filter((hit) => currentVisible.thread(hit.threadId) && searchHitVisibleNow(hit.threadId, searchViewerId))
         .slice(0, limit)
         .map((hit) => {
           const bot = store.botByThread(hit.threadId);
@@ -18329,6 +18382,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const created = body.visibility === undefined ? null : parseVisibility(body.visibility);
       if (created && !created.ok) return json(res, 400, { error: created.error });
       const bot = store.createBot({ ...profile.patch, soul: settings.soul, section, modelSelection: selection,
+        ownerUserId: creatingBotOwnerId(auth),
         ...(created?.ok ? { visibility: created.visibility } : {}) });
       const createdRoutines: Array<{ id: string; enabled: boolean }> = [];
       try {
@@ -21729,6 +21783,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // place rather than committing a new provider with stale bot voices.
         // A later config-write failure may leave voices cleared, which is the
         // safe side of this cross-file mutation: no foreign id can be spoken.
+        const nextOrg = (() => {
+          if (!patch.profile || typeof patch.profile.email !== "string" || !cfg.org) return undefined;
+          const nextOwner = ownerUserIdAfterProfileEmail({
+            ownerUserId: cfg.org.ownerUserId,
+            previousEmail: cfg.profile?.email ?? "",
+            nextEmail: patch.profile.email,
+          });
+          if (nextOwner === cfg.org.ownerUserId) return undefined;
+          return { ...cfg.org, ownerUserId: nextOwner };
+        })();
         if (changingVoiceProvider) store.clearVoiceSelections();
         if (externalSecretStorage) {
           // The packaged Electron caller commits supplied credentials to the
@@ -21745,12 +21809,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (persisted.tts?.fishKey !== undefined) persisted.tts.fishKey = "";
           if (persisted.imageGen?.key !== undefined) persisted.imageGen.key = "";
           if (persisted.imageGen?.customApiKey !== undefined) persisted.imageGen.customApiKey = "";
-          saveConfig(persisted);
+          saveConfig(nextOrg ? { ...persisted, org: nextOrg } : persisted);
           configWriteCommitted = true;
           syncCredentialEnv(patch);
           Object.assign(cfg, loadConfig());
         } else {
-          saveConfig(patch);
+          saveConfig(nextOrg ? { ...patch, org: nextOrg } : patch);
           configWriteCommitted = true;
           // loadConfig prefers env over the file for credentials, so the env
           // must follow the save — otherwise the value injected at boot would

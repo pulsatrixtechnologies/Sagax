@@ -2,7 +2,7 @@ import { createElement, type MouseEvent, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { ChannelMembers } from "./ChannelMembers";
+import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
 
 describe("ChannelMembers", () => {
   it("hides add controls from a member who cannot edit", () => {
@@ -54,6 +54,29 @@ describe("ChannelMembers", () => {
     const button = findAjouter(tree);
     button?.props.onClick?.({} as MouseEvent<HTMLButtonElement>);
     expect(onAddHuman).toHaveBeenCalledOnce();
+  });
+
+  it("shows add for humans when the actor is owner or admin, and for bots the actor owns", () => {
+    expect(channelRosterActions({
+      actorRole: "admin",
+      actorId: "Ada@Example.test",
+      bots: [{ id: "aurora", ownerUserId: "zachary@example.test" }],
+    })).toEqual({ canAddHuman: true, canAddBot: false });
+    expect(channelRosterActions({
+      actorRole: "owner",
+      actorId: "jc",
+      bots: [{ id: "aurora", ownerUserId: "JC" }],
+    })).toEqual({ canAddHuman: true, canAddBot: true });
+    expect(channelRosterActions({
+      actorRole: "member",
+      actorId: "zachary@example.test",
+      bots: [{ id: "aurora", ownerUserId: "zachary@example.test" }],
+    })).toEqual({ canAddHuman: false, canAddBot: true });
+    expect(channelRosterActions({
+      actorRole: "member",
+      actorId: "zachary@example.test",
+      bots: [{ id: "aurora", ownerUserId: "jc" }],
+    })).toEqual({ canAddHuman: false, canAddBot: false });
   });
 });
 

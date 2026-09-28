@@ -451,6 +451,9 @@ export interface Bot {
   browserProfile?: string | null;
   /** Who may see this bot on a shared workspace; only admins receive it. */
   visibility?: BotVisibility;
+  /** Lowercased user id of the person who created this bot. */
+  ownerUserId?: string;
+  directGrants?: string[];
   /** Where a shared or organization package put this bot (its provenance line). */
   installedPackage?: InstalledPackageMetadata;
   messages: Message[];
@@ -1057,7 +1060,7 @@ export type Action =
   | {
       type: "patchGroup";
       groupId: string;
-      patch: Partial<Pick<Group, "name" | "bulletin" | "memberIds" | "defaultResponder" | "pinnedMessageId" | "section">>;
+      patch: Partial<Pick<Group, "name" | "bulletin" | "memberIds" | "humanIds" | "defaultResponder" | "pinnedMessageId" | "section">>;
     }
   | { type: "deleteGroup"; groupId: string }
   | { type: "newGroupTask"; groupId: string }

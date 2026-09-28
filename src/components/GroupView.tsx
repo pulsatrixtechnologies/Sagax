@@ -45,7 +45,7 @@ import { GroupCallButton, GroupCallOverlay } from "./GroupCallView";
 import { ApprovalCard } from "./ApprovalCard";
 import { OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
-import { ChannelMembers } from "./ChannelMembers";
+import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
 import { ManageMembersPanel } from "./ManageMembersPanel";
 import { groupActivityRuns } from "@/lib/activity-runs";
 import { ActivityRun } from "./ActivityRun";
@@ -911,6 +911,24 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
 export function GroupView({ group }: { group: Group }) {
   const { state, dispatch } = useStore();
   const remoteClient = window.ogb?.remoteClient?.active === true;
+  const [remoteActor, setRemoteActor] = useState<{ id: string; role: "owner" | "admin" | "member" | null }>({ id: "", role: null });
+  useEffect(() => {
+    if (!remoteClient) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const session = await api<{ email?: string }>("/api/auth/session");
+        const org = await api<{ people?: { id: string; role: "owner" | "admin" | "member" }[] }>("/api/org");
+        if (cancelled) return;
+        const id = typeof session.email === "string" ? session.email.trim().toLowerCase() : "";
+        const role = org.people?.find((person) => person.id.trim().toLowerCase() === id)?.role ?? null;
+        setRemoteActor({ id, role });
+      } catch {
+        if (!cancelled) setRemoteActor({ id: "", role: null });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [remoteClient]);
   // Same Windows caption handling as ChatView: drag on the header, shift the
   // right-hand controls below the renderer-drawn caption buttons.
   const { dragStyle: headerDragStyle, noDragStyle: headerNoDragStyle, controlsShiftStyle } = useCaptionChrome();
@@ -1233,8 +1251,26 @@ export function GroupView({ group }: { group: Group }) {
               id,
               name: state.bots.find((bot) => bot.id === id)?.name || id,
             }))}
-            canAddHuman={false}
-            canAddBot={false}
+            {...channelRosterActions({
+              actorRole: remoteClient ? remoteActor.role : "owner",
+              actorId: remoteClient ? remoteActor.id : (state.config?.profile?.email?.trim().toLowerCase() || "local-owner"),
+              bots: state.bots,
+            })}
+            onAddHuman={() => {
+              const email = window.prompt("Adresse courriel")?.trim().toLowerCase() ?? "";
+              if (!email) return;
+              const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), email])];
+              dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
+            }}
+            onAddBot={() => {
+              const actorId = remoteClient ? remoteActor.id : (state.config?.profile?.email?.trim().toLowerCase() || "local-owner");
+              const owned = state.bots.find((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actorId && !group.memberIds.includes(bot.id));
+              dispatch({
+                type: "patchGroup",
+                groupId: group.id,
+                patch: { memberIds: owned ? [...group.memberIds, owned.id] : [...group.memberIds] },
+              });
+            }}
           />
         </div>
       )}
