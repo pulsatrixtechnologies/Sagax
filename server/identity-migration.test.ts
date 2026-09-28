@@ -1,0 +1,50 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { migrateIdentityRefs, principalIdFor } from "./identity-migration.ts";
+import { PrincipalRegistry } from "./principals.ts";
+
+const fresh = () => new PrincipalRegistry({ path: join(mkdtempSync(join(tmpdir(), "mig-")), "principals.json") });
+
+describe("identity migration", () => {
+  it("maps emails and local-owner to principals and leaves principal ids alone", () => {
+    const registry = fresh();
+    const local = registry.localOperator("jc@gox.ca");
+    expect(principalIdFor("local-owner", registry)).toBe(local.id);
+    expect(principalIdFor("JC@gox.ca", registry)).toBe(local.id);
+    const zach = principalIdFor("zach@gox.ca", registry);
+    expect(zach).toMatch(/^pr_/);
+    expect(principalIdFor(zach, registry)).toBe(zach);
+  });
+
+  it("rewrites org owner, humanIds, bot owners, grants and pairing sessions once", () => {
+    const registry = fresh();
+    const local = registry.localOperator("jc@gox.ca");
+    const input = {
+      org: { ownerUserId: "jc@gox.ca" },
+      groups: [{ id: "g1", humanIds: ["jc@gox.ca", "zach@gox.ca"] }, { id: "g2" }],
+      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["zach@gox.ca"] }, { id: "b2" }],
+      sessions: [{ id: "s-phone" }, { id: "s-zach", email: "zach@gox.ca", userId: "cp_7" }],
+      registry,
+    };
+    const out = migrateIdentityRefs(input);
+    const zach = registry.byEmail("zach@gox.ca")!.id;
+    expect(out.orgOwner).toBe(local.id);
+    expect(out.groups).toEqual([{ id: "g1", humanIds: [local.id, zach] }]);
+    expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [zach] }]);
+    expect(out.sessions).toEqual([{ id: "s-phone", principalId: local.id }, { id: "s-zach", principalId: zach }]);
+    expect(registry.byId(zach)?.controlPlaneUserId).toBe("cp_7");
+
+    // Applying the result and running again changes nothing.
+    const again = migrateIdentityRefs({
+      org: { ownerUserId: out.orgOwner! },
+      groups: [{ id: "g1", humanIds: out.groups[0]!.humanIds }, { id: "g2" }],
+      bots: [{ id: "b1", ownerUserId: local.id, directGrants: [zach] }, { id: "b2" }],
+      sessions: [{ id: "s-phone", principalId: local.id }, { id: "s-zach", email: "zach@gox.ca", principalId: zach }],
+      registry,
+    });
+    expect(again).toEqual({ groups: [], bots: [], sessions: [] });
+    expect(registry.list()).toHaveLength(2);
+  });
+});
