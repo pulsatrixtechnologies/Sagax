@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { SessionRegistry } from "./sessions.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,8 @@ let child: ChildProcess | undefined;
 let home: string;
 let data: string;
 let log = "";
+const ZARA = "zara@example.test";
+let zaraToken = "";
 
 const api = async (method: string, path: string, body?: unknown, token?: string): Promise<{ status: number; body: any }> => {
   const res = await fetch(`${BASE}${path}`, {
@@ -74,7 +77,12 @@ posixOnly("org identity", () => {
     home = mkdtempSync(join(tmpdir(), "omb-org-identity-"));
     data = join(home, ".openmausbot");
     mkdirSync(data, { recursive: true });
-    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" } }));
+    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" }, signIn: { admins: [], members: [ZARA] } }));
+    // Zara signed in with her email (as a portal or an older build would
+    // issue it): the server gives her session her principal.
+    const registry = new SessionRegistry({ file: join(data, "sessions.json"), emailScopes: () => ["client"] });
+    zaraToken = registry.issue({ label: "Zara's laptop", email: ZARA, scopes: ["client"] }).token;
+    registry.close();
     await start();
   }, 40_000);
 
@@ -108,11 +116,70 @@ posixOnly("org identity", () => {
     const token = paired.body.token as string;
     const org = await api("GET", "/api/org", undefined, token);
     expect(org.status).toBe(200);
-    expect(org.body.people).toEqual([{ id: ownerId, role: "owner" }]);
+    expect(org.body.people).toEqual([{ id: ownerId, role: "owner" }, { id: ZARA, role: "member" }]);
     const listed = await api("GET", "/api/auth/sessions", undefined, token);
     expect(listed.status).toBe(200);
     const mine = listed.body.sessions.find((session: any) => session.id === listed.body.current);
     expect(mine?.principalId).toBe(ownerId);
+  });
+
+  let botId = "";
+  let channelId = "";
+
+  it("lets a member added to a channel by email see it from her own session", async () => {
+    const bot = await api("POST", "/api/bots", { name: "Ops" });
+    expect(bot.status, JSON.stringify(bot.body)).toBe(201);
+    botId = bot.body.bot.id;
+    const created = await api("POST", "/api/groups", { name: "Ops room", memberIds: [botId], humanIds: ["Zara@Example.test"] });
+    expect(created.status, JSON.stringify(created.body)).toBeLessThan(300);
+    channelId = created.body.group.id;
+    const zara = principalsFile().principals.find((p) => p.email === ZARA)!;
+    expect(zara.id).toMatch(/^pr_/);
+    expect(created.body.group.humanIds).toEqual([zara.id]);
+    const seen = await api("GET", "/api/bots", undefined, zaraToken);
+    expect(seen.status).toBe(200);
+    expect(seen.body.groups.map((g: any) => g.id)).toContain(channelId);
+  });
+
+  it("lets a person granted a bot by email see it in her Direct view", async () => {
+    const bot = await api("POST", "/api/bots", { name: "Solo" });
+    expect(bot.status).toBe(201);
+    const soloId = bot.body.bot.id as string;
+    expect((await api("GET", "/api/bots", undefined, zaraToken)).body.bots.map((b: any) => b.id)).not.toContain(soloId);
+    const granted = await api("POST", `/api/bots/${soloId}/direct-grants`, { userId: ZARA.toUpperCase() });
+    expect(granted.status, JSON.stringify(granted.body)).toBe(200);
+    const zara = principalsFile().principals.find((p) => p.email === ZARA)!;
+    expect(granted.body.directGrants).toEqual([zara.id]);
+    expect((await api("GET", "/api/bots", undefined, zaraToken)).body.bots.map((b: any) => b.id)).toContain(soloId);
+  });
+
+  const pairAs = async (scopes: string[]) => {
+    const pairing = await api("POST", "/api/auth/pairing", { label: "Device", scopes });
+    expect(pairing.status).toBe(200);
+    const paired = await api("POST", "/api/auth/pair", { code: pairing.body.code });
+    expect(paired.status).toBe(200);
+    return paired.body.token as string;
+  };
+
+  it("pairs a chat-only code from this computer as nobody: no org channel, no owner approvals", async () => {
+    const token = await pairAs(["client"]);
+    const listed = await api("GET", "/api/auth/sessions", undefined, await pairAs(["admin", "client"]));
+    const kiosk = listed.body.sessions.find((session: any) => session.label === "Device" && !session.principalId);
+    expect(kiosk).toBeTruthy();
+    const seen = await api("GET", "/api/bots", undefined, token);
+    expect(seen.status).toBe(200);
+    expect(seen.body.groups.map((g: any) => g.id)).not.toContain(channelId);
+    expect(seen.body.bots.map((b: any) => b.id)).not.toContain(botId);
+    // The owner's bot is out of its reach, approvals included.
+    const answer = await api("POST", `/api/bots/${botId}/respond`, { requestId: "r1", behavior: "allow" }, token);
+    expect([403, 404]).toContain(answer.status);
+  });
+
+  it("pairs an admin code from this computer as the operator, who sees every channel", async () => {
+    const token = await pairAs(["admin", "client"]);
+    const seen = await api("GET", "/api/bots", undefined, token);
+    expect(seen.body.groups.map((g: any) => g.id)).toContain(channelId);
+    expect(seen.body.bots.map((b: any) => b.id)).toContain(botId);
   });
 
   it("keeps one local operator and the same owner across a restart", async () => {

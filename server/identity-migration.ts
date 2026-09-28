@@ -20,7 +20,7 @@ export function migrateIdentityRefs(input: {
   org: { ownerUserId: string } | null;
   groups: { id: string; humanIds?: string[] }[];
   bots: { id: string; ownerUserId?: string; directGrants?: string[] }[];
-  sessions: { id: string; email?: string; userId?: string; principalId?: string }[];
+  sessions: { id: string; email?: string; userId?: string; principalId?: string; scopes?: readonly string[] }[];
   registry: PrincipalRegistry;
 }) {
   const { registry } = input;
@@ -56,9 +56,11 @@ export function migrateIdentityRefs(input: {
     const userId = session.userId?.trim();
     // Before principals, only an admin could mint a pairing code. So:
     // - email present: the person at that address.
-    // - no email, no userId: pairing session from before account tracking (operator's device).
+    // - no email, no userId, admin scope: pairing session from before account tracking (operator's device).
+    // - no email, no userId, chat-only scope: an anonymous device; no principal.
     // - no email, userId present: incomplete migration state; skip (no principal yet).
     if (!email && userId) continue;
+    if (!email && !session.scopes?.includes("admin")) continue;
     const principalId = email
       ? registry.forAccount({ email, controlPlaneUserId: userId && !userId.startsWith("portal:") ? userId : undefined }).id
       : registry.localOperator().id;

@@ -25,7 +25,11 @@ describe("identity migration", () => {
       org: { ownerUserId: "jc@gox.ca" },
       groups: [{ id: "g1", humanIds: ["jc@gox.ca", "zach@gox.ca"] }, { id: "g2" }],
       bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["zach@gox.ca"] }, { id: "b2" }],
-      sessions: [{ id: "s-phone" }, { id: "s-zach", email: "zach@gox.ca", userId: "cp_7" }],
+      sessions: [
+        { id: "s-phone", scopes: ["admin", "client"] },
+        { id: "s-kiosk", scopes: ["client"] },
+        { id: "s-zach", email: "zach@gox.ca", userId: "cp_7", scopes: ["client"] },
+      ],
       registry,
     };
     const out = migrateIdentityRefs(input);
@@ -35,6 +39,8 @@ describe("identity migration", () => {
     expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [zach] }]);
     expect(out.sessions).toEqual([{ id: "s-phone", principalId: local.id }, { id: "s-zach", principalId: zach }]);
     expect(registry.byId(zach)?.controlPlaneUserId).toBe("cp_7");
+    // A chat-only device from before accounts is nobody: it gets no principal.
+    expect(out.sessions.some((s) => s.id === "s-kiosk")).toBe(false);
 
     // Applying the result and running again changes nothing.
     const again = migrateIdentityRefs({

@@ -490,7 +490,7 @@ import {
 } from "./request-auth.ts";
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
 import { PrincipalRegistry } from "./principals.ts";
-import { migrateIdentityRefs } from "./identity-migration.ts";
+import { migrateIdentityRefs, principalIdFor } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
 import {
   activityCsv,
@@ -3575,7 +3575,7 @@ function createChannel(value: unknown): GroupRecord {
     if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string")) {
       throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
     }
-    const applied = applyHumanIds({ dm: false, humanIds: body.humanIds });
+    const applied = applyHumanIds({ dm: false, humanIds: body.humanIds.map((id: string) => principalIdFor(id, principals)) });
     if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
     humanIds = applied.humanIds;
   }
@@ -3661,7 +3661,7 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string")) {
       throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
     }
-    const applied = applyHumanIds({ dm: Boolean(existing.dm), humanIds: body.humanIds });
+    const applied = applyHumanIds({ dm: Boolean(existing.dm), humanIds: body.humanIds.map((id: string) => principalIdFor(id, principals)) });
     if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
     patch.humanIds = applied.humanIds;
   }
@@ -13651,15 +13651,18 @@ function localPrincipalId(): string {
 /** Who acts, by principal: a session's principal (or its anonymous id),
  * the operator on loopback, nobody for a local service. */
 function actorPrincipalId(auth: RequestAuth): string {
-  if (auth.kind === "session") return channelViewerId(auth) ?? "";
+  if (auth.kind === "session") {
+    const viewerId = channelViewerId(auth) ?? "";
+    return viewerId.startsWith("anon:") ? "" : viewerId;
+  }
   if (auth.kind === "loopback" && auth.trust === "service") return "";
   return localPrincipalId();
 }
-/** Whose channels a request may see. The operator's own phone, paired from
- * this computer, is the operator: unfiltered, like loopback. */
+/** Whose channels a request may see. The operator's own phone (an admin
+ * code paired from this computer) is the operator: unfiltered, like loopback. */
 function channelFilterViewerId(auth: RequestAuth): string | undefined {
   const viewerId = channelViewerId(auth);
-  return viewerId && viewerId === localPrincipalId() ? undefined : viewerId;
+  return viewerId && auth.scopes.includes("admin") && viewerId === localPrincipalId() ? undefined : viewerId;
 }
 /** The actor's sign-in email: sign-in lists and invites stay in emails. */
 function actorEmail(auth: RequestAuth): string | undefined {
@@ -13806,6 +13809,7 @@ ROUTES.push(createDirectGrantRoutes({
   bot: (id) => store.bot(id) ?? undefined,
   patchBot: (id, patch) => store.patchBot(id, patch),
   actorId: channelActorId,
+  resolveUserId: (ref) => principalIdFor(ref, principals),
 }));
 ROUTES.push(createWorkerRoutes({
   workers: () => registeredWorkers,
@@ -14146,7 +14150,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const requested: unknown = body?.scopes;
       const scopes = Array.isArray(requested) ? requested.filter((v): v is Scope => v === "admin" || v === "client") : undefined;
-      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes, principalId: actorPrincipalId(auth) || undefined });
+      // Only an admin code carries its creator's person: a chat-only code
+      // pairs an anonymous device that sees no org channel.
+      const carriesPrincipal = (scopes?.length ? scopes : ["admin"]).includes("admin");
+      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes, principalId: carriesPrincipal ? actorPrincipalId(auth) || undefined : undefined });
       const origin = requestOrigin(req);
       const base = publicUrl() ?? (auth.kind === "session" && origin ? origin : null);
       const code = formatPairingCode(opened.code);
@@ -21843,9 +21850,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // place rather than committing a new provider with stale bot voices.
         // A later config-write failure may leave voices cleared, which is the
         // safe side of this cross-file mutation: no foreign id can be spoken.
-        // The operator keeps one principal id, so the org owner needs no
-        // rewrite when the profile email changes; only the attribute moves.
-        if (patch.profile && typeof patch.profile.email === "string") principals.localOperator(patch.profile.email);
         if (changingVoiceProvider) store.clearVoiceSelections();
         if (externalSecretStorage) {
           // The packaged Electron caller commits supplied credentials to the
@@ -21885,6 +21889,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           for (const request of browserCleanupRequests) browserCleanup.abort(request);
         }
         throw error;
+      }
+      // The operator keeps one principal id, so the org owner needs no
+      // rewrite when the profile email changes; only the attribute moves,
+      // once the config is saved. A cleared email clears it on the principal.
+      if (patch.profile && typeof patch.profile.email === "string") {
+        if (patch.profile.email.trim()) principals.localOperator(patch.profile.email);
+        else principals.setEmail(principals.localOperator().id, "");
       }
       let browserReferenceCleanupError: unknown = null;
       if (patch.signIn !== undefined) sessions.revalidateEmailSessions();

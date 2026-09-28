@@ -45,6 +45,8 @@ export interface DirectGrantRouteDeps {
   bot(id: string): { id: string; ownerUserId?: string; directGrants?: string[] } | undefined;
   patchBot(id: string, patch: { directGrants: string[] }): unknown;
   actorId(auth: RequestAuth): string;
+  /** A person ref (email or principal id) as the stored principal id. */
+  resolveUserId?(ref: string): string;
 }
 
 export function createDirectGrantRoutes(deps: DirectGrantRouteDeps): RouteHandler {
@@ -54,7 +56,8 @@ export function createDirectGrantRoutes(deps: DirectGrantRouteDeps): RouteHandle
     const body = await readBody(req);
     if (typeof body?.userId !== "string" || !body.userId) return json(res, 400, { error: "userId is required" });
     const bot = deps.bot(m[1]!);
-    const result = grantDirectRoute({ actorId: deps.actorId(auth), bot, userId: body.userId });
+    const userId = deps.resolveUserId ? deps.resolveUserId(body.userId) : body.userId;
+    const result = grantDirectRoute({ actorId: deps.actorId(auth), bot, userId });
     if (result.status === 404 || !bot) return json(res, 404, { error: "no such bot" });
     if (result.status === 403) return json(res, 403, { error: result.error });
     deps.patchBot(bot.id, { directGrants: result.directGrants });

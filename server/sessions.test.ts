@@ -552,6 +552,6 @@ describe("sessions carry a principal", () => {
     const opened = registry.openPairing({ label: "Old phone" });
     const paired = registry.exchange({ code: opened.code, label: "", source: "test" });
     const id = paired.ok ? paired.session.id : "";
-    expect(registry.listRecordsForMigration()).toEqual([{ id, email: undefined, userId: undefined, principalId: undefined }]);
+    expect(registry.listRecordsForMigration()).toEqual([{ id, email: undefined, userId: undefined, principalId: undefined, scopes: ["admin", "client"] }]);
   });
 });
