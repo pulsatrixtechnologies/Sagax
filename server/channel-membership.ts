@@ -5,6 +5,19 @@ export function canPlaceBot(input: { actorId: string; ownerUserId: string }): bo
   return input.actorId === input.ownerUserId;
 }
 
+/** The id canPlaceBot compares against. A recorded owner wins. Otherwise
+ * the org owner, or the local operator when there is no organization.
+ * This never substitutes the caller's id. */
+export function ownerUserIdForPlacement(input: {
+  recordedOwnerUserId?: string;
+  orgOwnerUserId?: string;
+  localOperatorId: string;
+}): string {
+  if (input.recordedOwnerUserId) return input.recordedOwnerUserId;
+  if (input.orgOwnerUserId) return input.orgOwnerUserId;
+  return input.localOperatorId;
+}
+
 /** Owner and admin may change who is in a channel. A member may not. */
 export function canEditHumans(role: OrgRole): boolean {
   return role === "owner" || role === "admin";

@@ -539,7 +539,7 @@ import {
   phoneSecretOperationId,
   type PhoneSecretContext,
 } from "./phone-secret.ts";
-import { applyHumanIds, canEditHumans, canPlaceBot } from "./channel-membership.ts";
+import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { roleOf, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
@@ -13094,22 +13094,18 @@ function channelActorRole(auth: RequestAuth): OrgRole | null {
   });
 }
 
-/** Bots do not store ownerUserId yet. Until one is present, an organization
- * treats the org owner as the owner. The local operator, and a pre-org
- * admin, keep the access they already had. */
-function ownerUserIdForPlacement(botId: string, auth: RequestAuth, actorId: string): string {
-  const recorded = (store.bot(botId) as { ownerUserId?: unknown } | undefined)?.ownerUserId;
-  if (typeof recorded === "string" && recorded) return recorded;
-  if (auth.kind === "loopback" && auth.trust !== "service") return actorId;
-  if (orgState.org) return orgState.org.ownerUserId;
-  return actorId;
-}
-
 function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already: ReadonlySet<string>): string | null {
   const actorId = channelActorId(auth);
+  const localOperatorId = (cfg.profile?.email ?? "local-owner").trim();
   for (const id of botIds) {
     if (typeof id !== "string" || already.has(id)) continue;
-    if (!canPlaceBot({ actorId, ownerUserId: ownerUserIdForPlacement(id, auth, actorId) })) {
+    const recorded = (store.bot(id) as { ownerUserId?: unknown } | undefined)?.ownerUserId;
+    const ownerUserId = ownerUserIdForPlacement({
+      recordedOwnerUserId: typeof recorded === "string" && recorded ? recorded : undefined,
+      orgOwnerUserId: orgState.org?.ownerUserId,
+      localOperatorId,
+    });
+    if (!canPlaceBot({ actorId, ownerUserId })) {
       return "forbidden: only the bot owner can place it in a channel";
     }
   }
