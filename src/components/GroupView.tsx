@@ -2,9 +2,9 @@
 // carry the personality; avatars inside the room stay still so a busy group
 // does not become a wall of competing motion. Plain messages go to the room's
 // default responder; @mentions override that routing.
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { activeLocale, t } from "@/lib/i18n";
-import { ArrowDown, Check, ChevronDown, ChevronRight, Folder, FolderOpen, Loader2, MessageSquareReply, Pin, PinOff, Plus, Search, X } from "lucide-react";
+import { ArrowDown, Bot as BotIcon, Check, ChevronDown, ChevronRight, FolderOpen, Loader2, MessageSquareReply, Pin, PinOff, Search, Users, X, type LucideIcon } from "lucide-react";
 import {
   api,
   useStore,
@@ -40,7 +40,7 @@ import { GoalRunCard } from "./GoalRunCard";
 import { AttachmentGallery, MessageAttachmentGallery } from "./AttachmentGallery";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { OptionCard } from "./OptionCard";
-import { GroupCallButton, GroupCallOverlay } from "./GroupCallView";
+import { GroupCallOverlay } from "./GroupCallView";
 
 import { ApprovalCard } from "./ApprovalCard";
 import { OwnerWait } from "./OwnerWait";
@@ -415,12 +415,12 @@ function DefaultResponderSelect({ group, members }: { group: Group; members: Bot
   };
 
   return (
-    <div className="relative shrink-0" title={title}>
+    <div className="relative rounded-xl bg-card p-3" title={title}>
       <select
         aria-label={t("room.responder.aria")}
         value={value}
         onChange={(event) => change(event.target.value)}
-        className="h-8 max-w-[190px] appearance-none truncate rounded-full border border-hairline/40 bg-raised/60 py-1 pl-3 pr-7 text-[12.5px] font-medium text-ink outline-none hover:bg-raised focus:border-accent"
+        className="h-8 w-full appearance-none truncate rounded-lg border border-hairline/40 bg-raised/60 py-1 pl-3 pr-7 text-[12.5px] font-medium text-ink outline-none hover:bg-raised focus:border-accent"
       >
         <optgroup label={t("room.responder.groupLead")}>
           {members.map((member) => (
@@ -529,36 +529,6 @@ function RoomWorkingFolder({ group }: { group: Group }) {
     </div>
   );
 }
-
-/** The folder this room's turns run in — the pinned folder once a turn ran,
- * else the room folder a first turn would pin. Always present so the desk
- * is settable before any folder exists; quiet (icon only) until then. */
-function RoomWorkingFolderChip({ group, onToggle }: { group: Group; onToggle: () => void }) {
-  const folder = group.pinnedCwd === undefined ? group.cwd : (group.pinnedCwd ?? undefined);
-  if (!folder) {
-    return (
-      <button
-        onClick={onToggle}
-        className="rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink"
-        title={t("room.folder.chipTitle")}
-      >
-        <Folder size={14} />
-      </button>
-    );
-  }
-  const name = folder.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || folder;
-  return (
-    <button
-      onClick={onToggle}
-      className="flex max-w-[180px] items-center gap-1.5 rounded-full border border-hairline/40 bg-raised/60 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink"
-      title={t("chat.workingFolder", { folder })}
-    >
-      <Folder size={12} />
-      <span className="truncate font-mono">{name}</span>
-    </button>
-  );
-}
-
 
 type RoomSetupFields = {
   setupPending?: boolean;
@@ -908,6 +878,41 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
     </section>
   );
 }
+function ChannelAccordion({
+  id,
+  label,
+  icon: Icon,
+  open,
+  onToggle,
+  children,
+}: {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="border-b border-hairline/30" data-channel-section={id}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className={cn(
+          "flex w-full shrink-0 items-center gap-2.5 px-4 py-2.5 text-left text-[14px]",
+          open ? "bg-control/60 text-ink" : "text-ink-secondary hover:bg-control/40 hover:text-ink",
+        )}
+      >
+        <Icon size={15} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <ChevronDown size={16} className={cn("shrink-0 text-ink-secondary transition-transform", open && "rotate-180")} />
+      </button>
+      {open && <div className="px-4 pb-4 pt-1">{children}</div>}
+    </div>
+  );
+}
+
 export function GroupView({ group }: { group: Group }) {
   const { state, dispatch } = useStore();
   const remoteClient = window.ogb?.remoteClient?.active === true;
@@ -944,8 +949,8 @@ export function GroupView({ group }: { group: Group }) {
   const touchY = useRef(0);
   const [bulletinOpen, setBulletinOpen] = useState(false);
   const [bulletinDraft, setBulletinDraft] = useState(group.bulletin);
-  const [folderOpen, setFolderOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [channelSection, setChannelSection] = useState<string | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const { replyTo, selectReply, clearReply, consumeReply, restoreReply } = useReplyDraft(
     group.threadId,
@@ -970,6 +975,20 @@ export function GroupView({ group }: { group: Group }) {
     () => group.memberIds.map((id) => state.bots.find((b) => b.id === id)).filter((b): b is Bot => Boolean(b)),
     [group.memberIds, state.bots],
   );
+  const viewerEmail = state.config?.profile?.email?.trim().toLowerCase() || "";
+  const viewerName = state.config?.profile?.name?.trim() || viewerEmail || "Vous";
+  const channelHumans = [
+    { id: viewerEmail || "local-owner", label: viewerName, detail: viewerEmail && viewerName !== viewerEmail ? viewerEmail : undefined, removable: false as boolean },
+    ...(group.humanIds ?? [])
+      .map((id) => id.trim().toLowerCase())
+      .filter((id) => id && id !== viewerEmail)
+      .map((id) => ({ id, label: id, detail: undefined, removable: true })),
+  ];
+  const roster = channelRosterActions({
+    actorRole: remoteClient ? remoteActor.role : "owner",
+    actorId: remoteClient ? remoteActor.id : (viewerEmail || "local-owner"),
+    bots: state.bots,
+  });
   const speaker = members.find((b) => b.id === group.busyBotId);
   const setupPending = !remoteClient && roomNeedsSetup(group);
 
@@ -1071,8 +1090,6 @@ export function GroupView({ group }: { group: Group }) {
   useFocusMessage(group.threadId, group.messages.length > 0);
 
   useEffect(() => setBulletinDraft(group.bulletin), [group.id, group.bulletin]);
-  // an open folder editor belongs to the room it was opened in
-  useEffect(() => setFolderOpen(false), [group.id]);
   useEffect(() => setMembersOpen(false), [group.id]);
   // deps track the FULL messages.length, so expanding the window (which only
   // changes windowedMessages) can never re-trigger this bottom scrollTo.
@@ -1171,7 +1188,8 @@ export function GroupView({ group }: { group: Group }) {
   ));
 
   return (
-    <main className="relative flex h-full min-w-0 flex-1 flex-col bg-app">
+    <main className="relative flex h-full min-w-0 flex-1 bg-app">
+      <div className="flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
       {membersOpen && !remoteClient && !group.dm && (
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
@@ -1213,67 +1231,11 @@ export function GroupView({ group }: { group: Group }) {
             messages={group.messages}
             isGroup
           />
-          <GroupCallButton group={group} members={members} />
+
           <GroupUsageChip usage={group.usage} />
-          {!remoteClient && !setupPending && !group.dm && <RoomWorkingFolderChip group={group} onToggle={() => setFolderOpen((open) => !open)} />}
-          {!remoteClient && !setupPending && !group.dm && <DefaultResponderSelect group={group} members={members} />}
-          {group.dm || remoteClient ? (
-            memberMauses
-          ) : (
-            // The roster lives where you already look to see who is in the
-            // room; a dashed + says the row is editable without shouting.
-            <button
-              ref={membersTriggerRef}
-              type="button"
-              onClick={() => setMembersOpen(true)}
-              title={t("room.members.manage")}
-              aria-label={
-                members.length === 1
-                  ? t("room.members.ariaOne")
-                  : t("room.members.ariaMany", { count: members.length })
-              }
-              className="flex items-center gap-1.5 rounded-full py-0.5 pl-1 pr-1.5 hover:bg-raised/60"
-            >
-              {memberMauses}
-              <span className="flex size-[18px] items-center justify-center rounded-full border border-dashed border-hairline/70 text-ink-secondary">
-                <Plus size={11} />
-              </span>
-            </button>
-          )}
+          {(group.dm || remoteClient) && memberMauses}
         </div>
       </div>
-
-      {!group.dm && (
-        <div className="w-full px-5 pb-2">
-          <ChannelMembers
-            humans={(group.humanIds ?? []).map((id) => ({ id }))}
-            bots={group.memberIds.map((id) => ({
-              id,
-              name: state.bots.find((bot) => bot.id === id)?.name || id,
-            }))}
-            {...channelRosterActions({
-              actorRole: remoteClient ? remoteActor.role : "owner",
-              actorId: remoteClient ? remoteActor.id : (state.config?.profile?.email?.trim().toLowerCase() || "local-owner"),
-              bots: state.bots,
-            })}
-            onAddHuman={() => {
-              const email = window.prompt("Adresse courriel")?.trim().toLowerCase() ?? "";
-              if (!email) return;
-              const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), email])];
-              dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
-            }}
-            onAddBot={() => {
-              const actorId = remoteClient ? remoteActor.id : (state.config?.profile?.email?.trim().toLowerCase() || "local-owner");
-              const owned = state.bots.find((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actorId && !group.memberIds.includes(bot.id));
-              dispatch({
-                type: "patchGroup",
-                groupId: group.id,
-                patch: { memberIds: owned ? [...group.memberIds, owned.id] : [...group.memberIds] },
-              });
-            }}
-          />
-        </div>
-      )}
 
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
 
@@ -1312,15 +1274,6 @@ export function GroupView({ group }: { group: Group }) {
           </button>
         )}
       </div>}
-
-      {/* Working folder card — the chip in the header toggles it */}
-      {!setupPending && folderOpen && !group.dm && (
-        <div className="w-full px-5">
-          <div className="mb-1">
-            <RoomWorkingFolder group={group} />
-          </div>
-        </div>
-      )}
 
       {/* Pinned message banner — resolves against the room's full transcript */}
       {(() => {
@@ -1507,6 +1460,75 @@ export function GroupView({ group }: { group: Group }) {
       />
       </div>
       </div>
+      </div>
+      {!group.dm && (
+        <aside className="flex w-[min(420px,42vw)] shrink-0 flex-col overflow-y-auto border-l border-hairline/40 bg-panel">
+          <ChannelAccordion id="people" label="Gens" icon={Users} open={channelSection === "people"} onToggle={() => setChannelSection((current) => current === "people" ? null : "people")}>
+            <ChannelMembers
+              part="humans"
+              humans={channelHumans}
+              bots={[]}
+              {...roster}
+              onAddHuman={() => {
+                const email = window.prompt("Adresse courriel")?.trim().toLowerCase() ?? "";
+                if (!email) return;
+                const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), email])];
+                dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
+              }}
+              onRemoveHuman={(id) => {
+                dispatch({
+                  type: "patchGroup",
+                  groupId: group.id,
+                  patch: { humanIds: (group.humanIds ?? []).filter((humanId) => humanId.trim().toLowerCase() !== id.trim().toLowerCase()) },
+                });
+              }}
+            />
+          </ChannelAccordion>
+          <ChannelAccordion id="bots" label="Bots" icon={BotIcon} open={channelSection === "bots"} onToggle={() => setChannelSection((current) => current === "bots" ? null : "bots")}>
+            <ChannelMembers
+              part="bots"
+              humans={[]}
+              bots={group.memberIds.map((id) => {
+                const bot = state.bots.find((item) => item.id === id);
+                return { id, name: bot?.name || id, title: bot?.title, color: bot?.color, avatarUrl: bot?.avatarUrl, mascotBody: bot?.mascotBody };
+              })}
+              {...roster}
+              onRemoveBot={(id) => {
+                dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
+              }}
+              onAddBot={() => {
+                const actorId = remoteClient ? remoteActor.id : (state.config?.profile?.email?.trim().toLowerCase() || "local-owner");
+                const owned = state.bots.find((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actorId && !group.memberIds.includes(bot.id));
+                dispatch({
+                  type: "patchGroup",
+                  groupId: group.id,
+                  patch: { memberIds: owned ? [...group.memberIds, owned.id] : [...group.memberIds] },
+                });
+              }}
+            />
+            {!remoteClient && !setupPending && (
+              <button
+                ref={membersTriggerRef}
+                type="button"
+                onClick={() => setMembersOpen(true)}
+                className="mt-2 rounded-lg bg-raised px-3 py-2 text-[13px] text-ink hover:bg-raised-hover"
+              >
+                {t("room.members.manage")}
+              </button>
+            )}
+          </ChannelAccordion>
+          {!remoteClient && !setupPending && (
+            <ChannelAccordion id="responder" label={t("room.responder.aria")} icon={MessageSquareReply} open={channelSection === "responder"} onToggle={() => setChannelSection((current) => current === "responder" ? null : "responder")}>
+              <DefaultResponderSelect group={group} members={members} />
+            </ChannelAccordion>
+          )}
+          {!remoteClient && !setupPending && (
+            <ChannelAccordion id="folder" label={t("room.folder.title")} icon={FolderOpen} open={channelSection === "folder"} onToggle={() => setChannelSection((current) => current === "folder" ? null : "folder")}>
+              <RoomWorkingFolder group={group} />
+            </ChannelAccordion>
+          )}
+        </aside>
+      )}
     </main>
   );
 }

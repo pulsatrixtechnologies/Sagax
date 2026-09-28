@@ -11,12 +11,13 @@ import {
   type CSSProperties,
 } from "react";
 import {
-  ArrowLeft,
+  Menu,
   CalendarDays,
   CheckCheck,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+
   CircleAlert,
   Clock3,
   Cloud,
@@ -706,7 +707,7 @@ function EventEditor({
               </div>
               {kind === "routine" && (
                 <p className="text-[11px] leading-relaxed text-ink-secondary">
-                  Runs while OpenMausBot is open on this computer — it cannot wake a sleeping Mac. A run missed by less than 12 hours still happens when the app is back; for 24/7, run OpenMausBot on a VPS.
+                  Runs while Pulsa Bot is open on this computer — it cannot wake a sleeping Mac. A run missed by less than 12 hours still happens when the app is back; for 24/7, run Pulsa Bot on a VPS.
                 </p>
               )}
               {isCronChoice(recurrence) && kind === "routine" && cron && <CronScheduleFields choice={recurrence} value={cronDraft} onChange={(draft) => { setCronDraft(draft); setCronChanged(true); }} runs={cron.runs} error={cron.error} />}
@@ -969,11 +970,11 @@ function EventEditor({
                 {isRoomGoal ? (
                   <div className="rounded-xl border border-accent/35 bg-accent/[0.07] p-3">
                     <div className="text-[12.5px] font-medium text-ink">Runs on this computer</div>
-                    <div className="mt-1 text-[11px] leading-relaxed text-ink-secondary">OpenMausBot keeps the group and its member hand-offs together for the full goal.</div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-ink-secondary">Pulsa Bot keeps the group and its member hand-offs together for the full goal.</div>
                   </div>
                 ) : <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => setRunOn("maus")} className={cn("rounded-xl border p-3 text-left", runOn === "maus" ? "border-accent/60 bg-accent/10" : "border-hairline/50 bg-inset hover:bg-raised")}><div className="text-[12.5px] font-medium text-ink">Bot’s current setup</div><div className="mt-1 text-[11px] text-ink-secondary">Keeps its model and configured computer, including a self-hosted VPS.</div></button>
-                  <button type="button" disabled={!cloudReady || attachments.length > 0} onClick={() => setRunOn("cloud")} className={cn("rounded-xl border p-3 text-left disabled:cursor-not-allowed disabled:opacity-45", runOn === "cloud" ? "border-accent/60 bg-accent/10" : "border-hairline/50 bg-inset hover:bg-raised")}><div className="text-[12.5px] font-medium text-ink">Box-hosted agent</div><div className="mt-1 text-[11px] text-ink-secondary">Switches to the Box runner, not your VPS. OpenMausBot must stay running to launch it.</div></button>
+                  <button type="button" disabled={!cloudReady || attachments.length > 0} onClick={() => setRunOn("cloud")} className={cn("rounded-xl border p-3 text-left disabled:cursor-not-allowed disabled:opacity-45", runOn === "cloud" ? "border-accent/60 bg-accent/10" : "border-hairline/50 bg-inset hover:bg-raised")}><div className="text-[12.5px] font-medium text-ink">Box-hosted agent</div><div className="mt-1 text-[11px] text-ink-secondary">Switches to the Box runner, not your VPS. Pulsa Bot must stay running to launch it.</div></button>
                 </div>}
               </div>
             </div>
@@ -1613,12 +1614,12 @@ export function RoutineEditor({
   return <EventEditor seed={{ kind: "routine", at, durationMinutes: routine?.durationMinutes ?? 30, botIds: lockedBotId ? [lockedBotId] : routine ? [routine.botId] : [], routine }} bots={bots} lockedBotId={lockedBotId} defaultRunOn={defaultRunOn} onClose={onClose} onSavedCall={() => {}} />;
 }
 
-export function RoutinesPage({ onBack, onOpenRoom }: { onBack: () => void; onOpenRoom: (id: string) => void }) {
+export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fill = false }: { onBack: () => void; onOpenRoom: (id: string) => void; embedded?: boolean; fill?: boolean }) {
   const { state, dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
   const routinesOnly = window.ogb?.remoteClient?.active === true;
-  const backButtonRef = useRef<HTMLButtonElement>(null);
   const newMenuRef = useRef<HTMLDetailsElement>(null);
+  const navMenuRef = useRef<HTMLDetailsElement>(null);
   const [section, setSection] = useState<"calendar" | "logs" | "webhooks">(state.routinesFocus?.section === "logs" ? "logs" : "calendar");
   const [scheduleView, setScheduleView] = useState<"calendar" | "list">(state.routinesFocus?.view ?? "calendar");
   const [viewDays, setViewDays] = useState<1 | 3 | 7>(7);
@@ -1631,6 +1632,7 @@ export function RoutinesPage({ onBack, onOpenRoom }: { onBack: () => void; onOpe
   const [editor, setEditor] = useState<EventSeed | null>(null);
   const [selected, setSelected] = useState<CalendarEventItem | null>(null);
   const [pausedOpen, setPausedOpen] = useState(false);
+  const [botsOpen, setBotsOpen] = useState(true);
   const [webhookCreateRequest, setWebhookCreateRequest] = useState(0);
   const [error, setError] = useState("");
   const visibleBots = state.bots.filter((bot) => !bot.hidden);
@@ -1657,14 +1659,14 @@ export function RoutinesPage({ onBack, onOpenRoom }: { onBack: () => void; onOpe
   useEffect(() => {
     if (!routinesOnly) void loadCalls();
   }, [loadCalls, routinesOnly]);
-  useEffect(() => { backButtonRef.current?.focus({ preventScroll: true }); }, []);
   useEffect(() => {
-    const closeNewMenu = (event: PointerEvent) => {
-      const menu = newMenuRef.current;
-      if (menu?.open && !menu.contains(event.target as Node)) menu.removeAttribute("open");
+    const closeMenus = (event: PointerEvent) => {
+      for (const menu of [newMenuRef.current, navMenuRef.current]) {
+        if (menu?.open && !menu.contains(event.target as Node)) menu.removeAttribute("open");
+      }
     };
-    document.addEventListener("pointerdown", closeNewMenu);
-    return () => document.removeEventListener("pointerdown", closeNewMenu);
+    document.addEventListener("pointerdown", closeMenus);
+    return () => document.removeEventListener("pointerdown", closeMenus);
   }, []);
 
   const items = useMemo<CalendarEventItem[]>(() => {
@@ -1767,32 +1769,30 @@ export function RoutinesPage({ onBack, onOpenRoom }: { onBack: () => void; onOpe
   };
 
   return (
-    <main className="flex h-full min-w-0 flex-1 flex-col bg-app animate-workspace-in">
+    <main className={cn("flex h-full min-w-0 flex-col bg-app", fill ? "flex-1" : embedded ? "w-[min(820px,48vw)] min-w-[420px] shrink-0 border-l border-hairline/40" : "flex-1 animate-workspace-in")}>
       <header
-        className={cn("shrink-0 border-b border-hairline/35 bg-app py-3 pr-4", macInset ? "pl-[86px]" : "pl-4")}
-        style={windowDragStyle}
+        className={cn("shrink-0 border-b border-hairline/35 bg-app py-3 pr-4", !embedded && !fill && macInset ? "pl-[86px]" : "pl-4")}
+        style={embedded || fill ? undefined : windowDragStyle}
       >
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            ref={backButtonRef}
-            onClick={onBack}
-            aria-label="Back"
-            title="Back"
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-ink-secondary hover:bg-raised hover:text-ink"
-            style={windowNoDragStyle}
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div data-tour="automations-page" className="mr-2 flex items-center gap-2"><CalendarDays size={21} className="text-accent" /><h1 className="text-[18px] font-semibold tracking-tight text-ink">Automations</h1></div>
-          <div className="flex items-center rounded-lg border border-hairline/50 bg-panel p-0.5" style={windowNoDragStyle} aria-label="Automation type">
-            <button type="button" aria-pressed={section === "calendar"} onClick={() => setSection("calendar")} className={cn("rounded-md px-3 py-1.5 text-[11.5px] font-medium", section === "calendar" ? "bg-raised text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}>{routinesOnly ? "Scheduled routines" : "Schedule"}</button>
-            <button type="button" aria-pressed={section === "logs"} onClick={() => { setSection("logs"); setRoutineFilter(undefined); }} className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11.5px] font-medium", section === "logs" ? "bg-raised text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}><FileText size={12} />{t("routines.logs")}{unseenFailures > 0 && <span className="rounded-full bg-danger/10 px-1.5 text-[9px] text-danger">{unseenFailures}</span>}</button>
-            {!routinesOnly && <button type="button" aria-pressed={section === "webhooks"} onClick={() => setSection("webhooks")} className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11.5px] font-medium", section === "webhooks" ? "bg-raised text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}><Webhook size={12} />Webhooks{state.webhooks.length > 0 && <span className="rounded-full bg-accent/15 px-1.5 text-[9px] text-accent">{state.webhooks.length}</span>}</button>}
+          <div data-tour="automations-page" className="mr-2 flex items-center gap-2">
+            <span className="flex size-9 items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink"><CalendarDays size={16} /></span>
+            <h1 className="text-[18px] font-semibold tracking-tight text-ink">Automations</h1>
           </div>
-          {unseenFailures > 0 && <button type="button" onClick={() => dispatch({ type: "markAllRoutineRunsSeen" })} className="flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-2.5 py-2 text-[11.5px] text-ink-secondary hover:bg-raised hover:text-ink" title={t("routines.markAllSeen")} aria-label={t("routines.markAllSeen")}><CheckCheck size={12} />{t("routines.markAllSeen")}</button>}
-          <details ref={newMenuRef} className="group relative ml-auto" style={windowNoDragStyle}>
-            <summary role="button" aria-label="Create an automation" className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-[12px] font-semibold text-white hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
+          <div className="ml-auto flex items-center gap-2" style={windowNoDragStyle}>
+          <details ref={navMenuRef} className="group relative">
+            <summary aria-label="Automation menu" className="flex size-9 cursor-pointer list-none items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink hover:bg-raised [&::-webkit-details-marker]:hidden">
+              <Menu size={16} />
+            </summary>
+            <div role="menu" className="absolute right-0 top-full z-40 mt-1.5 w-[220px] rounded-xl border border-hairline/60 bg-card p-1.5 shadow-2xl">
+              <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); setSection("calendar"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-ink hover:bg-raised"><CalendarDays size={14} className="text-ink-secondary" />{routinesOnly ? "Scheduled routines" : "Schedule"}</button>
+              <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); setSection("logs"); setRoutineFilter(undefined); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-ink hover:bg-raised"><FileText size={14} className="text-ink-secondary" />{t("routines.logs")}{unseenFailures > 0 && <span className="ml-auto rounded-full bg-danger/10 px-1.5 text-[10px] text-danger">{unseenFailures}</span>}</button>
+              {!routinesOnly && <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); setSection("webhooks"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-ink hover:bg-raised"><Webhook size={14} className="text-ink-secondary" />Webhooks{state.webhooks.length > 0 && <span className="ml-auto rounded-full bg-raised px-1.5 text-[10px] text-ink-secondary">{state.webhooks.length}</span>}</button>}
+              <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); dispatch({ type: "markAllRoutineRunsSeen" }); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-ink hover:bg-raised"><CheckCheck size={14} className="text-ink-secondary" />{t("routines.markAllSeen")}</button>
+            </div>
+          </details>
+          <details ref={newMenuRef} className="group relative">
+            <summary role="button" aria-label="Create an automation" className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-3 text-[12px] font-medium text-ink hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 [&::-webkit-details-marker]:hidden">
               <Plus size={15} aria-hidden="true" />New
             </summary>
             <div role="group" aria-label="New automation" className="absolute right-0 top-full z-40 mt-1.5 w-[280px] rounded-xl border border-hairline/60 bg-card p-1.5 shadow-2xl">
@@ -1810,6 +1810,7 @@ export function RoutinesPage({ onBack, onOpenRoom }: { onBack: () => void; onOpe
               </button>}
             </div>
           </details>
+          </div>
         </div>
         {section !== "webhooks" && <div className="mt-2 flex flex-wrap items-center gap-2" style={windowNoDragStyle}>
           {section === "calendar" && <div className="flex items-center rounded-lg border border-hairline/50 bg-panel p-0.5" aria-label="Schedule view">
@@ -1846,8 +1847,18 @@ export function RoutinesPage({ onBack, onOpenRoom }: { onBack: () => void; onOpe
         </div></div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <div className="hidden shrink-0 lg:block"><CalendarSidebar bots={visibleBots} anchor={anchor} onSelectDate={(at) => setAnchor(startOfDay(at))} /></div>
           <CalendarGrid anchor={rangeStart} days={viewDays} items={items} bots={state.bots} groups={state.groups} onOpen={(item) => { setSelected(item); if (item.kind === "routine" && item.run && ["failed", "missed"].includes(item.run.status) && !item.run.seenAt) dispatch({ type: "markRoutineRunSeen", runId: item.run.id }); }} onCreate={openCreate} onMove={(item, at) => void moveEvent(item, at)} onResize={(item, duration) => void resizeEvent(item, duration)} />
+          {botsOpen ? (
+            <div className="relative hidden shrink-0 lg:block">
+              <button type="button" onClick={() => setBotsOpen(false)} aria-label="Hide my bots" title="Hide my bots" className="absolute left-2 top-2 z-10 rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"><ChevronRight size={16} /></button>
+              <CalendarSidebar bots={visibleBots} anchor={anchor} onSelectDate={(at) => setAnchor(startOfDay(at))} />
+            </div>
+          ) : (
+            <button type="button" onClick={() => setBotsOpen(true)} aria-label="Show my bots" title="My bots" className="hidden w-10 shrink-0 flex-col items-center gap-2 border-l border-hairline/40 bg-panel px-1 py-4 text-[11px] text-ink-secondary hover:text-ink lg:flex">
+              <UsersRound size={16} />
+              <span className="[writing-mode:vertical-rl]">My bots</span>
+            </button>
+          )}
         </div>
       )}
 

@@ -8,7 +8,7 @@ import {
   updateLabel,
   updatePhase,
 } from "./SidebarProfileMenu";
-import { DOCS_URL, FEEDBACK_URL, HELP_CENTER_URL, platformLabel } from "@/lib/app-links";
+import { APP_REPOSITORY, DOCS_URL, HELP_CENTER_URL, LICENSE_URL, RELEASES_URL, platformLabel } from "@/lib/app-links";
 import type { UpdaterState } from "@/lib/updater";
 
 const state = (patch: Partial<UpdaterState>): UpdaterState => ({ status: "idle", ...patch }) as UpdaterState;
@@ -158,12 +158,11 @@ describe("updateNoteworthy", () => {
 describe("outward links", () => {
   // both were pointed somewhere else once; pin them so a future tidy-up of
   // app-links does not quietly send Help back to the README
-  it("sends Help Center to the docs the website also links to", () => {
+  it("sends Help Center, docs, releases, and the license to this fork", () => {
     expect(HELP_CENTER_URL).toBe(DOCS_URL);
-    expect(DOCS_URL).toBe("https://github.com/milind-soni/OpenMausBot/tree/main/docs");
-  });
-
-  it("sends Send Feedback to the Discord community", () => {
-    expect(FEEDBACK_URL).toBe("https://discord.gg/9Wb8MEpXRs");
+    expect(DOCS_URL).toBe(`${APP_REPOSITORY}/tree/main/docs`);
+    expect(RELEASES_URL).toBe(`${APP_REPOSITORY}/releases`);
+    expect(LICENSE_URL).toBe(`${APP_REPOSITORY}/blob/main/LICENSE`);
+    expect(APP_REPOSITORY).toBe("https://github.com/pulsatrixtechnologies/pulsa-bot");
   });
 });

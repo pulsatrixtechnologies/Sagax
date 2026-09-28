@@ -111,7 +111,7 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-hairline/40 bg-card p-4" data-bot-visibility>
+    <div className="flex flex-col gap-3 rounded-xl border border-hairline/40 p-4" data-bot-visibility>
       <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("botSettings.visibility.subtitle")}</p>
       <div role="radiogroup" aria-label={t("botSettings.visibility.title")} className="flex flex-col gap-1.5">
         {OPTIONS.map((option) => (

@@ -1,4 +1,4 @@
-# OpenMausBot documentation
+# Pulsa Bot documentation
 
 The public documentation site is a Next.js 16 + Fumadocs app. User-facing content lives in `content/docs`; the repository's top-level `docs` folder remains available for implementation notes and detailed platform records.
 
@@ -21,7 +21,7 @@ pnpm --filter @openmausbot/docs types:check
 pnpm --filter @openmausbot/docs lint
 ```
 
-The changelog reads published releases from `milind-soni/OpenMausBot` plus the
+The changelog reads published releases from `pulsatrixtechnologies/pulsa-bot` plus the
 legacy updater archive, deduplicates them into one complete history, and caches
 the result for five minutes. If one repository is temporarily unavailable, the
 other still renders; if both fail, the page links directly to GitHub.
@@ -34,7 +34,7 @@ incremental regeneration so published releases appear without a source commit.
 
 Create a second Vercel project beside the existing `openmausbot.com` project:
 
-1. Import the `milind-soni/OpenMausBot` repository.
+1. Import the `pulsatrixtechnologies/pulsa-bot` repository.
 2. Set **Root Directory** to `apps/docs`.
 3. Keep the detected **Next.js** framework settings.
 4. Set the production branch to `main` and deploy.

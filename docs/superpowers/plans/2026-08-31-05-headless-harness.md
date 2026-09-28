@@ -31,7 +31,7 @@ sidecar on `:8810`, `electron/companion-origin-gateway.mjs` opens the managed or
 `cloudflare/control-plane` maps one opaque hostname to that installation. Close the app
 and all four stop, taking routines (`server/routines.ts`) and the webhook receiver
 (`server/webhook-ingress.ts`, `:8800`) with them. The README says this plainly in its
-Status section, and it is the single biggest gap between OpenMausBot and an "AI employee".
+Status section, and it is the single biggest gap between Pulsa Bot and an "AI employee".
 
 The good news, verified: of the five always-on modules, four already take their
 dependencies as injected parameters — `readSecureCredentials` in

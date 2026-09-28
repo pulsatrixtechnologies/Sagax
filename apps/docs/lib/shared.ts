@@ -1,10 +1,10 @@
 export const docsRoute = '/docs';
 export const docsImageRoute = '/og/docs';
 export const docsContentRoute = '/llms.mdx/docs';
-export const appName = 'OpenMausBot Docs';
+export const appName = 'Pulsa Bot Docs';
 
 export const gitConfig = {
-  user: 'milind-soni',
-  repo: 'OpenMausBot',
+  user: 'pulsatrixtechnologies',
+  repo: 'pulsa-bot',
   branch: 'main',
 };

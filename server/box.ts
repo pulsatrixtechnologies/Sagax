@@ -91,7 +91,7 @@ const BOX_STATES = new Set([
   "error",
 ]);
 // Provider listings are account-wide. Hash the durable local environment id
-// into every new name so another OpenMausBot installation using the same Box
+// into every new name so another Pulsa Bot installation using the same Box
 // account cannot mistake this installation's computers for abandoned ones.
 // The environment UUID itself never leaves the local data directory.
 let scopedBoxPrefixCache: string | null = null;
@@ -536,7 +536,7 @@ async function listBoxPages(
 
 /**
  * One account listing for Settings and deletion guards. Only boxes
- * carrying OpenMausBot's exact deterministic name shape leave this boundary;
+ * carrying Pulsa Bot's exact deterministic name shape leave this boundary;
  * provider desktop links, IPs, environment details and other raw fields never
  * reach the renderer. Only names scoped to this installation may become
  * ownerless rows. Legacy names are accepted solely when a current bot proves
@@ -588,7 +588,7 @@ export async function listManagedBoxes(
     try {
       recoveries = boxCreateRecoverySnapshot();
     } catch {
-      return invalidInventory("OpenMausBot could not safely read its cloud computer recovery records");
+      return invalidInventory("Pulsa Bot could not safely read its cloud computer recovery records");
     }
     for (const recovery of recoveries) {
       if (!recovery.resolved || !recovery.boxId) continue;
@@ -602,7 +602,7 @@ export async function listManagedBoxes(
       if (matchingRows.length === 1) {
         const listedName = typeof matchingRows[0]?.name === "string" ? matchingRows[0].name : "";
         if (listedName !== namedOwner.currentName && listedName !== namedOwner.legacyName) {
-          return invalidInventory("A remembered cloud computer no longer has its OpenMausBot owner name — repair it in boat.dev before continuing");
+          return invalidInventory("A remembered cloud computer no longer has its Pulsa Bot owner name — repair it in boat.dev before continuing");
         }
         continue;
       }
@@ -621,7 +621,7 @@ export async function listManagedBoxes(
         inspected.identity.name !== namedOwner.currentName
         && inspected.identity.name !== namedOwner.legacyName
       ) {
-        return invalidInventory("A remembered cloud computer no longer has its OpenMausBot owner name — repair it in boat.dev before continuing");
+        return invalidInventory("A remembered cloud computer no longer has its Pulsa Bot owner name — repair it in boat.dev before continuing");
       }
       const directCandidate = {
         id: inspected.identity.boxId,
@@ -635,7 +635,7 @@ export async function listManagedBoxes(
     try {
       deletions = boxDeletionSnapshot();
     } catch {
-      return invalidInventory("OpenMausBot could not safely read its cloud computer deletion records");
+      return invalidInventory("Pulsa Bot could not safely read its cloud computer deletion records");
     }
     for (const deletion of deletions) {
       let state: BoxDeletionReconciliation;
@@ -746,7 +746,7 @@ export async function listManagedBoxes(
       try {
         adoptResolvedBox(owner.botId, boxId);
       } catch {
-        return invalidInventory("OpenMausBot could not safely remember this legacy cloud computer's owner — repair it in boat.dev before continuing");
+        return invalidInventory("Pulsa Bot could not safely remember this legacy cloud computer's owner — repair it in boat.dev before continuing");
       }
     }
     seenBoxIds.add(boxId);
@@ -1067,7 +1067,7 @@ function idempotentCreateInProgress(result: Awaited<ReturnType<typeof boxJson>>)
   return result.status === 409 && code === "idempotency_in_progress";
 }
 
-/** The keys this OpenMausBot already holds, as the environment its bots'
+/** The keys this Pulsa Bot already holds, as the environment its bots'
  * agents read on the box. The box is created with `noEnv: true`, so the
  * boat.dev account's own logins never land in the guest: the box has exactly
  * these and nothing else (see "Whose keys" in the Box integrated-agents docs). */
@@ -1099,7 +1099,7 @@ const BOX_FORWARDED_CREDENTIAL_ENV = [
 async function requestBoxCreate(cfg: AppConfig, botId: string, ttlSeconds: number, env: Record<string, string>): Promise<BoxCreateResult> {
   // The computer needs the user's desktop session, not the account owner's
   // host credentials. Keep provider-side env injection off; the only keys the
-  // guest ever has are the ones this OpenMausBot forwards (`env`), which its
+  // guest ever has are the ones this Pulsa Bot forwards (`env`), which its
   // agents need now that the turn runs on the box. The idempotency identity
   // stays the secret-free part: a trial-TTL retry must receive a different
   // key, and the journal on disk never carries a credential.
@@ -1352,7 +1352,7 @@ export async function execOnBox(cfg: AppConfig, botId: string, command: string) 
 // The frame is for a person: it fills the panel and opens in the chat's
 // image viewer, so it keeps the desktop's native size up to 1080p and a
 // quality where page text stays legible. (Sizing it is now the only say
-// OpenMausBot has over any frame off this box: the turn runs on the box's
+// Pulsa Bot has over any frame off this box: the turn runs on the box's
 // own agent, so the model's own captures never pass through here.) Only
 // wider displays are scaled down, with -resize rather than -thumbnail so
 // the resample is not the fast-and-blurry kind meant for icons. The

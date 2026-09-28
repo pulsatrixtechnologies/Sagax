@@ -24,7 +24,7 @@ export interface ShortcutGroup {
 }
 
 /**
- * Complete catalog of keyboard shortcuts available in OpenMausBot,
+ * Complete catalog of keyboard shortcuts available in Pulsa Bot,
  * organized logically into categories for quick reference.
  */
 export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
@@ -39,7 +39,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
       },
       {
         id: "new-bot",
-        description: "Create a new bot",
+        description: "Search or create a bot",
         macKeys: ["⌘", "N"],
         winKeys: ["Ctrl", "N"],
       },

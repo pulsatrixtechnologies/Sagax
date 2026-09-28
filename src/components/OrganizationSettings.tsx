@@ -25,6 +25,7 @@ export function OrganizationSettings() {
   const status = useRef<ManagedDesktopState["status"] | undefined>(undefined);
   const [org, setOrg] = useState<{ name: string } | null>(null);
   const [people, setPeople] = useState<{ id: string; role: OrgRole }[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<{ email: string }[]>([]);
   const [orgReady, setOrgReady] = useState(false);
   const [directoryError, setDirectoryError] = useState("");
 
@@ -62,10 +63,11 @@ export function OrganizationSettings() {
 
   const loadOrg = async (alive = () => true) => {
     try {
-      const body = await api<{ org: { name: string }; people?: { id: string; role: OrgRole }[] }>("/api/org");
+      const body = await api<{ org: { name: string }; people?: { id: string; role: OrgRole }[]; pendingInvites?: { email: string }[] }>("/api/org");
       if (!alive()) return;
       setOrg({ name: body.org.name });
       setPeople(body.people ?? []);
+      setPendingInvites(body.pendingInvites ?? []);
       setOrgReady(true);
       setDirectoryError("");
     } catch (error) {
@@ -73,6 +75,7 @@ export function OrganizationSettings() {
       if (error instanceof ApiError && error.status === 404) {
         setOrg(null);
         setPeople([]);
+        setPendingInvites([]);
         setOrgReady(true);
         setDirectoryError("");
         return;
@@ -115,6 +118,7 @@ export function OrganizationSettings() {
         <OrgDirectory
           org={org}
           people={people}
+          pendingInvites={pendingInvites}
           onCreate={async (name) => {
             try {
               const created = await api<{ org?: { name?: string } }>("/api/org", { method: "POST", body: JSON.stringify({ name, host: { kind: "this-computer" } }) });

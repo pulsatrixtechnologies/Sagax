@@ -106,12 +106,12 @@
   --color-hairline: #333333;
   --color-ink: #fcfcfc;
   --color-ink-secondary: #fcfcfc99;
-  --color-accent: #1084fe;
-  --color-accent-border: #459ffe;
+  --color-accent: #d6d6d6;
+  --color-accent-border: #a3a3a3;
   /* the ring a keyboard user follows; sits on the accent so focus reads as
      "the app is talking to you", not as a browser default */
-  --color-focus: #459ffe;
-  --color-accent-text: #7fc0ff;
+  --color-focus: #bdbdbd;
+  --color-accent-text: #e8e8e8;
   --color-bubble-user: #5a5a5a;
   --color-success: #38d591;
   --color-danger: #ff5667;
@@ -127,7 +127,7 @@
   --code-color-scheme: dark;
   /* ink carried by a filled accent / danger surface (see the rule at the
      bottom of this file, which is what makes them take effect) */
-  --color-accent-ink: #ffffff;
+  --color-accent-ink: #111111;
   --color-danger-ink: #ffffff;
   /* ink carried by the user's own bubble. A hex rather than the ink token so
      the contrast check can measure it; every dark skin repeats its ink here. */
@@ -163,10 +163,10 @@
   --color-hairline: #333333;
   --color-ink: #fcfcfc;
   --color-ink-secondary: #fcfcfc99;
-  --color-accent: #1084fe;
-  --color-accent-border: #459ffe;
-  --color-accent-text: #7fc0ff;
-  --color-accent-ink: #ffffff;
+  --color-accent: #d6d6d6;
+  --color-accent-border: #a3a3a3;
+  --color-accent-text: #e8e8e8;
+  --color-accent-ink: #111111;
   --color-bubble-user: #5a5a5a;
   --color-bubble-user-ink: #fcfcfc;   /* = ink: unchanged */
   --color-success: #38d591;
@@ -378,11 +378,11 @@
   --color-ink: #f2f4f7;
   --color-ink-secondary: #b3b8c2;
 
-  --color-accent: #4f75a2;
-  --color-accent-border: #698fbb;
-  --color-accent-text: #8fb4df;
-  --color-focus: #8fb4df;
-  --color-accent-ink: #ffffff;
+  --color-accent: #d0d4da;
+  --color-accent-border: #9aa3ad;
+  --color-accent-text: #e4e7ec;
+  --color-focus: #b3b8c2;
+  --color-accent-ink: #111214;
   --color-bubble-user: #30343a;
   --color-bubble-user-ink: #f2f4f7;   /* = ink: unchanged */
 
@@ -422,10 +422,10 @@
   --color-ink: #1d2229;
   --color-ink-secondary: #59616c;
 
-  --color-accent: #355f8a;
-  --color-accent-border: #4978a6;
-  --color-accent-text: #2c5680;
-  --color-focus: #2c5680;
+  --color-accent: #2a2a2a;
+  --color-accent-border: #3a3a3a;
+  --color-accent-text: #2a2a2a;
+  --color-focus: #2a2a2a;
   --color-accent-ink: #ffffff;
   --color-bubble-user: #e1e6ed;
   --color-bubble-user-ink: #1d2229;   /* = ink: unchanged */
@@ -519,11 +519,11 @@
   /* The upstream blue is #1084fe, which carries white at 3.1:1 — fine for the
      unread dot it is mostly used for, not for a filled button's label. The
      fill is darkened until white clears AA; the dot keeps reading as blue. */
-  --color-accent: #0b62c4;
-  --color-accent-border: #1084fe;
-  --color-accent-text: #0b5cb8;
-  --color-focus: #0b62c4;
-  --color-accent-ink: #ffffff;
+  --color-accent: #2a2a2a;
+  --color-accent-border: #3a3a3a;
+  --color-accent-text: #2a2a2a;
+  --color-focus: #2a2a2a;
+  --color-accent-ink: #fcfcfc;
   /* The composer is the page with a ring around it, not a grey slab —
      the one surface where this skin departs from `raised`. */
   --color-composer: #fcfcfc;
@@ -1338,10 +1338,10 @@ body {
     --color-raised-hover: #3d3d3d;
     --color-control: #2f2f2f;
     --color-hairline: #666666;
-    --color-accent: #7fc0ff;
-    --color-accent-text: #7fc0ff;
-    --color-accent-ink: #070707;
-    --color-focus: #7fc0ff;
+    --color-accent: #e8e8e8;
+    --color-accent-text: #e8e8e8;
+    --color-accent-ink: #111111;
+    --color-focus: #e8e8e8;
     --color-danger: #ff7788;
     --color-danger-ink: #070707;
     --color-success: #63b58a;

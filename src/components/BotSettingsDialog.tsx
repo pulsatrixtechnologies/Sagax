@@ -3,7 +3,7 @@
 // bot-settings/; this dialog owns only the fetches (overview, system-prompt,
 // history) and which accordion row is expanded.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Search, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronsRight, Monitor, Search } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
 import type { BotOverview } from "@/lib/bot-overview-types";
@@ -37,6 +37,19 @@ function sectionMatches(entry: (typeof BOT_SECTIONS)[number], query: string): bo
   return [entry.label, sectionLabel(entry), ...entry.keywords].some((part) => part.toLowerCase().includes(query));
 }
 
+const SETTINGS_WIDTH_KEY = "omb-settings-panel-width";
+const SETTINGS_MIN_WIDTH = 320;
+const SETTINGS_MAX_WIDTH = 720;
+const SETTINGS_DEFAULT_WIDTH = 420;
+
+function readSettingsWidth(): number {
+  try {
+    const stored = Number(localStorage.getItem(SETTINGS_WIDTH_KEY));
+    if (Number.isFinite(stored) && stored >= SETTINGS_MIN_WIDTH && stored <= SETTINGS_MAX_WIDTH) return stored;
+  } catch { /* default width */ }
+  return SETTINGS_DEFAULT_WIDTH;
+}
+
 export function BotSettingsDialog({ bot }: { bot: Bot }) {
   const { state, dispatch, flushBotPatches } = useStore();
   const section = state.botSettingsSection;
@@ -46,6 +59,8 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
   // Keep expansion in the store too: header deep links can arrive while
   // this panel is already mounted, including after collapsing the same row.
   const collapsed = !state.botSettingsExpandAccordion;
+  const [settingsWidth, setSettingsWidth] = useState(readSettingsWidth);
+  const settingsResize = useRef<{ x: number; width: number; current: number } | null>(null);
   const q = query.trim().toLowerCase();
   // Slack is offered only where the server has an Admin page to link to
   // (a hosted organisation workspace); otherwise its row does not exist.
@@ -252,10 +267,6 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
             prompt={prompt}
             promptError={promptError}
             onOpen={(target) => dispatch({ type: "toggleSettings", open: true, section: target })}
-            onSetup={derived.canCoordinate && !bot.busy ? () => {
-              dispatch({ type: "toggleSettings", open: false });
-              dispatch({ type: "send", botId: bot.id, text: "/setup", threadId: bot.threadId });
-            } : undefined}
           />
         );
       case "identity":
@@ -322,23 +333,73 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
         role="dialog"
         aria-labelledby="bot-settings-title"
         tabIndex={-1}
-        className="animate-panel-in absolute inset-0 z-40 flex h-full min-w-0 flex-col border-l border-hairline/40 bg-panel outline-none lg:static lg:z-auto lg:w-[min(420px,42vw)] lg:shrink-0"
+        style={{ width: settingsWidth }}
+        className="animate-panel-in relative flex h-full min-w-0 shrink-0 flex-col border-l border-hairline/40 bg-panel outline-none max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-auto"
       >
-        <div className="flex shrink-0 items-center justify-between px-4 py-3">
-          <span id="bot-settings-title" className="truncate text-[15px] font-semibold text-ink">
-            {bot.name}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize settings"
+          aria-valuemin={SETTINGS_MIN_WIDTH}
+          aria-valuemax={SETTINGS_MAX_WIDTH}
+          aria-valuenow={settingsWidth}
+          tabIndex={0}
+          onPointerDown={(event) => {
+            settingsResize.current = { x: event.clientX, width: settingsWidth, current: settingsWidth };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const from = settingsResize.current;
+            if (!from) return;
+            const next = Math.min(SETTINGS_MAX_WIDTH, Math.max(SETTINGS_MIN_WIDTH, from.width + (from.x - event.clientX)));
+            settingsResize.current = { ...from, current: next };
+            setSettingsWidth(next);
+          }}
+          onPointerUp={(event) => {
+            const width = settingsResize.current?.current;
+            if (width == null) return;
+            settingsResize.current = null;
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            try { localStorage.setItem(SETTINGS_WIDTH_KEY, String(width)); } catch { /* session only */ }
+          }}
+          onKeyDown={(event) => {
+            const delta = event.key === "ArrowLeft" ? 24 : event.key === "ArrowRight" ? -24 : 0;
+            if (!delta) return;
+            event.preventDefault();
+            setSettingsWidth((current) => {
+              const next = Math.min(SETTINGS_MAX_WIDTH, Math.max(SETTINGS_MIN_WIDTH, current + delta));
+              try { localStorage.setItem(SETTINGS_WIDTH_KEY, String(next)); } catch { /* session only */ }
+              return next;
+            });
+          }}
+          className="absolute inset-y-0 left-0 z-10 hidden w-1.5 cursor-col-resize hover:bg-accent/40 focus-visible:bg-accent/60 lg:block"
+        />
+        <div className="relative flex h-11 shrink-0 items-center justify-center px-12">
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "toggleSettings", open: true })}
+              aria-label="Back"
+              className="absolute left-2.5 flex size-7 items-center justify-center rounded-full bg-raised text-ink-secondary hover:text-ink"
+            >
+              <ChevronLeft size={16} />
+            </button>
+          )}
+          <span id="bot-settings-title" className="truncate text-[14px] font-semibold text-ink">
+            {collapsed ? "Settings" : sectionLabel(sections.find((entry) => entry.id === section) ?? sections[0])}
           </span>
           <button
             type="button"
             onClick={() => dispatch({ type: "toggleSettings", open: false })}
-            aria-label="Close settings"
-            className="rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
+            aria-label="Close"
+            title="Close"
+            className="absolute right-2.5 flex size-7 items-center justify-center rounded-full bg-raised text-ink-secondary hover:text-ink"
           >
-            <X size={18} className="pointer-events-none" />
+            <ChevronsRight size={15} />
           </button>
         </div>
 
-        <div className="mx-4 mb-2 flex shrink-0 items-center gap-2 rounded-lg bg-control/70 px-2.5 py-2">
+        {!collapsed && <div className="mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-2.5 py-1.5">
           <Search size={14} className="shrink-0 text-ink-secondary" />
           <input
             value={query}
@@ -356,10 +417,56 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
             aria-label="Search settings"
             className="w-full bg-transparent text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
           />
-        </div>
+        </div>}
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          {visibleSections.length === 0 && (
+          {collapsed && !q ? (
+            <div className="flex flex-col gap-4 px-4 py-3">
+              <IdentitySection
+                bot={bot}
+                patch={derived.patch}
+                activeState={derived.activeState}
+                mascotMotion={derived.mascotMotion}
+              />
+              <div className="overflow-hidden rounded-xl border border-hairline/40">
+                {sections.filter((entry) => entry.id !== "identity").map((entry) => {
+                  const Icon = entry.icon;
+                  return (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      onClick={() => dispatch({ type: "toggleSettings", open: true, section: entry.id })}
+                      className="flex w-full items-center gap-2.5 border-b border-hairline/30 px-3 py-2.5 text-left text-[13px] text-ink last:border-b-0 hover:bg-raised/40"
+                    >
+                      <Icon size={15} className="shrink-0 text-ink-secondary" />
+                      <span className="min-w-0 flex-1 truncate">{sectionLabel(entry)}</span>
+                      <ChevronDown size={14} className="-rotate-90 text-ink-secondary" />
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => dispatch({ type: "toggleComputer", open: true })}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-raised/40"
+                >
+                  <Monitor size={15} className="shrink-0 text-ink-secondary" />
+                  <span className="min-w-0 flex-1 truncate">Computer, screen and browser</span>
+                  <ChevronDown size={14} className="-rotate-90 text-ink-secondary" />
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {!collapsed && (
+            <div className="px-3 pb-4">
+              {renderSectionBody(section)}
+            </div>
+          )}
+          {section !== "memory" && (
+            <div hidden>
+              <MemorySection bot={bot} active={false} />
+            </div>
+          )}
+          {collapsed && q && visibleSections.length === 0 && (
             <div className="px-4 py-4 text-[12.5px] leading-relaxed text-ink-secondary">
               Nothing matches “{query.trim()}”
             </div>
@@ -367,7 +474,7 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
           {/* Walk all sections so Memory keeps a stable mount (draft survival)
               even when search filters its row out of view. Other unmatched
               rows are omitted entirely. */}
-          {sections.map((entry) => {
+          {collapsed && q && sections.map((entry) => {
             const { id, icon: Icon } = entry;
             const label = sectionLabel(entry);
             const matched = sectionMatches(entry, q);
@@ -391,8 +498,8 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
                   }}
                   aria-expanded={open}
                   className={cn(
-                    "flex w-full shrink-0 items-center gap-2.5 px-4 py-2.5 text-left text-[14px]",
-                    open ? "bg-control/60 text-ink" : "text-ink-secondary hover:bg-control/40 hover:text-ink",
+                    "flex w-full shrink-0 items-center gap-2.5 px-3 py-2.5 text-left text-[13px]",
+                    open ? "text-ink" : "text-ink-secondary hover:bg-raised/40 hover:text-ink",
                   )}
                 >
                   <Icon size={15} className="shrink-0" />
@@ -408,11 +515,11 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
                 {/* Memory stays mounted (hidden when collapsed) so drafts survive;
                     other sections only mount while expanded. */}
                 {id === "memory" ? (
-                  <div hidden={!open} className="px-4 pb-4 pt-1">
+                  <div hidden={!open} className="px-3 pb-3 pt-0.5">
                     {renderSectionBody("memory")}
                   </div>
                 ) : (
-                  open && <div className="px-4 pb-4 pt-1">{renderSectionBody(id)}</div>
+                  open && <div className="px-3 pb-3 pt-0.5">{renderSectionBody(id)}</div>
                 )}
               </div>
             );

@@ -8,6 +8,10 @@ vi.mock("./DesktopCapabilities", () => ({
   useDesktopCapabilities: () => ({}),
 }));
 
+vi.mock("@/lib/thread-preferences", () => ({
+  useShowThreads: () => true,
+}));
+
 import { ConfirmDialogCard } from "./ConfirmDialog";
 import { BotDeleteMenuItem, BotListItem, botConfirmCopy, currentArchivableBot } from "./Sidebar";
 
@@ -89,50 +93,35 @@ describe("BotListItem", () => {
     expect(markup).not.toContain('aria-label="Archive Atlas"');
   });
 
-  it("shows the Chief of Staff label on its own line under the name", () => {
+  it("keeps the Chief of Staff mark beside the name, not on its own line", () => {
     const withTitle = renderRow(bot({ chiefOfStaff: true, title: "Developer" }));
-    expect(withTitle).toContain("Chief of Staff</span>");
-    // the label sits after the name line, never inside it
-    expect(withTitle.indexOf("Chief of Staff</span>")).toBeGreaterThan(withTitle.indexOf(">Atlas<"));
-
-    const withoutTitle = renderRow(bot({ chiefOfStaff: true }));
-    expect(withoutTitle).toContain("Chief of Staff</span>");
-    expect(withoutTitle.indexOf("Chief of Staff</span>")).toBeGreaterThan(withoutTitle.indexOf(">Atlas<"));
+    expect(withTitle).toContain('data-testid="chief-crown"');
+    expect(withTitle).toContain('aria-label="Chief of Staff"');
+    expect(withTitle).not.toContain("Chief of Staff</span>");
 
     expect(renderRow(bot())).not.toContain("Chief of Staff");
   });
 
-  // matches the title line's own class list (see Sidebar.tsx) — used to
-  // assert the marker element itself is present or absent, since checking
-  // for the title text alone can pass by accident when there's no title.
-  const titleLine = /<div class="truncate text-\[11px\][^"]*">([^<]*)<\/div>/;
+  const titlePill = /<span class="max-w-\[46%\] shrink truncate[^"]*">([^<]*)<\/span>/;
 
-  it("shows the bot's title on its own line above the name, not a badge beside it", () => {
-    // #866 / #871: a badge next to the name always had to fight the name for
-    // width — a long name crushed the badge, and a long title crushed a long
-    // name right back. Its own line above the name never competes with it.
+  it("shows the bot's title as a pill beside the name", () => {
     const markup = renderRow(bot({ title: "Developer" }));
 
-    expect(titleLine.exec(markup)?.[1]).toBe("Developer");
-    expect(markup.indexOf(">Developer<")).toBeLessThan(markup.indexOf(">Atlas<"));
-    // the rename hint is unrelated to the bot's title
+    expect(titlePill.exec(markup)?.[1]).toBe("Developer");
+    expect(markup.indexOf(">Developer<")).toBeGreaterThan(markup.indexOf(">Atlas<"));
     expect(markup).toContain('title="Double-click to rename"');
 
-    expect(titleLine.test(renderRow(bot()))).toBe(false);
-    expect(titleLine.test(renderRow(bot({ title: "  " })))).toBe(false);
+    expect(titlePill.test(renderRow(bot()))).toBe(false);
+    expect(titlePill.test(renderRow(bot({ title: "  " })))).toBe(false);
   });
 
-  it("keeps the title line's own truncate class instead of a shared-line width cap", () => {
-    // renderToStaticMarkup keeps the full text regardless of CSS, so this
-    // can't observe an actual ellipsis — it asserts the title line still
-    // carries `truncate` (so a too-long title clips on its own line) and,
-    // unlike the #871 badge, never a max-width cap shared with the name.
+  it("lets a long title truncate beside the name", () => {
     const longTitle = "Meta-Agent — opensource team maintainer";
     const markup = renderRow(bot({ name: "Team Maintainer", title: longTitle }));
 
-    expect(titleLine.exec(markup)?.[1]).toBe(longTitle);
+    expect(titlePill.exec(markup)?.[1]).toBe(longTitle);
     expect(markup).toContain(">Team Maintainer<");
-    expect(markup).not.toContain("max-w-[45%]");
+    expect(markup).toContain("truncate");
   });
 
   it("shows typing dots instead of preview text while the bot works", () => {
@@ -242,15 +231,15 @@ describe("bot deletion feedback", () => {
   });
 
   describe("quiet rows", () => {
-    const titleLine = /<div class="truncate text-\[11px\][^"]*">([^<]*)<\/div>/;
+    const titlePill = /<span class="max-w-\[46%\] shrink truncate[^"]*">([^<]*)<\/span>/;
 
-    it("reduces an idle bot to its name: no title line, no Chief line, no preview", () => {
+    it("reduces an idle bot to its name: no title pill, no Chief line, no preview", () => {
       const markup = renderRow(bot({
         title: "Developer",
         chiefOfStaff: true,
         messages: [{ id: "b1", role: "bot", kind: "text", text: "Created notes.txt with three lines.", at: 2 }] as Bot["messages"],
       }), true);
-      expect(titleLine.test(markup)).toBe(false);
+      expect(titlePill.test(markup)).toBe(false);
       expect(markup).not.toContain("Chief of Staff</span>");
       expect(markup).not.toContain("Created notes.txt with three lines.");
       expect(markup).toContain(">Atlas<");
@@ -276,9 +265,10 @@ describe("bot deletion feedback", () => {
       expect(markup.indexOf('data-testid="chief-crown"')).toBeGreaterThan(markup.indexOf(">Atlas<"));
     });
 
-    it("changes nothing when off", () => {
-      expect(renderRow(bot({ title: "Developer", chiefOfStaff: true }))).toContain("Chief of Staff</span>");
-      expect(renderRow(bot({ title: "Developer", chiefOfStaff: true }))).not.toContain('data-testid="chief-crown"');
+    it("shows the title pill and the crown when quiet rows are off", () => {
+      const markup = renderRow(bot({ title: "Developer", chiefOfStaff: true }));
+      expect(markup).toContain(">Developer<");
+      expect(markup).toContain('data-testid="chief-crown"');
     });
   });
 });

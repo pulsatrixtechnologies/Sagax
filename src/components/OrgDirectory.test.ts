@@ -56,6 +56,18 @@ describe("OrgDirectory", () => {
     expect(html).toContain("zachary@example.test");
     expect(html).not.toContain("Créer l'organisation");
   });
+  it("shows a pending invite separately from members", () => {
+    const html = render({
+      org: { name: "GOX" },
+      people: [],
+      pendingInvites: [{ email: "zachary@example.test" }],
+      onCreate() {},
+      onInvite() {},
+    }).html;
+    expect(html).toContain("Invitations en attente");
+    expect(html).toContain("zachary@example.test");
+    expect(html).toContain("après avoir accepté");
+  });
   it("keeps the invite address when onInvite fails", async () => {
     const onInvite = vi.fn(() => Promise.reject(new Error("forbidden")));
     const props = { org: { name: "GOX" }, people: [] as { id: string; role: "member" }[], onCreate() {}, onInvite };

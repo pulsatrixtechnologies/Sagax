@@ -5,11 +5,13 @@ import { Card } from "./SettingsPrimitives";
 export function OrgDirectory({
   org,
   people,
+  pendingInvites = [],
   onCreate,
   onInvite,
 }: {
   org: { name: string } | null;
   people: { id: string; role: OrgRole }[];
+  pendingInvites?: { email: string }[];
   onCreate: (name: string) => void;
   onInvite: (email: string) => void;
 }) {
@@ -54,6 +56,17 @@ export function OrgDirectory({
           </li>
         ))}
       </ul>
+      {pendingInvites.length > 0 && (
+        <div className="mt-4">
+          <div className="text-[13px] font-medium text-ink">Invitations en attente</div>
+          <ul className="mt-1">
+            {pendingInvites.map((invite) => (
+              <li key={invite.email} className="py-1 text-[13px] text-ink-secondary">{invite.email}</li>
+            ))}
+          </ul>
+          <p className="mt-1 text-[12px] text-ink-secondary">La personne rejoint la liste seulement après avoir accepté.</p>
+        </div>
+      )}
       <form
         className="mt-4 flex flex-col gap-3"
         onSubmit={async (event: FormEvent) => {

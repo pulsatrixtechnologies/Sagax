@@ -38,8 +38,8 @@ describe("ChannelMembers", () => {
     const botCut = bots.indexOf("Bots");
     expect(bots.slice(0, botCut)).not.toContain("Ajouter");
     expect(bots.slice(botCut)).toContain("Ajouter");
-    expect(humans.match(/Ajouter/g)).toHaveLength(1);
-    expect(bots.match(/Ajouter/g)).toHaveLength(1);
+    expect(humans.match(/aria-label="Ajouter"/g)).toHaveLength(1);
+    expect(bots.match(/aria-label="Ajouter"/g)).toHaveLength(1);
   });
 
   it("calls onAddHuman when Ajouter is clicked", () => {
@@ -83,7 +83,8 @@ describe("ChannelMembers", () => {
 function findAjouter(tree: ReactNode): { props: { onClick?: (event: MouseEvent<HTMLButtonElement>) => void } } | undefined {
   if (!tree || typeof tree !== "object" || !("props" in tree)) return;
   const props = tree.props as { children?: ReactNode; onClick?: (event: MouseEvent<HTMLButtonElement>) => void };
-  if ((tree as { type?: unknown }).type === "button" && props.children === "Ajouter") {
+  const aria = (tree as { props?: { "aria-label"?: string } }).props?.["aria-label"];
+  if ((tree as { type?: unknown }).type === "button" && aria === "Ajouter") {
     return { props };
   }
   const nested = Array.isArray(props.children) ? props.children : [props.children];

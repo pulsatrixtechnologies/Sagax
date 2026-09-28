@@ -64,7 +64,7 @@ export function IdentitySection({
           onChange={(e) => patch({ name: e.target.value })}
         />
       </div>
-      <Field label="Title">
+      <Field label="Label (optional)">
         <ProposalStatus bot={bot} kind="chief" />
         <input
           className={inputCls}
@@ -77,7 +77,7 @@ export function IdentitySection({
       <div className="block">
         <div className="mb-1.5 flex items-center justify-between gap-3">
           <label htmlFor={`bot-instructions-${bot.id}`} className="text-[13px] text-ink-secondary">
-            Blurb
+            Description
           </label>
           <button
             type="button"

@@ -30,10 +30,10 @@ describe("OrgSidebar", () => {
       channels: [{ id: "c1", name: "administration", preview: "Parfait." }],
       directs: [{ id: "b1", name: "Ara" }],
     }));
-    expect(html).toContain("GOX");
+    expect(html).not.toContain("GOX");
     expect(html).toContain("administration");
-    expect(html).toContain("Direct");
-    expect(html).toContain("Ara");
+    expect(html).not.toContain("Direct");
+    expect(html).not.toContain("Ara");
     expect(html).not.toContain("Zephyr");
   });
 
@@ -107,22 +107,21 @@ describe("Sidebar organization column", () => {
     const roster = renderToStaticMarkup(createElement(Sidebar, { open: true, onClose: () => {} }));
     expect(roster).toContain("Atlas");
     expect(roster).not.toContain("Direct");
-    expect(roster).not.toContain("GOX");
 
     notifyOrgColumn("GOX");
     const created = renderToStaticMarkup(createElement(Sidebar, { open: true, onClose: () => {} }));
-    expect(created).toContain("GOX");
-    expect(created).toContain("Direct");
-    expect(created).not.toContain("Atlas");
+    expect(created).not.toContain("GOX");
+    expect(created).not.toContain("Direct");
+    expect(created).toContain("Atlas");
 
     fetchMock.mockResolvedValue(jsonResponse(404, {}) as Response);
     await refreshOrgColumn();
     fetchMock.mockResolvedValue(jsonResponse(200, { org: { name: "GOX" } }) as Response);
     await refreshOrgColumn();
     const loaded = renderToStaticMarkup(createElement(Sidebar, { open: true, onClose: () => {} }));
-    expect(loaded).toContain("GOX");
-    expect(loaded).toContain("Direct");
-    expect(loaded).not.toContain("Atlas");
+    expect(loaded).not.toContain("GOX");
+    expect(loaded).not.toContain("Direct");
+    expect(loaded).toContain("Atlas");
   });
 });
 

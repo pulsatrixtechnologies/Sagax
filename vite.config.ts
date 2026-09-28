@@ -7,14 +7,17 @@ import tailwindcss from "@tailwindcss/vite";
 // The About dialog shows the shipped version; package.json is the one place
 // it is already maintained, so it is inlined at build time rather than
 // round-tripped through the preload bridge (which is absent in dev).
-const { version } = JSON.parse(
+const pkg = JSON.parse(
   readFileSync(fileURLToPath(new URL("./package.json", import.meta.url)), "utf8"),
-) as { version: string };
+) as { version: string; baseVersion?: string; forkVersion?: string };
+const baseVersion = pkg.baseVersion ?? pkg.version;
+const forkVersion = pkg.forkVersion ?? pkg.version;
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
-    __APP_VERSION__: JSON.stringify(version),
+    __APP_VERSION__: JSON.stringify(forkVersion),
+    __BASE_VERSION__: JSON.stringify(baseVersion),
   },
   test: {
     environment: "node",
@@ -24,7 +27,6 @@ export default defineConfig({
       "src/**/*.test.ts",
       "shared/**/*.test.ts",
       "companion/**/*.test.ts",
-      "enterprise/**/*.test.ts",
       "scripts/**/*.test.mjs",
       "scripts/**/*.test.ts",
     ],

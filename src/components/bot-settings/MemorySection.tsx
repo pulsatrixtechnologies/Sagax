@@ -197,8 +197,8 @@ export function MemorySection({ bot, active = true }: { bot: Bot; active?: boole
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl bg-card p-4">
-        <div className="text-[15px] font-medium text-ink">Memory</div>
+      <div className="rounded-xl border border-hairline/40 p-4">
+        <div className="text-[13px] font-medium text-ink">Memory</div>
         <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
           Notes this bot keeps between tasks. They are plain markdown files in a folder on this computer — open them in any
           editor, or in Obsidian.
@@ -222,7 +222,7 @@ export function MemorySection({ bot, active = true }: { bot: Bot; active?: boole
       {overview && <MemoryGauge index={overview.index} />}
 
       {editing && (
-        <div className="rounded-xl bg-card p-4">
+        <div className="rounded-xl border border-hairline/40 p-4">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate font-mono text-[12.5px] text-ink">{editing.path}</span>
             {editing.path !== MEMORY_INDEX && (
@@ -280,7 +280,7 @@ export function MemorySection({ bot, active = true }: { bot: Bot; active?: boole
       )}
 
       {overview && (
-        <div className="rounded-xl bg-card p-4">
+        <div className="rounded-xl border border-hairline/40 p-4">
           <MemoryFileRows
             title="Topic files"
             hint="Longer notes the bot reads on demand. Click one to edit it."
@@ -319,8 +319,8 @@ export function MemorySection({ bot, active = true }: { bot: Bot; active?: boole
         </div>
       )}
 
-      <div className="rounded-xl bg-card p-4">
-        <div className="text-[15px] font-medium text-ink">Changes</div>
+      <div className="rounded-xl border border-hairline/40 p-4">
+        <div className="text-[13px] font-medium text-ink">Changes</div>
         <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
           Every change to these files, whoever made it. Undo puts a file back the way it was before that change.
         </p>
@@ -341,7 +341,7 @@ export function MemoryGauge({ index }: { index: MemoryCapacity }) {
   const status = capacityStatus(index);
   const fill = status.level === "over" ? "bg-danger" : status.level === "near" ? "bg-warning" : "bg-accent";
   return (
-    <div className={cn("rounded-xl p-4", status.level === "over" ? "border border-danger/30 bg-danger/10" : "bg-card")}>
+    <div className={cn("p-1", status.level === "over" && "rounded-xl border border-danger/30 bg-danger/10 p-4")}>
       <div className="flex items-center justify-between gap-3 text-[13px]">
         <span className="font-medium text-ink">How much of MEMORY.md loads</span>
         <span className={cn("text-[12px]", status.level === "over" ? "text-danger" : "text-ink-secondary")}>
@@ -515,7 +515,7 @@ export function MemoryJournalList({
                 <summary className="cursor-pointer text-[12px] text-ink-secondary">
                   +{row.added} −{row.removed} · show what changed
                 </summary>
-                <pre className="mt-1 max-h-[240px] overflow-auto whitespace-pre-wrap rounded-md bg-card p-2 font-mono text-[11.5px] leading-relaxed text-ink">
+                <pre className="mt-1 max-h-[240px] overflow-auto whitespace-pre-wrap rounded-md p-2 font-mono text-[11.5px] leading-relaxed text-ink">
                   {row.diff}
                 </pre>
               </details>

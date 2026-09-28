@@ -4223,7 +4223,16 @@
       "botAccess.grants.verb.modify": "d94eaf69438863a8d5ef755e74e6840048386eefbf0e34f39004d2e9c9157778",
       "botAccess.grants.verb.delete": "e2d0a54968ead24efc0dffa6ac78fc606dceec34a0f586177a74a54cc2272cf8",
       "connectors.grants.limited": "e83d55669994029b942e5ab33607dab85a72227badd0ee08defaf49748c61cf8",
-      "connectors.grants.more": "bdc66b5347d2d9ccedcb5871a3c39fa99a2bd1b64ac6391ecd6d6015217fcf92"
+      "connectors.grants.more": "bdc66b5347d2d9ccedcb5871a3c39fa99a2bd1b64ac6391ecd6d6015217fcf92",
+      "compose.to": "2b5fc5c94f64250c5600c58f0adc9e2ff34e333359d77b7649112fbed3554867",
+      "compose.placeholder": "5c900777271a0d325fa86647eca52f8a3e344fbd5601c9a9ba7d08937d831d94",
+      "compose.placeholderGroup": "05bed5c3a4de786a085c93562005970061b7f308cd675f58b8a127f337eb29c9",
+      "compose.createBot": "f5c2d68dd308472f10a84b6fa939b0f3825e2aa92841bbbb50dbcd53585cba8b",
+      "compose.createGroup": "4587861700d299e64df1a3b58d0a6bc6db9a6f589c408c9ad810fdaa00712797",
+      "compose.newChat": "db18382a249e0206bc28514931d423b77d55dce180c1eb8e4bf35f861c9a50ec",
+      "compose.add": "9fd728c66c9a256b121472dabf32a34317aed01d8427d70ec830289cf23a7cc8",
+      "compose.remove": "c3812fc4acb861d5182fc2b8155f327f736fbe5e5eb86a7bd7afcb6dc5497282",
+      "compose.groupAria": "b3868c3ff65b6312f773d8d5dd9564de983b6f5c26e6b369f6fe93a79c2abca7"
     },
     "hi": {
       "noEngines.title": "af88855a5f80377de709995229ba3907df9e8fb3b940fbf7c0d9cbe6eea54afe",

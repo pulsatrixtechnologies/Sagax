@@ -1972,12 +1972,12 @@ describe("bot settings section", () => {
     expect(next.botSettingsExpandAccordion).toBe(true);
   });
 
-  it("toggleSettings leaves the computer panel and inspector open, closes app settings", () => {
+  it("toggleSettings closes the computer panel and inspector, and app settings", () => {
     const withPanels = { ...initialState, computerOpen: true, inspectorOpen: true, appSettingsOpen: true };
     const next = reducer(withPanels, { type: "toggleSettings", open: true });
     expect(next.settingsOpen).toBe(true);
-    expect(next.computerOpen).toBe(true);
-    expect(next.inspectorOpen).toBe(true);
+    expect(next.computerOpen).toBe(false);
+    expect(next.inspectorOpen).toBe(false);
     expect(next.appSettingsOpen).toBe(false);
   });
 

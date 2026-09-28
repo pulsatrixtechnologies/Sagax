@@ -42,7 +42,7 @@ const prompt: PromptPreviewData = {
 };
 
 describe("OverviewSection", () => {
-  it("offers optional setup ideas without declaring a usable bot unfinished", () => {
+  it("does not offer setup ideas", () => {
     const markup = render(createElement(OverviewSection, {
       overview: { ...sentences, setup: [
         { id: "identity", label: "Identity", done: true, section: "identity" },
@@ -50,12 +50,10 @@ describe("OverviewSection", () => {
         { id: "schedule", label: "Add a routine", done: false, section: "routines" },
       ] }, prompt: null, onOpen: vi.fn(),
     }));
-    expect(markup).toContain("Setup ideas");
-    expect(markup).toContain("You can start chatting now.");
-    expect(markup).toContain("Choose a project folder");
-    expect(markup).not.toContain("Finish setting up");
-    expect(markup).not.toContain("1 of 3 done");
-    expect(markup).not.toContain(">Identity</span>");
+    expect(markup).not.toContain("Setup ideas");
+    expect(markup).not.toContain("Set up with the bot");
+    expect(markup).not.toContain("Choose a project folder");
+    expect(markup).not.toContain("Add a routine");
   });
 
   it("shows Loading… before the overview arrives", () => {

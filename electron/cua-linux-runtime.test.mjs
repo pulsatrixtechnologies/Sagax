@@ -305,7 +305,7 @@ describe.skipIf(process.platform === "win32")("Linux CUA opt-in and lifecycle", 
   });
 
   it("passes the exact packaged candidate and architecture into inspection", async () => {
-    const bundledDriverPath = "/opt/OpenMausBot/resources/cua-linux-x64/cua-driver";
+    const bundledDriverPath = "/opt/Pulsa Bot/resources/cua-linux-x64/cua-driver";
     const context = harness({
       runtimeOptions: { bundledDriverPath, arch: "x64" },
     });

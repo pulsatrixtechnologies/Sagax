@@ -70,7 +70,7 @@ describe("browser installation opt-in", () => {
   });
 
   it("allows an explicitly disabled bot to opt in after the workspace, while its browser destination stays unavailable", () => {
-    expect(switchTag(access(), "Give this bot a built-in browser")).toContain("disabled=");
+    expect(access()).not.toContain("Give this bot a built-in browser");
     fixture.config.features = { browser: true };
     const markup = access();
     const toggle = switchTag(markup, "Give this bot a built-in browser");
@@ -78,7 +78,7 @@ describe("browser installation opt-in", () => {
     expect(toggle).not.toContain("disabled=");
     expect(markup.match(/<button[^>]*>Browser<\/button>/)?.[0]).toContain("disabled=");
     expect(panel(false)).not.toContain("Install the browser engine");
-    expect(panel(true)).toContain("Install the browser engine");
+    expect(panel(true)).not.toContain("Install the browser engine");
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
 

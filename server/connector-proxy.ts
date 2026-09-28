@@ -2,7 +2,7 @@
 //
 // Provider CLIs only see this stdio server. Ordinary MCP traffic is relayed
 // to the configured Composio Session, but connection requests are converted
-// into first-class OpenMausBot chat cards. The agent never authors an auth
+// into first-class Pulsa Bot chat cards. The agent never authors an auth
 // URL and credentials never pass through its transcript.
 // tools/list responses are trimmed to this bot's granted tools as a
 // prompt-time hint; every call is still judged harness-side by the grants
@@ -219,12 +219,12 @@ async function handle(message: Json): Promise<void> {
       const labels = requests.map((r) => (r.alias ? `${r.slug} (${r.alias})` : r.slug)).join(", ");
       send(textResult(
         id,
-        `OpenMausBot showed the user a secure connection card for ${labels}. End this turn now. The app will continue the task automatically after the connection finishes.`,
+        `Pulsa Bot showed the user a secure connection card for ${labels}. End this turn now. The app will continue the task automatically after the connection finishes.`,
       ));
       return;
     }
     if (/WAIT_FOR_CONNECTIONS$/i.test(name)) {
-      send(textResult(id, "OpenMausBot is handling connection completion and will continue the task automatically."));
+      send(textResult(id, "Pulsa Bot is handling connection completion and will continue the task automatically."));
       return;
     }
   }

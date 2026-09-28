@@ -267,13 +267,13 @@ with:
 In the `list_bots` tool definition, change the description's opening sentence from:
 
 ```
-"List the other bots (agents) in your OpenMausBot section, with their model and whether they're busy.
+"List the other bots (agents) in your Pulsa Bot section, with their model and whether they're busy.
 ```
 
 to:
 
 ```
-"List the other bots (agents) in your OpenMausBot section, with their model and what each is doing right now (available, working, waiting on the user, not responding, or unavailable).
+"List the other bots (agents) in your Pulsa Bot section, with their model and what each is doing right now (available, working, waiting on the user, not responding, or unavailable).
 ```
 
 Leave the rest of that description string unchanged.

@@ -278,7 +278,7 @@ describe("OpenMaus-managed Box inventory", () => {
     const inventory = await box.listManagedBoxes(cfg, [{ botId, name: "Conflict", inUse: false }]);
 
     expect(inventory).toMatchObject({ available: false, instances: [] });
-    expect(inventory.problem).toMatch(/no longer has its OpenMausBot owner name/i);
+    expect(inventory.problem).toMatch(/no longer has its Pulsa Bot owner name/i);
     expect(journal.boxCreateRecoverySnapshot()).toContainEqual({ botId, boxId, resolved: true });
     expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
       "GET /api/box/v1/boxes",

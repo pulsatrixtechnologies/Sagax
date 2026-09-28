@@ -1,48 +1,44 @@
 # Licensing
 
-OpenMausBot is open source under the [Apache License 2.0](LICENSE), with one
-carve-out and a few notes.
+Pulsa Bot is a modified distribution of the work originally published as
+OpenMausBot. Both the original work and this distribution are under the
+[Apache License 2.0](LICENSE).
 
-## The carve-out: `enterprise/`
+Copyright 2026 Milind Soni and OpenMausBot contributors. Those notices stay
+in [NOTICE](NOTICE). Apache 2.0 section 6 does not grant trademark rights.
+The OpenMausBot name and mascot are trademarks of Milind Soni. This product
+does not use them as its name. Naming the original project, to say where
+the work came from, is the use the license allows.
 
-Everything under `enterprise/` is source-available under the
-[OpenMausBot Enterprise License](enterprise/LICENSE), not Apache 2.0. You may
-read, build, and evaluate it, and run it freely in development and test.
-Running its features in production needs a license key issued for your
-organisation. Hosting it for third parties or white-labelling the product needs
-a partner agreement.
+## What changed in this distribution
 
-Delete the folder and what remains is the open-source edition: the server
-reports `{"edition":"oss"}` and ordinary standalone operation is unchanged.
-A workspace explicitly configured for hosted sign-in refuses remote access
-without that optional adapter; removing the enterprise layer must not bypass
-its configured sign-in authority. The `open-source edition builds without
-enterprise/` CI job proves the OSS build, boot response and absent adapter
-factory; it does not exercise every hosted HTTP route. The isolated hosted
-workspace tests verify those sign-in and revocation paths separately. The list
-of entitlement ids the server understands is in [`enterprise/FEATURES`](enterprise/FEATURES).
+- The product name is Pulsa Bot.
+- The `enterprise/` directory was removed. That directory was not Apache
+  2.0: its own license forbade redistribution. None of that source is
+  included here, and its license check was not rewritten into this tree.
+  `server/enterprise.ts` already starts the open-source edition when the
+  directory is absent. The server then reports `{"edition":"oss"}`.
+  A workspace configured for hosted sign-in still refuses remote access
+  when that adapter is absent.
 
-The routing rule for new work: could any open-source user want it? Then it goes
-in core, as a public pull request. Organisation-, admin- or tier-flavoured?
-Then it lives in `enterprise/` behind an entitlement. Customer-specific brand,
-skills, packages or connectors belong in that customer's own repository as
-data and configuration, never as a fork.
+## What Apache 2.0 requires when you redistribute
 
-## Contributions
+1. Give recipients a copy of the Apache License 2.0 (`LICENSE`).
+2. State that you changed the files. This file and [NOTICE](NOTICE) record
+   the changes above. Add your own changes the same way.
+3. Keep all copyright, patent, trademark, and attribution notices from
+   the source, including `NOTICE` and [`third_party/`](third_party/).
+4. If you ship a notice file with a binary or a source bundle, include a
+   readable copy of the attribution notices from `NOTICE` (Apache 2.0
+   section 4(d)).
+5. Do not use the OpenMausBot name or mascot as the name of your product.
 
-- Outside `enterprise/`: contribute under Apache 2.0. No DCO sign-off or CLA is
-  required. Submit only code you wrote or have the right to contribute.
-- Inside `enterprise/`: sign the [Contributor License Agreement](CLA.md) once, by
-  commenting on your pull request. It lets the project keep that folder under
-  its own license while still accepting your work.
-- The open-core boundary, the cloud seam and this file are covered by
-  [`CODEOWNERS`](.github/CODEOWNERS): a maintainer reviews changes there.
+Contributions to this tree are under Apache 2.0. No DCO sign-off and no
+CLA are required. Submit only code you wrote or have the right to
+contribute. There is no `enterprise/` directory to contribute to.
 
-## Third-party components and trademarks
+## Third-party components
 
-Bundled third-party software keeps its own licenses; notices, license texts,
-source locations and the SBOM are listed in [NOTICE](NOTICE) and
-[`third_party/`](third_party/). The OpenMausBot name and mascot are trademarks
-of Milind Soni; the Apache License does not grant trademark rights (section 6),
-so a product built on OpenMausBot needs its own name unless a partner agreement
-says otherwise.
+Bundled third-party software keeps its own licenses. Notices, license
+texts, source locations, and the SBOM are listed in [NOTICE](NOTICE) and
+[`third_party/`](third_party/).

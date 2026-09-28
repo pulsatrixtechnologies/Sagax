@@ -195,7 +195,7 @@ export function stateForBot(bot: MascotBotProfile): MausState {
     return "excited";
   }
   if (matches(/\b(overnight|night|background|async|queue|batch|long-running)\b/)) {
-    return "drowsy";
+    return "idle";
   }
   if (matches(/\b(monitor|monitoring|incident|alert|watch|status|uptime)\b/)) {
     return "radar";

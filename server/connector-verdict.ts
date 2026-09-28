@@ -185,7 +185,7 @@ export function connectorRefusalText(denials: ConnectorDenial[]): string {
   return [
     named + " " + (one ? "is" : "are") + " not granted to this bot.",
     "This call was not performed.",
-    "Ask the person to grant " + (one ? "it" : "these tools") + " in OpenMausBot if they want " + (one ? "it" : "them") + " run.",
+    "Ask the person to grant " + (one ? "it" : "these tools") + " in Pulsa Bot if they want " + (one ? "it" : "them") + " run.",
   ].join(" ");
 }
 
@@ -193,7 +193,7 @@ export function connectorRefusalText(denials: ConnectorDenial[]): string {
  * be read, and still points at the person rather than at any tool list. */
 export function connectorUnrecognizedText(invoked: string, reason: string): string {
   return [
-    "A " + invoked + " call arrived in a shape OpenMausBot could not read (" + reason + "), so it was not performed.",
+    "A " + invoked + " call arrived in a shape Pulsa Bot could not read (" + reason + "), so it was not performed.",
     "Send a well-formed call that names the tools to execute.",
     "Ask the person to grant any tool this bot needs.",
   ].join(" ");

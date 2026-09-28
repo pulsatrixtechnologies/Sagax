@@ -62,21 +62,15 @@ export function PermissionsSection({
     <div className="flex flex-col gap-4">
       <div
         className={cn(
-          "rounded-xl border p-4",
-          bot.chiefOfStaff ? "border-accent/40 bg-accent/10" : "border-hairline/40 bg-card",
+          "rounded-xl border border-hairline/40 p-4",
         )}
       >
         <div className="flex items-center gap-3">
-          <span
-            className={cn(
-              "flex size-8 shrink-0 items-center justify-center rounded-lg",
-              bot.chiefOfStaff ? "bg-accent text-white" : "bg-control text-ink-secondary",
-            )}
-          >
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-control text-ink-secondary">
             <Crown size={17} />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[15px] font-medium text-ink">Chief of Staff</div>
+            <div className="text-[13px] font-medium text-ink">Chief of Staff</div>
             <div className="text-[11.5px] text-ink-secondary">One for {sectionName}</div>
           </div>
           <Switch
@@ -110,9 +104,9 @@ export function PermissionsSection({
         {bot.chiefOfStaff && <ProposalStatus bot={bot} kind="owner" />}
       </div>
 
-      <div className="flex items-center justify-between gap-4 rounded-xl bg-card p-4">
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
         <div>
-          <div className="text-[15px] font-medium text-ink">Ask me before contacting other bots</div>
+          <div className="text-[13px] font-medium text-ink">Ask me before contacting other bots</div>
           <div className="mt-0.5 text-[13px] text-ink-secondary">
             {bot.approvePeerComms
               ? "This bot will stop and ask before it reaches out to another bot."
@@ -130,8 +124,8 @@ export function PermissionsSection({
         />
       </div>
 
-      <div className="rounded-xl bg-card p-4">
-        <div className="text-[15px] font-medium text-ink">Approval level</div>
+      <div className="rounded-xl border border-hairline/40 p-4">
+        <div className="text-[13px] font-medium text-ink">Approval level</div>
         <div className="mt-0.5 text-[13px] text-ink-secondary">
           {draft ? "Default for the new bot's threads, routines and delegated work." : "Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread."}
         </div>
@@ -152,12 +146,12 @@ export function PermissionsSection({
         </div>
         {!draft && approvalMode === "full" && trustedModesAvailable && <button
           type="button" disabled={Boolean(bot.busy)}
-          className="mt-3 text-[13px] text-accent hover:underline disabled:opacity-40"
+          className="mt-3 text-[13px] text-ink-secondary hover:text-ink hover:underline disabled:opacity-40"
           onClick={() => { setAllThreads(true); setFullAccessTarget(bot.id); }}
         >Apply Full access to all threads</button>}
         {!draft && ownerOrAdmin === true && <button
           type="button"
-          className="mt-3 block text-[13px] text-accent hover:underline"
+          className="mt-3 block text-[13px] text-ink-secondary hover:text-ink hover:underline"
           onClick={() => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name })}
         >{t("commandAllowlist.manage")}</button>}
       </div>

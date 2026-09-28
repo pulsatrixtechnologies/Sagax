@@ -25,9 +25,12 @@ function orgPeople(state: OrgState): { id: string; role: OrgRole }[] {
   return people;
 }
 
-export function getOrgRoute(state: OrgState) {
+export function getOrgRoute(state: OrgState, now = Date.now()) {
   if (!state.org) return { status: 404 as const };
-  return { status: 200 as const, body: { org: state.org, people: orgPeople(state) } };
+  const pendingInvites = state.invites
+    .filter((invite) => inviteStatus(invite, now) === "open")
+    .map((invite) => ({ email: invite.email, expiresAt: invite.expiresAt }));
+  return { status: 200 as const, body: { org: state.org, people: orgPeople(state), pendingInvites } };
 }
 
 export function createOrgRoute(state: OrgState, input: { name: string; ownerUserId: string; host: OrgRecord["host"] }) {

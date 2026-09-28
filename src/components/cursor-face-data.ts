@@ -89,6 +89,32 @@ export const EXPRESSIONS: Ring[][] = RAW.map((ex, i) =>
 export const EXPRESSION_COUNT = EXPRESSIONS.length
 
 /**
+ * Grok Bot eyes: two identical vertical capsules, level with each other.
+ * Measured from the Grok inbox avatars (about 6 by 10 px on a 54 px body,
+ * gap a little wider than one eye). Placed on the face centre so they sit
+ * where the resting pair already fits inside every body.
+ */
+export const GROK_EYE = { width: 20, height: 36, separation: 52 }
+
+/** Exact capsule outline. Sweep 1 is the cap that bulges toward smaller y. */
+export function grokEyePath(cx: number, cy: number, width = GROK_EYE.width, height = GROK_EYE.height): string {
+  const radius = width / 2
+  const straight = Math.max(0, (height - width) / 2)
+  const left = cx - radius
+  const right = cx + radius
+  const top = cy - straight
+  const bottom = cy + straight
+  const r = radius.toFixed(2)
+  return `M${left.toFixed(2)} ${top.toFixed(2)}A${r} ${r} 0 0 1 ${right.toFixed(2)} ${top.toFixed(2)}L${right.toFixed(2)} ${bottom.toFixed(2)}A${r} ${r} 0 0 1 ${left.toFixed(2)} ${bottom.toFixed(2)}Z`
+}
+
+/** The pair, left then right, centred on the face. */
+export function grokEyePaths(centre: [number, number] = FACE_CENTRE): [string, string] {
+  const half = GROK_EYE.separation / 2
+  return [grokEyePath(centre[0] - half, centre[1]), grokEyePath(centre[0] + half, centre[1])]
+}
+
+/**
  * One mouth per expression: [halfWidth, curve, gap, skew].
  *   curve  + bows the middle down => smile (U);  - => frown
  *   gap    clearance below the lowest eye edge

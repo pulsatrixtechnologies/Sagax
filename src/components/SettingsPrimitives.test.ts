@@ -13,6 +13,7 @@ describe("settings primitives", () => {
     }));
     expect(html).toMatch(/role="group" aria-labelledby="[^"]+"/);
     expect(html).toContain("sm:grid-cols-[minmax(0,1fr)_auto]");
+    expect(html).toContain("sm:gap-4");
     expect(html).toContain('aria-label="App language"');
     expect(html).toContain('<p role="alert">Could not save</p>');
     expect(html).not.toContain("bg-card");
@@ -23,7 +24,8 @@ describe("settings primitives", () => {
       title: "Profile",
       children: createElement(Switch, { checked: true, disabled: true, "aria-label": "Analytics" }),
     }));
-    expect(html).toContain("bg-card");
+    expect(html).toContain("border-hairline/40");
+    expect(html).not.toContain("bg-card");
     expect(html).toContain('type="button" role="switch" aria-checked="true"');
     expect(html).toContain('aria-label="Analytics"');
     expect(html).toContain('disabled=""');

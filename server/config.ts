@@ -466,7 +466,12 @@ const appConfigSchema = z.object({
     ).optional(),
   }).optional(),
   /** Non-secret profile details; aboutMe is shared with every bot. */
-  profile: z.object({ name: optionalText, email: optionalText, aboutMe: z.string().max(24_000).optional() }).optional(),
+  profile: z.object({
+    name: optionalText,
+    email: optionalText,
+    aboutMe: z.string().max(24_000).optional(),
+    avatarUrl: z.string().max(300_000).optional(),
+  }).optional(),
   /** UI language override (BCP-47, lowercase). Empty/absent = follow the
    * system language. Unknown tags degrade to English in the renderer. */
   language: optionalText,

@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import en from "./en.json";
 
 // The product words: the tenant is an "Organization" (US spelling, as in
-// Admin), and one running OpenMausBot is an "installation". A remote one saved
+// Admin), and one running Pulsa Bot is an "installation". A remote one saved
 // in the desktop is a "server" and a bot's or task's directory is a "folder".
 // "Workspace" survives only as Slack's own term, or another product's term.
 const ALLOWED = new Set([

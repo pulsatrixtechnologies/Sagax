@@ -2,7 +2,7 @@
 // Per-bot settings (persona, model, computer) live in BotSettingsDialog — this
 // is the stuff shared by every bot: who you are, your keys, and the
 // machine your bots can borrow.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Archive, Coins, FlaskConical, KeyRound, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
@@ -24,6 +24,7 @@ import { CustomDomainSettings } from "./CustomDomainSettings";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { RemoteComputerSection } from "./RemoteComputerSection";
 import { ConnectedWorkspacesSettings } from "./ConnectedWorkspacesSettings";
+import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { CloudAccountSettings } from "./CloudAccountSettings";
 import { Card, SettingRow, Switch } from "./SettingsPrimitives";
@@ -34,6 +35,7 @@ import { UsageSection } from "./UsageSection";
 import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { WorkspacesSection, workspacesAvailable } from "./WorkspacesSection";
 import { SkinPicker } from "./SkinPicker";
+import { loadSidebarDensity, saveSidebarDensity, subscribeSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { AboutMeSettings } from "./AboutMeSettings";
 import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
@@ -78,43 +80,102 @@ function sectionMatches(section: (typeof SECTIONS)[number], query: string): bool
   return [t(section.labelKey), ...section.keywords].some((part) => part.toLowerCase().includes(query));
 }
 
-/** Name and email save on blur; shared context has its own autosave. */
+function profilePhoto(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read the image"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Could not read the image"));
+      image.onload = () => {
+        const size = 256;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Could not read the image"));
+          return;
+        }
+        const scale = Math.max(size / image.width, size / image.height);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      image.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Name, email, and photo. Shared context has its own autosave. */
 function ProfileFields() {
   const { state, dispatch } = useStore();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(state.config?.profile?.name ?? "");
   const [email, setEmail] = useState(state.config?.profile?.email ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(state.config?.profile?.avatarUrl ?? "");
+  const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
     setName(state.config?.profile?.name ?? "");
     setEmail(state.config?.profile?.email ?? "");
-  }, [state.config?.profile?.name, state.config?.profile?.email]);
+    setAvatarUrl(state.config?.profile?.avatarUrl ?? "");
+  }, [state.config?.profile?.name, state.config?.profile?.email, state.config?.profile?.avatarUrl]);
 
-  const save = () => {
+  const save = (next: { name?: string; email?: string; avatarUrl?: string } = {}) => {
+    const profile = {
+      name: (next.name ?? name).trim(),
+      email: (next.email ?? email).trim().toLowerCase(),
+      avatarUrl: next.avatarUrl ?? avatarUrl,
+    };
     void fetch("/api/config", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ profile: { name: name.trim(), email: email.trim().toLowerCase() } }),
+      body: JSON.stringify({ profile }),
     })
       .then((r) => { if (!r.ok) throw new Error("Profile save failed"); return r.json(); })
       .then((config: ConfigStatus) => {
-        if (config.profile) dispatch({ type: "profileSaved", profile: { name: config.profile.name, email: config.profile.email } });
+        if (config.profile) dispatch({ type: "profileSaved", profile: config.profile });
       })
       .catch(() => {});
   };
 
-  const inputClass =
-    "w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none";
+  const choosePhoto = (file: File | undefined) => {
+    if (!file) return;
+    void profilePhoto(file).then((url) => {
+      setAvatarUrl(url);
+      save({ avatarUrl: url });
+    }).catch(() => {});
+  };
+
+  const initials = (name.trim() || email.trim() || "?").slice(0, 1).toUpperCase();
   return (
     <div className="flex flex-col gap-3">
-      <input aria-label={t("settings.profile.name")} value={name} onChange={(e) => setName(e.target.value)} onBlur={save} placeholder={t("settings.profile.name")} className={inputClass} />
-      <input
-        type="email"
-        aria-label={t("phone.signIn.email")}
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        onBlur={save}
-        placeholder="you@example.com"
-        className={inputClass}
-      />
+      <div className="flex items-center gap-3 rounded-xl border border-hairline/40 px-3 py-2.5">
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="Change avatar"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+            className="flex size-9 items-center justify-center overflow-hidden rounded-full bg-raised text-[13px] font-semibold text-ink"
+          >
+            {avatarUrl ? <img src={avatarUrl} alt="" className="size-full object-cover" /> : initials}
+          </button>
+          {menuOpen && (
+            <div className="absolute left-0 top-full z-10 mt-2 w-40 rounded-xl border border-hairline/50 bg-menu py-1 shadow-xl">
+              <button type="button" onClick={() => { setMenuOpen(false); fileRef.current?.click(); }} className="block w-full px-3 py-2 text-left text-[13px] text-ink hover:bg-raised">Upload photo</button>
+              {avatarUrl && <button type="button" onClick={() => { setAvatarUrl(""); setMenuOpen(false); save({ avatarUrl: "" }); }} className="block w-full px-3 py-2 text-left text-[13px] text-ink hover:bg-raised">Remove photo</button>}
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label="Upload avatar" onChange={(event) => { choosePhoto(event.target.files?.[0]); event.target.value = ""; }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <input aria-label={t("settings.profile.name")} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => save()} placeholder={t("settings.profile.name")} className="w-full bg-transparent text-[14px] font-semibold text-ink placeholder:text-ink-secondary focus:outline-none" />
+          <input type="email" aria-label={t("phone.signIn.email")} value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => save()} placeholder="you@example.com" className="mt-0.5 w-full bg-transparent text-[13px] text-ink-secondary placeholder:text-ink-secondary focus:outline-none" />
+        </div>
+      </div>
       <AboutMeSettings />
     </div>
   );
@@ -367,6 +428,25 @@ function NotificationSoundsRow() {
   );
 }
 
+function SidebarDensityRow() {
+  const density = useSyncExternalStore(subscribeSidebarDensity, loadSidebarDensity, () => "comfortable" as const);
+  const choose = (next: SidebarDensity) => saveSidebarDensity(next);
+  return (
+    <SettingRow title={t("sidebar.density.title")} subtitle={t("sidebar.density.chooseAria")}>
+      <select
+        aria-label={t("sidebar.density.chooseAria")}
+        value={density}
+        onChange={(event) => choose(event.target.value as SidebarDensity)}
+        className="rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[13px] text-ink"
+      >
+        <option value="comfortable">{t("sidebar.density.comfortable")}</option>
+        <option value="compact">{t("sidebar.density.compact")}</option>
+        <option value="icons">{t("sidebar.density.iconsOnly")}</option>
+      </select>
+    </SettingRow>
+  );
+}
+
 function ShowThreadsRow() {
   const enabled = useShowThreads();
   return (
@@ -559,7 +639,7 @@ export function SettingsModal() {
   const ownerOrAdmin = useOwnerOrAdmin();
   const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "desktopWorkspaces")
     .filter((entry) => entry.id !== "desktopWorkspaces" || Boolean(window.ogb?.environments))
-    .filter((entry) => entry.id !== "organization" || Boolean(window.ogb?.organization))
+    .filter((entry) => entry.id !== "organization" || Boolean(window.ogb))
     .filter((entry) => entry.id !== "cloudAccount" || Boolean(window.ogb?.cloudAccount))
     // the operator's screen for other workspaces exists only where a fleet agent does
     .filter((entry) => entry.id !== "workspaces" || workspacesAvailable(state.config))
@@ -636,12 +716,12 @@ export function SettingsModal() {
         aria-modal="true"
         aria-labelledby="app-settings-title"
         tabIndex={-1}
-        className={cn("flex max-h-[calc(100dvh-24px)] w-full overflow-hidden rounded-2xl border border-hairline/50 bg-panel shadow-2xl outline-none", section === "engines" ? "h-[720px] max-w-[1040px]" : "h-[560px] max-w-[860px]")}
+        className="flex h-[min(720px,88dvh)] max-h-[calc(100dvh-24px)] w-full max-w-[min(960px,92vw)] overflow-hidden rounded-2xl border border-hairline/50 bg-panel shadow-2xl outline-none"
       >
         {/* section nav */}
         <span id="app-settings-title" className="sr-only">{t("settings.title")}</span>
-        <nav className="hidden min-h-0 w-[190px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-hairline/40 bg-app/30 p-3 sm:flex">
-          <div className="shrink-0 px-2 py-3 text-[15px] font-semibold text-ink">
+        <nav className="hidden min-h-0 w-[200px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-hairline/40 bg-app/30 p-2.5 sm:flex">
+          <div className="shrink-0 px-2 py-2 text-[13px] font-semibold text-ink">
             {t("settings.title")}
           </div>
           <div className="mb-2 mt-1 flex min-h-8 shrink-0 items-center gap-2 rounded-lg border border-transparent bg-control/70 px-2.5 py-2 focus-within:border-focus">
@@ -683,7 +763,7 @@ export function SettingsModal() {
         </nav>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline/30 px-3 py-3 sm:px-5">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline/30 px-3 py-2.5 sm:px-4">
             <select
               aria-label={t("settings.title")}
               value={section}
@@ -697,7 +777,7 @@ export function SettingsModal() {
                 <option key={id} value={id}>{t(labelKey)}</option>
               ))}
             </select>
-            <span className="hidden text-[15px] font-semibold text-ink sm:block">
+            <span className="hidden text-[13px] font-semibold text-ink sm:block">
               {sectionLabelKey ? t(sectionLabelKey) : null}
             </span>
             <button
@@ -710,13 +790,14 @@ export function SettingsModal() {
             </button>
           </div>
 
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-4 sm:px-5 sm:pb-5">
+          <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-3 py-3 sm:px-4 sm:pb-4">
             <LicenseExpiryBanner config={state.config} />
             {section === "desktopWorkspaces" && <ConnectedWorkspacesSettings />}
-            {section === "organization" && window.ogb?.organization && !remoteActive && <OrganizationSettings />}
+            {section === "organization" && window.ogb && !remoteActive && <OrganizationSettings />}
             {section === "cloudAccount" && window.ogb?.cloudAccount && !remoteActive && <CloudAccountSettings />}
             {section === "general" && (
               <>
+                <ThisComputerSettings />
                 <Card title={t("settings.profile.title")} subtitle={t("settings.profile.sharedSubtitle")}>
                   <ProfileFields />
                 </Card>
@@ -746,6 +827,7 @@ export function SettingsModal() {
                   <SkinPicker />
                 </Card>
                 <div>
+                  <SidebarDensityRow />
                   <ShowThreadsRow />
                   <NotificationSoundsRow />
                   {!remoteActive && <ToolCallsRow />}

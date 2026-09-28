@@ -257,6 +257,7 @@ export function BotAvatar({ bot, size = 44, label, ...mascotProps }: BotAvatarPr
       <MausAvatar
         bodyId={bot.mascotBody ?? undefined}
         {...mascotProps}
+        showMouth={false}
         color={bot.color}
         size={size}
         label={label ?? bot.name}

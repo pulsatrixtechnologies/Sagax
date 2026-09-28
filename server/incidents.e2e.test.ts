@@ -68,7 +68,7 @@ it("reports a crashed run to the Chief, who retries it from the incidents thread
     // …and a turn of its own carrying the report, marked as not from the person.
     const chiefRun = await dump(incidents.threadId);
     const prompt = JSON.stringify(chiefRun.prompt);
-    expect(prompt).toContain("[Incident report from OpenMausBot — not from the person.");
+    expect(prompt).toContain("[Incident report from Pulsa Bot — not from the person.");
     expect(prompt).toContain("Ada's run in its thread #Reconcile the September invoices. failed");
     expect(prompt).toContain("Reconcile the September invoices.");
     expect(prompt).toContain(`retry_thread with bot_id \\"${ada.id}\\" and thread_id \\"${ada.activeTaskId}\\"`);

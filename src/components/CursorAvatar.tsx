@@ -31,6 +31,7 @@ import {
   GAZE_TRAVEL,
   MOUTHS,
   MOUTH_STROKE,
+  grokEyePaths,
   mouthFrame,
   type Ring,
 } from "./cursor-face-data"
@@ -487,8 +488,8 @@ export const POOLS = {
     13
   ],
   idle: [
-    6,
     0,
+    6,
     8
   ],
   listening: [
@@ -1190,7 +1191,7 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
       paused = false,
       silhouette = DEFAULT_SILHOUETTE,
       gradient = DEFAULT_GRADIENT,
-      eyeColor = "#ffffff",
+      eyeColor = "#000000",
       title,
       className,
       style,
@@ -1353,8 +1354,18 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
         const radians = (((p.turn ?? 0) + spinTurn) * Math.PI) / 180
         const base = p.eyeScale ?? 1
         const blink = blinkScale(e, now)
-
-        rings.forEach((ring, index) => {
+        // Bot faces (no mouth) use Grok's two identical capsules. Expression
+        // rings are uneven and tilt, which is not that face.
+        if (p.showMouth === false) {
+          const shift = `translate(${gx.toFixed(2)} ${gy.toFixed(2)})`
+          grokEyePaths().forEach((d, index) => {
+            const el = index === 0 ? eye0.current : eye1.current
+            if (!el) return
+            el.setAttribute('d', d)
+            el.setAttribute('transform', base === 1 ? shift : `translate(${FACE_CENTRE[0]} ${FACE_CENTRE[1]}) scale(${base.toFixed(4)}) translate(${(-FACE_CENTRE[0]).toFixed(2)} ${(-FACE_CENTRE[1]).toFixed(2)}) ${shift}`)
+            el.style.opacity = '1'
+          })
+        } else rings.forEach((ring, index) => {
           const el = index === 0 ? eye0.current : eye1.current
           if (!el) return
           const c = ringCentre(ring)

@@ -52,7 +52,7 @@ export const HELP_UI = `renderer (needs a ui launch handle; every verb takes --u
   ui wait-settle --ui HANDLE [--timeout 30]
   ui help`;
 
-export const HELP = `control-omb — verify a running OpenMausBot instance through its shared MCP core
+export const HELP = `control-omb — verify a running Pulsa Bot instance through its shared MCP core
 
 read-only:
   doctor [--url URL]
@@ -127,7 +127,7 @@ function configuredUrl(raw: unknown, env: NodeJS.ProcessEnv, requiredForMutation
   if (!explicit) {
     if (requiredForMutation) {
       throw new ControlOmbError(
-        "mutating commands require an explicit OpenMausBot instance",
+        "mutating commands require an explicit Pulsa Bot instance",
         "start `control-omb launch`, then pass its URL with --url",
       );
     }

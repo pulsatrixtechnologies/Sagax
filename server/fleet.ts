@@ -55,7 +55,7 @@ export function agentUnit(spec: { node: string; script: string; operator: string
   return [
     "# Written by `openmausbot fleet init`. The operator workspace creates and manages workspaces through this.",
     "[Unit]",
-    "Description=OpenMausBot fleet agent",
+    "Description=Pulsa Bot fleet agent",
     "After=network-online.target",
     "Wants=network-online.target",
     "",
@@ -153,7 +153,7 @@ export function templateUnit(spec: { node: string; script: string; layout?: Flee
   return [
     "# Written by `openmausbot fleet init`. One unit for every workspace: %i is the slug.",
     "[Unit]",
-    "Description=OpenMausBot workspace %i",
+    "Description=Pulsa Bot workspace %i",
     "After=network-online.target openmausbot-fence.service",
     "Wants=network-online.target",
     "Requires=openmausbot-fence.service",
@@ -188,7 +188,7 @@ export function fenceUnit(layout = fleetLayout()): string {
   return [
     "# Written by `openmausbot fleet init`: keeps each workspace's loopback ports to its own user.",
     "[Unit]",
-    "Description=OpenMausBot per-workspace loopback fence",
+    "Description=Pulsa Bot per-workspace loopback fence",
     "",
     "[Service]",
     "Type=oneshot",

@@ -27,7 +27,7 @@ export function AboutMeSettings() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <label htmlFor="profile-about-me" className="text-[14px] text-ink">{t("settings.profile.aboutMe")}</label>
+        <label htmlFor="profile-about-me" className="text-[13px] text-ink">{t("settings.profile.aboutMe")}</label>
         <details className="group relative">
           <summary title={t("settings.profile.aboutMeHelp")} aria-label={t("settings.profile.aboutMeHelp")}
             className="flex size-6 cursor-pointer list-none items-center justify-center rounded-md text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 [&::-webkit-details-marker]:hidden">
@@ -41,7 +41,7 @@ export function AboutMeSettings() {
       <textarea id="profile-about-me" value={value} rows={5} maxLength={24_000}
         onChange={(event) => controller.edit(event.target.value)}
         onBlur={() => void flush()}
-        className="min-h-[120px] w-full resize-y rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink focus:border-hairline focus:outline-none"
+        className="min-h-[96px] w-full resize-y rounded-lg border border-hairline/40 bg-transparent px-3 py-2 text-[13px] text-ink focus:border-hairline focus:outline-none"
       />
       <div className="min-h-4 text-[12px]" role="status">
         {status === "saving" && <span className="text-ink-secondary">{t("settings.profile.saving")}</span>}

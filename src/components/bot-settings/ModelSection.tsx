@@ -15,13 +15,13 @@ export function ModelSection({ bot }: { bot: Bot }) {
   const modelVariants = state.instances.find((instance) => instance.instanceId === bot.modelSelection.instanceId)?.capabilities?.modelVariants;
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl bg-card p-4">
+      <div className="rounded-xl border border-hairline/40 p-4">
         <ModelPicker
           bot={bot}
           contained
           label={
             <div>
-              <div className="text-[15px] font-medium text-ink">Default model</div>
+              <div className="text-[13px] font-medium text-ink">Default model</div>
               <div className="mt-0.5 text-[13px] text-ink-secondary">
                 {draft ? "Starting model for the new bot and its threads." : "For groups and new threads. Also updates the selected idle thread; other existing threads keep their model."}
               </div>
@@ -34,10 +34,10 @@ export function ModelSection({ bot }: { bot: Bot }) {
       {/* Share the model picker's effort choices, but edit the profile default. */}
       <EffortRow
         bot={bot}
-        className="rounded-xl bg-card p-4"
+        className="rounded-xl border border-hairline/40 p-4"
         label={
           <div>
-            <div className="text-[15px] font-medium text-ink">{modelVariants ? "Reasoning" : "Effort"}</div>
+            <div className="text-[13px] font-medium text-ink">{modelVariants ? "Reasoning" : "Effort"}</div>
             {/* Says what the app does, not what the engine ends up at:
                 Codex applies a level to the whole thread and has no way to
                 take one back, so "currently: engine default" was a promise

@@ -26,8 +26,17 @@ describe("org routes", () => {
           { id: "ada@example.test", role: "admin" },
           { id: "zachary@example.test", role: "member" },
         ],
+        pendingInvites: [],
       },
     });
+  });
+  it("lists an open invite without treating it as a member", () => {
+    const state = emptyOrgState();
+    createOrgRoute(state, { name: "GOX", ownerUserId: "jc", host: { kind: "this-computer" } });
+    issueInviteRoute(state, { actorId: "jc", email: "zachary@example.test", now: 1_000, token: "tok" });
+    const body = getOrgRoute(state, 2_000).body;
+    expect(body?.people).toEqual([{ id: "jc", role: "owner" }]);
+    expect(body?.pendingInvites).toEqual([{ email: "zachary@example.test", expiresAt: 1_000 + 7 * 24 * 60 * 60 * 1000 }]);
   });
   it("joins once and reports already-member the second time", () => {
     const state = emptyOrgState();

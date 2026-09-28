@@ -2,7 +2,7 @@
 
 When an Organization shares packages with its members, or a partner shares
 them with its Customers, Admin builds a catalog for each receiving
-Organization. A connected OpenMausBot desktop keeps a verified copy of that
+Organization. A connected Pulsa Bot desktop keeps a verified copy of that
 catalog and of each package's release file, so **Templates → From
 {Organization}** can show and add them. This page describes the desktop's half
 of that channel: Electron main. The runtime's shelf, the Add button and the
@@ -133,8 +133,8 @@ Main waits 5 s after a snapshot arrives and sends only the newest one.
 
 | Desktop \ Admin | Admin without `capabilities.library` | Admin with it |
 |---|---|---|
-| OpenMausBot before this channel | as before | ignores the pointer, stays connected |
-| OpenMausBot with it | no library request, no shelf; file import and export work | the shelf |
+| Pulsa Bot before this channel | as before | ignores the pointer, stays connected |
+| Pulsa Bot with it | no library request, no shelf; file import and export work | the shelf |
 | No organization account | as before | — |
 
 This channel and the runtime's handler for `openmausbot:managed-library`

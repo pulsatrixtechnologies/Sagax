@@ -27,6 +27,13 @@ export function loadSidebarDensity(storage?: Pick<Storage, "getItem"> | null): S
   }
 }
 
+const densityListeners = new Set<() => void>();
+
+export function subscribeSidebarDensity(listener: () => void): () => void {
+  densityListeners.add(listener);
+  return () => densityListeners.delete(listener);
+}
+
 export function saveSidebarDensity(
   density: SidebarDensity,
   storage?: Pick<Storage, "setItem"> | null,
@@ -38,6 +45,7 @@ export function saveSidebarDensity(
     // Private browsing and locked-down webviews may reject localStorage.
     // The in-memory React state still makes the control useful this session.
   }
+  for (const listener of densityListeners) listener();
 }
 
 export function parseSidebarAttentionPinned(value: string | null): boolean {

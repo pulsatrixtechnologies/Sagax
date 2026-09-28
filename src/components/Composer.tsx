@@ -30,6 +30,9 @@ import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { PlaceChip } from "./PlaceChip";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
+import { ModelPicker } from "./ModelPicker";
+import { CallButton } from "./CallView";
+import { GroupCallButton } from "./GroupCallView";
 import { CommandAllowlistDialog } from "./CommandAllowlistDialog";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import {
@@ -1143,6 +1146,9 @@ export function Composer({
             className="block max-h-[9rem] min-h-6 w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[15px] leading-6 placeholder:text-ink-secondary focus:outline-none"
           />
           <div className="flex items-center gap-1">
+          {bot && !group && !remoteClient && (
+            <ModelPicker inComposer key={bot.threadId} bot={bot} threadId={threadId} />
+          )}
           {/* Stop stays a stop. Stop-then-steer is named beside the queued
               message above, where its effect is visible before activation. */}
           {busy && !locked && (
@@ -1163,13 +1169,15 @@ export function Composer({
               "flex size-8 shrink-0 items-center justify-center rounded-full",
               recording
                 ? "animate-pulse bg-danger/20 text-danger"
-                : "text-ink-secondary hover:bg-raised hover:text-ink",
+                : "text-ink-secondary ring-1 ring-hairline/60 hover:bg-raised hover:text-ink",
             )}
             title={recording ? t("composer.dictation.stopHint") : t("composer.dictation.hint")}
           >
             <Mic size={18} />
           </button>
         )}
+        {bot && !group && <CallButton bot={bot} />}
+        {group && <GroupCallButton group={group} members={members ?? []} />}
         {hasContent && !locked && (
           <button
             onClick={send}
