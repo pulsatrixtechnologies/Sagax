@@ -1,6 +1,6 @@
-import { createElement } from "react";
+import { createElement, type MouseEvent, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ChannelMembers } from "./ChannelMembers";
 
@@ -41,4 +41,31 @@ describe("ChannelMembers", () => {
     expect(humans.match(/Ajouter/g)).toHaveLength(1);
     expect(bots.match(/Ajouter/g)).toHaveLength(1);
   });
+
+  it("calls onAddHuman when Ajouter is clicked", () => {
+    const onAddHuman = vi.fn();
+    const tree = ChannelMembers({
+      humans: [{ id: "zachary@example.test" }],
+      bots: [{ id: "aurora", name: "Aurora" }],
+      canAddHuman: true,
+      canAddBot: false,
+      onAddHuman,
+    });
+    const button = findAjouter(tree);
+    button?.props.onClick?.({} as MouseEvent<HTMLButtonElement>);
+    expect(onAddHuman).toHaveBeenCalledOnce();
+  });
 });
+
+function findAjouter(tree: ReactNode): { props: { onClick?: (event: MouseEvent<HTMLButtonElement>) => void } } | undefined {
+  if (!tree || typeof tree !== "object" || !("props" in tree)) return;
+  const props = tree.props as { children?: ReactNode; onClick?: (event: MouseEvent<HTMLButtonElement>) => void };
+  if ((tree as { type?: unknown }).type === "button" && props.children === "Ajouter") {
+    return { props };
+  }
+  const nested = Array.isArray(props.children) ? props.children : [props.children];
+  for (const child of nested) {
+    const found = findAjouter(child);
+    if (found) return found;
+  }
+}

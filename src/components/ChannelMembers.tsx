@@ -1,10 +1,12 @@
-// Presentational roster. The booleans only hide controls. Placement stays on the server.
+// Presentational roster. The booleans only hide controls. Ajouter calls the matching callback.
 
 export function ChannelMembers(props: {
   humans: { id: string }[];
   bots: { id: string; name: string }[];
   canAddHuman: boolean;
   canAddBot: boolean;
+  onAddHuman?: () => void;
+  onAddBot?: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -16,7 +18,7 @@ export function ChannelMembers(props: {
           ))}
           {props.canAddHuman && (
             <li>
-              <button type="button" className="rounded-md px-2 py-1 text-left text-[13px] text-ink-secondary hover:bg-raised hover:text-ink">
+              <button type="button" onClick={() => props.onAddHuman?.()} className="rounded-md px-2 py-1 text-left text-[13px] text-ink-secondary hover:bg-raised hover:text-ink">
                 Ajouter
               </button>
             </li>
@@ -31,7 +33,7 @@ export function ChannelMembers(props: {
           ))}
           {props.canAddBot && (
             <li>
-              <button type="button" className="rounded-md px-2 py-1 text-left text-[13px] text-ink-secondary hover:bg-raised hover:text-ink">
+              <button type="button" onClick={() => props.onAddBot?.()} className="rounded-md px-2 py-1 text-left text-[13px] text-ink-secondary hover:bg-raised hover:text-ink">
                 Ajouter
               </button>
             </li>
