@@ -12,3 +12,25 @@ export function canSeeChannel(input: { humanIds: string[]; viewerId: string }): 
 export function canSeeDirectBot(input: { ownerUserId: string; viewerId: string; directGrants: string[] }): boolean {
   return input.viewerId === input.ownerUserId || input.directGrants.includes(input.viewerId);
 }
+
+/** Signed-in owner, admin, or member: email, else userId. Loopback and a
+ * session with no user id have no viewer id and see every group. Admin
+ * scope does not skip the humanIds check. */
+export function channelViewerId(auth: {
+  kind: string;
+  session?: { email?: string; userId?: string };
+}): string | undefined {
+  if (auth.kind !== "session") return undefined;
+  const email = auth.session?.email?.trim();
+  if (email) return email;
+  const userId = auth.session?.userId?.trim();
+  if (userId && !userId.startsWith("portal:")) return userId;
+  return undefined;
+}
+
+/** The GET /api/groups filter. No viewer id (local operator) sees every
+ * group. A signed-in id sees a channel only when canSeeChannel is true. */
+export function seesChannel(group: { humanIds?: string[] }, viewerId: string | undefined): boolean {
+  if (!viewerId) return true;
+  return canSeeChannel({ humanIds: group.humanIds ?? [], viewerId });
+}

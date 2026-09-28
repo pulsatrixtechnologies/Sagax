@@ -540,7 +540,7 @@ import {
   type PhoneSecretContext,
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
-import { canSeeChannel, canSeeDirectBot } from "./channel-visibility.ts";
+import { canSeeDirectBot, channelViewerId, seesChannel } from "./channel-visibility.ts";
 import { roleOf, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
@@ -4442,8 +4442,8 @@ interface SseClient {
   /** Who is watching, for bot visibility; a member's stream is narrowed to
    * what that person may see once any bot is restricted. */
   viewer: Viewer;
-  /** Channel and Direct membership id. Absent for loopback, admin, and a
-   * local session with no userId, which see every group. */
+  /** Channel and Direct membership id. Absent for loopback and a local
+   * session with no userId, which see every group. */
   viewerId?: string;
   /** The bots and rooms this stream has been shown (bot-visibility.ts). */
   seen: StreamSeen;
@@ -13081,23 +13081,6 @@ const orgState: OrgState = {
 function channelActorId(auth: RequestAuth): string {
   if (auth.kind === "session") return (auth.session.email ?? auth.session.userId ?? auth.session.id).trim();
   return (cfg.profile?.email ?? "local-owner").trim();
-}
-
-/** Member id for channel and Direct filters. Loopback, admin, and a local
- * session with no userId see everything, like SEES_EVERYTHING. */
-function channelViewerId(auth: RequestAuth): string | undefined {
-  if (auth.kind === "loopback" || auth.scopes.includes("admin")) return undefined;
-  if (auth.kind !== "session") return undefined;
-  const email = auth.session.email?.trim();
-  if (email) return email;
-  const userId = auth.session.userId?.trim();
-  if (userId && !userId.startsWith("portal:")) return userId;
-  return undefined;
-}
-
-function seesChannel(group: { humanIds?: string[] }, viewerId: string | undefined): boolean {
-  if (!viewerId) return true;
-  return canSeeChannel({ humanIds: group.humanIds ?? [], viewerId });
 }
 
 function seesDirectBot(bot: { ownerUserId?: unknown; directGrants?: unknown }, viewerId: string | undefined): boolean {
