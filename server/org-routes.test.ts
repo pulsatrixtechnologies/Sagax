@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseStoredConfig } from "./config.ts";
-import { acceptInviteRoute, createOrgRoute, issueInviteRoute, type OrgState } from "./org-routes.ts";
+import { acceptInviteRoute, createOrgRoute, getOrgRoute, issueInviteRoute, type OrgState } from "./org-routes.ts";
 import { requiredScope } from "./request-auth.ts";
 
 function emptyOrgState(): OrgState {
@@ -8,6 +8,26 @@ function emptyOrgState(): OrgState {
 }
 
 describe("org routes", () => {
+  it("returns 404 when there is no organization", () => {
+    expect(getOrgRoute(emptyOrgState())).toEqual({ status: 404 });
+  });
+  it("returns the stored org and people from signIn plus the owner", () => {
+    const state = emptyOrgState();
+    createOrgRoute(state, { name: "GOX", ownerUserId: "jc", host: { kind: "this-computer" } });
+    state.signIn.admins = ["ada@example.test"];
+    state.signIn.members = ["zachary@example.test"];
+    expect(getOrgRoute(state)).toEqual({
+      status: 200,
+      body: {
+        org: { name: "GOX", ownerUserId: "jc", host: { kind: "this-computer" } },
+        people: [
+          { id: "jc", role: "owner" },
+          { id: "ada@example.test", role: "admin" },
+          { id: "zachary@example.test", role: "member" },
+        ],
+      },
+    });
+  });
   it("joins once and reports already-member the second time", () => {
     const state = emptyOrgState();
     createOrgRoute(state, { name: "GOX", ownerUserId: "jc", host: { kind: "this-computer" } });
@@ -35,6 +55,7 @@ describe("org routes", () => {
   });
   it("lets a non-member accept an invite at client scope", () => {
     expect(requiredScope("POST", "/api/org/invites/tok/accept")).toBe("client");
+    expect(requiredScope("GET", "/api/org")).toBe("client");
     expect(requiredScope("POST", "/api/org")).toBe("admin");
     expect(requiredScope("POST", "/api/org/invites")).toBe("admin");
   });

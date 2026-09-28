@@ -353,6 +353,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // Accepting an invite is how a person who is not yet a member joins.
   // Creating the org and issuing invites stay admin (owner/admin in the handler).
   { methods: ["POST"], path: /^\/api\/org\/invites\/[^/]+\/accept$/ },
+  { methods: ["GET"], path: /^\/api\/org$/ },
 ];
 
 export function requiredScope(method: string, path: string, features: { sharedComputers?: boolean } = {}): Scope {

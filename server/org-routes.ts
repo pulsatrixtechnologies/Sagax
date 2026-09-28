@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { acceptInvite, roleOf, type OrgInvite } from "./org-directory.ts";
+import { acceptInvite, roleOf, type OrgInvite, type OrgRole } from "./org-directory.ts";
 import { createOrg, issueInvite, memberListsAfterAccept, type OrgRecord } from "./org-record.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
@@ -8,6 +8,26 @@ export interface OrgState {
   org: OrgRecord | null;
   invites: OrgInvite[];
   signIn: { admins: string[]; members: string[] };
+}
+
+function orgPeople(state: OrgState): { id: string; role: OrgRole }[] {
+  if (!state.org) return [];
+  const lists = { ownerUserId: state.org.ownerUserId, admins: state.signIn.admins, members: state.signIn.members };
+  const people: { id: string; role: OrgRole }[] = [];
+  const seen = new Set<string>();
+  for (const id of [state.org.ownerUserId, ...state.signIn.admins, ...state.signIn.members]) {
+    if (seen.has(id)) continue;
+    const role = roleOf({ ...lists, userId: id });
+    if (!role) continue;
+    seen.add(id);
+    people.push({ id, role });
+  }
+  return people;
+}
+
+export function getOrgRoute(state: OrgState) {
+  if (!state.org) return { status: 404 as const };
+  return { status: 200 as const, body: { org: state.org, people: orgPeople(state) } };
 }
 
 export function createOrgRoute(state: OrgState, input: { name: string; ownerUserId: string; host: OrgRecord["host"] }) {
@@ -71,6 +91,10 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
   const now = deps.now ?? Date.now;
   const token = deps.token ?? (() => randomBytes(16).toString("hex"));
   return async ({ req, res, path, method, auth, json, readBody }) => {
+    if (method === "GET" && path === "/api/org") {
+      const result = getOrgRoute(deps.state);
+      return json(res, result.status, result.body ?? {});
+    }
     if (method !== "POST") return PASS;
     if (path === "/api/org") {
       const body = await readBody(req);

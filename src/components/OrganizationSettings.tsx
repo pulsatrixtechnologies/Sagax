@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { ManagedDesktopState } from "../../electron/managed-desktop.mjs";
+import type { OrgRole } from "../../server/org-directory.ts";
 import { activeLocale, t } from "@/lib/i18n";
+import { api, ApiError } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { CompanyModels } from "./CompanyModels";
+import { OrgDirectory } from "./OrgDirectory";
 
 const providerNames: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter" };
 const DEFAULT_PORTAL_ORIGIN = "https://admin.openmausbot.com";
@@ -19,6 +22,8 @@ export function OrganizationSettings() {
   const generation = useRef(0);
   const revision = useRef(0);
   const status = useRef<ManagedDesktopState["status"] | undefined>(undefined);
+  const [org, setOrg] = useState<{ name: string } | null>(null);
+  const [people, setPeople] = useState<{ id: string; role: OrgRole }[]>([]);
 
   const acceptConnection = (next: ManagedDesktopState) => {
     const changed = status.current !== next.status;
@@ -52,6 +57,29 @@ export function OrganizationSettings() {
     return () => { generation.current++; unsubscribe?.(); };
   }, [bridge]);
 
+  const loadOrg = (alive = () => true) =>
+    api<{ org: { name: string }; people?: { id: string; role: OrgRole }[] }>("/api/org")
+      .then((body) => {
+        if (!alive()) return;
+        setOrg({ name: body.org.name });
+        setPeople(body.people ?? []);
+      })
+      .catch((error) => {
+        if (!alive()) return;
+        if (error instanceof ApiError && error.status === 404) {
+          setOrg(null);
+          setPeople([]);
+        }
+      });
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadOrg(() => !cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const perform = async (action: () => Promise<ManagedDesktopState>) => {
     if (!bridge || pending.current) return;
     pending.current = true;
@@ -72,7 +100,23 @@ export function OrganizationSettings() {
     }
   };
 
-  if (!bridge) return <p className="text-[13px] text-ink-secondary">{t("organization.desktopOnly")}</p>;
+  const directory = (
+    <OrgDirectory
+      org={org}
+      people={people}
+      onCreate={(name) => {
+        void api("/api/org", { method: "POST", body: JSON.stringify({ name, host: { kind: "this-computer" } }) }).then(() => loadOrg());
+      }}
+      onInvite={(email) => {
+        void api("/api/org/invites", { method: "POST", body: JSON.stringify({ email }) }).then(() => loadOrg());
+      }}
+    />
+  );
+
+  if (!bridge) return <>
+    {directory}
+    <p className="text-[13px] text-ink-secondary">{t("organization.desktopOnly")}</p>
+  </>;
   // Unavailable can still hold a saved grant; let the person clear it before
   // reconnecting even while the Admin portal or local runtime is offline.
   const enrolled = connection?.status === "connected" || connection?.status === "reauth-required" || connection?.status === "unavailable" || connection?.status === "license-expired";
@@ -84,6 +128,7 @@ export function OrganizationSettings() {
   const dateLabel = date && Number.isFinite(date.getTime())
     ? new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium", timeStyle: "short" }).format(date) : null;
   return <>
+    {directory}
     <p className="text-[13px] leading-relaxed text-ink-secondary">{t("organization.additive")}</p>
     <Card title={t("settings.section.organization")} subtitle={t("organization.privacy")}>
       {!connection && <p role="status" className="text-[13px] text-ink-secondary">{error || t("organization.loading")}</p>}
