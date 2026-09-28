@@ -6,6 +6,7 @@ import { api, ApiError } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { CompanyModels } from "./CompanyModels";
 import { OrgDirectory } from "./OrgDirectory";
+import { notifyOrgColumn } from "./org-column";
 
 const providerNames: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter" };
 const DEFAULT_PORTAL_ORIGIN = "https://admin.openmausbot.com";
@@ -116,7 +117,9 @@ export function OrganizationSettings() {
           people={people}
           onCreate={async (name) => {
             try {
-              await api("/api/org", { method: "POST", body: JSON.stringify({ name, host: { kind: "this-computer" } }) });
+              const created = await api<{ org?: { name?: string } }>("/api/org", { method: "POST", body: JSON.stringify({ name, host: { kind: "this-computer" } }) });
+              const createdName = typeof created.org?.name === "string" ? created.org.name : name;
+              notifyOrgColumn(createdName);
               await loadOrg();
             } catch {
               setDirectoryError("Impossible de créer l'organisation.");

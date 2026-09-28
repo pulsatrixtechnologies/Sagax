@@ -1,6 +1,6 @@
 import { track } from "@/lib/analytics";
 import { OrganizationIdentity } from "./OrganizationIdentity";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   Activity,
@@ -32,7 +32,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { api, ApiError, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
+import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
 import { canSeeDirectBot } from "../../server/channel-visibility.ts";
 import { peerLine } from "@/lib/peer-message";
 import { liveActivityLabel } from "@/lib/live-activity";
@@ -102,6 +102,7 @@ import { attentionJumpAction, AttentionThreadRows, crossBotAttentionThreads, Sid
 import { SidebarAttentionPanel } from "./SidebarAttentionPanel";
 import { ShortcutHint } from "./ShortcutHint";
 import { OrgSidebar, OrgSidebarNav } from "./OrgSidebar";
+import { orgColumnSnapshot, refreshOrgColumn, subscribeOrgColumn } from "./org-column";
 
 const SECTION_LABEL_KEYS: Record<string, LocaleKey> = {
   [PINNED_SECTION_ID]: "sidebar.section.pinned",
@@ -1630,7 +1631,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   } | null>(null);
   const [query, setQuery] = useState("");
   // null on 404 and on any other failure, so the roster stays.
-  const [org, setOrg] = useState<{ name: string } | null>(null);
+  const org = useSyncExternalStore(subscribeOrgColumn, orgColumnSnapshot, orgColumnSnapshot);
   const [density, setDensityState] = useState<SidebarDensity>(() => loadSidebarDensity());
   const [lastExpandedDensity, setLastExpandedDensity] = useState<Exclude<SidebarDensity, "icons">>(() => {
     const saved = loadSidebarDensity();
@@ -1705,21 +1706,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   }, [teamFeedback]);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const body = await api<{ org?: { name?: string } }>("/api/org");
-        if (cancelled) return;
-        const name = body.org?.name;
-        if (typeof name === "string") setOrg({ name });
-      } catch (error) {
-        if (cancelled) return;
-        if (error instanceof ApiError && error.status === 404) setOrg(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    void refreshOrgColumn();
   }, []);
 
 

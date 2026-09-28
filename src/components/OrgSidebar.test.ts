@@ -1,8 +1,27 @@
 import { createElement, type MouseEvent, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Bot } from "@/state/store";
+
+const harness = vi.hoisted(() => ({
+  state: {} as Record<string, unknown>,
+  dispatch: (() => undefined) as (action: unknown) => void,
+}));
+
+vi.mock("@/state/store", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/state/store")>();
+  return {
+    ...original,
+    useStore: () => ({
+      state: { ...original.initialState, ...harness.state },
+      dispatch: harness.dispatch,
+    }),
+  };
+});
 
 import { OrgSidebar, OrgSidebarNav } from "./OrgSidebar";
+import { Sidebar } from "./Sidebar";
+import { notifyOrgColumn, refreshOrgColumn } from "./org-column";
 
 describe("OrgSidebar", () => {
   it("lists channels and direct bots under the organization", () => {
@@ -37,6 +56,73 @@ describe("OrgSidebar", () => {
     const button = findButton(tree!, "data-sidebar-group-row", "c1");
     button?.props.onClick?.({} as MouseEvent<HTMLButtonElement>);
     expect(dispatch).toHaveBeenCalledWith({ type: "select", id: "c1" });
+  });
+});
+
+const atlas = {
+  id: "atlas",
+  threadId: "thread-atlas",
+  name: "Atlas",
+  title: "",
+  description: "",
+  notifications: true,
+  color: "green",
+  unread: false,
+  modelSelection: { instanceId: "claude", model: "test" },
+  messages: [],
+} as Bot;
+
+function jsonResponse(status: number, body: unknown) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 404 ? "Not Found" : "OK",
+    json: async () => body,
+  };
+}
+
+describe("Sidebar organization column", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    harness.state = {};
+  });
+
+  it("keeps the roster on 404 and shows the organization column on 200", async () => {
+    harness.state = { bots: [atlas], groups: [] };
+    harness.dispatch = () => {};
+    vi.stubGlobal("window", {
+      addEventListener() {},
+      removeEventListener() {},
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      setInterval: globalThis.setInterval.bind(globalThis),
+      clearInterval: globalThis.clearInterval.bind(globalThis),
+    });
+    vi.stubGlobal("document", { addEventListener() {}, removeEventListener() {} });
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+
+    fetchMock.mockResolvedValue(jsonResponse(404, {}) as Response);
+    await refreshOrgColumn();
+    const roster = renderToStaticMarkup(createElement(Sidebar, { open: true, onClose: () => {} }));
+    expect(roster).toContain("Atlas");
+    expect(roster).not.toContain("Direct");
+    expect(roster).not.toContain("GOX");
+
+    notifyOrgColumn("GOX");
+    const created = renderToStaticMarkup(createElement(Sidebar, { open: true, onClose: () => {} }));
+    expect(created).toContain("GOX");
+    expect(created).toContain("Direct");
+    expect(created).not.toContain("Atlas");
+
+    fetchMock.mockResolvedValue(jsonResponse(404, {}) as Response);
+    await refreshOrgColumn();
+    fetchMock.mockResolvedValue(jsonResponse(200, { org: { name: "GOX" } }) as Response);
+    await refreshOrgColumn();
+    const loaded = renderToStaticMarkup(createElement(Sidebar, { open: true, onClose: () => {} }));
+    expect(loaded).toContain("GOX");
+    expect(loaded).toContain("Direct");
+    expect(loaded).not.toContain("Atlas");
   });
 });
 
