@@ -540,7 +540,7 @@ import {
   type PhoneSecretContext,
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
-import { channelViewerId, liveFramesNeedChannelFilter, seesBotForViewer, seesChannel, seesChannelFrame } from "./channel-visibility.ts";
+import { channelViewerId, liveFramesNeedChannelFilter, seesBotForViewer, seesChannel, seesChannelFrame, sseFrameProjection } from "./channel-visibility.ts";
 import { roleOf, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
@@ -4567,7 +4567,9 @@ function sseFrameFor(
 ): string | null {
   if (client.admin && (!liveFramesNeedChannelFilter(client.viewerId) || clientFrame === null)) return frame;
   if (clientFrame === null || !payload) return clientFrame;
-  return memberFrame(client, seq, payload, clientFrame);
+  const filtered = memberFrame(client, seq, payload, clientFrame);
+  if (filtered === null) return null;
+  return sseFrameProjection({ admin: client.admin }) === "admin" ? frame : filtered;
 }
 
 function memberFrame(client: SseClient, seq: number, payload: Record<string, unknown>, clientFrame: string | null): string | null {

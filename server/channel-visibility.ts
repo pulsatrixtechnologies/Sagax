@@ -41,6 +41,13 @@ export function liveFramesNeedChannelFilter(viewerId: string | undefined): boole
   return Boolean(viewerId);
 }
 
+/** After memberSeesFrame allows the frame, admins still get the admin
+ * projection. Members get the client projection (config is the one that
+ * differs). */
+export function sseFrameProjection(input: { admin: boolean }): "admin" | "client" {
+  return input.admin ? "admin" : "client";
+}
+
 /** A channel frame is judged only by humanIds. The speaking bot's Direct
  * grants are not consulted. */
 export function seesChannelFrame(input: {

@@ -4,6 +4,7 @@ import {
   canSeeDirectBot,
   channelViewerId,
   liveFramesNeedChannelFilter,
+  sseFrameProjection,
   seesBotForViewer,
   seesChannel,
   seesChannelFrame,
@@ -31,6 +32,10 @@ describe("channel visibility", () => {
   it("filters live frames for a signed-in admin and not for loopback", () => {
     expect(liveFramesNeedChannelFilter("ada@example.test")).toBe(true);
     expect(liveFramesNeedChannelFilter(undefined)).toBe(false);
+  });
+  it("keeps the admin projection after a channel filter allows the frame", () => {
+    expect(sseFrameProjection({ admin: true })).toBe("admin");
+    expect(sseFrameProjection({ admin: false })).toBe("client");
   });
   it("keeps a channel speaker visible even without a direct grant", () => {
     expect(seesChannelFrame({
