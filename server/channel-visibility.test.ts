@@ -24,10 +24,10 @@ describe("channel visibility", () => {
   it("hides a channel from an admin who was not added", () => {
     const viewerId = channelViewerId({
       kind: "session",
-      session: { email: "ada@example.test" },
+      session: { email: "ada@example.test", principalId: "pr_ada" },
     });
     expect(seesChannel({ humanIds: ["jc"] }, viewerId)).toBe(false);
-    expect(seesChannel({ humanIds: ["jc", "ada@example.test"] }, viewerId)).toBe(true);
+    expect(seesChannel({ humanIds: ["jc", "pr_ada"] }, viewerId)).toBe(true);
   });
   it("filters live frames for a signed-in admin and not for loopback", () => {
     expect(liveFramesNeedChannelFilter("ada@example.test")).toBe(true);
@@ -96,6 +96,22 @@ describe("channel visibility", () => {
       channel: null,
       bot: { ownerUserId: "jc", directGrants: [], inChannels: [] },
     })).toBe(true);
+  });
+});
+
+describe("viewer id by principal", () => {
+  it("uses the session principal", () => {
+    expect(channelViewerId({ kind: "session", session: { id: "s1", email: "z@gox.ca", principalId: "pr_11111111-1111-4111-8111-111111111111" } }))
+      .toBe("pr_11111111-1111-4111-8111-111111111111");
+  });
+  it("gives a session without a principal an id that sees no channel", () => {
+    const viewer = channelViewerId({ kind: "session", session: { id: "s9" } });
+    expect(viewer).toBe("anon:s9");
+    expect(seesChannel({ humanIds: ["pr_11111111-1111-4111-8111-111111111111"] }, viewer)).toBe(false);
+    expect(seesBotForViewer({ viewerId: viewer, ownerUserId: "pr_11111111-1111-4111-8111-111111111111", directGrants: [], inChannels: [] })).toBe(false);
+  });
+  it("leaves the local operator unfiltered", () => {
+    expect(channelViewerId({ kind: "loopback" })).toBeUndefined();
   });
 });
 
