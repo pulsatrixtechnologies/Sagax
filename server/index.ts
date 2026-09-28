@@ -999,13 +999,13 @@ function calendarAudienceConflict(body: unknown): string | null {
 }
 
 /** What a member's live stream needs to narrow a frame. */
-function memberFrameContext(visible: VisibleSet, viewer?: ApprovalViewer): FrameContext {
+function memberFrameContext(visible: VisibleSet, viewer: ApprovalViewer): FrameContext {
   return {
     visible,
     webhookBot: (webhookId) => webhooks.list().find((webhook) => webhook.id === webhookId)?.botId,
     freshBot: (botId) => {
       const bot = store.bot(botId);
-      return bot ? { ...wireBot(bot), tasks: store.tasks(bot.id).map(wireTask), ...messagePage(bot.threadId, DEFAULT_PAGE) } : undefined;
+      return bot ? { ...wireBot(bot), tasks: store.tasks(bot.id).map(wireTask), ...messagePage(bot.threadId, DEFAULT_PAGE, null, viewer) } : undefined;
     },
     freshGroup: (groupId) => {
       const group = store.group(groupId);
@@ -4362,23 +4362,30 @@ function slimMessage(message: Message): Message | Record<string, unknown> {
  * newest rows from SQLite instead of hydrating the whole transcript first.
  * Paging further back with `before` still needs the full, cached array to
  * seek to an arbitrary point in history. */
-function messagePage(threadId: string, limit: number | undefined, before?: string | null, viewer?: ApprovalViewer) {
+/** Unscoped page. Broadcasts use this, then each SSE client is projected.
+ * A response to one viewer must use messagePage, which requires that viewer. */
+function transcriptPage(threadId: string, limit: number | undefined, before?: string | null) {
   if (limit === undefined) {
-    return { messages: projectMessages(threadId, store.messagesFor(threadId), viewer), activeLeafId: store.activeLeaf(threadId) };
+    return { messages: store.messagesFor(threadId), activeLeafId: store.activeLeaf(threadId) };
   }
   if (!before) {
     const tail = store.messagesTail(threadId, limit);
-    return { messages: projectMessages(threadId, tail.messages.map(slimMessage), viewer), hasMore: tail.hasMore, activeLeafId: tail.activeLeafId };
+    return { messages: tail.messages.map(slimMessage), hasMore: tail.hasMore, activeLeafId: tail.activeLeafId };
   }
   const all = store.messagesFor(threadId);
   const end = all.findIndex((msg) => msg.id === before);
   const stop = end === -1 ? all.length : end;
   const start = Math.max(0, stop - limit);
   return {
-    messages: projectMessages(threadId, all.slice(start, stop).map(slimMessage), viewer),
+    messages: all.slice(start, stop).map(slimMessage),
     hasMore: start > 0,
     activeLeafId: store.activeLeaf(threadId),
   };
+}
+
+function messagePage(threadId: string, limit: number | undefined, before: string | null | undefined, viewer: ApprovalViewer) {
+  const page = transcriptPage(threadId, limit, before);
+  return { ...page, messages: projectMessages(threadId, page.messages, viewer) };
 }
 
 function guardedRequestSnapshot(botId: string, threadId: string, sendId: string) {
@@ -4437,7 +4444,7 @@ function settleTrackedRequest(threadId: string): void {
 
 /** A bounded page centred on a known message, used when a search result is
  * opened on a client that only hydrated the newest part of the transcript. */
-function messageWindow(threadId: string, messageId: string, limit: number, viewer?: ApprovalViewer) {
+function messageWindow(threadId: string, messageId: string, limit: number, viewer: ApprovalViewer) {
   const all = store.messagesFor(threadId);
   const index = all.findIndex((message) => message.id === messageId);
   if (index < 0) return null;
@@ -4657,15 +4664,17 @@ function approvalCallerUserId(auth: RequestAuth): string {
   return "";
 }
 
-/** 403 when this caller is not the bot owner. The card is not applied. */
+/** 403 unless this caller is the bot owner. An unrecognized card or a missing
+ * bot cannot prove that, so the route refuses instead of applying the card. */
 function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: string): string | null {
+  const refusal = "Only the bot owner can answer this approval.";
   const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
-  if (!message || !isApprovalCardMessage(message)) return null;
+  if (!message) return refusal;
   const bot = botForApproval(threadId, message);
-  if (!bot) return null;
+  if (!bot) return refusal;
   const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
   const decision = answerApproval({ callerUserId: approvalCallerUserId(auth), audience, card: message });
-  if (decision.status === 403) return "Only the bot owner can answer this approval.";
+  if (decision.status === 403) return refusal;
   return null;
 }
 
@@ -4687,18 +4696,19 @@ function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalV
   const row = message as { kind?: unknown; card?: unknown; from?: { botId?: string } };
   if (!isApprovalCardMessage(row)) return message;
   const bot = botForApproval(threadId, row);
-  if (!bot) return message;
-  const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
+  const audience = bot
+    ? approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) })
+    : { userId: "\0", deviceId: null as string | null };
+  const ownerName = bot ? approvalOwnerName(audience.userId) : "the owner";
   return approvalDelivery({
     audience,
     viewer,
     message: message as { card?: unknown },
-    ownerName: approvalOwnerName(audience.userId),
+    ownerName,
   }) as T;
 }
 
-function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalViewer | undefined): T[] {
-  if (!viewer) return messages;
+function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalViewer): T[] {
   let changed = false;
   const next = messages.map((message) => {
     const projected = scopeApprovalMessage(threadId, message, viewer);
@@ -4713,6 +4723,22 @@ function projectGroupTranscript<T extends { threadId?: string; messages?: unknow
   const messages = projectMessages(group.threadId, group.messages, viewer);
   if (messages === group.messages) return group;
   return { ...group, messages };
+}
+
+function projectBotTranscript<T extends { threadId?: string; messages?: unknown[] }>(bot: T, viewer: ApprovalViewer): T {
+  if (!bot.threadId || !bot.messages) return bot;
+  const messages = projectMessages(bot.threadId, bot.messages, viewer);
+  if (messages === bot.messages) return bot;
+  return { ...bot, messages };
+}
+
+function approvalBot(input: { threadId?: unknown; botId?: unknown }): BotRecord | undefined {
+  if (typeof input.botId === "string") {
+    const named = store.bot(input.botId);
+    if (named) return named;
+  }
+  if (typeof input.threadId !== "string") return undefined;
+  return botForApproval(input.threadId, {});
 }
 
 function scopeChannelApproval(
@@ -4737,24 +4763,32 @@ function scopeChannelApproval(
     if (messages === record.messages) return { action: "same" };
     return { action: "replace", payload: { ...payload, group: { ...record, messages } } };
   }
+  if (kind === "bot") {
+    const bot = payload.bot;
+    if (!bot || typeof bot !== "object") return { action: "same" };
+    const record = bot as { threadId?: string; messages?: unknown[] };
+    if (!record.threadId || !record.messages) return { action: "same" };
+    const messages = projectMessages(record.threadId, record.messages, viewer);
+    if (messages === record.messages) return { action: "same" };
+    return { action: "replace", payload: { ...payload, bot: { ...record, messages } } };
+  }
   if (kind === "notify") {
     const notification = payload.notification;
     if (!notification || typeof notification !== "object") return { action: "same" };
     const note = notification as { kind?: unknown; threadId?: unknown; botId?: unknown };
-    if (note.kind !== "approval" || typeof note.threadId !== "string" || (!store.botByThread(note.threadId) && !store.groupByThread(note.threadId))) return { action: "same" };
-    const bot = typeof note.botId === "string" ? store.bot(note.botId) : botForApproval(note.threadId, {});
-    if (!bot) return { action: "same" };
+    if (note.kind !== "approval") return { action: "same" };
+    const bot = approvalBot(note);
+    if (!bot) return { action: "drop" };
     const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
     return receivesApprovalCard(viewer, audience) ? { action: "same" } : { action: "drop" };
   }
   if (kind === "runtime") {
     const event = payload.event;
     if (!event || typeof event !== "object") return { action: "same" };
-    const row = event as { type?: unknown; threadId?: unknown; requestType?: unknown };
-    if (row.type !== "request.opened" || row.requestType !== "permission" || typeof row.threadId !== "string") return { action: "same" };
-    if (!store.botByThread(row.threadId) && !store.groupByThread(row.threadId)) return { action: "same" };
-    const bot = botForApproval(row.threadId, {});
-    if (!bot) return { action: "same" };
+    const row = event as { type?: unknown; threadId?: unknown; requestType?: unknown; botId?: unknown };
+    if (row.type !== "request.opened" || row.requestType !== "permission") return { action: "same" };
+    const bot = approvalBot(row);
+    if (!bot) return { action: "drop" };
     const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
     return receivesApprovalCard(viewer, audience) ? { action: "same" } : { action: "drop" };
   }
@@ -16569,7 +16603,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         bots: shownBots.map((bot) => memberBot({
           ...wireBot(bot),
           tasks: store.tasks(bot.id).map(wireTask),
-          ...messagePage(bot.threadId, limit),
+          ...messagePage(bot.threadId, limit, null, viewerForApproval(auth)),
         }, visible)),
         botQueuedMessages: visible.everything ? queued : Object.fromEntries(Object.entries(queued).filter(([threadId]) => visible.thread(threadId))),
         sections: visible.sections(store.sections),
@@ -17238,7 +17272,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         installId: imported.installId,
         name: imported.name,
         section: imported.section,
-        bots: imported.bots.map((bot) => publicBot(store.bot(bot.id) ?? bot)),
+        bots: imported.bots.map((bot) => projectBotTranscript(publicBot(store.bot(bot.id) ?? bot), viewerForApproval(auth))),
         groups: imported.groups.map((created) => ({ ...publicGroupState(store.group(created.id) ?? created), messages: [] })),
         routines: imported.routines,
         offeredSkills: imported.offeredSkills,
@@ -17312,11 +17346,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         try {
           const imported = importTeamBackup(store, routines!, body, await defaultSelection(), { visibility: importVisibility });
           const bots = imported.bots.map((bot) => publicBot(bot));
-          const groups = imported.groups.map((group) => ({ ...publicGroupState(group), ...messagePage(group.threadId, undefined) }));
+          const groups = imported.groups.map((group) => ({ ...publicGroupState(group), ...transcriptPage(group.threadId, undefined) }));
           for (const bot of bots) broadcast({ kind: "bot", bot });
           for (const group of groups) broadcast({ kind: "group", group });
           const approvalViewer = viewerForApproval(auth);
-          return json(res, 201, { ...imported, bots, groups: groups.map((group) => projectGroupTranscript(group, approvalViewer)) });
+          return json(res, 201, {
+            ...imported,
+            bots: bots.map((bot) => projectBotTranscript(bot, approvalViewer)),
+            groups: groups.map((group) => projectGroupTranscript(group, approvalViewer)),
+          });
         } catch (error) {
           return json(res, 400, { error: error instanceof Error ? error.message : "Backup could not be imported" });
         }
@@ -17357,7 +17395,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 201, {
         name: imported.name,
         section: imported.section,
-        bots: imported.bots.map((bot) => publicBot(store.bot(bot.id) ?? bot)),
+        bots: imported.bots.map((bot) => projectBotTranscript(publicBot(store.bot(bot.id) ?? bot), viewerForApproval(auth))),
         group: imported.group,
         groups: imported.groups.map((created) => ({ ...created, messages: [] })),
         routines: imported.routines,
@@ -17486,7 +17524,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // anything earlier pages back through /api/threads/:id/messages.
       broadcast({
         kind: "group",
-        group: { ...switchedSettings, ...messagePage(switched.threadId, DEFAULT_PAGE) },
+        group: { ...switchedSettings, ...transcriptPage(switched.threadId, DEFAULT_PAGE) },
       });
       // "0" predates paging and means settings only — no `messages` key at
       // all, which clients tell apart from an empty page. A positive page is
@@ -17498,7 +17536,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? switchedSettings
         : switchLimit === undefined
           ? projectGroupTranscript(groupWithThread(switched), approvalViewer)
-          : projectGroupTranscript({ ...switchedSettings, ...messagePage(switched.threadId, switchLimit) }, approvalViewer);
+          : projectGroupTranscript({ ...switchedSettings, ...messagePage(switched.threadId, switchLimit, null, approvalViewer) }, approvalViewer);
       return json(res, 200, { group: responseGroup });
     }
     if (m && method === "PATCH") {
@@ -18165,11 +18203,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return json(res, 201, {
         ...(warnings.length ? { warnings } : {}),
-        bot: {
+        bot: projectBotTranscript({
           ...wireBot(bot),
           messages: store.messagesFor(bot.threadId),
           activeLeafId: store.activeLeaf(bot.threadId),
-        },
+        }, viewerForApproval(auth)),
       });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/avatar\/generate$/);
@@ -19324,7 +19362,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const threadId = parsed.data.threadId;
       const snapshot = guardedRequestSnapshot(m[1], threadId, m[2]);
       res.setHeader("cache-control", "private, no-store");
-      if (method === "GET") return json(res, 200, snapshot);
+      if (method === "GET") {
+        return json(res, 200, { ...snapshot, messages: projectMessages(threadId, snapshot.messages, viewerForApproval(auth)) });
+      }
       assertRequestTarget(snapshot, body);
       const owner = directRequestOwners.get(threadId);
       if (snapshot.phase === "untracked" || !owner || owner.messageId !== snapshot.messageId) {
@@ -19992,7 +20032,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const projects = store.reorderProjects(bot.id, body.projectIds);
       if (!projects) return json(res, 400, { error: "projectIds must include each of this bot's folders exactly once" });
-      return json(res, 200, { projects, bot: botWithThread(bot) });
+      return json(res, 200, { projects, bot: projectBotTranscript(botWithThread(bot), viewerForApproval(auth)) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/projects(?:\/([\w-]+))?$/);
     if (m && ((method === "POST" && !m[2]) || (method === "PATCH" && m[2]) || (method === "DELETE" && m[2]))) {
@@ -20001,7 +20041,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (m[2] && !store.project(bot.id, m[2])) return json(res, 404, { error: "no such folder" });
       if (method === "DELETE") {
         const updated = store.deleteProject(bot.id, m[2]!);
-        return json(res, 200, { bot: botWithThread(updated!) });
+        return json(res, 200, { bot: projectBotTranscript(botWithThread(updated!), viewerForApproval(auth)) });
       }
       const body = await readBody(req);
       if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
@@ -20021,7 +20061,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const project = method === "POST"
         ? store.createProject(bot.id, patch.name!, patch.emoji)
         : store.patchProject(bot.id, m[2]!, patch);
-      return json(res, method === "POST" ? 201 : 200, { project, bot: botWithThread(bot) });
+      return json(res, method === "POST" ? 201 : 200, { project, bot: projectBotTranscript(botWithThread(bot), viewerForApproval(auth)) });
     }
 
     m = path.match(/^\/api\/bots\/([\w-]+)\/tasks$/);
@@ -20054,7 +20094,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (auth.kind === "session") threadStarters.set(task.threadId, personKey(auth.session));
       const fresh = botWithThread(store.bot(bot.id)!);
       broadcast({ kind: "bot", bot: fresh });
-      return json(res, 201, { bot: fresh, task: wireTask(task) });
+      return json(res, 201, { bot: projectBotTranscript(fresh, viewerForApproval(auth)), task: wireTask(task) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/tasks\/([\w-]+)$/);
     if (m && method === "POST") {
@@ -20073,15 +20113,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Bounded for the same reason as the channel switch above.
       broadcast({
         kind: "bot",
-        bot: { ...switchedSettings, ...messagePage(switched.threadId, DEFAULT_PAGE) },
+        bot: { ...switchedSettings, ...transcriptPage(switched.threadId, DEFAULT_PAGE) },
       });
       // "0" is settings only, a positive page is a bounded transcript, and no
       // parameter is the whole thread — the one branch that materialises it.
       const responseBot = requestedMessages === "0"
         ? switchedSettings
         : switchLimit === undefined
-          ? botWithThread(switched)
-          : { ...switchedSettings, ...messagePage(switched.threadId, switchLimit) };
+          ? projectBotTranscript(botWithThread(switched), viewerForApproval(auth))
+          : projectBotTranscript({ ...switchedSettings, ...messagePage(switched.threadId, switchLimit, null, viewerForApproval(auth)) }, viewerForApproval(auth));
       return json(res, 200, { bot: responseBot });
     }
     if (m && method === "PATCH") {
@@ -20181,7 +20221,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         : store.patchTask(m[1], m[2], patch)!;
       const fresh = botWithThread(store.bot(m[1])!);
       broadcast({ kind: "bot", bot: fresh });
-      return json(res, 200, { task: wireTask(task), bot: fresh });
+      return json(res, 200, { task: wireTask(task), bot: projectBotTranscript(fresh, viewerForApproval(auth)) });
     }
     if (m && method === "DELETE") {
       const bot = store.bot(m[1]);
@@ -20205,7 +20245,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
       const fresh = botWithThread(updated);
       broadcast({ kind: "bot", bot: fresh });
-      return json(res, 200, { bot: fresh });
+      return json(res, 200, { bot: projectBotTranscript(fresh, viewerForApproval(auth)) });
     }
 
     // Named team Boxes use real independent ownership, never a hidden bot or
