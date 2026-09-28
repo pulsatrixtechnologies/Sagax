@@ -541,7 +541,7 @@ import {
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, seesBotForViewer, seesChannel, seesChannelFrame, sseFrameProjection } from "./channel-visibility.ts";
-import { answerApproval, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
+import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { roleOf, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
@@ -4664,17 +4664,19 @@ function approvalCallerUserId(auth: RequestAuth): string {
   return "";
 }
 
-/** 403 unless this caller is the bot owner. An unrecognized card or a missing
- * bot cannot prove that, so the route refuses instead of applying the card. */
+/** 403 only for an approval whose bot is still here and whose caller is not
+ * the owner. A question stays on the ordinary answer path. A card with no
+ * live bot does too, so the thread route can still close it. */
 function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: string): string | null {
   const refusal = "Only the bot owner can answer this approval.";
   const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
   if (!message) return refusal;
+  const question = Boolean(message.card && typeof message.card === "object" && message.card.questionRequest);
+  if (question) return null;
+  if (!isApprovalCardMessage(message)) return refusal;
   const bot = botForApproval(threadId, message);
-  if (!bot) return refusal;
-  const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
-  const decision = answerApproval({ callerUserId: approvalCallerUserId(auth), audience, card: message });
-  if (decision.status === 403) return refusal;
+  const audience = bot ? approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) }) : null;
+  if (approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403) return refusal;
   return null;
 }
 

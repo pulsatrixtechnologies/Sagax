@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerApproval, approvalAudience, approvalDelivery, receivesApprovalCard } from "./approval-audience.ts";
+import { answerApproval, approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard } from "./approval-audience.ts";
 
 describe("approval audience", () => {
   it("sends the card to the owner session on the executing machine", () => {
@@ -62,6 +62,30 @@ describe("approval audience", () => {
     expect(refused.card).toBe(card);
     expect(card).toEqual(before);
     expect(card.card).not.toHaveProperty("answered");
+  });
+
+  it("leaves questions and an approval with no live bot on the ordinary answer path", () => {
+    const audience = approvalAudience({ ownerUserId: "jc", host: { kind: "fleet" } });
+    expect(approvalAnswerStatus({
+      question: true,
+      audience,
+      callerUserId: "zachary@example.test",
+    })).toBeNull();
+    expect(approvalAnswerStatus({
+      question: false,
+      audience: null,
+      callerUserId: "zachary@example.test",
+    })).toBeNull();
+    expect(approvalAnswerStatus({
+      question: false,
+      audience,
+      callerUserId: "zachary@example.test",
+    })).toBe(403);
+    expect(approvalAnswerStatus({
+      question: false,
+      audience,
+      callerUserId: "jc",
+    })).toBeNull();
   });
 
   it("matches the owner on any device when the host is the fleet", () => {

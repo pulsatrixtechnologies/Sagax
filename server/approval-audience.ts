@@ -38,6 +38,22 @@ export function answerApproval<T>(input: {
   return { status: 200, card: input.card };
 }
 
+/** Questions stay on the ordinary answer path. An approval with no live bot
+ * does too, so a stored card can still be cleared. A live bot's approval is
+ * 403 unless the caller is the owner. */
+export function approvalAnswerStatus(input: {
+  question: boolean;
+  audience: { userId: string; deviceId: string | null } | null;
+  callerUserId: string;
+}): 403 | null {
+  if (input.question || !input.audience) return null;
+  return answerApproval({
+    callerUserId: input.callerUserId,
+    audience: input.audience,
+    card: null,
+  }).status === 403 ? 403 : null;
+}
+
 function cardStillOpen(card: unknown): boolean {
   if (!card || typeof card !== "object") return false;
   const row = card as { answered?: unknown; dismissed?: unknown; expired?: unknown };
