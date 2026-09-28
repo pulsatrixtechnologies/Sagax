@@ -57,14 +57,14 @@ describe("workers", () => {
       messageId: "m1",
       queued: [],
     })).toEqual({
-      queued: [{ messageId: "m1", deviceId: "laptop", authorId: "", started: false }],
+      queued: [{ messageId: "m1", deviceId: "laptop", userId: "zachary@example.test", authorId: "", started: false }],
       fleetIds: [],
       status: "machine-offline",
     });
   });
 
   it("starts a fleet bot when no worker is online", () => {
-    const queued = [{ messageId: "kept", deviceId: "studio", authorId: "p", started: false }];
+    const queued = [{ messageId: "kept", deviceId: "studio", userId: "p", authorId: "p", started: false }];
     expect(channelTurnGate({
       bots: [{ id: "aurora", host: { kind: "fleet" } }],
       workers: [],
@@ -74,7 +74,7 @@ describe("workers", () => {
   });
 
   it("lets an online worker pull its message once and does not call the fleet runner", () => {
-    const queued = [{ messageId: "older", deviceId: "studio", authorId: "p", started: false }];
+    const queued = [{ messageId: "older", deviceId: "studio", userId: "studio-owner", authorId: "p", started: false }];
     const destination = turnDestination({
       host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" },
       workerOnline: true,
@@ -92,10 +92,11 @@ describe("workers", () => {
     });
     expect(gate.fleetIds).toEqual([]);
     expect(gate.status).toBeNull();
-    const pulled = takeQueued("laptop", gate.queued);
+    const pulled = takeQueued("laptop", gate.queued, "zachary@example.test");
     expect(pulled.ids).toEqual(["m1"]);
-    expect(takeQueued("laptop", pulled.queued).ids).toEqual([]);
-    expect(takeQueued("studio", pulled.queued).ids).toEqual(["older"]);
+    expect(takeQueued("laptop", pulled.queued, "zachary@example.test").ids).toEqual([]);
+    expect(takeQueued("laptop", gate.queued, "ada@example.test").ids).toEqual([]);
+    expect(takeQueued("studio", pulled.queued, "studio-owner").ids).toEqual(["older"]);
   });
 
   it("queues an offline machine until that device pulls it, and does not call the fleet runner", () => {
@@ -116,11 +117,11 @@ describe("workers", () => {
     });
     expect(gate.fleetIds).toEqual([]);
     expect(gate.status).toBe("machine-offline");
-    const pulled = takeQueued("laptop", gate.queued);
+    const pulled = takeQueued("laptop", gate.queued, "zachary@example.test");
     expect(pulled.ids).toEqual(["m1"]);
-    expect(pulled.started).toEqual([{ messageId: "m1", deviceId: "laptop", authorId: "p_zach", started: true }]);
-    expect(takeQueued("laptop", pulled.queued).ids).toEqual([]);
-    expect(takeQueued("studio", gate.queued).ids).toEqual([]);
+    expect(pulled.started).toEqual([{ messageId: "m1", deviceId: "laptop", userId: "zachary@example.test", authorId: "p_zach", started: true }]);
+    expect(takeQueued("laptop", pulled.queued, "zachary@example.test").ids).toEqual([]);
+    expect(takeQueued("studio", gate.queued, "zachary@example.test").ids).toEqual([]);
   });
 
   it("queues each offline device once and still runs a fleet bot", () => {
@@ -137,17 +138,17 @@ describe("workers", () => {
     });
     expect(gate.fleetIds).toEqual(["fleet-bot"]);
     expect(gate.queued).toEqual([
-      { messageId: "m1", deviceId: "laptop", authorId: "p_zach", started: false },
-      { messageId: "m1", deviceId: "studio", authorId: "p_zach", started: false },
+      { messageId: "m1", deviceId: "laptop", userId: "zachary@example.test", authorId: "p_zach", started: false },
+      { messageId: "m1", deviceId: "studio", userId: "ada@example.test", authorId: "p_zach", started: false },
     ]);
     expect(gate.status).toBe("machine-offline");
   });
 
   it("lets only the owning session pull, and registering does not take the queue", () => {
-    const queued = [{ messageId: "m1", deviceId: "laptop", authorId: "p_zach", started: false }];
+    const queued = [{ messageId: "m1", deviceId: "laptop", userId: "zachary@example.test", authorId: "p_zach", started: false }];
     const registered = registerWorkerBody({ workers: [], userId: "zachary@example.test", body: { deviceId: "laptop" } });
     expect(registered.status).toBe(200);
-    expect(queued).toEqual([{ messageId: "m1", deviceId: "laptop", authorId: "p_zach", started: false }]);
+    expect(queued).toEqual([{ messageId: "m1", deviceId: "laptop", userId: "zachary@example.test", authorId: "p_zach", started: false }]);
     if (registered.status !== 200) return;
     expect(pullQueuedForSession({
       deviceId: "laptop",
@@ -163,8 +164,45 @@ describe("workers", () => {
     })).toEqual({ status: 200, ids: ["m1"], queued: [] });
   });
 
+  it("does not give a later registrant ids held for the previous owner", () => {
+    const queued = [{ messageId: "m1", deviceId: "laptop", userId: "zachary@example.test", authorId: "p_zach", started: false }];
+    const stolen = registerWorker([{ deviceId: "laptop", userId: "zachary@example.test", online: true }], {
+      deviceId: "laptop",
+      userId: "ada@example.test",
+      online: true,
+    });
+    const ada = pullQueuedForSession({
+      deviceId: "laptop",
+      userId: "ada@example.test",
+      workers: stolen,
+      queued,
+    });
+    expect(ada).toEqual({ status: 200, ids: [], queued });
+    expect(pullQueuedForSession({
+      deviceId: "laptop",
+      userId: "zachary@example.test",
+      workers: stolen,
+      queued,
+    })).toEqual({ status: 403, error: "forbidden" });
+    const restored = registerWorker(stolen, { deviceId: "laptop", userId: "zachary@example.test", online: true });
+    const pulled = pullQueuedForSession({
+      deviceId: "laptop",
+      userId: "zachary@example.test",
+      workers: restored,
+      queued,
+    });
+    expect(pulled).toEqual({ status: 200, ids: ["m1"], queued: [] });
+    if (pulled.status !== 200) return;
+    expect(pullQueuedForSession({
+      deviceId: "laptop",
+      userId: "zachary@example.test",
+      workers: restored,
+      queued: pulled.queued,
+    })).toEqual({ status: 200, ids: [], queued: [] });
+  });
+
   it("drops a queued message only when its author cancels", () => {
-    const queued = [{ messageId: "m1", deviceId: "laptop", authorId: "p_zach", started: false }];
+    const queued = [{ messageId: "m1", deviceId: "laptop", userId: "zachary@example.test", authorId: "p_zach", started: false }];
     expect(cancelQueued("m1", "ada", queued)).toEqual(queued);
     expect(cancelQueued("m1", "", queued)).toEqual(queued);
     expect(cancelQueued("m1", "p_zach", queued)).toEqual([]);

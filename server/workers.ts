@@ -24,10 +24,11 @@ export function queueTurn(input: {
   return { queued: input.queued, started: true };
 }
 
-/** A queued channel message waiting for one device. `started` is set when that device pulls it. */
+/** A channel turn waiting for one device. `userId` is who owned that device when the turn was held. */
 export interface DeviceQueuedTurn {
   messageId: string;
   deviceId: string;
+  userId: string;
   authorId: string;
   started: boolean;
 }
@@ -51,21 +52,23 @@ export function enqueueOfflineTurn(input: {
   queued: DeviceQueuedTurn[];
   messageId: string;
   deviceId: string;
+  userId: string;
   authorId: string;
 }): DeviceQueuedTurn[] {
-  if (input.queued.some((item) => !item.started && item.messageId === input.messageId && item.deviceId === input.deviceId)) {
+  if (input.queued.some((item) => !item.started && item.messageId === input.messageId && item.deviceId === input.deviceId && item.userId === input.userId)) {
     return input.queued;
   }
   return [...input.queued, {
     messageId: input.messageId,
     deviceId: input.deviceId,
+    userId: input.userId,
     authorId: input.authorId,
     started: false,
   }];
 }
 
-/** Ids waiting for this device. They leave the queue and come back marked started. A second pull does not return them. */
-export function takeQueued(deviceId: string, queued: DeviceQueuedTurn[]): {
+/** Ids held for this device while that same session owned it. They leave the queue marked started. A second pull does not return them. */
+export function takeQueued(deviceId: string, queued: DeviceQueuedTurn[], userId: string): {
   queued: DeviceQueuedTurn[];
   ids: string[];
   started: DeviceQueuedTurn[];
@@ -73,7 +76,7 @@ export function takeQueued(deviceId: string, queued: DeviceQueuedTurn[]): {
   const started: DeviceQueuedTurn[] = [];
   const rest: DeviceQueuedTurn[] = [];
   for (const item of queued) {
-    if (item.deviceId === deviceId && !item.started) started.push({ ...item, started: true });
+    if (item.deviceId === deviceId && item.userId === userId && !item.started) started.push({ ...item, started: true });
     else rest.push(item);
   }
   return { queued: rest, ids: started.map((item) => item.messageId), started };
@@ -118,10 +121,22 @@ export function channelTurnGate(input: {
     if (destination.kind === "fleet") {
       fleetIds.push(bot.id);
     } else if (destination.kind === "worker") {
-      queued = enqueueOfflineTurn({ queued, messageId: input.messageId, deviceId: destination.deviceId, authorId });
+      queued = enqueueOfflineTurn({
+        queued,
+        messageId: input.messageId,
+        deviceId: destination.deviceId,
+        userId: host.kind === "machine" ? host.userId : "",
+        authorId,
+      });
     } else if (destination.kind === "queued" && host.kind === "machine") {
       held = true;
-      queued = enqueueOfflineTurn({ queued, messageId: input.messageId, deviceId: host.deviceId, authorId });
+      queued = enqueueOfflineTurn({
+        queued,
+        messageId: input.messageId,
+        deviceId: host.deviceId,
+        userId: host.userId,
+        authorId,
+      });
     }
   }
   return { queued, fleetIds, status: held ? "machine-offline" : null };
@@ -135,7 +150,7 @@ export function pullQueuedForSession(input: {
 }): { status: 200; ids: string[]; queued: DeviceQueuedTurn[] } | { status: 403; error: "forbidden" } {
   const owner = input.workers.find((worker) => worker.deviceId === input.deviceId);
   if (!owner || owner.userId !== input.userId) return { status: 403, error: "forbidden" };
-  const pulled = takeQueued(input.deviceId, input.queued);
+  const pulled = takeQueued(input.deviceId, input.queued, input.userId);
   return { status: 200, ids: pulled.ids, queued: pulled.queued };
 }
 

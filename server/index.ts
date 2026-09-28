@@ -3874,7 +3874,8 @@ const roomHandoffs = new RoomHandoffs(join(DATA_DIR, "room-handoffs.json"), {
       await runGroupMemberTurn(group.id, node.threadId, bot.id, MAX_COMMS_DEPTH, new Set(),
         undefined, error => { result.stopReason = error; }, () => operation.cancelled,
         () => groupProviderHandshakeStarted(operation), () => groupProviderHandshakeSettled(operation),
-        { claimed: true }, { roomHandoffId: node.id, resumed, systemInstructions, turnInstructions: brief, liveRoster, followMentions: false, result }, operation);
+        { claimed: true }, { roomHandoffId: node.id, resumed, systemInstructions, turnInstructions: brief, liveRoster, followMentions: false, result }, operation,
+        0, node.id);
     });
     const tracked = run.finally(() => {
       signal.removeEventListener("abort", abort);
@@ -9648,7 +9649,8 @@ function dispatchTeamSetupResume(entry: TeamSetupResumeEntry): void {
       if (!current?.group) return;
       if (current.bot.busy) { pendingTeamSetupResumes.set(request.requestId, entry); return; }
       await runGroupMemberTurn(groupId, request.threadId, request.botId, 0, new Set(), prompt, failed,
-        () => operation.cancelled, () => groupProviderHandshakeStarted(operation), () => groupProviderHandshakeSettled(operation));
+        () => operation.cancelled, () => groupProviderHandshakeStarted(operation), () => groupProviderHandshakeSettled(operation),
+        undefined, undefined, undefined, 0, messageId);
     });
     groupQueues.set(groupId, next.finally(() => finishGroupTurnOperation(groupId, operation)).catch((error) => failed(error instanceof Error ? error.message : String(error))));
     return;
@@ -9989,7 +9991,8 @@ type GroupMemberTurnOutcome =
   | "timed_out"
   | "cancelled"
   | "busy"
-  | "unavailable";
+  | "unavailable"
+  | "held";
 type GroupTurnOrchestration = {
   roomHandoffId?: string;
   resumed?: boolean;
@@ -10098,6 +10101,8 @@ async function runGroupMemberTurn(
   // execution setting changes in that gap, rebuild the turn once from the
   // fresh bot rather than mixing a stale adapter with fresh permissions.
   setupRetry = 0,
+  /** Transcript or handoff id of this call. Absent means this call is not a held turn. */
+  heldTurnId?: string,
 ): Promise<boolean> {
   if (workspaceMaintenance.active) {
     onDispatchError?.("A workspace backup or restore is in progress.");
@@ -10118,28 +10123,35 @@ async function runGroupMemberTurn(
   if (destination.kind !== "fleet") {
     const host = bot.host;
     const deviceId = destination.kind === "worker" ? destination.deviceId : host?.kind === "machine" ? host.deviceId : null;
-    if (deviceId) {
-      const lastUser = [...store.messagesFor(threadId)].reverse().find((item) => item.role === "user" && item.kind === "text");
-      if (lastUser) {
-        const next = enqueueOfflineTurn({
-          queued: queuedWorkerTurns,
-          messageId: lastUser.id,
-          deviceId,
-          authorId: lastUser.sender?.id ?? (cfg.profile?.email ?? "local-owner").trim(),
-        });
-        if (next !== queuedWorkerTurns) {
-          queuedWorkerTurns = next;
-          if (destination.kind === "queued") {
-            store.appendMessage(threadId, {
-              role: "bot",
-              kind: "activity",
-              tool: { name: "machine-offline", ok: false },
-            });
-          }
+    const deviceUserId = host?.kind === "machine" ? host.userId : "";
+    const heldMessageId = heldTurnId ?? orchestration?.roomHandoffId ?? operation?.goalRun?.cardMessageId;
+    if (deviceId && deviceUserId && heldMessageId) {
+      const heldMessage = store.messagesFor(threadId).find((item) => item.id === heldMessageId);
+      const next = enqueueOfflineTurn({
+        queued: queuedWorkerTurns,
+        messageId: heldMessageId,
+        deviceId,
+        userId: deviceUserId,
+        authorId: heldMessage?.sender?.id ?? (cfg.profile?.email ?? "local-owner").trim(),
+      });
+      if (next !== queuedWorkerTurns) {
+        queuedWorkerTurns = next;
+        if (destination.kind === "queued") {
+          store.appendMessage(threadId, {
+            role: "bot",
+            kind: "activity",
+            tool: { name: "machine-offline", ok: false },
+          });
         }
       }
     }
-    return false;
+    if (orchestration) {
+      orchestration.result.outcome = "held";
+      orchestration.result.replyText = "";
+      orchestration.result.stopReason = null;
+    }
+    spoken.add(botId);
+    return true;
   }
   if (bot.approvalGrant) {
     onDispatchError?.(`${bot.name}'s approval level is still being confirmed — skipped this round`);
@@ -11208,6 +11220,15 @@ async function runGroupGoalOperation(args: {
       }),
     });
     if (args.operation.cancelled) return;
+    if (coordinatorResult.outcome === "held") {
+      finishGroupGoalRun(
+        args.groupId,
+        args.operation,
+        "blocked",
+        `${args.coordinator.name} runs on a machine, so this goal was not coordinated on the fleet host.`,
+      );
+      return;
+    }
     if (coordinatorResult.outcome === "unavailable") {
       finishGroupGoalRun(args.groupId, args.operation, "blocked", `${args.coordinator.name} is not available.`);
       return;
@@ -11302,6 +11323,12 @@ async function runGroupGoalOperation(args: {
       }),
     });
     if (args.operation.cancelled) return;
+    if (workerResult.outcome === "held") {
+      coordinatorNote =
+        `${workerBot.name} has this assignment on their machine. The fleet host did not run it. ` +
+        "Leave that assignment with them. Continue with other members, or report blocked if the goal must wait.";
+      continue;
+    }
     if (workerResult.outcome === "unavailable") {
       finishGroupGoalRun(args.groupId, args.operation, "blocked", `${workerBot.name} is not available.`);
       return;
@@ -12196,6 +12223,7 @@ function dispatchConnectorResume(entry: { botId: string; threadId: string; resum
         pendingConnectorResumes.set(`${entry.threadId}:${entry.resumeKey}`, entry);
         return;
       }
+      const cardId = connectorCards(entry.threadId, entry.resumeKey)[0]?.id ?? entry.resumeKey;
       await runGroupMemberTurn(
         current.group.id,
         entry.threadId,
@@ -12207,6 +12235,11 @@ function dispatchConnectorResume(entry: { botId: string; threadId: string; resum
         () => operation.cancelled,
         () => groupProviderHandshakeStarted(operation),
         () => groupProviderHandshakeSettled(operation),
+        undefined,
+        undefined,
+        undefined,
+        0,
+        cardId,
       );
     });
     const tracked = next.finally(() => finishGroupTurnOperation(groupId, operation));
@@ -12351,6 +12384,11 @@ function dispatchSecretResume(entry: SecretResumeEntry) {
         () => operation.cancelled,
         () => groupProviderHandshakeStarted(operation),
         () => groupProviderHandshakeSettled(operation),
+        undefined,
+        undefined,
+        undefined,
+        0,
+        entry.messageId,
       );
     });
     const tracked = next.finally(() => finishGroupTurnOperation(groupId, operation));
