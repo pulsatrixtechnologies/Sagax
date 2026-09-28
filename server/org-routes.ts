@@ -10,13 +10,17 @@ export interface OrgState {
   signIn: { admins: string[]; members: string[] };
 }
 
-function orgPeople(state: OrgState): { id: string; role: OrgRole }[] {
+function orgPeople(state: OrgState, ownerEmail?: string): { id: string; role: OrgRole }[] {
   if (!state.org) return [];
   const lists = { ownerUserId: state.org.ownerUserId, admins: state.signIn.admins, members: state.signIn.members };
   const people: { id: string; role: OrgRole }[] = [];
   const seen = new Set<string>();
+  const owner = ownerEmail?.trim().toLowerCase();
   for (const id of [state.org.ownerUserId, ...state.signIn.admins, ...state.signIn.members]) {
     if (seen.has(id)) continue;
+    // The owner is listed once, by principal id, even when their sign-in
+    // email is also in admins or members.
+    if (id !== state.org.ownerUserId && owner && id.trim().toLowerCase() === owner) continue;
     // The owner is a principal id, matched against itself. Admins and
     // members are emails, so each is matched by its own email.
     const role = id === state.org.ownerUserId ? roleOf({ ...lists, userId: id }) : roleOf({ ...lists, userId: id, email: id });
@@ -27,12 +31,12 @@ function orgPeople(state: OrgState): { id: string; role: OrgRole }[] {
   return people;
 }
 
-export function getOrgRoute(state: OrgState, now = Date.now()) {
+export function getOrgRoute(state: OrgState, now = Date.now(), ownerEmail?: string) {
   if (!state.org) return { status: 404 as const };
   const pendingInvites = state.invites
     .filter((invite) => inviteStatus(invite, now) === "open")
     .map((invite) => ({ email: invite.email, expiresAt: invite.expiresAt }));
-  return { status: 200 as const, body: { org: state.org, people: orgPeople(state), pendingInvites } };
+  return { status: 200 as const, body: { org: state.org, people: orgPeople(state, ownerEmail), pendingInvites } };
 }
 
 export function createOrgRoute(state: OrgState, input: { name: string; ownerUserId: string; host: OrgRecord["host"] }) {
@@ -108,6 +112,8 @@ export interface OrgRouteDeps {
   state: OrgState;
   actorId: (auth: RequestAuth) => string;
   actorEmail: (auth: RequestAuth) => string | undefined;
+  /** The org owner's email, so the owner is not listed again by that email. */
+  ownerEmail?: () => string | undefined;
   now?: () => number;
   token?: () => string;
   persist?: () => void;
@@ -118,7 +124,7 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
   const token = deps.token ?? (() => randomBytes(16).toString("hex"));
   return async ({ req, res, path, method, auth, json, readBody }) => {
     if (method === "GET" && path === "/api/org") {
-      const result = getOrgRoute(deps.state);
+      const result = getOrgRoute(deps.state, now(), deps.ownerEmail?.());
       return json(res, result.status, result.body ?? {});
     }
     if (method !== "POST") return PASS;

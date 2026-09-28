@@ -30,6 +30,18 @@ describe("org routes", () => {
       },
     });
   });
+  it("lists the owner once when their email is also in the sign-in lists", () => {
+    const state = emptyOrgState();
+    const owner = "pr_11111111-1111-4111-8111-111111111111";
+    createOrgRoute(state, { name: "GOX", ownerUserId: owner, host: { kind: "server", url: "https://pulsa.gox.ca" } });
+    state.signIn.admins = ["JC@gox.ca", "ada@example.test"];
+    state.signIn.members = ["jc@gox.ca", "zachary@example.test"];
+    expect(getOrgRoute(state, 1_000, "jc@gox.ca").body?.people).toEqual([
+      { id: owner, role: "owner" },
+      { id: "ada@example.test", role: "admin" },
+      { id: "zachary@example.test", role: "member" },
+    ]);
+  });
   it("lists an open invite without treating it as a member", () => {
     const state = emptyOrgState();
     createOrgRoute(state, { name: "GOX", ownerUserId: "jc", host: { kind: "server", url: "https://pulsa.gox.ca" } });
