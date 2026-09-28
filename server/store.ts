@@ -7,6 +7,7 @@ import { chmodSync, existsSync, readFileSync, mkdirSync, rmSync, statSync, unlin
 import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { applyHumanIds } from "./channel-membership.ts";
 import { ensureSections, readSections, changeEmptySection } from "./section-context.ts";
 import type { TeamComputers } from "./team-computers.ts";
 import { removeBotFolder, soulFile, soulHash, writeSoulMirror } from "./bot-folder.ts";
@@ -1114,7 +1115,14 @@ export class Store {
       defaultResponder?: GroupDefaultResponder;
       completed?: boolean;
     },
+    humanIds?: string[],
   ): GroupRecord {
+    let acceptedHumans: string[] | undefined;
+    if (humanIds !== undefined) {
+      const applied = applyHumanIds({ dm, humanIds });
+      if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
+      acceptedHumans = applied.humanIds;
+    }
     this.rememberSections([section]);
     const threadId = newId();
     const createdAt = Date.now();
@@ -1133,6 +1141,7 @@ export class Store {
       busyBotId: null,
       section,
     };
+    if (acceptedHumans !== undefined) group.humanIds = acceptedHumans;
     if (!dm) {
       group.tasks = [{ threadId, title: UNTITLED_TASK, createdAt, updatedAt: createdAt }];
       group.setupCompletedAt = setup?.completed ? createdAt : null;
@@ -1151,9 +1160,16 @@ export class Store {
     );
   }
 
-  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "defaultResponder" | "bulletin" | "unread" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage">>): GroupRecord | null {
+  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "humanIds" | "defaultResponder" | "bulletin" | "unread" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage">>): GroupRecord | null {
     const group = this.group(id);
     if (!group) return null;
+    if (Object.prototype.hasOwnProperty.call(patch, "humanIds")) {
+      if (!Array.isArray(patch.humanIds) || patch.humanIds.some((id) => typeof id !== "string")) {
+        throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
+      }
+      const applied = applyHumanIds({ dm: group.dm, humanIds: patch.humanIds });
+      if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
+    }
     if (Object.prototype.hasOwnProperty.call(patch, "section")) {
       this.rememberSections([patch.section]);
     }

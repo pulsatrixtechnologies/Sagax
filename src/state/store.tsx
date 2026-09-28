@@ -221,6 +221,8 @@ export interface Group {
   threadId: string;
   name: string;
   memberIds: string[];
+  /** People in this channel, beside the bots. Absent on a bot-to-bot dm. */
+  humanIds?: string[];
   defaultResponder: GroupDefaultResponder;
   bulletin: string;
   unread: boolean;

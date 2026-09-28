@@ -539,6 +539,8 @@ import {
   phoneSecretOperationId,
   type PhoneSecretContext,
 } from "./phone-secret.ts";
+import { applyHumanIds, canEditHumans, canPlaceBot } from "./channel-membership.ts";
+import { roleOf, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -3513,7 +3515,16 @@ function createChannel(value: unknown): GroupRecord {
     if (!responder) throw Object.assign(new Error("invalid setup.defaultResponder"), { status: 400 });
     setup = { bulletin: requested.bulletin, defaultResponder: responder, completed: true };
   }
-  return store.createGroup(name, memberIds, false, section, setup);
+  let humanIds: string[] | undefined;
+  if (body.humanIds !== undefined) {
+    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string")) {
+      throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
+    }
+    const applied = applyHumanIds({ dm: false, humanIds: body.humanIds });
+    if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
+    humanIds = applied.humanIds;
+  }
+  return store.createGroup(name, memberIds, false, section, setup, humanIds);
 }
 
 function updateChannel(groupId: string, value: unknown): GroupRecord {
@@ -3576,6 +3587,14 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
       throw Object.assign(new Error("pause or reassign this room's team-goal routine before removing its lead"), { status: 409 });
     }
     patch.memberIds = roster.memberIds;
+  }
+  if (body.humanIds !== undefined) {
+    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string")) {
+      throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
+    }
+    const applied = applyHumanIds({ dm: Boolean(existing.dm), humanIds: body.humanIds });
+    if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
+    patch.humanIds = applied.humanIds;
   }
   if (body.defaultResponder !== undefined) {
     const memberIds = (patch.memberIds as string[] | undefined) ?? existing.memberIds;
@@ -13054,6 +13073,57 @@ const orgState: OrgState = {
     return cfg.signIn as { admins: string[]; members: string[] };
   },
 };
+function channelActorId(auth: RequestAuth): string {
+  if (auth.kind === "session") return (auth.session.email ?? auth.session.userId ?? auth.session.id).trim();
+  return (cfg.profile?.email ?? "local-owner").trim();
+}
+
+/** Loopback on this machine is the operator. Otherwise the org role, or
+ * an admin session when no organization exists yet. */
+function channelActorRole(auth: RequestAuth): OrgRole | null {
+  if (auth.kind === "loopback" && auth.trust !== "service") return "owner";
+  if (!orgState.org) {
+    if (auth.kind === "session" && auth.scopes.includes("admin")) return "admin";
+    return null;
+  }
+  return roleOf({
+    ownerUserId: orgState.org.ownerUserId,
+    admins: orgState.signIn.admins,
+    members: orgState.signIn.members,
+    userId: channelActorId(auth),
+  });
+}
+
+/** Bots do not store ownerUserId yet. Until one is present, an organization
+ * treats the org owner as the owner. The local operator, and a pre-org
+ * admin, keep the access they already had. */
+function ownerUserIdForPlacement(botId: string, auth: RequestAuth, actorId: string): string {
+  const recorded = (store.bot(botId) as { ownerUserId?: unknown } | undefined)?.ownerUserId;
+  if (typeof recorded === "string" && recorded) return recorded;
+  if (auth.kind === "loopback" && auth.trust !== "service") return actorId;
+  if (orgState.org) return orgState.org.ownerUserId;
+  return actorId;
+}
+
+function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already: ReadonlySet<string>): string | null {
+  const actorId = channelActorId(auth);
+  for (const id of botIds) {
+    if (typeof id !== "string" || already.has(id)) continue;
+    if (!canPlaceBot({ actorId, ownerUserId: ownerUserIdForPlacement(id, auth, actorId) })) {
+      return "forbidden: only the bot owner can place it in a channel";
+    }
+  }
+  return null;
+}
+
+function refuseHumanEdit(auth: RequestAuth, body: unknown): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  if (!Object.prototype.hasOwnProperty.call(body, "humanIds")) return null;
+  const role = channelActorRole(auth);
+  if (role && canEditHumans(role)) return null;
+  return "forbidden: only an owner or an admin can change channel people";
+}
+
 ROUTES.push(createOrgRoutes({
   state: orgState,
   actorId: (auth) => {
@@ -16519,6 +16589,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // ── channels (persisted internally as groups) ───────────────────────
     if (method === "POST" && path === "/api/groups") {
       const body = await readBody(req);
+      if (Array.isArray(body?.memberIds)) {
+        const placed = refusePlacedBots(auth, body.memberIds, new Set());
+        if (placed) return json(res, 403, { error: placed });
+      }
+      const humans = refuseHumanEdit(auth, body);
+      if (humans) return json(res, 403, { error: humans });
       // A member may only put bots they can see in a room: the room would
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
@@ -17071,6 +17147,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     m = path.match(/^\/api\/groups\/([\w-]+)$/);
     if (m && method === "PATCH") {
       const body = await readBody(req);
+      const existingGroup = store.group(m[1]);
+      // A bot-to-bot dm keeps its existing member refusal. Placement checks
+      // apply only when this patch adds a bot to a channel.
+      if (existingGroup && !existingGroup.dm && Array.isArray(body?.memberIds)) {
+        const placed = refusePlacedBots(auth, body.memberIds, new Set(existingGroup.memberIds));
+        if (placed) return json(res, 403, { error: placed });
+      }
+      const humans = refuseHumanEdit(auth, body);
+      if (humans) return json(res, 403, { error: humans });
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
         const field = clientGroupPatchViolation(body);
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });

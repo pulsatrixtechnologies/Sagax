@@ -739,6 +739,21 @@ describe("Store", () => {
     expect(reloaded.group(group.id)?.defaultResponder).toEqual({ kind: "member", botId: second.id });
   });
 
+  it("refuses humanIds on a bot-to-bot dm and persists them on a channel", () => {
+    const store = new Store(selection);
+    const first = store.createBot();
+    const second = store.createBot();
+    const dm = store.createGroup("Pair", [first.id, second.id], true);
+    expect(() => store.patchGroup(dm.id, { humanIds: ["zachary@example.test"], name: "nope" })).toThrow(/dm-has-no-humans/);
+    expect(dm.humanIds).toBeUndefined();
+    expect(dm.name).toBe("Pair");
+
+    const room = store.createGroup("Channel", [first.id]);
+    expect(store.patchGroup(room.id, { humanIds: ["jc", "zachary@example.test"] })?.humanIds).toEqual(["jc", "zachary@example.test"]);
+    expect(new Store(selection).group(room.id)?.humanIds).toEqual(["jc", "zachary@example.test"]);
+    expect(new Store(selection).group(dm.id)?.humanIds).toBeUndefined();
+  });
+
   it("persists a channel's context when it is created", () => {
     const store = new Store(selection);
     const bot = store.createBot();

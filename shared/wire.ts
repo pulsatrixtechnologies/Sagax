@@ -564,6 +564,8 @@ export interface WireGroup {
   tasks?: GroupTask[];
   name: string;
   memberIds: string[];
+  /** People in this channel, beside the bots. Absent on a bot-to-bot dm. */
+  humanIds?: string[];
   defaultResponder: GroupDefaultResponder;
   /** The room's shared instructions. */
   bulletin: string;
