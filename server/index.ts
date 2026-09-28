@@ -10117,22 +10117,25 @@ async function runGroupMemberTurn(
   const destination = destinationForBot({ host: bot.host, workers: registeredWorkers });
   if (destination.kind !== "fleet") {
     const host = bot.host;
-    if (destination.kind === "queued" && host?.kind === "machine") {
+    const deviceId = destination.kind === "worker" ? destination.deviceId : host?.kind === "machine" ? host.deviceId : null;
+    if (deviceId) {
       const lastUser = [...store.messagesFor(threadId)].reverse().find((item) => item.role === "user" && item.kind === "text");
       if (lastUser) {
         const next = enqueueOfflineTurn({
           queued: queuedWorkerTurns,
           messageId: lastUser.id,
-          deviceId: host.deviceId,
+          deviceId,
           authorId: lastUser.sender?.id ?? (cfg.profile?.email ?? "local-owner").trim(),
         });
         if (next !== queuedWorkerTurns) {
           queuedWorkerTurns = next;
-          store.appendMessage(threadId, {
-            role: "bot",
-            kind: "activity",
-            tool: { name: "machine-offline", ok: false },
-          });
+          if (destination.kind === "queued") {
+            store.appendMessage(threadId, {
+              role: "bot",
+              kind: "activity",
+              tool: { name: "machine-offline", ok: false },
+            });
+          }
         }
       }
     }

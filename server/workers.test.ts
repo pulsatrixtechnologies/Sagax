@@ -73,16 +73,29 @@ describe("workers", () => {
     })).toEqual({ queued, fleetIds: ["aurora"], status: null });
   });
 
-  it("does not run an online machine on the fleet host", () => {
+  it("lets an online worker pull its message once and does not call the fleet runner", () => {
     const queued = [{ messageId: "older", deviceId: "studio", authorId: "p", started: false }];
+    const destination = turnDestination({
+      host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" },
+      workerOnline: true,
+    });
+    expect(destination).toEqual({ kind: "worker", deviceId: "laptop" });
+    const calls: string[] = [];
+    expect(invokeFleetRunner({ destination, run: () => calls.push("fleet") })).toBe(false);
+    expect(calls).toEqual([]);
     const gate = channelTurnGate({
       bots: [{ id: "desk", host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" } }],
       workers: [{ deviceId: "laptop", userId: "zachary@example.test", online: true }],
       messageId: "m1",
+      authorId: "p_zach",
       queued,
     });
-    expect(gate).toEqual({ queued, fleetIds: [], status: null });
-    expect(gate.queued).toBe(queued);
+    expect(gate.fleetIds).toEqual([]);
+    expect(gate.status).toBeNull();
+    const pulled = takeQueued("laptop", gate.queued);
+    expect(pulled.ids).toEqual(["m1"]);
+    expect(takeQueued("laptop", pulled.queued).ids).toEqual([]);
+    expect(takeQueued("studio", pulled.queued).ids).toEqual(["older"]);
   });
 
   it("queues an offline machine until that device pulls it, and does not call the fleet runner", () => {

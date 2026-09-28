@@ -96,9 +96,9 @@ function machineOnline(workers: Worker[], host: BotHost): boolean {
 }
 
 /**
- * Fleet bots are the only ones the host may run. An offline machine is queued
- * for its device. An online machine is not queued and is not a fleet id.
- * A missing host is fleet, so an older bot is not treated as an offline machine.
+ * Fleet bots are the only ones the host may run. Offline and online machines
+ * are both claimable by that device's pull. Only an offline machine is
+ * machine-offline. A missing host is fleet.
  */
 export function channelTurnGate(input: {
   bots: { id: string; host?: BotHost }[];
@@ -117,6 +117,8 @@ export function channelTurnGate(input: {
     queueTurn({ destination, messageId: input.messageId, queued: queued.map((item) => item.messageId) });
     if (destination.kind === "fleet") {
       fleetIds.push(bot.id);
+    } else if (destination.kind === "worker") {
+      queued = enqueueOfflineTurn({ queued, messageId: input.messageId, deviceId: destination.deviceId, authorId });
     } else if (destination.kind === "queued" && host.kind === "machine") {
       held = true;
       queued = enqueueOfflineTurn({ queued, messageId: input.messageId, deviceId: host.deviceId, authorId });
