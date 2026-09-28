@@ -22,12 +22,16 @@ export function acceptInvite(invite: OrgInvite, now: number) {
 function actorKey(id: string): string {
   return id.trim().toLowerCase();
 }
-export function roleOf(input: { ownerUserId: string; admins: string[]; members: string[]; userId: string }): OrgRole | null {
+export function roleOf(input: { ownerUserId: string; admins: string[]; members: string[]; userId: string; email?: string }): OrgRole | null {
   const userId = actorKey(input.userId);
   if (!userId) return null;
   if (userId === actorKey(input.ownerUserId)) return "owner";
-  if (input.admins.some((id) => actorKey(id) === userId)) return "admin";
-  if (input.members.some((id) => actorKey(id) === userId)) return "member";
+  // Lists are sign-in emails. A principal is matched by its email; a legacy
+  // email-shaped id still matches itself until the migration has run.
+  const key = input.email !== undefined ? actorKey(input.email) : userId;
+  if (!key) return null;
+  if (input.admins.some((id) => actorKey(id) === key)) return "admin";
+  if (input.members.some((id) => actorKey(id) === key)) return "member";
   return null;
 }
 /** The creator stays owner after a profile email lands. `local-owner` is the

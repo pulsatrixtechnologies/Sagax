@@ -13802,6 +13802,7 @@ ROUTES.push(createOrgRoutes({
     if (auth.kind === "session") return (auth.session.email ?? auth.session.userId ?? auth.session.id).trim();
     return (cfg.profile?.email ?? "local-owner").trim();
   },
+  actorEmail: (auth) => auth.kind === "session" ? (auth.session.email?.trim().toLowerCase() || undefined) : (cfg.profile?.email?.trim().toLowerCase() || undefined),
   persist: () => {
     saveConfig({
       ...(orgState.org ? { org: orgState.org } : {}),

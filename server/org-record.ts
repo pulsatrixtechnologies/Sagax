@@ -1,4 +1,5 @@
 import { INVITE_TTL_MS, type OrgInvite } from "./org-directory.ts";
+import { isPrincipalId } from "./principals.ts";
 
 export interface OrgRecord {
   name: string;
@@ -6,10 +7,26 @@ export interface OrgRecord {
   ownerUserId: string;
 }
 
+export function serverAddressOk(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:") return true;
+    if (parsed.protocol !== "http:") return false;
+    // Tailscale names, or a local Docker server whose exposure the operator manages.
+    return parsed.hostname.endsWith(".ts.net") || parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
 export function createOrg(input: { name: string; ownerUserId: string; host: OrgRecord["host"] }): OrgRecord {
   const name = input.name.trim();
   if (!name) throw new Error("name is required");
-  return { name, ownerUserId: input.ownerUserId.trim().toLowerCase(), host: input.host };
+  // Org mode needs a coordination server everyone signs in to. This
+  // computer can be it, through its tunnel, Tailscale or domain address.
+  if (input.host.kind !== "server" || !serverAddressOk(input.host.url)) throw new Error("a server address is required");
+  const owner = input.ownerUserId.trim();
+  return { name, ownerUserId: isPrincipalId(owner) ? owner : owner.toLowerCase(), host: { kind: "server", url: input.host.url.trim() } };
 }
 
 export function issueInvite(input: { email: string; now: number; token: string }): OrgInvite {

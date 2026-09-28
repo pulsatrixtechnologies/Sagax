@@ -17,7 +17,9 @@ function orgPeople(state: OrgState): { id: string; role: OrgRole }[] {
   const seen = new Set<string>();
   for (const id of [state.org.ownerUserId, ...state.signIn.admins, ...state.signIn.members]) {
     if (seen.has(id)) continue;
-    const role = roleOf({ ...lists, userId: id });
+    // The owner is a principal id, matched against itself. Admins and
+    // members are emails, so each is matched by its own email.
+    const role = id === state.org.ownerUserId ? roleOf({ ...lists, userId: id }) : roleOf({ ...lists, userId: id, email: id });
     if (!role) continue;
     seen.add(id);
     people.push({ id, role });
@@ -40,13 +42,14 @@ export function createOrgRoute(state: OrgState, input: { name: string; ownerUser
   return { status: 200, body: { org } };
 }
 
-export function issueInviteRoute(state: OrgState, input: { actorId: string; email: string; now: number; token: string }) {
+export function issueInviteRoute(state: OrgState, input: { actorId: string; email: string; now: number; token: string; actorEmail?: string }) {
   if (!state.org) return { status: 404 };
   const role = roleOf({
     ownerUserId: state.org.ownerUserId,
     admins: state.signIn.admins,
     members: state.signIn.members,
     userId: input.actorId,
+    email: input.actorEmail,
   });
   if (role !== "owner" && role !== "admin") return { status: 403 };
   const invite = issueInvite({ email: input.email, now: input.now, token: input.token });
@@ -58,13 +61,14 @@ function sameEmail(a: string, b: string) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-export function revokeInviteRoute(state: OrgState, input: { actorId: string; token: string; now: number }) {
+export function revokeInviteRoute(state: OrgState, input: { actorId: string; token: string; now: number; actorEmail?: string }) {
   if (!state.org) return { status: 404 as const };
   const role = roleOf({
     ownerUserId: state.org.ownerUserId,
     admins: state.signIn.admins,
     members: state.signIn.members,
     userId: input.actorId,
+    email: input.actorEmail,
   });
   if (role !== "owner" && role !== "admin") return { status: 403 as const };
   const found = state.invites.find((invite) => invite.token === input.token);
@@ -103,6 +107,7 @@ function parseHost(value: unknown): OrgRecord["host"] | null {
 export interface OrgRouteDeps {
   state: OrgState;
   actorId: (auth: RequestAuth) => string;
+  actorEmail: (auth: RequestAuth) => string | undefined;
   now?: () => number;
   token?: () => string;
   persist?: () => void;
@@ -134,6 +139,7 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
       if (typeof body?.email !== "string") return json(res, 400, { error: "email is required" });
       const result = issueInviteRoute(deps.state, {
         actorId: deps.actorId(auth),
+        actorEmail: deps.actorEmail(auth),
         email: body.email,
         now: now(),
         token: token(),
@@ -145,6 +151,7 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
     if (revoke) {
       const result = revokeInviteRoute(deps.state, {
         actorId: deps.actorId(auth),
+        actorEmail: deps.actorEmail(auth),
         token: decodeURIComponent(revoke[1]!),
         now: now(),
       });
@@ -158,7 +165,7 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
     const sessionEmail = auth.kind === "session" ? auth.session.email : undefined;
     const result = acceptInviteRoute(deps.state, {
       token: decodeURIComponent(accept[1]!),
-      userId: body.userId,
+      userId: deps.actorEmail(auth) ?? body.userId,
       now: now(),
       sessionEmail,
     });
