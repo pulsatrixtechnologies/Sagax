@@ -32,7 +32,8 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
+import { api, ApiError, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
+import { canSeeDirectBot } from "../../server/channel-visibility.ts";
 import { peerLine } from "@/lib/peer-message";
 import { liveActivityLabel } from "@/lib/live-activity";
 
@@ -100,6 +101,7 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { attentionJumpAction, AttentionThreadRows, crossBotAttentionThreads, SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { SidebarAttentionPanel } from "./SidebarAttentionPanel";
 import { ShortcutHint } from "./ShortcutHint";
+import { OrgSidebar, OrgSidebarNav } from "./OrgSidebar";
 
 const SECTION_LABEL_KEYS: Record<string, LocaleKey> = {
   [PINNED_SECTION_ID]: "sidebar.section.pinned",
@@ -1543,6 +1545,36 @@ export function TeamMenuItems({ onAddBots, onRename, onShare, onDelete }: {
   );
 }
 
+function orgViewerId(state: AppState): string {
+  const email = state.config?.profile?.email?.trim();
+  // Same fallback as the server actor id when this machine has no profile email.
+  return email || "local-owner";
+}
+
+/** Non-dm groups already kept by GET /api/groups. Bot-to-bot dms are not channels. */
+function orgChannelRows(state: AppState): { id: string; name: string; preview: string }[] {
+  return state.groups.flatMap((group) => {
+    if (group.dm) return [];
+    return [{ id: group.id, name: group.name, preview: groupPreview(group, state.bots) }];
+  });
+}
+
+/** Direct is ownership or a grant. A bot with no owner is not listed, even
+ * when the server sent it because it sits in a channel. */
+function orgDirectRows(state: AppState): { id: string; name: string }[] {
+  const viewerId = orgViewerId(state);
+  return state.bots.flatMap((bot) => {
+    if (bot.hidden) return [];
+    const record = bot as Bot & { ownerUserId?: unknown; directGrants?: unknown };
+    if (typeof record.ownerUserId !== "string" || !record.ownerUserId) return [];
+    const directGrants = Array.isArray(record.directGrants)
+      ? record.directGrants.filter((id): id is string => typeof id === "string")
+      : [];
+    if (!canSeeDirectBot({ ownerUserId: record.ownerUserId, viewerId, directGrants })) return [];
+    return [{ id: bot.id, name: bot.name }];
+  });
+}
+
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
@@ -1597,6 +1629,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     restoreBot?: { id: string; name: string };
   } | null>(null);
   const [query, setQuery] = useState("");
+  // null on 404 and on any other failure, so the roster stays.
+  const [org, setOrg] = useState<{ name: string } | null>(null);
   const [density, setDensityState] = useState<SidebarDensity>(() => loadSidebarDensity());
   const [lastExpandedDensity, setLastExpandedDensity] = useState<Exclude<SidebarDensity, "icons">>(() => {
     const saved = loadSidebarDensity();
@@ -1669,6 +1703,24 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     const timer = window.setTimeout(() => setTeamFeedback(null), 5000);
     return () => window.clearTimeout(timer);
   }, [teamFeedback]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const body = await api<{ org?: { name?: string } }>("/api/org");
+        if (cancelled) return;
+        const name = body.org?.name;
+        if (typeof name === "string") setOrg({ name });
+      } catch (error) {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 404) setOrg(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
 
   // Archive and delete share one pending confirmation at a time.
@@ -1859,6 +1911,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   // disagree with it.
   const attention = crossBotAttentionThreads(state.bots, state.pendingQueued, undefined, state.groups);
   const pendingBotUndo = teamFeedback?.restoreBot;
+  const orgChannels = org
+    ? orgChannelRows(state).filter((channel) => !q || channel.name.toLowerCase().includes(q) || channel.preview.toLowerCase().includes(q))
+    : [];
+  const orgDirects = org
+    ? orgDirectRows(state).filter((bot) => !q || bot.name.toLowerCase().includes(q))
+    : [];
 
   return (
     <aside
@@ -2095,8 +2153,13 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         />
       )}
 
-      {/* Bot list */}
+      {/* Bot list. GET /api/org 404 keeps this roster. */}
       <div className="flex-1 overflow-y-auto px-2">
+        {org ? (
+          <OrgSidebarNav dispatch={dispatch} selectedId={state.activeView === "chat" ? state.selectedId : null}>
+            <OrgSidebar orgName={org.name} channels={orgChannels} directs={orgDirects} />
+          </OrgSidebarNav>
+        ) : (
         <div className="flex flex-col gap-0.5">
           {matchingBots.length === 0 && visibleGroups.length === 0 && q && q.length < MIN_QUERY && (
             <div className="px-3 py-6 text-center text-[13px] text-ink-secondary">{t("sidebar.noMatch", { query })}</div>
@@ -2232,6 +2295,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           })}
           <SearchResults query={query} onLanded={() => setQuery("")} />
         </div>
+        )}
       </div>
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {reorderAnnouncement}
