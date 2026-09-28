@@ -489,6 +489,8 @@ import {
   sessionCookieName,
 } from "./request-auth.ts";
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
+import { PrincipalRegistry } from "./principals.ts";
+import { migrateIdentityRefs } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
 import {
   activityCsv,
@@ -543,7 +545,7 @@ import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } fr
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, seesChannelFrame, sseFrameProjection } from "./channel-visibility.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
-import { ownerUserIdAfterProfileEmail, roleOf, signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
+import { roleOf, signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -740,11 +742,18 @@ function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   return name ? { name, id: personKey(auth.session) } : undefined;
 }
 
-/** An opaque, stable key for the person behind a session: their account
- * email when they signed in with one (a new device is still them), else the
- * paired session itself. Hashed, so a message or a thread can carry it
- * without handing other members a session id. */
+/** A stable key for the person behind a session: their principal id
+ * (server/principals.ts), so a new device or a changed email is still them.
+ * A session without one falls back to the older hashed key. */
 function personKey(session: SessionRecord): string {
+  return session.principalId ?? legacyPersonKey(session);
+}
+
+/** Before principals: their account email when they signed in with one,
+ * else the paired session itself. Hashed, so a message or a thread can
+ * carry it without handing other members a session id. Threads and cards
+ * recorded then still carry it. */
+function legacyPersonKey(session: SessionRecord): string {
   const basis = session.email ? `email:${session.email.trim().toLowerCase()}` : `session:${session.id}`;
   return `p_${createHash("sha256").update(basis).digest("base64url").slice(0, 22)}`;
 }
@@ -805,7 +814,7 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
   }
   if (auth.scopes.includes("admin") || !sharedMembership()) return null;
   const known = [threadStarters.get(threadId), cardRequesterKey(threadId, requestId)].filter((person): person is string => Boolean(person));
-  if (!known.length || known.includes(personKey(auth.session))) return null;
+  if (!known.length || known.includes(personKey(auth.session)) || known.includes(legacyPersonKey(auth.session))) return null;
   return "Only the person who started this conversation or sent this request, or a workspace admin, can answer this card.";
 }
 
@@ -2738,6 +2747,25 @@ try {
 // Replay only after the secondary write above is durable. If reconciliation
 // failed, leave the committed journal in place and profile reuse blocked.
 if (browserCleanupReferencesReconciled) browserCleanup.startPending();
+// People by a stable principal id (server/principals.ts). Built once `store`
+// and `sessions` exist and before any route serves; stored emails and
+// "local-owner" become principal ids once, sessions on every boot.
+const principals = new PrincipalRegistry({ path: join(DATA_DIR, "principals.json") });
+principals.localOperator(cfg.profile?.email);
+{
+  const migrated = migrateIdentityRefs({
+    org: cfg.identityMigratedAt ? null : cfg.org ?? null,
+    groups: cfg.identityMigratedAt ? [] : store.groups,
+    bots: cfg.identityMigratedAt ? [] : store.bots,
+    sessions: sessions.listRecordsForMigration(),
+    registry: principals,
+  });
+  if (migrated.orgOwner && cfg.org) { cfg.org = { ...cfg.org, ownerUserId: migrated.orgOwner }; saveConfig({ org: cfg.org }); }
+  for (const g of migrated.groups) store.patchGroup(g.id, { humanIds: g.humanIds });
+  for (const b of migrated.bots) store.patchBot(b.id, { ...(b.ownerUserId ? { ownerUserId: b.ownerUserId } : {}), ...(b.directGrants ? { directGrants: b.directGrants } : {}) });
+  for (const s of migrated.sessions) sessions.setPrincipal(s.id, s.principalId);
+  if (!cfg.identityMigratedAt) { cfg.identityMigratedAt = Date.now(); saveConfig({ identityMigratedAt: cfg.identityMigratedAt }); }
+}
 
 /** A bot as a client may see it: no provider session bookkeeping.
  *
@@ -4794,11 +4822,9 @@ function approvalOwnerId(bot: BotRecord): string {
 }
 
 function approvalOwnerName(ownerUserId: string): string {
-  const email = cfg.profile?.email?.trim() ?? "";
   const name = cfg.profile?.name?.trim() ?? "";
-  const localId = email || "local-owner";
-  if (name && (ownerUserId === email || ownerUserId === localId)) return name;
-  return ownerUserId;
+  if (name && ownerUserId === localPrincipalId()) return name;
+  return principals.byId(ownerUserId)?.email ?? ownerUserId;
 }
 
 /** The device this session currently is, when it is the registered worker
@@ -4820,7 +4846,7 @@ function viewerForApproval(auth: RequestAuth): ApprovalViewer {
   const userId = auth.kind === "session"
     ? (channelViewerId(auth) ?? "")
     : auth.kind === "loopback" && auth.trust !== "service"
-      ? (cfg.profile?.email ?? "local-owner").trim()
+      ? localPrincipalId()
       : "";
   return {
     userId,
@@ -4846,7 +4872,7 @@ function isApprovalCardMessage(message: { kind?: unknown; card?: unknown }): boo
 
 function approvalCallerUserId(auth: RequestAuth): string {
   if (auth.kind === "session") return channelViewerId(auth) ?? "";
-  if (auth.kind === "loopback" && auth.trust !== "service") return (cfg.profile?.email ?? "local-owner").trim();
+  if (auth.kind === "loopback" && auth.trust !== "service") return localPrincipalId();
   return "";
 }
 
@@ -10554,7 +10580,7 @@ async function runGroupMemberTurn(
         messageId: heldMessageId,
         deviceId,
         userId: deviceUserId,
-        authorId: heldMessage?.sender?.id ?? (cfg.profile?.email ?? "local-owner").trim(),
+        authorId: heldMessage?.sender?.id ?? localPrincipalId(),
       });
       if (next !== queuedWorkerTurns) {
         queuedWorkerTurns = next;
@@ -11931,7 +11957,7 @@ function startGroupTurn(
     bots: speakers.map((bot) => ({ id: bot.id, host: bot.host })),
     workers: registeredWorkers,
     messageId: message.id,
-    authorId: options.sender?.id ?? (cfg.profile?.email ?? "local-owner").trim(),
+    authorId: options.sender?.id ?? localPrincipalId(),
     queued: queuedWorkerTurns,
   });
   queuedWorkerTurns = gate.queued;
@@ -13617,12 +13643,28 @@ const orgState: OrgState = {
     return cfg.signIn as { admins: string[]; members: string[] };
   },
 };
+/** The operator at this computer, as a principal. The profile email is an
+ * attribute of it, never a second person. */
+function localPrincipalId(): string {
+  return principals.localOperator(cfg.profile?.email).id;
+}
+/** Who acts, by principal: a session's principal (or its anonymous id),
+ * the operator on loopback, nobody for a local service. */
+function actorPrincipalId(auth: RequestAuth): string {
+  if (auth.kind === "session") return channelViewerId(auth) ?? "";
+  if (auth.kind === "loopback" && auth.trust === "service") return "";
+  return localPrincipalId();
+}
+/** The actor's sign-in email: sign-in lists and invites stay in emails. */
+function actorEmail(auth: RequestAuth): string | undefined {
+  if (auth.kind === "session") return auth.session.email?.trim().toLowerCase() || undefined;
+  return cfg.profile?.email?.trim().toLowerCase() || undefined;
+}
 function channelActorId(auth: RequestAuth): string {
-  if (auth.kind === "session") return (auth.session.email ?? auth.session.userId ?? auth.session.id).trim();
-  return (cfg.profile?.email ?? "local-owner").trim();
+  return actorPrincipalId(auth);
 }
 function creatingBotOwnerId(auth: RequestAuth): string {
-  return channelActorId(auth).trim().toLowerCase();
+  return actorPrincipalId(auth);
 }
 
 function recordedBotOwner(bot: { ownerUserId?: unknown }): string | undefined {
@@ -13632,7 +13674,7 @@ function effectiveBotOwner(bot: { ownerUserId?: unknown }): string {
   return ownerUserIdForPlacement({
     recordedOwnerUserId: recordedBotOwner(bot),
     orgOwnerUserId: orgState.org?.ownerUserId?.trim().toLowerCase(),
-    localOperatorId: (cfg.profile?.email ?? "local-owner").trim().toLowerCase(),
+    localOperatorId: localPrincipalId(),
   });
 }
 function botDirectGrants(bot: { directGrants?: unknown }): string[] {
@@ -13724,6 +13766,7 @@ function channelActorRole(auth: RequestAuth): OrgRole | null {
     admins: orgState.signIn.admins,
     members: orgState.signIn.members,
     userId: channelActorId(auth),
+    email: actorEmail(auth),
   });
 }
 
@@ -13736,7 +13779,7 @@ function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already
       ? effectiveBotOwner(bot)
       : ownerUserIdForPlacement({
         orgOwnerUserId: orgState.org?.ownerUserId?.trim().toLowerCase(),
-        localOperatorId: (cfg.profile?.email ?? "local-owner").trim().toLowerCase(),
+        localOperatorId: localPrincipalId(),
       });
     if (!canPlaceBot({ actorId, ownerUserId })) {
       return "forbidden: only the bot owner can place it in a channel";
@@ -13798,11 +13841,9 @@ ROUTES.push(createWorkerRoutes({
 }));
 ROUTES.push(createOrgRoutes({
   state: orgState,
-  actorId: (auth) => {
-    if (auth.kind === "session") return (auth.session.email ?? auth.session.userId ?? auth.session.id).trim();
-    return (cfg.profile?.email ?? "local-owner").trim();
-  },
-  actorEmail: (auth) => auth.kind === "session" ? (auth.session.email?.trim().toLowerCase() || undefined) : (cfg.profile?.email?.trim().toLowerCase() || undefined),
+  actorId: actorPrincipalId,
+  actorEmail,
+  ownerEmail: () => (orgState.org ? principals.byId(orgState.org.ownerUserId)?.email : undefined),
   persist: () => {
     saveConfig({
       ...(orgState.org ? { org: orgState.org } : {}),
@@ -13900,7 +13941,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, verified.status, { error: verified.error });
       }
       sessions.clearFailures(source);
-      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email });
+      const principal = principals.forAccount({ email: verified.email, controlPlaneUserId: verified.userId });
+      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id });
       const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: true, sharedComputers: sharedComputersEnabled(cfg) });
       const secure = requestOrigin(req)?.startsWith("https://") === true;
       res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }));
@@ -14012,6 +14054,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         : { status: 503, error: "Workspace sign-in is unavailable." };
       if (failure) return json(res, failure.status, { error: failure.error });
     }
+    // A portal-issued or older account session never went through email
+    // sign-in: give it its person now, so it owns what it owned by email.
+    if (auth.kind === "session" && !auth.session.principalId && auth.session.email) {
+      const userId = auth.session.userId;
+      const principal = principals.forAccount({
+        email: auth.session.email,
+        controlPlaneUserId: userId && !userId.startsWith("portal:") ? userId : undefined,
+      });
+      sessions.setPrincipal(auth.session.id, principal.id);
+      auth.session.principalId = principal.id;
+    }
     // Bot visibility: a member reaches a restricted bot, its threads, rooms,
     // routines and files exactly as they reach an id that does not exist.
     // Lists and live frames are narrowed where they are built, below.
@@ -14087,7 +14140,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const requested: unknown = body?.scopes;
       const scopes = Array.isArray(requested) ? requested.filter((v): v is Scope => v === "admin" || v === "client") : undefined;
-      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes });
+      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes, principalId: actorPrincipalId(auth) || undefined });
       const origin = requestOrigin(req);
       const base = publicUrl() ?? (auth.kind === "session" && origin ? origin : null);
       const code = formatPairingCode(opened.code);
@@ -16745,7 +16798,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         client.sessionId = auth.session.id;
         client.approvalUserId = channelViewerId(auth) ?? "";
       } else if (auth.kind === "loopback" && auth.trust !== "service") {
-        client.approvalUserId = (cfg.profile?.email ?? "local-owner").trim();
+        client.approvalUserId = localPrincipalId();
       }
       if (viewerId) client.viewerId = viewerId;
       res.writeHead(200, {
@@ -21784,16 +21837,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // place rather than committing a new provider with stale bot voices.
         // A later config-write failure may leave voices cleared, which is the
         // safe side of this cross-file mutation: no foreign id can be spoken.
-        const nextOrg = (() => {
-          if (!patch.profile || typeof patch.profile.email !== "string" || !cfg.org) return undefined;
-          const nextOwner = ownerUserIdAfterProfileEmail({
-            ownerUserId: cfg.org.ownerUserId,
-            previousEmail: cfg.profile?.email ?? "",
-            nextEmail: patch.profile.email,
-          });
-          if (nextOwner === cfg.org.ownerUserId) return undefined;
-          return { ...cfg.org, ownerUserId: nextOwner };
-        })();
+        // The operator keeps one principal id, so the org owner needs no
+        // rewrite when the profile email changes; only the attribute moves.
+        if (patch.profile && typeof patch.profile.email === "string") principals.localOperator(patch.profile.email);
         if (changingVoiceProvider) store.clearVoiceSelections();
         if (externalSecretStorage) {
           // The packaged Electron caller commits supplied credentials to the
@@ -21810,12 +21856,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (persisted.tts?.fishKey !== undefined) persisted.tts.fishKey = "";
           if (persisted.imageGen?.key !== undefined) persisted.imageGen.key = "";
           if (persisted.imageGen?.customApiKey !== undefined) persisted.imageGen.customApiKey = "";
-          saveConfig(nextOrg ? { ...persisted, org: nextOrg } : persisted);
+          saveConfig(persisted);
           configWriteCommitted = true;
           syncCredentialEnv(patch);
           Object.assign(cfg, loadConfig());
         } else {
-          saveConfig(nextOrg ? { ...patch, org: nextOrg } : patch);
+          saveConfig(patch);
           configWriteCommitted = true;
           // loadConfig prefers env over the file for credentials, so the env
           // must follow the save — otherwise the value injected at boot would

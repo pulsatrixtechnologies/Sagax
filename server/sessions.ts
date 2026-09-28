@@ -569,7 +569,13 @@ export class SessionRegistry {
     return true;
   }
 
-  /** Boot migration only: attach the person an older session acts as. */
+  /** Boot migration only: who each stored session is, without its secrets. */
+  listRecordsForMigration(): { id: string; email?: string; userId?: string; principalId?: string }[] {
+    return this.sessions.map(({ id, email, userId, principalId }) => ({ id, email, userId, principalId }));
+  }
+
+  /** Attach the person a session acts as: at boot for older sessions, or on
+   * the first request of a session issued without one. */
   setPrincipal(sessionId: string, principalId: string): boolean {
     const found = this.sessions.find((s) => s.id === sessionId);
     if (!found) return false;

@@ -367,6 +367,8 @@ const appConfigSchema = z.object({
     ]),
     ownerUserId: z.string().min(1),
   }).optional(),
+  /** When stored person references became principal ids (server/identity-migration.ts). */
+  identityMigratedAt: z.number().optional(),
   invites: z.array(z.object({
     token: z.string().min(1),
     email: z.string().max(320),
@@ -501,7 +503,7 @@ const appConfigSchema = z.object({
 const storedAppConfigSchema = appConfigSchema.extend({
   browserProfiles: storedBrowserProfilesSchema.optional(),
 });
-const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, org: true, invites: true })
+const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, org: true, identityMigratedAt: true, invites: true })
   .extend({ threads: threadsPatchSchema.optional(), newBots: newBotsPatchSchema.optional() });
 const jsonObjectSchema = z.record(z.string(), z.json());
 
@@ -513,6 +515,8 @@ export interface AppConfig {
     host: { kind: "this-computer" } | { kind: "server"; url: string };
     ownerUserId: string;
   };
+  /** When stored person references became principal ids (server/identity-migration.ts). */
+  identityMigratedAt?: number;
   invites?: Array<{
     token: string;
     email: string;
@@ -1104,6 +1108,7 @@ export function saveConfig(
   if (checkedPatch.customDomain !== undefined) disk.customDomain = checkedPatch.customDomain;
   if (checkedPatch.signIn !== undefined) disk.signIn = checkedPatch.signIn;
   if (checkedPatch.org !== undefined) disk.org = checkedPatch.org;
+  if (checkedPatch.identityMigratedAt !== undefined) disk.identityMigratedAt = checkedPatch.identityMigratedAt;
   if (checkedPatch.invites !== undefined) disk.invites = checkedPatch.invites;
   // Replace the section so clearing a backup cannot revive the old selection.
   if (checkedPatch.automaticRecovery !== undefined) disk.automaticRecovery = checkedPatch.automaticRecovery;

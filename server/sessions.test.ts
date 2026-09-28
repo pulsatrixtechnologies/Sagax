@@ -547,4 +547,11 @@ describe("sessions carry a principal", () => {
     expect(sessions.setPrincipal(id, "pr_33333333-3333-4333-8333-333333333333")).toBe(true);
     expect(sessions.authenticate(token)?.principalId).toBe("pr_33333333-3333-4333-8333-333333333333");
   });
+
+  it("lists each session's identity fields for the boot migration, never its token hash", () => {
+    const opened = registry.openPairing({ label: "Old phone" });
+    const paired = registry.exchange({ code: opened.code, label: "", source: "test" });
+    const id = paired.ok ? paired.session.id : "";
+    expect(registry.listRecordsForMigration()).toEqual([{ id, email: undefined, userId: undefined, principalId: undefined }]);
+  });
 });
