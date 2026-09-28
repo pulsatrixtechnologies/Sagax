@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approvalAudience, approvalDelivery, receivesApprovalCard } from "./approval-audience.ts";
+import { answerApproval, approvalAudience, approvalDelivery, receivesApprovalCard } from "./approval-audience.ts";
 
 describe("approval audience", () => {
   it("sends the card to the owner session on the executing machine", () => {
@@ -22,6 +22,7 @@ describe("approval audience", () => {
     });
     const card = { id: "m1", kind: "options" as const, card: { title: "Approval needed", requestId: "r1", tool: "bash" } };
     expect(receivesApprovalCard({ userId: "jc", deviceId: "studio" }, audience)).toBe(true);
+    expect(receivesApprovalCard({ userId: "jc", deviceId: null }, audience)).toBe(false);
     expect(receivesApprovalCard({ userId: "jc", deviceId: "laptop" }, audience)).toBe(false);
     expect(approvalDelivery({
       audience,
@@ -50,6 +51,17 @@ describe("approval audience", () => {
     });
     expect(settled).not.toHaveProperty("card");
     expect(settled).not.toHaveProperty("state");
+  });
+
+  it("refuses a non-owner answer and leaves the card unchanged", () => {
+    const audience = approvalAudience({ ownerUserId: "jc", host: { kind: "fleet" } });
+    const card = { id: "m1", kind: "options" as const, card: { title: "Approval needed", requestId: "r1", tool: "bash" } };
+    const before = { ...card, card: { ...card.card } };
+    const refused = answerApproval({ callerUserId: "zachary@example.test", audience, card });
+    expect(refused).toEqual({ status: 403, card });
+    expect(refused.card).toBe(card);
+    expect(card).toEqual(before);
+    expect(card.card).not.toHaveProperty("answered");
   });
 
   it("matches the owner on any device when the host is the fleet", () => {

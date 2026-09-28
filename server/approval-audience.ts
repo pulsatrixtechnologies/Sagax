@@ -16,7 +16,8 @@ export function approvalAudience(input: {
   return { userId: input.ownerUserId, deviceId: null };
 }
 
-/** Fleet: any session of that user. Machine: that user on that device. */
+/** Fleet (`deviceId` null): the owner's userId. Machine: that userId only
+ * when this session is the registered worker for that device. */
 export function receivesApprovalCard(
   viewer: ApprovalViewer,
   audience: { userId: string; deviceId: string | null },
@@ -24,6 +25,17 @@ export function receivesApprovalCard(
   if (!viewer.userId || viewer.userId !== audience.userId) return false;
   if (audience.deviceId === null) return true;
   return viewer.deviceId === audience.deviceId;
+}
+
+/** An answer counts only from `audience.userId`. Anyone else is refused
+ * and the card is returned as it was, not applied. */
+export function answerApproval<T>(input: {
+  callerUserId: string;
+  audience: { userId: string; deviceId: string | null };
+  card: T;
+}): { status: 403; card: T } | { status: 200; card: T } {
+  if (input.callerUserId !== input.audience.userId) return { status: 403, card: input.card };
+  return { status: 200, card: input.card };
 }
 
 function cardStillOpen(card: unknown): boolean {

@@ -541,7 +541,7 @@ import {
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, seesBotForViewer, seesChannel, seesChannelFrame, sseFrameProjection } from "./channel-visibility.ts";
-import { approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
+import { answerApproval, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { roleOf, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
@@ -3673,11 +3673,12 @@ const channelTaskBlocked = (group: GroupRecord) =>
 // before registering store listeners or recovering interrupted routines.
 const groupQueues = new Map<string, Promise<void>>();
 let registeredWorkers: Worker[] = [];
-/** deviceId last registered by a session, or by a loopback user id. Read
- * when a channel approval is emitted, so the executing machine can be told
- * from the owner's other sessions. */
+/** deviceId last registered by a session, or by a loopback user id. The
+ * device map names the one session that is the current worker for that
+ * device. A client does not send deviceId. */
 const sessionDeviceIds = new Map<string, string>();
 const loopbackDeviceIds = new Map<string, string>();
+const deviceOwnerSession = new Map<string, string>();
 let queuedWorkerTurns: DeviceQueuedTurn[] = [];
 function roomHandoffProblem(node: Pick<RoomHandoff, "groupId" | "threadId" | "botId"> & Partial<Pick<RoomHandoff, "kind">>, parent?: Pick<RoomHandoff, "groupId" | "threadId" | "botId">): string | undefined {
   const group = node.groupId ? store.group(node.groupId) : undefined;
@@ -4470,8 +4471,6 @@ interface SseClient {
   viewerId?: string;
   /** Account id for approval delivery. Absent for a service loopback. */
   approvalUserId?: string;
-  /** Machine this stream named. Null defers to a worker check-in. */
-  approvalDeviceId: string | null;
   /** The bots and rooms this stream has been shown (bot-visibility.ts). */
   seen: StreamSeen;
 }
@@ -4609,27 +4608,36 @@ function approvalOwnerName(ownerUserId: string): string {
   return ownerUserId;
 }
 
-function viewerForApproval(auth: RequestAuth, explicitDeviceId: string | null): ApprovalViewer {
-  let userId = "";
-  if (auth.kind === "session") userId = channelViewerId(auth) ?? "";
-  else if (auth.kind === "loopback" && auth.trust !== "service") userId = (cfg.profile?.email ?? "local-owner").trim();
-  const named = explicitDeviceId?.trim() || "";
-  let deviceId: string | null = named || null;
-  if (!deviceId && auth.kind === "session") deviceId = sessionDeviceIds.get(auth.session.id) ?? null;
-  if (!deviceId && userId && auth.kind === "loopback") deviceId = loopbackDeviceIds.get(userId) ?? null;
-  return { userId, deviceId };
+/** The device this session currently is, when it is the registered worker
+ * for that device. A query string is not a device. */
+function registeredDeviceFor(input: { sessionId?: string; userId: string }): string | null {
+  if (!input.userId) return null;
+  const deviceId = input.sessionId
+    ? sessionDeviceIds.get(input.sessionId) ?? null
+    : loopbackDeviceIds.get(input.userId) ?? null;
+  if (!deviceId) return null;
+  const worker = registeredWorkers.find((entry) => entry.deviceId === deviceId && entry.userId === input.userId);
+  if (!worker) return null;
+  const ownerSession = deviceOwnerSession.get(deviceId);
+  if (input.sessionId) return ownerSession === input.sessionId ? deviceId : null;
+  return ownerSession === "" ? deviceId : null;
+}
+
+function viewerForApproval(auth: RequestAuth): ApprovalViewer {
+  const userId = auth.kind === "session"
+    ? (channelViewerId(auth) ?? "")
+    : auth.kind === "loopback" && auth.trust !== "service"
+      ? (cfg.profile?.email ?? "local-owner").trim()
+      : "";
+  return {
+    userId,
+    deviceId: registeredDeviceFor({ sessionId: auth.kind === "session" ? auth.session.id : undefined, userId }),
+  };
 }
 
 function approvalViewerOf(client: SseClient): ApprovalViewer {
-  let deviceId = client.approvalDeviceId;
-  if (!deviceId && client.sessionId) deviceId = sessionDeviceIds.get(client.sessionId) ?? null;
-  if (!deviceId && client.approvalUserId && !client.sessionId) deviceId = loopbackDeviceIds.get(client.approvalUserId) ?? null;
-  return { userId: client.approvalUserId ?? "", deviceId };
-}
-
-function isChannelThread(threadId: string): boolean {
-  const group = store.groupByThread(threadId);
-  return Boolean(group && !group.dm);
+  const userId = client.approvalUserId ?? "";
+  return { userId, deviceId: registeredDeviceFor({ sessionId: client.sessionId, userId }) };
 }
 
 function isApprovalCardMessage(message: { kind?: unknown; card?: unknown }): boolean {
@@ -4643,18 +4651,41 @@ function isApprovalCardMessage(message: { kind?: unknown; card?: unknown }): boo
   );
 }
 
+function approvalCallerUserId(auth: RequestAuth): string {
+  if (auth.kind === "session") return channelViewerId(auth) ?? "";
+  if (auth.kind === "loopback" && auth.trust !== "service") return (cfg.profile?.email ?? "local-owner").trim();
+  return "";
+}
+
+/** 403 when this caller is not the bot owner. The card is not applied. */
+function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: string): string | null {
+  const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+  if (!message || !isApprovalCardMessage(message)) return null;
+  const bot = botForApproval(threadId, message);
+  if (!bot) return null;
+  const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
+  const decision = answerApproval({ callerUserId: approvalCallerUserId(auth), audience, card: message });
+  if (decision.status === 403) return "Only the bot owner can answer this approval.";
+  return null;
+}
+
 function botForApproval(threadId: string, message: { from?: { botId?: string } }): BotRecord | undefined {
-  const id = message.from?.botId || groupSpeakers.get(threadId)?.botId || store.groupByThread(threadId)?.busyBotId || undefined;
+  const id = message.from?.botId
+    || groupSpeakers.get(threadId)?.botId
+    || store.groupByThread(threadId)?.busyBotId
+    || store.botByThread(threadId)?.id
+    || undefined;
   if (!id) return undefined;
   return store.bot(id) ?? undefined;
 }
 
-/** Channel approval cards stay on the owner session. Other sessions on this
- * thread get the wait, without the card. Bot threads and questions are unchanged. */
+/** Approval cards on a channel, a direct thread, or a bot-to-bot dm stay on
+ * the owner session. Other viewers get the wait, without the card. Questions
+ * are unchanged. */
 function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalViewer): T {
   if (!message || typeof message !== "object") return message;
   const row = message as { kind?: unknown; card?: unknown; from?: { botId?: string } };
-  if (!isChannelThread(threadId) || !isApprovalCardMessage(row)) return message;
+  if (!isApprovalCardMessage(row)) return message;
   const bot = botForApproval(threadId, row);
   if (!bot) return message;
   const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
@@ -4710,7 +4741,7 @@ function scopeChannelApproval(
     const notification = payload.notification;
     if (!notification || typeof notification !== "object") return { action: "same" };
     const note = notification as { kind?: unknown; threadId?: unknown; botId?: unknown };
-    if (note.kind !== "approval" || typeof note.threadId !== "string" || !isChannelThread(note.threadId)) return { action: "same" };
+    if (note.kind !== "approval" || typeof note.threadId !== "string" || (!store.botByThread(note.threadId) && !store.groupByThread(note.threadId))) return { action: "same" };
     const bot = typeof note.botId === "string" ? store.bot(note.botId) : botForApproval(note.threadId, {});
     if (!bot) return { action: "same" };
     const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
@@ -4721,7 +4752,7 @@ function scopeChannelApproval(
     if (!event || typeof event !== "object") return { action: "same" };
     const row = event as { type?: unknown; threadId?: unknown; requestType?: unknown };
     if (row.type !== "request.opened" || row.requestType !== "permission" || typeof row.threadId !== "string") return { action: "same" };
-    if (!isChannelThread(row.threadId)) return { action: "same" };
+    if (!store.botByThread(row.threadId) && !store.groupByThread(row.threadId)) return { action: "same" };
     const bot = botForApproval(row.threadId, {});
     if (!bot) return { action: "same" };
     const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
@@ -13484,6 +13515,7 @@ ROUTES.push(createWorkerRoutes({
   rememberDevice: ({ sessionId, userId, deviceId }) => {
     if (sessionId) sessionDeviceIds.set(sessionId, deviceId);
     else if (userId) loopbackDeviceIds.set(userId, deviceId);
+    deviceOwnerSession.set(deviceId, sessionId ?? "");
   },
 }));
 ROUTES.push(createOrgRoutes({
@@ -16303,7 +16335,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, {
         group: {
           ...publicGroupState(group),
-          messages: projectMessages(group.threadId, store.messagesFor(group.threadId), viewerForApproval(auth, url.searchParams.get("deviceId"))),
+          messages: projectMessages(group.threadId, store.messagesFor(group.threadId), viewerForApproval(auth)),
         },
       });
     }
@@ -16417,14 +16449,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "GET" && path === "/api/events") {
       const viewer = viewerFor(auth);
       const visibleNow = visibleTo(viewer);
-      const namedDevice = url.searchParams.get("deviceId")?.trim() ?? "";
       const client: SseClient = {
         res,
         admin: auth.scopes.includes("admin"),
         screens: url.searchParams.get("screens") !== "off",
         backpressured: false,
         viewer,
-        approvalDeviceId: namedDevice || null,
         // What this person's hydration (GET /api/bots, narrowed the same way) showed them.
         seen: viewer.kind === "all" ? { bots: new Set(), groups: new Set() } : {
           bots: new Set(store.bots.filter((bot) => visibleNow.bot(bot.id) && listedBotVisible(bot, viewerId)).map((bot) => bot.id)),
@@ -16544,7 +16574,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         botQueuedMessages: visible.everything ? queued : Object.fromEntries(Object.entries(queued).filter(([threadId]) => visible.thread(threadId))),
         sections: visible.sections(store.sections),
         groups: store.groups.filter((g) => visible.group(g.id) && seesChannel(g, viewerId)).map((g) => {
-          const room = { ...publicGroupState(g), ...messagePage(g.threadId, limit, null, viewerForApproval(auth, url.searchParams.get("deviceId"))) };
+          const room = { ...publicGroupState(g), ...messagePage(g.threadId, limit, null, viewerForApproval(auth)) };
           return visible.everything ? room : memberGroup(room);
         }),
         computerControl: Object.fromEntries(
@@ -16567,7 +16597,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (limit === null) return json(res, 400, { error: "limit must be a non-negative whole number" });
       const before = url.searchParams.get("before");
       const around = url.searchParams.get("around");
-      const approvalViewer = viewerForApproval(auth, url.searchParams.get("deviceId"));
+      const approvalViewer = viewerForApproval(auth);
       if (before && around) return json(res, 400, { error: "before and around cannot be combined" });
       if (around) {
         const window = messageWindow(threadId, around, limit ?? DEFAULT_PAGE, approvalViewer);
@@ -16931,7 +16961,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? (store.taskByThread(bot.id, threadId)?.title || bot.name)
         : (store.groupTaskByThread(group!.id, threadId)?.title || group!.name);
       const filename = (title.replace(/[^\w\- ]+/g, "").trim() || "conversation").slice(0, 60);
-      const messages = projectMessages(threadId, store.activePath(threadId), viewerForApproval(auth, url.searchParams.get("deviceId")));
+      const messages = projectMessages(threadId, store.activePath(threadId), viewerForApproval(auth));
       if (format === "json") {
         // pixels stripped — an export is for reading and archiving, and a
         // base64 desktop frame is neither
@@ -17285,7 +17315,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const groups = imported.groups.map((group) => ({ ...publicGroupState(group), ...messagePage(group.threadId, undefined) }));
           for (const bot of bots) broadcast({ kind: "bot", bot });
           for (const group of groups) broadcast({ kind: "group", group });
-          const approvalViewer = viewerForApproval(auth, url.searchParams.get("deviceId"));
+          const approvalViewer = viewerForApproval(auth);
           return json(res, 201, { ...imported, bots, groups: groups.map((group) => projectGroupTranscript(group, approvalViewer)) });
         } catch (error) {
           return json(res, 400, { error: error instanceof Error ? error.message : "Backup could not be imported" });
@@ -17427,7 +17457,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (auth.kind === "session") threadStarters.set(task.threadId, personKey(auth.session));
       const fresh = groupWithThread(store.group(group.id)!);
       broadcast({ kind: "group", group: fresh });
-      return json(res, 201, { group: projectGroupTranscript(fresh, viewerForApproval(auth, url.searchParams.get("deviceId"))), task });
+      return json(res, 201, { group: projectGroupTranscript(fresh, viewerForApproval(auth)), task });
     }
 
     m = path.match(/^\/api\/groups\/([\w-]+)\/tasks\/([\w-]+)$/);
@@ -17463,7 +17493,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the transcript a client can actually hold; omitting the parameter
       // keeps the whole transcript, as it always did — and only that branch
       // materialises it.
-      const approvalViewer = viewerForApproval(auth, url.searchParams.get("deviceId"));
+      const approvalViewer = viewerForApproval(auth);
       const responseGroup = requestedMessages === "0"
         ? switchedSettings
         : switchLimit === undefined
@@ -17528,7 +17558,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
       const fresh = groupWithThread(updated);
       broadcast({ kind: "group", group: fresh });
-      return json(res, 200, { group: projectGroupTranscript(fresh, viewerForApproval(auth, url.searchParams.get("deviceId"))) });
+      return json(res, 200, { group: projectGroupTranscript(fresh, viewerForApproval(auth)) });
     }
 
     m = path.match(/^\/api\/groups\/([\w-]+)$/);
@@ -19683,6 +19713,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const behavior = requestBehavior(body.behavior);
       const reviewedSha256 = typeof body.reviewedSha256 === "string" ? body.reviewedSha256 : undefined;
       if (!behavior) return json(res, 400, { error: "behavior must be allow, deny, or answer" });
+      const ownerRefusal = approvalAnswerRefusal(auth, bot.threadId, String(body.requestId));
+      if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, bot.threadId, String(body.requestId), behavior);
       if (refusal) return json(res, 403, { error: refusal });
       if (body.rememberCommand === true) {
@@ -19751,6 +19783,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const reviewedSha256 = typeof body.reviewedSha256 === "string" ? body.reviewedSha256 : undefined;
       if (!behavior) return json(res, 400, { error: "behavior must be allow, deny, or answer" });
       const requestId = String(body.requestId);
+      const ownerRefusal = approvalAnswerRefusal(auth, threadId, requestId);
+      if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);
       if (refusal) return json(res, 403, { error: refusal });
       if (body.rememberCommand === true) {
