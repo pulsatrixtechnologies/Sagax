@@ -13754,7 +13754,7 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown): string | null {
 }
 
 ROUTES.push(createDirectGrantRoutes({
-  bot: (id) => store.bot(id),
+  bot: (id) => store.bot(id) ?? undefined,
   patchBot: (id, patch) => store.patchBot(id, patch),
   actorId: channelActorId,
 }));

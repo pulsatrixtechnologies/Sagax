@@ -47,7 +47,7 @@ afterEach(() => vi.unstubAllGlobals());
 function render(x = 990, y = 795) {
   return renderToStaticMarkup(createElement(BotContextMenu, {
     menu: { botId: bot.id, x, y }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(),
-    onMoveToSection: vi.fn(), onNewFolder: vi.fn(),
+    onMoveToSection: vi.fn(), onNewFolder: vi.fn(), onRename: vi.fn(),
   }));
 }
 function measuredMenu(width: number, height: number) {

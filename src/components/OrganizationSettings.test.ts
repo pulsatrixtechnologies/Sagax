@@ -282,8 +282,8 @@ describe("optional desktop Organisation settings", () => {
 function text(html: string) {
   return html.replace(/&#x27;/g, "'");
 }
-function jsonResponse(status: number, body: unknown) {
-  return { ok: status >= 200 && status < 300, status, statusText: status === 404 ? "Not Found" : "Error", json: async () => body };
+function jsonResponse(status: number, body: unknown): Response {
+  return { ok: status >= 200 && status < 300, status, statusText: status === 404 ? "Not Found" : "Error", json: async () => body } as unknown as Response;
 }
 async function loadOrg() {
   render();
@@ -294,8 +294,8 @@ async function loadOrg() {
 
 describe("fleet organization directory", () => {
   it("does not offer creation until GET /api/org returns 404", async () => {
-    let finish!: (value: unknown) => void;
-    vi.mocked(fetch).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }) as Promise<Response>);
+    let finish!: (value: Response | PromiseLike<Response>) => void;
+    vi.mocked(fetch).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     render();
     for (const effect of fixture.effects) effect();
     expect(text(render().html)).not.toContain("Créer l'organisation");
@@ -305,7 +305,7 @@ describe("fleet organization directory", () => {
   });
 
   it("shows an error instead of the create form when GET fails", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(500, { error: "boom" }) as Response);
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(500, { error: "boom" }));
     const html = text((await loadOrg()).html);
     expect(html).toContain("Impossible de charger l'organisation.");
     expect(html).not.toContain("Créer l'organisation");
@@ -316,7 +316,7 @@ describe("fleet organization directory", () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, {
       org: { name: "GOX" },
       people: [{ id: "zachary@example.test", role: "member" }],
-    }) as Response);
+    }));
     const html = text((await loadOrg()).html);
     expect(html).toContain("GOX");
     expect(html).toContain("zachary@example.test");
@@ -326,10 +326,10 @@ describe("fleet organization directory", () => {
   it("keeps a create error on screen", async () => {
     vi.mocked(fetch).mockImplementation(async (_input, init) => (
       init && "method" in init && init.method === "POST" ? jsonResponse(409, {}) : jsonResponse(404, {})
-    ) as Promise<Response>);
+    ));
     await loadOrg();
     const directory = render().nodes.find((node) => node.type === OrgDirectory)!;
-    await directory.props.onCreate("GOX");
+    await directory.props.onCreate?.("GOX");
     await flush();
     const html = text(render().html);
     expect(html).toContain("Impossible de créer l'organisation.");
@@ -341,10 +341,10 @@ describe("fleet organization directory", () => {
       init && "method" in init && init.method === "POST"
         ? jsonResponse(403, {})
         : jsonResponse(200, { org: { name: "GOX" }, people: [] })
-    ) as Promise<Response>);
+    ));
     await loadOrg();
     const directory = render().nodes.find((node) => node.type === OrgDirectory)!;
-    await directory.props.onInvite!("zachary@example.test").then(() => undefined, () => undefined);
+    await Promise.resolve(directory.props.onInvite?.("zachary@example.test")).then(() => undefined, () => undefined);
     await flush();
     const html = text(render().html);
     expect(html).toContain("Impossible d'envoyer l'invitation.");

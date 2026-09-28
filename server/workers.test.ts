@@ -506,7 +506,7 @@ describe("workers", () => {
     expect(registerWorkerBody({
       workers: [{ deviceId: "laptop", userId: "old@example.test", online: false }],
       userId: "zachary@example.test",
-      body: { deviceId: "laptop", userId: "jc@example.test" },
+      body: { deviceId: "laptop", userId: "jc@example.test" } as { deviceId?: unknown },
     })).toEqual({
       status: 200,
       worker: { deviceId: "laptop", userId: "zachary@example.test", online: true },

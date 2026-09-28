@@ -24,7 +24,6 @@ describe("channel visibility", () => {
   it("hides a channel from an admin who was not added", () => {
     const viewerId = channelViewerId({
       kind: "session",
-      scopes: ["admin"],
       session: { email: "ada@example.test" },
     });
     expect(seesChannel({ humanIds: ["jc"] }, viewerId)).toBe(false);

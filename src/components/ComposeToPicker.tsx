@@ -54,7 +54,7 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<ComposeMode>("browse");
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [cursor, setCursor] = useState(0);
-  const rootRef = useRef<HTMLElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
