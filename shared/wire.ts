@@ -320,6 +320,9 @@ export interface WireBot {
   /** Who may see this bot on a workspace several people share. Absent means
    * everyone. Sent to admins only; a member's copy of a bot never carries it. */
   visibility?: BotVisibility;
+  /** User ids this bot's owner opened Direct to. Absent or empty: only the
+   * owner sees the bot in Direct. */
+  directGrants?: string[];
 }
 
 /** Who may see a bot: every signed-in person, admins only, or the listed

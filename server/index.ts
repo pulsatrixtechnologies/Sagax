@@ -549,6 +549,7 @@ import { ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createOrgRoutes, type OrgState } from "./org-routes.ts";
+import { createDirectGrantRoutes } from "./direct-grants.ts";
 
 const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
 const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
@@ -13199,6 +13200,11 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown): string | null {
   return "forbidden: only an owner or an admin can change channel people";
 }
 
+ROUTES.push(createDirectGrantRoutes({
+  bot: (id) => store.bot(id),
+  patchBot: (id, patch) => store.patchBot(id, patch),
+  actorId: channelActorId,
+}));
 ROUTES.push(createOrgRoutes({
   state: orgState,
   actorId: (auth) => {

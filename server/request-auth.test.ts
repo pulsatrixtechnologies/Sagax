@@ -105,6 +105,7 @@ describe("scopes", () => {
       ["GET", "/api/config"], ["GET", "/api/webhooks"], ["POST", "/api/tts/speak"],
       ["GET", "/api/auth/session"], ["POST", "/api/auth/stream-ticket"], ["POST", "/api/auth/logout"],
       ["GET", "/api/bots/x/slack-management"], // a link to Admin, read-only
+      ["POST", "/api/bots/x/direct-grants"],
       ["POST", "/api/org/invites/tok/accept"],
       ["GET", "/api/org"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
