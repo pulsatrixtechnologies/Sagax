@@ -1,13 +1,13 @@
-name: ${COMPOSE_PROJECT_NAME:-openmausbot}
+name: ${COMPOSE_PROJECT_NAME:-pulsa}
 services:
   omb:
     init: true
+    # Built from this repository, never from the upstream image.
     build:
-      context: ./deploy/local
+      context: .
       args:
-        BASE_IMAGE: ${OMB_BASE_IMAGE:-ghcr.io/milind-soni/openmausbot:latest}
         ENGINES: ${ENGINES-@anthropic-ai/claude-code @openai/codex}
-    image: ${OMB_LOCAL_IMAGE:-openmausbot-local:latest}
+    image: ${OMB_LOCAL_IMAGE:-pulsa-bot-server:local}
     restart: unless-stopped
     volumes:
       - data:/data
@@ -58,6 +58,6 @@ services:
 volumes:
   data:
     external: ${OMB_DATA_EXTERNAL:-false}
-    name: ${OMB_DATA_VOLUME:-${COMPOSE_PROJECT_NAME:-openmausbot}_data}
+    name: ${OMB_DATA_VOLUME:-${COMPOSE_PROJECT_NAME:-pulsa}_data}
   caddy_data:
   caddy_config:

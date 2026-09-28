@@ -17,7 +17,7 @@
 - La liste `cfg.signIn` (`admins`, `members`) reste en emails.
 - Les ids stockés comparés sans casse avant la migration (`trim().toLowerCase()`); après, un id `pr_…` est comparé tel quel.
 - Une session sans principal ne voit aucun channel qui a des `humanIds`.
-- Nouvelle organisation: `host` doit être `{ kind: "server", url }` avec une URL `https://` ou `http://` d'hôte Tailscale (`*.ts.net`). Une organisation existante `this-computer` reste lisible.
+- Nouvelle organisation: `host` doit être `{ kind: "server", url }` avec une URL `https://`, `http://` d'hôte Tailscale (`*.ts.net`), ou `http://localhost` / `http://127.0.0.1` pour un serveur Docker local dont l'opérateur gère l'exposition. Une organisation existante `this-computer` reste lisible.
 - Écriture de fichier: `writeFileAtomic` de `server/atomic.ts`, comme `sessions.ts`.
 - Texte d'interface nouveau: anglais dans `en.json`, français (Québec) dans `fr.json`, puis `node scripts/generate-locale.mjs fr --accept`. Pas de tiret cadratin ni de en-dash.
 - Tests: `npx vitest run <fichier>`; typecheck `pnpm -s typecheck`.
@@ -527,7 +527,7 @@ git commit -m "feat: bind sessions and pairing codes to a principal"
 - Consumes: `isPrincipalId` (Task 1).
 - Produces:
   - `roleOf(input: { ownerUserId: string; admins: string[]; members: string[]; userId: string; email?: string }): OrgRole | null`. The owner is matched by `userId` (a principal id, or a legacy email). Admins and members are matched by `email` when given, otherwise by `userId` (legacy).
-  - `createOrg` throws `"a server address is required"` unless `host.kind === "server"` with a valid URL (`https://…`, or `http://` whose host ends in `.ts.net`).
+  - `createOrg` throws `"a server address is required"` unless `host.kind === "server"` with a valid URL (`https://…`, or `http://` whose host ends in `.ts.net` or is `localhost` / `127.0.0.1`).
   - `OrgRouteDeps.actorEmail: (auth: RequestAuth) => string | undefined`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -559,6 +559,8 @@ In `server/org-record.test.ts`, change the existing "records the creator" test t
   it("requires a server address for a new organization", () => {
     expect(() => createOrg({ name: "GOX", ownerUserId: "pr_x", host: { kind: "this-computer" } })).toThrow(/server address/);
     expect(() => createOrg({ name: "GOX", ownerUserId: "pr_x", host: { kind: "server", url: "http://10.0.0.5:8799" } })).toThrow(/server address/);
+    expect(createOrg({ name: "GOX", ownerUserId: "pr_x", host: { kind: "server", url: "http://localhost:8080" } }).host)
+      .toEqual({ kind: "server", url: "http://localhost:8080" });
     expect(createOrg({ name: "GOX", ownerUserId: "pr_x", host: { kind: "server", url: "http://gox-fs01.tail1234.ts.net:8799" } }).host)
       .toEqual({ kind: "server", url: "http://gox-fs01.tail1234.ts.net:8799" });
   });
@@ -601,7 +603,9 @@ export function serverAddressOk(url: string): boolean {
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "https:") return true;
-    return parsed.protocol === "http:" && parsed.hostname.endsWith(".ts.net");
+    if (parsed.protocol !== "http:") return false;
+    // Tailscale names, or a local Docker server whose exposure the operator manages.
+    return parsed.hostname.endsWith(".ts.net") || parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
   } catch {
     return false;
   }
@@ -835,7 +839,8 @@ describe("organization create form", () => {
     const markup = renderToStaticMarkup(createElement(OrgCreateForm, { initialAddress: "", onCreate: async () => undefined }));
     expect(markup).toContain('name="org-server-address"');
   });
-  it("accepts https and Tailscale addresses only", () => {
+  it("accepts https, Tailscale and local Docker addresses only", () => {
+    expect(orgHostFromInput("http://localhost:8080")).toEqual({ kind: "server", url: "http://localhost:8080" });
     expect(orgHostFromInput("https://pulsa.gox.ca")).toEqual({ kind: "server", url: "https://pulsa.gox.ca" });
     expect(orgHostFromInput("http://fs01.tail1234.ts.net:8799")).toEqual({ kind: "server", url: "http://fs01.tail1234.ts.net:8799" });
     expect(orgHostFromInput("http://10.0.0.5")).toBeNull();
@@ -858,7 +863,8 @@ export function orgHostFromInput(value: string): { kind: "server"; url: string }
   const url = value.trim();
   try {
     const parsed = new URL(url);
-    if (parsed.protocol === "https:" || (parsed.protocol === "http:" && parsed.hostname.endsWith(".ts.net"))) return { kind: "server", url };
+    const localOrTailnet = parsed.hostname.endsWith(".ts.net") || parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+    if (parsed.protocol === "https:" || (parsed.protocol === "http:" && localOrTailnet)) return { kind: "server", url };
   } catch { /* not a URL */ }
   return null;
 }
@@ -871,7 +877,7 @@ Strings:
 | key | en | fr |
 |---|---|---|
 | `org.serverAddress` | `Server address` | `Adresse du serveur` |
-| `org.serverAddressHelp` | `Everyone in the organization signs in to this server. Use its https address or its Tailscale name.` | `Tout le monde dans l'organisation se connecte à ce serveur. Utilise son adresse https ou son nom Tailscale.` |
+| `org.serverAddressHelp` | `Everyone in the organization signs in to this server. Use its https address, its Tailscale name, or http://localhost for a local Docker server.` | `Tout le monde dans l'organisation se connecte à ce serveur. Utilise son adresse https, son nom Tailscale, ou http://localhost pour un serveur Docker local.` |
 
 Then run `node scripts/generate-locale.mjs fr --accept` and `pnpm -s i18n:check`.
 
@@ -890,6 +896,10 @@ git commit -m "feat: ask for the server address when creating an organization"
 ```
 
 ---
+
+## Serveur de développement
+
+Le serveur de coordination tourne dans Docker sur le Mac de l'opérateur: `docker compose up -d --build` à la racine (`compose.yaml`, projet `pulsa`, image construite depuis ce repo, jamais depuis l'image d'OpenMausBot). Il écoute sur `127.0.0.1:8080`. L'opérateur gère lui-même l'exposition (proxy, tunnel ou Tailscale). Les tests de bout en bout de la Task 6 n'en dépendent pas: ils démarrent le harness directement sur un `DATA_DIR` temporaire.
 
 ## Hors tranche (noté pour la suite)
 
