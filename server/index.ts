@@ -560,6 +560,7 @@ import {
   failTurn,
   failTurnOnMembershipRemoval,
   failTurnOnWorkerClose,
+  memberIdsDropBot,
   type DeviceQueuedTurn,
   type OpenTurnMessage,
   type Worker,
@@ -3554,9 +3555,23 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   if (body.memberIds !== undefined && phoneSecretSubmissions.hasGroup(existing.id)) {
     throw Object.assign(new Error("this channel is securely saving a credential — try again when it finishes"), { status: 409 });
   }
+  // A bot leaving memberIds during a turn is applied. failTurn cancels the
+  // held id. Bulletin and responder edits stay blocked, and so does a
+  // memberIds change that does not remove anyone.
+  const nextMemberIds = Array.isArray(body.memberIds) && body.memberIds.every((id) => typeof id === "string")
+    ? body.memberIds as string[]
+    : null;
+  const dropsBot = nextMemberIds !== null && memberIdsDropBot({
+    beforeMemberIds: existing.memberIds,
+    afterMemberIds: nextMemberIds,
+  });
   if (
     channelTaskBlocked(existing) &&
-    (body.memberIds !== undefined || body.defaultResponder !== undefined || body.bulletin !== undefined)
+    (
+      body.defaultResponder !== undefined
+      || body.bulletin !== undefined
+      || (body.memberIds !== undefined && !dropsBot)
+    )
   ) {
     throw Object.assign(new Error("this channel is working or waiting on you — finish that turn first"), { status: 409 });
   }

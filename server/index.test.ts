@@ -2139,12 +2139,15 @@ describe("harness HTTP API", () => {
       const busyToken = await mintTestCapability(BASE, chief.id, chief.threadId);
       expect((await api("POST", `/api/groups/${roomId}/messages`, { text: "Hold this room turn" })).status).toBe(202);
       await expect.poll(async () => (await readRoom()).working).toBe(true);
-      for (const mutation of [{ action: "set_members", memberIds: [chief.id] }, { action: "set_bulletin", bulletin: "Changed mid-turn" }]) {
-        const blocked = await chiefRoomRequest(BASE, busyToken, "manage-room", { roomId, ...mutation });
-        expect(blocked.status).toBe(409);
-        expect(blocked.body.error).toMatch(/working or waiting/);
-      }
-      expect(await readRoom()).toMatchObject({ bulletin: "Updated brief ✓", memberIds: [chief.id, peer.id] });
+      const bulletin = await chiefRoomRequest(BASE, busyToken, "manage-room", { roomId, action: "set_bulletin", bulletin: "Changed mid-turn" });
+      expect(bulletin.status).toBe(409);
+      expect(bulletin.body.error).toMatch(/working or waiting/);
+      const removed = await chiefRoomRequest(BASE, busyToken, "manage-room", { roomId, action: "set_members", memberIds: [chief.id] });
+      expect(removed.status).toBe(200);
+      expect(removed.body.memberIds).toEqual([chief.id]);
+      const afterRemoval = await readRoom();
+      expect(afterRemoval).toMatchObject({ bulletin: "Updated brief ✓", memberIds: [chief.id] });
+      expect(afterRemoval.messages.some((message: { text?: string }) => message.text === "Hold this room turn")).toBe(true);
     } finally {
       for (const id of roomIds) {
         expect((await api("POST", `/api/groups/${id}/interrupt`, {})).status).toBe(200);

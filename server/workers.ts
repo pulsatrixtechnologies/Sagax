@@ -90,6 +90,62 @@ function rosterLost(before: readonly string[], after: readonly string[]): boolea
   return before.some((id) => !after.includes(id));
 }
 
+/** True when the next memberIds list drops a bot that is there now. */
+export function memberIdsDropBot(input: {
+  beforeMemberIds: readonly string[];
+  afterMemberIds: readonly string[];
+}): boolean {
+  return input.beforeMemberIds.some((id) => !input.afterMemberIds.includes(id));
+}
+
+/** A memberIds change while a turn is held is applied, not refused.
+ * failTurn runs for the held id. Partial text stays. Nothing is approved. */
+export function memberIdsChangeDuringHeldTurn(input: {
+  beforeMemberIds: readonly string[];
+  afterMemberIds: readonly string[];
+  heldId: string;
+  queued: string[];
+  partial: string;
+  messages: OpenTurnMessage[];
+}): {
+  refused: boolean;
+  memberIds: readonly string[];
+  queued: string[];
+  status: "failed" | null;
+  partial: string;
+  messages: OpenTurnMessage[];
+} {
+  if (!memberIdsDropBot({ beforeMemberIds: input.beforeMemberIds, afterMemberIds: input.afterMemberIds })) {
+    return {
+      refused: true,
+      memberIds: input.beforeMemberIds,
+      queued: input.queued,
+      status: null,
+      partial: input.partial,
+      messages: input.messages,
+    };
+  }
+  const failed = failTurnOnMembershipRemoval({
+    beforeHumanIds: [],
+    afterHumanIds: [],
+    beforeMemberIds: input.beforeMemberIds,
+    afterMemberIds: input.afterMemberIds,
+    inTurn: true,
+    queued: input.queued,
+    messageId: input.heldId,
+    partial: input.partial,
+    messages: input.messages,
+  });
+  return {
+    refused: false,
+    memberIds: input.afterMemberIds,
+    queued: failed.queued,
+    status: failed.status,
+    partial: failed.partial,
+    messages: failed.messages,
+  };
+}
+
 /** A human leaving humanIds, or a bot leaving memberIds, during a turn
  * uses the same failTurn path. History is the messages array, unchanged
  * except for the failed id. */

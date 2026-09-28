@@ -9,6 +9,7 @@ import {
   failTurnOnMembershipRemoval,
   failTurnOnWorkerClose,
   invokeFleetRunner,
+  memberIdsChangeDuringHeldTurn,
   pullQueuedForSession,
   queueTurn,
   registerWorker,
@@ -313,6 +314,54 @@ describe("workers", () => {
     });
     expect(added.status).toBeNull();
     expect(added.messages).toBe(messages);
+  });
+
+  it("calls failTurn when memberIds change during a held turn and keeps the partial", () => {
+    const partial = "début";
+    const card = { tool: "Bash" };
+    const earlier = { id: "earlier", text: "historique" };
+    const held = { id: "m1", text: partial, card };
+    const messages = [earlier, held];
+    const destination = turnDestination({
+      host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" },
+      workerOnline: true,
+    });
+    const calls: string[] = [];
+    expect(invokeFleetRunner({ destination, run: () => calls.push("fleet") })).toBe(false);
+    expect(calls).toEqual([]);
+    const result = memberIdsChangeDuringHeldTurn({
+      beforeMemberIds: ["desk", "other"],
+      afterMemberIds: ["desk"],
+      heldId: "m1",
+      queued: ["m1"],
+      partial,
+      messages,
+    });
+    const failed = failTurn({ queued: ["m1"], messageId: "m1", partial });
+    expect(result.refused).toBe(false);
+    expect(result.memberIds).toEqual(["desk"]);
+    expect(result.queued).toEqual(failed.queued);
+    expect(result.status).toBe(failed.status);
+    expect(result.partial).toBe(failed.partial);
+    expect(result.partial).toBe(partial);
+    expect(result.messages[0]).toBe(earlier);
+    expect(result.messages[1]?.text).toBe(partial);
+    expect(result.messages[1]?.status).toBe("failed");
+    expect(result.messages[1]?.card).toBe(card);
+    expect(card).toEqual({ tool: "Bash" });
+    const blocked = memberIdsChangeDuringHeldTurn({
+      beforeMemberIds: ["desk"],
+      afterMemberIds: ["desk", "other"],
+      heldId: "m1",
+      queued: ["m1"],
+      partial,
+      messages,
+    });
+    expect(blocked.refused).toBe(true);
+    expect(blocked.memberIds).toEqual(["desk"]);
+    expect(blocked.status).toBeNull();
+    expect(blocked.partial).toBe(partial);
+    expect(blocked.messages).toBe(messages);
   });
 
   it("treats a socket close during the turn as the drop, not the response finish", async () => {
