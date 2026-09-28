@@ -230,21 +230,18 @@ API keys are write-only: they land in `~/.openmausbot/config.json` via `PUT /api
 only ever reports `configured` booleans. Keep it that way — no logging keys, no echoing them in
 responses or events, no baking them into argv where another local process could read them.
 
-## Downstream forks and release ownership
+## Where contributions go
 
-Changes prepared in a downstream fork should keep provenance in the pull request, not add
-fork-specific branding or ownership claims to the upstream source tree. Record the exact upstream
-commit used as the comparison base, the head branch, and the checks run after the final rebase.
+Pulsa Bot is developed only in `pulsatrixtechnologies` repositories. Open pull requests against
+[pulsatrixtechnologies/pulsa-bot](https://github.com/pulsatrixtechnologies/pulsa-bot). Changes made
+here are not submitted to the original OpenMausBot project or any other upstream: no pull requests,
+issues, or pushes there.
 
-Fork maintainers own the binaries and update channels they publish. Before distributing a fork,
-review the application name and identifiers, signing configuration, update metadata, and every
-`electron-builder` publish target. Never upload fork artifacts or update metadata to the official
-Pulsa Bot release repository, and never change the upstream publish target in a feature PR unless
-that release migration was explicitly agreed with the maintainer.
-
-An upstream PR should contain only the portable product change. Keep local build paths, account
-names, credentials, private endpoints, machine-specific configuration, and fork-only release notes
-out of its commits and screenshots.
+Release artifacts and update metadata go only to this repository's releases. Before distributing a
+build, review the application name and identifiers, signing configuration, update metadata, and every
+`electron-builder` publish target so none of them points outside `pulsatrixtechnologies`. Keep local
+build paths, account names, credentials, private endpoints, and machine-specific configuration out of
+commits and screenshots.
 
 ## Contribution licensing
 
