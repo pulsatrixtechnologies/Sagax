@@ -540,6 +540,7 @@ import {
   type PhoneSecretContext,
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
+import { canSeeChannel, canSeeDirectBot } from "./channel-visibility.ts";
 import { roleOf, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
@@ -4441,6 +4442,9 @@ interface SseClient {
   /** Who is watching, for bot visibility; a member's stream is narrowed to
    * what that person may see once any bot is restricted. */
   viewer: Viewer;
+  /** Channel and Direct membership id. Absent for loopback, admin, and a
+   * local session with no userId, which see every group. */
+  viewerId?: string;
   /** The bots and rooms this stream has been shown (bot-visibility.ts). */
   seen: StreamSeen;
 }
@@ -4555,6 +4559,7 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
 function memberFrame(client: SseClient, seq: number, payload: Record<string, unknown>, clientFrame: string | null): string | null {
   // A frame kept from clients altogether stays kept: never the admin copy.
   if (clientFrame === null) return null;
+  if (client.viewerId && !memberSeesFrame(payload, client.viewerId)) return null;
   if (client.viewer.kind === "all") return clientFrame;
   const visible = visibleTo(client.viewer);
   if (visible.everything) {
@@ -13078,6 +13083,69 @@ function channelActorId(auth: RequestAuth): string {
   return (cfg.profile?.email ?? "local-owner").trim();
 }
 
+/** Member id for channel and Direct filters. Loopback, admin, and a local
+ * session with no userId see everything, like SEES_EVERYTHING. */
+function channelViewerId(auth: RequestAuth): string | undefined {
+  if (auth.kind === "loopback" || auth.scopes.includes("admin")) return undefined;
+  if (auth.kind !== "session") return undefined;
+  const email = auth.session.email?.trim();
+  if (email) return email;
+  const userId = auth.session.userId?.trim();
+  if (userId && !userId.startsWith("portal:")) return userId;
+  return undefined;
+}
+
+function seesChannel(group: { humanIds?: string[] }, viewerId: string | undefined): boolean {
+  if (!viewerId) return true;
+  return canSeeChannel({ humanIds: group.humanIds ?? [], viewerId });
+}
+
+function seesDirectBot(bot: { ownerUserId?: unknown; directGrants?: unknown }, viewerId: string | undefined): boolean {
+  if (!viewerId) return true;
+  const ownerUserId = typeof bot.ownerUserId === "string" ? bot.ownerUserId : "";
+  if (!ownerUserId) return true;
+  const directGrants = Array.isArray(bot.directGrants)
+    ? bot.directGrants.filter((id): id is string => typeof id === "string")
+    : [];
+  return canSeeDirectBot({ ownerUserId, viewerId, directGrants });
+}
+
+function subjectSeesChannel(subject: PathSubject, viewerId: string): boolean {
+  if (subject.kind === "group") {
+    const group = store.group(subject.id);
+    return !group || seesChannel(group, viewerId);
+  }
+  if (subject.kind === "thread") {
+    const group = store.groupByThread(subject.id);
+    return !group || seesChannel(group, viewerId);
+  }
+  if (subject.kind === "bot") {
+    const bot = store.bot(subject.id);
+    return !bot || seesDirectBot(bot, viewerId);
+  }
+  return true;
+}
+
+function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): boolean {
+  const groupField = payload.group && typeof payload.group === "object" ? (payload.group as { id?: unknown }).id : undefined;
+  const groupId = typeof payload.groupId === "string" ? payload.groupId : typeof groupField === "string" ? groupField : undefined;
+  if (typeof groupId === "string") {
+    const group = store.group(groupId);
+    if (group && !seesChannel(group, viewerId)) return false;
+  }
+  const botField = payload.bot && typeof payload.bot === "object" ? (payload.bot as { id?: unknown }).id : undefined;
+  const botId = typeof payload.botId === "string" ? payload.botId : typeof botField === "string" ? botField : undefined;
+  if (typeof botId === "string") {
+    const bot = store.bot(botId);
+    if (bot && !seesDirectBot(bot, viewerId)) return false;
+  }
+  if (typeof payload.threadId === "string") {
+    const group = store.groupByThread(payload.threadId);
+    if (group && !seesChannel(group, viewerId)) return false;
+  }
+  return true;
+}
+
 /** Loopback on this machine is the operator. Otherwise the org role, or
  * an admin session when no organization exists yet. */
 function channelActorRole(auth: RequestAuth): OrgRole | null {
@@ -13339,6 +13407,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // routines and files exactly as they reach an id that does not exist.
     // Lists and live frames are narrowed where they are built, below.
     const visible = visibleTo(viewerFor(auth));
+    const viewerId = channelViewerId(auth);
     if (!visible.everything) {
       const subject = pathSubject(path);
       if (subject && !subjectVisible(subject, visible)) return json(res, 404, { error: notFoundFor(subject) });
@@ -13346,6 +13415,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // edit, a new or switched task) comes without its audience list or
       // the teammates they cannot see, whichever route answers.
       onJsonBody(res, (body) => memberBody(body, visible));
+    }
+    if (viewerId) {
+      const subject = pathSubject(path);
+      if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
     }
     beginAdminAudit(req, res, method, path, auth);
 
@@ -16049,11 +16122,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         viewer,
         // What this person's hydration (GET /api/bots, narrowed the same way) showed them.
         seen: viewer.kind === "all" ? { bots: new Set(), groups: new Set() } : {
-          bots: new Set(store.bots.filter((bot) => visibleNow.bot(bot.id)).map((bot) => bot.id)),
-          groups: new Set(store.groups.filter((group) => visibleNow.group(group.id)).map((group) => group.id)),
+          bots: new Set(store.bots.filter((bot) => visibleNow.bot(bot.id) && seesDirectBot(bot, viewerId)).map((bot) => bot.id)),
+          groups: new Set(store.groups.filter((group) => visibleNow.group(group.id) && seesChannel(group, viewerId)).map((group) => group.id)),
         },
       };
       if (auth.kind === "session") client.sessionId = auth.session.id;
+      if (viewerId) client.viewerId = viewerId;
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -16153,7 +16227,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // bot record carrying no tasks, where publicBot() always sent [].
       // A member on a workspace with a restricted bot gets only what they may
       // see (bot-visibility.ts); for everyone else these filters keep all.
-      const shownBots = store.bots.filter((bot) => visible.bot(bot.id));
+      const shownBots = store.bots.filter((bot) => visible.bot(bot.id) && seesDirectBot(bot, viewerId));
       const queued = publicBotQueuedMessages();
       return json(res, 200, {
         bots: shownBots.map((bot) => memberBot({
@@ -16163,7 +16237,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }, visible)),
         botQueuedMessages: visible.everything ? queued : Object.fromEntries(Object.entries(queued).filter(([threadId]) => visible.thread(threadId))),
         sections: visible.sections(store.sections),
-        groups: store.groups.filter((g) => visible.group(g.id)).map((g) => {
+        groups: store.groups.filter((g) => visible.group(g.id) && seesChannel(g, viewerId)).map((g) => {
           const room = { ...publicGroupState(g), ...messagePage(g.threadId, limit) };
           return visible.everything ? room : memberGroup(room);
         }),
@@ -16583,6 +16657,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     // ── channels (persisted internally as groups) ───────────────────────
+    if (method === "GET" && path === "/api/groups") {
+      return json(res, 200, {
+        groups: store.groups.filter((g) => visible.group(g.id) && seesChannel(g, viewerId)).map((g) => {
+          const room = publicGroupState(g);
+          return visible.everything ? room : memberGroup(room);
+        }),
+      });
+    }
     if (method === "POST" && path === "/api/groups") {
       const body = await readBody(req);
       if (Array.isArray(body?.memberIds)) {

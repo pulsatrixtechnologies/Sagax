@@ -101,7 +101,7 @@ describe("scopes", () => {
       ["PATCH", "/api/bots/x"], ["PATCH", "/api/bots/x/profile"], ["POST", "/api/attachments"],
       ["GET", "/api/attachments/a.png"], ["POST", "/api/routines"], ["POST", "/api/routines/r/run"],
       ["POST", "/api/routine-runs/seen-all"],
-      ["GET", "/api/bots"], ["GET", "/api/threads/t/messages"], ["GET", "/api/search"], ["GET", "/api/events"],
+      ["GET", "/api/bots"], ["GET", "/api/groups"], ["GET", "/api/threads/t/messages"], ["GET", "/api/search"], ["GET", "/api/events"],
       ["GET", "/api/config"], ["GET", "/api/webhooks"], ["POST", "/api/tts/speak"],
       ["GET", "/api/auth/session"], ["POST", "/api/auth/stream-ticket"], ["POST", "/api/auth/logout"],
       ["GET", "/api/bots/x/slack-management"], // a link to Admin, read-only
