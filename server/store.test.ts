@@ -875,6 +875,29 @@ describe("Store", () => {
     expect(reloaded.projectBotForTask(bot.id, sibling.threadId)?.approvalMode).toBe("full");
   });
 
+  it("defaults a disk bot without host to the fleet and keeps a machine host", () => {
+    const store = new Store(selection);
+    const missing = store.createBot();
+    const machine = store.createBot();
+    const fleet = store.createBot();
+    expect(missing.host).toEqual({ kind: "fleet" });
+    const raw: BotRecord[] = JSON.parse(readFileSync(join(DATA_DIR, "bots.json"), "utf8"));
+    delete raw.find((bot) => bot.id === missing.id)!.host;
+    raw.find((bot) => bot.id === machine.id)!.host = { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" };
+    raw.find((bot) => bot.id === fleet.id)!.host = { kind: "fleet" };
+    writeFileSync(join(DATA_DIR, "bots.json"), JSON.stringify(raw));
+
+    const reloaded = new Store(selection);
+    expect(reloaded.bot(missing.id)?.host).toEqual({ kind: "fleet" });
+    expect(reloaded.bot(machine.id)?.host).toEqual({ kind: "machine", userId: "zachary@example.test", deviceId: "laptop" });
+    expect(reloaded.bot(fleet.id)?.host).toEqual({ kind: "fleet" });
+
+    const saved: BotRecord[] = JSON.parse(readFileSync(join(DATA_DIR, "bots.json"), "utf8"));
+    expect(saved.find((bot) => bot.id === missing.id)?.host).toEqual({ kind: "fleet" });
+    expect(saved.find((bot) => bot.id === machine.id)?.host).toEqual({ kind: "machine", userId: "zachary@example.test", deviceId: "laptop" });
+    expect(saved.find((bot) => bot.id === fleet.id)?.host).toEqual({ kind: "fleet" });
+  });
+
   it("normalizes persisted cloud backends without changing valid or absent values", () => {
     const store = new Store(selection);
     const box = store.createBot();

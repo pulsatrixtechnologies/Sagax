@@ -29,6 +29,7 @@ import type { GroupGoalRunCardData } from "../shared/group-goal-run.ts";
 import { isMentionBoundary, isMentionNameContinuation } from "../shared/mention-boundary.ts";
 import type { HandedState } from "./delta-context.ts";
 import type { AgentPart, PartPair, RoomPart } from "./package-parts.ts";
+import type { BotHost } from "./turn-route.ts";
 import type {
   BotActivity, GroupDefaultResponder, GroupTask as GroupTaskRecord, MausColor,
   ConnectorToolGrant, OptionCardData, TaskClosedBy, TaskOpenedBy, TaskUsage, WireBot, WireGroup,
@@ -492,6 +493,15 @@ const COLORS: MausColor[] = [
  * their identity. Missing/blank means the unsectioned (General) team. */
 export const sectionKey = (section?: string | null): string => section?.trim() || "";
 
+/** Bots saved before host existed run on the fleet. A machine host must
+ * name both the member and the device; anything else is fleet. */
+function recordedBotHost(value: BotRecord["host"]): BotHost {
+  if (value?.kind === "machine" && value.userId && value.deviceId) {
+    return { kind: "machine", userId: value.userId, deviceId: value.deviceId };
+  }
+  return { kind: "fleet" };
+}
+
 /** Resolve @mentions in a message against a bot roster: `@` must start a
  * word, the name must end on a word boundary (so "@New Bottle" never matches
  * "New Bot"), names match case-insensitively, longest name wins (so
@@ -698,6 +708,11 @@ export class Store {
       }
       if (b.avatarCrop !== undefined && avatar.avatarCrop !== b.avatarCrop) {
         delete b.avatarCrop;
+        botsMigrated = true;
+      }
+      const host = recordedBotHost(b.host);
+      if (JSON.stringify(host) !== JSON.stringify(b.host)) {
+        b.host = host;
         botsMigrated = true;
       }
     }
@@ -1701,6 +1716,7 @@ export class Store {
       modelSelection: this.newBotSelection(profile.modelSelection),
       resumeCursors: {},
       createdAt: Date.now(),
+      host: { kind: "fleet" },
     };
     if (section) bot.section = section;
     if (profile.cwd) bot.cwd = profile.cwd;
