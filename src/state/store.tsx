@@ -207,6 +207,11 @@ export interface Message {
   /** steer-queue entry this drained user line came from. Pending chips
    * match on this id, not on equal text. Absent on ordinary sends. */
   queueId?: string;
+  /** Projected for someone who is not the approval audience. */
+  state?: "waiting-on-owner";
+  ownerName?: string;
+  /** A dropped worker, or a person or bot removed during the turn. */
+  status?: "failed";
 }
 
 export type GroupDefaultResponder =

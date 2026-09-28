@@ -1,3 +1,5 @@
+import type { ServerResponse } from "node:http";
+import type { Socket } from "node:net";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 import { turnDestination, type BotHost } from "./turn-route.ts";
@@ -22,6 +24,113 @@ export function queueTurn(input: {
     return { queued: [...input.queued, input.messageId], started: false };
   }
   return { queued: input.queued, started: true };
+}
+
+/** Drop `messageId`. Status is failed. `partial` is the same string. */
+export function failTurn(input: {
+  queued: string[];
+  messageId: string;
+  partial: string;
+}): { queued: string[]; status: "failed"; partial: string } {
+  return {
+    queued: input.queued.filter((id) => id !== input.messageId),
+    status: "failed",
+    partial: input.partial,
+  };
+}
+
+export interface OpenTurnMessage {
+  id: string;
+  text?: string;
+  status?: "failed";
+  card?: { answered?: unknown };
+}
+
+function withFailedStatus(messages: OpenTurnMessage[], messageId: string, partial: string): OpenTurnMessage[] {
+  return messages.map((message) => {
+    if (message.id !== messageId) return message;
+    if (message.text === undefined && partial) return { ...message, text: partial, status: "failed" };
+    return { ...message, status: "failed" };
+  });
+}
+
+/** The queue loses this id and the channel message is marked failed.
+ * Other messages stay. The card object is not answered. */
+export function failOpenTurn(input: {
+  queued: string[];
+  messageId: string;
+  partial: string;
+  messages: OpenTurnMessage[];
+}): { queued: string[]; status: "failed"; partial: string; messages: OpenTurnMessage[] } {
+  const failed = failTurn({ queued: input.queued, messageId: input.messageId, partial: input.partial });
+  return {
+    queued: failed.queued,
+    status: failed.status,
+    partial: failed.partial,
+    messages: withFailedStatus(input.messages, input.messageId, failed.partial),
+  };
+}
+
+/** A worker socket that closes before the turn starts leaves the queue.
+ * A close during the turn uses failTurn. */
+export function failTurnOnWorkerClose(input: {
+  midTurn: boolean;
+  queued: string[];
+  messageId: string;
+  partial: string;
+  messages: OpenTurnMessage[];
+}): { queued: string[]; status: "failed" | null; partial: string; messages: OpenTurnMessage[] } {
+  if (!input.midTurn) {
+    return { queued: input.queued, status: null, partial: input.partial, messages: input.messages };
+  }
+  return failOpenTurn(input);
+}
+
+function rosterLost(before: readonly string[], after: readonly string[]): boolean {
+  return before.some((id) => !after.includes(id));
+}
+
+/** A human leaving humanIds, or a bot leaving memberIds, during a turn
+ * uses the same failTurn path. History is the messages array, unchanged
+ * except for the failed id. */
+export function failTurnOnMembershipRemoval(input: {
+  beforeHumanIds: readonly string[];
+  afterHumanIds: readonly string[];
+  beforeMemberIds: readonly string[];
+  afterMemberIds: readonly string[];
+  inTurn: boolean;
+  queued: string[];
+  messageId: string;
+  partial: string;
+  messages: OpenTurnMessage[];
+}): { queued: string[]; status: "failed" | null; partial: string; messages: OpenTurnMessage[] } {
+  const removed = input.inTurn && (
+    rosterLost(input.beforeHumanIds, input.afterHumanIds) || rosterLost(input.beforeMemberIds, input.afterMemberIds)
+  );
+  if (!removed) {
+    return { queued: input.queued, status: null, partial: input.partial, messages: input.messages };
+  }
+  return failOpenTurn(input);
+}
+
+/** Ignore the close that follows a finished response in the same beat.
+ * A later close, while the socket was still held, is the worker dropping. */
+export function bindWorkerSocket(input: {
+  socket: { once(event: "close", listener: () => void): void };
+  onResponseFinished: (mark: () => void) => void;
+  onClose: () => void;
+}): void {
+  let ignoreClose = false;
+  input.onResponseFinished(() => {
+    ignoreClose = true;
+    setImmediate(() => {
+      ignoreClose = false;
+    });
+  });
+  input.socket.once("close", () => {
+    if (ignoreClose) return;
+    input.onClose();
+  });
 }
 
 /** A channel turn waiting for one device. `userId` is who owned that device when the turn was held. */
@@ -177,9 +286,23 @@ export interface WorkerRouteDeps {
   /** The caller that just registered this device, so approval delivery can
    * tell that session from the owner's other sessions. */
   rememberDevice?(input: { sessionId?: string; userId: string; deviceId: string }): void;
+  /** Ids the device just took. They are in a turn until the socket closes. */
+  onTurnPulled?(input: { deviceId: string; userId: string; messageIds: string[] }): void;
+  /** The worker connection dropped. The caller fails any turn still open. */
+  onWorkerSocketClose?(input: { deviceId: string; userId: string }): void;
 }
 
 export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
+  const boundSockets = new WeakSet<Socket>();
+  const bindRequestSocket = (socket: Socket, res: ServerResponse, deviceId: string, userId: string) => {
+    if (boundSockets.has(socket)) return;
+    boundSockets.add(socket);
+    bindWorkerSocket({
+      socket,
+      onResponseFinished(mark) { res.on("finish", mark); },
+      onClose() { deps.onWorkerSocketClose?.({ deviceId, userId }); },
+    });
+  };
   return async ({ req, res, path, method, auth, json, readBody }) => {
     if (method !== "POST") return PASS;
     if (path === "/api/workers") {
@@ -196,6 +319,7 @@ export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
         userId: result.worker.userId,
         deviceId: result.worker.deviceId,
       });
+      bindRequestSocket(req.socket, res, result.worker.deviceId, result.worker.userId);
       return json(res, 200, { worker: result.worker });
     }
     const pull = path.match(/^\/api\/workers\/([\w-]+)\/pull$/);
@@ -208,6 +332,10 @@ export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
       });
       if (result.status === 403) return json(res, 403, { error: result.error });
       deps.replaceQueued(result.queued);
+      if (result.ids.length) {
+        deps.onTurnPulled?.({ deviceId: pull[1]!, userId: deps.userId(auth), messageIds: result.ids });
+      }
+      bindRequestSocket(req.socket, res, pull[1]!, deps.userId(auth));
       return json(res, 200, { ids: result.ids });
     }
     const cancel = path.match(/^\/api\/workers\/queue\/([\w-]+)\/cancel$/);

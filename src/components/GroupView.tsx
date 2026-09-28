@@ -43,6 +43,7 @@ import { OptionCard } from "./OptionCard";
 import { GroupCallButton, GroupCallOverlay } from "./GroupCallView";
 
 import { ApprovalCard } from "./ApprovalCard";
+import { OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { ChannelMembers } from "./ChannelMembers";
 import { ManageMembersPanel } from "./ManageMembersPanel";
@@ -237,14 +238,19 @@ const Transcript = memo(function Transcript({
         const routineTarget = routineOwner && hasRoutineExecutionTask(routineOwner.tasks, routineExecutionThreadId)
           ? { botId: routineOwner.id, threadId: routineExecutionThreadId }
           : undefined;
+        // a member can hit a permission ask mid-turn; without this the
+        // card never rendered here and the bot waited out its timeout.
+        // `tool` distinguishes a permission from a QUESTION — a question
+        // only accepts an "answer", so routing it to the approval box
+        // would offer an Allow the broker rejects. A structured ask is
+        // one of those questions, and answers in its own card.
         const row =
-          // a member can hit a permission ask mid-turn; without this the
-          // card never rendered here and the bot waited out its timeout.
-          // `tool` distinguishes a permission from a QUESTION — a question
-          // only accepts an "answer", so routing it to the approval box
-          // would offer an Allow the broker rejects. A structured ask is
-          // one of those questions, and answers in its own card.
-          m.kind === "secret" && m.secret && m.from?.botId ? (
+          // Someone who is not the owner sees the wait, not an approval.
+          m.state === "waiting-on-owner" ? (
+            <div className="flex justify-start">
+              <OwnerWait ownerName={m.ownerName ?? ""} />
+            </div>
+          ) : m.kind === "secret" && m.secret && m.from?.botId ? (
             <SecretRequestCard botId={m.from.botId} threadId={group.threadId} message={m} />
           ) : m.kind === "connector" && m.connector && m.from?.botId ? (
             <ConnectorCard botId={m.from.botId} threadId={group.threadId} message={m} />

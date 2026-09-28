@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { requiredScope } from "./request-auth.ts";
 import { turnDestination } from "./turn-route.ts";
 import {
+  bindWorkerSocket,
   cancelQueued,
   channelTurnGate,
+  failTurn,
+  failTurnOnMembershipRemoval,
+  failTurnOnWorkerClose,
   invokeFleetRunner,
   pullQueuedForSession,
   queueTurn,
@@ -206,6 +210,134 @@ describe("workers", () => {
     expect(cancelQueued("m1", "ada", queued)).toEqual(queued);
     expect(cancelQueued("m1", "", queued)).toEqual(queued);
     expect(cancelQueued("m1", "p_zach", queued)).toEqual([]);
+  });
+
+  it("keeps partial text and marks the turn failed when the worker drops", () => {
+    expect(failTurn({ queued: ["m1"], messageId: "m1", partial: "début" })).toEqual({
+      queued: [],
+      status: "failed",
+      partial: "début",
+    });
+  });
+
+  it("marks the channel message failed when the worker socket closes mid-turn", () => {
+    const partial = "début";
+    const card = { tool: "Bash" };
+    const earlier = { id: "earlier", text: "historique" };
+    const open = { id: "m1", text: partial, card };
+    const messages = [earlier, open];
+    const result = failTurnOnWorkerClose({
+      midTurn: true,
+      queued: ["m0", "m1"],
+      messageId: "m1",
+      partial,
+      messages,
+    });
+    expect(result).toEqual({
+      queued: ["m0"],
+      status: "failed",
+      partial,
+      messages: [earlier, { id: "m1", text: partial, card, status: "failed" }],
+    });
+    expect(result.messages[0]).toBe(earlier);
+    expect(result.messages[1]?.card).toBe(card);
+    expect(card).toEqual({ tool: "Bash" });
+    expect(result.partial).toBe(partial);
+    const queued = ["m1"];
+    const waiting = failTurnOnWorkerClose({
+      midTurn: false,
+      queued,
+      messageId: "m1",
+      partial,
+      messages,
+    });
+    expect(waiting).toEqual({ queued, status: null, partial, messages });
+    expect(waiting.queued).toBe(queued);
+    expect(waiting.messages).toBe(messages);
+  });
+
+  it("fails the same way when a human or a bot leaves during a turn, and keeps history", () => {
+    const partial = "début";
+    const earlier = { id: "earlier", text: "historique" };
+    const open = { id: "m1", text: partial };
+    const messages = [earlier, open];
+    const shared = {
+      queued: ["m1"],
+      messageId: "m1",
+      partial,
+      messages,
+    };
+    const human = failTurnOnMembershipRemoval({
+      beforeHumanIds: ["jc", "ada"],
+      afterHumanIds: ["jc"],
+      beforeMemberIds: ["bot"],
+      afterMemberIds: ["bot"],
+      inTurn: true,
+      ...shared,
+    });
+    const bot = failTurnOnMembershipRemoval({
+      beforeHumanIds: ["jc"],
+      afterHumanIds: ["jc"],
+      beforeMemberIds: ["bot", "other"],
+      afterMemberIds: ["bot"],
+      inTurn: true,
+      ...shared,
+    });
+    expect(human.status).toBe("failed");
+    expect(bot.status).toBe("failed");
+    expect(human.partial).toBe(partial);
+    expect(bot.partial).toBe(partial);
+    expect(human.messages.map((message) => message.id)).toEqual(["earlier", "m1"]);
+    expect(bot.messages.map((message) => message.id)).toEqual(["earlier", "m1"]);
+    expect(human.messages[0]).toBe(earlier);
+    expect(bot.messages[0]).toBe(earlier);
+    expect(human.messages[1]?.status).toBe("failed");
+    expect(human.messages[1]?.text).toBe(partial);
+    const idle = failTurnOnMembershipRemoval({
+      beforeHumanIds: ["jc", "ada"],
+      afterHumanIds: ["jc"],
+      beforeMemberIds: ["bot"],
+      afterMemberIds: ["bot"],
+      inTurn: false,
+      ...shared,
+    });
+    expect(idle).toEqual({ queued: ["m1"], status: null, partial, messages });
+    expect(idle.messages).toBe(messages);
+    const added = failTurnOnMembershipRemoval({
+      beforeHumanIds: ["jc"],
+      afterHumanIds: ["jc", "ada"],
+      beforeMemberIds: ["bot"],
+      afterMemberIds: ["bot", "other"],
+      inTurn: true,
+      ...shared,
+    });
+    expect(added.status).toBeNull();
+    expect(added.messages).toBe(messages);
+  });
+
+  it("treats a socket close during the turn as the drop, not the response finish", async () => {
+    let close = () => {};
+    let markFinished = () => {};
+    const calls: string[] = [];
+    bindWorkerSocket({
+      socket: { once(_event, listener) { close = listener; } },
+      onResponseFinished(mark) { markFinished = mark; },
+      onClose() { calls.push("close"); },
+    });
+    markFinished();
+    close();
+    expect(calls).toEqual([]);
+    let later = () => {};
+    let markLater = () => {};
+    bindWorkerSocket({
+      socket: { once(_event, listener) { later = listener; } },
+      onResponseFinished(mark) { markLater = mark; },
+      onClose() { calls.push("close"); },
+    });
+    markLater();
+    await new Promise((resolve) => setImmediate(resolve));
+    later();
+    expect(calls).toEqual(["close"]);
   });
 
   it("registers the session user for the posted deviceId and replaces that device", () => {

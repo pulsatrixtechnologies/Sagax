@@ -419,6 +419,9 @@ export interface WireMessage {
   requestMessageId?: string;
   /** Provider completion outcome, independent of whether it emitted text. */
   turnSucceeded?: boolean;
+  /** A dropped worker, or a person or bot removed during the turn.
+   * This is not an approval. */
+  status?: "failed";
   /** An exact request was stopped; a restart must not revive an old result. */
   requestCancelled?: boolean;
   /** Set before execution and cleared only after the request's verified

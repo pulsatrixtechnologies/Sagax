@@ -557,7 +557,11 @@ import {
   createWorkerRoutes,
   destinationForBot,
   enqueueOfflineTurn,
+  failTurn,
+  failTurnOnMembershipRemoval,
+  failTurnOnWorkerClose,
   type DeviceQueuedTurn,
+  type OpenTurnMessage,
   type Worker,
 } from "./workers.ts";
 
@@ -3651,9 +3655,13 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     if (body.resetAudience !== true) throw Object.assign(new Error("resetAudience must be true"), { status: 400 });
     patch.audienceFloor = undefined;
   }
+  const beforeHumanIds = [...(existing.humanIds ?? [])];
+  const beforeMemberIds = [...existing.memberIds];
+  const turnWasOpen = channelTurnOpen(existing);
   const group = store.patchGroup(groupId, patch);
   if (resetAudience) audienceChanged();
   if (!group) throw Object.assign(new Error("no such room"), { status: 404 });
+  if (turnWasOpen) failTurnIfMemberLeft(group, beforeHumanIds, beforeMemberIds);
   return group;
 }
 
@@ -3680,6 +3688,162 @@ const sessionDeviceIds = new Map<string, string>();
 const loopbackDeviceIds = new Map<string, string>();
 const deviceOwnerSession = new Map<string, string>();
 let queuedWorkerTurns: DeviceQueuedTurn[] = [];
+/** Message ids a device already pulled and has not finished. */
+const inflightWorkerTurns = new Map<string, string[]>();
+
+function groupThreadIds(group: GroupRecord): string[] {
+  return [group.threadId, ...store.groupTasks(group.id).map((task) => task.threadId)];
+}
+
+function locateChannelMessage(messageId: string): { threadId: string; messages: Message[] } | null {
+  for (const group of store.groups) {
+    for (const threadId of groupThreadIds(group)) {
+      const messages = store.messagesFor(threadId);
+      if (messages.some((message) => message.id === messageId)) return { threadId, messages };
+    }
+  }
+  return null;
+}
+
+function channelTurnOpen(group: GroupRecord): boolean {
+  if (groupIsWorking(group)) return true;
+  const threads = new Set(groupThreadIds(group));
+  return queuedWorkerTurns.some((item) => [...threads].some((threadId) => (
+    store.messagesFor(threadId).some((message) => message.id === item.messageId)
+  )));
+}
+
+function partialAlreadyWritten(messages: Message[], messageId: string): string {
+  const index = messages.findIndex((message) => message.id === messageId);
+  if (index < 0) return "";
+  for (let cursor = messages.length - 1; cursor > index; cursor -= 1) {
+    const message = messages[cursor];
+    if (message && message.role === "bot" && message.kind === "text" && message.text) return message.text;
+  }
+  return "";
+}
+
+function openTurnMessage(message: Message): OpenTurnMessage {
+  return {
+    id: message.id,
+    text: message.text,
+    status: message.status,
+    card: message.card ? { answered: message.card.answered } : undefined,
+  };
+}
+
+function forgetInflight(messageId: string): void {
+  for (const [deviceId, ids] of inflightWorkerTurns) {
+    const next = ids.filter((id) => id !== messageId);
+    if (next.length) inflightWorkerTurns.set(deviceId, next);
+    else inflightWorkerTurns.delete(deviceId);
+  }
+}
+
+function commitFailedTurn(input: {
+  messageId: string;
+  threadId: string | null;
+  result: { queued: string[]; status: "failed" | null; messages: OpenTurnMessage[] };
+  detail: string;
+}): void {
+  if (input.result.status !== "failed") return;
+  queuedWorkerTurns = queuedWorkerTurns.filter((item) => input.result.queued.includes(item.messageId));
+  forgetInflight(input.messageId);
+  if (!input.threadId) return;
+  const marked = input.result.messages.find((message) => message.id === input.messageId);
+  const current = store.messagesFor(input.threadId).find((message) => message.id === input.messageId);
+  if (marked?.status === "failed" && current) {
+    store.patchMessage(input.threadId, input.messageId, {
+      status: "failed",
+      ...(current.text === undefined && marked.text !== undefined ? { text: marked.text } : {}),
+    });
+  }
+  const group = store.groupByThread(input.threadId);
+  if (!group) return;
+  cancelGroupTurnOperations(group.id, input.threadId, { status: "stopped", detail: input.detail });
+}
+
+function failQueuedMessage(messageId: string, partial: string, detail: string, removed: {
+  beforeHumanIds: string[];
+  afterHumanIds: string[];
+  beforeMemberIds: string[];
+  afterMemberIds: string[];
+} | null): void {
+  const located = locateChannelMessage(messageId);
+  const messages = (located?.messages ?? []).map(openTurnMessage);
+  const queued = queuedWorkerTurns.map((item) => item.messageId);
+  const result = removed
+    ? failTurnOnMembershipRemoval({
+      ...removed,
+      inTurn: true,
+      queued,
+      messageId,
+      partial,
+      messages,
+    })
+    : failTurnOnWorkerClose({ midTurn: true, queued, messageId, partial, messages });
+  commitFailedTurn({
+    messageId,
+    threadId: located?.threadId ?? null,
+    result,
+    detail,
+  });
+}
+
+function failTurnIfMemberLeft(group: GroupRecord, beforeHumanIds: string[], beforeMemberIds: string[]): void {
+  const afterHumanIds = group.humanIds ?? [];
+  const afterMemberIds = group.memberIds;
+  const humanGone = beforeHumanIds.some((id) => !afterHumanIds.includes(id));
+  const botGone = beforeMemberIds.some((id) => !afterMemberIds.includes(id));
+  if (!humanGone && !botGone) return;
+  const threads = new Set(groupThreadIds(group));
+  const queuedIds = queuedWorkerTurns
+    .filter((item) => [...threads].some((threadId) => store.messagesFor(threadId).some((message) => message.id === item.messageId)))
+    .map((item) => item.messageId);
+  const messageIds = [...new Set(queuedIds)];
+  if (!messageIds.length && groupIsWorking(group)) {
+    const user = [...store.messagesFor(group.threadId)].reverse().find((message) => message.role === "user");
+    if (user) messageIds.push(user.id);
+  }
+  const removed = { beforeHumanIds, afterHumanIds, beforeMemberIds, afterMemberIds };
+  for (const messageId of messageIds) {
+    const located = locateChannelMessage(messageId);
+    const partial = located ? partialAlreadyWritten(located.messages, messageId) : "";
+    failQueuedMessage(messageId, partial, "The turn failed because a member left the channel.", removed);
+  }
+}
+
+function failInflightWorkerTurns(deviceId: string, userId: string): void {
+  const worker = registeredWorkers.find((entry) => entry.deviceId === deviceId && entry.userId === userId);
+  if (!worker) return;
+  const ids = inflightWorkerTurns.get(deviceId);
+  if (!ids?.length) return;
+  inflightWorkerTurns.delete(deviceId);
+  for (const messageId of ids) {
+    const located = locateChannelMessage(messageId);
+    const partial = located ? partialAlreadyWritten(located.messages, messageId) : "";
+    const queued = queuedWorkerTurns.map((item) => item.messageId);
+    const result = failTurnOnWorkerClose({
+      midTurn: true,
+      queued,
+      messageId,
+      partial,
+      messages: (located?.messages ?? []).map(openTurnMessage),
+    });
+    if (result.status !== "failed") {
+      const dropped = failTurn({ queued, messageId, partial });
+      queuedWorkerTurns = queuedWorkerTurns.filter((item) => dropped.queued.includes(item.messageId));
+      continue;
+    }
+    commitFailedTurn({
+      messageId,
+      threadId: located?.threadId ?? null,
+      result,
+      detail: "The turn failed because the worker dropped.",
+    });
+  }
+}
+
 function roomHandoffProblem(node: Pick<RoomHandoff, "groupId" | "threadId" | "botId"> & Partial<Pick<RoomHandoff, "kind">>, parent?: Pick<RoomHandoff, "groupId" | "threadId" | "botId">): string | undefined {
   const group = node.groupId ? store.group(node.groupId) : undefined;
   const bot = store.bot(node.botId);
@@ -13552,6 +13716,14 @@ ROUTES.push(createWorkerRoutes({
     if (sessionId) sessionDeviceIds.set(sessionId, deviceId);
     else if (userId) loopbackDeviceIds.set(userId, deviceId);
     deviceOwnerSession.set(deviceId, sessionId ?? "");
+  },
+  onTurnPulled: ({ deviceId, messageIds }) => {
+    if (!messageIds.length) return;
+    const prev = inflightWorkerTurns.get(deviceId) ?? [];
+    inflightWorkerTurns.set(deviceId, [...prev, ...messageIds.filter((id) => !prev.includes(id))]);
+  },
+  onWorkerSocketClose: ({ deviceId, userId }) => {
+    failInflightWorkerTurns(deviceId, userId);
   },
 }));
 ROUTES.push(createOrgRoutes({

@@ -59,6 +59,7 @@ import { ToolActivity } from "./ToolActivity";
 import { ThreadRefText } from "./ThreadRefs";
 import { OptionCard, shouldHideOnboardingCard } from "./OptionCard";
 import { ApprovalCard } from "./ApprovalCard";
+import { OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { Composer } from "./Composer";
 import { ChatFindBar } from "./ChatFindBar";
@@ -767,6 +768,7 @@ const MessagesList = memo(function MessagesList({
         }
         const m = item.message;
         const row = (() => {
+          if (m.state === "waiting-on-owner") return <OwnerWait ownerName={m.ownerName ?? ""} />;
           switch (m.kind) {
             case "secret":
               return m.secret ? <SecretRequestCard botId={bot.id} threadId={bot.threadId} message={m} /> : null;
