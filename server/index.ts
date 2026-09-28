@@ -550,7 +550,14 @@ import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createOrgRoutes, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
-import { channelTurnGate, createWorkerRoutes, type Worker } from "./workers.ts";
+import {
+  channelTurnGate,
+  createWorkerRoutes,
+  destinationForBot,
+  enqueueOfflineTurn,
+  type DeviceQueuedTurn,
+  type Worker,
+} from "./workers.ts";
 
 const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
 const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
@@ -3664,7 +3671,7 @@ const channelTaskBlocked = (group: GroupRecord) =>
 // before registering store listeners or recovering interrupted routines.
 const groupQueues = new Map<string, Promise<void>>();
 let registeredWorkers: Worker[] = [];
-let queuedWorkerTurns: string[] = [];
+let queuedWorkerTurns: DeviceQueuedTurn[] = [];
 function roomHandoffProblem(node: Pick<RoomHandoff, "groupId" | "threadId" | "botId"> & Partial<Pick<RoomHandoff, "kind">>, parent?: Pick<RoomHandoff, "groupId" | "threadId" | "botId">): string | undefined {
   const group = node.groupId ? store.group(node.groupId) : undefined;
   const bot = store.bot(node.botId);
@@ -10107,6 +10114,30 @@ async function runGroupMemberTurn(
     ? group.threadId === threadId
     : Boolean(group && store.groupTaskByThread(group.id, threadId));
   if (!group || !bot || !ownsThread) return false;
+  const destination = destinationForBot({ host: bot.host, workers: registeredWorkers });
+  if (destination.kind !== "fleet") {
+    const host = bot.host;
+    if (destination.kind === "queued" && host?.kind === "machine") {
+      const lastUser = [...store.messagesFor(threadId)].reverse().find((item) => item.role === "user" && item.kind === "text");
+      if (lastUser) {
+        const next = enqueueOfflineTurn({
+          queued: queuedWorkerTurns,
+          messageId: lastUser.id,
+          deviceId: host.deviceId,
+          authorId: lastUser.sender?.id ?? (cfg.profile?.email ?? "local-owner").trim(),
+        });
+        if (next !== queuedWorkerTurns) {
+          queuedWorkerTurns = next;
+          store.appendMessage(threadId, {
+            role: "bot",
+            kind: "activity",
+            tool: { name: "machine-offline", ok: false },
+          });
+        }
+      }
+    }
+    return false;
+  }
   if (bot.approvalGrant) {
     onDispatchError?.(`${bot.name}'s approval level is still being confirmed — skipped this round`);
     return true;
@@ -11441,14 +11472,14 @@ function startGroupTurn(
     return message;
   }
 
-  // Offline machine: the user line is already in the transcript. Queue it
-  // and tell the channel machine-offline. Do not start the local runner
-  // for that bot, and do not fall back to the fleet host.
+  // Machine turns never run on this host. Offline stays queued for that
+  // device. Online does not mean the fleet runner starts it.
   const speakers = goalCoordinator ? [goalCoordinator] : responders;
   const gate = channelTurnGate({
     bots: speakers.map((bot) => ({ id: bot.id, host: bot.host })),
     workers: registeredWorkers,
     messageId: message.id,
+    authorId: options.sender?.id ?? (cfg.profile?.email ?? "local-owner").trim(),
     queued: queuedWorkerTurns,
   });
   queuedWorkerTurns = gate.queued;
@@ -11458,10 +11489,12 @@ function startGroupTurn(
       kind: "activity",
       tool: { name: "machine-offline", ok: false },
     });
-    if (gate.startedIds.length === 0) return message;
   }
-  if (!goalCoordinator) {
-    responders = responders.filter((bot) => gate.startedIds.includes(bot.id));
+  if (goalCoordinator) {
+    if (!gate.fleetIds.includes(goalCoordinator.id)) return message;
+  } else {
+    responders = responders.filter((bot) => gate.fleetIds.includes(bot.id));
+    if (!responders.length) return message;
   }
 
   // The snippet is only the fallback name here too. The member about to
@@ -13234,7 +13267,10 @@ ROUTES.push(createDirectGrantRoutes({
 ROUTES.push(createWorkerRoutes({
   workers: () => registeredWorkers,
   replace: (workers) => { registeredWorkers = workers; },
+  queued: () => queuedWorkerTurns,
+  replaceQueued: (queued) => { queuedWorkerTurns = queued; },
   userId: channelActorId,
+  authorId: (auth) => auth.kind === "session" ? personKey(auth.session) : channelActorId(auth),
 }));
 ROUTES.push(createOrgRoutes({
   state: orgState,

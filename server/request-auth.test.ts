@@ -109,6 +109,8 @@ describe("scopes", () => {
       ["POST", "/api/org/invites/tok/accept"],
       ["GET", "/api/org"],
       ["POST", "/api/workers"],
+      ["POST", "/api/workers/laptop/pull"],
+      ["POST", "/api/workers/queue/m1/cancel"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
       ["POST", "/api/cli-test"], ["GET", "/api/cli-candidates"], ["GET", "/api/instances"], ["PATCH", "/api/instances/claude"],

@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { requiredScope } from "./request-auth.ts";
 import { turnDestination } from "./turn-route.ts";
-import { channelTurnGate, queueTurn, registerWorker, registerWorkerBody } from "./workers.ts";
+import {
+  cancelQueued,
+  channelTurnGate,
+  invokeFleetRunner,
+  pullQueuedForSession,
+  queueTurn,
+  registerWorker,
+  registerWorkerBody,
+  takeQueued,
+} from "./workers.ts";
 
 describe("workers", () => {
   it("does not start a turn for an offline machine", () => {
@@ -12,7 +21,7 @@ describe("workers", () => {
     expect(queueTurn({ destination, messageId: "m1", queued: [] })).toEqual({ queued: ["m1"], started: false });
   });
 
-  it("starts a fleet or online worker turn without changing the queue", () => {
+  it("leaves the queue unchanged for a fleet or online worker destination", () => {
     const queued = ["earlier"];
     const fleet = turnDestination({ host: { kind: "fleet" }, workerOnline: false });
     const worker = turnDestination({
@@ -23,6 +32,11 @@ describe("workers", () => {
     expect(queueTurn({ destination: worker, messageId: "m2", queued })).toEqual({ queued, started: true });
     expect(queueTurn({ destination: fleet, messageId: "m2", queued }).queued).toBe(queued);
     expect(queued).toEqual(["earlier"]);
+    const calls: string[] = [];
+    expect(invokeFleetRunner({ destination: worker, run: () => calls.push("worker") })).toBe(false);
+    expect(invokeFleetRunner({ destination: { kind: "queued" }, run: () => calls.push("queued") })).toBe(false);
+    expect(invokeFleetRunner({ destination: fleet, run: () => calls.push("fleet") })).toBe(true);
+    expect(calls).toEqual(["fleet"]);
   });
 
   it("replaces the worker with the same deviceId", () => {
@@ -42,30 +56,61 @@ describe("workers", () => {
       workers: [{ deviceId: "laptop", userId: "zachary@example.test", online: false }],
       messageId: "m1",
       queued: [],
-    })).toEqual({ queued: ["m1"], startedIds: [], status: "machine-offline" });
+    })).toEqual({
+      queued: [{ messageId: "m1", deviceId: "laptop", authorId: "", started: false }],
+      fleetIds: [],
+      status: "machine-offline",
+    });
   });
 
   it("starts a fleet bot when no worker is online", () => {
-    const queued = ["kept"];
+    const queued = [{ messageId: "kept", deviceId: "studio", authorId: "p", started: false }];
     expect(channelTurnGate({
       bots: [{ id: "aurora", host: { kind: "fleet" } }],
       workers: [],
       messageId: "m9",
       queued,
-    })).toEqual({ queued, startedIds: ["aurora"], status: null });
+    })).toEqual({ queued, fleetIds: ["aurora"], status: null });
   });
 
-  it("starts the registered machine and leaves the queue", () => {
-    const queued = ["older"];
-    expect(channelTurnGate({
+  it("does not run an online machine on the fleet host", () => {
+    const queued = [{ messageId: "older", deviceId: "studio", authorId: "p", started: false }];
+    const gate = channelTurnGate({
       bots: [{ id: "desk", host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" } }],
       workers: [{ deviceId: "laptop", userId: "zachary@example.test", online: true }],
       messageId: "m1",
       queued,
-    })).toEqual({ queued, startedIds: ["desk"], status: null });
+    });
+    expect(gate).toEqual({ queued, fleetIds: [], status: null });
+    expect(gate.queued).toBe(queued);
   });
 
-  it("queues once when one bot is offline and still starts the others", () => {
+  it("queues an offline machine until that device pulls it, and does not call the fleet runner", () => {
+    const destination = turnDestination({
+      host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" },
+      workerOnline: false,
+    });
+    expect(queueTurn({ destination, messageId: "m1", queued: [] })).toEqual({ queued: ["m1"], started: false });
+    const calls: string[] = [];
+    expect(invokeFleetRunner({ destination, run: () => calls.push("fleet") })).toBe(false);
+    expect(calls).toEqual([]);
+    const gate = channelTurnGate({
+      bots: [{ id: "desk", host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" } }],
+      workers: [],
+      messageId: "m1",
+      authorId: "p_zach",
+      queued: [],
+    });
+    expect(gate.fleetIds).toEqual([]);
+    expect(gate.status).toBe("machine-offline");
+    const pulled = takeQueued("laptop", gate.queued);
+    expect(pulled.ids).toEqual(["m1"]);
+    expect(pulled.started).toEqual([{ messageId: "m1", deviceId: "laptop", authorId: "p_zach", started: true }]);
+    expect(takeQueued("laptop", pulled.queued).ids).toEqual([]);
+    expect(takeQueued("studio", gate.queued).ids).toEqual([]);
+  });
+
+  it("queues each offline device once and still runs a fleet bot", () => {
     const gate = channelTurnGate({
       bots: [
         { id: "fleet-bot", host: { kind: "fleet" } },
@@ -74,11 +119,42 @@ describe("workers", () => {
       ],
       workers: [{ deviceId: "laptop", userId: "jc@example.test", online: true }],
       messageId: "m1",
+      authorId: "p_zach",
       queued: [],
     });
-    expect(gate.startedIds).toEqual(["fleet-bot"]);
-    expect(gate.queued).toEqual(["m1"]);
+    expect(gate.fleetIds).toEqual(["fleet-bot"]);
+    expect(gate.queued).toEqual([
+      { messageId: "m1", deviceId: "laptop", authorId: "p_zach", started: false },
+      { messageId: "m1", deviceId: "studio", authorId: "p_zach", started: false },
+    ]);
     expect(gate.status).toBe("machine-offline");
+  });
+
+  it("lets only the owning session pull, and registering does not take the queue", () => {
+    const queued = [{ messageId: "m1", deviceId: "laptop", authorId: "p_zach", started: false }];
+    const registered = registerWorkerBody({ workers: [], userId: "zachary@example.test", body: { deviceId: "laptop" } });
+    expect(registered.status).toBe(200);
+    expect(queued).toEqual([{ messageId: "m1", deviceId: "laptop", authorId: "p_zach", started: false }]);
+    if (registered.status !== 200) return;
+    expect(pullQueuedForSession({
+      deviceId: "laptop",
+      userId: "ada@example.test",
+      workers: registered.workers,
+      queued,
+    })).toEqual({ status: 403, error: "forbidden" });
+    expect(pullQueuedForSession({
+      deviceId: "laptop",
+      userId: "zachary@example.test",
+      workers: registered.workers,
+      queued,
+    })).toEqual({ status: 200, ids: ["m1"], queued: [] });
+  });
+
+  it("drops a queued message only when its author cancels", () => {
+    const queued = [{ messageId: "m1", deviceId: "laptop", authorId: "p_zach", started: false }];
+    expect(cancelQueued("m1", "ada", queued)).toEqual(queued);
+    expect(cancelQueued("m1", "", queued)).toEqual(queued);
+    expect(cancelQueued("m1", "p_zach", queued)).toEqual([]);
   });
 
   it("registers the session user for the posted deviceId and replaces that device", () => {
@@ -102,7 +178,9 @@ describe("workers", () => {
     expect(registerWorkerBody({ workers: [], userId: "zachary@example.test", body: null }).status).toBe(400);
   });
 
-  it("lets a session register a worker at client scope", () => {
+  it("lets a session register, pull, and cancel a worker queue at client scope", () => {
     expect(requiredScope("POST", "/api/workers")).toBe("client");
+    expect(requiredScope("POST", "/api/workers/laptop/pull")).toBe("client");
+    expect(requiredScope("POST", "/api/workers/queue/m1/cancel")).toBe("client");
   });
 });

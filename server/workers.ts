@@ -24,6 +24,67 @@ export function queueTurn(input: {
   return { queued: input.queued, started: true };
 }
 
+/** A queued channel message waiting for one device. `started` is set when that device pulls it. */
+export interface DeviceQueuedTurn {
+  messageId: string;
+  deviceId: string;
+  authorId: string;
+  started: boolean;
+}
+
+export function destinationForBot(input: { host?: BotHost; workers: Worker[] }): ReturnType<typeof turnDestination> {
+  const host = normalizedHost(input.host);
+  return turnDestination({ host, workerOnline: machineOnline(input.workers, host) });
+}
+
+/** Fleet is the only destination the host runner may execute. */
+export function invokeFleetRunner(input: {
+  destination: ReturnType<typeof turnDestination>;
+  run: () => void;
+}): boolean {
+  if (input.destination.kind !== "fleet") return false;
+  input.run();
+  return true;
+}
+
+export function enqueueOfflineTurn(input: {
+  queued: DeviceQueuedTurn[];
+  messageId: string;
+  deviceId: string;
+  authorId: string;
+}): DeviceQueuedTurn[] {
+  if (input.queued.some((item) => !item.started && item.messageId === input.messageId && item.deviceId === input.deviceId)) {
+    return input.queued;
+  }
+  return [...input.queued, {
+    messageId: input.messageId,
+    deviceId: input.deviceId,
+    authorId: input.authorId,
+    started: false,
+  }];
+}
+
+/** Ids waiting for this device. They leave the queue and come back marked started. A second pull does not return them. */
+export function takeQueued(deviceId: string, queued: DeviceQueuedTurn[]): {
+  queued: DeviceQueuedTurn[];
+  ids: string[];
+  started: DeviceQueuedTurn[];
+} {
+  const started: DeviceQueuedTurn[] = [];
+  const rest: DeviceQueuedTurn[] = [];
+  for (const item of queued) {
+    if (item.deviceId === deviceId && !item.started) started.push({ ...item, started: true });
+    else rest.push(item);
+  }
+  return { queued: rest, ids: started.map((item) => item.messageId), started };
+}
+
+/** The author can drop their own queued message. Anyone else leaves the queue as it is. */
+export function cancelQueued(messageId: string, authorId: string, queued: DeviceQueuedTurn[]): DeviceQueuedTurn[] {
+  if (!authorId) return queued;
+  return queued.filter((item) => item.started || item.messageId !== messageId || item.authorId !== authorId);
+}
+
 function normalizedHost(host: BotHost | undefined): BotHost {
   if (host?.kind === "machine" && host.userId && host.deviceId) return host;
   return { kind: "fleet" };
@@ -35,30 +96,45 @@ function machineOnline(workers: Worker[], host: BotHost): boolean {
 }
 
 /**
- * One channel message is queued once, even when several bots are offline.
+ * Fleet bots are the only ones the host may run. An offline machine is queued
+ * for its device. An online machine is not queued and is not a fleet id.
  * A missing host is fleet, so an older bot is not treated as an offline machine.
  */
 export function channelTurnGate(input: {
   bots: { id: string; host?: BotHost }[];
   workers: Worker[];
   messageId: string;
-  queued: string[];
-}): { queued: string[]; startedIds: string[]; status: "machine-offline" | null } {
+  authorId?: string;
+  queued: DeviceQueuedTurn[];
+}): { queued: DeviceQueuedTurn[]; fleetIds: string[]; status: "machine-offline" | null } {
   let queued = input.queued;
   let held = false;
-  const startedIds: string[] = [];
+  const fleetIds: string[] = [];
+  const authorId = input.authorId ?? "";
   for (const bot of input.bots) {
     const host = normalizedHost(bot.host);
     const destination = turnDestination({ host, workerOnline: machineOnline(input.workers, host) });
-    const result = queueTurn({ destination, messageId: input.messageId, queued });
-    if (result.started) {
-      startedIds.push(bot.id);
-    } else if (!held) {
-      queued = result.queued;
+    queueTurn({ destination, messageId: input.messageId, queued: queued.map((item) => item.messageId) });
+    if (destination.kind === "fleet") {
+      fleetIds.push(bot.id);
+    } else if (destination.kind === "queued" && host.kind === "machine") {
       held = true;
+      queued = enqueueOfflineTurn({ queued, messageId: input.messageId, deviceId: host.deviceId, authorId });
     }
   }
-  return { queued, startedIds, status: held ? "machine-offline" : null };
+  return { queued, fleetIds, status: held ? "machine-offline" : null };
+}
+
+export function pullQueuedForSession(input: {
+  deviceId: string;
+  userId: string;
+  workers: Worker[];
+  queued: DeviceQueuedTurn[];
+}): { status: 200; ids: string[]; queued: DeviceQueuedTurn[] } | { status: 403; error: "forbidden" } {
+  const owner = input.workers.find((worker) => worker.deviceId === input.deviceId);
+  if (!owner || owner.userId !== input.userId) return { status: 403, error: "forbidden" };
+  const pulled = takeQueued(input.deviceId, input.queued);
+  return { status: 200, ids: pulled.ids, queued: pulled.queued };
 }
 
 export function registerWorkerBody(input: {
@@ -77,20 +153,45 @@ export function registerWorkerBody(input: {
 export interface WorkerRouteDeps {
   workers(): Worker[];
   replace(workers: Worker[]): void;
+  queued(): DeviceQueuedTurn[];
+  replaceQueued(queued: DeviceQueuedTurn[]): void;
   userId(auth: RequestAuth): string;
+  authorId(auth: RequestAuth): string;
 }
 
 export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
-    if (method !== "POST" || path !== "/api/workers") return PASS;
-    const body = await readBody(req);
-    const result = registerWorkerBody({
-      workers: deps.workers(),
-      userId: deps.userId(auth),
-      body: body && typeof body === "object" && !Array.isArray(body) ? body : null,
-    });
-    if (result.status === 400) return json(res, 400, { error: result.error });
-    deps.replace(result.workers);
-    return json(res, 200, { worker: result.worker });
+    if (method !== "POST") return PASS;
+    if (path === "/api/workers") {
+      const body = await readBody(req);
+      const result = registerWorkerBody({
+        workers: deps.workers(),
+        userId: deps.userId(auth),
+        body: body && typeof body === "object" && !Array.isArray(body) ? body : null,
+      });
+      if (result.status === 400) return json(res, 400, { error: result.error });
+      deps.replace(result.workers);
+      return json(res, 200, { worker: result.worker });
+    }
+    const pull = path.match(/^\/api\/workers\/([\w-]+)\/pull$/);
+    if (pull) {
+      const result = pullQueuedForSession({
+        deviceId: pull[1]!,
+        userId: deps.userId(auth),
+        workers: deps.workers(),
+        queued: deps.queued(),
+      });
+      if (result.status === 403) return json(res, 403, { error: result.error });
+      deps.replaceQueued(result.queued);
+      return json(res, 200, { ids: result.ids });
+    }
+    const cancel = path.match(/^\/api\/workers\/queue\/([\w-]+)\/cancel$/);
+    if (cancel) {
+      const before = deps.queued();
+      const next = cancelQueued(cancel[1]!, deps.authorId(auth), before);
+      deps.replaceQueued(next);
+      return json(res, 200, { removed: before.length - next.length });
+    }
+    return PASS;
   };
 }
