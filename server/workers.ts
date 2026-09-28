@@ -174,6 +174,9 @@ export interface WorkerRouteDeps {
   replaceQueued(queued: DeviceQueuedTurn[]): void;
   userId(auth: RequestAuth): string;
   authorId(auth: RequestAuth): string;
+  /** The caller that just registered this device, so approval delivery can
+   * tell that session from the owner's other sessions. */
+  rememberDevice?(input: { sessionId?: string; userId: string; deviceId: string }): void;
 }
 
 export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
@@ -188,6 +191,11 @@ export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
       });
       if (result.status === 400) return json(res, 400, { error: result.error });
       deps.replace(result.workers);
+      deps.rememberDevice?.({
+        sessionId: auth.kind === "session" ? auth.session.id : undefined,
+        userId: result.worker.userId,
+        deviceId: result.worker.deviceId,
+      });
       return json(res, 200, { worker: result.worker });
     }
     const pull = path.match(/^\/api\/workers\/([\w-]+)\/pull$/);
