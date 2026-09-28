@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -58,5 +58,23 @@ describe("principal registry", () => {
     expect(isPrincipalId("pr_00000000-0000-4000-8000-000000000000")).toBe(true);
     expect(isPrincipalId("zach@gox.ca")).toBe(false);
     expect(isPrincipalId("local-owner")).toBe(false);
+  });
+
+  it("starts empty on corrupt principals.json without throwing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "principals-"));
+    const path = join(dir, "principals.json");
+    // Write invalid JSON
+    writeFileSync(path, "{invalid json");
+    // Should not throw
+    const reg = new PrincipalRegistry({ path });
+    expect(reg.list()).toHaveLength(0);
+  });
+
+  it("creates parent directories for a nested path", () => {
+    const dir = mkdtempSync(join(tmpdir(), "principals-"));
+    const nestedPath = join(dir, "subdir", "deep", "principals.json");
+    const reg = new PrincipalRegistry({ path: nestedPath, now: () => 1000, newId: () => "pr_00000000-0000-4000-8000-000000000000" });
+    reg.forAccount({ email: "test@gox.ca" });
+    expect(existsSync(nestedPath)).toBe(true);
   });
 });

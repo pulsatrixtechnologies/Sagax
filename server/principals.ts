@@ -1,12 +1,15 @@
 // A person, by a stable id. Emails change and "local-owner" was never a
 // person; ownership, channel membership and grants key on `pr_<uuid>`.
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { z } from "zod";
 import { writeFileAtomic } from "./atomic.ts";
 
+const PRINCIPAL_ID_REGEX = /^pr_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 const principalSchema = z.object({
-  id: z.string().regex(/^pr_[0-9a-f-]{36}$/),
+  id: z.string().regex(PRINCIPAL_ID_REGEX),
   kind: z.enum(["human", "guest"]),
   email: z.string().max(320).optional(),
   controlPlaneUserId: z.string().max(256).optional(),
@@ -18,7 +21,7 @@ const fileSchema = z.object({ version: z.literal(1), principals: z.array(princip
 export type Principal = z.infer<typeof principalSchema>;
 
 export function isPrincipalId(value: string): boolean {
-  return /^pr_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+  return PRINCIPAL_ID_REGEX.test(value);
 }
 
 const emailKey = (email: string) => email.trim().toLowerCase();
@@ -33,10 +36,19 @@ export class PrincipalRegistry {
     this.path = options.path;
     this.now = options.now ?? Date.now;
     this.newId = options.newId ?? (() => `pr_${randomUUID()}`);
-    if (existsSync(this.path)) {
-      const parsed = fileSchema.safeParse(JSON.parse(readFileSync(this.path, "utf8")));
-      if (parsed.success) this.principals = parsed.data.principals;
+    this.load();
+  }
+
+  private load(): void {
+    if (!existsSync(this.path)) return;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(readFileSync(this.path, "utf8"));
+    } catch {
+      return; // unreadable: start empty rather than refuse to boot
     }
+    const parsed = fileSchema.safeParse(raw);
+    if (parsed.success) this.principals = parsed.data.principals;
   }
 
   list(): Principal[] {
@@ -105,6 +117,7 @@ export class PrincipalRegistry {
   }
 
   private persist(): void {
-    writeFileAtomic(this.path, JSON.stringify({ version: 1, principals: this.principals }, null, 2));
+    mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
+    writeFileAtomic(this.path, JSON.stringify({ version: 1, principals: this.principals }, null, 2), { mode: 0o600 });
   }
 }
