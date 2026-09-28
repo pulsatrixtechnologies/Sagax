@@ -59,13 +59,13 @@ const CREDENTIALS: Record<
     optional: true,
   },
   box: {
-    labelKey: "keys.box.label",
-    placeholderKey: "keys.box.placeholder",
-    descriptionKey: "keys.box.desc",
+    labelKey: "keys.boat.label",
+    placeholderKey: "keys.boat.placeholder",
+    descriptionKey: "keys.boat.desc",
     href: "https://docs.boat.dev/api-keys",
-    linkLabelKey: "keys.box.link",
+    linkLabelKey: "keys.boat.link",
     optional: true,
-    warningKey: "keys.box.warning",
+    warningKey: "keys.boat.warning",
   },
   opencodeGo: {
     labelKey: "keys.opencode.label",

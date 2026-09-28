@@ -1,6 +1,8 @@
 package com.openmausbot.companion.storage
 
 import android.content.Context
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import com.openmausbot.companion.core.Chat
 import com.openmausbot.companion.core.BotTask
 import com.openmausbot.companion.core.forTask
@@ -8,6 +10,8 @@ import com.openmausbot.companion.ui.bot
 import com.openmausbot.companion.ui.room
 import com.openmausbot.companion.core.ActivityDetail
 import com.openmausbot.companion.core.QuickReply
+import com.openmausbot.companion.ui.AppearanceSkin
+import com.openmausbot.companion.ui.cssHexToArgb
 import kotlin.test.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,6 +55,30 @@ class ChatPreferencesTest {
         store(name).setQuickReplies(replies)
 
         assertEquals(replies, store(name).quickReplies.value)
+    }
+
+    @Test
+    fun `appearance skin defaults to desktop midnight and survives relaunch`() {
+        val name = "chat-appearance-skin"
+        context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
+        assertEquals(AppearanceSkin.MIDNIGHT, store(name).appearanceSkin.value)
+        store(name).setAppearanceSkin(AppearanceSkin.LAGOON)
+        assertEquals(AppearanceSkin.LAGOON, store(name).appearanceSkin.value)
+    }
+
+    @Test
+    fun `appearance offers the desktop's eight named skins`() {
+        assertEquals(
+            listOf("Midnight", "Atelier", "Foundry", "Lagoon", "Graphite", "Linen", "Dusk", "Daylight"),
+            AppearanceSkin.entries.map(AppearanceSkin::label),
+        )
+    }
+
+    @Test
+    fun `CSS RGBA token keeps its desktop alpha in Compose`() {
+        assertEquals("FCFCFC99", AppearanceSkin.MIDNIGHT.colors.secondaryInk)
+        assertEquals(0x99FCFCFCL, cssHexToArgb(AppearanceSkin.MIDNIGHT.colors.secondaryInk))
+        assertEquals(0x99FCFCFC.toInt(), Color(cssHexToArgb("FCFCFC99")).toArgb())
     }
 
     @Test

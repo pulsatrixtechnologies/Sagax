@@ -20,6 +20,7 @@ import {
   MAX_CUSTOM_ANSWER,
   type AskQuestion,
 } from "../../shared/ask-question";
+import { ExpandableText } from "./ExpandableText";
 
 /** What each question has been answered with so far. Option labels and the
  * free-text reply are kept apart so toggling "Other" off cannot silently
@@ -171,7 +172,7 @@ export function QuestionCard({
         </div>
       )}
 
-      <div className="mt-3 text-[15px] leading-relaxed text-ink">{current.question}</div>
+      <ExpandableText text={current.question} className="mt-3 text-[15px] leading-relaxed text-ink" />
       {current.multiSelect && !settled && (
         <div className="mt-1 text-[12.5px] text-ink-secondary">{t("question.multiHint")}</div>
       )}

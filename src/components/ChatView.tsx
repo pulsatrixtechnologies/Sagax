@@ -543,7 +543,7 @@ function Bubble({
         <span
           className={cn(
             "self-end pb-1 text-[11px] tabular-nums text-ink-secondary/70 opacity-0 transition-opacity group-hover:opacity-100",
-            user ? "order-first mr-1" : "ml-1",
+            user ? "order-first mr-2" : "ml-2",
           )}
         >
           {formatTime(message.at)}
