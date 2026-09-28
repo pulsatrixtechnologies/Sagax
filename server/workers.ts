@@ -1,5 +1,3 @@
-import type { ServerResponse } from "node:http";
-import type { Socket } from "node:net";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 import { turnDestination, type BotHost } from "./turn-route.ts";
@@ -169,22 +167,58 @@ export function failTurnOnMembershipRemoval(input: {
   return failOpenTurn(input);
 }
 
-/** Ignore the close that follows a finished response in the same beat.
- * A later close, while the socket was still held, is the worker dropping. */
+/** Queued ids and ids already pulled. A pull removes the id from the queue,
+ * so membership has to see the inflight row, including on a task thread. */
+export function turnsOpenForMembership(input: {
+  threadIds: readonly string[];
+  queued: readonly { messageId: string; threadId: string }[];
+  inflight: readonly { messageId: string; threadId: string }[];
+}): string[] {
+  const threads = new Set(input.threadIds);
+  const ids: string[] = [];
+  for (const item of [...input.queued, ...input.inflight]) {
+    if (!threads.has(item.threadId) || ids.includes(item.messageId)) continue;
+    ids.push(item.messageId);
+  }
+  return ids;
+}
+
+/** A pull socket closes for the ids that pull holds, including after the
+ * response has finished. Registration does not fail inflight ids. */
+export function failPulledTurnsOnClose(input: {
+  source: "register" | "pull";
+  pulledIds: readonly string[];
+  partials: Readonly<Record<string, string>>;
+  messages: OpenTurnMessage[];
+}): { failedIds: string[]; partials: Record<string, string>; messages: OpenTurnMessage[] } {
+  if (input.source !== "pull") {
+    return { failedIds: [], partials: { ...input.partials }, messages: input.messages };
+  }
+  let messages = input.messages;
+  const partials = { ...input.partials };
+  const failedIds: string[] = [];
+  for (const messageId of input.pulledIds) {
+    const partial = partials[messageId] ?? "";
+    const result = failTurnOnWorkerClose({
+      midTurn: true,
+      queued: [],
+      messageId,
+      partial,
+      messages,
+    });
+    messages = result.messages;
+    partials[messageId] = result.partial;
+    failedIds.push(messageId);
+  }
+  return { failedIds, partials, messages };
+}
+
+/** The pull socket's close fails that pull. A finished response does not swallow it. */
 export function bindWorkerSocket(input: {
   socket: { once(event: "close", listener: () => void): void };
-  onResponseFinished: (mark: () => void) => void;
   onClose: () => void;
 }): void {
-  let ignoreClose = false;
-  input.onResponseFinished(() => {
-    ignoreClose = true;
-    setImmediate(() => {
-      ignoreClose = false;
-    });
-  });
   input.socket.once("close", () => {
-    if (ignoreClose) return;
     input.onClose();
   });
 }
@@ -344,21 +378,11 @@ export interface WorkerRouteDeps {
   rememberDevice?(input: { sessionId?: string; userId: string; deviceId: string }): void;
   /** Ids the device just took. They are in a turn until the socket closes. */
   onTurnPulled?(input: { deviceId: string; userId: string; messageIds: string[] }): void;
-  /** The worker connection dropped. The caller fails any turn still open. */
-  onWorkerSocketClose?(input: { deviceId: string; userId: string }): void;
+  /** The pull socket dropped. `messageIds` are the ids that pull holds, not every inflight id. */
+  onWorkerSocketClose?(input: { deviceId: string; userId: string; messageIds: string[] }): void;
 }
 
 export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
-  const boundSockets = new WeakSet<Socket>();
-  const bindRequestSocket = (socket: Socket, res: ServerResponse, deviceId: string, userId: string) => {
-    if (boundSockets.has(socket)) return;
-    boundSockets.add(socket);
-    bindWorkerSocket({
-      socket,
-      onResponseFinished(mark) { res.on("finish", mark); },
-      onClose() { deps.onWorkerSocketClose?.({ deviceId, userId }); },
-    });
-  };
   return async ({ req, res, path, method, auth, json, readBody }) => {
     if (method !== "POST") return PASS;
     if (path === "/api/workers") {
@@ -375,7 +399,6 @@ export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
         userId: result.worker.userId,
         deviceId: result.worker.deviceId,
       });
-      bindRequestSocket(req.socket, res, result.worker.deviceId, result.worker.userId);
       return json(res, 200, { worker: result.worker });
     }
     const pull = path.match(/^\/api\/workers\/([\w-]+)\/pull$/);
@@ -390,8 +413,17 @@ export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
       deps.replaceQueued(result.queued);
       if (result.ids.length) {
         deps.onTurnPulled?.({ deviceId: pull[1]!, userId: deps.userId(auth), messageIds: result.ids });
+        bindWorkerSocket({
+          socket: req.socket,
+          onClose() {
+            deps.onWorkerSocketClose?.({
+              deviceId: pull[1]!,
+              userId: deps.userId(auth),
+              messageIds: result.ids,
+            });
+          },
+        });
       }
-      bindRequestSocket(req.socket, res, pull[1]!, deps.userId(auth));
       return json(res, 200, { ids: result.ids });
     }
     const cancel = path.match(/^\/api\/workers\/queue\/([\w-]+)\/cancel$/);

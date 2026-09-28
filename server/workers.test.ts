@@ -7,9 +7,11 @@ import {
   channelTurnGate,
   failTurn,
   failTurnOnMembershipRemoval,
+  failPulledTurnsOnClose,
   failTurnOnWorkerClose,
   invokeFleetRunner,
   memberIdsChangeDuringHeldTurn,
+  turnsOpenForMembership,
   pullQueuedForSession,
   queueTurn,
   registerWorker,
@@ -364,29 +366,96 @@ describe("workers", () => {
     expect(blocked.messages).toBe(messages);
   });
 
-  it("treats a socket close during the turn as the drop, not the response finish", async () => {
+  it("fails a pulled turn on a task thread when a person or a bot leaves", () => {
+    const partial = "début";
+    const card = { tool: "Bash" };
+    const earlier = { id: "earlier", text: "historique" };
+    const held = { id: "m-task", text: partial, card };
+    const messages = [earlier, held];
+    const ids = turnsOpenForMembership({
+      threadIds: ["room", "task-1"],
+      queued: [],
+      inflight: [{ messageId: "m-task", threadId: "task-1" }],
+    });
+    expect(ids).toEqual(["m-task"]);
+    const destination = turnDestination({
+      host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" },
+      workerOnline: true,
+    });
+    const calls: string[] = [];
+    expect(invokeFleetRunner({ destination, run: () => calls.push("fleet") })).toBe(false);
+    expect(calls).toEqual([]);
+    const shared = {
+      inTurn: true,
+      queued: [] as string[],
+      messageId: ids[0]!,
+      partial,
+      messages,
+    };
+    const human = failTurnOnMembershipRemoval({
+      beforeHumanIds: ["jc", "ada"],
+      afterHumanIds: ["jc"],
+      beforeMemberIds: ["desk"],
+      afterMemberIds: ["desk"],
+      ...shared,
+    });
+    const bot = failTurnOnMembershipRemoval({
+      beforeHumanIds: ["jc"],
+      afterHumanIds: ["jc"],
+      beforeMemberIds: ["desk", "other"],
+      afterMemberIds: ["desk"],
+      ...shared,
+    });
+    for (const result of [human, bot]) {
+      expect(result.status).toBe("failed");
+      expect(result.partial).toBe(partial);
+      expect(result.messages[0]).toBe(earlier);
+      expect(result.messages[1]?.text).toBe(partial);
+      expect(result.messages[1]?.status).toBe("failed");
+      expect(result.messages[1]?.card).toBe(card);
+    }
+    expect(card).toEqual({ tool: "Bash" });
+  });
+
+  it("fails the pulled ids when that pull socket closes, not every inflight id", () => {
+    const partial = "début";
+    const card = { tool: "Bash" };
+    const earlier = { id: "earlier", text: "historique" };
+    const held = { id: "m1", text: partial, card };
+    const other = { id: "m2", text: "autre" };
+    const messages = [earlier, held, other];
+    const partials = { m1: partial, m2: "autre" };
+    const registered = failPulledTurnsOnClose({
+      source: "register",
+      pulledIds: [],
+      partials,
+      messages,
+    });
+    expect(registered.failedIds).toEqual([]);
+    expect(registered.messages).toBe(messages);
+    expect(registered.partials.m1).toBe(partial);
     let close = () => {};
-    let markFinished = () => {};
     const calls: string[] = [];
     bindWorkerSocket({
       socket: { once(_event, listener) { close = listener; } },
-      onResponseFinished(mark) { markFinished = mark; },
-      onClose() { calls.push("close"); },
+      onClose() { calls.push("pull"); },
     });
-    markFinished();
     close();
-    expect(calls).toEqual([]);
-    let later = () => {};
-    let markLater = () => {};
-    bindWorkerSocket({
-      socket: { once(_event, listener) { later = listener; } },
-      onResponseFinished(mark) { markLater = mark; },
-      onClose() { calls.push("close"); },
+    expect(calls).toEqual(["pull"]);
+    const pulled = failPulledTurnsOnClose({
+      source: "pull",
+      pulledIds: ["m1"],
+      partials,
+      messages,
     });
-    markLater();
-    await new Promise((resolve) => setImmediate(resolve));
-    later();
-    expect(calls).toEqual(["close"]);
+    expect(pulled.failedIds).toEqual(["m1"]);
+    expect(pulled.partials.m1).toBe(partial);
+    expect(pulled.messages[0]).toBe(earlier);
+    expect(pulled.messages.find((message) => message.id === "m1")?.text).toBe(partial);
+    expect(pulled.messages.find((message) => message.id === "m1")?.status).toBe("failed");
+    expect(pulled.messages.find((message) => message.id === "m1")?.card).toBe(card);
+    expect(pulled.messages.find((message) => message.id === "m2")?.status).toBeUndefined();
+    expect(card).toEqual({ tool: "Bash" });
   });
 
   it("registers the session user for the posted deviceId and replaces that device", () => {
