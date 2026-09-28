@@ -24,6 +24,8 @@ export function OrganizationSettings() {
   const status = useRef<ManagedDesktopState["status"] | undefined>(undefined);
   const [org, setOrg] = useState<{ name: string } | null>(null);
   const [people, setPeople] = useState<{ id: string; role: OrgRole }[]>([]);
+  const [orgReady, setOrgReady] = useState(false);
+  const [directoryError, setDirectoryError] = useState("");
 
   const acceptConnection = (next: ManagedDesktopState) => {
     const changed = status.current !== next.status;
@@ -57,20 +59,26 @@ export function OrganizationSettings() {
     return () => { generation.current++; unsubscribe?.(); };
   }, [bridge]);
 
-  const loadOrg = (alive = () => true) =>
-    api<{ org: { name: string }; people?: { id: string; role: OrgRole }[] }>("/api/org")
-      .then((body) => {
-        if (!alive()) return;
-        setOrg({ name: body.org.name });
-        setPeople(body.people ?? []);
-      })
-      .catch((error) => {
-        if (!alive()) return;
-        if (error instanceof ApiError && error.status === 404) {
-          setOrg(null);
-          setPeople([]);
-        }
-      });
+  const loadOrg = async (alive = () => true) => {
+    try {
+      const body = await api<{ org: { name: string }; people?: { id: string; role: OrgRole }[] }>("/api/org");
+      if (!alive()) return;
+      setOrg({ name: body.org.name });
+      setPeople(body.people ?? []);
+      setOrgReady(true);
+      setDirectoryError("");
+    } catch (error) {
+      if (!alive()) return;
+      if (error instanceof ApiError && error.status === 404) {
+        setOrg(null);
+        setPeople([]);
+        setOrgReady(true);
+        setDirectoryError("");
+        return;
+      }
+      setDirectoryError("Impossible de charger l'organisation.");
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -101,16 +109,32 @@ export function OrganizationSettings() {
   };
 
   const directory = (
-    <OrgDirectory
-      org={org}
-      people={people}
-      onCreate={(name) => {
-        void api("/api/org", { method: "POST", body: JSON.stringify({ name, host: { kind: "this-computer" } }) }).then(() => loadOrg());
-      }}
-      onInvite={(email) => {
-        void api("/api/org/invites", { method: "POST", body: JSON.stringify({ email }) }).then(() => loadOrg());
-      }}
-    />
+    <>
+      {orgReady && (
+        <OrgDirectory
+          org={org}
+          people={people}
+          onCreate={async (name) => {
+            try {
+              await api("/api/org", { method: "POST", body: JSON.stringify({ name, host: { kind: "this-computer" } }) });
+              await loadOrg();
+            } catch {
+              setDirectoryError("Impossible de créer l'organisation.");
+            }
+          }}
+          onInvite={async (email) => {
+            try {
+              await api("/api/org/invites", { method: "POST", body: JSON.stringify({ email }) });
+              await loadOrg();
+            } catch (error) {
+              setDirectoryError("Impossible d'envoyer l'invitation.");
+              throw error;
+            }
+          }}
+        />
+      )}
+      {directoryError && <p role="alert" className="text-[13px] text-danger">{directoryError}</p>}
+    </>
   );
 
   if (!bridge) return <>

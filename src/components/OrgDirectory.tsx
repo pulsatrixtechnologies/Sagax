@@ -56,12 +56,15 @@ export function OrgDirectory({
       </ul>
       <form
         className="mt-4 flex flex-col gap-3"
-        onSubmit={(event: FormEvent) => {
+        onSubmit={async (event: FormEvent) => {
           event.preventDefault();
           const value = email.trim();
-          if (value) {
-            onInvite(value);
+          if (!value) return;
+          try {
+            await onInvite(value);
             setEmail("");
+          } catch {
+            // Keep the address so a refused invite can be corrected.
           }
         }}
       >
