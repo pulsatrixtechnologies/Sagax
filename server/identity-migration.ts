@@ -54,8 +54,11 @@ export function migrateIdentityRefs(input: {
     if (session.principalId) continue;
     const email = session.email?.trim();
     const userId = session.userId?.trim();
-    // Before principals, only an admin could mint a pairing code, so a
-    // session with no account is the operator's own device.
+    // Before principals, only an admin could mint a pairing code. So:
+    // - email present: the person at that address.
+    // - no email, no userId: pairing session from before account tracking (operator's device).
+    // - no email, userId present: incomplete migration state; skip (no principal yet).
+    if (!email && userId) continue;
     const principalId = email
       ? registry.forAccount({ email, controlPlaneUserId: userId && !userId.startsWith("portal:") ? userId : undefined }).id
       : registry.localOperator().id;

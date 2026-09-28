@@ -47,4 +47,21 @@ describe("identity migration", () => {
     expect(again).toEqual({ groups: [], bots: [], sessions: [] });
     expect(registry.list()).toHaveLength(2);
   });
+
+  it("skips sessions with userId but no email (incomplete migration state)", () => {
+    const registry = fresh();
+    registry.localOperator("jc@gox.ca");
+    const input = {
+      org: null,
+      groups: [],
+      bots: [],
+      sessions: [{ id: "s-odd", userId: "cp_x" }],
+      registry,
+    };
+    const out = migrateIdentityRefs(input);
+    // The session with userId but no email is not included in the result.
+    expect(out.sessions).toEqual([]);
+    // No additional principal was created.
+    expect(registry.list()).toHaveLength(1);
+  });
 });
