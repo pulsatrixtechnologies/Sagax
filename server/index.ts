@@ -13872,7 +13872,7 @@ function configStatus() {
     tts: tts.describeVoice(cfg),
     imageGen: avatarImageStatus(cfg),
     // not a secret — the sidebar shows it
-    profile: { name: cfg.profile?.name ?? "", email: cfg.profile?.email ?? "", aboutMe: cfg.profile?.aboutMe ?? "" },
+    profile: { name: cfg.profile?.name ?? "", email: cfg.profile?.email ?? "", aboutMe: cfg.profile?.aboutMe ?? "", avatarUrl: cfg.profile?.avatarUrl ?? "" },
     // the enrolled organisation's read-only desktop policy; null when not enrolled
     managedPolicy: managedPolicy.summary(),
     // not a secret — the settings picker shows it; "" = follow the system
