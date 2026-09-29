@@ -4184,7 +4184,10 @@
       "botAccess.grants.verb.modify": "d94eaf69438863a8d5ef755e74e6840048386eefbf0e34f39004d2e9c9157778",
       "botAccess.grants.verb.delete": "e2d0a54968ead24efc0dffa6ac78fc606dceec34a0f586177a74a54cc2272cf8",
       "connectors.grants.limited": "e83d55669994029b942e5ab33607dab85a72227badd0ee08defaf49748c61cf8",
-      "connectors.grants.more": "bdc66b5347d2d9ccedcb5871a3c39fa99a2bd1b64ac6391ecd6d6015217fcf92"
+      "connectors.grants.more": "bdc66b5347d2d9ccedcb5871a3c39fa99a2bd1b64ac6391ecd6d6015217fcf92",
+      "org.serverAddress": "8be89710b2f1d0c515eaff86dd4f049ec2447de5bfdb07d02d9720ff7fe017e1",
+      "org.serverAddressHelp": "393fa9da7ebe8f250c633456ae71bc053aab3326f8fcfcbf9550187eaec3c8f5",
+      "org.needsServerAddress": "e4d2b78c153f7ebedbe88f7dfc043eb9389cb16dd930823f2a8b4e74e0a56dc9"
     },
     "hi": {
       "noEngines.title": "af88855a5f80377de709995229ba3907df9e8fb3b940fbf7c0d9cbe6eea54afe",

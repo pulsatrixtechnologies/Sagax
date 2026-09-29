@@ -1,46 +1,29 @@
 import { useState, type FormEvent } from "react";
 import type { OrgRole } from "../../server/org-directory.ts";
 import { Card } from "./SettingsPrimitives";
+import { OrgCreateForm } from "./OrganizationSettings";
 
 export function OrgDirectory({
   org,
   people,
   pendingInvites = [],
+  initialAddress = "",
   onCreate,
   onInvite,
 }: {
   org: { name: string } | null;
   people: { id: string; role: OrgRole }[];
   pendingInvites?: { email: string }[];
-  onCreate: (name: string) => void;
+  initialAddress?: string;
+  onCreate: (name: string, host: { kind: "server"; url: string }) => void;
   onInvite: (email: string) => void;
 }) {
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
   if (!org) {
     return (
       <Card>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(event: FormEvent) => {
-            event.preventDefault();
-            const value = name.trim();
-            if (value) onCreate(value);
-          }}
-        >
-          <label className="flex flex-col gap-1.5 text-[13px] text-ink">
-            Nom
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50"
-            />
-          </label>
-          <button type="submit" className="w-fit rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110">
-            Créer l'organisation
-          </button>
-        </form>
+        <OrgCreateForm initialAddress={initialAddress} onCreate={onCreate} />
       </Card>
     );
   }

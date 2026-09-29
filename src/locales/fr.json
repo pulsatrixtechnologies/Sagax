@@ -1397,5 +1397,8 @@
   "botAccess.grants.verb.modify": "Modifier",
   "botAccess.grants.verb.delete": "Supprimer",
   "connectors.grants.limited": "Bots avec des outils limités : {count}",
-  "connectors.grants.more": " +{count} de plus"
+  "connectors.grants.more": " +{count} de plus",
+  "org.serverAddress": "Adresse du serveur",
+  "org.serverAddressHelp": "Tout le monde dans l'organisation se connecte à ce serveur. Utilise son adresse https, son nom Tailscale, ou http://localhost pour un serveur Docker local.",
+  "org.needsServerAddress": "Cette organisation n'a pas encore d'adresse de serveur. Les personnes hors de ce poste ne peuvent pas la rejoindre avant."
 }

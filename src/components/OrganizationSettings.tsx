@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ManagedDesktopState } from "../../electron/managed-desktop.mjs";
 import type { OrgRole } from "../../server/org-directory.ts";
+import type { OrgRecord } from "../../server/org-record.ts";
 import { activeLocale, t } from "@/lib/i18n";
 import { api, ApiError } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
@@ -10,6 +11,66 @@ import { notifyOrgColumn } from "./org-column";
 
 const providerNames: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter" };
 const DEFAULT_PORTAL_ORIGIN = "https://admin.openmausbot.com";
+
+/** Consistent with `serverAddressOk` in server/org-record.ts: https for any
+ * host, http only for a Tailscale name or a local Docker server. */
+export function orgHostFromInput(value: string): { kind: "server"; url: string } | null {
+  const url = value.trim();
+  try {
+    const parsed = new URL(url);
+    const localOrTailnet = parsed.hostname.endsWith(".ts.net") || parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+    if (parsed.protocol === "https:" || (parsed.protocol === "http:" && localOrTailnet)) return { kind: "server", url };
+  } catch { /* not a URL */ }
+  return null;
+}
+
+/** Everyone in the organization signs in to this server; ask for its address
+ * up front rather than defaulting to a computer that may go offline. */
+export function OrgCreateForm({
+  initialAddress,
+  onCreate,
+}: {
+  initialAddress: string;
+  onCreate: (name: string, host: { kind: "server"; url: string }) => void | Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [address, setAddress] = useState(initialAddress);
+  const host = orgHostFromInput(address);
+  return (
+    <form
+      className="flex flex-col gap-3"
+      onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        const value = name.trim();
+        if (value && host) void onCreate(value, host);
+      }}
+    >
+      <label className="flex flex-col gap-1.5 text-[13px] text-ink">
+        Nom
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50"
+        />
+      </label>
+      <label className="flex flex-col gap-1.5 text-[13px] text-ink">
+        {t("org.serverAddress")}
+        <input
+          name="org-server-address"
+          value={address}
+          onChange={(event) => setAddress(event.target.value)}
+          placeholder="https://…"
+          autoCapitalize="none" autoCorrect="off" autoComplete="off" spellCheck={false}
+          className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50"
+        />
+        <span className="text-[12px] text-ink-secondary">{t("org.serverAddressHelp")}</span>
+      </label>
+      <button type="submit" disabled={!host} className="w-fit rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50">
+        Créer l'organisation
+      </button>
+    </form>
+  );
+}
 
 /** Only the trusted desktop bridge can enroll this computer or hold its token. */
 export function OrganizationSettings() {
@@ -23,7 +84,7 @@ export function OrganizationSettings() {
   const generation = useRef(0);
   const revision = useRef(0);
   const status = useRef<ManagedDesktopState["status"] | undefined>(undefined);
-  const [org, setOrg] = useState<{ name: string } | null>(null);
+  const [org, setOrg] = useState<{ name: string; host?: OrgRecord["host"] } | null>(null);
   const [people, setPeople] = useState<{ id: string; role: OrgRole }[]>([]);
   const [pendingInvites, setPendingInvites] = useState<{ email: string }[]>([]);
   const [orgReady, setOrgReady] = useState(false);
@@ -63,9 +124,9 @@ export function OrganizationSettings() {
 
   const loadOrg = async (alive = () => true) => {
     try {
-      const body = await api<{ org: { name: string }; people?: { id: string; role: OrgRole }[]; pendingInvites?: { email: string }[] }>("/api/org");
+      const body = await api<{ org: { name: string; host?: OrgRecord["host"] }; people?: { id: string; role: OrgRole }[]; pendingInvites?: { email: string }[] }>("/api/org");
       if (!alive()) return;
-      setOrg({ name: body.org.name });
+      setOrg({ name: body.org.name, host: body.org.host });
       setPeople(body.people ?? []);
       setPendingInvites(body.pendingInvites ?? []);
       setOrgReady(true);
@@ -119,9 +180,10 @@ export function OrganizationSettings() {
           org={org}
           people={people}
           pendingInvites={pendingInvites}
-          onCreate={async (name) => {
+          initialAddress=""
+          onCreate={async (name, host) => {
             try {
-              const created = await api<{ org?: { name?: string } }>("/api/org", { method: "POST", body: JSON.stringify({ name, host: { kind: "this-computer" } }) });
+              const created = await api<{ org?: { name?: string } }>("/api/org", { method: "POST", body: JSON.stringify({ name, host }) });
               const createdName = typeof created.org?.name === "string" ? created.org.name : name;
               notifyOrgColumn(createdName);
               await loadOrg();
@@ -139,6 +201,9 @@ export function OrganizationSettings() {
             }
           }}
         />
+      )}
+      {org?.host?.kind === "this-computer" && (
+        <p role="status" className="text-[13px] text-ink-secondary">{t("org.needsServerAddress")}</p>
       )}
       {directoryError && <p role="alert" className="text-[13px] text-danger">{directoryError}</p>}
     </>

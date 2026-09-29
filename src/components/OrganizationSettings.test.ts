@@ -28,7 +28,7 @@ vi.mock("react", async (original) => ({ ...await original<typeof import("react")
 vi.mock("@/state/store", async (original) => ({ ...await original<typeof import("@/state/store")>(),
   useStore: () => ({ state: { bots: fixture.store.bots, instances: fixture.store.instances }, dispatch: fixture.store.dispatch, flushBotPatches: fixture.store.flushBotPatches }),
 }));
-import { OrganizationSettings } from "./OrganizationSettings";
+import { OrganizationSettings, OrgCreateForm, orgHostFromInput } from "./OrganizationSettings";
 import { CompanyModels } from "./CompanyModels";
 import { OrgDirectory } from "./OrgDirectory";
 
@@ -279,6 +279,20 @@ describe("optional desktop Organisation settings", () => {
   });
 });
 
+describe("organization create form", () => {
+  it("asks for the server address everyone signs in to", () => {
+    const markup = renderToStaticMarkup(createElement(OrgCreateForm, { initialAddress: "", onCreate: async () => undefined }));
+    expect(markup).toContain('name="org-server-address"');
+  });
+  it("accepts https, Tailscale and local Docker addresses only", () => {
+    expect(orgHostFromInput("http://localhost:8080")).toEqual({ kind: "server", url: "http://localhost:8080" });
+    expect(orgHostFromInput("https://pulsa.gox.ca")).toEqual({ kind: "server", url: "https://pulsa.gox.ca" });
+    expect(orgHostFromInput("http://fs01.tail1234.ts.net:8799")).toEqual({ kind: "server", url: "http://fs01.tail1234.ts.net:8799" });
+    expect(orgHostFromInput("http://10.0.0.5")).toBeNull();
+    expect(orgHostFromInput("")).toBeNull();
+  });
+});
+
 function text(html: string) {
   return html.replace(/&#x27;/g, "'");
 }
@@ -334,6 +348,15 @@ describe("fleet organization directory", () => {
     const html = text(render().html);
     expect(html).toContain("Impossible de créer l'organisation.");
     expect(html).toContain("Créer l'organisation");
+  });
+
+  it("shows a notice when the organization has no server address yet", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, {
+      org: { name: "GOX", host: { kind: "this-computer" } },
+      people: [],
+    }));
+    const html = text((await loadOrg()).html);
+    expect(html).toContain("This organization has no server address yet.");
   });
 
   it("keeps an invite error on screen", async () => {
