@@ -20,7 +20,7 @@ function Miniature({ skin }: { skin: SkinId }) {
     <div
       data-skin={skin}
       aria-hidden="true"
-      className="flex h-[78px] w-full overflow-hidden rounded-lg bg-app ring-1 ring-hairline/60"
+      className="flex h-[104px] w-full overflow-hidden rounded-lg bg-app ring-1 ring-hairline/60"
     >
       {/* rail */}
       <div className="flex w-[11px] shrink-0 flex-col items-center gap-[3px] bg-panel pt-[5px]">
@@ -74,9 +74,10 @@ export function SkinPicker() {
   );
 
   return (
-    // Four columns keep each miniature useful while allowing the collection
-    // to grow into a second row; Settings already scrolls on short windows.
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    // Cards at least 190px wide: three across at the modal's normal width,
+    // so each miniature is large enough to judge and every tagline reads in
+    // full. Settings scrolls on short windows.
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3">
       {SKINS.map((skin) => {
         const selected = skin.id === active;
         return (
@@ -89,7 +90,7 @@ export function SkinPicker() {
             }}
             aria-pressed={selected}
             className={cn(
-              "flex flex-col gap-2 rounded-xl border p-2 text-left transition-colors",
+              "flex flex-col gap-2.5 rounded-xl border p-2.5 text-left transition-colors",
               selected
                 ? "border-accent-border bg-control"
                 : "border-hairline/60 hover:border-hairline hover:bg-control/50",
@@ -99,7 +100,7 @@ export function SkinPicker() {
             <div className="flex items-start gap-1.5 px-0.5 pb-0.5">
               <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium text-ink">{skin.name}</div>
-                <div className="mt-0.5 text-[11px] leading-snug text-ink-secondary">
+                <div className="mt-0.5 text-[12px] leading-snug text-ink-secondary">
                   {skin.tagline}
                 </div>
               </div>

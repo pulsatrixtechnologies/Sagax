@@ -32,7 +32,7 @@ let startupScreen = null;
 let desktopTray = null;
 import { collisionFreeDownloadPath, defaultSaveName, withSavableFile } from "./save-file.mjs";
 import { desktopViewerPermissionAllowed } from "./desktop-viewer-permissions.mjs";
-import { appPermissionAllowed, externalWebUrl } from "./app-permissions.mjs";
+import { appPermissionAllowed, externalOpenUrl, externalWebUrl } from "./app-permissions.mjs";
 import {
   ensureManagedComposioCredentials,
   managedComposioAccess,
@@ -2134,7 +2134,7 @@ function createWindow({ deferNavigation = false } = {}) {
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     try {
-      void shell.openExternal(externalWebUrl(url)).catch(() => {
+      void shell.openExternal(externalOpenUrl(url)).catch(() => {
         console.warn("The external web link could not be opened");
       });
     } catch {

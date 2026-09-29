@@ -58,6 +58,7 @@ export const MAUS_COLOR_NAMES = [
   "teal",
   "coral",
   "white",
+  "black",
 ] as const;
 
 export type MausColor = (typeof MAUS_COLOR_NAMES)[number];
@@ -74,7 +75,30 @@ export const MAUS_COLORS = {
   teal: "#01A492",
   coral: "#E5634E",
   white: "#F4F4F4",
+  black: "#1D1E22",
 } satisfies Record<MausColor, string>;
+
+/**
+ * A bot colour used as text or a tint on the app's own surfaces. Black has no
+ * light of its own and would vanish on a dark theme, so it reads as a cool
+ * slate there instead; every other colour is its palette value.
+ */
+export const MAUS_INK: Record<MausColor, string> = { ...MAUS_COLORS, black: "#8B93A3" };
+
+export function mausInk(color: string | null | undefined): string | undefined {
+  return color && Object.hasOwn(MAUS_INK, color) ? MAUS_INK[color as MausColor] : undefined;
+}
+
+/**
+ * A colour swatch's paint. The black swatch also gets an inner hairline so it
+ * still reads as a button on a dark card.
+ */
+export function swatchStyle(color: MausColor): { backgroundColor: string; boxShadow?: string } {
+  return {
+    backgroundColor: MAUS_COLORS[color] ?? MAUS_COLORS.green,
+    ...(color === "black" ? { boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.32)" } : {}),
+  };
+}
 
 export const MAUS_MOTIONS = [
   "arrive",
@@ -89,7 +113,20 @@ export const MAUS_MOTIONS = [
   "blink",
   "surprise",
   "failure",
+  // wing moves: the owl opens its wings
+  "spread-wings",
+  "flap",
+  "take-off",
+  "shake",
+  "hoot",
 ] as const;
+
+/**
+ * The motions that are only wing moves, in the order the appearance card
+ * offers them to try. `celebrate`, `success` and `launch` use the wings too,
+ * but they are app beats first.
+ */
+export const MAUS_WING_MOTIONS = ["spread-wings", "flap", "take-off", "shake", "hoot"] as const satisfies readonly MausMotion[];
 
 export type MausMotion = "none" | (typeof MAUS_MOTIONS)[number];
 

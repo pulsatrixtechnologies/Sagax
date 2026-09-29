@@ -36,6 +36,7 @@ import type {
 import { gateServer, resultBudget } from "../mcp-gate-config.ts";
 import { newEventId, newId } from "../contracts.ts";
 import { askInputSummary, commandSummary, toolDetailPreview } from "../tool-summary.ts";
+import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
@@ -1805,6 +1806,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                   title: b.name,
                   summary: commandSummary(b.input),
                   input: toolDetailPreview(b.input),
+                  ...filesField(writtenFilesFromToolInput(b.name, b.input)),
                 });
               }
             }

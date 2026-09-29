@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { readFileSync } from "node:fs";
-import { appPermissionAllowed, externalWebUrl } from "./app-permissions.mjs";
+import { appPermissionAllowed, externalMailUrl, externalOpenUrl, externalWebUrl } from "./app-permissions.mjs";
 
 const LOCAL_ORIGIN = "http://127.0.0.1:5199";
 const LOCAL_PAGE = "http://127.0.0.1:5199/chat?botId=bot-1";
@@ -82,7 +82,18 @@ test("both external-link entry points use the policy and IPC retains the local-o
   const main = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
   assert.match(main, /ipcMain\.handle\("desktop:open-external", localOnly\("desktop:open-external"/);
   assert.match(main, /shell\.openExternal\(externalWebUrl\(rawUrl\)\)/);
-  assert.match(main, /shell\.openExternal\(externalWebUrl\(url\)\)/);
+  assert.match(main, /shell\.openExternal\(externalOpenUrl\(url\)\)/);
+});
+
+test("window.open also hands a bounded mailto: draft to the mail client, nothing else", () => {
+  const draft = "mailto:ana@example.com?subject=Hello%20there&body=Line%201%0D%0ALine%202";
+  assert.equal(externalMailUrl(draft), draft);
+  assert.equal(externalOpenUrl(draft), draft);
+  assert.equal(externalOpenUrl("https://example.com/"), "https://example.com/");
+  for (const url of ["mailto:a@b.c\nX-Header: evil", `mailto:a@b.c?body=${"x".repeat(40_000)}`, "javascript:alert(1)", "file:///etc/passwd"])
+    assert.throws(() => externalOpenUrl(url));
+  // the IPC entry point stays web-only
+  assert.throws(() => externalWebUrl(draft), /Only web/);
 });
 
 test("fails closed on unparsable or opaque origins", () => {

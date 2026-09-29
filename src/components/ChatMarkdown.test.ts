@@ -128,9 +128,9 @@ describe("repaired tables", () => {
     const html = renderToStaticMarkup(createElement(ChatMarkdown, {
       text: "Pros | Cons\n---\n\n| a \\| b | c |\n| --- | --- |\n| 1 | 2 |",
     }));
-    expect(html).toContain('font-semibold">Pros | Cons</div>');
+    expect(html).toMatch(/font-semibold" id="[^"]*pros-cons" role="heading" aria-level="2">Pros \| Cons<a /);
     expect(html.match(/<table\b/g)).toHaveLength(1);
-    expect(html).toContain(">a | b</th>");
+    expect(html).toContain('<span class="min-w-0">a | b</span>');
     expect(html.match(/<th\b/g)).toHaveLength(2);
   });
 
@@ -220,7 +220,7 @@ describe("#Title thread links in markdown", () => {
     expect(markup).not.toContain("data-thread-link");
     expect(markup).toContain("<code");
     // the heading survives as a heading (this renderer draws it as a div), unlinked
-    expect(markup).toContain('font-semibold">QA PR 245</div>');
+    expect(markup).toMatch(/role="heading" aria-level="1">QA PR 245<a /);
   });
 
   it("does nothing without any visible threads", () => {
@@ -508,7 +508,7 @@ describe("bidi: message content carries its own direction", () => {
       ].join("\n"),
     }));
 
-    expect(html).toContain('<div dir="rtl" class="mt-2 text-[16px] font-semibold">');
+    expect(html).toContain('<div dir="rtl" class="mt-2 text-[16px] font-semibold" id=');
     expect(html).toContain('<p dir="rtl">');
     expect(html).toContain('<p dir="ltr">An English paragraph');
     expect(html).toContain('<blockquote dir="rtl"');
@@ -542,7 +542,7 @@ describe("bidi: message content carries its own direction", () => {
     expect(html).toContain("list-disc space-y-1 ps-5");
     expect(html).toContain("list-decimal space-y-1 ps-5");
     expect(html).toContain("border-s-2 border-hairline ps-3");
-    expect(html).toContain("px-2 py-1.5 text-start font-semibold");
+    expect(html).toMatch(/<th scope="col" class="[^"]*\btext-start\b/);
     expect(html).not.toMatch(/class="[^"]*\bpl-5\b/);
     expect(html).not.toMatch(/class="[^"]*\bborder-l-2\b/);
     expect(html).not.toMatch(/class="[^"]*\btext-left\b/);

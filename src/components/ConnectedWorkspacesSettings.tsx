@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Cloud, Laptop, Loader2, Trash2 } from "lucide-react";
 import { Card } from "./SettingsPrimitives";
+import { t } from "@/lib/i18n";
 import { ComputerSharingSettings } from "./ComputerSharingSettings";
 import { useStore } from "@/state/store";
 import { sharedComputersEnabled } from "@/lib/feature-flags";
@@ -60,7 +61,15 @@ export function ConnectedWorkspacesSettings() {
   const computerWorkspace = saved?.environments.find(entry => entry.id === computerId);
   return <>
     <p className="text-[13px] leading-relaxed text-ink-secondary">One desktop app, wherever your bots live. Switching servers does not move or replace your bots, conversations, or provider accounts.</p>
-    <Card title="Your servers" subtitle="Saved on this computer. Your hosted bots keep running when you switch away.">
+    <Card
+      collapsible
+      cardId="organization.servers"
+      title="Your servers"
+      subtitle="Saved on this computer. Your hosted bots keep running when you switch away."
+      summary={!saved ? t("common.checking") : t("settings.card.current", {
+        name: saved.environments.find((entry) => entry.id === saved.activeId)?.name ?? "This computer",
+      })}
+    >
       {!saved ? <p role="status" className="text-[13px] text-ink-secondary">{error ? "Saved servers could not be loaded." : "Loading servers…"}</p> :
         <ul className="divide-y divide-hairline/40">
           {[{ id: "local", name: "This computer", origin: "" }, ...saved.environments].map((entry) => {
@@ -81,7 +90,14 @@ export function ConnectedWorkspacesSettings() {
         </ul>}
     </Card>
     {sharingOffered && computerWorkspace && <ComputerSharingSettings key={computerWorkspace.id} workspace={computerWorkspace} onClose={() => setComputerId(null)} />}
-    <Card title="Connect to a server" subtitle="Already running Pulsa Bot on a VPS, server, or another computer? Connect it here.">
+    <Card
+      collapsible
+      cardId="organization.connectServer"
+      defaultOpen={false}
+      title="Connect to a server"
+      subtitle="Already running Pulsa Bot on a VPS, server, or another computer? Connect it here."
+      summary={t("settings.card.byLink")}
+    >
       <form className="flex flex-col gap-3" onSubmit={(event) => {
         event.preventDefault();
         if (address.trim()) void perform(() => bridge.addFromLink(address.trim(), name.trim()));

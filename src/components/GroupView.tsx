@@ -24,7 +24,9 @@ import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
-import { MAUS_COLORS, normalizeState, type MausColor } from "@/lib/mascot";
+import { viewerActorId } from "@/lib/viewer";
+import { OtherAuthorLabel } from "./MessageAuthor";
+import { mausInk, normalizeState } from "@/lib/mascot";
 import { effectiveDefaultResponder, groupResponseHint } from "@/lib/group-routing";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { Composer } from "./Composer";
@@ -38,6 +40,8 @@ import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { GoalRunCard } from "./GoalRunCard";
 import { AttachmentGallery, MessageAttachmentGallery } from "./AttachmentGallery";
+import { ConversationGalleryProvider } from "./ConversationGallery";
+import { prefersWideBubble } from "@/lib/rich-blocks";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { OptionCard } from "./OptionCard";
 import { GroupCallOverlay } from "./GroupCallView";
@@ -131,7 +135,7 @@ export function RoomToolChip({ message, roomId }: { message: Message; roomId?: s
 
 /** 16px profile avatar + name in the bot's color, shown once per sender cluster. */
 function ClusterLabel({ bot, name, color }: { bot?: Bot; name: string; color: string }) {
-  const tint = MAUS_COLORS[(bot?.color ?? color) as MausColor] ?? color;
+  const tint = mausInk(bot?.color ?? color) ?? color;
   return (
     <div className="mb-1 ml-1.5 mt-3 flex items-center gap-1.5 px-1.5">
       <BotAvatar
@@ -293,6 +297,7 @@ const Transcript = memo(function Transcript({
             showToolCalls ? <DigestChip message={m} /> : null
           ) : m.kind === "text" && (m.text || m.attachments?.length) ? (
             <div className={cn("group flex w-full flex-col", user ? "items-end" : "items-start")}>
+              {user && <OtherAuthorLabel message={m} />}
               <div className={cn("flex w-full items-end gap-1.5", user ? "justify-end" : "justify-start")}>
                 {user && (
                   <>
@@ -310,7 +315,8 @@ const Transcript = memo(function Transcript({
                 )}
                 <div
                   className={cn(
-                    "w-fit max-w-[min(80%,560px,calc(100%-82px))] rounded-[18px] text-[15px] leading-relaxed",
+                    "rounded-[18px] text-[15px] leading-relaxed",
+                    !user && m.text && prefersWideBubble(m.text) ? "w-full max-w-[min(94%,780px,calc(100%-82px))]" : "w-fit max-w-[min(80%,560px,calc(100%-82px))]",
                     !user && m.id === emergingId && "turn-answer",
                     // A bot message that is only attachments is just the files: no bubble.
                     !user && !m.text?.trim() && !m.replyToId && m.attachments?.length
@@ -978,16 +984,21 @@ export function GroupView({ group }: { group: Group }) {
   );
   const viewerEmail = state.config?.profile?.email?.trim().toLowerCase() || "";
   const viewerName = state.config?.profile?.name?.trim() || viewerEmail || "Vous";
+  // The server's word on who is looking, when it gives one; before that,
+  // the remote client's own lookup, else the operator.
+  const viewer = state.config?.viewer;
+  const viewerId = viewerActorId(state.config);
   const channelHumans = [
-    { id: viewerEmail || "local-owner", label: viewerName, detail: viewerEmail && viewerName !== viewerEmail ? viewerEmail : undefined, removable: false as boolean },
+    { id: viewerId, label: viewerName, detail: viewerEmail && viewerName !== viewerEmail ? viewerEmail : undefined, removable: false as boolean },
     ...(group.humanIds ?? [])
       .map((id) => id.trim().toLowerCase())
-      .filter((id) => id && id !== viewerEmail)
+      .filter((id) => id && id !== viewerId && id !== viewerEmail)
       .map((id) => ({ id, label: id, detail: undefined, removable: true })),
   ];
+  const actorId = viewer ? viewerId : remoteClient ? remoteActor.id : viewerId;
   const roster = channelRosterActions({
-    actorRole: remoteClient ? remoteActor.role : "owner",
-    actorId: remoteClient ? remoteActor.id : (viewerEmail || "local-owner"),
+    actorRole: viewer ? viewer.role : remoteClient ? remoteActor.role : "owner",
+    actorId,
     bots: state.bots,
   });
   const speaker = members.find((b) => b.id === group.busyBotId);
@@ -1348,6 +1359,7 @@ export function GroupView({ group }: { group: Group }) {
           aria-live="polite"
           aria-label={t("room.aria", { name: group.name })}
         >
+          <ConversationGalleryProvider>
           {group.messages.length === 0 && (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
               <div className="flex -space-x-2">
@@ -1427,6 +1439,7 @@ export function GroupView({ group }: { group: Group }) {
               since={speaker ? group.turnStartedAt ?? null : null}
             />
           )}
+          </ConversationGalleryProvider>
         </div>
         )}
       </div>
@@ -1498,7 +1511,6 @@ export function GroupView({ group }: { group: Group }) {
                 dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
               }}
               onAddBot={() => {
-                const actorId = remoteClient ? remoteActor.id : (state.config?.profile?.email?.trim().toLowerCase() || "local-owner");
                 const owned = state.bots.find((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actorId && !group.memberIds.includes(bot.id));
                 dispatch({
                   type: "patchGroup",

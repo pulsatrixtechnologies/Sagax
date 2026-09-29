@@ -4,6 +4,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -22,6 +23,8 @@ import {
   Maximize2,
   RotateCcw,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 
 import {
@@ -32,6 +35,8 @@ import {
 } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { useConversationGallery } from "./conversation-gallery-context";
+import { isInlineRasterDataUrl } from "@/lib/rich-blocks";
 
 export interface PreviewImage {
   src: string;
@@ -62,13 +67,26 @@ export function wrappedImageIndex(index: number, step: -1 | 1, count: number): n
   return (index + step + count) % count;
 }
 
-export type PreviewKeyAction = "close" | "previous" | "next" | null;
+export type PreviewKeyAction = "close" | "previous" | "next" | "zoom-in" | "zoom-out" | "zoom-reset" | null;
 
 export function previewKeyAction(key: string, count: number): PreviewKeyAction {
   if (key === "Escape") return "close";
   if (count > 1 && key === "ArrowLeft") return "previous";
   if (count > 1 && key === "ArrowRight") return "next";
+  if (key === "+" || key === "=") return "zoom-in";
+  if (key === "-" || key === "_") return "zoom-out";
+  if (key === "0") return "zoom-reset";
   return null;
+}
+
+export const MIN_ZOOM = 1;
+export const MAX_ZOOM = 6;
+
+/** One zoom step (x1.5 in, /1.5 out), clamped; 1 means "fit". */
+export function steppedZoom(zoom: number, direction: 1 | -1): number {
+  const next = direction > 0 ? zoom * 1.5 : zoom / 1.5;
+  const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+  return Math.abs(clamped - 1) < 0.01 ? 1 : Number(clamped.toFixed(3));
 }
 
 export function imageGalleryLayout(count: number): string {
@@ -339,14 +357,27 @@ export function AttachmentPreviewDialog({
   const [loadedSources, setLoadedSources] = useState<Set<string>>(() => new Set());
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
   useLayoutEffect(() => {
     closeRef.current = onClose;
   }, [onClose]);
 
+  const applyZoom = useCallback((next: number | ((value: number) => number)) => {
+    setZoom((value) => {
+      const resolved = typeof next === "function" ? next(value) : next;
+      if (resolved === 1) setPan({ x: 0, y: 0 });
+      return resolved;
+    });
+  }, []);
+
   const navigate = useCallback((step: -1 | 1) => {
     setIndex((value) => wrappedImageIndex(value, step, items.length));
     setFailedSource(null);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
   }, [items.length]);
 
   useEffect(() => {
@@ -358,6 +389,9 @@ export function AttachmentPreviewDialog({
         event.preventDefault();
         event.stopPropagation();
         if (action === "close") closeRef.current();
+        else if (action === "zoom-in") applyZoom((value) => steppedZoom(value, 1));
+        else if (action === "zoom-out") applyZoom((value) => steppedZoom(value, -1));
+        else if (action === "zoom-reset") applyZoom(1);
         else navigate(action === "previous" ? -1 : 1);
         return;
       }
@@ -387,7 +421,7 @@ export function AttachmentPreviewDialog({
       window.removeEventListener("keydown", onKey);
       previousFocus?.focus();
     };
-  }, [items.length, navigate]);
+  }, [items.length, navigate, applyZoom]);
 
   const loaded = loadedSources.has(current.src);
   const failed = failedSource === current.src;
@@ -424,6 +458,35 @@ export function AttachmentPreviewDialog({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => applyZoom((value) => steppedZoom(value, -1))}
+              disabled={zoom <= MIN_ZOOM}
+              className="flex size-9 items-center justify-center rounded-lg text-white/65 hover:bg-white/10 hover:text-white disabled:opacity-35 disabled:hover:bg-transparent"
+              aria-label={t("attach.zoomOut")}
+              title={t("attach.zoomOut")}
+            >
+              <ZoomOut size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={() => applyZoom(1)}
+              className="min-w-12 rounded-lg px-1.5 py-1 text-[11.5px] tabular-nums text-white/65 hover:bg-white/10 hover:text-white"
+              aria-label={t("attach.zoomReset")}
+              title={t("attach.zoomReset")}
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={() => applyZoom((value) => steppedZoom(value, 1))}
+              disabled={zoom >= MAX_ZOOM}
+              className="flex size-9 items-center justify-center rounded-lg text-white/65 hover:bg-white/10 hover:text-white disabled:opacity-35 disabled:hover:bg-transparent"
+              aria-label={t("attach.zoomIn")}
+              title={t("attach.zoomIn")}
+            >
+              <ZoomIn size={17} />
+            </button>
             {current.downloadUrl && (
               <a
                 href={current.downloadUrl}
@@ -484,10 +547,31 @@ export function AttachmentPreviewDialog({
               key={`${current.src}:${attempt}`}
               src={current.src}
               alt={current.name}
+              draggable={false}
               onLoad={() => setLoadedSources((sources) => new Set(sources).add(current.src))}
               onError={() => setFailedSource(current.src)}
+              onDoubleClick={() => applyZoom((value) => (value > 1 ? 1 : 2))}
+              onWheel={(event) => {
+                if (!event.ctrlKey && !event.metaKey) return;
+                event.preventDefault();
+                applyZoom((value) => steppedZoom(value, event.deltaY < 0 ? 1 : -1));
+              }}
+              onPointerDown={(event) => {
+                if (zoom <= 1) return;
+                event.currentTarget.setPointerCapture?.(event.pointerId);
+                drag.current = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
+              }}
+              onPointerMove={(event) => {
+                const start = drag.current;
+                if (!start) return;
+                setPan({ x: start.panX + (event.clientX - start.x) / zoom, y: start.panY + (event.clientY - start.y) / zoom });
+              }}
+              onPointerUp={() => { drag.current = null; }}
+              onPointerCancel={() => { drag.current = null; }}
+              style={zoom !== 1 ? { transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)` } : undefined}
               className={cn(
-                "block max-h-full max-w-full rounded-lg object-contain shadow-2xl transition-opacity duration-150",
+                "block max-h-full max-w-full rounded-lg object-contain shadow-2xl transition-[opacity,transform] duration-150 motion-reduce:transition-none",
+                zoom > 1 ? "cursor-grab active:cursor-grabbing" : "cursor-zoom-in",
                 loaded ? "opacity-100" : "opacity-0",
               )}
             />
@@ -538,9 +622,24 @@ export function AttachmentThumbnail({
   // Until the pixels are known the tile is 4:3; then it takes the picture's own
   // shape (within sane bounds) so a wide image has no empty band beneath it.
   const [ratio, setRatio] = useState<number | null>(null);
+  // Inside a transcript the conversation-wide lightbox takes the click, so
+  // next/previous reach every picture in the thread; elsewhere the caller's
+  // own viewer opens.
+  const gallery = useConversationGallery();
+  const galleryId = useId();
+  const frameRef = useRef<HTMLSpanElement>(null);
+  const { src, name, downloadUrl, downloadName, openUrl } = image;
+  useEffect(() => {
+    if (!gallery || !src) return;
+    return gallery.register(galleryId, { element: frameRef.current, image: { src, name, downloadUrl, downloadName, openUrl } });
+  }, [gallery, galleryId, src, name, downloadUrl, downloadName, openUrl]);
+  const preview = () => {
+    if (!gallery?.open(galleryId)) onPreview();
+  };
 
   return (
     <span
+      ref={frameRef}
       style={ratio ? { aspectRatio: String(ratio) } : undefined}
       className={cn("group/image relative block aspect-[4/3] min-w-0 overflow-hidden rounded-xl border border-hairline/40 bg-inset", className)}
     >
@@ -584,12 +683,12 @@ export function AttachmentThumbnail({
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (state === "ready") onPreview();
+            if (state === "ready") preview();
           }}
           onKeyDown={(event) => {
             if (state === "ready" && (event.key === "Enter" || event.key === " ")) {
               event.preventDefault();
-              onPreview();
+              preview();
             }
           }}
           className="absolute inset-0 block size-full cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60 aria-disabled:cursor-default"
@@ -721,10 +820,14 @@ export function MarkdownImagePreview({
     src: visibleSource ?? "",
     name,
     openUrl,
-    downloadUrl: localMessageImage ? visibleSource ?? undefined : undefined,
+    // a local image downloads through its message capability; an inline
+    // data image is already in memory, so it downloads as itself
+    downloadUrl: localMessageImage ? visibleSource ?? undefined : isInlineRasterDataUrl(src) ? src : undefined,
     downloadName: localMessageImage
       ? canonicalDownloadFilename({ fallback: name, source: filePath })
-      : undefined,
+      : isInlineRasterDataUrl(src)
+        ? canonicalDownloadFilename({ fallback: name, mime: /^data:([^;,]+)/.exec(src)?.[1] })
+        : undefined,
   };
   return (
     <>

@@ -28,7 +28,8 @@ import { VoiceSection } from "./bot-settings/VoiceSection";
 import { HistorySection, type HistoryRow } from "./bot-settings/HistorySection";
 import { UsageSection } from "./bot-settings/UsageSection";
 import { VisibilitySection } from "./bot-settings/VisibilitySection";
-import { MediaSection } from "./bot-settings/MediaSection";
+import { FilesSection } from "./bot-settings/FilesSection";
+import { isAdvancedSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
 import { ComputerPanel } from "./ComputerPanel";
 import { BotProfileAvatarCard } from "./BotProfileAvatarCard";
 import { useCaptionChrome } from "./DesktopCapabilities";
@@ -55,12 +56,6 @@ function readSettingsWidth(): number {
   } catch { /* default width */ }
   return SETTINGS_DEFAULT_WIDTH;
 }
-
-/** Details holds who the bot is, Routines what it runs on a schedule;
- * Advanced keeps every other section behind one searchable list. */
-type PanelTab = "details" | "routines" | "files" | "computer" | "advanced";
-const TAB_SECTIONS: Record<string, "details" | "routines"> = { identity: "details", routines: "routines" };
-const tabForSection = (id: string) => (Object.hasOwn(TAB_SECTIONS, id) ? TAB_SECTIONS[id] : "advanced");
 
 export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpenVmWorkspace?: (botId: string) => void }) {
   const { state, dispatch, flushBotPatches } = useStore();
@@ -105,7 +100,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
   // on a served workspace, and there only to an admin.
   const ownerOrAdmin = useOwnerOrAdmin();
   const sections = BOT_SECTIONS
-    .filter((entry) => !Object.hasOwn(TAB_SECTIONS, entry.id))
+    .filter((entry) => isAdvancedSection(entry.id))
     .filter((entry) => entry.id !== "slack" || slackUrl !== null)
     .filter((entry) => entry.id !== "visibility" || (!window.ogb && ownerOrAdmin === true));
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
@@ -454,16 +449,31 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
             <BotProfileAvatarCard bot={bot} activeState={derived.activeState} mascotMotion={derived.mascotMotion} onPatch={derived.patch} />
             <span id="bot-settings-title" className="mt-2 max-w-full truncate text-[17px] font-medium leading-6 text-ink">{bot.name}</span>
             {bot.title.trim() && <span className="mt-0.5 max-w-full truncate text-[12px] leading-4 text-ink-secondary">{bot.title.trim()}</span>}
-            <div role="tablist" aria-label={t("botPanel.tabsAria")} className="mt-4 flex items-center gap-1">
-              {(["details", "routines", "files", "computer", "advanced"] as const).map((id) => (
+            <div
+              role="tablist"
+              aria-label={t("botPanel.tabsAria")}
+              onKeyDown={(event) => {
+                // Arrow keys move between tabs, as in any tab list.
+                const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                if (!step) return;
+                event.preventDefault();
+                const next = PANEL_TABS[(PANEL_TABS.indexOf(tab) + step + PANEL_TABS.length) % PANEL_TABS.length]!;
+                chooseTab(next);
+                event.currentTarget.querySelector<HTMLElement>(`[data-panel-tab="${next}"]`)?.focus();
+              }}
+              className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-0.5"
+            >
+              {PANEL_TABS.map((id) => (
                 <button
                   key={id}
                   type="button"
                   role="tab"
+                  data-panel-tab={id}
                   aria-selected={tab === id}
+                  tabIndex={tab === id ? 0 : -1}
                   onClick={() => chooseTab(id)}
                   className={cn(
-                    "rounded-md px-2 py-1 text-[13px] leading-5 transition-colors",
+                    "rounded-md px-1.5 py-1 text-[13px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
                     tab === id ? "bg-elevated-hover text-ink" : "text-ink-secondary hover:text-ink",
                   )}
                 >
@@ -486,12 +496,12 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
           )}
 
           {tab === "routines" && (
-            <section className="flex flex-col gap-2 px-4 pb-6 pt-2">
+            <div className="px-4 pb-6 pt-2" data-bot-settings-section="routines">
               <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />
-            </section>
+            </div>
           )}
 
-          {tab === "files" && <div className="px-4 pb-6 pt-2"><MediaSection bot={bot} /></div>}
+          {tab === "files" && <div className="px-4 pb-6 pt-2"><FilesSection bot={bot} /></div>}
 
           {tab === "computer" && (
             <div className="px-4 pt-2">

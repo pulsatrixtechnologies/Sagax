@@ -85,7 +85,9 @@ import {
   messageImageTargetAt,
   messageReferencesFile,
   openMessageFile,
+  statMessageFile,
 } from "./message-file.ts";
+import { activePath, listThreadFiles, threadFileRefs, writtenFilesForMessage, type ThreadFileRef } from "./thread-files.ts";
 import {
   avatarGenerationRequestSchema,
   avatarGenerationStateMatches,
@@ -383,6 +385,7 @@ import {
   CREDENTIAL_PROMPT,
   mentionPrompt,
   THREADS_PROMPT,
+  RICH_OUTPUT_PROMPT,
   LEARN_PROMPT,
   PROFILE_PROMPT,
   ROUTINE_PROMPT,
@@ -488,6 +491,7 @@ import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
   clientBotPatchViolation,
+  memberBotFieldViolation,
   clientGroupPatchViolation,
   isLoopbackHost,
   isProxied,
@@ -559,6 +563,7 @@ import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBot
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { roleOf, signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
+import { configForViewer, displayNameFromEmail, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -3162,7 +3167,7 @@ function previewSystemPrompt(bot: BotRecord) {
   });
   const privateWorkspace = instance && supportsWorkspaceFiles(instance.driverKind);
   const built = buildSystemPrompt(persona, bot.soul ?? "", [
-    { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(cfg.profile) },
+    { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
     {
       id: "setup",
       label: "Setup",
@@ -3186,6 +3191,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "credential", label: "Credentials", text: agentsMounted ? CREDENTIAL_PROMPT : "" },
     { id: "routine", label: "Routines", text: agentsMounted ? ROUTINE_PROMPT : "" },
     { id: "profile", label: "Profile changes", text: agentsMounted ? PROFILE_PROMPT : "" },
+    { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
     { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
     { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace) }) },
     { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id) : "" },
@@ -5025,6 +5031,10 @@ interface SseClient {
   approvalUserId?: string;
   /** The bots and rooms this stream has been shown (bot-visibility.ts). */
   seen: StreamSeen;
+  /** Who is watching, for config frames: the operator sees their profile,
+   * anyone else sees themselves (server/viewer-identity.ts). Read at each
+   * frame, so a changed role is current. Absent for a local service. */
+  identity?: () => ViewerIdentity | null;
 }
 const sseClients = new Set<SseClient>();
 
@@ -5350,6 +5360,12 @@ function sseFrameFor(
       frame = serialized;
       clientFrame = serialized;
     }
+  }
+  // A config frame names its viewer: each stream gets its own profile and
+  // viewer block, never another person's.
+  if (payload?.kind === "config" && clientFrame !== null && client.identity) {
+    const projected = configForViewer(configForAccess(payload as ReturnType<typeof configStatus>, client.admin), client.identity());
+    return `id: ${STREAM_ID}:${seq}\ndata: ${JSON.stringify({ ...projected, seq })}\n\n`;
   }
   if (client.admin && (!liveFramesNeedChannelFilter(client.viewerId) || clientFrame === null)) return frame;
   if (clientFrame === null || !payload) return clientFrame;
@@ -6992,7 +7008,7 @@ bus.subscribe((event: RuntimeEvent) => {
         const message = pushMessage({
           role: "bot",
           kind: "activity",
-          tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId },
+          tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}) },
           // attributed to its turn so the digest can count it
           turnId: liveTurnId,
         });
@@ -8897,7 +8913,7 @@ async function startTurn(
       const userTurnText = promptWithReply(
         skillAuthoring ? expandLearnTurnText(setupText) : setupText,
         opts?.replyTo,
-        cfg.profile?.name?.trim() || "User",
+        botUserName(bot),
       );
       // Decided again at dispatch when setup outlasted a soul edit (config).
       const decideContext = (config: string) => {
@@ -9593,7 +9609,7 @@ async function startTurn(
         throw new DirectTurnSetupCancelled("Coordination access changed before dispatch");
       }
       const prompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
-        { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(cfg.profile) },
+        { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         // first after the soul: the block names agent tools, so it only goes
         // to a turn whose engine actually mounted them (setupMode is already
         // false when they are not — see agentsMounted above)
@@ -9616,10 +9632,11 @@ async function startTurn(
         { id: "routine-execution", label: "Routine execution", text: opts?.automationSource === "schedule" || opts?.automationSource === "manual" ? ROUTINE_EXECUTION_PROMPT : "" },
         { id: "profile", label: "Profile changes", text: profilePrompt },
         { id: "learn", label: "Skill authoring", text: learnPrompt },
+        { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
         { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
         // what the bot said lately in its other conversations, so a task
         // never redoes — or forgets — what another one already did
-        { id: "recent", label: "Recent work", text: recentWorkPrompt(recentWork(recentWorkSources(bot), bot, { userName: cfg.profile?.name?.trim() || "User", currentThreadId: threadId })) },
+        { id: "recent", label: "Recent work", text: recentWorkPrompt(recentWork(recentWorkSources(bot), bot, { userName: botUserName(bot), currentThreadId: threadId })) },
         { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace }) },
         { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id) : "" },
         { id: "skill-instructions", label: "Skill instructions", text: skillInstructions },
@@ -9635,7 +9652,7 @@ async function startTurn(
         // a routine run starts fresh by design, and a webhook is untrusted:
         // neither pulls earlier conversations in
         conversations: commsDepth === 0 && !coordinationNode && !opts?.automationSource && !opts?.unattended,
-        userName: cfg.profile?.name?.trim() || "User",
+        userName: botUserName(bot),
       });
       runningTurnEngines.set(threadId, instance);
       // The prompt carries the soul as saved now. If it changed during setup,
@@ -11704,7 +11721,7 @@ async function runGroupMemberTurn(
     }
   }
   const roomSystem = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
-    { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(cfg.profile) },
+    { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },
@@ -12866,6 +12883,20 @@ function messageFileRootsForThread(senderId: string, threadId: string): string[]
   });
 }
 
+/** The file references of a thread's visible branch (thread-files.ts). */
+function threadFileRefsFor(threadId: string): ThreadFileRef[] {
+  const directBot = store.botByThread(threadId);
+  return threadFileRefs(activePath(store.messagesFor(threadId), store.activeLeaf(threadId)), directBot?.id);
+}
+
+/** The roots one listed file may be read from: the private attachment store
+ * for uploads and attach_file output, the author's conversation roots for
+ * links and written files, the same split the message file route makes. */
+function threadFileRoots(threadId: string, ref: ThreadFileRef): string[] {
+  if (ref.source === "upload" || ref.source === "attachment") return [ATTACHMENTS_DIR];
+  return ref.botId ? messageFileRootsForThread(ref.botId, threadId) : [];
+}
+
 async function attachmentVmForTurn(capability: InternalCapability): Promise<LocalVmTarget | undefined> {
   const slot = autoVmClaims.get(capability.threadId);
   if (!localVmThreadTargets.has(capability.threadId) &&
@@ -13881,7 +13912,7 @@ function configStatus() {
     tts: tts.describeVoice(cfg),
     imageGen: avatarImageStatus(cfg),
     // not a secret — the sidebar shows it
-    profile: { name: cfg.profile?.name ?? "", email: cfg.profile?.email ?? "", aboutMe: cfg.profile?.aboutMe ?? "" },
+    profile: { name: cfg.profile?.name ?? "", email: cfg.profile?.email ?? "", aboutMe: cfg.profile?.aboutMe ?? "", avatarUrl: cfg.profile?.avatarUrl ?? "" },
     // the enrolled organisation's read-only desktop policy; null when not enrolled
     managedPolicy: managedPolicy.summary(),
     // not a secret — the settings picker shows it; "" = follow the system
@@ -14473,6 +14504,72 @@ function channelActorRole(auth: RequestAuth): OrgRole | null {
     userId: channelActorId(auth),
     email: actorEmail(auth),
   });
+}
+
+// ── the viewer's own identity and bots (server/viewer-identity.ts) ─────
+/** The operator at this computer, or a device they paired: the profile
+ * describes them. Anyone else is described as themselves. */
+function viewerIsOperator(auth: RequestAuth): boolean {
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  return sessionIsOperator({
+    principalId: auth.session.principalId,
+    email: auth.session.email,
+    admin: auth.scopes.includes("admin"),
+    localPrincipalId: localPrincipalId(),
+    operatorEmail: cfg.profile?.email,
+    orgExists: Boolean(orgState.org),
+  });
+}
+/** Whether this request may create a bot: the operator and server admins,
+ * as before, and an organization member or admin signed in with a
+ * chat-scoped session, whose bot is then their own. Never a guest, a
+ * session with no organization role, or a chat-only device of the owner. */
+function botCreationAllowed(auth: RequestAuth): boolean {
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  if (auth.scopes.includes("admin")) return true;
+  const role = channelActorRole(auth);
+  return role === "member" || role === "admin";
+}
+/** A chat-scoped session acting on a bot it owns (and may still create
+ * bots): the only non-admin case that edits or deletes a bot. */
+function memberOwnsBot(auth: RequestAuth, bot: { ownerUserId?: unknown }): boolean {
+  if (auth.kind !== "session" || !botCreationAllowed(auth)) return false;
+  const actor = actorPrincipalId(auth).trim().toLowerCase();
+  return Boolean(actor) && effectiveBotOwner(bot) === actor;
+}
+/** Where an organization exists and this chat-scoped session is someone
+ * other than the operator, bot edits are held to the bot's owner. */
+function botEditsNeedOwner(auth: RequestAuth): boolean {
+  return auth.kind === "session" && !auth.scopes.includes("admin") && Boolean(orgState.org) && !viewerIsOperator(auth);
+}
+function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
+  if (auth.kind === "loopback" && auth.trust === "service") return null;
+  const role = channelActorRole(auth);
+  const canCreateBots = botCreationAllowed(auth);
+  if (viewerIsOperator(auth)) {
+    return {
+      operator: true, principalId: localPrincipalId(), email: cfg.profile?.email?.trim() ?? "",
+      name: cfg.profile?.name?.trim() ?? "", role, canCreateBots,
+    };
+  }
+  const session = (auth as Extract<RequestAuth, { kind: "session" }>).session;
+  const principalId = session.principalId?.trim() || null;
+  const email = session.email?.trim() || (principalId ? principals.byId(principalId)?.email?.trim() : undefined) || "";
+  return {
+    operator: false, principalId, email, name: displayNameFromEmail(email), role, canCreateBots,
+    operatorName: cfg.profile?.name?.trim() || "",
+  };
+}
+/** The profile a bot's turns speak to: the operator's for the operator's
+ * bots, as before. A bot someone else owns never carries the operator's
+ * about-me, and calls its person by their own name. */
+function botUserProfile(bot: { ownerUserId?: unknown }): { aboutMe?: string } {
+  return effectiveBotOwner(bot) === localPrincipalId() ? cfg.profile ?? {} : {};
+}
+function botUserName(bot: { ownerUserId?: unknown }): string {
+  const owner = effectiveBotOwner(bot);
+  if (owner === localPrincipalId()) return cfg.profile?.name?.trim() || "User";
+  return displayNameFromEmail(principals.byId(owner)?.email) || "User";
 }
 
 function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already: ReadonlySet<string>): string | null {
@@ -17644,6 +17741,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       } else if (auth.kind === "loopback" && auth.trust !== "service") {
         client.approvalUserId = localPrincipalId();
       }
+      if (!(auth.kind === "loopback" && auth.trust === "service")) client.identity = () => viewerIdentity(auth);
       if (viewerId) client.viewerId = viewerId;
       res.writeHead(200, {
         "content-type": "text/event-stream",
@@ -17869,11 +17967,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
       const message = store.messagesFor(threadId).find((candidate) => candidate.id === m![2]);
       if (!message) return json(res, 404, { error: "no such message" });
-      if (message.kind !== "text" || (!message.text && !message.attachments?.length)) {
+      const body = method === "POST" ? await readBody(req) : null;
+      // A file the bot's own tool wrote is granted by that tool's activity
+      // message, the same way a Markdown link is by its text message.
+      const writtenGrant = method === "POST" && message.role === "bot" && typeof body.path === "string" &&
+        writtenFilesForMessage(message).includes(body.path);
+      if (!writtenGrant && (message.kind !== "text" || (!message.text && !message.attachments?.length))) {
         return json(res, 403, { error: "that message does not share this file" });
       }
       const messageText = message.text ?? "";
-      const body = method === "POST" ? await readBody(req) : null;
       const rawReference = streamsMessageImage ? url.searchParams.get("ref") : null;
       if (streamsMessageImage && (!rawReference || !/^\d+$/.test(rawReference))) {
         return json(res, 400, { error: "ref must identify a rendered image" });
@@ -17902,6 +18004,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // mobile clients can fetch an attached image through this route too.
         downloadName = botAttachment.kind === "file" ? botAttachment.name : undefined;
         roots = [ATTACHMENTS_DIR];
+      } else if (writtenGrant) {
+        const senderId = directBot?.id ?? message.from?.botId;
+        if (!senderId) return json(res, 403, { error: "the file's bot author could not be verified" });
+        roots = messageFileRootsForThread(senderId, threadId);
       } else {
         if (!messageReferencesFile(messageText, href)) {
           return json(res, 403, { error: "that bot message does not link to this file" });
@@ -17939,6 +18045,66 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               "referrer-policy": "no-referrer",
             }
           : {}),
+      });
+      if (file.bytes === 0) {
+        await file.handle.close();
+        return res.end();
+      }
+      const stream = file.handle.createReadStream({ start: 0, end: file.bytes - 1, autoClose: true });
+      stream.on("error", () => res.destroy());
+      res.on("close", () => stream.destroy());
+      stream.pipe(res);
+      return;
+    }
+
+    // The conversation's files for the bot panel's Files tab: every upload,
+    // attachment, linked file and tool-written file on the visible branch,
+    // newest first, with size and whether this server can serve it.
+    m = path.match(/^\/api\/threads\/([\w-]+)\/files$/);
+    if (m && method === "GET") {
+      const threadId = m[1]!;
+      if (!store.botByThread(threadId) && !store.groupByThread(threadId)) {
+        return json(res, 404, { error: "no such conversation" });
+      }
+      const files = await listThreadFiles(
+        threadFileRefsFor(threadId),
+        (ref) => statMessageFile(ref.path, threadFileRoots(threadId, ref)),
+      );
+      return json(res, 200, { files });
+    }
+
+    // One of those files by its opaque id: `preview=1` streams an image
+    // inline for a thumbnail; otherwise it downloads. The listing entry is
+    // the grant and the roots are the message route's, so no host path
+    // ever travels in the URL.
+    m = path.match(/^\/api\/threads\/([\w-]+)\/files\/([a-f0-9]{24})$/);
+    if (m && method === "GET") {
+      const threadId = m[1]!;
+      if (!store.botByThread(threadId) && !store.groupByThread(threadId)) {
+        return json(res, 404, { error: "no such conversation" });
+      }
+      const ref = threadFileRefsFor(threadId).find((candidate) => candidate.id === m![2]);
+      if (!ref) return json(res, 404, { error: "no such file in this conversation" });
+      const preview = url.searchParams.get("preview") === "1";
+      const file = await openMessageFile(ref.path, threadFileRoots(threadId, ref));
+      if (preview && !file.mime.startsWith("image/")) {
+        await file.handle.close();
+        return json(res, 415, { error: "only images can be previewed here" });
+      }
+      res.writeHead(200, {
+        "content-type": file.mime,
+        "content-length": String(file.bytes),
+        "content-disposition": preview
+          ? "inline"
+          : messageFileDisposition(messageFileDownloadName(ref.source === "upload" || ref.source === "attachment" ? ref.name : undefined, file.name)),
+        "cache-control": preview ? "private, max-age=3600" : "private, no-store",
+        "cdn-cache-control": "no-store",
+        "cloudflare-cdn-cache-control": "no-store",
+        pragma: "no-cache",
+        vary: "Authorization",
+        "x-content-type-options": "nosniff",
+        "cross-origin-resource-policy": "same-origin",
+        "referrer-policy": "no-referrer",
       });
       if (file.bytes === 0) {
         await file.handle.close();
@@ -19269,13 +19435,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         return json(res, 400, { error: "bot must be a JSON object" });
       }
-      const template = resolveBotCreationDefaults(cfg.newBotDefaults, body);
+      // An organization member's bot starts from nothing the admin saved
+      // (New bot defaults can set a folder, a computer or skills): only the
+      // fields memberBotFieldViolation allows, and it is theirs.
+      const memberCreate = auth.kind === "session" && !auth.scopes.includes("admin");
+      if (memberCreate && !botCreationAllowed(auth)) {
+        return json(res, 403, { error: "forbidden: only a member of the organization can create bots" });
+      }
+      const template = memberCreate
+        ? resolveBotCreationDefaults(undefined, { ...body, useDefaults: false })
+        : resolveBotCreationDefaults(cfg.newBotDefaults, body);
       const settings = template.profile;
-      if (auth.kind === "session" && !auth.scopes.includes("admin")) {
-        const field = clientBotPatchViolation(settings);
-        if (field || body.preset !== undefined || template.skills.length || template.routines.length || Object.keys(template.memory).length) {
-          return json(res, 403, { error: "Creating a bot with these defaults needs the admin scope" });
-        }
+      if (memberCreate) {
+        const field = memberBotFieldViolation(settings) ??
+          (["preset", "visibility", "section", "cwd"].find((key) => body[key] !== undefined) ?? null);
+        if (field) return json(res, 403, { error: `forbidden: a member's new bot may set its name, look, instructions and model, not "${field}"` });
       }
       // A preset (presets.ts) supplies content: playbooks, skills and
       // starter notes. Name, look and instructions stay the request's own.
@@ -19463,6 +19637,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/profile$/);
     if (m && method === "PATCH") {
+      const target = store.bot(m[1]);
+      if (target && botEditsNeedOwner(auth) && !memberOwnsBot(auth, target)) {
+        return json(res, 403, { error: "forbidden: only the bot owner can change its profile" });
+      }
       const parsed = parseBotProfilePatch(await readBody(req), true);
       if (!parsed.ok) return json(res, 400, { error: parsed.error });
       if (parsed.patch.avatarUrl && !storedAvatarExists(parsed.patch.avatarUrl)) {
@@ -19590,8 +19768,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "body must be a JSON object" });
       }
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
-        const field = clientBotPatchViolation(body);
-        if (field) return json(res, 403, { error: `forbidden: this session may change how a bot looks, not "${field}" (needs the admin scope)` });
+        const target = store.bot(m[1]);
+        const own = Boolean(target && memberOwnsBot(auth, target));
+        const field = own ? memberBotFieldViolation(body) : clientBotPatchViolation(body);
+        if (field) {
+          return json(res, 403, {
+            error: own
+              ? `forbidden: a member may change their bot's name, look, instructions and model, not "${field}"`
+              : `forbidden: this session may change how a bot looks, not "${field}" (needs the admin scope)`,
+          });
+        }
+        if (!own && target && botEditsNeedOwner(auth) && Object.keys(body).some((key) => key === "color" || key.startsWith("mascot"))) {
+          return json(res, 403, { error: "forbidden: only the bot owner can change how it looks" });
+        }
       }
       const existingBot = store.bot(m[1]);
       const selectedTask = existingBot ? requestedTaskBot(existingBot.id, undefined) : null;
@@ -20136,6 +20325,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     m = path.match(/^\/api\/bots\/([\w-]+)$/);
     if (m && method === "DELETE") {
+      if (auth.kind === "session" && !auth.scopes.includes("admin")) {
+        const target = store.bot(m[1]);
+        if (!target) return json(res, 404, { error: "no such bot" });
+        if (!memberOwnsBot(auth, target)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can delete it" });
+      }
       const result = await deleteBotWithLifecycle(m[1]);
       return json(res, result.status, result.body);
     }
@@ -22326,7 +22520,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
     // ── app config (API keys — never echoed back, booleans only) ──
     if (method === "GET" && path === "/api/config") {
-      return json(res, 200, configForAccess(configStatus(), auth.scopes.includes("admin")));
+      return json(res, 200, configForViewer(configForAccess(configStatus(), auth.scopes.includes("admin")), viewerIdentity(auth)));
     }
     if ((method === "PUT" || method === "PATCH") && path === "/api/config") {
       const body = await readBody(req);
@@ -22827,7 +23021,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         finalized.acknowledgements.every(Boolean),
         removedBrowserProfileIds.length === 1 ? "The browser profile" : "The browser profiles",
       );
-      return json(res, 200, finalized.value);
+      return json(res, 200, configForViewer(finalized.value, viewerIdentity(auth)));
       } finally {
         for (const provider of transitioningProviders) computerProviderConfigTransitions.delete(provider);
         if (changingLocalVmMode) localVmModeChangeBusy = false;

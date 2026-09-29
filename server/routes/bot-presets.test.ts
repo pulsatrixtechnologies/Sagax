@@ -71,7 +71,9 @@ describe("/api/bot-presets through the route table", () => {
   it("is for admins only, like the New bot defaults, and so is creating a bot from a preset", () => {
     expect(requiredScope("GET", "/api/bot-presets")).toBe("admin");
     expect(requiredScope("DELETE", "/api/bot-presets/p1")).toBe("admin");
-    expect(requiredScope("POST", "/api/bots")).toBe("admin");
+    // A member may create a plain bot of their own, never from a preset:
+    // the handler refuses `preset` below admin (member-identity.e2e.test.ts).
+    expect(requiredScope("POST", "/api/bots")).toBe("client");
     expect(requiredScope("POST", "/api/teams/export")).toBe("admin");
   });
 });

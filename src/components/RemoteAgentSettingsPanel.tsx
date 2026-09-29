@@ -5,6 +5,8 @@ import { api, useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { useCaptionChrome } from "@/components/DesktopCapabilities";
 import { VoiceSettings } from "./VoiceSettings";
+import { FilesSection } from "./bot-settings/FilesSection";
+import { t } from "@/lib/i18n";
 import { Switch } from "./SettingsPrimitives";
 import { BotAvatar } from "./Avatar";
 import { imageAttachmentFromFile } from "@/lib/composer-attachments";
@@ -139,6 +141,13 @@ export function RemoteAgentSettingsPanel({ bot }: { bot: Bot }) {
               onClick={() => void patch({ notifications: !bot.notifications })}
             />
           </div>
+
+          {/* The open chat's files, served by the remote host through the
+              same client-scoped routes the desktop panel's Files tab uses. */}
+          <section className="rounded-xl bg-card p-4" aria-labelledby="remote-agent-files">
+            <h3 id="remote-agent-files" className="mb-3 text-[15px] font-medium text-ink">{t("botPanel.tab.files")}</h3>
+            <FilesSection bot={bot} />
+          </section>
 
           {error ? <div role="alert" className="text-[12px] text-danger">{error}</div> : null}
         </div>

@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { GripVertical, Search, UsersRound } from "lucide-react";
+import { ChevronRight, GripVertical, Search, UsersRound } from "lucide-react";
 import { BotAvatar } from "@/components/Avatar";
 import type { Bot } from "@/state/store";
 import { MiniMonth } from "./MiniMonth";
@@ -10,9 +10,12 @@ export interface CalendarSidebarProps {
   bots: Bot[];
   anchor: number;
   onSelectDate: (at: number) => void;
+  /** Collapses the sidebar; its button sits in its own row above the month
+   * so it never covers the month title. */
+  onCollapse?: () => void;
 }
 
-export function CalendarSidebar({ bots, anchor, onSelectDate }: CalendarSidebarProps) {
+export function CalendarSidebar({ bots, anchor, onSelectDate, onCollapse }: CalendarSidebarProps) {
   const [query, setQuery] = useState("");
   const filteredBots = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
@@ -33,6 +36,13 @@ export function CalendarSidebar({ bots, anchor, onSelectDate }: CalendarSidebarP
       aria-label="Schedule sidebar"
       className="flex h-full w-[280px] shrink-0 flex-col overflow-hidden border-l border-hairline/40 bg-panel"
     >
+      {onCollapse && (
+        <div className="flex shrink-0 px-2 pt-2">
+          <button type="button" onClick={onCollapse} aria-label="Hide my bots" title="Hide my bots" className="rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink">
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
       <MiniMonth anchor={anchor} onSelect={onSelectDate} />
 
       <div className="mx-4 border-t border-hairline/40" />

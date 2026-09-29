@@ -17,7 +17,7 @@ const MACHINE_TEXT = {
  * never reaches this page. A render helper (no hooks), part of the card. */
 function cloudHomeCard({ machine, busy, failed, onConnect }: { machine: CloudMachine; busy: boolean; failed: boolean; onConnect: () => void }) {
   const connectable = machine.status === "ready";
-  return <Card title={t("cloudHome.title")}>
+  return <Card collapsible cardId="cloudAccount.home" title={t("cloudHome.title")} summary={t(MACHINE_TEXT[machine.status])}>
     <div data-cloud-home={machine.status} className="flex flex-col items-start gap-3">
       <p role="status" className={machine.status === "ready" ? "text-[14px] text-ink" : "text-[13px] text-ink-secondary"}>{t(MACHINE_TEXT[machine.status])}</p>
       {connectable && <>
@@ -68,7 +68,13 @@ export function CloudAccountSettings() {
           : account?.message ? t("cloudAccount.signinFailed") : null;
   return <>
     <p className="text-[13px] leading-relaxed text-ink-secondary">{t("cloudAccount.optional")}</p>
-    <Card title={t("settings.section.cloudAccount")} subtitle={t("cloudAccount.separate")}>
+    <Card
+      collapsible
+      cardId="cloudAccount.account"
+      title={t("settings.section.cloudAccount")}
+      subtitle={t("cloudAccount.separate")}
+      summary={signed ? account.account?.email ?? (activePro ? t("cloudAccount.pro") : t("cloudAccount.free")) : t("settings.card.notConnected")}
+    >
       {!account && <p role="status" className="text-[13px] text-ink-secondary">{t("cloudAccount.loading")}</p>}
       {message && <p role="status" className="mb-3 text-[13px] text-ink-secondary">{message}</p>}
       {account?.status === "signed-out" && <button type="button" disabled={busy} className="ui-button" onClick={() => void perform(() => bridge.begin())}>{t("cloudAccount.signIn")}</button>}

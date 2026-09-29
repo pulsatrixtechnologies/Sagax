@@ -301,6 +301,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/image$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/export$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/file$/ },
+  // a conversation's files (the bot panel's Files tab): the list and one file by id
+  { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files$/ },
+  { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}$/ },
   // chat, one to one
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages\/[\w-]+\/edit$/ },
@@ -312,7 +315,12 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tasks$/ },
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/profile$/ },
-  { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+$/ }, // display fields only: see clientBotPatchViolation
+  { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+$/ }, // display fields only, or the owner's own bot: see clientBotPatchViolation
+  // An organization member's own bots: the handler requires a member or
+  // admin role, limits the fields (memberBotFieldViolation) and, for a
+  // delete, that the session owns the bot.
+  { methods: ["POST"], path: /^\/api\/bots$/ },
+  { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/direct-grants$/ },
   // approvals and cards
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/respond$/ },
@@ -374,10 +382,25 @@ export function requiredScope(method: string, path: string, features: { sharedCo
 
 /** Fields a client session may change on a bot: how it looks in the list,
  * never what it may do. Returns the first offending field, or null. */
-const CLIENT_BOT_PATCH_FIELDS = new Set(["unread", "pinned", "pinnedMessageId", "color", "mascotExpression", "mascotBody"]);
+const CLIENT_BOT_PATCH_FIELDS = new Set(["unread", "pinned", "pinnedMessageId", "color", "mascotExpression", "mascotBody", "mascotSkin"]);
 export function clientBotPatchViolation(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
   for (const key of Object.keys(body)) if (!CLIENT_BOT_PATCH_FIELDS.has(key)) return key;
+  return null;
+}
+
+/** What an organization member may set on a bot they own, at creation and
+ * afterwards: how it looks, its name and instructions, and which of the
+ * server's engines it runs on. Never where it runs, what it may reach or
+ * how much it may do unasked (computer, folder, approval level, MCP servers,
+ * browser profile, peers, teams): those stay server admin settings. */
+const MEMBER_BOT_FIELDS = new Set([
+  ...CLIENT_BOT_PATCH_FIELDS,
+  "name", "title", "description", "soul", "avatarUrl", "modelSelection", "requireAvailableModel",
+]);
+export function memberBotFieldViolation(body: unknown): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
+  for (const key of Object.keys(body)) if (!MEMBER_BOT_FIELDS.has(key)) return key;
   return null;
 }
 

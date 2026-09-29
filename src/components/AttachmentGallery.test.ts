@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FILE_MAX_BYTES } from "@/lib/composer-attachments";
-import { AttachmentGallery, collectMessageFiles, isAudioAttachment, isVideoAttachment, loadMessageAudio, loadMessageVideo, MessageAttachmentGallery, splitMessageAttachments } from "./AttachmentGallery";
+import { AttachmentGallery, collectMessageFiles, isAudioAttachment, isPdfAttachment, isVideoAttachment, listMessageFiles, loadMessageAudio, loadMessageVideo, MessageAttachmentGallery, splitMessageAttachments } from "./AttachmentGallery";
 
 const message = { threadId: "thread/one", messageId: "message two" };
 const file = { path: "/workspace/demo.mp4", name: "demo.mp4", linked: true };
@@ -222,5 +222,39 @@ describe("explicit local video preview", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(stream, { headers: { "content-type": "video/mp4" } })));
     await expect(loadMessageVideo(file, message, request.signal)).rejects.toMatchObject({ name: "AbortError" });
     expect(cancel).toHaveBeenCalledOnce();
+  });
+});
+
+describe("message file listing", () => {
+  it("lists stored attachments then linked files, each with its kind", () => {
+    const files = listMessageFiles({
+      text: "See [the deck](./deck.pdf), [clip](./demo.mp4) and [notes](./notes.txt).",
+      attachments: [
+        { path: "/store/123e4567-e89b-42d3-a456-426614174000.png", kind: "image" },
+        { path: "/work/out.wav", kind: "file", name: "out.wav" },
+      ],
+    });
+    expect(files.map(({ name, kind, linked }) => [name, kind, linked])).toEqual([
+      ["123e4567-e89b-42d3-a456-426614174000.png", "image", false],
+      ["out.wav", "audio", false],
+      ["deck.pdf", "pdf", true],
+      ["demo.mp4", "video", true],
+      ["notes.txt", "file", true],
+    ]);
+    expect(listMessageFiles({ text: "[x](./x.pdf)", includeLinks: false })).toEqual([]);
+    expect(isPdfAttachment("./a/Report.PDF")).toBe(true);
+    expect(isPdfAttachment("./a/report.pdf.txt")).toBe(false);
+  });
+
+  it("shows a PDF as a document card with an explicit save action", () => {
+    const html = renderToStaticMarkup(createElement(AttachmentGallery, {
+      files: [{ path: "/work/report.pdf", name: "report.pdf", private: true }],
+      message: { threadId: "t", messageId: "m" },
+    }));
+    expect(html).toContain(">PDF</span>");
+    expect(html).toContain("PDF document");
+    expect(html).toContain('aria-label="Save a copy of report.pdf"');
+    expect(html).not.toContain("<iframe");
+    expect(html).not.toContain("<embed");
   });
 });

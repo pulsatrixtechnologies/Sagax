@@ -22,6 +22,7 @@ import {
   ROUTINE_EXECUTION_PROMPT,
   WEBHOOK_PROMPT,
   SIGN_IN_PROMPT,
+  RICH_OUTPUT_PROMPT,
   type ComputerPromptKind,
 } from "./system-prompt.ts";
 
@@ -273,5 +274,20 @@ describe("composioSystemPrompt", () => {
     const prompt = composioSystemPrompt({ gmail: { tools: "*" } });
     expect(prompt.startsWith(" ")).toBe(true);
     expect(prompt.startsWith("  ")).toBe(false);
+  });
+});
+
+describe("RICH_OUTPUT_PROMPT", () => {
+  it("teaches every fence the chat renders, and the sandbox rules", () => {
+    for (const fence of ["```email", "```chart", "```csv", "```widget", "```mermaid", "[!NOTE]"]) {
+      expect(RICH_OUTPUT_PROMPT).toContain(fence);
+    }
+    expect(RICH_OUTPUT_PROMPT).toMatch(/To:, Cc:, Bcc: and Subject:/);
+    expect(RICH_OUTPUT_PROMPT).toMatch(/no network access/);
+    expect(RICH_OUTPUT_PROMPT).toMatch(/nothing is sent/);
+    expect(RICH_OUTPUT_PROMPT).not.toMatch(/[\u2013\u2014]/);
+    // the chart example in the prompt is valid JSON the renderer accepts
+    const example = /```chart fence holding JSON such as (\{.*?\}) \(type/.exec(RICH_OUTPUT_PROMPT)?.[1];
+    expect(() => JSON.parse(example ?? "")).not.toThrow();
   });
 });

@@ -479,6 +479,24 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(instance.adapter.hasSession("t-happy")).toBe(false);
   });
 
+  it("names the files a Write or Edit call writes, and none for a shell call", async () => {
+    process.env.FAKE_CLAUDE_TOOL_CALLS = JSON.stringify([
+      { name: "Write", input: { file_path: "/work/report.md", content: "# Report" }, output: "ok" },
+      { name: "Bash", input: { command: "ls" }, output: "report.md" },
+    ]);
+    try {
+      await create();
+      await instance.adapter.sendTurn({ threadId: "t-files", text: "write it", model: "claude-sonnet-5" });
+      await recorder.until((e) => e.type === "turn.completed");
+      const started = recorder.events.filter((e) => e.type === "item.started");
+      expect(started[0]).toMatchObject({ title: "Write", files: ["/work/report.md"] });
+      expect(started[1]).toMatchObject({ title: "Bash" });
+      expect(started[1]).not.toHaveProperty("files");
+    } finally {
+      delete process.env.FAKE_CLAUDE_TOOL_CALLS;
+    }
+  });
+
   it("streams partial-message text deltas without re-emitting the whole message", async () => {
     await create("stream");
     await instance.adapter.sendTurn({ threadId: "t-stream", text: "hi" });

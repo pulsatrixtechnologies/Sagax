@@ -69,6 +69,8 @@ import { ConnectorCard } from "./ConnectorCard";
 import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { AttachmentGallery, collectMessageFiles, splitMessageAttachments } from "./AttachmentGallery";
+import { ConversationGalleryProvider } from "./ConversationGallery";
+import { prefersWideBubble } from "@/lib/rich-blocks";
 import { ScreenFrame } from "./ScreenFrame";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
@@ -99,6 +101,7 @@ import {
   tailWindowStart,
 } from "@/lib/transcript-window";
 import { appendComposerDraft, useReplyDraft } from "@/lib/drafts";
+import { OtherAuthorLabel } from "./MessageAuthor";
 
 /** Long user messages collapse behind a fade so pasted walls of text don't
  * bury the conversation; bots get full markdown. */
@@ -335,6 +338,7 @@ function Bubble({
   const speech = useSpeech();
   const speaking = speech.messageId === message.id && speech.status !== "idle";
   const text = peer ? peer.body : (message.text ?? "");
+  const wideBubble = useMemo(() => !user && Boolean(text) && prefersWideBubble(text), [user, text]);
   const attached = useMemo(() => splitMessageAttachments(message.attachments), [message.attachments]);
   const generatedPaths = attached.images;
   const linkedFiles = useMemo(
@@ -374,6 +378,7 @@ function Bubble({
   return (
     <div className={cn("group flex w-full flex-col", user ? "animate-msg-in items-end" : "items-start")}>
       {peer && <PeerLabel peer={peer} />}
+      {user && <OtherAuthorLabel message={message} />}
       <div className={cn("flex w-full items-center gap-1.5", user ? "justify-end" : "justify-start")}>
         {user && (
           <MessageActions side="user">
@@ -418,7 +423,10 @@ function Bubble({
         )}
         <div
           className={cn(
-            "w-fit max-w-[min(80%,560px,calc(100%-82px))] rounded-[18px] text-[15px] leading-relaxed",
+            "rounded-[18px] text-[15px] leading-relaxed",
+            // tables, diagrams, charts, widgets and email drafts need room;
+            // prose keeps the narrow reading measure
+            wideBubble ? "w-full max-w-[min(94%,780px,calc(100%-82px))]" : "w-fit max-w-[min(80%,560px,calc(100%-82px))]",
             emerging && "turn-answer",
             user && webhookView
               ? "overflow-hidden border border-accent/25 bg-card text-ink shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
@@ -1423,6 +1431,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
               </button>
             </div>
           ) : null}
+          <ConversationGalleryProvider>
           <MessagesList
             bot={bot}
             locale={activeLocale()}
@@ -1439,6 +1448,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             onRegenerate={regenerate}
             onReply={selectReply}
           />
+          </ConversationGalleryProvider>
           {laterCount > 0 && (
             <div className="flex justify-center">
               <button

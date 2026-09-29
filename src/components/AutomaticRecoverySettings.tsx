@@ -5,6 +5,15 @@ import { Card, Switch } from "./SettingsPrimitives";
 
 type Recovery = NonNullable<ConfigStatus["automaticRecovery"]>;
 
+/** Off, or which backup model takes over, named as the pickers name it. */
+export function recoverySummary(saved: Recovery | undefined, instances: Array<{ instanceId: string; displayName: string; models: { options: Array<{ id: string; label: string }> } }>): string {
+  if (!saved?.enabled) return t("settings.card.off");
+  const engine = instances.find((instance) => instance.instanceId === saved.backup?.instanceId);
+  const model = engine?.models.options.find((option) => option.id === saved.backup?.model);
+  const name = [engine?.displayName ?? saved.backup?.instanceId, model?.label ?? saved.backup?.model].filter(Boolean).join(" · ");
+  return name ? t("settings.card.recoveryOn", { model: name }) : t("settings.card.on");
+}
+
 export function AutomaticRecoverySettings() {
   const { state, dispatch } = useStore();
   const [draft, setDraft] = useState<Recovery | null>(null);
@@ -37,7 +46,13 @@ export function AutomaticRecoverySettings() {
     }
   };
   return (
-    <Card title={t("settings.recovery.title")}>
+    <Card
+      collapsible
+      cardId="general.recovery"
+      defaultOpen={false}
+      title={t("settings.recovery.title")}
+      summary={recoverySummary(state.config?.automaticRecovery, state.instances)}
+    >
       <div className="flex items-center justify-between gap-4">
         <label htmlFor="automatic-recovery-enabled" className="text-[13px] font-medium text-ink">{t("settings.recovery.enable")}</label>
         <Switch id="automatic-recovery-enabled" checked={value.enabled} disabled={saving || !state.config}

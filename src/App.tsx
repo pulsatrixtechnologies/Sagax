@@ -50,18 +50,15 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
         target.searchParams.set("share-computer", computerId);
         window.history.replaceState(null, "", `${target.pathname}${target.search}${target.hash}`);
       }
-      dispatch({ type: "toggleAppSettings", open: true, section: "desktopWorkspaces" });
+      dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
     };
     const url = new URL(window.location.href);
     const requestedSettings = url.searchParams.get("desktop-settings");
     if (requestedSettings === "workspaces" || (requestedSettings === "organization" && window.ogb.organization && !remoteClient)) {
       url.searchParams.delete("desktop-settings");
       window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-      if (requestedSettings === "organization") {
-        requestEnterpriseEntry();
-        dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
-      }
-      else open();
+      if (requestedSettings === "organization") requestEnterpriseEntry();
+      open();
     }
     return window.ogb.environments.onOpenSettings?.(open);
   }, [dispatch]);

@@ -72,3 +72,28 @@ export function externalWebUrl(rawUrl) {
   if (url.username || url.password) throw new Error("Web links must not include user credentials");
   return url.toString();
 }
+
+// A mailto: link (an email draft's "Open in mail app") goes to the OS mail
+// client, which only pre-fills a draft; nothing is sent without the person.
+// Bounded so a hostile page cannot hand the OS an unbounded URL.
+export const MAILTO_MAX_LENGTH = 32_768;
+export function externalMailUrl(rawUrl) {
+  if (typeof rawUrl !== "string" || !/^mailto:/i.test(rawUrl)) throw new Error("Only mail links can be opened here");
+  if (rawUrl.length > MAILTO_MAX_LENGTH) throw new Error("That mail link is too long");
+  // oxlint-disable-next-line no-control-regex -- control characters never belong in a mail link
+  if (/[\u0000-\u001f\u007f]/.test(rawUrl)) throw new Error("That mail link is invalid");
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new Error("That mail link is invalid");
+  }
+  if (url.protocol !== "mailto:") throw new Error("Only mail links can be opened here");
+  return url.toString();
+}
+
+/** The one policy window.open follows: web links, or a mail draft. */
+export function externalOpenUrl(rawUrl) {
+  if (typeof rawUrl === "string" && /^mailto:/i.test(rawUrl)) return externalMailUrl(rawUrl);
+  return externalWebUrl(rawUrl);
+}

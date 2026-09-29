@@ -20,6 +20,7 @@ import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
+import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
 import type { ProfileRequestCardData } from "../../shared/profile-request";
 import type { ModelRequestCardData } from "../../shared/model-request";
@@ -173,6 +174,9 @@ export interface Message {
   steered?: boolean;
   /** a user message that arrived through the server's API, not typed here */
   via?: "api";
+  /** user messages: the signed-in person who sent it. Absent for the
+   * operator's own sends (see shared/wire.ts). */
+  sender?: import("../../shared/wire").WireMessage["sender"];
   /** Provider turn that produced this message. */
   turnId?: string;
   /** Last assistant text item from a settled provider turn. */
@@ -384,6 +388,8 @@ export interface Bot {
   mascotExpression?: string | null;
   /** Which body the bot wears. Unknown/absent values fall back to the cursor. */
   mascotBody?: MascotBodyId | null;
+  /** Special-edition skin. Unknown/absent values wear none. */
+  mascotSkin?: MascotSkinId | null;
   /** App-owned image attachment used for this bot's profile. */
   avatarUrl?: string | null;
   /** Mascot, or the crop applied to avatarUrl. */
@@ -651,8 +657,12 @@ export interface ConfigStatus {
     xaiConfigured?: boolean;
     customKeyConfigured?: boolean;
   };
-  /** who's using the app — collected in onboarding, shown in the sidebar */
+  /** who's using the app: collected in onboarding, shown in the sidebar.
+   * For someone signed in to another person's server, the server fills it
+   * with their own identity (see `viewer`). */
   profile?: { name: string; email: string; aboutMe?: string; avatarUrl?: string };
+  /** Who is looking, as the server knows them. Absent from older servers. */
+  viewer?: ConfigViewer;
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
@@ -668,6 +678,20 @@ export interface ConfigStatus {
   /** The enrolled organisation's read-only desktop policy; null when this
    * desktop is not enrolled or its Admin sends no policy. */
   managedPolicy?: ManagedPolicySummary | null;
+}
+
+/** Mirrors ViewerIdentity in server/viewer-identity.ts. */
+export interface ConfigViewer {
+  /** The operator at the server's computer, or a device they paired. */
+  operator: boolean;
+  principalId: string | null;
+  email: string;
+  name: string;
+  role: "owner" | "admin" | "member" | null;
+  /** The server lets this viewer create a bot. */
+  canCreateBots: boolean;
+  /** The operator's name, for their lines that carry no sender. */
+  operatorName?: string;
 }
 
 export interface ManagedPolicySummary {
@@ -703,7 +727,7 @@ export interface BrowserProfile {
 // Settings shows (a saved key's Test button used to vanish that way).
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "mistral" | "anthropic" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "imageGen" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy"
+  "xai" | "mistral" | "anthropic" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "imageGen" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -733,6 +757,7 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     budgets: frame.budgets,
     billing: frame.billing,
     managedPolicy: frame.managedPolicy,
+    viewer: frame.viewer,
   };
 }
 
@@ -819,7 +844,6 @@ export interface InstanceInfo {
 
 export type AppSettingsSection =
   | "general"
-  | "desktopWorkspaces"
   | "organization"
   | "cloudAccount"
   | "appearance"
@@ -1144,6 +1168,8 @@ export type Action =
   | { type: "botDeletionPending"; botId: string; on: boolean }
   | { type: "duplicateBot"; botId: string }
   | { type: "markUnread"; botId: string }
+  /** Play a one-shot mascot motion on a bot, as the appearance card's moves do. */
+  | { type: "playMascotMotion"; botId: string; kind: Exclude<MausMotion, "none"> }
   | { type: "botPatched"; bot: BotAnnouncement }
   | { type: "messageAdded"; threadId: string; message: Message }
   | { type: "messagePatched"; threadId: string; message: Message }
@@ -1626,6 +1652,8 @@ export function reducer(state: AppState, action: Action): AppState {
       const { [action.botId]: _settled, ...deletingBots } = state.deletingBots;
       return { ...state, deletingBots };
     }
+    case "playMascotMotion":
+      return withMascotMotion(state, action.botId, action.kind);
     case "markUnread":
       return updateBot(withMascotMotion(state, action.botId, "surprise"), action.botId, (b) => ({ ...b, unread: true }));
     case "botPatched": {
@@ -2029,9 +2057,13 @@ export function reducer(state: AppState, action: Action): AppState {
       const mascotChanged =
         Object.prototype.hasOwnProperty.call(action.patch, "color") ||
         Object.prototype.hasOwnProperty.call(action.patch, "mascotExpression");
-      const animated = mascotChanged
-        ? withMascotMotion(state, action.botId, "customize")
-        : state;
+      // a new skin is shown off with the wings open
+      const skinChanged = Object.prototype.hasOwnProperty.call(action.patch, "mascotSkin");
+      const animated = skinChanged
+        ? withMascotMotion(state, action.botId, "spread-wings")
+        : mascotChanged
+          ? withMascotMotion(state, action.botId, "customize")
+          : state;
       const target = animated.bots.find((bot) => bot.id === action.botId);
       const chiefSection = (action.patch.section ?? target?.section)?.trim() || "";
       const next = action.patch.chiefOfStaff
