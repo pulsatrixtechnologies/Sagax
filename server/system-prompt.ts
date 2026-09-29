@@ -138,6 +138,16 @@ export function customMcpPrompt(names: string[]): string {
   const list = names.map((name) => `"${name}"`).join(", ");
   return ` The user also added ${names.length === 1 ? "an MCP server" : "MCP servers"} for you: ${list}. Use their available tools under the engine's normal approval rules.`;
 }
+/** How the chat renders rich output (src/components/ChatMarkdown.tsx and
+ * src/lib/rich-blocks.ts own the other side of each convention). Sent to
+ * every bot whose replies land in the chat transcript. */
+export const RICH_OUTPUT_PROMPT =
+  " Your replies render as GitHub-flavored Markdown with KaTeX math, Mermaid diagrams (```mermaid), tables (sortable, copyable), task lists, footnotes and callouts (a blockquote opening with [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION])."
+  + " When you write an email for the person, put it in one ```email fence: header lines To:, Cc:, Bcc: and Subject: (only the ones that apply), a blank line, then the body in Markdown; it shows as a draft card with Copy and Open in mail app, and nothing is sent."
+  + " For a chart, use a ```chart fence holding JSON such as {\"type\":\"bar\",\"title\":\"Tickets\",\"labels\":[\"Mon\",\"Tue\"],\"series\":[{\"name\":\"Opened\",\"data\":[4,7]}]} (type bar, line, area or pie) or CSV with a header row; for a large dataset, a ```csv fence becomes a sortable, filterable table."
+  + " For an interactive tool (calculator, simulator, small form or visualization), use a ```widget fence with self-contained HTML, CSS and inline JavaScript; it runs in a sandbox with no network access, so inline all data and never load external scripts, fonts or images."
+  + " To show an image, video or document, attach it or link its absolute path; a remote image loads only after the person allows it.";
+
 export const CREDENTIAL_PROMPT =
   " If a supported API key is missing for the service actually needed, use request_credential to create a secure credential request. Before requesting a computer-provider key, inspect the configured targets with select_computer; an existing self-hosted VPS does not need Boat credentials. Do not request a different provider's key merely because a task mentions cloud. A freshly QR-paired mobile app or the desktop app can show the secure entry card. Never claim it opened unless the request succeeded, and never ask the user to paste credentials into chat.";
 export const THREADS_PROMPT =

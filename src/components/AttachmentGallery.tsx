@@ -3,7 +3,7 @@
 // through the server's exact-message file authorization.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fromMarkdown } from "mdast-util-from-markdown";
-import { ChevronDown, ChevronUp, Download, Film, LoaderCircle, Music, Play, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Download, FileText, Film, LoaderCircle, Music, Play, RotateCcw, X } from "lucide-react";
 import { attachmentBasename, FILE_MAX_BYTES, type TranscriptFileAttachment, type TranscriptImageAttachment } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -16,6 +16,7 @@ import {
   previewImage,
   requestMessageFile,
   safeDownloadFilename,
+  useLocalFileSave,
   type MessageAttachmentContext,
   type PreviewImage,
 } from "./AttachmentPreview";
@@ -78,6 +79,36 @@ export function isVideoAttachment(path: string): boolean {
 
 export function isAudioAttachment(path: string): boolean {
   return /\.(?:mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i.test(fileIdentity(path));
+}
+
+export function isPdfAttachment(path: string): boolean {
+  return /\.pdf$/i.test(fileIdentity(path));
+}
+
+export type MessageFileKind = "image" | "video" | "audio" | "pdf" | "file";
+
+/** Every file one message carries or hands over, in display order: stored
+ * attachments (uploads, generated images, attach_file results) first, then
+ * files a bot linked in its Markdown. Presentation only: each file is still
+ * authorized by the server when it is opened or saved. Shared with the
+ * per-chat Files view so both list the same things. */
+export function listMessageFiles(input: {
+  text?: string;
+  attachments?: readonly MessageAttachmentEntry[];
+  /** User turns never turn their own Markdown links into files. */
+  includeLinks?: boolean;
+}): Array<{ path: string; name: string; kind: MessageFileKind; linked: boolean }> {
+  const attached = splitMessageAttachments(input.attachments);
+  const linked = input.includeLinks === false || !input.text
+    ? []
+    : collectMessageFiles(input.text, [...attached.images, ...attached.files.map((file) => file.path)]);
+  const classify = (path: string): MessageFileKind =>
+    isVideoAttachment(path) ? "video" : isAudioAttachment(path) ? "audio" : isPdfAttachment(path) ? "pdf" : "file";
+  return [
+    ...attached.images.map((path) => ({ path, name: attachmentBasename(path), kind: "image" as const, linked: false })),
+    ...attached.files.map((file) => ({ path: file.path, name: file.name, kind: classify(file.path), linked: false })),
+    ...linked.map((file) => ({ path: file.path, name: file.name, kind: classify(file.path), linked: true })),
+  ];
 }
 
 type MessageAttachmentEntry = { path: string; kind?: string; name?: string };
@@ -320,9 +351,41 @@ function AudioAttachment({ file, message }: { file: GalleryFile; message: Messag
   );
 }
 
+/** A PDF is a document card: its name, its kind, and a save action. The
+ * desktop window has no PDF plugin, so the file opens in the person's own
+ * viewer once saved rather than in an embedded frame. */
+function PdfAttachment({ file, message }: { file: GalleryFile; message: MessageAttachmentContext }) {
+  const save = useLocalFileSave(file.path, file.name, message);
+  return (
+    <button
+      type="button"
+      onClick={() => void save.save()}
+      disabled={save.state === "saving"}
+      aria-label={t("attach.saveAria", { name: file.name })}
+      title={save.state === "saved" && save.savedTo ? t("attach.savedTo", { path: save.savedTo }) : t("attach.pdfOpen", { name: file.name })}
+      className="flex w-72 max-w-full items-center gap-3 rounded-xl border border-hairline/30 bg-inset/60 p-2.5 text-left transition-colors hover:bg-raised/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-wait motion-reduce:transition-none"
+    >
+      <span className="relative flex h-12 w-10 shrink-0 flex-col items-center justify-center rounded-md border border-hairline/40 bg-panel text-danger">
+        <FileText size={18} aria-hidden="true" />
+        <span className="mt-0.5 text-[8.5px] font-bold tracking-wider">PDF</span>
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[12.5px] font-medium text-ink">{file.name}</span>
+        <span role={save.state === "failed" ? "alert" : undefined} className={cn("block text-[11px]", save.state === "failed" ? "text-danger" : "text-ink-secondary")}>
+          {save.state === "failed" ? save.reason : save.state === "saving" ? t("attach.downloading") : save.state === "saved" ? t("attach.downloaded") : t("attach.pdfDocument")}
+        </span>
+      </span>
+      {save.state === "saving" ? <LoaderCircle size={14} className="shrink-0 animate-spin text-ink-secondary" />
+        : save.state === "saved" ? <Check size={14} className="shrink-0 text-success" />
+          : save.state === "failed" ? <RotateCcw size={14} className="shrink-0 text-danger" />
+            : <Download size={14} className="shrink-0 text-ink-secondary" />}
+    </button>
+  );
+}
+
 type GalleryItem = { key: string } & (
   | { kind: "image"; image: PreviewImage }
-  | { kind: "video" | "audio" | "file"; file: GalleryFile }
+  | { kind: "video" | "audio" | "pdf" | "file"; file: GalleryFile }
 );
 
 export function AttachmentGallery({ images = [], files = [], message, eager = false, className }: {
@@ -353,14 +416,21 @@ export function AttachmentGallery({ images = [], files = [], message, eager = fa
       if (seen.has(key)) continue;
       seen.add(key);
       const trusted = Boolean(message && (file.private || file.linked));
-      result.push({ key, kind: trusted && isVideoAttachment(file.path) ? "video" : trusted && isAudioAttachment(file.path) ? "audio" : "file", file });
+      result.push({
+        key,
+        kind: trusted && isVideoAttachment(file.path) ? "video"
+          : trusted && isAudioAttachment(file.path) ? "audio"
+            : trusted && isPdfAttachment(file.path) ? "pdf"
+              : "file",
+        file,
+      });
     }
     return result;
   }, [images, files, message]);
   if (!items.length) return null;
   const shown = expanded ? items : items.slice(0, 4);
   const media = shown.filter((item) => item.kind === "image" || item.kind === "video");
-  const documents = shown.filter((item) => item.kind === "file" || item.kind === "audio");
+  const documents = shown.filter((item) => item.kind === "file" || item.kind === "audio" || item.kind === "pdf");
   const previews = items.flatMap((item) => item.kind === "image" ? [item.image] : []);
 
   return (
@@ -380,7 +450,9 @@ export function AttachmentGallery({ images = [], files = [], message, eager = fa
         <div className="flex flex-col items-start gap-1.5">
           {documents.map((item) => item.kind === "audio" && message
             ? <AudioAttachment key={`${message.threadId}:${message.messageId}:${item.key}`} file={item.file} message={message} />
-            : item.kind === "file" && <AttachedFileChip key={item.key} file={item.file} linked={item.file.linked} message={message} className="max-w-none rounded-xl border-hairline/25 bg-transparent" />)}
+            : item.kind === "pdf" && message
+              ? <PdfAttachment key={`${message.threadId}:${message.messageId}:${item.key}`} file={item.file} message={message} />
+              : (item.kind === "file" || item.kind === "pdf") && <AttachedFileChip key={item.key} file={item.file} linked={item.file.linked} message={message} className="max-w-none rounded-xl border-hairline/25 bg-transparent" />)}
         </div>
       )}
       {items.length > 4 && (
