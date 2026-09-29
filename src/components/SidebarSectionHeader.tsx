@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, GripVertical, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { cn } from "@/lib/cn";
@@ -18,7 +18,6 @@ export function SidebarSectionHeader({
   onDragStart,
   onDragEnd,
   onMove,
-  onDelete,
   onContextMenu,
 }: {
   name: string;
@@ -27,10 +26,9 @@ export function SidebarSectionHeader({
   onToggle?: () => void;
   reorderable: boolean;
   dragging: boolean;
-  onDragStart?: (event: DragEvent<HTMLSpanElement>) => void;
+  onDragStart?: (event: DragEvent<HTMLDivElement>) => void;
   onDragEnd?: () => void;
   onMove?: (direction: -1 | 1) => void;
-  onDelete?: () => void;
   onContextMenu?: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const Chevron = collapsed ? ChevronRight : ChevronDown;
@@ -46,8 +44,43 @@ export function SidebarSectionHeader({
     }
   };
 
+  const marks = (
+    <>
+      {attention && attention.waiting > 0 && (
+        <span
+          aria-hidden="true"
+          className="min-w-4 rounded-full bg-warning/15 px-1 text-center text-[9px] font-semibold leading-4 text-warning"
+        >
+          {attention.waiting}
+        </span>
+      )}
+      {attention && attention.unread > 0 && (
+        <span
+          aria-hidden="true"
+          className="min-w-4 rounded-full bg-accent/15 px-1 text-center text-[9px] font-semibold leading-4 text-accent"
+        >
+          {attention.unread}
+        </span>
+      )}
+      {attention && attention.working > 0 && (
+        <span aria-hidden="true" className="flex size-4 items-center justify-center">
+          <span className="size-1.5 animate-pulse rounded-full bg-success" />
+        </span>
+      )}
+      {attentionLabel && <span className="sr-only">{attentionLabel}</span>}
+    </>
+  );
+
   return (
-    <div className="flex items-center gap-1 px-2 pb-1" data-section={name} tabIndex={onContextMenu ? -1 : undefined} onContextMenu={onContextMenu}>
+    <div
+      className={cn("pb-0.5", dragging && "opacity-40")}
+      data-section={name}
+      tabIndex={onContextMenu ? -1 : undefined}
+      onContextMenu={onContextMenu}
+      draggable={reorderable || undefined}
+      onDragStart={reorderable ? onDragStart : undefined}
+      onDragEnd={reorderable ? onDragEnd : undefined}
+    >
       {onToggle ? (
         <button
           type="button"
@@ -64,71 +97,17 @@ export function SidebarSectionHeader({
                 ? t("sidebar.section.expand", { name })
                 : t("sidebar.section.collapse", { name })
           }
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-0.5 text-left hover:bg-raised/50"
+          className="group/section flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-2 pb-1.5 pt-2 text-left transition-colors hover:bg-hover"
         >
-          <span className="truncate text-[12px] font-semibold text-ink-secondary">
-            {name}
-          </span>
-          <Chevron size={13} className="shrink-0 text-ink-secondary" aria-hidden="true" />
-          {attention && attention.waiting > 0 && (
-            <span
-              aria-hidden="true"
-              className="min-w-4 rounded-full bg-warning/15 px-1 text-center text-[9px] font-semibold leading-4 text-warning"
-            >
-              {attention.waiting}
-            </span>
-          )}
-          {attention && attention.unread > 0 && (
-            <span
-              aria-hidden="true"
-              className="min-w-4 rounded-full bg-accent/15 px-1 text-center text-[9px] font-semibold leading-4 text-accent"
-            >
-              {attention.unread}
-            </span>
-          )}
-          {attention && attention.working > 0 && (
-            <span
-              aria-hidden="true"
-              className="flex size-4 items-center justify-center"
-            >
-              <span className="size-1.5 animate-pulse rounded-full bg-success" />
-            </span>
-          )}
-          {attentionLabel && <span className="sr-only">{attentionLabel}</span>}
+          <span className="truncate text-[12px] leading-4 text-ink-secondary">{name}</span>
+          {marks}
+          <Chevron size={14} strokeWidth={2} className={cn("ml-auto shrink-0 text-ink-secondary transition-opacity", !collapsed && "opacity-0 group-hover/section:opacity-100 group-focus-visible/section:opacity-100")} aria-hidden="true" />
         </button>
       ) : (
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5">
-          <span className="truncate text-[12px] font-semibold text-ink-secondary">
-            {name}
-          </span>
-          {attentionLabel && <span className="sr-only">{attentionLabel}</span>}
+        <div className="flex h-[30px] min-w-0 items-center gap-2 px-2 pb-1.5 pt-2">
+          <span className="truncate text-[12px] leading-4 text-ink-secondary">{name}</span>
+          {marks}
         </div>
-      )}
-      {onDelete && (
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label={t("sidebar.section.deleteAria", { name })}
-          title={t("sidebar.section.deleteAria", { name })}
-          className="flex size-6 shrink-0 items-center justify-center rounded text-ink-secondary hover:bg-danger/10 hover:text-danger"
-        >
-          <Trash2 size={13} aria-hidden="true" />
-        </button>
-      )}
-      {reorderable && (
-        <span
-          aria-hidden="true"
-          draggable
-          title={t("sidebar.section.dragToReorder")}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-          className={cn(
-            "flex size-6 shrink-0 cursor-grab items-center justify-center rounded text-ink-secondary hover:bg-raised hover:text-ink",
-            dragging && "opacity-40",
-          )}
-        >
-          <GripVertical size={13} />
-        </span>
       )}
     </div>
   );

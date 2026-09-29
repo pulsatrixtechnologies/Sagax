@@ -17,16 +17,16 @@ export function UsageSection({ bot }: { bot: Bot }) {
 
   if (usage.turns === 0) {
     return (
-      <div className="rounded-xl bg-card p-4 text-[13px] text-ink-secondary">
+      <div className="rounded-xl border border-hairline/40 p-4 text-[13px] text-ink-secondary">
         No usage recorded yet for this bot.
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl bg-card p-4">
+    <div className="rounded-xl border border-hairline/40 p-4">
       <div className="flex items-baseline justify-between">
-        <div className="text-[15px] font-medium text-ink">Usage</div>
+        <div className="text-[13px] font-medium text-ink">Usage</div>
         <button
           onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: "usage" })}
           className="text-[12px] text-ink-secondary hover:text-ink"

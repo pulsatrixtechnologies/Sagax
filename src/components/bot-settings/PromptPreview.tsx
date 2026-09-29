@@ -25,14 +25,14 @@ export function PromptPreview({
   onToggle: () => void;
 }) {
   return (
-    <div className="rounded-xl bg-card p-4">
+    <div className="rounded-xl border border-hairline/40 p-4">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
         className="flex w-full items-center justify-between gap-3 text-left"
       >
-        <span className="text-[15px] font-medium text-ink">
+        <span className="text-[13px] font-medium text-ink">
           {data
             ? `Prompt preview · ${data.totalBytes.toLocaleString()} bytes ≈ ${data.approxTokens.toLocaleString()} tokens`
             : "Prompt preview"}

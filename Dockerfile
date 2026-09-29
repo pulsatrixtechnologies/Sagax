@@ -55,10 +55,21 @@ RUN if [ -n "$ENGINES" ]; then npm install -g $ENGINES; fi
 # The bots' browser (docs/plans/browser-engine.md): the pinned agent-browser
 # and a Chrome for Testing with its libraries, so a server bot can browse.
 # Pin here and in server/browser-engine-release.ts together.
+# Chrome for Testing has no Linux ARM64 build (Apple silicon Docker), so
+# arm64 images use Debian's Chromium at the same path instead.
 ARG AGENT_BROWSER_VERSION=0.37.0
+ARG TARGETARCH
 RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
-  && HOME=/opt/openmausbot-browser agent-browser install \
-  && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome \
+  && if [ "$TARGETARCH" = "arm64" ]; then \
+       apt-get update \
+       && apt-get install -y --no-install-recommends chromium \
+       && rm -rf /var/lib/apt/lists/* \
+       && mkdir -p /opt/openmausbot-browser \
+       && ln -s /usr/bin/chromium /opt/openmausbot-browser/chrome; \
+     else \
+       HOME=/opt/openmausbot-browser agent-browser install \
+       && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome; \
+     fi \
   && agent-browser --version
 # Keep the baked-in browser outside both root's private home and /data,
 # which may be an existing mounted volume. Session state still lives in HOME.

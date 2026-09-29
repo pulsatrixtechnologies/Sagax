@@ -31,7 +31,7 @@ export function CalendarSidebar({ bots, anchor, onSelectDate }: CalendarSidebarP
   return (
     <aside
       aria-label="Schedule sidebar"
-      className="flex h-full w-[320px] shrink-0 flex-col overflow-hidden border-r border-hairline/40 bg-panel"
+      className="flex h-full w-[280px] shrink-0 flex-col overflow-hidden border-l border-hairline/40 bg-panel"
     >
       <MiniMonth anchor={anchor} onSelect={onSelectDate} />
 

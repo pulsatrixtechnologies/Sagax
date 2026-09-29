@@ -18,7 +18,7 @@
 // it happens, which is why waiting feels like listening to someone work
 // rather than listening to nothing.
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { Loader2, Phone, PhoneOff, X } from "lucide-react";
+import { AudioLines, Loader2, PhoneOff, X } from "lucide-react";
 
 import { useStore, visibleMessages, type Bot } from "@/state/store";
 import { currentCall, deferCallCleanup, endCall, startCall, useOnCall } from "@/lib/call";
@@ -151,15 +151,15 @@ export function CallTargetButton({
         aria-label={label}
         title={label}
         className={cn(
-          "relative flex size-9 items-center justify-center rounded-full transition-colors",
+          "relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors",
           active
             ? "bg-danger text-white hover:brightness-110"
             : unavailable
-              ? "text-ink-secondary/50 hover:bg-raised hover:text-ink-secondary"
-              : "text-ink-secondary hover:bg-raised hover:text-ink",
+              ? "bg-raised text-ink-secondary/50"
+              : "bg-ink text-app hover:brightness-110",
         )}
       >
-        {active ? <PhoneOff size={17} /> : <Phone size={17} />}
+        {active ? <PhoneOff size={15} /> : <AudioLines size={15} />}
         {unavailable && (
           <span className="absolute right-1 top-1 size-1.5 rounded-full bg-warning ring-2 ring-app" aria-hidden="true" />
         )}
@@ -170,7 +170,7 @@ export function CallTargetButton({
           id={helpId}
           role="group"
           aria-label="Call unavailable"
-          className="animate-pop-in absolute right-0 z-30 mt-1.5 w-[280px] rounded-xl border border-hairline bg-panel p-3 text-left shadow-2xl"
+          className="animate-pop-in absolute bottom-full right-0 z-30 mb-2 w-[280px] rounded-xl border border-hairline bg-panel p-3 text-left shadow-2xl"
         >
           <div className="text-[13px] font-medium text-ink">Call unavailable</div>
           <div className="mt-1 text-[12px] leading-[1.45] text-ink-secondary">{reason}</div>
@@ -181,7 +181,7 @@ export function CallTargetButton({
                 setHelpOpen(false);
                 void window.ogb?.workspaces?.menu();
               }}
-              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:brightness-110"
+              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:brightness-110"
             >
               Choose This computer
             </button>
@@ -194,7 +194,7 @@ export function CallTargetButton({
                 if (setupBotId && setupBotId !== targetId) dispatch({ type: "select", id: setupBotId });
                 dispatch({ type: "toggleSettings", open: true, section: "voice" });
               }}
-              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:brightness-110"
+              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:brightness-110"
             >
               Open agent settings
             </button>

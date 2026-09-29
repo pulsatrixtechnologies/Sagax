@@ -1,5 +1,5 @@
 // Sign in with your email on a hosted server. The emailed code comes from the
-// OpenMausBot control plane (the account service the desktop companion and
+// Pulsa Bot control plane (the account service the desktop companion and
 // `openmausbot login` already use), and this server decides who is welcome
 // with an allow-list its owner controls. The result is an ordinary local
 // session, the same thing a pairing code produces, so every gate applies.

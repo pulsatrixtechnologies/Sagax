@@ -38,11 +38,12 @@ posixOnly("mid-turn steering e2e", () => {
     return { status: res.status, body: await res.json() };
   };
   const getBot = async (id: string) => (await api("GET", "/api/bots")).body.bots.find((b: any) => b.id === id);
-  /** Pair a second device the way a teammate does, and send as them. A
-   * queue is a delay, never a change of author: their words must still be
-   * theirs when they finally reach the transcript. */
-  // `id` is the opaque person key the server derives from the session.
-  const PAIRED = { name: "Safari on Mac", id: expect.stringMatching(/^p_[\w-]{22}$/) };
+  /** Pair the operator's own second device (a default, admin-scope code, so
+   * it carries the operator's principal and sees every room), and send from
+   * it. A queue is a delay, never a change of author: its words must still
+   * name that device when they finally reach the transcript. */
+  // `id` is the person key: the principal the paired session carries.
+  const PAIRED = { name: "Safari on Mac", id: expect.stringMatching(/^pr_[0-9a-f-]{36}$/) };
   const asPairedPerson = async () => {
     const opened = await api("POST", "/api/auth/pairing", {});
     expect(opened.status).toBe(200);

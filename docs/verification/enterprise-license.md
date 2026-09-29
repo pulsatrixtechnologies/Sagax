@@ -1,12 +1,14 @@
-# Enterprise layer loading and license expiry
+# Edition loading
+
+This distribution does not include the source-available `enterprise/`
+directory. `server/enterprise.ts` reports `{"edition":"oss"}` when that
+directory is absent. A license key with no layer does not unlock features.
 
 ## Sub-features
 
-- Find the bundled enterprise layer in every shipped layout: a checkout
-  (`enterprise/` beside `server/`), the npm package (`<package>/enterprise/`
-  beside `dist-server/`), and the Docker image and packaged desktop, which
-  carry `dist-server/` alone (`dist-server/enterprise/`). `OMB_ENTERPRISE_DIR`,
-  when set, is the only place looked at.
+- A checkout, npm package, Docker image, and packaged desktop ship without
+  `enterprise/`. `OMB_ENTERPRISE_DIR`, when set, is the only place looked at,
+  and a missing directory stays the open-source edition.
 - From 30 days before a key expires: `expiresInDays` on `/api/edition`, a
   warning in the startup log, and a banner in Settings for admins. The dates
   reach admin sessions only: a member's `/api/edition` and config leave out
@@ -18,24 +20,14 @@
 ## Driving it
 
 ```sh
-pnpm exec vitest run server/enterprise.test.ts enterprise/server/register.test.ts
-pnpm exec vitest run --no-file-parallelism server/license-expiry-api.test.ts server/hosted-access.test.ts
-pnpm test:packaged-server
+pnpm exec vitest run server/enterprise.test.ts server/brand.test.ts
 ```
 
-`server/enterprise.test.ts` builds each layout in a temporary directory and
-checks which copy wins, the warning window, the grace period and the moment it
-ends. `enterprise/server/register.test.ts` issues keys with a throwaway signing
-pair and checks the layer accepts a key that lapsed less than 7 days ago and
-refuses it after. `server/license-expiry-api.test.ts` boots the `control-omb`
-fixture with a stand-in layer whose key expires in 12 days, expired 2 days
-ago, or expires in 90 days, and reads `/api/edition`, the server log, and
-`/api/config` as an admin and as a chat-only device.
-`server/hosted-access.test.ts` checks a hosted server withdraws readiness the
-moment its grace period ends. The packaged-server smoke copies `dist-server/`
-out of the repository, boots it with a key that is not genuine, and fails if
-`/api/edition` says no layer exists; the Docker workflow makes the same check
-against the built image.
+`server/enterprise.test.ts` checks the open-source edition when the directory
+is absent, including a key that was set anyway. It can still load a temporary
+stand-in `register()` to prove the seam. It does not vendor the removed
+layer. The Docker workflow boots the image with a non-genuine key and expects
+`edition: oss` plus `no enterprise layer exists`.
 
 ## Gotchas
 

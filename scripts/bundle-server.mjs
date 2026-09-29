@@ -131,28 +131,15 @@ await build({
   logLevel: "info",
 });
 
-// The enterprise layer (enterprise/LICENSE; delete the folder for pure OSS).
-// A package or image has no TypeScript runtime, so ship it bundled to
-// dist-server/enterprise/server/index.js, where server/enterprise.ts finds it
-// inside the server root: the Docker image and the packaged desktop carry
-// dist-server/ alone. The npm package also copies it to
-// <package>/enterprise/server/index.js, beside the server. Its own license
-// travels with it either way.
-if (existsSync(join(root, "enterprise", "server", "index.ts"))) {
-  await build({
-    entryPoints: [join(root, "enterprise", "server", "index.ts")],
-    bundle: true,
-    platform: "node",
-    target: "node20",
-    format: "esm",
-    outfile: join(root, "dist-server", "enterprise", "server", "index.js"),
-    allowOverwrite: true,
-    logLevel: "info",
-  });
-  copyFileSync(join(root, "enterprise", "LICENSE"), join(root, "dist-server", "enterprise", "LICENSE"));
+// This distribution does not include the source-available enterprise layer.
+// server/enterprise.ts boots the open-source edition when the directory is
+// absent. Do not bundle that directory into an Apache package.
+if (existsSync(join(root, "enterprise", "server", "index.ts")) || existsSync(join(root, "enterprise", "server", "index.js"))) {
+  console.error("enterprise/ is not part of this distribution and must not be bundled");
+  process.exit(1);
 }
 
-// pi-mcp-extension.ts is NOT an OpenMausBot entry point: it is loaded by the
+// pi-mcp-extension.ts is NOT an Pulsa Bot entry point: it is loaded by the
 // external `pi` process (pi's own jiti), which resolves its
 // @earendil-works/pi-coding-agent and typebox imports from pi's install. Ship
 // it verbatim as .ts so the packaged app has it too — never bundle it, or

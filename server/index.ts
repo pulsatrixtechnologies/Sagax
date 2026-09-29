@@ -1,4 +1,4 @@
-// OpenMausBot server — the harness host. Clients hold no transports
+// Pulsa Bot server — the harness host. Clients hold no transports
 // (upstream rule): the React app dispatches typed commands over HTTP and
 // folds one SSE event stream; every provider process runs here.
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -496,6 +496,8 @@ import {
   sessionCookieName,
 } from "./request-auth.ts";
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
+import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.ts";
+import { applyIdentityMigration, principalIdFor } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
 import {
   activityCsv,
@@ -546,6 +548,11 @@ import {
   phoneSecretOperationId,
   type PhoneSecretContext,
 } from "./phone-secret.ts";
+import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
+import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, seesChannelFrame, sseFrameProjection } from "./channel-visibility.ts";
+import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
+import type { BotHost } from "./turn-route.ts";
+import { roleOf, signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -553,6 +560,22 @@ import { ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import { createOrgRoutes, type OrgState } from "./org-routes.ts";
+import { createDirectGrantRoutes } from "./direct-grants.ts";
+import {
+  channelTurnGate,
+  createWorkerRoutes,
+  destinationForBot,
+  enqueueOfflineTurn,
+  failPulledOnAuthorCancel,
+  failTurnOnMembershipRemoval,
+  failTurnOnWorkerClose,
+  memberIdsDropBot,
+  turnsOpenForMembership,
+  type DeviceQueuedTurn,
+  type OpenTurnMessage,
+  type Worker,
+} from "./workers.ts";
 
 const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
 const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
@@ -607,10 +630,19 @@ function signInAllowList() {
   const current = loadConfig().signIn;
   return { admins: parseAllowList(current?.admins?.join(",")), members: parseAllowList(current?.members?.join(",")) };
 }
+function emailSignInAllowList() {
+  const list = signInAllowList();
+  return signInListWithOpenInvites({
+    admins: list.admins,
+    members: list.members,
+    invites: loadConfig().invites ?? [],
+    now: Date.now(),
+  });
+}
 const sessions = new SessionRegistry({
   file: join(DATA_DIR, "sessions.json"),
   emailScopesSnapshot: () => {
-    const membership = signInAllowList();
+    const membership = emailSignInAllowList();
     return (email) => allowedScopes(email, membership);
   },
   portalMembership: hostedWorkspaceConfiguration()?.portalMembership === true,
@@ -685,7 +717,7 @@ const customDomainVerifier = createCustomDomainVerifier({ environmentId: ENVIRON
 // "Sign in with your email" on /pair: the allow-list is read per call so a
 // Settings change or an env bootstrap applies without a restart.
 const emailSignIn = createEmailSignIn({
-  allow: signInAllowList,
+  allow: emailSignInAllowList,
 });
 let customDomainRevision = 0;
 function savedCustomDomain(): string | null {
@@ -731,11 +763,18 @@ function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   return name ? { name, id: personKey(auth.session) } : undefined;
 }
 
-/** An opaque, stable key for the person behind a session: their account
- * email when they signed in with one (a new device is still them), else the
- * paired session itself. Hashed, so a message or a thread can carry it
- * without handing other members a session id. */
+/** A stable key for the person behind a session: their principal id
+ * (server/principals.ts), so a new device or a changed email is still them.
+ * A session without one falls back to the older hashed key. */
 function personKey(session: SessionRecord): string {
+  return session.principalId ?? legacyPersonKey(session);
+}
+
+/** Before principals: their account email when they signed in with one,
+ * else the paired session itself. Hashed, so a message or a thread can
+ * carry it without handing other members a session id. Threads and cards
+ * recorded then still carry it. */
+function legacyPersonKey(session: SessionRecord): string {
   const basis = session.email ? `email:${session.email.trim().toLowerCase()}` : `session:${session.id}`;
   return `p_${createHash("sha256").update(basis).digest("base64url").slice(0, 22)}`;
 }
@@ -791,12 +830,12 @@ function threadPersonKey(threadId: string): string | undefined {
 function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: string, behavior: string): string | null {
   if (auth.kind === "loopback") {
     return auth.trust === "service" && behavior !== "deny"
-      ? "A local service can only decline this request. Approve or answer it in OpenMausBot while signed in."
+      ? "A local service can only decline this request. Approve or answer it in Pulsa Bot while signed in."
       : null;
   }
   if (auth.scopes.includes("admin") || !sharedMembership()) return null;
   const known = [threadStarters.get(threadId), cardRequesterKey(threadId, requestId)].filter((person): person is string => Boolean(person));
-  if (!known.length || known.includes(personKey(auth.session))) return null;
+  if (!known.length || known.includes(personKey(auth.session)) || known.includes(legacyPersonKey(auth.session))) return null;
   return "Only the person who started this conversation or sent this request, or a workspace admin, can answer this card.";
 }
 
@@ -1050,17 +1089,17 @@ function calendarAudienceConflict(body: unknown): string | null {
 }
 
 /** What a member's live stream needs to narrow a frame. */
-function memberFrameContext(visible: VisibleSet): FrameContext {
+function memberFrameContext(visible: VisibleSet, viewer: ApprovalViewer): FrameContext {
   return {
     visible,
     webhookBot: (webhookId) => webhooks.list().find((webhook) => webhook.id === webhookId)?.botId,
     freshBot: (botId) => {
       const bot = store.bot(botId);
-      return bot ? { ...wireBot(bot), tasks: store.tasks(bot.id).map(wireTask), ...messagePage(bot.threadId, DEFAULT_PAGE) } : undefined;
+      return bot ? { ...wireBot(bot), tasks: store.tasks(bot.id).map(wireTask), ...messagePage(bot.threadId, DEFAULT_PAGE, null, viewer) } : undefined;
     },
     freshGroup: (groupId) => {
       const group = store.group(groupId);
-      return group ? { ...publicGroupState(group), ...messagePage(group.threadId, DEFAULT_PAGE) } : undefined;
+      return group ? { ...publicGroupState(group), ...messagePage(group.threadId, DEFAULT_PAGE, null, viewer) } : undefined;
     },
   };
 }
@@ -1380,7 +1419,7 @@ function applyDesktopMutationTokenMessage(raw: unknown): boolean {
 const browserCleanup: BrowserCleanupCoordinator = new BrowserCleanupCoordinator({
   file: join(DATA_DIR, "browser-cleanups.json"),
   send: (request) => {
-    // Cleanup may only run the engine OpenMausBot itself configured or
+    // Cleanup may only run the engine Pulsa Bot itself configured or
     // downloaded. A binary the ambient PATH turned up — on a dev machine, a
     // global wrapper that shadows the harness PATH and rewrites the session
     // key — is not that engine: a close through it can fail and wedge the
@@ -1399,7 +1438,7 @@ const browserCleanup: BrowserCleanupCoordinator = new BrowserCleanupCoordinator(
     const work = status.kind === "ready" && sessions.length
       ? Promise.all(sessions.map(async (session) => {
           const ok = await clearBrowserSessionState(status.binaryPath, session, { encryptionKey: browserEngineEncryptionKey() });
-          if (!ok) console.warn(`browser cleanup: could not clear saved state for session ${session}; restart OpenMausBot to retry this profile's cleanup. Do not use state clear --all: it erases other profiles too.`);
+          if (!ok) console.warn(`browser cleanup: could not clear saved state for session ${session}; restart Pulsa Bot to retry this profile's cleanup. Do not use state clear --all: it erases other profiles too.`);
           return ok;
         }))
       : Promise.resolve([true]);
@@ -2954,6 +2993,29 @@ try {
 // Replay only after the secondary write above is durable. If reconciliation
 // failed, leave the committed journal in place and profile reuse blocked.
 if (browserCleanupReferencesReconciled) browserCleanup.startPending();
+// People by a stable principal id (server/principals.ts). Built once `store`
+// and `sessions` exist and before any route serves. Stored emails and
+// "local-owner" become principal ids on every boot: ids pass through, so a
+// restored workspace or an imported team is mapped as well.
+// `identityMigratedAt` only records when that first happened.
+const principals = new PrincipalRegistry({ path: join(DATA_DIR, "principals.json") });
+principals.localOperator(cfg.profile?.email);
+applyIdentityMigration({
+  registry: principals,
+  org: cfg.org ?? null,
+  saveOrgOwner: (ownerUserId) => {
+    if (!cfg.org) return;
+    cfg.org = { ...cfg.org, ownerUserId };
+    saveConfig({ org: cfg.org });
+  },
+  groups: store.groups,
+  patchGroup: (id, patch) => { store.patchGroup(id, patch); },
+  bots: store.bots,
+  patchBot: (id, patch) => { store.patchBot(id, patch); },
+  sessions: sessions.listRecordsForMigration(),
+  setPrincipal: (id, principalId) => { sessions.setPrincipal(id, principalId); },
+});
+if (!cfg.identityMigratedAt) { cfg.identityMigratedAt = Date.now(); saveConfig({ identityMigratedAt: cfg.identityMigratedAt }); }
 
 /** A bot as a client may see it: no provider session bookkeeping.
  *
@@ -2999,7 +3061,7 @@ function previewSystemPrompt(bot: BotRecord) {
   // `cfg` is the module-level config (`const cfg = loadConfig()` near the
   // top of index.ts), the same object the turn code reads.
   const persona = [
-    `You are ${bot.name}, a personal bot in OpenMausBot.`,
+    `You are ${bot.name}, a personal bot in Pulsa Bot.`,
     bot.title && `Role: ${bot.title}.`,
     bot.description && `About: ${bot.description}`,
   ]
@@ -3762,7 +3824,18 @@ function createChannel(value: unknown): GroupRecord {
     if (!responder) throw Object.assign(new Error("invalid setup.defaultResponder"), { status: 400 });
     setup = { bulletin: requested.bulletin, defaultResponder: responder, completed: true };
   }
-  return store.createGroup(name, memberIds, false, section, setup);
+  let humanIds: string[] | undefined;
+  if (body.humanIds !== undefined) {
+    // The route authorized the actor (refuseHumanEdit) before this runs:
+    // mapping an email may create its principal.
+    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string" || id.length > 320)) {
+      throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
+    }
+    const applied = applyHumanIds({ dm: false, humanIds: body.humanIds.map((id: string) => principalIdFor(id, principals)) });
+    if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
+    humanIds = applied.humanIds;
+  }
+  return store.createGroup(name, memberIds, false, section, setup, humanIds);
 }
 
 function updateChannel(groupId: string, value: unknown): GroupRecord {
@@ -3776,9 +3849,23 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   if (body.memberIds !== undefined && phoneSecretSubmissions.hasGroup(existing.id)) {
     throw Object.assign(new Error("this channel is securely saving a credential — try again when it finishes"), { status: 409 });
   }
+  // A bot leaving memberIds during a turn is applied. failTurn cancels the
+  // held id. Bulletin and responder edits stay blocked, and so does a
+  // memberIds change that does not remove anyone.
+  const nextMemberIds = Array.isArray(body.memberIds) && body.memberIds.every((id) => typeof id === "string")
+    ? body.memberIds as string[]
+    : null;
+  const dropsBot = nextMemberIds !== null && memberIdsDropBot({
+    beforeMemberIds: existing.memberIds,
+    afterMemberIds: nextMemberIds,
+  });
   if (
     channelTaskBlocked(existing) &&
-    (body.memberIds !== undefined || body.defaultResponder !== undefined || body.bulletin !== undefined)
+    (
+      body.defaultResponder !== undefined
+      || body.bulletin !== undefined
+      || (body.memberIds !== undefined && !dropsBot)
+    )
   ) {
     throw Object.assign(new Error("this channel is working or waiting on you — finish that turn first"), { status: 409 });
   }
@@ -3826,6 +3913,16 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     }
     patch.memberIds = roster.memberIds;
   }
+  if (body.humanIds !== undefined) {
+    // The route authorized the actor (refuseHumanEdit) before this runs:
+    // mapping an email may create its principal.
+    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string" || id.length > 320)) {
+      throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
+    }
+    const applied = applyHumanIds({ dm: Boolean(existing.dm), humanIds: body.humanIds.map((id: string) => principalIdFor(id, principals)) });
+    if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
+    patch.humanIds = applied.humanIds;
+  }
   if (body.defaultResponder !== undefined) {
     const memberIds = (patch.memberIds as string[] | undefined) ?? existing.memberIds;
     const responder = checkedGroupResponder(body.defaultResponder, memberIds);
@@ -3869,9 +3966,13 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     if (body.resetAudience !== true) throw Object.assign(new Error("resetAudience must be true"), { status: 400 });
     patch.audienceFloor = undefined;
   }
+  const beforeHumanIds = [...(existing.humanIds ?? [])];
+  const beforeMemberIds = [...existing.memberIds];
+  const turnWasOpen = channelTurnOpen(existing);
   const group = store.patchGroup(groupId, patch);
   if (resetAudience) audienceChanged();
   if (!group) throw Object.assign(new Error("no such room"), { status: 404 });
+  if (turnWasOpen) failTurnIfMemberLeft(group, beforeHumanIds, beforeMemberIds);
   return group;
 }
 
@@ -3890,6 +3991,176 @@ const channelTaskBlocked = (group: GroupRecord) =>
 // Recovery can synchronously emit room changes. Load coordination state
 // before registering store listeners or recovering interrupted routines.
 const groupQueues = new Map<string, Promise<void>>();
+let registeredWorkers: Worker[] = [];
+/** deviceId last registered by a session, or by a loopback user id. The
+ * device map names the one session that is the current worker for that
+ * device. A client does not send deviceId. */
+const sessionDeviceIds = new Map<string, string>();
+const loopbackDeviceIds = new Map<string, string>();
+const deviceOwnerSession = new Map<string, string>();
+let queuedWorkerTurns: DeviceQueuedTurn[] = [];
+/** Message ids a device already pulled and has not finished. */
+const inflightWorkerTurns = new Map<string, string[]>();
+const inflightWorkerAuthors = new Map<string, string>();
+
+function groupThreadIds(group: GroupRecord): string[] {
+  return [group.threadId, ...store.groupTasks(group.id).map((task) => task.threadId)];
+}
+
+function locateChannelMessage(messageId: string): { threadId: string; messages: Message[] } | null {
+  for (const group of store.groups) {
+    for (const threadId of groupThreadIds(group)) {
+      const messages = store.messagesFor(threadId);
+      if (messages.some((message) => message.id === messageId)) return { threadId, messages };
+    }
+  }
+  return null;
+}
+
+function allInflightIds(): string[] {
+  const ids: string[] = [];
+  for (const list of inflightWorkerTurns.values()) {
+    for (const id of list) if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+function turnsHeldOnGroup(group: GroupRecord): string[] {
+  const threadIds = groupThreadIds(group);
+  const queued = queuedWorkerTurns.flatMap((item) => {
+    const located = locateChannelMessage(item.messageId);
+    return located ? [{ messageId: item.messageId, threadId: located.threadId }] : [];
+  });
+  const inflight = allInflightIds().flatMap((messageId) => {
+    const located = locateChannelMessage(messageId);
+    return located ? [{ messageId, threadId: located.threadId }] : [];
+  });
+  return turnsOpenForMembership({ threadIds, queued, inflight });
+}
+
+function channelTurnOpen(group: GroupRecord): boolean {
+  if (groupIsWorking(group)) return true;
+  return turnsHeldOnGroup(group).length > 0;
+}
+
+function partialAlreadyWritten(messages: Message[], messageId: string): string {
+  const index = messages.findIndex((message) => message.id === messageId);
+  if (index < 0) return "";
+  for (let cursor = messages.length - 1; cursor > index; cursor -= 1) {
+    const message = messages[cursor];
+    if (message && message.role === "bot" && message.kind === "text" && message.text) return message.text;
+  }
+  return "";
+}
+
+function openTurnMessage(message: Message): OpenTurnMessage {
+  return {
+    id: message.id,
+    text: message.text,
+    status: message.status,
+    card: message.card ? { answered: message.card.answered } : undefined,
+  };
+}
+
+function forgetInflight(messageId: string): void {
+  inflightWorkerAuthors.delete(messageId);
+  for (const [deviceId, ids] of inflightWorkerTurns) {
+    const next = ids.filter((id) => id !== messageId);
+    if (next.length) inflightWorkerTurns.set(deviceId, next);
+    else inflightWorkerTurns.delete(deviceId);
+  }
+}
+
+function commitFailedTurn(input: {
+  messageId: string;
+  threadId: string | null;
+  result: { queued: string[]; status: "failed" | null; messages: OpenTurnMessage[] };
+  detail: string;
+}): void {
+  if (input.result.status !== "failed") return;
+  queuedWorkerTurns = queuedWorkerTurns.filter((item) => input.result.queued.includes(item.messageId));
+  forgetInflight(input.messageId);
+  if (!input.threadId) return;
+  const marked = input.result.messages.find((message) => message.id === input.messageId);
+  const current = store.messagesFor(input.threadId).find((message) => message.id === input.messageId);
+  if (marked?.status === "failed" && current) {
+    store.patchMessage(input.threadId, input.messageId, {
+      status: "failed",
+      ...(current.text === undefined && marked.text !== undefined ? { text: marked.text } : {}),
+    });
+  }
+  const group = store.groupByThread(input.threadId);
+  if (!group) return;
+  cancelGroupTurnOperations(group.id, input.threadId, { status: "stopped", detail: input.detail });
+}
+
+function failQueuedMessage(messageId: string, partial: string, detail: string, removed: {
+  beforeHumanIds: string[];
+  afterHumanIds: string[];
+  beforeMemberIds: string[];
+  afterMemberIds: string[];
+} | null): void {
+  const located = locateChannelMessage(messageId);
+  const messages = (located?.messages ?? []).map(openTurnMessage);
+  const queued = queuedWorkerTurns.map((item) => item.messageId);
+  const result = removed
+    ? failTurnOnMembershipRemoval({
+      ...removed,
+      inTurn: true,
+      queued,
+      messageId,
+      partial,
+      messages,
+    })
+    : failTurnOnWorkerClose({ midTurn: true, queued, messageId, partial, messages });
+  commitFailedTurn({
+    messageId,
+    threadId: located?.threadId ?? null,
+    result,
+    detail,
+  });
+}
+
+function failTurnIfMemberLeft(group: GroupRecord, beforeHumanIds: string[], beforeMemberIds: string[]): void {
+  const afterHumanIds = group.humanIds ?? [];
+  const afterMemberIds = group.memberIds;
+  const humanGone = beforeHumanIds.some((id) => !afterHumanIds.includes(id));
+  const botGone = beforeMemberIds.some((id) => !afterMemberIds.includes(id));
+  if (!humanGone && !botGone) return;
+  const messageIds = turnsHeldOnGroup(group);
+  if (!messageIds.length && groupIsWorking(group)) {
+    const user = [...store.messagesFor(group.threadId)].reverse().find((message) => message.role === "user");
+    if (user) messageIds.push(user.id);
+  }
+  const removed = { beforeHumanIds, afterHumanIds, beforeMemberIds, afterMemberIds };
+  for (const messageId of messageIds) {
+    const located = locateChannelMessage(messageId);
+    const partial = located ? partialAlreadyWritten(located.messages, messageId) : "";
+    failQueuedMessage(messageId, partial, "The turn failed because a member left the channel.", removed);
+  }
+}
+
+function failWorkerTurns(messageIds: readonly string[], detail = "The turn failed because the worker dropped."): void {
+  for (const messageId of messageIds) {
+    const located = locateChannelMessage(messageId);
+    const partial = located ? partialAlreadyWritten(located.messages, messageId) : "";
+    const queued = queuedWorkerTurns.map((item) => item.messageId);
+    const result = failTurnOnWorkerClose({
+      midTurn: true,
+      queued,
+      messageId,
+      partial,
+      messages: (located?.messages ?? []).map(openTurnMessage),
+    });
+    commitFailedTurn({
+      messageId,
+      threadId: located?.threadId ?? null,
+      result,
+      detail,
+    });
+  }
+}
+
 function roomHandoffProblem(node: Pick<RoomHandoff, "groupId" | "threadId" | "botId"> & Partial<Pick<RoomHandoff, "kind">>, parent?: Pick<RoomHandoff, "groupId" | "threadId" | "botId">): string | undefined {
   const group = node.groupId ? store.group(node.groupId) : undefined;
   const bot = store.bot(node.botId);
@@ -4092,7 +4363,8 @@ const roomHandoffs = new RoomHandoffs(join(DATA_DIR, "room-handoffs.json"), {
       await runGroupMemberTurn(group.id, node.threadId, bot.id, MAX_COMMS_DEPTH, new Set(),
         undefined, error => { result.stopReason = error; }, () => operation.cancelled,
         () => groupProviderHandshakeStarted(operation), () => groupProviderHandshakeSettled(operation),
-        { claimed: true }, { roomHandoffId: node.id, resumed, systemInstructions, turnInstructions: brief, liveRoster, followMentions: false, result }, operation);
+        { claimed: true }, { roomHandoffId: node.id, resumed, systemInstructions, turnInstructions: brief, liveRoster, followMentions: false, result }, operation,
+        0, node.id);
     });
     const tracked = run.finally(() => {
       signal.removeEventListener("abort", abort);
@@ -4475,6 +4747,10 @@ const groupWithThread = (group: GroupRecord) => ({
   ...(group.dm ? {} : { tasks: store.groupTasks(group.id) }),
 });
 
+// Group threads: the fold needs to know who is talking. The turn engine
+// records the active member here before dispatching its turn.
+const groupSpeakers = new Map<string, { botId: string; name: string; color: string }>();
+
 // The store tells us what it wrote; this is the ONE place that turns those
 // into SSE frames. No mutation path can persist without emitting — the
 // property holds by construction, not by every call site remembering to
@@ -4567,7 +4843,9 @@ function slimMessage(message: Message): Message | Record<string, unknown> {
  * newest rows from SQLite instead of hydrating the whole transcript first.
  * Paging further back with `before` still needs the full, cached array to
  * seek to an arbitrary point in history. */
-function messagePage(threadId: string, limit: number | undefined, before?: string | null) {
+/** Unscoped page. Broadcasts use this, then each SSE client is projected.
+ * A response to one viewer must use messagePage, which requires that viewer. */
+function transcriptPage(threadId: string, limit: number | undefined, before?: string | null) {
   if (limit === undefined) {
     return { messages: store.messagesFor(threadId), activeLeafId: store.activeLeaf(threadId) };
   }
@@ -4584,6 +4862,11 @@ function messagePage(threadId: string, limit: number | undefined, before?: strin
     hasMore: start > 0,
     activeLeafId: store.activeLeaf(threadId),
   };
+}
+
+function messagePage(threadId: string, limit: number | undefined, before: string | null | undefined, viewer: ApprovalViewer) {
+  const page = transcriptPage(threadId, limit, before);
+  return { ...page, messages: projectMessages(threadId, page.messages, viewer) };
 }
 
 function guardedRequestSnapshot(botId: string, threadId: string, sendId: string) {
@@ -4642,14 +4925,14 @@ function settleTrackedRequest(threadId: string): void {
 
 /** A bounded page centred on a known message, used when a search result is
  * opened on a client that only hydrated the newest part of the transcript. */
-function messageWindow(threadId: string, messageId: string, limit: number) {
+function messageWindow(threadId: string, messageId: string, limit: number, viewer: ApprovalViewer) {
   const all = store.messagesFor(threadId);
   const index = all.findIndex((message) => message.id === messageId);
   if (index < 0) return null;
   const before = Math.floor((limit - 1) / 2);
   const start = Math.max(0, Math.min(index - before, all.length - limit));
   const stop = Math.min(all.length, start + limit);
-  return { messages: all.slice(start, stop).map(slimMessage), hasMore: start > 0 };
+  return { messages: projectMessages(threadId, all.slice(start, stop).map(slimMessage), viewer), hasMore: start > 0 };
 }
 
 // ── SSE fan-out to clients ─────────────────────────────────────────────
@@ -4671,6 +4954,11 @@ interface SseClient {
   /** Who is watching, for bot visibility; a member's stream is narrowed to
    * what that person may see once any bot is restricted. */
   viewer: Viewer;
+  /** Channel and Direct membership id. Absent for loopback and a local
+   * session with no userId, which see every group. */
+  viewerId?: string;
+  /** Account id for approval delivery. Absent for a service loopback. */
+  approvalUserId?: string;
   /** The bots and rooms this stream has been shown (bot-visibility.ts). */
   seen: StreamSeen;
 }
@@ -4769,7 +5057,9 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
   for (const client of Array.from(sseClients)) {
     if (!wants(client, kind)) continue;
     // Admin-only frames (clientFrame null) never reach members, and a member never falls back to the admin frame.
-    const out = client.admin ? frame : clientFrame === null ? null : memberFrame(client, seq, payload, clientFrame);
+    // A signed-in admin has a viewerId and goes through memberFrame so hidden
+    // channels stay hidden. Loopback (no viewerId) still gets the raw frame.
+    const out = sseFrameFor(client, seq, payload, frame, clientFrame);
     if (out === null) continue;
     // Screen frames are replaceable and durable events are not: see
     // ./sse-fanout.ts for the backpressure/bound decision this makes.
@@ -4779,19 +5069,242 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
   }
 }
 
+function approvalHostOf(bot: BotRecord): BotHost {
+  const host = bot.host;
+  if (host?.kind === "machine" && host.userId && host.deviceId) return host;
+  return { kind: "fleet" };
+}
+
+function approvalOwnerId(bot: BotRecord): string {
+  return effectiveBotOwner(bot);
+}
+
+function approvalOwnerName(ownerUserId: string): string {
+  const name = cfg.profile?.name?.trim() ?? "";
+  if (name && ownerUserId === localPrincipalId()) return name;
+  return principals.byId(ownerUserId)?.email ?? ownerUserId;
+}
+
+/** The device this session currently is, when it is the registered worker
+ * for that device. A query string is not a device. */
+function registeredDeviceFor(input: { sessionId?: string; userId: string }): string | null {
+  if (!input.userId) return null;
+  const deviceId = input.sessionId
+    ? sessionDeviceIds.get(input.sessionId) ?? null
+    : loopbackDeviceIds.get(input.userId) ?? null;
+  if (!deviceId) return null;
+  const worker = registeredWorkers.find((entry) => entry.deviceId === deviceId && entry.userId === input.userId);
+  if (!worker) return null;
+  const ownerSession = deviceOwnerSession.get(deviceId);
+  if (input.sessionId) return ownerSession === input.sessionId ? deviceId : null;
+  return ownerSession === "" ? deviceId : null;
+}
+
+function viewerForApproval(auth: RequestAuth): ApprovalViewer {
+  const userId = auth.kind === "session"
+    ? (channelViewerId(auth) ?? "")
+    : auth.kind === "loopback" && auth.trust !== "service"
+      ? localPrincipalId()
+      : "";
+  return {
+    userId,
+    deviceId: registeredDeviceFor({ sessionId: auth.kind === "session" ? auth.session.id : undefined, userId }),
+  };
+}
+
+function approvalViewerOf(client: SseClient): ApprovalViewer {
+  const userId = client.approvalUserId ?? "";
+  return { userId, deviceId: registeredDeviceFor({ sessionId: client.sessionId, userId }) };
+}
+
+function isApprovalCardMessage(message: { kind?: unknown; card?: unknown }): boolean {
+  if (message.kind !== "options" || !message.card || typeof message.card !== "object") return false;
+  const card = message.card as Record<string, unknown>;
+  if (card.questionRequest) return false;
+  return Boolean(
+    card.tool || card.allowKey || card.commandAllowlist || card.approvalScope
+    || card.skillRequest || card.routineRequest || card.profileRequest
+    || card.teamSetupRequest || card.modelRequest || card.tighteningRequest,
+  );
+}
+
+function approvalCallerUserId(auth: RequestAuth): string {
+  if (auth.kind === "session") return channelViewerId(auth) ?? "";
+  if (auth.kind === "loopback" && auth.trust !== "service") return localPrincipalId();
+  return "";
+}
+
+/** 403 only for an approval whose bot is still here and whose caller is not
+ * the owner. A question stays on the ordinary answer path. A card with no
+ * live bot does too, so the thread route can still close it. */
+function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: string): string | null {
+  const refusal = "Only the bot owner can answer this approval.";
+  const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+  if (!message) return refusal;
+  const question = Boolean(message.card && typeof message.card === "object" && message.card.questionRequest);
+  if (question) return null;
+  if (!isApprovalCardMessage(message)) return refusal;
+  const bot = botForApproval(threadId, message);
+  const audience = bot ? approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) }) : null;
+  if (approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403) return refusal;
+  return null;
+}
+
+function botForApproval(threadId: string, message: { from?: { botId?: string } }): BotRecord | undefined {
+  const id = message.from?.botId
+    || groupSpeakers.get(threadId)?.botId
+    || store.groupByThread(threadId)?.busyBotId
+    || store.botByThread(threadId)?.id
+    || undefined;
+  if (!id) return undefined;
+  return store.bot(id) ?? undefined;
+}
+
+/** Approval cards on a channel, a direct thread, or a bot-to-bot dm stay on
+ * the owner session. Other viewers get the wait, without the card. Questions
+ * are unchanged. */
+function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalViewer): T {
+  if (!message || typeof message !== "object") return message;
+  const row = message as { kind?: unknown; card?: unknown; from?: { botId?: string } };
+  if (!isApprovalCardMessage(row)) return message;
+  const bot = botForApproval(threadId, row);
+  const audience = bot
+    ? approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) })
+    : { userId: "\0", deviceId: null as string | null };
+  const ownerName = bot ? approvalOwnerName(audience.userId) : "the owner";
+  return approvalDelivery({
+    audience,
+    viewer,
+    message: message as { card?: unknown },
+    ownerName,
+  }) as T;
+}
+
+function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalViewer): T[] {
+  let changed = false;
+  const next = messages.map((message) => {
+    const projected = scopeApprovalMessage(threadId, message, viewer);
+    if (projected !== message) changed = true;
+    return projected;
+  });
+  return changed ? next : messages;
+}
+
+function projectGroupTranscript<T extends { threadId?: string; messages?: unknown[] }>(group: T, viewer: ApprovalViewer): T {
+  if (!group.threadId || !group.messages) return group;
+  const messages = projectMessages(group.threadId, group.messages, viewer);
+  if (messages === group.messages) return group;
+  return { ...group, messages };
+}
+
+function projectBotTranscript<T extends { threadId?: string; messages?: unknown[] }>(bot: T, viewer: ApprovalViewer): T {
+  if (!bot.threadId || !bot.messages) return bot;
+  const messages = projectMessages(bot.threadId, bot.messages, viewer);
+  if (messages === bot.messages) return bot;
+  return { ...bot, messages };
+}
+
+function approvalBot(input: { threadId?: unknown; botId?: unknown }): BotRecord | undefined {
+  if (typeof input.botId === "string") {
+    const named = store.bot(input.botId);
+    if (named) return named;
+  }
+  if (typeof input.threadId !== "string") return undefined;
+  return botForApproval(input.threadId, {});
+}
+
+function scopeChannelApproval(
+  payload: Record<string, unknown>,
+  viewer: ApprovalViewer,
+): { action: "same" } | { action: "drop" } | { action: "replace"; payload: Record<string, unknown> } {
+  const kind = String(payload.kind ?? "");
+  if (kind === "message" || kind === "message.patch") {
+    const threadId = typeof payload.threadId === "string" ? payload.threadId : "";
+    const message = payload.message;
+    if (!threadId || !message || typeof message !== "object") return { action: "same" };
+    const next = scopeApprovalMessage(threadId, message, viewer);
+    if (next === message) return { action: "same" };
+    return { action: "replace", payload: { ...payload, message: next } };
+  }
+  if (kind === "group") {
+    const group = payload.group;
+    if (!group || typeof group !== "object") return { action: "same" };
+    const record = group as { threadId?: string; messages?: unknown[] };
+    if (!record.threadId || !record.messages) return { action: "same" };
+    const messages = projectMessages(record.threadId, record.messages, viewer);
+    if (messages === record.messages) return { action: "same" };
+    return { action: "replace", payload: { ...payload, group: { ...record, messages } } };
+  }
+  if (kind === "bot") {
+    const bot = payload.bot;
+    if (!bot || typeof bot !== "object") return { action: "same" };
+    const record = bot as { threadId?: string; messages?: unknown[] };
+    if (!record.threadId || !record.messages) return { action: "same" };
+    const messages = projectMessages(record.threadId, record.messages, viewer);
+    if (messages === record.messages) return { action: "same" };
+    return { action: "replace", payload: { ...payload, bot: { ...record, messages } } };
+  }
+  if (kind === "notify") {
+    const notification = payload.notification;
+    if (!notification || typeof notification !== "object") return { action: "same" };
+    const note = notification as { kind?: unknown; threadId?: unknown; botId?: unknown };
+    if (note.kind !== "approval") return { action: "same" };
+    const bot = approvalBot(note);
+    if (!bot) return { action: "drop" };
+    const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
+    return receivesApprovalCard(viewer, audience) ? { action: "same" } : { action: "drop" };
+  }
+  if (kind === "runtime") {
+    const event = payload.event;
+    if (!event || typeof event !== "object") return { action: "same" };
+    const row = event as { type?: unknown; threadId?: unknown; requestType?: unknown; botId?: unknown };
+    if (row.type !== "request.opened" || row.requestType !== "permission") return { action: "same" };
+    const bot = approvalBot(row);
+    if (!bot) return { action: "drop" };
+    const audience = approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) });
+    return receivesApprovalCard(viewer, audience) ? { action: "same" } : { action: "drop" };
+  }
+  return { action: "same" };
+}
+
 /** The frame a non-admin stream gets: the shared client frame, unless a bot
  * is restricted and this member may not see all of what the frame carries —
  * then narrowed (bot-visibility.ts), withdrawn, or nothing at all (null). */
+function sseFrameFor(
+  client: SseClient,
+  seq: number,
+  payload: Record<string, unknown> | null,
+  frame: string | null,
+  clientFrame: string | null,
+): string | null {
+  if (payload) {
+    const scoped = scopeChannelApproval(payload, approvalViewerOf(client));
+    if (scoped.action === "drop") return null;
+    if (scoped.action === "replace") {
+      payload = scoped.payload;
+      const serialized = `id: ${STREAM_ID}:${seq}\ndata: ${JSON.stringify({ ...payload, seq })}\n\n`;
+      frame = serialized;
+      clientFrame = serialized;
+    }
+  }
+  if (client.admin && (!liveFramesNeedChannelFilter(client.viewerId) || clientFrame === null)) return frame;
+  if (clientFrame === null || !payload) return clientFrame;
+  const filtered = memberFrame(client, seq, payload, clientFrame);
+  if (filtered === null) return null;
+  return sseFrameProjection({ admin: client.admin }) === "admin" ? frame : filtered;
+}
+
 function memberFrame(client: SseClient, seq: number, payload: Record<string, unknown>, clientFrame: string | null): string | null {
   // A frame kept from clients altogether stays kept: never the admin copy.
   if (clientFrame === null) return null;
+  if (liveFramesNeedChannelFilter(client.viewerId) && client.viewerId && !memberSeesFrame(payload, client.viewerId)) return null;
   if (client.viewer.kind === "all") return clientFrame;
   const visible = visibleTo(client.viewer);
   if (visible.everything) {
     noteSeen(payload, client.seen);
     return clientFrame;
   }
-  const narrowed = frameForMember(payload, memberFrameContext(visible), client.seen);
+  const narrowed = frameForMember(payload, memberFrameContext(visible, approvalViewerOf(client)), client.seen);
   if (!narrowed) return null;
   return narrowed === payload ? clientFrame : `id: ${STREAM_ID}:${seq}\ndata: ${JSON.stringify({ ...narrowed, seq })}\n\n`;
 }
@@ -4958,10 +5471,6 @@ function notify(notification: Notification | null) {
   // exactly like {kind:"message", message} and {kind:"bot", bot}
   if (notification) broadcast({ kind: "notify", notification });
 }
-
-// Group threads: the fold needs to know WHO is talking — the turn engine
-// records the active member here before dispatching its turn.
-const groupSpeakers = new Map<string, { botId: string; name: string; color: string }>();
 
 // The latest running token totals for the turn in flight on each thread.
 // Providers report cumulative-within-turn numbers; the final value is folded
@@ -5702,8 +6211,8 @@ async function mountHostComputer(owner: TurnOwner, botId: string, providerSuppor
   if (!cua) {
     const reason = readCuaUnavailableReason();
     throw new Error(reason
-      ? `CUA Driver is not ready for this computer — ${reason}${process.platform === "darwin" && /(?:Screen Recording|Accessibility).*required/i.test(reason) ? ". Relaunch OpenMausBot after granting the missing macOS permission." : ""}`
-      : "CUA Driver is not ready for this computer — check permissions and restart OpenMausBot");
+      ? `CUA Driver is not ready for this computer — ${reason}${process.platform === "darwin" && /(?:Screen Recording|Accessibility).*required/i.test(reason) ? ". Relaunch Pulsa Bot after granting the missing macOS permission." : ""}`
+      : "CUA Driver is not ready for this computer — check permissions and restart Pulsa Bot");
   }
   await bindTurnComputer(owner, "computer:host");
   return gatedLocalComputer(cua, controlIntegration(botId, owner.threadId, owner.generation));
@@ -8371,7 +8880,7 @@ async function startTurn(
       let dispatchContext = decideContext(plannedConfig);
 
       const persona = [
-        `You are ${bot.name}, a personal bot in OpenMausBot.`,
+        `You are ${bot.name}, a personal bot in Pulsa Bot.`,
         bot.title && `Role: ${bot.title}.`,
         bot.description && `About: ${bot.description}`,
       ]
@@ -9646,10 +10155,10 @@ store.reconcileInterruptedGroupGoals((runId, threadId) => {
   );
   const detail = run.output ?? run.error ?? (
     status === "completed"
-      ? "The scheduled team goal completed before OpenMausBot restarted."
+      ? "The scheduled team goal completed before Pulsa Bot restarted."
       : status === "stopped"
         ? "The scheduled team goal was stopped."
-        : "OpenMausBot restarted before this scheduled team goal finished."
+        : "Pulsa Bot restarted before this scheduled team goal finished."
   );
   return { status, detail, finishedAt: run.finishedAt ?? groupGoalRecoveryAt };
 });
@@ -9688,7 +10197,7 @@ async function cloudRoutineReadiness(botId: string, threadId?: string): Promise<
     };
   }
   const instance = turnInstance(bot, "cloud", threadId);
-  if (!instance) return { ready: false, reason: "The Cloud VM runner is unavailable. Restart OpenMausBot and try again." };
+  if (!instance) return { ready: false, reason: "The Cloud VM runner is unavailable. Restart Pulsa Bot and try again." };
   try {
     if ((await instance.snapshot()).state !== "available") {
       return { ready: false, reason: "The target bot's model engine is not ready to use the Boat cloud computer." };
@@ -9796,12 +10305,12 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           const vm = await containerComputerStatus(undefined, undefined, target);
           if (!vm.daemonUp && existsSync(target.workspaceDir)) {
             return deletionResponse( 409, {
-              error: "start the container runtime so OpenMausBot can remove this bot's Local VM while deleting it",
+              error: "start the container runtime so Pulsa Bot can remove this bot's Local VM while deleting it",
             });
           }
           if (vm.container !== "missing" && !vm.managed) {
             return deletionResponse(409, {
-              error: `The container named ${vm.container_name} was not created by OpenMausBot. Remove it manually before deleting this bot`,
+              error: `The container named ${vm.container_name} was not created by Pulsa Bot. Remove it manually before deleting this bot`,
             });
           }
           localVmCleanup = {
@@ -10064,7 +10573,7 @@ function dispatchTeamSetupResume(entry: TeamSetupResumeEntry): void {
     pendingTeamSetupResumes.set(request.requestId, entry);
     return;
   }
-  const prompt = `OpenMausBot team setup decision ${request.requestId}: ${JSON.stringify(request.result)}. Report this exact result and continue the user's already requested work. Do not ask for confirmation again or repeat this setup/deletion. A denied or cancelled operation did not authorize any substitute action. Existing thread models were not changed.`;
+  const prompt = `Pulsa Bot team setup decision ${request.requestId}: ${JSON.stringify(request.result)}. Report this exact result and continue the user's already requested work. Do not ask for confirmation again or repeat this setup/deletion. A denied or cancelled operation did not authorize any substitute action. Existing thread models were not changed.`;
   const failed = (error: string) => {
     if (cancelled()) return;
     const current = store.messagesFor(request.threadId).find((item) => item.id === messageId);
@@ -10080,7 +10589,8 @@ function dispatchTeamSetupResume(entry: TeamSetupResumeEntry): void {
       if (!current?.group) return;
       if (current.bot.busy) { pendingTeamSetupResumes.set(request.requestId, entry); return; }
       await runGroupMemberTurn(groupId, request.threadId, request.botId, 0, new Set(), prompt, failed,
-        () => operation.cancelled, () => groupProviderHandshakeStarted(operation), () => groupProviderHandshakeSettled(operation));
+        () => operation.cancelled, () => groupProviderHandshakeStarted(operation), () => groupProviderHandshakeSettled(operation),
+        undefined, undefined, undefined, 0, messageId);
     });
     groupQueues.set(groupId, next.finally(() => finishGroupTurnOperation(groupId, operation)).catch((error) => failed(error instanceof Error ? error.message : String(error))));
     return;
@@ -10424,7 +10934,8 @@ type GroupMemberTurnOutcome =
   | "timed_out"
   | "cancelled"
   | "busy"
-  | "unavailable";
+  | "unavailable"
+  | "held";
 type GroupTurnOrchestration = {
   roomHandoffId?: string;
   resumed?: boolean;
@@ -10535,6 +11046,8 @@ async function runGroupMemberTurn(
   // execution setting changes in that gap, rebuild the turn once from the
   // fresh bot rather than mixing a stale adapter with fresh permissions.
   setupRetry = 0,
+  /** Transcript or handoff id of this call. Absent means this call is not a held turn. */
+  heldTurnId?: string,
 ): Promise<boolean> {
   if (workspaceMaintenance.active) {
     onDispatchError?.("A workspace backup or restore is in progress.");
@@ -10551,6 +11064,40 @@ async function runGroupMemberTurn(
     ? group.threadId === threadId
     : Boolean(group && store.groupTaskByThread(group.id, threadId));
   if (!group || !bot || !ownsThread) return false;
+  const destination = destinationForBot({ host: bot.host, workers: registeredWorkers });
+  if (destination.kind !== "fleet") {
+    const host = bot.host;
+    const deviceId = destination.kind === "worker" ? destination.deviceId : host?.kind === "machine" ? host.deviceId : null;
+    const deviceUserId = host?.kind === "machine" ? host.userId : "";
+    const heldMessageId = heldTurnId ?? orchestration?.roomHandoffId ?? operation?.goalRun?.cardMessageId;
+    if (deviceId && deviceUserId && heldMessageId) {
+      const heldMessage = store.messagesFor(threadId).find((item) => item.id === heldMessageId);
+      const next = enqueueOfflineTurn({
+        queued: queuedWorkerTurns,
+        messageId: heldMessageId,
+        deviceId,
+        userId: deviceUserId,
+        authorId: heldMessage?.sender?.id ?? localPrincipalId(),
+      });
+      if (next !== queuedWorkerTurns) {
+        queuedWorkerTurns = next;
+        if (destination.kind === "queued") {
+          store.appendMessage(threadId, {
+            role: "bot",
+            kind: "activity",
+            tool: { name: "machine-offline", ok: false },
+          });
+        }
+      }
+    }
+    if (orchestration) {
+      orchestration.result.outcome = "held";
+      orchestration.result.replyText = "";
+      orchestration.result.stopReason = null;
+    }
+    spoken.add(botId);
+    return true;
+  }
   if (bot.approvalGrant) {
     onDispatchError?.(`${bot.name}'s approval level is still being confirmed — skipped this round`);
     return true;
@@ -11008,7 +11555,7 @@ async function runGroupMemberTurn(
     ? reachablePeers(store.bots, bot).filter((peer) => !readyGroup.memberIds.includes(peer.id))
     : [];
   const system = [
-    `You are ${bot.name}, a bot in the room "${readyGroup.name}" in OpenMausBot.`,
+    `You are ${bot.name}, a bot in the room "${readyGroup.name}" in Pulsa Bot.`,
     bot.title && `Role: ${bot.title}.`,
     bot.description && `About: ${bot.description}`,
     `Room members: ${roster}, and ${userName} (the human).`,
@@ -11016,7 +11563,7 @@ async function runGroupMemberTurn(
     `Reply as yourself, briefly and conversationally. To bring a teammate in, mention them like @Name — they'll see the conversation and respond.`,
     outsideRoom.length > 0 && orchestration && !orchestration.roomHandoffId && roomPeerRosterSystemPrompt(outsideRoom),
     integrations.agents && (CREDENTIAL_PROMPT + (orchestration && !orchestration.roomHandoffId ? THREADS_PROMPT : "")).trim(),
-    integrations.agents && (!orchestration || orchestration.roomHandoffId) && "For actual OpenMausBot teamwork, discover IDs with list_room_targets and use coordinate_bots for advice or work in this or another room. Do not substitute native coding helpers for these named bots. Consult only when needed to make a decision; no discussion step is mandatory. Give concrete responsibilities, exact accessible paths and acceptance checks. End your turn after assigning; busy teammates queue and results automatically resume you. When they return, finish the requested verification and give the user one final answer. Native helper names are not evidence that an OpenMausBot teammate participated. Plain @mentions are only for conversational replies in this room.",
+    integrations.agents && (!orchestration || orchestration.roomHandoffId) && "For actual Pulsa Bot teamwork, discover IDs with list_room_targets and use coordinate_bots for advice or work in this or another room. Do not substitute native coding helpers for these named bots. Consult only when needed to make a decision; no discussion step is mandatory. Give concrete responsibilities, exact accessible paths and acceptance checks. End your turn after assigning; busy teammates queue and results automatically resume you. When they return, finish the requested verification and give the user one final answer. Native helper names are not evidence that an Pulsa Bot teammate participated. Plain @mentions are only for conversational replies in this room.",
     integrations.agents && ROUTINE_PROMPT.trim(),
     integrations.agents && PROFILE_PROMPT.trim(),
     skillAuthoring && LEARN_PROMPT.trim(),
@@ -11645,6 +12192,15 @@ async function runGroupGoalOperation(args: {
       }),
     });
     if (args.operation.cancelled) return;
+    if (coordinatorResult.outcome === "held") {
+      finishGroupGoalRun(
+        args.groupId,
+        args.operation,
+        "blocked",
+        `${args.coordinator.name} runs on a machine, so this goal was not coordinated on the fleet host.`,
+      );
+      return;
+    }
     if (coordinatorResult.outcome === "unavailable") {
       finishGroupGoalRun(args.groupId, args.operation, "blocked", `${args.coordinator.name} is not available.`);
       return;
@@ -11739,6 +12295,12 @@ async function runGroupGoalOperation(args: {
       }),
     });
     if (args.operation.cancelled) return;
+    if (workerResult.outcome === "held") {
+      coordinatorNote =
+        `${workerBot.name} has this assignment on their machine. The fleet host did not run it. ` +
+        "Leave that assignment with them. Continue with other members, or report blocked if the goal must wait.";
+      continue;
+    }
     if (workerResult.outcome === "unavailable") {
       finishGroupGoalRun(args.groupId, args.operation, "blocked", `${workerBot.name} is not available.`);
       return;
@@ -11947,6 +12509,31 @@ function startGroupTurn(
       });
     }
     return message;
+  }
+
+  // Machine turns never run on this host. Offline stays queued for that
+  // device. Online does not mean the fleet runner starts it.
+  const speakers = goalCoordinator ? [goalCoordinator] : responders;
+  const gate = channelTurnGate({
+    bots: speakers.map((bot) => ({ id: bot.id, host: bot.host })),
+    workers: registeredWorkers,
+    messageId: message.id,
+    authorId: options.sender?.id ?? localPrincipalId(),
+    queued: queuedWorkerTurns,
+  });
+  queuedWorkerTurns = gate.queued;
+  if (gate.status === "machine-offline") {
+    store.appendMessage(threadId, {
+      role: "bot",
+      kind: "activity",
+      tool: { name: "machine-offline", ok: false },
+    });
+  }
+  if (goalCoordinator) {
+    if (!gate.fleetIds.includes(goalCoordinator.id)) return message;
+  } else {
+    responders = responders.filter((bot) => gate.fleetIds.includes(bot.id));
+    if (!responders.length) return message;
   }
 
   // The snippet is only the fallback name here too. The member about to
@@ -12646,7 +13233,7 @@ function dispatchConnectorResume(entry: { botId: string; threadId: string; resum
   const owner = connectorThread(entry.botId, entry.threadId);
   if (!owner) return;
   const names = entry.labels.join(", ");
-  const prompt = `OpenMausBot connection update: the user securely connected ${names}. Continue the task that paused for this connection. Do not ask them to connect it again.`;
+  const prompt = `Pulsa Bot connection update: the user securely connected ${names}. Continue the task that paused for this connection. Do not ask them to connect it again.`;
   if (!canAdmitDirectTurn(entry.botId, entry.threadId)) {
     pendingConnectorResumes.set(`${entry.threadId}:${entry.resumeKey}`, entry);
     return;
@@ -12663,6 +13250,7 @@ function dispatchConnectorResume(entry: { botId: string; threadId: string; resum
         pendingConnectorResumes.set(`${entry.threadId}:${entry.resumeKey}`, entry);
         return;
       }
+      const cardId = connectorCards(entry.threadId, entry.resumeKey)[0]?.id ?? entry.resumeKey;
       await runGroupMemberTurn(
         current.group.id,
         entry.threadId,
@@ -12674,6 +13262,11 @@ function dispatchConnectorResume(entry: { botId: string; threadId: string; resum
         () => operation.cancelled,
         () => groupProviderHandshakeStarted(operation),
         () => groupProviderHandshakeSettled(operation),
+        undefined,
+        undefined,
+        undefined,
+        0,
+        cardId,
       );
     });
     const tracked = next.finally(() => finishGroupTurnOperation(groupId, operation));
@@ -12752,7 +13345,7 @@ function phoneSecretSubmissionKey(threadId: string, messageId: string, requestKe
 }
 
 function credentialDesktopHandoff(label: string): string {
-  return `Securely provide the ${label} from OpenMausBot on your phone or computer. It is never added to chat.`;
+  return `Securely provide the ${label} from Pulsa Bot on your phone or computer. It is never added to chat.`;
 }
 
 function secretMessage(botId: string, threadId: string, messageId: string): Message | null {
@@ -12789,8 +13382,8 @@ function dispatchSecretResume(entry: SecretResumeEntry) {
   if (!owner) return;
   const prompt =
     entry.outcome === "provided"
-      ? `OpenMausBot credential update: the user securely provided ${entry.label}. Continue the task that paused for it. You do not receive the secret and must not ask them to paste it into chat.`
-      : `OpenMausBot credential update: the user declined to provide ${entry.label}. Continue without it if possible, or briefly explain the limitation. Do not ask them to paste it into chat.`;
+      ? `Pulsa Bot credential update: the user securely provided ${entry.label}. Continue the task that paused for it. You do not receive the secret and must not ask them to paste it into chat.`
+      : `Pulsa Bot credential update: the user declined to provide ${entry.label}. Continue without it if possible, or briefly explain the limitation. Do not ask them to paste it into chat.`;
   if (!canAdmitDirectTurn(entry.botId, entry.threadId)) {
     pendingSecretResumes.set(`${entry.threadId}:${entry.messageId}`, entry);
     return;
@@ -12818,6 +13411,11 @@ function dispatchSecretResume(entry: SecretResumeEntry) {
         () => operation.cancelled,
         () => groupProviderHandshakeStarted(operation),
         () => groupProviderHandshakeSettled(operation),
+        undefined,
+        undefined,
+        undefined,
+        0,
+        entry.messageId,
       );
     });
     const tracked = next.finally(() => finishGroupTurnOperation(groupId, operation));
@@ -13604,6 +14202,272 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+const orgState: OrgState = {
+  get org() {
+    return cfg.org ?? null;
+  },
+  set org(value) {
+    cfg.org = value ?? undefined;
+  },
+  get invites() {
+    if (!cfg.invites) cfg.invites = [];
+    return cfg.invites;
+  },
+  get signIn() {
+    if (!cfg.signIn) cfg.signIn = { admins: [], members: [] };
+    if (!cfg.signIn.admins) cfg.signIn.admins = [];
+    if (!cfg.signIn.members) cfg.signIn.members = [];
+    return cfg.signIn as { admins: string[]; members: string[] };
+  },
+};
+/** The operator at this computer, as a principal. The profile email is an
+ * attribute of it, never a second person. */
+function localPrincipalId(): string {
+  // Read only: the boot above created the operator, and its email is synced
+  // at boot and after a config save, never on a read.
+  return principals.local()?.id ?? principals.localOperator().id;
+}
+/** Who acts, by principal: a session's principal (or its anonymous id),
+ * the operator on loopback, nobody for a local service. */
+function actorPrincipalId(auth: RequestAuth): string {
+  if (auth.kind === "session") {
+    const viewerId = channelViewerId(auth) ?? "";
+    return viewerId.startsWith("anon:") ? "" : viewerId;
+  }
+  if (auth.kind === "loopback" && auth.trust === "service") return "";
+  return localPrincipalId();
+}
+/** Whose channels and bots a request may see (requests, live frames and
+ * search all read this). Unfiltered, like loopback: the operator's own phone
+ * (an admin code paired from this computer), and, while no organization
+ * exists, a session without a principal (a chat-only device on a personal
+ * server keeps seeing the operator's bots; its scope still gates it). */
+function channelFilterViewerId(auth: RequestAuth): string | undefined {
+  const viewerId = channelViewerId(auth);
+  if (!viewerId) return undefined;
+  if (viewerId.startsWith("anon:") && !orgState.org) return undefined;
+  return auth.scopes.includes("admin") && viewerId === localPrincipalId() ? undefined : viewerId;
+}
+/** The actor's sign-in email: sign-in lists and invites stay in emails. */
+function actorEmail(auth: RequestAuth): string | undefined {
+  if (auth.kind === "session") return auth.session.email?.trim().toLowerCase() || undefined;
+  return cfg.profile?.email?.trim().toLowerCase() || undefined;
+}
+function channelActorId(auth: RequestAuth): string {
+  return actorPrincipalId(auth);
+}
+function creatingBotOwnerId(auth: RequestAuth): string {
+  return actorPrincipalId(auth);
+}
+
+function recordedBotOwner(bot: { ownerUserId?: unknown }): string | undefined {
+  return typeof bot.ownerUserId === "string" && bot.ownerUserId.trim() ? bot.ownerUserId.trim().toLowerCase() : undefined;
+}
+function effectiveBotOwner(bot: { ownerUserId?: unknown }): string {
+  return ownerUserIdForPlacement({
+    recordedOwnerUserId: recordedBotOwner(bot),
+    orgOwnerUserId: orgState.org?.ownerUserId?.trim().toLowerCase(),
+    localOperatorId: localPrincipalId(),
+  });
+}
+function botDirectGrants(bot: { directGrants?: unknown }): string[] {
+  return Array.isArray(bot.directGrants)
+    ? bot.directGrants.filter((id): id is string => typeof id === "string")
+    : [];
+}
+function listedBotVisible(bot: { id: string; ownerUserId?: unknown; directGrants?: unknown }, viewerId: string | undefined): boolean {
+  return seesBotForViewer({
+    viewerId,
+    ownerUserId: effectiveBotOwner(bot),
+    directGrants: botDirectGrants(bot),
+    inChannels: store.groups.filter((group) => group.memberIds.includes(bot.id)),
+  });
+}
+function searchHitVisibleNow(threadId: string, viewerId: string | undefined): boolean {
+  const bot = store.botByThread(threadId);
+  if (bot) {
+    return searchHitVisible({
+      viewerId,
+      channel: null,
+      bot: {
+        ownerUserId: effectiveBotOwner(bot),
+        directGrants: botDirectGrants(bot),
+        inChannels: store.groups.filter((group) => group.memberIds.includes(bot.id)),
+      },
+    });
+  }
+  const group = store.groupByThread(threadId);
+  if (group) return searchHitVisible({ viewerId, channel: group, bot: null });
+  return searchHitVisible({ viewerId, channel: null, bot: null });
+}
+
+function subjectSeesChannel(subject: PathSubject, viewerId: string): boolean {
+  if (subject.kind === "group") {
+    const group = store.group(subject.id);
+    return !group || seesChannel(group, viewerId);
+  }
+  if (subject.kind === "thread") {
+    const group = store.groupByThread(subject.id);
+    return !group || seesChannel(group, viewerId);
+  }
+  if (subject.kind === "bot") {
+    const bot = store.bot(subject.id);
+    return !bot || listedBotVisible(bot, viewerId);
+  }
+  return true;
+}
+
+function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): boolean {
+  const groupField = payload.group && typeof payload.group === "object" ? (payload.group as { id?: unknown }).id : undefined;
+  const groupId = typeof payload.groupId === "string" ? payload.groupId : typeof groupField === "string" ? groupField : undefined;
+  if (typeof groupId === "string") {
+    const group = store.group(groupId);
+    if (group) {
+      return seesChannelFrame({
+        humanIds: group.humanIds ?? [],
+        viewerId,
+        speakingOwnerUserId: typeof payload.botId === "string"
+          ? (store.bot(payload.botId) as { ownerUserId?: string } | undefined)?.ownerUserId
+          : undefined,
+        speakingDirectGrants: [],
+      });
+    }
+  }
+  if (typeof payload.threadId === "string") {
+    const group = store.groupByThread(payload.threadId);
+    if (group) return seesChannel(group, viewerId);
+  }
+  const botField = payload.bot && typeof payload.bot === "object" ? (payload.bot as { id?: unknown }).id : undefined;
+  const botId = typeof payload.botId === "string" ? payload.botId : typeof botField === "string" ? botField : undefined;
+  if (typeof botId === "string") {
+    const bot = store.bot(botId);
+    if (bot && !listedBotVisible(bot, viewerId)) return false;
+  }
+  return true;
+}
+
+/** Loopback on this machine is the operator. Otherwise the org role, or
+ * an admin session when no organization exists yet. */
+function channelActorRole(auth: RequestAuth): OrgRole | null {
+  if (auth.kind === "loopback" && auth.trust !== "service") return "owner";
+  if (!orgState.org) {
+    if (auth.kind === "session" && auth.scopes.includes("admin")) return "admin";
+    return null;
+  }
+  return roleOf({
+    ownerUserId: orgState.org.ownerUserId,
+    admins: orgState.signIn.admins,
+    members: orgState.signIn.members,
+    userId: channelActorId(auth),
+    email: actorEmail(auth),
+  });
+}
+
+function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already: ReadonlySet<string>): string | null {
+  const actorId = channelActorId(auth);
+  for (const id of botIds) {
+    if (typeof id !== "string" || already.has(id)) continue;
+    const bot = typeof id === "string" ? store.bot(id) : undefined;
+    const ownerUserId = bot
+      ? effectiveBotOwner(bot)
+      : ownerUserIdForPlacement({
+        orgOwnerUserId: orgState.org?.ownerUserId?.trim().toLowerCase(),
+        localOperatorId: localPrincipalId(),
+      });
+    if (!canPlaceBot({ actorId, ownerUserId })) {
+      return "forbidden: only the bot owner can place it in a channel";
+    }
+  }
+  return null;
+}
+
+function refuseHumanEdit(auth: RequestAuth, body: unknown): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  if (!Object.prototype.hasOwnProperty.call(body, "humanIds")) return null;
+  const role = channelActorRole(auth);
+  if (role && canEditHumans(role)) return null;
+  return "forbidden: only an owner or an admin can change channel people";
+}
+
+ROUTES.push(createDirectGrantRoutes({
+  bot: (id) => store.bot(id) ?? undefined,
+  patchBot: (id, patch) => store.patchBot(id, patch),
+  actorId: channelActorId,
+  // Called only once the actor owns the bot: resolving an email may create
+  // its principal. Anything that is not a principal id or an account email
+  // is refused.
+  resolveUserId: (ref) => {
+    const id = principalIdFor(ref, principals);
+    return isPrincipalId(id) ? id : null;
+  },
+}));
+ROUTES.push(createWorkerRoutes({
+  workers: () => registeredWorkers,
+  replace: (workers) => { registeredWorkers = workers; },
+  queued: () => queuedWorkerTurns,
+  replaceQueued: (queued) => { queuedWorkerTurns = queued; },
+  userId: channelActorId,
+  authorId: (auth) => auth.kind === "session" ? personKey(auth.session) : channelActorId(auth),
+  rememberDevice: ({ sessionId, userId, deviceId }) => {
+    if (sessionId) sessionDeviceIds.set(sessionId, deviceId);
+    else if (userId) loopbackDeviceIds.set(userId, deviceId);
+    deviceOwnerSession.set(deviceId, sessionId ?? "");
+  },
+  onTurnPulled: ({ deviceId, messageIds, authorIds }) => {
+    if (!messageIds.length) return;
+    const prev = inflightWorkerTurns.get(deviceId) ?? [];
+    const added = messageIds.filter((id) => !prev.includes(id));
+    inflightWorkerTurns.set(deviceId, [...prev, ...added]);
+    for (const id of added) {
+      const author = authorIds[messageIds.indexOf(id)] ?? "";
+      if (author) inflightWorkerAuthors.set(id, author);
+    }
+  },
+  onWorkerSocketClose: ({ deviceId, messageIds }) => {
+    const held = new Set(inflightWorkerTurns.get(deviceId) ?? []);
+    failWorkerTurns(messageIds.filter((id) => held.has(id)));
+  },
+  onAuthorCancel: ({ messageId, authorId }) => {
+    const decision = failPulledOnAuthorCancel({
+      messageId,
+      authorId,
+      heldAuthorId: inflightWorkerAuthors.get(messageId),
+      partial: "",
+      messages: [],
+    });
+    if (!decision.failed) return;
+    failWorkerTurns([messageId], "The turn failed because the author cancelled.");
+  },
+}));
+ROUTES.push(createOrgRoutes({
+  state: orgState,
+  actorId: actorPrincipalId,
+  actorEmail,
+  ownerEmail: () => (orgState.org ? principals.byId(orgState.org.ownerUserId)?.email : undefined),
+  persist: (next) => {
+    const org = next?.org ?? orgState.org;
+    saveConfig({
+      ...(org ? { org } : {}),
+      invites: orgState.invites,
+      signIn: { admins: orgState.signIn.admins, members: orgState.signIn.members },
+    });
+  },
+  // A stream opened before the organization was built with no filter for a
+  // session without a principal (or the operator's own phone). End every
+  // session-backed unfiltered stream so it reconnects under the org filter.
+  onOrgCreated: () => {
+    audienceChangedAt = lastSeq;
+    for (const client of sseClients) {
+      if (!client.sessionId || client.viewerId) continue;
+      sseClients.delete(client);
+      try {
+        client.res.end();
+      } catch {
+        /* already gone */
+      }
+    }
+  },
+}));
 
 const toolResults = new ToolResults();
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
@@ -13693,7 +14557,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, verified.status, { error: verified.error });
       }
       sessions.clearFailures(source);
-      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email });
+      if (!isAccountEmail(verified.email)) return json(res, 400, { error: "this address cannot sign in: at most 320 characters, shaped name@domain" });
+      const principal = principals.forAccount({ email: verified.email, controlPlaneUserId: verified.userId });
+      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id });
       const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: true, sharedComputers: sharedComputersEnabled(cfg) });
       const secure = requestOrigin(req)?.startsWith("https://") === true;
       res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }));
@@ -13823,10 +14689,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         : { status: 503, error: "Workspace sign-in is unavailable." };
       if (failure) return json(res, failure.status, { error: failure.error });
     }
+    // A portal-issued or older account session never went through email
+    // sign-in: give it its person now, so it owns what it owned by email.
+    // An address that is not an account email stays nobody.
+    if (auth.kind === "session" && !auth.session.principalId && auth.session.email && isAccountEmail(auth.session.email)) {
+      const userId = auth.session.userId;
+      const principal = principals.forAccount({
+        email: auth.session.email,
+        controlPlaneUserId: userId && !userId.startsWith("portal:") ? userId : undefined,
+      });
+      sessions.setPrincipal(auth.session.id, principal.id);
+      auth.session.principalId = principal.id;
+    }
     // Bot visibility: a member reaches a restricted bot, its threads, rooms,
     // routines and files exactly as they reach an id that does not exist.
     // Lists and live frames are narrowed where they are built, below.
     const visible = visibleTo(viewerFor(auth));
+    const viewerId = channelFilterViewerId(auth);
     if (!visible.everything) {
       const subject = pathSubject(path);
       if (subject && !subjectVisible(subject, visible)) return json(res, 404, { error: notFoundFor(subject) });
@@ -13834,6 +14713,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // edit, a new or switched task) comes without its audience list or
       // the teammates they cannot see, whichever route answers.
       onJsonBody(res, (body) => memberBody(body, visible));
+    }
+    if (viewerId) {
+      const subject = pathSubject(path);
+      if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
     }
     beginAdminAudit(req, res, method, path, auth);
 
@@ -13896,7 +14779,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const requested: unknown = body?.scopes;
       const scopes = Array.isArray(requested) ? requested.filter((v): v is Scope => v === "admin" || v === "client") : undefined;
-      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes });
+      // Only an admin code carries its creator's person: a chat-only code
+      // pairs an anonymous device that sees no org channel.
+      const carriesPrincipal = (scopes?.length ? scopes : ["admin"]).includes("admin");
+      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes, principalId: carriesPrincipal ? actorPrincipalId(auth) || undefined : undefined });
       const origin = requestOrigin(req);
       const base = publicUrl() ?? (auth.kind === "session" && origin ? origin : null);
       const code = formatPairingCode(opened.code);
@@ -13929,7 +14815,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.setHeader("cache-control", "no-store");
       if (method === "GET") return json(res, 200, customDomainStatus());
       if (method === "POST" || method === "DELETE") {
-        if (DESKTOP_MANAGED) return json(res, 409, { error: "Custom domains are configured on a self-hosted OpenMausBot server, not the desktop companion." });
+        if (DESKTOP_MANAGED) return json(res, 409, { error: "Custom domains are configured on a self-hosted Pulsa Bot server, not the desktop companion." });
         if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {
           return json(res, 415, { error: "content-type must be application/json" });
         }
@@ -14170,7 +15056,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           source!.previousSurface = store.taskByThread(bot.id, bot.threadId)?.surface;
         }
         return json(res, 200, { status: "pending", surface: option.surface,
-          message: `End this turn now without using the previous computer tools. OpenMausBot will continue the original request on ${option.label} with a fresh tool connection.` });
+          message: `End this turn now without using the previous computer tools. Pulsa Bot will continue the original request on ${option.label} with a fresh tool connection.` });
       }
       if (method === "POST" && path === "/api/internal/hook") {
         const body = await readInternalBody();
@@ -15937,6 +16823,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             description: instructions,
             modelSelection: selection,
             section: chief.section,
+            ownerUserId: creatingBotOwnerId(auth),
             ...(cwd !== undefined ? { cwd } : {}),
             // exactly the Chief's audience: a restricted Chief never makes a bot everyone sees
             ...(chief.visibility ? { visibility: chief.visibility } : {}),
@@ -16421,7 +17308,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "single-bot events open that bot's chat directly" });
       }
       const group = ensureCalendarCallRoom(call);
-      return json(res, 200, { group: { ...publicGroupState(group), messages: store.messagesFor(group.threadId) } });
+      return json(res, 200, {
+        group: {
+          ...publicGroupState(group),
+          messages: projectMessages(group.threadId, store.messagesFor(group.threadId), viewerForApproval(auth)),
+        },
+      });
     }
     const calendarCallMatch = path.match(/^\/api\/calendar-calls\/([\w-]+)$/);
     if (calendarCallMatch && method === "PATCH") {
@@ -16444,7 +17336,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // ── independent webhook triggers ────────────────────────────────────
     // Management stays on the app-only server. Actual deliveries land on a
     // second, webhook-only loopback listener so Funnel or a future hosted
-    // relay never has to expose the rest of OpenMausBot's control surface.
+    // relay never has to expose the rest of Pulsa Bot's control surface.
     if (path === "/api/webhooks" && method === "GET") {
       const shownHooks = webhooks.list().filter((webhook) => visible.bot(webhook.botId));
       const shownIds = new Set(shownHooks.map((webhook) => webhook.id));
@@ -16541,11 +17433,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         viewer,
         // What this person's hydration (GET /api/bots, narrowed the same way) showed them.
         seen: viewer.kind === "all" ? { bots: new Set(), groups: new Set() } : {
-          bots: new Set(store.bots.filter((bot) => visibleNow.bot(bot.id)).map((bot) => bot.id)),
-          groups: new Set(store.groups.filter((group) => visibleNow.group(group.id)).map((group) => group.id)),
+          bots: new Set(store.bots.filter((bot) => visibleNow.bot(bot.id) && listedBotVisible(bot, viewerId)).map((bot) => bot.id)),
+          groups: new Set(store.groups.filter((group) => visibleNow.group(group.id) && seesChannel(group, viewerId)).map((group) => group.id)),
         },
       };
-      if (auth.kind === "session") client.sessionId = auth.session.id;
+      if (auth.kind === "session") {
+        client.sessionId = auth.session.id;
+        client.approvalUserId = channelViewerId(auth) ?? "";
+      } else if (auth.kind === "loopback" && auth.trust !== "service") {
+        client.approvalUserId = localPrincipalId();
+      }
+      if (viewerId) client.viewerId = viewerId;
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -16589,11 +17487,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (resumed) {
         for (const buffered of replayBuffer) {
           if (buffered.seq <= since || !wants(client, buffered.kind)) continue;
-          const frame = client.admin
-            ? buffered.frame
-            : buffered.payload
-              ? memberFrame(client, buffered.seq, buffered.payload, buffered.clientFrame)
-              : buffered.clientFrame;
+          const frame = sseFrameFor(client, buffered.seq, buffered.payload, buffered.frame, buffered.clientFrame);
           if (frame) res.write(frame);
         }
       }
@@ -16630,7 +17524,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (threadId === undefined &&
         (auth.kind === "session" || req.headers["x-openmausbot-companion"] === "1") &&
         store.tasks(botId).length > 1) {
-        throw Object.assign(new Error("This bot has more than one thread. Update the OpenMausBot app on this device, then choose a thread and try again."), { status: 409 });
+        throw Object.assign(new Error("This bot has more than one thread. Update the Pulsa Bot app on this device, then choose a thread and try again."), { status: 409 });
       }
     };
     if (method === "GET" && path === "/api/bots") {
@@ -16645,18 +17539,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // bot record carrying no tasks, where publicBot() always sent [].
       // A member on a workspace with a restricted bot gets only what they may
       // see (bot-visibility.ts); for everyone else these filters keep all.
-      const shownBots = store.bots.filter((bot) => visible.bot(bot.id));
+      const shownBots = store.bots.filter((bot) => visible.bot(bot.id) && listedBotVisible(bot, viewerId));
       const queued = publicBotQueuedMessages();
       return json(res, 200, {
         bots: shownBots.map((bot) => memberBot({
           ...wireBot(bot),
           tasks: store.tasks(bot.id).map(wireTask),
-          ...messagePage(bot.threadId, limit),
+          ...messagePage(bot.threadId, limit, null, viewerForApproval(auth)),
         }, visible)),
         botQueuedMessages: visible.everything ? queued : Object.fromEntries(Object.entries(queued).filter(([threadId]) => visible.thread(threadId))),
         sections: visible.sections(store.sections),
-        groups: store.groups.filter((g) => visible.group(g.id)).map((g) => {
-          const room = { ...publicGroupState(g), ...messagePage(g.threadId, limit) };
+        groups: store.groups.filter((g) => visible.group(g.id) && seesChannel(g, viewerId)).map((g) => {
+          const room = { ...publicGroupState(g), ...messagePage(g.threadId, limit, null, viewerForApproval(auth)) };
           return visible.everything ? room : memberGroup(room);
         }),
         computerControl: Object.fromEntries(
@@ -16715,9 +17609,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (limit === null) return json(res, 400, { error: "limit must be a non-negative whole number" });
       const before = url.searchParams.get("before");
       const around = url.searchParams.get("around");
+      const approvalViewer = viewerForApproval(auth);
       if (before && around) return json(res, 400, { error: "before and around cannot be combined" });
       if (around) {
-        const window = messageWindow(threadId, around, limit ?? DEFAULT_PAGE);
+        const window = messageWindow(threadId, around, limit ?? DEFAULT_PAGE, approvalViewer);
         if (!window) return json(res, 404, { error: "no such message" });
         return json(res, 200, { ...window, activeLeafId: store.activeLeaf(threadId) });
       }
@@ -16726,7 +17621,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (before && !store.messagesFor(threadId).some((msg) => msg.id === before)) {
         return json(res, 404, { error: "no such message" });
       }
-      return json(res, 200, { ...messagePage(threadId, limit ?? DEFAULT_PAGE, before), activeLeafId: store.activeLeaf(threadId) });
+      return json(res, 200, { ...messagePage(threadId, limit ?? DEFAULT_PAGE, before, approvalViewer), activeLeafId: store.activeLeaf(threadId) });
     }
 
     // the pixels of one screen message, fetched only when something shows it
@@ -16756,7 +17651,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // a bot must render a Markdown link or carry a generated-image attachment,
     // while a user message must carry the standalone composer tag. The bot
     // branch derives conversation/workspace roots; the user branch is limited
-    // to OpenMausBot's private attachment directory. This is deliberately not
+    // to Pulsa Bot's private attachment directory. This is deliberately not
     // a general path reader.
     m = path.match(/^\/api\/threads\/([\w-]+)\/messages\/([\w-]+)\/file$/);
     const streamsMessageImage = Boolean(
@@ -17041,8 +17936,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!current.auth) return json(res, current.status, { error: current.error });
       const currentVisible = visibleTo(viewerFor(current.auth));
       if (threadId && !currentVisible.thread(threadId)) return json(res, 404, { error: "no such conversation" });
+      const searchViewerId = channelFilterViewerId(current.auth);
       const hits = found
-        .filter((hit) => currentVisible.thread(hit.threadId))
+        .filter((hit) => currentVisible.thread(hit.threadId) && searchHitVisibleNow(hit.threadId, searchViewerId))
         .slice(0, limit)
         .map((hit) => {
           const bot = store.botByThread(hit.threadId);
@@ -17078,7 +17974,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? (store.taskByThread(bot.id, threadId)?.title || bot.name)
         : (store.groupTaskByThread(group!.id, threadId)?.title || group!.name);
       const filename = (title.replace(/[^\w\- ]+/g, "").trim() || "conversation").slice(0, 60);
-      const messages = store.activePath(threadId);
+      const messages = projectMessages(threadId, store.activePath(threadId), viewerForApproval(auth));
       if (format === "json") {
         // pixels stripped — an export is for reading and archiving, and a
         // base64 desktop frame is neither
@@ -17111,8 +18007,22 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     // ── channels (persisted internally as groups) ───────────────────────
+    if (method === "GET" && path === "/api/groups") {
+      return json(res, 200, {
+        groups: store.groups.filter((g) => visible.group(g.id) && seesChannel(g, viewerId)).map((g) => {
+          const room = publicGroupState(g);
+          return visible.everything ? room : memberGroup(room);
+        }),
+      });
+    }
     if (method === "POST" && path === "/api/groups") {
       const body = await readBody(req);
+      if (Array.isArray(body?.memberIds)) {
+        const placed = refusePlacedBots(auth, body.memberIds, new Set());
+        if (placed) return json(res, 403, { error: placed });
+      }
+      const humans = refuseHumanEdit(auth, body);
+      if (humans) return json(res, 403, { error: humans });
       // A member may only put bots they can see in a room: the room would
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
@@ -17341,7 +18251,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         installId: imported.installId,
         name: imported.name,
         section: imported.section,
-        bots: imported.bots.map((bot) => publicBot(store.bot(bot.id) ?? bot)),
+        bots: imported.bots.map((bot) => projectBotTranscript(publicBot(store.bot(bot.id) ?? bot), viewerForApproval(auth))),
         groups: imported.groups.map((created) => ({ ...publicGroupState(store.group(created.id) ?? created), messages: [] })),
         routines: imported.routines,
         offeredSkills: imported.offeredSkills,
@@ -17415,10 +18325,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         try {
           const imported = importTeamBackup(store, routines!, body, await defaultSelection(), { visibility: importVisibility });
           const bots = imported.bots.map((bot) => publicBot(bot));
-          const groups = imported.groups.map((group) => ({ ...publicGroupState(group), ...messagePage(group.threadId, undefined) }));
+          const groups = imported.groups.map((group) => ({ ...publicGroupState(group), ...transcriptPage(group.threadId, undefined) }));
           for (const bot of bots) broadcast({ kind: "bot", bot });
           for (const group of groups) broadcast({ kind: "group", group });
-          return json(res, 201, { ...imported, bots, groups });
+          const approvalViewer = viewerForApproval(auth);
+          return json(res, 201, {
+            ...imported,
+            bots: bots.map((bot) => projectBotTranscript(bot, approvalViewer)),
+            groups: groups.map((group) => projectGroupTranscript(group, approvalViewer)),
+          });
         } catch (error) {
           return json(res, 400, { error: error instanceof Error ? error.message : "Backup could not be imported" });
         }
@@ -17459,7 +18374,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 201, {
         name: imported.name,
         section: imported.section,
-        bots: imported.bots.map((bot) => publicBot(store.bot(bot.id) ?? bot)),
+        bots: imported.bots.map((bot) => projectBotTranscript(publicBot(store.bot(bot.id) ?? bot), viewerForApproval(auth))),
         group: imported.group,
         groups: imported.groups.map((created) => ({ ...created, messages: [] })),
         routines: imported.routines,
@@ -17559,7 +18474,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (auth.kind === "session") threadStarters.set(task.threadId, personKey(auth.session));
       const fresh = groupWithThread(store.group(group.id)!);
       broadcast({ kind: "group", group: fresh });
-      return json(res, 201, { group: fresh, task });
+      return json(res, 201, { group: projectGroupTranscript(fresh, viewerForApproval(auth)), task });
     }
 
     m = path.match(/^\/api\/groups\/([\w-]+)\/tasks\/([\w-]+)$/);
@@ -17588,18 +18503,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // anything earlier pages back through /api/threads/:id/messages.
       broadcast({
         kind: "group",
-        group: { ...switchedSettings, ...messagePage(switched.threadId, DEFAULT_PAGE) },
+        group: { ...switchedSettings, ...transcriptPage(switched.threadId, DEFAULT_PAGE) },
       });
       // "0" predates paging and means settings only — no `messages` key at
       // all, which clients tell apart from an empty page. A positive page is
       // the transcript a client can actually hold; omitting the parameter
       // keeps the whole transcript, as it always did — and only that branch
       // materialises it.
+      const approvalViewer = viewerForApproval(auth);
       const responseGroup = requestedMessages === "0"
         ? switchedSettings
         : switchLimit === undefined
-          ? groupWithThread(switched)
-          : { ...switchedSettings, ...messagePage(switched.threadId, switchLimit) };
+          ? projectGroupTranscript(groupWithThread(switched), approvalViewer)
+          : projectGroupTranscript({ ...switchedSettings, ...messagePage(switched.threadId, switchLimit, null, approvalViewer) }, approvalViewer);
       return json(res, 200, { group: responseGroup });
     }
     if (m && method === "PATCH") {
@@ -17659,12 +18575,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
       const fresh = groupWithThread(updated);
       broadcast({ kind: "group", group: fresh });
-      return json(res, 200, { group: fresh });
+      return json(res, 200, { group: projectGroupTranscript(fresh, viewerForApproval(auth)) });
     }
 
     m = path.match(/^\/api\/groups\/([\w-]+)$/);
     if (m && method === "PATCH") {
       const body = await readBody(req);
+      const existingGroup = store.group(m[1]);
+      // A bot-to-bot dm keeps its existing member refusal. Placement checks
+      // apply only when this patch adds a bot to a channel.
+      if (existingGroup && !existingGroup.dm && Array.isArray(body?.memberIds)) {
+        const placed = refusePlacedBots(auth, body.memberIds, new Set(existingGroup.memberIds));
+        if (placed) return json(res, 403, { error: placed });
+      }
+      const humans = refuseHumanEdit(auth, body);
+      if (humans) return json(res, 403, { error: humans });
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
         const field = clientGroupPatchViolation(body);
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
@@ -18225,6 +19150,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const created = body.visibility === undefined ? null : parseVisibility(body.visibility);
       if (created && !created.ok) return json(res, 400, { error: created.error });
       const bot = store.createBot({ ...profile.patch, soul: settings.soul, section, modelSelection: selection,
+        ownerUserId: creatingBotOwnerId(auth),
         ...(created?.ok ? { visibility: created.visibility } : {}) });
       const createdRoutines: Array<{ id: string; enabled: boolean }> = [];
       try {
@@ -18292,11 +19218,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return json(res, 201, {
         ...(warnings.length ? { warnings } : {}),
-        bot: {
+        bot: projectBotTranscript({
           ...wireBot(bot),
           messages: store.messagesFor(bot.threadId),
           activeLeafId: store.activeLeaf(bot.threadId),
-        },
+        }, viewerForApproval(auth)),
       });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/avatar\/generate$/);
@@ -19330,7 +20256,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const threadId = parsed.data.threadId;
       const snapshot = guardedRequestSnapshot(m[1], threadId, m[2]);
       res.setHeader("cache-control", "private, no-store");
-      if (method === "GET") return json(res, 200, snapshot);
+      if (method === "GET") {
+        return json(res, 200, { ...snapshot, messages: projectMessages(threadId, snapshot.messages, viewerForApproval(auth)) });
+      }
       assertRequestTarget(snapshot, body);
       const owner = directRequestOwners.get(threadId);
       if (snapshot.phase === "untracked" || !owner || owner.messageId !== snapshot.messageId) {
@@ -19719,6 +20647,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const behavior = requestBehavior(body.behavior);
       const reviewedSha256 = typeof body.reviewedSha256 === "string" ? body.reviewedSha256 : undefined;
       if (!behavior) return json(res, 400, { error: "behavior must be allow, deny, or answer" });
+      const ownerRefusal = approvalAnswerRefusal(auth, bot.threadId, String(body.requestId));
+      if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, bot.threadId, String(body.requestId), behavior);
       if (refusal) return json(res, 403, { error: refusal });
       if (body.rememberCommand === true) {
@@ -19787,6 +20717,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const reviewedSha256 = typeof body.reviewedSha256 === "string" ? body.reviewedSha256 : undefined;
       if (!behavior) return json(res, 400, { error: "behavior must be allow, deny, or answer" });
       const requestId = String(body.requestId);
+      const ownerRefusal = approvalAnswerRefusal(auth, threadId, requestId);
+      if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);
       if (refusal) return json(res, 403, { error: refusal });
       if (body.rememberCommand === true) {
@@ -19994,7 +20926,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const projects = store.reorderProjects(bot.id, body.projectIds);
       if (!projects) return json(res, 400, { error: "projectIds must include each of this bot's folders exactly once" });
-      return json(res, 200, { projects, bot: botWithThread(bot) });
+      return json(res, 200, { projects, bot: projectBotTranscript(botWithThread(bot), viewerForApproval(auth)) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/projects(?:\/([\w-]+))?$/);
     if (m && ((method === "POST" && !m[2]) || (method === "PATCH" && m[2]) || (method === "DELETE" && m[2]))) {
@@ -20003,7 +20935,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (m[2] && !store.project(bot.id, m[2])) return json(res, 404, { error: "no such folder" });
       if (method === "DELETE") {
         const updated = store.deleteProject(bot.id, m[2]!);
-        return json(res, 200, { bot: botWithThread(updated!) });
+        return json(res, 200, { bot: projectBotTranscript(botWithThread(updated!), viewerForApproval(auth)) });
       }
       const body = await readBody(req);
       if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
@@ -20023,7 +20955,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const project = method === "POST"
         ? store.createProject(bot.id, patch.name!, patch.emoji)
         : store.patchProject(bot.id, m[2]!, patch);
-      return json(res, method === "POST" ? 201 : 200, { project, bot: botWithThread(bot) });
+      return json(res, method === "POST" ? 201 : 200, { project, bot: projectBotTranscript(botWithThread(bot), viewerForApproval(auth)) });
     }
 
     m = path.match(/^\/api\/bots\/([\w-]+)\/tasks$/);
@@ -20056,7 +20988,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (auth.kind === "session") threadStarters.set(task.threadId, personKey(auth.session));
       const fresh = botWithThread(store.bot(bot.id)!);
       broadcast({ kind: "bot", bot: fresh });
-      return json(res, 201, { bot: fresh, task: wireTask(task) });
+      return json(res, 201, { bot: projectBotTranscript(fresh, viewerForApproval(auth)), task: wireTask(task) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/tasks\/([\w-]+)$/);
     if (m && method === "POST") {
@@ -20075,15 +21007,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Bounded for the same reason as the channel switch above.
       broadcast({
         kind: "bot",
-        bot: { ...switchedSettings, ...messagePage(switched.threadId, DEFAULT_PAGE) },
+        bot: { ...switchedSettings, ...transcriptPage(switched.threadId, DEFAULT_PAGE) },
       });
       // "0" is settings only, a positive page is a bounded transcript, and no
       // parameter is the whole thread — the one branch that materialises it.
       const responseBot = requestedMessages === "0"
         ? switchedSettings
         : switchLimit === undefined
-          ? botWithThread(switched)
-          : { ...switchedSettings, ...messagePage(switched.threadId, switchLimit) };
+          ? projectBotTranscript(botWithThread(switched), viewerForApproval(auth))
+          : projectBotTranscript({ ...switchedSettings, ...messagePage(switched.threadId, switchLimit, null, viewerForApproval(auth)) }, viewerForApproval(auth));
       return json(res, 200, { bot: responseBot });
     }
     if (m && method === "PATCH") {
@@ -20183,7 +21115,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         : store.patchTask(m[1], m[2], patch)!;
       const fresh = botWithThread(store.bot(m[1])!);
       broadcast({ kind: "bot", bot: fresh });
-      return json(res, 200, { task: wireTask(task), bot: fresh });
+      return json(res, 200, { task: wireTask(task), bot: projectBotTranscript(fresh, viewerForApproval(auth)) });
     }
     if (m && method === "DELETE") {
       const bot = store.bot(m[1]);
@@ -20207,7 +21139,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
       const fresh = botWithThread(updated);
       broadcast({ kind: "bot", bot: fresh });
-      return json(res, 200, { bot: fresh });
+      return json(res, 200, { bot: projectBotTranscript(fresh, viewerForApproval(auth)) });
     }
 
     // Named team Boats use real independent ownership, never a hidden bot or
@@ -20805,7 +21737,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 200, { instances: await describeInstances() });
         }
         if (action === "install") {
-          if (!(await registry.installRuntime(instanceId))) return json(res, 404, { error: "Installing this engine from Settings is not available on this server. Use the install command on the machine running OpenMausBot." });
+          if (!(await registry.installRuntime(instanceId))) return json(res, 404, { error: "Installing this engine from Settings is not available on this server. Use the install command on the machine running Pulsa Bot." });
           return json(res, 200, { instances: await describeInstances() });
         }
         if (action === "auth/start") {
@@ -21309,7 +22241,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               // deterministic rename. The replacement credential already
               // proved the exact deletion target, so its in-flight resource
               // is governed by that stronger target-bound receipt rather
-              // than an OpenMausBot name check.
+              // than a Pulsa Bot name check.
               if (replacementProvedByDeletion && deletingBoatIds.has(recovery.boxId)) continue;
               const inspected = await boat.inspectBoatIdentity({ box: { token: currentBoatToken } }, recovery.boxId);
               if (!inspected.available) {
@@ -21541,6 +22473,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           for (const request of browserCleanupRequests) browserCleanup.abort(request);
         }
         throw error;
+      }
+      // The operator keeps one principal id, so the org owner needs no
+      // rewrite when the profile email changes; only the attribute moves,
+      // once the config is saved. A cleared email clears it on the principal.
+      if (patch.profile && typeof patch.profile.email === "string") {
+        if (patch.profile.email.trim()) principals.localOperator(patch.profile.email);
+        else principals.setEmail(principals.localOperator().id, "");
       }
       let browserReferenceCleanupError: unknown = null;
       if (patch.signIn !== undefined) sessions.revalidateEmailSessions();

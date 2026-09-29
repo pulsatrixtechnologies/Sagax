@@ -41,7 +41,7 @@ See [the roadmap](2026-08-31-00-control-plane-roadmap.md#global-constraints). Th
 
 The consequence: `loadMemory()` silently truncates at 200 lines, and nothing tells the user that the memory they are relying on stopped loading forty lines ago. That is the single highest-value thing this plan fixes.
 
-**Explicitly NOT in scope: pluggable third-party memory providers** (Mem0, Honcho, Supermemory and friends). OpenMausBot's memory is plain markdown the user can open in any editor, and that is a product position, not a limitation. Routing memory through a hosted service would trade it for a vendor dependency and a second place secrets live. If it is ever wanted, it is its own plan with its own argument.
+**Explicitly NOT in scope: pluggable third-party memory providers** (Mem0, Honcho, Supermemory and friends). Pulsa Bot's memory is plain markdown the user can open in any editor, and that is a product position, not a limitation. Routing memory through a hosted service would trade it for a vendor dependency and a second place secrets live. If it is ever wanted, it is its own plan with its own argument.
 
 ---
 

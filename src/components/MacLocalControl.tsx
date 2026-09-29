@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Loader2, Shield } from "lucide-react";
+import { AlertTriangle, ChevronDown, Loader2, Shield } from "lucide-react";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { macCuaPermissionMessage, missingMacCuaPermissions } from "@/lib/mac-cua-permissions";
 import { MacCuaRecoveryActions } from "./MacCuaRecoveryActions";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
 
 export function MacLocalControl() {
   const { capabilities } = useDesktopCapabilities();
@@ -12,6 +13,7 @@ export function MacLocalControl() {
   const [pending, setPending] = useState(false);
   const [awaitingGrant, setAwaitingGrant] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   const retry = async () => {
     setPending(true);
@@ -59,12 +61,20 @@ export function MacLocalControl() {
   if (capabilities.localComputer.available) return null;
 
   return (
-    <section className="mt-4 rounded-xl border border-warning/25 bg-warning/10 p-4">
-      <div className="flex items-start gap-3">
-        <Shield size={16} className="mt-0.5 shrink-0 text-warning" />
+    <section className="mt-4 overflow-hidden rounded-xl border border-hairline/40">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-left"
+      >
+        <Shield size={15} className="shrink-0 text-ink-secondary" />
+        <span className="min-w-0 flex-1 text-[13px] font-medium text-ink-secondary">Allow control of this computer</span>
+        <ChevronDown size={16} className={cn("shrink-0 text-ink-secondary transition-transform", open && "rotate-180")} />
+      </button>
+      {open && <div className="px-4 pb-4">
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-medium text-ink">Allow control of this computer</div>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-ink-secondary">
+          <p className="text-[12.5px] leading-relaxed text-ink-secondary">
             {permissionMessage ?? t("computer.mac.permission.generic")}
           </p>
           {reason && <details className="mt-2 text-[12px] text-ink-secondary"><summary className="cursor-pointer">{t("computer.mac.permission.driverDetail")}</summary><p className="mt-1 break-words">{reason}</p></details>}
@@ -81,7 +91,7 @@ export function MacLocalControl() {
                 type="button"
                 onClick={() => void openSettings()}
                 disabled={pending}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-3 py-1.5 text-[12.5px] font-medium text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
               >
                 Open System Settings
               </button>
@@ -90,14 +100,14 @@ export function MacLocalControl() {
               type="button"
               onClick={() => void retry()}
               disabled={pending}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[12.5px] font-medium text-ink hover:bg-raised disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[12.5px] font-medium text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
             >
               {pending && <Loader2 size={13} className="animate-spin" />}
               Retry
             </button>
           </div>
         </div>
-      </div>
+      </div>}
     </section>
   );
 }

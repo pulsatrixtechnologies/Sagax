@@ -30,8 +30,8 @@ Use current `main` after the companion lands. While reviewing the feature PR,
 GitHub CLI can create the correct local branch:
 
 ```sh
-git clone https://github.com/milind-soni/OpenMausBot
-cd OpenMausBot
+git clone https://github.com/pulsatrixtechnologies/pulsa-bot
+cd pulsa-bot
 gh pr checkout 161        # omit after the PR is merged
 ```
 
@@ -109,7 +109,7 @@ This is the likeliest snag on macOS, and it is not a bug in the phone.
   and normally shares it fine, but if something else grabbed it exclusively the
   advertisement cannot start. `sudo lsof -i :5353` shows who.
 - **The firewall is prompting.** System Settings → Network → Firewall. Incoming
-  connections to `node`/OpenMausBot must be allowed, or the phone reaches
+  connections to `node`/Pulsa Bot must be allowed, or the phone reaches
   nothing on 8810 even with a correct address.
 - Neither blocks testing: use the typed address instead. Discovery failing is
   designed to be a fallback, not a dead end — that is worth confirming too.
@@ -176,7 +176,7 @@ paid account is required to run on your own phone.
 
 On the phone, in order:
 
-1. **Pair.** In OpenMausBot → Settings → Phone, choose **Pair a phone**.
+1. **Pair.** In Pulsa Bot → Settings → Phone, choose **Pair a phone**.
    Scan the QR code with the phone's Camera, open OpenMausMobile,
    confirm that the computer and six-digit code are filled in, then tap
    **Connect**. The computer should also appear by name for the manual path:
@@ -186,7 +186,7 @@ On the phone, in order:
      into Keychain rather than only living in memory.
    - If the list stays empty, check in this order:
      1. **Local Network permission.** iOS asks once, and a denial is
-        permanent and silent. Settings → OpenMausBot → Local Network. If the
+        permanent and silent. Settings → Pulsa Bot → Local Network. If the
         toggle is not even there, the prompt never fired — which points at the
         Info.plist. Deleting the app and reinstalling resets the decision and
         asks again.
@@ -255,7 +255,7 @@ so this is also how the phone reaches the Mac over cellular.
    App Store build) and sign in.
 2. **On the phone:** install Tailscale from the App Store, sign in to the *same*
    account, and turn the VPN on.
-3. **In OpenMausBot → Settings → Phone:** with Phone access on, the panel now
+3. **In Pulsa Bot → Settings → Phone:** with Phone access on, the panel now
    shows a separate **Tailscale pairing** card. Choose **Turn on phone access &
    check** (or **Check again** when Phone access is already on); it should
    report a tailnet name such as `macbook.tail1234.ts.net`. If it

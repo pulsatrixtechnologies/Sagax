@@ -313,6 +313,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/profile$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+$/ }, // display fields only: see clientBotPatchViolation
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/direct-grants$/ },
   // approvals and cards
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/respond$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/respond$/ },
@@ -322,7 +323,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/(?:resume|dismiss)$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/always-allow$/ }, // must match a pending card
   // rooms
-  { methods: ["POST"], path: /^\/api\/groups$/ },
+  { methods: ["GET", "POST"], path: /^\/api\/groups$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/messages$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/interrupt$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/read$/ },
@@ -350,6 +351,16 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/webhooks$/ },
   // configured-or-not booleans; the handler strips the few identifying fields for clients
   { methods: ["GET"], path: /^\/api\/config$/ },
+  // Accepting an invite is how a person who is not yet a member joins.
+  // Creating the org and issuing invites stay admin (owner/admin in the handler).
+  { methods: ["POST"], path: /^\/api\/org\/invites\/[^/]+\/accept$/ },
+  { methods: ["GET"], path: /^\/api\/org$/ },
+  // A member's machine checks in as a worker. The handler binds it to the session user.
+  // Pull and cancel stay on that session: registering does not run the queued turns.
+  { methods: ["POST"], path: /^\/api\/workers$/ },
+  { methods: ["POST"], path: /^\/api\/workers\/[\w-]+\/pull$/ },
+  { methods: ["POST"], path: /^\/api\/workers\/[\w-]+\/drop$/ },
+  { methods: ["POST"], path: /^\/api\/workers\/queue\/[\w-]+\/cancel$/ },
 ];
 
 export function requiredScope(method: string, path: string, features: { sharedComputers?: boolean } = {}): Scope {
@@ -370,8 +381,9 @@ export function clientBotPatchViolation(body: unknown): string | null {
   return null;
 }
 
-/** Same for a room: name and reading state, never its folder or who answers. */
-const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinnedMessageId", "section"]);
+/** Same for a room: name, reading state, and the roster. humanIds and
+ * memberIds are not refused here. canEditHumans and canPlaceBot decide them. */
+const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinnedMessageId", "section", "humanIds", "memberIds"]);
 export function clientGroupPatchViolation(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
   for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key)) return key;

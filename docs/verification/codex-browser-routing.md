@@ -1,6 +1,6 @@
 # Codex browser routing
 
-Codex bot processes use OpenMausBot's selected browser/desktop bridge. Process-local overrides disable the bundled desktop-only browser/computer plugins; they do not uninstall plugins, change the user's Codex configuration, or disable native web search.
+Codex bot processes use Pulsa Bot's selected browser/desktop bridge. Process-local overrides disable the bundled desktop-only browser/computer plugins; they do not uninstall plugins, change the user's Codex configuration, or disable native web search.
 
 ## Regression checks
 

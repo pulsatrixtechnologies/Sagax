@@ -4,7 +4,7 @@ import { boatCredentialEnv } from "./boat.ts";
 import type { AppConfig } from "./config.ts";
 
 // The boat is created with `noEnv: true`, so the only keys its agents ever see
-// are the ones this OpenMausBot forwards. Forward exactly what the user
+// are the ones this Pulsa Bot forwards. Forward exactly what the user
 // already configured here; never invent, never leak unrelated variables.
 describe("boatCredentialEnv", () => {
   it("forwards the workspace Anthropic key and the known agent keys from the environment", () => {

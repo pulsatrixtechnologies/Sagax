@@ -1,4 +1,4 @@
-# Contributing to OpenMausBot
+# Contributing to Pulsa Bot
 
 Thanks for wanting to help — community PRs have already shipped in this repo, and more are welcome.
 This file tells you how to get a working dev setup, what the codebase expects from a change, and what
@@ -23,7 +23,7 @@ and logged in. macOS is the primary release platform and Ubuntu 24.04 x64 is the
 the harness server itself is portable Node and the test suite runs on macOS, Linux, and Windows.
 
 ```sh
-git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot
+git clone https://github.com/pulsatrixtechnologies/pulsa-bot && cd pulsa-bot
 pnpm install
 
 pnpm dev:server    # harness server → 127.0.0.1:8799
@@ -57,12 +57,12 @@ fail-closed Wayland CUA smoke,
 and produces one release artifact containing:
 
 - the versioned `.deb` and AppImage;
-- stable `OpenMausBot-amd64.deb` and `OpenMausBot.AppImage` copies used by the latest-download links;
+- stable `Pulsa Bot-amd64.deb` and `Pulsa Bot.AppImage` copies used by the latest-download links;
 - `SHA256SUMS-ubuntu-x64.txt` covering both versioned and stable names.
 
 Before publishing, confirm that `package.json` has the release version and dispatch the workflow against the same
 commit used for the other platforms. Attach all five Ubuntu files to the matching release in the separate
-[OpenMausBot releases](https://github.com/milind-soni/OpenMausBot/releases). Then verify the checksum
+[Pulsa Bot releases](https://github.com/pulsatrixtechnologies/pulsa-bot/releases). Then verify the checksum
 file and install the `.deb` plus launch the AppImage in a clean Ubuntu 24.04 x86_64 GNOME environment. Never combine
 packages built from different commits under one version.
 
@@ -230,31 +230,27 @@ API keys are write-only: they land in `~/.openmausbot/config.json` via `PUT /api
 only ever reports `configured` booleans. Keep it that way — no logging keys, no echoing them in
 responses or events, no baking them into argv where another local process could read them.
 
-## Downstream forks and release ownership
+## Where contributions go
 
-Changes prepared in a downstream fork should keep provenance in the pull request, not add
-fork-specific branding or ownership claims to the upstream source tree. Record the exact upstream
-commit used as the comparison base, the head branch, and the checks run after the final rebase.
+Pulsa Bot is developed only in `pulsatrixtechnologies` repositories. Open pull requests against
+[pulsatrixtechnologies/pulsa-bot](https://github.com/pulsatrixtechnologies/pulsa-bot). Changes made
+here are not submitted to the original OpenMausBot project or any other upstream: no pull requests,
+issues, or pushes there.
 
-Fork maintainers own the binaries and update channels they publish. Before distributing a fork,
-review the application name and identifiers, signing configuration, update metadata, and every
-`electron-builder` publish target. Never upload fork artifacts or update metadata to the official
-OpenMausBot release repository, and never change the upstream publish target in a feature PR unless
-that release migration was explicitly agreed with the maintainer.
-
-An upstream PR should contain only the portable product change. Keep local build paths, account
-names, credentials, private endpoints, machine-specific configuration, and fork-only release notes
-out of its commits and screenshots.
+Release artifacts and update metadata go only to this repository's releases. Before distributing a
+build, review the application name and identifiers, signing configuration, update metadata, and every
+`electron-builder` publish target so none of them points outside `pulsatrixtechnologies`. Keep local
+build paths, account names, credentials, private endpoints, and machine-specific configuration out of
+commits and screenshots.
 
 ## Contribution licensing
 
 - No DCO sign-off is required. Submit only code you wrote or have the right
   to contribute under the applicable project license.
-- Changes under `enterprise/` (source-available, see [LICENSING.md](LICENSING.md))
-  need the [CLA](CLA.md), signed once by commenting on the pull request
-  when the bot asks. Changes outside `enterprise/` do not require a CLA.
-- `enterprise/`, the cloud seam and the licensing files have code owners; a
-  maintainer review is required there.
+- This distribution has no `enterprise/` directory. Contributions are under
+  Apache 2.0. See [LICENSING.md](LICENSING.md). No CLA is required.
+- The cloud seam and the licensing files have code owners; a maintainer
+  review is required there.
 
 ## CI, in one glance
 

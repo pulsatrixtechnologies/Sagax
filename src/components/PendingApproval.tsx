@@ -292,7 +292,7 @@ export function PendingApprovalActions({
         disabled={isSkillRequest && !reviewedSha256}
         className={cn(
           base,
-          "bg-accent font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40",
+          "bg-accent font-medium text-accent-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40",
         )}
       >
         {isTeamSetup ? pending.message.card?.options[0] : isSkillRequest

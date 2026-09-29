@@ -251,7 +251,7 @@ export function Spotlight({
                   type="button"
                   autoFocus
                   onClick={primary.onClick}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white transition-transform duration-150 active:scale-[0.98]"
+                  className="rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-ink transition-transform duration-150 active:scale-[0.98]"
                 >
                   {primary.label}
                 </button>

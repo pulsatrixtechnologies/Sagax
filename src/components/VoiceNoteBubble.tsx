@@ -114,7 +114,7 @@ export function VoiceNoteBubble({
         onClick={toggle}
         aria-label={playing ? t("chat.voiceNote.pause") : t("chat.voiceNote.play")}
         title={playing ? t("chat.voiceNote.pause") : t("chat.voiceNote.play")}
-        className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-opacity hover:opacity-90"
+        className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink transition-opacity hover:opacity-90"
       >
         {playing ? <Pause size={13} className="fill-current" /> : <Play size={13} className="translate-x-px fill-current" />}
       </button>

@@ -74,9 +74,9 @@ function workspaceSummary(state) {
 
 /** Native identity must not depend on a hosted renderer's version/title. */
 function workspaceWindowTitle(state, companion) {
-  if (companion) return `OpenMausBot — Connected to: ${companion.serverName} (${new URL(companion.endpoint).host})`;
+  if (companion) return `Pulsa Bot — Connected to: ${companion.serverName} (${new URL(companion.endpoint).host})`;
   const active = activeEnvironment(state);
-  return active ? `OpenMausBot — Hosted: ${active.name} (${new URL(active.origin).host})` : "OpenMausBot";
+  return active ? `Pulsa Bot — Hosted: ${active.name} (${new URL(active.origin).host})` : "Pulsa Bot";
 }
 
 /** Renderer navigation stays in the selected workspace. Switching is a main

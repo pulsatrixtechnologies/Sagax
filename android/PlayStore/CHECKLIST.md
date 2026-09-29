@@ -7,7 +7,7 @@ commit and artifact being submitted; unchecked items remain release work.
 
 - [ ] Record the release commit and intended version from
   `android/app/build.gradle.kts`; confirm the version against Console uploads.
-- [ ] Confirm Android branding is MausBot and desktop references are OpenMausBot.
+- [ ] Confirm Android branding is MausBot and desktop references are Pulsa Bot.
 - [ ] Confirm package `com.openmausbot.companion` and the release SDK settings.
 - [ ] Have the release owner confirm signing configuration, certificate identity,
   key backups, and supported installation/upgrade paths.
@@ -25,7 +25,7 @@ commit and artifact being submitted; unchecked items remain release work.
 ## Listing and reviewer access
 
 - [ ] Write the description and release notes from features verified in this
-  release, including its OpenMausBot desktop dependency.
+  release, including its Pulsa Bot desktop dependency.
 - [ ] Exclude unmerged call-mode and voice-key setup claims (#739/#1531).
 - [ ] Review icon, feature graphic, and each selected screenshot against the
   release, with MausBot branding and no private data.

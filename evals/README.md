@@ -1,6 +1,6 @@
 # Behavior evals
 
-Offline behavior evals for the OpenMausBot harness (upstream issue #1503, tiers 1-3). The unit and e2e suite tests code paths; these scenarios test what the harness *does*: which tools a turn's model was allowed to call, where work was dispatched, what the handoff tree looks like, how routines defer, and when the computer claim fires.
+Offline behavior evals for the Pulsa Bot harness (upstream issue #1503, tiers 1-3). The unit and e2e suite tests code paths; these scenarios test what the harness *does*: which tools a turn's model was allowed to call, where work was dispatched, what the handoff tree looks like, how routines defer, and when the computer claim fires.
 
 The principle: evaluate the harness, never the models. A scripted engine replays deterministic turns (tool calls, text, refusals) from a plan file; no external API is called; a run is hermetic and repeatable.
 

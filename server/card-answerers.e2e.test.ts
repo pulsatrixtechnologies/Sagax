@@ -264,7 +264,7 @@ posixOnly("who may answer a card on a shared workspace", () => {
 
     // A Slack-shaped request: the worker opens the thread and sends through
     // the guarded route, so no person can be named. Any member may approve it
-    // in OpenMausBot, as before; nothing waits on an admin.
+    // in Pulsa Bot, as before; nothing waits on an admin.
     const task = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Slack · C1 · 1.0" });
     expect(task.status, JSON.stringify(task.body)).toBe(201);
     const threadId = task.body.task.threadId as string;

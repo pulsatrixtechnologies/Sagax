@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 
 import { InitialsAvatar } from "./Avatar";
-import { DiscordIcon } from "./DiscordIcon";
 import { AboutDialog } from "./AboutDialog";
 import { SidebarPopoverMenu, type SidebarMenuItem } from "./SidebarPopoverMenu";
 import { ShortcutHint } from "./ShortcutHint";
@@ -31,7 +30,7 @@ import { useStore } from "@/state/store";
 import { useUpdaterState, type UpdaterState } from "@/lib/updater";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { FEEDBACK_URL, HELP_CENTER_URL, openExternalLink } from "@/lib/app-links";
+import { HELP_CENTER_URL, openExternalLink } from "@/lib/app-links";
 
 /** "Milind Soni" → "MS", "milind" → "M", "you@x.dev" → "Y", unset → "?" */
 export function profileInitials(profile?: { name?: string; email?: string }): string {
@@ -187,7 +186,11 @@ function useUpdateItem(): UpdateEntry | null {
   };
 }
 
-export function SidebarProfileMenu() {
+export function SidebarProfileMenu({ avatarOnly = false }: {
+  /** just the avatar, beside the apps pill the way Grok Bot lays out its
+   * footer; the name moves to the tooltip and the menu keeps its width */
+  avatarOnly?: boolean;
+} = {}) {
   const { state, dispatch } = useStore();
   const phone = useSidebarPhoneStatus();
   const update = useUpdateItem();
@@ -239,12 +242,6 @@ export function SidebarProfileMenu() {
       icon: <HelpCircle size={18} />,
       onSelect: () => void openExternalLink(HELP_CENTER_URL),
     },
-    {
-      key: "feedback",
-      label: t("sidebar.menu.feedback"),
-      icon: <DiscordIcon size={17} />,
-      onSelect: () => void openExternalLink(FEEDBACK_URL),
-    },
   ];
 
   return (
@@ -252,7 +249,33 @@ export function SidebarProfileMenu() {
       <SidebarPopoverMenu
         items={items}
         ariaLabel={name}
-        renderTrigger={({ open }) => (
+        menuClassName={avatarOnly ? "left-0 w-64" : undefined}
+        renderTrigger={({ open }) => avatarOnly ? (
+          <span
+            ref={triggerRef}
+            title={name}
+            className={cn(
+              "relative flex size-9 items-center justify-center rounded-full transition-[filter]",
+              open ? "ring-2 ring-accent/60" : "hover:brightness-90",
+            )}
+          >
+            {profile?.avatarUrl ? (
+              <img src={profile.avatarUrl} alt="" className="size-9 rounded-full object-cover" />
+            ) : (
+              <InitialsAvatar initials={profileInitials(profile)} size={36} />
+            )}
+            {update && updateNoteworthy(update.phase, update.pending) && (
+              <span
+                title={update.label}
+                aria-label={update.label}
+                className={cn(
+                  "absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-panel",
+                  update.phase === "error" ? "bg-danger" : "bg-accent",
+                )}
+              />
+            )}
+          </span>
+        ) : (
           <span
             ref={triggerRef}
             className={cn(
@@ -260,7 +283,11 @@ export function SidebarProfileMenu() {
               open ? "bg-raised" : "hover:bg-raised/50",
             )}
           >
-            <InitialsAvatar initials={profileInitials(profile)} size={28} />
+            {profile?.avatarUrl ? (
+              <img src={profile.avatarUrl} alt="" className="size-7 shrink-0 rounded-full object-cover" />
+            ) : (
+              <InitialsAvatar initials={profileInitials(profile)} size={28} />
+            )}
             <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{name}</span>
             {/* an update is the one thing worth interrupting the name for, so
               * it sits on the row rather than waiting to be found in the menu */}

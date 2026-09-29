@@ -29,7 +29,7 @@ if (!deb.endsWith(".deb") || !existsSync(deb)) fail("pass the path to a .deb");
 
 // Inside the container the package sits at a path with a space and an
 // apostrophe, so the quoting the app emits is exercised, not assumed.
-const staged = "/root/pending dir/o'brien/OpenMausBot.deb";
+const staged = "/root/pending dir/o'brien/Pulsa Bot.deb";
 const command = packageInstallCommand("deb", staged);
 console.log(`[smoke-deb-command] command under test:\n    ${command}\n`);
 
@@ -72,7 +72,7 @@ const installed = inContainer(
     prepare,
     command,
     'dpkg-query -W -f="INSTALLED=\\${Version} \\${db:Status-Abbrev}\\n" openmausbot',
-    'test -x /opt/OpenMausBot/openmausbot && echo "EXECUTABLE=yes"',
+    'test -x /opt/Pulsa Bot/openmausbot && echo "EXECUTABLE=yes"',
   ].join("\n"),
 );
 

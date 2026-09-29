@@ -24,18 +24,8 @@ mkdirSync(out, { recursive: true });
 cpSync(join(root, "dist-server"), join(out, "dist-server"), { recursive: true });
 cpSync(join(root, "dist"), join(out, "dist"), { recursive: true });
 if (existsSync(join(root, "skills"))) cpSync(join(root, "skills"), join(out, "skills"), { recursive: true });
-// The enterprise layer, bundled by scripts/bundle-server.mjs, under the path
-// server/enterprise.ts loads from: <package>/enterprise/server/index.js.
-// Source-available under its own license; inert without OMB_LICENSE_KEY.
-const enterpriseBundle = join(root, "dist-server", "enterprise", "server", "index.js");
-if (existsSync(enterpriseBundle)) {
-  mkdirSync(join(out, "enterprise", "server"), { recursive: true });
-  copyFileSync(enterpriseBundle, join(out, "enterprise", "server", "index.js"));
-  for (const file of ["LICENSE", "README.md"]) {
-    if (existsSync(join(root, "enterprise", file))) copyFileSync(join(root, "enterprise", file), join(out, "enterprise", file));
-  }
-}
 cpSync(join(root, "LICENSE"), join(out, "LICENSE"));
+if (existsSync(join(root, "NOTICE"))) copyFileSync(join(root, "NOTICE"), join(out, "NOTICE"));
 
 // The bin lives next to the bundle so serverEntry() finds index.js by path.
 writeFileSync(join(out, "cli.js"), `#!/usr/bin/env node\nimport "./dist-server/openmausbot.js";\n`);
@@ -46,14 +36,14 @@ writeFileSync(
     {
       name: "openmausbot",
       version: app.version,
-      description: "Run the OpenMausBot server anywhere and pair your devices to it",
+      description: "Run the Pulsa Bot server anywhere and pair your devices to it",
       license: "Apache-2.0",
       type: "module",
       bin: { openmausbot: "cli.js" },
-      files: ["cli.js", "dist-server", "dist", "skills", "enterprise", "LICENSE", "README.md"],
+      files: ["cli.js", "dist-server", "dist", "skills", "LICENSE", "NOTICE", "README.md"],
       engines: { node: ">=24" },
-      repository: { type: "git", url: "https://github.com/milind-soni/OpenMausBot.git" },
-      homepage: "https://github.com/milind-soni/OpenMausBot#readme",
+      repository: { type: "git", url: "https://github.com/pulsatrixtechnologies/pulsa-bot.git" },
+      homepage: "https://github.com/pulsatrixtechnologies/pulsa-bot#readme",
       keywords: ["openmausbot", "agents", "self-hosted", "server"],
     },
     null,
@@ -84,14 +74,14 @@ conversations keep their settings.
 One optional step connects your phone, defaulting to Skip for now. Choose
 an explicitly approved managed public HTTPS endpoint protected by pairing,
 existing Tailscale, or an HTTPS reverse proxy you already configured.
-Managed access uses a separate OpenMausBot account and asks permission for
+Managed access uses a separate Pulsa Bot account and asks permission for
 the public endpoint and possible connector download. The pairing page and
 basic server identity are public; chat and settings require pairing.
 Tailscale must already be installed and signed in on both devices.
 
 After the HTTPS connection is checked, scan the QR with your phone. When
 you pair an Android phone the QR is an app link, so scan it inside the
-OpenMausBot app; the web address is printed beside it if you would rather
+Pulsa Bot app; the web address is printed beside it if you would rather
 use a browser. On iPhone or iPad, scan with Camera for Safari, or use the
 app's own scanner. Choose Connect on the phone; scanning alone is not a
 completed pairing. Codes
@@ -99,7 +89,7 @@ are private, single-use, and expire after five minutes. Guided phone
 access permits chat and approvals, not settings or pairing administration.
 Localhost and a bare LAN address cannot connect your phone to this server.
 
-Later launches reuse your saved choices and open OpenMausBot on this computer.
+Later launches reuse your saved choices and open Pulsa Bot on this computer.
 Keep the terminal open: this is a foreground server, not a background
 service. Ctrl-C stops the server without deleting saved work. Automatic
 browser opening uses only the local address; it is skipped for SSH and
@@ -137,11 +127,11 @@ without starting a server. Completed installs and sign-ins remain; run
 
 For a service, use \`serve --tunnel\` after \`login\` for managed HTTPS,
 \`serve --tailscale\` for your tailnet, or your own reverse proxy. The
-\`login\` command signs in to an OpenMausBot account, not an AI provider;
+\`login\` command signs in to an Pulsa Bot account, not an AI provider;
 it does not start the tunnel itself.
 
-[Setup guide](https://github.com/milind-soni/OpenMausBot/blob/main/docs/cli-onboarding.md)
-· [Hosting guide](https://github.com/milind-soni/OpenMausBot/blob/main/docs/self-hosting.md)
+[Setup guide](https://github.com/pulsatrixtechnologies/pulsa-bot/blob/main/docs/cli-onboarding.md)
+· [Hosting guide](https://github.com/pulsatrixtechnologies/pulsa-bot/blob/main/docs/self-hosting.md)
 `,
 );
 console.log(`npm package assembled at ${out} (openmausbot@${app.version})`);

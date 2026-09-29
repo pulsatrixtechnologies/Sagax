@@ -66,8 +66,8 @@ function WorkingFolder({ bot }: { bot: Bot }) {
   };
 
   return (
-    <div className="rounded-xl bg-card p-4">
-      <div className="text-[15px] font-medium text-ink">Working folder</div>
+    <div className="rounded-xl border border-hairline/40 p-4">
+      <div className="text-[13px] font-medium text-ink">Working folder</div>
       <div className="mt-0.5 text-[13px] text-ink-secondary">Where this bot runs its shell and file tools.</div>
       <ProposalStatus bot={bot} kind="chief" />
       {canPick ? (
@@ -135,10 +135,10 @@ function McpServersCard({ bot, patch }: { bot: Bot; patch: (patch: { mcpServers:
   };
 
   return (
-    <div className="rounded-xl bg-card p-4">
+    <div className="rounded-xl border border-hairline/40 p-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="text-[15px] font-medium text-ink">{t("connectors.tab.mcp")}</div>
+          <div className="text-[13px] font-medium text-ink">{t("connectors.tab.mcp")}</div>
           <div className="mt-0.5 text-[13px] text-ink-secondary">
             {t("botAccess.mcpDescription")}
           </div>
@@ -556,13 +556,13 @@ export function AccessSection({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl bg-card p-4">
-        <div className="text-[15px] font-medium text-ink">Works on</div>
+      <div className="rounded-xl border border-hairline/40 p-4">
+        <div className="text-[13px] font-medium text-ink">Works on</div>
         <div className="mt-0.5 text-[13px] text-ink-secondary">
           Where this bot works{bot.computer ? "" : " (currently: auto)"}. Browser is the built-in browser tab only; no desktop.
         </div>
         <ProposalStatus bot={bot} kind="owner" />
-        <div className="mt-3 flex overflow-hidden rounded-lg border border-hairline/40">
+        <div className="mt-3 grid grid-cols-3 gap-1.5">
           {([
             [null, "Auto"],
             ["cloud", "Cloud"],
@@ -570,7 +570,7 @@ export function AccessSection({
             ["local", "This computer"],
             ["browser", "Browser"],
             ["off", "Off"],
-          ] as const).map(([mode, label], i) => (
+          ] as const).map(([mode, label]) => (
             <button
               key={mode ?? "auto"}
               disabled={(mode === "local" && !localSelectable) || (mode === "browser" && !browserSelectable)}
@@ -592,12 +592,11 @@ export function AccessSection({
                 else patch({ computer: mode });
               }}
               className={cn(
-                "flex-1 py-1.5 text-[13px] capitalize",
-                i > 0 && "border-l border-hairline/40",
+                "rounded-lg border px-1.5 py-1.5 text-[12px] whitespace-nowrap",
                 ((mode === "local" && !localSelectable) || (mode === "browser" && !browserSelectable)) && "cursor-not-allowed opacity-40",
                 (mode === null ? bot.computer === undefined : bot.computer === mode)
-                  ? "bg-control text-ink"
-                  : "text-ink-secondary hover:bg-control/60 hover:text-ink",
+                  ? "border-hairline bg-control text-ink"
+                  : "border-hairline/40 text-ink-secondary hover:bg-control/60 hover:text-ink",
               )}
             >
               {label}
@@ -645,10 +644,10 @@ export function AccessSection({
 
       <WorkingFolder bot={bot} />
 
-      <div className="rounded-xl bg-card p-4">
+      <div className="rounded-xl border border-hairline/40 p-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-[15px] font-medium text-ink">Connected apps</div>
+            <div className="text-[13px] font-medium text-ink">Connected apps</div>
             <div className="mt-0.5 text-[13px] text-ink-secondary">
               {!connectedAppsConfigured
                 ? "Connect apps in App Settings before giving this bot access."
@@ -700,9 +699,9 @@ export function AccessSection({
 
       <McpServersCard bot={bot} patch={patch} />
 
-      <div className="flex items-center justify-between gap-4 rounded-xl bg-card p-4">
+      {browserFeature && <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
         <div>
-          <div className="text-[15px] font-medium text-ink">Browser</div>
+          <div className="text-[13px] font-medium text-ink">Browser</div>
           <div className="mt-0.5 text-[13px] text-ink-secondary">
             {!desktopBrowser
               ? browserBlockedOnWindows && !browserInstallable
@@ -731,10 +730,10 @@ export function AccessSection({
           title={bot.computer === "off" ? "Works on is set to Off, so this bot has no browser" : undefined}
           className="disabled:cursor-not-allowed"
         />
-      </div>
+      </div>}
 
-      {!draft && <div className="rounded-xl bg-card p-4">
-        <div className="text-[15px] font-medium text-ink">Webhooks</div>
+      {!draft && <div className="rounded-xl border border-hairline/40 p-4">
+        <div className="text-[13px] font-medium text-ink">Webhooks</div>
         <div className="mt-0.5 text-[13px] text-ink-secondary">Inbound triggers wired to this bot.</div>
         <ProposalStatus bot={bot} kind="owner" />
         {webhooks.length === 0 ? (
@@ -761,8 +760,8 @@ export function AccessSection({
         )}
       </div>}
 
-      {!draft && <div className="rounded-xl bg-card p-4">
-        <div className="text-[15px] font-medium text-ink">Always allowed</div>
+      {!draft && <div className="rounded-xl border border-hairline/40 p-4">
+        <div className="text-[13px] font-medium text-ink">Always allowed</div>
         <div className="mt-0.5 text-[13px] text-ink-secondary">Tools this bot no longer asks about.</div>
         <ProposalStatus bot={bot} kind="owner" />
         {alwaysAllow.length === 0 ? (

@@ -385,6 +385,25 @@ const appConfigSchema = z.object({
   /** Who may sign in with an emailed code (server/account-signin.ts):
    * addresses or `@domain` entries; admins get every scope, members chat only. */
   signIn: z.object({ admins: z.array(z.string().max(320)).max(500).optional(), members: z.array(z.string().max(320)).max(5000).optional() }).optional(),
+  /** Fleet organization on this host. Members stay in signIn.members. */
+  org: z.object({
+    name: z.string().min(1),
+    host: z.union([
+      z.object({ kind: z.literal("this-computer") }),
+      z.object({ kind: z.literal("server"), url: z.string().min(1) }),
+    ]),
+    ownerUserId: z.string().min(1),
+  }).optional(),
+  /** When stored person references became principal ids (server/identity-migration.ts). */
+  identityMigratedAt: z.number().optional(),
+  invites: z.array(z.object({
+    token: z.string().min(1),
+    email: z.string().max(320),
+    createdAt: z.number(),
+    expiresAt: z.number(),
+    usedAt: z.number().optional(),
+    revokedAt: z.number().optional(),
+  })).max(5000).optional(),
   defaultModelSelection: defaultModelSelectionSchema.optional(),
   automaticRecovery: automaticRecoverySchema.optional(),
   newBotDefaults: newBotDefaultsSchema.optional(),
@@ -478,7 +497,12 @@ const appConfigSchema = z.object({
     ).optional(),
   }).optional(),
   /** Non-secret profile details; aboutMe is shared with every bot. */
-  profile: z.object({ name: optionalText, email: optionalText, aboutMe: z.string().max(24_000).optional() }).optional(),
+  profile: z.object({
+    name: optionalText,
+    email: optionalText,
+    aboutMe: z.string().max(24_000).optional(),
+    avatarUrl: z.string().max(300_000).optional(),
+  }).optional(),
   /** UI language override (BCP-47, lowercase). Empty/absent = follow the
    * system language. Unknown tags degrade to English in the renderer. */
   language: optionalText,
@@ -524,13 +548,28 @@ const appConfigSchema = z.object({
 const storedAppConfigSchema = appConfigSchema.extend({
   browserProfiles: storedBrowserProfilesSchema.optional(),
 });
-const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true })
+const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, org: true, identityMigratedAt: true, invites: true })
   .extend({ threads: threadsPatchSchema.optional(), newBots: newBotsPatchSchema.optional() });
 const jsonObjectSchema = z.record(z.string(), z.json());
 
 export interface AppConfig {
   customDomain?: string;
   signIn?: { admins?: string[]; members?: string[] };
+  org?: {
+    name: string;
+    host: { kind: "this-computer" } | { kind: "server"; url: string };
+    ownerUserId: string;
+  };
+  /** When stored person references became principal ids (server/identity-migration.ts). */
+  identityMigratedAt?: number;
+  invites?: Array<{
+    token: string;
+    email: string;
+    createdAt: number;
+    expiresAt: number;
+    usedAt?: number;
+    revokedAt?: number;
+  }>;
   /** Preferred selection for newly created bots; existing bots keep theirs. */
   defaultModelSelection?: ModelSelection;
   /** Off by default; one backup attempt only before any work starts. */
@@ -1187,6 +1226,9 @@ export function saveConfig(
   if (checkedPatch.language !== undefined) disk.language = checkedPatch.language;
   if (checkedPatch.customDomain !== undefined) disk.customDomain = checkedPatch.customDomain;
   if (checkedPatch.signIn !== undefined) disk.signIn = checkedPatch.signIn;
+  if (checkedPatch.org !== undefined) disk.org = checkedPatch.org;
+  if (checkedPatch.identityMigratedAt !== undefined) disk.identityMigratedAt = checkedPatch.identityMigratedAt;
+  if (checkedPatch.invites !== undefined) disk.invites = checkedPatch.invites;
   // Replace the section so clearing a backup cannot revive the old selection.
   if (checkedPatch.automaticRecovery !== undefined) disk.automaticRecovery = checkedPatch.automaticRecovery;
   // A selection is replaced as one value, so changing engines also clears

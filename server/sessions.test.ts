@@ -517,3 +517,41 @@ describe("stream tickets", () => {
     expect(registry.redeemStreamTicket(orphan)).toBeNull();
   });
 });
+
+describe("sessions carry a principal", () => {
+  it("gives a paired device the principal that minted the code", () => {
+    const sessions = registry;
+    const opened = sessions.openPairing({ label: "Phone", principalId: "pr_11111111-1111-4111-8111-111111111111" });
+    const paired = sessions.exchange({ code: opened.code, label: "", source: "test" });
+    expect(paired.ok).toBe(true);
+    const token = paired.ok ? paired.token : "";
+    expect(sessions.authenticate(token)?.principalId).toBe("pr_11111111-1111-4111-8111-111111111111");
+  });
+
+  it("stores the principal of an account sign-in", () => {
+    // Needs its own registry: an account session carrying an email is
+    // fail-closed by revalidateEmailSessions unless membership resolves
+    // (see "fails closed" above), which is orthogonal to principalId.
+    registry = new SessionRegistry({ file: file(), now: () => clock, emailScopes: () => ["client"] });
+    const sessions = registry;
+    const issued = sessions.issue({ label: "Mac", scopes: ["client"], email: "zach@gox.ca", userId: "cp_1", principalId: "pr_22222222-2222-4222-8222-222222222222" });
+    expect(sessions.authenticate(issued.token)?.principalId).toBe("pr_22222222-2222-4222-8222-222222222222");
+  });
+
+  it("lets the boot migration attach a principal to an older session", () => {
+    const sessions = registry;
+    const opened = sessions.openPairing({ label: "Old phone" });
+    const paired = sessions.exchange({ code: opened.code, label: "", source: "test" });
+    const token = paired.ok ? paired.token : "";
+    const id = sessions.authenticate(token)!.id;
+    expect(sessions.setPrincipal(id, "pr_33333333-3333-4333-8333-333333333333")).toBe(true);
+    expect(sessions.authenticate(token)?.principalId).toBe("pr_33333333-3333-4333-8333-333333333333");
+  });
+
+  it("lists each session's identity fields for the boot migration, never its token hash", () => {
+    const opened = registry.openPairing({ label: "Old phone" });
+    const paired = registry.exchange({ code: opened.code, label: "", source: "test" });
+    const id = paired.ok ? paired.session.id : "";
+    expect(registry.listRecordsForMigration()).toEqual([{ id, label: "Old phone", email: undefined, userId: undefined, principalId: undefined, scopes: ["admin", "client"] }]);
+  });
+});

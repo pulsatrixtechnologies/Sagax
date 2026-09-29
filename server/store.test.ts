@@ -739,6 +739,21 @@ describe("Store", () => {
     expect(reloaded.group(group.id)?.defaultResponder).toEqual({ kind: "member", botId: second.id });
   });
 
+  it("refuses humanIds on a bot-to-bot dm and persists them on a channel", () => {
+    const store = new Store(selection);
+    const first = store.createBot();
+    const second = store.createBot();
+    const dm = store.createGroup("Pair", [first.id, second.id], true);
+    expect(() => store.patchGroup(dm.id, { humanIds: ["zachary@example.test"], name: "nope" })).toThrow(/dm-has-no-humans/);
+    expect(dm.humanIds).toBeUndefined();
+    expect(dm.name).toBe("Pair");
+
+    const room = store.createGroup("Channel", [first.id]);
+    expect(store.patchGroup(room.id, { humanIds: ["jc", "zachary@example.test"] })?.humanIds).toEqual(["jc", "zachary@example.test"]);
+    expect(new Store(selection).group(room.id)?.humanIds).toEqual(["jc", "zachary@example.test"]);
+    expect(new Store(selection).group(dm.id)?.humanIds).toBeUndefined();
+  });
+
   it("persists a channel's context when it is created", () => {
     const store = new Store(selection);
     const bot = store.createBot();
@@ -858,6 +873,29 @@ describe("Store", () => {
     expect(reloaded.bot(bot.id)?.approvalGrant).toBeUndefined();
     expect(reloaded.projectBotForTask(bot.id, target.threadId)?.approvalMode).toBe("ask");
     expect(reloaded.projectBotForTask(bot.id, sibling.threadId)?.approvalMode).toBe("full");
+  });
+
+  it("defaults a disk bot without host to the fleet and keeps a machine host", () => {
+    const store = new Store(selection);
+    const missing = store.createBot();
+    const machine = store.createBot();
+    const fleet = store.createBot();
+    expect(missing.host).toEqual({ kind: "fleet" });
+    const raw: BotRecord[] = JSON.parse(readFileSync(join(DATA_DIR, "bots.json"), "utf8"));
+    delete raw.find((bot) => bot.id === missing.id)!.host;
+    raw.find((bot) => bot.id === machine.id)!.host = { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" };
+    raw.find((bot) => bot.id === fleet.id)!.host = { kind: "fleet" };
+    writeFileSync(join(DATA_DIR, "bots.json"), JSON.stringify(raw));
+
+    const reloaded = new Store(selection);
+    expect(reloaded.bot(missing.id)?.host).toEqual({ kind: "fleet" });
+    expect(reloaded.bot(machine.id)?.host).toEqual({ kind: "machine", userId: "zachary@example.test", deviceId: "laptop" });
+    expect(reloaded.bot(fleet.id)?.host).toEqual({ kind: "fleet" });
+
+    const saved: BotRecord[] = JSON.parse(readFileSync(join(DATA_DIR, "bots.json"), "utf8"));
+    expect(saved.find((bot) => bot.id === missing.id)?.host).toEqual({ kind: "fleet" });
+    expect(saved.find((bot) => bot.id === machine.id)?.host).toEqual({ kind: "machine", userId: "zachary@example.test", deviceId: "laptop" });
+    expect(saved.find((bot) => bot.id === fleet.id)?.host).toEqual({ kind: "fleet" });
   });
 
   it("normalizes persisted cloud backends without changing valid or absent values", () => {

@@ -101,10 +101,17 @@ describe("scopes", () => {
       ["PATCH", "/api/bots/x"], ["PATCH", "/api/bots/x/profile"], ["POST", "/api/attachments"],
       ["GET", "/api/attachments/a.png"], ["POST", "/api/routines"], ["POST", "/api/routines/r/run"],
       ["POST", "/api/routine-runs/seen-all"],
-      ["GET", "/api/bots"], ["GET", "/api/threads/t/messages"], ["GET", "/api/search"], ["GET", "/api/events"],
+      ["GET", "/api/bots"], ["GET", "/api/groups"], ["GET", "/api/threads/t/messages"], ["GET", "/api/search"], ["GET", "/api/events"],
       ["GET", "/api/config"], ["GET", "/api/webhooks"], ["POST", "/api/tts/speak"],
       ["GET", "/api/auth/session"], ["POST", "/api/auth/stream-ticket"], ["POST", "/api/auth/logout"],
       ["GET", "/api/bots/x/slack-management"], // a link to Admin, read-only
+      ["POST", "/api/bots/x/direct-grants"],
+      ["POST", "/api/org/invites/tok/accept"],
+      ["GET", "/api/org"],
+      ["POST", "/api/workers"],
+      ["POST", "/api/workers/laptop/pull"],
+      ["POST", "/api/workers/laptop/drop"],
+      ["POST", "/api/workers/queue/m1/cancel"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
       ["POST", "/api/cli-test"], ["GET", "/api/cli-candidates"], ["GET", "/api/instances"], ["PATCH", "/api/instances/claude"],
@@ -117,6 +124,7 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/slack-management"], ["GET", "/api/bots/x/slack-management/extra"],
       ["PUT", "/api/config"], ["POST", "/api/auth/pairing"], ["GET", "/api/auth/sessions"], ["DELETE", "/api/auth/sessions/abc"],
       ["POST", "/api/auth/pair"], // handled before the gate; the gate itself never grants it
+      ["POST", "/api/org"], ["POST", "/api/org/invites"],
       ["GET", "/api/something-new"], // anything unlisted is admin until listed
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
   });
@@ -129,7 +137,7 @@ describe("scopes", () => {
     expect(clientBotPatchViolation([])).toBe("body");
     expect(clientGroupPatchViolation({ name: "Ops", unread: false })).toBeNull();
     expect(clientGroupPatchViolation({ cwd: "/tmp" })).toBe("cwd");
-    expect(clientGroupPatchViolation({ memberIds: [] })).toBe("memberIds");
+    expect(clientGroupPatchViolation({ memberIds: ["bot"], humanIds: ["ada@example.test"] })).toBeNull();
   });
 });
 

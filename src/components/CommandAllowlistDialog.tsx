@@ -163,7 +163,7 @@ export function CommandAllowlistDialog({ botId, botName, threadId, onClose }: {
               </label>
               <div className="mt-4 flex justify-end">
                 <button type="submit" disabled={Boolean(saving) || !command.trim() || !cwd.trim()}
-                  className="rounded-lg bg-accent px-3.5 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
+                  className="rounded-lg bg-accent px-3.5 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
                   {t(saving === "add" ? "commandAllowlist.adding" : "commandAllowlist.add")}
                 </button>
               </div>

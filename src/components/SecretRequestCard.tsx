@@ -35,7 +35,7 @@ export function SecretRequestCard({
       ? "Saved securely. Your bot is continuing the task."
       : "Saved securely. Your bot will continue when its current turn settles."
     : declined
-      ? "You chose not to provide this credential. OpenMausBot could not resume the bot yet."
+      ? "You chose not to provide this credential. Pulsa Bot could not resume the bot yet."
       : secret.description;
   const footerLabel = declined
     ? "Continuing without this credential failed"
@@ -131,7 +131,7 @@ export function SecretRequestCard({
             </p>
             {pending && (
               <p className="mt-1 flex items-center gap-1 text-[11.5px] text-ink-secondary/80">
-                <LockKeyhole size={11} /> Stored securely by OpenMausBot and never added to chat.
+                <LockKeyhole size={11} /> Stored securely by Pulsa Bot and never added to chat.
               </p>
             )}
             {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
@@ -169,7 +169,7 @@ export function SecretRequestCard({
               <button
                 type="submit"
                 disabled={saving || (!value.trim() && !savedLocally)}
-                className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-accent-ink hover:opacity-90 disabled:opacity-50"
               >
                 {saving ? <Loader2 size={13} className="animate-spin" /> : <LockKeyhole size={13} />}
                 {savedLocally ? "Continue task" : "Save securely"}
@@ -198,7 +198,7 @@ export function SecretRequestCard({
               <button
                 onClick={() => void retryResume()}
                 disabled={saving}
-                className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:opacity-90 disabled:opacity-50"
               >
                 {saving ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Try again
               </button>

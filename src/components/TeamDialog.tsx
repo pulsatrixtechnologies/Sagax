@@ -110,7 +110,7 @@ export function TeamDialog({ section, rename = false, onClose, onRenamed }: {
         <div className="mt-4 flex justify-end gap-2">
           <button disabled={saving} onClick={onClose} className="rounded-lg px-3 py-2 text-[13px] text-ink-secondary hover:bg-raised">{t("common.cancel")}</button>
           <button disabled={saving || (!moving && !name.trim()) || unchanged} onClick={() => void save()}
-            className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white disabled:opacity-40">
+            className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink disabled:opacity-40">
             {saving ? t("team.saving") : rename ? t("folder.saveName") : managing ? t("common.save") : moving ? picked.size ? t(picked.size === 1 ? "team.moveOne" : "team.moveMany", { count: picked.size }) : t("team.moveSelected") : t("team.create")}
           </button>
         </div>

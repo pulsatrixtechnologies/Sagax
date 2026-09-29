@@ -117,7 +117,7 @@ export function Automations({ playing, onCue, onEnded, label }: SceneProps) {
               style={{ "--i": i + 1 } as React.CSSProperties}
             >
               <div className={cn("text-[8.5px] font-medium uppercase tracking-[0.14em]", i === 0 ? "text-accent" : "text-ink-secondary")}>{day}</div>
-              <div className={cn("mx-auto mt-0.5 flex size-5 items-center justify-center rounded-full text-[10.5px] font-medium tabular-nums", i === 0 ? "bg-accent text-white shadow-[0_4px_12px_-4px_var(--color-accent)]" : "text-ink")}>
+              <div className={cn("mx-auto mt-0.5 flex size-5 items-center justify-center rounded-full text-[10.5px] font-medium tabular-nums", i === 0 ? "bg-accent text-accent-ink shadow-[0_4px_12px_-4px_var(--color-accent)]" : "text-ink")}>
                 {14 + i}
               </div>
             </div>

@@ -376,7 +376,7 @@ describe("ACP turns (fake CLI)", () => {
     expect(await send("second", "Memory: likes quiet hours.")).toBe("second");
     // A changed volatile half rides the next prompt as a labelled note.
     expect(await send("third", "Memory: moved to Toronto."))
-      .toBe("Context from OpenMausBot updated since this conversation started; it replaces any earlier copy:\n\nMemory: moved to Toronto.\n\nthird");
+      .toBe("Context from Pulsa Bot updated since this conversation started; it replaces any earlier copy:\n\nMemory: moved to Toronto.\n\nthird");
     // A cleared volatile half is announced once, not silently dropped.
     expect(await send("fourth", "")).toContain("have been cleared");
     expect(await send("fifth", "")).toBe("fifth");

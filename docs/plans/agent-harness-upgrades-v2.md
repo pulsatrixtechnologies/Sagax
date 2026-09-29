@@ -1,4 +1,4 @@
-# OpenMausBot Harness Upgrades v2 Implementation Plan
+# Pulsa Bot Harness Upgrades v2 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -6,7 +6,7 @@
 resilience and visibility primitives, and unlock local models — in an order
 where each round pays for the next.
 
-**Architecture:** OpenMausBot is itself a harness; `server/store.ts` is the
+**Architecture:** Pulsa Bot is itself a harness; `server/store.ts` is the
 canonical cross-engine record and every path that turns it back into model
 context is load-bearing. This plan keeps v1's reframe and rounds, but corrects
 its scope against the code as it actually is today: two items were partly

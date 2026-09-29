@@ -26,13 +26,12 @@ describe("SidebarSectionHeader", () => {
     expect(html).not.toContain("uppercase");
   });
 
-  it.each([false, true])("keeps delete separate from collapse and the context menu, collapsed=%s", (collapsed) => {
+  it.each([false, true])("keeps delete off the heading and leaves the context menu, collapsed=%s", (collapsed) => {
     const onContextMenu = () => {};
     const element = SidebarSectionHeader({
       name: "Work",
       collapsed,
       onToggle: () => {},
-      onDelete: () => {},
       onContextMenu,
       reorderable: true,
       dragging: false,
@@ -41,10 +40,11 @@ describe("SidebarSectionHeader", () => {
 
     expect(element.props.onContextMenu).toBe(onContextMenu);
     expect(html).toContain('tabindex="-1"');
-    expect(html).toContain('aria-label="Delete Work section"');
+    expect(html).not.toContain("Delete Work section");
+    expect(html).not.toContain("lucide-trash");
+    expect(html).toContain("ml-auto");
     expect(html).toContain(`aria-expanded="${!collapsed}"`);
-    expect(html.match(/<button\b/g)).toHaveLength(2);
-    expect(html.indexOf("</button>")).toBeLessThan(html.indexOf('aria-label="Delete Work section"'));
+    expect(html.match(/<button\b/g)).toHaveLength(1);
   });
 
   it("renders collapsed attention signals in the heading", () => {

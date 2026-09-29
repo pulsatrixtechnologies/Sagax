@@ -27,7 +27,7 @@ mkdirSync(home, { mode: 0o700 });
 chmodSync(runtime, 0o700);
 chmodSync(home, 0o700);
 
-const title = `OpenMausBot CUA input safety ${process.pid}`;
+const title = `Pulsa Bot CUA input safety ${process.pid}`;
 const xev = spawn(
   "xev",
   ["-name", title, "-geometry", "320x180+40+40"],

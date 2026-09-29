@@ -1,6 +1,19 @@
 OpenMausBot
 Copyright 2026 Milind Soni and OpenMausBot contributors
 
+Pulsa Bot
+This distribution is a modified version of the Apache-2.0 work originally
+published as OpenMausBot.
+
+Changes: the product name is Pulsa Bot. The source-available enterprise/
+directory was removed, so this tree is Apache-2.0 only. Its license check
+was not copied into this tree. Original copyright and attribution notices
+above are retained.
+
+The OpenMausBot name and mascot are trademarks of Milind Soni. This
+product does not use those marks as its name. Apache License 2.0 section 6
+does not grant trademark rights.
+
 OpenMausBot was relicensed from the MIT License to the Apache License,
 Version 2.0, with the consent of all contributors whose copyright was
 incorporated before the transition.

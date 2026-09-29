@@ -13,8 +13,8 @@ import { GroupView } from "@/components/GroupView";
 import { BotSettingsDialog } from "@/components/BotSettingsDialog";
 import { RemoteAgentSettingsPanel } from "@/components/RemoteAgentSettingsPanel";
 import { NewBotDialog } from "@/components/NewBotDialog";
+import { ComposeToPicker } from "@/components/ComposeToPicker";
 import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
-import { ComputerPanel } from "@/components/ComputerPanel";
 import { RemoteDesktopPanel } from "@/components/remote-desktop-panel";
 import { InspectorPanel } from "@/components/InspectorPanel";
 import { SettingsModal } from "@/components/SettingsModal";
@@ -77,6 +77,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     setLocaleEpoch((epoch) => epoch + 1);
   }, [language]);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
   const [localVmWorkspaceBotId, setLocalVmWorkspaceBotId] = useState<string | null>(null);
   // the Browser tab, expanded into the main column (the small preview in
   // the panel hands off to this and back)
@@ -85,7 +86,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   const calendarOriginRef = useRef<"chat" | "team-map">("chat");
   const group = state.groups.find((g) => g.id === state.selectedId);
   const bot = group ? undefined : (state.bots.find((b) => b.id === state.selectedId) ?? state.bots[0]);
-  const calendarFocus = state.activeView === "routines";
+  const calendarOpen = state.activeView === "routines";
 
   // Nothing on this machine can run a bot. A missing cloud login does not
   // count — that CLI can still host a local model. Wait for the first
@@ -115,7 +116,9 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       const bots = state.bots.filter((b) => !b.hidden);
       if (e.key === "n" && !e.shiftKey) {
         e.preventDefault();
-        dispatch({ type: "toggleNewBot", open: true });
+        setComposeOpen((open) => !open);
+      } else if (composeOpen && /^[1-9]$/.test(e.key)) {
+        return;
       } else if (/^[1-9]$/.test(e.key)) {
         const target = bots[Number(e.key) - 1];
         if (target) {
@@ -133,7 +136,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.bots, state.selectedId, state.shortcutsOpen, dispatch]);
+  }, [state.bots, state.selectedId, state.shortcutsOpen, composeOpen, dispatch]);
 
   useEffect(() => {
     window.ogb?.setUnreadCount?.(unreadCount);
@@ -156,13 +159,18 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   useEffect(() => {
     setDrawerOpen(false);
   }, [state.selectedId, bot?.threadId, group?.threadId, state.activeView, state.pluginsOpen, state.settingsOpen]);
-
   useEffect(() => {
+    setComposeOpen(false);
+  }, [state.selectedId, state.activeView]);
+
+  if (previousViewRef.current !== state.activeView) {
     if (state.activeView === "routines" && previousViewRef.current !== "routines") {
-      calendarOriginRef.current = previousViewRef.current;
+      calendarOriginRef.current = previousViewRef.current === "team-map" ? "team-map" : "chat";
     }
     previousViewRef.current = state.activeView;
-  }, [state.activeView]);
+  }
+  const mainIsTeamMap = state.activeView === "team-map";
+  const calendarFillsMain = calendarOpen;
 
   useEffect(() => {
     if (
@@ -210,7 +218,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   // is absent in the browser.
   useEffect(() => {
     return window.ogb?.onOpenAppSettings?.(section => dispatch({ type: "toggleAppSettings", open: true,
-      ...(section === "organization" && window.ogb?.organization && !remoteClient ? { section } : {}) }));
+      ...(section === "organization" && window.ogb && !remoteClient ? { section } : {}) }));
   }, [dispatch]);
 
   // The viewer outlives ComputerPanel and can target any bot, so release control
@@ -242,7 +250,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       {/* fixed-position popup, bottom-left — outside the layout flow */}
       <UpdateBanner />
       <div className="relative flex min-h-0 flex-1">
-      {!calendarFocus && <button
+      <button
         type="button"
         ref={menuButtonRef}
         aria-label="Open bot list"
@@ -251,25 +259,30 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
         className="absolute left-3 top-3 z-30 rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink md:hidden"
       >
         <Menu size={18} />
-      </button>}
-      {drawerOpen && !calendarFocus && (
+      </button>
+      {drawerOpen && (
         <div
           aria-hidden
           onMouseDown={(e) => e.target === e.currentTarget && setDrawerOpen(false)}
           className="absolute inset-0 z-30 bg-black/50 md:hidden"
         />
       )}
-      {!calendarFocus && <Sidebar
+      <Sidebar
         open={drawerOpen}
+        composeOpen={composeOpen}
+        onCompose={() => setComposeOpen((open) => !open)}
         onClose={() => {
           setDrawerOpen(false);
           menuButtonRef.current?.focus();
         }}
-      />}
-      {state.activeView === "team-map" ? (
+      />
+      <div className="relative flex h-full min-w-0 flex-1 flex-col">
+      {composeOpen && (group || bot) ? (
+        group ? <GroupView key={group.id} group={group} /> : bot ? <ChatView bot={bot} /> : null
+      ) : calendarFillsMain ? (
+        <RoutinesPage fill onBack={closeCalendar} onOpenRoom={openCalendarRoom} />
+      ) : mainIsTeamMap ? (
         <TeamMapPage />
-      ) : state.activeView === "routines" ? (
-        <RoutinesPage onBack={closeCalendar} onOpenRoom={openCalendarRoom} />
       ) : !remoteClient && localVmWorkspaceBotId ? (
         <LocalVmWorkspace
           primaryBotId={localVmWorkspaceBotId}
@@ -298,27 +311,23 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
           )}
         </main>
       )}
+      {composeOpen && <ComposeToPicker onClose={() => setComposeOpen(false)} />}
+      </div>
       {/* The panels below are siblings, so their keys must differ even
           though each is remounted per bot. Two siblings keyed `bot.id`
           collide in React's keyed reconciliation whenever both are open
           (Computer panel, then the usage chip): every re-render mounts a
           fresh settings panel and never removes the previous one, so the
           panels pile up and Close stops working. */}
-      {state.settingsOpen && bot && (
-        remoteClient
-          ? <RemoteAgentSettingsPanel bot={bot} />
-          : <BotSettingsDialog key={`settings:${bot.id}`} bot={bot} />
+      {/* One tabbed bot panel (Details, Media, Computer, Advanced) on the
+          desktop; its Computer tab is the store's computer view, so both
+          flags render the same panel under one key. */}
+      {!remoteClient && (state.settingsOpen || state.computerOpen) && bot && (
+        <BotSettingsDialog key={`panel:${bot.id}`} bot={bot} onOpenVmWorkspace={openLocalVmWorkspace} />
       )}
-      {state.computerOpen && bot && (
-        remoteClient ? (
-          <RemoteDesktopPanel key={`computer:${bot.id}`} bot={bot} />
-        ) : (
-          <ComputerPanel
-            key={`computer:${bot.id}`}
-            bot={bot}
-            onOpenVmWorkspace={openLocalVmWorkspace}
-          />
-        )
+      {remoteClient && state.settingsOpen && bot && <RemoteAgentSettingsPanel bot={bot} />}
+      {remoteClient && state.computerOpen && bot && (
+        <RemoteDesktopPanel key={`computer:${bot.id}`} bot={bot} />
       )}
       {!remoteClient && state.inspectorOpen && bot && <InspectorPanel key={bot.threadId} bot={bot} />}
       {state.appSettingsOpen && <SettingsModal />}

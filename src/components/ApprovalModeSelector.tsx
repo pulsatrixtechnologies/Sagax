@@ -3,7 +3,6 @@ import { Check, FilePen, Hand, ListChecks, Settings, ShieldAlert, ShieldCheck } 
 
 import { approvalModeFor, hasNativeAutoReview, supportsApprovalMode, type ApprovalMode } from "../../shared/approval-mode";
 import { cn } from "@/lib/cn";
-import { APPROVAL_LEVELS_URL, openExternalLink } from "@/lib/app-links";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 
@@ -92,7 +91,6 @@ export function ApprovalModeSelector({
   wide = false,
   disabled = false,
   trustedModesAvailable = true,
-  trustedModesNotice,
   onManageCommandAllowlist,
 }: {
   approvalMode?: ApprovalMode;
@@ -154,9 +152,9 @@ export function ApprovalModeSelector({
         triggerRef.current?.focus();
         onManageCommandAllowlist();
       }}
-      className="flex items-center gap-3 border-t border-hairline/20 px-4 py-3 text-left text-[14px] text-ink hover:bg-raised-hover"
+      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
     >
-      <ListChecks size={18} className="shrink-0 opacity-80" />
+      <ListChecks size={16} className="shrink-0" />
       {t("commandAllowlist.title")}
     </button>
   );
@@ -194,74 +192,53 @@ export function ApprovalModeSelector({
           role="menu"
           aria-label={t("approvalMode.menuAria", { provider: providerName })}
           className={cn(
-            "absolute z-40 w-[340px] overflow-hidden rounded-2xl border border-hairline/40 bg-raised shadow-2xl",
+            // Same surface and scale as the right-click menus: no heading,
+            // 13px rows, and nothing listed that cannot be picked here.
+            "absolute z-40 flex w-[260px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5",
             menuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2",
             align === "right" ? "right-0" : "left-0",
-            wide && "w-full min-w-[340px]",
+            wide && "w-full min-w-[260px]",
           )}
         >
-          <div className="border-b border-hairline/20 px-4 py-3">
-            <div className="text-[14px] font-medium text-ink">
-              {t("approvalMode.question", { provider: providerName })}
-            </div>
-            <button
-              type="button"
-              onClick={() => void openExternalLink(APPROVAL_LEVELS_URL)}
-              className="mt-1 text-[12px] text-ink-secondary underline underline-offset-2 hover:text-ink"
-            >
-              {t("approvalMode.learnMore")}
-            </button>
-          </div>
-          <div className="flex flex-col py-1.5">
-            {visibleOptions.map((option) => {
-              const selected = option.mode === mode;
-              const Icon = option.Icon;
-              return (
-                <Fragment key={option.mode}>
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selected}
-                    disabled={modesDisabled}
-                    title={
-                      disabled ? t("approvalMode.busy") : requiresLocalDesktop ? t("approvalMode.customLocalOnly") : undefined
-                    }
-                    onClick={() => {
-                      if (modesDisabled) return;
-                      onSelect(option.mode);
-                      setOpen(false);
-                    }}
-                    className={cn(
-                      "flex items-start gap-3 px-4 py-3 text-left hover:bg-raised-hover",
-                      modesDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
-                    )}
-                  >
-                    <Icon size={18} className="mt-0.5 shrink-0 opacity-80" />
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="flex items-center justify-between gap-3 text-[14px] text-ink">
-                        {option.label}
-                        {selected && <Check size={15} className="shrink-0" />}
-                      </span>
-                      <span className="text-[12.5px] leading-snug text-ink-secondary">
-                        {option.description}
-                      </span>
+          {visibleOptions.map((option) => {
+            const selected = option.mode === mode;
+            const Icon = option.Icon;
+            return (
+              <Fragment key={option.mode}>
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  disabled={modesDisabled}
+                  title={
+                    disabled ? t("approvalMode.busy") : requiresLocalDesktop ? t("approvalMode.customLocalOnly") : undefined
+                  }
+                  onClick={() => {
+                    if (modesDisabled) return;
+                    onSelect(option.mode);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover",
+                    modesDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
+                  )}
+                >
+                  <Icon size={16} className="mt-px shrink-0 text-ink" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex items-center justify-between gap-3 text-[13px] leading-[18px] text-ink">
+                      {option.label}
+                      {selected && <Check size={14} className="shrink-0" />}
                     </span>
-                  </button>
-                  {option.mode === "full" && allowlistAction}
-                </Fragment>
-              );
-            })}
-            {!visibleOptions.some((option) => option.mode === "full") && allowlistAction}
-            {!trustedModesAvailable && (trustedModesNotice || driverKind === "codex" || driverKind === "antigravityAgent" || requiresLocalDesktop) && (
-              <div className="border-t border-hairline/20 px-4 py-2.5 text-[11.5px] leading-snug text-ink-secondary">
-                {trustedModesNotice ?? (requiresLocalDesktop
-                  ? t("approvalMode.customLocalOnlyDot")
-                  : driverKind === "antigravityAgent"
-                    ? t("approvalMode.antigravityLocalOnly")
-                    : t("approvalMode.trustedLocalOnly"))}
-              </div>
-            )}
-          </div>
+                    <span className="text-[12px] leading-4 text-ink-tertiary">
+                      {option.description}
+                    </span>
+                  </span>
+                </button>
+                {option.mode === "full" && allowlistAction}
+              </Fragment>
+            );
+          })}
+          {!visibleOptions.some((option) => option.mode === "full") && allowlistAction}
         </div>
       )}
     </div>

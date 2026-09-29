@@ -52,7 +52,7 @@ export function codexDeveloperInstructions(config: unknown, botInstructions: str
   // Native rules previously outranked the bot's user-message prefix. Keep
   // them last in the combined developer block to preserve that precedence.
   return configured
-    ? `${botInstructions || "No OpenMausBot bot-specific instructions remain."}\n\n${configured}`
+    ? `${botInstructions || "No Pulsa Bot bot-specific instructions remain."}\n\n${configured}`
     : botInstructions;
 }
 
@@ -90,8 +90,8 @@ export async function syncCodexInstructions(
           role: "developer",
           content: [{
             type: "input_text",
-            text: "The following replaces the previous developer instruction block supplied by OpenMausBot, including its native configured rules and bot-specific instructions. Other Codex instructions and permissions still apply.\n\n"
-              + (instructions || "No OpenMausBot bot-specific instructions remain."),
+            text: "The following replaces the previous developer instruction block supplied by Pulsa Bot, including its native configured rules and bot-specific instructions. Other Codex instructions and permissions still apply.\n\n"
+              + (instructions || "No Pulsa Bot bot-specific instructions remain."),
           }],
         }],
       });

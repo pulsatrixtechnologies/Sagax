@@ -75,7 +75,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
       onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
     >
       <ConfirmDialogCard ref={dialogRef} cancelRef={cancelRef} {...props} />
@@ -111,31 +111,28 @@ export function ConfirmDialogCard({
       aria-busy={pending}
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-body"
-      className={cn(
-        "w-full max-w-[420px] rounded-2xl border bg-panel p-5 shadow-2xl",
-        danger ? "border-danger/30" : "border-hairline/50",
-      )}
+      className="w-full max-w-[420px] rounded-[14px] border border-border bg-elevated outline-none"
     >
-      <div className="flex items-start gap-3">
-        <span className={cn("mt-0.5 shrink-0", danger ? "text-danger" : "text-warning")}>
+      <div className="flex items-start gap-2.5 px-4 py-3">
+        <span className={cn("mt-[2px] shrink-0", danger ? "text-danger" : "text-warning")}>
           {icon ?? <AlertTriangle size={18} />}
         </span>
         <div className="min-w-0">
-          <h2 id="confirm-dialog-title" className="text-[15px] font-semibold text-ink">
+          <h2 id="confirm-dialog-title" className="text-[14px] font-semibold leading-[22px] text-ink">
             {title}
           </h2>
-          <p id="confirm-dialog-body" className="mt-1.5 text-[13px] leading-relaxed text-ink-secondary">
+          <p id="confirm-dialog-body" className="text-[14px] leading-[22px] text-ink-tertiary">
             {body}
           </p>
         </div>
       </div>
-      <div className="mt-5 flex justify-end gap-2">
+      <div className="flex justify-end gap-2 px-4 py-3">
         <button
           ref={cancelRef}
           type="button"
           onClick={onCancel}
           disabled={pending}
-          className="rounded-xl px-4 py-2 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink"
+          className="ui-button disabled:opacity-50"
         >
           Cancel
         </button>
@@ -144,8 +141,10 @@ export function ConfirmDialogCard({
           onClick={onConfirm}
           disabled={pending}
           className={cn(
-            "rounded-xl px-4 py-2 text-[13px] font-medium",
-            danger ? "bg-danger text-white hover:brightness-110" : "bg-accent text-white hover:brightness-110",
+            danger
+              ? "h-[30px] rounded-full bg-danger px-[13px] text-[13px] text-white hover:brightness-110"
+              : "ui-button ui-button-primary",
+            "disabled:opacity-50",
           )}
         >
           {confirmLabel}

@@ -12,6 +12,7 @@ export function RenameTitle({
   value,
   onCommit,
   onEditingChange,
+  forceEditing = false,
   onActivate,
   showEditButton = false,
   className,
@@ -20,6 +21,8 @@ export function RenameTitle({
   value: string;
   onCommit: (next: string) => void;
   onEditingChange?: (editing: boolean) => void;
+  /** Open the field from a menu. Stays armed until the parent clears it. */
+  forceEditing?: boolean;
   /** Optional single-click action for locations where the title opens a profile. */
   onActivate?: () => void;
   /** Preserve deliberate inline rename beside an onActivate title. */
@@ -33,6 +36,12 @@ export function RenameTitle({
   useEffect(() => {
     if (!editing) setDraft(value);
   }, [value, editing]);
+
+  useEffect(() => {
+    if (!forceEditing || editing) return;
+    setDraft(value);
+    setMode(true);
+  }, [forceEditing, editing, value]);
 
   const setMode = (next: boolean) => {
     setEditing(next);

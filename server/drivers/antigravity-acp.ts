@@ -130,7 +130,7 @@ export async function prepareAntigravityProfile(input: {
 
   const executable = process.platform === "win32" ? process.execPath.replaceAll("\\", "/") : process.execPath;
   if (/\r|\n|\0|%s/u.test(executable) || executable.includes(delimiter)) {
-    throw new Error("The OpenMausBot runtime path cannot safely suppress Antigravity browser launches.");
+    throw new Error("The Pulsa Bot runtime path cannot safely suppress Antigravity browser launches.");
   }
   const browserCommand = [executable, "-e", browserHelperSource, "--", "%s"]
     .map(quoteBrowserArgument)
@@ -303,7 +303,7 @@ export class AntigravityAcpClient {
             "The executable was found, but did not finish starting. " +
             (this.nativeStartupHint ? `${this.nativeStartupHint} ` : "") +
             `Startup output: ${this.startupOutputBytes} bytes; diagnostic output: ${this.startupDiagnosticBytes} bytes. ` +
-            "Retry setup. If it still fails, share this error and your OpenMausBot version; do not paste Google sign-in links or tokens.",
+            "Retry setup. If it still fails, share this error and your Pulsa Bot version; do not paste Google sign-in links or tokens.",
           ));
         } else reject(new Error(`${method} timed out.`));
       }, timeoutMs);

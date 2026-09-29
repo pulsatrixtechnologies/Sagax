@@ -87,26 +87,30 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin }: {
         {showLive && <span className="absolute right-1.5 top-1.5 size-1.5 animate-pulse rounded-full bg-success" aria-label={t("place.live")} />}
       </button>
       {open && (
-        <div role="menu" aria-label={t("place.chipTitle")} className="absolute bottom-full left-0 z-40 mb-2 w-[300px] overflow-hidden rounded-2xl border border-hairline/40 bg-raised shadow-2xl">
-          <div className="border-b border-hairline/20 px-4 py-3 text-[14px] font-medium text-ink">{t("place.chipTitle")}</div>
-          <div className="flex flex-col py-1.5">
+        // Same surface and scale as the right-click menus. The title stays
+        // on the menu's aria-label only.
+        <div role="menu" aria-label={t("place.chipTitle")} className="absolute bottom-full left-0 z-40 mb-2 w-[260px] overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5">
+          <div className="flex flex-col gap-0.5">
             <button
               type="button"
               role="menuitemradio"
               aria-checked={!pinned}
               onClick={() => choose(null)}
-              className={cn("flex items-start gap-3 px-4 py-2 text-left hover:bg-control/60", !pinned && "bg-control/40")}
+              className="flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover"
             >
-              <PlaceIcon place={botDefault} size={14} className="mt-0.5 shrink-0 opacity-70" aria-hidden="true" />
+              <PlaceIcon place={botDefault} size={16} className="mt-px shrink-0 text-ink" aria-hidden="true" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] text-ink">{t("place.followBot")}</span>
-                <span className="block text-[11px] text-ink-secondary">{t("place.followBotDetail", { place: t(placeLabelKey(botDefault)) })}</span>
+                <span className="block text-[13px] leading-[18px] text-ink">{t("place.followBot")}</span>
+                <span className="block text-[12px] leading-4 text-ink-tertiary">{t("place.followBotDetail", { place: t(placeLabelKey(botDefault)) })}</span>
               </span>
-              {!pinned && <Check size={14} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />}
+              {!pinned && <Check size={14} className="mt-0.5 shrink-0 text-ink" aria-hidden="true" />}
             </button>
             {PLACES.map((place) => {
               const selected = task?.surface === place;
               const reachable = availability[place];
+              // An option this bot cannot use here is left out, unless it is
+              // the one already chosen (so the current place never vanishes).
+              if (!reachable && !selected) return null;
               return (
                 <button
                   key={place}
@@ -116,14 +120,14 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin }: {
                   disabled={!reachable}
                   title={reachable ? undefined : t("place.unavailable")}
                   onClick={() => choose(place)}
-                  className={cn("flex items-start gap-3 px-4 py-2 text-left", reachable ? "hover:bg-control/60" : "cursor-not-allowed opacity-45", selected && "bg-control/40")}
+                  className={cn("flex items-start gap-2 rounded-md px-2 py-1.5 text-left", reachable ? "hover:bg-hover" : "cursor-not-allowed opacity-45")}
                 >
-                  <PlaceIcon place={place} size={14} className="mt-0.5 shrink-0 opacity-70" aria-hidden="true" />
+                  <PlaceIcon place={place} size={16} className="mt-px shrink-0 text-ink" aria-hidden="true" />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[13px] text-ink">{t(placeLabelKey(place))}</span>
-                    <span className="block text-[11px] text-ink-secondary">{reachable ? t(DESCRIPTION[place]) : t("place.unavailable")}</span>
+                    <span className="block text-[13px] leading-[18px] text-ink">{t(placeLabelKey(place))}</span>
+                    <span className="block text-[12px] leading-4 text-ink-tertiary">{reachable ? t(DESCRIPTION[place]) : t("place.unavailable")}</span>
                   </span>
-                  {selected && <Check size={14} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />}
+                  {selected && <Check size={14} className="mt-0.5 shrink-0 text-ink" aria-hidden="true" />}
                 </button>
               );
             })}

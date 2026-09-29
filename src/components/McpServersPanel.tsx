@@ -385,7 +385,7 @@ export function McpServersPanel() {
                 setError(null);
                 setNotice(null);
               }}
-              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-white disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-accent-ink disabled:opacity-40"
             >
               <Plus size={14} /> {t("mcp.addServer")}
             </button>
@@ -555,7 +555,7 @@ export function McpServersPanel() {
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void save()}
-                className="flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-[12.5px] font-medium text-white disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-[12.5px] font-medium text-accent-ink disabled:opacity-50"
               >
                 {busy === "save" && <Loader2 size={13} className="animate-spin" />} {t("mcp.save")}
               </button>

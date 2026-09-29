@@ -18,19 +18,19 @@ afterAll(() => vi.unstubAllGlobals());
 describe("Mac local computer status", () => {
   it("shows the recorded Accessibility failure and its matching recovery actions", () => {
     const markup = renderToStaticMarkup(createElement(MacLocalControl));
-    expect(markup).toContain("Accessibility is required for OpenMausBot");
-    expect(markup).toContain("Open Accessibility Settings");
-    expect(markup).toContain("Relaunch OpenMausBot");
-    expect(markup).not.toContain("Open Screen Recording Settings");
-    expect(markup).toContain("Driver detail");
+    expect(markup).toContain("Allow control of this computer");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("Open Accessibility Settings");
+    expect(markup).not.toContain("Relaunch Pulsa Bot");
   });
 
   it("does not turn a missing reason into a claimed permission diagnosis", () => {
     fixture.localComputer = { available: false, status: "unavailable" } as DesktopCapabilities["localComputer"];
     const markup = renderToStaticMarkup(createElement(MacLocalControl));
-    expect(markup).toContain("Local computer control is not ready");
+    expect(markup).toContain("Allow control of this computer");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("Local computer control is not ready");
     expect(markup).not.toContain("Accessibility is required");
-    expect(markup).not.toContain("Relaunch OpenMausBot</button>");
   });
 
   it("does not offer host repair actions to a remote renderer", () => {

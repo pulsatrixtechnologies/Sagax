@@ -13,7 +13,7 @@ Status: plan (Sep 14, 2026). First phase of the harness-upgrade programme descri
 Touches no bot-to-bot behaviour: delegation, rooms, peer comms and shared memory are untouched
 until Phase 6.
 
-**Standing rule (owner, Sep 14): OpenMausBot is model- and CLI-agnostic, and every item here must
+**Standing rule (owner, Sep 14): Pulsa Bot is model- and CLI-agnostic, and every item here must
 hold for every engine.** The engine families on main are: **Claude Code** (stream-json,
 `drivers/claude.ts`), **Codex** (app-server JSON-RPC, `drivers/codex.ts`), **pi** (rpc mode,
 `drivers/pi.ts`), the **ACP family** sharing `drivers/acp/core.ts` (Cursor, Gemini, Droid, Grok

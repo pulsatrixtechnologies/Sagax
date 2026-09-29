@@ -22,9 +22,9 @@ export function VoiceSection({
     <div className="flex flex-col gap-4">
       <VoiceSettings bot={bot} onPatch={patch} />
 
-      <div className="flex items-center justify-between gap-4 rounded-xl bg-card p-4">
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
         <div>
-          <div className="text-[15px] font-medium text-ink">Notifications</div>
+          <div className="text-[13px] font-medium text-ink">Notifications</div>
           <div className="mt-0.5 text-[13px] text-ink-secondary">
             Get notified when this agent finishes or needs input
           </div>

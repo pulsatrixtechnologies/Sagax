@@ -8,12 +8,12 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   metadataBase: new URL('https://docs.openmausbot.com'),
   title: {
-    default: 'OpenMausBot Docs',
-    template: '%s · OpenMausBot Docs',
+    default: 'Pulsa Bot Docs',
+    template: '%s · Pulsa Bot Docs',
   },
   description: 'Install, configure, and extend your local-first team of AI agents.',
   openGraph: {
-    title: 'OpenMausBot Docs',
+    title: 'Pulsa Bot Docs',
     description: 'Your own team of AI agents, in a chat app.',
     type: 'website',
   },

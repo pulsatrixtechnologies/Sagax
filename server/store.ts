@@ -7,6 +7,7 @@ import { chmodSync, existsSync, readFileSync, mkdirSync, rmSync, statSync, unlin
 import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { applyHumanIds } from "./channel-membership.ts";
 import { ensureSections, readSections, changeEmptySection } from "./section-context.ts";
 import type { TeamComputers } from "./team-computers.ts";
 import { removeBotFolder, soulFile, soulHash, writeSoulMirror } from "./bot-folder.ts";
@@ -28,6 +29,7 @@ import type { GroupGoalRunCardData } from "../shared/group-goal-run.ts";
 import { isMentionBoundary, isMentionNameContinuation } from "../shared/mention-boundary.ts";
 import type { HandedState } from "./delta-context.ts";
 import type { AgentPart, PartPair, RoomPart } from "./package-parts.ts";
+import type { BotHost } from "./turn-route.ts";
 import type {
   BotActivity, GroupDefaultResponder, GroupTask as GroupTaskRecord, MausColor,
   ConnectorToolGrant, OptionCardData, TaskClosedBy, TaskOpenedBy, TaskUsage, WireBot, WireGroup,
@@ -491,6 +493,15 @@ const COLORS: MausColor[] = [
  * their identity. Missing/blank means the unsectioned (General) team. */
 export const sectionKey = (section?: string | null): string => section?.trim() || "";
 
+/** Bots saved before host existed run on the fleet. A machine host must
+ * name both the member and the device; anything else is fleet. */
+function recordedBotHost(value: BotRecord["host"]): BotHost {
+  if (value?.kind === "machine" && value.userId && value.deviceId) {
+    return { kind: "machine", userId: value.userId, deviceId: value.deviceId };
+  }
+  return { kind: "fleet" };
+}
+
 /** Resolve @mentions in a message against a bot roster: `@` must start a
  * word, the name must end on a word boundary (so "@New Bottle" never matches
  * "New Bot"), names match case-insensitively, longest name wins (so
@@ -719,6 +730,11 @@ export class Store {
           b[key] = focus;
           botsMigrated = true;
         }
+      }
+      const host = recordedBotHost(b.host);
+      if (JSON.stringify(host) !== JSON.stringify(b.host)) {
+        b.host = host;
+        botsMigrated = true;
       }
     }
     for (const b of this.bots) {
@@ -1135,7 +1151,14 @@ export class Store {
       defaultResponder?: GroupDefaultResponder;
       completed?: boolean;
     },
+    humanIds?: string[],
   ): GroupRecord {
+    let acceptedHumans: string[] | undefined;
+    if (humanIds !== undefined) {
+      const applied = applyHumanIds({ dm, humanIds });
+      if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
+      acceptedHumans = applied.humanIds;
+    }
     this.rememberSections([section]);
     const threadId = newId();
     const createdAt = Date.now();
@@ -1154,6 +1177,7 @@ export class Store {
       busyBotId: null,
       section,
     };
+    if (acceptedHumans !== undefined) group.humanIds = acceptedHumans;
     if (!dm) {
       group.tasks = [{ threadId, title: UNTITLED_TASK, createdAt, updatedAt: createdAt }];
       group.setupCompletedAt = setup?.completed ? createdAt : null;
@@ -1172,9 +1196,16 @@ export class Store {
     );
   }
 
-  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "defaultResponder" | "bulletin" | "unread" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage">>): GroupRecord | null {
+  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "humanIds" | "defaultResponder" | "bulletin" | "unread" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage">>): GroupRecord | null {
     const group = this.group(id);
     if (!group) return null;
+    if (Object.prototype.hasOwnProperty.call(patch, "humanIds")) {
+      if (!Array.isArray(patch.humanIds) || patch.humanIds.some((id) => typeof id !== "string")) {
+        throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
+      }
+      const applied = applyHumanIds({ dm: group.dm, humanIds: patch.humanIds });
+      if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
+    }
     if (Object.prototype.hasOwnProperty.call(patch, "section")) {
       this.rememberSections([patch.section]);
     }
@@ -1246,7 +1277,7 @@ export class Store {
       detail: string;
       finishedAt: number;
     } | null,
-    fallbackDetail = "OpenMausBot restarted before this goal finished.",
+    fallbackDetail = "Pulsa Bot restarted before this goal finished.",
     fallbackFinishedAt = Date.now(),
   ): number {
     const ownedThreadIds = new Set<string>();
@@ -1676,7 +1707,7 @@ export class Store {
     profile: Partial<
       Pick<
         BotRecord,
-        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "modelSelection" | "section" | "cwd" | "visibility"
+        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "modelSelection" | "section" | "cwd" | "visibility" | "ownerUserId"
       >
     > = {},
     opts: {
@@ -1706,6 +1737,8 @@ export class Store {
       modelSelection: this.newBotSelection(profile.modelSelection),
       resumeCursors: {},
       createdAt: Date.now(),
+      host: { kind: "fleet" },
+      ...(profile.ownerUserId?.trim() ? { ownerUserId: profile.ownerUserId.trim().toLowerCase() } : {}),
     };
     if (section) bot.section = section;
     if (profile.cwd) bot.cwd = profile.cwd;

@@ -55,12 +55,12 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("bot-first sidebar", () => {
   it.each([
-    { enabled: true, density: "comfortable", size: 32, spacing: ["gap-2", "py-2", "pl-6"] },
-    { enabled: true, density: "compact", size: 26, spacing: ["gap-1.5", "py-1", "pl-6"] },
-    { enabled: true, density: "icons", size: 44, spacing: ["justify-center", "px-1", "py-1.5"] },
-    { enabled: false, density: "comfortable", size: 56, spacing: ["gap-3", "py-2.5", "pl-2"] },
-    { enabled: false, density: "compact", size: 40, spacing: ["gap-2", "py-1.5", "pl-2"] },
-    { enabled: false, density: "icons", size: 44, spacing: ["justify-center", "px-1", "py-1.5"] },
+    { enabled: true, density: "comfortable", size: 36, spacing: ["min-h-[54px]", "gap-2", "py-2", "pl-6"] },
+    { enabled: true, density: "compact", size: 28, spacing: ["gap-1.5", "py-1", "pl-6"] },
+    { enabled: true, density: "icons", size: 36, spacing: ["justify-center", "px-1", "py-1.5"] },
+    { enabled: false, density: "comfortable", size: 36, spacing: ["min-h-[54px]", "gap-2", "py-2", "pl-2"] },
+    { enabled: false, density: "compact", size: 28, spacing: ["gap-2", "py-1.5", "pl-2"] },
+    { enabled: false, density: "icons", size: 36, spacing: ["justify-center", "px-1", "py-1.5"] },
   ] as const)("sizes bot portraits and row spacing in $density density with threads $enabled", ({ enabled, density, size, spacing }) => {
     fixture.showThreads = enabled;
     for (const avatar of [{}, { avatarUrl: "/api/attachments/portrait.png", avatarCrop: "circle" as const }]) {
@@ -132,17 +132,18 @@ describe("bot-first sidebar", () => {
 
   it("only hides thread/folder creation in the bot context menu", () => {
     const render = () => renderToStaticMarkup(createElement(BotContextMenu, {
-      menu: { botId: bot.id, x: 0, y: 0 }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onNewFolder: vi.fn(),
+      menu: { botId: bot.id, x: 0, y: 0 }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onNewFolder: vi.fn(), onRename: vi.fn(),
     }));
     const enabled = render();
-    expect(enabled).toContain("New thread");
-    expect(enabled).toContain("New folder");
+    expect(enabled).toContain("Move to");
+    expect(enabled).toContain("Rename Bot");
+    expect(enabled).toContain("Hide from sidebar");
     fixture.showThreads = false;
     const disabled = render();
+    expect(disabled).toContain("Move to");
+    expect(disabled).toContain("Rename Bot");
+    expect(disabled).toContain("Hide from sidebar");
     expect(disabled).not.toContain("New thread");
-    expect(disabled).not.toContain("New folder");
-    expect(disabled).toContain("Edit Profile");
-    expect(disabled).toContain("Move to team");
   });
 
   it("reveals a matching sole thread when searching a bot", () => {
@@ -161,10 +162,9 @@ describe("bot-first sidebar", () => {
     };
     fixture.state.selectedId = group.id;
     const markup = renderToStaticMarkup(createElement(GroupListItem, { group, density: "comfortable", onMenu: vi.fn() }));
-    expect(markup).toContain('data-sidebar-thread-row="group-thread"');
-    // New thread is an icon on the room row, disabled while the room works
+    expect(markup).not.toContain('data-sidebar-thread-row="group-thread"');
     expect(markup).toContain('aria-label="New thread"');
-    expect(markup).toContain('aria-label="Collapse Planning threads"');
+    expect(markup).not.toContain('aria-label="Collapse Planning threads"');
     const working = renderToStaticMarkup(createElement(GroupListItem, { group: { ...group, working: true }, density: "comfortable", onMenu: vi.fn() }));
     expect(working).toMatch(/<button type="button" disabled="" aria-label="New thread"/);
     // a room with one thread is that thread: no disclosure, no duplicate row
@@ -174,7 +174,7 @@ describe("bot-first sidebar", () => {
     const searched = renderToStaticMarkup(createElement(GroupListItem, {
       group: { ...group, tasks: [group.tasks![0]] }, density: "comfortable", query: "conversation", onMenu: vi.fn(),
     }));
-    expect(searched).toContain('data-sidebar-thread-row="group-thread"');
+    expect(searched).not.toContain('data-sidebar-thread-row="group-thread"');
   });
 });
 

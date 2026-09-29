@@ -19,9 +19,9 @@ function storage(): Storage | undefined {
 function showThreads(): boolean {
   if (sessionChoice !== undefined) return sessionChoice;
   try {
-    return storage()?.getItem(SHOW_THREADS_KEY) !== "0";
+    return storage()?.getItem(SHOW_THREADS_KEY) === "1";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -60,5 +60,5 @@ export function setShowThreads(enabled: boolean): void {
 }
 
 export function useShowThreads(): boolean {
-  return useSyncExternalStore(subscribe, showThreads, () => true);
+  return useSyncExternalStore(subscribe, showThreads, () => false);
 }

@@ -366,6 +366,7 @@ export function ModelPicker({
   threadId,
   className,
   contained = false,
+  inComposer = false,
   label,
 }: {
   bot: Bot;
@@ -374,6 +375,8 @@ export function ModelPicker({
   /** Expand the menu in-flow under the trigger so it cannot overflow a
    * narrow parent (the Agent profile sidebar). */
   contained?: boolean;
+  /** Sit in the composer as a text row. The menu opens upward. */
+  inComposer?: boolean;
   label?: ReactNode;
 }) {
   const { state, dispatch, refreshInstances, refreshModels: refreshInstanceModels } = useStore();
@@ -568,7 +571,40 @@ export function ModelPicker({
     />
   );
 
-  const trigger = (
+  const composerLabel = [
+    modelLabel(active, selection.model),
+    selectedVariantLabel,
+    !selectedVariantLabel && selection.effort ? effortLabel(selection.effort) : "",
+  ].filter(Boolean).join(" ");
+
+  const trigger = inComposer ? (
+    <button data-tour="model"
+      type="button"
+      disabled={Boolean(bot.busy)}
+      onClick={() => {
+        if (bot.busy) return;
+        if (active?.driverKind === "claudeAgent") lastClaudeIdRef.current = active.instanceId;
+        const initial = pickerInstances.find((instance) => instance.instanceId === selection.instanceId) ?? pickerInstances[0];
+        setRailId(initial?.instanceId ?? null);
+        setOpen((wasOpen) => {
+          const next = !wasOpen;
+          if (next) openFor(initial);
+          return next;
+        });
+      }}
+      aria-expanded={open && !bot.busy}
+      aria-haspopup="dialog"
+      title={
+        bot.busy
+          ? t(threadId ? "model.threadBusy" : "model.busy")
+          : composerLabel
+      }
+      className="flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <span className="truncate">{composerLabel}</span>
+      <ChevronDown size={14} className={cn("shrink-0 transition-transform", open && "rotate-180")} />
+    </button>
+  ) : (
     <button data-tour="model"
       type="button"
       disabled={Boolean(bot.busy)}
@@ -658,7 +694,9 @@ export function ModelPicker({
             "flex overflow-hidden rounded-2xl border border-hairline/50 bg-card",
             contained
               ? "relative mt-3 w-full max-h-[min(420px,50dvh)]"
-              : "absolute right-0 top-full z-30 mt-2 w-[380px] max-w-[calc(100vw-2rem)] max-h-[min(480px,calc(100dvh-7rem))] shadow-2xl shadow-black/50",
+              : inComposer
+                ? "absolute right-0 bottom-full z-40 mb-2 w-[380px] max-w-[calc(100vw-2rem)] max-h-[min(480px,calc(100dvh-8rem))] shadow-2xl shadow-black/50"
+                : "absolute right-0 top-full z-30 mt-2 w-[380px] max-w-[calc(100vw-2rem)] max-h-[min(480px,calc(100dvh-7rem))] shadow-2xl shadow-black/50",
           )}
         >
           {pickerInstances.length > 0 && <ModelEngineRail instances={pickerInstances} selectedInstance={railInstance} claudeInstance={claudeRailInstance} onSelect={selectRail} />}

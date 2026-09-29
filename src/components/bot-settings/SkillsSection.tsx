@@ -202,10 +202,10 @@ export function SkillsSection({ bot }: { bot: Bot }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl bg-card p-4">
+      <div className="rounded-xl border border-hairline/40 p-4">
         <div className="flex items-center gap-2">
           <BookOpen size={16} className="text-ink-secondary" />
-          <div className="text-[15px] font-medium text-ink">Learned skills</div>
+          <div className="text-[13px] font-medium text-ink">Learned skills</div>
         </div>
         <div className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
           {featureEnabled ? t("skills.learned.hintOn") : t("skills.learned.hintOff")}
@@ -329,7 +329,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
                 type="button"
                 disabled={working === reviewing.skill.name}
                 onClick={() => void enableReviewed()}
-                className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
+                className="rounded-lg bg-accent px-4 py-2 text-[13px] font-semibold text-accent-ink disabled:opacity-40"
               >
                 Enable reviewed skill
               </button>

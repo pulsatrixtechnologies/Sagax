@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { ManagedDesktopState } from "../../electron/managed-desktop.mjs";
+import type { OrgRole } from "../../server/org-directory.ts";
+import type { OrgRecord } from "../../server/org-record.ts";
 import { activeLocale, t } from "@/lib/i18n";
+import { api, ApiError } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { CompanyModels } from "./CompanyModels";
+import { OrgDirectory } from "./OrgDirectory";
+import { notifyOrgColumn } from "./org-column";
+
+export { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";
 
 const providerNames: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter" };
 const DEFAULT_PORTAL_ORIGIN = "https://admin.openmausbot.com";
@@ -19,6 +26,11 @@ export function OrganizationSettings() {
   const generation = useRef(0);
   const revision = useRef(0);
   const status = useRef<ManagedDesktopState["status"] | undefined>(undefined);
+  const [org, setOrg] = useState<{ name: string; host?: OrgRecord["host"] } | null>(null);
+  const [people, setPeople] = useState<{ id: string; role: OrgRole }[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<{ email: string }[]>([]);
+  const [orgReady, setOrgReady] = useState(false);
+  const [directoryError, setDirectoryError] = useState("");
 
   const acceptConnection = (next: ManagedDesktopState) => {
     const changed = status.current !== next.status;
@@ -52,6 +64,37 @@ export function OrganizationSettings() {
     return () => { generation.current++; unsubscribe?.(); };
   }, [bridge]);
 
+  const loadOrg = async (alive = () => true) => {
+    try {
+      const body = await api<{ org: { name: string; host?: OrgRecord["host"] }; people?: { id: string; role: OrgRole }[]; pendingInvites?: { email: string }[] }>("/api/org");
+      if (!alive()) return;
+      setOrg({ name: body.org.name, host: body.org.host });
+      setPeople(body.people ?? []);
+      setPendingInvites(body.pendingInvites ?? []);
+      setOrgReady(true);
+      setDirectoryError("");
+    } catch (error) {
+      if (!alive()) return;
+      if (error instanceof ApiError && error.status === 404) {
+        setOrg(null);
+        setPeople([]);
+        setPendingInvites([]);
+        setOrgReady(true);
+        setDirectoryError("");
+        return;
+      }
+      setDirectoryError("Impossible de charger l'organisation.");
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadOrg(() => !cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const perform = async (action: () => Promise<ManagedDesktopState>) => {
     if (!bridge || pending.current) return;
     pending.current = true;
@@ -72,7 +115,46 @@ export function OrganizationSettings() {
     }
   };
 
-  if (!bridge) return <p className="text-[13px] text-ink-secondary">{t("organization.desktopOnly")}</p>;
+  const directory = (
+    <>
+      {orgReady && (
+        <OrgDirectory
+          org={org}
+          people={people}
+          pendingInvites={pendingInvites}
+          initialAddress=""
+          onCreate={async (name, host) => {
+            try {
+              const created = await api<{ org?: { name?: string } }>("/api/org", { method: "POST", body: JSON.stringify({ name, host }) });
+              const createdName = typeof created.org?.name === "string" ? created.org.name : name;
+              notifyOrgColumn(createdName);
+              await loadOrg();
+            } catch {
+              setDirectoryError("Impossible de créer l'organisation.");
+            }
+          }}
+          onInvite={async (email) => {
+            try {
+              await api("/api/org/invites", { method: "POST", body: JSON.stringify({ email }) });
+              await loadOrg();
+            } catch (error) {
+              setDirectoryError("Impossible d'envoyer l'invitation.");
+              throw error;
+            }
+          }}
+        />
+      )}
+      {org?.host?.kind === "this-computer" && (
+        <p role="status" className="text-[13px] text-ink-secondary">{t("org.needsServerAddress")}</p>
+      )}
+      {directoryError && <p role="alert" className="text-[13px] text-danger">{directoryError}</p>}
+    </>
+  );
+
+  if (!bridge) return <>
+    {directory}
+    <p className="text-[13px] text-ink-secondary">{t("organization.desktopOnly")}</p>
+  </>;
   // Unavailable can still hold a saved grant; let the person clear it before
   // reconnecting even while the Admin portal or local runtime is offline.
   const enrolled = connection?.status === "connected" || connection?.status === "reauth-required" || connection?.status === "unavailable" || connection?.status === "license-expired";
@@ -84,6 +166,7 @@ export function OrganizationSettings() {
   const dateLabel = date && Number.isFinite(date.getTime())
     ? new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium", timeStyle: "short" }).format(date) : null;
   return <>
+    {directory}
     <p className="text-[13px] leading-relaxed text-ink-secondary">{t("organization.additive")}</p>
     <Card title={t("settings.section.organization")} subtitle={t("organization.privacy")}>
       {!connection && <p role="status" className="text-[13px] text-ink-secondary">{error || t("organization.loading")}</p>}
@@ -92,7 +175,7 @@ export function OrganizationSettings() {
       {connection?.status === "signed-out" && <div className="flex flex-col gap-3">
         <p className="text-[13px] text-ink-secondary">{t("organization.signInHelp")}</p>
         <button type="button" disabled={busy} onClick={() => void perform(() => bridge.begin({ portalOrigin: DEFAULT_PORTAL_ORIGIN }))}
-          className="w-fit rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-50">{busy ? t("organization.working") : t("organization.signIn")}</button>
+          className="w-fit rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50">{busy ? t("organization.working") : t("organization.signIn")}</button>
         <details className="text-[12px] text-ink-secondary">
           <summary className="w-fit cursor-pointer hover:text-ink">{t("organization.advanced")}</summary>
           <form className="mt-2 flex flex-col gap-2" onSubmit={(event) => {

@@ -134,7 +134,7 @@ export function ClaudeSignIn({ instanceId }: { instanceId: string }) {
       {auth?.phase === "waiting" ? (
         link ? (
           <div className="space-y-2 rounded-lg border border-hairline/50 bg-app p-3">
-            <a href={link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110">
+            <a href={link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110">
               {t("engineSetup.claude.open")} <ExternalLink size={13} />
             </a>
             <label className="block text-[12px] text-ink-secondary" htmlFor={`claude-code-${instanceId}`}>
@@ -152,7 +152,7 @@ export function ClaudeSignIn({ instanceId }: { instanceId: string }) {
               type="button"
               disabled={busy !== null || code.trim().length < 8}
               onClick={() => void finish()}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110 disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
             >
               {busy === "finish" ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
               {busy === "finish" ? t("engineSetup.claude.finishing") : t("engineSetup.claude.finish")}
@@ -173,7 +173,7 @@ export function ClaudeSignIn({ instanceId }: { instanceId: string }) {
           type="button"
           disabled={busy !== null}
           onClick={() => void start()}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110 disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
         >
           {busy === "start" ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
           {busy === "start" ? t("engineSetup.claude.starting") : t("engineSetup.claude.start")}

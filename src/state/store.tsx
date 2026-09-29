@@ -207,6 +207,11 @@ export interface Message {
   /** steer-queue entry this drained user line came from. Pending chips
    * match on this id, not on equal text. Absent on ordinary sends. */
   queueId?: string;
+  /** Projected for someone who is not the approval audience. */
+  state?: "waiting-on-owner";
+  ownerName?: string;
+  /** A dropped worker, or a person or bot removed during the turn. */
+  status?: "failed";
 }
 
 export type GroupDefaultResponder =
@@ -221,6 +226,8 @@ export interface Group {
   threadId: string;
   name: string;
   memberIds: string[];
+  /** People in this channel, beside the bots. Absent on a bot-to-bot dm. */
+  humanIds?: string[];
   defaultResponder: GroupDefaultResponder;
   bulletin: string;
   unread: boolean;
@@ -453,6 +460,9 @@ export interface Bot {
   browserProfile?: string | null;
   /** Who may see this bot on a shared workspace; only admins receive it. */
   visibility?: BotVisibility;
+  /** Lowercased user id of the person who created this bot. */
+  ownerUserId?: string;
+  directGrants?: string[];
   /** Where a shared or organization package put this bot (its provenance line). */
   installedPackage?: InstalledPackageMetadata;
   messages: Message[];
@@ -642,7 +652,7 @@ export interface ConfigStatus {
     customKeyConfigured?: boolean;
   };
   /** who's using the app — collected in onboarding, shown in the sidebar */
-  profile?: { name: string; email: string; aboutMe?: string };
+  profile?: { name: string; email: string; aboutMe?: string; avatarUrl?: string };
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
@@ -1059,7 +1069,7 @@ export type Action =
   | {
       type: "patchGroup";
       groupId: string;
-      patch: Partial<Pick<Group, "name" | "bulletin" | "memberIds" | "defaultResponder" | "pinnedMessageId" | "section">>;
+      patch: Partial<Pick<Group, "name" | "bulletin" | "memberIds" | "humanIds" | "defaultResponder" | "pinnedMessageId" | "section">>;
     }
   | { type: "deleteGroup"; groupId: string }
   | { type: "newGroupTask"; groupId: string }
@@ -1919,8 +1929,10 @@ export function reducer(state: AppState, action: Action): AppState {
         // Mascot / bare open omits `section` → accordion stays fully collapsed.
         // Deep links expand that row even when the panel is already open.
         botSettingsExpandAccordion: open ? action.section !== undefined : false,
-        // Preserve the computer and inspector surfaces; their own controls
-        // can open bot settings. App settings are mutually exclusive.
+        // Settings and the computer panel share one slot. Opening settings
+        // closes the computer view; its gear opens settings again.
+        computerOpen: open ? false : state.computerOpen,
+        inspectorOpen: open ? false : state.inspectorOpen,
         appSettingsOpen: open ? false : state.appSettingsOpen,
       };
     }

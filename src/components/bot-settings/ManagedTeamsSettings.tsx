@@ -32,7 +32,7 @@ export function ManagedTeamsSettings({
         {!choices.length && <p className="text-[13px] text-ink-secondary">Create another team to coordinate across teams.</p>}
       </fieldset>
       <button type="button" disabled={!changed} onClick={() => onSave(selected)}
-        className="mt-3 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-40">
+        className="mt-3 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink disabled:opacity-40">
         Save team access
       </button>
     </details>

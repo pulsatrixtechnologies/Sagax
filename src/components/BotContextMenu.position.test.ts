@@ -47,7 +47,7 @@ afterEach(() => vi.unstubAllGlobals());
 function render(x = 990, y = 795) {
   return renderToStaticMarkup(createElement(BotContextMenu, {
     menu: { botId: bot.id, x, y }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(),
-    onMoveToSection: vi.fn(), onNewFolder: vi.fn(),
+    onMoveToSection: vi.fn(), onNewFolder: vi.fn(), onRename: vi.fn(),
   }));
 }
 function measuredMenu(width: number, height: number) {
@@ -62,7 +62,7 @@ describe("bot actions menu viewport placement", () => {
     const element = measuredMenu(228, 468);
     const cleanup = fixture.effects[0]!();
     expect(element.style).toEqual({ top: "324px", left: "764px" });
-    expect(html).toContain(">Archive</button>");
+    expect(html).toContain(">Hide from sidebar</button>");
     expect(fixture.portal?.target).toBe(document.body);
     expect(html).toContain("data-sidebar");
     expect(listeners.has("resize")).toBe(true);

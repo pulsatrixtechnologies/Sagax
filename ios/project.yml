@@ -65,7 +65,7 @@ targets:
         # What appears under the icon. This MUST stay close to the App Store
         # listing name ("MausBot") or review rejects the build under
         # guideline 2.3.8: a person who installs "MausBot" has to be able to
-        # find it on the home screen. The desktop app is "OpenMausBot", which
+        # find it on the home screen. The desktop app is "Pulsa Bot", which
         # is near enough to read as the same family and still tell them apart.
         CFBundleDisplayName: MausBot
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -102,10 +102,10 @@ targets:
         # It looks exactly like "no computers on this network", which is a
         # confusing hour if you don't know to look here.
         NSLocalNetworkUsageDescription: >-
-          OpenMausBot finds your computer on this network so your bots can
+          Pulsa Bot finds your computer on this network so your bots can
           reach you here.
         NSCameraUsageDescription: >-
-          OpenMausBot uses the camera only to scan a pairing QR code shown on
+          Pulsa Bot uses the camera only to scan a pairing QR code shown on
           your computer.
         NSMicrophoneUsageDescription: >-
           OpenMausMobile listens while you dictate a message to a bot.

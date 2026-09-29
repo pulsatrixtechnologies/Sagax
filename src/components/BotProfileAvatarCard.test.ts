@@ -41,7 +41,7 @@ describe("BotProfileAvatarCard body picker", () => {
   it("renders one option per body catalog entry, labeled by name", () => {
     const markup = renderCard(makeBot());
 
-    expect(markup).toContain(">Body<");
+    expect(markup).toContain(">Bot<");
     for (const id of MASCOT_BODY_IDS) {
       expect(markup).toContain(`aria-label="Use the ${MASCOT_BODIES[id].name} body"`);
     }

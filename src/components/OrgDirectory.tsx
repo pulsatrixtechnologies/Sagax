@@ -1,0 +1,82 @@
+import { useState, type FormEvent } from "react";
+import type { OrgRole } from "../../server/org-directory.ts";
+import { Card } from "./SettingsPrimitives";
+import { OrgCreateForm } from "./OrgCreateForm";
+
+export function OrgDirectory({
+  org,
+  people,
+  pendingInvites = [],
+  initialAddress = "",
+  onCreate,
+  onInvite,
+}: {
+  org: { name: string } | null;
+  people: { id: string; role: OrgRole }[];
+  pendingInvites?: { email: string }[];
+  initialAddress?: string;
+  onCreate: (name: string, host: { kind: "server"; url: string }) => void;
+  onInvite: (email: string) => void;
+}) {
+  const [email, setEmail] = useState("");
+
+  if (!org) {
+    return (
+      <Card>
+        <OrgCreateForm initialAddress={initialAddress} onCreate={onCreate} />
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <div className="text-[15px] font-medium text-ink">{org.name}</div>
+      <ul className="mt-4 divide-y divide-hairline/40">
+        {people.map((person) => (
+          <li key={person.id} className="flex justify-between gap-2 py-2 text-[13px] text-ink">
+            <span>{person.id}</span>
+            <span className="text-ink-secondary">{person.role}</span>
+          </li>
+        ))}
+      </ul>
+      {pendingInvites.length > 0 && (
+        <div className="mt-4">
+          <div className="text-[13px] font-medium text-ink">Invitations en attente</div>
+          <ul className="mt-1">
+            {pendingInvites.map((invite) => (
+              <li key={invite.email} className="py-1 text-[13px] text-ink-secondary">{invite.email}</li>
+            ))}
+          </ul>
+          <p className="mt-1 text-[12px] text-ink-secondary">La personne rejoint la liste seulement après avoir accepté.</p>
+        </div>
+      )}
+      <form
+        className="mt-4 flex flex-col gap-3"
+        onSubmit={async (event: FormEvent) => {
+          event.preventDefault();
+          const value = email.trim();
+          if (!value) return;
+          try {
+            await onInvite(value);
+            setEmail("");
+          } catch {
+            // Keep the address so a refused invite can be corrected.
+          }
+        }}
+      >
+        <label className="flex flex-col gap-1.5 text-[13px] text-ink">
+          Courriel
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50"
+          />
+        </label>
+        <button type="submit" className="ui-button w-fit">
+          Inviter
+        </button>
+      </form>
+    </Card>
+  );
+}

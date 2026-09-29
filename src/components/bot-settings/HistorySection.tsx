@@ -52,7 +52,7 @@ export function HistorySection({
         <div className="rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink-secondary">Couldn’t refresh history.</div>
       )}
       {sorted.map((row) => (
-        <div key={`${bot.id}-${row.id}`} className="rounded-xl bg-card p-4">
+        <div key={`${bot.id}-${row.id}`} className="rounded-xl border border-hairline/40 p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1 text-[13px] leading-relaxed text-ink">
               <span className="text-ink-secondary">{whenLabel(row.at)}</span>

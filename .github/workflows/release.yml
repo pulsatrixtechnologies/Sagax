@@ -140,16 +140,16 @@ jobs:
 
       - name: "Gate: both packaged apps use the canonical updater feed"
         run: |
-          for app in release/mac-arm64/OpenMausBot.app release/mac/OpenMausBot.app; do
+          for app in release/mac-arm64/Pulsa Bot.app release/mac/Pulsa Bot.app; do
             update="$app/Contents/Resources/app-update.yml"
             test -f "$update" || { echo "::error::missing $update"; exit 1; }
             grep -Eq '^owner: milind-soni$' "$update" || { echo "::error::wrong update owner in $update"; exit 1; }
-            grep -Eq '^repo: OpenMausBot$' "$update" || { echo "::error::wrong update repo in $update"; exit 1; }
+            grep -Eq '^repo: Pulsa Bot$' "$update" || { echo "::error::wrong update repo in $update"; exit 1; }
           done
 
       - name: "Gate: the signature must verify BEFORE notarization"
         run: |
-          for app in release/mac-arm64/OpenMausBot.app release/mac/OpenMausBot.app; do
+          for app in release/mac-arm64/Pulsa Bot.app release/mac/Pulsa Bot.app; do
             codesign --verify --deep --strict "$app"
             bin="$app/Contents/Resources/cloudflared/cloudflared"
             test -x "$bin" || { echo "::error::missing executable $bin"; exit 1; }
@@ -174,8 +174,8 @@ jobs:
       - name: "Gate: signed native browser works with an empty home"
         run: |
           case "$(node -p process.arch)" in
-            arm64) resources="$PWD/release/mac-arm64/OpenMausBot.app/Contents/Resources" ;;
-            x64) resources="$PWD/release/mac/OpenMausBot.app/Contents/Resources" ;;
+            arm64) resources="$PWD/release/mac-arm64/Pulsa Bot.app/Contents/Resources" ;;
+            x64) resources="$PWD/release/mac/Pulsa Bot.app/Contents/Resources" ;;
             *) exit 1 ;;
           esac
           node scripts/smoke-browser-bundle.mjs --resources "$resources"
@@ -183,7 +183,7 @@ jobs:
 
       - name: "Gate: both packaged servers start and every helper path resolves"
         run: |
-          for app in release/mac-arm64/OpenMausBot.app release/mac/OpenMausBot.app; do
+          for app in release/mac-arm64/Pulsa Bot.app release/mac/Pulsa Bot.app; do
             res="$app/Contents/Resources"
             # the server tree is plain JS — runnable on the runner's node
             # regardless of the app binary's arch
@@ -201,7 +201,7 @@ jobs:
           }
           console.log(`ok: ${Object.keys(SPAWNED_PROXIES).length} proxies resolve in ${server}`);
           EOF
-            for bin in "$res/cua-driver" "$res/OpenMausBot Speech.app/Contents/MacOS/speech-helper"; do
+            for bin in "$res/cua-driver" "$res/Pulsa Bot Speech.app/Contents/MacOS/speech-helper"; do
               lipo -archs "$bin" | grep -q "x86_64" || { echo "::error::$bin lacks x86_64"; exit 1; }
               lipo -archs "$bin" | grep -q "arm64" || { echo "::error::$bin lacks arm64"; exit 1; }
             done
@@ -236,17 +236,17 @@ jobs:
 
       - name: Staple, re-zip, regenerate blockmaps and the feed
         run: |
-          xcrun stapler staple release/OpenMausBot-*-arm64.dmg
-          xcrun stapler staple release/OpenMausBot-*-x64.dmg
-          xcrun stapler staple release/mac-arm64/OpenMausBot.app
-          xcrun stapler staple release/mac/OpenMausBot.app
+          xcrun stapler staple release/Pulsa Bot-*-arm64.dmg
+          xcrun stapler staple release/Pulsa Bot-*-x64.dmg
+          xcrun stapler staple release/mac-arm64/Pulsa Bot.app
+          xcrun stapler staple release/mac/Pulsa Bot.app
           v=$(node -p "require('./package.json').version")
-          rm -f "release/OpenMausBot-$v-arm64.zip" "release/OpenMausBot-$v-x64.zip"
-          ditto -c -k --sequesterRsrc --keepParent release/mac-arm64/OpenMausBot.app "release/OpenMausBot-$v-arm64.zip"
-          ditto -c -k --sequesterRsrc --keepParent release/mac/OpenMausBot.app "release/OpenMausBot-$v-x64.zip"
+          rm -f "release/Pulsa Bot-$v-arm64.zip" "release/Pulsa Bot-$v-x64.zip"
+          ditto -c -k --sequesterRsrc --keepParent release/mac-arm64/Pulsa Bot.app "release/Pulsa Bot-$v-arm64.zip"
+          ditto -c -k --sequesterRsrc --keepParent release/mac/Pulsa Bot.app "release/Pulsa Bot-$v-x64.zip"
           node scripts/regenerate-blockmaps.mjs \
-            "release/OpenMausBot-$v-arm64.zip" "release/OpenMausBot-$v-x64.zip" \
-            "release/OpenMausBot-$v-arm64.dmg" "release/OpenMausBot-$v-x64.dmg"
+            "release/Pulsa Bot-$v-arm64.zip" "release/Pulsa Bot-$v-x64.zip" \
+            "release/Pulsa Bot-$v-arm64.dmg" "release/Pulsa Bot-$v-x64.dmg"
           # refreshes every hash from the post-staple bytes and refuses to
           # finish unless the feed matches the files on disk
           node scripts/regenerate-mac-feed.mjs
@@ -254,8 +254,8 @@ jobs:
       - name: Stable-named copies for the README's /latest/download links
         run: |
           v=$(node -p "require('./package.json').version")
-          cp "release/OpenMausBot-$v-arm64.dmg" release/OpenMausBot.dmg
-          cp "release/OpenMausBot-$v-x64.dmg" release/OpenMausBot-intel.dmg
+          cp "release/Pulsa Bot-$v-arm64.dmg" release/Pulsa Bot.dmg
+          cp "release/Pulsa Bot-$v-x64.dmg" release/Pulsa Bot-intel.dmg
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -311,7 +311,7 @@ jobs:
             echo "::error::cloudflared has the wrong version"; exit 1; }
           [ -f "$res/app-update.yml" ] || { echo "::error::missing app-update.yml"; exit 1; }
           grep -Eq '^owner: milind-soni$' "$res/app-update.yml" || { echo "::error::wrong update owner"; exit 1; }
-          grep -Eq '^repo: OpenMausBot$' "$res/app-update.yml" || { echo "::error::wrong update repo"; exit 1; }
+          grep -Eq '^repo: Pulsa Bot$' "$res/app-update.yml" || { echo "::error::wrong update repo"; exit 1; }
           if grep -q "publisherName" "$res/app-update.yml"; then
             echo "::error::publisherName on an unsigned build breaks every update"; exit 1
           fi
@@ -330,7 +330,7 @@ jobs:
         shell: bash
         run: |
           v=$(node -p "require('./package.json').version")
-          cp "release/OpenMausBot-$v-setup.exe" release/OpenMausBot-setup.exe
+          cp "release/Pulsa Bot-$v-setup.exe" release/Pulsa Bot-setup.exe
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-release
@@ -374,7 +374,7 @@ jobs:
           update=release/linux-unpacked/resources/app-update.yml
           test -f "$update" || { echo "::error::missing $update"; exit 1; }
           grep -Eq '^owner: milind-soni$' "$update" || { echo "::error::wrong update owner"; exit 1; }
-          grep -Eq '^repo: OpenMausBot$' "$update" || { echo "::error::wrong update repo"; exit 1; }
+          grep -Eq '^repo: Pulsa Bot$' "$update" || { echo "::error::wrong update repo"; exit 1; }
       - name: Verify package contents and metadata
         run: node scripts/verify-linux-package.mjs
       - name: Match a normal Ubuntu package parent on the ephemeral runner
@@ -398,11 +398,11 @@ jobs:
           sudo chmod 4755 release/linux-unpacked/chrome-sandbox
           test "$(stat -c '%U:%G %a' release/linux-unpacked/chrome-sandbox)" = "root:root 4755"
       - name: "Gate: installed browser works with Ubuntu sandbox restrictions"
-        run: node scripts/smoke-browser-bundle.mjs --resources /opt/OpenMausBot/resources
+        run: node scripts/smoke-browser-bundle.mjs --resources /opt/Pulsa Bot/resources
       - name: "Gate: packaged Linux server discovers its browser"
         env:
-          OMB_SMOKE_DIST: /opt/OpenMausBot/resources/server
-        run: node scripts/smoke-packaged-server.mjs --browser-bundle /opt/OpenMausBot/resources/browser-engine
+          OMB_SMOKE_DIST: /opt/Pulsa Bot/resources/server
+        run: node scripts/smoke-packaged-server.mjs --browser-bundle /opt/Pulsa Bot/resources/browser-engine
       - name: Smoke the packages
         env:
           OMB_KEEP_SMOKE_DIR: "1"
@@ -414,9 +414,9 @@ jobs:
       - name: Stable-named copies and checksums
         run: |
           v=$(node -p "require('./package.json').version")
-          cp "release/OpenMausBot-$v-amd64.deb" release/OpenMausBot-amd64.deb
-          cp "release/OpenMausBot-$v-x86_64.AppImage" release/OpenMausBot.AppImage
-          (cd release && sha256sum OpenMausBot-$v-amd64.deb OpenMausBot-$v-x86_64.AppImage > SHA256SUMS-ubuntu-x64.txt)
+          cp "release/Pulsa Bot-$v-amd64.deb" release/Pulsa Bot-amd64.deb
+          cp "release/Pulsa Bot-$v-x86_64.AppImage" release/Pulsa Bot.AppImage
+          (cd release && sha256sum Pulsa Bot-$v-amd64.deb Pulsa Bot-$v-x86_64.AppImage > SHA256SUMS-ubuntu-x64.txt)
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-release
@@ -452,20 +452,20 @@ jobs:
         run: |
           required=(
             latest-linux.yml latest-mac.yml latest.yml
-            "OpenMausBot-$VERSION-amd64.deb"
-            "OpenMausBot-$VERSION-arm64.dmg"
-            "OpenMausBot-$VERSION-arm64.dmg.blockmap"
-            "OpenMausBot-$VERSION-arm64.zip"
-            "OpenMausBot-$VERSION-arm64.zip.blockmap"
-            "OpenMausBot-$VERSION-setup.exe"
-            "OpenMausBot-$VERSION-setup.exe.blockmap"
-            "OpenMausBot-$VERSION-x64.dmg"
-            "OpenMausBot-$VERSION-x64.dmg.blockmap"
-            "OpenMausBot-$VERSION-x64.zip"
-            "OpenMausBot-$VERSION-x64.zip.blockmap"
-            "OpenMausBot-$VERSION-x86_64.AppImage"
-            OpenMausBot-amd64.deb OpenMausBot-intel.dmg OpenMausBot-setup.exe
-            OpenMausBot.AppImage OpenMausBot.dmg SHA256SUMS-ubuntu-x64.txt
+            "Pulsa Bot-$VERSION-amd64.deb"
+            "Pulsa Bot-$VERSION-arm64.dmg"
+            "Pulsa Bot-$VERSION-arm64.dmg.blockmap"
+            "Pulsa Bot-$VERSION-arm64.zip"
+            "Pulsa Bot-$VERSION-arm64.zip.blockmap"
+            "Pulsa Bot-$VERSION-setup.exe"
+            "Pulsa Bot-$VERSION-setup.exe.blockmap"
+            "Pulsa Bot-$VERSION-x64.dmg"
+            "Pulsa Bot-$VERSION-x64.dmg.blockmap"
+            "Pulsa Bot-$VERSION-x64.zip"
+            "Pulsa Bot-$VERSION-x64.zip.blockmap"
+            "Pulsa Bot-$VERSION-x86_64.AppImage"
+            Pulsa Bot-amd64.deb Pulsa Bot-intel.dmg Pulsa Bot-setup.exe
+            Pulsa Bot.AppImage Pulsa Bot.dmg SHA256SUMS-ubuntu-x64.txt
           )
           for file in "${required[@]}"; do
             test -s "assets/$file" || { echo "::error::missing or empty release asset: $file"; exit 1; }
@@ -481,15 +481,15 @@ jobs:
           const sha512 = (f) => createHash("sha512").update(readFileSync(f)).digest("base64");
           const expected = new Map([
             ["latest-mac.yml", [
-              "OpenMausBot-${{ needs.prepare.outputs.version }}-x64.zip",
-              "OpenMausBot-${{ needs.prepare.outputs.version }}-arm64.zip",
-              "OpenMausBot-${{ needs.prepare.outputs.version }}-x64.dmg",
-              "OpenMausBot-${{ needs.prepare.outputs.version }}-arm64.dmg",
+              "Pulsa Bot-${{ needs.prepare.outputs.version }}-x64.zip",
+              "Pulsa Bot-${{ needs.prepare.outputs.version }}-arm64.zip",
+              "Pulsa Bot-${{ needs.prepare.outputs.version }}-x64.dmg",
+              "Pulsa Bot-${{ needs.prepare.outputs.version }}-arm64.dmg",
             ]],
-            ["latest.yml", ["OpenMausBot-${{ needs.prepare.outputs.version }}-setup.exe"]],
+            ["latest.yml", ["Pulsa Bot-${{ needs.prepare.outputs.version }}-setup.exe"]],
             ["latest-linux.yml", [
-              "OpenMausBot-${{ needs.prepare.outputs.version }}-x86_64.AppImage",
-              "OpenMausBot-${{ needs.prepare.outputs.version }}-amd64.deb",
+              "Pulsa Bot-${{ needs.prepare.outputs.version }}-x86_64.AppImage",
+              "Pulsa Bot-${{ needs.prepare.outputs.version }}-amd64.deb",
             ]],
           ]);
           let bad = 0;
@@ -541,7 +541,7 @@ jobs:
             done
           }
           ensure_draft "$GITHUB_REPOSITORY" --target "$SHA" \
-            --draft --title "OpenMausBot $VERSION" --generate-notes
+            --draft --title "Pulsa Bot $VERSION" --generate-notes
           target=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)
           target_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$target" --jq .sha)
           test "$target_sha" = "$SHA" || {
@@ -582,9 +582,9 @@ jobs:
             done
           }
           ensure_draft milind-soni/openmausbot-releases \
-            --draft --title "OpenMausBot $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+            --draft --title "Pulsa Bot $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
           gh release edit "$tag" --repo milind-soni/openmausbot-releases \
-            --title "OpenMausBot $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+            --title "Pulsa Bot $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
           for file in assets/*; do
             gh release upload "$tag" "$file" --repo milind-soni/openmausbot-releases --clobber
           done

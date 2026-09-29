@@ -56,11 +56,10 @@ jobs:
           node dist-server/openmausbot.js --help | grep -q "openmausbot serve"
           OMB_PORT=1 node dist-server/pair-cli.js > pair.out 2>&1 || true
           cat pair.out
-          grep -q "no OpenMausBot server" pair.out
+          grep -q "no Pulsa Bot server" pair.out
           # --tunnel ships its own processes and fails closed without an account
           test -f dist-server/tunnel-guardian.js && test -f dist-server/prepare-cloudflared.js
-          # the enterprise layer ships bundled (inert without a key) so a white-label key works on an npm install
-          test -f enterprise/server/index.js && test -f enterprise/LICENSE
+          if [ -e enterprise ]; then echo "enterprise directory must not ship"; exit 1; fi
           if HOME=/tmp/omb-pack/home node cli.js serve --tunnel --port 18798 --data-dir /tmp/omb-pack/data2 > tunnel.log 2>&1; then echo "serve --tunnel should refuse without login"; exit 1; fi
           grep -q "run \`openmausbot login\` first" tunnel.log
           kill %1; wait %1 || true
@@ -94,7 +93,7 @@ jobs:
       # OIDC token, so no registry token is stored
       # anywhere and no one-time password is asked for. One-time setup on
       # npmjs.com: package → Settings → Publishing access → GitHub Actions,
-      # owner milind-soni, repository OpenMausBot, workflow npm-package.yml.
+      # owner milind-soni, repository Pulsa Bot, workflow npm-package.yml.
       # Needs npm ≥ 11.5 (Node 24 ships it).
       - name: Publish to npm
         run: |

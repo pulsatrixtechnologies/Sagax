@@ -132,7 +132,7 @@ describe("local computer descriptor", () => {
   it.skipIf(process.platform === "win32")("reports a private unavailable reason without making that descriptor mountable", () => {
     const userData = privateUserData("mac-unavailable");
     const file = join(userData, "cua-connection.json");
-    const reason = "embedded host failed: Screen Recording required; grant access in System Settings and restart OpenMausBot";
+    const reason = "embedded host failed: Screen Recording required; grant access in System Settings and restart Pulsa Bot";
     writeFileSync(file, JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
     expect(readCuaConnection({ platform: "darwin", userData })).toBeNull();
     expect(readCuaUnavailableReason({ platform: "darwin", userData })).toBe(reason);
@@ -159,7 +159,7 @@ describe("local computer descriptor", () => {
   it.skipIf(process.platform === "win32")("never substitutes a stale legacy descriptor for the packaged app's exact status", () => {
     const userData = privateUserData("exact-mac-user-data");
     const home = join(userData, "fixture-home");
-    const legacy = join(home, "Library", "Application Support", "OpenMausBot");
+    const legacy = join(home, "Library", "Application Support", "Pulsa Bot");
     mkdirSync(legacy, { recursive: true, mode: 0o700 });
     const legacyFile = join(legacy, "cua-connection.json");
     writeFileSync(legacyFile, JSON.stringify({
@@ -168,7 +168,7 @@ describe("local computer descriptor", () => {
     }), { mode: 0o600 });
 
     const exactFile = join(userData, "cua-connection.json");
-    const reason = "Screen Recording required; grant access in System Settings and restart OpenMausBot";
+    const reason = "Screen Recording required; grant access in System Settings and restart Pulsa Bot";
     writeFileSync(exactFile, JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
     expect(readCuaConnection({ platform: "darwin", userData, home })).toBeNull();
     expect(readCuaUnavailableReason({ platform: "darwin", userData, home })).toBe(reason);
@@ -181,11 +181,11 @@ describe("local computer descriptor", () => {
 
   it.skipIf(process.platform === "win32")("treats the first present legacy descriptor as authoritative", () => {
     const root = privateUserData("legacy-mac-home");
-    const first = join(root, "Library", "Application Support", "OpenMausBot");
+    const first = join(root, "Library", "Application Support", "Pulsa Bot");
     const stale = join(root, "Library", "Application Support", "OpenGrokBot");
     mkdirSync(first, { recursive: true, mode: 0o700 });
     mkdirSync(stale, { recursive: true, mode: 0o700 });
-    const reason = "Accessibility required; grant access in System Settings and restart OpenMausBot";
+    const reason = "Accessibility required; grant access in System Settings and restart Pulsa Bot";
     writeFileSync(join(first, "cua-connection.json"), JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
     writeFileSync(join(stale, "cua-connection.json"), JSON.stringify({
       mode: "embedded", socketPath: "/fixture/stale.sock", mcpCommand: "/fixture/stale-driver",

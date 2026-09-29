@@ -1,4 +1,4 @@
-// "About OpenMausBot" — the version you are running and where to go next.
+// "About Pulsa Bot" — the version you are running and where to go next.
 // Small on purpose: the interesting settings live in the settings panel, and
 // this exists so a bug report can quote a version number.
 import { useEffect, useRef } from "react";
@@ -10,6 +10,7 @@ import {
   LICENSE_URL,
   RELEASES_URL,
   appVersion,
+  baseVersion,
   openExternalLink,
   platformLabel,
 } from "@/lib/app-links";
@@ -43,7 +44,7 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
         role="dialog"
         aria-modal="true"
         aria-labelledby="about-dialog-title"
-        className="w-full max-w-[360px] rounded-2xl border border-hairline/50 bg-panel p-6 text-center shadow-2xl"
+        className="w-full max-w-[360px] rounded-[14px] border border-border bg-elevated p-6 text-center"
       >
         <img src="/app-icon.svg" alt="" width={56} height={56} className="mx-auto size-14" />
         <h2 id="about-dialog-title" className="mt-3 text-[17px] font-semibold text-ink">
@@ -52,6 +53,9 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
         <p className="mt-1 text-[13px] text-ink-secondary">
           Version {appVersion()}
           {platform ? ` · ${platform}` : ""}
+        </p>
+        <p className="mt-1 text-[12px] text-ink-secondary">
+          Based on OpenMausBot {baseVersion()}
         </p>
         <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
           An open-source desktop home for your agents. Apache 2.0 licensed.

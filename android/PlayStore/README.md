@@ -6,7 +6,7 @@ Console declarations or establish that a release is ready to publish.
 
 ## Release identity and build
 
-The Android app is **MausBot**; the desktop app remains **OpenMausBot**.
+The Android app is **MausBot**; the desktop app remains **Pulsa Bot**.
 The Android package is `com.openmausbot.companion`.
 
 Use the selected release commit's [Gradle configuration](../app/build.gradle.kts)
@@ -48,7 +48,7 @@ Suggested short description, subject to verification on the release build:
 
 > Chat with AI bots on your paired computer from your phone.
 
-Describe the OpenMausBot desktop dependency and the setup needed for each
+Describe the Pulsa Bot desktop dependency and the setup needed for each
 supported connection method. Write the full description and release notes from
 features verified in the selected release. Android call mode and on-device voice
 key setup are not established by this preparation work; do not advertise them

@@ -23,11 +23,12 @@ it("survives a real server crash: queued sends keep receipts, cancellation and u
     expect(response.status, JSON.stringify(result)).toBe(status);
     return result;
   };
-  // A second person on a paired device. What they queue must still be theirs
-  // after the wait, the crash and the restart: the name rides the durable row.
-  // `id` is the opaque person key the server derives from the session; a row
+  // The operator's own paired device (a default, admin-scope code, so it
+  // carries the operator's principal). What it queues must still name that
+  // device after the wait, the crash and the restart: the name rides the
+  // durable row. `id` is the principal the paired session carries; a row
   // written straight to the database below keeps the older name-only shape.
-  const PAIRED = { name: "Safari on Mac", id: expect.stringMatching(/^p_[\w-]{22}$/) };
+  const PAIRED = { name: "Safari on Mac", id: expect.stringMatching(/^pr_[0-9a-f-]{36}$/) };
   const PAIRED_ROW = { name: "Safari on Mac" };
   let pairedToken = "";
   const asPairedPerson = async (path: string, body: unknown) => {

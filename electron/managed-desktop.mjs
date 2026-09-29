@@ -291,7 +291,7 @@ export function createManagedDesktopClient({ store, applyConnection, applyPolicy
       if (persisted.status === "fulfilled") { cleanupGrant = null; cleanupNeeded = false; }
       if (!current(stamp)) return snapshot();
       const warnings = [];
-      if (runtime.status === "rejected") warnings.push("The local runtime did not confirm stopping Company tasks. Quit and reopen OpenMausBot before using Company models again.");
+      if (runtime.status === "rejected") warnings.push("The local runtime did not confirm stopping Company tasks. Quit and reopen Pulsa Bot before using Company models again.");
       if (revoked.status === "rejected") warnings.push("The portal was unreachable; ask your administrator to revoke this device there too.");
       if (persisted.status === "rejected") return publish({ status: "unavailable", message: [
         "The saved company sign-in could not be cleared. Unlock your system keychain and Disconnect again before reconnecting.", ...warnings,
@@ -307,7 +307,7 @@ export function createManagedDesktopClient({ store, applyConnection, applyPolicy
     await sendIdentity(grant);
     await Promise.resolve().then(() => applyPolicy(null)).catch(() => {});
     try { await applyConnection(null); }
-    catch { message += " Quit and reopen OpenMausBot to confirm Company tasks have stopped."; }
+    catch { message += " Quit and reopen Pulsa Bot to confirm Company tasks have stopped."; }
     return current(stamp) ? publish({ status: "reauth-required", message }) : snapshot();
   }
   /** Renew once per start and when fewer than seven days remain, only when
@@ -455,7 +455,7 @@ export function createManagedDesktopClient({ store, applyConnection, applyPolicy
     async start() {
       const stamp = generation;
       try { const saved = await store.read(); if (!current(stamp)) { markRestored(); return snapshot(); } grant = saved ? validateGrant(saved) : null; }
-      catch { markRestored(); return current(stamp) ? publish({ status: "unavailable", message: "Company sign-in could not be restored. Unlock your system keychain and restart OpenMausBot." }) : snapshot(); }
+      catch { markRestored(); return current(stamp) ? publish({ status: "unavailable", message: "Company sign-in could not be restored. Unlock your system keychain and restart Pulsa Bot." }) : snapshot(); }
       // Restore the organisation's last policy before any network call, and
       // move references to this enrollment's old device-scoped ids.
       if (grant?.policy && grant.expiresAt > now()) await sendPolicy(grant);

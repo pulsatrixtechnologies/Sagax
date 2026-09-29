@@ -19,8 +19,9 @@ declare global {
     lastBackupAt?: number;
     schedule?: CompanyBackupScheduleState;
   }
-/** The package.json version, inlined by Vite's define at build time. */
+/** Fork version inlined by Vite. Official base is __BASE_VERSION__. */
 const __APP_VERSION__: string;
+const __BASE_VERSION__: string;
 
   type DesktopSharedFolder = import("../../electron/computer-sharing.mjs").SharedFolder;
   type DesktopComputerSharing = import("../../electron/computer-sharing.mjs").SharingState;
@@ -244,7 +245,7 @@ const __APP_VERSION__: string;
       onOpenAppSettings?(cb: (section?: "organization") => void): () => void;
       /** Updates the native Dock/taskbar unread indicator. */
       setUnreadCount?(count: number): void;
-      /** Opens a live desktop as a sandboxed window owned by OpenMausBot. */
+      /** Opens a live desktop as a sandboxed window owned by Pulsa Bot. */
       desktopViewer?: {
         open(url: string, title: string, contextId: string): Promise<boolean>;
         /** Closes the live-desktop window, but only when it belongs to this bot. */

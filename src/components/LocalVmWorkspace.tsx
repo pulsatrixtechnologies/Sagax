@@ -312,7 +312,7 @@ function LocalVmPane({
       if (bridge) await bridge.close(contextId).catch(() => {});
       if (!alive || !botId) return;
       if (!bridge) {
-        setError("The two-desktop view requires the OpenMausBot desktop app.");
+        setError("The two-desktop view requires the Pulsa Bot desktop app.");
         return;
       }
       try {
@@ -363,7 +363,7 @@ function LocalVmPane({
         setError(
           cause instanceof Error && cause.message === "layout-unavailable"
             ? "The viewer area is not laid out yet. Retry after resizing the window."
-            : "OpenMausBot could not connect this Local VM viewer.",
+            : "Pulsa Bot could not connect this Local VM viewer.",
         );
       }
     };
@@ -396,7 +396,7 @@ function LocalVmPane({
     if (!bridge || !bounds || !nativeState.open) return;
     void bridge
       .layout([{ contextId, bounds, visible: !obscured }])
-      .catch(() => setError("OpenMausBot could not position this Local VM viewer."));
+      .catch(() => setError("Pulsa Bot could not position this Local VM viewer."));
   }, [contextId, nativeState.open, obscured]);
 
   useEffect(() => {
@@ -463,7 +463,7 @@ function LocalVmPane({
             type="button"
             onClick={onRelease}
             disabled={controlPending}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-2 text-[12px] font-medium text-white hover:brightness-110 disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 py-2 text-[12px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
           >
             {controlPending ? <Loader2 size={13} className="animate-spin" /> : <Hand size={13} />}
             Hand back
@@ -684,7 +684,7 @@ export function LocalVmWorkspace({
       setControlledBotId(null);
       return true;
     } catch {
-      setControlError("OpenMausBot could not hand control back. The view stayed open.");
+      setControlError("Pulsa Bot could not hand control back. The view stayed open.");
       return false;
     } finally {
       controlBusyRef.current = false;

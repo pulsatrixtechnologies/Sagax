@@ -96,8 +96,8 @@ export function ConnectorCard({ botId, threadId, message }: { botId: string; thr
 
   return (
     <div className="flex w-full justify-start">
-      <div data-tour="connector" className="w-full max-w-[520px] overflow-hidden rounded-2xl border border-hairline/50 bg-card shadow-sm">
-        <div className="flex items-start gap-3 p-4">
+      <div data-tour="connector" className="flex w-full max-w-[520px] flex-col gap-2.5 overflow-hidden rounded-2xl bg-elevated p-3">
+        <div className="flex items-start gap-3">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-control text-[16px] font-semibold text-ink">
             {connector.label.slice(0, 1).toUpperCase() || <PlugZap size={19} />}
           </div>
@@ -130,7 +130,7 @@ export function ConnectorCard({ botId, threadId, message }: { botId: string; thr
             </button>
           )}
         </div>
-        <div className="flex items-center justify-between border-t border-hairline/40 bg-panel/40 px-4 py-2.5">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[11.5px] text-ink-secondary">
             {authorizing ? <Loader2 size={12} className="animate-spin" /> : <PlugZap size={12} />}
             {authorizing
@@ -143,7 +143,7 @@ export function ConnectorCard({ botId, threadId, message }: { botId: string; thr
             <button
               onClick={() => void connect()}
               disabled={busy}
-              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-ink hover:opacity-90 disabled:opacity-50"
             >
               {busy || authorizing ? <Loader2 size={13} className="animate-spin" /> : <PlugZap size={13} />}
               {authorizing
@@ -156,7 +156,7 @@ export function ConnectorCard({ botId, threadId, message }: { botId: string; thr
             <button
               onClick={() => void resume()}
               disabled={busy}
-              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-ink hover:opacity-90 disabled:opacity-50"
             >
               {busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} {t("connectors.card.continueTask")}
             </button>

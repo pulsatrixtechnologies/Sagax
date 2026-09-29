@@ -5,11 +5,10 @@
 // own transcript and its own provider session — so sensitive work, a
 // long job and a quick question can sit side by side under one agent.
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Activity, Check, ChevronDown, FolderInput, Pencil, Pin, PinOff, Plus, Search, Trash2 } from "lucide-react";
+import { Activity, Check, FolderInput, MessagesSquare, Pencil, Pin, PinOff, Plus, Search, Trash2 } from "lucide-react";
 import { useStore, type Bot, type BotProject, type Group, type Task } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { COMPACT_BUBBLE } from "@/lib/compact-chip";
 import { formatTaskTokens, headlineTokens, usageDetail } from "@/lib/usage";
 import { nextRename } from "@/lib/rename";
 import { FolderIcon, NewThreadButton } from "./BotProjects";
@@ -244,15 +243,9 @@ function ConversationTaskPicker({
         }}
         title={switchTitle}
         aria-label={t("task.switch")}
-        className={cn(
-          "flex max-w-[220px] items-center gap-1.5 rounded-full border border-hairline/40 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink",
-          COMPACT_BUBBLE,
-        )}
+        className="flex size-8 items-center justify-center rounded-md text-ink-secondary hover:bg-raised hover:text-ink"
       >
-        <span className="truncate @max-4xl/chathead:hidden">{t("task.switch")}</span>
-        {/* folded: just the count in the bubble — the title rides the tooltip */}
-        <span className="shrink-0 tabular-nums opacity-60 @max-4xl/chathead:opacity-100">{tasks.length}</span>
-        <ChevronDown size={12} className="shrink-0 @max-4xl/chathead:hidden" />
+        <MessagesSquare size={18} />
       </button>
 
       {open && (

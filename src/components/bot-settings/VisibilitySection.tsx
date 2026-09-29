@@ -111,7 +111,7 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-hairline/40 bg-card p-4" data-bot-visibility>
+    <div className="flex flex-col gap-3 rounded-xl border border-hairline/40 p-4" data-bot-visibility>
       <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("botSettings.visibility.subtitle")}</p>
       <div role="radiogroup" aria-label={t("botSettings.visibility.title")} className="flex flex-col gap-1.5">
         {OPTIONS.map((option) => (
@@ -165,7 +165,7 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
           type="button"
           onClick={() => void save()}
           disabled={busy || !dirty}
-          className={cn("flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-semibold text-white hover:brightness-110 disabled:opacity-50")}
+          className={cn("flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50")}
         >
           {busy && <Loader2 size={13} className="animate-spin" />}
           {busy ? t("botSettings.visibility.saving") : t("botSettings.visibility.save")}

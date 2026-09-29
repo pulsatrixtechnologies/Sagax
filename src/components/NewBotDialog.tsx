@@ -42,7 +42,7 @@ export function CompanionNewBotDialog() {
   }, []);
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t("newBot.create")} tabIndex={-1}
-      className="w-full max-w-sm rounded-2xl border border-hairline/50 bg-panel p-5 text-ink shadow-2xl"
+      className="w-full max-w-sm rounded-[14px] border border-border bg-elevated p-5 text-ink"
       onKeyDown={event => {
         if (event.key === "Escape") { event.stopPropagation(); close(); }
         if (event.key === "Tab") {
@@ -54,9 +54,9 @@ export function CompanionNewBotDialog() {
       }}>
       <h2 className="mb-4 text-[17px] font-semibold">{t("newBot.create")}</h2>
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={close} className="rounded-lg px-3 py-2">{t("common.cancel")}</button>
+        <button type="button" onClick={close} className="ui-button">{t("common.cancel")}</button>
         <button type="button" disabled={state.botCreationPending} onClick={() => dispatch({ type: "newBot", onCreated: close })}
-          className="rounded-lg bg-accent px-4 py-2 text-white disabled:opacity-40">{t("newBot.create")}</button>
+          className="ui-button ui-button-primary disabled:opacity-40">{t("newBot.create")}</button>
       </div>
     </div>
   </div>;
@@ -171,13 +171,13 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
     },
   };
   const title = defaultsMode ? t("newBot.defaults") : t("sidebar.newBot");
-  return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-3 sm:p-5">
+  return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-3 sm:p-5">
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={title} aria-busy={saving} tabIndex={-1}
-      className="flex h-[min(760px,94dvh)] w-full max-w-[900px] flex-col overflow-hidden rounded-2xl border border-hairline/50 bg-panel shadow-2xl outline-none">
+      className="flex h-[min(760px,94dvh)] w-full max-w-[900px] flex-col overflow-hidden rounded-[14px] border border-border bg-elevated outline-none">
       <div className="flex shrink-0 items-center justify-between border-b border-hairline/40 px-5 py-4">
         <h2 className="text-[17px] font-semibold text-ink">{title}</h2>
         <button type="button" onClick={() => closeRef.current()} aria-label={t("common.close")}
-          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40"><X size={18} className="pointer-events-none" /></button>
+          className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary disabled:opacity-40"><X size={18} className="pointer-events-none" /></button>
       </div>
         {choosesVisibility && (
           <div className="flex flex-wrap items-center gap-2 px-5 pt-3 text-[13px] text-ink-secondary" data-new-bot-visibility>
@@ -187,7 +187,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
                 value={audience}
                 disabled={saving}
                 onChange={(event) => setAudience(event.target.value as VisibilityMode)}
-                className="rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[13px] text-ink focus:border-hairline focus:outline-none"
+                className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
               >
                 <option value="everyone">{t("botSettings.visibility.everyone")}</option>
                 <option value="admins">{t("botSettings.visibility.admins")}</option>
@@ -201,7 +201,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
                 onChange={(event) => setPeople(event.target.value)}
                 placeholder={t("botSettings.visibility.peoplePlaceholder")}
                 aria-label={t("botSettings.visibility.peopleLabel")}
-                className="min-w-[16rem] flex-1 rounded-lg border border-hairline/40 bg-inset px-3 py-1.5 text-[13px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
+                className="min-w-[16rem] flex-1 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none"
               />
             )}
           </div>
@@ -224,7 +224,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
       <div className="flex shrink-0 justify-end gap-2 border-t border-hairline/40 px-5 py-3">
         <button type="button" onClick={() => closeRef.current()} className="rounded-lg px-4 py-2 text-[13px] text-ink-secondary hover:bg-control">{t("common.cancel")}</button>
         <button type="button" disabled={!ready || saving || (!defaultsMode && !bot.name.trim())} onClick={() => void save()}
-          className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-40">
+          className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40">
           {saving && <Loader2 size={15} className="animate-spin" />}{t(defaultsMode ? "newBot.saveDefaults" : "newBot.create")}
         </button>
       </div>
@@ -350,7 +350,7 @@ function DraftMemory({ draft }: { draft: BotCreationDraft }) {
 function DraftRoutines({ draft }: { draft: BotCreationDraft }) {
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
   return <div className="space-y-3">
-    <button type="button" className="rounded-lg bg-accent px-3 py-2 text-[13px] text-white" onClick={() => setEditing("new")}>{t("computer.routines.create")}</button>
+    <button type="button" className="rounded-lg bg-accent px-3 py-2 text-[13px] text-accent-ink" onClick={() => setEditing("new")}>{t("computer.routines.create")}</button>
     {draft.routines.map(routine => <div key={routine.id} className="flex items-center gap-2 rounded-lg bg-card p-3">
       <button type="button" className="min-w-0 flex-1 text-left text-[13px]" onClick={() => setEditing(routine)}>{routine.name}</button>
       <label className="flex items-center gap-1.5 text-[12px] text-ink-secondary"><input type="checkbox" checked={routine.enabled} onChange={event => draft.setRoutineEnabled(routine.id, event.target.checked)} />Enabled</label>

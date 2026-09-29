@@ -46,6 +46,7 @@ export function SidebarPopoverMenu({
   items,
   ariaLabel,
   openOnHover = false,
+  menuClassName = "left-0 right-0",
   renderTrigger,
 }: {
   /** `data-tour` id for the trigger button */
@@ -53,6 +54,9 @@ export function SidebarPopoverMenu({
   items: SidebarMenuItem[];
   ariaLabel: string;
   openOnHover?: boolean;
+  /** horizontal placement of the menu; it spans the trigger by default, a
+   * trigger narrower than its items (the avatar) gives it a width instead */
+  menuClassName?: string;
   renderTrigger: (state: {
     open: boolean;
     attention: boolean;
@@ -151,11 +155,11 @@ export function SidebarPopoverMenu({
           id={menuId}
           role="menu"
           aria-label={ariaLabel}
-          className="animate-pop-in absolute bottom-full left-0 right-0 z-40 mb-1 overflow-hidden rounded-xl border border-hairline/50 bg-menu py-1.5 shadow-2xl shadow-black/50"
+          className={cn("animate-pop-in absolute bottom-full z-40 mb-1 flex min-w-[200px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]", menuClassName)}
         >
           {items.map((item) => (
             <div key={item.key}>
-              {item.separatorBefore && <div className="my-1.5 h-px bg-hairline/50" />}
+              {item.separatorBefore && <div className="mx-2 my-1 h-[0.5px] bg-border" />}
               <button
                 type="button"
                 role="menuitem"
@@ -166,15 +170,15 @@ export function SidebarPopoverMenu({
                   if (!item.keepOpen) close();
                 }}
                 className={cn(
-                  "flex w-full items-center gap-3 px-3.5 py-2 text-left text-[14px] disabled:opacity-60",
-                  item.active ? "bg-raised text-ink" : "text-ink hover:bg-raised/70",
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] disabled:opacity-60",
+                  item.active ? "bg-selected text-ink" : "text-ink hover:bg-hover",
                 )}
               >
                 {item.icon && (
                   <span
                     className={cn(
                       "flex size-5 shrink-0 items-center justify-center",
-                      item.active ? "text-accent" : "text-ink-secondary",
+                      "text-ink",
                     )}
                   >
                     {item.icon}

@@ -66,10 +66,10 @@ export function OrgSkillsCard({ bot, onAdded }: { bot: Bot; onAdded: () => void 
   };
 
   return (
-    <div className="rounded-xl bg-card p-4">
+    <div className="rounded-xl border border-hairline/40 p-4">
       <div className="flex items-center gap-2">
         <Building2 size={16} className="text-ink-secondary" />
-        <div className="text-[15px] font-medium text-ink">{t("orgLibrary.tab", { name: organization })}</div>
+        <div className="text-[13px] font-medium text-ink">{t("orgLibrary.tab", { name: organization })}</div>
       </div>
       <div className="mt-1 text-[12px] leading-relaxed text-ink-secondary">{t("orgLibrary.skillsHint")}</div>
       <div className="mt-3 divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">

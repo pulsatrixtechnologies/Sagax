@@ -2,7 +2,7 @@
 //
 // Starts as root only to hand a fresh Fly volume (mounted root-owned at
 // /data) to the unprivileged `maus` user, then drops privileges for good
-// and runs two children: the OpenMausBot server on 127.0.0.1:8799 (and its
+// and runs two children: the Pulsa Bot server on 127.0.0.1:8799 (and its
 // webhook receiver on :8800) and the Caddy edge on 0.0.0.0:8080. The edge is
 // the only listener the network can reach, and it always forwards with
 // X-Forwarded-*, so request-auth.ts never grants a remote request loopback

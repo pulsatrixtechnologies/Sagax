@@ -2,7 +2,7 @@
   "name": "@openmausbot/companion",
   "version": "0.1.0",
   "private": true,
-  "description": "A sidecar that lets a paired phone reach an unmodified OpenMausBot harness",
+  "description": "A sidecar that lets a paired phone reach an unmodified Pulsa Bot harness",
   "type": "module",
   "bin": {
     "openmausbot-companion": "./src/index.ts"

@@ -3,9 +3,11 @@
 // bot-settings/; this dialog owns only the fetches (overview, system-prompt,
 // history) and which accordion row is expanded.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Search, X } from "lucide-react";
+import { Bug, ChevronDown, ChevronLeft, PanelRight, Search } from "lucide-react";
 
-import { api, useStore, type Bot } from "@/state/store";
+import { api, useStore, visibleMessages, type Bot } from "@/state/store";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
+import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import type { BotOverview } from "@/lib/bot-overview-types";
 import { cn } from "@/lib/cn";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -26,6 +28,10 @@ import { VoiceSection } from "./bot-settings/VoiceSection";
 import { HistorySection, type HistoryRow } from "./bot-settings/HistorySection";
 import { UsageSection } from "./bot-settings/UsageSection";
 import { VisibilitySection } from "./bot-settings/VisibilitySection";
+import { MediaSection } from "./bot-settings/MediaSection";
+import { ComputerPanel } from "./ComputerPanel";
+import { BotProfileAvatarCard } from "./BotProfileAvatarCard";
+import { useCaptionChrome } from "./DesktopCapabilities";
 import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import type { PromptPreviewData } from "./bot-settings/PromptPreview";
@@ -37,8 +43,27 @@ function sectionMatches(entry: (typeof BOT_SECTIONS)[number], query: string): bo
   return [entry.label, sectionLabel(entry), ...entry.keywords].some((part) => part.toLowerCase().includes(query));
 }
 
-export function BotSettingsDialog({ bot }: { bot: Bot }) {
+const SETTINGS_WIDTH_KEY = "omb-settings-panel-width";
+const SETTINGS_MIN_WIDTH = 320;
+const SETTINGS_MAX_WIDTH = 720;
+const SETTINGS_DEFAULT_WIDTH = 360;
+
+function readSettingsWidth(): number {
+  try {
+    const stored = Number(localStorage.getItem(SETTINGS_WIDTH_KEY));
+    if (Number.isFinite(stored) && stored >= SETTINGS_MIN_WIDTH && stored <= SETTINGS_MAX_WIDTH) return stored;
+  } catch { /* default width */ }
+  return SETTINGS_DEFAULT_WIDTH;
+}
+
+/** Details holds who the bot is and what it runs on a schedule; Advanced
+ * keeps every other section behind one searchable list. */
+type PanelTab = "details" | "media" | "computer" | "advanced";
+const DETAILS_SECTIONS = new Set(["identity", "routines"]);
+
+export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpenVmWorkspace?: (botId: string) => void }) {
   const { state, dispatch, flushBotPatches } = useStore();
+  const { padClass } = useCaptionChrome();
   const section = state.botSettingsSection;
   const derived = useBotSettingsDerived(bot);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -46,6 +71,31 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
   // Keep expansion in the store too: header deep links can arrive while
   // this panel is already mounted, including after collapsing the same row.
   const collapsed = !state.botSettingsExpandAccordion;
+  // A deep link to a section lands on the tab that holds it.
+  const [pickedTab, setPickedTab] = useState<Exclude<PanelTab, "computer">>(
+    !collapsed && !DETAILS_SECTIONS.has(state.botSettingsSection) ? "advanced" : "details",
+  );
+  useEffect(() => {
+    if (collapsed) return;
+    setPickedTab(DETAILS_SECTIONS.has(section) ? "details" : "advanced");
+  }, [collapsed, section]);
+  // The Computer tab is the store's computer view, so every existing
+  // "open the computer" link still lands on it.
+  const tab: PanelTab = state.computerOpen ? "computer" : pickedTab;
+  const chooseTab = (next: PanelTab) => {
+    if (next === "computer") {
+      dispatch({ type: "toggleComputer", open: true });
+      return;
+    }
+    if (state.computerOpen || !collapsed) dispatch({ type: "toggleSettings", open: true });
+    setPickedTab(next);
+  };
+  const closePanel = () => {
+    dispatch({ type: "toggleSettings", open: false });
+    dispatch({ type: "toggleComputer", open: false });
+  };
+  const [settingsWidth, setSettingsWidth] = useState(readSettingsWidth);
+  const settingsResize = useRef<{ x: number; width: number; current: number } | null>(null);
   const q = query.trim().toLowerCase();
   // Slack is offered only where the server has an Admin page to link to
   // (a hosted organisation workspace); otherwise its row does not exist.
@@ -54,6 +104,7 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
   // on a served workspace, and there only to an admin.
   const ownerOrAdmin = useOwnerOrAdmin();
   const sections = BOT_SECTIONS
+    .filter((entry) => !DETAILS_SECTIONS.has(entry.id))
     .filter((entry) => entry.id !== "slack" || slackUrl !== null)
     .filter((entry) => entry.id !== "visibility" || (!window.ogb && ownerOrAdmin === true));
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
@@ -225,6 +276,7 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
       if (event.key === "Escape") {
         event.preventDefault();
         dispatch({ type: "toggleSettings", open: false });
+        dispatch({ type: "toggleComputer", open: false });
       }
     };
 
@@ -252,10 +304,6 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
             prompt={prompt}
             promptError={promptError}
             onOpen={(target) => dispatch({ type: "toggleSettings", open: true, section: target })}
-            onSetup={derived.canCoordinate && !bot.busy ? () => {
-              dispatch({ type: "toggleSettings", open: false });
-              dispatch({ type: "send", botId: bot.id, text: "/setup", threadId: bot.threadId });
-            } : undefined}
           />
         );
       case "identity":
@@ -322,101 +370,189 @@ export function BotSettingsDialog({ bot }: { bot: Bot }) {
         role="dialog"
         aria-labelledby="bot-settings-title"
         tabIndex={-1}
-        className="animate-panel-in absolute inset-0 z-40 flex h-full min-w-0 flex-col border-l border-hairline/40 bg-panel outline-none lg:static lg:z-auto lg:w-[min(420px,42vw)] lg:shrink-0"
+        style={{ width: settingsWidth }}
+        className="animate-panel-in relative flex h-full min-w-0 shrink-0 flex-col border-l-[0.5px] border-hairline-weak bg-app outline-none max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-auto"
       >
-        <div className="flex shrink-0 items-center justify-between px-4 py-3">
-          <span id="bot-settings-title" className="truncate text-[15px] font-semibold text-ink">
-            {bot.name}
-          </span>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "toggleSettings", open: false })}
-            aria-label="Close settings"
-            className="rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
-          >
-            <X size={18} className="pointer-events-none" />
-          </button>
-        </div>
-
-        <div className="mx-4 mb-2 flex shrink-0 items-center gap-2 rounded-lg bg-control/70 px-2.5 py-2">
-          <Search size={14} className="shrink-0 text-ink-secondary" />
-          <input
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              dispatch({ type: "toggleSettings", open: true });
-            }}
-            onKeyDown={(e) => {
-              if (e.key !== "Escape") return;
-              e.stopPropagation();
-              if (query) setQuery("");
-              else dispatch({ type: "toggleSettings", open: false });
-            }}
-            placeholder="Search"
-            aria-label="Search settings"
-            className="w-full bg-transparent text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
-          />
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize settings"
+          aria-valuemin={SETTINGS_MIN_WIDTH}
+          aria-valuemax={SETTINGS_MAX_WIDTH}
+          aria-valuenow={settingsWidth}
+          tabIndex={0}
+          onPointerDown={(event) => {
+            settingsResize.current = { x: event.clientX, width: settingsWidth, current: settingsWidth };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const from = settingsResize.current;
+            if (!from) return;
+            const next = Math.min(SETTINGS_MAX_WIDTH, Math.max(SETTINGS_MIN_WIDTH, from.width + (from.x - event.clientX)));
+            settingsResize.current = { ...from, current: next };
+            setSettingsWidth(next);
+          }}
+          onPointerUp={(event) => {
+            const width = settingsResize.current?.current;
+            if (width == null) return;
+            settingsResize.current = null;
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            try { localStorage.setItem(SETTINGS_WIDTH_KEY, String(width)); } catch { /* session only */ }
+          }}
+          onKeyDown={(event) => {
+            const delta = event.key === "ArrowLeft" ? 24 : event.key === "ArrowRight" ? -24 : 0;
+            if (!delta) return;
+            event.preventDefault();
+            setSettingsWidth((current) => {
+              const next = Math.min(SETTINGS_MAX_WIDTH, Math.max(SETTINGS_MIN_WIDTH, current + delta));
+              try { localStorage.setItem(SETTINGS_WIDTH_KEY, String(next)); } catch { /* session only */ }
+              return next;
+            });
+          }}
+          className="absolute inset-y-0 -left-1.5 z-10 hidden w-3 cursor-col-resize focus-visible:bg-accent/40 lg:block"
+        />
+        {/* Top bar: only the controls, the way Grok Bot's panel opens. On
+            Windows it drops below the caption buttons (padClass). */}
+        <div className={cn("relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
+          {tab === "advanced" && !collapsed ? (
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "toggleSettings", open: true })}
+              aria-label="Back"
+              className={CIRCLE_BUTTON}
+            >
+              <ChevronLeft size={18} strokeWidth={1.75} />
+            </button>
+          ) : <span />}
+          <div className="flex items-center gap-2">
+            <ExportTranscriptMenu title={bot.name} messages={visibleMessages(bot)} botName={bot.name} />
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "toggleInspector", open: true })}
+              aria-label={t("chat.inspector")}
+              title={t("chat.inspectorHint")}
+              className={CIRCLE_BUTTON}
+            >
+              <Bug size={18} strokeWidth={1.75} />
+            </button>
+            <button
+              type="button"
+              onClick={closePanel}
+              aria-label="Close"
+              title="Close"
+              className={CIRCLE_BUTTON}
+            >
+              <PanelRight size={18} strokeWidth={1.75} />
+            </button>
+          </div>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          {visibleSections.length === 0 && (
-            <div className="px-4 py-4 text-[12.5px] leading-relaxed text-ink-secondary">
-              Nothing matches “{query.trim()}”
-            </div>
-          )}
-          {/* Walk all sections so Memory keeps a stable mount (draft survival)
-              even when search filters its row out of view. Other unmatched
-              rows are omitted entirely. */}
-          {sections.map((entry) => {
-            const { id, icon: Icon } = entry;
-            const label = sectionLabel(entry);
-            const matched = sectionMatches(entry, q);
-            if (!matched && id !== "memory") return null;
-            const open = !collapsed && section === id;
-            return (
-              <div
-                key={id}
-                data-bot-settings-section={id}
-                className="border-b border-hairline/30"
-                hidden={!matched}
-              >
+          {/* Who this is, then the tabs */}
+          <div className="flex shrink-0 flex-col items-center px-4 pb-3">
+            <BotProfileAvatarCard bot={bot} activeState={derived.activeState} mascotMotion={derived.mascotMotion} onPatch={derived.patch} />
+            <span id="bot-settings-title" className="mt-2 max-w-full truncate text-[17px] font-medium leading-6 text-ink">{bot.name}</span>
+            {bot.title.trim() && <span className="mt-0.5 max-w-full truncate text-[12px] leading-4 text-ink-secondary">{bot.title.trim()}</span>}
+            <div role="tablist" aria-label={t("botPanel.tabsAria")} className="mt-4 flex items-center gap-1">
+              {(["details", "media", "computer", "advanced"] as const).map((id) => (
                 <button
+                  key={id}
                   type="button"
-                  onClick={() => {
-                    if (section === id && !collapsed) {
-                      dispatch({ type: "toggleSettings", open: true });
-                      return;
-                    }
-                    dispatch({ type: "toggleSettings", open: true, section: id });
-                  }}
-                  aria-expanded={open}
+                  role="tab"
+                  aria-selected={tab === id}
+                  onClick={() => chooseTab(id)}
                   className={cn(
-                    "flex w-full shrink-0 items-center gap-2.5 px-4 py-2.5 text-left text-[14px]",
-                    open ? "bg-control/60 text-ink" : "text-ink-secondary hover:bg-control/40 hover:text-ink",
+                    "rounded-md px-2 py-1 text-[13px] leading-5 transition-colors",
+                    tab === id ? "bg-elevated-hover text-ink" : "text-ink-secondary hover:text-ink",
                   )}
                 >
-                  <Icon size={15} className="shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{label}</span>
-                  <ChevronDown
-                    size={16}
-                    className={cn(
-                      "shrink-0 text-ink-secondary transition-transform",
-                      open && "rotate-180",
-                    )}
-                  />
+                  {t(`botPanel.tab.${id}`)}
                 </button>
-                {/* Memory stays mounted (hidden when collapsed) so drafts survive;
-                    other sections only mount while expanded. */}
-                {id === "memory" ? (
-                  <div hidden={!open} className="px-4 pb-4 pt-1">
-                    {renderSectionBody("memory")}
-                  </div>
-                ) : (
-                  open && <div className="px-4 pb-4 pt-1">{renderSectionBody(id)}</div>
-                )}
-              </div>
-            );
-          })}
+              ))}
+            </div>
+          </div>
+
+          {tab === "details" && (
+            <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
+              <IdentitySection
+                bot={bot}
+                patch={derived.patch}
+                activeState={derived.activeState}
+                mascotMotion={derived.mascotMotion}
+                showAvatar={false}
+              />
+              <section className="flex flex-col gap-2">
+                <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />
+              </section>
+            </div>
+          )}
+
+          {tab === "media" && <div className="px-4 pb-6 pt-2"><MediaSection bot={bot} /></div>}
+
+          {tab === "computer" && (
+            <div className="px-4 pt-2">
+              <ComputerPanel bot={bot} onOpenVmWorkspace={onOpenVmWorkspace} embedded />
+            </div>
+          )}
+
+          {tab === "advanced" && (
+            <>
+              {collapsed && <div className="mx-4 mb-3 flex shrink-0 items-center gap-2 rounded-lg border border-hairline-weak bg-elevated px-2.5 py-1.5">
+                <Search size={14} className="shrink-0 text-ink-secondary" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Escape") return;
+                    e.stopPropagation();
+                    if (query) setQuery("");
+                    else closePanel();
+                  }}
+                  placeholder="Search"
+                  aria-label="Search settings"
+                  className="w-full bg-transparent text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
+                />
+              </div>}
+              {collapsed && (
+                <div className="mx-4 mb-6 overflow-hidden rounded-xl border border-hairline-weak">
+                  {visibleSections.map((entry) => {
+                    const Icon = entry.icon;
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        data-bot-settings-section={entry.id}
+                        onClick={() => dispatch({ type: "toggleSettings", open: true, section: entry.id })}
+                        className="flex w-full items-center gap-2.5 border-b border-hairline-weak px-3 py-2.5 text-left text-[13px] text-ink last:border-b-0 hover:bg-hover"
+                      >
+                        <Icon size={15} className="shrink-0 text-ink-secondary" />
+                        <span className="min-w-0 flex-1 truncate">{sectionLabel(entry)}</span>
+                        <ChevronDown size={14} className="-rotate-90 text-ink-secondary" />
+                      </button>
+                    );
+                  })}
+                  {q && visibleSections.length === 0 && (
+                    <div className="px-3 py-3 text-[12.5px] leading-relaxed text-ink-secondary">
+                      Nothing matches “{query.trim()}”
+                    </div>
+                  )}
+                </div>
+              )}
+              {!collapsed && (
+                <div className="px-4 pb-6">
+                  <h3 className="mb-3 text-[14px] font-medium text-ink">
+                    {sectionLabel(sections.find((entry) => entry.id === section) ?? sections[0]!)}
+                  </h3>
+                  {section !== "memory" && renderSectionBody(section)}
+                </div>
+              )}
+            </>
+          )}
+          {/* Memory stays mounted so an unsaved draft survives tab and
+              section changes; it shows only while it is the open section. */}
+          <div hidden={!(tab === "advanced" && !collapsed && section === "memory")} className="px-4 pb-6">
+            <MemorySection bot={bot} active={tab === "advanced" && !collapsed && section === "memory"} />
+          </div>
         </div>
       </aside>
       <ConfirmDialog

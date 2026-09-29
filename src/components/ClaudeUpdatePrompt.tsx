@@ -64,7 +64,7 @@ export function ClaudeUpdatePrompt({
             <button
               type="button"
               onClick={update}
-              className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1 text-[12.5px] font-medium text-white hover:brightness-110"
+              className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1 text-[12.5px] font-medium text-accent-ink hover:brightness-110"
             >
               <Download size={12} aria-hidden="true" /> {t("chat.claudeUpdate.doIt")}
             </button>

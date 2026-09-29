@@ -7,8 +7,11 @@ import {
   FACE_CENTRE,
   GAZE,
   GAZE_TRAVEL,
+  GROK_EYE,
   MOUTHS,
   MOUTH_STROKE,
+  grokEyePath,
+  grokEyePaths,
   mouthFrame,
 } from "./cursor-face-data";
 
@@ -32,6 +35,19 @@ describe("cursor face data", () => {
     expect(FACE_CENTRE).toEqual([120, 122.5]);
     expect(GAZE_TRAVEL).toEqual({ x: 13.2, y: 8.4 });
     expect(MOUTH_STROKE).toBe(7.5);
+  });
+
+  it("draws Grok eyes as two identical level capsules", () => {
+    const [left, right] = grokEyePaths()
+    const half = GROK_EYE.separation / 2
+    expect(left).toBe(grokEyePath(FACE_CENTRE[0] - half, FACE_CENTRE[1]))
+    expect(right).toBe(grokEyePath(FACE_CENTRE[0] + half, FACE_CENTRE[1]))
+    expect(left).not.toBe(right)
+    expect(GROK_EYE.height / GROK_EYE.width).toBeGreaterThan(1.6)
+    expect(GROK_EYE.height / GROK_EYE.width).toBeLessThan(2)
+    expect(GROK_EYE.separation).toBeGreaterThan(GROK_EYE.width)
+    expect(left).toContain(`A${(GROK_EYE.width / 2).toFixed(2)}`)
+    expect(right).toContain(`A${(GROK_EYE.width / 2).toFixed(2)}`)
   });
 
   it("hangs the mouth below the eye pair", () => {

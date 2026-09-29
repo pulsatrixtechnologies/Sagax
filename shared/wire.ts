@@ -59,7 +59,7 @@ export type Surface = "cloud" | "vm" | "local" | "browser";
 
 export type MausColor =
   | "green" | "blue" | "red" | "orange" | "purple" | "cyan" | "pink"
-  | "yellow" | "teal" | "coral";
+  | "yellow" | "teal" | "coral" | "white";
 
 /** The face a bot rests on, as one of the engine's state names. Kept as a
  * plain string rather than a union: bots saved under the app's earlier
@@ -331,6 +331,14 @@ export interface WireBot {
   /** Who may see this bot on a workspace several people share. Absent means
    * everyone. Sent to admins only; a member's copy of a bot never carries it. */
   visibility?: BotVisibility;
+  /** User ids this bot's owner opened Direct to. Absent or empty: only the
+   * owner sees the bot in Direct. */
+  directGrants?: string[];
+  /** Lowercased user id of the person who created the bot. Absent on older
+   * records: the org owner is the owner. */
+  ownerUserId?: string;
+  /** Where this bot's turns run. Missing on older bots.json means fleet. */
+  host?: { kind: "fleet" } | { kind: "machine"; userId: string; deviceId: string };
 }
 
 /** Who may see a bot: every signed-in person, admins only, or the listed
@@ -425,6 +433,9 @@ export interface WireMessage {
   requestMessageId?: string;
   /** Provider completion outcome, independent of whether it emitted text. */
   turnSucceeded?: boolean;
+  /** A dropped worker, or a person or bot removed during the turn.
+   * This is not an approval. */
+  status?: "failed";
   /** An exact request was stopped; a restart must not revive an old result. */
   requestCancelled?: boolean;
   /** Set before execution and cleared only after the request's verified
@@ -575,6 +586,8 @@ export interface WireGroup {
   tasks?: GroupTask[];
   name: string;
   memberIds: string[];
+  /** People in this channel, beside the bots. Absent on a bot-to-bot dm. */
+  humanIds?: string[];
   defaultResponder: GroupDefaultResponder;
   /** The room's shared instructions. */
   bulletin: string;

@@ -114,7 +114,7 @@ describe("mcp-gate", () => {
     const answer = await call("search_products");
     const text = answer.result.content[0].text;
     expect(text.length).toBeLessThan(full.length / 10);
-    expect(text).toContain("OpenMausBot trimmed this tool result");
+    expect(text).toContain("Pulsa Bot trimmed this tool result");
 
     const spillDir = join(scratch, "spill");
     const [file] = readdirSync(spillDir);
@@ -124,7 +124,7 @@ describe("mcp-gate", () => {
     // never trimming. It is there for the person and the harness.
     expect(text).not.toContain(join(spillDir, file));
 
-    const kept = JSON.parse(text.slice(0, text.indexOf("\n\n[OpenMausBot")));
+    const kept = JSON.parse(text.slice(0, text.indexOf("\n\n[Pulsa Bot")));
     expect(kept.products[0]).toEqual(products[0]);
     expect(kept.nextOffset).toBe("1");
   });
