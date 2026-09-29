@@ -526,6 +526,62 @@ have Full access. Files the server's user owns (`config.json`, the engine's
 environment) are also still readable from a bot's shell; that needs a
 second user for engines, a separate change.
 
+## Sign in with Pulsatrix (organization server)
+
+A server shared by an organization signs people in with Pulsatrix
+Perspicax, the organization's identity provider, instead of email codes or
+invitation links. Accounts, passwords, second factors and roles live in
+Perspicax; Pulsa Bot is an OpenID Connect client of it (spec:
+`docs/superpowers/specs/2026-09-29-perspicax-multiuser-design.md`).
+
+```sh
+OMB_IDENTITY=perspicax
+OMB_PERSPICAX_ISSUER=https://px.yourcompany.com   # the Perspicax public origin
+OMB_PUBLIC_URL=https://bot.yourcompany.com        # this server, no path
+# OMB_OIDC_CLIENT_ID=pulsa-bot                    # the default
+```
+
+On the Perspicax side, set `PXC_PULSABOT_ORIGIN` to exactly the value of
+`OMB_PUBLIC_URL`: that registers the first-party client `pulsa-bot` with the
+redirect URI `<OMB_PUBLIC_URL>/auth/oidc/callback`. Both addresses must be
+https (plain http is accepted only on this machine, for a local test). A
+server with `OMB_IDENTITY=perspicax` and a missing or unsafe address refuses
+to start rather than fall back to email codes.
+
+What changes:
+
+- `/pair` shows **Sign in with Pulsatrix**. It opens `/auth/oidc/start`,
+  which sends the browser to the Perspicax sign-in page (password and TOTP,
+  or a passkey) and back to `/auth/oidc/callback`. The server exchanges the
+  code itself (PKCE S256, `state`, `nonce`), checks the ES256 `id_token`
+  against the Perspicax JWKS, and sets its own session cookie. No Perspicax
+  token reaches the browser, the desktop app, a phone or an engine; in this
+  first slice the server keeps none either (the refresh token is revoked at
+  once, and the session stands on its own).
+- The person is found by the Perspicax account (`iss` + `sub`), never by
+  email: the address, name and login are attributes refreshed at each
+  sign-in. `GET /api/auth/session` shows `principalId`, `email`, `name`,
+  `role` (the Perspicax role) and `orgRole`.
+- The Perspicax role decides the session: `admin` gets the admin and client
+  scopes and is an organization admin in Pulsa Bot; `manager` and
+  `employee` get the client scope and are members. A role Pulsa Bot does not
+  know cannot sign in.
+- Email codes (`/api/auth/email/*`) and every invitation route
+  (`/api/org/invites*`) answer 403 with `code: "identity_perspicax"`, and
+  their screens are hidden. New people are created by an admin in
+  Perspicax.
+- Loopback without a session is a service, not the owner
+  (`OMB_LOOPBACK_TRUST=service`), unless you set `OMB_LOOPBACK_TRUST`
+  yourself: every bot's shell on a shared server is a loopback caller.
+- The desktop app, connected to this server as a saved server, runs the same
+  sign-in in a small window of its own (no preload, same cookie jar). A
+  phone pairs with the QR code a signed-in person opens, as before.
+
+Bots run on the server: an admin who signed in this way creates a bot and
+its turns run on the engines installed on the server (in the Docker image,
+the `ENGINES` build argument; see "Docker" above), with the engine
+connection or provider key an admin set in Settings → Connections.
+
 ## Sign in with your email
 
 A pairing code is fine for the owner's own devices. For a workspace other

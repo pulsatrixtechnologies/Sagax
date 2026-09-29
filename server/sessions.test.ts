@@ -555,3 +555,26 @@ describe("sessions carry a principal", () => {
     expect(registry.listRecordsForMigration()).toEqual([{ id, label: "Old phone", email: undefined, userId: undefined, principalId: undefined, scopes: ["admin", "client"] }]);
   });
 });
+
+describe("sessions from an OpenID Connect sign-in", () => {
+  it("carry the provider subject and are never revoked by the email sign-in list", () => {
+    const store = new SessionRegistry({ file: join(dir, "oidc-sessions.json"), now: () => clock, emailScopes: () => null });
+    const issued = store.issue({ label: "Chrome on Mac", scopes: ["admin", "client"], email: "ada@example.test", principalId: "pr_x", idp: { iss: "https://px.example.test", sub: "01J", role: "admin" } });
+    const legacy = store.issue({ label: "Email", scopes: ["client"], email: "ada@example.test" });
+    expect(store.authenticate(legacy.token)).toBeNull();
+    const record = store.authenticate(issued.token);
+    expect(record?.idp).toEqual({ iss: "https://px.example.test", sub: "01J", role: "admin" });
+    expect(record?.principalId).toBe("pr_x");
+    store.close();
+  });
+
+  it("do not survive an unclean restart, like other account sessions", () => {
+    const path = join(dir, "oidc-unclean.json");
+    const store = new SessionRegistry({ file: path, now: () => clock });
+    const issued = store.issue({ label: "Chrome", scopes: ["client"], principalId: "pr_y", idp: { iss: "https://px.example.test", sub: "01K" } });
+    // no close(): the open marker stays, as after a crash
+    const reopened = new SessionRegistry({ file: path, now: () => clock });
+    expect(reopened.authenticate(issued.token)).toBeNull();
+    reopened.close();
+  });
+});

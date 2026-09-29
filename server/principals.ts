@@ -14,6 +14,14 @@ const principalSchema = z.object({
   email: z.string().max(320).optional(),
   controlPlaneUserId: z.string().max(256).optional(),
   local: z.boolean().optional(),
+  /** The identity provider account behind this person in organization mode
+   * (`iss` + `sub`, never reused). Email is only an attribute beside it. */
+  subject: z.object({ iss: z.string().min(1).max(2048), sub: z.string().min(1).max(255) }).optional(),
+  name: z.string().max(200).optional(),
+  login: z.string().max(200).optional(),
+  /** The last Pulsa Bot organization role computed from the provider's
+   * `role` claim, for display while offline. */
+  orgRole: z.enum(["admin", "member"]).optional(),
   createdAt: z.number(),
 });
 const fileSchema = z.object({ version: z.literal(1), principals: z.array(z.unknown()) });
@@ -165,7 +173,9 @@ export class PrincipalRegistry {
     if (account && account.length > 256) throw new Error("account id is too long");
     if (!email && !account) throw new Error("an account email or id is required");
     let found = account ? this.principals.find((p) => p.controlPlaneUserId === account) : undefined;
-    found ??= email ? this.principals.find((p) => p.email === email && (!p.controlPlaneUserId || !account)) : undefined;
+    // A person known by an identity provider subject is never claimed by
+    // an address: email is an attribute of theirs, not a key.
+    found ??= email ? this.principals.find((p) => p.email === email && !p.subject && (!p.controlPlaneUserId || !account)) : undefined;
     if (found) {
       let changed = false;
       if (email && found.email !== email) { found.email = email; changed = true; }
@@ -183,6 +193,40 @@ export class PrincipalRegistry {
     this.principals.push(created);
     this.persist();
     return { ...created };
+  }
+
+  /** The person behind a verified OpenID Connect sign-in, keyed by
+   * `iss` + `sub` only. Name, login, address and role are attributes,
+   * refreshed on every sign-in; an address that is not an account email is
+   * dropped rather than stored. */
+  forSubject(input: { iss: string; sub: string; claims?: { email?: string; name?: string; login?: string }; orgRole?: "admin" | "member" }): Principal {
+    const iss = input.iss.trim();
+    const sub = input.sub.trim();
+    if (!iss || iss.length > 2048 || !sub || sub.length > 255) throw new Error("an issuer and a subject are required");
+    const email = input.claims?.email && isAccountEmail(input.claims.email) ? emailKey(input.claims.email) : undefined;
+    const name = input.claims?.name?.trim().slice(0, 200) || undefined;
+    const login = input.claims?.login?.trim().slice(0, 200) || undefined;
+    let found = this.principals.find((p) => p.subject?.iss === iss && p.subject.sub === sub);
+    const created = !found;
+    if (!found) {
+      found = { id: this.newId(), kind: "human", subject: { iss, sub }, createdAt: this.now() };
+      this.principals.push(found);
+    }
+    const before = JSON.stringify(found);
+    if (email) found.email = email;
+    else delete found.email;
+    if (name) found.name = name;
+    else delete found.name;
+    if (login) found.login = login;
+    else delete found.login;
+    if (input.orgRole) found.orgRole = input.orgRole;
+    if (created || JSON.stringify(found) !== before) this.persist();
+    return { ...found };
+  }
+
+  bySubject(iss: string, sub: string): Principal | null {
+    const found = this.principals.find((p) => p.subject?.iss === iss && p.subject.sub === sub);
+    return found ? { ...found } : null;
   }
 
   /** The person at this computer, read only: null before the first

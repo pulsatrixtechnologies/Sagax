@@ -567,6 +567,7 @@ import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
+import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, oidcSessionFields } from "./oidc-login.ts";
 import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import {
@@ -680,7 +681,15 @@ const sharedWorkspaceFullAccessEnabled = () => SHARED_WORKSPACE_FULL_ACCESS && B
 // Who a loopback request without a session is (server/request-auth.ts
 // LoopbackTrust): the owner on a desktop or a one-person server; a service on
 // a shared workspace, where every bot's shell is a loopback caller too.
-const LOOPBACK = resolveLoopbackTrust({ desktopManaged: DESKTOP_MANAGED, hostedWorkspace: HOSTED_WORKSPACE });
+// Organization sign-in (server/oidc-login.ts): OMB_IDENTITY=perspicax. A
+// half-configured organization server stops here rather than fall back to
+// email codes.
+const IDENTITY = identityConfigFromEnv();
+// An organization server is shared: loopback is a bot's shell, not an owner,
+// unless the operator says otherwise (spec section 8, request-auth.ts).
+const LOOPBACK = IDENTITY.kind === "perspicax" && !DESKTOP_MANAGED && process.env.OMB_LOOPBACK_TRUST === undefined
+  ? { trust: "service" as const, reason: "organization server (OMB_IDENTITY=perspicax)" as string, warning: undefined as string | undefined }
+  : resolveLoopbackTrust({ desktopManaged: DESKTOP_MANAGED, hostedWorkspace: HOSTED_WORKSPACE });
 // `openmausbot serve` on a service-trust server hands the server it starts a
 // per-launch secret on stdin, then closes it (server/cli.ts). It opens only
 // the pairing route, for that CLI. Never an environment variable: every
@@ -14451,6 +14460,8 @@ function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): bo
  * an admin session when no organization exists yet. */
 function channelActorRole(auth: RequestAuth): OrgRole | null {
   if (auth.kind === "loopback" && auth.trust !== "service") return "owner";
+  // Signed in with Pulsatrix: the role claim decided the session's scopes.
+  if (auth.kind === "session" && auth.session.idp) return auth.scopes.includes("admin") ? "admin" : "member";
   if (!orgState.org) {
     if (auth.kind === "session" && auth.scopes.includes("admin")) return "admin";
     return null;
@@ -14616,6 +14627,16 @@ const publicInvites = createPublicInviteRoutes({
   },
 });
 
+// "Sign in with Pulsatrix" (server/oidc-login.ts), only on an organization server.
+const oidcLogin = IDENTITY.kind === "perspicax"
+  ? createOidcLoginRoutes({
+    config: IDENTITY,
+    sessionCookie: SESSION_COOKIE,
+    forSubject: (input) => principals.forSubject(input),
+    issueSession: (input) => sessions.issue(input),
+  })
+  : null;
+
 const toolResults = new ToolResults();
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   let url: URL;
@@ -14642,6 +14663,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (hostedModels) res.setHeader(HOSTED_MODEL_POLICY_HEADER, "1");
       return json(res, 200, { ok: true, service: "openmausbot", membershipAuthority: "portal", workspace: hosted.workspace, ...HOSTED_CONTRACT_METADATA });
     }
+    // An organization server signs people in with Pulsatrix only: the
+    // interim email codes and invitation links are refused outright.
+    if (IDENTITY.kind === "perspicax") {
+      if (isInterimSignInRoute(method, path)) return json(res, 403, INTERIM_SIGNIN_REFUSAL);
+      if (oidcLogin && await oidcLogin(req, res, url)) return;
+    }
     // Hosted workspaces have one sign-in authority. A missing optional layer
     // must not accidentally reactivate legacy email/QR credential minting.
     if (HOSTED_WORKSPACE) {
@@ -14666,7 +14693,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // paired session with the right scope.
     if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
     if (method === "GET" && path === "/.well-known/openmausbot/environment") {
-      return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && emailSignIn.enabled(), sharedComputers: sharedComputersEnabled(cfg) }));
+      return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && IDENTITY.kind === "solo" && emailSignIn.enabled(), sharedComputers: sharedComputersEnabled(cfg), identity: identityDescriptor(IDENTITY) }));
     }
     // The browser lands here after an MCP server's sign-in. Public: the
     // single-use `state` bound to the pending flow is the authorization.
@@ -14929,6 +14956,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               // an OMB Cloud home: the web UI's first run is its engine
               // sign-in (docs/cloud-pro.md). Absent everywhere else.
               ...(CLOUD_HOME ? { cloudHome: true } : {}),
+              // who signed in with Pulsatrix: principal, name and role
+              ...oidcSessionFields(auth.session, auth.session.principalId ? principals.byId(auth.session.principalId) : null),
             },
       );
     }

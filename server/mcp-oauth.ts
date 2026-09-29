@@ -237,7 +237,7 @@ function isLoopbackHostname(hostname: string): boolean {
 }
 
 /** An endpoint a token may be sent to: https, or http on this machine. */
-function safeEndpoint(value: unknown): string | undefined {
+export function safeEndpoint(value: unknown): string | undefined {
   if (typeof value !== "string" || !value) return undefined;
   try {
     const url = new URL(value);
@@ -273,7 +273,7 @@ export function parseBearerChallenge(header: string | null): Record<string, stri
   return params;
 }
 
-async function readBounded(response: Response): Promise<string> {
+export async function readBounded(response: Response): Promise<string> {
   const reader = response.body?.getReader();
   if (!reader) return "";
   const chunks: Uint8Array[] = [];

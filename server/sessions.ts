@@ -80,6 +80,10 @@ const sessionSchema = z.object({
   membershipAuthority: z.literal("portal").optional(),
   /** The person this session acts as (server/principals.ts). */
   principalId: z.string().max(64).optional(),
+  /** Set when the session came from an OpenID Connect sign-in
+   * (server/oidc-login.ts): the provider account and the role claim it
+   * carried. Its membership is the provider's, not the email sign-in list. */
+  idp: z.object({ iss: z.string().max(2048), sub: z.string().max(255), role: z.string().max(40).optional() }).optional(),
 });
 
 const fileSchema = z.object({ version: z.literal(1), sessions: z.array(sessionSchema) });
@@ -243,7 +247,7 @@ export class SessionRegistry {
       return; // unreadable: start empty rather than refuse to boot; pairing again is cheap
     }
     const parsed = fileSchema.safeParse(raw);
-    if (parsed.success) this.sessions = parsed.data.sessions.filter(session => restoreAccounts || (session.email === undefined && session.userId === undefined));
+    if (parsed.success) this.sessions = parsed.data.sessions.filter(session => restoreAccounts || (session.email === undefined && session.userId === undefined && session.idp === undefined));
   }
 
   private syncDirectory(): void {
@@ -426,7 +430,7 @@ export class SessionRegistry {
 
   /** A session from a verified account sign-in (server/account-signin.ts)
    * rather than a pairing code: same token, same term, same gates. */
-  issue(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string }): { token: string; session: PublicSession } {
+  issue(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string; idp?: SessionRecord["idp"] }): { token: string; session: PublicSession } {
     return this.issueAccount(input);
   }
 
@@ -437,7 +441,7 @@ export class SessionRegistry {
     return this.issueAccount({ label: "Hosted workspace", email: input.email, userId: `portal:${input.grant}`, scopes: input.scopes }, "portal");
   }
 
-  private issueAccount(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string }, membershipAuthority?: "portal"): { token: string; session: PublicSession } {
+  private issueAccount(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string; idp?: SessionRecord["idp"] }, membershipAuthority?: "portal"): { token: string; session: PublicSession } {
     this.prune();
     const now = this.now();
     const token = `omb_sess_${randomBytes(32).toString("base64url")}`;
@@ -453,6 +457,7 @@ export class SessionRegistry {
     if (input.userId) record.userId = input.userId;
     if (input.email) record.email = input.email;
     if (input.principalId) record.principalId = input.principalId;
+    if (input.idp) record.idp = { ...input.idp };
     if (membershipAuthority) record.membershipAuthority = membershipAuthority;
     this.sessions.push(record);
     this.lastSeenWrites.set(record.id, now);
@@ -482,7 +487,9 @@ export class SessionRegistry {
    * have no email and remain independent of the hosted sign-in list. */
   revalidateEmailSessions(): void {
     if (this.closed) throw new Error("Session registry is closed.");
-    const eligible = this.sessions.filter(session => session.email !== undefined && !(this.options.portalMembership && session.membershipAuthority === "portal"));
+    // An OpenID Connect session's membership is the identity provider's
+    // (refresh and back-channel logout, slice 2), never the email list.
+    const eligible = this.sessions.filter(session => session.email !== undefined && session.idp === undefined && !(this.options.portalMembership && session.membershipAuthority === "portal"));
     if (!eligible.length) return;
     let resolveScopes = this.options.emailScopes;
     try {

@@ -16,6 +16,7 @@ import {
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 
+import type { IdentityDescriptor } from "./oidc-login.ts";
 import { SERVER_ROOT } from "./proxy-paths.ts";
 
 export interface EnvironmentDescriptor {
@@ -35,6 +36,9 @@ export interface EnvironmentDescriptor {
     /** Whether /pair offers "sign in with your email" (an allow-list is set). */
     emailSignIn?: boolean;
   };
+  /** Present on an organization server: people sign in with Perspicax
+   * (OpenID Connect) at `loginPath`, and email codes are off. */
+  identity?: IdentityDescriptor;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -119,7 +123,7 @@ export function serverVersion(): string {
   return "unknown";
 }
 
-export function environmentDescriptor(input: { environmentId: string; desktopManaged: boolean; emailSignIn?: boolean; sharedComputers?: boolean }): EnvironmentDescriptor {
+export function environmentDescriptor(input: { environmentId: string; desktopManaged: boolean; emailSignIn?: boolean; sharedComputers?: boolean; identity?: IdentityDescriptor }): EnvironmentDescriptor {
   return {
     environmentId: input.environmentId,
     label: process.env.OMB_ENVIRONMENT_LABEL?.trim() || hostname(),
@@ -133,5 +137,6 @@ export function environmentDescriptor(input: { environmentId: string; desktopMan
       selfUpdate: input.desktopManaged ? "desktop-managed" : "operator",
       emailSignIn: input.emailSignIn === true,
     },
+    ...(input.identity ? { identity: input.identity } : {}),
   };
 }

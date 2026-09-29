@@ -130,3 +130,39 @@ describe("principal registry", () => {
     expect(existsSync(nestedPath)).toBe(true);
   });
 });
+
+describe("principals from an identity provider (forSubject)", () => {
+  const ISS = "https://px.example.test";
+  it("keys a person by (iss, sub) and keeps name, login, email and role as attributes", () => {
+    const { reg, path } = registry();
+    const a = reg.forSubject({ iss: ISS, sub: "01JSUBJECT", claims: { email: "Ada@Example.test", name: "Ada", login: "ada" }, orgRole: "admin" });
+    expect(a).toMatchObject({ kind: "human", subject: { iss: ISS, sub: "01JSUBJECT" }, email: "ada@example.test", name: "Ada", login: "ada", orgRole: "admin" });
+    const b = reg.forSubject({ iss: ISS, sub: "01JSUBJECT", claims: { email: "ada.new@example.test", name: "Ada L." }, orgRole: "member" });
+    expect(b.id).toBe(a.id);
+    expect(b).toMatchObject({ email: "ada.new@example.test", name: "Ada L.", orgRole: "member" });
+    expect(b.login).toBeUndefined();
+    expect(JSON.parse(readFileSync(path, "utf8")).principals).toHaveLength(1);
+    // another issuer with the same sub is another person
+    expect(reg.forSubject({ iss: "https://other.example.test", sub: "01JSUBJECT", claims: {} }).id).not.toBe(a.id);
+    expect(reg.bySubject(ISS, "01JSUBJECT")?.id).toBe(a.id);
+  });
+
+  it("never matches or merges people by email, in either direction", () => {
+    const { reg } = registry();
+    const interim = reg.forAccount({ email: "sam@example.test" });
+    const oidc = reg.forSubject({ iss: ISS, sub: "01JSAM", claims: { email: "sam@example.test" } });
+    expect(oidc.id).not.toBe(interim.id);
+    const other = reg.forSubject({ iss: ISS, sub: "01JMALLORY", claims: { email: "ada@example.test" } });
+    // an email sign-in with the subject person's address does not claim them
+    expect(reg.forAccount({ email: "ada@example.test" }).id).not.toBe(other.id);
+  });
+
+  it("drops an address that is not an account email, and survives a reload", () => {
+    const { reg, path } = registry();
+    const a = reg.forSubject({ iss: ISS, sub: "01JX", claims: { email: "not an email" } });
+    expect(a.email).toBeUndefined();
+    const again = new PrincipalRegistry({ path });
+    expect(again.bySubject(ISS, "01JX")?.id).toBe(a.id);
+    expect(() => reg.forSubject({ iss: ISS, sub: "" })).toThrow();
+  });
+});
