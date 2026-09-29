@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FolderPlus, X } from "lucide-react";
 import { Card } from "./SettingsPrimitives";
+import { t } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 import { sharedComputersEnabled } from "@/lib/feature-flags";
 
@@ -42,7 +43,13 @@ export function ComputerSharingSettings({ workspace, onClose }: { workspace: { i
     finally { pending.current = false; if (mounted.current) setBusy(false); }
   };
   if (!bridge) return null;
-  return <div ref={panel}><Card title={`Computer access · ${workspace.name}`} subtitle={workspace.origin}>
+  return <div ref={panel}><Card
+    collapsible
+    cardId={`organization.computerAccess.${workspace.id}`}
+    title={`Computer access · ${workspace.name}`}
+    subtitle={workspace.origin}
+    summary={!state ? t("common.checking") : !state.enabled ? t("settings.card.notShared") : state.connected ? t("settings.card.sharing") : t("settings.card.waiting")}
+  >
     <div className="flex flex-col gap-4 text-[13px]">
       <div className="flex items-center justify-between gap-2">
         <p role="status" className="text-ink-secondary">{!state ? "Loading access…" : !state.enabled ? "Not shared" : state.connected ? "Sharing while this desktop is open" : "Waiting for the workspace to connect"}</p>

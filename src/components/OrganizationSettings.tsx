@@ -46,12 +46,12 @@ export function JoinOrganizationCard({
   const [showCreate, setShowCreate] = useState(false);
   return (
     <>
-      <Card title={t("org.join.title")}>
+      <Card collapsible cardId="organization.join" title={t("org.join.title")} summary={t("settings.card.byInvite")}>
         <p className="text-[13px] leading-relaxed text-ink-secondary">{t("org.join.browser")}</p>
       </Card>
       <RemoteComputerSection />
       {readyToCreate && (
-        <Card>
+        <Card collapsible cardId="organization.create" defaultOpen={false} title={t("org.createCard")} summary={t("settings.card.optional")}>
           {showCreate
             ? <OrgCreateForm initialAddress={initialAddress} onCreate={onCreate} />
             : <button type="button" className="ui-button w-fit" onClick={() => setShowCreate(true)}>{t("org.createLink")}</button>}
@@ -283,7 +283,15 @@ export function OrganizationSettings() {
     {joinOrConnect}
     {directory}
     <p className="text-[13px] leading-relaxed text-ink-secondary">{t("organization.additive")}</p>
-    <Card title={t("settings.section.organization")} subtitle={t("organization.privacy")}>
+    <Card
+      collapsible
+      cardId="organization.enterprise"
+      title={t("settings.section.organization")}
+      subtitle={t("organization.privacy")}
+      summary={connection?.status === "connected" || connection?.status === "license-expired"
+        ? connection.organization?.name ?? connection.email ?? t("settings.card.connected")
+        : t("settings.card.notConnected")}
+    >
       {!connection && <p role="status" className="text-[13px] text-ink-secondary">{error || t("organization.loading")}</p>}
       {connection?.message && <p role="status" className="mb-3 text-[13px] text-ink-secondary">{connection.message}</p>}
       {licenseExpired && <p role="alert" className="mb-3 text-[13px] text-ink">{t("organization.licenseExpired")}</p>}

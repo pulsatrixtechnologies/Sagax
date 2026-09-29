@@ -98,8 +98,16 @@ export function RemoteComputerSection() {
 
   return (
     <Card
+      collapsible
+      cardId="organization.remote"
+      defaultOpen={Boolean(bridge || environments)}
       title={state.active ? t("remote.client.active") : t("remote.client.idle")}
       subtitle={t("remote.client.subtitle")}
+      summary={!bridge && !environments
+        ? t("settings.card.desktopOnly")
+        : state.active
+          ? state.serverName || state.endpoint || t("remote.client.fallbackName")
+          : t("settings.card.notConnected")}
     >
       {!bridge && !environments ? (
         <p className="text-[13px] text-ink-secondary">{t("remote.client.desktopOnly")}</p>

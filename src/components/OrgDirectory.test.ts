@@ -72,6 +72,24 @@ describe("OrgDirectory", () => {
     view.nodes.find((node) => node.type === "button" && node.props.children === "Revoke")!.props.onClick!();
     expect(onRevoke).toHaveBeenCalledExactlyOnceWith("tok-1");
   });
+  it("splits the directory into collapsible cards: invite open, people and pending folded with counts", () => {
+    const html = render({
+      org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } },
+      people: [{ id: "a@example.test", role: "owner" }, { id: "b@example.test", role: "member" }],
+      pendingInvites: [{ email: "c@example.test", token: "tok-2" }],
+      onCreate() {},
+      onInvite() {},
+    }).html;
+    expect(html).toContain('data-settings-card="organization.directory" data-open="true"');
+    expect(html).toContain('data-settings-card="organization.invite" data-open="true"');
+    expect(html).toContain('data-settings-card="organization.people" data-open="false"');
+    expect(html).toContain('data-settings-card="organization.pending" data-open="false"');
+    expect(html).toContain(">2 people<");
+    expect(html).toContain(">1 pending<");
+    // folded, not removed
+    expect(html).toContain("b@example.test");
+    expect(html).toContain("c@example.test");
+  });
   it("lists people by email, falling back to a short id", () => {
     const html = render({
       org: { name: "GOX" },

@@ -4,7 +4,7 @@
 // summed here; nothing is fetched.
 import { useStore } from "@/state/store";
 import { BotAvatar } from "./Avatar";
-import { Card } from "./SettingsPrimitives";
+import { Card, cardCount } from "./SettingsPrimitives";
 import { t } from "@/lib/i18n";
 import { botUsage, cachedUsageNote, costCaption, formatTokens, formatUsd, hasFiniteCost, headlineTokens, sumUsage, tokensColumnLabel, usageDetail } from "@/lib/usage";
 import { UsageHistory } from "./UsageHistory";
@@ -31,7 +31,15 @@ export function UsageSection() {
 
   return (
     <>
-    <Card title={t("usage.title")} subtitle={t("usage.subtitle")}>
+    <Card
+      collapsible
+      cardId="usage.bots"
+      title={t("usage.title")}
+      subtitle={t("usage.subtitle")}
+      summary={rows.length === 0
+        ? t("settings.card.nothingYet")
+        : [cardCount("turns", total.turns), hasFiniteCost(total.costUsd) ? formatUsd(total.costUsd) : formatTokens(headlineTokens(total))].join(" · ")}
+    >
       {rows.length === 0 ? (
         <div className="text-[13px] text-ink-secondary">{t("usage.empty")}</div>
       ) : (

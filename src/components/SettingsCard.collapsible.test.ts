@@ -7,9 +7,10 @@ import { StoreProvider } from "@/state/store";
 import {
   Card,
   SettingRow,
-  clearSettingsCardRequests,
+  cardCount,
   loadCardOpen,
   requestSettingsCard,
+  resetSettingsCards,
   saveCardOpen,
 } from "./SettingsPrimitives";
 
@@ -45,16 +46,22 @@ function collapsible(props: Record<string, unknown> = {}) {
   }, createElement("textarea", { "aria-label": "About me text" })));
 }
 
+/** A fresh device: storage stubbed, in-memory choices dropped. */
+function device(storage = memoryStorage()) {
+  vi.stubGlobal("localStorage", storage);
+  resetSettingsCards();
+  return storage;
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.useRealTimers();
-  clearSettingsCardRequests();
+  resetSettingsCards();
   setLocale("en");
 });
 
 describe("collapsible settings card", () => {
   it("starts collapsed with a one-line summary and an accessible disclosure button", () => {
-    vi.stubGlobal("localStorage", memoryStorage());
+    device();
     const html = collapsible();
     expect(html).toMatch(/<h3[^>]*><button type="button" aria-expanded="false" aria-controls="([^"]+)"/);
     const controls = /aria-controls="([^"]+)"/.exec(html)![1];
@@ -68,7 +75,7 @@ describe("collapsible settings card", () => {
   });
 
   it("opens by default when asked to, and then hides the summary in favor of the subtitle", () => {
-    vi.stubGlobal("localStorage", memoryStorage());
+    device();
     const html = collapsible({ defaultOpen: true });
     expect(html).toContain('aria-expanded="true"');
     expect(html).not.toContain("data-card-summary");
@@ -85,7 +92,7 @@ describe("collapsible settings card", () => {
     expect(loadCardOpen("other.card", true, storage)).toBe(false);
     expect(JSON.parse(storage.values.get("openmausbot.settingsCards.v1")!)).toEqual({ "test.card": true, "other.card": false });
 
-    vi.stubGlobal("localStorage", storage);
+    device(storage);
     expect(collapsible()).toContain('aria-expanded="true"');
     expect(collapsible({ cardId: "other.card", defaultOpen: true })).toContain('aria-expanded="false"');
   });
@@ -100,20 +107,27 @@ describe("collapsible settings card", () => {
   });
 
   it("opens a collapsed card that a deep link targets, even against a remembered choice", () => {
-    vi.stubGlobal("localStorage", memoryStorage({ "openmausbot.settingsCards.v1": '{"test.card":false}' }));
+    const storage = device(memoryStorage({ "openmausbot.settingsCards.v1": '{"test.card":false}' }));
     expect(collapsible()).toContain('aria-expanded="false"');
+    // before the card mounts, as when a link opens Settings first
     requestSettingsCard("test.card");
     expect(collapsible()).toContain('aria-expanded="true"');
     expect(collapsible({ cardId: "unrelated.card" })).toContain('aria-expanded="false"');
+    // and it stays open next time
+    expect(JSON.parse(storage.values.get("openmausbot.settingsCards.v1")!)["test.card"]).toBe(true);
   });
 
-  it("ignores a deep link that no card picked up in time", () => {
-    vi.stubGlobal("localStorage", memoryStorage());
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-09-29T12:00:00Z"));
-    requestSettingsCard("test.card");
-    vi.setSystemTime(new Date("2026-09-29T12:00:11Z"));
-    expect(collapsible()).toContain('aria-expanded="false"');
+  it("follows a changing default until the person chooses", () => {
+    device();
+    expect(collapsible({ cardId: "setup.card", defaultOpen: true })).toContain('aria-expanded="true"');
+    expect(collapsible({ cardId: "setup.card", defaultOpen: false })).toContain('aria-expanded="false"');
+  });
+
+  it("folds a card without a cardId too, without writing to storage", () => {
+    const storage = device();
+    const html = collapsible({ cardId: undefined, defaultOpen: false });
+    expect(html).toContain('aria-expanded="false"');
+    expect(storage.values.size).toBe(0);
   });
 
   it("keeps a plain card static, without a disclosure button", () => {
@@ -176,9 +190,30 @@ describe("collapsed card summaries", () => {
   });
 });
 
+describe("card counts", () => {
+  it("uses the language's plural rule", () => {
+    expect(cardCount("people", 1)).toBe("1 person");
+    expect(cardCount("people", 3)).toBe("3 people");
+    expect(cardCount("devices", 0)).toBe("0 devices");
+    setLocale("fr");
+    expect(cardCount("people", 0)).toBe("0 personne");
+    expect(cardCount("people", 2)).toBe("2 personnes");
+  });
+});
+
+describe("skin picker", () => {
+  it("keeps roomy cards with full taglines", async () => {
+    const { SkinPicker } = await import("./SkinPicker");
+    const html = renderToStaticMarkup(createElement(SkinPicker));
+    expect(html).toContain("grid-cols-[repeat(auto-fill,minmax(190px,1fr))]");
+    expect(html).not.toContain("line-clamp");
+    expect(html).toContain("Pulsatrix blue. Deep navy with a soft glow from the top.");
+  });
+});
+
 describe("Settings → General, compact", () => {
   it("renders About me and the advanced cards collapsed with their summaries", async () => {
-    vi.stubGlobal("localStorage", memoryStorage());
+    device();
     const { SettingsModal } = await import("./SettingsModal");
     const html = renderToStaticMarkup(createElement(StoreProvider, null, createElement(SettingsModal)));
     for (const id of ["general.aboutMe", "general.roomTurns", "general.threads", "general.recovery", "general.threadCleanup"]) {
@@ -190,5 +225,8 @@ describe("Settings → General, compact", () => {
     // collapsed, not removed: the fields are still in the document
     expect(html).toContain('id="profile-about-me"');
     expect(html).toContain('id="room-turn-timeout"');
+    // every card on the page is the collapsible kind, Profile included
+    expect(html).toContain('data-settings-card="general.profile" data-open="true"');
+    expect(html.match(/data-settings-card="[^"]*"(?! data-open)/g)).toBeNull();
   });
 });

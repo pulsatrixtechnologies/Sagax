@@ -1,6 +1,6 @@
-import { useEffect, useId, useRef, useState, type ComponentProps } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { Check, ChevronDown, CircleHelp, Copy } from "lucide-react";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 export function Switch({
@@ -30,11 +30,21 @@ export function Switch({
   );
 }
 
+type CountKey = "people" | "devices" | "backups" | "turns" | "computers" | "entries" | "workspaces" | "profiles";
+
+/** "1 person" / "3 people" for a collapsed card's summary, by the active
+ * language's plural rule (French says "0 personne"). */
+export function cardCount(key: CountKey, count: number): string {
+  let one = count === 1;
+  try {
+    one = new Intl.PluralRules(activeLocale()).select(count) === "one";
+  } catch {
+    /* an unknown locale keeps the English rule */
+  }
+  return one ? t(`settings.card.${key}One`, { count }) : t(`settings.card.${key}`, { count });
+}
+
 const CARD_STATE_KEY = "openmausbot.settingsCards.v1";
-const CARD_OPEN_EVENT = "openmausbot:settings-card-open";
-/** A deep link older than this is stale: its card never mounted. */
-const CARD_REQUEST_TTL_MS = 10_000;
-const cardRequests = new Map<string, number>();
 
 type CardStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -70,61 +80,58 @@ export function saveCardOpen(id: string, open: boolean, storage: CardStorage | n
   }
 }
 
-function pendingCardRequest(id: string, now = Date.now()): boolean {
-  const at = cardRequests.get(id);
-  if (at === undefined) return false;
-  if (now - at > CARD_REQUEST_TTL_MS) {
-    cardRequests.delete(id);
-    return false;
-  }
-  return true;
+// One shared store of explicit choices (toggles, remembered states, deep
+// links), read from storage once. A card without a choice follows its
+// `defaultOpen`, which may change once the card's data loads. Keeping the
+// state here rather than in component state lets a deep link open a card
+// that has not mounted yet, with no event wiring.
+let cardChoices: Record<string, boolean> | null = null;
+const ANONYMOUS_CARD = "anonymous:";
+const cardListeners = new Set<() => void>();
+
+function choices(): Record<string, boolean> {
+  return (cardChoices ??= readCardStates(defaultStorage()));
 }
 
-/** Opens (and scrolls to) the collapsible settings card `id`: now if it is
- * mounted, or when it mounts, for a deep link that opens Settings first. */
+function subscribeCards(listener: () => void): () => void {
+  cardListeners.add(listener);
+  return () => cardListeners.delete(listener);
+}
+
+function chooseCardOpen(id: string, open: boolean): void {
+  cardChoices = { ...choices(), [id]: open };
+  // A card without a cardId still folds, for this session only.
+  if (!id.startsWith(ANONYMOUS_CARD)) saveCardOpen(id, open);
+  for (const listener of cardListeners) listener();
+}
+
+/** Opens the collapsible settings card `id` and scrolls it into view, now if
+ * it is mounted or as soon as it mounts (a deep link opens Settings first). */
 export function requestSettingsCard(id: string): void {
-  cardRequests.set(id, Date.now());
-  try {
-    globalThis.dispatchEvent?.(new CustomEvent(CARD_OPEN_EVENT, { detail: id }));
-  } catch {
-    /* no DOM events outside the renderer */
-  }
-}
-
-/** Test seam: forget deep-link requests that no card consumed. */
-export function clearSettingsCardRequests(): void {
-  cardRequests.clear();
-}
-
-function useCardOpen(id: string | undefined, defaultOpen: boolean, ref: React.RefObject<HTMLDivElement | null>) {
-  // null follows `defaultOpen`, which may change once a card's data loads;
-  // a toggle, a remembered choice or a deep link pins it.
-  const [chosen, setChosen] = useState<boolean | null>(() => {
-    if (!id) return null;
-    if (pendingCardRequest(id)) return true;
-    return readCardStates(defaultStorage())[id] ?? null;
-  });
-  useEffect(() => {
-    if (!id) return;
-    const reveal = () => {
-      cardRequests.delete(id);
-      setChosen(true);
-      saveCardOpen(id, true);
-      requestAnimationFrame(() => ref.current?.scrollIntoView?.({ block: "nearest" }));
-    };
-    if (pendingCardRequest(id)) reveal();
-    const onRequest = (event: Event) => {
-      if ((event as CustomEvent<unknown>).detail === id) reveal();
-    };
-    window.addEventListener(CARD_OPEN_EVENT, onRequest);
-    return () => window.removeEventListener(CARD_OPEN_EVENT, onRequest);
-  }, [id, ref]);
-  const open = chosen ?? defaultOpen;
-  const toggle = () => {
-    const next = !open;
-    setChosen(next);
-    if (id) saveCardOpen(id, next);
+  chooseCardOpen(id, true);
+  let frames = 0;
+  const reveal = () => {
+    try {
+      const card = [...document.querySelectorAll<HTMLElement>("[data-settings-card]")].find((node) => node.dataset.settingsCard === id);
+      if (card) card.scrollIntoView?.({ block: "nearest" });
+      else if (++frames < 30) requestAnimationFrame(reveal);
+    } catch {
+      /* no document outside the renderer */
+    }
   };
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(reveal);
+}
+
+/** Test seam: drop the in-memory choices so storage is read again. */
+export function resetSettingsCards(): void {
+  cardChoices = null;
+}
+
+function useCardOpen(id: string, defaultOpen: boolean) {
+  const read = () => choices()[id];
+  const chosen = useSyncExternalStore(subscribeCards, read, read);
+  const open = chosen ?? defaultOpen;
+  const toggle = () => chooseCardOpen(id, !open);
   return [open, toggle] as const;
 }
 
@@ -157,11 +164,10 @@ export function Card(props: CardProps) {
 }
 
 function CollapsibleCard({ title, subtitle, children, cardId, defaultOpen = true, summary }: CardProps & { title: string }) {
-  const ref = useRef<HTMLDivElement>(null);
   const bodyId = useId();
-  const [open, toggle] = useCardOpen(cardId, defaultOpen, ref);
+  const [open, toggle] = useCardOpen(cardId ?? `${ANONYMOUS_CARD}${bodyId}`, defaultOpen);
   return (
-    <div ref={ref} data-settings-card={cardId} data-open={open ? "true" : "false"} className="rounded-[14px] border-[0.5px] border-border">
+    <div data-settings-card={cardId} data-open={open ? "true" : "false"} className="rounded-[14px] border-[0.5px] border-border">
       <h3 className="text-[13px] font-normal leading-[18px]">
         <button
           type="button"

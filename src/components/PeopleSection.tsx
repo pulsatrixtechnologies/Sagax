@@ -17,7 +17,7 @@ import { readMembership, type Membership } from "../lib/membership";
 import { readSessionState, type SessionState } from "../lib/session";
 import { canPairDevices } from "./ServerPairingCard";
 import { normalizeAccessEntry, withEntry, withoutEntry, type SignInLists } from "./SignInAccessCard";
-import { Card } from "./SettingsPrimitives";
+import { Card, cardCount } from "./SettingsPrimitives";
 
 export type Role = "admin" | "member";
 
@@ -184,7 +184,7 @@ export function CopyLink({ link }: { link: string }) {
 export function PortalPeople({ peopleUrl, people }: { peopleUrl: string | null; people: Person[] }) {
   const noop = () => {};
   return (
-    <Card title={t("people.title")} subtitle={t("people.portal.subtitle")}>
+    <Card collapsible cardId="people.portal" title={t("people.title")} subtitle={t("people.portal.subtitle")} summary={cardCount("people", people.length)}>
       <div data-people-portal className="flex flex-col gap-3 text-[13px] leading-relaxed text-ink-secondary">
         <p>{t("people.portal.managed")}</p>
         {peopleUrl && (
@@ -285,7 +285,7 @@ export function PeopleSection() {
   if (!canPairDevices(session)) return null;
   if (membership?.authority === "portal") return <PortalPeople peopleUrl={membership.peopleUrl} people={people} />;
   return (
-    <Card title={t("people.title")} subtitle={t("people.subtitle")}>
+    <Card collapsible cardId="people.list" title={t("people.title")} subtitle={t("people.subtitle")} summary={cardCount("people", people.length)}>
       {emailOffered === false && <p className="mb-3 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-[12.5px] text-ink-secondary">{t(membership?.pairingCodes === false ? "people.portalSignIn" : "people.notHosted")}</p>}
       <form className="flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); void invite(); }}>
         <input
