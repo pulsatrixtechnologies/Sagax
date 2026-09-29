@@ -27,6 +27,17 @@ describe("mail settings", () => {
     expect(mailReady({ provider: "sendgrid", from: "a@b.c", sendgrid: { apiKey: "k" } })).toBe(true);
   });
 
+  it("ignores a malformed SMTP port instead of truncating it", () => {
+    for (const bad of ["587abc", "587.9", "0", "70000"]) {
+      const r = resolveMailSettings({ file: undefined, env: { OMB_SMTP_PORT: bad } });
+      expect(r.settings.smtp?.port).toBeUndefined();
+      expect(r.envManaged).not.toContain("smtp.port");
+    }
+    const r = resolveMailSettings({ file: undefined, env: { OMB_SMTP_PORT: "2525" } });
+    expect(r.settings.smtp?.port).toBe(2525);
+    expect(r.envManaged).toContain("smtp.port");
+  });
+
   it("never exposes a secret in the public status", () => {
     const status = publicMailStatus(resolveMailSettings({ file: { provider: "smtp", from: "a@b.c", smtp: { host: "h", password: "hunter2" }, sendgrid: { apiKey: "SG.secret" } }, env: {} }));
     const text = JSON.stringify(status);

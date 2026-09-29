@@ -49,6 +49,9 @@ export interface PublicMailStatus {
 
 const MAIL_PROVIDERS = new Set<MailProvider>(["smtp", "sendgrid"]);
 const SMTP_SECURE_MODES = new Set(["tls", "starttls", "none"]);
+// Full match only: "587abc" and "587.9" are not "close enough" to a port,
+// they are malformed input to be ignored, not coerced by parseInt.
+const SMTP_PORT_PATTERN = /^\d+$/;
 
 const defaultReadFile = (path: string): string => readFileSync(path, "utf8");
 
@@ -98,10 +101,12 @@ export function resolveMailSettings(input: {
 
   const smtpPortRaw = env.OMB_SMTP_PORT;
   if (smtpPortRaw !== undefined && smtpPortRaw !== "") {
-    const port = Number.parseInt(smtpPortRaw, 10);
-    if (Number.isInteger(port) && port >= 1 && port <= 65535) {
+    const port = SMTP_PORT_PATTERN.test(smtpPortRaw) ? Number.parseInt(smtpPortRaw, 10) : NaN;
+    if (port >= 1 && port <= 65535) {
       settings.smtp = { ...settings.smtp, port };
       envManaged.push("smtp.port");
+    } else {
+      console.warn("mail-config: ignoring malformed OMB_SMTP_PORT");
     }
   }
 
