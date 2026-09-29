@@ -37,6 +37,7 @@ import {
 import type { PromptSplitReceipt } from "./prompt-split.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 import { commandSummary, toolDetailPreview } from "../tool-summary.ts";
+import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 
 import type {
   DriverCreateInput,
@@ -797,6 +798,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
               title: String(evt.toolName ?? "tool").slice(0, 80),
               summary: commandSummary(evt.args),
               input: toolDetailPreview(evt.args),
+              ...filesField(writtenFilesFromToolInput(typeof evt.toolName === "string" ? evt.toolName : undefined, evt.args)),
             });
             return;
           }

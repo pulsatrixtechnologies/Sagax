@@ -157,7 +157,8 @@ function walkMarkdown(node: MarkdownNode, visit: (node: MarkdownNode) => void): 
   }
 }
 
-function renderedMarkdownTargets(markdown: string): string[] {
+/** Every link and image destination a message renders, definitions resolved. */
+export function renderedMarkdownTargets(markdown: string): string[] {
   const definitions = new Map<string, string>();
   const links: string[] = [];
   const references: string[] = [];
@@ -303,11 +304,23 @@ export function messageAttachmentName(text: string, requested: string): string |
   } catch {
     return null;
   }
+  for (const tag of messageAttachmentTags(text)) {
+    try {
+      if (referencedPathIdentity(tag.path) === wanted) return tag.name;
+    } catch {
+      // A malformed transport tag grants no capability.
+    }
+  }
+  return null;
+}
 
-  const tag = /^<attached-(?:image|file)[\t ]+path="([^"\r\n]*)"(?:[\t ]+name="([^"\r\n]*)")?[\t ]*\/>$/;
-  let found: string | null = null;
+/** Every standalone composer attachment tag a stored user message carries,
+ * in order, with the same rules messageAttachmentName grants by: a tag that
+ * shares its line with prose, or sits in a code block, is not an attachment. */
+export function messageAttachmentTags(text: string): Array<{ kind: "image" | "file"; path: string; name: string }> {
+  const tag = /^<attached-(image|file)[\t ]+path="([^"\r\n]*)"(?:[\t ]+name="([^"\r\n]*)")?[\t ]*\/>$/;
+  const found: Array<{ kind: "image" | "file"; path: string; name: string }> = [];
   walkMarkdown(fromMarkdown(text), (node) => {
-    if (found !== null) return;
     if (node.type !== "html" || !node.value || !node.position) return;
     const start = node.position.start.offset;
     const end = node.position.end.offset;
@@ -318,17 +331,27 @@ export function messageAttachmentName(text: string, requested: string): string |
     if (text.slice(lineStart, start).trim() || text.slice(end, lineEnd).trim()) return;
     const match = tag.exec(node.value);
     if (!match) return;
-    try {
-      if (referencedPathIdentity(decodeAttachmentAttribute(match[1]!)) === wanted) {
-        found = safeDisplayName(match[2]
-          ? decodeAttachmentAttribute(match[2])
-          : decodeAttachmentAttribute(match[1]!));
-      }
-    } catch {
-      // A malformed transport tag grants no capability.
-    }
+    const path = decodeAttachmentAttribute(match[2]!);
+    if (!path) return;
+    found.push({
+      kind: match[1] as "image" | "file",
+      path,
+      name: safeDisplayName(match[3] ? decodeAttachmentAttribute(match[3]) : path),
+    });
   });
   return found;
+}
+
+/** The link spellings a bot uses to hand over a local file: absolute POSIX
+ * and Windows paths, UNC, file:// URLs, and relative paths. Web links,
+ * fragments and other schemes are not files. Mirrors the renderer's rule. */
+export function isLocalFileHref(href: string): boolean {
+  if (!href || href.includes("\0")) return false;
+  if (/^file:\/\//i.test(href)) return true;
+  if (href.startsWith("\\\\") || /^[a-z]:[\\/]/i.test(href)) return true;
+  if (href.startsWith("//") || href.startsWith("#")) return false;
+  if (/^[a-z][a-z\d+.-]*:/i.test(href)) return false;
+  return true;
 }
 
 function containedBy(root: string, candidate: string): boolean {
@@ -444,6 +467,41 @@ export async function openMessageFile(href: string, roots: readonly string[]): P
 
   if (sawOutsideRoot) throw statusError(403, "the linked file is outside this conversation's workspace");
   throw statusError(404, "the linked file is unavailable");
+}
+
+/** Size and type of a message-linked file without opening it, under the
+ * same root containment as openMessageFile. Null when it is missing here
+ * (a remote computer's path, a deleted file) or outside every root. */
+export async function statMessageFile(href: string, roots: readonly string[]): Promise<{ bytes: number; name: string; mime: string } | null> {
+  let requested: string;
+  try {
+    requested = referencedPath(href);
+  } catch {
+    return null;
+  }
+  const canonicalRoots = (await Promise.all(roots.map(async (root) => {
+    try {
+      const canonical = await realpath(root);
+      return (await stat(canonical)).isDirectory() ? canonical : null;
+    } catch {
+      return null;
+    }
+  }))).filter((root): root is string => Boolean(root));
+  const candidates = isAbsolute(requested)
+    ? [resolve(requested)]
+    : canonicalRoots.map((root) => resolve(root, requested));
+  for (const candidate of new Set(candidates)) {
+    try {
+      const canonical = await realpath(candidate);
+      if (!canonicalRoots.some((root) => containedBy(root, canonical))) continue;
+      const info = await stat(canonical);
+      if (!info.isFile()) continue;
+      return { bytes: info.size, name: basename(canonical), mime: mimeFor(canonical) };
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }
 
 /** A safe attachment header with a readable ASCII fallback and UTF-8 name. */
