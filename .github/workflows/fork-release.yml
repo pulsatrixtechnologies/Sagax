@@ -18,7 +18,12 @@ permissions:
 jobs:
   mac:
     name: macOS arm64 + x64
-    runs-on: macos-14
+    # The macOS 26 owl icon (build/icon.icon) is compiled by electron-builder
+    # with actool, which needs Xcode 26+. macos-26 is GitHub's hosted image
+    # for macOS Tahoe and carries Xcode 26 by default; macos-14 (Sonoma) does
+    # not offer it. See actions/runner-images macos-26 readme (GA since
+    # 2026-02-26, in public preview since 2025-09-11).
+    runs-on: macos-26
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
