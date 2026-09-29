@@ -105,6 +105,14 @@ const DEV_URL = process.env.ELECTRON_START_URL ?? "http://127.0.0.1:5199";
 const DEFAULT_COMPOSIO_BROKER_URL = "https://openmausbot-composio.milindsoni201.workers.dev";
 let SERVER_PORT = 8799;
 const APP_ICON = path.join(__dirname, "resources/app-icon.png");
+function devBundleHasSystemIcon() {
+  try {
+    const plist = fs.readFileSync(path.join(path.dirname(process.execPath), "../Info.plist"), "utf8");
+    return /<key>CFBundleIconName<\/key>\s*<string>PulsaBotIcon<\/string>/.test(plist);
+  } catch {
+    return false;
+  }
+}
 let desktopViewerWindow = null;
 let desktopViewerOwner = null;
 let desktopViewerContextId = null;
@@ -2954,8 +2962,10 @@ app.whenReady().then(async () => {
   // A runtime Dock image overrides the bundle icon with a flat PNG, which
   // on macOS 26 discards the Liquid Glass rendering (build/icon.icon) and
   // drops the icon into the gray "squircle jail". Packaged builds keep the
-  // system icon; only unpackaged dev runs need a Dock icon set at runtime.
-  if (process.platform === "darwin" && !app.isPackaged) app.dock.setIcon(APP_ICON);
+  // system icon. Unpackaged dev runs get the same compiled icon from
+  // scripts/prepare-dev-mac-icon.mjs; the flat PNG is only the fallback
+  // when that script could not run (no Xcode actool).
+  if (process.platform === "darwin" && !app.isPackaged && !devBundleHasSystemIcon()) app.dock.setIcon(APP_ICON);
   secureCredentials = await loadSecureCredentials();
   // The AssemblyAI key only fed the removed Teach a skill recorder, and its
   // set/clear handler went with it; drop the orphaned secret rather than

@@ -39,7 +39,7 @@
     "mcp": "node --experimental-strip-types scripts/mcp-server.ts",
     "control:omb": "node --experimental-strip-types scripts/control-omb.ts",
     "eval": "node --experimental-strip-types evals/runners/run-evals.ts",
-    "dev:desktop": "node scripts/prepare-cloudflared.mjs --current && electron .",
+    "dev:desktop": "node scripts/prepare-cloudflared.mjs --current && node scripts/prepare-dev-mac-icon.mjs && electron .",
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
     "typecheck": "tsc -b && tsc -p tsconfig.server.json",
     "test": "vitest run && pnpm broker:test && pnpm test:electron && pnpm test:packaged-server",
