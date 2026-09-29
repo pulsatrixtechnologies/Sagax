@@ -123,7 +123,7 @@ Ordre de résolution: clé de la routine, puis `credentialRef` du bot, puis clé
 ## Pannes et refus
 
 - Serveur injoignable: pas de compositeur dans les channels d'organisation. L'app dit que l'organisation est hors ligne.
-- Session sans principal (vieux code d'appairage): elle ne voit aucun channel d'organisation. Elle garde les bots personnels de ce poste.
+- Session sans principal (vieux code d'appairage): quand une organisation existe, elle ne voit aucun channel d'organisation et aucun bot. Sans organisation, elle garde la visibilité qu'elle avait avant cette tranche.
 - Email changé chez le control plane: même principal, retrouvé par `controlPlaneUserId`. La propriété ne bouge pas.
 - Principal inconnu dans un id stocké après migration: traité comme personne, jamais comme l'opérateur local.
 - Invité expiré: sa session est refusée, ses droits restent listés pour l'historique.

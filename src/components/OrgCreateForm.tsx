@@ -35,7 +35,7 @@ export function OrgCreateForm({
       }}
     >
       <label className="flex flex-col gap-1.5 text-[13px] text-ink">
-        Nom
+        {t("org.name")}
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -55,7 +55,7 @@ export function OrgCreateForm({
         <span className="text-[12px] text-ink-secondary">{t("org.serverAddressHelp")}</span>
       </label>
       <button type="submit" disabled={!host} className="w-fit rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50">
-        Créer l'organisation
+        {t("org.create")}
       </button>
     </form>
   );

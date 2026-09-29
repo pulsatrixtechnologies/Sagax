@@ -43,7 +43,7 @@ beforeEach(() => {
 describe("OrgDirectory", () => {
   it("offers creation when there is no organization", () => {
     const html = render({ org: null, people: [], onCreate() {}, onInvite() {} }).html;
-    expect(html).toContain("Créer l'organisation");
+    expect(html).toContain("Create organization");
   });
   it("lists members once the organization exists", () => {
     const html = render({
@@ -54,7 +54,7 @@ describe("OrgDirectory", () => {
     }).html;
     expect(html).toContain("GOX");
     expect(html).toContain("zachary@example.test");
-    expect(html).not.toContain("Créer l'organisation");
+    expect(html).not.toContain("Create organization");
   });
   it("shows a pending invite separately from members", () => {
     const html = render({

@@ -32,7 +32,7 @@ import { OrganizationSettings, OrgCreateForm, orgHostFromInput } from "./Organiz
 import { CompanyModels } from "./CompanyModels";
 import { OrgDirectory } from "./OrgDirectory";
 
-type Node = ReactElement<{ children?: ReactNode; disabled?: boolean; value?: string; onChange?: (event: unknown) => void; onSubmit?: (event: unknown) => void; onClick?: () => void; onCreate?: (name: string) => void | Promise<void>; onInvite?: (email: string) => void | Promise<void> }>;
+type Node = ReactElement<{ children?: ReactNode; disabled?: boolean; value?: string; onChange?: (event: unknown) => void; onSubmit?: (event: unknown) => void; onClick?: () => void; onCreate?: (name: string, host: { kind: "server"; url: string }) => void | Promise<void>; onInvite?: (email: string) => void | Promise<void> }>;
 function nodes(value: ReactNode): Node[] {
   if (!isValidElement(value)) return [];
   const node = value as Node;
@@ -283,6 +283,14 @@ describe("organization create form", () => {
   it("asks for the server address everyone signs in to", () => {
     const markup = renderToStaticMarkup(createElement(OrgCreateForm, { initialAddress: "", onCreate: async () => undefined }));
     expect(markup).toContain('name="org-server-address"');
+    expect(markup).toContain("Name");
+    expect(markup).toContain("Create organization");
+  });
+  it("labels the form in the chosen language", () => {
+    setLocale("fr");
+    const markup = text(renderToStaticMarkup(createElement(OrgCreateForm, { initialAddress: "", onCreate: async () => undefined })));
+    expect(markup).toContain("Nom");
+    expect(markup).toContain("Créer l'organisation");
   });
   it("accepts https, Tailscale and local Docker addresses only", () => {
     expect(orgHostFromInput("http://localhost:8080")).toEqual({ kind: "server", url: "http://localhost:8080" });
@@ -312,17 +320,17 @@ describe("fleet organization directory", () => {
     vi.mocked(fetch).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     render();
     for (const effect of fixture.effects) effect();
-    expect(text(render().html)).not.toContain("Créer l'organisation");
+    expect(text(render().html)).not.toContain("Create organization");
     finish(jsonResponse(404, {}));
     await flush();
-    expect(text(render().html)).toContain("Créer l'organisation");
+    expect(text(render().html)).toContain("Create organization");
   });
 
   it("shows an error instead of the create form when GET fails", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(500, { error: "boom" }));
     const html = text((await loadOrg()).html);
     expect(html).toContain("Impossible de charger l'organisation.");
-    expect(html).not.toContain("Créer l'organisation");
+    expect(html).not.toContain("Create organization");
     expect(html).not.toContain("boom");
   });
 
@@ -334,7 +342,7 @@ describe("fleet organization directory", () => {
     const html = text((await loadOrg()).html);
     expect(html).toContain("GOX");
     expect(html).toContain("zachary@example.test");
-    expect(html).not.toContain("Créer l'organisation");
+    expect(html).not.toContain("Create organization");
   });
 
   it("keeps a create error on screen", async () => {
@@ -343,11 +351,15 @@ describe("fleet organization directory", () => {
     ));
     await loadOrg();
     const directory = render().nodes.find((node) => node.type === OrgDirectory)!;
-    await directory.props.onCreate?.("GOX");
+    await directory.props.onCreate?.("GOX", { kind: "server", url: "https://pulsa.gox.ca" });
     await flush();
     const html = text(render().html);
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining("/api/org"), expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } }),
+    }));
     expect(html).toContain("Impossible de créer l'organisation.");
-    expect(html).toContain("Créer l'organisation");
+    expect(html).toContain("Create organization");
   });
 
   it("shows a notice when the organization has no server address yet", async () => {

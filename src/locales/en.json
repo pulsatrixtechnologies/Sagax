@@ -2731,6 +2731,8 @@
   "botAccess.grants.verb.delete": "Delete",
   "connectors.grants.limited": "Bots with limited tools: {count}",
   "connectors.grants.more": " +{count} more",
+  "org.name": "Name",
+  "org.create": "Create organization",
   "org.serverAddress": "Server address",
   "org.serverAddressHelp": "Everyone in the organization signs in to this server. Use its https address, its Tailscale name, or http://localhost for a local Docker server.",
   "org.needsServerAddress": "This organization has no server address yet. People outside this computer cannot join until it has one."
