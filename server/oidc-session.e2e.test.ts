@@ -1,0 +1,301 @@
+// Slice 2 of "Sign in with Pulsatrix" through the real server, against the
+// local fake provider (server/testing/fake-oidc-provider.ts) and the fake
+// engine: the session lives on the provider's grant.
+//
+//   S2-1  a due grant is refreshed on use, in the background, and rotates
+//   S2-2  a role change at the provider narrows the session on its next refresh
+//   S2-3  a back-channel logout ends the person's sessions and open stream at once
+//   S2-5  logout revokes the grant at the provider and drops it from the vault
+//   S2-6  forged and replayed logout tokens are refused; the session stays
+//   S2-7  the desktop return link redeems once into a person-bound cookie session
+//   S2-8  the phone return link redeems into a bearer that a back-channel
+//         logout ends by principal
+//   plus: a provider refusing the refresh ends the session; a member pairs
+//   their own device, never wider than themselves.
+//
+// OMB_OIDC_REFRESH_AFTER_SECONDS=1 makes every grant due after a second.
+import { spawn, type ChildProcess } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { request } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
+import { freePortBlock } from "./testing/ports.ts";
+
+const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
+const FAKE_CLI = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
+const posixOnly = describe.skipIf(process.platform === "win32");
+const ALICE: FakeOidcUser = { sub: "01J9S2ALICE00000000000000A", email: "alice@example.test", name: "Alice", preferred_username: "alice", role: "admin" };
+const BOB: FakeOidcUser = { sub: "01J9S2BOB000000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee" };
+const CAROL: FakeOidcUser = { sub: "01J9S2CAROL00000000000000C", email: "carol@example.test", name: "Carol", preferred_username: "carol", role: "admin" };
+const DAVE: FakeOidcUser = { sub: "01J9S2DAVE000000000000000D", email: "dave@example.test", name: "Dave", preferred_username: "dave", role: "employee" };
+
+let PORT = 0;
+let BASE = "";
+let child: ChildProcess;
+let home: string;
+let log = "";
+let idp: FakeOidcProvider;
+
+type Auth = { cookie?: string; bearer?: string };
+const api = async (method: string, path: string, auth?: Auth, body?: unknown): Promise<{ status: number; body: any; headers: Headers }> => {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(auth?.cookie ? { cookie: auth.cookie } : {}),
+      ...(auth?.bearer ? { authorization: `Bearer ${auth.bearer}` } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})), headers: res.headers };
+};
+const cookiePair = (setCookie: string) => setCookie.split(";")[0]!;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The browser's walk through the provider. Returns where the callback sent it. */
+async function walk(user: FakeOidcUser, client?: "desktop" | "phone"): Promise<{ location: string; cookie: string }> {
+  idp.user = { ...user };
+  const start = await fetch(`${BASE}/auth/oidc/start${client ? `?client=${client}` : ""}`, { redirect: "manual" });
+  const binding = cookiePair(start.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
+  const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
+  const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
+  const session = callback.headers.getSetCookie().find((c) => c.startsWith("omb_session_") && !c.includes("_oidc="));
+  return { location: callback.headers.get("location") ?? "", cookie: session ? cookiePair(session) : "" };
+}
+
+async function signIn(user: FakeOidcUser): Promise<Auth> {
+  const { location, cookie } = await walk(user);
+  expect(location, log.slice(-2000)).toBe("/");
+  return { cookie };
+}
+
+async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms = 10_000): Promise<T | null> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const value = await read();
+    if (value) return value;
+    if (Date.now() > deadline) return null;
+    await sleep(100);
+  }
+}
+
+const backchannel = (token: string) => fetch(`${BASE}/api/auth/oidc/backchannel-logout`, {
+  method: "POST",
+  headers: { "content-type": "application/x-www-form-urlencoded" },
+  body: `logout_token=${encodeURIComponent(token)}`,
+});
+
+/** Open /api/events with a stream ticket; resolves `ended` when the server closes it. */
+async function openStream(auth: Auth): Promise<{ ended: Promise<void> }> {
+  const { body } = await api("POST", "/api/auth/stream-ticket", auth);
+  expect(body.ticket).toMatch(/^omb_tick_/);
+  return new Promise((resolve, reject) => {
+    const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
+      expect(res.statusCode).toBe(200);
+      const ended = new Promise<void>((done) => { res.on("end", () => done()); res.on("close", () => done()); res.on("error", () => done()); });
+      res.resume();
+      resolve({ ended });
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+async function start() {
+  child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+    cwd: join(SERVER_DIR, ".."),
+    env: {
+      ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
+      OMB_IDENTITY: "perspicax",
+      OMB_PERSPICAX_ISSUER: idp.issuer,
+      OMB_PUBLIC_URL: BASE,
+      OMB_OIDC_REFRESH_AFTER_SECONDS: "1",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout!.on("data", (c) => (log += c));
+  child.stderr!.on("data", (c) => (log += c));
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      if ((await fetch(`${BASE}/api/health`)).ok) return;
+    } catch {
+      /* not up yet */
+    }
+    if (Date.now() > deadline) throw new Error(`server never came up:\n${log}`);
+    await sleep(150);
+  }
+}
+
+posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's grant", () => {
+  beforeAll(async () => {
+    chmodSync(FAKE_CLI, 0o755);
+    idp = await startFakeOidcProvider({ user: ALICE });
+    PORT = await freePortBlock([0, 1]);
+    BASE = `http://127.0.0.1:${PORT}`;
+    home = mkdtempSync(join(tmpdir(), "omb-oidc-session-"));
+    const data = join(home, ".openmausbot");
+    mkdirSync(data, { recursive: true });
+    writeFileSync(join(data, "config.json"), JSON.stringify({
+      instances: { grok: { driver: "grokAgent", config: { cli: FAKE_CLI, fullAuto: false } } },
+    }));
+    await start();
+  });
+
+  afterAll(async () => {
+    child?.kill("SIGTERM");
+    if (child) await waitForExit(child);
+    await idp?.close();
+    if (home) removeTempDir(home);
+  });
+
+  it("S2-1: refreshes a due grant on use, in the background, and rotates it again later", async () => {
+    const bob = await signIn(BOB);
+    const before = idp.refreshCount;
+    await sleep(1_100);
+    expect((await api("GET", "/api/auth/session", bob)).status).toBe(200);
+    expect(await waitFor(async () => idp.refreshCount > before)).toBe(true);
+    expect(idp.lastTokenRequest).toMatchObject({ grant_type: "refresh_token", client_id: "pulsa-bot", resource: BASE });
+    await sleep(1_100);
+    expect((await api("GET", "/api/auth/session", bob)).status).toBe(200);
+    expect(await waitFor(async () => idp.refreshCount > before + 1)).toBe(true);
+    expect((await api("GET", "/api/auth/session", bob)).status).toBe(200);
+  });
+
+  it("S2-2: a role change at the provider narrows the session on its next refresh", async () => {
+    const carol = await signIn(CAROL);
+    expect((await api("GET", "/api/auth/session", carol)).body).toMatchObject({ scopes: ["admin", "client"], role: "admin" });
+    idp.setRole(CAROL.sub, "employee");
+    const before = idp.refreshCount;
+    await sleep(1_100);
+    await api("GET", "/api/auth/session", carol);
+    await waitFor(async () => idp.refreshCount > before);
+    const after = await waitFor(async () => {
+      const got = await api("GET", "/api/auth/session", carol);
+      return got.body.role === "employee" ? got : null;
+    });
+    expect(after?.body).toMatchObject({ scopes: ["client"], role: "employee", orgRole: "member" });
+    expect((await api("GET", "/api/auth/pairing", carol)).status).toBe(403);
+    idp.setRole(CAROL.sub, "admin");
+  });
+
+  it("S2-3 and S2-6: forged logout tokens change nothing; a valid one ends the person's sessions and stream at once; a replay is refused", async () => {
+    const dave = await signIn(DAVE);
+    const daveAgain = await signIn(DAVE);
+    const stream = await openStream(dave);
+    for (const forged of [
+      idp.logoutToken({ sub: DAVE.sub, strayKey: true }),
+      idp.logoutToken({ sub: DAVE.sub, header: (h) => ({ ...h, alg: "none" }) }),
+      idp.logoutToken({ sub: DAVE.sub, claims: (c) => ({ ...c, aud: "someone-else" }) }),
+      idp.logoutToken({ sub: DAVE.sub, claims: (c) => ({ ...c, iss: "https://evil.example" }) }),
+      idp.logoutToken({ sub: DAVE.sub, claims: (c) => ({ ...c, exp: Math.floor(Date.now() / 1000) - 300 }) }),
+      idp.logoutToken({ sub: DAVE.sub, claims: (c) => { const { events: _e, ...rest } = c; return rest; } }),
+      idp.logoutToken({ sub: DAVE.sub, claims: (c) => ({ ...c, nonce: "n" }) }),
+    ]) {
+      const res = await backchannel(forged);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "invalid_request" });
+    }
+    expect((await api("GET", "/api/auth/session", dave)).status).toBe(200);
+    const principalId = (await api("GET", "/api/auth/session", dave)).body.principalId;
+    const logout = idp.logoutToken({ sub: DAVE.sub });
+    const revokedBefore = idp.revoked.length;
+    const started = Date.now();
+    const res = await backchannel(logout);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    await stream.ended;
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect((await api("GET", "/api/auth/session", dave)).status).toBe(401);
+    expect((await api("GET", "/api/auth/session", daveAgain)).status).toBe(401);
+    // the provider already ended the grant: nothing is revoked back
+    await sleep(200);
+    expect(idp.revoked.length).toBe(revokedBefore);
+    expect((await backchannel(logout)).status).toBe(400);
+    // signing in again works, same person
+    const back = await signIn(DAVE);
+    expect((await api("GET", "/api/auth/session", back)).body).toMatchObject({ principalId });
+  });
+
+  it("ends the session when the provider refuses the refresh (a disabled person)", async () => {
+    const bob = await signIn(BOB);
+    idp.disable(BOB.sub);
+    try {
+      await sleep(1_100);
+      await api("GET", "/api/auth/session", bob);
+      const refused = await waitFor(async () => (await api("GET", "/api/auth/session", bob)).status === 401);
+      expect(refused).toBe(true);
+    } finally {
+      idp.enable(BOB.sub);
+    }
+  });
+
+  it("S2-5: logout revokes the grant at the provider", async () => {
+    const alice = await signIn(ALICE);
+    const live = new Set(idp.liveRefreshTokens());
+    const res = await api("POST", "/api/auth/logout", alice);
+    expect(res.status).toBe(200);
+    expect(res.headers.getSetCookie().join(";")).toMatch(/Max-Age=0/);
+    const revoked = await waitFor(async () => idp.revoked.find((r) => r.token && live.has(r.token)) ?? null, 3_000);
+    expect(revoked).toMatchObject({ token_type_hint: "refresh_token", client_id: "pulsa-bot" });
+    expect((await api("GET", "/api/auth/session", alice)).status).toBe(401);
+  });
+
+  it("S2-7: the desktop return link redeems once into a person-bound cookie session", async () => {
+    const { location } = await walk(ALICE, "desktop");
+    const match = /^openmausbot:\/\/auth\?origin=([^#]+)#code=(omb_pair_[A-Za-z0-9_-]{43})$/.exec(location);
+    expect(match, location).not.toBeNull();
+    expect(decodeURIComponent(match![1]!)).toBe(BASE);
+    const paired = await api("POST", "/api/auth/pair", undefined, { code: match![2], label: "My Mac", cookie: true, attemptId: "attempt-desktop-1" });
+    expect(paired.status).toBe(200);
+    const cookie = cookiePair(paired.headers.getSetCookie().find((c) => c.startsWith("omb_session_"))!);
+    const session = await api("GET", "/api/auth/session", { cookie });
+    expect(session.body).toMatchObject({ identity: "perspicax", scopes: ["admin", "client"], role: "admin", email: "alice@example.test" });
+    expect(session.body.principalId).toMatch(/^pr_/);
+    expect((await api("POST", "/api/auth/pair", undefined, { code: match![2], cookie: true })).status).toBe(401);
+    // its grant refreshes like a web one
+    const before = idp.refreshCount;
+    await sleep(1_100);
+    await api("GET", "/api/auth/session", { cookie });
+    expect(await waitFor(async () => idp.refreshCount > before)).toBe(true);
+  });
+
+  it("S2-8: the phone return link redeems into a bearer that a back-channel logout ends by principal", async () => {
+    const { location } = await walk(BOB, "phone");
+    const url = new URL(location);
+    expect(`${url.protocol}//${url.host}`).toBe("openmausbot://pair");
+    expect(url.searchParams.get("address")).toBe(BASE);
+    const token = url.searchParams.get("token")!;
+    expect(token).toMatch(/^omb_pair_[A-Za-z0-9_-]{43}$/);
+    const paired = await api("POST", "/api/pair", undefined, { credential: token, deviceName: "Bob's phone", pairRequestId: "pair-request-phone-1" });
+    expect(paired.status).toBe(200);
+    const bearer = paired.body.token as string;
+    const session = await api("GET", "/api/auth/session", { bearer });
+    expect(session.body).toMatchObject({ identity: "perspicax", scopes: ["client"], role: "employee" });
+    // a device Bob pairs himself from that phone: his person, never wider
+    const code = await api("POST", "/api/auth/pairing", { bearer }, { scopes: ["admin", "client"], label: "Bob's tablet" });
+    expect(code.status, JSON.stringify(code.body)).toBe(200);
+    const tablet = await api("POST", "/api/pair", undefined, { credential: code.body.credential, deviceName: "Bob's tablet" });
+    const tabletSession = await api("GET", "/api/auth/session", { bearer: tablet.body.token });
+    // (its person shows below: the back-channel logout ends it by principal)
+    expect(tabletSession.body).toMatchObject({ kind: "session", scopes: ["client"] });
+    // Perspicax disables Bob: both devices are cut
+    expect((await backchannel(idp.logoutToken({ sub: BOB.sub }))).status).toBe(200);
+    expect((await api("GET", "/api/auth/session", { bearer })).status).toBe(401);
+    expect((await api("GET", "/api/auth/session", { bearer: tablet.body.token })).status).toBe(401);
+  });
+
+  it("advertises the native return and refuses an unknown client", async () => {
+    const env = await (await fetch(`${BASE}/.well-known/openmausbot/environment`)).json() as { identity: unknown };
+    expect(env.identity).toMatchObject({ kind: "perspicax", nativeReturn: true, loginPath: "/auth/oidc/start" });
+    const bad = await fetch(`${BASE}/auth/oidc/start?client=tv`, { redirect: "manual" });
+    expect(bad.headers.get("location")).toBe("/pair#signin_error=client");
+    expect(log).not.toMatch(/pxlr1\.|omb_pair_[A-Za-z0-9_-]{43}/);
+  });
+});
