@@ -4250,7 +4250,14 @@
       "mcp.oauth.clientSecret": "4a93cfc32f2513fc82e072db601c56784de706931107d4dbb1ef3d66fbf1e6ee",
       "mcp.oauth.addedNeedsSignIn": "c61dde72be53087b61ce19ba2f85bb3a2983cbfaf5ecd7d45b1326219788660e",
       "mcp.oauth.signInAria": "47e7f20bbed4fe5f0fb08f5bdc8c397fd2fba3246d869a97a16e1953e175794e",
-      "mcp.oauth.disconnectAria": "2986263f26f5e9fe9d5e4722b51d0c989a02d3ff6875adf711e66ed3ef50f4b6"
+      "mcp.oauth.disconnectAria": "2986263f26f5e9fe9d5e4722b51d0c989a02d3ff6875adf711e66ed3ef50f4b6",
+      "pair.pulsatrix.signIn": "eba3422cf5af1e6ea8c14bb95fed8daf167d6a3f2d1acb30c0a7a8b232698a40",
+      "pair.pulsatrix.intro": "c16d83acd1c50961b481326d7e1fb0febd9d0c0011155e873419587c9d0ce5a0",
+      "pair.pulsatrix.useCode": "7f8238d89374841b8a0fba93e2a6602917b90649d546e85cbabc7f67019652f4",
+      "pair.pulsatrix.error": "eeb0c47464c645e0656106b0b46336db70fd7e861258b519ae1a1cef4a353387",
+      "pair.pulsatrix.errorRole": "7851d3903e29a6082952edf28cece939c960c2707898eba7e118bcd6e2ee7df2",
+      "pair.pulsatrix.errorUnavailable": "57861af655310fdedc46a2756707063963a3f4f3516af23628d6a091f0920584",
+      "org.managedInPerspicax": "cb58f9a2b9568c8669a3a146070636626e5c0583f72a311c114f233a892d05ef"
     },
     "hi": {
       "noEngines.title": "af88855a5f80377de709995229ba3907df9e8fb3b940fbf7c0d9cbe6eea54afe",

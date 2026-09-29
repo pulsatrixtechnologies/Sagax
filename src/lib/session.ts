@@ -8,6 +8,26 @@ export interface EnvironmentDescriptor {
   platform: string;
   version: string;
   capabilities: { remoteSessions: true; selfUpdate: "desktop-managed" | "operator"; emailSignIn?: boolean; sharedComputers?: true };
+  /** An organization server: people sign in with Pulsatrix Perspicax at
+   * `loginPath` (server/oidc-login.ts); email codes and invitations are off. */
+  identity?: { kind: "perspicax"; protocol: "oidc"; issuer: string; loginPath: string };
+}
+
+/** The same-origin path that starts "Sign in with Pulsatrix", or null when
+ * this server does not offer it. Only a local path is accepted. */
+export function pulsatrixLoginPath(environment: EnvironmentDescriptor | null): string | null {
+  const identity = environment?.identity;
+  if (identity?.kind !== "perspicax" || typeof identity.loginPath !== "string") return null;
+  return /^\/[A-Za-z0-9/_-]*$/.test(identity.loginPath) && !identity.loginPath.startsWith("//") ? identity.loginPath : null;
+}
+
+/** Why the last "Sign in with Pulsatrix" came back to /pair, read once from
+ * `#signin_error=<code>` and removed from the address bar. */
+export function takeSignInErrorFromLocation(loc: Pick<Location, "hash" | "pathname" | "search"> = location, history: Pick<History, "replaceState"> | null = globalThis.history ?? null): string | null {
+  const match = /(?:^#|&)signin_error=([\w-]{1,40})(?:&|$)/.exec(loc.hash);
+  if (!match) return null;
+  history?.replaceState(null, "", `${loc.pathname}${loc.search}`);
+  return match[1]!;
 }
 
 export type SessionState =

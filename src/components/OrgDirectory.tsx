@@ -40,6 +40,7 @@ export function OrgDirectory({
   pendingInvites = [],
   initialAddress = "",
   canManage = true,
+  invitesOff = false,
   lastInvite = null,
   onCreate,
   onInvite,
@@ -52,6 +53,9 @@ export function OrgDirectory({
   initialAddress?: string;
   /** Owners and admins invite, revoke and edit the address. */
   canManage?: boolean;
+  /** An organization server that signs people in with Pulsatrix: accounts
+   * are created in Perspicax, so no invitation is shown or offered. */
+  invitesOff?: boolean;
   /** The invite just issued, so its link can be copied at once. */
   lastInvite?: { email: string; link?: string } | null;
   onCreate: (name: string, host: { kind: "server"; url: string }) => void;
@@ -124,7 +128,8 @@ export function OrgDirectory({
           </li>
         ))}
       </ul>
-      {pendingInvites.length > 0 && (
+      {invitesOff && <p className="mt-4 text-[12.5px] text-ink-secondary">{t("org.managedInPerspicax")}</p>}
+      {!invitesOff && pendingInvites.length > 0 && (
         <div className="mt-4">
           <div className="text-[13px] font-medium text-ink">{t("org.pendingInvites")}</div>
           <ul className="mt-1 divide-y divide-hairline/40">
@@ -145,14 +150,14 @@ export function OrgDirectory({
           <p className="mt-1 text-[12px] text-ink-secondary">{t("org.pendingHint")}</p>
         </div>
       )}
-      {canManage && lastInvite?.link && (
+      {!invitesOff && canManage && lastInvite?.link && (
         <div role="status" className="mt-4 rounded-lg border-[0.5px] border-border bg-elevated p-3">
           <p className="text-[13px] text-ink">{t("org.inviteLinkReady", { email: lastInvite.email })}</p>
           <code dir="ltr" className="mt-2 block select-all break-all text-[12px] text-ink-secondary">{lastInvite.link}</code>
           <div className="mt-2"><CopyLinkButton link={lastInvite.link} /></div>
         </div>
       )}
-      {canManage && (
+      {!invitesOff && canManage && (
         <form
           className="mt-4 flex flex-col gap-3"
           onSubmit={async (event: FormEvent) => {

@@ -74,6 +74,7 @@ import {
 } from "./companion-account-service.mjs";
 import capabilitiesModule from "./capabilities.cjs";
 import environmentsModule from "./environments.cjs";
+import oidcLoginWindowModule from "./oidc-login-window.cjs";
 import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
@@ -2144,6 +2145,20 @@ function createWindow({ deferNavigation = false } = {}) {
   // Only the selected workspace may navigate this window. Switching is a
   // native action, not a redirect/link from a remote page to the local bridge.
   const guardNavigation = (event, url) => {
+    // "Sign in with Pulsatrix" on a saved organization server: the identity
+    // provider's page opens in its own window, never in this preload-bearing
+    // one (electron/oidc-login-window.cjs).
+    const loginStart = oidcLoginWindowModule.oidcLoginStartUrl(url, environmentsState);
+    if (loginStart) {
+      event.preventDefault();
+      oidcLoginWindowModule.openOidcLoginWindow({
+        BrowserWindow, parent: win, url: loginStart, log: slog,
+        onDone: (target) => {
+          if (!win.isDestroyed() && workspaceNavigationAllowed(target, environmentsState, rendererOrigin())) void win.loadURL(target);
+        },
+      });
+      return;
+    }
     let origin = null;
     try {
       origin = new URL(url).origin;

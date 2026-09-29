@@ -1475,5 +1475,12 @@
   "mcp.oauth.clientSecret": "Secret client (facultatif)",
   "mcp.oauth.addedNeedsSignIn": "{name} a été ajouté. Connectez-vous pour que les bots puissent l'utiliser, puis activez-le.",
   "mcp.oauth.signInAria": "Se connecter à {name}",
-  "mcp.oauth.disconnectAria": "Se déconnecter de {name}"
+  "mcp.oauth.disconnectAria": "Se déconnecter de {name}",
+  "pair.pulsatrix.signIn": "Se connecter avec Pulsatrix",
+  "pair.pulsatrix.intro": "Votre organisation vous connecte avec Pulsatrix Perspicax : votre mot de passe et votre second facteur restent là-bas.",
+  "pair.pulsatrix.useCode": "Vous avez plutôt un code d'appairage ?",
+  "pair.pulsatrix.error": "La connexion n'a pas abouti. Réessayez.",
+  "pair.pulsatrix.errorRole": "Ce compte ne peut pas se connecter à Pulsa Bot. Demandez à un administrateur dans Perspicax.",
+  "pair.pulsatrix.errorUnavailable": "Pulsatrix est injoignable. Réessayez dans un instant.",
+  "org.managedInPerspicax": "Les personnes, les rôles et les nouveaux comptes se gèrent dans Perspicax."
 }

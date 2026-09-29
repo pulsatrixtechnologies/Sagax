@@ -45,6 +45,21 @@ describe("OrgDirectory", () => {
     const html = render({ org: null, people: [], onCreate() {}, onInvite() {} }).html;
     expect(html).toContain("Create organization");
   });
+  it("offers no invitation on an organization server that signs people in with Pulsatrix", () => {
+    const html = render({
+      org: { name: "GOX" },
+      people: [{ id: "zachary@example.test", role: "member" }],
+      pendingInvites: [{ email: "late@example.test", token: "t1", link: "https://bot.example.test/join#token=t1" }],
+      lastInvite: { email: "late@example.test", link: "https://bot.example.test/join#token=t1" },
+      invitesOff: true,
+      onCreate() {},
+      onInvite() {},
+      onRevoke() {},
+    }).html;
+    expect(html).toContain("managed in Perspicax");
+    expect(html).not.toContain("late@example.test");
+    expect(html).not.toContain("Invite");
+  });
   it("lists members once the organization exists", () => {
     const html = render({
       org: { name: "GOX" },

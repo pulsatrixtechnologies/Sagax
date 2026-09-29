@@ -4,6 +4,7 @@ import type { OrgRole } from "../../server/org-directory.ts";
 import type { OrgRecord } from "../../server/org-record.ts";
 import { activeLocale, t } from "@/lib/i18n";
 import { enterpriseEntryRequested } from "@/lib/enterprise-entry";
+import { pulsatrixLoginPath, type EnvironmentDescriptor } from "@/lib/session";
 import { api, ApiError, useStore } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { CompanyModels } from "./CompanyModels";
@@ -121,6 +122,18 @@ export function OrganizationSettings() {
       cancelled = true;
     };
   }, []);
+  // An organization server signs people in with Pulsatrix: no invitations
+  // here. Read after the organization, and never blocking it.
+  const [perspicax, setPerspicax] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.resolve()
+      .then(() => fetch("/.well-known/openmausbot/environment", { cache: "no-store" }))
+      .then((r) => (r?.ok ? r.json() : null))
+      .then((d: EnvironmentDescriptor | null) => { if (!cancelled) setPerspicax(pulsatrixLoginPath(d) !== null); })
+      .catch(() => { /* an older server: invitations stay as they were */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const perform = async (action: () => Promise<ManagedDesktopState>) => {
     if (!bridge || pending.current) return;
@@ -152,6 +165,7 @@ export function OrganizationSettings() {
           initialAddress={suggestedOrgAddress()}
           // An older server sends no role: leave the controls to its own checks.
           canManage={viewerRole === undefined || viewerRole === "owner" || viewerRole === "admin"}
+          invitesOff={perspicax}
           lastInvite={lastInvite}
           onCreate={async (name, host) => {
             try {

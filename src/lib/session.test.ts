@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { isConnected, isOwnerOrAdmin, readSessionState, reasonWorthShowing, SERVICE_TRUST_REASON, takeInvitedEmailFromLocation } from "./session";
+import { isConnected, isOwnerOrAdmin, pulsatrixLoginPath, readSessionState, reasonWorthShowing, SERVICE_TRUST_REASON, takeInvitedEmailFromLocation, takeSignInErrorFromLocation, type EnvironmentDescriptor } from "./session";
 
 describe("what the pair page says about why it was shown", () => {
   it("stays quiet for the ordinary no-session case and repeats anything else", () => {
@@ -50,5 +50,24 @@ describe("an SSH tunnel to a server that treats local requests as a service", ()
     expect(isConnected({ kind: "unauthenticated", error: "pair" })).toBe(false);
     expect(isConnected(null)).toBe(false);
     expect(reasonWorthShowing(SERVICE_TRUST_REASON)).toBe(SERVICE_TRUST_REASON);
+  });
+});
+
+describe("Sign in with Pulsatrix on an organization server", () => {
+  const base: EnvironmentDescriptor = { environmentId: "e", label: "Org", platform: "linux", version: "1", capabilities: { remoteSessions: true, selfUpdate: "operator" } };
+  it("offers the button only when the descriptor advertises a same-origin Perspicax login path", () => {
+    expect(pulsatrixLoginPath(null)).toBeNull();
+    expect(pulsatrixLoginPath(base)).toBeNull();
+    const org = { ...base, identity: { kind: "perspicax" as const, protocol: "oidc" as const, issuer: "https://px.example.test", loginPath: "/auth/oidc/start" } };
+    expect(pulsatrixLoginPath(org)).toBe("/auth/oidc/start");
+    expect(pulsatrixLoginPath({ ...org, identity: { ...org.identity, loginPath: "https://evil.example/start" } })).toBeNull();
+    expect(pulsatrixLoginPath({ ...org, identity: { ...org.identity, loginPath: "//evil.example/start" } })).toBeNull();
+  });
+  it("reads a returned sign-in error once and clears it from the address bar", () => {
+    const replaceState = vi.fn();
+    expect(takeSignInErrorFromLocation({ hash: "#signin_error=role", pathname: "/pair", search: "" }, { replaceState })).toBe("role");
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/pair");
+    expect(takeSignInErrorFromLocation({ hash: "#code=ABCD", pathname: "/pair", search: "" }, { replaceState })).toBeNull();
+    expect(takeSignInErrorFromLocation({ hash: "#signin_error=<script>", pathname: "/pair", search: "" }, { replaceState })).toBeNull();
   });
 });

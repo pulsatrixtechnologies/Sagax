@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { DesktopWorkspaceSwitcher } from "../components/DesktopWorkspaceSwitcher";
+import { t } from "@/lib/i18n";
 
 import {
   defaultDeviceLabel,
   isConnected,
   newAttemptId,
   pairWithCode,
+  pulsatrixLoginPath,
   readSessionState,
   reasonWorthShowing,
   startEmailSignIn,
+  takeSignInErrorFromLocation,
   verifyEmailSignIn,
   type EnvironmentDescriptor,
   type SessionState,
@@ -17,6 +20,13 @@ import {
 const input = "mt-1 w-full rounded-md border border-line bg-surface px-3 py-2 text-[14px] text-ink outline-none focus:border-accent-border";
 const button = "mt-5 w-full rounded-md bg-accent px-4 py-2 text-[14px] font-medium text-accent-ink disabled:opacity-50";
 const fieldLabel = "mt-4 block text-[12px] font-medium text-ink-secondary";
+
+/** Why "Sign in with Pulsatrix" came back here, in the reader's words. */
+function signInErrorText(code: string): string {
+  if (code === "role") return t("pair.pulsatrix.errorRole");
+  if (code === "unavailable") return t("pair.pulsatrix.errorUnavailable");
+  return t("pair.pulsatrix.error");
+}
 
 /** The page a pairing link opens: /pair#code=XXXX-XXXX-XXXX. Also what the
  * app shows instead of itself when a remote browser has no session yet.
@@ -31,7 +41,8 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
   const [error, setError] = useState<string | null>(null);
   // one id per code typed: a retry after a lost response reuses it, a new code gets a new one
   const [attemptId, setAttemptId] = useState(() => newAttemptId());
-  const [mode, setMode] = useState<"email" | "code" | null>(initialCode ? "code" : null);
+  const [mode, setMode] = useState<"pulsatrix" | "email" | "code" | null>(initialCode ? "code" : null);
+  const [signInError] = useState(() => takeSignInErrorFromLocation());
   const [email, setEmail] = useState(initialEmail ?? "");
   const [otp, setOtp] = useState("");
   const [sent, setSent] = useState(false);
@@ -41,7 +52,7 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
       .then((r) => (r.ok ? r.json() : null))
       .then((d: EnvironmentDescriptor | null) => {
         setEnvironment(d);
-        setMode((current) => current ?? (d?.capabilities.emailSignIn ? "email" : "code"));
+        setMode((current) => current ?? (pulsatrixLoginPath(d) ? "pulsatrix" : d?.capabilities.emailSignIn ? "email" : "code"));
       })
       .catch(() => {
         setEnvironment(null);
@@ -51,7 +62,9 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
   }, []);
 
   const connected = isConnected(session);
-  const emailOffered = environment?.capabilities.emailSignIn === true;
+  // An organization server signs people in with Pulsatrix, never by email.
+  const loginPath = pulsatrixLoginPath(environment);
+  const emailOffered = !loginPath && environment?.capabilities.emailSignIn === true;
 
   async function submitCode(e: React.FormEvent) {
     e.preventDefault();
@@ -83,7 +96,7 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
     setSent(true);
   }
 
-  function switchMode(next: "email" | "code") {
+  function switchMode(next: "pulsatrix" | "email" | "code") {
     setMode(next);
     setError(null);
   }
@@ -92,10 +105,12 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
     <main className="flex min-h-screen items-center justify-center bg-app px-6 text-ink">
       <div className="absolute left-3 top-12 max-w-[280px]"><DesktopWorkspaceSwitcher /></div>
       <div className="w-full max-w-[420px]">
-        <h1 className="text-[20px] font-semibold">{mode === "email" ? "Sign in to" : "Connect to"} {environment?.label ?? "this Pulsa Bot"}</h1>
+        <h1 className="text-[20px] font-semibold">{mode === "email" || mode === "pulsatrix" ? "Sign in to" : "Connect to"} {environment?.label ?? "this Pulsa Bot"}</h1>
         <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-secondary">
           {environment ? `Version ${environment.version} on ${environment.platform}. ` : ""}
-          {mode === "email"
+          {mode === "pulsatrix"
+            ? t("pair.pulsatrix.intro")
+            : mode === "email"
             ? sent
               ? `We emailed an 8-digit code to ${email}. It works once and expires in ten minutes.`
               : "Enter your email and we will send you a one-time code."
@@ -109,6 +124,18 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
               Open the app
             </a>
           </p>
+        ) : mode === "pulsatrix" && loginPath ? (
+          <div>
+            {signInError ? <p role="alert" className="mt-3 text-[13px] text-danger">{signInErrorText(signInError)}</p> : null}
+            {/* A full-page navigation: the server answers with the Perspicax
+                sign-in page and comes back here with its own session cookie. */}
+            <a href={loginPath} className={`${button} block text-center`}>
+              {t("pair.pulsatrix.signIn")}
+            </a>
+            <button type="button" onClick={() => switchMode("code")} className="mt-3 w-full text-[13px] text-ink-secondary underline">
+              {t("pair.pulsatrix.useCode")}
+            </button>
+          </div>
         ) : mode === "email" ? (
           <form onSubmit={submitEmail}>
             <label className={fieldLabel} htmlFor="signin-email">
@@ -188,7 +215,11 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
             <button type="submit" disabled={busy || code.replace(/[^a-z0-9]/gi, "").length < 12} className={button}>
               {busy ? "Connecting…" : "Connect"}
             </button>
-            {emailOffered ? (
+            {loginPath ? (
+              <button type="button" onClick={() => switchMode("pulsatrix")} className="mt-3 w-full text-[13px] text-ink-secondary underline">
+                {t("pair.pulsatrix.signIn")}
+              </button>
+            ) : emailOffered ? (
               <button type="button" onClick={() => switchMode("email")} className="mt-3 w-full text-[13px] text-ink-secondary underline">
                 Sign in with your email instead
               </button>
