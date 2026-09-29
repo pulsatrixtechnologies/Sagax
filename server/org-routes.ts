@@ -128,6 +128,10 @@ export interface OrgRouteDeps {
   persist?: (next?: { org?: OrgRecord }) => void;
   /** After an organization was created and saved. */
   onOrgCreated?: () => void;
+  /** After an invite is issued and saved: mails it when a mailer is
+   * configured. Resolves to whether it was sent; that becomes the route's
+   * `mailed` flag. A send failure never undoes the invite. */
+  mailInvite?: (input: { email: string; token: string; inviterEmail?: string }) => Promise<boolean>;
 }
 
 export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
@@ -167,15 +171,20 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
     if (path === "/api/org/invites") {
       const body = await readBody(req);
       if (typeof body?.email !== "string") return json(res, 400, { error: "email is required" });
+      const inviterEmail = deps.actorEmail(auth);
       const result = issueInviteRoute(deps.state, {
         actorId: deps.actorId(auth),
-        actorEmail: deps.actorEmail(auth),
+        actorEmail: inviterEmail,
         email: body.email,
         now: now(),
         token: token(),
       });
-      if (result.status === 200) deps.persist?.();
-      return json(res, result.status, result.body ?? {});
+      if (result.status !== 200) return json(res, result.status, result.body ?? {});
+      deps.persist?.();
+      const mailed = result.body?.invite
+        ? await deps.mailInvite?.({ email: result.body.invite.email, token: result.body.invite.token, inviterEmail }) ?? false
+        : false;
+      return json(res, result.status, { ...result.body, mailed });
     }
     const revoke = /^\/api\/org\/invites\/([^/]+)\/revoke$/.exec(path);
     if (revoke) {

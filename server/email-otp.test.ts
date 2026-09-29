@@ -114,4 +114,13 @@ describe("email one-time codes", () => {
     expect(s.issue("user5@gox.ca", "src5").ok).toBe(true);
     expect(s.size().pending).toBe(1); // Old ones expired, only the new one
   });
+
+  it("revoke voids a pending code without needing to know it", () => {
+    const { s } = store();
+    s.issue("zach@gox.ca", "src");
+    s.revoke("Zach@Gox.ca");
+    expect(s.verify("zach@gox.ca", "12345678")).toMatchObject({ ok: false, status: 401 });
+    // Harmless when nothing is pending for that address.
+    expect(() => s.revoke("nobody@gox.ca")).not.toThrow();
+  });
 });

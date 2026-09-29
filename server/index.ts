@@ -470,7 +470,10 @@ import { WorkspaceBackupMaintenance } from "./workspace-backup-maintenance.ts";
 import { createWorkspaceBackupRoutes, isWorkspaceBackupSessionControl } from "./workspace-backup-http.ts";
 import { applyPendingWorkspaceRestore, readLastWorkspaceRestore, type WorkspaceRestoreResult } from "./workspace-backup.ts";
 import { createCustomDomainVerifier, customDomainIpv4, normalizeCustomDomain } from "./custom-domain.ts";
-import { allowedScopes, createEmailSignIn, parseAllowList } from "./account-signin.ts";
+import { allowedScopes, createServerEmailSignIn, parseAllowList } from "./account-signin.ts";
+import { EmailOtpStore } from "./email-otp.ts";
+import { resolveMailSettings } from "./mail-config.ts";
+import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
@@ -693,10 +696,40 @@ bindThreadLogCapProvider(() => threadEventLogMaxBytes(cfg));
 // prune, so a Settings change applies at the next one without a restart.
 bindDecisionRetention(() => decisionRetentionDays(cfg.decisions?.retentionDays));
 const customDomainVerifier = createCustomDomainVerifier({ environmentId: ENVIRONMENT_ID });
+// Server-issued sign-in codes (server/email-otp.ts) and the mail that
+// carries them (server/mail-config.ts, server/mailer.ts). Settings are
+// resolved per call so a Settings change or a Docker env bootstrap applies
+// without a restart; the mailer is cached by a JSON key of the resolved
+// settings so a new transport is not built on every call.
+const emailOtp = new EmailOtpStore();
+const mailResolved = () => resolveMailSettings({ file: cfg.mail, env: process.env });
+// OMB_MAIL_CAPTURE_FILE (e2e/test seam only): instead of sending, append
+// each message as one JSON line to this file. Refused in production so a
+// misconfigured deploy cannot silently stop sending real mail.
+const MAIL_CAPTURE_FILE = process.env.OMB_MAIL_CAPTURE_FILE;
+if (MAIL_CAPTURE_FILE && process.env.NODE_ENV === "production") {
+  console.warn("OMB_MAIL_CAPTURE_FILE is set but NODE_ENV is production; ignoring it (this seam is test-only)");
+}
+const mailCaptureFile = MAIL_CAPTURE_FILE && process.env.NODE_ENV !== "production" ? MAIL_CAPTURE_FILE : undefined;
+let cachedMailerKey: string | null = null;
+let cachedMailer: Mailer | null = null;
+const mailer = (): Mailer | null => {
+  if (mailCaptureFile) return createCaptureMailer(mailCaptureFile);
+  const settings = mailResolved().settings;
+  const settingsKey = JSON.stringify(settings);
+  if (settingsKey !== cachedMailerKey) {
+    cachedMailer = createMailer(settings);
+    cachedMailerKey = settingsKey;
+  }
+  return cachedMailer;
+};
 // "Sign in with your email" on /pair: the allow-list is read per call so a
 // Settings change or an env bootstrap applies without a restart.
-const emailSignIn = createEmailSignIn({
+const emailSignIn = createServerEmailSignIn({
   allow: emailSignInAllowList,
+  otp: emailOtp,
+  mailer,
+  publicUrl,
 });
 let customDomainRevision = 0;
 function savedCustomDomain(): string | null {
@@ -13898,6 +13931,23 @@ ROUTES.push(createOrgRoutes({
       }
     }
   },
+  mailInvite: async ({ email, inviterEmail }) => {
+    const send = mailer();
+    if (!send) return false;
+    const orgName = orgState.org?.name ?? "Pulsa Bot";
+    const url = publicUrl();
+    try {
+      await send.send({
+        to: email,
+        subject: `You are invited to ${orgName} on Pulsa Bot`,
+        text: `${inviterEmail ?? "You"} invited you. Sign in with this address at ${url ?? ""}/pair within 7 days.`,
+      });
+      return true;
+    } catch (error) {
+      console.warn(`invite email to ${email} could not be sent: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  },
 }));
 
 const toolResults = new ToolResults();
@@ -13972,7 +14022,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       const email = typeof body?.email === "string" ? body.email : "";
       if (path === "/api/auth/email/start") {
-        const started = await emailSignIn.start(email);
+        const started = await emailSignIn.start(email, source);
         if (!started.ok) {
           if (started.status === 403) sessions.noteFailure(source);
           return json(res, started.status, { error: started.error });
@@ -13989,7 +14039,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       sessions.clearFailures(source);
       if (!isAccountEmail(verified.email)) return json(res, 400, { error: "this address cannot sign in: at most 320 characters, shaped name@domain" });
-      const principal = principals.forAccount({ email: verified.email, controlPlaneUserId: verified.userId });
+      const principal = principals.forAccount({ email: verified.email, controlPlaneUserId: verified.userId || undefined });
       const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id });
       const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: true, sharedComputers: sharedComputersEnabled(cfg) });
       const secure = requestOrigin(req)?.startsWith("https://") === true;
