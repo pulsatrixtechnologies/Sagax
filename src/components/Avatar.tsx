@@ -1,9 +1,8 @@
-// Bot avatar — the Blob Studio "Cursor" mascot (CursorAvatar.tsx), wrapped
-// in the app's historical MausAvatar API so no call site changes: per-bot
-// color becomes a body gradient, the app's one-shot motion beats borrow the
-// face/state for a moment, and the eyes follow the pointer. The previous
-// hand-built Maus body + face engine (maus-engine/face/driver) is gone;
-// CursorAvatar owns morphing, blinking, drift, body motion and effects.
+// Bot avatar: the Pulsa Bot owl (OwlAvatar.tsx), wrapped in the app's
+// historical MausAvatar API so no call site changes. The bot's color is the
+// owl's plumage; the app's MausState vocabulary and one-shot MausMotion beats
+// are translated to the owl's six states by src/lib/owl/owl-state.ts. The
+// mascot body catalog (bodyId) is no longer drawn: every bot is the owl.
 import {
   forwardRef,
   memo,
@@ -11,94 +10,59 @@ import {
   useImperativeHandle,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
-import { MAUS_COLORS, type MausColor, type MausMotion, type MausState } from "@/lib/mascot";
-import { CursorAvatar, type CursorAvatarHandle } from "./CursorAvatar";
+import { type MausColor, type MausMotion, type MausState } from "@/lib/mascot";
+import { OWL_BEAT_MS, owlBeatForMotion, owlStateForMaus } from "@/lib/owl/owl-state";
+import { OwlAvatar, type OwlAvatarHandle } from "./OwlAvatar";
 import { botAvatarProfile, clampAvatarFocus, clampAvatarZoom, type BotAvatarCrop } from "../../shared/bot-avatar";
-import { MASCOT_BODIES, botMascotBody, type MascotBodyId } from "../../shared/mascot-bodies";
+import type { MascotBodyId } from "../../shared/mascot-bodies";
 
+/** Kept for API compatibility (the preview page reads them); the owl ignores both. */
 export const EYE_SCALE = 1.12;
 export const MOUTH_WEIGHT = 11;
 
-/**
- * How far the pointer may pull the eyes. Facing forward the full range is
- * safe; with the expressions' authored gaze they already start off-centre.
- */
-const POINTER_GAZE = { forward: 1, authored: 0.25 };
+/** A head turn of this many degrees looks all the way to one side. */
+const TURN_FULL_DEG = 90;
 
-/** Where a resting mascot looks when nobody pins a gaze: off to the right,
- * the way Grok Bot's mascots glance toward the conversation. */
-const RESTING_GAZE = { x: 0.7, y: 0 };
-
-/**
- * What a one-shot motion does while it plays: CursorAvatar animates the body
- * per state, so borrowing the state for a beat moves body and face together.
- */
-interface MotionFaces
-  extends Partial<
-    Record<Exclude<MausMotion, "none">, { state?: MausState; blink?: boolean; spin?: number }>
-  > {}
-
-const MOTION_FACE: MotionFaces = {
-  arrive: { state: "spawning", spin: 900 },
-  switch: { state: "waking", spin: 620 },
-  customize: { state: "proud", blink: true },
-  alert: { state: "alerting" },
-  thinking: { state: "thinking" },
-  working: { state: "working" },
-  launch: { state: "loading" },
-  success: { state: "happy", blink: true },
-  celebrate: { state: "celebrate", spin: 700 },
-  blink: { blink: true },
-  surprise: { state: "surprised", blink: true },
-  failure: { state: "sad" },
-};
-
-/** How long a one-shot motion holds its state before the bot's own returns. */
-const MOTION_FACE_MS = 1400;
-
-/**
- * Bot color -> the mascot's body fill. The renderer takes three stops
- * (highlight, base, shadow); all three are the bot's color, so the body
- * is one flat, uniform color the way Grok Bot draws its mascots.
- */
-const gradientFor = (color: MausColor): [string, string, string] => {
-  const fill = MAUS_COLORS[color] ?? MAUS_COLORS.green;
-  return [fill, fill, fill];
-};
-
-export type MausAvatarHandle = CursorAvatarHandle;
+export interface MausAvatarHandle {
+  blink: () => void;
+  /** The old engine spun the body; the owl hops. */
+  spin: (durationMs?: number) => void;
+  /** The owl has no expression sheet; kept so old callers still compile. */
+  setExpression: (index: number) => void;
+}
 
 export type MausAvatarProps = {
   color: MausColor;
-  /** Named behaviour — drives the expression pool, its cadence and blinking. */
+  /** Named behaviour, mapped to one of the owl's six states. */
   state?: MausState;
-  /** Pin one of the 25 faces and stop the state's own drift. */
+  /** Ignored by the owl (it has no expression sheet). */
   expression?: number;
   size?: number;
   label?: string;
   motion?: MausMotion;
   motionKey?: number;
-  /** Head turn in degrees. */
+  /** Head turn in degrees: moves the owl's gaze sideways. */
   turn?: number;
+  /** Pins the gaze (-1..1 per axis). */
   gaze?: { x?: number; y?: number };
+  /** Ignored by the owl. */
   spring?: number;
+  /** Ignored by the owl. */
   eyeScale?: number;
+  /** Ignored by the owl (it has no mouth). */
   showMouth?: boolean;
+  /** Ignored by the owl. */
   mouthStroke?: number;
-  /**
-   * Face the viewer at turn 0, cancelling each expression's authored gaze
-   * direction. Off restores the engine's own drawn-in directions.
-   */
+  /** Ignored by the owl. */
   forward?: boolean;
-  /** How much each expression glances around. Overrides `forward`'s 0-or-1. */
+  /** Ignored by the owl. */
   lookAround?: number;
-  /** Let the eyes follow the pointer across this avatar. */
+  /** Let the eye follow the pointer across this avatar. */
   trackPointer?: boolean;
-  /** Run the animation. Off renders the state's resting face. */
+  /** Run the animation. Off draws the resting pose once. */
   animated?: boolean;
-  /** Which body the bot wears. Unknown values fall back to the cursor. */
+  /** Ignored: every bot is the owl now. The field stays on the wire. */
   bodyId?: MascotBodyId;
 };
 
@@ -106,84 +70,64 @@ function MausAvatarComponent(
   {
     color,
     state = "idle",
-    expression,
     size = 44,
     label,
     motion = "none",
     motionKey = 0,
     turn,
     gaze,
-    spring,
-    eyeScale,
-    showMouth,
-    mouthStroke,
-    forward = true,
-    lookAround,
     trackPointer = true,
     animated = true,
-    bodyId,
   }: MausAvatarProps,
   ref: React.Ref<MausAvatarHandle>,
 ) {
-  const silhouette = MASCOT_BODIES[botMascotBody(bodyId)];
-  const inner = useRef<CursorAvatarHandle>(null);
+  const owl = useRef<OwlAvatarHandle>(null);
   useImperativeHandle(ref, () => ({
-    blink: () => inner.current?.blink(),
-    spin: (durationMs?: number) => inner.current?.spin(durationMs),
-    setExpression: (index: number) => inner.current?.setExpression(index),
+    blink: () => owl.current?.blink(),
+    spin: () => owl.current?.play("success"),
+    setExpression: () => {},
   }));
 
-  // A one-shot motion borrows the state for a moment, then hands it back.
-  const [motionState, setMotionState] = useState<MausState | null>(null);
+  // success/alert are one-shots: the owl rests as idle and plays the beat
+  // when the bot enters the state (not on first mount, so a list of happy
+  // bots does not all jump at once).
+  const mapped = owlStateForMaus(state);
+  const restState = mapped.oneShot ? "idle" : mapped.state;
+  const entered = useRef(mapped.state);
   useEffect(() => {
-    if (motion === "none" || !animated) return;
-    const beat = MOTION_FACE[motion];
+    if (mapped.state === entered.current) return;
+    entered.current = mapped.state;
+    if (animated && mapped.oneShot) owl.current?.play(mapped.state);
+  }, [mapped.state, mapped.oneShot, animated]);
+
+  // A one-shot motion borrows a state (or a blink) for a moment.
+  useEffect(() => {
+    if (!animated) return;
+    const beat = owlBeatForMotion(motion);
     if (!beat) return;
-    if (beat.blink) inner.current?.blink();
-    if (beat.spin) inner.current?.spin(beat.spin);
-    if (!beat.state) return;
-    setMotionState(beat.state);
-    const timer = setTimeout(() => setMotionState(null), MOTION_FACE_MS);
-    return () => clearTimeout(timer);
+    if (beat.blink) owl.current?.blink();
+    if (beat.play) owl.current?.play(beat.play, OWL_BEAT_MS);
   }, [motion, motionKey, animated]);
 
-  // Pointer-follow gaze, composed with any gaze the caller pins.
-  const [pointer, setPointer] = useState({ x: 0, y: 0 });
-  const range = forward ? POINTER_GAZE.forward : POINTER_GAZE.authored;
-  const onPointerMove = (event: ReactPointerEvent<HTMLSpanElement>) => {
-    if (!trackPointer || !animated) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    setPointer({
-      x: Math.max(-1, Math.min(1, ((event.clientX - rect.left) / rect.width) * 2 - 1)) * range,
-      y: Math.max(-1, Math.min(1, ((event.clientY - rect.top) / rect.height) * 2 - 1)) * range,
-    });
-  };
-  const onPointerLeave = () => setPointer({ x: 0, y: 0 });
+  const pinned =
+    gaze || turn
+      ? {
+          x: Math.max(-1, Math.min(1, (gaze?.x ?? 0) + (turn ?? 0) / TURN_FULL_DEG)),
+          y: Math.max(-1, Math.min(1, gaze?.y ?? 0)),
+        }
+      : undefined;
 
   return (
-    <span
-      className="inline-flex shrink-0"
-      onPointerMove={trackPointer && animated ? onPointerMove : undefined}
-      onPointerLeave={trackPointer && animated ? onPointerLeave : undefined}
-    >
-      <CursorAvatar
-        ref={inner}
-        state={motionState ?? state}
-        expression={expression}
-        size={size}
-        silhouette={silhouette}
-        gradient={gradientFor(color)}
-        title={label ?? null}
-        lookAround={lookAround ?? (forward ? 0 : 1)}
-        gaze={{ x: (gaze?.x ?? RESTING_GAZE.x) + pointer.x, y: (gaze?.y ?? RESTING_GAZE.y) + pointer.y }}
-        turn={turn}
-        spring={spring}
-        eyeScale={eyeScale}
-        showMouth={showMouth}
-        mouthStroke={mouthStroke}
-        paused={!animated}
-      />
-    </span>
+    <OwlAvatar
+      ref={owl}
+      color={color}
+      state={animated ? restState : mapped.state === "alert" ? "alert" : restState}
+      size={size}
+      label={label ?? null}
+      animated={animated}
+      trackPointer={trackPointer}
+      gaze={pinned}
+    />
   );
 }
 
@@ -248,7 +192,6 @@ export function BotAvatar({ bot, size = 44, label, ...mascotProps }: BotAvatarPr
   if (outcome !== "flatImage") {
     return (
       <MausAvatar
-        bodyId={bot.mascotBody ?? undefined}
         {...mascotProps}
         showMouth={false}
         color={bot.color}
