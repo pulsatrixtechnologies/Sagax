@@ -7,9 +7,12 @@ import { enterpriseEntryRequested } from "@/lib/enterprise-entry";
 import { api, ApiError, useStore } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { CompanyModels } from "./CompanyModels";
-import { orgHostFromInput } from "./OrgCreateForm";
+import { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";
 import { OrgDirectory, type OrgPersonView, type PendingInviteView } from "./OrgDirectory";
 import { notifyOrgColumn } from "./org-column";
+import { ConnectedWorkspacesSettings } from "./ConnectedWorkspacesSettings";
+import { RemoteComputerSection } from "./RemoteComputerSection";
+import { CustomDomainSettings } from "./CustomDomainSettings";
 
 export { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";
 
@@ -24,23 +27,45 @@ export function suggestedOrgAddress(): string {
   return orgHostFromInput(origin) ? origin : "";
 }
 
-/** How to join someone else's organization: in the desktop app, add their
- * server under "Servers you joined"; in a browser, open the invite link. */
-export function JoinOrganizationCard({ onOpenServers }: { onOpenServers?: () => void }) {
+/** How to join someone else's organization: pair with their server by
+ * pasting its pairing link (the desktop app's own pairing flow), or in a
+ * browser, open the invite link. Creating an organization instead sits
+ * behind a small secondary link, since this card is for joining, not owning. */
+export function JoinOrganizationCard({
+  initialAddress,
+  onCreate,
+  readyToCreate,
+}: {
+  initialAddress: string;
+  onCreate: (name: string, host: { kind: "server"; url: string }) => void | Promise<void>;
+  /** Only offer creating an organization once the server has confirmed this
+   * computer is not already in one; before that, a click could race a
+   * result that is already on its way. */
+  readyToCreate: boolean;
+}) {
+  const [showCreate, setShowCreate] = useState(false);
   return (
-    <Card title={t("org.join.title")}>
-      {onOpenServers ? <>
-        <p className="text-[13px] leading-relaxed text-ink-secondary">{t("org.join.desktop")}</p>
-        <button type="button" className="ui-button mt-3 w-fit" onClick={onOpenServers}>{t("org.join.openServers")}</button>
-      </> : <p className="text-[13px] leading-relaxed text-ink-secondary">{t("org.join.browser")}</p>}
-    </Card>
+    <>
+      <Card title={t("org.join.title")}>
+        <p className="text-[13px] leading-relaxed text-ink-secondary">{t("org.join.browser")}</p>
+      </Card>
+      <RemoteComputerSection />
+      {readyToCreate && (
+        <Card>
+          {showCreate
+            ? <OrgCreateForm initialAddress={initialAddress} onCreate={onCreate} />
+            : <button type="button" className="ui-button w-fit" onClick={() => setShowCreate(true)}>{t("org.createLink")}</button>}
+        </Card>
+      )}
+    </>
   );
 }
 
 /** Only the trusted desktop bridge can enroll this computer or hold its token. */
 export function OrganizationSettings() {
-  const { state: store, dispatch } = useStore();
-  const bridge = window.ogb?.remoteClient?.active ? undefined : window.ogb?.organization;
+  const { state: store } = useStore();
+  const remoteActive = window.ogb?.remoteClient?.active === true;
+  const bridge = remoteActive ? undefined : window.ogb?.organization;
   const [connection, setConnection] = useState<ManagedDesktopState | null>(null);
   const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
@@ -57,6 +82,7 @@ export function OrganizationSettings() {
   const [lastInvite, setLastInvite] = useState<{ email: string; link?: string } | null>(null);
   const [orgReady, setOrgReady] = useState(false);
   const [directoryError, setDirectoryError] = useState("");
+  const [servers, setServers] = useState<{ activeId: string; count: number } | null>(null);
 
   const acceptConnection = (next: ManagedDesktopState) => {
     const changed = status.current !== next.status;
@@ -122,6 +148,17 @@ export function OrganizationSettings() {
     };
   }, []);
 
+  useEffect(() => {
+    // Whether this desktop has already joined (or is currently active on)
+    // another server decides whether Organization shows a bare join card or
+    // the connected server list next to it.
+    let cancelled = false;
+    void Promise.resolve(window.ogb?.environments?.state()).then((next) => {
+      if (next && !cancelled) setServers({ activeId: next.activeId, count: next.environments.length });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const perform = async (action: () => Promise<ManagedDesktopState>) => {
     if (!bridge || pending.current) return;
     pending.current = true;
@@ -142,27 +179,37 @@ export function OrganizationSettings() {
     }
   };
 
+  // An older server sends no role: leave the controls to its own checks.
+  const canManage = viewerRole === undefined || viewerRole === "owner" || viewerRole === "admin";
+  // Already active on (or saved) another server: show the connected/joined
+  // server list next to Organization instead of the bare join card.
+  const connectedToAnotherServer = remoteActive || (servers ? servers.activeId !== "local" : false);
+  const hasSavedServers = (servers?.count ?? 0) > 0;
+  const showJoinOnly = !org && !hasSavedServers && !connectedToAnotherServer;
+
+  const handleCreate = async (name: string, host: { kind: "server"; url: string }) => {
+    try {
+      const created = await api<{ org?: { name?: string } }>("/api/org", { method: "POST", body: JSON.stringify({ name, host }) });
+      const createdName = typeof created.org?.name === "string" ? created.org.name : name;
+      notifyOrgColumn(createdName);
+      await loadOrg();
+    } catch {
+      setDirectoryError(t("org.createFailed"));
+    }
+  };
+
   const directory = (
     <>
-      {orgReady && (
+      {orgReady && org && (
         <OrgDirectory
           org={org}
           people={people}
           pendingInvites={pendingInvites}
           initialAddress={suggestedOrgAddress()}
-          // An older server sends no role: leave the controls to its own checks.
-          canManage={viewerRole === undefined || viewerRole === "owner" || viewerRole === "admin"}
+          canManage={canManage}
           lastInvite={lastInvite}
-          onCreate={async (name, host) => {
-            try {
-              const created = await api<{ org?: { name?: string } }>("/api/org", { method: "POST", body: JSON.stringify({ name, host }) });
-              const createdName = typeof created.org?.name === "string" ? created.org.name : name;
-              notifyOrgColumn(createdName);
-              await loadOrg();
-            } catch {
-              setDirectoryError(t("org.createFailed"));
-            }
-          }}
+          onCreate={handleCreate}
+          domainSettings={canManage && !remoteActive ? <CustomDomainSettings /> : null}
           onInvite={async (email) => {
             try {
               const issued = await api<{ invite?: { email?: string }; link?: string }>("/api/org/invites", { method: "POST", body: JSON.stringify({ email }) });
@@ -202,20 +249,25 @@ export function OrganizationSettings() {
     </>
   );
 
-  // The desktop app joins another organization by adding its server; a
-  // browser joins by opening the invite link.
-  const openServers = window.ogb?.environments && !window.ogb?.remoteClient?.active
-    ? () => dispatch({ type: "toggleAppSettings", open: true, section: "desktopWorkspaces" })
-    : undefined;
-  const joinCard = <JoinOrganizationCard onOpenServers={openServers} />;
+  // Not in any organization and no server joined yet: only the join card.
+  // Otherwise, show the servers this desktop already connects to (switch,
+  // leave, or the active remote-client connection and its disconnect action).
+  // Waits for the organization load so it settles into one shape instead of
+  // swapping components once the load resolves.
+  const joinOrConnect = !orgReady ? null : showJoinOnly
+    ? <JoinOrganizationCard initialAddress={suggestedOrgAddress()} onCreate={handleCreate} readyToCreate={orgReady} />
+    : <>
+        <ConnectedWorkspacesSettings />
+        {remoteActive && <RemoteComputerSection />}
+      </>;
   // The enterprise Admin connection is shown only where it is in use: a
   // connection exists (any state but signed out), the app is managed, or the
   // native "Sign in with your organization" entry asked for it.
   const enterpriseInUse = connection !== null && (connection.status !== "signed-out" || connection.notice === "license-expired");
   const showEnterprise = Boolean(bridge) && (enterpriseInUse || Boolean(store.config?.managedPolicy) || enterpriseEntryRequested());
   if (!bridge || !showEnterprise) return <>
+    {joinOrConnect}
     {directory}
-    {joinCard}
   </>;
   // Unavailable can still hold a saved grant; let the person clear it before
   // reconnecting even while the Admin portal or local runtime is offline.
@@ -228,8 +280,8 @@ export function OrganizationSettings() {
   const dateLabel = date && Number.isFinite(date.getTime())
     ? new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium", timeStyle: "short" }).format(date) : null;
   return <>
+    {joinOrConnect}
     {directory}
-    {joinCard}
     <p className="text-[13px] leading-relaxed text-ink-secondary">{t("organization.additive")}</p>
     <Card title={t("settings.section.organization")} subtitle={t("organization.privacy")}>
       {!connection && <p role="status" className="text-[13px] text-ink-secondary">{error || t("organization.loading")}</p>}

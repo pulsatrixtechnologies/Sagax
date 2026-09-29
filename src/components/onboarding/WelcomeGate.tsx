@@ -80,7 +80,7 @@ export function WelcomeGate({ viewer }: { viewer: WelcomeViewer | null }) {
     });
   // Explicit desktop connection Settings need no local provider onboarding.
   // Organisation remains optional; closing Settings resumes the normal tour.
-  if (state.appSettingsOpen && ["desktopWorkspaces", "organization"].includes(state.appSettingsSection)) return null;
+  if (state.appSettingsOpen && state.appSettingsSection === "organization") return null;
   if (!state.welcomeOpen && !due) return null;
   const bot = state.bots.find((b) => !b.hidden) ?? null;
   const replay = state.welcomeOpen && !due;

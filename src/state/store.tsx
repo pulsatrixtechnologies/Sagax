@@ -819,7 +819,6 @@ export interface InstanceInfo {
 
 export type AppSettingsSection =
   | "general"
-  | "desktopWorkspaces"
   | "organization"
   | "cloudAccount"
   | "appearance"

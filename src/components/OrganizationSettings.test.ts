@@ -276,7 +276,6 @@ describe("optional desktop Organisation settings", () => {
 
   it.each([{}, { ogb: { remoteClient: { active: true } } }])("has no sign-in controls without the local desktop bridge", (windowState) => {
     vi.stubGlobal("window", windowState);
-    expect(render().html).toContain("Open the invitation link you received");
     expect(render().html).not.toContain("desktop app on this computer");
     expect(render().html).not.toContain("Sign in with your organization");
     expect(bridge.state).not.toHaveBeenCalled();
@@ -288,7 +287,6 @@ describe("optional desktop Organisation settings", () => {
     const html = render().html;
     expect(html).not.toContain("Sign in with your organization");
     expect(html).not.toContain("does not upload your chat history");
-    expect(html).toContain("Join an organization");
   });
 
   it("keeps the enterprise connection when one exists or the app is managed", async () => {
@@ -301,14 +299,17 @@ describe("optional desktop Organisation settings", () => {
     expect(render().html).toContain("Sign in with your organization");
   });
 
-  it("sends the desktop app to Servers you joined to join another organization", async () => {
-    vi.stubGlobal("window", { ogb: { organization: bridge, environments: { state: vi.fn() } } });
-    await ready();
+  it("offers to pair with a server's link or reveal Create an organization once confirmed there is none yet", async () => {
+    vi.stubGlobal("window", { ogb: { organization: bridge } });
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(404, {}));
+    render();
+    for (const effect of fixture.effects) effect();
+    await flush();
     const view = render();
-    expect(view.html).toContain("Invited to someone else&#x27;s organization?");
-    expect(view.html).toContain("Open Servers you joined");
-    (view.nodes.find((node) => node.type === JoinOrganizationCard)!.props as { onOpenServers: () => void }).onOpenServers();
-    expect(fixture.store.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "desktopWorkspaces" });
+    expect(view.html).toContain("Join an organization");
+    expect(view.html).toContain("Open the invitation link you received");
+    expect(view.html).toContain("Create an organization");
+    expect(view.html).not.toContain("Create organization");
   });
 });
 
@@ -364,7 +365,7 @@ describe("fleet organization directory", () => {
     expect(text(render().html)).not.toContain("Create organization");
     finish(jsonResponse(404, {}));
     await flush();
-    expect(text(render().html)).toContain("Create organization");
+    expect(text(render().html)).toContain("Create an organization");
   });
 
   it("shows an error instead of the create form when GET fails", async () => {
@@ -391,8 +392,8 @@ describe("fleet organization directory", () => {
       init && "method" in init && init.method === "POST" ? jsonResponse(409, {}) : jsonResponse(404, {})
     ));
     await loadOrg();
-    const directory = render().nodes.find((node) => node.type === OrgDirectory)!;
-    await directory.props.onCreate?.("GOX", { kind: "server", url: "https://pulsa.gox.ca" });
+    const join = render().nodes.find((node) => node.type === JoinOrganizationCard)!;
+    await join.props.onCreate?.("GOX", { kind: "server", url: "https://pulsa.gox.ca" });
     await flush();
     const html = text(render().html);
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining("/api/org"), expect.objectContaining({
@@ -400,7 +401,7 @@ describe("fleet organization directory", () => {
       body: JSON.stringify({ name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } }),
     }));
     expect(html).toContain("Could not create the organization.");
-    expect(html).toContain("Create organization");
+    expect(html).toContain("Create an organization");
   });
 
   it("shows the new invite's link after inviting, and each pending invite's actions", async () => {
@@ -428,7 +429,7 @@ describe("fleet organization directory", () => {
     expect(html).toContain("Edit");
   });
 
-  it("gives a member no invite, revoke or edit controls", async () => {
+  it("shows a member only the organization's name, address and status, with no people list, invites, address edit or domain", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, {
       org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } },
       people: [{ id: "zara@gox.ca", role: "member", email: "zara@gox.ca" }],
@@ -436,10 +437,14 @@ describe("fleet organization directory", () => {
       viewerRole: "member",
     }));
     const html = text((await loadOrg()).html);
-    expect(html).toContain("zara@gox.ca");
+    expect(html).toContain("GOX");
+    expect(html).toContain("https://pulsa.gox.ca");
+    expect(html).not.toContain("zara@gox.ca");
+    expect(html).not.toContain("ada@gox.ca");
     expect(html).not.toContain(">Invite<");
     expect(html).not.toContain("Revoke");
     expect(html).not.toContain(">Edit<");
+    expect(html).not.toContain("data-custom-domain-settings");
   });
 
   it("shows a notice when the organization has no server address yet", async () => {

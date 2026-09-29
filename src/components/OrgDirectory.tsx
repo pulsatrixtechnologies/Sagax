@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import type { OrgRole } from "../../server/org-directory.ts";
 import { t } from "@/lib/i18n";
 import { Card } from "./SettingsPrimitives";
@@ -45,12 +45,15 @@ export function OrgDirectory({
   onInvite,
   onRevoke,
   onUpdateHost,
+  domainSettings = null,
 }: {
   org: { name: string; host?: { kind: "this-computer" } | { kind: "server"; url: string } } | null;
   people: OrgPersonView[];
   pendingInvites?: PendingInviteView[];
   initialAddress?: string;
-  /** Owners and admins invite, revoke and edit the address. */
+  /** Owners and admins invite, revoke and edit the address, and see the
+   * people list; a member sees only the organization's name, address and
+   * status. */
   canManage?: boolean;
   /** The invite just issued, so its link can be copied at once. */
   lastInvite?: { email: string; link?: string } | null;
@@ -58,6 +61,9 @@ export function OrgDirectory({
   onInvite: (email: string) => void | Promise<void>;
   onRevoke?: (token: string) => void | Promise<void>;
   onUpdateHost?: (host: { kind: "server"; url: string }) => void | Promise<void>;
+  /** The server's custom-domain card, shown under the address for owners
+   * and admins only. */
+  domainSettings?: ReactNode;
 }) {
   const [email, setEmail] = useState("");
   const [editing, setEditing] = useState(false);
@@ -115,16 +121,21 @@ export function OrgDirectory({
           </div>
         </form>
       )}
-      <div className="mt-4 text-[13px] font-medium text-ink">{t("org.people")}</div>
-      <ul className="mt-1 divide-y divide-hairline/40">
-        {people.map((person) => (
-          <li key={person.id} className="flex justify-between gap-2 py-2 text-[13px] text-ink">
-            <span className="break-all" title={person.id}>{personLabel(person)}</span>
-            <span className="shrink-0 text-ink-secondary">{roleLabel(person.role)}</span>
-          </li>
-        ))}
-      </ul>
-      {pendingInvites.length > 0 && (
+      {canManage && domainSettings}
+      {canManage && (
+        <>
+          <div className="mt-4 text-[13px] font-medium text-ink">{t("org.people")}</div>
+          <ul className="mt-1 divide-y divide-hairline/40">
+            {people.map((person) => (
+              <li key={person.id} className="flex justify-between gap-2 py-2 text-[13px] text-ink">
+                <span className="break-all" title={person.id}>{personLabel(person)}</span>
+                <span className="shrink-0 text-ink-secondary">{roleLabel(person.role)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {canManage && pendingInvites.length > 0 && (
         <div className="mt-4">
           <div className="text-[13px] font-medium text-ink">{t("org.pendingInvites")}</div>
           <ul className="mt-1 divide-y divide-hairline/40">
