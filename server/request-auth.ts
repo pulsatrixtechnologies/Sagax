@@ -301,6 +301,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/image$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/export$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/file$/ },
+  // a conversation's files (the bot panel's Files tab): the list and one file by id
+  { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files$/ },
+  { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}$/ },
   // chat, one to one
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages\/[\w-]+\/edit$/ },
