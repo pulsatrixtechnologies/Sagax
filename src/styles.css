@@ -17,9 +17,11 @@
 .mention-editor-mirror {
   /* Match the native textarea's direction independently for each paragraph. */
   unicode-bidi: plaintext;
-  padding: 4px;
-  font-size: 15px;
-  line-height: 24px;
+  /* Must match the composer textarea exactly (px-1 py-1.5 text-[14px]
+     leading-5), or the visible text drifts from the caret. */
+  padding: 6px 4px;
+  font-size: 14px;
+  line-height: 20px;
   white-space: pre-wrap;
   overflow-wrap: break-word;
   color: var(--color-ink);
