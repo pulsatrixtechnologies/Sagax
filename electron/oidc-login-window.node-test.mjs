@@ -65,3 +65,50 @@ test("the sign-in window has no preload, is sandboxed, shares the session, denie
   assert.deepEqual(done, [`${ORG}/`]);
   assert.equal(login.closed, true);
 });
+
+const { parseAuthReturnLink } = require("./environments.cjs");
+const { SYSTEM_SIGN_IN_TTL_MS, authReturnTarget, createPendingSystemSignIn, systemBrowserStartUrl } = require("./oidc-login-window.cjs");
+const CREDENTIAL = `omb_pair_${"A1b2_C3d4-".repeat(4)}xyz`;
+const returnLink = (hash, origin = ORG) => `openmausbot://auth?origin=${encodeURIComponent(origin)}#${hash}`;
+
+test("the system browser starts the desktop flow on the selected saved server only", () => {
+  assert.equal(systemBrowserStartUrl(`${ORG}/auth/oidc/start`, state), `${ORG}/auth/oidc/start?client=desktop`);
+  assert.equal(systemBrowserStartUrl("https://evil.example/auth/oidc/start", state), null);
+  assert.equal(systemBrowserStartUrl(`${ORG}/pair`, state), null);
+});
+
+test("a return link is honoured only for a saved server, with the credential in the hash", () => {
+  assert.deepEqual(parseAuthReturnLink(returnLink(`code=${CREDENTIAL}`), state), { origin: ORG, code: CREDENTIAL });
+  assert.deepEqual(parseAuthReturnLink(returnLink("error=role"), state), { origin: ORG, error: "role" });
+  // a server this app never saved
+  assert.equal(parseAuthReturnLink(returnLink(`code=${CREDENTIAL}`, "https://evil.example"), state), null);
+  // the credential in the query
+  assert.equal(parseAuthReturnLink(`openmausbot://auth?origin=${encodeURIComponent(ORG)}&code=${CREDENTIAL}`, state), null);
+  // bad shapes
+  assert.equal(parseAuthReturnLink(returnLink("code=omb_pair_short"), state), null);
+  assert.equal(parseAuthReturnLink(returnLink(`code=${CREDENTIAL}&error=role`), state), null);
+  assert.equal(parseAuthReturnLink(returnLink("error=<script>"), state), null);
+  assert.equal(parseAuthReturnLink(returnLink(`code=${CREDENTIAL}`, `${ORG}/path`), state), null);
+  assert.equal(parseAuthReturnLink(`openmausbot://auth?origin=${encodeURIComponent(ORG)}&origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
+  assert.equal(parseAuthReturnLink(`openmausbot://pair?origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
+  assert.equal(parseAuthReturnLink(`https://bot.example.test/?origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
+  assert.equal(parseAuthReturnLink(42, state), null);
+});
+
+test("the return lands on /pair to be redeemed once, or shows the error", () => {
+  assert.equal(authReturnTarget({ origin: ORG, code: CREDENTIAL }), `${ORG}/pair#code=${CREDENTIAL}&auto=1`);
+  assert.equal(authReturnTarget({ origin: ORG, error: "role" }), `${ORG}/pair#signin_error=role`);
+});
+
+test("only the sign-in this app started, for ten minutes, once", () => {
+  let clock = 1_000;
+  const pending = createPendingSystemSignIn({ now: () => clock });
+  assert.equal(pending.take(ORG), false); // nobody started one
+  pending.begin(ORG);
+  assert.equal(pending.take("https://other.example.test"), false);
+  assert.equal(pending.take(ORG), true);
+  assert.equal(pending.take(ORG), false); // once
+  pending.begin(ORG);
+  clock += SYSTEM_SIGN_IN_TTL_MS;
+  assert.equal(pending.take(ORG), false); // expired
+});

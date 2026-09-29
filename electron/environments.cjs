@@ -66,6 +66,43 @@ function parseHostedWorkspaceLink(input) {
   }
 }
 
+const SIGN_IN_CREDENTIAL = /^omb_pair_[A-Za-z0-9_-]{43}$/;
+const SIGN_IN_ERROR = /^[a-z_]{1,40}$/;
+
+/** "Sign in with Pulsatrix" in the system browser comes back as
+ * `openmausbot://auth?origin=<saved server>#code=<omb_pair_ credential>` or
+ * `#error=<code>`. Returns {origin, code} or {origin, error} for a SAVED
+ * server only, else null. The credential travels in the hash only, never
+ * the query. */
+function parseAuthReturnLink(input, state) {
+  if (typeof input !== "string" || input.length > 2048) return null;
+  let url;
+  try {
+    url = new URL(input);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "openmausbot:" || url.host !== "auth" || (url.pathname !== "" && url.pathname !== "/")) return null;
+  if (url.username || url.password) return null;
+  const keys = [...url.searchParams.keys()];
+  if (keys.length !== 1 || keys[0] !== "origin") return null;
+  const origin = normalizeOrigin(url.searchParams.get("origin"));
+  if (!origin || origin !== url.searchParams.get("origin")) return null;
+  if (!state?.environments?.some((entry) => entry.origin === origin)) return null;
+  const fragment = new URLSearchParams(url.hash.replace(/^#/, ""));
+  const parts = [...fragment.keys()];
+  if (parts.length !== 1) return null;
+  if (parts[0] === "code") {
+    const code = fragment.get("code");
+    return code && SIGN_IN_CREDENTIAL.test(code) ? { origin, code } : null;
+  }
+  if (parts[0] === "error") {
+    const error = fragment.get("error");
+    return error && SIGN_IN_ERROR.test(error) ? { origin, error } : null;
+  }
+  return null;
+}
+
 /** Remote renderers learn only their current workspace, not the local list. */
 function workspaceSummary(state) {
   const active = activeEnvironment(state);
@@ -196,6 +233,7 @@ module.exports = {
   allowedOrigins,
   normalizeOrigin,
   parseEnvironments,
+  parseAuthReturnLink,
   parsePairingLink,
   parseHostedWorkspaceLink,
   serializeEnvironments,
