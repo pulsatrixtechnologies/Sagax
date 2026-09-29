@@ -24,6 +24,8 @@ import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
+import { viewerActorId } from "@/lib/viewer";
+import { OtherAuthorLabel } from "./MessageAuthor";
 import { MAUS_COLORS, normalizeState, type MausColor } from "@/lib/mascot";
 import { effectiveDefaultResponder, groupResponseHint } from "@/lib/group-routing";
 import { ChatMarkdown } from "./ChatMarkdown";
@@ -293,6 +295,7 @@ const Transcript = memo(function Transcript({
             showToolCalls ? <DigestChip message={m} /> : null
           ) : m.kind === "text" && (m.text || m.attachments?.length) ? (
             <div className={cn("group flex w-full flex-col", user ? "items-end" : "items-start")}>
+              {user && <OtherAuthorLabel message={m} />}
               <div className={cn("flex w-full items-end gap-1.5", user ? "justify-end" : "justify-start")}>
                 {user && (
                   <>
@@ -978,16 +981,21 @@ export function GroupView({ group }: { group: Group }) {
   );
   const viewerEmail = state.config?.profile?.email?.trim().toLowerCase() || "";
   const viewerName = state.config?.profile?.name?.trim() || viewerEmail || "Vous";
+  // The server's word on who is looking, when it gives one; before that,
+  // the remote client's own lookup, else the operator.
+  const viewer = state.config?.viewer;
+  const viewerId = viewerActorId(state.config);
   const channelHumans = [
-    { id: viewerEmail || "local-owner", label: viewerName, detail: viewerEmail && viewerName !== viewerEmail ? viewerEmail : undefined, removable: false as boolean },
+    { id: viewerId, label: viewerName, detail: viewerEmail && viewerName !== viewerEmail ? viewerEmail : undefined, removable: false as boolean },
     ...(group.humanIds ?? [])
       .map((id) => id.trim().toLowerCase())
-      .filter((id) => id && id !== viewerEmail)
+      .filter((id) => id && id !== viewerId && id !== viewerEmail)
       .map((id) => ({ id, label: id, detail: undefined, removable: true })),
   ];
+  const actorId = viewer ? viewerId : remoteClient ? remoteActor.id : viewerId;
   const roster = channelRosterActions({
-    actorRole: remoteClient ? remoteActor.role : "owner",
-    actorId: remoteClient ? remoteActor.id : (viewerEmail || "local-owner"),
+    actorRole: viewer ? viewer.role : remoteClient ? remoteActor.role : "owner",
+    actorId,
     bots: state.bots,
   });
   const speaker = members.find((b) => b.id === group.busyBotId);
@@ -1498,7 +1506,6 @@ export function GroupView({ group }: { group: Group }) {
                 dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
               }}
               onAddBot={() => {
-                const actorId = remoteClient ? remoteActor.id : (state.config?.profile?.email?.trim().toLowerCase() || "local-owner");
                 const owned = state.bots.find((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actorId && !group.memberIds.includes(bot.id));
                 dispatch({
                   type: "patchGroup",

@@ -99,6 +99,7 @@ import {
   tailWindowStart,
 } from "@/lib/transcript-window";
 import { appendComposerDraft, useReplyDraft } from "@/lib/drafts";
+import { OtherAuthorLabel } from "./MessageAuthor";
 
 /** Long user messages collapse behind a fade so pasted walls of text don't
  * bury the conversation; bots get full markdown. */
@@ -374,6 +375,7 @@ function Bubble({
   return (
     <div className={cn("group flex w-full flex-col", user ? "animate-msg-in items-end" : "items-start")}>
       {peer && <PeerLabel peer={peer} />}
+      {user && <OtherAuthorLabel message={message} />}
       <div className={cn("flex w-full items-center gap-1.5", user ? "justify-end" : "justify-start")}>
         {user && (
           <MessageActions side="user">

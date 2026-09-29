@@ -173,6 +173,9 @@ export interface Message {
   steered?: boolean;
   /** a user message that arrived through the server's API, not typed here */
   via?: "api";
+  /** user messages: the signed-in person who sent it. Absent for the
+   * operator's own sends (see shared/wire.ts). */
+  sender?: import("../../shared/wire").WireMessage["sender"];
   /** Provider turn that produced this message. */
   turnId?: string;
   /** Last assistant text item from a settled provider turn. */
@@ -651,8 +654,12 @@ export interface ConfigStatus {
     xaiConfigured?: boolean;
     customKeyConfigured?: boolean;
   };
-  /** who's using the app — collected in onboarding, shown in the sidebar */
+  /** who's using the app: collected in onboarding, shown in the sidebar.
+   * For someone signed in to another person's server, the server fills it
+   * with their own identity (see `viewer`). */
   profile?: { name: string; email: string; aboutMe?: string; avatarUrl?: string };
+  /** Who is looking, as the server knows them. Absent from older servers. */
+  viewer?: ConfigViewer;
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
@@ -668,6 +675,20 @@ export interface ConfigStatus {
   /** The enrolled organisation's read-only desktop policy; null when this
    * desktop is not enrolled or its Admin sends no policy. */
   managedPolicy?: ManagedPolicySummary | null;
+}
+
+/** Mirrors ViewerIdentity in server/viewer-identity.ts. */
+export interface ConfigViewer {
+  /** The operator at the server's computer, or a device they paired. */
+  operator: boolean;
+  principalId: string | null;
+  email: string;
+  name: string;
+  role: "owner" | "admin" | "member" | null;
+  /** The server lets this viewer create a bot. */
+  canCreateBots: boolean;
+  /** The operator's name, for their lines that carry no sender. */
+  operatorName?: string;
 }
 
 export interface ManagedPolicySummary {
@@ -703,7 +724,7 @@ export interface BrowserProfile {
 // Settings shows (a saved key's Test button used to vanish that way).
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "mistral" | "anthropic" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "imageGen" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy"
+  "xai" | "mistral" | "anthropic" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "imageGen" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -733,6 +754,7 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     budgets: frame.budgets,
     billing: frame.billing,
     managedPolicy: frame.managedPolicy,
+    viewer: frame.viewer,
   };
 }
 

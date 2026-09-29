@@ -30,6 +30,7 @@
   "settings.profile.title": "Profil",
   "settings.profile.subtitle": "Affiché dans la barre latérale. Enregistré au fil de la saisie.",
   "settings.profile.name": "Votre nom",
+  "settings.profile.signedInAs": "Connexion au serveur d'une autre personne",
   "settings.skin.title": "Thème",
   "settings.skin.subtitle": "S'applique aussitôt et reste mémorisé sur cet ordinateur.",
   "settings.roomTurns.title": "Tours en groupe",

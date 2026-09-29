@@ -4,16 +4,13 @@ import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { isMacPlatform } from "@/lib/keyboard-shortcuts";
+import { viewerActorId, viewerCanCreateBots } from "@/lib/viewer";
 import { useStore, type Bot } from "@/state/store";
 import { BotAvatar } from "./Avatar";
 import { useCaptionChrome } from "./DesktopCapabilities";
 
 type ComposeMode = "browse" | "group";
 type ComposeRow = { kind: "create-bot" } | { kind: "create-group" } | { kind: "bot"; bot: Bot };
-
-function viewerId(email: string | undefined): string {
-  return email?.trim() || "local-owner";
-}
 
 function isExternalBot(bot: Bot, viewer: string): boolean {
   const owner = bot.ownerUserId?.trim().toLowerCase();
@@ -26,11 +23,12 @@ function matches(bot: Bot, query: string): boolean {
   return `${bot.name} ${bot.title} ${bot.description ?? ""}`.toLowerCase().includes(query);
 }
 
-/** Rows under the To: field. Group mode keeps the confirm row, then the bots. */
-export function composeRows(mode: ComposeMode, bots: Bot[]): ComposeRow[] {
+/** Rows under the To: field. Group mode keeps the confirm row, then the
+ * bots. "New bot" is offered only when the server lets this viewer create one. */
+export function composeRows(mode: ComposeMode, bots: Bot[], canCreateBots = true): ComposeRow[] {
   const people = bots.map((bot): ComposeRow => ({ kind: "bot", bot }));
   if (mode === "group") return [{ kind: "create-group" }, ...people];
-  return [{ kind: "create-bot" }, { kind: "create-group" }, ...people];
+  return [...(canCreateBots ? [{ kind: "create-bot" } as const] : []), { kind: "create-group" }, ...people];
 }
 
 function KeyHint({ n }: { n: number }) {
@@ -59,10 +57,11 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  const viewer = viewerId(state.config?.profile?.email);
+  const viewer = viewerActorId(state.config);
+  const canCreateBots = viewerCanCreateBots(state.config);
   const q = query.trim().toLowerCase();
   const bots = state.bots.filter((bot) => !bot.hidden && !isExternalBot(bot, viewer) && matches(bot, q));
-  const rows = useMemo(() => composeRows(mode, bots), [mode, bots]);
+  const rows = useMemo(() => composeRows(mode, bots, canCreateBots), [mode, bots, canCreateBots]);
   const active = rows.length ? Math.min(cursor, rows.length - 1) : 0;
 
   useEffect(() => setCursor(0), [q, mode]);
@@ -83,7 +82,7 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
   const activate = (row: ComposeRow | undefined) => {
     if (!row) return;
     if (row.kind === "create-bot") {
-      if (state.botCreationPending) return;
+      if (state.botCreationPending || !canCreateBots) return;
       dispatch({ type: "newBot" });
       onCloseRef.current();
       return;

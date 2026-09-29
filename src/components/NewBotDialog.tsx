@@ -62,8 +62,13 @@ export function CompanionNewBotDialog() {
   </div>;
 }
 
+/** Someone signed in to another person's server (an organization member)
+ * gets the same single-request creation: the host's defaults and settings
+ * are not theirs to read or change. */
 export function NewBotDialog(props: Parameters<typeof LocalNewBotDialog>[0] = {}) {
-  return typeof window !== "undefined" && window.ogb?.remoteClient?.active
+  const { state } = useStore();
+  const guestOfServer = state.config?.viewer?.operator === false;
+  return (typeof window !== "undefined" && window.ogb?.remoteClient?.active) || guestOfServer
     ? <CompanionNewBotDialog /> : <LocalNewBotDialog {...props} />;
 }
 

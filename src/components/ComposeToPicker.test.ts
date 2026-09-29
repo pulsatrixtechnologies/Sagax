@@ -1,10 +1,10 @@
 import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { initialState, type Bot } from "@/state/store";
+import { initialState, type Bot, type ConfigStatus } from "@/state/store";
 import { composeRows } from "./ComposeToPicker";
 
-const fixture = vi.hoisted(() => ({ dispatch: vi.fn(), bots: [] as Bot[] }));
+const fixture = vi.hoisted(() => ({ dispatch: vi.fn(), bots: [] as Bot[], config: null as ConfigStatus | null }));
 vi.mock("./DesktopCapabilities", () => ({
   useCaptionChrome: () => ({ dragStyle: undefined, noDragStyle: undefined, controlsShiftStyle: undefined }),
 }));
@@ -13,7 +13,7 @@ vi.mock("@/state/store", async (importOriginal) => {
   return {
     ...original,
     useStore: () => ({
-      state: { ...original.initialState, bots: fixture.bots, botCreationPending: false },
+      state: { ...original.initialState, bots: fixture.bots, botCreationPending: false, config: fixture.config },
       dispatch: fixture.dispatch,
     }),
   };
@@ -68,6 +68,24 @@ describe("ComposeToPicker", () => {
     fixture.dispatch.mockReset();
     rendered.find((node) => node.props["data-compose-action"] === "create-group")?.props.onClick?.();
     expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("offers New bot only when the server says this viewer may create one, and lists the viewer's own bots by principal", () => {
+    const member = "pr_0f0f0f0f-1111-4222-8333-444455556666";
+    fixture.bots = [person("scout", "Scout", { ownerUserId: member }), person("ops", "Ops", { ownerUserId: "pr_other" })];
+    const render = () => renderToStaticMarkup(createElement(() => ComposeToPicker({ onClose: vi.fn() })));
+    fixture.config = { viewer: { operator: false, principalId: member, email: "zara@example.test", name: "zara", role: "member", canCreateBots: true } } as ConfigStatus;
+    let html = render();
+    expect(html).toContain("Create new Bot");
+    expect(html).toContain("Scout");
+    expect(html).not.toContain("Ops");
+    fixture.config = { viewer: { operator: false, principalId: "pr_guest", email: "", name: "", role: null, canCreateBots: false } } as ConfigStatus;
+    html = render();
+    expect(html).not.toContain("Create new Bot");
+    expect(html).toContain("Create group chat");
+    fixture.config = null;
+    expect(render()).toContain("Create new Bot");
+    expect(composeRows("browse", [], false).map((row) => row.kind)).toEqual(["create-group"]);
   });
 
   it("puts the group confirm row ahead of the bots", () => {

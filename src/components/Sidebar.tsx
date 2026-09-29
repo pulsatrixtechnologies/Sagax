@@ -31,6 +31,7 @@ import {
 import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
+import { viewerActorId } from "@/lib/viewer";
 import { liveActivityLabel } from "@/lib/live-activity";
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
@@ -1624,9 +1625,9 @@ export function TeamMenuItems({ onAddBots, onRename, onShare, onDelete }: {
 }
 
 function orgViewerId(state: AppState): string {
-  const email = state.config?.profile?.email?.trim();
-  // Same fallback as the server actor id when this machine has no profile email.
-  return email || "local-owner";
+  // The server's principal for this viewer; older servers: the profile
+  // email, else the same "local-owner" fallback as the server actor id.
+  return viewerActorId(state.config);
 }
 
 function isExternalBot(bot: Bot, viewerId: string): boolean {

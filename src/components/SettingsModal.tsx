@@ -37,6 +37,8 @@ import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { loadSidebarDensity, saveSidebarDensity, subscribeSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { AboutMeSettings } from "./AboutMeSettings";
+import { InitialsAvatar } from "./Avatar";
+import { profileInitials, profileLabel } from "./SidebarProfileMenu";
 import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
 import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
 import { ThreadCleanupSettings } from "./ThreadCleanupSettings";
@@ -108,8 +110,30 @@ function profilePhoto(file: File): Promise<string> {
   });
 }
 
-/** Name, email, and photo. Shared context has its own autosave. */
+/** Name, email, and photo. Shared context has its own autosave. Someone
+ * signed in to another person's server sees who they are signed in as: the
+ * editable profile is the operator's, and saving it would overwrite theirs. */
 function ProfileFields() {
+  const { state } = useStore();
+  const viewer = state.config?.viewer;
+  if (viewer && !viewer.operator) return <SignedInIdentity name={viewer.name} email={viewer.email} />;
+  return <OperatorProfileFields />;
+}
+
+function SignedInIdentity({ name, email }: { name: string; email: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-[14px] border-[0.5px] border-border px-3.5 py-2.5">
+      <InitialsAvatar initials={profileInitials({ name, email })} size={36} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[14px] font-semibold text-ink">{profileLabel({ name, email })}</div>
+        {email && <div className="mt-0.5 truncate text-[13px] text-ink-secondary">{email}</div>}
+        <div className="mt-0.5 text-[12px] text-ink-secondary">{t("settings.profile.signedInAs")}</div>
+      </div>
+    </div>
+  );
+}
+
+function OperatorProfileFields() {
   const { state, dispatch } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(state.config?.profile?.name ?? "");

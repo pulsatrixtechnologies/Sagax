@@ -294,6 +294,7 @@
   "settings.profile.subtitle": "Shown in the sidebar. Saved as you go.",
   "settings.profile.sharedSubtitle": "Your details and shared context. Saved as you go.",
   "settings.profile.name": "Your name",
+  "settings.profile.signedInAs": "Signed in to another person's server",
   "settings.profile.aboutMe": "About me",
   "settings.profile.aboutMeHelp": "Shared with every bot in private and group chats. Saved automatically.",
   "settings.profile.saving": "Saving…",
