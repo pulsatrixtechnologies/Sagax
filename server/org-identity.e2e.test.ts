@@ -70,6 +70,42 @@ async function stop() {
   child = undefined;
 }
 
+/** A live /api/events stream: what it received so far, and whether the
+ * server ended it. */
+function openStream(token: string) {
+  const state = { text: "", closed: false };
+  const controller = new AbortController();
+  const ready = (async () => {
+    const res = await fetch(`${BASE}/api/events`, { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
+    expect(res.status).toBe(200);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    const pump = (async () => {
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          state.text += decoder.decode(value, { stream: true });
+        }
+      } catch {
+        /* aborted */
+      }
+      state.closed = true;
+    })();
+    return pump;
+  })();
+  return { state, ready, abort: () => controller.abort() };
+}
+
+async function until(check: () => boolean, ms = 5_000) {
+  const deadline = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > deadline) return false;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return true;
+}
+
 const principalsFile = () => JSON.parse(readFileSync(join(data, "principals.json"), "utf8")) as { principals: { id: string; email?: string; local?: boolean }[] };
 
 posixOnly("org identity", () => {
@@ -92,6 +128,8 @@ posixOnly("org identity", () => {
   });
 
   let ownerId = "";
+  let kioskToken = "";
+  let kioskStream: ReturnType<typeof openStream> | undefined;
 
   it("lets a chat-only device see the operator's bot while no organization exists", async () => {
     const bot = await api("POST", "/api/bots", { name: "Personal" });
@@ -99,9 +137,22 @@ posixOnly("org identity", () => {
     const pairing = await api("POST", "/api/auth/pairing", { label: "Kiosk", scopes: ["client"] });
     const paired = await api("POST", "/api/auth/pair", { code: pairing.body.code });
     expect(paired.status).toBe(200);
-    const seen = await api("GET", "/api/bots", undefined, paired.body.token);
+    kioskToken = paired.body.token;
+    const seen = await api("GET", "/api/bots", undefined, kioskToken);
     expect(seen.status).toBe(200);
     expect(seen.body.bots.map((b: any) => b.id)).toContain(bot.body.bot.id);
+    // It sees the bot but does not own it: a grant is refused before the
+    // grantee is resolved, so a huge email creates no principal.
+    const before = principalsFile().principals;
+    const refused = await api("POST", `/api/bots/${bot.body.bot.id}/direct-grants`, { userId: `${"a".repeat(400)}@example.test` }, kioskToken);
+    expect(refused).toEqual({ status: 403, body: { error: "not-owner" } });
+    const plain = await api("POST", `/api/bots/${bot.body.bot.id}/direct-grants`, { userId: "stranger@example.test" }, kioskToken);
+    expect(plain).toEqual({ status: 403, body: { error: "not-owner" } });
+    expect(principalsFile().principals).toEqual(before);
+    // Its live stream opens now, unfiltered, before any organization.
+    kioskStream = openStream(kioskToken);
+    expect(await until(() => kioskStream!.state.text.includes('"kind":"hello"'))).toBe(true);
+    expect(kioskStream.state.closed).toBe(false);
   });
 
   it("refuses an organization without a server address", async () => {
@@ -117,6 +168,39 @@ posixOnly("org identity", () => {
     expect(ownerId).toMatch(/^pr_/);
     const local = principalsFile().principals.filter((p) => p.local);
     expect(local).toEqual([expect.objectContaining({ id: ownerId, email: "jc@gox.ca" })]);
+  });
+
+  it("ends the principal-less stream opened before the organization, so it reconnects filtered", async () => {
+    expect(await until(() => kioskStream!.state.closed)).toBe(true);
+    const bot = await api("POST", "/api/bots", { name: "Hidden" });
+    const room = await api("POST", "/api/groups", { name: "After org", memberIds: [bot.body.bot.id], humanIds: [ZARA] });
+    expect(room.status, JSON.stringify(room.body)).toBeLessThan(300);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(kioskStream!.state.text).not.toContain(room.body.group.id);
+    // A new stream from the same device is filtered: the channel frame never reaches it.
+    const again = openStream(kioskToken);
+    expect(await until(() => again.state.text.includes('"kind":"hello"'))).toBe(true);
+    await api("PATCH", `/api/groups/${room.body.group.id}`, { name: "After org, renamed" });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(again.state.text).not.toContain(room.body.group.id);
+    again.abort();
+  });
+
+  it("refuses a chat-only device's direct grant before it creates any principal", async () => {
+    const before = principalsFile().principals;
+    const bot = await api("POST", "/api/bots", { name: "Owned" });
+    expect(bot.status).toBe(201);
+    const huge = `${"a".repeat(400)}@example.test`;
+    const refused = await api("POST", `/api/bots/${bot.body.bot.id}/direct-grants`, { userId: huge }, kioskToken);
+    // Once an organization exists the bot is out of its sight altogether.
+    expect([403, 404]).toContain(refused.status);
+    const other = await api("POST", `/api/bots/${bot.body.bot.id}/direct-grants`, { userId: "new-person@example.test" }, kioskToken);
+    expect([403, 404]).toContain(other.status);
+    expect(principalsFile().principals).toEqual(before);
+    // Even the owner cannot grant a ref that is not an account email.
+    const bad = await api("POST", `/api/bots/${bot.body.bot.id}/direct-grants`, { userId: huge });
+    expect(bad.status).toBe(400);
+    expect(principalsFile().principals).toEqual(before);
   });
 
   it("pairs a phone from this computer as the same person", async () => {
@@ -195,6 +279,11 @@ posixOnly("org identity", () => {
 
   it("keeps one local operator and the same owner across a restart", async () => {
     await stop();
+    // A bad entry (an oversized email, as an older build could write) is
+    // skipped on load; it does not wipe the file or change the operator.
+    const file = JSON.parse(readFileSync(join(data, "principals.json"), "utf8"));
+    file.principals.push({ id: "pr_00000000-0000-4000-8000-0000000000ff", kind: "human", email: `${"a".repeat(400)}@example.test`, createdAt: 1 });
+    writeFileSync(join(data, "principals.json"), JSON.stringify(file));
     await start();
     const local = principalsFile().principals.filter((p) => p.local);
     expect(local).toHaveLength(1);
