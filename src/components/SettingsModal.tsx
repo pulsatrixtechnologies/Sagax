@@ -28,7 +28,7 @@ import { ConnectedWorkspacesSettings } from "./ConnectedWorkspacesSettings";
 import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { CloudAccountSettings } from "./CloudAccountSettings";
-import { Card, SettingRow, Switch } from "./SettingsPrimitives";
+import { Card, SettingRow, Switch, requestSettingsCard } from "./SettingsPrimitives";
 import { effortLabel } from "./ModelPicker";
 import { EFFORT_LEVELS, isEffortLevel } from "../../shared/wire";
 import { shortcutLabel } from "./ShortcutHint";
@@ -77,6 +77,26 @@ const SECTIONS: Array<{
   { id: "backups", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery"] },
   { id: "workspaces", labelKey: "settings.section.workspaces", icon: Building2, keywords: ["clients", "tenants", "fleet", "workspaces", "installation", "installations"] },
 ];
+
+/** Collapsible cards a search opens: a match on these words means the person
+ * is looking for what the card holds, so it should not stay folded. */
+const CARD_KEYWORDS: Record<string, string[]> = {
+  "general.aboutMe": ["about me"],
+  "general.threads": ["parallel", "concurrency"],
+  "general.threadCleanup": ["cleanup", "retention", "event log", "event-log", "log size"],
+  "general.recovery": ["automatic recovery", "backup model", "fallback"],
+  "connections.apps": ["composio"],
+  "connections.integrations": ["box", "vps"],
+  "companion.domain": ["domain", "dns", "caddy"],
+  "backups.import": ["import", "restore"],
+};
+
+export function cardsMatching(query: string): string[] {
+  if (query.length < 3) return [];
+  return Object.entries(CARD_KEYWORDS)
+    .filter(([, words]) => words.some((word) => word.includes(query)))
+    .map(([id]) => id);
+}
 
 function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
   if (!query) return true;
@@ -154,8 +174,7 @@ function ProfileFields() {
 
   const initials = (name.trim() || email.trim() || "?").slice(0, 1).toUpperCase();
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-3 rounded-[14px] border-[0.5px] border-border px-3.5 py-2.5">
+    <div className="flex items-center gap-3">
         <div className="relative">
           <button
             type="button"
@@ -178,10 +197,25 @@ function ProfileFields() {
           <input aria-label={t("settings.profile.name")} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => save()} placeholder={t("settings.profile.name")} className="w-full bg-transparent text-[14px] font-semibold text-ink placeholder:text-ink-secondary focus:outline-none" />
           <input type="email" aria-label={t("phone.signIn.email")} value={email} onChange={(e) => setEmail(e.target.value)} onBlur={() => save()} placeholder="you@example.com" className="mt-0.5 w-full bg-transparent text-[13px] text-ink-secondary placeholder:text-ink-secondary focus:outline-none" />
         </div>
-      </div>
-      <AboutMeSettings />
     </div>
   );
+}
+
+type ConnectionKey = "anthropic" | "openaiCompat" | "xai" | "mistral" | "composio" | "box" | "vps" | "opencodeGo";
+
+/** "Set" / "Not set" for one connection, "2 of 4 set" for a group. Reads
+ * only the configured flags the server returns; never a secret. */
+export function configuredSummary(config: ConfigStatus | null | undefined, keys: ConnectionKey[]): string {
+  const set = keys.filter((key) => Boolean((config?.[key] as { configured?: boolean } | undefined)?.configured)).length;
+  if (keys.length === 1) return set ? t("settings.card.set") : t("settings.card.notSet");
+  return t("settings.card.countSet", { count: set, total: keys.length });
+}
+
+/** "3 lines" or "Not set": enough to know whether About me needs a look. */
+export function aboutMeSummary(aboutMe: string | undefined): string {
+  const lines = (aboutMe ?? "").split("\n").filter((line) => line.trim()).length;
+  if (!lines) return t("settings.card.notSet");
+  return lines === 1 ? t("settings.card.lineOne") : t("settings.card.lineMany", { count: lines });
 }
 
 function UpdatesRow() {
@@ -279,7 +313,8 @@ function NewBotEffortRow() {
   return (
     <SettingRow
       title={t("settings.newBotEffort.title")}
-      subtitle={t("settings.newBotEffort.subtitle")}
+      subtitle={t("settings.newBotEffort.short")}
+      help={t("settings.newBotEffort.subtitle")}
       message={error ? <p role="alert" className="text-danger">{error}</p> : null}
     >
       <select
@@ -303,7 +338,7 @@ function NewBotEffortRow() {
 function AnalyticsRow() {
   const [on, setOn] = useState(analyticsEnabled);
   return (
-    <SettingRow title={t("settings.analytics.title")} subtitle={t("settings.analytics.subtitle")}>
+    <SettingRow title={t("settings.analytics.title")} subtitle={t("settings.analytics.short")} help={t("settings.analytics.subtitle")}>
       <Switch
         checked={on}
         aria-label={t("settings.analytics.aria")}
@@ -381,7 +416,8 @@ function LanguageRow() {
   return (
     <SettingRow
       title={t("settings.language.title")}
-      subtitle={t("settings.language.subtitle")}
+      subtitle={t("settings.language.short")}
+      help={t("settings.language.subtitle")}
     >
       <select
         value={current}
@@ -403,7 +439,7 @@ function LanguageRow() {
 function NotificationSoundsRow() {
   const enabled = useNotificationSounds();
   return (
-    <SettingRow title={t("settings.notificationSounds.title")} subtitle={t("settings.notificationSounds.subtitle")}>
+    <SettingRow title={t("settings.notificationSounds.title")} subtitle={t("settings.notificationSounds.short")} help={t("settings.notificationSounds.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.notificationSounds.play")}
@@ -458,7 +494,7 @@ function SidebarDensityRow() {
 function ShowThreadsRow() {
   const enabled = useShowThreads();
   return (
-    <SettingRow title={t("settings.threadDisplay.title")} subtitle={t("settings.threadDisplay.subtitle")}>
+    <SettingRow title={t("settings.threadDisplay.title")} subtitle={t("settings.threadDisplay.short")} help={t("settings.threadDisplay.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.threadDisplay.show")}
@@ -494,7 +530,8 @@ function RoutinesInConversationRow() {
   return (
     <SettingRow
       title={t("settings.routinesInConversation.title")}
-      subtitle={t("settings.routinesInConversation.subtitle")}
+      subtitle={t("settings.routinesInConversation.short")}
+      help={t("settings.routinesInConversation.subtitle")}
       message={error ? <p role="alert" className="text-danger">{error}</p> : null}
     >
       <Switch
@@ -534,7 +571,8 @@ function ToolCallsRow() {
   return (
     <SettingRow
       title={t("settings.toolCalls.title")}
-      subtitle={<>{t("settings.toolCalls.subtitle")} {t("settings.toolCalls.detail")}</>}
+      subtitle={t("settings.toolCalls.short")}
+      help={<>{t("settings.toolCalls.subtitle")} {t("settings.toolCalls.detail")}</>}
       message={error ? <p role="alert" className="text-danger">{error}</p> : null}
     >
       <Switch
@@ -653,7 +691,8 @@ function DiagnosticsRow() {
   return (
     <SettingRow
       title={t("settings.diagnostics.title")}
-      subtitle={t("settings.diagnostics.subtitle")}
+      subtitle={t("settings.diagnostics.short")}
+      help={t("settings.diagnostics.subtitle")}
       message={result ? (
         <p role={result.kind === "error" ? "alert" : "status"} className={cn("break-all", result.kind === "error" ? "text-danger" : "text-success")}>
           {result.message}
@@ -697,6 +736,10 @@ export function SettingsModal() {
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
   const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
   const nextVisibleSection = visibleSections.some((entry) => entry.id === section) ? undefined : visibleSections[0]?.id;
+
+  useEffect(() => {
+    for (const id of cardsMatching(q)) requestSettingsCard(id);
+  }, [q]);
 
   useEffect(() => {
     // Translated matches can change without the query changing. Follow the
@@ -835,10 +878,10 @@ export function SettingsModal() {
           </div>
 
           <div className="flex flex-1 flex-col overflow-y-auto">
-            <h2 className="hidden px-8 pb-1.5 pt-8 text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink sm:block">
+            <h2 className="hidden px-8 pb-1 pt-6 text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink sm:block">
               {sectionLabelKey ? t(sectionLabelKey) : null}
             </h2>
-            <div className="flex flex-col gap-3 px-4 pb-7 pt-[22px] sm:px-8">
+            <div className="flex flex-col gap-3 px-4 pb-6 pt-4 sm:px-8">
             <LicenseExpiryBanner config={state.config} />
             {section === "desktopWorkspaces" && <ConnectedWorkspacesSettings />}
             {section === "organization" && !remoteActive && <OrganizationSettings />}
@@ -846,23 +889,44 @@ export function SettingsModal() {
             {section === "general" && (
               <>
                 <ThisComputerSettings />
-                <Card title={t("settings.profile.title")} subtitle={t("settings.profile.sharedSubtitle")}>
+                <Card title={t("settings.profile.title")}>
                   <ProfileFields />
                 </Card>
-                <div className="rounded-[14px] border-[0.5px] border-border py-2">
+                <Card
+                  collapsible
+                  cardId="general.aboutMe"
+                  defaultOpen={false}
+                  title={t("settings.profile.aboutMe")}
+                  subtitle={t("settings.profile.aboutMeHelp")}
+                  summary={aboutMeSummary(state.config?.profile?.aboutMe)}
+                >
+                  <AboutMeSettings inCard />
+                </Card>
+                <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <LanguageRow />
                   <NewBotEffortRow />
                   <AnalyticsRow />
                   <DefaultBotSettings />
                 </div>
-                <Card title={t("settings.roomTurns.title")} subtitle={t("settings.roomTurns.subtitle")}>
+                {!remoteActive && (
+                  <div className="rounded-[14px] border-[0.5px] border-border py-1">
+                    <RoutinesInConversationRow />
+                  </div>
+                )}
+                <Card
+                  collapsible
+                  cardId="general.roomTurns"
+                  defaultOpen={false}
+                  title={t("settings.roomTurns.title")}
+                  subtitle={t("settings.roomTurns.subtitle")}
+                  summary={t("settings.card.roomTurns", { minutes: state.config?.rooms.turnTimeoutMinutes ?? 5 })}
+                >
                   <RoomTurnTimeoutSettings />
                 </Card>
                 <ThreadConcurrencySettings />
-                {!remoteActive && <RoutinesInConversationRow />}
                 <AutomaticRecoverySettings />
                 <ThreadCleanupSettings />
-                <div className="rounded-[14px] border-[0.5px] border-border py-2">
+                <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
                   <DiagnosticsRow />
@@ -875,7 +939,7 @@ export function SettingsModal() {
                 <Card title={t("settings.skin.title")} subtitle={t("settings.skin.subtitle")}>
                   <SkinPicker />
                 </Card>
-                <div className="rounded-[14px] border-[0.5px] border-border py-2">
+                <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <FontRow />
                   <SidebarDensityRow />
                   <ShowThreadsRow />
@@ -893,37 +957,57 @@ export function SettingsModal() {
             )}
 
             {section === "connections" && (
-              <Card
-                title={t("settings.connections.title")}
-                subtitle={t("settings.connections.subtitle")}
-              >
-                <div className="flex flex-col gap-4">
-                  {state.config?.composio.mode === "managed" ? (
-                    <div className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-[13px] text-success">
-                      {t("settings.connections.ready")}
-                    </div>
-                  ) : null}
-                  <div className="px-2 text-[12px] leading-4 text-ink-secondary">{t("keys.providers.title")}</div>
-                  <p className="-mt-3 text-[12px] leading-relaxed text-ink-secondary">{t("keys.providers.subtitle")}</p>
-                  <ApiKeyRow section="anthropic" testProvider="anthropic" />
-                  <ApiKeyRow section="openaiCompat" testProvider="openaiCompat" />
-                  <OpenAiCompatUrl />
-                  <ApiKeyRow section="xai" testProvider="xai" />
-                  <ApiKeyRow section="mistral" testProvider="mistral" />
-                  <div className="px-2 pt-2 text-[12px] leading-4 text-ink-secondary">{t("settings.connections.appsTitle")}</div>
-                  <p className="-mt-3 text-[12px] leading-relaxed text-ink-secondary">
+              <>
+                <p className="text-[13px] leading-[18px] text-ink-secondary">{t("settings.connections.subtitle")}</p>
+                {state.config?.composio.mode === "managed" ? (
+                  <div className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-[13px] text-success">
+                    {t("settings.connections.ready")}
+                  </div>
+                ) : null}
+                <Card
+                  collapsible
+                  cardId="connections.providers"
+                  title={t("keys.providers.title")}
+                  subtitle={t("keys.providers.subtitle")}
+                  summary={configuredSummary(state.config, ["anthropic", "openaiCompat", "xai", "mistral"])}
+                >
+                  <div className="flex flex-col gap-4">
+                    <ApiKeyRow section="anthropic" testProvider="anthropic" />
+                    <ApiKeyRow section="openaiCompat" testProvider="openaiCompat" />
+                    <OpenAiCompatUrl />
+                    <ApiKeyRow section="xai" testProvider="xai" />
+                    <ApiKeyRow section="mistral" testProvider="mistral" />
+                  </div>
+                </Card>
+                <Card
+                  collapsible
+                  cardId="connections.apps"
+                  defaultOpen={false}
+                  title={t("settings.connections.appsTitle")}
+                  subtitle={<>
                     {t("settings.connections.appsSubtitle")}{" "}
                     <a href={COMPOSIO_PLATFORM_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
                       platform.composio.dev
                     </a>
-                  </p>
+                  </>}
+                  summary={configuredSummary(state.config, ["composio"])}
+                >
                   <ApiKeyRow section="composio" />
-                  <div className="px-2 pt-2 text-[12px] leading-4 text-ink-secondary">{t("keys.integrations.title")}</div>
-                  <ApiKeyRow section="box" />
-                  <VpsConnection />
-                  <ApiKeyRow section="opencodeGo" />
-                </div>
-              </Card>
+                </Card>
+                <Card
+                  collapsible
+                  cardId="connections.integrations"
+                  defaultOpen={false}
+                  title={t("keys.integrations.title")}
+                  summary={configuredSummary(state.config, ["box", "vps", "opencodeGo"])}
+                >
+                  <div className="flex flex-col gap-4">
+                    <ApiKeyRow section="box" />
+                    <VpsConnection />
+                    <ApiKeyRow section="opencodeGo" />
+                  </div>
+                </Card>
+              </>
             )}
 
             {section === "engines" && (

@@ -14,6 +14,7 @@ import { isConnectorToolGrantShape } from "@/lib/connector-grants";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { McpServersPanel } from "./McpServersPanel";
 import { ConnectedAppsSetup } from "./ConnectedAppsSetup";
+import { requestSettingsCard } from "./SettingsPrimitives";
 
 export interface ToolkitCard {
   slug: string;
@@ -707,6 +708,7 @@ export function PluginsPanel() {
               className="underline underline-offset-2 hover:text-ink"
               onClick={() => {
                 close();
+                requestSettingsCard("connections.apps");
                 dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
               }}
             >

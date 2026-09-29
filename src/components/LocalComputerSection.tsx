@@ -374,8 +374,14 @@ export function VpsComputersCard({
 }) {
   return (
     <Card
+      collapsible
+      cardId="computer.vps"
+      defaultOpen={false}
       title={t("vm.vps.title")}
       subtitle={t("vm.vps.subtitle")}
+      summary={configured === false || !sshAlias
+        ? t("settings.card.notSet")
+        : `${sshAlias} · ${t("settings.card.computers", { count: instances.length })}`}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="text-[12px] text-ink-secondary">
@@ -508,8 +514,14 @@ export function CloudComputersCard({
 }) {
   return (
     <Card
+      collapsible
+      cardId="computer.cloud"
+      defaultOpen={false}
       title={t("vm.cloud.title")}
       subtitle={t("vm.cloud.subtitle")}
+      summary={configured === false
+        ? t("settings.card.notConnected")
+        : t("settings.card.computers", { count: instances.length })}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="text-[12px] text-ink-secondary">
@@ -768,6 +780,14 @@ export function LocalVmInventoryCard({
       </div>
     </Card>
   );
+}
+
+/** The first setup step still to do, for the collapsed Setup card. */
+export function setupStep(status: Pick<Status, "runtime" | "daemonUp" | "image">): number {
+  if (!status.runtime) return 1;
+  if (!status.daemonUp) return 2;
+  if (!status.image) return 3;
+  return 4;
 }
 
 function Step({ n, title, done, children }: { n: number; title: string; done: boolean; children?: React.ReactNode }) {
@@ -1306,8 +1326,14 @@ export function LocalComputerSection() {
       </Card>
 
       <Card
+        collapsible
+        cardId="computer.isolation"
+        defaultOpen={false}
         title={t("vm.isolation.title")}
         subtitle={t("vm.isolation.subtitle")}
+        summary={perBot
+          ? t("settings.card.upTo", { label: t("vm.isolation.perBot"), count: status?.max_instances ?? 2 })
+          : t("vm.isolation.shared")}
       >
         <div className="flex overflow-hidden rounded-lg border border-hairline/40">
           {(["shared", "per-bot"] as const).map((mode, index) => (
@@ -1347,7 +1373,18 @@ export function LocalComputerSection() {
         {policyPending && <div className="mt-2 flex items-center gap-1.5 text-[12px] text-ink-secondary"><Loader2 size={12} className="animate-spin" /> {t("vm.saving")}</div>}
       </Card>
 
-      <Card title={t("vm.setup.title")} subtitle={t("vm.setup.subtitle")}>
+      <Card
+        collapsible
+        cardId="computer.setup"
+        defaultOpen={Boolean(status) && !(perBot ? headerReady : ready)}
+        title={t("vm.setup.title")}
+        subtitle={t("vm.setup.subtitle")}
+        summary={!status
+          ? t("common.checking")
+          : (perBot ? headerReady : ready)
+            ? t("settings.card.done")
+            : t("settings.card.step", { step: setupStep(status), total: 4 })}
+      >
         <div className="flex flex-col gap-4">
           <Step n={1} title={t("vm.setup.step1")} done={Boolean(status?.runtime)}>
             <div className="text-[13px] leading-relaxed text-ink-secondary">
@@ -1454,7 +1491,11 @@ export function LocalComputerSection() {
       )}
 
       <Card
+        collapsible
+        cardId="computer.safety"
+        defaultOpen={false}
         title={t("vm.safety.title")}
+        summary={t("settings.card.safety")}
         subtitle={
           perBot
             ? t("vm.safety.perBot", { path: status?.workspace_guest_path ?? "/home/cua/workspace" })
