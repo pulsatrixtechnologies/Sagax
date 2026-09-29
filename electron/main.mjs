@@ -679,6 +679,24 @@ async function ensurePhoneSecretIdentity() {
   }
 }
 
+/** One random key per installation for the server's encrypted MCP sign-in
+ * vault (server/mcp-oauth.ts), kept in the OS-encrypted credential store. */
+async function ensureMcpOAuthKey() {
+  const current = secureCredentialState?.read() ?? secureCredentials;
+  if (typeof current?.mcpOAuthKey === "string" && /^[0-9a-f]{64}$/.test(current.mcpOAuthKey)) return;
+  try {
+    const key = randomBytes(32).toString("hex");
+    await updateSecureCredentialDocument((credentials) =>
+      typeof credentials.mcpOAuthKey === "string" && /^[0-9a-f]{64}$/.test(credentials.mcpOAuthKey)
+        ? credentials
+        : { ...credentials, mcpOAuthKey: key },
+    );
+  } catch (error) {
+    // MCP sign-in reports the store as unavailable until a later launch.
+    slog(`MCP sign-in key unavailable: ${error?.message ?? error}`);
+  }
+}
+
 function publicManagedCompanionState() {
   const access = managedCompanionTunnelAccess(secureCredentials);
   const status = managedCompanionConnector?.getStatus();
@@ -1289,6 +1307,11 @@ async function startServerOn(port) {
     // the server prefers these over config.json, whose plaintext fields
     // the boot migration has deleted
     ...workspaceCredentialEnv(secureCredentials),
+    // The key of the server's encrypted MCP sign-in vault. It lives in
+    // credentials.bin; without it the server refuses to invent another.
+    ...(typeof secureCredentials.mcpOAuthKey === "string" && /^[0-9a-f]{64}$/.test(secureCredentials.mcpOAuthKey)
+      ? { OMB_MCP_OAUTH_KEY: secureCredentials.mcpOAuthKey }
+      : {}),
   });
   delete childEnv.OMB_BROWSER_CONNECTION;
   slog(`fork ${entry} port=${port}`);
@@ -2981,6 +3004,7 @@ app.whenReady().then(async () => {
   });
   secureCredentials = secureCredentialState.read();
   if (app.isPackaged) await ensurePhoneSecretIdentity();
+  if (app.isPackaged) await ensureMcpOAuthKey();
   desktopRemoteAccess = desktopCompanionAccess(secureCredentials);
   const hostedAccount = desktopRemoteAccess ? null : ensureCompanionAccountService();
   // Display capture remains user-initiated. The renderer first sends a

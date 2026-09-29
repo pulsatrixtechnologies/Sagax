@@ -1131,6 +1131,8 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "OMB_CUSTOM_IMAGE_KEY",
   "COMPOSIO_API_KEY",
   "OMB_COMPOSIO_BROKER_TOKEN",
+  // The key of the encrypted MCP sign-in vault (server/mcp-oauth.ts).
+  "OMB_MCP_OAUTH_KEY",
   // Harness-private filesystem hints are not credentials themselves, but
   // exposing them to a shell-capable agent points straight at app-owned
   // state. The built-in browser master is delivered privately in memory.
