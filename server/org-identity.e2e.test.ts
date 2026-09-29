@@ -211,7 +211,7 @@ posixOnly("org identity", () => {
     const token = paired.body.token as string;
     const org = await api("GET", "/api/org", undefined, token);
     expect(org.status).toBe(200);
-    expect(org.body.people).toEqual([{ id: ownerId, role: "owner" }, { id: ZARA, role: "member" }]);
+    expect(org.body.people).toEqual([{ id: ownerId, role: "owner", email: "jc@gox.ca" }, { id: ZARA, role: "member", email: ZARA }]);
     const listed = await api("GET", "/api/auth/sessions", undefined, token);
     expect(listed.status).toBe(200);
     const mine = listed.body.sessions.find((session: any) => session.id === listed.body.current);

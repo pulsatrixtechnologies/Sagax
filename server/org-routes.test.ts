@@ -5,8 +5,9 @@ import { parseStoredConfig } from "./config.ts";
 import { json, readBody } from "./harness/http.ts";
 import { signInListWithOpenInvites } from "./org-directory.ts";
 import {
-  acceptInviteRoute, createOrgRoute, createOrgRoutes, getOrgRoute, inviteMailMessage, issueInviteRoute, revokeInviteRoute,
-  type OrgRouteDeps, type OrgState,
+  acceptInviteRoute, acceptOpenInvitesForEmail, createOrgRoute, createOrgRoutes, createPublicInviteRoutes, getOrgRoute, inviteLink, inviteLinkBase,
+  inviteMailMessage, invitePreviewRoute, issueInviteRoute, joinInviteRoute, maskEmail, revokeInviteRoute, updateOrgHostRoute,
+  type OrgRouteDeps, type OrgState, type PublicInviteRouteDeps,
 } from "./org-routes.ts";
 import { requiredScope } from "./request-auth.ts";
 import { dispatchRoutes } from "./routes/table.ts";
@@ -70,8 +71,8 @@ describe("org routes", () => {
         org: { name: "GOX", ownerUserId: JC, host: { kind: "server", url: "https://pulsa.gox.ca" } },
         people: [
           { id: JC, role: "owner" },
-          { id: "ada@example.test", role: "admin" },
-          { id: "zachary@example.test", role: "member" },
+          { id: "ada@example.test", role: "admin", email: "ada@example.test" },
+          { id: "zachary@example.test", role: "member", email: "zachary@example.test" },
         ],
         pendingInvites: [],
       },
@@ -84,9 +85,9 @@ describe("org routes", () => {
     state.signIn.admins = ["JC@gox.ca", "ada@example.test"];
     state.signIn.members = ["jc@gox.ca", "zachary@example.test"];
     expect(getOrgRoute(state, 1_000, "jc@gox.ca").body?.people).toEqual([
-      { id: owner, role: "owner" },
-      { id: "ada@example.test", role: "admin" },
-      { id: "zachary@example.test", role: "member" },
+      { id: owner, role: "owner", email: "jc@gox.ca" },
+      { id: "ada@example.test", role: "admin", email: "ada@example.test" },
+      { id: "zachary@example.test", role: "member", email: "zachary@example.test" },
     ]);
   });
   it("lists an open invite without treating it as a member", () => {
@@ -253,22 +254,281 @@ describe("invite mail", () => {
       mailInvite: async (input) => { seen.push(input); return true; },
     });
     await postInvite(base, "zachary@example.test");
-    expect(seen).toEqual([{ email: "zachary@example.test", token: expect.any(String), inviterEmail: "jc@gox.ca", origin: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/) }]);
+    expect(seen).toEqual([{
+      email: "zachary@example.test", token: expect.any(String), inviterEmail: "jc@gox.ca",
+      origin: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/),
+      link: expect.stringMatching(/^https:\/\/pulsa\.gox\.ca\/join#token=[0-9a-f]{32}$/),
+    }]);
   });
 });
 
 describe("invite mail text (inviteMailMessage)", () => {
-  it("names the inviter and links the public URL when both are known", () => {
-    expect(inviteMailMessage({ orgName: "GOX", inviterEmail: "jc@gox.ca", base: "https://pulsa.gox.ca" })).toEqual({
+  it("names the inviter and gives the invite link when both are known", () => {
+    expect(inviteMailMessage({ orgName: "GOX", inviterEmail: "jc@gox.ca", link: "https://pulsa.gox.ca/join#token=abc" })).toEqual({
       subject: "You are invited to GOX on Pulsa Bot",
-      text: "jc@gox.ca invited you to GOX. Sign in with this address at https://pulsa.gox.ca/pair within 7 days.",
+      text: "jc@gox.ca invited you to GOX. Open https://pulsa.gox.ca/join#token=abc within 7 days to join GOX.",
     });
   });
 
   it("falls back to a generic greeting and drops the link clause when neither is known", () => {
-    expect(inviteMailMessage({ orgName: "GOX", base: null })).toEqual({
+    expect(inviteMailMessage({ orgName: "GOX", link: null })).toEqual({
       subject: "You are invited to GOX on Pulsa Bot",
       text: "You were invited to GOX. Sign in with this address on this server's sign-in page within 7 days.",
     });
+  });
+});
+
+const DAY = 24 * 60 * 60 * 1000;
+const TOKEN = "0123456789abcdef0123456789abcdef";
+
+function invitedState(token = TOKEN, email = "Zara@Gox.ca"): OrgState {
+  const state = orgStateWithOwner();
+  issueInviteRoute(state, { actorId: JC, email, now: 1_000, token });
+  return state;
+}
+
+describe("invite links", () => {
+  it("builds <base>/join#token=<token> without a doubled slash", () => {
+    expect(inviteLink("https://pulsa.gox.ca", TOKEN)).toBe(`https://pulsa.gox.ca/join#token=${TOKEN}`);
+    expect(inviteLink("https://pulsa.gox.ca/", TOKEN)).toBe(`https://pulsa.gox.ca/join#token=${TOKEN}`);
+  });
+
+  it("points at the organization's server address, else the fallback", () => {
+    const state = orgStateWithOwner();
+    expect(inviteLinkBase(state, "http://127.0.0.1:8799")).toBe("https://pulsa.gox.ca");
+    state.org = { ...state.org!, host: { kind: "server", url: "http://10.0.0.5" } };
+    expect(inviteLinkBase(state, "https://public.example.test")).toBe("https://public.example.test");
+    state.org = { ...state.org!, host: { kind: "this-computer" } };
+    expect(inviteLinkBase(state, null)).toBeNull();
+  });
+
+  it("returns the link when an invite is issued", () => {
+    const state = orgStateWithOwner();
+    const issued = issueInviteRoute(state, { actorId: JC, email: "zara@gox.ca", now: 1, token: TOKEN, linkBase: "https://pulsa.gox.ca" });
+    expect(issued.body).toMatchObject({ link: `https://pulsa.gox.ca/join#token=${TOKEN}` });
+  });
+
+  it("gives owners and admins each pending invite's link, never members", () => {
+    const state = invitedState();
+    const owner = getOrgRoute(state, 2_000, undefined, { viewerRole: "owner", linkBase: "https://pulsa.gox.ca" }).body!;
+    expect(owner.pendingInvites).toEqual([{ email: "zara@gox.ca", expiresAt: 1_000 + 7 * DAY, token: TOKEN, link: `https://pulsa.gox.ca/join#token=${TOKEN}` }]);
+    const admin = getOrgRoute(state, 2_000, undefined, { viewerRole: "admin", linkBase: "https://pulsa.gox.ca" }).body!;
+    expect(admin.pendingInvites[0]).toHaveProperty("link");
+    const member = getOrgRoute(state, 2_000, undefined, { viewerRole: "member", linkBase: "https://pulsa.gox.ca" }).body!;
+    expect(member.pendingInvites).toEqual([{ email: "zara@gox.ca", expiresAt: 1_000 + 7 * DAY }]);
+    expect(JSON.stringify(member)).not.toContain(TOKEN);
+  });
+
+  it("serves links over HTTP only to a manager", async () => {
+    const state = invitedState();
+    const managerBase = await serveOrgRoutes({ state, now: () => 2_000 });
+    const asOwner = await (await fetch(`${managerBase}/api/org`)).json() as { pendingInvites: { link?: string }[]; viewerRole: string };
+    expect(asOwner.viewerRole).toBe("owner");
+    expect(asOwner.pendingInvites[0]?.link).toBe(`https://pulsa.gox.ca/join#token=${TOKEN}`);
+    state.signIn.members = ["ada@example.test"];
+    const memberBase = await serveOrgRoutes({ state, now: () => 2_000, actorId: () => "pr_00000000-0000-4000-8000-00000000000b", actorEmail: () => "ada@example.test" });
+    const asMember = await (await fetch(`${memberBase}/api/org`)).json() as { pendingInvites: object[]; viewerRole: string };
+    expect(asMember.viewerRole).toBe("member");
+    expect(JSON.stringify(asMember)).not.toContain(TOKEN);
+  });
+});
+
+describe("invite preview", () => {
+  it("masks the address", () => {
+    expect(maskEmail("zara@gox.ca")).toBe("z***@gox.ca");
+    expect(maskEmail("Z@Gox.ca")).toBe("z***@gox.ca");
+    expect(maskEmail("nobody")).toBe("***");
+  });
+
+  it("shows the org name and masked email for an open invite only", () => {
+    const state = invitedState();
+    expect(invitePreviewRoute(state, { token: TOKEN, now: 2_000 }).body).toEqual({ status: "open", orgName: "GOX", email: "z***@gox.ca" });
+    expect(invitePreviewRoute(state, { token: TOKEN, now: 1_000 + 7 * DAY }).body).toEqual({ status: "expired" });
+    expect(invitePreviewRoute(state, { token: "ffffffffffffffffffffffffffffffff", now: 2_000 }).body).toEqual({ status: "unknown" });
+    expect(invitePreviewRoute(state, { token: "../../etc", now: 2_000 }).body).toEqual({ status: "unknown" });
+    joinInviteRoute(state, { token: TOKEN, now: 2_000 });
+    expect(invitePreviewRoute(state, { token: TOKEN, now: 3_000 }).body).toEqual({ status: "used" });
+    const revoked = invitedState("fedcba9876543210fedcba9876543210");
+    revokeInviteRoute(revoked, { actorId: JC, token: "fedcba9876543210fedcba9876543210", now: 2_000 });
+    expect(invitePreviewRoute(revoked, { token: "fedcba9876543210fedcba9876543210", now: 3_000 }).body).toEqual({ status: "revoked" });
+  });
+
+  it("never leaks the token, the full address or a principal", () => {
+    const body = JSON.stringify(invitePreviewRoute(invitedState(), { token: TOKEN, now: 2_000 }).body);
+    expect(body).not.toContain(TOKEN);
+    expect(body).not.toContain("zara@");
+    expect(body).not.toContain("pr_");
+  });
+});
+
+describe("joining by link", () => {
+  it("joins once: marks the invite used and adds the address to members", () => {
+    const state = invitedState();
+    const joined = joinInviteRoute(state, { token: TOKEN, now: 2_000 });
+    expect(joined).toEqual({ status: 200, body: { status: "joined", orgName: "GOX" }, email: "zara@gox.ca" });
+    expect(state.signIn.members).toEqual(["zara@gox.ca"]);
+    expect(state.invites[0]?.usedAt).toBe(2_000);
+    expect(joinInviteRoute(state, { token: TOKEN, now: 3_000 })).toEqual({ status: 410, body: { status: "used" } });
+  });
+
+  it("refuses an expired, revoked or unknown link", () => {
+    expect(joinInviteRoute(invitedState(), { token: TOKEN, now: 1_000 + 7 * DAY })).toEqual({ status: 410, body: { status: "expired" } });
+    const revoked = invitedState();
+    revokeInviteRoute(revoked, { actorId: JC, token: TOKEN, now: 2_000 });
+    expect(joinInviteRoute(revoked, { token: TOKEN, now: 3_000 })).toEqual({ status: 410, body: { status: "revoked" } });
+    expect(revoked.signIn.members).toEqual([]);
+    expect(joinInviteRoute(invitedState(), { token: "ffffffffffffffffffffffffffffffff", now: 2_000 })).toEqual({ status: 404, body: { status: "unknown" } });
+  });
+
+  it("tells an existing member to sign in instead, and keeps the lists as they were", () => {
+    const state = invitedState();
+    state.signIn.members = ["zara@gox.ca"];
+    expect(joinInviteRoute(state, { token: TOKEN, now: 2_000 })).toEqual({ status: 409, body: { status: "already-member" } });
+    const admin = invitedState();
+    admin.signIn.admins = ["ZARA@gox.ca"];
+    expect(joinInviteRoute(admin, { token: TOKEN, now: 2_000 }).status).toBe(409);
+    expect(admin.signIn.members).toEqual([]);
+    expect(joinInviteRoute(invitedState(TOKEN, "jc@gox.ca"), { token: TOKEN, now: 2_000, ownerEmail: "jc@gox.ca" }).status).toBe(409);
+  });
+});
+
+describe("public invite routes over HTTP", () => {
+  async function servePublic(state: OrgState, overrides: Partial<PublicInviteRouteDeps> = {}) {
+    const failures: string[] = [];
+    const signedIn: string[] = [];
+    let locked = false;
+    const handler = createPublicInviteRoutes({
+      state,
+      now: () => 2_000,
+      limiter: {
+        source: () => "203.0.113.9",
+        allowed: () => (locked ? { ok: false, retryAfterMs: 5_000 } : { ok: true }),
+        noteFailure: (source) => failures.push(source),
+        clearFailures: () => {},
+      },
+      signIn: ({ res, email }) => { signedIn.push(email); res.setHeader("set-cookie", "omb_session=fixture; HttpOnly"); },
+      ...overrides,
+    });
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://localhost");
+      if (!(await handler({ req, res, path: url.pathname, method: req.method ?? "GET", json, readBody }))) json(res, 404, { from: "elsewhere" });
+    });
+    servers.push(server);
+    await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    return { base, failures, signedIn, lock: () => { locked = true; } };
+  }
+  const join = (base: string, token: string, contentType = "application/json") =>
+    fetch(`${base}/api/org/invites/${token}/join`, { method: "POST", headers: { "content-type": contentType, "x-forwarded-for": "203.0.113.9" }, body: "{}" });
+
+  it("previews, joins with a session cookie, then refuses the same link", async () => {
+    const state = invitedState();
+    let saved = 0;
+    const { base, signedIn } = await servePublic(state, { persist: () => { saved += 1; } });
+    const preview = await fetch(`${base}/api/org/invites/${TOKEN}/preview`);
+    expect(await preview.json()).toEqual({ status: "open", orgName: "GOX", email: "z***@gox.ca" });
+    const first = await join(base, TOKEN);
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ status: "joined", orgName: "GOX" });
+    expect(first.headers.get("set-cookie")).toContain("omb_session=");
+    expect(signedIn).toEqual(["zara@gox.ca"]);
+    expect(saved).toBe(1);
+    const second = await join(base, TOKEN);
+    expect(second.status).toBe(410);
+    expect(await second.json()).toEqual({ status: "used" });
+    expect(second.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("counts an unknown link as a failed attempt and honours the lockout", async () => {
+    const { base, failures, lock } = await servePublic(invitedState());
+    const unknown = await join(base, "ffffffffffffffffffffffffffffffff");
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toEqual({ status: "unknown" });
+    await fetch(`${base}/api/org/invites/ffffffffffffffffffffffffffffffff/preview`);
+    expect(failures).toEqual(["203.0.113.9", "203.0.113.9"]);
+    lock();
+    expect((await join(base, TOKEN)).status).toBe(429);
+    expect((await fetch(`${base}/api/org/invites/${TOKEN}/preview`)).status).toBe(429);
+  });
+
+  it("answers 409 for an existing member without a session, and refuses a form post", async () => {
+    const state = invitedState();
+    state.signIn.members = ["zara@gox.ca"];
+    const { base, signedIn } = await servePublic(state);
+    const res = await join(base, TOKEN);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ status: "already-member" });
+    expect(signedIn).toEqual([]);
+    expect((await join(base, TOKEN, "application/x-www-form-urlencoded")).status).toBe(415);
+  });
+
+  it("rolls the join back when it cannot be saved", async () => {
+    const state = invitedState();
+    const { base, signedIn } = await servePublic(state, { persist: () => { throw new Error("disk full"); } });
+    expect((await join(base, TOKEN)).status).toBe(500);
+    expect(signedIn).toEqual([]);
+    expect(state.signIn.members).toEqual([]);
+    expect(state.invites[0]?.usedAt).toBeUndefined();
+  });
+});
+
+describe("accepting invites on email sign-in", () => {
+  it("accepts the open invite for that exact address, once", () => {
+    const state = invitedState();
+    expect(acceptOpenInvitesForEmail(state, { email: "ZARA@gox.ca", now: 2_000 })).toBe(true);
+    expect(state.signIn.members).toEqual(["zara@gox.ca"]);
+    expect(state.invites[0]?.usedAt).toBe(2_000);
+    expect(acceptOpenInvitesForEmail(state, { email: "zara@gox.ca", now: 3_000 })).toBe(false);
+    expect(state.signIn.members).toEqual(["zara@gox.ca"]);
+    expect(acceptOpenInvitesForEmail(invitedState(), { email: "other@gox.ca", now: 2_000 })).toBe(false);
+    expect(acceptOpenInvitesForEmail(invitedState(), { email: "zara@gox.ca", now: 1_000 + 7 * DAY })).toBe(false);
+  });
+});
+
+describe("editing the organization's address", () => {
+  it("lets the owner change it to a valid server address", () => {
+    const state = orgStateWithOwner();
+    expect(updateOrgHostRoute(state, { actorId: JC, host: { kind: "server", url: " https://bot.gox.ca " } })).toEqual({
+      status: 200, body: { org: { name: "GOX", ownerUserId: JC, host: { kind: "server", url: "https://bot.gox.ca" } } },
+    });
+  });
+
+  it("refuses a member (403) and an invalid address (400)", () => {
+    const state = orgStateWithOwner();
+    state.signIn.members = ["ada@example.test"];
+    expect(updateOrgHostRoute(state, { actorId: "pr_00000000-0000-4000-8000-00000000000b", actorEmail: "ada@example.test", host: { kind: "server", url: "https://x.example.test" } }).status).toBe(403);
+    expect(updateOrgHostRoute(state, { actorId: JC, host: { kind: "server", url: "http://10.0.0.5" } }).status).toBe(400);
+    expect(updateOrgHostRoute(state, { actorId: JC, host: { kind: "this-computer" } }).status).toBe(400);
+    expect(state.org?.host).toEqual({ kind: "server", url: "https://pulsa.gox.ca" });
+  });
+
+  it("saves the change over PATCH /api/org", async () => {
+    const state = orgStateWithOwner();
+    let saved = 0;
+    const base = await serveOrgRoutes({ state, persist: () => { saved += 1; } });
+    const res = await fetch(`${base}/api/org`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ host: { kind: "server", url: "https://bot.gox.ca" } }) });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { org: { host: unknown } }).org.host).toEqual({ kind: "server", url: "https://bot.gox.ca" });
+    expect(saved).toBe(1);
+    const bad = await fetch(`${base}/api/org`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ host: { kind: "server", url: "ftp://x" } }) });
+    expect(bad.status).toBe(400);
+    expect(requiredScope("PATCH", "/api/org")).toBe("admin");
+  });
+});
+
+describe("people by email", () => {
+  it("shows each principal's email and each sign-in entry as its email", () => {
+    const state = orgStateWithOwner();
+    state.signIn.members = ["Zara@gox.ca"];
+    const people = getOrgRoute(state, 1, undefined, { emailOf: (id) => (id === JC ? "jc@gox.ca" : undefined) }).body!.people;
+    expect(people).toEqual([
+      { id: JC, role: "owner", email: "jc@gox.ca" },
+      { id: "Zara@gox.ca", role: "member", email: "zara@gox.ca" },
+    ]);
+  });
+
+  it("falls back to the owner email when the principal has none", () => {
+    const state = orgStateWithOwner();
+    expect(getOrgRoute(state, 1, "jc@gox.ca", { emailOf: () => undefined }).body!.people).toEqual([{ id: JC, role: "owner", email: "jc@gox.ca" }]);
   });
 });

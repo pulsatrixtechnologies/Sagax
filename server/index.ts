@@ -563,7 +563,8 @@ import { ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
-import { createOrgRoutes, inviteMailMessage, type OrgState } from "./org-routes.ts";
+import type { OrgRecord } from "./org-record.ts";
+import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import {
   channelTurnGate,
@@ -14479,19 +14480,31 @@ ROUTES.push(createWorkerRoutes({
     failWorkerTurns([messageId], "The turn failed because the author cancelled.");
   },
 }));
+/** A principal's sign-in email. The local operator without one takes the
+ * profile email, and it is synced onto the principal, so the owner is shown
+ * by address rather than by id. */
+function principalEmail(id: string): string | undefined {
+  const found = principals.byId(id);
+  if (found?.email) return found.email;
+  if (found?.local && cfg.profile?.email && isAccountEmail(cfg.profile.email)) return principals.localOperator(cfg.profile.email).email;
+  return undefined;
+}
+function persistOrgState(next?: { org?: OrgRecord }) {
+  const org = next?.org ?? orgState.org;
+  saveConfig({
+    ...(org ? { org } : {}),
+    invites: orgState.invites,
+    signIn: { admins: orgState.signIn.admins, members: orgState.signIn.members },
+  });
+}
 ROUTES.push(createOrgRoutes({
   state: orgState,
   actorId: actorPrincipalId,
   actorEmail,
-  ownerEmail: () => (orgState.org ? principals.byId(orgState.org.ownerUserId)?.email : undefined),
-  persist: (next) => {
-    const org = next?.org ?? orgState.org;
-    saveConfig({
-      ...(org ? { org } : {}),
-      invites: orgState.invites,
-      signIn: { admins: orgState.signIn.admins, members: orgState.signIn.members },
-    });
-  },
+  ownerEmail: () => (orgState.org ? principalEmail(orgState.org.ownerUserId) : undefined),
+  emailOf: principalEmail,
+  publicUrl,
+  persist: persistOrgState,
   // A stream opened before the organization was built with no filter for a
   // session without a principal (or the operator's own phone). End every
   // session-backed unfiltered stream so it reconnects under the org filter.
@@ -14507,12 +14520,11 @@ ROUTES.push(createOrgRoutes({
       }
     }
   },
-  mailInvite: async ({ email, inviterEmail, origin }) => {
+  mailInvite: async ({ email, inviterEmail, link }) => {
     const send = mailer();
     if (!send) return false;
     const orgName = orgState.org?.name ?? "Pulsa Bot";
-    const base = publicUrl() ?? origin ?? null;
-    const message = inviteMailMessage({ orgName, inviterEmail, base });
+    const message = inviteMailMessage({ orgName, inviterEmail, link });
     try {
       await send.send({ to: email, ...message });
       return true;
@@ -14522,6 +14534,27 @@ ROUTES.push(createOrgRoutes({
     }
   },
 }));
+
+// Invite links (/join#token=...): public like /api/auth/email/start, and
+// counted against the same per-source lockout as pairing. Security model:
+// server/org-routes.ts `joinInviteRoute`.
+const publicInvites = createPublicInviteRoutes({
+  state: orgState,
+  ownerEmail: () => (orgState.org ? principalEmail(orgState.org.ownerUserId) : undefined),
+  limiter: {
+    source: requestSource,
+    allowed: (source) => sessions.attemptAllowed(source),
+    noteFailure: (source) => sessions.noteFailure(source),
+    clearFailures: (source) => sessions.clearFailures(source),
+  },
+  persist: () => persistOrgState(),
+  signIn: ({ req, res, email }) => {
+    const principal = principals.forAccount({ email });
+    const issued = sessions.issue({ label: `Invited: ${email}`, scopes: ["client"], email, principalId: principal.id });
+    const secure = requestOrigin(req)?.startsWith("https://") === true;
+    res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }));
+  },
+});
 
 const toolResults = new ToolResults();
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
@@ -14552,7 +14585,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // Hosted workspaces have one sign-in authority. A missing optional layer
     // must not accidentally reactivate legacy email/QR credential minting.
     if (HOSTED_WORKSPACE) {
-      if (method === "POST" && ["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path)) {
+      if ((method === "POST" && ["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path)) || PUBLIC_INVITE_PATH.test(path)) {
         return json(res, 403, { error: "Sign in through the workspace portal." });
       }
       if (workspaceAccess) {
@@ -14563,7 +14596,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     // An enrolled organisation that turns remote access off refuses new pairing
     // codes and new remote sessions. Existing sessions and this app are unchanged.
-    if (method === "POST" && ["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path)) {
+    if (method === "POST" && (["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path) || PUBLIC_INVITE_PATH.test(path))) {
       const refusal = managedPolicy.remoteAccessRefusal();
       if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
     }
@@ -14612,6 +14645,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       sessions.clearFailures(source);
       if (!isAccountEmail(verified.email)) return json(res, 400, { error: "this address cannot sign in: at most 320 characters, shaped name@domain" });
+      // A verified address with an open invite joins: proving you own the
+      // address is what the invite link would have proven. Idempotent.
+      if (acceptOpenInvitesForEmail(orgState, { email: verified.email, now: Date.now() })) {
+        try {
+          persistOrgState();
+        } catch (error) {
+          console.warn(`accepting the invite for ${verified.email} could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
       const principal = principals.forAccount({ email: verified.email, controlPlaneUserId: verified.userId || undefined });
       const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id });
       const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: true, sharedComputers: sharedComputersEnabled(cfg) });
@@ -14619,6 +14661,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }));
       return json(res, 200, { session: issued.session, environment });
     }
+    if (await publicInvites({ req, res, path, method, json, readBody })) return;
     // The Admin's signed request for one pairing window on a Cloud home
     // machine. Public like /api/auth/pair, JSON only, and bad signatures
     // count against the same lockout. Never log its headers, body or code.
