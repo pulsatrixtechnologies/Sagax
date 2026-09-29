@@ -5,7 +5,9 @@ import {
   ClipboardPaste,
   FlaskConical,
   Globe,
+  KeyRound,
   Loader2,
+  LogOut,
   Pencil,
   Plus,
   RefreshCw,
@@ -37,7 +39,16 @@ interface RemoteMcpListing {
   url: string;
   headerKeys: string[];
   enabled: boolean;
+  /** OAuth sign-in state; absent when the server has not been asked yet. */
+  auth?: McpAuthState;
+  authError?: string;
+  /** "needed": the server offers no dynamic registration, so a client ID
+   * registered with the provider must be entered before signing in. */
+  authClient?: "dynamic" | "manual" | "needed";
+  authIssuer?: string;
+  authPending?: boolean;
 }
+export type McpAuthState = "none" | "required" | "connected" | "expired" | "error";
 /** managedBy: the enrolled organisation has not approved this server, so it
  * stays configured but never reaches bots. */
 export type McpServerListing = (StdioMcpListing | RemoteMcpListing) & { managedBy?: string };
@@ -68,6 +79,31 @@ interface ProbeResult {
 interface McpMessage {
   key: LocaleKey;
   params?: Record<string, string | number>;
+}
+
+/** How long the panel waits for the browser to come back from a sign-in:
+ * the server forgets the pending flow after ten minutes too. */
+const SIGN_IN_WAIT_MS = 10 * 60_000;
+const SIGN_IN_POLL_MS = 2_000;
+
+/** The system browser in the desktop app; a new tab on the web. The tab is
+ * opened blank first so the provider never gets a handle on this window. */
+async function openSignInPage(url: string): Promise<boolean> {
+  if (window.ogb?.openExternal) {
+    await window.ogb.openExternal(url);
+    return true;
+  }
+  const opened = window.open("", "_blank");
+  if (!opened) return false;
+  opened.opener = null;
+  opened.location.replace(url);
+  return true;
+}
+
+interface ClientDraft {
+  redirectUri: string;
+  clientId: string;
+  clientSecret: string;
 }
 
 const EMPTY_DRAFT: McpDraft = { name: "", transport: "stdio", command: "", args: "", env: "", type: "http", url: "", headers: "" };
@@ -165,6 +201,10 @@ export function McpServersPanel() {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const loadGeneration = useRef(0);
+  const [oauthError, setOauthError] = useState<Record<string, string | McpMessage>>({});
+  const [waiting, setWaiting] = useState<Record<string, boolean>>({});
+  const [clientDraft, setClientDraft] = useState<Record<string, ClientDraft>>({});
+  const waiters = useRef(new Map<string, { timer: ReturnType<typeof setInterval>; until: number }>());
 
   // Paste-to-add: the same block Claude Code, Cursor and Claude Desktop
   // write. The server applies the form's rules and adds them switched off.
@@ -192,11 +232,11 @@ export function McpServersPanel() {
     }
   };
 
-  const load = useCallback(() => {
+  const load = useCallback((reprobe = false) => {
     const generation = ++loadGeneration.current;
     setBusy("load");
     setError(null);
-    return api("/api/mcp/servers")
+    return api(reprobe ? "/api/mcp/servers?reprobe=1" : "/api/mcp/servers")
       .then((result) => {
         if (generation === loadGeneration.current) {
           setServers(result.servers ?? []);
@@ -213,8 +253,137 @@ export function McpServersPanel() {
 
   useEffect(() => {
     void load();
-    return () => { loadGeneration.current += 1; };
+    const pending = waiters.current;
+    return () => {
+      loadGeneration.current += 1;
+      for (const { timer } of pending.values()) clearInterval(timer);
+      pending.clear();
+    };
   }, [load]);
+
+  const stopWaiting = useCallback((name: string) => {
+    const waiter = waiters.current.get(name);
+    if (waiter) clearInterval(waiter.timer);
+    waiters.current.delete(name);
+    setWaiting((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
+  }, []);
+
+  /** Refresh the list once, quietly: the row flips when the sign-in lands. */
+  const reloadQuietly = useCallback(async () => {
+    try {
+      const result = await api("/api/mcp/servers");
+      setServers(result.servers ?? []);
+      updateMcpServers(result.servers ?? []);
+    } catch {
+      // the next poll or a manual refresh tries again
+    }
+  }, []);
+
+  /** Poll one server's sign-in state until it connects, fails or times out. */
+  const waitForSignIn = useCallback((name: string) => {
+    const existing = waiters.current.get(name);
+    if (existing) clearInterval(existing.timer);
+    setWaiting((current) => ({ ...current, [name]: true }));
+    const until = Date.now() + SIGN_IN_WAIT_MS;
+    const timer = setInterval(() => {
+      void (async () => {
+        if (Date.now() > until) {
+          stopWaiting(name);
+          setOauthError((current) => ({ ...current, [name]: { key: "mcp.oauth.timedOut" } }));
+          return;
+        }
+        try {
+          const status = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/status`);
+          if (status.auth === "connected") {
+            stopWaiting(name);
+            setNotice({ key: "mcp.oauth.done", params: { name } });
+            await reloadQuietly();
+          } else if (!status.pending) {
+            stopWaiting(name);
+            if (status.authError) setOauthError((current) => ({ ...current, [name]: String(status.authError) }));
+            await reloadQuietly();
+          }
+        } catch {
+          // transient: keep polling until the deadline
+        }
+      })();
+    }, SIGN_IN_POLL_MS);
+    waiters.current.set(name, { timer, until });
+  }, [reloadQuietly, stopWaiting]);
+
+  // The callback page tells same-origin windows the outcome at once.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("pulsa-mcp-oauth");
+    channel.onmessage = (event: MessageEvent) => {
+      const data = event.data as { type?: unknown; name?: unknown } | null;
+      if (data?.type !== "mcp-oauth" || typeof data.name !== "string") return;
+      if (waiters.current.has(data.name)) void reloadQuietly();
+    };
+    return () => channel.close();
+  }, [reloadQuietly]);
+
+  const signIn = async (server: McpServerListing) => {
+    const name = server.name;
+    const client = clientDraft[name];
+    setBusy(`oauth:${name}`);
+    setOauthError((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
+    setNotice(null);
+    try {
+      const result = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/start`, {
+        method: "POST",
+        body: JSON.stringify(client?.clientId.trim()
+          ? { clientId: client.clientId.trim(), ...(client.clientSecret.trim() ? { clientSecret: client.clientSecret.trim() } : {}) }
+          : {}),
+      });
+      if (typeof result.authorizationUrl !== "string") throw new Error(t("mcp.oauth.error"));
+      if (!(await openSignInPage(result.authorizationUrl))) {
+        setOauthError((current) => ({ ...current, [name]: { key: "mcp.oauth.popupBlocked" } }));
+        return;
+      }
+      setClientDraft((current) => {
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
+      waitForSignIn(name);
+    } catch (cause) {
+      const detail = cause as Error & { body?: { code?: unknown; redirectUri?: unknown } };
+      if (detail.body?.code === "client_required" && typeof detail.body.redirectUri === "string") {
+        const redirectUri = detail.body.redirectUri;
+        setClientDraft((current) => ({ ...current, [name]: { redirectUri, clientId: current[name]?.clientId ?? "", clientSecret: current[name]?.clientSecret ?? "" } }));
+        return;
+      }
+      setOauthError((current) => ({ ...current, [name]: cause instanceof Error ? cause.message : String(cause) }));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const signOut = async (server: McpServerListing) => {
+    const name = server.name;
+    setBusy(`oauth:${name}`);
+    stopWaiting(name);
+    loadGeneration.current += 1;
+    try {
+      const result = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/disconnect`, { method: "POST", body: "{}" });
+      setServers(result.servers ?? []);
+      updateMcpServers(result.servers ?? []);
+      setNotice({ key: "mcp.oauth.disconnected", params: { name } });
+    } catch (cause) {
+      setOauthError((current) => ({ ...current, [name]: cause instanceof Error ? cause.message : String(cause) }));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const closeEditor = () => {
     setEditing(null);
@@ -266,7 +435,9 @@ export function McpServersPanel() {
       );
       setServers(result.servers ?? []);
       updateMcpServers(result.servers ?? []);
-      setNotice({ key: editing === "new" ? "mcp.saved" : "mcp.updated", params: { name } });
+      const saved = (result.servers as McpServerListing[] | undefined)?.find((server) => server.name === name);
+      const needsSignIn = saved && isRemoteMcpListing(saved) && (saved.auth === "required" || saved.auth === "expired");
+      setNotice({ key: needsSignIn && editing === "new" ? "mcp.oauth.addedNeedsSignIn" : editing === "new" ? "mcp.saved" : "mcp.updated", params: { name } });
       closeEditor();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -355,7 +526,7 @@ export function McpServersPanel() {
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              onClick={() => void load()}
+              onClick={() => void load(true)}
               disabled={busy !== null}
               className="rounded-lg p-2 text-ink-secondary transition-colors hover:bg-raised hover:text-ink disabled:opacity-40"
               aria-label={t("mcp.refreshAria")}
@@ -592,8 +763,33 @@ export function McpServersPanel() {
                       {isRemoteMcpListing(server)
                         ? server.headerKeys.length > 0 && <div className="mt-1 truncate text-[11px] text-ink-secondary">{t("mcp.headersSaved", { keys: server.headerKeys.join(", ") })}</div>
                         : server.envKeys.length > 0 && <div className="mt-1 truncate text-[11px] text-ink-secondary">{t("mcp.secretsSaved", { keys: server.envKeys.join(", ") })}</div>}
+                      {isRemoteMcpListing(server) && <McpAuthLine server={server} />}
                     </div>
-                    <div className="flex shrink-0 items-center gap-1">
+                    <div className="flex shrink-0 flex-wrap items-center gap-1">
+                      {isRemoteMcpListing(server) && (server.auth === "required" || server.auth === "expired") && (
+                        <button
+                          type="button"
+                          disabled={busy !== null || Boolean(server.managedBy)}
+                          onClick={() => void signIn(server)}
+                          className="ui-button ui-button-primary mr-1 flex items-center gap-1.5 text-[12px] font-medium"
+                          aria-label={t("mcp.oauth.signInAria", { name: server.name })}
+                        >
+                          {busy === `oauth:${server.name}` || waiting[server.name] ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
+                          {t(server.auth === "expired" ? "mcp.oauth.signInAgain" : "mcp.oauth.signIn")}
+                        </button>
+                      )}
+                      {isRemoteMcpListing(server) && server.auth === "connected" && (
+                        <button
+                          type="button"
+                          disabled={busy !== null}
+                          onClick={() => void signOut(server)}
+                          className="ui-button mr-1 flex items-center gap-1.5 text-[12px]"
+                          aria-label={t("mcp.oauth.disconnectAria", { name: server.name })}
+                        >
+                          {busy === `oauth:${server.name}` ? <Loader2 size={13} className="animate-spin" /> : <LogOut size={13} />}
+                          {t("mcp.oauth.disconnect")}
+                        </button>
+                      )}
                       <button type="button" disabled={busy !== null} onClick={() => void test(server)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40">
                         {busy === `test:${server.name}` ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />} {t("mcp.test")}
                       </button>
@@ -607,6 +803,32 @@ export function McpServersPanel() {
                       <button type="button" disabled={busy !== null} onClick={() => void remove(server)} className="rounded-lg p-2 text-ink-secondary hover:bg-danger/10 hover:text-danger disabled:opacity-40" aria-label={t("mcp.removeAria", { name: server.name })}><Trash2 size={14} /></button>
                     </div>
                   </div>
+                  {waiting[server.name] && (
+                    <div role="status" className="mt-3 flex items-center gap-2 rounded-lg bg-raised/60 px-3 py-2 text-[12px] text-ink-secondary">
+                      <Loader2 size={13} className="shrink-0 animate-spin" /> {t("mcp.oauth.waiting")}
+                    </div>
+                  )}
+                  {clientDraft[server.name] && (
+                    <McpClientForm
+                      draft={clientDraft[server.name]!}
+                      disabled={busy !== null}
+                      onChange={(next) => setClientDraft((current) => ({ ...current, [server.name]: next }))}
+                      onCancel={() => setClientDraft((current) => {
+                        const next = { ...current };
+                        delete next[server.name];
+                        return next;
+                      })}
+                      onSubmit={() => void signIn(server)}
+                    />
+                  )}
+                  {oauthError[server.name] && (
+                    <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                      {(() => {
+                        const value = oauthError[server.name]!;
+                        return typeof value === "string" ? value : t(value.key, value.params);
+                      })()}
+                    </div>
+                  )}
                   {result && (
                     <div role="status" className={cn("mt-3 rounded-lg px-3 py-2 text-[12px]", result.ok ? "bg-success/10 text-success" : "bg-danger/10 text-danger")}>
                       {result.ok ? (
@@ -619,6 +841,70 @@ export function McpServersPanel() {
             })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** One line under a remote server: whether bots can reach it signed in. */
+function McpAuthLine({ server }: { server: RemoteMcpListing & { managedBy?: string } }) {
+  const issuer = server.authIssuer ?? new URL(server.url).host;
+  if (!server.auth || server.auth === "none") return null;
+  if (server.auth === "connected") {
+    return (
+      <div className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-success">
+        <CheckCircle2 size={12} className="shrink-0" /> <span className="truncate">{t("mcp.oauth.connectedWith", { issuer })}</span>
+      </div>
+    );
+  }
+  if (server.auth === "error") {
+    return (
+      <div className="mt-1.5 text-[11.5px] text-danger">
+        <span className="font-medium">{t("mcp.oauth.error")}</span>{server.authError ? `. ${server.authError}` : ""}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1.5 text-[11.5px] text-ink-secondary">
+      <span className="rounded-full bg-raised px-2 py-0.5 text-[10.5px] font-medium text-ink">{t(server.auth === "expired" ? "mcp.oauth.expired" : "mcp.oauth.required")}</span>{" "}
+      {server.auth === "expired" ? t("mcp.oauth.expiredHint") : t("mcp.oauth.requiredWith", { issuer })}
+      {server.authError && <span className="mt-1 block text-danger">{server.authError}</span>}
+    </div>
+  );
+}
+
+/** For a provider without dynamic registration: the client the user made
+ * there, and the redirect URI they must give it. */
+function McpClientForm({ draft, disabled, onChange, onCancel, onSubmit }: {
+  draft: ClientDraft;
+  disabled: boolean;
+  onChange: (next: ClientDraft) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="mt-3 rounded-xl border border-hairline/60 bg-raised/35 p-3.5">
+      <div className="text-[12.5px] font-medium text-ink">{t("mcp.oauth.clientTitle")}</div>
+      <p className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">{t("mcp.oauth.clientHint")}</p>
+      <label className="mt-3 block">
+        <span className="text-[11.5px] font-medium text-ink-secondary">{t("mcp.oauth.redirectUri")}</span>
+        <input readOnly value={draft.redirectUri} onFocus={(event) => event.currentTarget.select()} className="mt-1 w-full rounded-lg border border-hairline/60 bg-raised px-3 py-2 font-mono text-[12px] text-ink outline-none focus:border-accent" />
+      </label>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-[11.5px] font-medium text-ink-secondary">{t("mcp.oauth.clientId")}</span>
+          <input autoFocus value={draft.clientId} onChange={(event) => onChange({ ...draft, clientId: event.target.value })} spellCheck={false} className="mt-1 w-full rounded-lg border border-hairline/60 bg-raised px-3 py-2 font-mono text-[12px] text-ink outline-none focus:border-accent" />
+        </label>
+        <label className="block">
+          <span className="text-[11.5px] font-medium text-ink-secondary">{t("mcp.oauth.clientSecret")}</span>
+          <input type="password" autoComplete="off" value={draft.clientSecret} onChange={(event) => onChange({ ...draft, clientSecret: event.target.value })} spellCheck={false} className="mt-1 w-full rounded-lg border border-hairline/60 bg-raised px-3 py-2 font-mono text-[12px] text-ink outline-none focus:border-accent" />
+        </label>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className="ui-button text-[12px]">{t("mcp.cancel")}</button>
+        <button type="button" disabled={disabled || !draft.clientId.trim()} onClick={onSubmit} className="ui-button ui-button-primary flex items-center gap-1.5 text-[12px] font-medium">
+          <KeyRound size={13} /> {t("mcp.oauth.signIn")}
+        </button>
       </div>
     </div>
   );

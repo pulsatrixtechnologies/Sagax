@@ -546,7 +546,7 @@ function Bubble({
         <span
           className={cn(
             "self-end pb-1 text-[11px] tabular-nums text-ink-secondary/70 opacity-0 transition-opacity group-hover:opacity-100",
-            user ? "order-first mr-1" : "ml-1",
+            user ? "order-first mr-2" : "ml-2",
           )}
         >
           {formatTime(message.at)}
@@ -1227,7 +1227,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   const canOpenResults = resultsThreadId && [...state.bots, ...state.groups].some((owner) => owner.threadId === resultsThreadId || owner.tasks?.some((task) => task.threadId === resultsThreadId));
 
   return (
-    <main className="relative flex h-full min-w-0 flex-1 flex-col bg-app">
+    <main className="app-glow relative flex h-full min-w-0 flex-1 flex-col bg-app">
       {/* Call mode covers the thread while the bot is on the line */}
       <CallOverlay bot={bot} />
       {/* Header */}

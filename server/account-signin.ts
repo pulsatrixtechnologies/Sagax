@@ -11,6 +11,8 @@
 // not expose the routes.
 import { resolveCompanionControlPlaneURL } from "../electron/companion-account-service.mjs";
 import { ControlPlaneError, createControlPlaneClient, normalizeAccountEmail, type ControlPlaneClient } from "../electron/control-plane-client.mjs";
+import type { EmailOtpStore } from "./email-otp.ts";
+import type { Mailer } from "./mailer.ts";
 import type { Scope } from "./sessions.ts";
 
 /** Who may sign in. `a@b.com` is that address; `@b.com` is everyone at b.com. */
@@ -47,7 +49,9 @@ export type SignInFailure = { ok: false; status: number; error: string };
 
 export interface EmailSignIn {
   enabled(): boolean;
-  start(email: string): Promise<{ ok: true } | SignInFailure>;
+  /** `source` is the caller's rate-limiting bucket (an IP or similar);
+   * "unknown" when the caller has none to offer. */
+  start(email: string, source?: string): Promise<{ ok: true } | SignInFailure>;
   verify(email: string, code: string): Promise<{ ok: true; email: string; userId: string; scopes: Scope[] } | SignInFailure>;
 }
 
@@ -109,6 +113,60 @@ export function createEmailSignIn(options: {
       const scopes = allowedScopes(verified.user.email, allow());
       if (!scopes) return NOT_WELCOME;
       return { ok: true, email: verified.user.email, userId: verified.user.id, scopes };
+    },
+  };
+}
+
+// Sign in with your email on a server that emails the code itself (no
+// outside account service): the code comes from `EmailOtpStore` and is sent
+// through whatever `Mailer` this server has configured (server/mailer.ts,
+// server/mail-config.ts). Same allow-list, same session outcome as
+// `createEmailSignIn` above; only the source of the code and the mail
+// differs, which is why both share `EmailSignIn`.
+export function createServerEmailSignIn(options: {
+  allow: SignInAllowList | (() => SignInAllowList);
+  otp: EmailOtpStore;
+  mailer: () => Mailer | null;
+  source?: () => string;
+  appName?: string;
+  publicUrl?: () => string | null;
+}): EmailSignIn {
+  const allow = () => (typeof options.allow === "function" ? options.allow() : options.allow);
+  const appName = options.appName ?? "Pulsa Bot";
+  return {
+    enabled: () => signInEnabled(allow()) && options.mailer() !== null,
+    async start(rawEmail, source) {
+      const email = rawEmail.trim().toLowerCase();
+      if (!email.includes("@")) return { ok: false, status: 400, error: "enter a valid email address" };
+      if (!allowedScopes(email, allow())) return NOT_WELCOME;
+      const mailer = options.mailer();
+      if (!mailer) return { ok: false, status: 502, error: "email sign-in is not set up on this server; use a pairing code" };
+      const issued = options.otp.issue(email, source ?? options.source?.() ?? "unknown");
+      if (!issued.ok) return issued;
+      const url = options.publicUrl?.();
+      const text = `Your code is ${issued.code}. It expires in 10 minutes.${url ? ` Sign in at ${url}/pair.` : ""}`;
+      try {
+        await mailer.send({ to: email, subject: `Your ${appName} sign-in code`, text });
+      } catch (error) {
+        // The code was minted but never delivered: void it so it cannot be
+        // found by an attacker who happens to guess it. The provider detail
+        // (never the code) is logged server-side only: this route is public
+        // and unauthenticated, so the response stays generic.
+        options.otp.revoke(email);
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn(`sign-in email to ${email} could not be sent: ${detail}`);
+        return { ok: false, status: 502, error: "the sign-in email could not be sent; try again in a moment" };
+      }
+      return { ok: true };
+    },
+    async verify(rawEmail, code) {
+      const email = rawEmail.trim().toLowerCase();
+      const scopes = allowedScopes(email, allow());
+      if (!scopes) return NOT_WELCOME;
+      const verified = options.otp.verify(email, code);
+      if (!verified.ok) return verified;
+      // No outside account service, so there is no separate account user id.
+      return { ok: true, email, userId: "", scopes };
     },
   };
 }

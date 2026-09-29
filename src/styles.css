@@ -76,10 +76,6 @@
   /* onboarding: a spotlight card or a first-sight hint scaling in from its
      anchor. Never from zero; nothing appears from nothing. */
   --animate-spot-in: spot-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
-  /* onboarding: a badge circling a centre. --angle (deg), --radius (px)
-     and --duration are set per element. Linear, because it is constant
-     motion, and GPU-only. */
-  --animate-orbit: orbit var(--duration, 24s) linear infinite;
   /* onboarding: a surface reacting once to an event (a routine firing) */
   --animate-ripple: ripple 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
   /* onboarding: a bolt travelling from a webhook address to the bot */
@@ -118,6 +114,8 @@
   --color-success: #38d591;
   --color-danger: #ff5667;
   --color-warning: #ff9800;
+  /* Top-of-window light wash (see Pulsatrix, below). "none" everywhere else. */
+  --app-glow: none;
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
@@ -161,6 +159,68 @@
   --color-scrollbar: #3d3d3d;
   /* second speed line of the mascot — contrasts against the app ground */
   --color-maus-line: #fcfcfc;
+  --app-glow: none;
+}
+
+/* ── Pulsatrix ─────────────────────────────────────────────────────────────
+   Pulsatrix v3's own dark palette (console/src/index.css), carried over
+   verbatim: deep navy ground, blue-violet accent, and a soft ice-glow
+   radiating from the top of the window. The default skin for new installs
+   and for anyone who never picked one (see DEFAULT_SKIN in src/lib/skins.ts);
+   an explicit choice of Midnight or another skin is never overridden.
+
+   --app-glow is this skin's one structural addition: v3's radial wash, at
+   its exact 16%/9% mix, applied via `.app-glow` on the chat/group `<main>`
+   rather than painted here — this token is just the single source of truth
+   for the expression. Every other skin declares it as "none".
+
+   Two fills would fall short of this file's 4.5:1 gate carrying white the
+   way v3 does (accent 4.13:1, danger 3.37:1), so both take the app's own
+   deep navy as ink instead — the same inversion Foundry uses for its brass:
+   a bright fill reads better with a dark mark than a light one forced onto
+   it. --color-ink-secondary is checked against every surface it can land on,
+   including raised-hover, the tightest of the lot at 5.62:1.
+   ───────────────────────────────────────────────────────────────────────── */
+[data-skin="pulsatrix"] {
+  --code-color-scheme: dark;
+  --color-app: #030b17;
+  --color-panel: #060f20;
+  --color-raised: #16233c;
+  --color-raised-hover: #1d2d4c;
+  --color-composer: #16233c;    /* = raised: unchanged */
+  --color-composer-ring: transparent;
+  --color-card: #0d192c;
+  --color-menu: #0d1729;
+  --color-inset: #081427;
+  --color-control: #16233c;       /* = raised: unchanged */
+  --color-hairline: #223353;
+
+  --color-ink: #eef2fb;
+  --color-ink-secondary: #9aa6c2;   /* 5.62:1 on raised-hover, the tightest surface */
+
+  --color-accent: #3c76f4;
+  --color-accent-border: #4f86f7;
+  --color-accent-text: #c8e4ff;
+  --color-focus: #4f86f7;
+  --color-accent-ink: #030b17;      /* white measures 4.13:1 here; see above */
+  --color-bubble-user: #1e3358;     /* blue-tinted, one step off the card */
+  --color-bubble-user-ink: #eef2fb;   /* = ink: unchanged */
+
+  --color-success: #38d591;
+  --color-danger: #f2555f;
+  --color-danger-ink: #030b17;      /* white measures 3.37:1 here; see above */
+  --color-success-ink: #072114;
+  --color-warning: #ff9800;
+  --color-scrollbar: #2a3f66;
+  --color-maus-line: #9aa6c2;
+  --app-glow:
+    radial-gradient(ellipse 110% 62% at 50% 0%, color-mix(in oklch, var(--color-accent) 16%, transparent), transparent 70%),
+    radial-gradient(ellipse 72% 44% at 80% 0%, color-mix(in oklch, var(--color-accent) 9%, transparent), transparent 68%);
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", system-ui, sans-serif;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
 }
 
 /* ── Midnight ──────────────────────────────────────────────────────────────
@@ -191,6 +251,7 @@
   --color-accent: #d6d6d6;
   --color-accent-border: #a3a3a3;
   --color-accent-text: #e8e8e8;
+  --color-focus: #bdbdbd;    /* = @theme default: unchanged */
   --color-accent-ink: #111111;
   --color-bubble-user: #5a5a5a;
   --color-bubble-user-ink: #fcfcfc;   /* = ink: unchanged */
@@ -201,6 +262,7 @@
   --color-warning: #ff9800;
   --color-scrollbar: #3d3d3d;
   --color-maus-line: #fcfcfc;
+  --app-glow: none;
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
@@ -252,6 +314,7 @@
   --color-warning: #7a5f31;       /* darkened → 4.98:1 */
   --color-scrollbar: #c9c0ae;
   --color-maus-line: #6b6559;
+  --app-glow: none;
 
   /* System faces rather than Inter: paper reads as the platform's own. */
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -310,6 +373,7 @@
   --color-warning: #dfa441;
   --color-scrollbar: #3d3529;
   --color-maus-line: #b0a696;
+  --app-glow: none;
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
@@ -374,6 +438,7 @@
   --color-warning: #7a5a2a;
   --color-scrollbar: #a6b8b6;
   --color-maus-line: #4d5c5b;
+  --app-glow: none;
 
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
@@ -418,6 +483,7 @@
   --color-warning: #d3a150;
   --color-scrollbar: #464b54;
   --color-maus-line: #b3b8c2;
+  --app-glow: none;
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
@@ -462,6 +528,7 @@
   --color-warning: #765b2b;
   --color-scrollbar: #aeb6c0;
   --color-maus-line: #59616c;
+  --app-glow: none;
 
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
@@ -505,6 +572,7 @@
   --color-warning: #d0a35d;
   --color-scrollbar: #4a414f;
   --color-maus-line: #b9afbd;
+  --app-glow: none;
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
@@ -564,6 +632,7 @@
   --color-warning: #8a5a00;
   --color-scrollbar: #c4c4c4;
   --color-maus-line: #5f5f5f;
+  --app-glow: none;
 
   --font-sans: "Inter", -apple-system, blinkmacsystemfont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
@@ -589,10 +658,47 @@
   text-align: start;
 }
 
+/* Soft top-of-window light (Pulsatrix only — every other skin sets
+   --app-glow to "none", so this rule is inert there). Painted on the chat
+   and group shell (`<main>`, which holds bg-app), not on the scrolling
+   transcript inside it, so the wash sits once behind the header and the
+   thread instead of repeating or drifting with scroll position. `local`
+   ties it to this element's own box rather than the viewport, which matters
+   inside Electron's multi-window shell. */
+.app-glow {
+  background-image: var(--app-glow);
+  background-repeat: no-repeat;
+  background-attachment: local;
+}
+
 html,
 body,
 #root {
   height: 100%;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   FONTS
+   An optional interface-font override, independent of the skin (see
+   src/lib/fonts.ts). `:root[data-font]` outranks the skins' `[data-skin]`
+   blocks, so the choice holds on every skin. No attribute = the skin's font.
+   Poppins is used when installed on the system; otherwise the stack falls
+   back to the system UI font.
+   ──────────────────────────────────────────────────────────────────────── */
+:root[data-font="system"] {
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+:root[data-font="inter"] {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", Roboto, sans-serif;
+}
+:root[data-font="poppins"] {
+  --font-sans: "Poppins", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+}
+:root[data-font="serif"] {
+  --font-sans: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
 }
 
 body {
@@ -757,15 +863,11 @@ body {
   from { transform: translateY(10px); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
-@keyframes orbit {
-  from {
-    transform: translate(-50%, -50%) rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px)) rotate(calc(var(--angle) * -1deg));
-  }
-  to {
-    transform: translate(-50%, -50%) rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px)) rotate(calc(var(--angle) * -1deg - 360deg));
-  }
+/* thinking dots in the onboarding chat scenes */
+@keyframes dot-bob {
+  0%, 60%, 100% { transform: none; opacity: 0.5; }
+  30% { transform: translateY(-3px); opacity: 1; }
 }
-/* thinking dots in the onboarding chat scene */
 @keyframes ripple {
   from { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-accent) 55%, transparent); }
   to { box-shadow: 0 0 0 14px color-mix(in oklab, var(--color-accent) 0%, transparent); }
@@ -832,8 +934,6 @@ body {
   .thinking-shimmer { background: none; color: var(--color-ink-secondary); }
   .turn-mascot-in, .turn-mascot-out, .turn-answer { animation: none; }
   .animate-rise, .animate-spot-in { animation: none; }
-  /* orbiting badges hold at their starting angle; the scene places them */
-  .animate-orbit { animation: none; }
   .animate-ripple, .animate-bolt { animation: none; }
   /* The drawer still moves, it just arrives instantly. */
   aside { transition: none; }

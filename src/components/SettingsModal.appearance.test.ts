@@ -117,7 +117,7 @@ describe("Settings → Appearance", () => {
     vi.stubGlobal("window", { ogb: { remoteClient: { active: true } } });
     const html = render();
     expect(html).toContain('<option value="appearance" selected="">Appearance</option>');
-    expect(html).toContain('<option value="companion">Remote access</option>');
+    expect(html).toContain('<option value="companion">Your other devices</option>');
     expect(html).not.toContain('<option value="general">');
     expect(html).not.toContain('<option value="connections">');
     expect(html).not.toContain('<option value="engines">');
@@ -150,7 +150,7 @@ describe("Settings → Appearance", () => {
     fixture.section = "desktopWorkspaces";
     vi.stubGlobal("window", { ogb: { environments: {} } });
     const local = render();
-    expect(local).toContain('<option value="desktopWorkspaces" selected="">Servers</option>');
+    expect(local).toContain('<option value="desktopWorkspaces" selected="">Servers you joined</option>');
     expect(local).toContain("Server address or pairing link");
     expect(local).toContain("Name (optional)");
     expect(local).toContain("Your servers");
@@ -160,15 +160,19 @@ describe("Settings → Appearance", () => {
     expect(render()).not.toContain('<option value="desktopWorkspaces"');
   });
 
-  it("offers optional Organisation settings only through the local desktop bridge", () => {
+  it("offers Organisation settings locally and in a browser, never to a remote client", () => {
     fixture.section = "organization";
     vi.stubGlobal("window", { ogb: { organization: {} } });
     const local = render();
     expect(local).toContain('<option value="organization" selected="">Organization</option>');
-    expect(local).toContain("personal and local models");
-    fixture.section = "appearance";
+    expect(local).toContain("Join an organization");
+    // The enterprise Admin connection stays hidden until it is in use.
+    expect(local).not.toContain("personal and local models");
     vi.stubGlobal("window", {});
-    expect(render()).not.toContain('<option value="organization"');
+    const browser = render();
+    expect(browser).toContain('<option value="organization" selected="">Organization</option>');
+    expect(browser).toContain("Open the invitation link you received");
+    fixture.section = "appearance";
     vi.stubGlobal("window", { ogb: { organization: {}, remoteClient: { active: true } } });
     expect(render()).not.toContain('<option value="organization"');
     expect(render()).toContain("Midnight");

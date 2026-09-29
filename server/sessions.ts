@@ -78,6 +78,8 @@ const sessionSchema = z.object({
   email: z.string().max(320).optional(),
   /** Set only by the internal verified-portal issuance path, never by email or pairing input. */
   membershipAuthority: z.literal("portal").optional(),
+  /** The person this session acts as (server/principals.ts). */
+  principalId: z.string().max(64).optional(),
 });
 
 const fileSchema = z.object({ version: z.literal(1), sessions: z.array(sessionSchema) });
@@ -94,6 +96,8 @@ export interface PublicSession {
   expiresAt: number;
   /** The account that signed in, when it was an account and not a code. */
   email?: string;
+  /** The person this session acts as (server/principals.ts). */
+  principalId?: string;
 }
 
 export interface PairingCode {
@@ -106,6 +110,8 @@ export interface PairingCode {
   label: string;
   createdAt: number;
   expiresAt: number;
+  /** Who minted the code; the paired device acts as them. */
+  principalId?: string;
 }
 
 export interface PublicPairing {
@@ -181,6 +187,7 @@ function publicSession(record: SessionRecord): PublicSession {
     expiresAt: record.expiresAt,
   };
   if (record.email) view.email = record.email;
+  if (record.principalId) view.principalId = record.principalId;
   return view;
 }
 
@@ -305,7 +312,7 @@ export class SessionRegistry {
 
   // ── pairing ────────────────────────────────────────────────────────────
 
-  openPairing(input: { scopes?: Scope[]; label?: string; ttlMs?: number } = {}): { id: string; code: string; credential: string; expiresAt: number } {
+  openPairing(input: { scopes?: Scope[]; label?: string; ttlMs?: number; principalId?: string } = {}): { id: string; code: string; credential: string; expiresAt: number } {
     this.prune();
     const now = this.now();
     const code = generatePairingCode();
@@ -319,6 +326,7 @@ export class SessionRegistry {
       label: (input.label ?? "").trim().slice(0, 80),
       createdAt: now,
       expiresAt: now + (input.ttlMs ?? PAIRING_CODE_TTL_MS),
+      ...(input.principalId ? { principalId: input.principalId } : {}),
     };
     this.pairings.push(pairing);
     return { id: pairing.id, code, credential, expiresAt: pairing.expiresAt };
@@ -406,6 +414,7 @@ export class SessionRegistry {
       // The absolute cap applies from the first term, so a TTL configured
       // longer than the cap does not hand out a session the cap forbids.
       expiresAt: now + Math.min(SESSION_TTL_MS, SESSION_MAX_AGE_MS),
+      ...(pairing.principalId ? { principalId: pairing.principalId } : {}),
     };
     this.sessions.push(record);
     this.lastSeenWrites.set(record.id, now); // the exchange itself was the first sighting
@@ -417,7 +426,7 @@ export class SessionRegistry {
 
   /** A session from a verified account sign-in (server/account-signin.ts)
    * rather than a pairing code: same token, same term, same gates. */
-  issue(input: { label: string; scopes: Scope[]; userId?: string; email?: string }): { token: string; session: PublicSession } {
+  issue(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string }): { token: string; session: PublicSession } {
     return this.issueAccount(input);
   }
 
@@ -428,7 +437,7 @@ export class SessionRegistry {
     return this.issueAccount({ label: "Hosted workspace", email: input.email, userId: `portal:${input.grant}`, scopes: input.scopes }, "portal");
   }
 
-  private issueAccount(input: { label: string; scopes: Scope[]; userId?: string; email?: string }, membershipAuthority?: "portal"): { token: string; session: PublicSession } {
+  private issueAccount(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string }, membershipAuthority?: "portal"): { token: string; session: PublicSession } {
     this.prune();
     const now = this.now();
     const token = `omb_sess_${randomBytes(32).toString("base64url")}`;
@@ -443,6 +452,7 @@ export class SessionRegistry {
     };
     if (input.userId) record.userId = input.userId;
     if (input.email) record.email = input.email;
+    if (input.principalId) record.principalId = input.principalId;
     if (membershipAuthority) record.membershipAuthority = membershipAuthority;
     this.sessions.push(record);
     this.lastSeenWrites.set(record.id, now);
@@ -555,6 +565,21 @@ export class SessionRegistry {
     this.sessions = this.sessions.filter((s) => s.id !== id);
     if (this.sessions.length === before) return false;
     this.forget(id);
+    this.persist();
+    return true;
+  }
+
+  /** Boot migration only: who each stored session is, without its secrets. */
+  listRecordsForMigration(): { id: string; label: string; email?: string; userId?: string; principalId?: string; scopes: Scope[] }[] {
+    return this.sessions.map(({ id, label, email, userId, principalId, scopes }) => ({ id, label, email, userId, principalId, scopes: [...scopes] }));
+  }
+
+  /** Attach the person a session acts as: at boot for older sessions, or on
+   * the first request of a session issued without one. */
+  setPrincipal(sessionId: string, principalId: string): boolean {
+    const found = this.sessions.find((s) => s.id === sessionId);
+    if (!found) return false;
+    found.principalId = principalId;
     this.persist();
     return true;
   }

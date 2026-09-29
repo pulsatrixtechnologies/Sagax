@@ -38,6 +38,14 @@ const yamlEsmPlugin = {
   },
 };
 
+// Some CommonJS dependencies (nodemailer, for the server's sign-in mail)
+// require() Node built-ins at load time. esbuild's ESM output has no
+// `require`, so its shim throws "Dynamic require of \"events\" is not
+// supported" and the server dies at startup. Give the bundle a real one.
+const requireBanner = {
+  js: 'import { createRequire as __ombCreateRequire } from "node:module"; const require = __ombCreateRequire(import.meta.url);',
+};
+
 // Every file run as its own process. Keep in sync with the spawn sites above.
 const ENTRY_POINTS = [
   "index.ts",
@@ -47,6 +55,9 @@ const ENTRY_POINTS = [
   "openmausbot.ts",
   "pair-cli.ts",
   "workspace-backup.worker.ts",
+  // the OMB Cloud Pro home image's entry point (deploy/fly/Dockerfile): it
+  // spawns index.js beside it and the Caddy edge
+  "cloud-home-start.ts",
   // The packaged smoke probe imports this manifest directly. Importing the
   // shared avatar contract widens TypeScript's inferred emit root to the repo,
   // so tsc may place its copy under dist-server/server/. Bundle an explicit
@@ -80,6 +91,7 @@ await build({
   allowOverwrite: true,
   logLevel: "info",
   plugins: [yamlEsmPlugin],
+  banner: requireBanner,
 });
 
 // External MCP clients launch this as an independent stdio process. Keep its

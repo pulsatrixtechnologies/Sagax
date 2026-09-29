@@ -118,10 +118,19 @@ struct ChatListView: View {
                 path.append(chat)
                 session.consumeNotificationChat()
             }
+            .onValueChange(of: session.pendingChat) { chat in
+                guard let chat else { return }
+                path.append(chat)
+                session.consumePendingChat()
+            }
             .task {
                 if let chat = session.notificationChat {
                     path.append(chat)
                     session.consumeNotificationChat()
+                }
+                if let chat = session.pendingChat {
+                    path.append(chat)
+                    session.consumePendingChat()
                 }
             }
 #if DEBUG

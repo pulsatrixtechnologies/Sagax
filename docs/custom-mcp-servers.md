@@ -15,10 +15,63 @@ Pulsa Bot saves a new server switched off. Use **Test** to start the command
 advertises. Then turn it on. It becomes available to compatible bots on their
 next task; no app restart is needed.
 
-Tokens for URL servers go in headers, never in the address. Remote servers
-that only offer an OAuth sign-in (no token) cannot be signed into from a bot's
-headless run; use a personal access token or API key the server issues and
-put it in the `Authorization` header.
+Tokens for URL servers go in headers, never in the address.
+
+### Servers that need a sign-in (OAuth)
+
+Many hosted servers (Linear, Notion, Sentry, GitHub and others) answer
+`401` until you sign in. When you add a URL server, or open the list,
+Pulsa Bot asks the server whether it needs a sign-in and shows the answer on
+its row: **Sign-in required**, **Connected**, **Sign-in expired**, or
+**Sign-in unavailable** with the reason.
+
+Click **Sign in**. Pulsa Bot opens the provider's page in your browser; after
+you approve, the browser comes back to this app at
+`http://127.0.0.1:<port>/api/mcp-oauth/callback`, shows "Sign-in complete. You
+can close this tab.", and the row flips to **Connected** within a few seconds.
+**Disconnect** revokes the tokens at the provider (when it offers revocation)
+and forgets them here. Then turn the server on as usual.
+
+How it works, following the MCP authorization spec (2025-06-18 and
+2025-11-25):
+
+- **Discovery.** The server's `401` names its Protected Resource Metadata
+  (RFC 9728) in `WWW-Authenticate`; otherwise Pulsa Bot tries
+  `/.well-known/oauth-protected-resource` on the server's origin. The
+  authorization server's metadata comes from RFC 8414
+  (`/.well-known/oauth-authorization-server`), with OpenID Connect discovery
+  as the fallback. Metadata that describes another origin, or a server
+  without PKCE `S256`, is refused.
+- **Client.** When the provider offers Dynamic Client Registration
+  (RFC 7591), Pulsa Bot registers itself as a public client. When it does not
+  (GitHub, for example), the row asks for a **client ID** (and an optional
+  secret) of an OAuth app you create with the provider, and shows the
+  redirect URI to give that app.
+- **Sign-in.** Authorization code with PKCE `S256` and the `resource`
+  parameter (RFC 8707). The `state` is random, bound to one pending sign-in,
+  valid for 10 minutes and usable once.
+- **Tokens.** Stored encrypted (AES-256-GCM) in `mcp-oauth.enc` beside
+  `config.json`, never in it, and never logged or returned by the API. In the
+  desktop app the key lives in the OS-encrypted credential store; a headless
+  server keeps a `0600` key file (`mcp-oauth.key`) in its data folder.
+  Tokens are refreshed before each turn when they expire within a minute, and
+  after the server refuses one. A refused refresh marks the server
+  **Sign-in expired**.
+- **Engines.** Each turn, a signed-in server reaches the engine with
+  `Authorization: Bearer <token>` (replacing any `Authorization` header you
+  typed for it): Claude Code through its MCP config file, Codex through
+  `bearer_token_env_var`, ACP agents (Cursor, Grok, Kimi and others that
+  advertise the `http` or `sse` transport) through the headers of the ACP
+  session's MCP servers. Servers a Cursor or Codex CLI loads from its own
+  config file (`~/.cursor/mcp.json`, `~/.codex/config.toml`) are signed in
+  by that CLI, not by Pulsa Bot; add them here instead to sign in once.
+
+Limits: a turn that outlives its access token (commonly one hour) is not
+refreshed mid-turn; the next turn is. When you use Pulsa Bot from another
+computer, the callback goes to the server's public address (Settings,
+custom domain or `OMB_PUBLIC_URL`) if one is set, otherwise to
+`127.0.0.1`, which only works in a browser on the server's own machine.
+Changing a server's address, or removing it, forgets its sign-in.
 
 ### Import and choose tools per bot
 

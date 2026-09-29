@@ -1,0 +1,158 @@
+import { createElement, Fragment } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { OwlAvatar, type OwlAvatarProps } from "./OwlAvatar";
+import { MAUS_COLORS } from "@/lib/mascot";
+import {
+  OWL_DETAIL_MIN_SIZE,
+  OWL_WHITE_PALETTE,
+  gazeToOffset,
+  owlPalette,
+  owlPose,
+  poseTransforms,
+  shade,
+} from "@/lib/owl/owl-art";
+import { createOwlController, runningOwlCount, type OwlRigElements } from "@/lib/owl/owl-loop";
+
+const render = (props: Partial<OwlAvatarProps>) =>
+  renderToStaticMarkup(createElement(OwlAvatar, { color: "green", animated: false, ...props }));
+
+/** The fills of every <path> inside a data-part group (first match). */
+function partFills(markup: string, part: string): string[] {
+  const start = markup.indexOf(`data-part="${part}"`);
+  expect(start).toBeGreaterThan(-1);
+  const chunk = markup.slice(start, markup.indexOf("</g>", start));
+  return [...chunk.matchAll(/<path fill="([^"]+)"/g)].map((m) => m[1]);
+}
+
+describe("OwlAvatar", () => {
+  it("paints the plumage in the bot's own color, flat, with the vivid wing and socket", () => {
+    const markup = render({ color: "blue" });
+    const blue = MAUS_COLORS.blue;
+    expect(partFills(markup, "body")[0]).toBe(blue);
+    expect(partFills(markup, "nearWing")).toEqual([shade(blue, 0.3)]);
+    expect(partFills(markup, "socket")).toEqual([shade(blue, 0.7)]);
+    // flat fills only
+    expect(markup).not.toContain("Gradient");
+    expect(markup).not.toContain("<stop");
+    expect(markup).not.toContain("filter");
+  });
+
+  it("accepts a hex as well as a color name", () => {
+    expect(partFills(render({ color: "#D94B52" }), "body")[0]).toBe("#D94B52");
+  });
+
+  it("gives the white bot its own light-grey palette so the face still reads", () => {
+    const markup = render({ color: "white" });
+    expect(partFills(markup, "body")[0]).toBe(OWL_WHITE_PALETTE.plumage);
+    expect(partFills(markup, "nearWing")).toEqual([OWL_WHITE_PALETTE.wingNear]);
+    expect(partFills(markup, "socket")).toEqual([OWL_WHITE_PALETTE.socket]);
+    expect(markup).not.toContain(`fill="${MAUS_COLORS.white}"`);
+    expect(owlPalette(MAUS_COLORS.white)).toMatchObject(OWL_WHITE_PALETTE);
+  });
+
+  it("gives every instance its own clip-path id and points each lid at its own", () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        Fragment,
+        null,
+        createElement(OwlAvatar, { color: "green", animated: false }),
+        createElement(OwlAvatar, { color: "green", animated: false }),
+      ),
+    );
+    const ids = [...markup.matchAll(/<clipPath id="([^"]+)"/g)].map((m) => m[1]);
+    const refs = [...markup.matchAll(/clip-path="url\(#([^)]+)\)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    expect(refs).toEqual(ids);
+    for (const id of ids) expect(id).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it("draws the resting pose once when animated=false and joins no loop", () => {
+    const markup = render({ state: "sleepy", size: 72 });
+    const pose = owlPose("sleepy", 0);
+    const still = poseTransforms(pose, gazeToOffset(pose.gaze));
+    expect(markup).toContain(`transform:${still.lids}`);
+    expect(markup).toContain(`transform:${still.rig}`);
+    expect(runningOwlCount()).toBe(0);
+  });
+
+  it("lets the hop overflow its box", () => {
+    expect(render({})).toContain("overflow:visible");
+  });
+
+  it("drops the belly spots below the detail size and keeps them above", () => {
+    expect(render({ size: OWL_DETAIL_MIN_SIZE - 1 })).not.toContain('data-part="spots"');
+    expect(render({ size: OWL_DETAIL_MIN_SIZE })).toContain('data-part="spots"');
+  });
+
+  it("is decorative without a label and an image with one", () => {
+    expect(render({})).toContain('aria-hidden="true"');
+    const labelled = render({ label: "Atlas" });
+    expect(labelled).toContain('role="img"');
+    expect(labelled).toContain('aria-label="Atlas"');
+  });
+});
+
+describe("the shared owl loop", () => {
+  const frames: FrameRequestCallback[] = [];
+  const el = (): SVGGElement => ({ style: { transform: "" } }) as unknown as SVGGElement;
+  const rig = (): OwlRigElements => ({ rig: el(), nearWing: el(), eyes: el(), pupil: el(), lids: el() });
+  const step = (ms: number) => {
+    const cb = frames.shift();
+    cb?.(ms);
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    frames.length = 0;
+  });
+
+  it("drives many owls from one requestAnimationFrame and stops when the last leaves", () => {
+    const raf = vi.fn((cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal("requestAnimationFrame", raf);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const a = createOwlController(rig(), { reducedMotion: false });
+    const b = createOwlController(rig(), { reducedMotion: false });
+    expect(runningOwlCount()).toBe(2);
+    expect(raf).toHaveBeenCalledTimes(1);
+    a.destroy();
+    b.destroy();
+    expect(runningOwlCount()).toBe(0);
+  });
+
+  it("plays success once and settles back to the resting state", () => {
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const els = rig();
+    const c = createOwlController(els, { reducedMotion: false });
+    c.play("success");
+    step(1000);
+    step(1300); // mid-hop: the rig is lifted
+    expect(els.rig.style.transform).toMatch(/^translate\(0\.00px,-\d/);
+    step(2200); // done
+    step(4000); // idle again: feet planted
+    expect(els.rig.style.transform).toMatch(/^translate\(0\.00px,0\.00px\)/);
+    c.destroy();
+  });
+
+  it("keeps only the blinks under reduced motion", () => {
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const els = rig();
+    const c = createOwlController(els, { state: "working", reducedMotion: true });
+    step(1000);
+    c.blink();
+    step(1050); // the blink starts on this frame
+    step(1110); // and is part-way closed on this one
+    expect(els.rig.style.transform).toBe("");
+    expect(els.nearWing.style.transform).toBe("");
+    expect(els.lids.style.transform).toContain("scale(1,");
+    expect(els.lids.style.transform).not.toContain("scale(1,0.000)");
+    c.destroy();
+  });
+});

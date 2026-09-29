@@ -69,9 +69,8 @@ describe("bot-first sidebar", () => {
       const markup = renderToStaticMarkup(createElement(Capture));
       const row = findElement(tree, "data-sidebar-bot-row", bot.id)!;
       expect(String(row.props.className).split(" ")).toEqual(expect.arrayContaining([...spacing]));
-      expect(markup).toContain(avatar.avatarUrl
-        ? `width="${size}" height="${size}"`
-        : `width="${size}px" height="${size}px"`);
+      // the image and the owl's svg both carry the portrait size as attributes
+      expect(markup).toContain(`width="${size}" height="${size}"`);
     }
   });
 

@@ -80,6 +80,7 @@ import { createComputerSharing, validateSharedFolders } from "./computer-sharing
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
+import { cloudHomeConnectUrl, withCloudHome } from "./cloud-home.mjs";
 import { createOrgLibrary } from "./org-library.mjs";
 import { createCompanyBackups } from "./company-backups.mjs";
 import { createCompanyBackupSchedule } from "./company-backup-schedule.mjs";
@@ -101,9 +102,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // 127.0.0.1 explicitly — vite binds IPv4; a bare "localhost" here can
 // resolve to ::1 and paint a black window
 const DEV_URL = process.env.ELECTRON_START_URL ?? "http://127.0.0.1:5199";
-const DEFAULT_COMPOSIO_BROKER_URL = "https://openmausbot-composio.milindsoni201.workers.dev";
 let SERVER_PORT = 8799;
 const APP_ICON = path.join(__dirname, "resources/app-icon.png");
+function devBundleHasSystemIcon() {
+  try {
+    const plist = fs.readFileSync(path.join(path.dirname(process.execPath), "../Info.plist"), "utf8");
+    return /<key>CFBundleIconName<\/key>\s*<string>PulsaBotIcon<\/string>/.test(plist);
+  } catch {
+    return false;
+  }
+}
 let desktopViewerWindow = null;
 let desktopViewerOwner = null;
 let desktopViewerContextId = null;
@@ -472,11 +480,12 @@ async function secureWorkspaceConfig() {
   }
 }
 
+// Managed connected apps run only through a broker the operator names
+// explicitly. There is no built-in default: the fork never routes users'
+// connections through a third party's service. Without the variable, the
+// app uses the workspace's own Composio project key (self-hosted mode).
 function composioBrokerUrl() {
-  const configured = process.env.OMB_COMPOSIO_BROKER_URL?.trim();
-  return normalizeManagedComposioBrokerUrl(
-    configured || (app.isPackaged ? DEFAULT_COMPOSIO_BROKER_URL : ""),
-  );
+  return normalizeManagedComposioBrokerUrl(process.env.OMB_COMPOSIO_BROKER_URL?.trim() || "");
 }
 
 // The packaged app has no terminal: everything about the server child's life
@@ -675,6 +684,24 @@ async function ensurePhoneSecretIdentity() {
     phoneSecretIdentity = null;
     slog(`phone credential key unavailable: ${error?.message ?? error}`);
     return null;
+  }
+}
+
+/** One random key per installation for the server's encrypted MCP sign-in
+ * vault (server/mcp-oauth.ts), kept in the OS-encrypted credential store. */
+async function ensureMcpOAuthKey() {
+  const current = secureCredentialState?.read() ?? secureCredentials;
+  if (typeof current?.mcpOAuthKey === "string" && /^[0-9a-f]{64}$/.test(current.mcpOAuthKey)) return;
+  try {
+    const key = randomBytes(32).toString("hex");
+    await updateSecureCredentialDocument((credentials) =>
+      typeof credentials.mcpOAuthKey === "string" && /^[0-9a-f]{64}$/.test(credentials.mcpOAuthKey)
+        ? credentials
+        : { ...credentials, mcpOAuthKey: key },
+    );
+  } catch (error) {
+    // MCP sign-in reports the store as unavailable until a later launch.
+    slog(`MCP sign-in key unavailable: ${error?.message ?? error}`);
   }
 }
 
@@ -988,6 +1015,7 @@ function ensureCloudAccount() {
     platform: process.platform, deviceName: os.hostname().slice(0, 100) || "My computer", appVersion: app.getVersion(),
     openBrowser: url => shell.openExternal(url),
     onState: state => {
+      rememberCloudHome(state);
       if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.mainFrame.url.startsWith(`${rendererOrigin()}/`) &&
         !activeEnvironment(environmentsState) && !desktopRemoteAccess) mainWindow.webContents.send("cloud-account:state-changed", state);
     },
@@ -1287,6 +1315,11 @@ async function startServerOn(port) {
     // the server prefers these over config.json, whose plaintext fields
     // the boot migration has deleted
     ...workspaceCredentialEnv(secureCredentials),
+    // The key of the server's encrypted MCP sign-in vault. It lives in
+    // credentials.bin; without it the server refuses to invent another.
+    ...(typeof secureCredentials.mcpOAuthKey === "string" && /^[0-9a-f]{64}$/.test(secureCredentials.mcpOAuthKey)
+      ? { OMB_MCP_OAUTH_KEY: secureCredentials.mcpOAuthKey }
+      : {}),
   });
   delete childEnv.OMB_BROWSER_CONNECTION;
   slog(`fork ${entry} port=${port}`);
@@ -1909,6 +1942,47 @@ async function connectHostedWorkspace(input, name) {
   return true;
 }
 
+/** A verified Cloud session that reports the person's machine lists it under
+ * Servers. It never switches to it: this computer stays active until they
+ * choose "Connect to my Cloud". Signed out, nothing here runs. */
+function rememberCloudHome(state) {
+  try {
+    const next = withCloudHome(environmentsState, state?.status === "connected" ? state.machine : null, () => randomUUID());
+    if (next !== environmentsState) persistEnvironments(next);
+  } catch (error) {
+    slog(`cloud home: could not list the Cloud machine under Servers (${error?.message ?? error})`);
+  }
+}
+
+/** The one action for Cloud Pro: open the person's machine in this window.
+ * Already signed in there, it simply switches. Otherwise the Admin opens a
+ * single-use pairing window on the machine, and the machine's pairing page
+ * signs this app in (the same link flow as Connect to a server). The person
+ * chose this in Settings, so there is no second confirmation. */
+async function connectCloudHome() {
+  const client = ensureCloudAccount();
+  const target = client.homeTarget();
+  if (!target) throw new Error("Your Cloud is not ready to connect yet.");
+  const grant = (await cloudHomeSignedIn(target.origin)) ? null : await client.pairHome();
+  let next = withCloudHome(environmentsState, { status: "ready", origin: target.origin }, () => randomUUID());
+  const entry = next.environments.find((candidate) => candidate.origin === target.origin);
+  if (!entry) throw new Error("Your Cloud could not be added to Servers.");
+  next = withActive(next, entry.id);
+  persistEnvironments(next);
+  navigateMainWindow(cloudHomeConnectUrl({ origin: target.origin, grant }, Date.now()));
+  return client.state();
+}
+
+/** Whether this app's cookie already signs it in to that server. */
+async function cloudHomeSignedIn(origin) {
+  try {
+    const response = await session.defaultSession.fetch(`${origin}/api/auth/session`, { credentials: "include", signal: AbortSignal.timeout(5_000) });
+    return response.ok && (await response.json())?.kind === "session";
+  } catch {
+    return false;
+  }
+}
+
 async function forgetEnvironment(id) {
   const env = environmentsState.environments.find((e) => e.id === id);
   if (!env) return;
@@ -2392,7 +2466,7 @@ ipcMain.handle("desktop:open-external", localOnly("desktop:open-external", async
   return true;
 }));
 
-// The Box VNC viewer must be a top-level page for its token exchange. A
+// The Boat VNC viewer must be a top-level page for its token exchange. A
 // sandboxed modal BrowserWindow satisfies that requirement while keeping the
 // live desktop inside Pulsa Bot instead of sending the person to a browser.
 ipcMain.handle("desktop-viewer:open", localOnly("desktop-viewer:open", (event, rawUrl, title, contextId) => {
@@ -2601,6 +2675,9 @@ const localWorkspaceOnly = (channel, handler) => localOnly(channel, workspaceOnl
 for (const method of ["state", "begin", "reopen", "cancel", "refresh", "signOut", "openDashboard"]) {
   ipcMain.handle(`cloud-account:${method}`, localWorkspaceOnly(`cloud-account:${method}`, () => ensureCloudAccount()[method]()));
 }
+// The machine and its code come from the verified session in main, never
+// from the renderer: this handler takes no arguments.
+ipcMain.handle("cloud-account:connectHome", localWorkspaceOnly("cloud-account:connectHome", () => connectCloudHome()));
 ipcMain.handle("organization:settings-opened", localWorkspaceOnly("organization:settings-opened", () => organizationEntry.settingsOpened()));
 ipcMain.handle("organization:state", localWorkspaceOnly("organization:state", () => ensureManagedDesktop().state()));
 ipcMain.handle("organization:begin", localWorkspaceOnly("organization:begin", (_event, input) => ensureManagedDesktop().begin(input)));
@@ -2905,7 +2982,13 @@ app.whenReady().then(async () => {
     // cannot impersonate the person operating the desktop app.
     installDesktopMutationHeader();
   }
-  if (process.platform === "darwin") app.dock.setIcon(APP_ICON);
+  // A runtime Dock image overrides the bundle icon with a flat PNG, which
+  // on macOS 26 discards the Liquid Glass rendering (build/icon.icon) and
+  // drops the icon into the gray "squircle jail". Packaged builds keep the
+  // system icon. Unpackaged dev runs get the same compiled icon from
+  // scripts/dev-desktop.mjs; the flat PNG is only the fallback
+  // when that script could not run (no Xcode actool).
+  if (process.platform === "darwin" && !app.isPackaged && !devBundleHasSystemIcon()) app.dock.setIcon(APP_ICON);
   secureCredentials = await loadSecureCredentials();
   // The AssemblyAI key only fed the removed Teach a skill recorder, and its
   // set/clear handler went with it; drop the orphaned secret rather than
@@ -2931,6 +3014,7 @@ app.whenReady().then(async () => {
   });
   secureCredentials = secureCredentialState.read();
   if (app.isPackaged) await ensurePhoneSecretIdentity();
+  if (app.isPackaged) await ensureMcpOAuthKey();
   desktopRemoteAccess = desktopCompanionAccess(secureCredentials);
   const hostedAccount = desktopRemoteAccess ? null : ensureCompanionAccountService();
   // Display capture remains user-initiated. The renderer first sends a
