@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { OrgRole } from "../../server/org-directory.ts";
 import { Card } from "./SettingsPrimitives";
-import { OrgCreateForm } from "./OrganizationSettings";
+import { OrgCreateForm } from "./OrgCreateForm";
 
 export function OrgDirectory({
   org,
