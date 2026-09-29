@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { allowedScopes, createEmailSignIn, parseAllowList, signInEnabled } from "./account-signin.ts";
+import { allowedScopes, createEmailSignIn, createServerEmailSignIn, parseAllowList, signInEnabled } from "./account-signin.ts";
+import { EmailOtpStore } from "./email-otp.ts";
 import { startControlPlaneStub } from "./testing/control-plane-stub.ts";
 
 describe("the sign-in allow-list", () => {
@@ -61,5 +62,33 @@ describe("the exchange with the control plane", () => {
     expect(off.enabled()).toBe(false);
     const down = createEmailSignIn({ allow: { admins: ["a@b.test"], members: [] }, env: { ...process.env, OMB_CONTROL_PLANE_URL: "http://127.0.0.1:9" } });
     expect(await down.start("a@b.test")).toMatchObject({ ok: false, status: 502 });
+  });
+});
+
+describe("server-issued email sign-in", () => {
+  const allow = { admins: ["jc@gox.ca"], members: ["@gox.ca"] };
+  it("is disabled until mail is configured", () => {
+    expect(createServerEmailSignIn({ allow, otp: new EmailOtpStore(), mailer: () => null }).enabled()).toBe(false);
+  });
+  it("mails a code to a welcome address and signs it in with the right scopes", async () => {
+    const send = vi.fn(async (_message: { to: string; subject: string; text: string }) => undefined);
+    const otp = new EmailOtpStore({ random: () => "24681357" });
+    const signIn = createServerEmailSignIn({ allow, otp, mailer: () => ({ send }), publicUrl: () => "https://pulsa.gox.ca" });
+    expect(signIn.enabled()).toBe(true);
+    expect(await signIn.start("zach@gox.ca", "src")).toEqual({ ok: true });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: "zach@gox.ca", text: expect.stringContaining("24681357") }));
+    expect(send.mock.calls[0]![0].text).toContain("https://pulsa.gox.ca/pair");
+    expect(await signIn.verify("zach@gox.ca", "24681357")).toEqual({ ok: true, email: "zach@gox.ca", userId: "", scopes: ["client"] });
+  });
+  it("never mails an address that is not on the list", async () => {
+    const send = vi.fn(async () => undefined);
+    const signIn = createServerEmailSignIn({ allow, otp: new EmailOtpStore(), mailer: () => ({ send }) });
+    expect(await signIn.start("stranger@other.com", "src")).toMatchObject({ ok: false, status: 403 });
+    expect(send).not.toHaveBeenCalled();
+  });
+  it("reports a mail failure as 502 and keeps the code unusable", async () => {
+    const signIn = createServerEmailSignIn({ allow, otp: new EmailOtpStore({ random: () => "11112222" }), mailer: () => ({ send: async () => { throw new Error("the mail server refused the message: 550"); } }) });
+    expect(await signIn.start("zach@gox.ca", "src")).toMatchObject({ ok: false, status: 502 });
+    expect((await signIn.verify("zach@gox.ca", "11112222")).ok).toBe(false);
   });
 });

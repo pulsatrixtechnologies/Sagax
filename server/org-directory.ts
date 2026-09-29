@@ -22,27 +22,17 @@ export function acceptInvite(invite: OrgInvite, now: number) {
 function actorKey(id: string): string {
   return id.trim().toLowerCase();
 }
-export function roleOf(input: { ownerUserId: string; admins: string[]; members: string[]; userId: string }): OrgRole | null {
+export function roleOf(input: { ownerUserId: string; admins: string[]; members: string[]; userId: string; email?: string }): OrgRole | null {
   const userId = actorKey(input.userId);
   if (!userId) return null;
   if (userId === actorKey(input.ownerUserId)) return "owner";
-  if (input.admins.some((id) => actorKey(id) === userId)) return "admin";
-  if (input.members.some((id) => actorKey(id) === userId)) return "member";
+  // Lists are sign-in emails. A principal is matched by its email; a legacy
+  // email-shaped id still matches itself until the migration has run.
+  const key = input.email !== undefined ? actorKey(input.email) : userId;
+  if (!key) return null;
+  if (input.admins.some((id) => actorKey(id) === key)) return "admin";
+  if (input.members.some((id) => actorKey(id) === key)) return "member";
   return null;
-}
-/** The creator stays owner after a profile email lands. `local-owner` is the
- * placeholder used when the org was created with no email yet. */
-export function ownerUserIdAfterProfileEmail(input: {
-  ownerUserId: string;
-  previousEmail: string;
-  nextEmail: string;
-}): string {
-  const owner = actorKey(input.ownerUserId);
-  const previous = actorKey(input.previousEmail);
-  const next = actorKey(input.nextEmail);
-  if (!next) return owner || input.ownerUserId;
-  if (owner === "local-owner" || (previous !== "" && owner === previous) || owner === next) return next;
-  return owner || input.ownerUserId;
 }
 /** Open invites may sign in. They are not members until accept adds the address. */
 export function signInListWithOpenInvites(input: {

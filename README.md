@@ -169,6 +169,7 @@ Secrets are write-only: the UI only sees "configured" flags.
 - **Voice.** Read replies aloud or call a bot. Voices come from ElevenLabs, Fish Audio, Grok (xAI), built-in Mac voices, or a local Chatterbox server. Calls are macOS only. See [docs/voice-mode.md](docs/voice-mode.md).
 - **Routines and webhooks.** Run work once, on weekdays, or every 5 to 1,440 minutes. A separate webhook receiver listens on `127.0.0.1:8800` by default (`OMB_WEBHOOK_PORT` to change it). See [docs/routine-schedules.md](docs/routine-schedules.md).
 - **MCP control plane.** A stdio MCP server lets Claude Desktop, Cursor, and other clients inspect bots and channels, send work, and wait for results. It does not expose approvals, deletion, credentials, or computer lifecycle. See [docs/mcp-server.md](docs/mcp-server.md).
+- **Bot memory.** Each bot keeps plain markdown notes in its workspace. **Bot Settings → Memory** shows how much of them loads, edits them without overwriting the bot's own writes, and keeps a journal of every change with one-click undo. See [docs/memory.md](docs/memory.md).
 - **Custom engines and tools.** Any ACP-speaking CLI or OpenAI-compatible endpoint plugs in through config ([docs/custom-engines.md](docs/custom-engines.md)), and so do your own MCP servers ([docs/custom-mcp-servers.md](docs/custom-mcp-servers.md)).
 
 ## How it works
@@ -259,12 +260,12 @@ Optional credentials, pasted once in **App Settings**:
 | Credential | What it enables | Where to get it |
 |---|---|---|
 | Composio project key (`ak_…`) | Gmail, GitHub, Slack, Notion, and other apps | [Composio setup](docs/composio.md) |
-| Box API key | An isolated remote Linux computer per bot | [Box API key guide](https://docs.boat.dev/api-keys) |
+| Boat API key | An isolated remote Linux computer per bot | [Boat API key guide](https://docs.boat.dev/api-keys) |
 | ElevenLabs key | Spoken replies and calls | [ElevenLabs API keys](https://elevenlabs.io/app/settings/api-keys) |
 | Fish Audio key | Spoken replies and calls | [Fish Audio API keys](https://fish.audio/app/api-keys/) |
 | xAI API key | Grok voices | **Settings → Connections** |
 
-Composio, Box, ElevenLabs, Fish Audio, and xAI are third-party services with their own terms and charges.
+Composio, Boat, ElevenLabs, Fish Audio, and xAI are third-party services with their own terms and charges.
 
 ## Status
 

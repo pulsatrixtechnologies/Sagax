@@ -898,6 +898,7 @@ const HEADING_CLASS: Record<string, string> = {
 const nodeOffset = (node: unknown): number | undefined =>
   (node as { position?: { start?: { offset?: number } } } | undefined)?.position?.start?.offset;
 
+/** Render message Markdown with math, protected code, scoped attachments, and mentions. */
 function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers = NO_MENTION_PEERS, everyone = false }: {
   text: string; streaming?: boolean; message?: MessageAttachmentContext;
   mentionPeers?: readonly MentionPeer[]; everyone?: boolean;

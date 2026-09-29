@@ -1,13 +1,13 @@
 import { cloudRunner } from "@/lib/remote-desktop";
 // The bot's computer, in the right-side slot. Where it runs decides the
-// whole flow: explicit cloud → provision the box on open (idempotent) and preview
+// whole flow: explicit cloud → provision the boat on open (idempotent) and preview
 // via SSE frames or a ~4s screenshot poll. macOS local mode keeps the legacy
 // in-panel capture. Linux local mode is an automation readiness state and its
 // separate preview remains explicitly user-initiated. Auto only reads an
-// existing Box's state: opening this panel never creates, wakes, bootstraps
+// existing Boat's state: opening this panel never creates, wakes, bootstraps
 // or opens one. A conversation's selected surface owns its preview;
 // its profile default owns lifecycle actions and the Works on picker.
-// An inherited team Box is shown as a shared resource, managed from Team map;
+// An inherited team Boat is shown as a shared resource, managed from Team map;
 // it must never fall back to this host or become a private Cloud selection.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -45,8 +45,8 @@ import {
   localComputerDisabledReason,
   localComputerSelectable,
   persistedComputerSelectionMatches,
-  isReadyBoxState,
-  resolveBoxPanelAction,
+  isReadyBoatState,
+  resolveBoatPanelAction,
   shouldPollCloudPreview,
 } from "@/lib/local-computer";
 import { t } from "@/lib/i18n";
@@ -83,7 +83,7 @@ type Phase =
   | "checking"
   | "unconfigured"
   | "starting"
-  | "busy-box"
+  | "busy-boat"
   | "ready"
   | "vm"
   | "vm-unavailable"
@@ -93,16 +93,16 @@ type Phase =
   | "local"
   | "local-unavailable"
   | "auto-unavailable"
-  | "team-box"
-  | "show-ready-box"
-  | "show-sleeping-box"
-  | "show-pending-box"
+  | "team-boat"
+  | "show-ready-boat"
+  | "show-sleeping-boat"
+  | "show-pending-boat"
   | "browser"
   | "off"
   | "error";
 
 interface LocalVmStatus {
-  mode: "shared" | "per-bot";
+  mode: "shared" | "per-bot" | "pool";
   max_instances: number;
   image: boolean;
   create_supported: boolean;
@@ -316,7 +316,7 @@ export function ComputerPanel({
       alive = false;
     };
   }, [bot.id, profileBot.computer, bot.section, cloudBackend, flushBotPatches]);
-  const [boxState, setBoxState] = useState<string | null>(null);
+  const [boatState, setBoatState] = useState<string | null>(null);
   const [polledFrame, setPolledFrame] = useState<{ png: string; mime: string } | null>(null);
   const [previewError, setPreviewError] = useState<Error | string | null>(null);
   const [previewRefreshing, setPreviewRefreshing] = useState(false);
@@ -341,7 +341,7 @@ export function ComputerPanel({
   const androidConnected = androidStatus.devices.length > 0;
   // Keep installation reachable before the engine is ready. Actual browser
 
-  // bumped when a Box API key is saved inline, to re-run the spin-up flow
+  // bumped when a Boat API key is saved inline, to re-run the spin-up flow
   const [retry, setRetry] = useState(0);
   // Auto is a server decision (including an existing Local VM). Do not guess
   // host-vs-cloud from desktop capabilities and show a different computer.
@@ -408,14 +408,14 @@ export function ComputerPanel({
     state.config?.box.configured &&
       cloudRunner(state.instances, bot.modelSelection.instanceId)?.snapshot.state === "available",
   );
-  // resolve the mode on open; box endpoints are only ever hit on the
+  // resolve the mode on open; boat endpoints are only ever hit on the
   // cloud path, so local/off can never render a JSON error as an image
   useEffect(() => {
-    // Other tabs own their surfaces. Do not provision a VM, wake a box,
+    // Other tabs own their surfaces. Do not provision a VM, wake a boat,
     // or churn preview state while reading routine history.
     if (panelView !== "computer") return;
     let alive = true;
-    let boxRetryTimer: number | undefined;
+    let boatRetryTimer: number | undefined;
     setResolvedComputerSelection(null);
     setTeamComputer(null);
     setPhase("checking");
@@ -440,7 +440,7 @@ export function ComputerPanel({
       return;
     }
     // Browser-only bots own no desktop: the Browser tab is their whole
-    // screen, so this tab must not wake a box or start host capture.
+    // screen, so this tab must not wake a boat or start host capture.
     if (bot.computer === "browser") {
       setPhase("browser");
       return;
@@ -538,7 +538,7 @@ export function ComputerPanel({
             return;
           }
           if (status.ready) {
-            setBoxState(status.container ?? null);
+            setBoatState(status.container ?? null);
             setPhase("ready");
             return;
           }
@@ -555,7 +555,7 @@ export function ComputerPanel({
             setPhase("starting");
             return api(`/api/bots/${bot.id}/computer/provision`, { method: "POST" }).then((result) => {
               if (!alive) return;
-              setBoxState(result.container ?? null);
+              setBoatState(result.container ?? null);
               if (result.ready) {
                 setResolvedComputerSelection({
                   botId: bot.id,
@@ -571,7 +571,7 @@ export function ComputerPanel({
               }
             });
           }
-          setBoxState(status.container ?? null);
+          setBoatState(status.container ?? null);
           setError(
             bot.autoStartVps
               ? new LocalizedPanelError("computer.err.vpsAuto", status.problem, "computer.err.vpsNoContainer")
@@ -588,16 +588,16 @@ export function ComputerPanel({
         alive = false;
       };
     }
-    // Explicit Cloud may create/wake its Box. Auto is observation-only here:
-    // even a ready Box and the box-native engine stay free of POSTs until the
+    // Explicit Cloud may create/wake its Boat. Auto is observation-only here:
+    // even a ready Boat and the boat-native engine stay free of POSTs until the
     // person deliberately chooses Cloud.
     api(threadPath("computer"))
       .then((status) => {
         if (!alive) return;
-        const action = resolveBoxPanelAction({
+        const action = resolveBoatPanelAction({
           computer: canManageCloud ? "cloud" : undefined,
           configured: Boolean(status.configured),
-          boxState: typeof status.box?.state === "string" ? status.box.state : null,
+          boatState: typeof status.box?.state === "string" ? status.box.state : null,
           canUseCloud: cloudSupported,
           autoLocal: false,
           teamComputer: typeof status.teamComputer?.id === "string" && typeof status.teamComputer?.name === "string",
@@ -613,25 +613,25 @@ export function ComputerPanel({
           setPhase("unconfigured");
           return;
         }
-        if (action === "team-box") {
+        if (action === "team-boat") {
           setTeamComputer({ id: status.teamComputer.id, name: status.teamComputer.name,
             botId: bot.id, section: bot.section?.trim() ?? "" });
-          setBoxState(typeof status.box?.state === "string" ? status.box.state : status.configured ? "missing" : "unavailable");
+          setBoatState(typeof status.box?.state === "string" ? status.box.state : status.configured ? "missing" : "unavailable");
           setError(typeof status.problem === "string" ? status.problem : null);
-          setPhase("team-box");
+          setPhase("team-boat");
           return;
         }
-        if (action === "attach-ready-box" || (bot.computer === "cloud" && action === "show-ready-box")) {
-          // The turn owns a ready box; provisioning would be refused (409)
+        if (action === "attach-ready-boat" || (bot.computer === "cloud" && action === "show-ready-boat")) {
+          // The turn owns a ready boat; provisioning would be refused (409)
           // and is not needed. Going straight to ready lets the turn's live
           // frames and the screenshot poll show what the bot is doing.
-          setBoxState(typeof status.box?.state === "string" ? status.box.state : null);
+          setBoatState(typeof status.box?.state === "string" ? status.box.state : null);
           setPhase("ready");
           return;
         }
-        if (action !== "ensure-box") {
-          if (action === "show-ready-box" || action === "show-sleeping-box" || action === "show-pending-box") {
-            setBoxState(typeof status.box?.state === "string" ? status.box.state : null);
+        if (action !== "ensure-boat") {
+          if (action === "show-ready-boat" || action === "show-sleeping-boat" || action === "show-pending-boat") {
+            setBoatState(typeof status.box?.state === "string" ? status.box.state : null);
           }
           setPhase(action);
           return;
@@ -639,7 +639,7 @@ export function ComputerPanel({
         setPhase("starting");
         return api(`/api/bots/${bot.id}/computer/provision`, { method: "POST" }).then((r) => {
           if (!alive) return;
-          setBoxState(r.state ?? null);
+          setBoatState(r.state ?? null);
           setResolvedComputerSelection({
             botId: bot.id,
             threadId: bot.threadId,
@@ -654,17 +654,17 @@ export function ComputerPanel({
         // A turn that started while provision was in flight: not a fault,
         // the panel waits for the turn (bot.busy re-runs this effect).
         if (isActiveTurnRefusal(e)) {
-          setPhase("busy-box");
+          setPhase("busy-boat");
           return;
         }
-        // The panel's own screenshot poll holds this box's lifecycle claim
+        // The panel's own screenshot poll holds this boat's lifecycle claim
         // while it captures, so a provision landing mid-capture is refused
         // with a *different* 409. It is a wait too: re-resolve shortly
         // instead of showing the fault this panel exists to stop showing.
         if (isRemoteScreenshotContention({ status: Number((e as { status?: unknown })?.status ?? 0), message: String(e?.message ?? "") })) {
           setError(null);
           setPhase("checking");
-          boxRetryTimer = window.setTimeout(() => setRetry((n) => n + 1), 2000);
+          boatRetryTimer = window.setTimeout(() => setRetry((n) => n + 1), 2000);
           return;
         }
         setError(e.message);
@@ -672,7 +672,7 @@ export function ComputerPanel({
       });
     return () => {
       alive = false;
-      if (boxRetryTimer !== undefined) window.clearTimeout(boxRetryTimer);
+      if (boatRetryTimer !== undefined) window.clearTimeout(boatRetryTimer);
     };
   }, [
     bot.id,
@@ -698,11 +698,11 @@ export function ComputerPanel({
     threadPath,
   ]);
 
-  // busy-box waits for the turn's own provisioning. Nothing else re-runs the
-  // resolve effect until the turn ends, so watch the box ourselves and attach
+  // busy-boat waits for the turn's own provisioning. Nothing else re-runs the
+  // resolve effect until the turn ends, so watch the boat ourselves and attach
   // as soon as it is ready — the screen should appear mid-turn, not after.
   useEffect(() => {
-    if (phase !== "busy-box") return;
+    if (phase !== "busy-boat") return;
     let alive = true;
     const check = () => {
       if (!profileBot.busy && canManageCloud) {
@@ -713,8 +713,8 @@ export function ComputerPanel({
         .then((status) => {
           if (!alive) return;
           const state = typeof status.box?.state === "string" ? status.box.state : null;
-          if (isReadyBoxState(state)) {
-            setBoxState(state);
+          if (isReadyBoatState(state)) {
+            setBoatState(state);
             setPhase("ready");
           }
         })
@@ -1031,7 +1031,7 @@ export function ComputerPanel({
     api(`/api/bots/${bot.id}/computer/${kind}`, { method: "POST" })
       .then((result) => {
         if (kind === "provision") {
-          setBoxState(result.container ?? null);
+          setBoatState(result.container ?? null);
           if (result.ready) {
             if (bot.computer === "cloud") {
               setResolvedComputerSelection({ botId: bot.id, threadId: bot.threadId, computer: bot.computer, cloudBackend });
@@ -1045,11 +1045,11 @@ export function ComputerPanel({
         }
         if (kind === "sleep") {
           setResolvedComputerSelection(null);
-          setBoxState(cloudBackend === "vps" ? "stopped" : "archived");
+          setBoatState(cloudBackend === "vps" ? "stopped" : "archived");
           if (cloudBackend === "vps") setPhase("vps-stopped");
-          // The deciders map an archived box to the sleeping observation
-          // phase; re-resolving would see "ensure-box" and wake it again.
-          else setPhase("show-sleeping-box");
+          // The deciders map an archived boat to the sleeping observation
+          // phase; re-resolving would see "ensure-boat" and wake it again.
+          else setPhase("show-sleeping-boat");
         }
       })
       .catch((e) => {
@@ -1109,7 +1109,7 @@ export function ComputerPanel({
         body: "{}",
       });
       setVpsStatus(result);
-      setBoxState(result.container ?? null);
+      setBoatState(result.container ?? null);
       if (result.ready && bot.computer === "cloud") {
         setResolvedComputerSelection({ botId: bot.id, threadId: bot.threadId, computer: bot.computer, cloudBackend });
       }
@@ -1136,13 +1136,13 @@ export function ComputerPanel({
   const emptyState = {
     checking: t("computer.phase.checking"),
     starting: t("computer.phase.starting"),
-    "busy-box": t("computer.phase.busyBox"),
+    "busy-boat": t("computer.phase.busyBoat"),
     unconfigured: t("computer.phase.unconfigured"),
     "auto-unavailable": t("computer.phase.autoUnavailable"),
-    "team-box": "This bot uses a shared team computer. Open Team map to view or manage it.",
-    "show-ready-box": t("computer.phase.showReadyBox"),
-    "show-sleeping-box": t("computer.phase.showSleepingBox"),
-    "show-pending-box": t("computer.phase.showPendingBox"),
+    "team-boat": "This bot uses a shared team computer. Open Team map to view or manage it.",
+    "show-ready-boat": t("computer.phase.showReadyBoat"),
+    "show-sleeping-boat": t("computer.phase.showSleepingBoat"),
+    "show-pending-boat": t("computer.phase.showPendingBoat"),
     "vps-unconfigured": t("computer.phase.vpsUnconfigured"),
     "vps-incompatible": t("computer.phase.vpsIncompatible"),
     "vps-stopped": t("computer.phase.vpsStopped"),
@@ -1161,8 +1161,8 @@ export function ComputerPanel({
             {currentTeamComputer && <span className="text-[11px]">Team default</span>}
             {phase === "local" && <span className="text-[11px]">{t("computer.badge.local")}</span>}
             {phase === "vm" && <span className="text-[11px]">{t("vm.dest.vm")}</span>}
-            {(phase === "show-ready-box" || phase === "show-sleeping-box" || phase === "show-pending-box") && (
-              <span className="text-[11px]">{t("computer.badge.autoBox")}</span>
+            {(phase === "show-ready-boat" || phase === "show-sleeping-boat" || phase === "show-pending-boat") && (
+              <span className="text-[11px]">{t("computer.badge.autoBoat")}</span>
             )}
             {computerStatusCurrent && bot.computer === "cloud" && cloudBackend === "vps" && (phase === "ready" || phase === "starting") && <span className="text-[11px]">{t("computer.badge.vps")}</span>}
         </div>
@@ -1215,7 +1215,7 @@ export function ComputerPanel({
             />
           ) : (
             <div className="flex flex-col items-center gap-2 px-6 text-center text-ink-secondary">
-              {phase === "checking" || phase === "starting" || phase === "busy-box" || phase === "vm" || (phase === "local" && !isLinux) ? (
+              {phase === "checking" || phase === "starting" || phase === "busy-boat" || phase === "vm" || (phase === "local" && !isLinux) ? (
                 <Loader2 size={18} className="animate-spin" />
               ) : phase === "off" ? (
                 <Power size={22} />
@@ -1224,7 +1224,7 @@ export function ComputerPanel({
               )}
               <span className="text-[12px]">
                 {currentTeamComputer
-                  ? `${currentTeamComputer.name} · ${boxState ?? "unavailable"}`
+                  ? `${currentTeamComputer.name} · ${boatState ?? "unavailable"}`
                   : cloudPreviewReady
                   ? t("computer.waitingFrame")
                   : phase === "ready"
@@ -1240,7 +1240,7 @@ export function ComputerPanel({
                     : emptyState[phase]}
               </span>
               {currentTeamComputer && <>
-                <p className="text-[12px]">Shared files and signed-in accounts. Auto uses this Box, not a private computer.</p>
+                <p className="text-[12px]">Shared files and signed-in accounts. Auto uses this Boat, not a private computer.</p>
                 <button type="button" onClick={() => dispatch({ type: "showTeamMap" })}
                   className="mt-1 rounded-lg bg-control px-3 py-1.5 text-[12px] text-ink hover:bg-raised-hover">Open Team map</button>
                 <button type="button" onClick={() => setRetry(n => n + 1)}
@@ -1255,15 +1255,15 @@ export function ComputerPanel({
                 </button>
               )}
 
-              {(phase === "show-ready-box" || phase === "show-sleeping-box" || phase === "show-pending-box") && (
+              {(phase === "show-ready-boat" || phase === "show-sleeping-boat" || phase === "show-pending-boat") && (
                 <button
                   type="button"
                   onClick={() => updateComputerSelection({ computer: "cloud" })}
                   className="mt-1 rounded-lg bg-control px-3 py-1.5 text-[12px] text-ink hover:bg-raised-hover"
                 >
-                  {phase === "show-sleeping-box"
+                  {phase === "show-sleeping-boat"
                     ? t("computer.chooseCloudWake")
-                    : phase === "show-ready-box"
+                    : phase === "show-ready-boat"
                       ? t("computer.chooseCloudOpen")
                       : t("computer.chooseCloudManage")}
                 </button>
@@ -1333,7 +1333,7 @@ export function ComputerPanel({
         {phase === "unconfigured" && (
           <div className="mt-3 rounded-xl bg-card p-4">
             <div className="mb-3 text-[13px] text-ink-secondary">
-              {t("computer.addBoxKey")}
+              {t("computer.addBoatKey")}
             </div>
             <ApiKeyRow
               section="box"
@@ -1477,10 +1477,10 @@ export function ComputerPanel({
                 {t("computer.openLiveDesktop")}
               </button>
             )}
-            {canManageCloud && (cloudBackend === "vps" || boxState !== "archived") && (
+            {canManageCloud && (cloudBackend === "vps" || boatState !== "archived") && (
               <button
                 onClick={() => run("sleep")}
-                // the server refuses sleep while a turn owns the box (409)
+                // the server refuses sleep while a turn owns the boat (409)
                 disabled={pending === "sleep" || profileBot.busy}
                 className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
                 title={t("computer.sleepTitle")}
@@ -1492,7 +1492,7 @@ export function ComputerPanel({
           </div>
         )}
 
-        {phase !== "team-box" && (bot.computer !== undefined || computerStatusCurrent) && <>
+        {phase !== "team-boat" && (bot.computer !== undefined || computerStatusCurrent) && <>
           <LocalScreenPreview />
           <LinuxLocalControl />
           <MacLocalControl />

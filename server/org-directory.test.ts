@@ -40,3 +40,16 @@ describe("roleOf", () => {
     expect(roleOf({ ...lists, userId: "stranger" })).toBeNull();
   });
 });
+
+describe("roles by principal", () => {
+  const lists = { ownerUserId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", admins: ["ana@gox.ca"], members: ["zach@gox.ca", "@client.com"] };
+  it("finds the owner by principal id and others by email", () => {
+    expect(roleOf({ ...lists, userId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })).toBe("owner");
+    expect(roleOf({ ...lists, userId: "pr_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", email: "Ana@gox.ca" })).toBe("admin");
+    expect(roleOf({ ...lists, userId: "pr_cccccccc-cccc-4ccc-8ccc-cccccccccccc", email: "zach@gox.ca" })).toBe("member");
+    expect(roleOf({ ...lists, userId: "pr_dddddddd-dddd-4ddd-8ddd-dddddddddddd", email: "stranger@gox.ca" })).toBeNull();
+  });
+  it("never makes someone owner because of their email", () => {
+    expect(roleOf({ ...lists, ownerUserId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", userId: "pr_eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", email: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })).toBeNull();
+  });
+});

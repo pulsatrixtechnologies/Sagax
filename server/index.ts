@@ -96,20 +96,23 @@ import {
 import { fitsOnOneLine, parseBotProfilePatch } from "./bot-profile.ts";
 import { groupTurnCwd } from "./room-cwd.ts";
 import { RoomTurnDeadline, RoomTurnStallRegistry, roomTurnTimeoutMessage } from "./room-turn-timeout.ts";
-import * as box from "./box.ts";
+import * as boat from "./boat.ts";
 import { TeamComputers, teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
 import { isEffortLevel, type BotVisibility, type CardAnswerer, type ResolvedSender, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
 import type { TeamComputersPayload } from "../shared/team-computer.ts";
-import { boxCreateRecoverySnapshot, retireDeletedBoxCreate } from "./box-create-idempotency.ts";
-import { boxDeletionSnapshot } from "./box-delete-journal.ts";
+import { boatCreateRecoverySnapshot, retireDeletedBoatCreate } from "./boat-create-idempotency.ts";
+import { boatDeletionSnapshot } from "./boat-delete-journal.ts";
 import {
-  boxAccountResourceChangeError,
+  boatAccountResourceChangeError,
   cloudBackendChangeError,
   vpsAliasResourceChangeError,
 } from "./cloud-backend.ts";
 import * as composio from "./composio.ts";
 import { connectorCallFromFrame, connectorRefusalText, connectorUnrecognizedText, evaluateConnectorTools } from "./connector-verdict.ts";
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
+import { buildRecall } from "./recall.ts";
+import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
+import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
 import { canAccessTeam, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerStatusWords, reachablePeers, resolveTeammate, roomPeerRosterSystemPrompt, roomRosterLine, PEER_ACCESS_HELP } from "./peer-roster.ts";
 import { openMausStatusSystemPrompt } from "./openmaus-status-capsule.ts";
 import {
@@ -124,6 +127,7 @@ import {
   localVmRecreatableOnDemand,
   localVmWorkspaceExists,
   perBotLocalVmTarget,
+  poolLocalVmTarget,
   SHARED_LOCAL_VM_TARGET,
   setupCommands,
   VM_WORKSPACE_GUEST,
@@ -145,11 +149,20 @@ import {
   threadEventLogRetentionDays,
   saveConfig,
   showToolCallsEnabled,
+  routinesInConversationEnabled,
   claudeUserMcpEnabled,
   skillAuthoringEnabled,
+  autoRecallEnabled,
+  captureQuietMs,
+  tidyHour,
   sharedComputersEnabled,
   builtInBrowserEnabled,
   llmThreadTitlesEnabled,
+  computerClaimIdleReleaseEnabled,
+  cloudOverflowAllowlistedThreads,
+  cloudOverflowEnabled,
+  cloudOverflowIdleStopMs,
+  cloudOverflowPerSecondCostUsd,
   browserProfileReplacementConflict,
   browserProfilePartitionTarget,
   syncCredentialEnv,
@@ -200,8 +213,11 @@ import {
   parseMcpServerMutation,
   parseMcpServersImport,
   parseStoredMcpServer,
+  isRemoteMcpServer,
+  type StoredRemoteMcpServer,
 } from "./mcp-registry.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
+import { callbackPage, McpOAuthError, McpOAuthManager, McpOAuthVault, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
   GROUP_GOAL_MAX_TURNS,
   groupGoalAssignmentKey,
@@ -232,7 +248,7 @@ import {
   restoreAsideMessages,
 } from "./aside-queue.ts";
 import { promptWithReply, transcriptText } from "./replies.ts";
-import { admit } from "./admission.ts";
+import { admit, DRAIN_COALESCE_MAX_ITEMS } from "./admission.ts";
 import { _loadPending, buildDelegationFailurePrompt, buildDelegationRevivalPrompt, DELEGATION_TTL_MS, DelegationWakeBudget, discardDelegations, drainDelegations, expireStaleDelegations, findDelegationReceipt, pendingDelegationInfo, pendingDelegationSnapshot, pendingThreads, queueDelegation, recordDelegationReceipt, releaseDelegationsWaitingOn, summarizeDelegatedActivity, type DelegationReceipt, type QueueResult } from "./delegations.ts";
 import {
   cancelSteeredMessage,
@@ -252,12 +268,14 @@ import {
   cancelChannelMessage,
   drainChannelMessages,
   holdChannelQueue,
+  headChannelGroup,
   queuedChannelMessage,
   queueChannelMessage,
   restoreChannelMessages,
   restoreHeldChannelQueue,
   resolveHeldReplyTarget,
   settleHeldChannelQueueHead,
+  type ChannelQueueItem,
 } from "./channel-queue.ts";
 import {
   acceptedSendMatch,
@@ -270,6 +288,7 @@ import { ProviderRegistry } from "./harness/registry.ts";
 import { ManagedDesktopProviders } from "./managed-desktop.ts";
 import { computerKindForResource, ManagedDesktopPolicy } from "./managed-policy.ts";
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
+import { CLOUD_IGNORED_KEYS, CLOUD_PAIRING_PATH, cloudHomeConfiguration, createCloudPairing, readSignedBody } from "./cloud-home.ts";
 import type { ProviderInstance } from "./contracts.ts";
 import { selectDefaultModelSelection, withNewBotEffort } from "./default-model-selection.ts";
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
@@ -298,6 +317,7 @@ import { Handoffs, handedStateUsable, recordHanded, renderUnseen, sessionStart, 
 import { extractTurnImages } from "./turn-images.ts";
 import { TurnWatchdog } from "./turn-watchdog.ts";
 import { TurnResources, workspaceResource, type TurnOwner } from "./turn-resources.ts";
+import { IdleReleasePolicy } from "./claim-idle.ts";
 import {
   ensureWorkspace,
   ensureTaskWorkspace,
@@ -305,31 +325,18 @@ import {
   supportsWorkspaceFiles,
   updateMemory,
   appendMemoryLog,
-  isMemoryTopicName,
   memorySystemPrompt,
   memorySourceLabel,
   searchMemoryFiles,
   SESSION_SEARCH_SYSTEM_PROMPT,
   workspaceDir,
 } from "./workspace.ts";
-import { listMemoryTopics, readMemoryFile, readMemoryTopic, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
-import {
-  MEMORY_INDEX,
-  MemoryStoreError,
-  memoryCapacity,
-  memoryOverview,
-  openMemoryLocation,
-  readMemoryDoc,
-} from "./memory-store.ts";
+import { listMemoryTopics, memoryDate, readMemoryFile, readMemoryTopic, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
 import {
   beginMemoryTurn,
   endMemoryTurn,
   flushAllMemoryJournals,
-  flushMemoryJournal,
-  journalMemoryDelete,
   journalMemoryWrite,
-  readMemoryJournal,
-  revertMemoryChange,
   type MemoryJournalEntry,
 } from "./memory-journal.ts";
 import {
@@ -387,11 +394,13 @@ import {
 import { readCuaConnection, readCuaUnavailableReason, gatedLocalComputer } from "./local-computer.ts";
 import {
   discoverExistingPerBotLocalVms,
+  discoverExistingPoolLocalVms,
   localVmInventoryEntry,
   shouldArmLocalVmIdle,
 } from "./local-vm-inventory.ts";
 import { LocalVmIdleTimer } from "./local-vm-idle.ts";
 import { LocalVmLease, LocalVmLeasePool } from "./local-vm-lease.ts";
+import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts";
 import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
@@ -453,6 +462,7 @@ import { shouldMountLocalComputer } from "./local-routing.ts";
 import { autoLocalVmAttachable, type ContainerComputerStatus } from "./container-computer.ts";
 import { startAutoVmClaim, type AutoVmClaimTable } from "./auto-vm-claims.ts";
 import { computerFreeAfterText, computerStillBusyText, computerStoppedWaitingText, computerWaitingText, type ComputerHolder } from "./computer-wait.ts";
+import { CloudOverflowConsent, CloudSeatLease, cloudOverflowAction, cloudOverflowConsentText, cloudOverflowOfferText, cloudSeatStartedText, cloudSeatStoppedText, type CloudOverflowSituation } from "./cloud-overflow.ts";
 import { modelContextWindow } from "./model-context-window.ts";
 import { parseSurface, resolveSurface, surfaceLabel, surfaceOfComputerKind, surfacePrompt, type Surface } from "./surface.ts";
 import {
@@ -471,7 +481,10 @@ import { WorkspaceBackupMaintenance } from "./workspace-backup-maintenance.ts";
 import { createWorkspaceBackupRoutes, isWorkspaceBackupSessionControl } from "./workspace-backup-http.ts";
 import { applyPendingWorkspaceRestore, readLastWorkspaceRestore, type WorkspaceRestoreResult } from "./workspace-backup.ts";
 import { createCustomDomainVerifier, customDomainIpv4, normalizeCustomDomain } from "./custom-domain.ts";
-import { allowedScopes, createEmailSignIn, parseAllowList } from "./account-signin.ts";
+import { allowedScopes, createServerEmailSignIn, parseAllowList } from "./account-signin.ts";
+import { EmailOtpStore } from "./email-otp.ts";
+import { resolveMailSettings } from "./mail-config.ts";
+import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
@@ -490,6 +503,8 @@ import {
   sessionCookieName,
 } from "./request-auth.ts";
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
+import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.ts";
+import { applyIdentityMigration, principalIdFor } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
 import {
   activityCsv,
@@ -544,14 +559,16 @@ import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } fr
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, seesChannelFrame, sseFrameProjection } from "./channel-visibility.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
-import { ownerUserIdAfterProfileEmail, roleOf, signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
+import { roleOf, signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
-import { createOrgRoutes, type OrgState } from "./org-routes.ts";
+import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import type { OrgRecord } from "./org-record.ts";
+import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import {
   channelTurnGate,
@@ -639,6 +656,19 @@ const sessions = new SessionRegistry({
   portalMembership: hostedWorkspaceConfiguration()?.portalMembership === true,
 });
 const sharedComputers = new SharedComputers(id => sessions.isLive(id));
+// OMB Cloud Pro home machine (server/cloud-home.ts, docs/cloud-pro.md). A
+// partial or invalid boot contract stops the server here, before it serves.
+const CLOUD_HOME = cloudHomeConfiguration();
+const cloudPairing = CLOUD_HOME ? createCloudPairing({ secret: CLOUD_HOME.bootstrapSecret, sessions }) : null;
+if (CLOUD_HOME) {
+  // The signing secret is held in memory from here on, and a platform
+  // gateway's settings are dropped: no engine or tool this server starts
+  // inherits either. The person's own engines are the only way to a model.
+  delete process.env.OMB_CLOUD_BOOTSTRAP_SECRET;
+  for (const key of CLOUD_IGNORED_KEYS) delete process.env[key];
+  console.log(`cloud home ${CLOUD_HOME.machineId}: bots run on the engines the person signs in to here`);
+  for (const warning of CLOUD_HOME.warnings) console.warn(`cloud home: ${warning}`);
+}
 // Who each thread is for, when a signed-in person can be named (server-private).
 const threadStarters = new ThreadStarters(join(DATA_DIR, "thread-starters.json"));
 const commandAllowlist = new CommandAllowlistStore(join(DATA_DIR, "command-allowlist.json"));
@@ -692,10 +722,47 @@ bindThreadLogCapProvider(() => threadEventLogMaxBytes(cfg));
 // prune, so a Settings change applies at the next one without a restart.
 bindDecisionRetention(() => decisionRetentionDays(cfg.decisions?.retentionDays));
 const customDomainVerifier = createCustomDomainVerifier({ environmentId: ENVIRONMENT_ID });
+// Server-issued sign-in codes (server/email-otp.ts) and the mail that
+// carries them (server/mail-config.ts, server/mailer.ts). Settings are
+// resolved per call so a Settings change or a Docker env bootstrap applies
+// without a restart; the mailer is cached by a hash of the resolved settings
+// so a new transport is not built on every call (and no secret sits around
+// as a plain cache key).
+const emailOtp = new EmailOtpStore();
+const mailResolved = () => resolveMailSettings({ file: cfg.mail, env: process.env });
+// OMB_MAIL_CAPTURE_FILE (test/e2e seam only): instead of sending, append
+// each message as one JSON line to this file. Requires an explicit test
+// marker (VITEST, set by the test runner itself, or OMB_TEST_SEAMS=1 for a
+// harness that does not inherit it) on top of a non-production NODE_ENV, so
+// a misconfigured deploy cannot silently stop sending real mail.
+const MAIL_CAPTURE_FILE = process.env.OMB_MAIL_CAPTURE_FILE;
+const mailCaptureFile = MAIL_CAPTURE_FILE && process.env.NODE_ENV !== "production" && (process.env.VITEST || process.env.OMB_TEST_SEAMS === "1")
+  ? MAIL_CAPTURE_FILE
+  : undefined;
+if (MAIL_CAPTURE_FILE && !mailCaptureFile) {
+  console.warn("OMB_MAIL_CAPTURE_FILE is set but ignored (needs VITEST or OMB_TEST_SEAMS=1, and NODE_ENV other than production)");
+} else if (mailCaptureFile) {
+  console.warn(`OMB_MAIL_CAPTURE_FILE seam is active: mail is captured to ${mailCaptureFile} instead of being sent`);
+}
+let cachedMailerKey: string | null = null;
+let cachedMailer: Mailer | null = null;
+const mailer = (): Mailer | null => {
+  if (mailCaptureFile) return createCaptureMailer(mailCaptureFile);
+  const settings = mailResolved().settings;
+  const settingsKey = createHash("sha256").update(JSON.stringify(settings)).digest("hex");
+  if (settingsKey !== cachedMailerKey) {
+    cachedMailer = createMailer(settings);
+    cachedMailerKey = settingsKey;
+  }
+  return cachedMailer;
+};
 // "Sign in with your email" on /pair: the allow-list is read per call so a
 // Settings change or an env bootstrap applies without a restart.
-const emailSignIn = createEmailSignIn({
+const emailSignIn = createServerEmailSignIn({
   allow: emailSignInAllowList,
+  otp: emailOtp,
+  mailer,
+  publicUrl,
 });
 let customDomainRevision = 0;
 function savedCustomDomain(): string | null {
@@ -741,11 +808,18 @@ function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   return name ? { name, id: personKey(auth.session) } : undefined;
 }
 
-/** An opaque, stable key for the person behind a session: their account
- * email when they signed in with one (a new device is still them), else the
- * paired session itself. Hashed, so a message or a thread can carry it
- * without handing other members a session id. */
+/** A stable key for the person behind a session: their principal id
+ * (server/principals.ts), so a new device or a changed email is still them.
+ * A session without one falls back to the older hashed key. */
 function personKey(session: SessionRecord): string {
+  return session.principalId ?? legacyPersonKey(session);
+}
+
+/** Before principals: their account email when they signed in with one,
+ * else the paired session itself. Hashed, so a message or a thread can
+ * carry it without handing other members a session id. Threads and cards
+ * recorded then still carry it. */
+function legacyPersonKey(session: SessionRecord): string {
   const basis = session.email ? `email:${session.email.trim().toLowerCase()}` : `session:${session.id}`;
   return `p_${createHash("sha256").update(basis).digest("base64url").slice(0, 22)}`;
 }
@@ -806,7 +880,7 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
   }
   if (auth.scopes.includes("admin") || !sharedMembership()) return null;
   const known = [threadStarters.get(threadId), cardRequesterKey(threadId, requestId)].filter((person): person is string => Boolean(person));
-  if (!known.length || known.includes(personKey(auth.session))) return null;
+  if (!known.length || known.includes(personKey(auth.session)) || known.includes(legacyPersonKey(auth.session))) return null;
   return "Only the person who started this conversation or sent this request, or a workspace admin, can answer this card.";
 }
 
@@ -987,6 +1061,51 @@ function recentWorkSources(bot: BotRecord) {
     groups: store.groups.filter((group) => !group.memberIds.includes(bot.id) || roomFeedsBot(group, bot)),
     taskByThread: (botId: string, threadId: string) => store.taskByThread(botId, threadId),
   };
+}
+
+/** The automatic-recall block for a turn (server/recall.ts), or "". Notes
+ * always; the bot's other conversations only when `conversations` — a 1:1
+ * turn the person started — because a message from another bot, a webhook
+ * or a room must not be able to pull a private chat into its reply. The
+ * conversations are the ones session_search would search, minus this one. */
+function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opts: { conversations: boolean; userName: string }): string {
+  if (!autoRecallEnabled(cfg)) return "";
+  const roomByThread = new Map<string, GroupRecord>();
+  if (opts.conversations) {
+    for (const group of store.groups) {
+      if (!group.memberIds.includes(bot.id) || !roomFeedsBot(group, bot)) continue;
+      roomByThread.set(group.threadId, group);
+      for (const task of group.tasks ?? []) roomByThread.set(task.threadId, group);
+    }
+  }
+  const threadIds = opts.conversations
+    ? [...new Set([bot.threadId, ...(bot.tasks ?? []).map((task) => task.threadId), ...roomByThread.keys()])].filter((id) => id !== threadId)
+    : [];
+  try {
+    const recalled = buildRecall({
+      botId: bot.id,
+      message,
+      threadIds,
+      label: (id) => {
+        const room = roomByThread.get(id);
+        if (room) return `room ${JSON.stringify(room.name)}`;
+        const task = store.taskByThread(bot.id, id);
+        if (task) return `chat ${JSON.stringify(task.title)}`;
+        return id === bot.threadId ? "your main chat" : "an earlier chat";
+      },
+      author: (hit) => (hit.role === "user" ? hit.peer ?? opts.userName : hit.from ?? bot.name),
+    });
+    if (recalled) console.log(`auto-recall: ${bot.name} (${bot.id}) got ${recalled.notes} note and ${recalled.conversations} conversation passage(s) in ${threadId}`);
+    return recalled?.text ?? "";
+  } catch (err) {
+    console.warn(`auto-recall failed for ${bot.id}: ${(err as Error).message}`);
+    return "";
+  }
+}
+
+/** The recalled block in front of a turn's message, or the message alone. */
+function withRecalled(recalled: string, text: string): string {
+  return recalled ? `${recalled}\n\n${text}` : text;
 }
 
 /** Bots in one room must be visible to the same people: a room is one
@@ -1253,15 +1372,17 @@ function operatorPrices(): PriceList | null {
  * engine reported tokens but no price, and let the spend cap see it at once.
  * The first booking that takes the month past the warning threshold, or to
  * the cap, notifies admins (once per month each; server/spend.ts). */
-function bookTurnUsage(row: Omit<UsageRow, "at" | "costSource">): void {
-  const booked = { ...row, ...ledgerCost(row, operatorPrices()), at: new Date().toISOString() };
+function bookTurnUsage(row: Omit<UsageRow, "at" | "costSource">, tokensReported = true, notificationThreadId = row.threadId): void {
+  // Missing helper usage is unpriced, not an estimated zero-dollar call.
+  const cost = tokensReported || row.costUsd !== null ? ledgerCost(row, operatorPrices()) : { costUsd: null };
+  const booked = { ...row, ...cost, at: new Date().toISOString() };
   // The append lands asynchronously; the cap counts the row from memory
   // until it does, so the check below (and the next turn start) sees it.
   noteSpend(DATA_DIR, booked, appendUsage(DATA_DIR, booked));
   const state = spendState(cfg, DATA_DIR);
   const alert = takeSpendAlert(DATA_DIR, state);
   if (alert && state) {
-    broadcast({ kind: "notify", notification: buildSpendNotification({ id: row.botId, name: row.botName }, row.threadId, spendAlertText(alert, state)) }, { adminOnly: true });
+    broadcast({ kind: "notify", notification: buildSpendNotification({ id: row.botId, name: row.botName }, notificationThreadId, spendAlertText(alert, state)) }, { adminOnly: true });
   }
 }
 
@@ -1398,6 +1519,17 @@ const companyRuntimeStarted = new Promise<void>(resolve => { companyRuntimeReady
 /** The enrolled organisation's desktop policy: in memory only, read-only, and
  * inert (null) unless Electron's enrolled parent sends one. */
 const managedPolicy = new ManagedDesktopPolicy({ onChange: () => broadcast({ kind: "config", ...configStatus() }) });
+// OAuth sign-ins for remote MCP servers (server/mcp-oauth.ts). Tokens live in
+// an encrypted vault beside config.json, never in it; the key comes from the
+// desktop's OS-encrypted store, or a 0600 key file on a headless server.
+let mcpOAuthKey: VaultKeySource | null = null;
+const mcpOAuth = new McpOAuthManager({
+  vault: new McpOAuthVault(DATA_DIR, () => {
+    if (mcpOAuthKey?.kind === "key") return mcpOAuthKey;
+    mcpOAuthKey = resolveVaultKey(DATA_DIR);
+    return mcpOAuthKey;
+  }),
+});
 /** Why the organisation refuses this instance for bots, or undefined. */
 function policyModelRefusal(instance: { instanceId: string; driverKind: string }): string | undefined {
   const engine = BUILT_IN_DRIVERS.find(driver => driver.driverKind === instance.driverKind)?.metadata.displayName;
@@ -1800,10 +1932,159 @@ const turnComputerResources = new Map<string, { owner: TurnOwner; resource: stri
 const teamComputerTurns = new Map<string, { owner: TurnOwner; computerId: string; botId: string; remoteAgent: boolean }>();
 const settlingResourceOwners = new Map<string, string>();
 
+/** Idle release for computer claims (#1653), disabled until the feature
+ * flag is on: a seat that stays screen-quiet for the policy's window is
+ * released to waiting turns while its holder's turn still lives, and the
+ * previous holder re-claims directly inside the reclaim window — it
+ * yields once another turn holds the seat. The durable VM profile keeps
+ * its login state, so that re-claim is cheap. Read per claim: a flag
+ * change applies to new claims, never to a seat held under the old
+ * setting. */
+const COMPUTER_CLAIM_IDLE_POLICY = new IdleReleasePolicy();
+
+function computerClaimIdlePolicy(resource: string): IdleReleasePolicy | undefined {
+  return resource.startsWith("computer:") && computerClaimIdleReleaseEnabled(cfg) ? COMPUTER_CLAIM_IDLE_POLICY : undefined;
+}
+
+/** #1655: the consent ledger for local-wait cloud overflow, and the live
+ * cloud seats it has started. One seat per bot — it is the bot's own Box,
+ * shared by that bot's threads the way every other computer is. */
+const cloudOverflowConsent = new CloudOverflowConsent();
+const cloudSeatLeases = new Map<string, CloudSeatLease>();
+let cloudSeatSweepTimer: ReturnType<typeof setInterval> | undefined;
+/** One stop attempt per seat at a time (#1655): the sweep ticks faster
+ * than a Box sleeps, and a second stop call would race the first. */
+const cloudSeatStopsInFlight = new Set<string>();
+
+/** The waits that may overflow: a turn queued for a local desktop, never
+ * one already bound for a cloud or VPS seat. */
+function localComputerWait(resource: string): boolean {
+  return resource === "computer:host" || resource.startsWith("computer:vm:");
+}
+
+function cloudOverflowSituation(owner: TurnOwner, resource: string, started: boolean): CloudOverflowSituation | null {
+  if (!localComputerWait(resource)) return null;
+  if (!store.botByThread(owner.threadId)) return null;
+  const perSecondCostUsd = cloudOverflowPerSecondCostUsd(cfg);
+  return {
+    featureEnabled: cloudOverflowEnabled(cfg),
+    // An organisation that refuses the Box kind has nothing to offer, and
+    // the decision must fail closed before any card is written.
+    cloudConfigured: boat.boatConfigured(cfg) && managedPolicy.computerRefusal("box") === undefined,
+    perSecondCostUsd,
+    // Consent answers the priced card (#1655): a grant counts only at the
+    // rate its card showed, so a config change re-offers instead of
+    // starting at a price nobody approved.
+    consented: cloudOverflowConsent.consented(owner.threadId, cloudOverflowAllowlistedThreads(cfg), perSecondCostUsd ?? undefined),
+    offered: cloudOverflowConsent.offered(owner.threadId, perSecondCostUsd ?? undefined),
+    started,
+  };
+}
+
 function claimTurnResource(owner: TurnOwner, resource: string): boolean {
-  if (!turnResources.claim(resource, owner)) return false;
+  const idle = computerClaimIdlePolicy(resource);
+  if (!turnResources.claim(resource, owner, idle ? { idle } : {})) return false;
   turnResourceOwners.set(owner.threadId, owner);
   return true;
+}
+
+/** Start the waiting bot's cloud seat (#1655). True once handled — started
+ * or terminally failed — so the wait never retries every poll; false when
+ * another turn of this bot owns the Box lifecycle and a later poll may
+ * still land. */
+async function startCloudSeat(owner: TurnOwner): Promise<boolean> {
+  const bot = store.botByThread(owner.threadId);
+  if (!bot) return true;
+  const perSecondCostUsd = cloudOverflowPerSecondCostUsd(cfg);
+  if (!perSecondCostUsd) return true;
+  const boxBotResource = "computer:box-bot:" + bot.id;
+  if (!claimTurnResource(owner, boxBotResource)) return false;
+  try {
+    broadcast({ kind: "computer", botId: bot.id, state: "waking" });
+    const machine = await boat.readyBoat(cfg, bot.id);
+    if (!machine) throw new Error("the cloud computer did not wake");
+    // Consent can be revoked while the Box wakes (#1655): a seat nobody
+    // consented to must not bill. It is released and put straight back to
+    // sleep — and if even that fails, leased as already idle so the sweep
+    // keeps retrying with backoff.
+    if (!cloudOverflowConsent.consented(owner.threadId, cloudOverflowAllowlistedThreads(cfg), perSecondCostUsd)) {
+      turnResources.releaseOne(boxBotResource, owner);
+      const idleStopMs = cloudOverflowIdleStopMs(cfg);
+      void boat.sleepBoat(cfg, bot.id).catch(() => {
+        cloudSeatLeases.set(bot.id, new CloudSeatLease({ botId: bot.id, threadId: owner.threadId, generation: owner.generation, now: Date.now() - idleStopMs - 1, idleStopMs }));
+        ensureCloudSeatSweep();
+      });
+      store.appendMessage(owner.threadId, {
+        role: "bot", kind: "activity",
+        tool: { name: "Cloud overflow consent was revoked while the cloud computer woke; it stops unbilled and the local wait continues.", ok: true },
+      });
+      return true;
+    }
+    cloudSeatLeases.set(bot.id, new CloudSeatLease({ botId: bot.id, threadId: owner.threadId, generation: owner.generation, idleStopMs: cloudOverflowIdleStopMs(cfg) }));
+    ensureCloudSeatSweep();
+    store.appendMessage(owner.threadId, {
+      role: "bot", kind: "activity",
+      tool: { name: cloudSeatStartedText({ perSecondCostUsd, idleStopMs: cloudOverflowIdleStopMs(cfg) }), ok: true },
+    });
+    return true;
+  } catch (error) {
+    turnResources.releaseOne(boxBotResource, owner);
+    store.appendMessage(owner.threadId, {
+      role: "bot", kind: "activity",
+      tool: { name: "Cloud computer could not start (" + (error instanceof Error ? error.message : String(error)) + "); the local wait continues.", ok: false },
+    });
+    return true;
+  }
+}
+
+/** A per-second-billed seat must stop on idleness even when nothing else
+ * touches the server, so this slice carries the one timer — unref'd, it
+ * can never hold the process open, and it dies with the last lease. */
+function ensureCloudSeatSweep(): void {
+  if (cloudSeatSweepTimer) return;
+  cloudSeatSweepTimer = setInterval(() => {
+    sweepIdleCloudSeats();
+    if (!cloudSeatLeases.size && cloudSeatSweepTimer) {
+      clearInterval(cloudSeatSweepTimer);
+      cloudSeatSweepTimer = undefined;
+    }
+  }, 15_000);
+  cloudSeatSweepTimer.unref?.();
+}
+
+/** Stop every cloud seat idle past its window (#1655): the machine is
+ * archived, billing pauses, and the transcript says which wait's seat it
+ * was. Only real computer tool completions refresh a lease — the poller's
+ * preview frames never reach the touch call. */
+/** Stop one running cloud seat (#1655): the Box sleeps, and only a
+ * successful stop clears the lease and its Box claim — a failed stop
+ * stays leased and retryable with backoff, because the seat still bills
+ * until it sleeps. The claim releases for the lease's own generation,
+ * never a newer turn's. */
+function stopCloudSeat(botId: string, lease: CloudSeatLease, stoppedName: string, now = Date.now()): void {
+  if (cloudSeatStopsInFlight.has(botId)) return;
+  if (cloudSeatLeases.get(botId) !== lease) return;
+  cloudSeatStopsInFlight.add(botId);
+  void boat.sleepBoat(cfg, botId)
+    .then(() => {
+      if (cloudSeatLeases.get(botId) === lease) cloudSeatLeases.delete(botId);
+      // The stopped seat's Box claim goes with it, so a still-waiting
+      // turn may start a fresh seat for the same bot.
+      turnResources.releaseOne(`computer:box-bot:${botId}`, { threadId: lease.threadId, generation: lease.generation });
+      store.appendMessage(lease.threadId, { role: "bot", kind: "activity", tool: { name: stoppedName, ok: true } });
+    })
+    .catch(() => {
+      lease.deferSleep(now);
+      store.appendMessage(lease.threadId, { role: "bot", kind: "activity", tool: { name: "Cloud computer could not stop — the sweep retries with backoff; stop it from Settings if it stays awake. Billing continues until it sleeps.", ok: false } });
+    })
+    .finally(() => cloudSeatStopsInFlight.delete(botId));
+}
+
+function sweepIdleCloudSeats(now = Date.now()): void {
+  for (const [botId, lease] of cloudSeatLeases) {
+    if (!lease.idleElapsed(now) || !lease.sleepDue(now)) continue;
+    stopCloudSeat(botId, lease, cloudSeatStoppedText(lease.idleFor(now)), now);
+  }
 }
 
 function releaseTurnResources(owner: TurnOwner | undefined): void {
@@ -1838,6 +2119,10 @@ async function bindTurnComputer(owner: TurnOwner, resource: string, exclusive = 
   // turn.wait_* events carry the same facts for the inspector log.
   let waitedSince: number | undefined;
   let waitEnded = false;
+  // #1655: whether this wait already started (or terminally failed to
+  // start) a cloud seat; the decision is re-evaluated every poll because
+  // consent can arrive mid-wait.
+  let overflowHandled = false;
   const waitEventBase = () => {
     const selection = store.botByThread(owner.threadId)?.modelSelection;
     const instance = selection ? registry.get(selection.instanceId) : null;
@@ -1900,7 +2185,31 @@ async function bindTurnComputer(owner: TurnOwner, resource: string, exclusive = 
           resource,
           ...(holder ? { holder } : {}),
         });
+        // #1655: the wait is where an overflow choice gets made. The card
+        // names the per-second cost before anything can start, and only a
+        // turn genuinely waiting on a local desktop gets one. Fail closed:
+        // feature off, cloud unusable, or no operator-set rate means no
+        // card at all — Auto never offers, never starts.
+        const overflow = cloudOverflowSituation(owner, resource, overflowHandled);
+        const perSecondCostUsd = overflow?.perSecondCostUsd ?? null;
+        if (overflow && perSecondCostUsd !== null && cloudOverflowAction(overflow).kind === "offer") {
+          store.appendMessage(owner.threadId, {
+            role: "bot", kind: "activity",
+            tool: { name: cloudOverflowOfferText({ perSecondCostUsd, idleStopMs: cloudOverflowIdleStopMs(cfg) }), ok: true },
+          });
+          cloudOverflowConsent.markOffered(owner.threadId, perSecondCostUsd);
+        }
       }
+      // #1655: consent can arrive mid-wait — the card's answer, or a
+      // thread the operator allowlisted — and only then may the cloud
+      // seat start, its cost chip landing beside the waiting one. The
+      // local wait itself is untouched: it still ends by acquisition,
+      // stop, or the ceiling (parking, once that stack lands).
+      if (!overflowHandled) {
+        const situation = cloudOverflowSituation(owner, resource, overflowHandled);
+        if (situation && cloudOverflowAction(situation).kind === "start") overflowHandled = await startCloudSeat(owner);
+      }
+      sweepIdleCloudSeats();
       if (Date.now() >= deadline) {
         endWait("gave_up");
         throw new ComputerWaitGaveUp(computerStillBusyText(holder, GROUP_GOAL_WAIT_MAX_MS));
@@ -2308,9 +2617,10 @@ const routineRequestEnvelopeSchema = z.discriminatedUnion("action", [
     action: z.literal("update"),
     routineId: z.unknown(),
     changes: z.unknown(),
+    forBotId: z.unknown().optional(),
   }).strict(),
   ...(["pause", "resume", "run_now", "delete"] as const).map((action) =>
-    z.object({ ...routineRequestSourceSchema, action: z.literal(action), routineId: z.unknown() }).strict()
+    z.object({ ...routineRequestSourceSchema, action: z.literal(action), routineId: z.unknown(), forBotId: z.unknown().optional() }).strict()
   ),
 ]);
 
@@ -2739,6 +3049,29 @@ try {
 // Replay only after the secondary write above is durable. If reconciliation
 // failed, leave the committed journal in place and profile reuse blocked.
 if (browserCleanupReferencesReconciled) browserCleanup.startPending();
+// People by a stable principal id (server/principals.ts). Built once `store`
+// and `sessions` exist and before any route serves. Stored emails and
+// "local-owner" become principal ids on every boot: ids pass through, so a
+// restored workspace or an imported team is mapped as well.
+// `identityMigratedAt` only records when that first happened.
+const principals = new PrincipalRegistry({ path: join(DATA_DIR, "principals.json") });
+principals.localOperator(cfg.profile?.email);
+applyIdentityMigration({
+  registry: principals,
+  org: cfg.org ?? null,
+  saveOrgOwner: (ownerUserId) => {
+    if (!cfg.org) return;
+    cfg.org = { ...cfg.org, ownerUserId };
+    saveConfig({ org: cfg.org });
+  },
+  groups: store.groups,
+  patchGroup: (id, patch) => { store.patchGroup(id, patch); },
+  bots: store.bots,
+  patchBot: (id, patch) => { store.patchBot(id, patch); },
+  sessions: sessions.listRecordsForMigration(),
+  setPrincipal: (id, principalId) => { sessions.setPrincipal(id, principalId); },
+});
+if (!cfg.identityMigratedAt) { cfg.identityMigratedAt = Date.now(); saveConfig({ identityMigratedAt: cfg.identityMigratedAt }); }
 
 /** A bot as a client may see it: no provider session bookkeeping.
  *
@@ -3402,6 +3735,10 @@ type GroupTurnOperation = {
   cancelled: boolean;
   cancellation: AbortController;
   providerHandshakePending: boolean;
+  /** The coalesced burst that started this turn (M2): member turns recover
+   * every burst line from the transcript by these stable queueIds, so each
+   * line's context text and attachments survive the fold into one turn. */
+  queuedQueueIds?: string[];
   goalRun?: {
     runId: string;
     cardMessageId: string;
@@ -3546,10 +3883,12 @@ function createChannel(value: unknown): GroupRecord {
   }
   let humanIds: string[] | undefined;
   if (body.humanIds !== undefined) {
-    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string")) {
+    // The route authorized the actor (refuseHumanEdit) before this runs:
+    // mapping an email may create its principal.
+    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string" || id.length > 320)) {
       throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
     }
-    const applied = applyHumanIds({ dm: false, humanIds: body.humanIds });
+    const applied = applyHumanIds({ dm: false, humanIds: body.humanIds.map((id: string) => principalIdFor(id, principals)) });
     if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
     humanIds = applied.humanIds;
   }
@@ -3632,10 +3971,12 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     patch.memberIds = roster.memberIds;
   }
   if (body.humanIds !== undefined) {
-    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string")) {
+    // The route authorized the actor (refuseHumanEdit) before this runs:
+    // mapping an email may create its principal.
+    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string" || id.length > 320)) {
       throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
     }
-    const applied = applyHumanIds({ dm: Boolean(existing.dm), humanIds: body.humanIds });
+    const applied = applyHumanIds({ dm: Boolean(existing.dm), humanIds: body.humanIds.map((id: string) => principalIdFor(id, principals)) });
     if (!applied.ok) throw Object.assign(new Error(applied.error), { status: 400 });
     patch.humanIds = applied.humanIds;
   }
@@ -4796,11 +5137,9 @@ function approvalOwnerId(bot: BotRecord): string {
 }
 
 function approvalOwnerName(ownerUserId: string): string {
-  const email = cfg.profile?.email?.trim() ?? "";
   const name = cfg.profile?.name?.trim() ?? "";
-  const localId = email || "local-owner";
-  if (name && (ownerUserId === email || ownerUserId === localId)) return name;
-  return ownerUserId;
+  if (name && ownerUserId === localPrincipalId()) return name;
+  return principals.byId(ownerUserId)?.email ?? ownerUserId;
 }
 
 /** The device this session currently is, when it is the registered worker
@@ -4822,7 +5161,7 @@ function viewerForApproval(auth: RequestAuth): ApprovalViewer {
   const userId = auth.kind === "session"
     ? (channelViewerId(auth) ?? "")
     : auth.kind === "loopback" && auth.trust !== "service"
-      ? (cfg.profile?.email ?? "local-owner").trim()
+      ? localPrincipalId()
       : "";
   return {
     userId,
@@ -4848,7 +5187,7 @@ function isApprovalCardMessage(message: { kind?: unknown; card?: unknown }): boo
 
 function approvalCallerUserId(auth: RequestAuth): string {
   if (auth.kind === "session") return channelViewerId(auth) ?? "";
-  if (auth.kind === "loopback" && auth.trust !== "service") return (cfg.profile?.email ?? "local-owner").trim();
+  if (auth.kind === "loopback" && auth.trust !== "service") return localPrincipalId();
   return "";
 }
 
@@ -5353,6 +5692,83 @@ bus.subscribe((event: RuntimeEvent) => {
   }
 });
 
+// Memory upkeep (server/memory-upkeep.ts): background capture, About me
+// suggestions and the nightly tidy-up, for bots with the switch on.
+const memoryUpkeep = createMemoryUpkeep({
+  bots: () => store.bots,
+  bot: (id) => store.bot(id) ?? undefined,
+  engine: (botId) => {
+    const bot = store.bot(botId);
+    const instance = bot ? registry.get(bot.modelSelection.instanceId) : undefined;
+    // an engine the organisation disallows never receives memory text
+    if (!bot || !instance || policyModelRefusal(instance)) return null;
+    const generate = instance.generateText?.bind(instance);
+    return generate ? {
+      generateText: async (prompt, options) => {
+        // Check every capture, organize and contradiction call, including
+        // consecutive calls within one upkeep pass.
+        assertWithinBudget(cfg, DATA_DIR);
+        const threadId = `memory-${randomUUID()}`;
+        return generate(prompt, { ...options, onUsage: (usage) => bookTurnUsage({
+          botId: bot.id,
+          botName: bot.name,
+          threadId,
+          instanceId: instance.instanceId,
+          driverKind: instance.driverKind,
+          model: usage.model,
+          input: usage.input ?? 0,
+          output: usage.output ?? 0,
+          ...(usage.cachedInput !== undefined ? { cachedInput: usage.cachedInput } : {}),
+          costUsd: usage.costUsd ?? null,
+          trigger: { kind: "bot", botId: bot.id },
+        }, usage.input !== undefined && usage.output !== undefined, bot.threadId) });
+      },
+    } : {};
+  },
+  busy: (botId) => botHasActiveTurn(botId),
+  addToAboutMe: (from, texts) => {
+    const current = cfg.profile?.aboutMe ?? "";
+    const facts = planLearned(from, texts, current, memoryDate());
+    const next = appendAboutMe(current, facts.map((fact) => fact.line));
+    // a full About me takes nothing more; the person trims it first
+    if (!facts.length || next === null) return 0;
+    saveConfig({ profile: { ...cfg.profile, aboutMe: next } });
+    Object.assign(cfg, loadConfig());
+    commitLearned(facts);
+    broadcast({ kind: "config", ...configStatus() });
+    return facts.length;
+  },
+  sourceLabel: (botId, threadId) => memorySourceLabel({ task: store.taskByThread(botId, threadId), threadId }),
+  quietMs: () => captureQuietMs(cfg),
+  tidyHour: () => tidyHour(cfg),
+  log: (line) => console.log(line),
+});
+
+// A finished 1:1 turn of an upkeep bot waits for capture. Only the person's
+// own conversation: not a room, not a turn another bot or the harness
+// started (its "user" line is not the person), not a failed turn.
+bus.subscribe((event: RuntimeEvent) => {
+  if (shouldIgnoreProviderEvent(event)) return;
+  if (event.type !== "turn.completed" || !event.turnId || !event.ok) return;
+  try {
+    const bot = store.botByThread(event.threadId);
+    if (!bot || !upkeepEnabled(bot) || store.groupByThread(event.threadId) || isInternalTurn(event.threadId)
+      || isUnattended(bot.id, event.threadId) || routines?.runForThread(event.threadId)) return;
+    const path = store.activePath(event.threadId);
+    const replyAt = path.findLastIndex((message) => message.role === "bot" && message.kind === "text" && message.turnId === event.turnId);
+    if (replyAt < 0) return;
+    const asked = path.slice(0, replyAt).findLast((message) => message.role === "user" && message.kind === "text");
+    if (!asked || asked.peerAsk) return;
+    memoryUpkeep.noteTurn(bot.id, event.threadId, {
+      person: extractTurnImages(asked.text ?? "").text,
+      bot: path[replyAt]!.text ?? "",
+      owner: !asked.sender,
+    });
+  } catch (error) {
+    console.warn(`memory upkeep: could not queue a turn for capture: ${(error as Error).message}`);
+  }
+});
+
 // One line per finished turn in the bot's daily log (server/recent-work.ts):
 // what it said last, the tools it used, whether the turn failed. What a bot
 // did in one conversation was invisible from every other; the log is where
@@ -5524,10 +5940,7 @@ async function scheduleTurnDigest(input: {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const capture = async () => {
-      const after = await checkpoints.snapshot(input.botId, checkpoint.cwd, `settle ${input.threadId.slice(0, 8)}`, controller.signal);
-      if (!after || controller.signal.aborted) return null;
-      if (checkpoint.hash === after) return { changed: [], added: [], deleted: [] };
-      return checkpoints.diffStat(input.botId, checkpoint.cwd, checkpoint.hash, after, controller.signal);
+      return checkpoints.diffWorkingTree(input.botId, checkpoint.cwd, checkpoint.hash, controller.signal);
     };
     let files: Awaited<ReturnType<typeof capture>>;
     try {
@@ -5622,6 +6035,11 @@ let routines: RoutineManager | null = null;
 let calendarCalls: CalendarCallManager | null = null;
 const localVmOwnerBusy = (botId: string) => store.bot(botId)?.busy === true;
 const localVmLeases = new LocalVmLeasePool(30 * 60_000);
+// Pool mode (issue #1654) keeps the lease pool as the ownership fence and
+// uses this table only to decide WHICH seat a conversation addresses: a
+// TTL-bounded affinity returns each thread to the desktop holding its login
+// state, and hands the seat back once the conversation has been idle.
+const localVmSeatPool = new LocalVmSeatPool(() => localVmMaxInstances(cfg));
 const localVmLifecycleBusy = new Set<string>();
 const localVmThreadTargets = new Map<string, LocalVmTarget>();
 const localVmActiveThreads = new Map<string, string>();
@@ -5662,12 +6080,12 @@ function vpsThreadEnded(botId: string, threadId: string): void {
   threads.delete(threadId);
   if (!threads.size) activeVpsThreads.delete(botId);
 }
-const boxLifecycleBusyBots = new Set<string>();
+const boatLifecycleBusyBots = new Set<string>();
 // A refresh is a reader, not a lifecycle change. Keep its reservation until
 // the provider settles even if the HTTP client leaves, and share it on retry.
 const vpsPreviewRequests = new Map<string, ReturnType<typeof vps.vpsComputerScreenshot>>();
-const orphanBoxLifecycleBusyIds = new Set<string>();
-const boxInventoryRequestsBusyIds = new Set<string>();
+const orphanBoatLifecycleBusyIds = new Set<string>();
+const boatInventoryRequestsBusyIds = new Set<string>();
 type RemoteComputerProvider = "box" | "vps";
 const computerProviderConfigTransitions = new Set<RemoteComputerProvider>();
 // A restore mutates and cleans a project work tree. Claim the bot across the
@@ -5685,7 +6103,7 @@ function inheritedTeamComputer(bot: Pick<BotRecord, "section" | "computer" | "cl
 }
 
 function teamComputerPrompt(computer: TeamComputerRecord | undefined): string {
-  return computer ? `Your team shares the Box computer ${JSON.stringify(computer.name)}. Its desktop files and desktop browser logins are shared with other Auto bots in your team; only one turn may drive it at a time. The separate built-in Browser is not this desktop and does not automatically share its logins.` : "";
+  return computer ? `Your team shares the Boat computer ${JSON.stringify(computer.name)}. Its desktop files and desktop browser logins are shared with other Auto bots in your team; only one turn may drive it at a time. The separate built-in Browser is not this desktop and does not automatically share its logins.` : "";
 }
 
 function botComputerControlKey(bot: BotRecord): string {
@@ -5739,6 +6157,10 @@ async function computerCallGate(internalCapability: InternalCapability) {
     };
   }
   const computer = turnComputerResources.get(internalCapability.threadId);
+  // The screen call arriving here re-claims an idle-released seat directly
+  // (#1653): inside the reclaim window the previous holder picks its seat
+  // back up without re-entering the wait, and the successful claim
+  // restarts the quiet window. A seat another turn holds still refuses.
   if (!snapshot.held && computer && computer.owner.generation === internalCapability.generation &&
       !claimTurnResource(computer.owner, computer.resource)) {
     return {
@@ -5783,14 +6205,14 @@ function assertTeamComputerChangeIdle(before: BotRecord, after: BotRecord): void
   const next = inheritedTeamComputer(after);
   if (previous?.id === next?.id) return;
   if (botHasActiveTurn(before.id) || routines?.activeRunForBot(before.id) || botComputerControlSnapshot(before.id).held ||
-      [previous, next].some(computer => computer && (teamComputerInUse(computer) || boxLifecycleBusyBots.has(teamComputerOwner(computer.id))))) {
+      [previous, next].some(computer => computer && (teamComputerInUse(computer) || boatLifecycleBusyBots.has(teamComputerOwner(computer.id))))) {
     throw Object.assign(new Error("Stop the affected team's work and release computer control before changing its computer access"), { status: 409 });
   }
 }
 
 async function teamComputersPayload(): Promise<TeamComputersPayload> {
   const entries = teamComputers.list();
-  const inventory = await box.listManagedBoxes(cfg, managedBoxOwners());
+  const inventory = await boat.listManagedBoats(cfg, managedBoatOwners());
   return {
     configured: inventory.configured,
     ...(inventory.problem ? { problem: inventory.problem } : {}),
@@ -5799,36 +6221,36 @@ async function teamComputersPayload(): Promise<TeamComputersPayload> {
       return {
         id: entry.id, name: entry.name, section: entry.section,
         held: computerControl.snapshot(teamComputerOwner(entry.id)).held,
-        state: boxLifecycleBusyBots.has(teamComputerOwner(entry.id)) ? "working" : machine?.state ?? (inventory.available ? "missing" : "unavailable"),
+        state: boatLifecycleBusyBots.has(teamComputerOwner(entry.id)) ? "working" : machine?.state ?? (inventory.available ? "missing" : "unavailable"),
         ...(entry.problem || inventory.problem ? { problem: entry.problem || inventory.problem! } : {}),
       };
     }),
   };
 }
 
-/** The same named Box identity and whole-turn lease in chats and rooms.
+/** The same named Boat identity and whole-turn lease in chats and rooms.
  * Assignment authorizes waking, never replacing a missing paid machine. */
-async function attachTeamBox(computer: TeamComputerRecord, botId: string, owner: TurnOwner, canMount: boolean, remoteAgent: boolean) {
-  if (!canMount) throw new Error("This model engine cannot use the team's Box computer; choose an engine with computer tools or an explicit bot destination");
-  if (!box.boxConfigured(cfg)) throw new Error("The team's Box account is not configured; reconnect it in Settings");
+async function attachTeamBoat(computer: TeamComputerRecord, botId: string, owner: TurnOwner, canMount: boolean, remoteAgent: boolean) {
+  if (!canMount) throw new Error("This model engine cannot use the team's Boat computer; choose an engine with computer tools or an explicit bot destination");
+  if (!boat.boatConfigured(cfg)) throw new Error("The team's Boat account is not configured; reconnect it in Settings");
   const ownerId = teamComputerOwner(computer.id);
-  if (boxLifecycleBusyBots.has(ownerId)) throw new Error("The team computer is being changed; wait for it to finish");
+  if (boatLifecycleBusyBots.has(ownerId)) throw new Error("The team computer is being changed; wait for it to finish");
   if (computerControl.snapshot(ownerId).held) throw new Error("Release human control of the team computer before starting another turn");
   await bindTurnComputer(owner, `computer:box-bot:${ownerId}`, true);
   teamComputerTurns.set(owner.threadId, { owner, computerId: computer.id, botId, remoteAgent });
-  let machine = await box.findBox(cfg, ownerId);
-  if (!machine) throw new Error("The team's Box computer is missing; explicitly create or retry it from the Team map");
+  let machine = await boat.findBoat(cfg, ownerId);
+  if (!machine) throw new Error("The team's Boat computer is missing; explicitly create or retry it from the Team map");
   await bindTurnComputer(owner, `computer:box:${machine.id}`, true);
-  const action = box.boxTurnLifecycleAction({ explicitCloud: true, canMount: true, state: typeof machine.state === "string" ? machine.state : null });
-  if (action === "wake") machine = await box.readyBox(cfg, ownerId);
-  if (!machine || box.boxTurnLifecycleAction({ explicitCloud: true, canMount: true, state: typeof machine.state === "string" ? machine.state : null }) !== "attach") {
+  const action = boat.boatTurnLifecycleAction({ explicitCloud: true, canMount: true, state: typeof machine.state === "string" ? machine.state : null });
+  if (action === "wake") machine = await boat.readyBoat(cfg, ownerId);
+  if (!machine || boat.boatTurnLifecycleAction({ explicitCloud: true, canMount: true, state: typeof machine.state === "string" ? machine.state : null }) !== "attach") {
     throw new Error("The team computer is not ready; check it in the Team map");
   }
   if (turnResourceOwners.get(owner.threadId)?.generation !== owner.generation ||
       !turnResources.owns(`computer:box:${machine.id}`, owner)) throw new Error("This computer turn ended while its machine was starting");
   return {
     integration: { kind: "box" as const, boxId: machine.id, token: cfg.box!.token!, control: controlIntegration(botId, owner.threadId, owner.generation) },
-    capture: () => box.screenshotBox(cfg, ownerId, machine!.id),
+    capture: () => boat.screenshotBoat(cfg, ownerId, machine!.id),
   };
 }
 
@@ -5893,27 +6315,27 @@ async function mountBotVps(
   };
 }
 
-/** The bot's own Box. Explicit Cloud is the consent boundary: it may create a
+/** The bot's own Boat. Explicit Cloud is the consent boundary: it may create a
  * missing machine and wake an archived one (~8s, and it un-pauses billing);
  * Auto only attaches a machine that is already running. */
-async function attachBotBox(
+async function attachBotBoat(
   bot: BotRecord,
   owner: TurnOwner,
   opts: { explicitCloud: boolean; canMount: boolean; remoteAgent: boolean },
 ) {
-  // Explicit cloud turns can provision/wake the same bot's Box. Claim before
+  // Explicit cloud turns can provision/wake the same bot's Boat. Claim before
   // any network await so setup itself cannot race another turn.
   if (opts.explicitCloud) await bindTurnComputer(owner, `computer:box-bot:${bot.id}`, true);
-  let b: Awaited<ReturnType<typeof box.findBox>> | null;
+  let b: Awaited<ReturnType<typeof boat.findBoat>> | null;
   try {
-    b = await box.findBox(cfg, bot.id);
+    b = await boat.findBoat(cfg, bot.id);
   } catch (error) {
     // Auto may fall through when an optional provider is offline, but a
     // durable deletion fence must never be mistaken for "no computer".
     if (opts.explicitCloud || (error as { status?: number })?.status === 409) throw error;
     b = null;
   }
-  const lifecycleOf = (explicitCloud: boolean) => box.boxTurnLifecycleAction({
+  const lifecycleOf = (explicitCloud: boolean) => boat.boatTurnLifecycleAction({
     explicitCloud,
     canMount: opts.canMount,
     state: typeof b?.state === "string" ? b.state : null,
@@ -5921,36 +6343,36 @@ async function attachBotBox(
   let lifecycle = lifecycleOf(opts.explicitCloud);
   if (lifecycle === "provision") {
     broadcast({ kind: "computer", botId: bot.id, state: "provisioning" });
-    await box.provisionBox(cfg, bot.id, bot.name);
-    b = await box.findBox(cfg, bot.id);
+    await boat.provisionBoat(cfg, bot.id, bot.name);
+    b = await boat.findBoat(cfg, bot.id);
     lifecycle = lifecycleOf(true);
   }
-  // an archived box answers every action with an error until it resumes —
+  // an archived boat answers every action with an error until it resumes —
   // wake it here, once, instead of letting the agent discover it one failed
   // tool call at a time.
   if (lifecycle === "wake") {
     broadcast({ kind: "computer", botId: bot.id, state: "waking" });
-    b = (await box.readyBox(cfg, bot.id)) ?? b;
+    b = (await boat.readyBoat(cfg, bot.id)) ?? b;
     lifecycle = lifecycleOf(true);
   }
   if (!b || lifecycle !== "attach") return null;
   const machine = b;
   await bindTurnComputer(owner, `computer:box:${machine.id}`, opts.remoteAgent);
   return {
-    capture: () => box.screenshotBox(cfg, bot.id, machine.id),
+    capture: () => boat.screenshotBoat(cfg, bot.id, machine.id),
     integration: opts.canMount
       ? { kind: "box" as const, boxId: machine.id, token: cfg.box!.token!, control: controlIntegration(bot.id, owner.threadId, owner.generation) }
       : null,
   };
 }
 
-function managedBoxOwners(): box.ManagedBoxOwner[] {
+function managedBoatOwners(): boat.ManagedBoatOwner[] {
   return [...store.bots.map((bot) => ({
     botId: bot.id,
     name: bot.name,
     // A machine is not safe to mutate while any app-level work or human
     // control lease still names its owner. This is deliberately conservative
-    // across destination changes: an old Box may still contain valuable state.
+    // across destination changes: an old Boat may still contain valuable state.
     inUse:
       bot.busy === true ||
       hasDirectDispatch(bot.id) ||
@@ -5972,7 +6394,7 @@ function botHasActiveTurn(botId: string): boolean {
 
 function providerTransitionMessage(provider: RemoteComputerProvider): string {
   return provider === "box"
-    ? "Box account settings are being updated — wait for them to finish"
+    ? "Boat account settings are being updated — wait for them to finish"
     : "VPS connection settings are being updated — wait for them to finish";
 }
 
@@ -5983,21 +6405,21 @@ function providerOperationConflict(provider: RemoteComputerProvider): string | n
   if (provider === "vps" && activeVpsThreads.size > 0) {
     return "stop the active VPS turn before changing the SSH config alias";
   }
-  if (managedBoxOwners().some((owner) => owner.inUse)) {
-    return `stop active bot work and computer control before changing ${provider === "box" ? "the Box account" : "the VPS connection"}`;
+  if (managedBoatOwners().some((owner) => owner.inUse)) {
+    return `stop active bot work and computer control before changing ${provider === "box" ? "the Boat account" : "the VPS connection"}`;
   }
-  if (boxLifecycleBusyBots.size > 0 || vpsPreviewRequests.size > 0) {
+  if (boatLifecycleBusyBots.size > 0 || vpsPreviewRequests.size > 0) {
     return "wait for cloud computer actions to finish before changing provider settings";
   }
   if (provider === "box") {
-    if (boxInventoryRequestsBusyIds.size > 0 || orphanBoxLifecycleBusyIds.size > 0) {
-      return "wait for cloud computer actions to finish before changing the Box account";
+    if (boatInventoryRequestsBusyIds.size > 0 || orphanBoatLifecycleBusyIds.size > 0) {
+      return "wait for cloud computer actions to finish before changing the Boat account";
     }
-    const deletingBoxIds = new Set(boxDeletionSnapshot().map((entry) => entry.boxId));
-    if (boxCreateRecoverySnapshot().some(
-      (entry) => !entry.resolved && (!entry.boxId || !deletingBoxIds.has(entry.boxId)),
+    const deletingBoatIds = new Set(boatDeletionSnapshot().map((entry) => entry.boxId));
+    if (boatCreateRecoverySnapshot().some(
+      (entry) => !entry.resolved && (!entry.boxId || !deletingBoatIds.has(entry.boxId)),
     )) {
-      return "finish reconciling pending cloud computer creation before changing the Box account";
+      return "finish reconciling pending cloud computer creation before changing the Boat account";
     }
   } else if (vps.vpsLifecycleBusy()) {
     return "wait for VPS computer actions to finish before changing the SSH config alias";
@@ -6007,10 +6429,10 @@ function providerOperationConflict(provider: RemoteComputerProvider): string | n
 
 function turnSurfacePlan(bot: BotRecord, runOn?: RoutineRunOn, threadId?: string) {
   const instance = registry.get(bot.modelSelection.instanceId);
-  const forcedBox = runOn === "cloud" || Boolean(inheritedTeamComputer(bot));
+  const forcedBoat = runOn === "cloud" || Boolean(inheritedTeamComputer(bot));
   return resolveSurface({
-    destination: forcedBox ? "cloud" : bot.computer,
-    pinnedSurface: forcedBox || !threadId ? null : store.taskByThread(bot.id, threadId)?.surface,
+    destination: forcedBoat ? "cloud" : bot.computer,
+    pinnedSurface: forcedBoat || !threadId ? null : store.taskByThread(bot.id, threadId)?.surface,
     browserOn: builtInBrowserEnabled(cfg) && bot.browser !== false && instance?.adapter.capabilities.browserMcp === true,
   });
 }
@@ -6023,13 +6445,13 @@ function turnProvider(bot: BotRecord, runOn?: RoutineRunOn, threadId?: string): 
   return bot.cloudBackend === "vps" ? "vps" : wants === "cloud" ? "box" : null;
 }
 
-/** A driver with a Box bridge keeps the selected model. Other engines use
- * Box's native runner. Start and interrupt must resolve the same owner. */
+/** A driver with a Boat bridge keeps the selected model. Other engines use
+ * Boat's native runner. Start and interrupt must resolve the same owner. */
 function turnInstance(bot: BotRecord, runOn?: RoutineRunOn, threadId?: string): ReturnType<typeof registry.get> {
   const selected = registry.get(bot.modelSelection.instanceId);
   if (selected?.adapter.capabilities.cloudComputerMcp) return selected;
-  const onBox = turnProvider(bot, runOn, threadId) === "box";
-  return onBox
+  const onBoat = turnProvider(bot, runOn, threadId) === "box";
+  return onBoat
     ? registry.instances().find((candidate) => candidate.driverKind === "boxAgent") ?? null
     : registry.get(bot.modelSelection.instanceId);
 }
@@ -6053,7 +6475,7 @@ async function computerPreviewSurface(bot: BotRecord, threadId?: string) {
     const remote = await vps.vpsComputerStatus(cfg, bot.id);
     if (remote.ready) return "cloud";
   }
-  const target = localVmTargetForBot(bot.id);
+  const target = localVmTargetForStatus(bot.id, threadId);
   if (instance?.adapter.capabilities.computerMcp && localVmSeen.has(target.key)) {
     const vm = await containerComputerStatus(undefined, undefined, target).catch(() => null);
     if (vm && autoLocalVmAttachable(vm)) return "vm";
@@ -6085,15 +6507,15 @@ async function selectableComputers(bot: BotRecord) {
             status.image && status.imageMatches && status.network === "private" && status.mounts === "none" && status.security === "hardened");
           canCreate = Boolean(status?.configured && status.daemonUp && status.container === "missing");
           reason = status?.problem ?? reason;
-        } else if (box.boxConfigured(cfg) && (caps?.usesCloudComputer === true || registry.instances().some(instance => instance.driverKind === "boxAgent"))) {
-          const status = await box.boxStatus(cfg, bot.id);
-          const lifecycle = box.boxTurnLifecycleAction({ explicitCloud: true, canMount: true, state: status.box?.state ?? null });
+        } else if (boat.boatConfigured(cfg) && (caps?.usesCloudComputer === true || registry.instances().some(instance => instance.driverKind === "boxAgent"))) {
+          const status = await boat.boatStatus(cfg, bot.id);
+          const lifecycle = boat.boatTurnLifecycleAction({ explicitCloud: true, canMount: true, state: status.box?.state ?? null });
           ready = lifecycle === "attach";
           canStart = lifecycle === "wake";
           canCreate = lifecycle === "provision";
         }
       } else if (surface === "vm" && localEngine && caps?.computerMcp) {
-        const target = localVmTargetForBot(bot.id);
+        const target = localVmTargetForStatus(bot.id);
         const status = await containerComputerStatus(undefined, undefined, target);
         ready = status.ready;
         canCreate = !ready && autoLocalVmAttachable(status);
@@ -6164,29 +6586,29 @@ function providerTransitionForTurn(
     : null;
 }
 
-function claimBoxInventoryRequest(boxId: string): () => void {
-  if (boxInventoryRequestsBusyIds.has(boxId)) {
+function claimBoatInventoryRequest(boxId: string): () => void {
+  if (boatInventoryRequestsBusyIds.has(boxId)) {
     throw Object.assign(new Error("this cloud computer is being changed — wait for it to finish"), { status: 409 });
   }
-  boxInventoryRequestsBusyIds.add(boxId);
-  return () => boxInventoryRequestsBusyIds.delete(boxId);
+  boatInventoryRequestsBusyIds.add(boxId);
+  return () => boatInventoryRequestsBusyIds.delete(boxId);
 }
 
-/** Claim the owning bot synchronously after Box revalidation and before the
+/** Claim the owning bot synchronously after Boat revalidation and before the
  * provider mutation. startTurn checks the same set before doing any work, so
  * a new turn and an irreversible lifecycle action cannot pass each other. */
-function claimManagedBoxMutation(instance: box.ManagedBoxInventoryInstance): () => void {
+function claimManagedBoatMutation(instance: boat.ManagedBoatInventoryInstance): () => void {
   const ownerBotId = instance.ownerBotId;
   const teamComputer = teamComputers.list().find(computer => teamComputerOwner(computer.id) === ownerBotId);
   if (teamComputer) return claimTeamComputerLifecycle(teamComputer);
   if (!ownerBotId) {
-    if (orphanBoxLifecycleBusyIds.has(instance.boxId)) {
+    if (orphanBoatLifecycleBusyIds.has(instance.boxId)) {
       throw Object.assign(new Error("this cloud computer is being changed — wait for it to finish"), { status: 409 });
     }
-    orphanBoxLifecycleBusyIds.add(instance.boxId);
-    return () => orphanBoxLifecycleBusyIds.delete(instance.boxId);
+    orphanBoatLifecycleBusyIds.add(instance.boxId);
+    return () => orphanBoatLifecycleBusyIds.delete(instance.boxId);
   }
-  const owner = managedBoxOwners().find((candidate) => candidate.botId === ownerBotId);
+  const owner = managedBoatOwners().find((candidate) => candidate.botId === ownerBotId);
   if (owner?.inUse) {
     throw Object.assign(new Error("this cloud computer is in use — stop its bot's work first"), { status: 409 });
   }
@@ -6198,20 +6620,20 @@ function claimManagedBoxMutation(instance: box.ManagedBoxInventoryInstance): () 
  * other instead of relying on a stale check made before a provider await.
  * Only opening an existing VPS viewer may coexist with its pending preview. */
 function claimBotComputerLifecycle(botId: string, allowPreview = false): () => void {
-  if (boxLifecycleBusyBots.has(botId)) {
+  if (boatLifecycleBusyBots.has(botId)) {
     throw Object.assign(new Error("this bot's cloud computer is being changed — wait for it to finish"), { status: 409 });
   }
   if (!allowPreview && vpsPreviewRequests.has(botId)) {
     throw Object.assign(new Error("a screen preview is still refreshing — wait before changing this computer"), { status: 409 });
   }
-  boxLifecycleBusyBots.add(botId);
-  return () => boxLifecycleBusyBots.delete(botId);
+  boatLifecycleBusyBots.add(botId);
+  return () => boatLifecycleBusyBots.delete(botId);
 }
 
 function claimManagedVpsMutation(containerName: string): () => void {
   const owner = store.bots.find((candidate) => vps.vpsContainerName(candidate.id) === containerName);
   if (!owner) return () => {};
-  const ownerState = managedBoxOwners().find((candidate) => candidate.botId === owner.id);
+  const ownerState = managedBoatOwners().find((candidate) => candidate.botId === owner.id);
   if (ownerState?.inUse) {
     throw Object.assign(new Error("this VPS computer is in use — stop its bot's work first"), { status: 409 });
   }
@@ -6220,6 +6642,30 @@ function claimManagedVpsMutation(containerName: string): () => void {
 
 function localVmTargetForBot(botId: string): LocalVmTarget {
   return localVmMode(cfg) === "per-bot" ? perBotLocalVmTarget(botId) : SHARED_LOCAL_VM_TARGET;
+}
+
+function localVmPoolSeatHolder(seat: number): LocalVmSeatHolder | null {
+  return localVmLeases.forTarget(poolLocalVmTarget(seat).key).current(localVmOwnerBusy);
+}
+
+/** The Local VM a conversation's turn addresses. In pool mode each thread
+ * draws a seat with TTL-bounded affinity so it reuses the desktop that
+ * holds its login state; other modes are unchanged. */
+function localVmTargetForThread(botId: string, threadId: string): LocalVmTarget {
+  if (localVmMode(cfg) !== "pool") return localVmTargetForBot(botId);
+  return poolLocalVmTarget(localVmSeatPool.assign(threadId, localVmPoolSeatHolder));
+}
+
+/** Best-effort seat for read-only surfaces (Computer panel previews,
+ * screenshots, status payloads). Records no affinity: a status probe must
+ * not steer a later turn onto a desktop its claim would not choose. */
+function localVmTargetForStatus(botId: string, threadId?: string): LocalVmTarget {
+  if (localVmMode(cfg) !== "pool") return localVmTargetForBot(botId);
+  // An in-flight turn keeps its claimed seat even after its affinity TTL
+  // decays: prefer the live target so a preview cannot land on another seat.
+  const activeTarget = threadId ? localVmThreadTargets.get(threadId) : undefined;
+  if (activeTarget) return activeTarget;
+  return poolLocalVmTarget((threadId ? localVmSeatPool.affinitySeat(threadId) : null) ?? 0);
 }
 
 function localVmLeaseFor(target: LocalVmTarget): LocalVmLease {
@@ -6258,6 +6704,17 @@ function releaseLocalVmThread(threadId: string): void {
   autoVmClaims.delete(threadId);
   const target = localVmThreadTargets.get(threadId);
   if (!target) return;
+  // Renew affinity at settlement so a turn that consumed part of the TTL
+  // still leaves the full window after it ends; failed claims never reach
+  // here (no target), so only settled turns renew. A turn longer than the
+  // TTL finds its entry expired — touch() alone would drop it — so renew
+  // with the seat the turn actually ran on. A target recorded before a
+  // mid-turn mode change is not a pool seat; touch still covers that.
+  if (localVmMode(cfg) === "pool") {
+    const pooled = /^pool:(\d+)$/.exec(target.key);
+    if (pooled) localVmSeatPool.renew(threadId, Number(pooled[1]));
+    else localVmSeatPool.touch(threadId);
+  }
   localVmLeaseFor(target).release(threadId);
   if (localVmActiveThreads.get(target.key) === threadId) localVmActiveThreads.delete(target.key);
   localVmThreadTargets.delete(threadId);
@@ -6268,6 +6725,26 @@ function releaseLocalVmThread(threadId: string): void {
 // bot's current destination is intentionally ignored: moving a bot to Cloud,
 // Browser, This computer, Auto, or Off does not delete its old Local VM.
 void (async () => {
+  if (localVmMode(cfg) === "pool") {
+    // Same restore rule as per-bot: idle cleanup removes the container, not
+    // its provisioned workspace, so every surviving seat stays Auto-eligible.
+    const seats = localVmMaxInstances(cfg);
+    for (let seat = 0; seat < seats; seat += 1) {
+      const target = poolLocalVmTarget(seat);
+      if (localVmWorkspaceExists(target)) localVmSeen.add(target.key);
+    }
+    const runtime = await containerRuntimeStatus().catch(() => null);
+    if (!runtime?.runtime || !runtime.daemonUp) return;
+    const existing = await discoverExistingPoolLocalVms(seats, runtime.runtime).catch(() => []);
+    const statuses = await Promise.all(existing.map((target) =>
+      containerComputerStatus(undefined, undefined, target).catch(() => null),
+    ));
+    existing.forEach((target, index) => {
+      noteLocalVmSeen(target, statuses[index]);
+      if (shouldArmLocalVmIdle(statuses[index])) localVmIdleFor(target).touch();
+    });
+    return;
+  }
   if (localVmMode(cfg) !== "per-bot") {
     const status = await containerComputerStatus(undefined, undefined, SHARED_LOCAL_VM_TARGET).catch(() => null);
     noteLocalVmSeen(SHARED_LOCAL_VM_TARGET, status);
@@ -6467,15 +6944,31 @@ bus.subscribe((event: RuntimeEvent) => {
         }
         // the bot just acted ON ITS SCREEN — refresh the preview now. Only
         // computer tools can change the screen, and each capture competes
-        // with the agent for the box's command endpoint, so a bot grinding
+        // with the agent for the boat's command endpoint, so a bot grinding
         // through file edits must not trigger one per tool. The refresh is
         // deliberately broad (a computer_exec may well have launched a
         // window); whether the turn has EARNED a settled screenshot is the
         // narrower question, and only the allow-list answers it.
         if (bot) {
           const touches = screenTouchingTool(toolName);
+          const surface = screenSurfaceForTool(toolName);
           if (touches || /computer|screenshot|click|type_text|press_key|scroll|open_url|wait_for|browser_/i.test(toolName)) {
-            pokeScreenPoller(event.threadId, touches, screenSurfaceForTool(toolName));
+            pokeScreenPoller(event.threadId, touches, surface);
+          }
+          // A completed screen-touching computer tool is real screen
+          // activity (#1653): it restarts the idle clock on that turn's
+          // computer claim. The poller's own frames never arrive here, so
+          // they cannot keep a quiet seat held.
+          if (touches && surface === "computer") {
+            const computer = turnComputerResources.get(event.threadId);
+            if (computer) turnResources.activity(computer.resource, computer.owner);
+            // Real cloud-screen work refreshes the #1655 idle stop for
+            // that seat; the poller's own frames never arrive here, so
+            // preview traffic cannot keep a paid machine awake.
+            if (computer?.resource.startsWith("computer:box:")) {
+              const seatBot = store.botByThread(event.threadId);
+              if (seatBot) cloudSeatLeases.get(seatBot.id)?.touch();
+            }
           }
         }
       }
@@ -7684,6 +8177,9 @@ function drainQueuedSends() {
           },
         });
         resolve();
+        // M2: only this group left the queue, and a turn that never
+        // started publishes no completion to wake the groups behind it.
+        queueMicrotask(drainQueuedSends);
       }).catch(reject);
     }),
     // Provider completion can precede its dispatch promise: keep the queue
@@ -7843,7 +8339,7 @@ const screenPollers = new Map<
   }
 >();
 
-/** The preview shares the box's single command endpoint with the agent's
+/** The preview shares the boat's single command endpoint with the agent's
  * own actions, so every frame we take is latency stolen from the work the
  * user is waiting on. Hence: a slow interval, a floor between captures,
  * and never two in flight. */
@@ -7852,7 +8348,7 @@ const SCREEN_MIN_GAP_MS = 3000;
 const SCREEN_SETTLE_TIMEOUT_MS = 10_000;
 
 /** `screenIsTheWork` starts the turn already counting as screen usage: a
- * boxAgent's whole session runs ON the box, so every tool it calls acts on
+ * boxAgent's whole session runs ON the boat, so every tool it calls acts on
  * that screen even though none of them is named like a computer tool. Its
  * shell-only turns are kept honest by the settle-time hash gate instead. */
 function startScreenPoller(
@@ -7946,7 +8442,7 @@ function shownScreenHash(threadId: string): string | undefined {
  * in-flight poke first) so the settled screenshot shows the screen's actual
  * end state, not the previous action's. A turn that never touched the
  * screen settles nothing — and skips the capture, which is one less
- * command on the box's single endpoint. A frame the reader can already see
+ * command on the boat's single endpoint. A frame the reader can already see
  * settles nothing either: the boxAgent pre-touch counts every turn as
  * screen work, so without this its shell-only replies would all end in the
  * same idle desktop. Either way the poller is torn down here, so no
@@ -8023,8 +8519,8 @@ async function startTurn(
     excludeMessageIds?: string[];
     /** Routines run in detached tasks; pin the destination for the whole turn. */
     threadId?: string;
-    /** Cloud routines use the bot's Box VM. Capable API drivers bridge its
-     * tools; other engines delegate the turn to the native Box runner. */
+    /** Cloud routines use the bot's Boat VM. Capable API drivers bridge its
+     * tools; other engines delegate the turn to the native Boat runner. */
     runOn?: RoutineRunOn;
     /** Lets the system prompt put externally supplied payloads behind an
      * explicit untrusted-data boundary without changing ordinary chat. */
@@ -8095,7 +8591,7 @@ async function startTurn(
       status: 409,
     });
   }
-  if (boxLifecycleBusyBots.has(botId)) {
+  if (boatLifecycleBusyBots.has(botId)) {
     throw Object.assign(new Error("this bot's cloud computer is being changed — wait for it to finish"), { status: 409 });
   }
   if (threadBusy(botId, threadId)) throw Object.assign(new Error("this thread is already working — interrupt it first"), { status: 409, code: "thread_busy" });
@@ -8130,7 +8626,7 @@ async function startTurn(
     throw Object.assign(
       new Error(
         turnProvider(bot, opts?.runOn, threadId) === "box"
-          ? "the Cloud VM runner is unavailable — configure Box in App Settings"
+          ? "the Cloud VM runner is unavailable — configure Boat in App Settings"
           : `provider instance "${bot.modelSelection.instanceId}" is unavailable — pick another model in settings`,
       ),
       { status: 409 },
@@ -8179,7 +8675,7 @@ async function startTurn(
   const switchedEngine = instance.instanceId !== bot.modelSelection.instanceId;
   const useInstanceDefaults = switchedEngine || (opts?.runOn === "cloud" && !instance.adapter.capabilities.cloudComputerMcp);
   const model = useInstanceDefaults ? instance.models.default : bot.modelSelection.model;
-  // A native cloud runner borrows its instance defaults; a Box bridge keeps
+  // A native cloud runner borrows its instance defaults; a Boat bridge keeps
   // the bot's selected model, effort and variant.
   const effort = useInstanceDefaults ? undefined : bot.modelSelection.effort;
   const variant = useInstanceDefaults ? undefined : bot.modelSelection.variant;
@@ -8236,7 +8732,7 @@ async function startTurn(
   const agentsMounted = (commsDepth < MAX_COMMS_DEPTH || Boolean(opts?.coordination)) && instance.adapter.capabilities.agentsMcp === true;
 
   // busy flips immediately so the composer locks; the dispatch itself runs
-  // in the background — box provisioning can take ~90s and must never
+  // in the background — boat provisioning can take ~90s and must never
   // hang the HTTP request
   const dispatchClaimId = randomUUID();
   const resourceOwner: TurnOwner = { threadId, generation: dispatchClaimId };
@@ -8481,6 +8977,7 @@ async function startTurn(
       // composio — only to a driver that can mount them. Their tools are
       // never pre-allowed, so every call rides the normal permission flow.
       if (instance.adapter.capabilities.customMcp === true) {
+        await refreshMcpOAuth(bot);
         const custom = engineMcpServers(bot);
         if (Object.keys(custom).length) integrations.custom = custom;
       }
@@ -8503,7 +9000,7 @@ async function startTurn(
       // the private bot workspace. A legacy task with an existing provider
       // session deliberately pins to null (the old home-folder behavior),
       // because moving a live session would break resume.
-      // A cloud run happens on the box, where a host folder means nothing:
+      // A cloud run happens on the boat, where a host folder means nothing:
       // pin the task to the default so the header chip never shows the
       // bot's folder for a task that runs elsewhere.
       if (opts?.runOn === "cloud") store.pinTaskCwd(bot.id, threadId, undefined, { none: true });
@@ -8524,7 +9021,7 @@ async function startTurn(
       // tools that would fail on every call or spawn an unnecessary proxy.
       const dwebUrl = process.env.DWEB_URL?.trim();
       if (dwebUrl) integrations.dweb = { url: dwebUrl };
-      // Cloud routines always use Box/BoxAgent. The per-bot backend applies
+      // Cloud routines always use Boat/BoatAgent. The per-bot backend applies
       // only to ordinary turns that mount a computer into the local agent.
       const teamComputer = inheritedTeamComputer(bot);
       const cloudBackend = teamComputer || opts?.runOn === "cloud" || bot.cloudBackend !== "vps" ? "box" : "vps";
@@ -8568,6 +9065,25 @@ async function startTurn(
         }
         return containerComputerFrame(undefined, undefined, localVmTarget);
       };
+      /** Pin the conversation at the moment its seat is actually claimed
+       * (issue #1650): the same guards as the dispatch-time pin below, so
+       * a claim landing later in the turn records exactly what a mount-time
+       * pin would have — and a turn that never claims records nothing.
+       * The guard reads live bot and task state because a claim can land
+       * long after dispatch: a Works on change may have swept this
+       * thread's auto pins, or a person may have pinned it meanwhile, and
+       * a deferred claim must resurrect neither nor clobber either. */
+      const autoPinAllowed = () => {
+        const liveBot = store.bot(bot.id);
+        const liveTask = store.taskByThread(bot.id, threadId);
+        return liveBot?.computer === undefined && !teamComputer && opts?.runOn !== "cloud" && !plan.pinned &&
+          Boolean(liveTask && liveTask.surfaceSource !== "user");
+      };
+      const pinAutoSurface = (surface: Surface) => {
+        if (autoPinAllowed()) {
+          store.patchTask(bot.id, threadId, { surface, surfaceSource: "auto" });
+        }
+      };
       /** The exclusive Local VM claim sequence, verbatim from the old inline
        * attach path, shared by dispatch (eager) and the first-screen-call
        * gate (issue #1361). Idempotent per turn: the resource claim and the
@@ -8577,7 +9093,7 @@ async function startTurn(
        * desktop, not whatever localVmTargetForBot resolves to by the time
        * the first screen call arrives. */
       const claimAutoLocalVm = async (claimThreadId: string, pinnedTarget?: LocalVmTarget): Promise<{ target: LocalVmTarget; runtime: Runtime }> => {
-        const localVmTarget = pinnedTarget ?? localVmTargetForBot(bot.id);
+        const localVmTarget = pinnedTarget ?? localVmTargetForThread(bot.id, claimThreadId);
         await bindTurnComputer(resourceOwner, `computer:vm:${localVmTarget.key}`, true);
         if (localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(localVmTarget.key)) {
           throw new Error("this Local VM is being started, stopped, or replaced — wait for setup to finish");
@@ -8588,6 +9104,9 @@ async function startTurn(
         if (!localVmLeaseFor(localVmTarget).claim(claimThreadId, bot.id, localVmOwnerBusy)) {
           throw new Error("this Local VM is already being used by another turn — wait for that turn to finish");
         }
+        // Only a turn that wins its lease extends pool affinity; a thread
+        // retrying behind a stranger lets the TTL lapse and migrates.
+        if (localVmMode(cfg) === "pool") localVmSeatPool.touch(claimThreadId);
         localVmThreadTargets.set(claimThreadId, localVmTarget);
         localVmActiveThreads.set(localVmTarget.key, claimThreadId);
         localVmIdleFor(localVmTarget).touch();
@@ -8626,12 +9145,17 @@ async function startTurn(
           dropLease();
           throw new Error("the Local VM lease expired while preparing the turn");
         }
-        // Same contract as the Box and VPS branches below: without this the
+        // Same contract as the Boat and VPS branches below: without this the
         // poller never starts, so the Local VM publishes no `screen` events
         // and every client that only has the stream (the phone) waits
         // forever. The web panel hid the gap by polling the screenshot
         // route itself.
         previewCapture = localVmPreviewFor(localVmTarget, claimThreadId);
+        // Pin on use: this runs for the dispatch-time claim of a VM created
+        // for the turn and for the gate-fired claim of a lazily mounted one
+        // alike — either way the conversation remembers the desktop this
+        // turn actually took, not one it merely mounted (issue #1650).
+        pinAutoSurface("vm");
         return { target: localVmTarget, runtime: localVm.runtime };
       };
 
@@ -8673,7 +9197,15 @@ async function startTurn(
           if (!strict) return false;
           throw new Error("this model engine cannot use the Local VM — choose Claude or an ACP engine, or select another computer destination");
         }
-        const localVmTarget = localVmTargetForBot(bot.id);
+        if (!strict && localVmMode(cfg) === "pool") {
+          // localVmTargetForThread records pool affinity, so a turn the
+          // fast path is about to skip must not reserve or refresh a seat.
+          // Gate on the side-effect-free candidate assign() would pick —
+          // the automationSource bypass below stays authoritative.
+          const poolCandidate = poolLocalVmTarget(localVmSeatPool.candidate(threadId, localVmPoolSeatHolder));
+          if (!localVmSeen.has(poolCandidate.key) && !opts?.automationSource) return false;
+        }
+        const localVmTarget = localVmTargetForThread(bot.id, threadId);
         let lazyReadyVm: { runtime: Runtime } | null = null;
         if (!strict) {
           // Nothing this process has ever seen for this target, and nobody is
@@ -8779,6 +9311,7 @@ async function startTurn(
             // The claim restarts the poller with the capture, the way the
             // Local VM's lazy claim does.
             onClaimed: (vpsCapture) => {
+              pinAutoSurface("cloud");
               previewCapture = vpsCapture;
               if (threadBusy(bot.id, threadId)) {
                 const touched = screenPollers.get(threadId)?.touched ?? false;
@@ -8806,17 +9339,17 @@ async function startTurn(
         }
       }
 
-      // Cloud is strict when selected. Native Box and drivers with a Box
-      // bridge may also reuse an already-ready Box on Auto.
+      // Cloud is strict when selected. Native Boat and drivers with a Boat
+      // bridge may also reuse an already-ready Boat on Auto.
       if (teamComputer) {
-        const attached = await attachTeamBox(teamComputer, bot.id, resourceOwner,
+        const attached = await attachTeamBoat(teamComputer, bot.id, resourceOwner,
           instance.adapter.capabilities.usesCloudComputer === true, instance.adapter.capabilities.remoteAgent === true);
         integrations.computer = attached.integration;
         previewCapture = attached.capture;
         computerKind = "box";
       }
-      if (!teamComputer && instance.adapter.capabilities.usesCloudComputer === true && (wants === "cloud" || wants === undefined) && cloudBackend === "box" && box.boxConfigured(cfg)) {
-        const attached = await attachBotBox(bot, resourceOwner, {
+      if (!teamComputer && instance.adapter.capabilities.usesCloudComputer === true && (wants === "cloud" || wants === undefined) && cloudBackend === "box" && boat.boatConfigured(cfg)) {
+        const attached = await attachBotBoat(bot, resourceOwner, {
           explicitCloud: wants === "cloud",
           canMount: instance.adapter.capabilities.usesCloudComputer === true,
           remoteAgent: instance.adapter.capabilities.remoteAgent === true,
@@ -8829,8 +9362,8 @@ async function startTurn(
           }
         }
       }
-      if (wants === "cloud" && cloudBackend === "box" && !box.boxConfigured(cfg)) {
-        throw new Error("Cloud box is not configured — add a Box API key or choose Local VM");
+      if (wants === "cloud" && cloudBackend === "box" && !boat.boatConfigured(cfg)) {
+        throw new Error("Cloud Boat is not configured — add a Boat API key or choose Local VM");
       }
       if (wants === "cloud" && cloudBackend === "box" && !integrations.computer) {
         throw new Error("the cloud computer could not be created or reached");
@@ -8860,7 +9393,24 @@ async function startTurn(
       ) {
         const cua = readCuaConnection();
         if (cua) {
-          await bindTurnComputer(resourceOwner, "computer:host");
+          // Lazy host claim (issue #1650): the gated integration mounts
+          // now, but the exclusive computer:host seat is taken only by the
+          // first screen tools/call, through the computer-control gate —
+          // the same seam as the Local VM (#1361) and the VPS. An Auto
+          // turn that never touches the screen holds no desktop seat and
+          // records no pin; a claim that finds the seat held waits behind
+          // the holder like every other seat instead of failing on the
+          // spot.
+          autoVmClaims.set(threadId, {
+            owner: resourceOwner,
+            lazy: true,
+            label: "this computer",
+            onRejected: surfaceLazyClaimRejection("this computer"),
+            claim: async () => {
+              await bindTurnComputer(resourceOwner, "computer:host", true);
+              pinAutoSurface("local");
+            },
+          });
           integrations.localComputer = gatedLocalComputer(cua, controlIntegration(bot.id, threadId, dispatchClaimId));
           computerKind = "local";
         }
@@ -9003,8 +9553,15 @@ async function startTurn(
       // turns stay there and the composer can show it. Explicit settings are
       // not recorded: an auto pin yields to a later Works on change (which
       // sweeps it — store.clearAutoSurfacePins); a person's pin does not.
-      if (bot.computer === undefined && !teamComputer && opts?.runOn !== "cloud" && !plan.pinned) {
-        const used = mountedComputer ?? (integrations.browser ? "browser" : null);
+      // Pin on use (issue #1650): every computer that registers a claim
+      // slot — a ready Local VM, the VPS, the host fallback, a VM created
+      // for this turn — records its pin inside the claim itself, so a turn
+      // that only mounted tools records nothing. A Box attached during
+      // dispatch and the built-in browser (no seat to claim) pin here.
+      if (autoPinAllowed()) {
+        const claimSlot = autoVmClaims.get(threadId);
+        const pinsAtClaim = claimSlot?.owner.generation === resourceOwner.generation;
+        const used = pinsAtClaim ? null : mountedComputer ?? (integrations.browser ? "browser" : null);
         if (used) store.patchTask(bot.id, threadId, { surface: used, surfaceSource: "auto" });
       }
       const computerSelection = computerSelectionTurns.get(threadId);
@@ -9065,6 +9622,15 @@ async function startTurn(
         { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed; do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
       ]);
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
+      // Automatic recall rides in front of THIS turn's message, never in the
+      // system prompt: the volatile half is re-sent whole whenever any part of
+      // it changes, and recall changes nearly every turn.
+      const recalled = autoRecallPrompt(bot, threadId, resolvedImages.text, {
+        // a routine run starts fresh by design, and a webhook is untrusted:
+        // neither pulls earlier conversations in
+        conversations: commsDepth === 0 && !coordinationNode && !opts?.automationSource && !opts?.unattended,
+        userName: cfg.profile?.name?.trim() || "User",
+      });
       runningTurnEngines.set(threadId, instance);
       // The prompt carries the soul as saved now. If it changed during setup,
       // decide again from what is actually sent — except on a continuation
@@ -9088,7 +9654,7 @@ async function startTurn(
         threadId,
         botId: bot.id,
         startupRecovery: cfg.automaticRecovery?.enabled === true && !opts?.automaticRecoveryAttempted,
-        text: dispatchContext.turnText,
+        text: withRecalled(recalled, dispatchContext.turnText),
         refreshSystemPrompt: true,
         images: turnImages,
         approvalMode: approvalModeForTurn(bot, commsDepth > 0),
@@ -9146,7 +9712,7 @@ async function startTurn(
       }
       // a turn can settle before dispatch returns, and a poller started
       // after its own turn.completed would never be torn down — it would
-      // keep polling the box forever, carrying dead per-turn state. busy
+      // keep polling the boat forever, carrying dead per-turn state. busy
       // is flipped false in the fold, so it is the honest "still running".
       if ((previewCapture || browserCapture) && threadBusy(bot.id, threadId)) {
         startScreenPoller(
@@ -9534,6 +10100,14 @@ routines = new RoutineManager({
     if (task && bot) broadcast({ kind: "bot", bot: publicBot(bot) });
     return task;
   },
+  joinConversation: (run) => {
+    if (!routinesInConversationEnabled(cfg) || run.target !== "bot") return null;
+    const source = routineSourceOwner(run);
+    // Only this bot's own visible chat. A room, or a teammate's thread, keeps
+    // the detached run so one bot cannot write its work into the wrong place.
+    if (!source || source.group || source.bot.id !== run.botId) return null;
+    return source.threadId;
+  },
   createGoalTask: (groupId, title) => store.createGroupTask(groupId, title, false),
   isResultsThread: (botId, threadId) => {
     const bot = store.bot(botId);
@@ -9675,25 +10249,25 @@ if (recoveryOwners.length > 0) {
 async function cloudRoutineReadiness(botId: string, threadId?: string): Promise<{ ready: boolean; reason?: string }> {
   const bot = threadId ? store.projectBotForTask(botId, threadId) : store.bot(botId);
   if (!bot || bot.hidden) return { ready: false, reason: "The routine's target bot no longer exists." };
-  if (!box.boxConfigured(cfg)) {
+  if (!boat.boatConfigured(cfg)) {
     return {
       ready: false,
-      reason: 'The Box cloud computer needs a working Box API key. For the bot’s configured computer, including a self-hosted VPS, set run_on="maus" instead.',
+      reason: 'The Boat cloud computer needs a working Boat API key. For the bot’s configured computer, including a self-hosted VPS, set run_on="maus" instead.',
     };
   }
   const instance = turnInstance(bot, "cloud", threadId);
   if (!instance) return { ready: false, reason: "The Cloud VM runner is unavailable. Restart Pulsa Bot and try again." };
   try {
     if ((await instance.snapshot()).state !== "available") {
-      return { ready: false, reason: "The target bot's model engine is not ready to use the Box cloud computer." };
+      return { ready: false, reason: "The target bot's model engine is not ready to use the Boat cloud computer." };
     }
     const teamComputer = inheritedTeamComputer(bot);
     const ownerId = teamComputer ? teamComputerOwner(teamComputer.id) : bot.id;
-    const machine = await box.findBox(cfg, ownerId);
+    const machine = await boat.findBoat(cfg, ownerId);
     if (teamComputer && !machine) {
-      return { ready: false, reason: "The team's Box computer is missing; explicitly create or retry it from the Team map." };
+      return { ready: false, reason: "The team's Boat computer is missing; explicitly create or retry it from the Team map." };
     }
-    // Explicit Cloud may provision or wake the bot's own Box at dispatch.
+    // Explicit Cloud may provision or wake the bot's own Boat at dispatch.
     // This probe only checks its identity/account, without starting billing.
     return { ready: true };
   } catch (error) {
@@ -9714,9 +10288,9 @@ const routineRequests = new RoutineRequestService({
   validateTarget: (proposerBotId, target) => {
     const proposer = store.bot(proposerBotId);
     const targetBot = store.bot(target.botId);
-    if (!targetBot) return `@${target.name} no longer exists, so this routine cannot be scheduled for it`;
+    if (!targetBot) return `@${target.name} no longer exists, so this routine request cannot be confirmed for it`;
     if (!proposer || !canReachPeer(proposer, targetBot)) {
-      return `@${target.name} is no longer in this section, so this routine cannot be scheduled for it`;
+      return `@${target.name} is no longer in this section, so this routine request cannot be confirmed for it`;
     }
     return null;
   },
@@ -9732,7 +10306,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
       if (localVmModeChangeBusy) {
         return deletionResponse(409, { error: "Local VM settings are being updated — wait before deleting this bot" });
       }
-      if (boxLifecycleBusyBots.has(bot.id)) {
+      if (boatLifecycleBusyBots.has(bot.id)) {
         return deletionResponse( 409, { error: "wait for this bot's cloud computer action to finish before deleting the bot" });
       }
       const activeRoutine = routines!.activeRunForBot(bot.id);
@@ -9747,17 +10321,17 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           error: `stop this bot's work in channel ${activeGroup.group.name} before deleting the bot`,
         });
       }
-      // A direct turn that has already claimed the bot can provision a Box in
-      // its background setup. Do not let deletion race that work while a Box
+      // A direct turn that has already claimed the bot can provision a Boat in
+      // its background setup. Do not let deletion race that work while a Boat
       // account is configured; the person can stop the turn and retry.
-      if ((box.boxConfigured(cfg) || vpsSshAlias(cfg)) && (bot.busy || hasDirectDispatch(bot.id))) {
+      if ((boat.boatConfigured(cfg) || vpsSshAlias(cfg)) && (bot.busy || hasDirectDispatch(bot.id))) {
         return deletionResponse( 409, { error: "stop this bot's work before checking and deleting its cloud computer" });
       }
-      const botBoxRecovery = boxCreateRecoverySnapshot().filter((entry) => entry.botId === bot.id);
-      const botBoxDeletions = boxDeletionSnapshot().filter((entry) => entry.ownerBotId === bot.id);
-      if (botBoxRecovery.some((entry) => !entry.resolved)) {
+      const botBoatRecovery = boatCreateRecoverySnapshot().filter((entry) => entry.botId === bot.id);
+      const botBoatDeletions = boatDeletionSnapshot().filter((entry) => entry.ownerBotId === bot.id);
+      if (botBoatRecovery.some((entry) => !entry.resolved)) {
         return deletionResponse( 409, {
-          error: "finish reconciling this bot's pending cloud computer creation before deleting it — check boat.dev, then retry Box setup",
+          error: "finish reconciling this bot's pending cloud computer creation before deleting it — check boat.dev, then retry Boat setup",
         });
       }
       // Bot deletion awaits VM/browser/provider cleanup. Claim the bot and
@@ -9807,7 +10381,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
         // Preflight every provider before deleting any resource. Cleanup can
         // still fail mid-flight across independent providers, but a missing
         // credential or offline daemon should not cause avoidable partial work.
-        const vpsInventory = await vps.listManagedVpsComputers(cfg, managedBoxOwners());
+        const vpsInventory = await vps.listManagedVpsComputers(cfg, managedBoatOwners());
         if (vpsInventory.configured && !vpsInventory.available) {
           return deletionResponse( 503, {
             error: `${vpsInventory.problem ?? "VPS computer inventory is unavailable"}. The bot was kept so its computer can be retried safely`,
@@ -9815,18 +10389,18 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
         }
         const ownedVpsComputers = vpsInventory.instances.filter((instance) => instance.ownerBotId === bot.id);
 
-        if ((botBoxRecovery.length > 0 || botBoxDeletions.length > 0) && !box.boxConfigured(cfg)) {
+        if ((botBoatRecovery.length > 0 || botBoatDeletions.length > 0) && !boat.boatConfigured(cfg)) {
           return deletionResponse(409, {
-            error: "Reconnect the Box account that owns this bot's remembered cloud computer, then retry deletion",
+            error: "Reconnect the Boat account that owns this bot's remembered cloud computer, then retry deletion",
           });
         }
-        const cloudInventory = await box.listManagedBoxes(cfg, managedBoxOwners());
+        const cloudInventory = await boat.listManagedBoats(cfg, managedBoatOwners());
         if (cloudInventory.configured && !cloudInventory.available) {
           return deletionResponse( 503, {
             error: `${cloudInventory.problem ?? "cloud computer inventory is unavailable"}. The bot was kept so its computer can be retried safely`,
           });
         }
-        const ownedBoxComputers = cloudInventory.instances.filter((instance) => instance.ownerBotId === bot.id);
+        const ownedBoatComputers = cloudInventory.instances.filter((instance) => instance.ownerBotId === bot.id);
 
         // Revalidate a reviewed Chief-of-Staff request and establish the
         // browser cleanup intent before the first irreversible provider
@@ -9840,8 +10414,8 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           // each exact, freshly revalidated identity before making its bot
           // owner disappear. Shared team computers use a different owner id
           // and are intentionally absent from these lists.
-          for (const instance of ownedBoxComputers) {
-            const removed = await box.deleteManagedBox(cfg, managedBoxOwners(), instance.boxId, instance.name);
+          for (const instance of ownedBoatComputers) {
+            const removed = await boat.deleteManagedBoat(cfg, managedBoatOwners(), instance.boxId, instance.name);
             if (removed.pending) {
               throw Object.assign(
                 new Error("The cloud computer deletion has started but is still finishing. The bot was kept; retry in a moment"),
@@ -9850,7 +10424,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
             }
           }
           for (const instance of ownedVpsComputers) {
-            await vps.removeManagedVpsComputer(cfg, managedBoxOwners(), instance.name, instance.name);
+            await vps.removeManagedVpsComputer(cfg, managedBoatOwners(), instance.name, instance.name);
           }
           if (localVmCleanup) {
             if (localVmCleanup.removeContainer) {
@@ -10404,7 +10978,10 @@ const roomHandoffTimer = setInterval(() => {
   try { roomHandoffs.tick(); } catch (error) { console.error("room handoffs:", error); }
 }, 250);
 roomHandoffTimer.unref();
-const GROUP_CONTEXT_MESSAGES = 30;
+// The room-context window IS the drain's coalescing cap: a burst longer
+// than the window would append transcript lines the responder never reads,
+// so both bounds come from one constant (admission.ts).
+const GROUP_CONTEXT_MESSAGES = DRAIN_COALESCE_MAX_ITEMS;
 const MAX_GROUP_HOPS = 1;
 
 type GroupMemberTurnOutcome =
@@ -10445,11 +11022,12 @@ function teammateReportContext(requestId: string, readerBotId?: string): string 
 function serializeRoomContext(
   threadId: string,
   userName: string,
-  textOverride?: { messageId: string; text: string },
+  textOverrides?: ReadonlyArray<{ messageId: string; text: string }>,
   readerBotId?: string,
 ): string {
   const messages = store.messagesFor(threadId);
   const messagesById = new Map(messages.map((message) => [message.id, message]));
+  const overrides = new Map(textOverrides?.map((override) => [override.messageId, override.text]));
   return messages
     .filter((m) => (m.kind === "text" && m.text) || (m.kind === "digest" && m.digest) || m.roomRequest?.phase === "result")
     .slice(-GROUP_CONTEXT_MESSAGES)
@@ -10462,7 +11040,8 @@ function serializeRoomContext(
         // turns. Resolve from the existing bounded store and recheck access.
         return teammateReportContext(m.roomRequest.id, readerBotId);
       }
-      const rendered = textOverride?.messageId === m.id ? { ...m, text: textOverride.text } : m;
+      const overridden = overrides.get(m.id);
+      const rendered = overridden !== undefined ? { ...m, text: overridden } : m;
       // a bot's name is quoted on the speaker line, so it gets one line; a
       // user line that came through the API says so, since the reader would
       // otherwise take it for the person typing
@@ -10557,7 +11136,7 @@ async function runGroupMemberTurn(
         messageId: heldMessageId,
         deviceId,
         userId: deviceUserId,
-        authorId: heldMessage?.sender?.id ?? (cfg.profile?.email ?? "local-owner").trim(),
+        authorId: heldMessage?.sender?.id ?? localPrincipalId(),
       });
       if (next !== queuedWorkerTurns) {
         queuedWorkerTurns = next;
@@ -10680,19 +11259,42 @@ async function runGroupMemberTurn(
   const latestUser = [...store.activePath(threadId)].reverse().find(
     (message) => message.role === "user" && message.kind === "text" && message.text,
   );
-  const resolvedLatestImages = latestUser?.text && !cardContinuation
+  const usesNativeImageInput = instance.adapter.capabilities.nativeImageInput === true;
+  // M2: a drained room turn runs one sender's whole burst as ONE turn, so
+  // every burst line must reach the responder the way its own turn would
+  // have carried it — attachments extracted natively, their tags stripped
+  // from the rendered context. Recover the burst by the queueIds recorded
+  // on the operation, not by position: the last line alone is not the burst.
+  const burstIds = new Set(operation?.queuedQueueIds ?? []);
+  const burstOverrides: Array<{ messageId: string; text: string }> = [];
+  const burstImages: ReturnType<typeof extractTurnImages>["images"] = [];
+  if (usesNativeImageInput && !cardContinuation) {
+    for (const message of store.activePath(threadId)) {
+      if (message.role !== "user" || message.kind !== "text" || !message.text) continue;
+      if (!message.queueId || !burstIds.has(message.queueId)) continue;
+      const resolved = extractTurnImages(message.text);
+      burstOverrides.push({ messageId: message.id, text: resolved.text });
+      burstImages.push(...resolved.images);
+    }
+  }
+  // the latest line is usually the burst's last item: extracting it again
+  // would double-count its attachments and re-strip already-stripped words
+  const latestInBurst = latestUser?.queueId !== undefined && burstIds.has(latestUser.queueId);
+  const resolvedLatestImages = latestUser?.text && !cardContinuation && !latestInBurst
     ? extractTurnImages(latestUser.text)
     : { text: latestUser?.text ?? "", images: [] };
-  const usesNativeImageInput = instance.adapter.capabilities.nativeImageInput === true;
   const roomContext = serializeRoomContext(
     threadId,
     userName,
     usesNativeImageInput && latestUser
-      ? { messageId: latestUser.id, text: resolvedLatestImages.text }
+      ? [
+          ...burstOverrides,
+          ...(latestInBurst ? [] : [{ messageId: latestUser.id, text: resolvedLatestImages.text }]),
+        ]
       : undefined,
     bot.id,
   );
-  const turnImages = usesNativeImageInput ? resolvedLatestImages.images : [];
+  const turnImages = usesNativeImageInput ? [...burstImages, ...resolvedLatestImages.images] : [];
   const skills = availableSkills();
   const selectedSkills = mergeSkills(
     selectBundledSkills(
@@ -10727,6 +11329,7 @@ async function runGroupMemberTurn(
   }
   // user-configured MCP servers: same gating as the 1:1 site above.
   if (instance.adapter.capabilities.customMcp === true) {
+    await refreshMcpOAuth(bot);
     const custom = engineMcpServers(bot);
     if (Object.keys(custom).length) integrations.custom = custom;
   }
@@ -10801,7 +11404,7 @@ async function runGroupMemberTurn(
     onDispatchError?.(message);
     return true;
   }
-  if (boxLifecycleBusyBots.has(readyBot.id)) {
+  if (boatLifecycleBusyBots.has(readyBot.id)) {
     if (orchestration) {
       orchestration.result.outcome = "busy";
       return true;
@@ -10843,7 +11446,7 @@ async function runGroupMemberTurn(
   orchestration?.onClaimed?.();
   // The stall completion handler only exists once the provider turn runs
   // (registered at dispatch below), but this watch is armed at claim. Latch
-  // a stall that fires during setup — browser, box, and VM mounts can all
+  // a stall that fires during setup — browser, boat, and VM mounts can all
   // wedge — so the dispatch site completes the turn instead of launching a
   // provider turn the person was already told was stopped. The finally
   // below unregisters the latch on every other exit.
@@ -10852,7 +11455,7 @@ async function runGroupMemberTurn(
     setupStalled = true;
   });
   // Watch from claim, not provider dispatch: room setup (connected-app
-  // discovery, browser, box, and VM mounts) can wedge before any provider
+  // discovery, browser, boat, and VM mounts) can wedge before any provider
   // event exists. The exits between here and dispatch either throw into the
   // finally's guarded cleanup or return through the revalidation block,
   // both of which settle the watch.
@@ -10880,7 +11483,7 @@ async function runGroupMemberTurn(
     : roomPlan.computer === "cloud" ? (turnProvider(readyBot) === "vps" ? "vps" : "box") : undefined;
   const roomPlaceRefusal = roomKind && managedPolicy.computerRefusal(roomKind);
   if (roomPlaceRefusal) throw Object.assign(new Error(roomPlaceRefusal), { code: "managed_policy" });
-  // The Computer engine runs on the Box; this computer has no tools it can
+  // The Computer engine runs on the Boat; this computer has no tools it can
   // reach, exactly as a bot thread refuses it.
   if (roomPlan.computer === "local" && instance.adapter.capabilities.remoteAgent === true) {
     throw new Error("the Computer engine works on the cloud computer — set Works on to Cloud, or choose another engine");
@@ -10903,7 +11506,7 @@ async function runGroupMemberTurn(
   }
 
   if (roomTeamComputer) {
-    const attached = await attachTeamBox(roomTeamComputer, readyBot.id, resourceOwner,
+    const attached = await attachTeamBoat(roomTeamComputer, readyBot.id, resourceOwner,
       instance.adapter.capabilities.usesCloudComputer === true, instance.adapter.capabilities.remoteAgent === true);
     if (isCancelled?.() || groupSpeakers.get(threadId) !== roomSpeaker ||
         activeInternalGenerationByThread.get(threadId) !== internalGeneration) return false;
@@ -10943,9 +11546,9 @@ async function runGroupMemberTurn(
       integrations.localComputer = mounted.integration;
       roomComputerKind = "vps";
     } else {
-      if (!box.boxConfigured(cfg)) throw new Error("Cloud box is not configured — add a Box API key or choose Local VM");
+      if (!boat.boatConfigured(cfg)) throw new Error("Cloud Boat is not configured — add a Boat API key or choose Local VM");
       const remoteAgent = instance.adapter.capabilities.remoteAgent === true;
-      const attached = await attachBotBox(readyBot, resourceOwner, { explicitCloud: true,
+      const attached = await attachBotBoat(readyBot, resourceOwner, { explicitCloud: true,
         canMount: instance.adapter.capabilities.usesCloudComputer === true, remoteAgent });
       if (!roomSetupIsCurrent()) return false;
       if (!attached?.integration) throw new Error("the cloud computer could not be created or reached");
@@ -10963,7 +11566,7 @@ async function runGroupMemberTurn(
       throw new Error("this model engine cannot use the Local VM");
     }
     // A distinct identity fences cleanup even in shared mode on the same room thread.
-    const target = { ...localVmTargetForBot(readyBot.id) };
+    const target = { ...localVmTargetForThread(readyBot.id, threadId) };
     await bindTurnComputer(resourceOwner, `computer:vm:${target.key}`, true);
     if (localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(target.key)) {
       throw new Error("this Local VM is being started, stopped, or replaced");
@@ -10971,6 +11574,7 @@ async function runGroupMemberTurn(
     if (!localVmLeaseFor(target).claim(threadId, readyBot.id, localVmOwnerBusy)) {
       throw new Error("this Local VM is already being used by another turn");
     }
+    if (localVmMode(cfg) === "pool") localVmSeatPool.touch(threadId);
     roomVmTarget = target;
     localVmThreadTargets.set(threadId, target);
     localVmActiveThreads.set(target.key, threadId);
@@ -11218,10 +11822,13 @@ async function runGroupMemberTurn(
     providerDispatched = true;
     turnPromptBytes.set(threadId, { stable: Buffer.byteLength(roomSystem.stable), volatile: Buffer.byteLength(roomSystem.volatile) });
     runningTurnEngines.set(threadId, instance);
+    // notes only in a room: a private chat reaches a room through the
+    // explicit, disclosed session_search, never automatically
+    const roomRecalled = cardContinuation ? "" : autoRecallPrompt(bot, threadId, resolvedLatestImages.text, { conversations: false, userName });
     guardTurnDispatch(instance.adapter.sendTurn({
         threadId,
         botId: readyBot.id,
-        text,
+        text: withRecalled(roomRecalled, text),
         refreshSystemPrompt: true,
         images: turnImages,
         approvalMode: roomTurnApprovalMode(readyBot, orchestration),
@@ -11832,6 +12439,11 @@ type StartGroupTurnOptions = {
   sender?: ResolvedSender;
   /** Who the ledger books this room turn's speakers to (see startTurn's `trigger`). */
   trigger?: UsageTrigger;
+  /** A drained queue's coalesced group (M2): one sender's contiguous
+   * in-window burst running as ONE follow-up. Each item lands as its own
+   * transcript line under its own queueId; `text` is the joined burst the
+   * responders are routed and titled on. */
+  queuedGroup?: ChannelQueueItem[];
 };
 
 function startGroupTurn(
@@ -11867,17 +12479,49 @@ function startGroupTurn(
   if (options.goalCoordinatorBotId && (channelMode !== "goal" || !requestedGoalCoordinator)) {
     throw Object.assign(new Error("the selected goal coordinator is not an active room member"), { status: 409 });
   }
-  const message = store.appendMessage(threadId, {
-    role: "user",
-    kind: "text",
-    text,
-    replyToId: replyTo?.id,
-    sendId,
-    channelMode,
-    queueId,
-    via: options.via,
-    sender: options.sender,
-  });
+  // A coalesced drain appends every queued line under its own queueId (the
+  // chips and sendId receipts stay per-item); the LAST line is the turn's
+  // user message, exactly like the 1:1 drain's userMessage.
+  const queuedGroup = options.queuedGroup;
+  const message = queuedGroup && queuedGroup.length > 0
+    ? (() => {
+        for (const item of queuedGroup.slice(0, -1)) {
+          store.appendMessage(threadId, {
+            role: "user",
+            kind: "text",
+            text: item.text,
+            replyToId: item.replyToId,
+            sendId: item.sendId,
+            channelMode: item.mode,
+            queueId: item.id,
+            via: item.via,
+            sender: item.sender,
+          });
+        }
+        const last = queuedGroup[queuedGroup.length - 1]!;
+        return store.appendMessage(threadId, {
+          role: "user",
+          kind: "text",
+          text: last.text,
+          replyToId: replyTo?.id,
+          sendId: last.sendId,
+          channelMode: last.mode,
+          queueId: last.id,
+          via: last.via,
+          sender: last.sender,
+        });
+      })()
+    : store.appendMessage(threadId, {
+        role: "user",
+        kind: "text",
+        text,
+        replyToId: replyTo?.id,
+        sendId,
+        channelMode,
+        queueId,
+        via: options.via,
+        sender: options.sender,
+      });
   // Admitted (see startTurn): the room's speakers are booked to this sender.
   if (options.trigger) turnTriggers.set(threadId, options.trigger);
   const titled = group.dm ? null : store.titleGroupTaskFromFirstMessage(group.id, text, threadId);
@@ -11934,7 +12578,7 @@ function startGroupTurn(
     bots: speakers.map((bot) => ({ id: bot.id, host: bot.host })),
     workers: registeredWorkers,
     messageId: message.id,
-    authorId: options.sender?.id ?? (cfg.profile?.email ?? "local-owner").trim(),
+    authorId: options.sender?.id ?? localPrincipalId(),
     queued: queuedWorkerTurns,
   });
   queuedWorkerTurns = gate.queued;
@@ -11975,6 +12619,11 @@ function startGroupTurn(
     threadId,
     goalCoordinator ? [] : responders.map((responder) => responder.id),
   );
+  if (queuedGroup && queuedGroup.length > 0) {
+    // member turns use these stable ids to carry every burst line's words
+    // and attachments through the turn that swallowed the burst
+    operation.queuedQueueIds = queuedGroup.map((item) => item.id);
+  }
   if (goalCoordinator) {
     const runId = options.goalRunId?.trim() || `goal-${Date.now().toString(36)}-${randomUUID()}`;
     const startedAt = Date.now();
@@ -12069,17 +12718,30 @@ function drainQueuedChannelSends(): void {
       const group = store.group(groupId);
       return group ? groupIsWorking(group) : false;
     },
-    ({ groupId, threadId, text, replyToId, sendId, mode, id, via, sender, trigger }) => {
+    ({ groupId, threadId, items }) => {
       const group = store.group(groupId);
       const ownsThread = group?.dm
         ? group.threadId === threadId
         : Boolean(group && store.groupTaskByThread(group.id, threadId));
       if (!group || !ownsThread) return;
+      // The burst runs as ONE room turn: the joined text routes responders
+      // and titles the task, while every queued line still lands under its
+      // own queueId (chips and sendId receipts stay per-item).
+      const head = items[0]!;
+      const last = items[items.length - 1]!;
+      const joined = items.map((item) => item.text).join("\n\n");
       try {
-        startGroupTurn(groupId, text, resolveReplyTarget(threadId, replyToId), sendId, mode, id, { via, threadId, sender, trigger: queuedTurnTrigger({ trigger, sender }) });
+        startGroupTurn(groupId, joined, resolveReplyTarget(threadId, last.replyToId), last.sendId, last.mode, last.id, {
+          threadId,
+          sender: head.sender,
+          trigger: queuedTurnTrigger({ trigger: head.trigger, sender: head.sender }),
+          queuedGroup: items,
+        });
       } catch (error) {
-        if (!store.messagesFor(threadId).some((message) => message.queueId === id && message.role === "user")) {
-          store.appendMessage(threadId, { role: "user", kind: "text", text, replyToId, sendId, channelMode: mode, queueId: id, via, sender });
+        for (const item of items) {
+          if (!store.messagesFor(threadId).some((message) => message.queueId === item.id && message.role === "user")) {
+            store.appendMessage(threadId, { role: "user", kind: "text", text: item.text, replyToId: item.replyToId, sendId: item.sendId, channelMode: item.mode, queueId: item.id, via: item.via, sender: item.sender });
+          }
         }
         store.appendMessage(threadId, {
           role: "bot",
@@ -13074,7 +13736,7 @@ async function localVmPayload(target: LocalVmTarget) {
  * app itself deleted eight hours earlier. Someone who steps away overnight
  * comes back to an error on their first message.
  *
- * The cloud branch below already does the opposite: an absent box is
+ * The cloud branch below already does the opposite: an absent boat is
  * provisioned on first use behind a `provisioning` broadcast. This gives the
  * Local VM the same lifecycle for the same reason.
  *
@@ -13094,7 +13756,11 @@ async function readyLocalVmForTurn(botId: string, target: LocalVmTarget, isCurre
   // before the first await — the same synchronous-fence-then-count shape
   // the panel route uses — so two concurrent turns cannot both pass the
   // per-bot limit between count and create.
-  const ownsProvision = !localVmProvisionBusy;
+  // Pool capacity is bounded by its seat indices. Each seat already has
+  // its own lease/lifecycle fence, so independent cold seats can start
+  // together without competing for the per-bot inventory's capacity gate.
+  const pooled = target.key.startsWith("pool:");
+  const ownsProvision = !pooled && !localVmProvisionBusy;
   if (ownsProvision) localVmProvisionBusy = true;
   let status: ContainerComputerStatus;
   try {
@@ -13105,9 +13771,9 @@ async function readyLocalVmForTurn(botId: string, target: LocalVmTarget, isCurre
     // Another creation is already mid-flight and its container is not yet
     // visible to a count, so the safe answer is the inspected status —
     // exactly what the over-cap path below returns.
-    if (!ownsProvision) return status;
+    if (!pooled && !ownsProvision) return status;
 
-    if (target.key !== SHARED_LOCAL_VM_TARGET.key) {
+    if (target.key.startsWith("bot:")) {
       const count = await existingPerBotLocalVmCount(status.runtime);
       if (!isCurrent() || count >= localVmMaxInstances(cfg)) return status;
     }
@@ -13230,6 +13896,7 @@ function configStatus() {
     features: {
       skillAuthoring: skillAuthoringEnabled(cfg),
       showToolCalls: showToolCallsEnabled(cfg),
+      routinesInConversation: routinesInConversationEnabled(cfg),
       browser: builtInBrowserEnabled(cfg),
       // Maintainer-only escape hatch, not a Settings toggle: the desktop
       // shell and the Settings UI read it so they offer nothing this server
@@ -13238,6 +13905,7 @@ function configStatus() {
       // Plugins → MCP servers switch: Claude bots also see this machine's
       // own Claude Code MCP servers
       claudeUserMcp: claudeUserMcpEnabled(cfg),
+      autoRecall: autoRecallEnabled(cfg),
     },
     // first-run progress — not a secret; the app decides whether to show
     // the welcome tour from this, never from browser storage
@@ -13280,8 +13948,12 @@ function mcpServerResponse() {
   // While enrolled with custom servers off, say which servers stay configured
   // but never reach bots, and why. Nothing here is written to config.json.
   const policy = managedPolicy.current();
-  const servers = listMcpServers(cfg.mcpServers).map(server =>
-    managedPolicy.mcpAllowed(server.name, "url" in server ? server.url : undefined) ? server : { ...server, managedBy: policy!.organizationName });
+  const remote = remoteMcpServers();
+  const servers = listMcpServers(cfg.mcpServers).map(server => {
+    const auth = "url" in server && remote[server.name] ? mcpOAuth.status(server.name, remote[server.name]) : undefined;
+    const listed = auth ? { ...server, ...auth, ...(auth.auth === "required" && mcpOAuth.pendingFor(server.name) ? { authPending: true } : {}) } : server;
+    return managedPolicy.mcpAllowed(server.name, "url" in server ? server.url : undefined) ? listed : { ...listed, managedBy: policy!.organizationName };
+  });
   return { servers, ...(policy && !policy.mcp.allowCustom ? { managed: { organizationName: policy.organizationName, allowlist: policy.mcp.allowlist } } : {}) };
 }
 /** Adding or editing a server the organisation has not approved is refused. */
@@ -13305,7 +13977,47 @@ function mcpServerBody(body: unknown): Record<string, unknown> {
 /** Configured MCP servers that may reach this bot's engine. While enrolled,
  * the organisation's allow-list filters them; config.json is never changed. */
 function engineMcpServers(bot: BotRecord) {
-  return managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers));
+  return mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers)));
+}
+
+/** Refresh the OAuth tokens a turn is about to hand its engine. A failure
+ * only marks that server expired; the turn still starts without it signed in. */
+async function refreshMcpOAuth(bot: BotRecord): Promise<void> {
+  await mcpOAuth.refreshDue(managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers))).catch(() => undefined);
+}
+
+/** Every configured remote server, parsed, keyed by name. */
+function remoteMcpServers(names?: string[]): Record<string, StoredRemoteMcpServer> {
+  const out: Record<string, StoredRemoteMcpServer> = {};
+  for (const [name, raw] of Object.entries(cfg.mcpServers ?? {})) {
+    if (names && !names.includes(name)) continue;
+    const parsed = parseStoredMcpServer(name, raw);
+    if (parsed.ok && isRemoteMcpServer(parsed.server)) out[name] = parsed.server;
+  }
+  return out;
+}
+
+/** Ask newly seen remote servers whether they want a sign-in, bounded so a
+ * slow server never holds the list for long. */
+async function probeMcpOAuth(names?: string[], force = false): Promise<void> {
+  // A server the organisation has not approved is never contacted.
+  const servers = Object.fromEntries(Object.entries(remoteMcpServers(names)).filter(([name, server]) => managedPolicy.mcpAllowed(name, server.url)));
+  await mcpOAuth.probeUnknown(servers, { force, signal: AbortSignal.timeout(4_000) }).catch(() => undefined);
+}
+
+/** A sign-in may carry a client the user registered with the provider,
+ * for servers that offer no dynamic registration. */
+const mcpOAuthStartSchema = z.object({
+  clientId: z.string().trim().min(1).max(512).regex(/^[\x21-\x7e]+$/, "The client ID has characters that are not allowed.").optional(),
+  clientSecret: z.string().trim().max(2_048).regex(/^[\x21-\x7e]*$/, "The client secret has characters that are not allowed.").optional(),
+}).strict();
+
+/** Where the authorization server sends the browser back: this server on
+ * loopback, or its public address when the request came from elsewhere. */
+function mcpOAuthRedirectUri(req: IncomingMessage): string {
+  const remote = !isLoopbackHost(req.headers.host) || isProxied(req);
+  const base = remote ? publicUrl() : null;
+  return `${base ?? `http://127.0.0.1:${PORT}`}/api/mcp-oauth/callback`;
 }
 
 function persistMcpServers(next: Record<string, unknown>): void {
@@ -13526,27 +14238,6 @@ function serveStatic(res: ServerResponse, path: string): boolean {
   }
 }
 
-/** A store refusal is a client error with a status of its own (400 path,
- * 409 conflict, 413 too large); a 409 also carries what is on disk now so
- * the editor can show the bot's version instead of guessing. Anything else
- * is a real failure and goes to the handler's catch-all. */
-function replyMemoryError(res: ServerResponse, error: unknown) {
-  if (!(error instanceof MemoryStoreError)) throw error;
-  if (error.code === "conflict") {
-    return json(res, error.status, { error: error.message, code: error.code, currentHash: error.currentHash, current: error.current });
-  }
-  return json(res, error.status, { error: error.message, code: error.code });
-}
-
-/** The journal row as the panel shows it: the full prior text stays on
- * the server (a revert needs it there, the list does not), and the thread
- * id becomes the chat title people recognise. */
-function journalEntryForClient(botId: string, entry: MemoryJournalEntry) {
-  const { before: _before, ...visible } = entry;
-  const threadTitle = entry.threadId ? store.taskByThread(botId, entry.threadId)?.title : undefined;
-  return threadTitle ? { ...visible, threadTitle } : visible;
-}
-
 // Loopback-only enforcement: the harness runs on 127.0.0.1 but accepts
 // requests from any loopback connection and any web page that DNS-rebinds
 // onto it. Reject non-loopback Hosts outright (defeats rebinding) and
@@ -13578,13 +14269,13 @@ const workspaceBackupRoutes = createWorkspaceBackupRoutes({
     idle: () => !providerFleetReloading && !providerAuthSessions.active && !browserEngineInstall &&
       !routines?.isTicking && !calendarCalls?.isTicking &&
       !localVmImageBusy && !localVmProvisionBusy && !localVmModeChangeBusy &&
-      !localVmLifecycleBusy.size && !boxLifecycleBusyBots.size && !vpsPreviewRequests.size && !orphanBoxLifecycleBusyIds.size &&
+      !localVmLifecycleBusy.size && !boatLifecycleBusyBots.size && !vpsPreviewRequests.size && !orphanBoatLifecycleBusyIds.size &&
       !computerProviderConfigTransitions.size && !checkpointRestoreLeases.size &&
       teamComputers.list().every(computer => !teamComputerInUse(computer)) &&
       store.bots.every((bot) => !botHasActiveTurn(bot.id) && !routines?.activeRunForBot(bot.id) && !botComputerControlSnapshot(bot.id).held) &&
       store.groups.every((group) => !groupIsWorking(group)),
-    pause: () => { routines?.stop(); calendarCalls?.stop(); watchdog.stop(); },
-    resume: () => { routines?.start(); calendarCalls?.start(); watchdog.start(); },
+    pause: () => { routines?.stop(); calendarCalls?.stop(); watchdog.stop(); memoryUpkeep.pause(); },
+    resume: () => { routines?.start(); calendarCalls?.start(); watchdog.start(); memoryUpkeep.resume(); },
     flush: async () => {
       await Promise.all([flushAllProfileHistory(), flushAllMemoryJournals(), flushUsageLedger(DATA_DIR), flushDecisionLog(DATA_DIR), flushAdminActivity(DATA_DIR)]);
       // With writers gated and work idle, release our WAL connection for the
@@ -13602,6 +14293,19 @@ ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: (
 // its file, so New bot cannot disagree with it. No organization: none.
 const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
+// The bot-memory panel's routes (MEMORY.md, memory/ topics, journal); the
+// store lookups — the 404 precheck and journal thread titles — stay explicit.
+ROUTES.push(createBotMemoryRoutes({
+  bot: (id) => store.bot(id),
+  taskByThread: (botId, threadId) => store.taskByThread(botId, threadId),
+  upkeep: memoryUpkeep,
+  aboutMe: () => cfg.profile?.aboutMe ?? "",
+  saveAboutMe: (aboutMe) => {
+    saveConfig({ profile: { ...cfg.profile, aboutMe } });
+    Object.assign(cfg, loadConfig());
+    broadcast({ kind: "config", ...configStatus() });
+  },
+}));
 const orgState: OrgState = {
   get org() {
     return cfg.org ?? null;
@@ -13620,12 +14324,44 @@ const orgState: OrgState = {
     return cfg.signIn as { admins: string[]; members: string[] };
   },
 };
+/** The operator at this computer, as a principal. The profile email is an
+ * attribute of it, never a second person. */
+function localPrincipalId(): string {
+  // Read only: the boot above created the operator, and its email is synced
+  // at boot and after a config save, never on a read.
+  return principals.local()?.id ?? principals.localOperator().id;
+}
+/** Who acts, by principal: a session's principal (or its anonymous id),
+ * the operator on loopback, nobody for a local service. */
+function actorPrincipalId(auth: RequestAuth): string {
+  if (auth.kind === "session") {
+    const viewerId = channelViewerId(auth) ?? "";
+    return viewerId.startsWith("anon:") ? "" : viewerId;
+  }
+  if (auth.kind === "loopback" && auth.trust === "service") return "";
+  return localPrincipalId();
+}
+/** Whose channels and bots a request may see (requests, live frames and
+ * search all read this). Unfiltered, like loopback: the operator's own phone
+ * (an admin code paired from this computer), and, while no organization
+ * exists, a session without a principal (a chat-only device on a personal
+ * server keeps seeing the operator's bots; its scope still gates it). */
+function channelFilterViewerId(auth: RequestAuth): string | undefined {
+  const viewerId = channelViewerId(auth);
+  if (!viewerId) return undefined;
+  if (viewerId.startsWith("anon:") && !orgState.org) return undefined;
+  return auth.scopes.includes("admin") && viewerId === localPrincipalId() ? undefined : viewerId;
+}
+/** The actor's sign-in email: sign-in lists and invites stay in emails. */
+function actorEmail(auth: RequestAuth): string | undefined {
+  if (auth.kind === "session") return auth.session.email?.trim().toLowerCase() || undefined;
+  return cfg.profile?.email?.trim().toLowerCase() || undefined;
+}
 function channelActorId(auth: RequestAuth): string {
-  if (auth.kind === "session") return (auth.session.email ?? auth.session.userId ?? auth.session.id).trim();
-  return (cfg.profile?.email ?? "local-owner").trim();
+  return actorPrincipalId(auth);
 }
 function creatingBotOwnerId(auth: RequestAuth): string {
-  return channelActorId(auth).trim().toLowerCase();
+  return actorPrincipalId(auth);
 }
 
 function recordedBotOwner(bot: { ownerUserId?: unknown }): string | undefined {
@@ -13635,7 +14371,7 @@ function effectiveBotOwner(bot: { ownerUserId?: unknown }): string {
   return ownerUserIdForPlacement({
     recordedOwnerUserId: recordedBotOwner(bot),
     orgOwnerUserId: orgState.org?.ownerUserId?.trim().toLowerCase(),
-    localOperatorId: (cfg.profile?.email ?? "local-owner").trim().toLowerCase(),
+    localOperatorId: localPrincipalId(),
   });
 }
 function botDirectGrants(bot: { directGrants?: unknown }): string[] {
@@ -13727,6 +14463,7 @@ function channelActorRole(auth: RequestAuth): OrgRole | null {
     admins: orgState.signIn.admins,
     members: orgState.signIn.members,
     userId: channelActorId(auth),
+    email: actorEmail(auth),
   });
 }
 
@@ -13739,7 +14476,7 @@ function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already
       ? effectiveBotOwner(bot)
       : ownerUserIdForPlacement({
         orgOwnerUserId: orgState.org?.ownerUserId?.trim().toLowerCase(),
-        localOperatorId: (cfg.profile?.email ?? "local-owner").trim().toLowerCase(),
+        localOperatorId: localPrincipalId(),
       });
     if (!canPlaceBot({ actorId, ownerUserId })) {
       return "forbidden: only the bot owner can place it in a channel";
@@ -13760,6 +14497,13 @@ ROUTES.push(createDirectGrantRoutes({
   bot: (id) => store.bot(id) ?? undefined,
   patchBot: (id, patch) => store.patchBot(id, patch),
   actorId: channelActorId,
+  // Called only once the actor owns the bot: resolving an email may create
+  // its principal. Anything that is not a principal id or an account email
+  // is refused.
+  resolveUserId: (ref) => {
+    const id = principalIdFor(ref, principals);
+    return isPrincipalId(id) ? id : null;
+  },
 }));
 ROUTES.push(createWorkerRoutes({
   workers: () => registeredWorkers,
@@ -13799,20 +14543,81 @@ ROUTES.push(createWorkerRoutes({
     failWorkerTurns([messageId], "The turn failed because the author cancelled.");
   },
 }));
+/** A principal's sign-in email. The local operator without one takes the
+ * profile email, and it is synced onto the principal, so the owner is shown
+ * by address rather than by id. */
+function principalEmail(id: string): string | undefined {
+  const found = principals.byId(id);
+  if (found?.email) return found.email;
+  if (found?.local && cfg.profile?.email && isAccountEmail(cfg.profile.email)) return principals.localOperator(cfg.profile.email).email;
+  return undefined;
+}
+function persistOrgState(next?: { org?: OrgRecord }) {
+  const org = next?.org ?? orgState.org;
+  saveConfig({
+    ...(org ? { org } : {}),
+    invites: orgState.invites,
+    signIn: { admins: orgState.signIn.admins, members: orgState.signIn.members },
+  });
+}
 ROUTES.push(createOrgRoutes({
   state: orgState,
-  actorId: (auth) => {
-    if (auth.kind === "session") return (auth.session.email ?? auth.session.userId ?? auth.session.id).trim();
-    return (cfg.profile?.email ?? "local-owner").trim();
+  actorId: actorPrincipalId,
+  actorEmail,
+  ownerEmail: () => (orgState.org ? principalEmail(orgState.org.ownerUserId) : undefined),
+  emailOf: principalEmail,
+  publicUrl,
+  persist: persistOrgState,
+  // A stream opened before the organization was built with no filter for a
+  // session without a principal (or the operator's own phone). End every
+  // session-backed unfiltered stream so it reconnects under the org filter.
+  onOrgCreated: () => {
+    audienceChangedAt = lastSeq;
+    for (const client of sseClients) {
+      if (!client.sessionId || client.viewerId) continue;
+      sseClients.delete(client);
+      try {
+        client.res.end();
+      } catch {
+        /* already gone */
+      }
+    }
   },
-  persist: () => {
-    saveConfig({
-      ...(orgState.org ? { org: orgState.org } : {}),
-      invites: orgState.invites,
-      signIn: { admins: orgState.signIn.admins, members: orgState.signIn.members },
-    });
+  mailInvite: async ({ email, inviterEmail, link }) => {
+    const send = mailer();
+    if (!send) return false;
+    const orgName = orgState.org?.name ?? "Pulsa Bot";
+    const message = inviteMailMessage({ orgName, inviterEmail, link });
+    try {
+      await send.send({ to: email, ...message });
+      return true;
+    } catch (error) {
+      console.warn(`invite email to ${email} could not be sent: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
   },
 }));
+
+// Invite links (/join#token=...): public like /api/auth/email/start, and
+// counted against the same per-source lockout as pairing. Security model:
+// server/org-routes.ts `joinInviteRoute`.
+const publicInvites = createPublicInviteRoutes({
+  state: orgState,
+  ownerEmail: () => (orgState.org ? principalEmail(orgState.org.ownerUserId) : undefined),
+  limiter: {
+    source: requestSource,
+    allowed: (source) => sessions.attemptAllowed(source),
+    noteFailure: (source) => sessions.noteFailure(source),
+    clearFailures: (source) => sessions.clearFailures(source),
+  },
+  persist: () => persistOrgState(),
+  signIn: ({ req, res, email }) => {
+    const principal = principals.forAccount({ email });
+    const issued = sessions.issue({ label: `Invited: ${email}`, scopes: ["client"], email, principalId: principal.id });
+    const secure = requestOrigin(req)?.startsWith("https://") === true;
+    res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }));
+  },
+});
 
 const toolResults = new ToolResults();
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
@@ -13843,7 +14648,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // Hosted workspaces have one sign-in authority. A missing optional layer
     // must not accidentally reactivate legacy email/QR credential minting.
     if (HOSTED_WORKSPACE) {
-      if (method === "POST" && ["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path)) {
+      if ((method === "POST" && ["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path)) || PUBLIC_INVITE_PATH.test(path)) {
         return json(res, 403, { error: "Sign in through the workspace portal." });
       }
       if (workspaceAccess) {
@@ -13854,7 +14659,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     // An enrolled organisation that turns remote access off refuses new pairing
     // codes and new remote sessions. Existing sessions and this app are unchanged.
-    if (method === "POST" && ["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path)) {
+    if (method === "POST" && (["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path) || PUBLIC_INVITE_PATH.test(path))) {
       const refusal = managedPolicy.remoteAccessRefusal();
       if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
     }
@@ -13865,6 +14670,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
     if (method === "GET" && path === "/.well-known/openmausbot/environment") {
       return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && emailSignIn.enabled(), sharedComputers: sharedComputersEnabled(cfg) }));
+    }
+    // The browser lands here after an MCP server's sign-in. Public: the
+    // single-use `state` bound to the pending flow is the authorization.
+    if (method === "GET" && path === "/api/mcp-oauth/callback") {
+      const result = await mcpOAuth.callback(url.searchParams, AbortSignal.timeout(15_000));
+      const page = callbackPage(result, typeof req.headers["accept-language"] === "string" ? req.headers["accept-language"] : undefined);
+      res.writeHead(result.ok ? 200 : 400, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${page.nonce}'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,
+      });
+      res.end(page.html);
+      return;
     }
     const domainCheck = /^\/\.well-known\/openmausbot\/domain-check\/([a-f0-9]{64})$/.exec(path);
     if (method === "GET" && domainCheck) {
@@ -13886,7 +14706,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       const email = typeof body?.email === "string" ? body.email : "";
       if (path === "/api/auth/email/start") {
-        const started = await emailSignIn.start(email);
+        const started = await emailSignIn.start(email, source);
         if (!started.ok) {
           if (started.status === 403) sessions.noteFailure(source);
           return json(res, started.status, { error: started.error });
@@ -13902,11 +14722,41 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, verified.status, { error: verified.error });
       }
       sessions.clearFailures(source);
-      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email });
+      if (!isAccountEmail(verified.email)) return json(res, 400, { error: "this address cannot sign in: at most 320 characters, shaped name@domain" });
+      // A verified address with an open invite joins: proving you own the
+      // address is what the invite link would have proven. Idempotent.
+      if (acceptOpenInvitesForEmail(orgState, { email: verified.email, now: Date.now() })) {
+        try {
+          persistOrgState();
+        } catch (error) {
+          console.warn(`accepting the invite for ${verified.email} could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      const principal = principals.forAccount({ email: verified.email, controlPlaneUserId: verified.userId || undefined });
+      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id });
       const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: true, sharedComputers: sharedComputersEnabled(cfg) });
       const secure = requestOrigin(req)?.startsWith("https://") === true;
       res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }));
       return json(res, 200, { session: issued.session, environment });
+    }
+    if (await publicInvites({ req, res, path, method, json, readBody })) return;
+    // The Admin's signed request for one pairing window on a Cloud home
+    // machine. Public like /api/auth/pair, JSON only, and bad signatures
+    // count against the same lockout. Never log its headers, body or code.
+    if (cloudPairing && path === CLOUD_PAIRING_PATH) {
+      res.setHeader("cache-control", "no-store");
+      if (method !== "POST") return json(res, 405, { error: "method_not_allowed" });
+      if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {
+        return json(res, 415, { error: "send the pairing request as JSON (content-type: application/json)" });
+      }
+      const source = requestSource(req);
+      const header = (name: string) => { const value = req.headers[name]; return typeof value === "string" ? value : undefined; };
+      const result = cloudPairing.handle({
+        timestamp: header("x-omb-cloud-timestamp"), nonce: header("x-omb-cloud-nonce"), signature: header("x-omb-cloud-signature"),
+        body: await readSignedBody(req), source,
+      });
+      if (result.status !== 200) console.warn(`cloud pairing refused from ${source}: ${String(result.body.error)}`);
+      return json(res, result.status, result.body);
     }
     if (method === "POST" && path === "/api/auth/pair") {
       // JSON only: a cross-site HTML form cannot send this content type
@@ -14014,11 +14864,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         : { status: 503, error: "Workspace sign-in is unavailable." };
       if (failure) return json(res, failure.status, { error: failure.error });
     }
+    // A portal-issued or older account session never went through email
+    // sign-in: give it its person now, so it owns what it owned by email.
+    // An address that is not an account email stays nobody.
+    if (auth.kind === "session" && !auth.session.principalId && auth.session.email && isAccountEmail(auth.session.email)) {
+      const userId = auth.session.userId;
+      const principal = principals.forAccount({
+        email: auth.session.email,
+        controlPlaneUserId: userId && !userId.startsWith("portal:") ? userId : undefined,
+      });
+      sessions.setPrincipal(auth.session.id, principal.id);
+      auth.session.principalId = principal.id;
+    }
     // Bot visibility: a member reaches a restricted bot, its threads, rooms,
     // routines and files exactly as they reach an id that does not exist.
     // Lists and live frames are narrowed where they are built, below.
     const visible = visibleTo(viewerFor(auth));
-    const viewerId = channelViewerId(auth);
+    const viewerId = channelFilterViewerId(auth);
     if (!visible.everything) {
       const subject = pathSubject(path);
       if (subject && !subjectVisible(subject, visible)) return json(res, 404, { error: notFoundFor(subject) });
@@ -14067,6 +14929,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               // a hosted team workspace: the web UI's first run skips the
               // desktop-only beats there. Absent everywhere else.
               ...(HOSTED_WORKSPACE ? { hosted: true } : {}),
+              // an OMB Cloud home: the web UI's first run is its engine
+              // sign-in (docs/cloud-pro.md). Absent everywhere else.
+              ...(CLOUD_HOME ? { cloudHome: true } : {}),
             },
       );
     }
@@ -14089,7 +14954,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const requested: unknown = body?.scopes;
       const scopes = Array.isArray(requested) ? requested.filter((v): v is Scope => v === "admin" || v === "client") : undefined;
-      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes });
+      // Only an admin code carries its creator's person: a chat-only code
+      // pairs an anonymous device that sees no org channel.
+      const carriesPrincipal = (scopes?.length ? scopes : ["admin"]).includes("admin");
+      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes, principalId: carriesPrincipal ? actorPrincipalId(auth) || undefined : undefined });
       const origin = requestOrigin(req);
       const base = publicUrl() ?? (auth.kind === "session" && origin ? origin : null);
       const code = formatPairingCode(opened.code);
@@ -14412,7 +15280,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (method === "POST" && path === "/api/internal/memory") {
         const body = await readInternalBody();
-        const result = updateMemory(internalSender.id, { action: body.action, text: body.text, oldText: body.oldText }, { source: memorySource() });
+        const result = updateMemory(internalSender.id, { action: body.action, text: body.text, oldText: body.oldText, ...(body.until !== undefined ? { until: body.until } : {}) }, { source: memorySource() });
         return json(res, result.ok ? 200 : result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : 400, result);
       }
       if (method === "POST" && path === "/api/internal/memory/log") {
@@ -14720,11 +15588,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const fromThreadId = internalCapability.threadId;
         const owner = connectorThread(from.id, fromThreadId);
         if (!owner) return json(res, 403, { error: "source conversation does not belong to sender" });
-        // "Make a routine for @B": resolve the target up front so the model
-        // gets a teaching error now, not a mis-bound routine later. Omitted
-        // (or the sender's own id) keeps the schedule-for-self path unchanged.
+        // "Make a routine for @B" / "pause @B's routine": resolve the target
+        // up front so the model gets a teaching error now, not a mis-bound
+        // routine later. Omitted (or the sender's own id) keeps the
+        // own-routine path unchanged.
         let forBot: { botId: string; name: string } | undefined;
-        if (body.action === "create" && body.forBotId !== undefined) {
+        if (body.forBotId !== undefined) {
           const parsedForBotId = z.string().max(128).safeParse(body.forBotId);
           const forBotId = parsedForBotId.success ? parsedForBotId.data.trim() : "";
           if (!forBotId) {
@@ -14748,8 +15617,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const proposedInput = body.action === "create"
           ? { action: body.action, routine: body.routine, forBot }
           : body.action === "update"
-            ? { action: body.action, routineId: body.routineId, changes: body.changes }
-            : { action: body.action, routineId: body.routineId };
+            ? { action: body.action, routineId: body.routineId, changes: body.changes, forBot }
+            : { action: body.action, routineId: body.routineId, forBot };
         const proposed = await routineRequests.submit({
           botId: from.id,
           threadId: fromThreadId,
@@ -16747,7 +17616,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         client.sessionId = auth.session.id;
         client.approvalUserId = channelViewerId(auth) ?? "";
       } else if (auth.kind === "loopback" && auth.trust !== "service") {
-        client.approvalUserId = (cfg.profile?.email ?? "local-owner").trim();
+        client.approvalUserId = localPrincipalId();
       }
       if (viewerId) client.viewerId = viewerId;
       res.writeHead(200, {
@@ -16869,6 +17738,42 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     // scrollback: the page before a message the client already holds
+    // #1655: the consent card's answer, per conversation. Explicit and
+    // revocable; a thread allowlisted in config carries the same standing
+    // consent without ever seeing a card.
+    m = path.match(/^\/api\/threads\/([\w-]+)\/cloud-overflow$/);
+    if (m && method === "POST") {
+      const threadId = m[1]!;
+      if (!store.botByThread(threadId)) return json(res, 404, { error: "no such conversation" });
+      const body = await readBody(req);
+      if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
+      if (typeof body.consent !== "boolean") return json(res, 400, { error: "consent must be a boolean" });
+      if (body.consent) {
+        // Consent answers the priced card, never a guess: without a prior
+        // offer the rate was never shown, so a seat must not start yet.
+        // The grant binds to the rate the card showed (#1655): a config
+        // change re-offers instead of starting at a new price silently.
+        const offeredRate = cloudOverflowConsent.offeredRate(threadId);
+        if (offeredRate === null) return json(res, 409, { error: "no cloud overflow offer" });
+        cloudOverflowConsent.grant(threadId, offeredRate);
+      } else {
+        cloudOverflowConsent.revoke(threadId);
+        // Revocation must reach the machine (#1655): the ledger alone
+        // would leave this conversation's seat billing to its idle
+        // timeout. A start still waking is caught by its own revoke
+        // check once readyBox resolves.
+        const seatBot = store.botByThread(threadId);
+        const lease = seatBot ? cloudSeatLeases.get(seatBot.id) : undefined;
+        if (seatBot && lease && lease.threadId === threadId) {
+          stopCloudSeat(seatBot.id, lease, "Cloud computer stopped because overflow consent was revoked — billing pauses while it sleeps.");
+        }
+      }
+      store.appendMessage(threadId, {
+        role: "bot", kind: "activity",
+        tool: { name: cloudOverflowConsentText(body.consent, cloudOverflowIdleStopMs(cfg)), ok: true },
+      });
+      return json(res, 200, { consented: body.consent });
+    }
     m = path.match(/^\/api\/threads\/([\w-]+)\/messages$/);
     if (m && method === "GET") {
       const threadId = m[1];
@@ -17206,7 +18111,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!current.auth) return json(res, current.status, { error: current.error });
       const currentVisible = visibleTo(viewerFor(current.auth));
       if (threadId && !currentVisible.thread(threadId)) return json(res, 404, { error: "no such conversation" });
-      const searchViewerId = channelViewerId(current.auth);
+      const searchViewerId = channelFilterViewerId(current.auth);
       const hits = found
         .filter((hit) => currentVisible.thread(hit.threadId) && searchHitVisibleNow(hit.threadId, searchViewerId))
         .slice(0, limit)
@@ -18048,7 +18953,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // turn — never both for the same words.
       const held = holdChannelQueue(current.id, targetThreadId, m[2]);
       if (!held) return json(res, 404, { error: "no such queued message" });
-      const [head] = held.items;
+      // M2: the head may be a coalesced group (one sender's contiguous
+      // burst); Steer folds that whole group into the live turn as one.
+      const headGroup = headChannelGroup(held.items);
+      const [head] = headGroup;
+      // A live steer has no image side channel — the same rule as the
+      // 1:1 queue: attachment words wait for a real turn where central
+      // admission can hand the images to the engine.
+      if (headGroup.some((item) => extractTurnImages(item.text).images.length > 0)) {
+        restoreHeldChannelQueue(held);
+        return json(res, 200, { ok: true, queued: true, threadId: targetThreadId });
+      }
       const decision = admit("room-steer", {
         speakerPresent: Boolean(speaker),
         engineCanSteer: Boolean(instance?.adapter.capabilities.queueing && instance.adapter.steer),
@@ -18065,11 +18980,36 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A reply target that cannot be resolved restores the held queue
       // before the request fails — the room's normal drain keeps the head.
       const replyTo = resolveHeldReplyTarget(held, resolveReplyTarget);
+      // Each burst line keeps its own reply relationship: the fold renders
+      // per-item reply context (the head through the helper above, the rest
+      // resolved here) so a mixed burst does not inherit the head's quote
+      // or drop its own. A target that cannot be resolved restores the held
+      // queue before the request fails, mirroring the helper's contract.
+      const speakerName = cfg.profile?.name?.trim() || "User";
+      let foldedPrompt: string;
+      try {
+        foldedPrompt = headGroup
+          .map((item, index) =>
+            promptWithReply(
+              item.text,
+              index === 0
+                ? replyTo
+                : item.replyToId
+                  ? resolveReplyTarget(targetThreadId, item.replyToId)
+                  : undefined,
+              speakerName,
+            ),
+          )
+          .join("\n\n");
+      } catch (error) {
+        restoreHeldChannelQueue(held);
+        throw error;
+      }
       // steer was offered only when a live speaker instance could take it;
       // the check carries that invariant to the type system.
       const steered: SteerOutcome = instance?.adapter.steer
         ? await instance.adapter
-            .steer(targetThreadId, promptWithReply(head.text, replyTo, cfg.profile?.name?.trim() || "User"))
+            .steer(targetThreadId, foldedPrompt)
             .catch((): SteerOutcome => "indeterminate")
         : "refused";
       // The steer was awaited adapter work: re-read every ownership
@@ -18088,25 +19028,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // speaker — and settle the head.
       const delivered = steered !== "refused";
       if (after && delivered && (steered === "indeterminate" || afterSpeakerBotId === speakerBotId)) {
-        const message = store.appendMessage(targetThreadId, {
+        const messages = headGroup.map((item) => store.appendMessage(targetThreadId, {
           role: "user",
           kind: "text",
-          text: head.text,
-          replyToId: head.replyToId,
-          sendId: head.sendId,
-          channelMode: head.mode,
-          queueId: head.id,
-          via: head.via,
+          text: item.text,
+          replyToId: item.replyToId,
+          sendId: item.sendId,
+          channelMode: item.mode,
+          queueId: item.id,
+          via: item.via,
           steered: true,
-          sender: head.sender,
-        });
+          sender: item.sender,
+        }));
         settleHeldChannelQueueHead(held);
         return json(res, 200, {
           ok: true,
           steered: true,
           threadId: targetThreadId,
-          messages: [message],
-          queueIds: [head.id],
+          messages,
+          queueIds: headGroup.map((item) => item.id),
         });
       }
       if (steered === "indeterminate" && !after) {
@@ -18781,6 +19721,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         patch.mcpServers = requestedMcpServers;
       }
+      if (body.memoryUpkeep !== undefined) {
+        if (typeof body.memoryUpkeep !== "boolean") return json(res, 400, { error: "memoryUpkeep must be true or false" });
+        patch.memoryUpkeep = body.memoryUpkeep;
+      }
       // per-bot gate on the app's built-in browser
       if (body.browser !== undefined) {
         if (typeof body.browser !== "boolean") return json(res, 400, { error: "browser must be true or false" });
@@ -19101,6 +20045,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         bot = store.patchBot(m[1], patch);
       }
       if (!bot) return json(res, 404, { error: "no such bot" });
+      if (body.memoryUpkeep === false) memoryUpkeep.dropBot(bot.id);
       // A defined Works on is the newest explicit choice: this bot's
       // auto-recorded pins that now point elsewhere give way immediately, so
       // the next turn on each thread follows the new setting. Person-set pins
@@ -19398,132 +20343,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const visible = wireBot(updated);
       broadcast({ kind: "bot", bot: visible });
       return json(res, 200, { bot: visible });
-    }
-
-    // ── bot memory: MEMORY.md + memory/ topic and log files ──────────────
-    // The files already belong to the person (plain markdown in the bot's
-    // workspace). server/memory-store.ts decides which paths can be reached
-    // and refuses a save whose expectedHash no longer matches the file;
-    // server/memory-journal.ts records every change made here so it can be
-    // read back and reverted. Reads never create the workspace — a bot that
-    // has not run yet simply has nothing to show. Admin scope by default
-    // (request-auth.ts), like the profile routes above.
-    m = path.match(/^\/api\/bots\/([\w-]+)\/memory$/);
-    if (m && method === "GET") {
-      if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
-      try {
-        const overview = memoryOverview(m[1]);
-        // `text` and `truncated` ride along one release for clients of the
-        // old whole-file shape; the panel reads the file through /memory/file
-        return json(res, 200, { ...overview, text: readMemoryDoc(m[1], MEMORY_INDEX).text, truncated: overview.index.truncated });
-      } catch (error) {
-        return replyMemoryError(res, error);
-      }
-    }
-    if (m && method === "PUT") {
-      // The pre-panel whole-file write, kept one release: no hash check, so
-      // it can still overwrite a note the bot just wrote — journaled as the
-      // person's so at least the journal can undo it.
-      if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
-      const parsed = z.object({ text: z.string() }).safeParse(await readBody(req));
-      if (!parsed.success) return json(res, 400, { error: "text must be a string" });
-      try {
-        const { doc } = journalMemoryWrite(m[1], MEMORY_INDEX, parsed.data.text, { actor: "person", via: "api" });
-        return json(res, 200, { ok: true, hash: doc.hash, truncated: memoryCapacity(doc.text).truncated });
-      } catch (error) {
-        // the old route answered 400 for an oversized body; keep that for
-        // its callers while the new route says 413
-        if (error instanceof MemoryStoreError && error.code === "too-large") return json(res, 400, { error: error.message });
-        return replyMemoryError(res, error);
-      }
-    }
-    m = path.match(/^\/api\/bots\/([\w-]+)\/memory\/file$/);
-    if (m && method === "GET") {
-      if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
-      try {
-        return json(res, 200, readMemoryDoc(m[1], url.searchParams.get("path") ?? MEMORY_INDEX));
-      } catch (error) {
-        return replyMemoryError(res, error);
-      }
-    }
-    if (m && method === "PUT") {
-      if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
-      const parsed = z
-        .object({ path: z.string().default(MEMORY_INDEX), text: z.string(), expectedHash: z.string().optional() })
-        .safeParse(await readBody(req));
-      if (!parsed.success) return json(res, 400, { error: "text must be a string; path and expectedHash are optional strings" });
-      try {
-        const { doc, entry } = journalMemoryWrite(m[1], parsed.data.path, parsed.data.text, {
-          actor: "person",
-          via: "ui",
-          expectedHash: parsed.data.expectedHash,
-        });
-        return json(res, 200, { ok: true, ...doc, entry: entry ? journalEntryForClient(m[1], entry) : null, overview: memoryOverview(m[1]) });
-      } catch (error) {
-        return replyMemoryError(res, error);
-      }
-    }
-    if (m && method === "DELETE") {
-      if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
-      const file = url.searchParams.get("path") ?? "";
-      try {
-        const entry = journalMemoryDelete(m[1], file, { actor: "person", via: "ui" });
-        return json(res, 200, { ok: true, path: file, entry: entry ? journalEntryForClient(m[1], entry) : null, overview: memoryOverview(m[1]) });
-      } catch (error) {
-        return replyMemoryError(res, error);
-      }
-    }
-    m = path.match(/^\/api\/bots\/([\w-]+)\/memory\/journal$/);
-    if (m && method === "GET") {
-      if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
-      // the row a save queued a moment ago may not have reached disk yet
-      await flushMemoryJournal(m[1]);
-      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 50) || 50));
-      const botId = m[1];
-      return json(res, 200, { entries: readMemoryJournal(botId, limit).map((entry) => journalEntryForClient(botId, entry)) });
-    }
-    m = path.match(/^\/api\/bots\/([\w-]+)\/memory\/journal\/([\w-]+)\/revert$/);
-    if (m && method === "POST") {
-      if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
-      await flushMemoryJournal(m[1]);
-      const result = revertMemoryChange(m[1], m[2]);
-      if (!result.ok) return json(res, result.status, { error: result.error });
-      return json(res, 200, { ok: true, ...result.doc, entry: result.entry ? journalEntryForClient(m[1], result.entry) : null, overview: memoryOverview(m[1]) });
-    }
-    m = path.match(/^\/api\/bots\/([\w-]+)\/memory\/open$/);
-    if (m && method === "POST") {
-      if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
-      const parsed = z.object({ target: z.enum(["obsidian", "folder"]) }).safeParse(await readBody(req));
-      if (!parsed.success) return json(res, 400, { error: "target must be obsidian or folder" });
-      // The folder is on this machine's disk; opening it only makes sense
-      // from this machine. A paired phone or a remote browser gets the path
-      // to open by hand instead.
-      const workspacePath = memoryOverview(m[1]).workspacePath;
-      if (auth.kind !== "loopback") {
-        return json(res, 403, { error: `This only works on the computer running Pulsa Bot. The memory folder there is ${workspacePath}`, workspacePath });
-      }
-      const opened = await openMemoryLocation(m[1], parsed.data.target);
-      if (!opened.ok) return json(res, 500, { error: opened.error, workspacePath: opened.workspacePath });
-      return json(res, 200, opened);
-    }
-    m = path.match(/^\/api\/bots\/([\w-]+)\/memory\/topics\/([^/]+)$/);
-    if (m && method === "GET") {
-      if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
-      // Decode before validating: a UI-sent name arrives percent-encoded
-      // ("my notes.md" → "my%20notes.md"), and an encoded traversal
-      // ("..%2F..") must be judged by what it decodes TO, not slip through
-      // as an opaque token. The name gate then rejects anything that is not
-      // a single plain-markdown path segment.
-      let name: string;
-      try {
-        name = decodeURIComponent(m[2]);
-      } catch {
-        return json(res, 400, { error: "invalid topic name" });
-      }
-      if (!isMemoryTopicName(name)) return json(res, 400, { error: "invalid topic name" });
-      const text = readMemoryTopic(m[1], name);
-      if (text === null) return json(res, 404, { error: "no such topic file" });
-      return json(res, 200, { name, text });
     }
 
     // ── workspace checkpoints: per-turn shadow-git snapshots ────────────
@@ -20498,7 +21317,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, { bot: projectBotTranscript(fresh, viewerForApproval(auth)) });
     }
 
-    // Named team Boxes use real independent ownership, never a hidden bot or
+    // Named team Boats use real independent ownership, never a hidden bot or
     // an arbitrary provider id. These new routes remain admin-only by default.
     if (path === "/api/team-computers" && method === "GET") {
       res.setHeader("cache-control", "private, no-store");
@@ -20530,7 +21349,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const parsed = z.object({ action: z.enum(["take", "release"]), controlLeaseId: controlLeaseIdSchema.optional() }).strict().safeParse(body);
         if (!parsed.success) return json(res, 400, { error: "Choose take or release with a valid optional controlLeaseId" });
         const key = teamComputerOwner(found.id);
-        if (parsed.data.action === "take" && boxLifecycleBusyBots.has(key)) return json(res, 409, { error: "Wait for this computer's action to finish before taking control" });
+        if (parsed.data.action === "take" && boatLifecycleBusyBots.has(key)) return json(res, 409, { error: "Wait for this computer's action to finish before taking control" });
         if (parsed.data.action === "take") assertTeamControlCanBeTaken(found.id);
         if (parsed.data.controlLeaseId) {
           const result = parsed.data.action === "take"
@@ -20548,13 +21367,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           assertCurrentOwner();
           if (section !== null && section !== "" && !store.sections.includes(section)) throw Object.assign(new Error("Create the team before assigning a computer"), { status: 404 });
           if (section !== null && store.bots.some(bot => sectionKey(bot.section) === section && (
-            botHasActiveTurn(bot.id) || routines?.activeRunForBot(bot.id) || botComputerControlSnapshot(bot.id).held || boxLifecycleBusyBots.has(bot.id)
+            botHasActiveTurn(bot.id) || routines?.activeRunForBot(bot.id) || botComputerControlSnapshot(bot.id).held || boatLifecycleBusyBots.has(bot.id)
           ))) throw Object.assign(new Error("Stop the target team's work and release computer control before assigning this computer"), { status: 409 });
         };
         checkAssignment();
         const release = claimTeamComputerLifecycle(found);
         try {
-          if (section !== null && !(await box.findBox(cfg, teamComputerOwner(found.id)))) return json(res, 409, { error: "Create or retry this computer before assigning it to a team" });
+          if (section !== null && !(await boat.findBoat(cfg, teamComputerOwner(found.id)))) return json(res, 409, { error: "Create or retry this computer before assigning it to a team" });
           checkAssignment();
           if (teamComputerInUse(found)) return json(res, 409, { error: "This team computer became busy; stop its work before assigning it" });
           teamComputers.assign(found.id, section);
@@ -20563,12 +21382,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (method === "POST" && !computerId) {
         const parsed = teamComputerCreate.safeParse(body);
-        if (!parsed.success) return json(res, 400, { error: "Provide requestId (UUID), a name, and acknowledgeCost: true to create a paid Box" });
-        if (!box.boxConfigured(cfg)) return json(res, 409, { error: "Configure Box in Settings before creating a cloud computer" });
+        if (!parsed.success) return json(res, 400, { error: "Provide requestId (UUID), a name, and acknowledgeCost: true to create a paid Boat" });
+        if (!boat.boatConfigured(cfg)) return json(res, 409, { error: "Configure Boat in Settings before creating a cloud computer" });
         const computer = teamComputers.create(parsed.data.name, parsed.data.requestId);
         const release = claimTeamComputerLifecycle(computer);
         try {
-          await box.provisionBox(cfg, teamComputerOwner(computer.id), computer.name);
+          await boat.provisionBoat(cfg, teamComputerOwner(computer.id), computer.name);
           teamComputers.setProblem(computer.id);
           return json(res, 201, { id: computer.id });
         } catch (error) {
@@ -20577,22 +21396,22 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         } finally { release(); }
       }
       if (method === "POST" && found && action && action !== "control") {
-        if (action === "provision" && body?.acknowledgeCost !== true) return json(res, 400, { error: "Confirm Box creation or wake costs with acknowledgeCost: true" });
+        if (action === "provision" && body?.acknowledgeCost !== true) return json(res, 400, { error: "Confirm Boat creation or wake costs with acknowledgeCost: true" });
         // A ready-only join never wakes, provisions or steals an agent's turn.
         // The caller takes a separate explicit human-control lease first.
         if (action === "join") {
           const key = teamComputerOwner(found.id);
-          if (boxLifecycleBusyBots.has(key)) return json(res, 409, { error: "Wait for this computer's action to finish" });
+          if (boatLifecycleBusyBots.has(key)) return json(res, 409, { error: "Wait for this computer's action to finish" });
           if (!computerControl.snapshot(key).held) return json(res, 409, { error: "Take control before opening this shared desktop" });
           const release = claimBotComputerLifecycle(key);
-          try { return json(res, 200, await box.joinReadyBox(cfg, key)); }
+          try { return json(res, 200, await boat.joinReadyBoat(cfg, key)); }
           finally { release(); }
         }
         const release = claimTeamComputerLifecycle(found);
         try {
           const result = action === "provision"
-            ? await box.provisionBox(cfg, teamComputerOwner(found.id), found.name)
-            : await box.sleepBox(cfg, teamComputerOwner(found.id));
+            ? await boat.provisionBoat(cfg, teamComputerOwner(found.id), found.name)
+            : await boat.sleepBoat(cfg, teamComputerOwner(found.id));
           teamComputers.setProblem(found.id);
           return json(res, 200, result);
         } catch (error) {
@@ -20603,12 +21422,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 405, { error: "method not allowed" });
     }
 
-    // Account-wide Box inventory is a Settings surface, never a provisioning
+    // Account-wide Boat inventory is a Settings surface, never a provisioning
     // path. Listing remains read-only; lifecycle changes require explicit
     // JSON actions and are revalidated against a fresh provider listing.
+    // The REST path keeps its historical /boxes segment.
     if (method === "GET" && path === "/api/computers/boxes") {
       res.setHeader("cache-control", "private, no-store");
-      return json(res, 200, await box.listManagedBoxes(cfg, managedBoxOwners()));
+      return json(res, 200, await boat.listManagedBoats(cfg, managedBoatOwners()));
     }
     m = path.match(/^\/api\/computers\/boxes\/([\w-]+)\/(sleep|delete)$/);
     if (m && method === "POST") {
@@ -20619,21 +21439,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (computerProviderConfigTransitions.has("box")) {
         return json(res, 409, { error: providerTransitionMessage("box") });
       }
-      const releaseInventoryRequest = claimBoxInventoryRequest(m[1]);
+      const releaseInventoryRequest = claimBoatInventoryRequest(m[1]);
       try {
-        const owners = managedBoxOwners();
+        const owners = managedBoatOwners();
         if (m[2] === "sleep") {
-          return json(res, 200, await box.sleepManagedBox(cfg, owners, m[1], claimManagedBoxMutation));
+          return json(res, 200, await boat.sleepManagedBoat(cfg, owners, m[1], claimManagedBoatMutation));
         }
         if (typeof body?.confirmName !== "string" || body.confirmName.length > 100) {
           return json(res, 400, { error: "confirmName must be the cloud computer name shown in Settings" });
         }
-        return json(res, 202, await box.deleteManagedBox(
+        return json(res, 202, await boat.deleteManagedBoat(
           cfg,
           owners,
           m[1],
           body.confirmName,
-          claimManagedBoxMutation,
+          claimManagedBoatMutation,
         ));
       } finally {
         releaseInventoryRequest();
@@ -20641,7 +21461,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (method === "GET" && path === "/api/computers/vps") {
       res.setHeader("cache-control", "private, no-store");
-      return json(res, 200, await vps.listManagedVpsComputers(cfg, managedBoxOwners()));
+      return json(res, 200, await vps.listManagedVpsComputers(cfg, managedBoatOwners()));
     }
     m = path.match(/^\/api\/computers\/vps\/([\w-]+)\/remove$/);
     if (m && method === "POST") {
@@ -20659,7 +21479,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       try {
         return json(res, 200, await vps.removeManagedVpsComputer(
           cfg,
-          managedBoxOwners(),
+          managedBoatOwners(),
           m[1],
           body.confirmName,
         ));
@@ -20692,6 +21512,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (localVmMode(cfg) === "per-bot" && action === "run") {
         return json(res, 409, { error: "Per-bot mode creates each desktop from that bot's Computer panel" });
+      }
+      if (localVmMode(cfg) === "pool" && action === "run") {
+        return json(res, 409, { error: "Pool mode creates its desktops automatically from conversation turns" });
       }
       const vmOwner = localVmLeaseFor(SHARED_LOCAL_VM_TARGET).current(localVmOwnerBusy);
       if (vmOwner && (action === "stop" || action === "remove" || action === "run")) {
@@ -20733,7 +21556,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "GET") {
       const bot = computerPreviewBot(m[1], url);
       if (!bot) return json(res, 404, { error: "no such bot" });
-      return json(res, 200, await localVmPayload(localVmTargetForBot(bot.id)));
+      return json(res, 200, await localVmPayload(localVmTargetForStatus(bot.id, bot.threadId)));
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/local-computer\/(run|stop|remove)$/);
     if (m && method === "POST") {
@@ -20742,7 +21565,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
-      if (boxLifecycleBusyBots.has(bot.id)) {
+      if (boatLifecycleBusyBots.has(bot.id)) {
         return json(res, 409, { error: "this bot's computer is being changed or deleted — wait for it to finish" });
       }
       const action = z.enum(["run", "stop", "remove"]).parse(m[2]);
@@ -20802,7 +21625,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (url.searchParams.has("threadId") && await computerPreviewSurface(bot, bot.threadId) !== "vm") {
         return json(res, 409, { error: "This conversation is not using the Local VM" });
       }
-      const target = localVmTargetForBot(bot.id);
+      const target = localVmTargetForStatus(bot.id, url.searchParams.has("threadId") ? bot.threadId : undefined);
       localVmIdleFor(target).touch();
       res.setHeader("cache-control", "private, no-store");
       return json(res, 200, {
@@ -21285,7 +22108,50 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
     // ── custom MCP servers (a local command or a URL; secrets write-only) ──
     if (method === "GET" && path === "/api/mcp/servers") {
+      await probeMcpOAuth(undefined, url.searchParams.get("reprobe") === "1");
       return json(res, 200, mcpServerResponse());
+    }
+
+    // ── OAuth sign-in for a remote MCP server (server/mcp-oauth.ts) ──
+    const mcpOAuthRoute = /^\/api\/mcp\/servers\/([a-z][a-z0-9_-]{0,31})\/oauth\/(start|disconnect|probe|status)$/.exec(path);
+    if (mcpOAuthRoute) {
+      const [, name, action] = mcpOAuthRoute;
+      const expected = action === "status" ? "GET" : "POST";
+      if (method !== expected) return json(res, 405, { error: "method not allowed" });
+      if (method === "POST" && !String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+        return json(res, 415, { error: "content-type must be application/json" });
+      }
+      const server = remoteMcpServers([name])[name];
+      if (!server) return json(res, 404, { error: "Remote MCP server not found." });
+      res.setHeader("cache-control", "no-store");
+      if (action === "status") {
+        return json(res, 200, { ...(mcpOAuth.status(name, server) ?? { auth: "none" }), pending: mcpOAuth.pendingFor(name) });
+      }
+      const body = await readBody(req);
+      if (action === "probe") {
+        if (!managedPolicy.mcpAllowed(name, server.url)) return json(res, 403, { error: mcpPolicyRefusal(name, server) ?? "Your organization has not approved this server.", code: "managed_policy" });
+        await mcpOAuth.probe(name, server, AbortSignal.timeout(10_000)).catch(() => undefined);
+        return json(res, 200, mcpServerResponse());
+      }
+      if (action === "disconnect") {
+        await mcpOAuth.disconnect(name, server).catch(() => undefined);
+        return json(res, 200, mcpServerResponse());
+      }
+      if (!managedPolicy.mcpAllowed(name, server.url)) {
+        return json(res, 403, { error: mcpPolicyRefusal(name, server) ?? "Your organization has not approved this server.", code: "managed_policy" });
+      }
+      const input = mcpOAuthStartSchema.safeParse(body ?? {});
+      if (!input.success) return json(res, 400, { error: input.error.issues[0]?.message ?? "Invalid sign-in request." });
+      const redirectUri = mcpOAuthRedirectUri(req);
+      try {
+        const started = await mcpOAuth.start(name, server, { redirectUri, ...input.data }, AbortSignal.timeout(15_000));
+        return json(res, 200, started);
+      } catch (error) {
+        if (error instanceof McpOAuthError) {
+          return json(res, 400, { error: error.message, ...(error.code ? { code: error.code } : {}), ...(error.code === "client_required" ? { redirectUri } : {}) });
+        }
+        return json(res, 502, { error: "The sign-in could not be started." });
+      }
     }
 
     const mcpTest = /^\/api\/mcp\/servers\/([a-z][a-z0-9_-]{0,31})\/test$/.exec(path);
@@ -21304,7 +22170,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.once("close", disconnect);
       mcpProbesInFlight += 1;
       try {
-        return json(res, 200, await probeMcpServer(parsed.server, undefined, controller.signal));
+        const name = mcpTest[1];
+        const server = parsed.server;
+        if (!isRemoteMcpServer(server)) return json(res, 200, await probeMcpServer(server, undefined, controller.signal));
+        await mcpOAuth.refresh(name, server, false, controller.signal).catch(() => false);
+        let result = await probeMcpServer({ ...server, ...mcpOAuth.withAuthHeaders({ [name]: server })[name] }, undefined, controller.signal);
+        // A token the server refuses: one forced refresh, then one retry.
+        if (!result.ok && /HTTP 401\b/.test(result.error) && await mcpOAuth.refresh(name, server, true, controller.signal).catch(() => false)) {
+          result = await probeMcpServer({ ...server, ...mcpOAuth.withAuthHeaders({ [name]: server })[name] }, undefined, controller.signal);
+        }
+        if (!result.ok && /HTTP 40[13]\b/.test(result.error)) await mcpOAuth.probe(name, server, controller.signal).catch(() => undefined);
+        return json(res, 200, result);
       } finally {
         res.off("close", disconnect);
         mcpProbesInFlight -= 1;
@@ -21330,6 +22206,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refusal = mcpPolicyRefusal(name, parsed.server);
         if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
         persistMcpServers({ ...current, [name]: parsed.server });
+        await mcpOAuth.forget(name).catch(() => undefined);
+        await probeMcpOAuth([name]);
         return json(res, 201, mcpServerResponse());
       } finally {
         mcpConfigBusy = false;
@@ -21365,6 +22243,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refused = names.filter(name => mcpPolicyRefusal(name, parsed.servers[name] as object));
         if (refused.length) return json(res, 403, { error: `${mcpPolicyRefusal(refused[0]!, parsed.servers[refused[0]!] as object)} Not approved: ${refused.join(", ")}.`, code: "managed_policy" });
         persistMcpServers({ ...current, ...parsed.servers });
+        for (const added of names) await mcpOAuth.forget(added).catch(() => undefined);
+        await probeMcpOAuth(names);
         return json(res, 201, { ...mcpServerResponse(), added: names });
       } finally {
         mcpConfigBusy = false;
@@ -21386,6 +22266,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const next = { ...current };
           delete next[name];
           persistMcpServers(next);
+          await mcpOAuth.forget(name).catch(() => undefined);
           return json(res, 200, mcpServerResponse());
         }
 
@@ -21406,6 +22287,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refusal = mcpPolicyRefusal(name, parsed.server);
         if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
         persistMcpServers({ ...current, [name]: parsed.server });
+        // A new address is a new resource: the old sign-in must not follow it.
+        const previousUrl = isRemoteMcpServer(existing.server) ? existing.server.url : undefined;
+        const nextUrl = isRemoteMcpServer(parsed.server) ? parsed.server.url : undefined;
+        if (previousUrl !== nextUrl) await mcpOAuth.forget(name).catch(() => undefined);
+        if (nextUrl) await probeMcpOAuth([name]);
         return json(res, 200, mcpServerResponse());
       } finally {
         mcpConfigBusy = false;
@@ -21501,16 +22387,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
       }
       if (patch.box?.token !== undefined) patch.box.token = patch.box.token.trim();
-      const currentBoxToken = cfg.box?.token?.trim() ?? "";
-      const nextBoxToken = patch.box?.token === undefined ? currentBoxToken : patch.box.token;
-      const changingBoxToken = patch.box?.token !== undefined && nextBoxToken !== currentBoxToken;
+      const currentBoatToken = cfg.box?.token?.trim() ?? "";
+      const nextBoatToken = patch.box?.token === undefined ? currentBoatToken : patch.box.token;
+      const changingBoatToken = patch.box?.token !== undefined && nextBoatToken !== currentBoatToken;
       const currentVpsAlias = vpsSshAlias(cfg);
       const nextVpsAlias = patch.vps === undefined
         ? currentVpsAlias
         : vpsSshAlias({ ...cfg, vps: patch.vps });
       const changingVpsAlias = patch.vps !== undefined && nextVpsAlias !== currentVpsAlias;
       const transitioningProviders: RemoteComputerProvider[] = [
-        ...(changingBoxToken ? ["box" as const] : []),
+        ...(changingBoatToken ? ["box" as const] : []),
         ...(changingVpsAlias ? ["vps" as const] : []),
       ];
       providerConfigBusy = true;
@@ -21526,7 +22412,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (changingVpsAlias && currentVpsAlias) {
           const inventory = await vps.listManagedVpsComputers(
             { vps: { sshAlias: currentVpsAlias } },
-            managedBoxOwners(),
+            managedBoatOwners(),
           );
           if (!inventory.available) {
             return json(res, 503, {
@@ -21537,85 +22423,85 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (resourceError) return json(res, 409, { error: resourceError });
         }
 
-        let boxRecovery = changingBoxToken ? boxCreateRecoverySnapshot() : [];
-        let boxDeletions = changingBoxToken ? boxDeletionSnapshot() : [];
-        if (changingBoxToken && boxDeletions.length > 0 && !nextBoxToken) {
+        let boatRecovery = changingBoatToken ? boatCreateRecoverySnapshot() : [];
+        let boatDeletions = changingBoatToken ? boatDeletionSnapshot() : [];
+        if (changingBoatToken && boatDeletions.length > 0 && !nextBoatToken) {
           return json(res, 409, {
-            error: "finish or retry pending cloud computer deletion before removing the Box account",
+            error: "finish or retry pending cloud computer deletion before removing the Boat account",
           });
         }
         let replacementProvedByDeletion = false;
-        if (changingBoxToken && boxDeletions.length > 0 && nextBoxToken) {
+        if (changingBoatToken && boatDeletions.length > 0 && nextBoatToken) {
           try {
-            await box.verifyBoxDeletionCredential({ box: { token: nextBoxToken } });
+            await boat.verifyBoatDeletionCredential({ box: { token: nextBoatToken } });
             replacementProvedByDeletion = true;
             // Verification can observe a completed operation and retire both
             // its deletion fence and matching create receipt. Never continue
             // with the pre-verification snapshots: they would demand access
-            // to a Box whose exact operation just proved it was deleted.
-            boxRecovery = boxCreateRecoverySnapshot();
-            boxDeletions = boxDeletionSnapshot();
+            // to a Boat whose exact operation just proved it was deleted.
+            boatRecovery = boatCreateRecoverySnapshot();
+            boatDeletions = boatDeletionSnapshot();
           } catch (error) {
             return json(res, (error as { status?: number })?.status ?? 503, {
               error: error instanceof Error ? error.message : String(error),
             });
           }
         }
-        let currentBoxInventory: box.ManagedBoxInventory | null = null;
-        let replacingRejectedBoxToken = false;
-        let currentBoxResources: Array<{ boxId: string; name: string }> | null = null;
-        const journalBoxResources: Array<{ boxId: string; name: string }> = [];
-        const deletingBoxIds = new Set(boxDeletions.map((entry) => entry.boxId));
-        if (changingBoxToken && currentBoxToken) {
-          currentBoxInventory = await box.listManagedBoxes(
-            { box: { token: currentBoxToken } },
-            managedBoxOwners(),
+        let currentBoatInventory: boat.ManagedBoatInventory | null = null;
+        let replacingRejectedBoatToken = false;
+        let currentBoatResources: Array<{ boxId: string; name: string }> | null = null;
+        const journalBoatResources: Array<{ boxId: string; name: string }> = [];
+        const deletingBoatIds = new Set(boatDeletions.map((entry) => entry.boxId));
+        if (changingBoatToken && currentBoatToken) {
+          currentBoatInventory = await boat.listManagedBoats(
+            { box: { token: currentBoatToken } },
+            managedBoatOwners(),
           );
-          if (!currentBoxInventory.available) {
-            replacingRejectedBoxToken = currentBoxInventory.credentialRejected === true && Boolean(nextBoxToken);
-            if (!replacementProvedByDeletion && !replacingRejectedBoxToken) {
+          if (!currentBoatInventory.available) {
+            replacingRejectedBoatToken = currentBoatInventory.credentialRejected === true && Boolean(nextBoatToken);
+            if (!replacementProvedByDeletion && !replacingRejectedBoatToken) {
               return json(res, 503, {
-                error: `${currentBoxInventory.problem ?? "cloud computer inventory is unavailable"}. Keep the current Box account and retry`,
+                error: `${currentBoatInventory.problem ?? "cloud computer inventory is unavailable"}. Keep the current Boat account and retry`,
               });
             }
             // A rejected old key cannot authorize its own rotation. Below,
-            // validate the replacement and prove access to remembered Boxes;
+            // validate the replacement and prove access to remembered Boats;
             // pending deletions retain their target-bound verification.
-            currentBoxInventory = null;
+            currentBoatInventory = null;
           }
-          if (currentBoxInventory) {
+          if (currentBoatInventory) {
             const currentById = new Map(
-              currentBoxInventory.instances.map((instance) => [instance.boxId, { boxId: instance.boxId, name: instance.name }]),
+              currentBoatInventory.instances.map((instance) => [instance.boxId, { boxId: instance.boxId, name: instance.name }]),
             );
-            for (const recovery of boxRecovery) {
+            for (const recovery of boatRecovery) {
               if (!recovery.boxId) continue;
               // A failed provisioning attempt may never have reached the
               // deterministic rename. The replacement credential already
               // proved the exact deletion target, so its in-flight resource
               // is governed by that stronger target-bound receipt rather
-              // than an Pulsa Bot name check.
-              if (replacementProvedByDeletion && deletingBoxIds.has(recovery.boxId)) continue;
-              const inspected = await box.inspectBoxIdentity({ box: { token: currentBoxToken } }, recovery.boxId);
+              // than a Pulsa Bot name check.
+              if (replacementProvedByDeletion && deletingBoatIds.has(recovery.boxId)) continue;
+              const inspected = await boat.inspectBoatIdentity({ box: { token: currentBoatToken } }, recovery.boxId);
               if (!inspected.available) {
                 return json(res, 503, {
-                  error: `${inspected.problem ?? "a remembered cloud computer could not be verified"}. Keep the current Box account and retry`,
+                  error: `${inspected.problem ?? "a remembered cloud computer could not be verified"}. Keep the current Boat account and retry`,
                 });
               }
               if (!inspected.identity) {
                 // Reconcile exact stale receipts while the current credential is
                 // still available. Leaving one behind would make a later token
-                // addition demand access to a Box the provider proved is gone.
-                retireDeletedBoxCreate(recovery.boxId);
+                // addition demand access to a Boat the provider proved is gone.
+                retireDeletedBoatCreate(recovery.boxId);
                 continue;
               }
               const listed = currentById.get(inspected.identity.boxId);
               if (listed && listed.name !== inspected.identity.name) {
-                return json(res, 503, { error: "boat.dev returned conflicting cloud computer identities; keep the current Box account and retry" });
+                return json(res, 503, { error: "boat.dev returned conflicting cloud computer identities; keep the current Boat account and retry" });
               }
               currentById.set(inspected.identity.boxId, inspected.identity);
-              journalBoxResources.push(inspected.identity);
+              journalBoatResources.push(inspected.identity);
             }
-            currentBoxResources = [...currentById.values()];
+            currentBoatResources = [...currentById.values()];
           }
         }
 
@@ -21653,53 +22539,53 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           patch.composio = { ...patch.composio, apiKey: "", sessionId: "" };
         }
       }
-      // check a box token against the provider before storing it: a
+      // check a boat token against the provider before storing it: a
       // rejected token used to save happily and only surface as a 401 in
       // another panel later, with nothing the user could act on
-      const newBoxToken = patch.box?.token;
-      if (newBoxToken?.trim()) {
-        const check = await box.verifyToken(newBoxToken);
+      const newBoatToken = patch.box?.token;
+      if (newBoatToken?.trim()) {
+        const check = await boat.verifyToken(newBoatToken);
         if (!check.ok) return json(res, 400, { error: check.message });
       }
-      if (replacingRejectedBoxToken) {
+      if (replacingRejectedBoatToken) {
         // An expired credential cannot authorize its own replacement. Probe
         // the new account without adopting or retiring any local identities.
-        const replacement = await box.listManagedBoxes(
-          { box: { token: nextBoxToken } }, managedBoxOwners(), { adoptLegacy: false },
+        const replacement = await boat.listManagedBoats(
+          { box: { token: nextBoatToken } }, managedBoatOwners(), { adoptLegacy: false },
         );
-        if (!replacement.available) return json(res, 503, { error: replacement.problem ?? "Could not verify the replacement Box key. Your saved key and computers are unchanged." });
+        if (!replacement.available) return json(res, 503, { error: replacement.problem ?? "Could not verify the replacement Boat key. Your saved key and computers are unchanged." });
       }
-      if (changingBoxToken && (!currentBoxToken || replacementProvedByDeletion || replacingRejectedBoxToken) && boxRecovery.length > 0) {
-        if (!nextBoxToken) {
-          return json(res, 409, { error: "restore the Box account that owns the remembered cloud computers before clearing it" });
+      if (changingBoatToken && (!currentBoatToken || replacementProvedByDeletion || replacingRejectedBoatToken) && boatRecovery.length > 0) {
+        if (!nextBoatToken) {
+          return json(res, 409, { error: "restore the Boat account that owns the remembered cloud computers before clearing it" });
         }
-        for (const recovery of boxRecovery) {
+        for (const recovery of boatRecovery) {
           if (!recovery.boxId) {
-            return json(res, 409, { error: "finish reconciling pending cloud computer creation before changing the Box account" });
+            return json(res, 409, { error: "finish reconciling pending cloud computer creation before changing the Boat account" });
           }
-          if (replacementProvedByDeletion && deletingBoxIds.has(recovery.boxId)) continue;
-          const inspected = await box.inspectBoxIdentity({ box: { token: nextBoxToken } }, recovery.boxId);
+          if (replacementProvedByDeletion && deletingBoatIds.has(recovery.boxId)) continue;
+          const inspected = await boat.inspectBoatIdentity({ box: { token: nextBoatToken } }, recovery.boxId);
           if (!inspected.available) {
             return json(res, 503, {
-              error: `${inspected.problem ?? "a remembered cloud computer could not be verified"}. Retry with the Box account that created it`,
+              error: `${inspected.problem ?? "a remembered cloud computer could not be verified"}. Retry with the Boat account that created it`,
             });
           }
-          if (!inspected.identity || !(await box.boxNameMatchesBot(recovery.botId, inspected.identity.name))) {
-            return json(res, 409, { error: "that Box token cannot access the remembered cloud computers from this installation" });
+          if (!inspected.identity || !(await boat.boatNameMatchesBot(recovery.botId, inspected.identity.name))) {
+            return json(res, 409, { error: "that Boat token cannot access the remembered cloud computers from this installation" });
           }
         }
       }
-      if (changingBoxToken && currentBoxInventory && currentBoxResources) {
+      if (changingBoatToken && currentBoatInventory && currentBoatResources) {
         let replacementResources: Array<{ boxId: string; name: string }> | null = null;
-        if (nextBoxToken) {
-          const replacementInventory = await box.listManagedBoxes(
-            { box: { token: nextBoxToken } },
-            managedBoxOwners(),
+        if (nextBoatToken) {
+          const replacementInventory = await boat.listManagedBoats(
+            { box: { token: nextBoatToken } },
+            managedBoatOwners(),
             { adoptLegacy: false },
           );
           if (!replacementInventory.available) {
             return json(res, 503, {
-              error: `${replacementInventory.problem ?? "cloud computer inventory is unavailable"}. Keep the current Box account and retry`,
+              error: `${replacementInventory.problem ?? "cloud computer inventory is unavailable"}. Keep the current Boat account and retry`,
             });
           }
           replacementResources = replacementInventory.instances.map((instance) => ({
@@ -21709,22 +22595,22 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const replacementById = new Map(
             replacementResources.map((instance) => [instance.boxId, { boxId: instance.boxId, name: instance.name }]),
           );
-          for (const identity of journalBoxResources) {
-            const inspected = await box.inspectBoxIdentity({ box: { token: nextBoxToken } }, identity.boxId);
+          for (const identity of journalBoatResources) {
+            const inspected = await boat.inspectBoatIdentity({ box: { token: nextBoatToken } }, identity.boxId);
             if (!inspected.available) {
               return json(res, 503, {
-                error: `${inspected.problem ?? "a remembered cloud computer could not be verified"}. Keep the current Box account and retry`,
+                error: `${inspected.problem ?? "a remembered cloud computer could not be verified"}. Keep the current Boat account and retry`,
               });
             }
             if (!inspected.identity || inspected.identity.name !== identity.name) {
-              return json(res, 409, { error: "the replacement Box token does not access the same cloud computers" });
+              return json(res, 409, { error: "the replacement Boat token does not access the same cloud computers" });
             }
             replacementById.set(inspected.identity.boxId, inspected.identity);
           }
           replacementResources = [...replacementById.values()];
         }
-        const resourceError = boxAccountResourceChangeError(
-          currentBoxResources,
+        const resourceError = boatAccountResourceChangeError(
+          currentBoatResources,
           replacementResources,
         );
         if (resourceError) return json(res, 409, { error: resourceError });
@@ -21786,16 +22672,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // place rather than committing a new provider with stale bot voices.
         // A later config-write failure may leave voices cleared, which is the
         // safe side of this cross-file mutation: no foreign id can be spoken.
-        const nextOrg = (() => {
-          if (!patch.profile || typeof patch.profile.email !== "string" || !cfg.org) return undefined;
-          const nextOwner = ownerUserIdAfterProfileEmail({
-            ownerUserId: cfg.org.ownerUserId,
-            previousEmail: cfg.profile?.email ?? "",
-            nextEmail: patch.profile.email,
-          });
-          if (nextOwner === cfg.org.ownerUserId) return undefined;
-          return { ...cfg.org, ownerUserId: nextOwner };
-        })();
         if (changingVoiceProvider) store.clearVoiceSelections();
         if (externalSecretStorage) {
           // The packaged Electron caller commits supplied credentials to the
@@ -21812,12 +22688,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (persisted.tts?.fishKey !== undefined) persisted.tts.fishKey = "";
           if (persisted.imageGen?.key !== undefined) persisted.imageGen.key = "";
           if (persisted.imageGen?.customApiKey !== undefined) persisted.imageGen.customApiKey = "";
-          saveConfig(nextOrg ? { ...persisted, org: nextOrg } : persisted);
+          saveConfig(persisted);
           configWriteCommitted = true;
           syncCredentialEnv(patch);
           Object.assign(cfg, loadConfig());
         } else {
-          saveConfig(nextOrg ? { ...patch, org: nextOrg } : patch);
+          saveConfig(patch);
           configWriteCommitted = true;
           // loadConfig prefers env over the file for credentials, so the env
           // must follow the save — otherwise the value injected at boot would
@@ -21835,6 +22711,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           for (const request of browserCleanupRequests) browserCleanup.abort(request);
         }
         throw error;
+      }
+      // The operator keeps one principal id, so the org owner needs no
+      // rewrite when the profile email changes; only the attribute moves,
+      // once the config is saved. A cleared email clears it on the principal.
+      if (patch.profile && typeof patch.profile.email === "string") {
+        if (patch.profile.email.trim()) principals.localOperator(patch.profile.email);
+        else principals.setEmail(principals.localOperator().id, "");
       }
       let browserReferenceCleanupError: unknown = null;
       if (patch.signIn !== undefined) sessions.revalidateEmailSessions();
@@ -22174,7 +23057,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 405, { error: "method not allowed" });
     }
 
-    // ── the bot's cloud computer (Box) ──
+    // ── the bot's cloud computer (Boat) ──
     m = path.match(/^\/api\/bots\/([\w-]+)\/computer$/);
     if (m && method === "GET") {
       const bot = computerPreviewBot(m[1], url);
@@ -22182,10 +23065,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const surface = url.searchParams.has("threadId") ? await computerPreviewSurface(bot, bot.threadId) : "cloud";
       if (surface !== "cloud") return json(res, 200, { surface, configured: false, backend: bot.cloudBackend === "vps" ? "vps" : "box" });
       const teamComputer = inheritedTeamComputer(bot);
-      if (teamComputer) return json(res, 200, { surface, backend: "box", teamComputer: { id: teamComputer.id, name: teamComputer.name }, ...(await box.boxStatus(cfg, teamComputerOwner(teamComputer.id))) });
+      if (teamComputer) return json(res, 200, { surface, backend: "box", teamComputer: { id: teamComputer.id, name: teamComputer.name }, ...(await boat.boatStatus(cfg, teamComputerOwner(teamComputer.id))) });
       return bot.cloudBackend === "vps"
         ? json(res, 200, { surface, backend: "vps", ...(await vps.vpsComputerStatus(cfg, bot.id)) })
-        : json(res, 200, { surface, backend: "box", ...(await box.boxStatus(cfg, bot.id)) });
+        : json(res, 200, { surface, backend: "box", ...(await boat.boatStatus(cfg, bot.id)) });
     }
     // Who is driving this bot's computer. GET is the panel's initial read;
     // POST take/release/dismiss-help are the person's three moves. The bot
@@ -22216,7 +23099,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 400, { error: "controlLeaseId is invalid" });
         }
         const controlLeaseId = leaseResult?.data;
-        if (action === "take" && (boxLifecycleBusyBots.has(bot.id) || boxLifecycleBusyBots.has(controlKey))) {
+        if (action === "take" && (boatLifecycleBusyBots.has(bot.id) || boatLifecycleBusyBots.has(controlKey))) {
           return json(res, 409, { error: "this bot's cloud computer is being changed — wait before taking control" });
         }
         if (action === "take" && controlLeaseId) {
@@ -22261,7 +23144,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // request (same reasoning as the Local VM lifecycle routes above): a
       // hostile page cannot submit it with a form, and its cross-origin JSON
       // request dies in the preflight this server never answers. Applied to
-      // both backends — the Box branch runs commands too.
+      // both backends — the Boat branch runs commands too.
       if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
         return json(res, 415, { error: "content-type must be application/json" });
       }
@@ -22269,24 +23152,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (computerProviderConfigTransitions.has(remoteProvider)) {
         return json(res, 409, { error: providerTransitionMessage(remoteProvider) });
       }
-      if (boxLifecycleBusyBots.has(botId)) {
+      if (boatLifecycleBusyBots.has(botId)) {
         return json(res, 409, { error: "this bot's cloud computer is being changed — wait for it to finish" });
       }
       const teamComputer = inheritedTeamComputer(bot);
       if (teamComputer) {
         const key = teamComputerOwner(teamComputer.id);
-        if (boxLifecycleBusyBots.has(key)) return json(res, 409, { error: "This team computer is being changed; wait for it to finish" });
+        if (boatLifecycleBusyBots.has(key)) return json(res, 409, { error: "This team computer is being changed; wait for it to finish" });
         if (m[2] === "provision" || m[2] === "remove") return json(res, 409, { error: "Manage this shared computer from the Team map" });
         if (m[2] === "exec") return json(res, 409, { error: "Use the bot's scoped computer tools for this shared desktop" });
         if (m[2] === "join" && !computerControl.snapshot(key).held) return json(res, 409, { error: "Take control before opening this shared desktop" });
         const release = m[2] === "sleep" ? claimTeamComputerLifecycle(teamComputer) : claimBotComputerLifecycle(key);
         try {
-          if (m[2] === "join") return json(res, 200, await box.joinReadyBox(cfg, key));
+          if (m[2] === "join") return json(res, 200, await boat.joinReadyBoat(cfg, key));
           if (m[2] === "screenshot") {
             res.setHeader("cache-control", "private, no-store");
-            return json(res, 200, await box.screenshotBox(cfg, key));
+            return json(res, 200, await boat.screenshotBoat(cfg, key));
           }
-          return json(res, 200, await box.sleepBox(cfg, key));
+          return json(res, 200, await boat.sleepBoat(cfg, key));
         } finally { release(); }
       }
       if (bot.cloudBackend === "vps") {
@@ -22323,8 +23206,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           releaseComputerLifecycle();
         }
       }
-      const activeBoxTurn = botHasActiveTurn(botId);
-      if (["provision", "sleep"].includes(m[2]) && activeBoxTurn) {
+      const activeBoatTurn = botHasActiveTurn(botId);
+      if (["provision", "sleep"].includes(m[2]) && activeBoatTurn) {
         return json(res, 409, {
           error: CLOUD_COMPUTER_BUSY_ERROR,
         });
@@ -22332,39 +23215,39 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Input validity is independent of destination authorization. Preserve
       // the stable 400 contract for oversized commands without contacting the
       // provider; a valid Auto request still reaches the 409 gate below.
-      let boxCommand: string | undefined;
+      let boatCommand: string | undefined;
       if (m[2] === "exec") {
         const body = await readBody(req);
-        boxCommand = String(body?.command ?? "");
-        if (boxCommand.length > box.MAX_REMOTE_COMMAND_LENGTH) {
+        boatCommand = String(body?.command ?? "");
+        if (boatCommand.length > boat.MAX_REMOTE_COMMAND_LENGTH) {
           return json(res, 400, {
-            error: `command is too long (maximum ${box.MAX_REMOTE_COMMAND_LENGTH} characters)`,
+            error: `command is too long (maximum ${boat.MAX_REMOTE_COMMAND_LENGTH} characters)`,
           });
         }
       }
       if (bot.computer !== "cloud" && !threadPreview) {
         return json(res, 409, {
-          error: "Choose Cloud before changing or opening this Box. Auto only checks existing computer state.",
+          error: "Choose Cloud before changing or opening this Boat. Auto only checks existing computer state.",
         });
       }
       if (m[2] === "remove") {
-        // Boxes sleep and wake; only the VPS backend has a container to remove.
-        return json(res, 409, { error: "the cloud Box backend has no container to remove — use sleep instead" });
+        // Boats sleep and wake; only the VPS backend has a container to remove.
+        return json(res, 409, { error: "the cloud Boat backend has no container to remove — use sleep instead" });
       }
       const releaseComputerLifecycle = claimBotComputerLifecycle(botId);
       try {
         switch (m[2]) {
           case "provision":
-            return json(res, 200, await box.provisionBox(cfg, botId, bot.name));
+            return json(res, 200, await boat.provisionBoat(cfg, botId, bot.name));
           case "join":
-            return json(res, 200, await (activeBoxTurn || threadPreview ? box.joinReadyBox(cfg, botId) : box.joinBox(cfg, botId)));
+            return json(res, 200, await (activeBoatTurn || threadPreview ? boat.joinReadyBoat(cfg, botId) : boat.joinBoat(cfg, botId)));
           case "sleep":
-            return json(res, 200, await box.sleepBox(cfg, botId));
+            return json(res, 200, await boat.sleepBoat(cfg, botId));
           case "exec":
-            return json(res, 200, await box.execOnBox(cfg, botId, boxCommand ?? ""));
+            return json(res, 200, await boat.execOnBoat(cfg, botId, boatCommand ?? ""));
           case "screenshot":
             res.setHeader("cache-control", "private, no-store");
-            return json(res, 200, await box.screenshotBox(cfg, botId));
+            return json(res, 200, await boat.screenshotBoat(cfg, botId));
         }
       } finally {
         releaseComputerLifecycle();
@@ -22528,6 +23411,7 @@ server.listen(PORT, "127.0.0.1", () => {
   // ordinary chat. Start only once every registry is initialized and the
   // endpoint is listening; earlier dispatch can hit uninitialized bindings.
   routines!.start();
+  memoryUpkeep.start();
   const leftover = pendingThreads();
   if (leftover.length) console.log(`delegations: ${leftover.length} thread(s) with queued handoffs from a previous run — draining`);
   for (const threadId of leftover) {
@@ -22578,6 +23462,7 @@ const gracefulShutdown = createGracefulShutdown({
       watchdog.stop();
       routines?.stop();
       calendarCalls?.stop();
+      memoryUpkeep.stop();
       webhookIngress?.server.close();
       tunnelListener?.close();
     },

@@ -45,7 +45,14 @@ export interface DirectGrantRouteDeps {
   bot(id: string): { id: string; ownerUserId?: string; directGrants?: string[] } | undefined;
   patchBot(id: string, patch: { directGrants: string[] }): unknown;
   actorId(auth: RequestAuth): string;
+  /** A person ref (email or principal id) as the stored principal id, or
+   * null when it names nobody. Called only after the actor is authorized,
+   * because resolving an email may create its principal. */
+  resolveUserId?(ref: string): string | null;
 }
+
+/** Longest person ref accepted: an account email is at most 320 characters. */
+const MAX_REF = 320;
 
 export function createDirectGrantRoutes(deps: DirectGrantRouteDeps): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
@@ -54,9 +61,17 @@ export function createDirectGrantRoutes(deps: DirectGrantRouteDeps): RouteHandle
     const body = await readBody(req);
     if (typeof body?.userId !== "string" || !body.userId) return json(res, 400, { error: "userId is required" });
     const bot = deps.bot(m[1]!);
-    const result = grantDirectRoute({ actorId: deps.actorId(auth), bot, userId: body.userId });
-    if (result.status === 404 || !bot) return json(res, 404, { error: "no such bot" });
-    if (result.status === 403) return json(res, 403, { error: result.error });
+    const actorId = deps.actorId(auth);
+    // Authorize first, on the raw ref: nothing is resolved (or created) for
+    // a caller who does not own the bot.
+    const authorized = grantDirectRoute({ actorId, bot, userId: body.userId });
+    if (authorized.status === 404 || !bot) return json(res, 404, { error: "no such bot" });
+    if (authorized.status === 403) return json(res, 403, { error: authorized.error });
+    if (body.userId.length > MAX_REF) return json(res, 400, { error: "userId must be a principal id or an account email" });
+    const userId = deps.resolveUserId ? deps.resolveUserId(body.userId) : body.userId;
+    if (!userId) return json(res, 400, { error: "userId must be a principal id or an account email" });
+    const result = grantDirectRoute({ actorId, bot, userId });
+    if (result.status !== 200) return json(res, 403, { error: "not-owner" });
     deps.patchBot(bot.id, { directGrants: result.directGrants });
     return json(res, 200, { directGrants: result.directGrants });
   };

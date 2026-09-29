@@ -1192,7 +1192,7 @@ export function GroupView({ group }: { group: Group }) {
   ));
 
   return (
-    <main className="relative flex h-full min-w-0 flex-1 bg-app">
+    <main className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
       <div className="flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
       {membersOpen && !remoteClient && !group.dm && (

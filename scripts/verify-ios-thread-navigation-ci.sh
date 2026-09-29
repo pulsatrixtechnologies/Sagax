@@ -50,5 +50,6 @@ for kind in iphone ipad; do
     -parallel-testing-enabled NO \
     -only-testing:OpenMausCompanionUITests/ThreadNavigationUITests \
     -only-testing:OpenMausCompanionUITests/TranscriptPresentationUITests \
+    -only-testing:OpenMausCompanionUITests/SwipeBackUITests \
     CODE_SIGNING_ALLOWED=NO test
 done

@@ -1,10 +1,14 @@
 // End to end: adding people to a hosted workspace. The owner bootstraps the
-// first admin from the box, that admin signs in with an emailed code (the
-// control plane is stubbed) and, through the same requests Settings → People
-// sends, invites a member, promotes them and removes them, immediately ending
-// their account sessions. Everything the People card reads answers in the shape it renders.
+// first admin from the box, that admin signs in with a code this server
+// emails itself (server/account-signin.ts, server/email-otp.ts) and, through
+// the same requests Settings → People sends, invites a member, promotes them
+// and removes them, immediately ending their account sessions. Everything
+// the People card reads answers in the shape it renders.
+// OMB_MAIL_CAPTURE_FILE (server/index.ts) stands in for a real mail
+// provider: the spawned server appends each message as a JSON line instead
+// of sending it, and this file reads the sign-in code back from there.
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -12,7 +16,6 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
-import { startControlPlaneStub, type ControlPlaneStub } from "./testing/control-plane-stub.ts";
 import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
@@ -24,8 +27,27 @@ const BOB = "bob@acme.test";
 
 let home: string;
 let child: ChildProcess;
-let stub: ControlPlaneStub;
+let captureFile: string;
 let stderr = "";
+
+interface CapturedMail { to: string; subject: string; text: string; at: string }
+
+function capturedMail(): CapturedMail[] {
+  try {
+    return readFileSync(captureFile, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as CapturedMail);
+  } catch {
+    return [];
+  }
+}
+
+/** The newest code this server emailed to `email`, read back from the
+ * capture file (server/mailer.ts createCaptureMailer). */
+function latestCode(email: string): string {
+  const messages = capturedMail().filter((m) => m.to.toLowerCase() === email.toLowerCase());
+  const match = messages.length ? /Your code is (\d{8})/.exec(messages[messages.length - 1]!.text) : null;
+  if (!match) throw new Error(`no captured sign-in code for ${email}`);
+  return match[1]!;
+}
 
 interface Reply {
   status: number;
@@ -91,7 +113,7 @@ const cookieOf = (reply: Reply): string => {
 async function signIn(email: string, label: string): Promise<{ reply: Reply; cookie: string }> {
   const started = await remote("/api/auth/email/start", { body: { email } });
   if (started.status !== 200) return { reply: started, cookie: "" };
-  const reply = await remote("/api/auth/email/verify", { body: { email, code: stub.otp, label } });
+  const reply = await remote("/api/auth/email/verify", { body: { email, code: latestCode(email), label } });
   return { reply, cookie: cookieOf(reply) };
 }
 
@@ -99,8 +121,8 @@ const as = (cookie: string) => (path: string, init: CallInit = {}) => remote(pat
 
 beforeAll(async () => {
   port = await freePortBlock([0, 1]);
-  stub = await startControlPlaneStub();
   home = mkdtempSync(join(tmpdir(), "omb-people-invite-"));
+  captureFile = join(home, "mail-capture.jsonl");
   const staticDir = join(home, "static");
   mkdirSync(join(home, ".openmausbot"), { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });
@@ -120,7 +142,8 @@ beforeAll(async () => {
       OMB_PUBLIC_URL: `https://${HOST}`,
       OMB_ENVIRONMENT_LABEL: "acme",
       OMB_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
-      OMB_CONTROL_PLANE_URL: stub.url,
+      OMB_MAIL_CAPTURE_FILE: captureFile,
+      OMB_TEST_SEAMS: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -145,7 +168,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (child) await waitForExit(child, { signal: "SIGTERM" });
-  if (stub) await stub.close();
   if (home) await removeTempDir(home);
 });
 
@@ -165,7 +187,7 @@ describe("adding people to a hosted workspace", () => {
     expect(saved.status).toBe(200);
     expect((await owner("/api/config")).body.signIn).toEqual({ admins: [ADA], members: [] });
     expect((await remote("/.well-known/openmausbot/environment")).body.capabilities.emailSignIn).toBe(true);
-    expect(stub.calls).not.toContain("POST /api/auth/email-otp/send-verification-otp");
+    expect(capturedMail()).toEqual([]);
   });
 
   it("lets that admin sign in and invite a member the way the People card does", async () => {
@@ -225,7 +247,7 @@ describe("adding people to a hosted workspace", () => {
     const refused = await remote("/api/auth/email/start", { body: { email: BOB } });
     expect(refused.status).toBe(403);
     expect(refused.body.error).toMatch(/not on this server's sign-in list/);
-    expect(stub.calls.filter((c) => c === "POST /api/auth/email-otp/send-verification-otp")).toHaveLength(3);
+    expect(capturedMail()).toHaveLength(3);
   });
 
   it("immediately revokes every removed account device and its tickets, without reviving them on reinvitation", async () => {

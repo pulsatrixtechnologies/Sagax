@@ -19,19 +19,18 @@ export function canSeeDirectBot(input: { ownerUserId: string; viewerId: string; 
   return viewer === actorKey(input.ownerUserId) || input.directGrants.some((id) => actorKey(id) === viewer);
 }
 
-/** Signed-in owner, admin, or member: email, else userId. Loopback and a
- * session with no user id have no viewer id and see every group. Admin
- * scope does not skip the humanIds check. */
+/** A signed-in viewer is their principal. A session that somehow has none
+ * gets an id no channel lists, so it sees nothing rather than everything.
+ * Loopback (the operator at this computer) has no viewer id and is not
+ * filtered. */
 export function channelViewerId(auth: {
   kind: string;
-  session?: { email?: string; userId?: string };
+  session?: { id?: string; email?: string; userId?: string; principalId?: string };
 }): string | undefined {
   if (auth.kind !== "session") return undefined;
-  const email = auth.session?.email?.trim().toLowerCase();
-  if (email) return email;
-  const userId = auth.session?.userId?.trim().toLowerCase();
-  if (userId && !userId.startsWith("portal:")) return userId;
-  return undefined;
+  const principal = auth.session?.principalId?.trim();
+  if (principal) return principal;
+  return `anon:${auth.session?.id ?? "unknown"}`;
 }
 
 /** The GET /api/groups filter. No viewer id (local operator) sees every
