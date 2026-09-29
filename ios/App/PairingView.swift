@@ -23,6 +23,10 @@ struct PairingView: View {
     @State private var showingOtherWays = false
     @State private var showingManualInput = false
     @State private var choiceGeneration = 0
+    /// Set when the chosen server signs people in with Pulsatrix and returns
+    /// to native apps (its descriptor's `identity.nativeReturn`).
+    @State private var pulsatrixOrigin: URL?
+    @StateObject private var pulsatrixSignIn = PulsatrixWebSignIn()
 
     private let onCancel: () -> Void
 
@@ -316,6 +320,29 @@ struct PairingView: View {
                 .controlSize(.large)
                 .disabled(pairing)
             } else {
+                if let origin = pulsatrixOrigin {
+                    VStack(spacing: 10) {
+                        Button {
+                            Haptics.selection()
+                            startPulsatrixSignIn(origin)
+                        } label: {
+                            HStack {
+                                if pulsatrixSignIn.running { ProgressView().tint(.white) }
+                                Text("Sign in with Pulsatrix")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(pairing || pulsatrixSignIn.running)
+
+                        Text("Your organization signs you in with Pulsatrix. You can also enter a pairing code.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 VStack(spacing: 12) {
                     Text("Enter the code shown on your computer")
                         .font(.subheadline)
@@ -373,6 +400,36 @@ struct PairingView: View {
         .padding(22)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .task(id: connection.pairingConsentOrigin) {
+            await probePulsatrixSignIn(connection)
+        }
+    }
+
+    /// Ask the chosen server whether it signs people in with Pulsatrix.
+    /// Anything but a clear yes keeps the code entry alone.
+    @MainActor
+    private func probePulsatrixSignIn(_ connection: Connection) async {
+        pulsatrixOrigin = nil
+        guard scannedCredential == nil, let base = connection.baseURL else { return }
+        let probe = CompanionClient(connection: connection, token: nil, requestTimeout: 8)
+        guard let environment = try? await probe.environment(), environment.offersPulsatrixSignIn else { return }
+        guard chosen?.pairingConsentOrigin == connection.pairingConsentOrigin else { return }
+        pulsatrixOrigin = base
+    }
+
+    @MainActor
+    private func startPulsatrixSignIn(_ origin: URL) {
+        failure = nil
+        pulsatrixSignIn.start(origin: origin) { invite in
+            guard let invite else {
+                failure = "Sign-in with Pulsatrix did not finish. Try again, or enter a pairing code."
+                return
+            }
+            // The person chose this server and signed in on it: redeem the
+            // two-minute credential it handed back right away.
+            accept(invite)
+            beginSubmission(invite.connection, credential: invite.credential)
+        }
     }
 
     private func errorBanner(_ message: String) -> some View {
