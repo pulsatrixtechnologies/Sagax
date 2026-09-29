@@ -4,7 +4,7 @@
 **Branch:** `develop` (Pulsa Bot, `9c70b9c`), Perspicax `main` à `66c930d` (tag `v1.6.0`)
 **Status:** proposition, à approuver par JC
 **Remplace:** les décisions 1 et 2 (serveur quelconque, courriels émis par Pulsa Bot) et la tranche 1b de `2026-09-28-collaborative-org-design.md`, ainsi que le système intérim d'invitations et de codes par courriel.
-**Garde:** les décisions 3 à 10 de ce même document (rôles, niveaux `use`/`run`/`edit`/`manage`, routines avec l'accès du propriétaire, conteneur par propriétaire, serveur comme VM derrière `computer:use`), réécrites ici avec l'identité et les équipes venant de Perspicax.
+**Garde:** les décisions 4 à 10 de ce même document (niveaux `use`/`run`/`edit`/`manage`, routines avec l'accès du propriétaire, conteneur par propriétaire, serveur comme VM derrière `computer:use`), réécrites ici avec l'identité, les rôles et les équipes venant de Perspicax. La décision 3 (invités) et le tableau des rôles owner/admin/member/guest sont remplacés par le modèle de Perspicax (section 3).
 
 ## 1. But, non-buts, les deux modes
 
@@ -42,7 +42,7 @@ L'app de bureau garde toujours son harness local en solo. Un serveur d'organisat
 2. Connexion OIDC (section 2). L'environnement est enregistré.
 3. L'app propose « Copier des bots vers l'organisation ». On choisit des bots; pour chacun, avec ou sans fils et mémoire.
 4. Le transfert réutilise la sauvegarde d'équipe (`server/team-backup.ts`, `shared/team-backup.ts`: bots, tâches avec leurs messages, routines, mémoire), exportée par le harness local et importée par une route authentifiée du serveur d'organisation (`POST /api/org/import`, section 8). Les canaux (`GroupRecord`) suivent seulement si leurs seuls humains sont la personne qui migre.
-5. Réécriture des personnes: le principal local (`local: true`) reçoit `linkedSubjects: [{ iss, sub, serverOrigin }]`. À l'import, chaque référence au principal local (`ownerUserId`, `humanIds`, `directGrants`, `runAs`) devient le principal d'organisation de la même personne. Toute autre référence (un ancien invité local) est retirée et listée dans le rapport d'import, jamais convertie en droit. Même mécanique que `server/identity-migration.ts`, avec une table de réécriture explicite au lieu d'une résolution par courriel.
+5. Réécriture des personnes: le principal local (`local: true`) reçoit `linkedSubjects: [{ iss, sub, serverOrigin }]`. À l'import, chaque référence au principal local (`ownerUserId`, `humanIds`, `directGrants`, `runAs`) devient le principal d'organisation de la même personne. Toute autre référence (une autre personne connue de ce poste) est retirée et listée dans le rapport d'import, jamais convertie en droit. Même mécanique que `server/identity-migration.ts`, avec une table de réécriture explicite au lieu d'une résolution par courriel.
 6. C'est une **copie**. Rien n'est effacé localement. Après vérification, l'app offre « Retirer ces bots de cet ordinateur » bot par bot.
 7. Les clés des fournisseurs ne voyagent pas (la sauvegarde les caviarde déjà, `redactSecretsInText`); le propriétaire les saisit dans le coffre du serveur (décision 7).
 
@@ -55,6 +55,34 @@ L'app de bureau garde toujours son harness local en solo. Un serveur d'organisat
 ### Serveur intérim déjà en organisation
 
 Un serveur de `develop` qui a déjà des principals créés par courriel (tranches du 2026-09-28) passe en mode Perspicax ainsi: à la première connexion OIDC d'un `sub` inconnu, si un principal intérim sans `subject` porte le même courriel, il est rattaché une seule fois, et le rattachement est écrit au journal d'audit. Après la période de migration (réglage admin, 30 jours par défaut), le rattachement par courriel est coupé et seul `iss` + `sub` compte.
+
+### Ce qu'on réutilise de Perspicax
+
+Règle: tout ce que Perspicax sait déjà faire, Pulsa Bot le prend au lieu de le refaire.
+
+| Besoin | Ce qui existe dans Perspicax |
+|---|---|
+| Comptes et connexion | mot de passe PBKDF2 plus TOTP, ou passkey; premier accès qui force le changement de mot de passe et l'inscription du second facteur (`crates/local-oauth`, `page.rs`, `must_change_password`) |
+| Cycle de vie des personnes | l'admin crée, désactive, supprime, réinitialise mot de passe et TOTP (`api/users.rs`); désactiver révoque les sessions (`model/users.rs::set_status`) |
+| Rôles | `admin`, `manager`, `employee` (`model/users.rs:21`), repris tels quels (section 3) |
+| Équipes et gestionnaires | `Team { managers, members, profiles }` (`model/teams.rs`); « un gestionnaire ne donne que dans ses équipes » devient la règle de partage des bots et canaux |
+| Portée MCP | profils par défaut des équipes, donnés aux membres à l'arrivée (`via_team`), plus les profils donnés à la personne; c'est la portée de l'échange de jeton (section 4) |
+| Journal et audit | `auth_events`, `mcp_requests` (client, profil, provenance), `admin_audit`, et l'explorateur du journal de la console |
+| Coffre | XChaCha20-Poly1305 (`vault/mod.rs`), rotation hors ligne; il garde la clé de signature (P2) et les clés de fournisseur du propriétaire dont ses routines ont besoin (décision 7), comme identifiants `scope: user` liés à la personne, lus par le serveur Pulsa Bot à travers le lien au moment d'exécuter |
+| Comptes de service | `kind: service`, jeton `pxat1.` montré une fois, rotation (`api/users.rs:178`): c'est le lien entre les deux serveurs |
+| Console | coquille, barre latérale et ses groupes (`components/shell.tsx`), feuilles d'édition, grille, i18n; la section Pulsa Bot est un groupe de plus |
+| Hôtes de redirection | `redirect_hosts.txt` et leur page d'admin (`api/oauth_redirect_hosts.rs`) |
+
+Retiré en mode organisation, parce que Perspicax le couvre:
+
+| Code intérim de Pulsa Bot | Remplacé par |
+|---|---|
+| liens d'invitation `/join#token` (`org-routes.ts`, `org-record.ts::issueInvite`, `src/pair/JoinPage.tsx`) | un compte créé par un admin dans Perspicax |
+| codes par courriel (`email-otp.ts`, `account-signin.ts`) | la connexion Perspicax |
+| rôles de l'annuaire d'organisation (`org-directory.ts::roleOf`, `OMB_SIGNIN_EMAILS`) | le claim `role` |
+| liste des personnes de l'organisation (`org-routes.ts`, `OrgPerson`, Réglages > Organisation) | l'annuaire de Perspicax, lu par le lien, et ses pages Personnes et Équipes |
+| mailer d'identité (`mailer.ts`, `mail-config.ts`, `compose.mail-test.yaml`) | rien à envoyer: le compte naît dans Perspicax |
+| propriétaire d'organisation unique (`org-record.ts`, `ownerUserId`) | les admins Perspicax |
 
 ## 2. Identité
 
@@ -133,49 +161,55 @@ Le principal de `server/principals.ts` reste la personne. On ajoute:
 | Code d'appairage lié au principal (`openPairing({ principalId })`) | gardé | gardé: c'est l'appareil de la personne qui l'a créé |
 | Code d'appairage sans principal | gardé (l'opérateur) | refusé, sauf le code d'amorçage admin avant le lien (section 6) |
 | Code par courriel (`email-otp.ts`, `account-signin.ts` serveur et control plane) | retiré: rien à envoyer à une seule personne | refusé, comme `HOSTED_WORKSPACE` le fait déjà (`index.ts:14647`) |
-| Invitations `/join#token` (`org-routes.ts`, `org-record.ts::issueInvite`, `src/pair/JoinPage.tsx`) | retirées | remplacées par un compte Perspicax (section 3) |
+| Invitations `/join#token` (`org-routes.ts`, `org-record.ts::issueInvite`, `src/pair/JoinPage.tsx`) | retirées | remplacées par un compte créé par un admin dans Perspicax |
 | Liste d'accueil `OMB_SIGNIN_EMAILS` (`config.ts:1064`) | retirée | remplacée par les claims |
 | Mailer SMTP / SendGrid (`mailer.ts`, `mail-config.ts`) | retiré (seuls usages: connexion et invitations, `index.ts:14584`) | non utilisé |
 
 ## 3. Autorisation
+
+Principe: le modèle de Perspicax est la référence. Pulsa Bot n'invente ni rôle, ni équipe, ni catégorie d'invité. Il lit le rôle et les équipes que l'admin gère déjà dans la console Perspicax, et n'ajoute que ce que Perspicax n'a pas: les droits sur ses propres objets (bots, canaux, routines).
 
 ### Qui décide quoi
 
 | Décision | Source de vérité | Pourquoi |
 |---|---|---|
 | La personne existe, est active, son nom, son courriel | Perspicax (`crates/gateway/src/model/users.rs`, `User`) | un seul annuaire |
-| Rôle Perspicax (`admin`, `manager`, `employee`), type (`person`, `service`) | Perspicax (`users.rs:21`, `:57`) | idem |
-| Équipes et gestionnaires (`model/teams.rs`, `Team { managers, members }`) | Perspicax | idem |
-| Qui a droit à Pulsa Bot et à quel rôle d'organisation | Perspicax, section « Pulsa Bot > Membres » de la console, émis en claim | l'admin gère les gens à un seul endroit |
-| Propriétaire de l'organisation Pulsa Bot | Pulsa Bot (`org-record.ts`, `ownerUserId`) | c'est un fait du serveur de bots |
-| Propriété des bots, niveaux par bot, membres des canaux, visibilité des routines | Pulsa Bot | ce sont des objets de Pulsa Bot |
+| Rôle (`admin`, `manager`, `employee`), type (`person`, `service`) | Perspicax (`users.rs:21`, `:57`) | idem |
+| Équipes, leurs gestionnaires, leurs membres, leurs profils par défaut (`model/teams.rs`, `Team { managers, members, profiles }`; les profils de l'équipe sont donnés à chaque membre à l'arrivée, `via_team`, et retirés au départ) | Perspicax | idem |
+| Qui peut se connecter à Pulsa Bot | Perspicax: toute personne active | pas de liste d'accès propre à Pulsa Bot |
+| Propriété des bots, membres des canaux, visibilité des routines, niveaux par bot | Pulsa Bot | ce sont des objets de Pulsa Bot, sans équivalent dans Perspicax |
 | Profils MCP qu'une personne détient | Perspicax (`profiles_of_user`, scopes `profile:<id>`) | le MCP est à Perspicax |
 
-### Rôles
+### Claims
 
-Perspicax calcule un claim `pulsabot_role` pour le client `pulsa-bot`:
+Aucun claim propre à Pulsa Bot. L'`id_token` porte ce que Perspicax sait déjà:
 
-| Perspicax | Claim | Pulsa Bot |
-|---|---|---|
-| personne `admin` | `admin` | `admin` (et `owner` si c'est le propriétaire enregistré) |
-| personne `manager` ou `employee` dans une équipe autorisée | `member` | `member` |
-| personne dans une équipe marquée « invités Pulsa Bot » | `guest` | `guest` (décision 3: canaux et bots donnés seulement, 30 jours, ni bot ni Direct) |
-| personne hors des équipes autorisées | absent | connexion refusée par Perspicax à l'autorisation, et par Pulsa Bot si le claim manque |
-| compte `service` | jamais | ne se connecte pas (il n'a ni mot de passe ni second facteur) |
+- `role`: `admin`, `manager` ou `employee`, tel quel;
+- `teams`: `[{ id, name, manager }]`, les équipes dont la personne est membre ou gestionnaire (`manager: true` quand elle figure dans `Team.managers`).
 
-Par défaut « équipes autorisées » = toutes les personnes actives, pour que la tranche 1 marche sans réglage. Le claim `px_teams` (`[{ id, name, manager }]`) accompagne le rôle, pour les droits donnés à une équipe.
+Un compte `service` ne se connecte jamais (il n'a ni mot de passe ni second facteur); il sert au lien (section 5).
 
-Le scope de session Pulsa Bot suit: `owner` et `admin` reçoivent `["admin", "client"]`, `member` et `guest` reçoivent `["client"]` (`sessions.ts:17`). Le rôle d'organisation reste distinct du scope serveur (tranche 2 du document du 2026-09-28): `can()` décide, le scope ne sert que de premier filtre (`CLIENT_ALLOW`, `request-auth.ts`).
+### Correspondance directe
+
+| Perspicax | Pulsa Bot |
+|---|---|
+| `admin` | admin de l'organisation: réglages, voit tous les bots et canaux dans la liste, peut transférer la propriété d'un bot; scopes de session `["admin", "client"]` |
+| `manager` | membre, plus: administre le partage des bots et des canaux **pour les équipes qu'il gère** (donner, retirer, changer un niveau quand le droit vise une de ces équipes ou un de leurs membres), modère les canaux de ces équipes; scopes `["client"]` |
+| `employee` | membre: crée ses bots, les partage, parle aux bots et canaux qu'on lui ouvre; scopes `["client"]` |
+
+C'est exactement la règle de Perspicax pour ses profils: « a manager grants only within their teams » (`model/`, AGENTS.md de Perspicax). Une personne externe à l'organisation est un compte Perspicax comme les autres, créé par un admin, dans l'équipe qu'on veut; ses accès se règlent par les équipes et les droits, pas par une catégorie à part. Le rôle d'organisation reste distinct du scope serveur (tranche 2 du document du 2026-09-28): `can()` décide, le scope ne sert que de premier filtre (`CLIENT_ALLOW`, `request-auth.ts`).
 
 ### `can(principal, action, resource)`
 
 Un module `server/authz.ts` absorbe `channel-visibility.ts` et `direct-grants.ts`:
 
-- Entrées: le principal (rôle, équipes à jour, `disabledAt`), l'action (`bot.use`, `bot.run`, `bot.edit`, `bot.manage`, `bot.approve`, `channel.read`, `channel.post`, `channel.moderate`, `routine.view`, `routine.edit`, `org.settings`, `computer.use`, `vault.read`), la ressource (bot, canal, routine, org).
-- Niveaux par bot: `use` ⊂ `run` ⊂ `edit` ⊂ `manage` (décision 5). Un droit se donne à un principal **ou à une équipe Perspicax** (`team:<ulid>`); l'équipe est résolue par les claims et l'annuaire (section 5), jamais copiée en liste de personnes.
+- Entrées: le principal (rôle et équipes à jour, `disabledAt`), l'action (`bot.use`, `bot.run`, `bot.edit`, `bot.manage`, `bot.approve`, `channel.read`, `channel.post`, `channel.moderate`, `routine.view`, `routine.edit`, `org.settings`, `computer.use`, `vault.read`), la ressource (bot, canal, routine, org).
+- Cible d'un droit: un utilisateur Perspicax (`user:<ulid>`, résolu en principal) **ou une équipe Perspicax** (`team:<ulid>`). Un droit d'équipe suit l'équipe: qui y entre l'obtient, qui en sort le perd, sans rien recopier, comme les profils `via_team`. Un canal peut avoir une équipe pour membres.
+- Niveaux par bot: `use` ⊂ `run` ⊂ `edit` ⊂ `manage` (décision 5). Gardés parce que Perspicax n'a rien pour « parler à un bot » contre « lancer ses routines » contre « modifier ses instructions ».
+- Qui administre un droit: le propriétaire du bot, qui a `manage`, un admin, et le gestionnaire d'une équipe pour les droits qui visent son équipe ou ses membres.
 - L'approbation reste au propriétaire ou à son délégué `approver`, jamais à l'admin par défaut.
 - Un admin règle l'organisation mais ne lit pas le Direct privé d'un autre: `bot.use` sur le bot d'autrui exige un droit.
-- Un invité expiré ou un principal `disabledAt` n'a aucun droit; ses droits restent listés pour l'historique.
+- Un principal `disabledAt` n'a aucun droit; ses droits restent listés pour l'historique.
 - Utilisé par le filtre SSE, la liste des canaux et des bots, la recherche (`searchHitVisible`) et chaque route qui modifie. Les fonctions pures de `channel-visibility.ts` deviennent des cas de `can()`, avec leurs tests.
 
 La branche `fix/member-identity` (`server/viewer-identity.ts`, `memberBotFieldViolation` dans `request-auth.ts`) se garde telle quelle: le nom et le courriel viennent des claims au lieu de l'adresse de connexion.
@@ -233,7 +267,7 @@ La barre latérale a les groupes Personnel, Équipe, Administration et Système 
 |---|---|---|---|
 | Serveurs | `/pulsabot/servers` | admin | serveurs liés: nom, origine, version, dernier contact, santé; lier, renouveler le jeton du lien, délier |
 | Bots | `/pulsabot/bots` | manager | bots de l'organisation: propriétaire, engine, profils MCP, droits (lecture); un manager ne voit que ceux de ses équipes |
-| Membres | `/pulsabot/members` | admin | équipes autorisées, équipe invités, rôle calculé par personne, propriétaire, délégations de routines actives (révocables) |
+| Membres | `/pulsabot/members` | manager | par personne: rôle et équipes (lecture, liens vers les pages Personnes et Équipes existantes), dernière connexion à Pulsa Bot, délégations de routines actives (révocables); un manager voit ses équipes |
 | Utilisation | `/pulsabot/usage` | manager | tours, jetons de modèle et appels MCP par personne, bot et jour |
 | Approbations | `/pulsabot/approvals` | employee | cartes en attente que **la personne connectée** peut trancher (décision 5), avec lien vers le fil dans Pulsa Bot |
 | Audit | `/pulsabot/audit` | admin | journal d'audit de Pulsa Bot (droits, partages, propriété, lien) à côté de l'`admin_audit` de Perspicax |
@@ -250,8 +284,7 @@ Nouveau, dans `crates/gateway/src/api/pulsabot.rs`, chaque route inscrite dans `
 |---|---|---|
 | `GET`, `POST /api/v1/pulsabot/servers`, `DELETE /api/v1/pulsabot/servers/{id}` | console | Admin |
 | `POST /api/v1/pulsabot/servers/{id}/rotate-link` | console | Admin |
-| `GET`, `PUT /api/v1/pulsabot/settings` (équipes autorisées, équipe invités) | console | Admin |
-| `GET /api/v1/pulsabot/directory` (personnes, équipes, rôle calculé, statut; `ETag`) | serveur Pulsa Bot | `PulsaBotLink` |
+| `GET /api/v1/pulsabot/directory` (personnes, rôle, statut, équipes avec gestionnaires et membres; `ETag`) | serveur Pulsa Bot | `PulsaBotLink` |
 | `GET /api/v1/pulsabot/servers/{id}/proxy/{*path}` et `POST` du même | console | Manager ou Any selon la page, puis `can()` côté Pulsa Bot |
 
 `PulsaBotLink` est un nouvel extracteur (`api/auth.rs`): un `pxat1.` (`Via::ApiToken`) dont l'utilisateur est le compte de service d'un serveur lié, et rien d'autre. Le jeton du lien ne donne accès à aucune autre route, ni à `/mcp` hors échange de jeton.
@@ -286,7 +319,7 @@ Variables: côté Perspicax `PXC_CONFIG_DIR`, `PXC_VAULT_KEY` ou le fichier de c
 2. Premier admin Perspicax: `pulsatrix-connector local-auth set-password` comme aujourd'hui (`deploy/README.md`, « First run in a container »), mot de passe temporaire, changement et TOTP à la première connexion (`must_change_password`). Une amorce sans `exec` (code dans le journal, comme la tranche 1b de Pulsa Bot) est souhaitable plus tard, hors de ce document.
 3. Lien automatique: au démarrage, si `PXC_PULSABOT_ORIGIN` est posé et qu'aucun serveur n'est lié à cette origine, Perspicax crée dans une transaction: le compte de service `pulsa-bot-<nom>` et son `pxat1.`, le client `pulsa-bot` avec sa redirection exacte, l'audience supplémentaire, l'hôte exact `=bot.<domaine>` dans `redirect_hosts.txt`, une ligne `admin_audit` `pulsabot.link`. Il écrit `pulsabot.json` (`issuer`, `client_id`, `server_id`, `link_token`) dans le volume `link` en `0600`.
 4. Pulsa Bot lit le fichier, vérifie la découverte et le JWKS, et passe en mode organisation.
-5. Propriétaire: le premier **admin Perspicax** qui se connecte à un serveur fraîchement lié devient `owner` (seul un admin le peut, et le lien a été voulu). Hors compose unique, le lien se fait depuis la console (Pulsa Bot > Serveurs > Lier), qui affiche le paquet une fois, et le propriétaire est l'admin qui l'a créé.
+5. Pas de propriétaire d'organisation à désigner: les admins Perspicax sont les admins de l'organisation Pulsa Bot. Hors compose unique, le lien se fait depuis la console (Pulsa Bot > Serveurs > Lier), qui affiche le paquet une fois.
 
 ### Mises à jour et sauvegardes
 
@@ -295,7 +328,7 @@ Variables: côté Perspicax `PXC_CONFIG_DIR`, `PXC_VAULT_KEY` ou le fichier de c
 
 ### Courriel
 
-Perspicax n'envoie aucun courriel aujourd'hui (les tables de `0023_prefs_email.sql` n'ont plus d'écrivain). Pulsa Bot n'en envoie plus en mode organisation. En v1, un nouveau compte reçoit un lien d'inscription à usage unique que l'admin copie depuis la console (nouveau dans Perspicax, tranche 4). Voir la question 5.
+Perspicax n'envoie aucun courriel aujourd'hui (les tables de `0023_prefs_email.sql` n'ont plus d'écrivain). Pulsa Bot n'en envoie plus en mode organisation. Un nouveau compte se crée dans Perspicax comme aujourd'hui: l'admin fixe un mot de passe temporaire, la personne le change et inscrit son second facteur à la première connexion (`must_change_password`). Aucun courriel dans Pulsa Bot.
 
 ## 7. Changements dans Perspicax
 
@@ -305,15 +338,15 @@ Rappels de ce dépôt: versions les plus récentes vérifiées sur crates.io au 
 |---|---|---|
 | P1 | Clé ES256 et JWS: génération, `kid`, signature. Crate `p256` (RustCrypto, `ecdsa`, `jwk`, `pkcs8`), cohérente avec `chacha20poly1305` et `sha2` déjà présents. | nouveau `crates/local-oauth/src/jwt.rs`; `Cargo.toml` racine; `make notices` (`legal/rust-crates.txt`) |
 | P2 | Stockage de la clé: scellée par le coffre en mode gateway, fichier `0600` en mode fichier. Rotation: l'ancienne clé reste au JWKS 24 h. | migration `crates/gateway/src/store/migrations/0035_oidc_keys.sql`; `vault/rotate.rs::SEALED_COLUMNS`; `tests/vault.rs` (`every_sealed_column_of_the_migrated_schema_is_listed`); `tests/store_migrations.rs`; `store.rs` de `local-oauth` pour le mode fichier |
-| P3 | `id_token` sur `authorization_code` et `refresh_token` quand `openid` est demandé: `iss`, `sub`, `aud`, `exp`, `iat`, `auth_time`, `nonce`, `amr`, `email`, `email_verified: false`, `name`, `preferred_username`, `locale`; pour le client `pulsa-bot` seulement: `pulsabot_role`, `px_teams`. Le `nonce` et `auth_time` voyagent avec le code. | `lib.rs`: `TokenResponse` (`:2337`), `exchange_code` (`:1368`), `refresh_grant_with_client` (`:1432`), l'entrée de code de `mint_code_with_scope` (`:1268`); `routes.rs`: `authorize` et `token` |
-| P4 | Source des claims: une méthode `claims(id)` sur le trait `UserStore`, implantée par la gateway (utilisateur, équipes, réglages Pulsa Bot). | `crates/local-oauth/src/store.rs`; `crates/gateway/src/oauth_store.rs` (`SqliteUserStore`, `:48`) |
+| P3 | `id_token` sur `authorization_code` et `refresh_token` quand `openid` est demandé: `iss`, `sub`, `aud`, `exp`, `iat`, `auth_time`, `nonce`, `amr`, `email`, `email_verified: false`, `name`, `preferred_username`, `locale`; `role` et `teams` (`[{ id, name, manager }]`), lus du modèle existant, aucun réglage nouveau. Le `nonce` et `auth_time` voyagent avec le code. | `lib.rs`: `TokenResponse` (`:2337`), `exchange_code` (`:1368`), `refresh_grant_with_client` (`:1432`), l'entrée de code de `mint_code_with_scope` (`:1268`); `routes.rs`: `authorize` et `token` |
+| P4 | Source des claims: une méthode `claims(id)` sur le trait `UserStore`, implantée par la gateway (utilisateur, rôle, équipes). | `crates/local-oauth/src/store.rs`; `crates/gateway/src/oauth_store.rs` (`SqliteUserStore`, `:48`) |
 | P5 | Découverte: `jwks_uri`, `id_token_signing_alg_values_supported: ["ES256"]`, `revocation_endpoint`, `backchannel_logout_supported`, le grant d'échange dans `grant_types_supported`. Nouvelles routes `/oauth/jwks` et `/oauth/revoke` (RFC 7009). | `lib.rs::Deployment::discovery_document` (`:164`); `routes.rs::router` (`:92`); `tests/branding_golden.rs` (le JSON de découverte est figé en octets) |
 | P6 | Audiences supplémentaires et client premier parti: `resource` accepte `/mcp` **ou** l'origine d'un serveur lié; le client `pulsa-bot` saute le sélecteur de profil **seulement** quand sa `redirect_uri` égale exactement celle qui est enregistrée (aujourd'hui `is_first_party_console` ne regarde que `client_id`, `page.rs:1449`). | `lib.rs` (`LocalOauthRuntime`, `resolve_mint_audience_any` `:385` déjà écrit); `routes.rs` (`authorize_audience`, `resolve_linked_scope` `:346`, la vérification de `resource` au jeton `:1321`); `page.rs` |
 | P7 | Échange de jeton RFC 8693 sur `/oauth/token`, client `pulsa-bot-server` authentifié par le `pxat1.` du lien, au-dessus de `mint_internal_access_token`; événement `token_exchanged` dans `auth_events`. | `routes.rs::token`; `lib.rs`; `crates/gateway/src/hooks.rs` (journal); `model/journal.rs` |
 | P8 | Désactivation: `set_status(Disabled)` révoque aussi les jetons OAuth locaux (`revoke_tokens_for_identity`, `lib.rs:1777`) et déclenche la déconnexion par canal arrière vers chaque serveur lié. TODO(verify): aujourd'hui `set_status` révoque les lignes `sessions` (`model/users.rs:616`) mais ce chemin ne touche pas le document `local_oauth_tokens`, et `validate_access_token` ne relit pas le statut. | `model/users.rs::set_status`; `api/users.rs::set_status` (`:277`); nouveau `crates/gateway/src/pulsabot_push.rs` |
 | P9 | Serveurs liés: table, lien automatique au démarrage, API, extracteur `PulsaBotLink`, mandataire signé vers Pulsa Bot. | migration `0036_pulsabot_servers.sql`; nouveaux `model/pulsabot.rs`, `api/pulsabot.rs`; `api/mod.rs`; `api/auth.rs`; `crates/connector/src/boot.rs` (lien automatique); `crates/gateway/openapi.json` et `console/src/api/schema.d.ts` (`make console-types`); `tests/route_roles.rs` |
-| P10 | Liens d'inscription à usage unique (un nouvel utilisateur choisit son mot de passe et son second facteur sur la page existante de première connexion). | `lib.rs` (session de configuration, `mint_setup_session`), `routes.rs`, `api/users.rs` |
-| P11 | Console: groupe `pulsabot` et ses six pages. | `console/src/components/shell.tsx`; nouveaux `console/src/pages/pulsabot/*.tsx`; `console/src/main.tsx`; `messages.en.ts` et `messages.fr.ts` (`nav.pulsabot.*`); `console/src/styles/routes.css`; `console/e2e/routes.ts`; `docs/design/look-inventory.txt` |
+| P10 | Clés de fournisseur des routines: un type d'identifiant « fournisseur de modèle » (`scope: user`) dans le coffre existant, et une lecture par le lien au moment d'une routine (tranche 6). | `model/credentials.rs`, `model/credential_slots.rs`, `api/pulsabot.rs` |
+| P11 | Console: groupe `pulsabot` et ses six pages, sur la coquille existante. | `console/src/components/shell.tsx`; nouveaux `console/src/pages/pulsabot/*.tsx`; `console/src/main.tsx`; `messages.en.ts` et `messages.fr.ts` (`nav.pulsabot.*`); `console/src/styles/routes.css`; `console/e2e/routes.ts`; `docs/design/look-inventory.txt` |
 | P12 | Déploiement: la compose unique et son Caddyfile, section du README. | `deploy/docker-compose.pulsabot.yml`, `deploy/Caddyfile.pulsabot`, `deploy/README.md` |
 
 ## 8. Changements dans Pulsa Bot
@@ -341,9 +374,9 @@ Rappels de ce dépôt: versions les plus récentes vérifiées sur crates.io au 
 | `identity-migration.ts` | gardé; plus une table de réécriture explicite pour l'import solo vers organisation |
 | `sessions.ts` | gardé; champ `idp`; appairage sans principal refusé en organisation |
 | `request-auth.ts` | gardé; le serveur d'organisation tourne en `LoopbackTrust` `service` |
-| `org-record.ts` | adapté: `identity: { kind: "perspicax", issuer, serverId }`; l'organisation naît du lien, plus de `createOrg` par formulaire; `issueInvite` et `memberListsAfterAccept` retirés |
+| `org-record.ts` | adapté: `identity: { kind: "perspicax", issuer, serverId }`; l'organisation naît du lien, plus de `createOrg` par formulaire; `ownerUserId`, `issueInvite` et `memberListsAfterAccept` retirés |
 | `org-directory.ts` | `roleOf` remplacé par les claims; invitations retirées |
-| `org-routes.ts` | `GET /api/org` et le nom gardés; invitations retirées; état du lien ajouté |
+| `org-routes.ts` | `GET /api/org` et le nom gardés; liste des personnes et invitations retirées; état du lien ajouté |
 | `channel-visibility.ts`, `direct-grants.ts` | absorbés par `authz.ts`, tests conservés; un droit peut viser `team:<ulid>` |
 | `mcp-oauth.ts` | gardé pour les MCP tiers; coffre indexé par `(principalId, name)` en organisation; ses utilitaires servent à `oidc-rp.ts` |
 | `email-otp.ts`, `mailer.ts`, `mail-config.ts`, `account-signin.ts`, `src/pair/JoinPage.tsx`, `SignInAccessCard.tsx`, `compose.mail-test.yaml` | retirés à la dernière tranche, après que plus rien ne les appelle; d'ici là refusés en organisation |
@@ -360,7 +393,7 @@ Rappels de ce dépôt: versions les plus récentes vérifiées sur crates.io au 
 | T4 | Interception sur le schéma `openmausbot://` | il ne porte qu'un identifiant d'appairage Pulsa Bot de 2 min, usage unique, haché, verrouillé par source; le PKCE de la jambe Perspicax reste sur le serveur |
 | T5 | Vol du jeton du lien (`pxat1.`) | extracteur `PulsaBotLink` borné à l'annuaire et à l'échange; fichier `0600` ou secret Docker; rotation (`rotate-link`); l'échange exige aussi un `subject_token` valide de la personne, donc le lien seul ne donne aucun accès MCP |
 | T6 | Rejeu d'une assertion de la console | ES256, 60 s, `aud` exact, `jti` mémorisé jusqu'à expiration; mandataire refusé en « voir comme » |
-| T7 | Propriétaire Pulsa Bot contre admin Perspicax | l'admin Perspicax est la racine de confiance: il peut créer un compte, réinitialiser un second facteur, donc devenir n'importe qui. Accepté et écrit. Mesures: toute action d'identité est à l'`admin_audit` de Perspicax, toute action de droits à l'audit de Pulsa Bot, la page Audit les montre côte à côte; un admin Pulsa Bot n'obtient pas `bot.use` sur un Direct privé sans droit; un propriétaire Pulsa Bot ne peut rien élever dans Perspicax |
+| T7 | Pouvoir des admins Perspicax sur Pulsa Bot, et des gestionnaires sur les bots | l'admin Perspicax est la racine de confiance: il peut créer un compte, réinitialiser un second facteur, donc devenir n'importe qui. Accepté et écrit. Mesures: toute action d'identité est à l'`admin_audit` de Perspicax, toute action de droits à l'audit de Pulsa Bot, la page Audit les montre côte à côte; un admin n'obtient pas `bot.use` sur un Direct privé sans droit; un gestionnaire n'administre que les droits qui visent ses équipes; le propriétaire d'un bot ne peut rien élever dans Perspicax |
 | T8 | Compte désactivé qui garde l'accès | déconnexion par canal arrière immédiate; rafraîchissement au plus tard 50 min; P8 révoque les jetons OAuth locaux à la désactivation |
 | T9 | Hameçonnage par un client qui prétend être premier parti | saut du sélecteur et de l'avis de destination seulement si `client_id` **et** `redirect_uri` exacte correspondent; hôte exact dans la liste de redirection |
 | T10 | Falsification d'un `id_token` | `alg` fixé à ES256, `none` refusé, `kid` connu, `iss`, `aud`, `exp`, `nonce`; JWKS en HTTPS seulement (sauf loopback de test) |
@@ -374,24 +407,30 @@ Rappels de ce dépôt: versions les plus récentes vérifiées sur crates.io au 
 Chacune se livre seule, avec ses tests, dans l'ordre. Les tranches Perspicax passent `make ci`; les tranches Pulsa Bot suivent `docs/verification/README.md` (instance isolée, jamais l'app ou les données réelles).
 
 1. **Connexion Perspicax, bout à bout.**
-   Perspicax: P1, P2, P3 (claims de base: `sub`, `email`, `name`, `preferred_username`, `pulsabot_role` déduit du seul rôle Perspicax), P5 (JWKS, découverte), P6 pour une origine donnée par `PXC_PULSABOT_ORIGIN`.
-   Pulsa Bot: `oidc-rp.ts`, `/auth/oidc/start` et `/callback`, `forSubject`, session avec `principalId`, rôle vers scopes, bouton sur `/pair`, descripteur `identity`, refus du courriel et des invitations quand `OMB_IDENTITY=perspicax`. Bureau: flux dans la fenêtre. Téléphone: QR d'appairage lié au principal (existant).
+   Perspicax: P1, P2, P3 (claims de base: `sub`, `email`, `name`, `preferred_username`, `role`; `teams` peut attendre la tranche 4), P5 (JWKS, découverte), P6 pour une origine donnée par `PXC_PULSABOT_ORIGIN`.
+   Pulsa Bot: `oidc-rp.ts`, `/auth/oidc/start` et `/callback`, `forSubject`, session avec `principalId`, `role` vers scopes (`admin` donne `["admin", "client"]`, les autres `["client"]`), bouton sur `/pair`, descripteur `identity`, refus du courriel et des invitations quand `OMB_IDENTITY=perspicax`. Bureau: flux dans la fenêtre. Téléphone: QR d'appairage lié au principal (existant).
    Preuve: une compose de développement avec les deux; un compte Perspicax créé par la CLI se connecte au web de Pulsa Bot; `GET /api/auth/session` montre le principal, le courriel et le rôle; le jeton de connexion est refusé par `/mcp` (401).
 2. **Cycle de vie de la session.** Rafraîchissement, `/oauth/revoke`, déconnexion, canal arrière et P8, navigateur système sur le bureau, OIDC natif sur le téléphone.
 3. **Lien et annuaire.** P9, lien automatique, `perspicax-link.ts`, principals créés depuis l'annuaire (on peut partager avec quelqu'un qui ne s'est jamais connecté), compose unique (P12), page console Serveurs.
-4. **Droits.** `authz.ts`, réglages Membres (équipes autorisées, invités), `px_teams`, droits d'équipe, niveaux par bot, invités 30 jours, liens d'inscription (P10).
+4. **Droits.** `authz.ts`, claim `teams`, droits visant un utilisateur ou une équipe Perspicax, partage administré par les gestionnaires pour leurs équipes, niveaux par bot, page Membres.
 5. **MCP automatique.** P7, pont stdio, profils par bot, identité de qui parle, provenance au journal.
-6. **Routines au nom du propriétaire.** Délégation, `runAs`, révocation depuis les deux côtés.
+6. **Routines au nom du propriétaire.** Délégation, `runAs`, clés de fournisseur dans le coffre de Perspicax (P10), révocation depuis les deux côtés.
 7. **Console Pulsa Bot complète.** Bots, Utilisation, Approbations, Audit, mandataire signé.
 8. **Solo vers organisation et ménage.** « Rejoindre », copie des bots, réécriture des personnes, rattachement intérim; retrait du code intérim de la section 8.
 
-## 11. Questions pour JC
+## 11. Positions et questions pour JC
 
-1. **Invités: comptes Perspicax ou courriel local?** Recommandation: comptes Perspicax dans une équipe « invités Pulsa Bot », avec second facteur. Un seul IdP, et le second facteur protège aussi les données clients qu'un invité voit. Coût: l'admin crée le compte.
-2. **Sous quelle identité le MCP tourne quand quelqu'un parle au bot d'un autre?** Recommandation: celle de qui parle; celle du propriétaire seulement pour ses routines. L'inverse donnerait à tout utilisateur d'un bot l'accès ConnectWise de son propriétaire.
-3. **Durée d'une délégation de routines.** Recommandation: 30 jours glissants renouvelés par chaque exécution, visible et révocable des deux côtés, coupée à la désactivation. Alternative plus stricte: 90 jours fixes puis nouveau consentement.
-4. **Propriétaire de l'organisation Pulsa Bot.** Recommandation: l'admin Perspicax qui a lié le serveur (ou le premier admin connecté en compose unique); tout admin Perspicax est admin Pulsa Bot; transfert par le propriétaire, ou par un admin Perspicax depuis la console en dépannage, écrit à l'audit.
-5. **Courriel.** Recommandation: aucun en v1, liens d'inscription copiés depuis la console; plus tard, le courriel d'identité (inscription, réinitialisation) vit dans Perspicax, et le mailer de Pulsa Bot disparaît.
-6. **Où vit la compose unique.** Recommandation: `pulsatrix-v3/deploy/`, puisque Perspicax est le produit privé qui rend le multi-utilisateur possible; Pulsa Bot garde sa compose solo et pointe vers l'autre.
-7. **Copier ou déplacer les bots en rejoignant.** Recommandation: copier, puis offrir le retrait local bot par bot après vérification; fils et mémoire au choix par bot.
-8. **Bots appartenant à l'organisation.** Faut-il des bots sans propriétaire humain, exécutés sous un compte de service Perspicax? Recommandation: pas en v1; chaque bot a un propriétaire humain, et les comptes de service servent seulement au lien.
+Positions retenues (recommandation acceptée sauf avis contraire):
+
+- **Invités:** pas de concept propre. Une personne externe est un compte Perspicax créé par un admin, dans l'équipe voulue, avec second facteur.
+- **Identité du MCP quand quelqu'un parle au bot d'un autre:** celle de qui parle; celle du propriétaire seulement pour ses routines. L'inverse donnerait à tout utilisateur d'un bot l'accès ConnectWise de son propriétaire.
+- **Administration de l'organisation:** les admins Perspicax. Aucun propriétaire d'organisation distinct; chaque bot garde son propriétaire humain.
+- **Courriel:** aucun dans Pulsa Bot. Les comptes se créent dans Perspicax, avec son mot de passe temporaire et son premier accès existants.
+- **Compose unique:** dans `pulsatrix-v3/deploy/`; Pulsa Bot garde sa compose solo et pointe vers l'autre.
+- **Rejoindre avec des bots locaux:** copier, puis offrir le retrait local bot par bot; fils et mémoire au choix par bot.
+- **Bots sans propriétaire humain:** pas en v1; les comptes de service servent au lien.
+
+Questions encore ouvertes:
+
+1. **Durée d'une délégation de routines.** Recommandation: 30 jours glissants renouvelés par chaque exécution, visible et révocable des deux côtés, coupée à la désactivation. Alternative plus stricte: 90 jours fixes puis nouveau consentement.
+2. **Portée d'un gestionnaire sur les bots de ses équipes.** Recommandation: il administre les droits qui visent ses équipes ou leurs membres, sans lire le Direct privé d'un bot qu'on ne lui a pas ouvert. Alternative: il obtient `use` sur tous les bots partagés avec ses équipes.
