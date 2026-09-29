@@ -11,6 +11,7 @@ import {
   readLastWorkspaceRestore, readPendingWorkspaceRestoreMetadata, readStagedWorkspaceBackup,
   removeWorkspaceBackupJob, stageWorkspaceBackup,
 } from "./workspace-backup.ts";
+import { PrincipalRegistry } from "./principals.ts";
 
 const PASSWORD = "correct horse battery staple";
 const AVATAR_BYTES = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -280,6 +281,41 @@ describe("encrypted full workspace backups", () => {
     for (const path of paths) {
       if (statSync(join(staging, "data", path)).isFile()) expect(readFileSync(join(staging, "data", path), "utf8")).not.toMatch(/ORGANIZATION_(?:CATALOG|RELEASE)_BYTES/);
     }
+  });
+
+  it("keeps the destination's local operator when restoring an archive without principals", async () => {
+    const source = directory();
+    writeFileSync(join(source, "note.txt"), "from before principals");
+    const exported = await createWorkspaceBackup(source, { password: PASSWORD });
+    const target = directory();
+    const local = new PrincipalRegistry({ path: join(target, "principals.json") }).localOperator("jc@gox.ca");
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    commitPendingWorkspaceRestore(target, staged.id);
+    expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
+    expect(readFileSync(join(target, "note.txt"), "utf8")).toBe("from before principals");
+    const after = new PrincipalRegistry({ path: join(target, "principals.json") });
+    expect(after.local()?.id).toBe(local.id);
+    expect(after.list()).toHaveLength(1);
+  });
+
+  it("merges an archive's principals by id and never replaces the destination's local operator", async () => {
+    const source = directory();
+    const sourceRegistry = new PrincipalRegistry({ path: join(source, "principals.json") });
+    const sourceLocal = sourceRegistry.localOperator("old@gox.ca");
+    const zach = sourceRegistry.forAccount({ email: "zach@gox.ca" });
+    const exported = await createWorkspaceBackup(source, { password: PASSWORD });
+    const target = directory();
+    const targetRegistry = new PrincipalRegistry({ path: join(target, "principals.json") });
+    const local = targetRegistry.localOperator("jc@gox.ca");
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    commitPendingWorkspaceRestore(target, staged.id);
+    expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
+    const after = new PrincipalRegistry({ path: join(target, "principals.json") });
+    expect(after.local()?.id).toBe(local.id);
+    expect(after.list().filter((p) => p.local)).toHaveLength(1);
+    expect(after.byId(zach.id)).toMatchObject({ email: "zach@gox.ca" });
+    expect(after.byId(sourceLocal.id)).toMatchObject({ email: "old@gox.ca" });
+    expect(after.byId(sourceLocal.id)?.local).toBeUndefined();
   });
 
   it("still restores an archive from a release that exported hook tokens, without installing them", async () => {

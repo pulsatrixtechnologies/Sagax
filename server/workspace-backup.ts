@@ -14,6 +14,7 @@ import { Worker } from "node:worker_threads";
 import * as tar from "tar";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { writeFileAtomic } from "./atomic.ts";
+import { mergePrincipalFiles } from "./principals.ts";
 import { escapeAttribute, splitTranscriptAttachments } from "../src/lib/composer-attachments.ts";
 import { WORKSPACE_BACKUP_CLIENT_KEYS } from "../shared/workspace-backup-client.ts";
 import { ephemeralWorkspaceTokenPath, excludedWorkspaceAuthPath, portableWorkspaceConfig, redownloadedOrgLibraryPath, restoredWorkspaceConfig } from "./workspace-backup-policy.ts";
@@ -732,6 +733,26 @@ function prepareRestore(dataDir: string, id: string, manifest: Manifest): string
   const newConfig = join(prepared, "config.json");
   if (existsSync(oldConfig) || existsSync(newConfig)) {
     writeJson(newConfig, restoredWorkspaceConfig(existsSync(newConfig) ? privateJson(newConfig) : {}, existsSync(oldConfig) ? privateJson(oldConfig) : {}));
+  }
+  // People keep their principal ids across a restore. The destination's
+  // principals.json stays when the archive has none (a pre-principal backup);
+  // when both exist they merge by id: destination entries stay as they are,
+  // archive entries it lacks are added, and its local operator is never
+  // replaced. The boot migration then maps the restored refs.
+  const oldPrincipals = join(dataDir, "principals.json");
+  const newPrincipals = join(prepared, "principals.json");
+  if (existsSync(oldPrincipals)) {
+    const readable = (path: string): unknown => {
+      try {
+        return privateJson(path);
+      } catch {
+        return undefined;
+      }
+    };
+    const destination = readable(oldPrincipals);
+    if (destination !== undefined) {
+      writeJson(newPrincipals, mergePrincipalFiles(destination, existsSync(newPrincipals) ? readable(newPrincipals) : undefined));
+    }
   }
   // Browser authentication lives alongside ordinary VM files. Copy only the
   // destination's excluded subtrees into the install copy, never the archive.
