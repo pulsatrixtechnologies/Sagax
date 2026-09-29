@@ -1399,7 +1399,65 @@ data class ServerPairResponse(
 data class ServerSession(val id: String, val label: String, val scopes: List<String>)
 
 @Serializable
-data class ServerEnvironment(val environmentId: String, val label: String)
+data class ServerEnvironment(
+    val environmentId: String,
+    val label: String,
+    /** Present on an organization server that signs people in with Pulsatrix. */
+    val identity: ServerIdentity? = null,
+) {
+    /** The server signs people in with Pulsatrix and returns to native apps
+     * (`/auth/oidc/start?client=phone` ends on an `openmausbot://pair` link). */
+    val offersPulsatrixSignIn: Boolean
+        get() = identity?.kind == "perspicax" && identity.nativeReturn == true
+}
+
+/** How an organization server signs people in (the descriptor's `identity`). */
+@Serializable
+data class ServerIdentity(
+    val kind: String,
+    val protocol: String? = null,
+    val issuer: String? = null,
+    val loginPath: String? = null,
+    /** The server ends a native sign-in on an `openmausbot://` link. */
+    val nativeReturn: Boolean? = null,
+)
+
+/**
+ * "Sign in with Pulsatrix" from the phone: a Custom Tab opens this address on
+ * the server, and the server's answer is the pairing invite link the app
+ * already accepts from a QR code
+ * (`openmausbot://pair?address=...&token=omb_pair_...&name=...`), which comes
+ * back through the existing intent filter.
+ */
+object PulsatrixSignIn {
+    /** `<server origin>/auth/oidc/start?client=phone`, or null for an address that is not http(s). */
+    fun startUrl(base: java.net.URI): java.net.URI? {
+        val scheme = base.scheme?.lowercase() ?: return null
+        if (scheme != "https" && scheme != "http") return null
+        val host = base.host ?: return null
+        return runCatching { java.net.URI(scheme, null, host, base.port, "/auth/oidc/start", "client=phone", null) }.getOrNull()
+    }
+
+    /** The invite a sign-in came back with, when it names the expected server
+     * and carries a sign-in credential; else null. */
+    fun invite(callback: java.net.URI, expectedOrigin: java.net.URI): PairingInvite? {
+        val invite = PairingInvite.parse(callback) ?: return null
+        if (!invite.credential.startsWith("omb_pair_")) return null
+        val address = invite.connection.baseUrl ?: return null
+        return invite.takeIf { sameOrigin(address, expectedOrigin) }
+    }
+
+    internal fun sameOrigin(a: java.net.URI, b: java.net.URI): Boolean {
+        fun key(url: java.net.URI): String? {
+            val scheme = url.scheme?.lowercase() ?: return null
+            val host = url.host?.lowercase() ?: return null
+            val port = if (url.port >= 0) url.port else if (scheme == "https") 443 else 80
+            return "$scheme://$host:$port"
+        }
+        val left = key(a) ?: return false
+        return left == key(b)
+    }
+}
 
 /** Unknown attachment kinds remain decodable and are not rendered. */
 @Serializable
