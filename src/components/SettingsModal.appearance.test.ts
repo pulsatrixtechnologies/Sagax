@@ -117,7 +117,7 @@ describe("Settings → Appearance", () => {
     vi.stubGlobal("window", { ogb: { remoteClient: { active: true } } });
     const html = render();
     expect(html).toContain('<option value="appearance" selected="">Appearance</option>');
-    expect(html).toContain('<option value="companion">Your other devices</option>');
+    expect(html).toContain('<option value="companion">Pair devices</option>');
     expect(html).not.toContain('<option value="general">');
     expect(html).not.toContain('<option value="connections">');
     expect(html).not.toContain('<option value="engines">');
@@ -146,35 +146,29 @@ describe("Settings → Appearance", () => {
     expect(html).not.toContain("settings.threadDisplay");
   });
 
-  it("offers desktop connections as a top-level page without exposing the list remotely", () => {
-    fixture.section = "desktopWorkspaces";
-    vi.stubGlobal("window", { ogb: { environments: {} } });
-    const local = render();
-    expect(local).toContain('<option value="desktopWorkspaces" selected="">Servers you joined</option>');
-    expect(local).toContain("Server address or pairing link");
-    expect(local).toContain("Name (optional)");
-    expect(local).toContain("Your servers");
-    expect(local).toContain("npx openmausbot pair --label");
-    fixture.section = "general";
-    vi.stubGlobal("window", { ogb: { workspaces: {} } });
-    expect(render()).not.toContain('<option value="desktopWorkspaces"');
-  });
-
-  it("offers Organisation settings locally and in a browser, never to a remote client", () => {
+  // The joined-servers list and the join card both wait on the /api/org
+  // load, which this suite never flushes (no effects run under
+  // renderToStaticMarkup); OrganizationSettings.test.ts covers that content
+  // once loaded. This only pins the section itself and its nav visibility.
+  it("offers Organisation settings locally and in a browser, folding the joined-servers list into it", () => {
     fixture.section = "organization";
     vi.stubGlobal("window", { ogb: { organization: {} } });
     const local = render();
     expect(local).toContain('<option value="organization" selected="">Organization</option>');
-    expect(local).toContain("Join an organization");
+    expect(local).not.toContain('<option value="desktopWorkspaces"');
     // The enterprise Admin connection stays hidden until it is in use.
     expect(local).not.toContain("personal and local models");
     vi.stubGlobal("window", {});
     const browser = render();
     expect(browser).toContain('<option value="organization" selected="">Organization</option>');
-    expect(browser).toContain("Open the invitation link you received");
-    fixture.section = "appearance";
+  });
+
+  it("keeps Organisation reachable to a remote client instead of hiding it", () => {
+    fixture.section = "organization";
     vi.stubGlobal("window", { ogb: { organization: {}, remoteClient: { active: true } } });
-    expect(render()).not.toContain('<option value="organization"');
+    const html = render();
+    expect(html).toContain('<option value="organization" selected="">Organization</option>');
+    fixture.section = "appearance";
     expect(render()).toContain("Midnight");
   });
   it("offers personal Cloud separately and only through the local desktop bridge", () => {

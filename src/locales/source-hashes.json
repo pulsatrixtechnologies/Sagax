@@ -2811,7 +2811,7 @@
       "settings.section.experimental": "3dc9f569422dcfdadcb2c33f3eb2ee6fcebc8ba679bd63e690f9ddd0ff7c24be",
       "settings.section.connections": "dc273117482b4429ada500ecd2e0c75532454194892cb901ca64cc7df369fdf6",
       "settings.section.engines": "b9bf0c84842bfa7937024fad674df9af19acc232461e6f089fc21f1a96e916d7",
-      "settings.section.companion": "9d5e841223b27ade3beceb106dc25bf1dd24d235641d6742ee6b30ec18562746",
+      "settings.section.companion": "37a77e407a22f0e3a68c3737c42f0c4693c7354445e2ac742aa2f2958a9db05d",
       "settings.section.computer": "6c1fbd71bae5a6278ae0d337aed1a6fd974675d3c913eab2242c31e2d1fd5e04",
       "settings.section.usage": "8d59829c1e15afe1a7fae93e8e5e32d8511bec5fd598a09f4fea6033b31e8a66",
       "settings.profile.title": "d696a35bdd1883da07a8d6c41bb7a3153381b23aa197629ee273479a6eaa5a9c",
@@ -4189,6 +4189,7 @@
       "computer.addBoatKey": "fcf349af3c05d6750fdc7ebdaac778bfcf27f8514faf5084c3882479c084cc36",
       "org.name": "dcd1d5223f73b3a965c07e3ff5dbee3eedcfedb806686a05b9b3868a2c3d6d50",
       "org.create": "f14e1b22393c0dc56ec6b3687791248dbfcdde193f0b62e774145e9fd43efaa7",
+      "org.createLink": "9176bf40a5dcb237daeb830b0e2edbd29ed3babd78e8811f6d288d3d16920ceb",
       "org.serverAddress": "8be89710b2f1d0c515eaff86dd4f049ec2447de5bfdb07d02d9720ff7fe017e1",
       "org.serverAddressHelp": "393fa9da7ebe8f250c633456ae71bc053aab3326f8fcfcbf9550187eaec3c8f5",
       "org.needsServerAddress": "e4d2b78c153f7ebedbe88f7dfc043eb9389cb16dd930823f2a8b4e74e0a56dc9",
@@ -4214,8 +4215,6 @@
       "org.revokeFailed": "3b8b20a2b1f0c5bce08233378d57fde2ef44e530114b23b8902769aed54e71bf",
       "org.addressFailed": "7c5c3c4faa574aa94264f52c49805001b44b27541b628e6141609a66d0ac4314",
       "org.join.title": "1e8b06946ab20b342f8c19c9782c3086b90611fc31da613bea2438cdb17e9a40",
-      "org.join.desktop": "c6304d640d9ec7c64c83ec8f3be1185dbd28ae0cdd127b14ad31568a9712ddc7",
-      "org.join.openServers": "302c6b6a84e51840407146a421518b6572d16af09a6f7212fadf7e19612f0954",
       "org.join.browser": "7bafca5f035a27d1dc02a3ea709c6acdf17c09e8cdc12058a5d1473f1fe60615",
       "settings.companion.ownDevices": "a59b20e93327be2db5b9a3566ebc271e47a159c18a57b494880523f5dc13bf04",
       "join.title": "7c672fe2058e4bddb10d597a42733882c6ae1089302aca1fef6b497650bed9d0",
@@ -4232,8 +4231,7 @@
       "join.unknown": "e96d56c46fb8ce6e5d86f8723cafc664b67316d31ddec4ff9005f5ea3a12149a",
       "join.alreadyMember": "83448a9f7a0d5a49fbd39029389f2810361b894327b9cfe58b0d8a14569a8135",
       "join.signIn": "bfd402b2f6f3812529b55596136d3a11c51616317e3b1cd999928e2d4eae7d3f",
-      "join.failed": "8f3bfb79f1b203476ba6dbcf615f81aea92389d7715b27d17fc0becca030c967",
-      "settings.section.desktopWorkspaces": "24fc6cc4551313ed9d54191d999a028b3675b514b3f54c56316e6795f52db2e5"
+      "join.failed": "8f3bfb79f1b203476ba6dbcf615f81aea92389d7715b27d17fc0becca030c967"
     },
     "hi": {
       "noEngines.title": "af88855a5f80377de709995229ba3907df9e8fb3b940fbf7c0d9cbe6eea54afe",
