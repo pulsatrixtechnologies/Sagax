@@ -21,7 +21,7 @@ function text(html: string): string {
   return html.replace(/&#x27;/g, "'");
 }
 
-type Node = ReactElement<{ children?: ReactNode; type?: string; value?: string; onChange?: (event: unknown) => void; onSubmit?: (event: unknown) => void | Promise<void> }>;
+type Node = ReactElement<{ children?: ReactNode; type?: string; value?: string; onClick?: () => void; onChange?: (event: unknown) => void; onSubmit?: (event: unknown) => void | Promise<void> }>;
 function nodes(value: ReactNode): Node[] {
   if (!isValidElement(value)) return [];
   const node = value as Node;
@@ -56,17 +56,48 @@ describe("OrgDirectory", () => {
     expect(html).toContain("zachary@example.test");
     expect(html).not.toContain("Create organization");
   });
-  it("shows a pending invite separately from members", () => {
-    const html = render({
+  it("shows a pending invite separately from members, with its link actions", () => {
+    const onRevoke = vi.fn();
+    const view = render({
       org: { name: "GOX" },
       people: [],
-      pendingInvites: [{ email: "zachary@example.test" }],
+      pendingInvites: [{ email: "zachary@example.test", token: "tok-1", link: "https://pulsa.gox.ca/join#token=tok-1" }],
+      onCreate() {},
+      onInvite() {},
+      onRevoke,
+    });
+    expect(view.html).toContain("Pending invitations");
+    expect(view.html).toContain("zachary@example.test");
+    expect(view.html).toContain("Copy link");
+    view.nodes.find((node) => node.type === "button" && node.props.children === "Revoke")!.props.onClick!();
+    expect(onRevoke).toHaveBeenCalledExactlyOnceWith("tok-1");
+  });
+  it("lists people by email, falling back to a short id", () => {
+    const html = render({
+      org: { name: "GOX" },
+      people: [
+        { id: "pr_00000000-0000-4000-8000-00000000000a", role: "owner", email: "jc@gox.ca" },
+        { id: "pr_11111111-1111-4111-8111-111111111111", role: "member" },
+      ],
       onCreate() {},
       onInvite() {},
     }).html;
-    expect(html).toContain("Invitations en attente");
-    expect(html).toContain("zachary@example.test");
-    expect(html).toContain("après avoir accepté");
+    expect(html).toContain(">jc@gox.ca<");
+    expect(html).toContain("Owner");
+    expect(html).toContain(">pr_11111111…<");
+    expect(html).not.toContain(">pr_00000000-0000-4000-8000-00000000000a<");
+  });
+  it("edits the server address with a valid address only", async () => {
+    const onUpdateHost = vi.fn(() => Promise.resolve());
+    const props = { org: { name: "GOX", host: { kind: "server" as const, url: "https://pulsa.gox.ca" } }, people: [], onCreate() {}, onInvite() {}, onUpdateHost };
+    expect(render(props).html).toContain("https://pulsa.gox.ca");
+    render(props).nodes.find((node) => node.type === "button" && node.props.children === "Edit")!.props.onClick!();
+    const edit = () => render(props).nodes.find((node) => node.type === "input" && (node.props as { name?: string }).name === "org-server-address-edit")!;
+    edit().props.onChange!({ target: { value: "http://10.0.0.5" } });
+    expect(render(props).html).toContain("Use an https address");
+    edit().props.onChange!({ target: { value: "https://bot.gox.ca" } });
+    await render(props).nodes.filter((node) => node.type === "form")[0]!.props.onSubmit!({ preventDefault() {} });
+    expect(onUpdateHost).toHaveBeenCalledExactlyOnceWith({ kind: "server", url: "https://bot.gox.ca" });
   });
   it("keeps the invite address when onInvite fails", async () => {
     const onInvite = vi.fn(() => Promise.reject(new Error("forbidden")));

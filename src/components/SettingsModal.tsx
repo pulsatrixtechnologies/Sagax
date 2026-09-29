@@ -686,7 +686,6 @@ export function SettingsModal() {
   const ownerOrAdmin = useOwnerOrAdmin();
   const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "desktopWorkspaces")
     .filter((entry) => entry.id !== "desktopWorkspaces" || Boolean(window.ogb?.environments))
-    .filter((entry) => entry.id !== "organization" || Boolean(window.ogb))
     .filter((entry) => entry.id !== "cloudAccount" || Boolean(window.ogb?.cloudAccount))
     // the operator's screen for other workspaces exists only where a fleet agent does
     .filter((entry) => entry.id !== "workspaces" || workspacesAvailable(state.config))
@@ -841,7 +840,7 @@ export function SettingsModal() {
             <div className="flex flex-col gap-3 px-4 pb-7 pt-[22px] sm:px-8">
             <LicenseExpiryBanner config={state.config} />
             {section === "desktopWorkspaces" && <ConnectedWorkspacesSettings />}
-            {section === "organization" && window.ogb && !remoteActive && <OrganizationSettings />}
+            {section === "organization" && !remoteActive && <OrganizationSettings />}
             {section === "cloudAccount" && window.ogb?.cloudAccount && !remoteActive && <CloudAccountSettings />}
             {section === "general" && (
               <>
@@ -932,6 +931,7 @@ export function SettingsModal() {
 
             {section === "companion" && (
               <>
+                <p className="text-[13px] leading-relaxed text-ink-secondary">{t("settings.companion.ownDevices")}</p>
                 <RemoteComputerSection />
                 {!remoteActive && <CustomDomainSettings />}
                 {/* mints an admin/client session token for anything that isn't the phone companion

@@ -33,6 +33,7 @@ import { TeamMapPage } from "@/components/TeamMapPage";
 import { setLocale } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
+import { requestEnterpriseEntry } from "@/lib/enterprise-entry";
 
 function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   const { state, dispatch } = useStore();
@@ -56,7 +57,10 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     if (requestedSettings === "workspaces" || (requestedSettings === "organization" && window.ogb.organization && !remoteClient)) {
       url.searchParams.delete("desktop-settings");
       window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-      if (requestedSettings === "organization") dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
+      if (requestedSettings === "organization") {
+        requestEnterpriseEntry();
+        dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
+      }
       else open();
     }
     return window.ogb.environments.onOpenSettings?.(open);
@@ -217,8 +221,10 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   // Local-shell only: remote server pages never receive the channel, and ogb
   // is absent in the browser.
   useEffect(() => {
-    return window.ogb?.onOpenAppSettings?.(section => dispatch({ type: "toggleAppSettings", open: true,
-      ...(section === "organization" && window.ogb && !remoteClient ? { section } : {}) }));
+    return window.ogb?.onOpenAppSettings?.(section => {
+      if (section === "organization" && window.ogb && !remoteClient) requestEnterpriseEntry();
+      dispatch({ type: "toggleAppSettings", open: true, ...(section === "organization" && window.ogb && !remoteClient ? { section } : {}) });
+    });
   }, [dispatch]);
 
   // The viewer outlives ComputerPanel and can target any bot, so release control

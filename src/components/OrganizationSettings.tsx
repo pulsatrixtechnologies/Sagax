@@ -3,10 +3,12 @@ import type { ManagedDesktopState } from "../../electron/managed-desktop.mjs";
 import type { OrgRole } from "../../server/org-directory.ts";
 import type { OrgRecord } from "../../server/org-record.ts";
 import { activeLocale, t } from "@/lib/i18n";
-import { api, ApiError } from "@/state/store";
+import { enterpriseEntryRequested } from "@/lib/enterprise-entry";
+import { api, ApiError, useStore } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { CompanyModels } from "./CompanyModels";
-import { OrgDirectory } from "./OrgDirectory";
+import { orgHostFromInput } from "./OrgCreateForm";
+import { OrgDirectory, type OrgPersonView, type PendingInviteView } from "./OrgDirectory";
 import { notifyOrgColumn } from "./org-column";
 
 export { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";
@@ -14,8 +16,30 @@ export { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";
 const providerNames: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter" };
 const DEFAULT_PORTAL_ORIGIN = "https://admin.openmausbot.com";
 
+/** The address this page was served from, when it would do as the
+ * organization's server address; empty otherwise (a loopback dev port, a
+ * LAN address over http). */
+export function suggestedOrgAddress(): string {
+  const origin = typeof window !== "undefined" ? window.location?.origin ?? "" : "";
+  return orgHostFromInput(origin) ? origin : "";
+}
+
+/** How to join someone else's organization: in the desktop app, add their
+ * server under "Servers you joined"; in a browser, open the invite link. */
+export function JoinOrganizationCard({ onOpenServers }: { onOpenServers?: () => void }) {
+  return (
+    <Card title={t("org.join.title")}>
+      {onOpenServers ? <>
+        <p className="text-[13px] leading-relaxed text-ink-secondary">{t("org.join.desktop")}</p>
+        <button type="button" className="ui-button mt-3 w-fit" onClick={onOpenServers}>{t("org.join.openServers")}</button>
+      </> : <p className="text-[13px] leading-relaxed text-ink-secondary">{t("org.join.browser")}</p>}
+    </Card>
+  );
+}
+
 /** Only the trusted desktop bridge can enroll this computer or hold its token. */
 export function OrganizationSettings() {
+  const { state: store, dispatch } = useStore();
   const bridge = window.ogb?.remoteClient?.active ? undefined : window.ogb?.organization;
   const [connection, setConnection] = useState<ManagedDesktopState | null>(null);
   const [address, setAddress] = useState("");
@@ -27,8 +51,10 @@ export function OrganizationSettings() {
   const revision = useRef(0);
   const status = useRef<ManagedDesktopState["status"] | undefined>(undefined);
   const [org, setOrg] = useState<{ name: string; host?: OrgRecord["host"] } | null>(null);
-  const [people, setPeople] = useState<{ id: string; role: OrgRole }[]>([]);
-  const [pendingInvites, setPendingInvites] = useState<{ email: string }[]>([]);
+  const [people, setPeople] = useState<OrgPersonView[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInviteView[]>([]);
+  const [viewerRole, setViewerRole] = useState<OrgRole | null | undefined>(undefined);
+  const [lastInvite, setLastInvite] = useState<{ email: string; link?: string } | null>(null);
   const [orgReady, setOrgReady] = useState(false);
   const [directoryError, setDirectoryError] = useState("");
 
@@ -66,11 +92,12 @@ export function OrganizationSettings() {
 
   const loadOrg = async (alive = () => true) => {
     try {
-      const body = await api<{ org: { name: string; host?: OrgRecord["host"] }; people?: { id: string; role: OrgRole }[]; pendingInvites?: { email: string }[] }>("/api/org");
+      const body = await api<{ org: { name: string; host?: OrgRecord["host"] }; people?: OrgPersonView[]; pendingInvites?: PendingInviteView[]; viewerRole?: OrgRole | null }>("/api/org");
       if (!alive()) return;
       setOrg({ name: body.org.name, host: body.org.host });
       setPeople(body.people ?? []);
       setPendingInvites(body.pendingInvites ?? []);
+      setViewerRole(body.viewerRole);
       setOrgReady(true);
       setDirectoryError("");
     } catch (error) {
@@ -83,7 +110,7 @@ export function OrganizationSettings() {
         setDirectoryError("");
         return;
       }
-      setDirectoryError("Impossible de charger l'organisation.");
+      setDirectoryError(t("org.loadFailed"));
     }
   };
 
@@ -122,7 +149,10 @@ export function OrganizationSettings() {
           org={org}
           people={people}
           pendingInvites={pendingInvites}
-          initialAddress=""
+          initialAddress={suggestedOrgAddress()}
+          // An older server sends no role: leave the controls to its own checks.
+          canManage={viewerRole === undefined || viewerRole === "owner" || viewerRole === "admin"}
+          lastInvite={lastInvite}
           onCreate={async (name, host) => {
             try {
               const created = await api<{ org?: { name?: string } }>("/api/org", { method: "POST", body: JSON.stringify({ name, host }) });
@@ -130,15 +160,36 @@ export function OrganizationSettings() {
               notifyOrgColumn(createdName);
               await loadOrg();
             } catch {
-              setDirectoryError("Impossible de créer l'organisation.");
+              setDirectoryError(t("org.createFailed"));
             }
           }}
           onInvite={async (email) => {
             try {
-              await api("/api/org/invites", { method: "POST", body: JSON.stringify({ email }) });
+              const issued = await api<{ invite?: { email?: string }; link?: string }>("/api/org/invites", { method: "POST", body: JSON.stringify({ email }) });
+              setLastInvite({ email: issued.invite?.email ?? email, link: issued.link });
+              setDirectoryError("");
               await loadOrg();
             } catch (error) {
-              setDirectoryError("Impossible d'envoyer l'invitation.");
+              setDirectoryError(t("org.inviteFailed"));
+              throw error;
+            }
+          }}
+          onRevoke={async (token) => {
+            try {
+              await api(`/api/org/invites/${encodeURIComponent(token)}/revoke`, { method: "POST", body: "{}" });
+              setLastInvite((current) => (current?.link?.endsWith(`token=${encodeURIComponent(token)}`) ? null : current));
+              await loadOrg();
+            } catch {
+              setDirectoryError(t("org.revokeFailed"));
+            }
+          }}
+          onUpdateHost={async (host) => {
+            try {
+              await api("/api/org", { method: "PATCH", body: JSON.stringify({ host }) });
+              setDirectoryError("");
+              await loadOrg();
+            } catch (error) {
+              setDirectoryError(t("org.addressFailed"));
               throw error;
             }
           }}
@@ -151,9 +202,20 @@ export function OrganizationSettings() {
     </>
   );
 
-  if (!bridge) return <>
+  // The desktop app joins another organization by adding its server; a
+  // browser joins by opening the invite link.
+  const openServers = window.ogb?.environments && !window.ogb?.remoteClient?.active
+    ? () => dispatch({ type: "toggleAppSettings", open: true, section: "desktopWorkspaces" })
+    : undefined;
+  const joinCard = <JoinOrganizationCard onOpenServers={openServers} />;
+  // The enterprise Admin connection is shown only where it is in use: a
+  // connection exists (any state but signed out), the app is managed, or the
+  // native "Sign in with your organization" entry asked for it.
+  const enterpriseInUse = connection !== null && (connection.status !== "signed-out" || connection.notice === "license-expired");
+  const showEnterprise = Boolean(bridge) && (enterpriseInUse || Boolean(store.config?.managedPolicy) || enterpriseEntryRequested());
+  if (!bridge || !showEnterprise) return <>
     {directory}
-    <p className="text-[13px] text-ink-secondary">{t("organization.desktopOnly")}</p>
+    {joinCard}
   </>;
   // Unavailable can still hold a saved grant; let the person clear it before
   // reconnecting even while the Admin portal or local runtime is offline.
@@ -167,6 +229,7 @@ export function OrganizationSettings() {
     ? new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium", timeStyle: "short" }).format(date) : null;
   return <>
     {directory}
+    {joinCard}
     <p className="text-[13px] leading-relaxed text-ink-secondary">{t("organization.additive")}</p>
     <Card title={t("settings.section.organization")} subtitle={t("organization.privacy")}>
       {!connection && <p role="status" className="text-[13px] text-ink-secondary">{error || t("organization.loading")}</p>}

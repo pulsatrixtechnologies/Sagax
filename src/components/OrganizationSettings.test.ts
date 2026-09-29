@@ -3,9 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ManagedDesktopBridge, ManagedDesktopState } from "../../electron/managed-desktop.mjs";
 import { setLocale } from "@/lib/i18n";
+import { requestEnterpriseEntry, resetEnterpriseEntry } from "@/lib/enterprise-entry";
 
 const fixture = vi.hoisted(() => ({ values: [] as unknown[], index: 0, effects: [] as EffectCallback[], updating: false,
-  store: { bots: [] as unknown[], instances: [] as unknown[], dispatch: (() => {}) as (action: unknown) => void, flushBotPatches: (async () => null) as (botId: string) => Promise<unknown> } }));
+  store: { bots: [] as unknown[], instances: [] as unknown[], config: undefined as unknown, dispatch: (() => {}) as (action: unknown) => void, flushBotPatches: (async () => null) as (botId: string) => Promise<unknown> } }));
 vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(),
   useState: (initial: unknown) => {
     const index = fixture.index++;
@@ -26,9 +27,9 @@ vi.mock("react", async (original) => ({ ...await original<typeof import("react")
 }));
 // The connected panel reads bots and engines for its Company models section.
 vi.mock("@/state/store", async (original) => ({ ...await original<typeof import("@/state/store")>(),
-  useStore: () => ({ state: { bots: fixture.store.bots, instances: fixture.store.instances }, dispatch: fixture.store.dispatch, flushBotPatches: fixture.store.flushBotPatches }),
+  useStore: () => ({ state: { bots: fixture.store.bots, instances: fixture.store.instances, config: fixture.store.config }, dispatch: fixture.store.dispatch, flushBotPatches: fixture.store.flushBotPatches }),
 }));
-import { OrganizationSettings, OrgCreateForm, orgHostFromInput } from "./OrganizationSettings";
+import { JoinOrganizationCard, OrganizationSettings, OrgCreateForm, orgHostFromInput, suggestedOrgAddress } from "./OrganizationSettings";
 import { CompanyModels } from "./CompanyModels";
 import { OrgDirectory } from "./OrgDirectory";
 
@@ -59,7 +60,9 @@ let push: (state: ManagedDesktopState) => void;
 let unsubscribe = vi.fn<() => void>();
 beforeEach(() => {
   fixture.values = []; fixture.index = 0; fixture.effects = []; fixture.updating = false;
-  fixture.store = { bots: [], instances: [], dispatch: vi.fn(), flushBotPatches: vi.fn(async () => null) };
+  fixture.store = { bots: [], instances: [], config: undefined, dispatch: vi.fn(), flushBotPatches: vi.fn(async () => null) };
+  // The enterprise card shows here as if the native organization entry opened it.
+  requestEnterpriseEntry();
   unsubscribe = vi.fn(); push = () => {};
   bridge = {
     settingsOpened: vi.fn().mockResolvedValue(true),
@@ -73,7 +76,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
   setLocale("en");
 });
-afterEach(() => { vi.unstubAllGlobals(); setLocale("en"); });
+afterEach(() => { vi.unstubAllGlobals(); setLocale("en"); resetEnterpriseEntry(); });
 async function ready(state: ManagedDesktopState = { status: "signed-out" }) {
   vi.mocked(bridge.state).mockResolvedValueOnce(state);
   render(); const cleanup = fixture.effects[0](); await flush(); return cleanup;
@@ -273,9 +276,39 @@ describe("optional desktop Organisation settings", () => {
 
   it.each([{}, { ogb: { remoteClient: { active: true } } }])("has no sign-in controls without the local desktop bridge", (windowState) => {
     vi.stubGlobal("window", windowState);
-    expect(render().html).toContain("desktop app on this computer");
+    expect(render().html).toContain("Open the invitation link you received");
+    expect(render().html).not.toContain("desktop app on this computer");
     expect(render().html).not.toContain("Sign in with your organization");
     expect(bridge.state).not.toHaveBeenCalled();
+  });
+
+  it("hides the enterprise connection when it is not in use", async () => {
+    resetEnterpriseEntry();
+    await ready();
+    const html = render().html;
+    expect(html).not.toContain("Sign in with your organization");
+    expect(html).not.toContain("does not upload your chat history");
+    expect(html).toContain("Join an organization");
+  });
+
+  it("keeps the enterprise connection when one exists or the app is managed", async () => {
+    resetEnterpriseEntry();
+    await ready(connected);
+    expect(render().html).toContain("Fixture Company");
+    fixture.values = [];
+    fixture.store.config = { managedPolicy: { organizationName: "Fixture Company" } };
+    await ready();
+    expect(render().html).toContain("Sign in with your organization");
+  });
+
+  it("sends the desktop app to Servers you joined to join another organization", async () => {
+    vi.stubGlobal("window", { ogb: { organization: bridge, environments: { state: vi.fn() } } });
+    await ready();
+    const view = render();
+    expect(view.html).toContain("Invited to someone else&#x27;s organization?");
+    expect(view.html).toContain("Open Servers you joined");
+    (view.nodes.find((node) => node.type === JoinOrganizationCard)!.props as { onOpenServers: () => void }).onOpenServers();
+    expect(fixture.store.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "desktopWorkspaces" });
   });
 });
 
@@ -291,6 +324,14 @@ describe("organization create form", () => {
     const markup = text(renderToStaticMarkup(createElement(OrgCreateForm, { initialAddress: "", onCreate: async () => undefined })));
     expect(markup).toContain("Nom");
     expect(markup).toContain("Créer l'organisation");
+  });
+  it("suggests the page's own address only when it would do as the server address", () => {
+    vi.stubGlobal("window", { location: { origin: "https://pulsa.gox.ca" } });
+    expect(suggestedOrgAddress()).toBe("https://pulsa.gox.ca");
+    vi.stubGlobal("window", { location: { origin: "http://192.168.1.20:5199" } });
+    expect(suggestedOrgAddress()).toBe("");
+    vi.stubGlobal("window", { location: { origin: "http://localhost:8799" } });
+    expect(suggestedOrgAddress()).toBe("http://localhost:8799");
   });
   it("accepts https, Tailscale and local Docker addresses only", () => {
     expect(orgHostFromInput("http://localhost:8080")).toEqual({ kind: "server", url: "http://localhost:8080" });
@@ -329,7 +370,7 @@ describe("fleet organization directory", () => {
   it("shows an error instead of the create form when GET fails", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(500, { error: "boom" }));
     const html = text((await loadOrg()).html);
-    expect(html).toContain("Impossible de charger l'organisation.");
+    expect(html).toContain("Could not load the organization.");
     expect(html).not.toContain("Create organization");
     expect(html).not.toContain("boom");
   });
@@ -358,8 +399,47 @@ describe("fleet organization directory", () => {
       method: "POST",
       body: JSON.stringify({ name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } }),
     }));
-    expect(html).toContain("Impossible de créer l'organisation.");
+    expect(html).toContain("Could not create the organization.");
     expect(html).toContain("Create organization");
+  });
+
+  it("shows the new invite's link after inviting, and each pending invite's actions", async () => {
+    const link = "https://pulsa.gox.ca/join#token=0123456789abcdef0123456789abcdef";
+    vi.mocked(fetch).mockImplementation(async (_input, init) => (
+      init && "method" in init && init.method === "POST"
+        ? jsonResponse(200, { invite: { email: "zara@gox.ca", token: "0123456789abcdef0123456789abcdef" }, link, mailed: false })
+        : jsonResponse(200, {
+          org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } },
+          people: [{ id: "pr_00000000-0000-4000-8000-00000000000a", role: "owner", email: "jc@gox.ca" }],
+          pendingInvites: [{ email: "zara@gox.ca", token: "0123456789abcdef0123456789abcdef", link }],
+          viewerRole: "owner",
+        })
+    ));
+    await loadOrg();
+    const directory = render().nodes.find((node) => node.type === OrgDirectory)!;
+    await directory.props.onInvite?.("zara@gox.ca");
+    await flush();
+    const html = text(render().html);
+    expect(html).toContain("jc@gox.ca");
+    expect(html).toContain("Send this link to zara@gox.ca");
+    expect(html).toContain(link);
+    expect(html).toContain("Copy link");
+    expect(html).toContain("Revoke");
+    expect(html).toContain("Edit");
+  });
+
+  it("gives a member no invite, revoke or edit controls", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, {
+      org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } },
+      people: [{ id: "zara@gox.ca", role: "member", email: "zara@gox.ca" }],
+      pendingInvites: [{ email: "ada@gox.ca" }],
+      viewerRole: "member",
+    }));
+    const html = text((await loadOrg()).html);
+    expect(html).toContain("zara@gox.ca");
+    expect(html).not.toContain(">Invite<");
+    expect(html).not.toContain("Revoke");
+    expect(html).not.toContain(">Edit<");
   });
 
   it("shows a notice when the organization has no server address yet", async () => {
@@ -382,7 +462,7 @@ describe("fleet organization directory", () => {
     await Promise.resolve(directory.props.onInvite?.("zachary@example.test")).then(() => undefined, () => undefined);
     await flush();
     const html = text(render().html);
-    expect(html).toContain("Impossible d'envoyer l'invitation.");
+    expect(html).toContain("Could not send the invitation.");
     expect(html).toContain("GOX");
   });
 });

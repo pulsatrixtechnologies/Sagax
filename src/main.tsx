@@ -6,6 +6,7 @@ import { bootstrapBrand } from "./lib/brand";
 import { applySkin, readSkin } from "./lib/skins";
 import { applyFont, readFont } from "./lib/fonts";
 import { PairPage } from "./pair/PairPage";
+import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
 import "katex/dist/katex.min.css";
 import "./styles.css";
 
@@ -21,6 +22,8 @@ applyFont(readFont());
  * device"; on the owner's own machine the server trusts loopback and this
  * check is a single fast request. */
 async function chooseRoot(): Promise<React.ReactNode> {
+  // An invite link works without a session: redeeming it is the sign-in.
+  if (location.pathname === "/join") return <JoinPage initialToken={takeInviteTokenFromLocation()} />;
   if (location.pathname === "/pair") return <PairPage initialCode={takePairingCodeFromLocation()} initialEmail={takeInvitedEmailFromLocation()} />;
   const session = await readSessionState();
   if (session.kind === "unauthenticated") return <PairPage initialCode={null} reason={session.error} />;
