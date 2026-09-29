@@ -93,6 +93,17 @@ posixOnly("org identity", () => {
 
   let ownerId = "";
 
+  it("lets a chat-only device see the operator's bot while no organization exists", async () => {
+    const bot = await api("POST", "/api/bots", { name: "Personal" });
+    expect(bot.status).toBe(201);
+    const pairing = await api("POST", "/api/auth/pairing", { label: "Kiosk", scopes: ["client"] });
+    const paired = await api("POST", "/api/auth/pair", { code: pairing.body.code });
+    expect(paired.status).toBe(200);
+    const seen = await api("GET", "/api/bots", undefined, paired.body.token);
+    expect(seen.status).toBe(200);
+    expect(seen.body.bots.map((b: any) => b.id)).toContain(bot.body.bot.id);
+  });
+
   it("refuses an organization without a server address", async () => {
     const res = await api("POST", "/api/org", { name: "GOX", host: { kind: "this-computer" } });
     expect(res.status).toBe(400);

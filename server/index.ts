@@ -13658,11 +13658,16 @@ function actorPrincipalId(auth: RequestAuth): string {
   if (auth.kind === "loopback" && auth.trust === "service") return "";
   return localPrincipalId();
 }
-/** Whose channels a request may see. The operator's own phone (an admin
- * code paired from this computer) is the operator: unfiltered, like loopback. */
+/** Whose channels and bots a request may see (requests, live frames and
+ * search all read this). Unfiltered, like loopback: the operator's own phone
+ * (an admin code paired from this computer), and, while no organization
+ * exists, a session without a principal (a chat-only device on a personal
+ * server keeps seeing the operator's bots; its scope still gates it). */
 function channelFilterViewerId(auth: RequestAuth): string | undefined {
   const viewerId = channelViewerId(auth);
-  return viewerId && auth.scopes.includes("admin") && viewerId === localPrincipalId() ? undefined : viewerId;
+  if (!viewerId) return undefined;
+  if (viewerId.startsWith("anon:") && !orgState.org) return undefined;
+  return auth.scopes.includes("admin") && viewerId === localPrincipalId() ? undefined : viewerId;
 }
 /** The actor's sign-in email: sign-in lists and invites stay in emails. */
 function actorEmail(auth: RequestAuth): string | undefined {
