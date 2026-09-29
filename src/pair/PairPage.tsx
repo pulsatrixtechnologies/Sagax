@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DesktopWorkspaceSwitcher } from "../components/DesktopWorkspaceSwitcher";
 import { t } from "@/lib/i18n";
 
@@ -25,6 +25,7 @@ const fieldLabel = "mt-4 block text-[12px] font-medium text-ink-secondary";
 function signInErrorText(code: string): string {
   if (code === "role") return t("pair.pulsatrix.errorRole");
   if (code === "unavailable") return t("pair.pulsatrix.errorUnavailable");
+  if (code === "client") return t("pair.pulsatrix.errorClient");
   return t("pair.pulsatrix.error");
 }
 
@@ -32,7 +33,7 @@ function signInErrorText(code: string): string {
  * app shows instead of itself when a remote browser has no session yet.
  * When the server has a sign-in allow-list, "sign in with your email" comes
  * first and the pairing code stays one link away. */
-export function PairPage({ initialCode, initialEmail = null, reason }: { initialCode: string | null; initialEmail?: string | null; reason?: string }) {
+export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit = false }: { initialCode: string | null; initialEmail?: string | null; reason?: string; autoSubmit?: boolean }) {
   const [code, setCode] = useState(initialCode ?? "");
   const [label, setLabel] = useState(defaultDeviceLabel());
   const [environment, setEnvironment] = useState<EnvironmentDescriptor | null>(null);
@@ -46,6 +47,23 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
   const [email, setEmail] = useState(initialEmail ?? "");
   const [otp, setOtp] = useState("");
   const [sent, setSent] = useState(false);
+  // The desktop app came back from "Sign in with Pulsatrix" in the system
+  // browser: redeem its credential once, without asking; a failure falls
+  // back to the code form with the error.
+  const [finishing, setFinishing] = useState(autoSubmit && Boolean(initialCode));
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!finishing || !initialCode || autoStarted.current) return;
+    autoStarted.current = true;
+    void pairWithCode({ code: initialCode, label: defaultDeviceLabel(), attemptId }).then((result) => {
+      if (result.ok) {
+        location.replace("/");
+        return;
+      }
+      setError(result.error);
+      setFinishing(false);
+    });
+  }, [finishing, initialCode, attemptId]);
 
   useEffect(() => {
     void fetch("/.well-known/openmausbot/environment")
@@ -124,6 +142,8 @@ export function PairPage({ initialCode, initialEmail = null, reason }: { initial
               Open the app
             </a>
           </p>
+        ) : finishing ? (
+          <p role="status" className="mt-4 text-[13.5px] text-ink-secondary">{t("pair.pulsatrix.finishing")}</p>
         ) : mode === "pulsatrix" && loginPath ? (
           <div>
             {signInError ? <p role="alert" className="mt-3 text-[13px] text-danger">{signInErrorText(signInError)}</p> : null}

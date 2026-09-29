@@ -1653,5 +1653,7 @@
   "pair.pulsatrix.error": "La connexion n'a pas abouti. Réessayez.",
   "pair.pulsatrix.errorRole": "Ce compte ne peut pas se connecter à Pulsa Bot. Demandez à un administrateur dans Perspicax.",
   "pair.pulsatrix.errorUnavailable": "Pulsatrix est injoignable. Réessayez dans un instant.",
+  "pair.pulsatrix.finishing": "Connexion en cours...",
+  "pair.pulsatrix.errorClient": "Ce lien de connexion ne vient pas de cette application. Recommencez depuis l'application.",
   "org.managedInPerspicax": "Les personnes, les rôles et les nouveaux comptes se gèrent dans Perspicax."
 }
