@@ -5,8 +5,11 @@ import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./bot-settings/BotEditorContext";
 import { imageAttachmentFromFile } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
+import type { LocaleKey } from "@/locales";
 import {
   MAUS_COLOR_NAMES,
+  MAUS_WING_MOTIONS,
   swatchStyle,
   type MausMotion,
   type MausState,
@@ -19,14 +22,33 @@ import {
   clampAvatarFocus,
   clampAvatarZoom,
 } from "../../shared/bot-avatar";
-import { BotAvatar } from "./Avatar";
+import { MASCOT_SKIN_IDS, botMascotSkin, type MascotSkinId } from "../../shared/mascot-skins";
+import { BotAvatar, MausAvatar } from "./Avatar";
 import { AvatarImageGenerator } from "./AvatarImageGenerator";
 
 type AvatarPatch = Partial<
-  Pick<Bot, "avatarCrop" | "avatarUrl" | "avatarZoom" | "avatarFocusX" | "avatarFocusY" | "color" | "mascotExpression" | "mascotBody">
+  Pick<Bot, "avatarCrop" | "avatarUrl" | "avatarZoom" | "avatarFocusX" | "avatarFocusY" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin">
 >;
 
 const FRAME_SIZE = 168;
+
+const SKIN_LABEL = {
+  none: "mascot.skin.none",
+  lightning: "mascot.skin.lightning",
+  gold: "mascot.skin.gold",
+  neon: "mascot.skin.neon",
+  inferno: "mascot.skin.inferno",
+  frost: "mascot.skin.frost",
+  carbon: "mascot.skin.carbon",
+} satisfies Record<MascotSkinId, LocaleKey>;
+
+const MOVE_LABEL = {
+  "spread-wings": "mascot.motion.spreadWings",
+  flap: "mascot.motion.flap",
+  "take-off": "mascot.motion.takeOff",
+  shake: "mascot.motion.shake",
+  hoot: "mascot.motion.hoot",
+} satisfies Record<(typeof MAUS_WING_MOTIONS)[number], LocaleKey>;
 
 function AvatarFraming({
   bot,
@@ -124,7 +146,7 @@ export function BotProfileAvatarCard({
   mascotMotion: { kind: Exclude<MausMotion, "none">; nonce: number } | null;
   onPatch: (patch: AvatarPatch) => void;
 }) {
-  const { flushBotPatches } = useStore();
+  const { dispatch, flushBotPatches } = useStore();
   const { request: api, uploadAvatar } = useBotEditor();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -140,6 +162,16 @@ export function BotProfileAvatarCard({
   const cropRef = useRef(crop);
   cropRef.current = crop;
   const busy = uploading || generating || savingConnection;
+  // A move tried here plays through the store, so the sidebar and chat header
+  // react too. An unsaved draft has no store motion to show, so the card also
+  // keeps the last move it asked for and plays that when nothing else is.
+  const [triedMove, setTriedMove] = useState<{ kind: Exclude<MausMotion, "none">; nonce: number } | null>(null);
+  const previewMotion = mascotMotion ?? triedMove;
+  const playMove = (kind: Exclude<MausMotion, "none">) => {
+    setTriedMove((last) => ({ kind, nonce: (last?.nonce ?? 0) + 1 }));
+    dispatch({ type: "playMascotMotion", botId: bot.id, kind });
+  };
+  const skin = botMascotSkin(bot.mascotSkin);
 
   const upload = async (file: File | undefined) => {
     if (!file || busy) return;
@@ -209,7 +241,8 @@ export function BotProfileAvatarCard({
     }
   };
 
-  const resetMascot = () => onPatch({ avatarCrop: "mascot", color: "green", mascotExpression: null, mascotBody: "cursor" });
+  const resetMascot = () =>
+    onPatch({ avatarCrop: "mascot", color: "green", mascotExpression: null, mascotBody: "cursor", mascotSkin: "none" });
 
   return (
     <div className="relative">
@@ -225,8 +258,8 @@ export function BotProfileAvatarCard({
             bot={bot}
             state={activeState}
             size={112}
-            motion={mascotMotion?.kind ?? "none"}
-            motionKey={mascotMotion?.nonce ?? 0}
+            motion={previewMotion?.kind ?? "none"}
+            motionKey={previewMotion?.nonce ?? 0}
           />
         </button>
       </div>
@@ -297,6 +330,60 @@ export function BotProfileAvatarCard({
                   title={color}
                   aria-label={`Use ${color} mascot color`}
                 />
+              ))}
+            </div>
+
+            <div className="mb-1.5 mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">
+              {t("mascot.skin.title")}
+            </div>
+            <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label={t("mascot.skin.title")}>
+              {MASCOT_SKIN_IDS.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="radio"
+                  disabled={busy}
+                  aria-checked={skin === id}
+                  aria-label={t("mascot.skin.use", { skin: t(SKIN_LABEL[id]) })}
+                  data-mascot-skin-option={id}
+                  onClick={() => onPatch({ mascotSkin: id })}
+                  className={cn(
+                    "flex flex-col items-center gap-0.5 rounded-lg bg-inset px-0.5 pb-1 pt-1.5 transition-colors hover:bg-control disabled:opacity-50",
+                    skin === id && "ring-2 ring-accent-border",
+                  )}
+                >
+                  {/* The owl stays still; only the skin's own effects play, so
+                      the previews cost no frame loop. */}
+                  <MausAvatar
+                    color={bot.color}
+                    skin={id}
+                    state="idle"
+                    size={44}
+                    animated={false}
+                    skinAnimated
+                    trackPointer={false}
+                  />
+                  <span className="text-[11px] leading-4 text-ink-secondary">{t(SKIN_LABEL[id])}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="mb-1.5 mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">
+              {t("mascot.moves.title")}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {MAUS_WING_MOTIONS.map((move) => (
+                <button
+                  key={move}
+                  type="button"
+                  disabled={busy}
+                  data-mascot-move={move}
+                  aria-label={t("mascot.moves.play", { move: t(MOVE_LABEL[move]) })}
+                  onClick={() => playMove(move)}
+                  className="rounded-md bg-control px-2 py-1 text-[12px] text-ink hover:bg-raised-hover disabled:opacity-50"
+                >
+                  {t(MOVE_LABEL[move])}
+                </button>
               ))}
             </div>
           </>

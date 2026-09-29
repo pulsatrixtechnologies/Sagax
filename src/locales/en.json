@@ -2816,5 +2816,21 @@
   "join.unknown": "This invitation link is not valid. Check that you opened the whole link.",
   "join.alreadyMember": "This address is already a member of the organization. Sign in instead.",
   "join.signIn": "Sign in",
-  "join.failed": "Could not join right now. Try again in a moment."
+  "join.failed": "Could not join right now. Try again in a moment.",
+  "mascot.skin.title": "Skin",
+  "mascot.skin.use": "Use the {skin} skin",
+  "mascot.skin.none": "None",
+  "mascot.skin.lightning": "Lightning",
+  "mascot.skin.gold": "Gold",
+  "mascot.skin.neon": "Neon",
+  "mascot.skin.inferno": "Inferno",
+  "mascot.skin.frost": "Ice",
+  "mascot.skin.carbon": "Carbon",
+  "mascot.moves.title": "Moves",
+  "mascot.moves.play": "Play the {move} move",
+  "mascot.motion.spreadWings": "Spread wings",
+  "mascot.motion.flap": "Flap",
+  "mascot.motion.takeOff": "Take off",
+  "mascot.motion.shake": "Ruffle",
+  "mascot.motion.hoot": "Hoot"
 }

@@ -21,6 +21,7 @@ import { MAUS_COLORS } from "@/lib/mascot";
 import {
   FAR_WING_MIRROR,
   gazeToOffset,
+  OWL_DETAIL_MIN_SIZE,
   hopForSize,
   owlPalette,
   owlRim,
@@ -34,6 +35,9 @@ import {
   type OwlWingMove,
 } from "@/lib/owl/owl-art";
 import { createOwlController, type OwlController } from "@/lib/owl/owl-loop";
+import { owlSkinId, owlSkinLook, owlSkinPalette } from "@/lib/owl/owl-skins";
+import type { MascotSkinId } from "../../shared/mascot-skins";
+import { OwlSkinBack, OwlSkinDefs, OwlSkinEyeGlow, OwlSkinFront, OwlSkinPlumage, OwlSkinWing } from "./OwlSkinFx";
 
 export interface OwlAvatarHandle {
   /** Play a state for a moment (success/alert run once), then resume. */
@@ -62,6 +66,10 @@ export interface OwlAvatarProps {
   reducedMotion?: boolean;
   /** Pin the wings open (0..1) in the still pose, for previews. */
   wings?: number;
+  /** Special-edition skin. Missing or unknown values wear none. */
+  skin?: MascotSkinId | string | null;
+  /** Play the skin's effects even while `animated` is off (skin pickers). */
+  skinAnimated?: boolean;
   className?: string;
 }
 
@@ -93,13 +101,20 @@ function OwlAvatarComponent(
     gaze,
     reducedMotion,
     wings = 0,
+    skin,
+    skinAnimated,
     className,
   }: OwlAvatarProps,
   ref: React.Ref<OwlAvatarHandle>,
 ) {
   const hex = (MAUS_COLORS as Record<string, string>)[color] ?? color;
-  const parts = useMemo(() => owlSvgParts(owlPalette(hex), { size }), [hex, size]);
-  const rim = owlRim(hex);
+  const skinId = owlSkinId(skin);
+  const parts = useMemo(
+    () => owlSvgParts(owlSkinPalette(skinId, owlPalette(hex), hex), { size }),
+    [skinId, hex, size],
+  );
+  const look = owlSkinLook(skinId, hex);
+  const rim = skinId === "none" ? owlRim(hex) : look.rim;
   const rimW = rimWidth(size);
   const uid = `owl-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const hop = hopForSize(size);
@@ -160,6 +175,10 @@ function OwlAvatarComponent(
   const onPointerLeave = () => controller.current?.setPointer(null);
 
   const { eye } = parts;
+  // Full skin effects need room; small avatars keep the recolor and aura, still.
+  const detail = size >= OWL_DETAIL_MIN_SIZE;
+  const fxLive = detail && (skinAnimated ?? animated) && reducedMotion !== true;
+  const fx = { skin: skinId, look, uid, detail, silhouette: parts.body };
   return (
     <span
       className={className ?? "inline-flex shrink-0"}
@@ -177,13 +196,17 @@ function OwlAvatarComponent(
         role={label ? "img" : undefined}
         aria-label={label || undefined}
         aria-hidden={label ? undefined : true}
+        data-owl-skin={skinId === "none" ? undefined : skinId}
+        data-owl-fx={skinId === "none" ? undefined : fxLive ? "live" : "still"}
       >
         <defs>
           <clipPath id={`${uid}-iris`}>
             <circle cx={eye.cx} cy={eye.cy} r={eye.clipR} />
           </clipPath>
+          {skinId !== "none" && <OwlSkinDefs {...fx} />}
         </defs>
         <g ref={rig} data-part="rig" style={{ transform: still.rig }}>
+          <OwlSkinBack {...fx} />
           {/* The far wing: the near wing mirrored, behind the body, shown only while the wings are out. */}
           <g
             ref={farWing}
@@ -201,11 +224,14 @@ function OwlAvatarComponent(
               <g ref={nearWingBack} data-part="nearWingRim" style={{ transform: still.nearWing }}>
                 {rimPaths(parts.nearWing, rim, rimW)}
               </g>
-              <g data-part="rim">{rimPaths([...parts.body, ...parts.feet], rim, rimW)}</g>
+              <g data-part="rim" className={skinId === "none" ? undefined : `owl-fx-rim owl-fx-rim-${skinId}`}>
+                {rimPaths([...parts.body, ...parts.feet], rim, rimW)}
+              </g>
             </>
           )}
           <g data-part="body">
             {paths(parts.body)}
+            <OwlSkinPlumage {...fx} />
             <g data-part="faceMask">{paths(parts.faceMask)}</g>
             {parts.spots && <g data-part="spots">{paths(parts.spots)}</g>}
             <g data-part="feet">{paths(parts.feet)}</g>
@@ -213,9 +239,11 @@ function OwlAvatarComponent(
           </g>
           <g ref={nearWing} data-part="nearWing" style={{ transform: still.nearWing }}>
             {paths(parts.nearWing)}
+            <OwlSkinWing {...fx} wing={parts.nearWing} />
           </g>
           <g data-part="head">
             <g data-part="socket">{paths(parts.socket)}</g>
+            <OwlSkinEyeGlow {...fx} />
             <g ref={eyes} data-part="eyes" style={{ transform: still.eyes }}>
               <circle data-part="iris" cx={eye.cx} cy={eye.cy} r={eye.iris.r} fill={eye.iris.fill} />
               <g ref={pupil} data-part="pupil" style={{ transform: still.pupil }}>
@@ -235,6 +263,7 @@ function OwlAvatarComponent(
               </g>
             </g>
           </g>
+          <OwlSkinFront {...fx} />
         </g>
       </svg>
     </span>
