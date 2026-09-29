@@ -319,7 +319,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
           (Computer panel, then the usage chip): every re-render mounts a
           fresh settings panel and never removes the previous one, so the
           panels pile up and Close stops working. */}
-      {/* One tabbed bot panel (Details, Media, Computer, Advanced) on the
+      {/* One tabbed bot panel (Details, Routines, Files, Computer, Advanced) on the
           desktop; its Computer tab is the store's computer view, so both
           flags render the same panel under one key. */}
       {!remoteClient && (state.settingsOpen || state.computerOpen) && bot && (
