@@ -1591,6 +1591,20 @@ describe("pending queued chip", () => {
     expect(landed.mascotMotion).toMatchObject({ botId: "b1", kind: "working" });
   });
 
+  it("shows off a newly chosen skin with the wings open", () => {
+    const withBot = reducer(initialState, { type: "botPatched", bot });
+    const skinned = reducer(withBot, { type: "updateBot", botId: "b1", patch: { mascotSkin: "lightning" } });
+    expect(skinned.mascotMotion).toMatchObject({ botId: "b1", kind: "spread-wings" });
+    expect(skinned.bots.find((candidate) => candidate.id === "b1")?.mascotSkin).toBe("lightning");
+  });
+
+  it("plays a chosen mascot move on the bot, each press a new beat", () => {
+    const first = reducer(initialState, { type: "playMascotMotion", botId: "b1", kind: "take-off" });
+    const again = reducer(first, { type: "playMascotMotion", botId: "b1", kind: "take-off" });
+    expect(first.mascotMotion).toMatchObject({ botId: "b1", kind: "take-off" });
+    expect(again.mascotMotion?.nonce).toBe((first.mascotMotion?.nonce ?? 0) + 1);
+  });
+
   it("keeps a Shift+Enter multiline message as one entry", () => {
     const withBot = reducer(initialState, { type: "botPatched", bot });
     const queued = reducer(withBot, {

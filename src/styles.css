@@ -223,6 +223,72 @@
   --radius-xl: 0.75rem;
 }
 
+/* ── Pulsatrix Light ──────────────────────────────────────────────────────
+   The light counterpart of Pulsatrix, above: the same v3 console, its own
+   light palette this time (console/src/index.css, the base :root block, no
+   `.dark` and no `prefers-color-scheme: dark`). Ice-blue ground, the same
+   brand blue accent, and a lighter echo of the top glow.
+
+   Surfaces climb from v3's own light ramp, ordered by their measured
+   lightness rather than picked by eye: --input (darkest, becomes the
+   control tone) < --border (hairline) < --accent (inset) < --muted
+   (raised-hover) < --bg (app) < --frame-bg (panel) < --card/--pop (raised,
+   composer, card, menu, all white, "raised means lighter" as in Atelier).
+
+   --color-accent is v3's own --accent-brand, --color-accent-border and
+   --color-focus are its --accent-brand-hover/--ring (identical in v3).
+   --color-danger is v3's --destructive verbatim; its fill is dark enough
+   that white clears AA outright, unlike Pulsatrix's own red, so danger-ink
+   stays v3's own --destructive-fg instead of borrowing the app's ink.
+   Success and warning are not top-level v3 tokens, so they are drawn from
+   the nearest thing v3 has: the --fg-ok and --fg-write badge inks, already
+   tuned for 4.5:1 on a white card. The user's own bubble takes v3's
+   --bg-query tint, the softest of its blue badges.
+   ───────────────────────────────────────────────────────────────────────── */
+[data-skin="pulsatrix-light"] {
+  --code-color-scheme: light;
+  --color-app: #eef2f8;
+  --color-panel: #f6f8fb;
+  --color-raised: #ffffff;
+  --color-raised-hover: #e6ebf4;
+  --color-composer: #ffffff;    /* = raised: unchanged */
+  --color-composer-ring: transparent;
+  --color-card: #ffffff;
+  --color-menu: #ffffff;    /* = card: unchanged */
+  --color-inset: #dfe6f2;
+  --color-control: #bfcade;
+  --color-hairline: #b8c3d9;         /* v3's own #c8d1e3 measures 1.37:1 on the
+                                         app ground; darkened to the nearest
+                                         step that clears 1.5:1 */
+
+  --color-ink: #0b1526;
+  --color-ink-secondary: #545e6e;   /* v3's #5a6577 darkened one notch for 4.5:1 on inset */
+
+  --color-accent: #2f62dd;
+  --color-accent-border: #3c76f4;
+  --color-accent-text: #2652bd;     /* darkened from accent for 4.5:1 on the app ground */
+  --color-focus: #3c76f4;
+  --color-accent-ink: #f6f8fc;
+  --color-bubble-user: #dceafe;     /* v3's --bg-query, the softest of its blue badges */
+  --color-bubble-user-ink: #0b1526;   /* = ink: unchanged */
+
+  --color-success: #0f5132;
+  --color-danger: #d92d3e;
+  --color-danger-ink: #ffffff;
+  --color-success-ink: #ffffff;
+  --color-warning: #7d4d09;
+  --color-scrollbar: #a9b7cf;
+  --color-maus-line: #545e6e;       /* = ink-secondary: unchanged */
+  --app-glow:
+    radial-gradient(ellipse 110% 62% at 50% 0%, color-mix(in oklch, var(--color-accent) 8%, transparent), transparent 70%),
+    radial-gradient(ellipse 72% 44% at 80% 0%, color-mix(in oklch, var(--color-accent) 5%, transparent), transparent 68%);
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", system-ui, sans-serif;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+}
+
 /* ── Midnight ──────────────────────────────────────────────────────────────
    The upstream palette, pixel-sampled from the real Grok app. Repeated here
    (rather than relying on the `@theme` defaults) so that a `[data-skin]`
@@ -1502,4 +1568,141 @@ button:disabled.bg-danger {
    disabled or busy controls keep the default cursor. */
 [data-sidebar] :is(button, [role="button"]):not(:disabled, [aria-busy="true"]) {
   cursor: pointer;
+}
+
+/* Owl skins (src/components/OwlSkinFx.tsx). The effects animate only opacity
+   and transform, only while the owl says it is live, and never under reduced
+   motion; with no animation each layer shows its still look. SVG transforms
+   here are in viewBox units. */
+.owl-fx-flame,
+.owl-fx-twinkle {
+  transform-box: fill-box;
+}
+.owl-fx-flame {
+  transform-origin: 50% 100%;
+}
+.owl-fx-twinkle {
+  transform-origin: 50% 50%;
+}
+[data-owl-fx="live"] .owl-fx-crackle {
+  animation-name: owl-fx-crackle;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-flash {
+  animation-name: owl-fx-flash;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-pulse {
+  animation-name: owl-fx-pulse;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-flame {
+  animation-name: owl-fx-flame;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+[data-owl-fx="live"] .owl-fx-rise {
+  animation-name: owl-fx-rise;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-fall {
+  animation-name: owl-fx-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-sweep {
+  animation-name: owl-fx-sweep;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-twinkle {
+  animation-name: owl-fx-twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-aura-lightning {
+  animation: owl-fx-surge 3.4s linear 1.9s infinite;
+}
+[data-owl-fx="live"] .owl-fx-aura-neon,
+[data-owl-fx="live"] .owl-fx-aura-inferno,
+[data-owl-fx="live"] .owl-fx-aura-frost,
+[data-owl-fx="live"] .owl-fx-aura-gold {
+  animation: owl-fx-pulse 2.8s ease-in-out infinite;
+}
+[data-owl-fx="live"] .owl-fx-rim-neon,
+[data-owl-fx="live"] .owl-fx-glow-neon {
+  animation: owl-fx-buzz 4.2s linear infinite;
+}
+[data-owl-fx="live"] .owl-fx-rim-lightning,
+[data-owl-fx="live"] .owl-fx-glow-lightning {
+  animation: owl-fx-surge 3.4s linear 1.9s infinite;
+}
+[data-owl-fx="live"] .owl-fx-glow-inferno {
+  animation: owl-fx-pulse 1.3s ease-in-out infinite;
+}
+@keyframes owl-fx-crackle {
+  0%, 30%, 100% { opacity: 0; }
+  2% { opacity: 1; }
+  5% { opacity: 0.25; }
+  8% { opacity: 1; }
+  12% { opacity: 0.55; }
+  16% { opacity: 1; }
+  22% { opacity: 0.3; }
+  26% { opacity: 0.9; }
+}
+@keyframes owl-fx-flash {
+  0%, 100% { opacity: 0; }
+  2% { opacity: 0.55; }
+  4% { opacity: 0.08; }
+  6% { opacity: 0.4; }
+  11% { opacity: 0; }
+}
+@keyframes owl-fx-surge {
+  0%, 100% { opacity: 0.7; }
+  2% { opacity: 1; }
+  4% { opacity: 0.8; }
+  6% { opacity: 1; }
+  14% { opacity: 0.7; }
+}
+@keyframes owl-fx-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+@keyframes owl-fx-buzz {
+  0%, 40%, 44%, 47%, 100% { opacity: 1; }
+  42% { opacity: 0.35; }
+  45.5% { opacity: 0.55; }
+}
+@keyframes owl-fx-flame {
+  0% { transform: scale(1, 0.92); }
+  50% { transform: scale(0.9, 1.1); }
+  100% { transform: scale(1.06, 0.86); }
+}
+@keyframes owl-fx-rise {
+  0% { transform: translate(0, 0); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translate(6px, -56px); opacity: 0; }
+}
+@keyframes owl-fx-fall {
+  0% { transform: translate(0, -14px) rotate(0deg); opacity: 0; }
+  20% { opacity: 0.9; }
+  100% { transform: translate(8px, 40px) rotate(90deg); opacity: 0; }
+}
+@keyframes owl-fx-sweep {
+  0% { transform: translateX(-200px); }
+  55%, 100% { transform: translateX(240px); }
+}
+@keyframes owl-fx-twinkle {
+  0%, 100% { transform: scale(0.2); opacity: 0; }
+  50% { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-owl-fx] * {
+    animation: none !important;
+  }
 }

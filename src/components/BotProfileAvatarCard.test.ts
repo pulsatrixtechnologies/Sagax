@@ -81,3 +81,53 @@ describe("BotProfileAvatarCard", () => {
     }
   });
 });
+
+describe("BotProfileAvatarCard skins and moves", () => {
+  it("offers every skin with a live preview, none chosen by default", () => {
+    const markup = renderCard(makeBot());
+    expect(markup).toContain(">Skin<");
+    for (const skin of ["none", "lightning", "gold", "neon", "inferno", "frost", "carbon"]) {
+      expect(markup).toContain(`data-mascot-skin-option="${skin}"`);
+    }
+    expect(markup).toContain('aria-checked="true" aria-label="Use the None skin"');
+    expect(markup).toContain('aria-checked="false" aria-label="Use the Lightning skin"');
+    expect(markup).toContain('aria-label="Use the Ice skin"');
+    // the previews play their effects without joining the frame loop
+    expect(markup).toMatch(/data-owl-skin="lightning" data-owl-fx="live"/);
+  });
+
+  it("reflects a stored skin, and reads an unknown one as none", () => {
+    expect(renderCard(makeBot({ mascotSkin: "gold" }))).toContain('aria-checked="true" aria-label="Use the Gold skin"');
+    // SAFETY: a skin this build does not know can arrive from a newer client.
+    expect(renderCard(makeBot({ mascotSkin: "plasma" as Bot["mascotSkin"] }))).toContain(
+      'aria-checked="true" aria-label="Use the None skin"',
+    );
+  });
+
+  it("offers every wing move as a button with a readable label", () => {
+    const markup = renderCard(makeBot());
+    expect(markup).toContain(">Moves<");
+    for (const [move, label] of [
+      ["spread-wings", "Spread wings"],
+      ["flap", "Flap"],
+      ["take-off", "Take off"],
+      ["shake", "Ruffle"],
+      ["hoot", "Hoot"],
+    ]) {
+      expect(markup).toContain(`data-mascot-move="${move}"`);
+      expect(markup).toContain(`aria-label="Play the ${label} move"`);
+    }
+  });
+
+  it("offers black among the colors, outlined so it reads on a dark card", () => {
+    const markup = renderCard(makeBot());
+    expect(markup).toMatch(/aria-label="Use black mascot color"/);
+    expect(markup).toContain("inset 0 0 0 1.5px");
+  });
+
+  it("hides skins and moves for a flat image", () => {
+    const markup = renderCard(makeBot({ avatarUrl: "/api/attachments/cat.webp", avatarCrop: "rounded" }));
+    expect(markup).not.toContain("data-mascot-skin-option");
+    expect(markup).not.toContain("data-mascot-move");
+  });
+});

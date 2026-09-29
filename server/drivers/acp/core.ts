@@ -68,6 +68,7 @@ import { MAX_QUESTION_TEXT, parseAskQuestions, parseChoices, questionAnswersByQu
 import { appendNative } from "../native.ts";
 import { acpPermissionCommand, permissionLaunchCwd } from "../permission-command.ts";
 import { commandSummary, toolDetailPreview } from "../../tool-summary.ts";
+import { acpWrittenFiles, filesField } from "../../thread-files.ts";
 import { extractMcpImages } from "../../mcp-tool-images.ts";
 import { redactSecretsInText } from "../../redact.ts";
 import { recoveryPromptFor } from "../../resume-recovery.ts";
@@ -1133,6 +1134,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 title: String(u.rawInput?.command ?? u.title ?? "tool").slice(0, 80),
                 summary: commandSummary(u.rawInput),
                 input: toolDetailPreview(u.rawInput),
+                ...filesField(acpWrittenFiles(u)),
               });
               break;
             }

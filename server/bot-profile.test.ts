@@ -121,6 +121,25 @@ describe("mascotBody", () => {
   });
 });
 
+describe("mascotSkin", () => {
+  it("accepts every known skin, none included", () => {
+    for (const skin of ["none", "lightning", "gold", "neon", "inferno", "frost", "carbon"]) {
+      expect(parseBotProfilePatch({ mascotSkin: skin } as never, true)).toEqual({ ok: true, patch: { mascotSkin: skin } });
+    }
+  });
+
+  it("is writable from the broad desktop boundary too", () => {
+    expect(parseBotProfilePatch({ mascotSkin: "gold" } as never)).toEqual({ ok: true, patch: { mascotSkin: "gold" } });
+  });
+
+  it("maps an unknown skin to a readable message", () => {
+    expect(parseBotProfilePatch({ mascotSkin: "plasma" } as never, true)).toEqual({
+      ok: false,
+      error: "mascotSkin must be none, lightning, gold, neon, inferno, frost, or carbon",
+    });
+  });
+});
+
 describe("soul (standing instructions)", () => {
   it("accepts soul on both the strict and broad boundaries", () => {
     expect(parseBotProfilePatch({ soul: "Be brief." }, true)).toEqual({ ok: true, patch: { soul: "Be brief." } });

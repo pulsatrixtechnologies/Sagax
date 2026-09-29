@@ -3,7 +3,7 @@ import type { ManagedDesktopState } from "../../electron/managed-desktop.mjs";
 import type { WorkspaceBackupSummary } from "../../shared/workspace-backup";
 import { activeLocale, t } from "@/lib/i18n";
 import { collectWorkspaceClientState, WORKSPACE_RESTORE_MARKER } from "@/lib/workspace-backup-client";
-import { Card, Switch } from "./SettingsPrimitives";
+import { Card, Switch, cardCount } from "./SettingsPrimitives";
 import { WorkspaceBackupSummaryView } from "./WorkspaceBackupSettings";
 
 type BackupBridge = NonNullable<NonNullable<Window["ogb"]>["companyBackups"]>;
@@ -71,7 +71,7 @@ export function SavedCompanyBackupSchedule({ bridge }: { bridge: BackupBridge })
     catch { if (current === generation.current) setError(t("companyBackup.scheduleFailed")); }
     finally { if (current === generation.current) setBusy(false); }
   };
-  return <Card title={t("companyBackup.title")} subtitle={t("companyBackup.savedSchedule")}>
+  return <Card collapsible cardId="backups.companySchedule" title={t("companyBackup.title")} subtitle={t("companyBackup.savedSchedule")} summary={t(`companyBackup.scheduleStatus.${schedule.status}`)}>
     <div className="rounded-lg border border-hairline/40 p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="text-[14px] font-medium">{t("companyBackup.daily")}</div>
@@ -243,7 +243,15 @@ export function ConnectedCompanyBackupSettings({ connection, bridge }: { connect
   const schedule = state?.schedule;
   const scheduledDate = (value: number) => new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 
-  return <Card title={t("companyBackup.title")} subtitle={t("companyBackup.account", { organization: connection.organization?.name ?? "", email: connection.email ?? "" })}>
+  return <Card
+    collapsible
+    cardId="backups.company"
+    title={t("companyBackup.title")}
+    subtitle={t("companyBackup.account", { organization: connection.organization?.name ?? "", email: connection.email ?? "" })}
+    summary={schedule?.lastBackupAt && Number.isFinite(schedule.lastBackupAt)
+      ? t("companyBackup.lastScheduledBackup", { date: scheduledDate(schedule.lastBackupAt) })
+      : listing ? cardCount("backups", ready.length) : connection.organization?.name ?? ""}
+  >
     <div className="flex flex-col gap-3">
       <p className="text-[13px] text-ink-secondary">{t("companyBackup.managedScope")}</p>
       {bridge.configureSchedule && schedule && <div className="rounded-lg border border-hairline/40 p-3">

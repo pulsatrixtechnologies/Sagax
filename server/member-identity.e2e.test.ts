@@ -142,7 +142,7 @@ posixOnly("an organization member's identity and bots", () => {
   it("describes the operator to the operator, as before", async () => {
     const config = await api("GET", "/api/config");
     expect(config.status).toBe(200);
-    expect(config.body.profile).toEqual({ name: OWNER_NAME, email: OWNER_EMAIL, aboutMe: OWNER_ABOUT });
+    expect(config.body.profile).toMatchObject({ name: OWNER_NAME, email: OWNER_EMAIL, aboutMe: OWNER_ABOUT });
     expect(config.body.viewer).toMatchObject({ operator: true, email: OWNER_EMAIL, name: OWNER_NAME, role: "owner", canCreateBots: true });
     expect(config.body.viewer.principalId).toMatch(/^pr_/);
   });

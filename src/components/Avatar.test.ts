@@ -57,6 +57,16 @@ describe("MausAvatar", () => {
     expect(runningOwlCount()).toBe(0);
   });
 
+  it("wears the bot's stored skin, and none for an unknown one", () => {
+    expect(renderBot({ mascotSkin: "gold" })).toContain('data-owl-skin="gold"');
+    // SAFETY: a newer client may store a skin this build does not know.
+    expect(renderBot({ mascotSkin: "plasma" as BotAvatarProps["bot"]["mascotSkin"] })).not.toContain("data-owl-skin");
+  });
+
+  it("renders the black bot with its rim", () => {
+    expect(render({ color: "black", size: 72 })).toContain('data-part="rim"');
+  });
+
   it("uses the label as the owl's accessible name", () => {
     expect(render({ label: "Atlas" })).toContain('aria-label="Atlas"');
   });

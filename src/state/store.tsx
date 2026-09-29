@@ -20,6 +20,7 @@ import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
+import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
 import type { ProfileRequestCardData } from "../../shared/profile-request";
 import type { ModelRequestCardData } from "../../shared/model-request";
@@ -387,6 +388,8 @@ export interface Bot {
   mascotExpression?: string | null;
   /** Which body the bot wears. Unknown/absent values fall back to the cursor. */
   mascotBody?: MascotBodyId | null;
+  /** Special-edition skin. Unknown/absent values wear none. */
+  mascotSkin?: MascotSkinId | null;
   /** App-owned image attachment used for this bot's profile. */
   avatarUrl?: string | null;
   /** Mascot, or the crop applied to avatarUrl. */
@@ -1165,6 +1168,8 @@ export type Action =
   | { type: "botDeletionPending"; botId: string; on: boolean }
   | { type: "duplicateBot"; botId: string }
   | { type: "markUnread"; botId: string }
+  /** Play a one-shot mascot motion on a bot, as the appearance card's moves do. */
+  | { type: "playMascotMotion"; botId: string; kind: Exclude<MausMotion, "none"> }
   | { type: "botPatched"; bot: BotAnnouncement }
   | { type: "messageAdded"; threadId: string; message: Message }
   | { type: "messagePatched"; threadId: string; message: Message }
@@ -1647,6 +1652,8 @@ export function reducer(state: AppState, action: Action): AppState {
       const { [action.botId]: _settled, ...deletingBots } = state.deletingBots;
       return { ...state, deletingBots };
     }
+    case "playMascotMotion":
+      return withMascotMotion(state, action.botId, action.kind);
     case "markUnread":
       return updateBot(withMascotMotion(state, action.botId, "surprise"), action.botId, (b) => ({ ...b, unread: true }));
     case "botPatched": {
@@ -2050,9 +2057,13 @@ export function reducer(state: AppState, action: Action): AppState {
       const mascotChanged =
         Object.prototype.hasOwnProperty.call(action.patch, "color") ||
         Object.prototype.hasOwnProperty.call(action.patch, "mascotExpression");
-      const animated = mascotChanged
-        ? withMascotMotion(state, action.botId, "customize")
-        : state;
+      // a new skin is shown off with the wings open
+      const skinChanged = Object.prototype.hasOwnProperty.call(action.patch, "mascotSkin");
+      const animated = skinChanged
+        ? withMascotMotion(state, action.botId, "spread-wings")
+        : mascotChanged
+          ? withMascotMotion(state, action.botId, "customize")
+          : state;
       const target = animated.bots.find((bot) => bot.id === action.botId);
       const chiefSection = (action.patch.section ?? target?.section)?.trim() || "";
       const next = action.patch.chiefOfStaff

@@ -85,7 +85,9 @@ import {
   messageImageTargetAt,
   messageReferencesFile,
   openMessageFile,
+  statMessageFile,
 } from "./message-file.ts";
+import { activePath, listThreadFiles, threadFileRefs, writtenFilesForMessage, type ThreadFileRef } from "./thread-files.ts";
 import {
   avatarGenerationRequestSchema,
   avatarGenerationStateMatches,
@@ -6995,7 +6997,7 @@ bus.subscribe((event: RuntimeEvent) => {
         const message = pushMessage({
           role: "bot",
           kind: "activity",
-          tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId },
+          tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}) },
           // attributed to its turn so the digest can count it
           turnId: liveTurnId,
         });
@@ -12869,6 +12871,20 @@ function messageFileRootsForThread(senderId: string, threadId: string): string[]
   });
 }
 
+/** The file references of a thread's visible branch (thread-files.ts). */
+function threadFileRefsFor(threadId: string): ThreadFileRef[] {
+  const directBot = store.botByThread(threadId);
+  return threadFileRefs(activePath(store.messagesFor(threadId), store.activeLeaf(threadId)), directBot?.id);
+}
+
+/** The roots one listed file may be read from: the private attachment store
+ * for uploads and attach_file output, the author's conversation roots for
+ * links and written files, the same split the message file route makes. */
+function threadFileRoots(threadId: string, ref: ThreadFileRef): string[] {
+  if (ref.source === "upload" || ref.source === "attachment") return [ATTACHMENTS_DIR];
+  return ref.botId ? messageFileRootsForThread(ref.botId, threadId) : [];
+}
+
 async function attachmentVmForTurn(capability: InternalCapability): Promise<LocalVmTarget | undefined> {
   const slot = autoVmClaims.get(capability.threadId);
   if (!localVmThreadTargets.has(capability.threadId) &&
@@ -13884,7 +13900,7 @@ function configStatus() {
     tts: tts.describeVoice(cfg),
     imageGen: avatarImageStatus(cfg),
     // not a secret — the sidebar shows it
-    profile: { name: cfg.profile?.name ?? "", email: cfg.profile?.email ?? "", aboutMe: cfg.profile?.aboutMe ?? "" },
+    profile: { name: cfg.profile?.name ?? "", email: cfg.profile?.email ?? "", aboutMe: cfg.profile?.aboutMe ?? "", avatarUrl: cfg.profile?.avatarUrl ?? "" },
     // the enrolled organisation's read-only desktop policy; null when not enrolled
     managedPolicy: managedPolicy.summary(),
     // not a secret — the settings picker shows it; "" = follow the system
@@ -17919,11 +17935,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
       const message = store.messagesFor(threadId).find((candidate) => candidate.id === m![2]);
       if (!message) return json(res, 404, { error: "no such message" });
-      if (message.kind !== "text" || (!message.text && !message.attachments?.length)) {
+      const body = method === "POST" ? await readBody(req) : null;
+      // A file the bot's own tool wrote is granted by that tool's activity
+      // message, the same way a Markdown link is by its text message.
+      const writtenGrant = method === "POST" && message.role === "bot" && typeof body.path === "string" &&
+        writtenFilesForMessage(message).includes(body.path);
+      if (!writtenGrant && (message.kind !== "text" || (!message.text && !message.attachments?.length))) {
         return json(res, 403, { error: "that message does not share this file" });
       }
       const messageText = message.text ?? "";
-      const body = method === "POST" ? await readBody(req) : null;
       const rawReference = streamsMessageImage ? url.searchParams.get("ref") : null;
       if (streamsMessageImage && (!rawReference || !/^\d+$/.test(rawReference))) {
         return json(res, 400, { error: "ref must identify a rendered image" });
@@ -17952,6 +17972,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // mobile clients can fetch an attached image through this route too.
         downloadName = botAttachment.kind === "file" ? botAttachment.name : undefined;
         roots = [ATTACHMENTS_DIR];
+      } else if (writtenGrant) {
+        const senderId = directBot?.id ?? message.from?.botId;
+        if (!senderId) return json(res, 403, { error: "the file's bot author could not be verified" });
+        roots = messageFileRootsForThread(senderId, threadId);
       } else {
         if (!messageReferencesFile(messageText, href)) {
           return json(res, 403, { error: "that bot message does not link to this file" });
@@ -17989,6 +18013,66 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               "referrer-policy": "no-referrer",
             }
           : {}),
+      });
+      if (file.bytes === 0) {
+        await file.handle.close();
+        return res.end();
+      }
+      const stream = file.handle.createReadStream({ start: 0, end: file.bytes - 1, autoClose: true });
+      stream.on("error", () => res.destroy());
+      res.on("close", () => stream.destroy());
+      stream.pipe(res);
+      return;
+    }
+
+    // The conversation's files for the bot panel's Files tab: every upload,
+    // attachment, linked file and tool-written file on the visible branch,
+    // newest first, with size and whether this server can serve it.
+    m = path.match(/^\/api\/threads\/([\w-]+)\/files$/);
+    if (m && method === "GET") {
+      const threadId = m[1]!;
+      if (!store.botByThread(threadId) && !store.groupByThread(threadId)) {
+        return json(res, 404, { error: "no such conversation" });
+      }
+      const files = await listThreadFiles(
+        threadFileRefsFor(threadId),
+        (ref) => statMessageFile(ref.path, threadFileRoots(threadId, ref)),
+      );
+      return json(res, 200, { files });
+    }
+
+    // One of those files by its opaque id: `preview=1` streams an image
+    // inline for a thumbnail; otherwise it downloads. The listing entry is
+    // the grant and the roots are the message route's, so no host path
+    // ever travels in the URL.
+    m = path.match(/^\/api\/threads\/([\w-]+)\/files\/([a-f0-9]{24})$/);
+    if (m && method === "GET") {
+      const threadId = m[1]!;
+      if (!store.botByThread(threadId) && !store.groupByThread(threadId)) {
+        return json(res, 404, { error: "no such conversation" });
+      }
+      const ref = threadFileRefsFor(threadId).find((candidate) => candidate.id === m![2]);
+      if (!ref) return json(res, 404, { error: "no such file in this conversation" });
+      const preview = url.searchParams.get("preview") === "1";
+      const file = await openMessageFile(ref.path, threadFileRoots(threadId, ref));
+      if (preview && !file.mime.startsWith("image/")) {
+        await file.handle.close();
+        return json(res, 415, { error: "only images can be previewed here" });
+      }
+      res.writeHead(200, {
+        "content-type": file.mime,
+        "content-length": String(file.bytes),
+        "content-disposition": preview
+          ? "inline"
+          : messageFileDisposition(messageFileDownloadName(ref.source === "upload" || ref.source === "attachment" ? ref.name : undefined, file.name)),
+        "cache-control": preview ? "private, max-age=3600" : "private, no-store",
+        "cdn-cache-control": "no-store",
+        "cloudflare-cdn-cache-control": "no-store",
+        pragma: "no-cache",
+        vary: "Authorization",
+        "x-content-type-options": "nosniff",
+        "cross-origin-resource-policy": "same-origin",
+        "referrer-policy": "no-referrer",
       });
       if (file.bytes === 0) {
         await file.handle.close();

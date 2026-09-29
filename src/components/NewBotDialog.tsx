@@ -369,7 +369,7 @@ export function DefaultBotSettings() {
   const [open, setOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
   return <>
-    <div className="flex items-center justify-between gap-4 py-3"><span className="text-[13px] text-ink">{t("newBot.defaults")}</span>
+    <div className="flex items-center justify-between gap-4 px-3.5 py-2.5"><span className="text-[13px] leading-[18px] text-ink">{t("newBot.defaults")}</span>
       <div className="flex shrink-0 gap-2">
         <button type="button" onClick={() => setSharing(true)} className="rounded-lg px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-control hover:text-ink">{t("newBot.sharePreset")}</button>
         <button type="button" onClick={() => setOpen(true)} className="rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover">{t("newBot.edit")}</button>

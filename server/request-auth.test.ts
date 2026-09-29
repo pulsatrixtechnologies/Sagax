@@ -114,6 +114,7 @@ describe("scopes", () => {
       ["POST", "/api/workers/laptop/pull"],
       ["POST", "/api/workers/laptop/drop"],
       ["POST", "/api/workers/queue/m1/cancel"],
+      ["GET", "/api/threads/t/files"], ["GET", `/api/threads/t/files/${"a1".repeat(12)}`],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
       ["POST", "/api/cli-test"], ["GET", "/api/cli-candidates"], ["GET", "/api/instances"], ["PATCH", "/api/instances/claude"],
@@ -134,6 +135,7 @@ describe("scopes", () => {
   it("limits a client's bot and room edits to display fields, naming the field it refused", () => {
     expect(clientBotPatchViolation({ unread: true })).toBeNull();
     expect(clientBotPatchViolation({ pinned: true, color: "green" })).toBeNull();
+    expect(clientBotPatchViolation({ color: "black", mascotSkin: "lightning" })).toBeNull();
     expect(clientBotPatchViolation({ unread: true, autoApprove: true })).toBe("autoApprove");
     expect(clientBotPatchViolation({ cwd: "/" })).toBe("cwd");
     expect(clientBotPatchViolation([])).toBe("body");

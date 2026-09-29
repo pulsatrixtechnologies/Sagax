@@ -21,7 +21,7 @@ import {
 } from "./PhoneSetupFlow";
 import { companionPairingMode } from "../lib/phone-setup";
 import { ConnectionDetail } from "./ConnectionDetail";
-import { Card, Switch } from "./SettingsPrimitives";
+import { Card, requestSettingsCard, Switch, cardCount } from "./SettingsPrimitives";
 import { brand } from "../lib/brand";
 import { useStore } from "@/state/store";
 
@@ -147,15 +147,19 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
   if (!companionBridge()) {
     return (
       <Card
+        collapsible
+        cardId="companion.desktopOnly"
+        defaultOpen={false}
         title={t("remote.desktopOnly.title", { app: brand().name })}
         subtitle={t("remote.desktopOnly.subtitle")}
+        summary={t("settings.card.desktopOnly")}
       />
     );
   }
 
   if (!state) {
     return (
-      <Card title={t("remote.title")} subtitle={t("remote.checking")}>
+      <Card collapsible cardId="companion.phone" title={t("remote.title")} subtitle={t("remote.checking")} summary={t("common.checking")}>
         <Loader2 size={15} className="animate-spin text-ink-secondary" />
       </Card>
     );
@@ -185,7 +189,13 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
     <div className="flex flex-col gap-4">
       {remoteBlocked && <p role="status" className="text-[13px] leading-relaxed text-ink-secondary">{remoteBlocked}</p>}
       <div ref={pairingFlow} tabIndex={-1} className="scroll-mt-4 focus:outline-none">
-        <Card title={pairingCopy.title} subtitle={pairingCopy.subtitle}>
+        <Card
+          collapsible
+          cardId="companion.phone"
+          title={pairingCopy.title}
+          subtitle={pairingCopy.subtitle}
+          summary={panelStatus?.label ?? cardCount("devices", pairedCount)}
+        >
           {(panelStatus || (pairedCount > 0 && c.hostedReady)) && (
             <div className="mb-4 flex items-center justify-between gap-3">
               {panelStatus && (
@@ -210,8 +220,12 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
       </div>
 
       <Card
+        collapsible
+        cardId="companion.tailscale"
+        defaultOpen={false}
         title={t("remote.pairing.tailscale.title")}
         subtitle={t("remote.tailscaleCard.subtitle")}
+        summary={tailscaleStatus.title}
       >
         <div className="rounded-xl bg-inset px-3 py-3" aria-live="polite">
           <div className="flex items-start gap-2.5">
@@ -233,6 +247,7 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
             title={managedBy ?? undefined}
             onClick={() => {
               c.useTailscale();
+              requestSettingsCard("companion.phone");
               window.requestAnimationFrame(() => {
                 pairingFlow.current?.scrollIntoView({ block: "start" });
                 pairingFlow.current?.focus({ preventScroll: true });
@@ -255,7 +270,11 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
       </Card>
 
       <Card
+        collapsible
+        cardId="companion.devices"
+        defaultOpen={false}
         title={t("remote.devices.title")}
+        summary={cardCount("devices", pairedCount)}
         subtitle={
           pairedCount
             ? t("remote.devices.subtitle", { app: brand().name })

@@ -16,7 +16,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { Card, CommandLine } from "./SettingsPrimitives";
+import { Card, CommandLine, cardCount } from "./SettingsPrimitives";
 import { MacLocalControl } from "./MacLocalControl";
 import { cn } from "@/lib/cn";
 
@@ -374,8 +374,14 @@ export function VpsComputersCard({
 }) {
   return (
     <Card
+      collapsible
+      cardId="computer.vps"
+      defaultOpen={false}
       title={t("vm.vps.title")}
       subtitle={t("vm.vps.subtitle")}
+      summary={configured === false || !sshAlias
+        ? t("settings.card.notSet")
+        : `${sshAlias} · ${cardCount("computers", instances.length)}`}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="text-[12px] text-ink-secondary">
@@ -508,8 +514,14 @@ export function CloudComputersCard({
 }) {
   return (
     <Card
+      collapsible
+      cardId="computer.cloud"
+      defaultOpen={false}
       title={t("vm.cloud.title")}
       subtitle={t("vm.cloud.subtitle")}
+      summary={configured === false
+        ? t("settings.card.notConnected")
+        : cardCount("computers", instances.length)}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="text-[12px] text-ink-secondary">
@@ -654,7 +666,12 @@ export function LocalVmInventoryCard({
 }) {
   return (
     <Card
+      collapsible
+      cardId="computer.perBotInventory"
       title={t("vm.perBot.title")}
+      summary={unavailableReason
+        ? t("vm.perBot.inventoryUnavailable")
+        : t("vm.perBot.created", { count: instances.length, max: maxInstances })}
       subtitle={t("vm.perBot.subtitle", {
         count: unavailableReason
           ? t("vm.perBot.inventoryUnavailable")
@@ -768,6 +785,14 @@ export function LocalVmInventoryCard({
       </div>
     </Card>
   );
+}
+
+/** The first setup step still to do, for the collapsed Setup card. */
+export function setupStep(status: Pick<Status, "runtime" | "daemonUp" | "image">): number {
+  if (!status.runtime) return 1;
+  if (!status.daemonUp) return 2;
+  if (!status.image) return 3;
+  return 4;
 }
 
 function Step({ n, title, done, children }: { n: number; title: string; done: boolean; children?: React.ReactNode }) {
@@ -1224,6 +1249,18 @@ export function LocalComputerSection() {
   const perBotRuntimeUnsupported = perBot && status?.runtime === "container";
   const headerReady = perBot ? Boolean(status?.daemonUp && status?.image && !perBotRuntimeUnsupported) : ready;
 
+  const statusText = loading
+    ? t("common.checking")
+    : unavailable
+      ? t("vm.main.statusUnavailable")
+      : perBot && headerReady
+        ? t("vm.main.readyPerBot")
+        : perBotRuntimeUnsupported
+          ? t("vm.main.perBotUnsupported")
+          : ready
+            ? t("vm.main.ready")
+            : (status?.problem ?? t("vm.main.notReady"));
+
   return (
     <>
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">{announcement}</p>
@@ -1254,7 +1291,10 @@ export function LocalComputerSection() {
       <MacLocalControl />
 
       <Card
+        collapsible
+        cardId="computer.main"
         title={t("vm.main.title")}
+        summary={statusText}
         subtitle={perBot
           ? t("vm.main.perBotSubtitle", { host })
           : t("vm.main.sharedSubtitle", { host })}
@@ -1268,17 +1308,7 @@ export function LocalComputerSection() {
             )}
           >
             {loading ? <Loader2 size={12} className="animate-spin" /> : headerReady ? <Check size={12} /> : <Circle size={9} />}
-            {loading
-              ? t("common.checking")
-              : unavailable
-                ? t("vm.main.statusUnavailable")
-                : perBot && headerReady
-                  ? t("vm.main.readyPerBot")
-                  : perBotRuntimeUnsupported
-                    ? t("vm.main.perBotUnsupported")
-                  : ready
-                    ? t("vm.main.ready")
-                    : (status?.problem ?? t("vm.main.notReady"))}
+            {statusText}
           </span>
           <button
             onClick={() => {
@@ -1306,8 +1336,14 @@ export function LocalComputerSection() {
       </Card>
 
       <Card
+        collapsible
+        cardId="computer.isolation"
+        defaultOpen={false}
         title={t("vm.isolation.title")}
         subtitle={t("vm.isolation.subtitle")}
+        summary={perBot
+          ? t("settings.card.upTo", { label: t("vm.isolation.perBot"), count: status?.max_instances ?? 2 })
+          : t("vm.isolation.shared")}
       >
         <div className="flex overflow-hidden rounded-lg border border-hairline/40">
           {(["shared", "per-bot"] as const).map((mode, index) => (
@@ -1347,7 +1383,18 @@ export function LocalComputerSection() {
         {policyPending && <div className="mt-2 flex items-center gap-1.5 text-[12px] text-ink-secondary"><Loader2 size={12} className="animate-spin" /> {t("vm.saving")}</div>}
       </Card>
 
-      <Card title={t("vm.setup.title")} subtitle={t("vm.setup.subtitle")}>
+      <Card
+        collapsible
+        cardId="computer.setup"
+        defaultOpen={Boolean(status) && !(perBot ? headerReady : ready)}
+        title={t("vm.setup.title")}
+        subtitle={t("vm.setup.subtitle")}
+        summary={!status
+          ? t("common.checking")
+          : (perBot ? headerReady : ready)
+            ? t("settings.card.done")
+            : t("settings.card.step", { step: setupStep(status), total: 4 })}
+      >
         <div className="flex flex-col gap-4">
           <Step n={1} title={t("vm.setup.step1")} done={Boolean(status?.runtime)}>
             <div className="text-[13px] leading-relaxed text-ink-secondary">
@@ -1445,16 +1492,18 @@ export function LocalComputerSection() {
       )}
 
       {unavailable && (
-        <Card>
-          <div className="flex gap-2 text-[13px] text-ink-secondary">
-            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-warning" />
-            <span>{t("vm.inspectFailed")}</span>
-          </div>
-        </Card>
+        <div role="status" className="flex gap-2 rounded-[14px] border-[0.5px] border-border px-3.5 py-3 text-[13px] text-ink-secondary">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0 text-warning" />
+          <span>{t("vm.inspectFailed")}</span>
+        </div>
       )}
 
       <Card
+        collapsible
+        cardId="computer.safety"
+        defaultOpen={false}
         title={t("vm.safety.title")}
+        summary={t("settings.card.safety")}
         subtitle={
           perBot
             ? t("vm.safety.perBot", { path: status?.workspace_guest_path ?? "/home/cua/workspace" })

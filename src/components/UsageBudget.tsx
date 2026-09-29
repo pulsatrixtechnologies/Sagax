@@ -70,7 +70,16 @@ export function BudgetCard({ budget }: { budget: BudgetState | null }) {
 
   const tone = budgetTone(budget);
   return (
-    <Card title={t("usage.budget.title")} subtitle={t("usage.budget.subtitle")}>
+    <Card
+      collapsible
+      cardId="usage.budget"
+      defaultOpen={false}
+      title={t("usage.budget.title")}
+      subtitle={t("usage.budget.subtitle")}
+      summary={budget
+        ? t("usage.budget.spent", { spent: formatUsd(budget.spentUsd), cap: formatUsd(budget.monthlyUsd), percent: String(budget.percent) })
+        : saved.monthlyUsd ? formatUsd(saved.monthlyUsd) : t("settings.card.noLimit")}
+    >
       {budget ? (
         <div className="mb-4">
           <div className="mb-1 flex items-baseline justify-between text-[13px]">
@@ -162,7 +171,14 @@ export function PricesCard() {
 
   const cell = "w-full rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[12.5px] tabular-nums text-ink focus:border-hairline focus:outline-none disabled:opacity-50";
   return (
-    <Card title={t("usage.prices.title")} subtitle={t("usage.prices.subtitle")}>
+    <Card
+      collapsible
+      cardId="usage.prices"
+      defaultOpen={false}
+      title={t("usage.prices.title")}
+      subtitle={t("usage.prices.subtitle")}
+      summary={t("settings.card.prices", { count: Object.keys(saved?.prices ?? {}).length, currency: saved?.currency ?? "USD" })}
+    >
       <div className="mb-3 flex items-center gap-2 text-[12px] text-ink-secondary">
         <label className="flex items-center gap-2">
           {t("usage.prices.currency")}

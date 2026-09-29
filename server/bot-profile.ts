@@ -9,6 +9,7 @@ import {
 } from "../shared/bot-avatar.ts";
 import { BOT_PROFILE_LIMITS, fitsOnOneLine } from "../shared/bot-profile.ts";
 import { MASCOT_BODY_IDS, mascotBodySchema } from "../shared/mascot-bodies.ts";
+import { MASCOT_SKIN_IDS, mascotSkinSchema } from "../shared/mascot-skins.ts";
 
 import type { BotRecord } from "./store.ts";
 
@@ -28,6 +29,7 @@ export const BOT_PROFILE_PATCH_FIELDS = [
   "avatarFocusX",
   "avatarFocusY",
   "mascotBody",
+  "mascotSkin",
   "voice",
   "speakReplies",
 ] as const;
@@ -65,6 +67,7 @@ export const profilePatchSchema = z.object({
   avatarFocusX: z.number({ error: "avatarFocusX must be a number from 0 to 1" }).finite().min(0).max(1).optional(),
   avatarFocusY: z.number({ error: "avatarFocusY must be a number from 0 to 1" }).finite().min(0).max(1).optional(),
   mascotBody: mascotBodySchema.optional(),
+  mascotSkin: mascotSkinSchema.optional(),
   voice: z
     .string({ error: "voice must be a string" })
     .max(BOT_PROFILE_LIMITS.voice, { error: "voice must be at most 200 characters" })
@@ -88,6 +91,7 @@ export type BotProfilePatch = Partial<
     | "avatarFocusX"
     | "avatarFocusY"
     | "mascotBody"
+    | "mascotSkin"
     | "voice"
     | "speakReplies"
   >
@@ -121,6 +125,10 @@ export function parseBotProfilePatch(input: BotProfilePatchInput, strict = false
     if (issue?.path[0] === "mascotBody") {
       const options = `${MASCOT_BODY_IDS.slice(0, -1).join(", ")}, or ${MASCOT_BODY_IDS.at(-1)}`;
       return { ok: false, error: `mascotBody must be ${options}` };
+    }
+    if (issue?.path[0] === "mascotSkin") {
+      const options = `${MASCOT_SKIN_IDS.slice(0, -1).join(", ")}, or ${MASCOT_SKIN_IDS.at(-1)}`;
+      return { ok: false, error: `mascotSkin must be ${options}` };
     }
     return { ok: false, error: issue?.message ?? "invalid profile patch" };
   }

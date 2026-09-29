@@ -56,7 +56,7 @@ export class PackageFormatError extends Error {
   }
 }
 
-const COLORS = ["green", "blue", "red", "orange", "purple", "cyan", "pink", "yellow", "teal", "coral", "white"] as const;
+const COLORS = ["green", "blue", "red", "orange", "purple", "cyan", "pink", "yellow", "teal", "coral", "white", "black"] as const;
 const AVATAR_MIMES = ["image/png", "image/jpeg", "image/webp"] as const;
 const AVATAR_CROPS = ["circle", "rounded", "square"] as const;
 

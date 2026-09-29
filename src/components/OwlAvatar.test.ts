@@ -5,8 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OwlAvatar, type OwlAvatarProps } from "./OwlAvatar";
 import { MAUS_COLORS } from "@/lib/mascot";
 import {
+  OWL_BLACK_PALETTE,
+  OWL_BLACK_RIM,
   OWL_DETAIL_MIN_SIZE,
+  OWL_REFERENCE,
   OWL_WHITE_PALETTE,
+  OWL_TRACE,
+  wingTransform,
   gazeToOffset,
   owlPalette,
   owlPose,
@@ -52,6 +57,29 @@ describe("OwlAvatar", () => {
     expect(owlPalette(MAUS_COLORS.white)).toMatchObject(OWL_WHITE_PALETTE);
   });
 
+  it("gives the black bot its charcoal palette and a rim light; no other color gets a rim", () => {
+    const markup = render({ color: "black", size: 112 });
+    expect(partFills(markup, "body")[0]).toBe(OWL_BLACK_PALETTE.plumage);
+    expect(markup).toContain('data-part="rim"');
+    expect(markup).toContain(`stroke="${OWL_BLACK_RIM}"`);
+    // the eye stays the reference yellow so it reads on the dark plumage
+    expect(markup).toContain(`fill="${OWL_REFERENCE.iris}"`);
+    expect(render({ color: "green" })).not.toContain("data-part=\"rim\"");
+    expect(render({ color: "white" })).not.toContain("stroke=");
+  });
+
+  it("rests with the wings folded: the far wing hidden and the near wing where it was traced", () => {
+    const markup = render({ size: 112 });
+    expect(markup).toMatch(/data-part="farWing" style="transform:[^"]*;opacity:0"/);
+    expect(markup).toContain(`data-part="nearWing" style="transform:${wingTransform(0)}"`);
+  });
+
+  it("can pin the wings open for a preview", () => {
+    const markup = render({ size: 112, wings: 1 });
+    expect(markup).toMatch(/data-part="farWing" style="transform:[^"]*;opacity:1"/);
+    expect(markup).toContain(`data-part="nearWing" style="transform:${wingTransform(0, 1)}"`);
+  });
+
   it("gives every instance its own clip-path id and points each lid at its own", () => {
     const markup = renderToStaticMarkup(
       createElement(
@@ -92,6 +120,45 @@ describe("OwlAvatar", () => {
     const labelled = render({ label: "Atlas" });
     expect(labelled).toContain('role="img"');
     expect(labelled).toContain('aria-label="Atlas"');
+  });
+});
+
+describe("OwlAvatar skins", () => {
+  it("adds nothing for none, and reads an unknown skin as none", () => {
+    const plain = render({ size: 112 });
+    expect(plain).not.toContain("data-owl-skin");
+    expect(plain).not.toContain("owl-fx");
+    expect(render({ size: 112, skin: "plasma" })).toBe(plain);
+  });
+
+  it("dresses a large owl in lightning: arcs, a flash, glowing eyes, live effects", () => {
+    const markup = render({ color: "black", skin: "lightning", size: 112, skinAnimated: true });
+    expect(markup).toContain('data-owl-skin="lightning"');
+    expect(markup).toContain('data-owl-fx="live"');
+    expect(markup.match(/class="owl-fx-crackle"/g)?.length).toBeGreaterThanOrEqual(6);
+    expect(markup).toContain('class="owl-fx-flash"');
+    expect(markup).toContain('data-part="eyeGlow"');
+    // the shape is the same owl: the plumage path is untouched
+    expect(markup).toContain(`d="${OWL_TRACE.layers[0].d[0]}"`);
+  });
+
+  it("keeps small avatars to a tint and an aura, still", () => {
+    const markup = render({ skin: "lightning", size: OWL_DETAIL_MIN_SIZE - 8, skinAnimated: true });
+    expect(markup).toContain('data-owl-fx="still"');
+    expect(markup).toContain("-aura)");
+    expect(markup).not.toContain("owl-fx-crackle");
+    expect(markup).not.toContain('data-part="eyeGlow"');
+  });
+
+  it("holds the effects still under reduced motion or when not animated", () => {
+    expect(render({ skin: "inferno", size: 112, skinAnimated: true, reducedMotion: true })).toContain('data-owl-fx="still"');
+    expect(render({ skin: "inferno", size: 112 })).toContain('data-owl-fx="still"');
+  });
+
+  it.each(["gold", "neon", "inferno", "frost", "carbon"] as const)("renders %s at full size", (skin) => {
+    const markup = render({ skin, size: 112 });
+    expect(markup).toContain(`data-owl-skin="${skin}"`);
+    expect(markup).toContain('data-part="skinBack"');
   });
 });
 

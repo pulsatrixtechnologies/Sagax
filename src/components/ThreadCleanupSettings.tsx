@@ -36,6 +36,15 @@ function mibText(bytes: number): string {
 
 type Knob = "retention" | "cap";
 
+/** One line for the collapsed card: what cleanup does today, or Off. */
+export function threadCleanupSummary(retentionDays: number | null, capBytes: number | null): string {
+  const parts = [
+    ...(retentionDays !== null ? [t("settings.card.cleanupRetention", { days: retentionDays })] : []),
+    ...(capBytes !== null ? [t("settings.card.cleanupCap", { size: mibText(capBytes) })] : []),
+  ];
+  return parts.length ? parts.join(" · ") : t("settings.card.off");
+}
+
 export function ThreadCleanupSettings() {
   const { state, dispatch } = useStore();
   const confirmedRetentionDays = state.config?.threads?.eventLogRetentionDays ?? null;
@@ -147,7 +156,14 @@ export function ThreadCleanupSettings() {
   };
 
   return (
-    <Card title={t("settings.threadCleanup.title")} subtitle={t("settings.threadCleanup.subtitle")}>
+    <Card
+      collapsible
+      cardId="general.threadCleanup"
+      defaultOpen={false}
+      title={t("settings.threadCleanup.title")}
+      subtitle={t("settings.threadCleanup.subtitle")}
+      summary={threadCleanupSummary(confirmedRetentionDays, confirmedCapBytes)}
+    >
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <input
