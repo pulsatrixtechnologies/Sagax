@@ -107,6 +107,7 @@ function MausAvatarComponent(
     if (!beat) return;
     if (beat.blink) owl.current?.blink();
     if (beat.play) owl.current?.play(beat.play, OWL_BEAT_MS);
+    if (beat.wings) owl.current?.flourish(beat.wings);
   }, [motion, motionKey, animated]);
 
   const pinned =

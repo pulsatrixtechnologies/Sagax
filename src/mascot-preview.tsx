@@ -17,6 +17,8 @@ import {
   type MausState,
 } from "@/lib/mascot";
 import { EXPRESSION_COUNT } from "@/components/CursorAvatar";
+import { OwlAvatar, type OwlAvatarHandle } from "@/components/OwlAvatar";
+import type { OwlWingMove } from "@/lib/owl/owl-art";
 import "./styles.css";
 import "./mascot-preview.css";
 
@@ -48,6 +50,11 @@ const MOTION_SCENARIOS = {
   blink: "New reply",
   surprise: "Unread update",
   failure: "Action failed",
+  "spread-wings": "Wing move: spread",
+  flap: "Wing move: flap",
+  "take-off": "Wing move: take off",
+  shake: "Wing move: ruffle",
+  hoot: "Wing move: hoot",
 } satisfies Record<Exclude<MausMotion, "none">, string>;
 
 const MOTION_COLORS: MausColor[] = [
@@ -372,8 +379,37 @@ function Preview() {
   );
 }
 
+/** A single owl pinned for screenshots: `?scene=1&color=black&wings=0.8&size=300`. */
+function Scene({ params }: { params: URLSearchParams }) {
+  const color = (params.get("color") ?? "green") as MausColor;
+  const size = Number(params.get("size") ?? 300);
+  const wings = Number(params.get("wings") ?? 0);
+  const move = params.get("move") as OwlWingMove | null;
+  const big = useRef<OwlAvatarHandle>(null);
+  useEffect(() => {
+    if (!move) return;
+    const go = () => big.current?.flourish(move);
+    // screenshots trigger the move themselves, then wait a set time
+    (window as { owlMove?: () => void }).owlMove = go;
+    if (params.has("manual")) return;
+    const first = window.setTimeout(go, Number(params.get("delay") ?? 300));
+    const every = window.setInterval(go, 3000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(every);
+    };
+  }, [move, params]);
+  return (
+    <div data-skin={params.get("theme") ?? "pulsatrix"} className="flex min-h-screen items-center justify-center gap-10 bg-app p-16">
+      <OwlAvatar ref={big} color={color} size={size} wings={wings} animated={Boolean(move) || params.get("animated") === "1"} reducedMotion={false} />
+      <OwlAvatar color={color} size={44} wings={wings} animated={false} />
+      <OwlAvatar color={color} size={28} wings={wings} animated={false} />
+    </div>
+  );
+}
+
+const sceneParams = new URLSearchParams(window.location.search);
+
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <Preview />
-  </StrictMode>,
+  <StrictMode>{sceneParams.has("scene") ? <Scene params={sceneParams} /> : <Preview />}</StrictMode>,
 );

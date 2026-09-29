@@ -6,6 +6,9 @@
 import {
   OWL_GEOM,
   eyesTransform,
+  farWingOpacity,
+  farWingTransform,
+  owlWingPose,
   gazeToOffset,
   lidTransform,
   owlPose,
@@ -13,6 +16,7 @@ import {
   rigTransform,
   wingTransform,
   type OwlState,
+  type OwlWingMove,
 } from "./owl-art";
 
 export interface OwlRigElements {
@@ -21,6 +25,10 @@ export interface OwlRigElements {
   eyes: SVGGElement;
   pupil: SVGGElement;
   lids: SVGGElement;
+  /** The far wing, behind the body; hidden while the wings are folded. */
+  farWing?: SVGGElement | null;
+  /** Layers behind the body that follow the near wing (its rim). */
+  nearWingBack?: SVGGElement | null;
 }
 
 type Offset = { x: number; y: number };
@@ -34,6 +42,8 @@ export interface OwlController {
    */
   play(state: OwlState, durationMs?: number): void;
   blink(): void;
+  /** Open the wings for one move (spread, flap, take off...). Ignored under reduced motion. */
+  flourish(move: OwlWingMove): void;
   /** Pointer-driven pupil offset (viewBox units), or null when the pointer left. */
   setPointer(offset: Offset | null): void;
   /** A caller-pinned pupil offset (viewBox units), or null for the state's own. */
@@ -101,6 +111,8 @@ export function createOwlController(
   let nextBlink = 0;
   let blinkStart = -1;
   let blinkPending = false;
+  let wingMove: { move: OwlWingMove; start: number | null } | null = null;
+  let farShown = false;
   const gaze: Offset = { ...OWL_GEOM.gazeRest };
 
   const driven: Driven = {
@@ -128,6 +140,18 @@ export function createOwlController(
         beat = null;
         t0 = now;
       }
+      if (wingMove) {
+        wingMove.start ??= now;
+        const w = owlWingPose(wingMove.move, now - wingMove.start, hop);
+        if (w.done) wingMove = null;
+        else {
+          pose.open = Math.max(pose.open, w.open);
+          pose.wing += w.flap;
+          pose.x += w.x;
+          pose.y += w.y;
+          pose.sy *= w.sy;
+        }
+      }
 
       // Blink every 3-6 s (slower when sleepy). Kept under reduced motion.
       if (now >= nextBlink) {
@@ -144,8 +168,14 @@ export function createOwlController(
         const g = pinned ?? gazeToOffset(pose.gaze);
         gaze.x = g.x;
         gaze.y = g.y;
+        wingMove = null;
         el.rig.style.transform = "";
         el.nearWing.style.transform = "";
+        if (el.nearWingBack) el.nearWingBack.style.transform = "";
+        if (farShown && el.farWing) {
+          el.farWing.style.opacity = "0";
+          farShown = false;
+        }
         el.eyes.style.transform = state === "alert" ? eyesTransform(1.15) : "";
       } else {
         const target = pointer ?? pinned ?? gazeToOffset(pose.gaze);
@@ -153,7 +183,14 @@ export function createOwlController(
         gaze.x += (target.x - gaze.x) * k;
         gaze.y += (target.y - gaze.y) * k;
         el.rig.style.transform = rigTransform(pose);
-        el.nearWing.style.transform = wingTransform(pose.wing);
+        el.nearWing.style.transform = wingTransform(pose.wing, pose.open);
+        if (el.nearWingBack) el.nearWingBack.style.transform = el.nearWing.style.transform;
+        if (el.farWing && (pose.open > 0 || farShown)) {
+          // only touched while the wings are (or were just) out
+          el.farWing.style.transform = farWingTransform(pose.wing, pose.open);
+          el.farWing.style.opacity = String(farWingOpacity(pose.open));
+          farShown = pose.open > 0;
+        }
         el.eyes.style.transform = eyesTransform(pose.eyeScale);
       }
       el.pupil.style.transform = pupilTransform(gaze);
@@ -175,6 +212,9 @@ export function createOwlController(
     },
     blink() {
       blinkPending = true;
+    },
+    flourish(move) {
+      wingMove = { move, start: null };
     },
     setPointer(offset) {
       pointer = offset;

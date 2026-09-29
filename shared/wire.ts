@@ -60,7 +60,7 @@ export type Surface = "cloud" | "vm" | "local" | "browser";
 
 export type MausColor =
   | "green" | "blue" | "red" | "orange" | "purple" | "cyan" | "pink"
-  | "yellow" | "teal" | "coral" | "white";
+  | "yellow" | "teal" | "coral" | "white" | "black";
 
 /** The face a bot rests on, as one of the engine's state names. Kept as a
  * plain string rather than a union: bots saved under the app's earlier

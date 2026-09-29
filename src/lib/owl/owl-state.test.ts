@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { MAUS_MOTIONS, MAUS_STATES, type MausState } from "@/lib/mascot";
-import { OWL_STATES } from "./owl-art";
+import { MAUS_MOTIONS, MAUS_STATES, MAUS_WING_MOTIONS, type MausState } from "@/lib/mascot";
+import { OWL_STATES, OWL_WING_MOVES } from "./owl-art";
 import { OWL_BEAT_OF, owlBeatForMotion, owlStateForMaus } from "./owl-state";
 
 /** The whole table, written out so a change to any row is a visible diff. */
@@ -77,12 +77,23 @@ describe("owlStateForMaus", () => {
 });
 
 describe("owlBeatForMotion", () => {
-  it("gives every one-shot motion a beat that plays a state or blinks", () => {
+  it("gives every one-shot motion a beat that plays a state, blinks or opens the wings", () => {
     expect(new Set(Object.keys(OWL_BEAT_OF))).toEqual(new Set(MAUS_MOTIONS));
     for (const motion of MAUS_MOTIONS) {
       const beat = owlBeatForMotion(motion);
-      expect(beat?.play != null || beat?.blink === true).toBe(true);
+      expect(beat?.play != null || beat?.blink === true || beat?.wings != null).toBe(true);
       if (beat?.play) expect(OWL_STATES).toContain(beat.play);
+      if (beat?.wings) expect(OWL_WING_MOVES).toContain(beat.wings);
+    }
+  });
+
+  it("opens the wings for every wing move and the app's big moments, never the quiet beats", () => {
+    for (const motion of MAUS_WING_MOTIONS) expect(owlBeatForMotion(motion)?.wings).toBeDefined();
+    expect(owlBeatForMotion("celebrate")?.wings).toBe("flap");
+    expect(owlBeatForMotion("success")?.wings).toBe("spread");
+    expect(owlBeatForMotion("launch")?.wings).toBe("takeoff");
+    for (const quiet of ["blink", "thinking", "failure", "switch"] as const) {
+      expect(owlBeatForMotion(quiet)?.wings).toBeUndefined();
     }
   });
 

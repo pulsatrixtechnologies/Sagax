@@ -6,8 +6,8 @@ import { useBotEditor } from "./bot-settings/BotEditorContext";
 import { imageAttachmentFromFile } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
 import {
-  MAUS_COLORS,
   MAUS_COLOR_NAMES,
+  swatchStyle,
   type MausMotion,
   type MausState,
 } from "@/lib/mascot";
@@ -293,7 +293,7 @@ export function BotProfileAvatarCard({
                   aria-pressed={bot.color === color}
                   onClick={() => onPatch({ color })}
                   className={cn("size-6 rounded-full disabled:opacity-50", bot.color === color && "ring-2 ring-white/80 ring-offset-2 ring-offset-card")}
-                  style={{ backgroundColor: MAUS_COLORS[color] }}
+                  style={swatchStyle(color)}
                   title={color}
                   aria-label={`Use ${color} mascot color`}
                 />

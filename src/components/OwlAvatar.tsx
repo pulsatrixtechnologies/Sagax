@@ -19,9 +19,11 @@ import {
 
 import { MAUS_COLORS } from "@/lib/mascot";
 import {
+  FAR_WING_MIRROR,
   gazeToOffset,
   hopForSize,
   owlPalette,
+  owlRim,
   owlPose,
   owlSvgParts,
   pointerGazeOffset,
@@ -29,6 +31,7 @@ import {
   type OwlGaze,
   type OwlPath,
   type OwlState,
+  type OwlWingMove,
 } from "@/lib/owl/owl-art";
 import { createOwlController, type OwlController } from "@/lib/owl/owl-loop";
 
@@ -36,6 +39,8 @@ export interface OwlAvatarHandle {
   /** Play a state for a moment (success/alert run once), then resume. */
   play: (state: OwlState, durationMs?: number) => void;
   blink: () => void;
+  /** Open the wings for one move. */
+  flourish: (move: OwlWingMove) => void;
 }
 
 export interface OwlAvatarProps {
@@ -55,6 +60,8 @@ export interface OwlAvatarProps {
   gaze?: OwlGaze;
   /** Force reduced motion; undefined follows the OS setting. */
   reducedMotion?: boolean;
+  /** Pin the wings open (0..1) in the still pose, for previews. */
+  wings?: number;
   className?: string;
 }
 
@@ -64,6 +71,14 @@ function stillPose(state: OwlState, hop: number) {
   if (state === "alert") return owlPose("alert", 0.6, true, hop);
   return owlPose(state, 0, true, hop);
 }
+
+/** The rim's stroke in viewBox units: about 1.6px on screen, never thinner than 5 units. */
+const rimWidth = (size: number) => Math.round(Math.max(5, (1.6 * 256) / Math.max(size, 1)) * 100) / 100;
+
+const rimPaths = (list: OwlPath[], stroke: string, width: number) =>
+  list.map((p, i) => (
+    <path key={`r${i}`} d={p.d} fill="none" stroke={stroke} strokeWidth={width} strokeLinejoin="round" />
+  ));
 
 const paths = (list: OwlPath[]) => list.map((p, i) => <path key={i} fill={p.fill} d={p.d} />);
 
@@ -77,24 +92,29 @@ function OwlAvatarComponent(
     trackPointer = true,
     gaze,
     reducedMotion,
+    wings = 0,
     className,
   }: OwlAvatarProps,
   ref: React.Ref<OwlAvatarHandle>,
 ) {
   const hex = (MAUS_COLORS as Record<string, string>)[color] ?? color;
   const parts = useMemo(() => owlSvgParts(owlPalette(hex), { size }), [hex, size]);
+  const rim = owlRim(hex);
+  const rimW = rimWidth(size);
   const uid = `owl-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const hop = hopForSize(size);
 
   const rig = useRef<SVGGElement>(null);
   const nearWing = useRef<SVGGElement>(null);
+  const farWing = useRef<SVGGElement>(null);
+  const nearWingBack = useRef<SVGGElement>(null);
   const eyes = useRef<SVGGElement>(null);
   const pupil = useRef<SVGGElement>(null);
   const lids = useRef<SVGGElement>(null);
   const controller = useRef<OwlController | null>(null);
 
   const pinned = gaze ? gazeToOffset(gaze) : null;
-  const first = stillPose(state, hop);
+  const first = { ...stillPose(state, hop), open: Math.max(0, Math.min(1, wings)) };
   const still = poseTransforms(first, pinned ?? gazeToOffset(first.gaze));
 
   // Join the shared loop while animated; leave it on unmount or when stilled.
@@ -103,7 +123,7 @@ function OwlAvatarComponent(
     const els = { rig: rig.current, nearWing: nearWing.current, eyes: eyes.current, pupil: pupil.current, lids: lids.current };
     if (!els.rig || !els.nearWing || !els.eyes || !els.pupil || !els.lids) return;
     const c = createOwlController(
-      { rig: els.rig, nearWing: els.nearWing, eyes: els.eyes, pupil: els.pupil, lids: els.lids },
+      { rig: els.rig, nearWing: els.nearWing, eyes: els.eyes, pupil: els.pupil, lids: els.lids, farWing: farWing.current, nearWingBack: nearWingBack.current },
       { state, hop, pinnedGaze: pinned, reducedMotion },
     );
     controller.current = c;
@@ -128,6 +148,7 @@ function OwlAvatarComponent(
   useImperativeHandle(ref, () => ({
     play: (s, durationMs) => controller.current?.play(s, durationMs),
     blink: () => controller.current?.blink(),
+    flourish: (move) => controller.current?.flourish(move),
   }));
 
   const follow = trackPointer && animated;
@@ -163,6 +184,26 @@ function OwlAvatarComponent(
           </clipPath>
         </defs>
         <g ref={rig} data-part="rig" style={{ transform: still.rig }}>
+          {/* The far wing: the near wing mirrored, behind the body, shown only while the wings are out. */}
+          <g
+            ref={farWing}
+            data-part="farWing"
+            style={{ transform: still.farWing, opacity: still.farWingOpacity }}
+          >
+            <g transform={FAR_WING_MIRROR}>
+              {rim && rimPaths(parts.farWing, rim, rimW)}
+              {paths(parts.farWing)}
+            </g>
+          </g>
+          {rim && (
+            <>
+              {/* The near wing's rim sits behind the body, moving with the wing, so it only shows once the wing is out. */}
+              <g ref={nearWingBack} data-part="nearWingRim" style={{ transform: still.nearWing }}>
+                {rimPaths(parts.nearWing, rim, rimW)}
+              </g>
+              <g data-part="rim">{rimPaths([...parts.body, ...parts.feet], rim, rimW)}</g>
+            </>
+          )}
           <g data-part="body">
             {paths(parts.body)}
             <g data-part="faceMask">{paths(parts.faceMask)}</g>

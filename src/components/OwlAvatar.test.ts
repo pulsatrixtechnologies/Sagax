@@ -5,8 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OwlAvatar, type OwlAvatarProps } from "./OwlAvatar";
 import { MAUS_COLORS } from "@/lib/mascot";
 import {
+  OWL_BLACK_PALETTE,
+  OWL_BLACK_RIM,
   OWL_DETAIL_MIN_SIZE,
+  OWL_REFERENCE,
   OWL_WHITE_PALETTE,
+  wingTransform,
   gazeToOffset,
   owlPalette,
   owlPose,
@@ -50,6 +54,29 @@ describe("OwlAvatar", () => {
     expect(partFills(markup, "socket")).toEqual([OWL_WHITE_PALETTE.socket]);
     expect(markup).not.toContain(`fill="${MAUS_COLORS.white}"`);
     expect(owlPalette(MAUS_COLORS.white)).toMatchObject(OWL_WHITE_PALETTE);
+  });
+
+  it("gives the black bot its charcoal palette and a rim light; no other color gets a rim", () => {
+    const markup = render({ color: "black", size: 112 });
+    expect(partFills(markup, "body")[0]).toBe(OWL_BLACK_PALETTE.plumage);
+    expect(markup).toContain('data-part="rim"');
+    expect(markup).toContain(`stroke="${OWL_BLACK_RIM}"`);
+    // the eye stays the reference yellow so it reads on the dark plumage
+    expect(markup).toContain(`fill="${OWL_REFERENCE.iris}"`);
+    expect(render({ color: "green" })).not.toContain("data-part=\"rim\"");
+    expect(render({ color: "white" })).not.toContain("stroke=");
+  });
+
+  it("rests with the wings folded: the far wing hidden and the near wing where it was traced", () => {
+    const markup = render({ size: 112 });
+    expect(markup).toMatch(/data-part="farWing" style="transform:[^"]*;opacity:0"/);
+    expect(markup).toContain(`data-part="nearWing" style="transform:${wingTransform(0)}"`);
+  });
+
+  it("can pin the wings open for a preview", () => {
+    const markup = render({ size: 112, wings: 1 });
+    expect(markup).toMatch(/data-part="farWing" style="transform:[^"]*;opacity:1"/);
+    expect(markup).toContain(`data-part="nearWing" style="transform:${wingTransform(0, 1)}"`);
   });
 
   it("gives every instance its own clip-path id and points each lid at its own", () => {
