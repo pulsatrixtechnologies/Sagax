@@ -68,7 +68,7 @@ Règle: tout ce que Perspicax sait déjà faire, Pulsa Bot le prend au lieu de l
 | Équipes et gestionnaires | `Team { managers, members, profiles }` (`model/teams.rs`); « un gestionnaire ne donne que dans ses équipes » devient la règle de partage des bots et canaux |
 | Portée MCP | profils par défaut des équipes, donnés aux membres à l'arrivée (`via_team`), plus les profils donnés à la personne; c'est la portée de l'échange de jeton (section 4) |
 | Journal et audit | `auth_events`, `mcp_requests` (client, profil, provenance), `admin_audit`, et l'explorateur du journal de la console |
-| Coffre | XChaCha20-Poly1305 (`vault/mod.rs`), rotation hors ligne; il garde la clé de signature (P2) et les clés de fournisseur du propriétaire dont ses routines ont besoin (décision 7), comme identifiants `scope: user` liés à la personne, lus par le serveur Pulsa Bot à travers le lien au moment d'exécuter |
+| Coffre | XChaCha20-Poly1305 (`vault/mod.rs`), rotation hors ligne; il garde la clé de signature (P2) et les clés de fournisseur du propriétaire dont ses bots et ses routines ont besoin (décision 7, section 4 bis), comme identifiants `scope: user` liés à la personne, lus par le serveur Pulsa Bot à travers le lien au moment d'exécuter |
 | Comptes de service | `kind: service`, jeton `pxat1.` montré une fois, rotation (`api/users.rs:178`): c'est le lien entre les deux serveurs |
 | Console | coquille, barre latérale et ses groupes (`components/shell.tsx`), feuilles d'édition, grille, i18n; la section Pulsa Bot est un groupe de plus |
 | Hôtes de redirection | `redirect_hosts.txt` et leur page d'admin (`api/oauth_redirect_hosts.rs`) |
@@ -257,6 +257,55 @@ Aujourd'hui un jeton OAuth MCP part dans les en-têtes de la configuration MCP d
 - Le pont relaie en Streamable HTTP vers `https://px.x/mcp?profile=<slug>`; `tools/list` est déjà filtré par Perspicax selon les scopes.
 - Risque résiduel, écrit tel quel: pendant un tour, un shell du bot qui lit la capacité du tour peut demander le même jeton au harness. Il n'obtient que les profils de ce bot, pour la personne de ce tour, jusqu'à la fin du tour, et chaque appel est au journal de Perspicax.
 
+## 4 bis. Bots exécutés sur le serveur
+
+Exigence de JC: un bot créé en mode organisation fonctionne depuis le serveur, et reste utilisable quand on le partage. Tout tour d'un bot d'organisation s'exécute dans le serveur Pulsa Bot de la compose, jamais sur le poste de qui parle.
+
+### Engines présents dans l'image
+
+- L'image (`Dockerfile`) installe les engines par l'argument de build `ENGINES` (`npm install -g $ENGINES`, ligne 54), vide par défaut. La `compose.yaml` solo passe `@anthropic-ai/claude-code @openai/codex`. La compose unique doit passer la même liste **explicitement**, et l'image publiée pour l'organisation est construite avec elle: sans cet argument, le serveur démarre sans aucun engine.
+- L'image contient aussi `agent-browser` et Chromium (lignes 60 à 70): la navigation sans écran marche sur le serveur.
+- `HOME=/data` (ligne 76): les connexions des CLI (`~/.claude`, `~/.codex`) et l'état de Pulsa Bot survivent aux redémarrages, dans le volume `pulsabot-data`.
+- Au démarrage, le serveur publie dans `/api/health` (et la page Serveurs de la console) la liste des engines installés et leur version, par les sondes CLI existantes (`cliProbeEnvironment`, `index.ts:13691`). Un engine absent n'est jamais proposé.
+
+### Où vivent les accès aux engines
+
+Aujourd'hui les accès sont communs à tout le serveur: comptes Claude nommés (`server/claude-accounts.ts`, « provider credentials are server-wide »), connexions en cours rattachées à la session admin (`server/provider-auth-sessions.ts`), clés API posées dans Réglages > Connections et passées dans l'environnement de l'instance (`drivers/claude.ts:182-206`, qui retire toute clé qui ne vient pas de l'instance). En organisation:
+
+| Accès | Où | Qui le pose | Pour quels tours |
+|---|---|---|---|
+| Clé API du propriétaire (Anthropic, OpenAI, ...) | coffre de Perspicax, identifiant `scope: user` lié au propriétaire (P10) | le propriétaire, dans Pulsa Bot ou dans la console Perspicax | tous les tours de ses bots, y compris ceux des personnes à qui il les partage, et ses routines |
+| Clé d'organisation | Réglages > Connections du serveur (existant), posée par un admin | un admin | repli quand le propriétaire n'a pas de clé, **seulement si l'admin a activé « utiliser la clé d'organisation pour les bots des membres »** (décision 7) |
+| Abonnement (connexion Claude ou ChatGPT) | dossier de connexion propre au principal (`/data/principals/<id>/claude`, `CLAUDE_CONFIG_DIR` et équivalent Codex), au lieu du dossier commun | la personne elle-même | seulement les tours qu'elle lance elle-même sur ses propres bots, et ses routines; jamais le tour d'une autre personne |
+
+Ordre de résolution pour un tour (celui du document du 2026-09-28, complété): clé de la routine, `credentialRef` du bot, abonnement de qui lance **si c'est le propriétaire**, clé du propriétaire, clé d'organisation si l'admin l'autorise. La clé est lue au moment du tour, injectée dans l'environnement de l'instance de ce seul tour, jamais écrite dans `config.json`.
+
+### Quand B parle au bot de A
+
+- **Engine:** l'accès de A (sa clé, ou la clé d'organisation si permise). Jamais l'abonnement de A, puisque A ne lance pas ce tour; jamais l'abonnement de B, qui n'est pas propriétaire du bot. Le coût va au propriétaire ou à l'organisation, et la page Utilisation le montre par personne qui parle.
+- **MCP:** l'identité de B (section 4). Le bot de A ne voit jamais les données ConnectWise que B ne voit pas.
+- **Approbation:** A ou son `approver` (décision 5); B voit que la carte attend le propriétaire.
+
+### Ordinateurs et VM
+
+- Les VM locales passent par un runtime de conteneurs (`server/container-computer.ts`: `docker`, `podman`, `container`). L'image du serveur n'en a pas, et on ne lui donne pas le socket Docker (document du 2026-09-28, « risque trop grand »). En organisation, les bots n'ont donc pas de VM locale dans les tranches 1 à 8; le formulaire de création ne propose que ce qui existe sur le serveur (dossier du bot, navigateur sans écran).
+- Le serveur comme VM derrière `computer:use` (décision 10) et le conteneur par propriétaire (décision 8) restent des tranches ultérieures, sur un runtime séparé.
+- Tant que tous les bots partagent le conteneur et l'utilisateur `maus`, un shell en accès complet pourrait lire l'environnement d'un autre tour (`/proc/<pid>/environ`) et donc une clé. En organisation, l'accès complet sans carte est refusé aux bots des membres jusqu'au conteneur par propriétaire (T15).
+
+### Échecs visibles
+
+Jamais un tour qui échoue en silence. Chaque cas donne une carte dans le fil, à la personne qui parle, et un avis au propriétaire:
+
+| Cas | Ce que voit qui parle | Ce que voit le propriétaire |
+|---|---|---|
+| engine absent de l'image | « Ce bot utilise Codex, qui n'est pas installé sur ce serveur. » | idem, plus « demander à un admin » |
+| aucun accès résolu | « Ce bot ne peut pas répondre: aucune clé pour Claude. Son propriétaire doit en ajouter une. » | carte avec le lien vers sa clé (Pulsa Bot ou console Perspicax) |
+| clé refusée par le fournisseur (401, quota) | « Le fournisseur a refusé la clé de ce bot. » | le message du fournisseur, caviardé (`provider-key-check.ts`) |
+| profil MCP non détenu par qui parle | le bot répond sans l'outil et dit pourquoi (note système au tour) | rien |
+| délégation de routine expirée | la routine est suspendue, pas relancée en boucle | carte « reconnecter mes routines » |
+
+À la création et dans l'écran du bot, le choix d'engine indique d'avance « répondra pour vous seulement » (abonnement) ou « répondra aussi aux personnes à qui vous le partagez » (clé).
+
 ## 5. Section « Pulsa Bot » de la console Perspicax
 
 ### Pages
@@ -304,12 +353,12 @@ Elle vit dans le dépôt privé (`pulsatrix-v3/deploy/docker-compose.pulsabot.ym
 | Service | Image | Rôle |
 |---|---|---|
 | `perspicax` | `pulsatrix-connector:<version>` | IdP, MCP, console. `bind = "0.0.0.0:8787"`, `trusted_proxies` du réseau de la compose (`deploy/docker-compose.caddy.yml` le documente déjà) |
-| `pulsabot` | `pulsa-bot-server:<version>` | serveur de coordination; son Caddy latéral actuel (`network_mode: service:omb`, `deploy/local/Caddyfile`) reste pour garder la règle d'hôte loopback |
+| `pulsabot` | `pulsa-bot-server:<version>`, construite avec `ENGINES="@anthropic-ai/claude-code @openai/codex"` (liste explicite, section 4 bis) | serveur de coordination et exécution de tous les tours; son Caddy latéral actuel (`network_mode: service:omb`, `deploy/local/Caddyfile`) reste pour garder la règle d'hôte loopback |
 | `caddy` | `caddy:2.11.x` | arête: deux sites, `px.<domaine>` vers `perspicax:8787`, `bot.<domaine>` vers le Caddy de `pulsabot`. Deux noms parce que les deux produits utilisent `/api/*`. |
 
 L'exposition réseau (DNS, Tailscale, tunnel, LAN) reste au propriétaire: la compose publie par défaut sur `127.0.0.1`, comme `compose.yaml` de Pulsa Bot (`OMB_BIND_ADDRESS`).
 
-Volumes: `perspicax-config` (`gateway.db`, `state/vault.key`, `state/local_oauth/`, sauvegardes), `pulsabot-data` (`/data`), `link` (un seul fichier, section suivante), `caddy-data`, `caddy-config`.
+Volumes: `perspicax-config` (`gateway.db`, `state/vault.key`, `state/local_oauth/`, sauvegardes), `pulsabot-data` (`/data`: état, dossiers des bots, connexions des CLI par principal), `link` (un seul fichier, section suivante), `caddy-data`, `caddy-config`.
 
 Variables: côté Perspicax `PXC_CONFIG_DIR`, `PXC_VAULT_KEY` ou le fichier de clé, `PXC_PULSABOT_ORIGIN=https://bot.<domaine>` et `PXC_PULSABOT_INTERNAL_URL=http://pulsabot:80` (nouveaux). Côté Pulsa Bot `OMB_PUBLIC_URL=https://bot.<domaine>`, `OMB_IDENTITY=perspicax`, `OMB_PERSPICAX_ISSUER=https://px.<domaine>`, `OMB_PERSPICAX_LINK_FILE=/link/pulsabot.json` (nouveaux), `OMB_IDP_VAULT_KEY_FILE` (secret Docker).
 
@@ -345,7 +394,7 @@ Rappels de ce dépôt: versions les plus récentes vérifiées sur crates.io au 
 | P7 | Échange de jeton RFC 8693 sur `/oauth/token`, client `pulsa-bot-server` authentifié par le `pxat1.` du lien, au-dessus de `mint_internal_access_token`; événement `token_exchanged` dans `auth_events`. | `routes.rs::token`; `lib.rs`; `crates/gateway/src/hooks.rs` (journal); `model/journal.rs` |
 | P8 | Désactivation: `set_status(Disabled)` révoque aussi les jetons OAuth locaux (`revoke_tokens_for_identity`, `lib.rs:1777`) et déclenche la déconnexion par canal arrière vers chaque serveur lié. TODO(verify): aujourd'hui `set_status` révoque les lignes `sessions` (`model/users.rs:616`) mais ce chemin ne touche pas le document `local_oauth_tokens`, et `validate_access_token` ne relit pas le statut. | `model/users.rs::set_status`; `api/users.rs::set_status` (`:277`); nouveau `crates/gateway/src/pulsabot_push.rs` |
 | P9 | Serveurs liés: table, lien automatique au démarrage, API, extracteur `PulsaBotLink`, mandataire signé vers Pulsa Bot. | migration `0036_pulsabot_servers.sql`; nouveaux `model/pulsabot.rs`, `api/pulsabot.rs`; `api/mod.rs`; `api/auth.rs`; `crates/connector/src/boot.rs` (lien automatique); `crates/gateway/openapi.json` et `console/src/api/schema.d.ts` (`make console-types`); `tests/route_roles.rs` |
-| P10 | Clés de fournisseur des routines: un type d'identifiant « fournisseur de modèle » (`scope: user`) dans le coffre existant, et une lecture par le lien au moment d'une routine (tranche 6). | `model/credentials.rs`, `model/credential_slots.rs`, `api/pulsabot.rs` |
+| P10 | Clés de fournisseur des propriétaires de bots: un type d'identifiant « fournisseur de modèle » (`scope: user`) dans le coffre existant, et une lecture par le lien au moment d'un tour ou d'une routine (tranche 4, section 4 bis). | `model/credentials.rs`, `model/credential_slots.rs`, `api/pulsabot.rs` |
 | P11 | Console: groupe `pulsabot` et ses six pages, sur la coquille existante. | `console/src/components/shell.tsx`; nouveaux `console/src/pages/pulsabot/*.tsx`; `console/src/main.tsx`; `messages.en.ts` et `messages.fr.ts` (`nav.pulsabot.*`); `console/src/styles/routes.css`; `console/e2e/routes.ts`; `docs/design/look-inventory.txt` |
 | P12 | Déploiement: la compose unique et son Caddyfile, section du README. | `deploy/docker-compose.pulsabot.yml`, `deploy/Caddyfile.pulsabot`, `deploy/README.md` |
 
@@ -361,6 +410,11 @@ Rappels de ce dépôt: versions les plus récentes vérifiées sur crates.io au 
 | `server/authz.ts` | `can()` (section 3) |
 | `server/perspicax-mcp-bridge.ts` | le pont stdio (section 4), sur le patron de `connector-proxy.ts` et `mcp-bridge.ts` |
 | Routes | `GET /auth/oidc/start`, `GET /auth/oidc/callback`, `POST /api/auth/oidc/backchannel-logout`, `POST /api/org/import`, `/api/org/admin/*` (assertion de la console), `POST /api/org/routine-delegation` |
+| `server/engine-credentials.ts` | résolution de l'accès d'un tour (section 4 bis): clé de routine, `credentialRef`, abonnement du propriétaire qui lance, clé du propriétaire lue dans le coffre de Perspicax par le lien, clé d'organisation si permise |
+| Connexions par principal | `server/claude-accounts.ts` et `server/provider-auth-sessions.ts`: en organisation, un dossier de connexion par principal sous `/data/principals/<id>/`, au lieu du dossier commun |
+| Cartes d'échec | engine absent, aucun accès, clé refusée, profil non détenu, délégation expirée (section 4 bis); au lieu d'un tour vide |
+| Création de bot par un membre | `POST /api/bots` et `memberBotFieldViolation` de la branche `fix/member-identity`; le formulaire ne propose que les engines installés et les options qui existent sur le serveur |
+| Santé | `/api/health` liste les engines installés et leur version |
 | `server/environment.ts` | `identity: { kind: "oidc", issuer }` dans le descripteur |
 | Web | bouton Perspicax dans `src/pair/PairPage.tsx`; `src/components/OrganizationSettings.tsx` montre le lien, le rôle et « Gérer dans Perspicax » |
 | Bureau | `electron/main.mjs` (`open-url` pour `openmausbot://auth`), `electron/environments.cjs` (analyse du retour), « Rejoindre un serveur Perspicax » |
@@ -401,6 +455,7 @@ Rappels de ce dépôt: versions les plus récentes vérifiées sur crates.io au 
 | T12 | Compromission du serveur Pulsa Bot | il tient les refresh de toutes les sessions et délégations: jetons scellés, clé en secret Docker; bouton « Révoquer tous les jetons de ce serveur » dans la console (par `client_id`); jetons MCP courts |
 | T13 | Shell d'un bot qui appelle le harness en loopback | risque déjà écrit dans `request-auth.ts` (`SERVICE_ALLOW`); en organisation, `LoopbackTrust` `service` partout, et la route qui donne un jeton au pont exige la capacité du tour |
 | T14 | Rattachement par courriel d'un principal intérim | une seule fois, pendant la période de migration, écrit à l'audit, puis coupé |
+| T15 | Clé d'un propriétaire lue par le shell d'un autre bot du même conteneur | clé injectée au seul tour qui la demande, jamais dans `config.json`; accès complet sans carte refusé aux bots des membres jusqu'au conteneur par propriétaire (décision 8) |
 
 ## 10. Tranches
 
@@ -409,14 +464,30 @@ Chacune se livre seule, avec ses tests, dans l'ordre. Les tranches Perspicax pas
 1. **Connexion Perspicax, bout à bout.**
    Perspicax: P1, P2, P3 (claims de base: `sub`, `email`, `name`, `preferred_username`, `role`; `teams` peut attendre la tranche 4), P5 (JWKS, découverte), P6 pour une origine donnée par `PXC_PULSABOT_ORIGIN`.
    Pulsa Bot: `oidc-rp.ts`, `/auth/oidc/start` et `/callback`, `forSubject`, session avec `principalId`, `role` vers scopes (`admin` donne `["admin", "client"]`, les autres `["client"]`), bouton sur `/pair`, descripteur `identity`, refus du courriel et des invitations quand `OMB_IDENTITY=perspicax`. Bureau: flux dans la fenêtre. Téléphone: QR d'appairage lié au principal (existant).
-   Preuve: une compose de développement avec les deux; un compte Perspicax créé par la CLI se connecte au web de Pulsa Bot; `GET /api/auth/session` montre le principal, le courriel et le rôle; le jeton de connexion est refusé par `/mcp` (401).
+   Engine: l'image construite avec Claude Code et Codex; accès par la connexion ou la clé posée par l'admin dans Réglages > Connections (existant); A est admin dans cette tranche.
+   Preuve: une compose de développement avec les deux; un compte Perspicax créé par la CLI se connecte au web de Pulsa Bot; `GET /api/auth/session` montre le principal, le courriel et le rôle; le jeton de connexion est refusé par `/mcp` (401); scénario A ci-dessous.
 2. **Cycle de vie de la session.** Rafraîchissement, `/oauth/revoke`, déconnexion, canal arrière et P8, navigateur système sur le bureau, OIDC natif sur le téléphone.
-3. **Lien et annuaire.** P9, lien automatique, `perspicax-link.ts`, principals créés depuis l'annuaire (on peut partager avec quelqu'un qui ne s'est jamais connecté), compose unique (P12), page console Serveurs.
-4. **Droits.** `authz.ts`, claim `teams`, droits visant un utilisateur ou une équipe Perspicax, partage administré par les gestionnaires pour leurs équipes, niveaux par bot, page Membres.
-5. **MCP automatique.** P7, pont stdio, profils par bot, identité de qui parle, provenance au journal.
-6. **Routines au nom du propriétaire.** Délégation, `runAs`, clés de fournisseur dans le coffre de Perspicax (P10), révocation depuis les deux côtés.
+3. **Lien, annuaire et premier partage.** P9, lien automatique, `perspicax-link.ts`, principals créés depuis l'annuaire, compose unique (P12), page console Serveurs. Partage minimal avec un **utilisateur**: les `directGrants` existants (`direct-grants.ts`, `canSeeDirectBot`), qui visent déjà des principals, choisis dans l'annuaire, avec retrait; création de bot par un membre (`fix/member-identity`); cartes d'échec; les tours partagés utilisent la clé d'organisation que l'admin a permise. Preuve: scénarios B et C pour un utilisateur.
+4. **Droits et accès des propriétaires.** `authz.ts`, claim `teams`, droits visant une équipe Perspicax, partage administré par les gestionnaires pour leurs équipes, niveaux par bot, page Membres; clés du propriétaire dans le coffre de Perspicax (P10) et `engine-credentials.ts`, abonnements par principal. Preuve: scénarios B et C complets (utilisateur et équipe).
+5. **MCP automatique.** P7, pont stdio, profils par bot, identité de qui parle, provenance au journal. Preuve: scénario E.
+6. **Routines au nom du propriétaire.** Délégation, `runAs`, clé du propriétaire (P10, déjà là depuis la tranche 4), révocation depuis les deux côtés. Preuve: scénario D.
 7. **Console Pulsa Bot complète.** Bots, Utilisation, Approbations, Audit, mandataire signé.
 8. **Solo vers organisation et ménage.** « Rejoindre », copie des bots, réécriture des personnes, rattachement intérim; retrait du code intérim de la section 8.
+
+Choix d'ordre: le partage avec un utilisateur avance à la tranche 3, parce qu'il réutilise les `directGrants` existants et ne dépend que de l'annuaire, livré dans la même tranche. Le partage avec une équipe et les niveaux attendent `authz.ts` (tranche 4). Les clés du propriétaire (P10) passent de la tranche 6 à la tranche 4, pour que les tours partagés ne dépendent pas de la clé d'organisation plus longtemps que nécessaire; la tranche 6 les réutilise.
+
+### Critères d'acceptation
+
+Scénarios de bout en bout, joués sur la compose unique de développement (instance isolée, `docs/verification/README.md`), avec des comptes Perspicax créés pour le test: A (propriétaire), B (autre utilisateur), C (membre de l'équipe T), D (hors de T, sans droit).
+
+| # | Scénario | Attendu | Tranche |
+|---|---|---|---|
+| A | A se connecte par Perspicax au web, crée un bot sur le serveur, lui écrit | la réponse est produite par un engine du conteneur `pulsabot` (le journal du serveur montre le tour, aucun harness local n'est lancé); le fil est lisible depuis un autre navigateur de A | 1 |
+| B | A partage le bot avec B (utilisateur) puis avec l'équipe T | B et C voient le bot dans leur liste, lui écrivent et obtiennent une réponse produite sur le serveur avec l'accès de A (ou la clé d'organisation permise); D ne le voit ni dans la liste, ni dans la recherche, ni par l'URL directe (403 ou 404), ni dans le flux SSE | 3 pour B, 4 pour T |
+| C | A retire le partage de B, puis retire C de l'équipe T dans Perspicax | tout de suite: le flux SSE de B se ferme ou cesse de recevoir les trames du bot, sa requête suivante reçoit 403; C perd l'accès au prochain rafraîchissement des claims ou de l'annuaire (au plus 5 min), puis 403 | 3 pour B, 4 pour C |
+| D | A crée une routine horaire, se déconnecte de tous ses appareils | la routine s'exécute sur le serveur à l'heure, avec l'accès et la délégation de A; son résultat est dans le fil au retour de A; désactiver A dans Perspicax la suspend | 6 |
+| E | B écrit au bot de A, qui a un profil MCP Perspicax | les appels MCP apparaissent dans le journal de Perspicax sous l'utilisateur B, client `pulsa-bot:<server id>`, `client_name` « Pulsa Bot (<bot id>) »; si B ne détient pas le profil, l'outil est absent et le bot le dit | 5 |
+| F | le bot de A utilise un engine sans accès résolu | B reçoit la carte « aucune clé » dans le fil, A reçoit l'avis; aucun tour vide | 3 |
 
 ## 11. Positions et questions pour JC
 
