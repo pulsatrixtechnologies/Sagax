@@ -539,6 +539,8 @@ OMB_IDENTITY=perspicax
 OMB_PERSPICAX_ISSUER=https://px.yourcompany.com   # the Perspicax public origin
 OMB_PUBLIC_URL=https://bot.yourcompany.com        # this server, no path
 # OMB_OIDC_CLIENT_ID=pulsa-bot                    # the default
+# OMB_OIDC_REFRESH_AFTER_SECONDS=3000             # 1 to 3000: refresh a used grant after this long
+# OMB_IDP_VAULT_KEY=<64 hex>                      # or OMB_IDP_VAULT_KEY_FILE=/path/to/key
 ```
 
 On the Perspicax side, set `PXC_PULSABOT_ORIGIN` to exactly the value of
@@ -555,9 +557,37 @@ What changes:
   or a passkey) and back to `/auth/oidc/callback`. The server exchanges the
   code itself (PKCE S256, `state`, `nonce`), checks the ES256 `id_token`
   against the Perspicax JWKS, and sets its own session cookie. No Perspicax
-  token reaches the browser, the desktop app, a phone or an engine; in this
-  first slice the server keeps none either (the refresh token is revoked at
-  once, and the session stands on its own).
+  token reaches the browser, the desktop app, a phone or an engine.
+- The server keeps each sign-in's Perspicax refresh token (the grant) in a
+  sealed file, `<data>/idp-grants.enc` (AES-256-GCM). Its key comes from
+  `OMB_IDP_VAULT_KEY` (64 hex characters), else the file named by
+  `OMB_IDP_VAULT_KEY_FILE`, else `<data>/idp-grants.key`, created 0600 on
+  first start. Both files stay out of workspace backups. If the key cannot be
+  read, sign-in is refused (`signin_error=unavailable`) rather than hand out a
+  session without its grant.
+- A session lives as long as Perspicax keeps refreshing its grant. When a
+  session is used and its grant was last refreshed more than
+  `OMB_OIDC_REFRESH_AFTER_SECONDS` ago (default 3000, at most 3000), the
+  server refreshes it in the background. Perspicax refusing the refresh (the
+  person was disabled or deleted, the grant revoked) ends the session. A
+  Perspicax that cannot be reached keeps the session and retries a minute
+  later; after 24 hours without a successful refresh the session ends with
+  `401 {code: "idp_unreachable"}`. A refresh carries the current role: a
+  demoted admin loses the admin scope on the next refresh, and the person's
+  other devices only ever narrow.
+- Logging out, or an admin revoking a device, revokes that session's grant
+  at Perspicax too.
+- Perspicax tells the server at once when a person is disabled, deleted,
+  has their password or TOTP reset, or has their sessions revoked: it posts
+  an OpenID Connect back-channel logout token to
+  `<OMB_PUBLIC_URL>/api/auth/oidc/backchannel-logout`. Every session and
+  open stream of that person ends, their pairing codes are cancelled, and
+  their requests answer `401 {code: "principal_disabled"}` until they sign in
+  again. When Perspicax reaches this server by another address than its
+  public one (a compose network), set Perspicax's `PXC_PULSABOT_INTERNAL_URL`
+  to that origin, for example `http://pulsabot:8799`; the path is added by
+  Perspicax. That route takes no other authentication than the token's
+  ES256 signature, so it is safe to expose.
 - The person is found by the Perspicax account (`iss` + `sub`), never by
   email: the address, name and login are attributes refreshed at each
   sign-in. `GET /api/auth/session` shows `principalId`, `email`, `name`,
@@ -573,9 +603,16 @@ What changes:
 - Loopback without a session is a service, not the owner
   (`OMB_LOOPBACK_TRUST=service`), unless you set `OMB_LOOPBACK_TRUST`
   yourself: every bot's shell on a shared server is a loopback caller.
-- The desktop app, connected to this server as a saved server, runs the same
-  sign-in in a small window of its own (no preload, same cookie jar). A
-  phone pairs with the QR code a signed-in person opens, as before.
+- The desktop app, connected to this server as a saved server, runs the
+  sign-in in the person's own browser when it is the system's handler for
+  `openmausbot://` links (`/auth/oidc/start?client=desktop` ends on
+  `openmausbot://auth?origin=...#code=...`, a two-minute, single-use pairing
+  credential bound to the person), else in a small window of its own (no
+  preload, same cookie jar). The phone apps offer **Sign in with Pulsatrix**
+  for such a server: `?client=phone` ends on the same
+  `openmausbot://pair?address=...&token=...` link a pairing QR code carries.
+  A signed-in member may also open a pairing code for their own device; the
+  device acts as them and never gets more than their own scopes.
 
 Bots run on the server: an admin who signed in this way creates a bot and
 its turns run on the engines installed on the server (in the Docker image,
