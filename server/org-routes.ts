@@ -39,9 +39,16 @@ export function getOrgRoute(state: OrgState, now = Date.now(), ownerEmail?: stri
   return { status: 200 as const, body: { org: state.org, people: orgPeople(state, ownerEmail), pendingInvites } };
 }
 
-export function createOrgRoute(state: OrgState, input: { name: string; ownerUserId: string; host: OrgRecord["host"] }) {
+/** `persist` saves the new org before it becomes the state: a failed save
+ * throws and leaves no organization behind. */
+export function createOrgRoute(
+  state: OrgState,
+  input: { name: string; ownerUserId: string; host: OrgRecord["host"] },
+  persist?: (org: OrgRecord) => void,
+) {
   if (state.org) return { status: 409 };
   const org = createOrg(input);
+  persist?.(org);
   state.org = org;
   return { status: 200, body: { org } };
 }
@@ -116,7 +123,11 @@ export interface OrgRouteDeps {
   ownerEmail?: () => string | undefined;
   now?: () => number;
   token?: () => string;
-  persist?: () => void;
+  /** Saves the state; `next.org`, when given, is saved in place of the
+   * current one (a new organization before it is assigned). */
+  persist?: (next?: { org?: OrgRecord }) => void;
+  /** After an organization was created and saved. */
+  onOrgCreated?: () => void;
 }
 
 export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
@@ -132,12 +143,25 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
       const body = await readBody(req);
       const host = parseHost(body?.host);
       if (typeof body?.name !== "string" || !host) return json(res, 400, { error: "name and host are required" });
+      let saveFailed: unknown;
+      const persist = deps.persist;
       try {
-        const result = createOrgRoute(deps.state, { name: body.name, ownerUserId: deps.actorId(auth), host });
-        if (result.status === 200) deps.persist?.();
+        const result = createOrgRoute(deps.state, { name: body.name, ownerUserId: deps.actorId(auth), host }, persist
+          ? (org) => {
+            try {
+              persist({ org });
+            } catch (error) {
+              saveFailed = error;
+              throw error;
+            }
+          }
+          : undefined);
+        if (result.status === 200) deps.onOrgCreated?.();
         return json(res, result.status, result.body ?? {});
       } catch (error) {
-        return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+        const message = error instanceof Error ? error.message : String(error);
+        if (saveFailed !== undefined) return json(res, 500, { error: `the organization could not be saved: ${message}` });
+        return json(res, 400, { error: message });
       }
     }
     if (path === "/api/org/invites") {

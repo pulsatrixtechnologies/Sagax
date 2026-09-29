@@ -34,20 +34,6 @@ export function roleOf(input: { ownerUserId: string; admins: string[]; members: 
   if (input.members.some((id) => actorKey(id) === key)) return "member";
   return null;
 }
-/** The creator stays owner after a profile email lands. `local-owner` is the
- * placeholder used when the org was created with no email yet. */
-export function ownerUserIdAfterProfileEmail(input: {
-  ownerUserId: string;
-  previousEmail: string;
-  nextEmail: string;
-}): string {
-  const owner = actorKey(input.ownerUserId);
-  const previous = actorKey(input.previousEmail);
-  const next = actorKey(input.nextEmail);
-  if (!next) return owner || input.ownerUserId;
-  if (owner === "local-owner" || (previous !== "" && owner === previous) || owner === next) return next;
-  return owner || input.ownerUserId;
-}
 /** Open invites may sign in. They are not members until accept adds the address. */
 export function signInListWithOpenInvites(input: {
   admins: string[];

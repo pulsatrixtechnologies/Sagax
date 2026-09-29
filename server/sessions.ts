@@ -570,8 +570,8 @@ export class SessionRegistry {
   }
 
   /** Boot migration only: who each stored session is, without its secrets. */
-  listRecordsForMigration(): { id: string; email?: string; userId?: string; principalId?: string; scopes: Scope[] }[] {
-    return this.sessions.map(({ id, email, userId, principalId, scopes }) => ({ id, email, userId, principalId, scopes: [...scopes] }));
+  listRecordsForMigration(): { id: string; label: string; email?: string; userId?: string; principalId?: string; scopes: Scope[] }[] {
+    return this.sessions.map(({ id, label, email, userId, principalId, scopes }) => ({ id, label, email, userId, principalId, scopes: [...scopes] }));
   }
 
   /** Attach the person a session acts as: at boot for older sessions, or on

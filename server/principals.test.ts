@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { isPrincipalId, PrincipalRegistry } from "./principals.ts";
+import { isAccountEmail, isPrincipalId, mergePrincipalFiles, PrincipalRegistry } from "./principals.ts";
 
 function registry() {
   const dir = mkdtempSync(join(tmpdir(), "principals-"));
@@ -60,14 +60,66 @@ describe("principal registry", () => {
     expect(isPrincipalId("local-owner")).toBe(false);
   });
 
-  it("starts empty on corrupt principals.json without throwing", () => {
+  it("moves an unparseable principals.json aside and starts empty without overwriting it", () => {
     const dir = mkdtempSync(join(tmpdir(), "principals-"));
     const path = join(dir, "principals.json");
-    // Write invalid JSON
     writeFileSync(path, "{invalid json");
-    // Should not throw
-    const reg = new PrincipalRegistry({ path });
+    const reg = new PrincipalRegistry({ path, now: () => 42 });
     expect(reg.list()).toHaveLength(0);
+    expect(readFileSync(join(dir, "principals.json.corrupt-42"), "utf8")).toBe("{invalid json");
+    reg.localOperator();
+    expect(readdirSync(dir).sort()).toEqual(["principals.json", "principals.json.corrupt-42"]);
+  });
+
+  it("skips an oversized or malformed entry and keeps the local operator across a restart", () => {
+    const { path, reg } = registry();
+    const local = reg.localOperator("jc@gox.ca");
+    const zach = reg.forAccount({ email: "zach@gox.ca" });
+    const file = JSON.parse(readFileSync(path, "utf8"));
+    file.principals.push(
+      { id: "pr_00000000-0000-4000-8000-0000000000ff", kind: "human", email: `${"a".repeat(400)}@gox.ca`, createdAt: 1 },
+      { id: "not-a-principal", kind: "human", createdAt: 1 },
+      { id: "pr_00000000-0000-4000-8000-0000000000fe", kind: "human", local: true, createdAt: 1 },
+    );
+    writeFileSync(path, JSON.stringify(file));
+    const again = new PrincipalRegistry({ path, now: () => 7 });
+    expect(again.local()?.id).toBe(local.id);
+    expect(again.localOperator("jc@gox.ca").id).toBe(local.id);
+    expect(again.byId(zach.id)).toMatchObject({ email: "zach@gox.ca" });
+    expect(again.list()).toHaveLength(2);
+    // The original is kept beside the rewritten file.
+    expect(existsSync(`${path}.corrupt-7`)).toBe(true);
+    expect(new PrincipalRegistry({ path }).local()?.id).toBe(local.id);
+  });
+
+  it("refuses an account email over 320 characters or without local@domain", () => {
+    const { reg } = registry();
+    expect(() => reg.forAccount({ email: `${"a".repeat(400)}@gox.ca` })).toThrow(/account email/);
+    expect(() => reg.forAccount({ email: "not-an-email" })).toThrow(/account email/);
+    expect(() => reg.forAccount({ email: "@gox.ca" })).toThrow(/account email/);
+    expect(reg.list()).toHaveLength(0);
+    expect(isAccountEmail("zach@gox.ca")).toBe(true);
+    expect(isAccountEmail(`${"a".repeat(320)}@gox.ca`)).toBe(false);
+  });
+
+  it("reads the local operator without writing", () => {
+    const { path, reg } = registry();
+    expect(reg.local()).toBeNull();
+    expect(existsSync(path)).toBe(false);
+    const local = reg.localOperator();
+    expect(reg.local()?.id).toBe(local.id);
+  });
+
+  it("merges a restored file by id without replacing the local operator", () => {
+    const mine = { id: "pr_00000000-0000-4000-8000-000000000001", kind: "human", local: true, createdAt: 1 };
+    const shared = { id: "pr_00000000-0000-4000-8000-000000000002", kind: "human", email: "zach@gox.ca", createdAt: 1 };
+    const theirs = { id: "pr_00000000-0000-4000-8000-000000000003", kind: "human", local: true, email: "old@gox.ca", createdAt: 1 };
+    const merged = mergePrincipalFiles(
+      { version: 1, principals: [mine, shared] },
+      { version: 1, principals: [{ ...shared, email: "changed@gox.ca" }, theirs] },
+    );
+    expect(merged.principals).toEqual([mine, shared, { id: theirs.id, kind: "human", email: "old@gox.ca", createdAt: 1 }]);
+    expect(mergePrincipalFiles(undefined, { version: 1, principals: [theirs] }).principals).toEqual([theirs]);
   });
 
   it("creates parent directories for a nested path", () => {

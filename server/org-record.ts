@@ -25,8 +25,10 @@ export function createOrg(input: { name: string; ownerUserId: string; host: OrgR
   // Org mode needs a coordination server everyone signs in to. This
   // computer can be it, through its tunnel, Tailscale or domain address.
   if (input.host.kind !== "server" || !serverAddressOk(input.host.url)) throw new Error("a server address is required");
+  // The owner is a person by principal id, never an email or "local-owner".
   const owner = input.ownerUserId.trim();
-  return { name, ownerUserId: isPrincipalId(owner) ? owner : owner.toLowerCase(), host: { kind: "server", url: input.host.url.trim() } };
+  if (!isPrincipalId(owner)) throw new Error("an organization owner must be a principal");
+  return { name, ownerUserId: owner, host: { kind: "server", url: input.host.url.trim() } };
 }
 
 export function issueInvite(input: { email: string; now: number; token: string }): OrgInvite {

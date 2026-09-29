@@ -489,8 +489,8 @@ import {
   sessionCookieName,
 } from "./request-auth.ts";
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
-import { PrincipalRegistry } from "./principals.ts";
-import { migrateIdentityRefs, principalIdFor } from "./identity-migration.ts";
+import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.ts";
+import { applyIdentityMigration, principalIdFor } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
 import {
   activityCsv,
@@ -2748,24 +2748,28 @@ try {
 // failed, leave the committed journal in place and profile reuse blocked.
 if (browserCleanupReferencesReconciled) browserCleanup.startPending();
 // People by a stable principal id (server/principals.ts). Built once `store`
-// and `sessions` exist and before any route serves; stored emails and
-// "local-owner" become principal ids once, sessions on every boot.
+// and `sessions` exist and before any route serves. Stored emails and
+// "local-owner" become principal ids on every boot: ids pass through, so a
+// restored workspace or an imported team is mapped as well.
+// `identityMigratedAt` only records when that first happened.
 const principals = new PrincipalRegistry({ path: join(DATA_DIR, "principals.json") });
 principals.localOperator(cfg.profile?.email);
-{
-  const migrated = migrateIdentityRefs({
-    org: cfg.identityMigratedAt ? null : cfg.org ?? null,
-    groups: cfg.identityMigratedAt ? [] : store.groups,
-    bots: cfg.identityMigratedAt ? [] : store.bots,
-    sessions: sessions.listRecordsForMigration(),
-    registry: principals,
-  });
-  if (migrated.orgOwner && cfg.org) { cfg.org = { ...cfg.org, ownerUserId: migrated.orgOwner }; saveConfig({ org: cfg.org }); }
-  for (const g of migrated.groups) store.patchGroup(g.id, { humanIds: g.humanIds });
-  for (const b of migrated.bots) store.patchBot(b.id, { ...(b.ownerUserId ? { ownerUserId: b.ownerUserId } : {}), ...(b.directGrants ? { directGrants: b.directGrants } : {}) });
-  for (const s of migrated.sessions) sessions.setPrincipal(s.id, s.principalId);
-  if (!cfg.identityMigratedAt) { cfg.identityMigratedAt = Date.now(); saveConfig({ identityMigratedAt: cfg.identityMigratedAt }); }
-}
+applyIdentityMigration({
+  registry: principals,
+  org: cfg.org ?? null,
+  saveOrgOwner: (ownerUserId) => {
+    if (!cfg.org) return;
+    cfg.org = { ...cfg.org, ownerUserId };
+    saveConfig({ org: cfg.org });
+  },
+  groups: store.groups,
+  patchGroup: (id, patch) => { store.patchGroup(id, patch); },
+  bots: store.bots,
+  patchBot: (id, patch) => { store.patchBot(id, patch); },
+  sessions: sessions.listRecordsForMigration(),
+  setPrincipal: (id, principalId) => { sessions.setPrincipal(id, principalId); },
+});
+if (!cfg.identityMigratedAt) { cfg.identityMigratedAt = Date.now(); saveConfig({ identityMigratedAt: cfg.identityMigratedAt }); }
 
 /** A bot as a client may see it: no provider session bookkeeping.
  *
@@ -3572,7 +3576,9 @@ function createChannel(value: unknown): GroupRecord {
   }
   let humanIds: string[] | undefined;
   if (body.humanIds !== undefined) {
-    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string")) {
+    // The route authorized the actor (refuseHumanEdit) before this runs:
+    // mapping an email may create its principal.
+    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string" || id.length > 320)) {
       throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
     }
     const applied = applyHumanIds({ dm: false, humanIds: body.humanIds.map((id: string) => principalIdFor(id, principals)) });
@@ -3658,7 +3664,9 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     patch.memberIds = roster.memberIds;
   }
   if (body.humanIds !== undefined) {
-    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string")) {
+    // The route authorized the actor (refuseHumanEdit) before this runs:
+    // mapping an email may create its principal.
+    if (!Array.isArray(body.humanIds) || body.humanIds.some((id) => typeof id !== "string" || id.length > 320)) {
       throw Object.assign(new Error("humanIds must be a list of user ids"), { status: 400 });
     }
     const applied = applyHumanIds({ dm: Boolean(existing.dm), humanIds: body.humanIds.map((id: string) => principalIdFor(id, principals)) });
@@ -13646,7 +13654,9 @@ const orgState: OrgState = {
 /** The operator at this computer, as a principal. The profile email is an
  * attribute of it, never a second person. */
 function localPrincipalId(): string {
-  return principals.localOperator(cfg.profile?.email).id;
+  // Read only: the boot above created the operator, and its email is synced
+  // at boot and after a config save, never on a read.
+  return principals.local()?.id ?? principals.localOperator().id;
 }
 /** Who acts, by principal: a session's principal (or its anonymous id),
  * the operator on loopback, nobody for a local service. */
@@ -13814,7 +13824,13 @@ ROUTES.push(createDirectGrantRoutes({
   bot: (id) => store.bot(id) ?? undefined,
   patchBot: (id, patch) => store.patchBot(id, patch),
   actorId: channelActorId,
-  resolveUserId: (ref) => principalIdFor(ref, principals),
+  // Called only once the actor owns the bot: resolving an email may create
+  // its principal. Anything that is not a principal id or an account email
+  // is refused.
+  resolveUserId: (ref) => {
+    const id = principalIdFor(ref, principals);
+    return isPrincipalId(id) ? id : null;
+  },
 }));
 ROUTES.push(createWorkerRoutes({
   workers: () => registeredWorkers,
@@ -13859,12 +13875,28 @@ ROUTES.push(createOrgRoutes({
   actorId: actorPrincipalId,
   actorEmail,
   ownerEmail: () => (orgState.org ? principals.byId(orgState.org.ownerUserId)?.email : undefined),
-  persist: () => {
+  persist: (next) => {
+    const org = next?.org ?? orgState.org;
     saveConfig({
-      ...(orgState.org ? { org: orgState.org } : {}),
+      ...(org ? { org } : {}),
       invites: orgState.invites,
       signIn: { admins: orgState.signIn.admins, members: orgState.signIn.members },
     });
+  },
+  // A stream opened before the organization was built with no filter for a
+  // session without a principal (or the operator's own phone). End every
+  // session-backed unfiltered stream so it reconnects under the org filter.
+  onOrgCreated: () => {
+    audienceChangedAt = lastSeq;
+    for (const client of sseClients) {
+      if (!client.sessionId || client.viewerId) continue;
+      sseClients.delete(client);
+      try {
+        client.res.end();
+      } catch {
+        /* already gone */
+      }
+    }
   },
 }));
 
@@ -13956,6 +13988,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, verified.status, { error: verified.error });
       }
       sessions.clearFailures(source);
+      if (!isAccountEmail(verified.email)) return json(res, 400, { error: "this address cannot sign in: at most 320 characters, shaped name@domain" });
       const principal = principals.forAccount({ email: verified.email, controlPlaneUserId: verified.userId });
       const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id });
       const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: true, sharedComputers: sharedComputersEnabled(cfg) });
@@ -14071,7 +14104,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     // A portal-issued or older account session never went through email
     // sign-in: give it its person now, so it owns what it owned by email.
-    if (auth.kind === "session" && !auth.session.principalId && auth.session.email) {
+    // An address that is not an account email stays nobody.
+    if (auth.kind === "session" && !auth.session.principalId && auth.session.email && isAccountEmail(auth.session.email)) {
       const userId = auth.session.userId;
       const principal = principals.forAccount({
         email: auth.session.email,
