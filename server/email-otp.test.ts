@@ -90,11 +90,28 @@ describe("email one-time codes", () => {
   });
 
   it("refuses to issue when tracking cap is reached", () => {
-    const { s } = store(1_000);
-    // Verify cap exists and is enforceable
-    expect(s.size().pending).toBe(0);
-    const result = s.issue("test@gox.ca", "src");
-    expect(result.ok).toBe(true);
-    expect(s.size().pending).toBe(1);
+    let clock = 1_000;
+    let n = 0;
+    const codes = ["12345678", "87654321", "11112222", "33334444", "55556666"];
+    const s = new EmailOtpStore({
+      now: () => clock,
+      random: () => codes[n++ % codes.length]!,
+      maxTracked: 3
+    });
+
+    // Issue codes for 3 distinct addresses from 3 distinct sources
+    expect(s.issue("user1@gox.ca", "src1").ok).toBe(true);
+    expect(s.issue("user2@gox.ca", "src2").ok).toBe(true);
+    expect(s.issue("user3@gox.ca", "src3").ok).toBe(true);
+    expect(s.size().pending).toBe(3);
+
+    // 4th attempt should be refused (cap reached)
+    expect(s.issue("user4@gox.ca", "src4")).toMatchObject({ ok: false, status: 429 });
+    expect(s.size().pending).toBe(3);
+
+    // After TTL passes, sweep frees the slots
+    clock += OTP_TTL_MS + 1;
+    expect(s.issue("user5@gox.ca", "src5").ok).toBe(true);
+    expect(s.size().pending).toBe(1); // Old ones expired, only the new one
   });
 });

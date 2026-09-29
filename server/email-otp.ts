@@ -18,12 +18,14 @@ interface Pending { hash: Buffer; expiresAt: number; attempts: number }
 export class EmailOtpStore {
   private readonly now: () => number;
   private readonly random: () => string;
+  private readonly maxTracked: number;
   private readonly pending = new Map<string, Pending>();
   private readonly sends = new Map<string, number[]>();
 
-  constructor(options: { now?: () => number; random?: () => string } = {}) {
+  constructor(options: { now?: () => number; random?: () => string; maxTracked?: number } = {}) {
     this.now = options.now ?? Date.now;
     this.random = options.random ?? (() => String(randomInt(0, 100_000_000)).padStart(8, "0"));
+    this.maxTracked = options.maxTracked ?? OTP_MAX_TRACKED;
   }
 
   issue(email: string, source: string): { ok: true; code: string } | { ok: false; status: 429; error: string } {
@@ -39,7 +41,7 @@ export class EmailOtpStore {
     }
 
     // Check the hard cap
-    if (this.pending.size >= OTP_MAX_TRACKED) {
+    if (this.pending.size >= this.maxTracked) {
       return { ok: false, status: 429, error: "too many codes requested; wait a few minutes and try again" };
     }
 
