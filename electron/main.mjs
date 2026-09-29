@@ -2963,7 +2963,7 @@ app.whenReady().then(async () => {
   // on macOS 26 discards the Liquid Glass rendering (build/icon.icon) and
   // drops the icon into the gray "squircle jail". Packaged builds keep the
   // system icon. Unpackaged dev runs get the same compiled icon from
-  // scripts/prepare-dev-mac-icon.mjs; the flat PNG is only the fallback
+  // scripts/dev-desktop.mjs; the flat PNG is only the fallback
   // when that script could not run (no Xcode actool).
   if (process.platform === "darwin" && !app.isPackaged && !devBundleHasSystemIcon()) app.dock.setIcon(APP_ICON);
   secureCredentials = await loadSecureCredentials();
