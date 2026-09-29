@@ -12,6 +12,7 @@ import { ProviderMark } from "@/components/ProviderIcons";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useStore, type InstanceInfo } from "@/state/store";
+import { requestSettingsCard } from "./SettingsPrimitives";
 
 type Choice = "claude" | "codex";
 
@@ -68,7 +69,7 @@ export function CloudEngineSignIn() {
             );
           })}
           <div data-cloud-choice="api-key">
-            <button type="button" onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: "connections" })} className={row}>
+            <button type="button" onClick={() => { requestSettingsCard("connections.providers"); dispatch({ type: "toggleAppSettings", open: true, section: "connections" }); }} className={row}>
               <span className="flex size-[18px] shrink-0 items-center justify-center text-ink-secondary">
                 <KeyRound size={16} />
               </span>

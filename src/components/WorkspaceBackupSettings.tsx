@@ -127,10 +127,14 @@ export function WorkspaceBackupSettings() {
   });
 
   const disabled = busy !== null || !status || status.busy || Boolean(status.pendingRestore);
-  return <div className="flex flex-col gap-4">
-    <p className="text-[13px] leading-relaxed text-ink-secondary">{t("backup.scope")}</p>
-    <p className="text-[13px] leading-relaxed text-ink-secondary">{t("backup.excluded")}</p>
-    <p className="text-[13px] leading-relaxed text-ink-secondary">{t("backup.privacy")}</p>
+  return <div className="flex flex-col gap-3">
+    <Card collapsible cardId="backups.scope" defaultOpen={false} title={t("settings.card.backupScope")} summary={t("settings.card.backupScopeSummary")}>
+      <div className="flex flex-col gap-2 text-[13px] leading-[18px] text-ink-secondary">
+        <p>{t("backup.scope")}</p>
+        <p>{t("backup.excluded")}</p>
+        <p>{t("backup.privacy")}</p>
+      </div>
+    </Card>
     {error && <p role="alert" className="break-words text-[13px] text-danger">{error}</p>}
     {status?.pendingRestore ? <div role="status" className="rounded-xl border border-warning/40 bg-warning/10 p-4 text-[13px] text-ink">{t("backup.restart")}</div> : <>
       {(!status || status.busy) && <div role="status" className="flex items-center gap-3 text-[13px] text-ink-secondary"><span>{status?.busy ? t("backup.serverBusy") : t("backup.checkStatus")}</span><button type="button" onClick={() => void refresh()} className="underline">{t("connectors.action.retry")}</button></div>}
@@ -142,7 +146,7 @@ export function WorkspaceBackupSettings() {
           {download && <a href={download.url} download={download.filename} className="break-all text-[13px] text-accent-text underline">{t("backup.downloadAgain", { filename: download.filename })}</a>}
         </form>
       </Card>
-      <Card title={t("backup.import")} subtitle={t("backup.importHint")}>
+      <Card collapsible cardId="backups.import" defaultOpen={false} title={t("backup.import")} subtitle={t("backup.importHint")} summary={t("settings.card.importSummary")}>
         <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); void previewBackup(); }}>
           <label className="text-[13px] text-ink">{t("backup.file")}<input type="file" accept=".ombbackup" disabled={disabled} onChange={(event) => { setFile(event.target.files?.[0] ?? null); setUploadedId(null); setPreview(null); setConfirmation(""); setImportPassword(""); setError(null); }} className="mt-1 block w-full min-w-0 rounded-lg border border-hairline/50 bg-inset p-2 text-[13px] text-ink file:mr-3 file:rounded file:border-0 file:bg-control file:px-2 file:py-1 file:text-ink disabled:opacity-50" /></label>
           {!preview && <><label className="text-[13px] text-ink">{t("backup.importPassword")}<input type="password" autoComplete="off" maxLength={1024} required disabled={disabled || !file} value={importPassword} onChange={(event) => setImportPassword(event.target.value)} className={`${inputClass} mt-1`} /></label><button type="submit" disabled={disabled || !file || !importPassword} className={buttonClass}>{busy === "preview" ? <Loader2 aria-hidden="true" size={15} className="animate-spin" /> : <Upload aria-hidden="true" size={15} />}{busy === "preview" ? t("backup.validating") : t("backup.validate")}</button></>}

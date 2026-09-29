@@ -135,7 +135,14 @@ export function CustomDomainSettings() {
   };
 
   return (
-    <Card title={t("settings.domain.title")} subtitle={t("settings.domain.subtitle")}>
+    <Card
+      collapsible
+      cardId="companion.domain"
+      defaultOpen={false}
+      title={t("settings.domain.title")}
+      subtitle={t("settings.domain.subtitle")}
+      summary={status?.customDomain ?? (status && !status.supported ? t("settings.card.serverOnly") : t("settings.card.notSet"))}
+    >
       <div className="space-y-3" data-custom-domain-settings>
         {busy === "loading" && <p role="status" className="flex items-center gap-2 text-[13px] text-ink-secondary"><Loader2 size={14} className="animate-spin" />{t("settings.domain.loading")}</p>}
         {status && !status.supported && <p className="text-[13px] leading-relaxed text-ink-secondary">{t("settings.domain.serverOnly")}</p>}

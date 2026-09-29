@@ -51,6 +51,7 @@ import {
 } from "@/lib/local-computer";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
+import { requestSettingsCard } from "./SettingsPrimitives";
 
 /** Keep local failure copy translatable while it remains in panel state. */
 class LocalizedPanelError extends Error {
@@ -1130,6 +1131,7 @@ export function ComputerPanel({
   };
 
   const openConnectionSettings = () => {
+    requestSettingsCard("connections.integrations");
     dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
   };
 

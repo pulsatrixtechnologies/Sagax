@@ -6,7 +6,9 @@ import { createAboutMeDraft } from "./about-me-draft";
 
 const drafts = new WeakMap<object, ReturnType<typeof createAboutMeDraft>>();
 
-export function AboutMeSettings() {
+/** `inCard`: the surrounding collapsible card already names the field and
+ * explains it, so the visible label and help popover step aside. */
+export function AboutMeSettings({ inCard = false }: { inCard?: boolean } = {}) {
   const { state, dispatch } = useStore();
   const confirmed = state.config?.profile?.aboutMe ?? "";
   let controller = drafts.get(dispatch);
@@ -26,7 +28,7 @@ export function AboutMeSettings() {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
+      {inCard ? <label htmlFor="profile-about-me" className="sr-only">{t("settings.profile.aboutMe")}</label> : <div className="flex items-center gap-2">
         <label htmlFor="profile-about-me" className="text-[13px] text-ink">{t("settings.profile.aboutMe")}</label>
         <details className="group relative">
           <summary title={t("settings.profile.aboutMeHelp")} aria-label={t("settings.profile.aboutMeHelp")}
@@ -37,7 +39,7 @@ export function AboutMeSettings() {
             {t("settings.profile.aboutMeHelp")}
           </p>
         </details>
-      </div>
+      </div>}
       <textarea id="profile-about-me" value={value} rows={5} maxLength={24_000}
         onChange={(event) => controller.edit(event.target.value)}
         onBlur={() => void flush()}

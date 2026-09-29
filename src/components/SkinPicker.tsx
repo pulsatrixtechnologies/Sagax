@@ -74,9 +74,10 @@ export function SkinPicker() {
   );
 
   return (
-    // Four columns keep each miniature useful while allowing the collection
-    // to grow into a second row; Settings already scrolls on short windows.
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    // Four columns (five once the modal is at full width) keep each miniature
+    // useful while the collection fits in two rows; Settings scrolls on short
+    // windows.
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
       {SKINS.map((skin) => {
         const selected = skin.id === active;
         return (
@@ -88,6 +89,7 @@ export function SkinPicker() {
               setActive(skin.id);
             }}
             aria-pressed={selected}
+            title={skin.tagline}
             className={cn(
               "flex flex-col gap-2 rounded-xl border p-2 text-left transition-colors",
               selected
@@ -99,7 +101,7 @@ export function SkinPicker() {
             <div className="flex items-start gap-1.5 px-0.5 pb-0.5">
               <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium text-ink">{skin.name}</div>
-                <div className="mt-0.5 text-[11px] leading-snug text-ink-secondary">
+                <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-ink-secondary">
                   {skin.tagline}
                 </div>
               </div>

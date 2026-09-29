@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ComponentProps } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, Copy } from "lucide-react";
+import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 export function Switch({
@@ -29,35 +30,198 @@ export function Switch({
   );
 }
 
-export function Card({
-  title,
-  subtitle,
-  children,
-}: {
+const CARD_STATE_KEY = "openmausbot.settingsCards.v1";
+const CARD_OPEN_EVENT = "openmausbot:settings-card-open";
+/** A deep link older than this is stale: its card never mounted. */
+const CARD_REQUEST_TTL_MS = 10_000;
+const cardRequests = new Map<string, number>();
+
+type CardStorage = Pick<Storage, "getItem" | "setItem">;
+
+function defaultStorage(): CardStorage | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readCardStates(storage: CardStorage | null): Record<string, boolean> {
+  try {
+    const parsed: unknown = JSON.parse(storage?.getItem(CARD_STATE_KEY) ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"));
+  } catch {
+    return {};
+  }
+}
+
+/** The remembered open state of a settings card, or `fallback` when this
+ * device never toggled it (or storage is unavailable). */
+export function loadCardOpen(id: string, fallback: boolean, storage: CardStorage | null = defaultStorage()): boolean {
+  return readCardStates(storage)[id] ?? fallback;
+}
+
+export function saveCardOpen(id: string, open: boolean, storage: CardStorage | null = defaultStorage()): void {
+  try {
+    storage?.setItem(CARD_STATE_KEY, JSON.stringify({ ...readCardStates(storage), [id]: open }));
+  } catch {
+    /* private windows and full quotas keep the in-memory state only */
+  }
+}
+
+function pendingCardRequest(id: string, now = Date.now()): boolean {
+  const at = cardRequests.get(id);
+  if (at === undefined) return false;
+  if (now - at > CARD_REQUEST_TTL_MS) {
+    cardRequests.delete(id);
+    return false;
+  }
+  return true;
+}
+
+/** Opens (and scrolls to) the collapsible settings card `id`: now if it is
+ * mounted, or when it mounts, for a deep link that opens Settings first. */
+export function requestSettingsCard(id: string): void {
+  cardRequests.set(id, Date.now());
+  try {
+    globalThis.dispatchEvent?.(new CustomEvent(CARD_OPEN_EVENT, { detail: id }));
+  } catch {
+    /* no DOM events outside the renderer */
+  }
+}
+
+/** Test seam: forget deep-link requests that no card consumed. */
+export function clearSettingsCardRequests(): void {
+  cardRequests.clear();
+}
+
+function useCardOpen(id: string | undefined, defaultOpen: boolean, ref: React.RefObject<HTMLDivElement | null>) {
+  // null follows `defaultOpen`, which may change once a card's data loads;
+  // a toggle, a remembered choice or a deep link pins it.
+  const [chosen, setChosen] = useState<boolean | null>(() => {
+    if (!id) return null;
+    if (pendingCardRequest(id)) return true;
+    return readCardStates(defaultStorage())[id] ?? null;
+  });
+  useEffect(() => {
+    if (!id) return;
+    const reveal = () => {
+      cardRequests.delete(id);
+      setChosen(true);
+      saveCardOpen(id, true);
+      requestAnimationFrame(() => ref.current?.scrollIntoView?.({ block: "nearest" }));
+    };
+    if (pendingCardRequest(id)) reveal();
+    const onRequest = (event: Event) => {
+      if ((event as CustomEvent<unknown>).detail === id) reveal();
+    };
+    window.addEventListener(CARD_OPEN_EVENT, onRequest);
+    return () => window.removeEventListener(CARD_OPEN_EVENT, onRequest);
+  }, [id, ref]);
+  const open = chosen ?? defaultOpen;
+  const toggle = () => {
+    const next = !open;
+    setChosen(next);
+    if (id) saveCardOpen(id, next);
+  };
+  return [open, toggle] as const;
+}
+
+type CardProps = {
   title?: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   children?: React.ReactNode;
-}) {
+  collapsible?: boolean;
+  cardId?: string;
+  defaultOpen?: boolean;
+  summary?: React.ReactNode;
+};
+
+/** A settings form card. With `collapsible`, the title becomes a disclosure
+ * button: collapsed it shows one `summary` line, open it shows the subtitle
+ * and the body. The body stays mounted while collapsed so drafts, saves and
+ * loads are unaffected. `cardId` keys the remembered state on this device
+ * and is the target of `requestSettingsCard`. */
+export function Card(props: CardProps) {
+  // A plain card stays hook-free; only a collapsible one needs state.
+  if (props.collapsible && props.title) return <CollapsibleCard {...props} title={props.title} />;
+  const { title, subtitle, children, cardId } = props;
   return (
-    <div className="rounded-[14px] border-[0.5px] border-border py-2">
-      <div className="px-3.5 py-2.5">
-        {title && <div className="text-[13px] font-normal leading-[18px] text-ink">{title}</div>}
-        {subtitle && <div className="mt-0.5 text-[13px] leading-[18px] text-ink-secondary">{subtitle}</div>}
-        {children && <div className={title || subtitle ? "mt-3" : undefined}>{children}</div>}
+    <div data-settings-card={cardId} className="rounded-[14px] border-[0.5px] border-border px-3.5 py-3">
+      {title && <div className="text-[13px] font-normal leading-[18px] text-ink">{title}</div>}
+      {subtitle && <div className="mt-0.5 text-[13px] leading-[18px] text-ink-secondary">{subtitle}</div>}
+      {children && <div className={title || subtitle ? "mt-2.5" : undefined}>{children}</div>}
+    </div>
+  );
+}
+
+function CollapsibleCard({ title, subtitle, children, cardId, defaultOpen = true, summary }: CardProps & { title: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const bodyId = useId();
+  const [open, toggle] = useCardOpen(cardId, defaultOpen, ref);
+  return (
+    <div ref={ref} data-settings-card={cardId} data-open={open ? "true" : "false"} className="rounded-[14px] border-[0.5px] border-border">
+      <h3 className="text-[13px] font-normal leading-[18px]">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={toggle}
+          className="flex w-full min-w-0 items-center gap-3 rounded-[14px] px-3.5 py-3 text-left text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none"
+        >
+          <span className="shrink-0">{title}</span>
+          {!open && summary ? (
+            <span data-card-summary className="ml-auto min-w-0 truncate text-right text-[12.5px] text-ink-secondary">{summary}</span>
+          ) : (
+            <span className="ml-auto" />
+          )}
+          <ChevronDown
+            size={14}
+            aria-hidden="true"
+            className={cn("shrink-0 text-ink-secondary transition-transform motion-reduce:transition-none", open && "rotate-180")}
+          />
+        </button>
+      </h3>
+      <div id={bodyId} hidden={!open} className="px-3.5 pb-3">
+        {subtitle && <div className="-mt-1 mb-2.5 text-[13px] leading-[18px] text-ink-secondary">{subtitle}</div>}
+        {children}
       </div>
     </div>
   );
 }
 
-/** Simple preferences share an aligned row; forms with several fields keep a Card. */
+/** The longer explanation behind a short setting line, on demand: a
+ * keyboard-reachable disclosure rather than a hover-only title. */
+export function HelpTip({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <details className="relative inline-block align-middle">
+      <summary
+        aria-label={label}
+        title={label}
+        className="flex size-5 cursor-pointer list-none items-center justify-center rounded-md text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 [&::-webkit-details-marker]:hidden"
+      >
+        <CircleHelp size={13} aria-hidden="true" />
+      </summary>
+      <div className="absolute left-0 z-30 mt-1 w-64 rounded-xl border border-hairline bg-panel p-3 text-[12px] leading-[17px] text-ink-secondary shadow-xl">
+        {children}
+      </div>
+    </details>
+  );
+}
+
+/** Simple preferences share an aligned row; forms with several fields keep a Card.
+ * `help` keeps the subtitle to one short line and moves the detail behind a HelpTip. */
 export function SettingRow({
   title,
   subtitle,
+  help,
   children,
   message,
 }: {
   title: string;
   subtitle?: React.ReactNode;
+  help?: React.ReactNode;
   children: React.ReactNode;
   message?: React.ReactNode;
 }) {
@@ -66,7 +230,10 @@ export function SettingRow({
     <div role="group" aria-labelledby={titleId} className="setting-row px-3.5 py-2.5">
       <div className="grid min-w-0 grid-cols-1 items-center gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
         <div className="min-w-0">
-          <div id={titleId} className="text-[13px] font-normal leading-[18px] text-ink">{title}</div>
+          <div className="flex items-center gap-1">
+            <div id={titleId} className="text-[13px] font-normal leading-[18px] text-ink">{title}</div>
+            {help && <HelpTip label={t("settings.moreAbout", { title })}>{help}</HelpTip>}
+          </div>
           {subtitle && <div className="mt-0.5 text-[13px] leading-[18px] text-ink-secondary">{subtitle}</div>}
         </div>
         <div className="min-w-0 sm:max-w-[240px]">{children}</div>
