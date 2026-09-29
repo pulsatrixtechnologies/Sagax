@@ -361,7 +361,7 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
   const actionButton = "flex size-7 shrink-0 items-center justify-center rounded-md text-ink-secondary transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40";
 
   const actions = (file: ThreadFile, className?: string) => {
-    const path = file.available ? copyablePath(file.path) : null;
+    const path = file.available ? copyablePath(file.localPath ?? file.path) : null;
     return (
       <div className={cn("flex items-center gap-0.5", className)}>
         <button type="button" onClick={() => onJump(file)} aria-label={t("botPanel.files.jump")} title={t("botPanel.files.jump")} className={actionButton}>

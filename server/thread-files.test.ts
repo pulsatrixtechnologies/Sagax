@@ -146,6 +146,8 @@ describe("sizes and availability", () => {
       msg({ id: "a", role: "bot", kind: "activity", tool: { name: "Write", ok: true, files: [join(workspace, "report.md"), "/home/cua/remote-only.png"] } as Message["tool"] }),
     ], "bot");
     const files = await listThreadFiles(refs, (ref) => statMessageFile(ref.path, [workspace]));
+    expect(files[1]!.localPath).toMatch(/report\.md$/);
+    expect(files[0]).not.toHaveProperty("localPath");
     expect(files.map((file) => [file.name, file.size, file.available, file.mime])).toEqual([
       ["remote-only.png", null, false, undefined],
       ["report.md", 7, true, "text/markdown; charset=utf-8"],

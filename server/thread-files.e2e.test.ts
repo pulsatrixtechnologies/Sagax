@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { launchVerificationServer, type VerificationServer } from "../scripts/control-omb.ts";
 
-type Listed = { id: string; messageId: string; source: string; path: string; name: string; size: number | null; available: boolean; mime?: string };
+type Listed = { id: string; messageId: string; source: string; path: string; name: string; size: number | null; available: boolean; mime?: string; localPath?: string };
 
 describe("conversation files through the harness", () => {
   let session: VerificationServer;
@@ -53,6 +53,7 @@ describe("conversation files through the harness", () => {
 
     const report = files.find((file) => file.name === "report.md")!;
     expect(report).toMatchObject({ source: "written", path: "report.md", size: 10, available: true, mime: "text/markdown; charset=utf-8" });
+    expect(report.localPath).toMatch(/workspaces[\\/].+[\\/]report\.md$/);
     expect(files.find((file) => file.name === "never-here.png")).toMatchObject({ available: false, size: null });
 
     // The activity message carries the record, and is the download grant.

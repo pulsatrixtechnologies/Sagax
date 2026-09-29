@@ -16,6 +16,8 @@ export interface ThreadFile {
   botId?: string;
   size: number | null;
   available: boolean;
+  /** Resolved absolute path on the server, while the file is available. */
+  localPath?: string;
 }
 
 export type FileKind = "image" | "video" | "audio" | "document" | "code" | "archive" | "other";

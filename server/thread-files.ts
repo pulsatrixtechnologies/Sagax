@@ -36,6 +36,9 @@ export interface ThreadFile extends ThreadFileRef {
   /** Readable on this server right now. False for a path on a remote
    * computer, a deleted file, or one outside this conversation's roots. */
   available: boolean;
+  /** The resolved absolute path on this server, for "Copy path". Present
+   * only while the file is available here. */
+  localPath?: string;
 }
 
 const MAX_PATH_BYTES = 4_096;
@@ -228,7 +231,7 @@ export function threadFileRefs(messages: readonly Message[], directBotId?: strin
  * byte routes use, so "available" means the download will be served. */
 export async function listThreadFiles(
   refs: readonly ThreadFileRef[],
-  stat: (ref: ThreadFileRef) => Promise<{ bytes: number; mime: string } | null>,
+  stat: (ref: ThreadFileRef) => Promise<{ bytes: number; mime: string; path?: string } | null>,
 ): Promise<ThreadFile[]> {
   return Promise.all(refs.map(async (ref) => {
     const found = await stat(ref).catch(() => null);
@@ -237,6 +240,7 @@ export async function listThreadFiles(
       mime: ref.mime ?? found?.mime,
       size: found ? found.bytes : null,
       available: Boolean(found),
+      ...(found?.path ? { localPath: found.path } : {}),
     };
   }));
 }

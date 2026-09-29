@@ -472,7 +472,7 @@ export async function openMessageFile(href: string, roots: readonly string[]): P
 /** Size and type of a message-linked file without opening it, under the
  * same root containment as openMessageFile. Null when it is missing here
  * (a remote computer's path, a deleted file) or outside every root. */
-export async function statMessageFile(href: string, roots: readonly string[]): Promise<{ bytes: number; name: string; mime: string } | null> {
+export async function statMessageFile(href: string, roots: readonly string[]): Promise<{ bytes: number; name: string; mime: string; path: string } | null> {
   let requested: string;
   try {
     requested = referencedPath(href);
@@ -496,7 +496,7 @@ export async function statMessageFile(href: string, roots: readonly string[]): P
       if (!canonicalRoots.some((root) => containedBy(root, canonical))) continue;
       const info = await stat(canonical);
       if (!info.isFile()) continue;
-      return { bytes: info.size, name: basename(canonical), mime: mimeFor(canonical) };
+      return { bytes: info.size, name: basename(canonical), mime: mimeFor(canonical), path: canonical };
     } catch {
       continue;
     }

@@ -29,7 +29,7 @@ const files = [
   file("chart.png", { source: "attachment", mime: "image/png" }),
   file("demo.mp4"),
   file("report.pdf", { source: "upload", path: "/data/attachments/11111111-1111-4111-8111-111111111111.pdf" }),
-  file("main.ts"),
+  file("main.ts", { path: "src/main.ts", localPath: "/work/src/main.ts" }),
   file("bundle.zip"),
   file("remote.png", { available: false, size: null, path: "/home/cua/remote.png" }),
 ];
@@ -70,7 +70,7 @@ describe("FilesBrowser", () => {
     expect(html.match(/aria-label="Show in chat"/g)).toHaveLength(6);
     expect(html).toContain('aria-label="Download chart.png"');
     expect(html).toMatch(/<button type="button" disabled="" aria-label="Download remote\.png"/);
-    expect(html).toContain('title="/work/main.ts"');
+    expect(html).toContain('title="/work/src/main.ts"');
     expect(html).not.toContain('title="/home/cua/remote.png"');
   });
 
