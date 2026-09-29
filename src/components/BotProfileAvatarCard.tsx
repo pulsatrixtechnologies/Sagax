@@ -19,8 +19,7 @@ import {
   clampAvatarFocus,
   clampAvatarZoom,
 } from "../../shared/bot-avatar";
-import { MASCOT_BODIES, MASCOT_BODY_IDS } from "../../shared/mascot-bodies";
-import { BotAvatar, MausAvatar } from "./Avatar";
+import { BotAvatar } from "./Avatar";
 import { AvatarImageGenerator } from "./AvatarImageGenerator";
 
 type AvatarPatch = Partial<
@@ -211,7 +210,6 @@ export function BotProfileAvatarCard({
   };
 
   const resetMascot = () => onPatch({ avatarCrop: "mascot", color: "green", mascotExpression: null, mascotBody: "cursor" });
-  const pickerBodies = MASCOT_BODY_IDS;
 
   return (
     <div className="relative">
@@ -286,24 +284,7 @@ export function BotProfileAvatarCard({
 
         {editorTab === "bot" && crop === "mascot" && (
           <>
-            <div className="grid grid-cols-4 gap-2">
-              {pickerBodies.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  disabled={busy}
-                  aria-pressed={(bot.mascotBody ?? "cursor") === id}
-                  aria-label={`Use the ${MASCOT_BODIES[id].name} body`}
-                  onClick={() => onPatch({ mascotBody: id, avatarCrop: "mascot" })}
-                  className="flex items-center justify-center rounded-full p-1 disabled:opacity-50"
-                >
-                  <span className={cn("rounded-full p-0.5", (bot.mascotBody ?? "cursor") === id && "ring-2 ring-white/80")}>
-                    <MausAvatar color={bot.color} bodyId={id} size={36} animated={false} trackPointer={false} showMouth={false} />
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <div className="flex flex-wrap justify-center gap-2">
               {MAUS_COLOR_NAMES.map((color) => (
                 <button
                   key={color}
