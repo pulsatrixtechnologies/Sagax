@@ -3,7 +3,7 @@
 // bots) and MausMotion one-shot beats; the owl has six states. Pure, so every
 // value is pinned by a unit test.
 import { normalizeState, type MausMotion, type MausState } from "@/lib/mascot";
-import type { OwlState } from "./owl-art";
+import type { OwlState, OwlWingMove } from "./owl-art";
 
 export interface OwlStateMapping {
   state: OwlState;
@@ -70,6 +70,8 @@ export interface OwlBeat {
   /** A transient state to play (success/alert run once, others hold). */
   play?: OwlState;
   blink?: boolean;
+  /** Open the wings for this move at the same time. */
+  wings?: OwlWingMove;
 }
 
 /** MausMotion one-shot beats -> a transient owl state and/or a blink. */
@@ -80,12 +82,17 @@ export const OWL_BEAT_OF: Record<Exclude<MausMotion, "none">, OwlBeat> = {
   alert: { play: "alert" },
   thinking: { play: "thinking" },
   working: { play: "working" },
-  launch: { play: "working" },
-  success: { play: "success" },
-  celebrate: { play: "success" },
+  launch: { play: "working", wings: "takeoff" },
+  success: { play: "success", wings: "spread" },
+  celebrate: { play: "success", wings: "flap" },
   blink: { blink: true },
   surprise: { play: "alert", blink: true },
   failure: { play: "sleepy" },
+  "spread-wings": { wings: "spread" },
+  flap: { wings: "flap" },
+  "take-off": { wings: "takeoff" },
+  shake: { wings: "shake", blink: true },
+  hoot: { wings: "hoot", blink: true },
 };
 
 export function owlBeatForMotion(motion: MausMotion | null | undefined): OwlBeat | null {

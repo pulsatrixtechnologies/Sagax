@@ -1473,5 +1473,21 @@
   "mcp.oauth.clientSecret": "Secret client (facultatif)",
   "mcp.oauth.addedNeedsSignIn": "{name} a été ajouté. Connectez-vous pour que les bots puissent l'utiliser, puis activez-le.",
   "mcp.oauth.signInAria": "Se connecter à {name}",
-  "mcp.oauth.disconnectAria": "Se déconnecter de {name}"
+  "mcp.oauth.disconnectAria": "Se déconnecter de {name}",
+  "mascot.skin.title": "Skin",
+  "mascot.skin.use": "Utiliser le skin {skin}",
+  "mascot.skin.none": "Aucun",
+  "mascot.skin.lightning": "Foudre",
+  "mascot.skin.gold": "Or",
+  "mascot.skin.neon": "Néon",
+  "mascot.skin.inferno": "Brasier",
+  "mascot.skin.frost": "Glace",
+  "mascot.skin.carbon": "Carbone",
+  "mascot.moves.title": "Mouvements",
+  "mascot.moves.play": "Jouer le mouvement {move}",
+  "mascot.motion.spreadWings": "Déployer les ailes",
+  "mascot.motion.flap": "Battre des ailes",
+  "mascot.motion.takeOff": "Décoller",
+  "mascot.motion.shake": "Ébouriffer",
+  "mascot.motion.hoot": "Hululer"
 }

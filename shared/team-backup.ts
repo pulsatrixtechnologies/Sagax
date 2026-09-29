@@ -9,7 +9,7 @@ export const TEAM_BACKUP_EXCLUSIONS = "Files, images, custom avatars, account co
 const key = z.string().min(1).max(200);
 const name = z.string().trim().min(1).max(200);
 const timestamp = z.number().finite().nonnegative();
-const color = z.enum(["green", "blue", "red", "orange", "purple", "cyan", "pink", "yellow", "teal", "coral", "white"]);
+const color = z.enum(["green", "blue", "red", "orange", "purple", "cyan", "pink", "yellow", "teal", "coral", "white", "black"]);
 const message = z.object({
   id: key,
   role: z.enum(["bot", "user"]),
@@ -88,6 +88,7 @@ const backupSchema = z.object({
     color,
     mascotExpression: z.string().max(80).optional(),
     mascotBody: z.string().max(40).optional(),
+    mascotSkin: z.string().max(40).optional(),
     chiefOfStaff: z.boolean(),
     hidden: z.boolean(),
     playbooks: z.array(playbook).max(200),

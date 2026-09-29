@@ -4,7 +4,7 @@ import type { RoutineInput } from "./routines";
 /** Data shared by the default template and an individual creation draft. */
 export type BotDefaultsProfile = Partial<Pick<WireBot,
   "name" | "title" | "description" | "soul" | "notifications" | "avatarUrl" | "avatarCrop" |
-  "mascotBody" | "color" | "voice" | "speakReplies" | "section" | "modelSelection" |
+  "mascotBody" | "mascotSkin" | "color" | "voice" | "speakReplies" | "section" | "modelSelection" |
   "cloudBackend" | "autoStartVps" | "approvalMode" | "alwaysAllow" | "chiefOfStaff" |
   "managedSections" | "approvePeerComms" | "composio" | "browser"
 >> & {

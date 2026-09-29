@@ -24,7 +24,7 @@ import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
-import { MAUS_COLORS, normalizeState, type MausColor } from "@/lib/mascot";
+import { mausInk, normalizeState } from "@/lib/mascot";
 import { effectiveDefaultResponder, groupResponseHint } from "@/lib/group-routing";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { Composer } from "./Composer";
@@ -131,7 +131,7 @@ export function RoomToolChip({ message, roomId }: { message: Message; roomId?: s
 
 /** 16px profile avatar + name in the bot's color, shown once per sender cluster. */
 function ClusterLabel({ bot, name, color }: { bot?: Bot; name: string; color: string }) {
-  const tint = MAUS_COLORS[(bot?.color ?? color) as MausColor] ?? color;
+  const tint = mausInk(bot?.color ?? color) ?? color;
   return (
     <div className="mb-1 ml-1.5 mt-3 flex items-center gap-1.5 px-1.5">
       <BotAvatar

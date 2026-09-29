@@ -1503,3 +1503,140 @@ button:disabled.bg-danger {
 [data-sidebar] :is(button, [role="button"]):not(:disabled, [aria-busy="true"]) {
   cursor: pointer;
 }
+
+/* Owl skins (src/components/OwlSkinFx.tsx). The effects animate only opacity
+   and transform, only while the owl says it is live, and never under reduced
+   motion; with no animation each layer shows its still look. SVG transforms
+   here are in viewBox units. */
+.owl-fx-flame,
+.owl-fx-twinkle {
+  transform-box: fill-box;
+}
+.owl-fx-flame {
+  transform-origin: 50% 100%;
+}
+.owl-fx-twinkle {
+  transform-origin: 50% 50%;
+}
+[data-owl-fx="live"] .owl-fx-crackle {
+  animation-name: owl-fx-crackle;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-flash {
+  animation-name: owl-fx-flash;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-pulse {
+  animation-name: owl-fx-pulse;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-flame {
+  animation-name: owl-fx-flame;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+[data-owl-fx="live"] .owl-fx-rise {
+  animation-name: owl-fx-rise;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-fall {
+  animation-name: owl-fx-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-sweep {
+  animation-name: owl-fx-sweep;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-twinkle {
+  animation-name: owl-fx-twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-aura-lightning {
+  animation: owl-fx-surge 3.4s linear 1.9s infinite;
+}
+[data-owl-fx="live"] .owl-fx-aura-neon,
+[data-owl-fx="live"] .owl-fx-aura-inferno,
+[data-owl-fx="live"] .owl-fx-aura-frost,
+[data-owl-fx="live"] .owl-fx-aura-gold {
+  animation: owl-fx-pulse 2.8s ease-in-out infinite;
+}
+[data-owl-fx="live"] .owl-fx-rim-neon,
+[data-owl-fx="live"] .owl-fx-glow-neon {
+  animation: owl-fx-buzz 4.2s linear infinite;
+}
+[data-owl-fx="live"] .owl-fx-rim-lightning,
+[data-owl-fx="live"] .owl-fx-glow-lightning {
+  animation: owl-fx-surge 3.4s linear 1.9s infinite;
+}
+[data-owl-fx="live"] .owl-fx-glow-inferno {
+  animation: owl-fx-pulse 1.3s ease-in-out infinite;
+}
+@keyframes owl-fx-crackle {
+  0%, 30%, 100% { opacity: 0; }
+  2% { opacity: 1; }
+  5% { opacity: 0.25; }
+  8% { opacity: 1; }
+  12% { opacity: 0.55; }
+  16% { opacity: 1; }
+  22% { opacity: 0.3; }
+  26% { opacity: 0.9; }
+}
+@keyframes owl-fx-flash {
+  0%, 100% { opacity: 0; }
+  2% { opacity: 0.55; }
+  4% { opacity: 0.08; }
+  6% { opacity: 0.4; }
+  11% { opacity: 0; }
+}
+@keyframes owl-fx-surge {
+  0%, 100% { opacity: 0.7; }
+  2% { opacity: 1; }
+  4% { opacity: 0.8; }
+  6% { opacity: 1; }
+  14% { opacity: 0.7; }
+}
+@keyframes owl-fx-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+@keyframes owl-fx-buzz {
+  0%, 40%, 44%, 47%, 100% { opacity: 1; }
+  42% { opacity: 0.35; }
+  45.5% { opacity: 0.55; }
+}
+@keyframes owl-fx-flame {
+  0% { transform: scale(1, 0.92); }
+  50% { transform: scale(0.9, 1.1); }
+  100% { transform: scale(1.06, 0.86); }
+}
+@keyframes owl-fx-rise {
+  0% { transform: translate(0, 0); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translate(6px, -56px); opacity: 0; }
+}
+@keyframes owl-fx-fall {
+  0% { transform: translate(0, -14px) rotate(0deg); opacity: 0; }
+  20% { opacity: 0.9; }
+  100% { transform: translate(8px, 40px) rotate(90deg); opacity: 0; }
+}
+@keyframes owl-fx-sweep {
+  0% { transform: translateX(-200px); }
+  55%, 100% { transform: translateX(240px); }
+}
+@keyframes owl-fx-twinkle {
+  0%, 100% { transform: scale(0.2); opacity: 0; }
+  50% { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-owl-fx] * {
+    animation: none !important;
+  }
+}

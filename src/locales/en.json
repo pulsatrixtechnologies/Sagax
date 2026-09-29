@@ -2843,5 +2843,21 @@
   "mcp.oauth.clientSecret": "Client secret (optional)",
   "mcp.oauth.addedNeedsSignIn": "{name} was added. Sign in so bots can use it, then turn it on.",
   "mcp.oauth.signInAria": "Sign in to {name}",
-  "mcp.oauth.disconnectAria": "Sign out of {name}"
+  "mcp.oauth.disconnectAria": "Sign out of {name}",
+  "mascot.skin.title": "Skin",
+  "mascot.skin.use": "Use the {skin} skin",
+  "mascot.skin.none": "None",
+  "mascot.skin.lightning": "Lightning",
+  "mascot.skin.gold": "Gold",
+  "mascot.skin.neon": "Neon",
+  "mascot.skin.inferno": "Inferno",
+  "mascot.skin.frost": "Ice",
+  "mascot.skin.carbon": "Carbon",
+  "mascot.moves.title": "Moves",
+  "mascot.moves.play": "Play the {move} move",
+  "mascot.motion.spreadWings": "Spread wings",
+  "mascot.motion.flap": "Flap",
+  "mascot.motion.takeOff": "Take off",
+  "mascot.motion.shake": "Ruffle",
+  "mascot.motion.hoot": "Hoot"
 }

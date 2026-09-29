@@ -5,7 +5,7 @@ import { MAUS_COLORS, MAUS_COLOR_NAMES } from "@/lib/mascot";
 import { MentionText } from "./MentionText";
 import { ChatMarkdown } from "./ChatMarkdown";
 
-it.each(["plain text", "Markdown"] as const)("keeps all ten bot colors independent in %s", (renderer) => {
+it.each(["plain text", "Markdown"] as const)("keeps every bot color independent in %s", (renderer) => {
   const peers = MAUS_COLOR_NAMES.map((color) => ({ name: `Bot ${color}`, color }));
   // Render in both directions, repeat names, and place neutral mentions between colors.
   const ordered = [...peers, ...[...peers].reverse(), peers[0]];

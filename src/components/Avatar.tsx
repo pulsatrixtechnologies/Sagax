@@ -16,6 +16,7 @@ import { OWL_BEAT_MS, owlBeatForMotion, owlStateForMaus } from "@/lib/owl/owl-st
 import { OwlAvatar, type OwlAvatarHandle } from "./OwlAvatar";
 import { botAvatarProfile, clampAvatarFocus, clampAvatarZoom, type BotAvatarCrop } from "../../shared/bot-avatar";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
+import type { MascotSkinId } from "../../shared/mascot-skins";
 
 /** Kept for API compatibility (the preview page reads them); the owl ignores both. */
 export const EYE_SCALE = 1.12;
@@ -64,6 +65,10 @@ export type MausAvatarProps = {
   animated?: boolean;
   /** Ignored: every bot is the owl now. The field stays on the wire. */
   bodyId?: MascotBodyId;
+  /** Special-edition skin. Missing or unknown values wear none. */
+  skin?: MascotSkinId | null;
+  /** Play the skin's effects even while `animated` is off (skin pickers). */
+  skinAnimated?: boolean;
 };
 
 function MausAvatarComponent(
@@ -78,6 +83,8 @@ function MausAvatarComponent(
     gaze,
     trackPointer = true,
     animated = true,
+    skin,
+    skinAnimated,
   }: MausAvatarProps,
   ref: React.Ref<MausAvatarHandle>,
 ) {
@@ -107,6 +114,7 @@ function MausAvatarComponent(
     if (!beat) return;
     if (beat.blink) owl.current?.blink();
     if (beat.play) owl.current?.play(beat.play, OWL_BEAT_MS);
+    if (beat.wings) owl.current?.flourish(beat.wings);
   }, [motion, motionKey, animated]);
 
   const pinned =
@@ -127,6 +135,8 @@ function MausAvatarComponent(
       animated={animated}
       trackPointer={trackPointer}
       gaze={pinned}
+      skin={skin}
+      skinAnimated={skinAnimated}
     />
   );
 }
@@ -143,6 +153,7 @@ export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
     avatarFocusX?: number;
     avatarFocusY?: number;
     mascotBody?: MascotBodyId | null;
+    mascotSkin?: MascotSkinId | null;
   };
 };
 
@@ -192,6 +203,7 @@ export function BotAvatar({ bot, size = 44, label, ...mascotProps }: BotAvatarPr
   if (outcome !== "flatImage") {
     return (
       <MausAvatar
+        skin={bot.mascotSkin}
         {...mascotProps}
         showMouth={false}
         color={bot.color}
