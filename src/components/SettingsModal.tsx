@@ -12,6 +12,7 @@ import { t } from "@/lib/i18n";
 import { withTourReset } from "@/lib/guided-tour";
 import { completionPatch } from "@/lib/onboarding";
 import { ApiKeyRow, OpenAiCompatUrl, VpsConnection } from "./ApiKeys";
+import { COMPOSIO_PLATFORM_URL } from "./ConnectedAppsSetup";
 import { useUpdaterState } from "@/lib/updater";
 import { EnginesSettings } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
@@ -909,16 +910,18 @@ export function SettingsModal() {
                   <OpenAiCompatUrl />
                   <ApiKeyRow section="xai" testProvider="xai" />
                   <ApiKeyRow section="mistral" testProvider="mistral" />
+                  <div className="px-2 pt-2 text-[12px] leading-4 text-ink-secondary">{t("settings.connections.appsTitle")}</div>
+                  <p className="-mt-3 text-[12px] leading-relaxed text-ink-secondary">
+                    {t("settings.connections.appsSubtitle")}{" "}
+                    <a href={COMPOSIO_PLATFORM_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+                      platform.composio.dev
+                    </a>
+                  </p>
+                  <ApiKeyRow section="composio" />
                   <div className="px-2 pt-2 text-[12px] leading-4 text-ink-secondary">{t("keys.integrations.title")}</div>
                   <ApiKeyRow section="box" />
                   <VpsConnection />
                   <ApiKeyRow section="opencodeGo" />
-                  <details className="rounded-[14px] border-[0.5px] border-border px-3.5 py-2.5">
-                    <summary className="cursor-pointer text-[13px] text-ink-secondary">{t("settings.connections.selfHost")}</summary>
-                    <div className="mt-3">
-                      <ApiKeyRow section="composio" />
-                    </div>
-                  </details>
                 </div>
               </Card>
             )}

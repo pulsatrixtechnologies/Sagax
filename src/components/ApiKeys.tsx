@@ -54,7 +54,7 @@ const CREDENTIALS: Record<
     labelKey: "keys.composio.label",
     placeholder: "ak_…",
     descriptionKey: "keys.composio.desc",
-    href: "https://dashboard.composio.dev",
+    href: "https://platform.composio.dev",
     linkLabelKey: "keys.composio.link",
     optional: true,
   },

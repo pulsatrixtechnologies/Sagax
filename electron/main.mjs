@@ -102,7 +102,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // 127.0.0.1 explicitly — vite binds IPv4; a bare "localhost" here can
 // resolve to ::1 and paint a black window
 const DEV_URL = process.env.ELECTRON_START_URL ?? "http://127.0.0.1:5199";
-const DEFAULT_COMPOSIO_BROKER_URL = "https://openmausbot-composio.milindsoni201.workers.dev";
 let SERVER_PORT = 8799;
 const APP_ICON = path.join(__dirname, "resources/app-icon.png");
 function devBundleHasSystemIcon() {
@@ -481,11 +480,12 @@ async function secureWorkspaceConfig() {
   }
 }
 
+// Managed connected apps run only through a broker the operator names
+// explicitly. There is no built-in default: the fork never routes users'
+// connections through a third party's service. Without the variable, the
+// app uses the workspace's own Composio project key (self-hosted mode).
 function composioBrokerUrl() {
-  const configured = process.env.OMB_COMPOSIO_BROKER_URL?.trim();
-  return normalizeManagedComposioBrokerUrl(
-    configured || (app.isPackaged ? DEFAULT_COMPOSIO_BROKER_URL : ""),
-  );
+  return normalizeManagedComposioBrokerUrl(process.env.OMB_COMPOSIO_BROKER_URL?.trim() || "");
 }
 
 // The packaged app has no terminal: everything about the server child's life

@@ -482,12 +482,18 @@ export async function prepareProjectSession(
     multi_account: MULTI_ACCOUNT_CONFIG,
   };
   if (Object.keys(authConfigs).length) sessionRequest.auth_configs = authConfigs;
-  const res = await fetch(`${apiBase()}/tool_router/session`, {
-    method: "POST",
-    headers: projectHeaders(trimmed, true),
-    body: JSON.stringify(sessionRequest),
-    signal: AbortSignal.timeout(30_000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}/tool_router/session`, {
+      method: "POST",
+      headers: projectHeaders(trimmed, true),
+      body: JSON.stringify(sessionRequest),
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    // a bare "fetch failed" tells the person nothing about their key
+    throw new Error("Could not reach Composio to check this key. Check the network and try again.");
+  }
   if (!res.ok) throw new Error(await responseError(res, `Composio rejected this key (HTTP ${res.status})`));
   const session = parseSessionResponse(sessionResponseSchema.parse(await res.json()));
   // If Composio does not echo the configs back, a later check would ask for

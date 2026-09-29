@@ -11,7 +11,9 @@ import type { LocaleKey } from "@/locales";
 import { readCachedInventory, writeCachedInventory } from "@/lib/connected-apps-cache";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
 import { isConnectorToolGrantShape } from "@/lib/connector-grants";
+import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { McpServersPanel } from "./McpServersPanel";
+import { ConnectedAppsSetup } from "./ConnectedAppsSetup";
 
 export interface ToolkitCard {
   slug: string;
@@ -262,6 +264,10 @@ export interface CatalogPagination {
 export function PluginsPanel() {
   const { state, dispatch } = useStore();
   const remoteClient = window.ogb?.remoteClient?.active === true;
+  const ownerOrAdmin = useOwnerOrAdmin();
+  // A remote client's desktop credential store is not the workspace's, so it
+  // can never set the workspace's Composio key from here.
+  const canConfigure = remoteClient ? false : ownerOrAdmin;
   const dialogRef = useRef<HTMLDivElement>(null);
   const surface = state.pluginsSurface;
   const [cards, setCards] = useState<ToolkitCard[] | null>(null);
@@ -388,12 +394,12 @@ export function PluginsPanel() {
     cachedConnectorStatusAuthoritative = !stale;
   }, [inventoryPhase, stale, status]);
 
-  useEffect(() => {
-    let alive = true;
-    void loadConnectionInventory();
-    api("/api/connectors/catalog")
+  const catalogGeneration = useRef(0);
+  const loadCatalog = useCallback(() => {
+    const generation = ++catalogGeneration.current;
+    return api("/api/connectors/catalog")
       .then((r) => {
-        if (!alive) return;
+        if (generation !== catalogGeneration.current) return;
         setCards(r.cards ?? []);
         setSource(r.source ?? "curated");
         setPagination(r.pagination ?? null);
@@ -401,13 +407,26 @@ export function PluginsPanel() {
         setMode(r.mode ?? "unavailable");
       })
       .catch((e) => {
-        if (!alive) return;
+        if (generation !== catalogGeneration.current) return;
         setError(e.message);
       });
+  }, []);
+
+  useEffect(() => {
+    void loadConnectionInventory();
+    void loadCatalog();
     return () => {
-      alive = false;
+      // an unmounted panel ignores any answer still in flight
+      catalogGeneration.current++;
     };
-  }, [loadConnectionInventory]);
+  }, [loadCatalog, loadConnectionInventory]);
+
+  /** A key was just saved: the mode changes in place, no restart needed. */
+  const onServiceConfigured = useCallback(() => {
+    setError(null);
+    void loadCatalog();
+    void loadConnectionInventory(true);
+  }, [loadCatalog, loadConnectionInventory]);
 
   useEffect(() => {
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -657,22 +676,11 @@ export function PluginsPanel() {
           </label>
         </div>
 
-        {/* Two notices about the same fact is one too many: the stale banner
-            above already explains this launch, and "configure your own
-            connection service" is advice for someone who never set one up. */}
-        {!configured && !stale && (
-          <div className="mx-6 mb-1 rounded-xl bg-warning/10 px-4 py-3 text-[13px] text-warning sm:mx-8">
-            {t("connectors.notConfigured")}{" "}
-            <button
-              className={cn("font-medium underline underline-offset-2", remoteClient && "hidden")}
-              onClick={() => {
-                close();
-                dispatch({ type: "toggleAppSettings", open: true });
-              }}
-            >
-              {t("connectors.openSettings")}
-            </button>
-          </div>
+        {/* No connection service yet: set one up right here instead of
+            sending the owner to hunt through App Settings. Only once the
+            catalog has answered, so a slow first load never flashes it. */}
+        {cards !== null && !configured && (
+          <ConnectedAppsSetup canConfigure={canConfigure} onConfigured={onServiceConfigured} />
         )}
         {botsWithoutApps.length > 0 && (
           <div className="mx-6 mb-1 rounded-xl bg-inset px-4 py-3 text-[12.5px] leading-relaxed text-ink-secondary sm:mx-8">
@@ -699,7 +707,7 @@ export function PluginsPanel() {
               className="underline underline-offset-2 hover:text-ink"
               onClick={() => {
                 close();
-                dispatch({ type: "toggleAppSettings", open: true });
+                dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
               }}
             >
               {t("connectors.updateKey")}
