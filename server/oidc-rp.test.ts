@@ -46,15 +46,22 @@ describe("OIDC relying party", () => {
     expect(sent.state).toBe(started.state);
     expect(sent.nonce).toMatch(/^[\w-]{43}$/);
     const outcome = await party.callback(params, started.binding);
-    expect(outcome).toEqual({ ok: true, identity: expect.objectContaining({ iss: idp.issuer, sub: "01J0000000000000000000ADMN", email: "ada@example.test", name: "Ada Admin", preferredUsername: "ada", role: "admin" }) });
+    expect(outcome).toEqual({
+      ok: true,
+      client: "web",
+      grant: { refreshToken: expect.stringMatching(/^pxlr1\./) },
+      identity: expect.objectContaining({ iss: idp.issuer, sub: "01J0000000000000000000ADMN", email: "ada@example.test", name: "Ada Admin", preferredUsername: "ada", role: "admin" }),
+    });
+    expect(sent.scope.split(" ")).toEqual(["openid", "profile", "email", "offline_access"]);
     // the verifier went to the token endpoint, never the browser
     expect(idp.lastTokenRequest?.code_verifier).toMatch(/^[\w-]{43}$/);
     expect(started.authorizationUrl).not.toContain(idp.lastTokenRequest!.code_verifier);
     expect(idp.lastTokenRequest).toMatchObject({ grant_type: "authorization_code", client_id: "pulsa-bot", redirect_uri: REDIRECT, resource: "http://127.0.0.1:9" });
     expect(party.pendingCount()).toBe(0);
-    // slice 1 keeps no provider token: the refresh family is revoked at once
+    // slice 2 keeps the grant: nothing is revoked after a good sign-in
+    const revokedBefore = idp.revoked.length;
     await new Promise((r) => setTimeout(r, 100));
-    expect(idp.revoked.at(-1)).toMatchObject({ token_type_hint: "refresh_token", client_id: "pulsa-bot", token: expect.stringMatching(/^pxlr1\./) });
+    expect(idp.revoked.length).toBe(revokedBefore);
   });
 
   it("refuses a state it did not issue, and a state used twice", async () => {
@@ -215,5 +222,151 @@ describe("OIDC relying party", () => {
     } finally {
       await other.close();
     }
+  });
+});
+
+/** A full sign-in, returning the refresh token the provider issued. */
+async function signedInGrant(party: OidcRelyingParty): Promise<string> {
+  const { started, params } = await authorize(party);
+  const outcome = await party.callback(params, started.binding);
+  if (!outcome.ok || !outcome.grant.refreshToken) throw new Error(`sign-in failed: ${JSON.stringify(outcome)}`);
+  return outcome.grant.refreshToken;
+}
+
+describe("OIDC relying party: refresh (slice 2)", () => {
+  it("keeps the client kind of the flow it started", async () => {
+    const party = rp();
+    const started = await party.start({ client: "desktop" });
+    const res = await fetch(started.authorizationUrl, { redirect: "manual" });
+    const outcome = await party.callback(new URL(res.headers.get("location")!).searchParams, started.binding);
+    expect(outcome).toMatchObject({ ok: true, client: "desktop" });
+    const other = await party.start({ client: "phone" });
+    const back = await fetch(other.authorizationUrl, { redirect: "manual" });
+    expect(await party.callback(new URL(back.headers.get("location")!).searchParams, "wrong")).toMatchObject({ ok: false, code: "binding", client: "phone" });
+  });
+
+  it("rotates the refresh token, sends the resource, and verifies the refreshed id_token without a nonce", async () => {
+    const party = rp();
+    const first = await signedInGrant(party);
+    const refreshed = await party.refresh(first, { sub: idp.user.sub });
+    expect(refreshed).toMatchObject({ ok: true, refreshToken: expect.stringMatching(/^pxlr1\./), identity: expect.objectContaining({ sub: idp.user.sub, role: "admin" }) });
+    expect(idp.lastTokenRequest).toMatchObject({ grant_type: "refresh_token", client_id: "pulsa-bot", resource: "http://127.0.0.1:9" });
+    if (!refreshed.ok) throw new Error("unreachable");
+    expect(refreshed.refreshToken).not.toBe(first);
+    // the old token is dead after rotation
+    expect(await party.refresh(first, { sub: idp.user.sub })).toMatchObject({ ok: false, kind: "rejected" });
+    // and the new one works, carrying the current role
+    idp.setRole(idp.user.sub, "employee");
+    const again = await party.refresh(refreshed.refreshToken, { sub: idp.user.sub });
+    expect(again).toMatchObject({ ok: true, identity: expect.objectContaining({ role: "employee" }) });
+    idp.setRole(idp.user.sub, "admin");
+  });
+
+  it("accepts a refresh without an id_token", async () => {
+    const party = rp();
+    const token = await signedInGrant(party);
+    idp.tamper = { noIdToken: true };
+    const refreshed = await party.refresh(token, { sub: idp.user.sub });
+    expect(refreshed.ok).toBe(true);
+    expect(refreshed.ok && refreshed.identity).toBeUndefined();
+  });
+
+  it("rejects a refreshed id_token for another subject, one carrying a nonce, and a disabled person", async () => {
+    const party = rp();
+    let token = await signedInGrant(party);
+    expect(await party.refresh(token, { sub: "someone-else" })).toMatchObject({ ok: false, kind: "rejected" });
+    token = await signedInGrant(party);
+    idp.tamper = { claims: (c) => ({ ...c, nonce: "n" }) };
+    expect(await party.refresh(token, { sub: idp.user.sub })).toMatchObject({ ok: false, kind: "rejected", error: expect.stringMatching(/nonce/) });
+    idp.tamper = {};
+    token = await signedInGrant(party);
+    idp.disable(idp.user.sub);
+    try {
+      expect(await party.refresh(token, { sub: idp.user.sub })).toMatchObject({ ok: false, kind: "rejected", error: expect.stringMatching(/invalid_grant/) });
+    } finally {
+      idp.enable(idp.user.sub);
+    }
+  });
+
+  it("treats 5xx, 429 and an unreachable provider as transient", async () => {
+    const party = rp();
+    const token = await signedInGrant(party);
+    idp.failNextToken(503);
+    expect(await party.refresh(token, { sub: idp.user.sub })).toMatchObject({ ok: false, kind: "transient" });
+    idp.failNextToken(429);
+    expect(await party.refresh(token, { sub: idp.user.sub })).toMatchObject({ ok: false, kind: "transient" });
+    // the token survived both
+    expect((await party.refresh(token, { sub: idp.user.sub })).ok).toBe(true);
+    const offline = new OidcRelyingParty({ issuer: idp.issuer, clientId: "pulsa-bot", redirectUri: REDIRECT, fetch: () => Promise.reject(new Error("ECONNREFUSED")) });
+    expect(await offline.refresh("pxlr1.x", { sub: "s" })).toMatchObject({ ok: false, kind: "transient" });
+  });
+
+  it("revokes a token at the provider and never throws", async () => {
+    const party = rp();
+    const token = await signedInGrant(party);
+    expect(await party.revokeToken(token)).toBe(true);
+    expect(idp.revoked.at(-1)).toEqual({ token, token_type_hint: "refresh_token", client_id: "pulsa-bot" });
+    expect(await party.refresh(token, { sub: idp.user.sub })).toMatchObject({ ok: false, kind: "rejected" });
+    const offline = new OidcRelyingParty({ issuer: idp.issuer, clientId: "pulsa-bot", redirectUri: REDIRECT, fetch: () => Promise.reject(new Error("down")) });
+    expect(await offline.revokeToken("x")).toBe(false);
+  });
+});
+
+describe("OIDC relying party: back-channel logout tokens", () => {
+  const sub = "01J0000000000000000000ADMN";
+
+  it("verifies a good logout token (typ logout+jwt, JWT or absent)", async () => {
+    const party = rp();
+    const claims = await party.verifyLogoutToken(idp.logoutToken({ sub }));
+    expect(claims).toMatchObject({ iss: idp.issuer, sub, jti: expect.stringMatching(/^[0-9a-f]{32}$/) });
+    expect(claims.exp).toBeGreaterThan(Date.now() / 1000);
+    await expect(party.verifyLogoutToken(idp.logoutToken({ sub, header: (h) => ({ ...h, typ: "JWT" }) }))).resolves.toMatchObject({ sub });
+    await expect(party.verifyLogoutToken(idp.logoutToken({ sub, header: (h) => { const { typ: _typ, ...rest } = h; return rest; } }))).resolves.toMatchObject({ sub });
+  });
+
+  it.each([
+    ["another key", { strayKey: true }, "logout_token_signature"],
+    ["alg none", { header: (h: Record<string, unknown>) => ({ ...h, alg: "none" }) }, "logout_token_alg"],
+    ["an unknown kid", { header: (h: Record<string, unknown>) => ({ ...h, kid: "nope" }) }, "logout_token_kid"],
+    ["another typ", { header: (h: Record<string, unknown>) => ({ ...h, typ: "at+jwt" }) }, "logout_token_typ"],
+    ["another audience", { claims: (c: Record<string, unknown>) => ({ ...c, aud: "other" }) }, "logout_token_aud"],
+    ["another issuer", { claims: (c: Record<string, unknown>) => ({ ...c, iss: "https://evil.example" }) }, "logout_token_iss"],
+    ["no expiry", { claims: (c: Record<string, unknown>) => { const { exp: _exp, ...rest } = c; return rest; } }, "logout_token_exp"],
+    ["an expired token", { claims: (c: Record<string, unknown>) => ({ ...c, exp: Math.floor(Date.now() / 1000) - 120 }) }, "logout_token_exp"],
+    ["an issue time in the future", { claims: (c: Record<string, unknown>) => ({ ...c, iat: Math.floor(Date.now() / 1000) + 600 }) }, "logout_token_iat"],
+    ["no events", { claims: (c: Record<string, unknown>) => { const { events: _events, ...rest } = c; return rest; } }, "logout_token_events"],
+    ["the wrong event", { claims: (c: Record<string, unknown>) => ({ ...c, events: { "http://example/other": {} } }) }, "logout_token_events"],
+    ["an event that is not an object", { claims: (c: Record<string, unknown>) => ({ ...c, events: { "http://schemas.openid.net/event/backchannel-logout": true } }) }, "logout_token_events"],
+    ["a nonce", { claims: (c: Record<string, unknown>) => ({ ...c, nonce: "n" }) }, "logout_token_nonce"],
+    ["no jti", { claims: (c: Record<string, unknown>) => { const { jti: _jti, ...rest } = c; return rest; } }, "logout_token_jti"],
+    ["a sid only", { claims: (c: Record<string, unknown>) => { const { sub: _sub, ...rest } = c; return { ...rest, sid: "s1" }; } }, "logout_token_sub"],
+  ])("refuses %s", async (_what, tamper, code) => {
+    const party = rp();
+    await expect(party.verifyLogoutToken(idp.logoutToken({ sub, ...tamper }))).rejects.toMatchObject({ code });
+  });
+
+  it("never takes an id_token for a logout token, nor a logout token for an id_token", async () => {
+    const party = rp();
+    // an id_token carries a nonce and no events
+    let captured = "";
+    const spy = new OidcRelyingParty({ issuer: idp.issuer, clientId: "pulsa-bot", redirectUri: REDIRECT, resource: "http://127.0.0.1:9", fetch: async (input, init) => {
+      const res = await fetch(input, init);
+      if (String(input).endsWith("/oauth/token")) {
+        const body = await res.clone().json() as { id_token?: string };
+        captured = body.id_token ?? "";
+      }
+      return res;
+    } });
+    await signedInGrant(spy);
+    expect(captured).toMatch(/^eyJ/);
+    await expect(party.verifyLogoutToken(captured)).rejects.toMatchObject({ code: expect.stringMatching(/^logout_token_(nonce|events)$/) });
+    // a logout token presented as a refreshed id_token is refused
+    const { verifyIdToken } = await import("./oidc-rp.ts");
+    await party.discover();
+    await expect(verifyIdToken({
+      token: idp.logoutToken({ sub }), issuer: idp.issuer, audience: "pulsa-bot", nonce: null,
+      keyFor: async () => (party as unknown as { keys: Map<string, import("node:crypto").KeyObject> }).keys.values().next().value ?? null,
+      nowSeconds: Math.floor(Date.now() / 1000),
+    })).rejects.toMatchObject({ code: "id_token_typ" });
   });
 });

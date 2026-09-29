@@ -22,6 +22,11 @@ const principalSchema = z.object({
   /** The last Pulsa Bot organization role computed from the provider's
    * `role` claim, for display while offline. */
   orgRole: z.enum(["admin", "member"]).optional(),
+  /** Set when the identity provider signalled that this person is out
+   * (back-channel logout: disabled, deleted, sessions revoked). Cleared by
+   * the next successful sign-in or refresh. While set, no session of theirs
+   * is served. */
+  disabledAt: z.number().optional(),
   createdAt: z.number(),
 });
 const fileSchema = z.object({ version: z.literal(1), principals: z.array(z.unknown()) });
@@ -220,7 +225,19 @@ export class PrincipalRegistry {
     if (login) found.login = login;
     else delete found.login;
     if (input.orgRole) found.orgRole = input.orgRole;
+    // A verified sign-in or refresh is the provider saying this person is in.
+    delete found.disabledAt;
     if (created || JSON.stringify(found) !== before) this.persist();
+    return { ...found };
+  }
+
+  /** Mark the person behind this provider account as out (back-channel
+   * logout). Returns the principal, or null for an unknown subject. */
+  markDisabled(iss: string, sub: string, at: number = this.now()): Principal | null {
+    const found = this.principals.find((p) => p.subject?.iss === iss && p.subject.sub === sub);
+    if (!found) return null;
+    found.disabledAt = at;
+    this.persist();
     return { ...found };
   }
 

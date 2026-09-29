@@ -129,7 +129,7 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
   it("advertises the Perspicax sign-in and no email codes", async () => {
     const res = await fetch(`${BASE}/.well-known/openmausbot/environment`);
     const body = await res.json() as any;
-    expect(body.identity).toEqual({ kind: "perspicax", protocol: "oidc", issuer: idp.issuer, loginPath: "/auth/oidc/start" });
+    expect(body.identity).toEqual({ kind: "perspicax", protocol: "oidc", issuer: idp.issuer, loginPath: "/auth/oidc/start", nativeReturn: true });
     expect(body.capabilities.emailSignIn).toBe(false);
     expect(log).toMatch(/service trust \(organization server/);
   });
@@ -155,12 +155,12 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
     // the person is keyed by (iss, sub); the email is an attribute
     const principals = JSON.parse(readFileSync(join(home, ".openmausbot", "principals.json"), "utf8")).principals as any[];
     expect(principals.find((p) => p.id === ids.principal)).toMatchObject({ subject: { iss: idp.issuer, sub: ADMIN.sub }, email: "alice@example.test", orgRole: "admin" });
-    // slice 1 keeps no provider token: the refresh family was revoked
-    await waitFor(async () => idp.revoked.length > 0 || null, 5_000);
-    expect(idp.revoked.at(-1)).toMatchObject({ token_type_hint: "refresh_token", client_id: "pulsa-bot" });
-    // nothing from the provider reaches the stored sessions
+    // slice 2 keeps the grant, sealed: nothing from the provider reaches the
+    // stored sessions, and the vault holds no readable token
+    expect(idp.revoked).toEqual([]);
     const stored = readFileSync(join(home, ".openmausbot", "sessions.json"), "utf8");
     expect(stored).not.toMatch(/pxlr1\.|pxlo1\.|eyJ/);
+    expect(readFileSync(join(home, ".openmausbot", "idp-grants.enc"), "utf8")).not.toMatch(/pxlr1\./);
   });
 
   it("scenario A: the admin creates a bot on the server and gets its answer; another browser reads the thread", async () => {

@@ -83,7 +83,14 @@ const sessionSchema = z.object({
   /** Set when the session came from an OpenID Connect sign-in
    * (server/oidc-login.ts): the provider account and the role claim it
    * carried. Its membership is the provider's, not the email sign-in list. */
-  idp: z.object({ iss: z.string().max(2048), sub: z.string().max(255), role: z.string().max(40).optional() }).optional(),
+  idp: z.object({
+    iss: z.string().max(2048),
+    sub: z.string().max(255),
+    role: z.string().max(40).optional(),
+    /** The identity provider grant this session lives on
+     * (server/idp-session.ts): refreshed on use, revoked with the session. */
+    grantRef: z.string().max(64).optional(),
+  }).optional(),
 });
 
 const fileSchema = z.object({ version: z.literal(1), sessions: z.array(sessionSchema) });
@@ -116,6 +123,9 @@ export interface PairingCode {
   expiresAt: number;
   /** Who minted the code; the paired device acts as them. */
   principalId?: string;
+  /** A code minted by "Sign in with Pulsatrix" for the desktop or a phone:
+   * the session it creates carries this provider account and grant. */
+  idp?: SessionRecord["idp"];
 }
 
 export interface PublicPairing {
@@ -212,6 +222,7 @@ export class SessionRegistry {
   private failures = new Map<string, { count: number; windowStart: number; lockedUntil: number }>();
   private replays: Array<{ codeHash: string; attemptId: string; result: ExchangeResult; expiresAt: number }> = [];
   private readonly onRevoked = new Set<(sessionId: string) => void>();
+  private exchanged: ((session: Readonly<SessionRecord>, pairing: Readonly<PairingCode>) => void) | undefined;
   private lastSeenWrites = new Map<string, number>();
   private readonly now: () => number;
   private readonly options: SessionStoreOptions;
@@ -316,7 +327,7 @@ export class SessionRegistry {
 
   // ── pairing ────────────────────────────────────────────────────────────
 
-  openPairing(input: { scopes?: Scope[]; label?: string; ttlMs?: number; principalId?: string } = {}): { id: string; code: string; credential: string; expiresAt: number } {
+  openPairing(input: { scopes?: Scope[]; label?: string; ttlMs?: number; principalId?: string; idp?: SessionRecord["idp"] } = {}): { id: string; code: string; credential: string; expiresAt: number } {
     this.prune();
     const now = this.now();
     const code = generatePairingCode();
@@ -331,6 +342,7 @@ export class SessionRegistry {
       createdAt: now,
       expiresAt: now + (input.ttlMs ?? PAIRING_CODE_TTL_MS),
       ...(input.principalId ? { principalId: input.principalId } : {}),
+      ...(input.idp ? { idp: { ...input.idp } } : {}),
     };
     this.pairings.push(pairing);
     return { id: pairing.id, code, credential, expiresAt: pairing.expiresAt };
@@ -345,6 +357,14 @@ export class SessionRegistry {
     const before = this.pairings.length;
     this.pairings = this.pairings.filter((p) => p.id !== id);
     return this.pairings.length !== before;
+  }
+
+  /** Cancel every open code minted for this person (back-channel logout).
+   * Returns how many were cancelled. */
+  cancelPairingsFor(principalId: string): number {
+    const before = this.pairings.length;
+    this.pairings = this.pairings.filter((p) => p.principalId !== principalId);
+    return before - this.pairings.length;
   }
 
   /** Sources with recent failures (for tests and diagnostics; never the codes). */
@@ -419,9 +439,11 @@ export class SessionRegistry {
       // longer than the cap does not hand out a session the cap forbids.
       expiresAt: now + Math.min(SESSION_TTL_MS, SESSION_MAX_AGE_MS),
       ...(pairing.principalId ? { principalId: pairing.principalId } : {}),
+      ...(pairing.idp ? { idp: { ...pairing.idp } } : {}),
     };
     this.sessions.push(record);
     this.lastSeenWrites.set(record.id, now); // the exchange itself was the first sighting
+    this.exchanged?.(record, pairing);
     this.persist();
     const result: ExchangeResult = { ok: true, token, session: publicSession(record) };
     if (attemptId) this.replays.push({ codeHash: presented, attemptId, result, expiresAt: now + EXCHANGE_REPLAY_MS });
@@ -574,6 +596,63 @@ export class SessionRegistry {
     this.forget(id);
     this.persist();
     return true;
+  }
+
+  /** Revoke every session the predicate picks, fire the revocation listeners
+   * for each and persist once. Returns the revoked ids. */
+  revokeWhere(pick: (session: Readonly<SessionRecord>) => boolean): string[] {
+    const gone = this.sessions.filter((s) => pick(s));
+    if (!gone.length) return [];
+    const ids = new Set(gone.map((s) => s.id));
+    this.sessions = this.sessions.filter((s) => !ids.has(s.id));
+    try {
+      this.persist();
+    } catch {
+      // The revocation stays effective in memory and the streams still close.
+      console.error("Could not persist session revocation.");
+    }
+    for (const id of ids) this.forget(id);
+    return [...ids];
+  }
+
+  /** The live record by id (a copy), or null. */
+  byId(id: string): SessionRecord | null {
+    const found = this.sessions.find((s) => s.id === id && s.expiresAt > this.now());
+    return found ? structuredClone(found) : null;
+  }
+
+  /** Every live session acting as this person (copies). */
+  forPrincipal(principalId: string): SessionRecord[] {
+    const now = this.now();
+    return this.sessions.filter((s) => s.principalId === principalId && s.expiresAt > now).map((s) => structuredClone(s));
+  }
+
+  /** Replace a session's scopes (a role change at the identity provider).
+   * An empty list is refused; revoke instead. */
+  setScopes(id: string, scopes: Scope[]): boolean {
+    const found = this.sessions.find((s) => s.id === id);
+    const next = [...new Set(scopes)].filter((scope): scope is Scope => SCOPES.includes(scope));
+    if (!found || !next.length) return false;
+    if (found.scopes.length === next.length && found.scopes.every((scope) => next.includes(scope))) return false;
+    found.scopes = next;
+    this.persist();
+    return true;
+  }
+
+  /** Update the role an OpenID Connect session carries. */
+  setIdpRole(id: string, role: string | undefined): boolean {
+    const found = this.sessions.find((s) => s.id === id);
+    if (!found?.idp || found.idp.role === role) return false;
+    if (role === undefined) delete found.idp.role;
+    else found.idp.role = role;
+    this.persist();
+    return true;
+  }
+
+  /** Called with each session a pairing exchange creates, before the answer
+   * goes out (the grant of a "Sign in with Pulsatrix" pairing binds here). */
+  onExchanged(listener: (session: Readonly<SessionRecord>, pairing: Readonly<PairingCode>) => void): void {
+    this.exchanged = listener;
   }
 
   /** Boot migration only: who each stored session is, without its secrets. */

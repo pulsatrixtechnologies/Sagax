@@ -573,6 +573,8 @@ import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, oidcSessionFields } from "./oidc-login.ts";
+import { OidcRelyingParty } from "./oidc-rp.ts";
+import { IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey } from "./idp-session.ts";
 import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import {
@@ -14724,13 +14726,54 @@ const publicInvites = createPublicInviteRoutes({
   },
 });
 
-// "Sign in with Pulsatrix" (server/oidc-login.ts), only on an organization server.
-const oidcLogin = IDENTITY.kind === "perspicax"
+// "Sign in with Pulsatrix" (server/oidc-login.ts), only on an organization
+// server. One relying party serves the sign-in routes, the grant refreshes
+// and the back-channel logout; the grants live in a sealed vault
+// (server/idp-session.ts).
+const oidcRp = IDENTITY.kind === "perspicax"
+  ? new OidcRelyingParty({ issuer: IDENTITY.issuer, clientId: IDENTITY.clientId, redirectUri: IDENTITY.redirectUri, resource: IDENTITY.publicOrigin })
+  : null;
+let idpVaultKey: ReturnType<typeof resolveIdpVaultKey> | null = null;
+const idpSessions = oidcRp
+  ? new IdpSessionManager({
+    vault: new IdpGrantVault(DATA_DIR, () => (idpVaultKey ??= resolveIdpVaultKey(DATA_DIR))),
+    rp: oidcRp,
+    sessions,
+    principals,
+    refreshAfterMs: refreshAfterMs(process.env.OMB_OIDC_REFRESH_AFTER_SECONDS),
+  })
+  : null;
+if (idpSessions) {
+  const unavailable = idpSessions.unavailableReason();
+  if (unavailable) console.error(`sign-in with Pulsatrix is unavailable: ${unavailable}`);
+  // Any session that ends takes its grant with it (logout, a device revoked
+  // by an admin, expiry). A back-channel logout drops its grants first, so
+  // nothing is sent back to the provider there.
+  sessions.onSessionRevoked((sessionId) => idpSessions.release(sessionId, { revokeAtIdp: true }));
+  // A desktop or phone sign-in's pairing credential became a session.
+  sessions.onExchanged((session) => {
+    if (session.idp?.grantRef) idpSessions.bindSession(session.idp.grantRef, session.id);
+  });
+  try {
+    const swept = idpSessions.sweep();
+    if (swept) console.log(`sign-in with Pulsatrix: revoked ${swept} grant(s) left without a session`);
+  } catch (error) {
+    console.error(`sign-in with Pulsatrix: the grant sweep failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  setInterval(() => {
+    try { idpSessions.sweep(); } catch { /* retried on the next tick */ }
+  }, 5 * 60_000).unref();
+}
+const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
   ? createOidcLoginRoutes({
     config: IDENTITY,
+    rp: oidcRp,
     sessionCookie: SESSION_COOKIE,
     forSubject: (input) => principals.forSubject(input),
     issueSession: (input) => sessions.issue(input),
+    grants: idpSessions,
+    openPairing: (input) => sessions.openPairing(input),
+    serverName: () => environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED }).label,
   })
   : null;
 
@@ -14948,7 +14991,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       url,
       loopbackMutationToken: desktopMutationToken,
       companionMutationToken,
-      features: { sharedComputers: sharedComputersEnabled(cfg) },
+      features: { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax" },
       loopbackTrust: LOOPBACK.trust,
       cliOwnerToken,
     });
@@ -14979,6 +15022,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (!gate.auth) return json(res, gate.status, { error: gate.error });
     const auth = gate.auth;
+    // Organization server: a person the provider signalled out is not
+    // served, and a session whose grant the provider stopped refreshing ends
+    // (server/idp-session.ts). Otherwise the grant is refreshed when due, in
+    // the background.
+    if (idpSessions && auth.kind === "session") {
+      const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
+      if (person?.disabledAt !== undefined) {
+        sessions.revoke(auth.session.id);
+        if (auth.via === "cookie") res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
+        return json(res, 401, { error: "Your account is disabled in Pulsatrix. Ask an administrator.", code: "principal_disabled" });
+      }
+      const refusal = idpSessions.mustRefuse(auth.session);
+      if (refusal) {
+        sessions.revoke(auth.session.id);
+        if (auth.via === "cookie") res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
+        return json(res, 401, { error: "Your Pulsatrix sign-in has ended. Sign in again.", code: refusal });
+      }
+      idpSessions.touch(auth.session);
+    }
     if (HOSTED_WORKSPACE && auth.kind === "session") {
       const failure = workspaceAccess
         ? await workspaceAccess.authorize(req, auth)
@@ -15076,11 +15138,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 401, { error: "Your session ended. Sign in again before creating a pairing code." });
       }
       const requested: unknown = body?.scopes;
-      const scopes = Array.isArray(requested) ? requested.filter((v): v is Scope => v === "admin" || v === "client") : undefined;
-      // Only an admin code carries its creator's person: a chat-only code
-      // pairs an anonymous device that sees no org channel.
-      const carriesPrincipal = (scopes?.length ? scopes : ["admin"]).includes("admin");
-      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes, principalId: carriesPrincipal ? actorPrincipalId(auth) || undefined : undefined });
+      let scopes = Array.isArray(requested) ? requested.filter((v): v is Scope => v === "admin" || v === "client") : undefined;
+      let principalId: string | undefined;
+      if (IDENTITY.kind === "perspicax" && auth.kind === "session") {
+        // Organization server: every code pairs a device of its creator's
+        // person, never an anonymous one, and never with more than the
+        // creator holds. The loopback bootstrap (the serve CLI) is unchanged.
+        principalId = actorPrincipalId(auth) || undefined;
+        if (!principalId) return json(res, 403, { error: "Only a signed-in person can pair a device on this server.", code: "principal_required" });
+        const own = auth.scopes;
+        scopes = (scopes?.length ? scopes : [...own]).filter((scope) => own.includes(scope));
+        if (!scopes.length) return json(res, 403, { error: "You cannot give a device more access than you have.", code: "scope_exceeds_session" });
+      } else {
+        // Only an admin code carries its creator's person: a chat-only code
+        // pairs an anonymous device that sees no org channel.
+        const carriesPrincipal = (scopes?.length ? scopes : ["admin"]).includes("admin");
+        principalId = carriesPrincipal ? actorPrincipalId(auth) || undefined : undefined;
+      }
+      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes, principalId });
       const origin = requestOrigin(req);
       const base = publicUrl() ?? (auth.kind === "session" && origin ? origin : null);
       const code = formatPairingCode(opened.code);
@@ -18298,7 +18373,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const current = resolveRequestAuth(req, {
         sessions, cookieName: SESSION_COOKIE, streamPath: "/api/events", url,
         loopbackMutationToken: desktopMutationToken, companionMutationToken,
-        features: { sharedComputers: sharedComputersEnabled(cfg) }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
+        features: { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
       });
       if (!current.auth) return json(res, current.status, { error: current.error });
       const currentVisible = visibleTo(viewerFor(current.auth));

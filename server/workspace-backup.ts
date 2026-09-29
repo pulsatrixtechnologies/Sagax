@@ -33,6 +33,9 @@ const EXCLUDED = new Set([
   ".backups", "tools", "cache", ".cache", "tmp", ".tmp", "dist-native", "tunnel-runtime",
   ".openmausbot-server-child", "environment-id", "sessions.json", "tunnel-account.json",
   "team-computers.json",
+  // Identity provider grants (server/idp-session.ts): bound to this server's
+  // sessions, which are never carried over either.
+  "idp-grants.enc", "idp-grants.key",
   "openmausbot-server.lease", "box-create-requests.lock", "messages.db-wal", "messages.db-shm",
 ]);
 const EXCLUSION_NOTES = [

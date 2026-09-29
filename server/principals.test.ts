@@ -166,3 +166,18 @@ describe("principals from an identity provider (forSubject)", () => {
     expect(() => reg.forSubject({ iss: ISS, sub: "" })).toThrow();
   });
 });
+
+describe("a person the identity provider signalled out", () => {
+  it("is marked disabled by subject, and a later sign-in or refresh clears it", () => {
+    const { reg, path } = registry();
+    const p = reg.forSubject({ iss: "https://px.example.test", sub: "S1", orgRole: "member" });
+    expect(reg.markDisabled("https://px.example.test", "unknown", 5)).toBeNull();
+    expect(reg.markDisabled("https://px.example.test", "S1", 5)).toMatchObject({ id: p.id, disabledAt: 5 });
+    expect(reg.byId(p.id)?.disabledAt).toBe(5);
+    expect(JSON.parse(readFileSync(path, "utf8")).principals[0].disabledAt).toBe(5);
+    const back = reg.forSubject({ iss: "https://px.example.test", sub: "S1", orgRole: "member" });
+    expect(back.id).toBe(p.id);
+    expect(back.disabledAt).toBeUndefined();
+    expect(JSON.parse(readFileSync(path, "utf8")).principals[0].disabledAt).toBeUndefined();
+  });
+});

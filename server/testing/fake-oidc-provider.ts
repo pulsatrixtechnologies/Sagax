@@ -1,8 +1,10 @@
-// A local OpenID Connect provider shaped like Perspicax slice 1, for tests:
-// discovery, a JWKS with one ES256 key (rotatable), an authorize endpoint
-// that signs the configured person in at once (no page), and a token
+// A local OpenID Connect provider shaped like Perspicax (slices 1 and 2), for
+// tests: discovery, a JWKS with one ES256 key (rotatable), an authorize
+// endpoint that signs the configured person in at once (no page), a token
 // endpoint that checks the code, client, redirect URI and PKCE S256 before
-// returning an ES256 id_token. `tamper` bends one thing at a time so a test
+// returning an ES256 id_token, a refresh grant with rotation (the old token
+// dies, the id_token carries no nonce), revocation of a whole family, and
+// back-channel logout tokens. `tamper` bends one thing at a time so a test
 // can prove the relying party refuses it. In-process only; imported by tests.
 import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -59,6 +61,21 @@ export interface FakeOidcProvider {
   revoked: Array<Record<string, string>>;
   /** The last authorize request's query. */
   lastAuthorize: Record<string, string> | null;
+  /** Refresh grants answered 200. */
+  refreshCount: number;
+  /** Refresh tokens that are live right now. */
+  liveRefreshTokens(): string[];
+  /** Refresh -> 400 invalid_grant for this subject from now on (disabled user). */
+  disable(sub: string): void;
+  enable(sub: string): void;
+  /** The role the next refreshed id_token carries for this subject. */
+  setRole(sub: string, role: string | undefined): void;
+  /** The next token request answers this status (429 `rate_limited`, else
+   * `temporarily_unavailable`), whatever the grant. */
+  failNextToken(status: number): void;
+  /** A back-channel logout token for this subject, signed by the provider's
+   * key unless `strayKey`; `claims` and `header` bend one thing at a time. */
+  logoutToken(input: { sub: string; claims?: (claims: Record<string, unknown>) => Record<string, unknown>; header?: (header: Record<string, unknown>) => Record<string, unknown>; strayKey?: boolean }): string;
   /** Replace the signing key (the old one leaves the JWKS). */
   rotateKey(): void;
   close(): Promise<void>;
@@ -68,7 +85,13 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
   const clientId = options.clientId ?? "pulsa-bot";
   let key = newKey();
   const stray = newKey();
-  const codes = new Map<string, { clientId: string; redirectUri: string; challenge: string; nonce: string; user: FakeOidcUser }>();
+  const codes = new Map<string, { clientId: string; redirectUri: string; challenge: string; nonce: string; user: FakeOidcUser; resource?: string }>();
+  /** Live refresh tokens: token -> family, the person and the resource. */
+  const refreshTokens = new Map<string, { family: string; user: FakeOidcUser; resource?: string }>();
+  const deadFamilies = new Set<string>();
+  const disabled = new Set<string>();
+  const roles = new Map<string, string | undefined>();
+  let failNext: number | null = null;
   let server: Server | null = null;
 
   const provider: FakeOidcProvider = {
@@ -80,6 +103,33 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
     lastTokenRequest: null,
     lastAuthorize: null,
     revoked: [],
+    refreshCount: 0,
+    liveRefreshTokens: () => [...refreshTokens.keys()],
+    disable(sub) {
+      disabled.add(sub);
+    },
+    enable(sub) {
+      disabled.delete(sub);
+    },
+    setRole(sub, role) {
+      roles.set(sub, role);
+    },
+    failNextToken(status) {
+      failNext = status;
+    },
+    logoutToken(input) {
+      const now = Math.floor(Date.now() / 1000);
+      let claims: Record<string, unknown> = {
+        iss: provider.issuer, aud: clientId, iat: now, exp: now + 120, jti: randomBytes(16).toString("hex"), sub: input.sub,
+        events: { "http://schemas.openid.net/event/backchannel-logout": {} },
+      };
+      if (input.claims) claims = input.claims(claims);
+      let header: Record<string, unknown> = { alg: "ES256", typ: "logout+jwt", kid: key.kid };
+      if (input.header) header = input.header(header);
+      const signed = `${b64(header)}.${b64(claims)}`;
+      const signature = sign("sha256", Buffer.from(signed), { key: input.strayKey ? stray.privateKey : key.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url");
+      return `${signed}.${signature}`;
+    },
     rotateKey() {
       key = newKey();
     },
@@ -91,10 +141,10 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
     res.end(JSON.stringify(body));
   };
 
-  const idToken = (user: FakeOidcUser, nonce: string): string => {
+  const idToken = (user: FakeOidcUser, nonce: string | null): string => {
     const now = Math.floor(Date.now() / 1000);
     let claims: Record<string, unknown> = {
-      iss: provider.issuer, sub: user.sub, aud: clientId, azp: clientId, exp: now + 600, iat: now, auth_time: now, nonce,
+      iss: provider.issuer, sub: user.sub, aud: clientId, azp: clientId, exp: now + 600, iat: now, auth_time: now, ...(nonce !== null ? { nonce } : {}),
       amr: ["pwd", "otp"], email_verified: false,
       ...(user.email ? { email: user.email } : {}),
       ...(user.name ? { name: user.name } : {}),
@@ -145,7 +195,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         back.searchParams.set("error", provider.tamper.authorizeError);
       } else {
         const code = randomBytes(24).toString("base64url");
-        codes.set(code, { clientId: q.client_id, redirectUri: q.redirect_uri, challenge: q.code_challenge, nonce: q.nonce ?? "", user: { ...provider.user } });
+        codes.set(code, { clientId: q.client_id, redirectUri: q.redirect_uri, challenge: q.code_challenge, nonce: q.nonce ?? "", user: { ...provider.user }, ...(q.resource ? { resource: q.resource } : {}) });
         back.searchParams.set("code", code);
       }
       res.writeHead(302, { location: back.toString() });
@@ -159,6 +209,37 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       req.on("end", () => {
         const form = Object.fromEntries(new URLSearchParams(raw));
         provider.lastTokenRequest = form;
+        if (failNext !== null) {
+          const status = failNext;
+          failNext = null;
+          return send(res, status, { error: status === 429 ? "rate_limited" : "temporarily_unavailable" });
+        }
+        const issueRefresh = (family: string, user: FakeOidcUser, resource?: string) => {
+          const token = `pxlr1.${randomBytes(16).toString("hex")}`;
+          refreshTokens.set(token, { family, user, ...(resource ? { resource } : {}) });
+          return token;
+        };
+        if (form.grant_type === "refresh_token") {
+          const held = form.refresh_token ? refreshTokens.get(form.refresh_token) : undefined;
+          if (!held || deadFamilies.has(held.family) || form.client_id !== clientId) return send(res, 400, { error: "invalid_grant" });
+          if (held.resource && form.resource !== held.resource) return send(res, 400, { error: "invalid_target" });
+          if (disabled.has(held.user.sub)) return send(res, 400, { error: "invalid_grant" });
+          refreshTokens.delete(form.refresh_token!); // rotation: the old token is dead
+          const user: FakeOidcUser = { ...held.user };
+          if (roles.has(user.sub)) {
+            const role = roles.get(user.sub);
+            if (role === undefined) delete user.role;
+            else user.role = role;
+          }
+          provider.refreshCount += 1;
+          return send(res, 200, {
+            access_token: `pxlo1.${randomBytes(16).toString("hex")}`,
+            refresh_token: issueRefresh(held.family, held.user, held.resource),
+            token_type: "Bearer",
+            expires_in: 3600,
+            ...(provider.tamper.noIdToken ? {} : { id_token: idToken(user, null) }),
+          });
+        }
         const grant = form.code ? codes.get(form.code) : undefined;
         if (form.code) codes.delete(form.code); // single use
         if (form.grant_type !== "authorization_code" || !grant) return send(res, 400, { error: "invalid_grant" });
@@ -167,10 +248,10 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         if (challenge !== grant.challenge) return send(res, 400, { error: "invalid_grant", error_description: "PKCE verification failed" });
         return send(res, 200, {
           access_token: `pxlo1.${randomBytes(16).toString("hex")}`,
-          refresh_token: `pxlr1.${randomBytes(16).toString("hex")}`,
+          refresh_token: issueRefresh(randomBytes(8).toString("hex"), grant.user, grant.resource),
           token_type: "Bearer",
           expires_in: 3600,
-          scope: "openid profile email",
+          scope: "openid profile email offline_access",
           ...(provider.tamper.noIdToken ? {} : { id_token: idToken(grant.user, grant.nonce) }),
         });
       });
@@ -181,7 +262,13 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       req.setEncoding("utf8");
       req.on("data", (chunk: string) => (raw += chunk));
       req.on("end", () => {
-        provider.revoked.push(Object.fromEntries(new URLSearchParams(raw)));
+        const form = Object.fromEntries(new URLSearchParams(raw));
+        provider.revoked.push(form);
+        const held = form.token ? refreshTokens.get(form.token) : undefined;
+        if (held) {
+          deadFamilies.add(held.family);
+          for (const [token, entry] of refreshTokens) if (entry.family === held.family) refreshTokens.delete(token);
+        }
         send(res, 200, {});
       });
       return;

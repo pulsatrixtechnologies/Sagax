@@ -578,3 +578,61 @@ describe("sessions from an OpenID Connect sign-in", () => {
     reopened.close();
   });
 });
+
+describe("OpenID Connect grants on sessions (slice 2)", () => {
+  const idp = { iss: "https://px.example.test", sub: "01J9SUB", role: "employee", grantRef: "g-1" };
+
+  it("carries a pairing's provider account and grant into the session it creates, and reports the exchange", () => {
+    const seen: string[] = [];
+    registry.onExchanged((session, pairing) => seen.push(`${session.idp?.grantRef}:${pairing.label}`));
+    const { credential } = registry.openPairing({ scopes: ["client"], label: "Pulsa Bot phone", ttlMs: 120_000, principalId: "pr_00000000-0000-4000-8000-000000000001", idp });
+    const result = registry.exchange({ code: credential, label: "", source: "1.2.3.4" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const record = registry.byId(result.session.id)!;
+    expect(record.idp).toEqual(idp);
+    expect(record.principalId).toBe("pr_00000000-0000-4000-8000-000000000001");
+    expect(record.scopes).toEqual(["client"]);
+    expect(seen).toEqual(["g-1:Pulsa Bot phone"]);
+    // the 120 s window closes
+    const late = registry.openPairing({ scopes: ["client"], ttlMs: 120_000, idp });
+    clock += 120_001;
+    expect(registry.exchange({ code: late.credential, label: "", source: "1.2.3.5" }).ok).toBe(false);
+  });
+
+  it("revokes by predicate, firing the listeners once per session, and persists once", () => {
+    const fired: string[] = [];
+    registry.onSessionRevoked((id) => fired.push(id));
+    const a = registry.issue({ label: "a", scopes: ["client"], principalId: "pr_00000000-0000-4000-8000-00000000000a", idp });
+    const b = registry.issue({ label: "b", scopes: ["client"], principalId: "pr_00000000-0000-4000-8000-00000000000a" });
+    const c = registry.issue({ label: "c", scopes: ["admin", "client"] });
+    const persist = vi.spyOn(atomic, "writeFileAtomic");
+    const gone = registry.revokeWhere((s) => s.principalId === "pr_00000000-0000-4000-8000-00000000000a");
+    expect(gone.sort()).toEqual([a.session.id, b.session.id].sort());
+    expect(fired.sort()).toEqual(gone.sort());
+    expect(persist.mock.calls.filter(([path]) => path === file())).toHaveLength(1);
+    expect(registry.list().map((s) => s.id)).toEqual([c.session.id]);
+    expect(registry.revokeWhere(() => false)).toEqual([]);
+  });
+
+  it("lists a person's sessions, narrows scopes, updates the role and cancels their codes", () => {
+    const person = "pr_00000000-0000-4000-8000-00000000000b";
+    const a = registry.issue({ label: "a", scopes: ["admin", "client"], principalId: person, idp });
+    registry.issue({ label: "other", scopes: ["client"] });
+    expect(registry.forPrincipal(person).map((s) => s.id)).toEqual([a.session.id]);
+    expect(registry.setScopes(a.session.id, ["client"])).toBe(true);
+    expect(registry.byId(a.session.id)!.scopes).toEqual(["client"]);
+    expect(registry.setScopes(a.session.id, [])).toBe(false);
+    expect(registry.setIdpRole(a.session.id, "manager")).toBe(true);
+    expect(registry.byId(a.session.id)!.idp?.role).toBe("manager");
+    registry.openPairing({ principalId: person });
+    registry.openPairing({ principalId: person });
+    registry.openPairing({ principalId: "pr_00000000-0000-4000-8000-00000000000c" });
+    expect(registry.cancelPairingsFor(person)).toBe(2);
+    expect(registry.openPairings()).toHaveLength(1);
+    // the grant reference survives a restart
+    registry.close();
+    const again = new SessionRegistry({ file: file(), now: () => clock });
+    expect(again.byId(a.session.id)!.idp?.grantRef).toBe("g-1");
+  });
+});
