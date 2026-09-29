@@ -5,6 +5,7 @@
 // one CSS block plus one line in SKINS.
 
 export const SKIN_IDS = [
+  "pulsatrix",
   "midnight",
   "atelier",
   "foundry",
@@ -24,6 +25,7 @@ export type Skin = {
 };
 
 export const SKINS: readonly Skin[] = [
+  { id: "pulsatrix", name: "Pulsatrix", tagline: "Pulsatrix blue. Deep navy with a soft glow from the top." },
   { id: "midnight", name: "Midnight", tagline: "The original. Cool and dark." },
   { id: "atelier", name: "Atelier", tagline: "Daylight on paper, warm and quiet." },
   { id: "foundry", name: "Foundry", tagline: "Night shift. Dark, warm, lit in brass." },
@@ -34,7 +36,7 @@ export const SKINS: readonly Skin[] = [
   { id: "daylight", name: "Daylight", tagline: "Midnight in reverse. Near-white, ink-black bubbles." },
 ];
 
-export const DEFAULT_SKIN: SkinId = "midnight";
+export const DEFAULT_SKIN: SkinId = "pulsatrix";
 
 const KEY = "omb-skin";
 
