@@ -411,6 +411,8 @@ export interface WireMessage {
     /** Whether the harness captured the full redacted result. Private
      * server-local spill paths are not exposed to clients. */
     fullResult?: boolean;
+    /** Files the call wrote, as the tool named them (see thread-files.ts). */
+    files?: string[];
   };
   /** user messages sent INTO a running turn (capabilities.queueing). */
   steered?: boolean;

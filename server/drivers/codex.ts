@@ -37,6 +37,7 @@ import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS }
 import { appendNative } from "./native.ts";
 import { permissionCommand, permissionLaunchCwd } from "./permission-command.ts";
 import { commandSummary, toolDetailPreview } from "../tool-summary.ts";
+import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { codexDeveloperInstructions, syncCodexInstructions } from "./codex-instructions.ts";
 import { volatileContextNote, withContextNote } from "./prompt-split.ts";
 import type { ApprovalMode } from "../../shared/approval-mode.ts";
@@ -1113,6 +1114,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
                 title,
                 summary: item.type === "commandExecution" ? commandSummary({ command: item.command }) : undefined,
                 input: toolDetailPreview(item.type === "commandExecution" ? { command: item.command, cwd: item.cwd } : item.type === "mcpToolCall" ? item.arguments : item.type === "fileChange" ? item.changes : item.query),
+                ...filesField(item.type === "fileChange"
+                  ? writtenFilesFromToolInput("edit", item.changes)
+                  : item.type === "mcpToolCall" ? writtenFilesFromToolInput(title, item.arguments) : []),
               });
             }
             break;

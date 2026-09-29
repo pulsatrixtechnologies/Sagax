@@ -97,6 +97,10 @@ export type RuntimeEvent = RuntimeEventBase &
         summary?: string;
         /** Bounded, redacted display preview; never raw tool arguments. */
         input?: string;
+        /** Files this call writes (Write/Edit, a Codex file change, an ACP
+         * edit), as the tool named them. Recorded on the activity message so
+         * the conversation's Files tab can list them once the call succeeds. */
+        files?: string[];
       }
     | { type: "item.updated"; itemType: "tool" | "reasoning"; tokens?: number | null }
     | { type: "item.completed"; itemType: "tool"; ok: boolean; output?: string }
