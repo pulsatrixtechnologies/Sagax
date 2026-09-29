@@ -223,6 +223,72 @@
   --radius-xl: 0.75rem;
 }
 
+/* ── Pulsatrix Light ──────────────────────────────────────────────────────
+   The light counterpart of Pulsatrix, above: the same v3 console, its own
+   light palette this time (console/src/index.css, the base :root block, no
+   `.dark` and no `prefers-color-scheme: dark`). Ice-blue ground, the same
+   brand blue accent, and a lighter echo of the top glow.
+
+   Surfaces climb from v3's own light ramp, ordered by their measured
+   lightness rather than picked by eye: --input (darkest, becomes the
+   control tone) < --border (hairline) < --accent (inset) < --muted
+   (raised-hover) < --bg (app) < --frame-bg (panel) < --card/--pop (raised,
+   composer, card, menu, all white, "raised means lighter" as in Atelier).
+
+   --color-accent is v3's own --accent-brand, --color-accent-border and
+   --color-focus are its --accent-brand-hover/--ring (identical in v3).
+   --color-danger is v3's --destructive verbatim; its fill is dark enough
+   that white clears AA outright, unlike Pulsatrix's own red, so danger-ink
+   stays v3's own --destructive-fg instead of borrowing the app's ink.
+   Success and warning are not top-level v3 tokens, so they are drawn from
+   the nearest thing v3 has: the --fg-ok and --fg-write badge inks, already
+   tuned for 4.5:1 on a white card. The user's own bubble takes v3's
+   --bg-query tint, the softest of its blue badges.
+   ───────────────────────────────────────────────────────────────────────── */
+[data-skin="pulsatrix-light"] {
+  --code-color-scheme: light;
+  --color-app: #eef2f8;
+  --color-panel: #f6f8fb;
+  --color-raised: #ffffff;
+  --color-raised-hover: #e6ebf4;
+  --color-composer: #ffffff;    /* = raised: unchanged */
+  --color-composer-ring: transparent;
+  --color-card: #ffffff;
+  --color-menu: #ffffff;    /* = card: unchanged */
+  --color-inset: #dfe6f2;
+  --color-control: #bfcade;
+  --color-hairline: #b8c3d9;         /* v3's own #c8d1e3 measures 1.37:1 on the
+                                         app ground; darkened to the nearest
+                                         step that clears 1.5:1 */
+
+  --color-ink: #0b1526;
+  --color-ink-secondary: #545e6e;   /* v3's #5a6577 darkened one notch for 4.5:1 on inset */
+
+  --color-accent: #2f62dd;
+  --color-accent-border: #3c76f4;
+  --color-accent-text: #2652bd;     /* darkened from accent for 4.5:1 on the app ground */
+  --color-focus: #3c76f4;
+  --color-accent-ink: #f6f8fc;
+  --color-bubble-user: #dceafe;     /* v3's --bg-query, the softest of its blue badges */
+  --color-bubble-user-ink: #0b1526;   /* = ink: unchanged */
+
+  --color-success: #0f5132;
+  --color-danger: #d92d3e;
+  --color-danger-ink: #ffffff;
+  --color-success-ink: #ffffff;
+  --color-warning: #7d4d09;
+  --color-scrollbar: #a9b7cf;
+  --color-maus-line: #545e6e;       /* = ink-secondary: unchanged */
+  --app-glow:
+    radial-gradient(ellipse 110% 62% at 50% 0%, color-mix(in oklch, var(--color-accent) 8%, transparent), transparent 70%),
+    radial-gradient(ellipse 72% 44% at 80% 0%, color-mix(in oklch, var(--color-accent) 5%, transparent), transparent 68%);
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", system-ui, sans-serif;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+}
+
 /* ── Midnight ──────────────────────────────────────────────────────────────
    The upstream palette, pixel-sampled from the real Grok app. Repeated here
    (rather than relying on the `@theme` defaults) so that a `[data-skin]`
