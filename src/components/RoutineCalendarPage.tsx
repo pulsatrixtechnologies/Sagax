@@ -1768,18 +1768,10 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
     }
   };
 
-  return (
-    <main className={cn("flex h-full min-w-0 flex-col bg-app", fill ? "flex-1" : embedded ? "w-[min(820px,48vw)] min-w-[420px] shrink-0 border-l border-hairline/40" : "flex-1 animate-workspace-in")}>
-      <header
-        className={cn("shrink-0 border-b border-hairline/35 bg-app py-3 pr-4", !embedded && !fill && macInset ? "pl-[86px]" : "pl-4")}
-        style={embedded || fill ? undefined : windowDragStyle}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <div data-tour="automations-page" className="mr-2 flex items-center gap-2">
-            <span className="flex size-9 items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink"><CalendarDays size={16} /></span>
-            <h1 className="text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">Automations</h1>
-          </div>
-          <div className="ml-auto flex items-center gap-2" style={windowNoDragStyle}>
+  // The menu and New sit beside the bot and range filters; on Webhooks, which
+  // has no filter row, they stay on the title row.
+  const automationActions = (
+    <>
           <details ref={navMenuRef} className="group relative">
             <summary aria-label="Automation menu" className="flex size-9 cursor-pointer list-none items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink hover:bg-raised [&::-webkit-details-marker]:hidden">
               <Menu size={16} />
@@ -1810,7 +1802,21 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
               </button>}
             </div>
           </details>
+    </>
+  );
+
+  return (
+    <main className={cn("flex h-full min-w-0 flex-col bg-app", fill ? "flex-1" : embedded ? "w-[min(820px,48vw)] min-w-[420px] shrink-0 border-l border-hairline/40" : "flex-1 animate-workspace-in")}>
+      <header
+        className={cn("shrink-0 border-b border-hairline/35 bg-app py-3 pr-4", !embedded && !fill && macInset ? "pl-[86px]" : "pl-4")}
+        style={embedded || fill ? undefined : windowDragStyle}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <div data-tour="automations-page" className="mr-2 flex items-center gap-2">
+            <span className="flex size-9 items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink"><CalendarDays size={16} /></span>
+            <h1 className="text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">Automations</h1>
           </div>
+          {section === "webhooks" && <div className="ml-auto flex items-center gap-2" style={windowNoDragStyle}>{automationActions}</div>}
         </div>
         {section !== "webhooks" && <div className="mt-2 flex flex-wrap items-center gap-2" style={windowNoDragStyle}>
           {section === "calendar" && <div className="flex items-center rounded-lg border border-hairline/50 bg-panel p-0.5" aria-label="Schedule view">
@@ -1829,6 +1835,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
             {paused.length > 0 && <button onClick={() => setPausedOpen(true)} aria-label="View paused routines" className="hidden items-center gap-1.5 rounded-full border border-hairline/50 px-2.5 py-1.5 text-[10.5px] text-ink-secondary hover:bg-raised sm:flex"><Pause size={11} />{paused.length}</button>}
             <select aria-label="Filter schedule by bot" value={botFilter} onChange={(event) => { setBotFilter(event.target.value); setRoutineFilter(undefined); }} className="max-w-[180px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong"><option value="all">All bots</option>{visibleBots.map((bot) => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select>
             {section === "calendar" && scheduleView === "calendar" && <select aria-label="Schedule range" value={viewDays} onChange={(event) => setView(Number(event.target.value) as 1 | 3 | 7)} className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong"><option value={1}>Day</option><option value={3}>3 days</option><option value={7}>Week</option></select>}
+            {automationActions}
           </div>
           {error && <button onClick={() => setError("")} className="flex items-center gap-1.5 rounded-lg bg-danger/10 px-2.5 py-1.5 text-[10.5px] text-danger"><CircleAlert size={11} />{error}<X size={11} /></button>}
           {section === "calendar" && scheduleView === "calendar" && state.routinesLoadState === "error" && <p role="alert" className="w-full text-[11.5px] text-danger">{t("routines.loadError")}</p>}
@@ -1849,9 +1856,8 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
         <div className="flex min-h-0 flex-1">
           <CalendarGrid anchor={rangeStart} days={viewDays} items={items} bots={state.bots} groups={state.groups} onOpen={(item) => { setSelected(item); if (item.kind === "routine" && item.run && ["failed", "missed"].includes(item.run.status) && !item.run.seenAt) dispatch({ type: "markRoutineRunSeen", runId: item.run.id }); }} onCreate={openCreate} onMove={(item, at) => void moveEvent(item, at)} onResize={(item, duration) => void resizeEvent(item, duration)} />
           {botsOpen ? (
-            <div className="relative hidden shrink-0 lg:block">
-              <button type="button" onClick={() => setBotsOpen(false)} aria-label="Hide my bots" title="Hide my bots" className="absolute left-2 top-2 z-10 rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"><ChevronRight size={16} /></button>
-              <CalendarSidebar bots={visibleBots} anchor={anchor} onSelectDate={(at) => setAnchor(startOfDay(at))} />
+            <div className="hidden shrink-0 lg:block">
+              <CalendarSidebar bots={visibleBots} anchor={anchor} onSelectDate={(at) => setAnchor(startOfDay(at))} onCollapse={() => setBotsOpen(false)} />
             </div>
           ) : (
             <button type="button" onClick={() => setBotsOpen(true)} aria-label="Show my bots" title="My bots" className="hidden w-10 shrink-0 flex-col items-center gap-2 border-l border-hairline/40 bg-panel px-1 py-4 text-[11px] text-ink-secondary hover:text-ink lg:flex">
