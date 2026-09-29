@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { acceptInvite, inviteStatus, roleOf, type OrgInvite, type OrgRole } from "./org-directory.ts";
 import { createOrg, issueInvite, memberListsAfterAccept, type OrgRecord } from "./org-record.ts";
-import type { RequestAuth } from "./request-auth.ts";
+import { requestOrigin, type RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 
 export interface OrgState {
@@ -68,6 +68,22 @@ export function issueInviteRoute(state: OrgState, input: { actorId: string; emai
   return { status: 200, body: { invite: { token: invite.token, email: invite.email, expiresAt: invite.expiresAt } } };
 }
 
+/** The invite email's subject and body. `base` is the address to sign in
+ * at (the server's own public URL, falling back to the request's origin);
+ * null when neither is known, in which case the link clause is dropped
+ * rather than emailing a broken or empty URL. Pure and exported so the
+ * wording is unit-testable without booting a mailer. */
+export function inviteMailMessage(input: { orgName: string; inviterEmail?: string; base: string | null }): { subject: string; text: string } {
+  const greeting = input.inviterEmail ? `${input.inviterEmail} invited you` : "You were invited";
+  const link = input.base
+    ? `Sign in with this address at ${input.base}/pair within 7 days.`
+    : "Sign in with this address on this server's sign-in page within 7 days.";
+  return {
+    subject: `You are invited to ${input.orgName} on Pulsa Bot`,
+    text: `${greeting} to ${input.orgName}. ${link}`,
+  };
+}
+
 function sameEmail(a: string, b: string) {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
@@ -130,8 +146,9 @@ export interface OrgRouteDeps {
   onOrgCreated?: () => void;
   /** After an invite is issued and saved: mails it when a mailer is
    * configured. Resolves to whether it was sent; that becomes the route's
-   * `mailed` flag. A send failure never undoes the invite. */
-  mailInvite?: (input: { email: string; token: string; inviterEmail?: string }) => Promise<boolean>;
+   * `mailed` flag. A send failure — including a throw — never undoes the
+   * invite; the handler treats a throw the same as a `false` resolution. */
+  mailInvite?: (input: { email: string; token: string; inviterEmail?: string; origin: string | null }) => Promise<boolean>;
 }
 
 export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
@@ -181,9 +198,20 @@ export function createOrgRoutes(deps: OrgRouteDeps): RouteHandler {
       });
       if (result.status !== 200) return json(res, result.status, result.body ?? {});
       deps.persist?.();
-      const mailed = result.body?.invite
-        ? await deps.mailInvite?.({ email: result.body.invite.email, token: result.body.invite.token, inviterEmail }) ?? false
-        : false;
+      let mailed = false;
+      if (result.body?.invite) {
+        try {
+          mailed = (await deps.mailInvite?.({
+            email: result.body.invite.email,
+            token: result.body.invite.token,
+            inviterEmail,
+            origin: requestOrigin(req),
+          })) ?? false;
+        } catch {
+          // A hook that throws never undoes an already-persisted invite.
+          mailed = false;
+        }
+      }
       return json(res, result.status, { ...result.body, mailed });
     }
     const revoke = /^\/api\/org\/invites\/([^/]+)\/revoke$/.exec(path);

@@ -320,7 +320,7 @@ posixOnly("server-issued email sign-in", () => {
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: home2, USERPROFILE: home2, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
         OMB_MAIL_PROVIDER: "sendgrid", OMB_MAIL_FROM: "bot@gox.ca", OMB_SENDGRID_API_KEY: "test-key",
-        OMB_SIGNIN_EMAILS: "jc@gox.ca", OMB_MAIL_CAPTURE_FILE: captureFile,
+        OMB_SIGNIN_EMAILS: "jc@gox.ca", OMB_MAIL_CAPTURE_FILE: captureFile, OMB_TEST_SEAMS: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

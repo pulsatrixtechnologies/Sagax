@@ -134,6 +134,7 @@ beforeAll(async () => {
       OMB_ENVIRONMENT_LABEL: "agentada",
       OMB_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
       OMB_MAIL_CAPTURE_FILE: captureFile,
+      OMB_TEST_SEAMS: "1",
       OMB_SSE_HEARTBEAT_MS: "50",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -243,6 +244,10 @@ describe("sign in with your email on a hosted server", () => {
     expect(last).toBe(429);
     // the lockout is per source: someone else still gets in, with a fresh
     // code (the one issued before the lockout loop is long since spent).
+    // This is her@example.test's 2nd start in this file; the "revokes
+    // demoted…" test below signs her in once more, for exactly 3 — the
+    // OTP_SENDS_PER_ADDRESS cap (per 15-minute window). Do not add a 4th
+    // start for this address anywhere in this file.
     await call("/api/auth/email/start", { body: { email: "her@example.test" } });
     const other = await call("/api/auth/email/verify", { body: { email: "her@example.test", code: latestCode("her@example.test") }, from: "198.51.100.43" });
     expect(other.status).toBe(200);

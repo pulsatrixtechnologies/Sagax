@@ -555,7 +555,7 @@ import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
-import { createOrgRoutes, type OrgState } from "./org-routes.ts";
+import { createOrgRoutes, inviteMailMessage, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import {
   channelTurnGate,
@@ -699,24 +699,31 @@ const customDomainVerifier = createCustomDomainVerifier({ environmentId: ENVIRON
 // Server-issued sign-in codes (server/email-otp.ts) and the mail that
 // carries them (server/mail-config.ts, server/mailer.ts). Settings are
 // resolved per call so a Settings change or a Docker env bootstrap applies
-// without a restart; the mailer is cached by a JSON key of the resolved
-// settings so a new transport is not built on every call.
+// without a restart; the mailer is cached by a hash of the resolved settings
+// so a new transport is not built on every call (and no secret sits around
+// as a plain cache key).
 const emailOtp = new EmailOtpStore();
 const mailResolved = () => resolveMailSettings({ file: cfg.mail, env: process.env });
-// OMB_MAIL_CAPTURE_FILE (e2e/test seam only): instead of sending, append
-// each message as one JSON line to this file. Refused in production so a
-// misconfigured deploy cannot silently stop sending real mail.
+// OMB_MAIL_CAPTURE_FILE (test/e2e seam only): instead of sending, append
+// each message as one JSON line to this file. Requires an explicit test
+// marker (VITEST, set by the test runner itself, or OMB_TEST_SEAMS=1 for a
+// harness that does not inherit it) on top of a non-production NODE_ENV, so
+// a misconfigured deploy cannot silently stop sending real mail.
 const MAIL_CAPTURE_FILE = process.env.OMB_MAIL_CAPTURE_FILE;
-if (MAIL_CAPTURE_FILE && process.env.NODE_ENV === "production") {
-  console.warn("OMB_MAIL_CAPTURE_FILE is set but NODE_ENV is production; ignoring it (this seam is test-only)");
+const mailCaptureFile = MAIL_CAPTURE_FILE && process.env.NODE_ENV !== "production" && (process.env.VITEST || process.env.OMB_TEST_SEAMS === "1")
+  ? MAIL_CAPTURE_FILE
+  : undefined;
+if (MAIL_CAPTURE_FILE && !mailCaptureFile) {
+  console.warn("OMB_MAIL_CAPTURE_FILE is set but ignored (needs VITEST or OMB_TEST_SEAMS=1, and NODE_ENV other than production)");
+} else if (mailCaptureFile) {
+  console.warn(`OMB_MAIL_CAPTURE_FILE seam is active: mail is captured to ${mailCaptureFile} instead of being sent`);
 }
-const mailCaptureFile = MAIL_CAPTURE_FILE && process.env.NODE_ENV !== "production" ? MAIL_CAPTURE_FILE : undefined;
 let cachedMailerKey: string | null = null;
 let cachedMailer: Mailer | null = null;
 const mailer = (): Mailer | null => {
   if (mailCaptureFile) return createCaptureMailer(mailCaptureFile);
   const settings = mailResolved().settings;
-  const settingsKey = JSON.stringify(settings);
+  const settingsKey = createHash("sha256").update(JSON.stringify(settings)).digest("hex");
   if (settingsKey !== cachedMailerKey) {
     cachedMailer = createMailer(settings);
     cachedMailerKey = settingsKey;
@@ -13931,17 +13938,14 @@ ROUTES.push(createOrgRoutes({
       }
     }
   },
-  mailInvite: async ({ email, inviterEmail }) => {
+  mailInvite: async ({ email, inviterEmail, origin }) => {
     const send = mailer();
     if (!send) return false;
     const orgName = orgState.org?.name ?? "Pulsa Bot";
-    const url = publicUrl();
+    const base = publicUrl() ?? origin ?? null;
+    const message = inviteMailMessage({ orgName, inviterEmail, base });
     try {
-      await send.send({
-        to: email,
-        subject: `You are invited to ${orgName} on Pulsa Bot`,
-        text: `${inviterEmail ?? "You"} invited you. Sign in with this address at ${url ?? ""}/pair within 7 days.`,
-      });
+      await send.send({ to: email, ...message });
       return true;
     } catch (error) {
       console.warn(`invite email to ${email} could not be sent: ${error instanceof Error ? error.message : String(error)}`);

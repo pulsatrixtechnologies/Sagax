@@ -149,10 +149,13 @@ export function createServerEmailSignIn(options: {
         await mailer.send({ to: email, subject: `Your ${appName} sign-in code`, text });
       } catch (error) {
         // The code was minted but never delivered: void it so it cannot be
-        // found by an attacker who happens to guess it.
+        // found by an attacker who happens to guess it. The provider detail
+        // (never the code) is logged server-side only: this route is public
+        // and unauthenticated, so the response stays generic.
         options.otp.revoke(email);
         const detail = error instanceof Error ? error.message : String(error);
-        return { ok: false, status: 502, error: `the sign-in email could not be sent (${detail}); try again in a moment` };
+        console.warn(`sign-in email to ${email} could not be sent: ${detail}`);
+        return { ok: false, status: 502, error: "the sign-in email could not be sent; try again in a moment" };
       }
       return { ok: true };
     },

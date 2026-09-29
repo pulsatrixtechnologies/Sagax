@@ -58,6 +58,11 @@ function createSmtpMailer(settings: MailSettings, smtpTransport: (options: objec
     requireTLS: smtp.secure === "starttls",
     ignoreTLS: smtp.secure === "none",
     auth: smtp.user ? { user: smtp.user, pass: smtp.password ?? "" } : undefined,
+    // An unreachable or slow-to-answer host must fail a sign-in request in
+    // seconds, not hang the connection indefinitely.
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 20_000,
   });
   return {
     async send(message) {

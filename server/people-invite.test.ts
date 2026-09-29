@@ -143,6 +143,7 @@ beforeAll(async () => {
       OMB_ENVIRONMENT_LABEL: "acme",
       OMB_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
       OMB_MAIL_CAPTURE_FILE: captureFile,
+      OMB_TEST_SEAMS: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
