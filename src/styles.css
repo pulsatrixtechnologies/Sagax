@@ -577,6 +577,28 @@
   color-scheme: var(--code-color-scheme);
 }
 
+/* Heading anchors in rendered messages: hidden until the heading is hovered
+   or the anchor itself has keyboard focus; headings leave room above them
+   when an in-message link scrolls to them. */
+.chat-md [role="heading"] {
+  scroll-margin-top: 1rem;
+}
+.chat-md .chat-heading-anchor {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.chat-md [role="heading"]:hover > .chat-heading-anchor {
+  opacity: 0.6;
+}
+.chat-md .chat-heading-anchor:focus-visible {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-md .chat-heading-anchor {
+    transition: none;
+  }
+}
+
 /* Plain-text message bodies (user turns, webhook tasks, error fallbacks) are
    written in whatever language the person used, which is independent of the
    UI language. `plaintext` resolves direction per line from its own first

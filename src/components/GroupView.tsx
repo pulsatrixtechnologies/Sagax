@@ -38,6 +38,8 @@ import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { GoalRunCard } from "./GoalRunCard";
 import { AttachmentGallery, MessageAttachmentGallery } from "./AttachmentGallery";
+import { ConversationGalleryProvider } from "./ConversationGallery";
+import { prefersWideBubble } from "@/lib/rich-blocks";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { OptionCard } from "./OptionCard";
 import { GroupCallOverlay } from "./GroupCallView";
@@ -310,7 +312,8 @@ const Transcript = memo(function Transcript({
                 )}
                 <div
                   className={cn(
-                    "w-fit max-w-[min(80%,560px,calc(100%-82px))] rounded-[18px] text-[15px] leading-relaxed",
+                    "rounded-[18px] text-[15px] leading-relaxed",
+                    !user && m.text && prefersWideBubble(m.text) ? "w-full max-w-[min(94%,780px,calc(100%-82px))]" : "w-fit max-w-[min(80%,560px,calc(100%-82px))]",
                     !user && m.id === emergingId && "turn-answer",
                     // A bot message that is only attachments is just the files: no bubble.
                     !user && !m.text?.trim() && !m.replyToId && m.attachments?.length
@@ -1348,6 +1351,7 @@ export function GroupView({ group }: { group: Group }) {
           aria-live="polite"
           aria-label={t("room.aria", { name: group.name })}
         >
+          <ConversationGalleryProvider>
           {group.messages.length === 0 && (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
               <div className="flex -space-x-2">
@@ -1427,6 +1431,7 @@ export function GroupView({ group }: { group: Group }) {
               since={speaker ? group.turnStartedAt ?? null : null}
             />
           )}
+          </ConversationGalleryProvider>
         </div>
         )}
       </div>
