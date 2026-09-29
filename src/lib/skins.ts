@@ -6,6 +6,7 @@
 
 export const SKIN_IDS = [
   "pulsatrix",
+  "pulsatrix-light",
   "midnight",
   "atelier",
   "foundry",
@@ -26,6 +27,7 @@ export type Skin = {
 
 export const SKINS: readonly Skin[] = [
   { id: "pulsatrix", name: "Pulsatrix", tagline: "Pulsatrix blue. Deep navy with a soft glow from the top." },
+  { id: "pulsatrix-light", name: "Pulsatrix Light", tagline: "Pulsatrix blue on a bright ice ground, with the same soft glow from the top." },
   { id: "midnight", name: "Midnight", tagline: "The original. Cool and dark." },
   { id: "atelier", name: "Atelier", tagline: "Daylight on paper, warm and quiet." },
   { id: "foundry", name: "Foundry", tagline: "Night shift. Dark, warm, lit in brass." },
