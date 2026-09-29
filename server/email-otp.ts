@@ -77,6 +77,14 @@ export class EmailOtpStore {
     return { pending: this.pending.size, buckets: this.sends.size };
   }
 
+  /** Voids a pending code without needing to know it: used when the send
+   * that would have delivered it fails, so a code nobody received cannot
+   * later be found by an attacker guessing it. Send-rate buckets are left
+   * charged, since the attempt to reach the address still happened. */
+  revoke(email: string): void {
+    this.pending.delete(key(email));
+  }
+
   private hasRoom(bucket: string, limit: number, now: number): boolean {
     const recent = (this.sends.get(bucket) ?? []).filter((at) => now - at <= OTP_SEND_WINDOW_MS);
     return recent.length < limit;

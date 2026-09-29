@@ -1,6 +1,9 @@
 // End to end: a hosted server with a sign-in allow-list lets a remote browser
-// sign in with an emailed code from the control plane (stubbed here) and
-// ends up with the same cookie session a pairing code would give.
+// sign in with a code the server emails itself (server/account-signin.ts,
+// server/email-otp.ts) and ends up with the same cookie session a pairing
+// code would give. OMB_MAIL_CAPTURE_FILE (server/index.ts) stands in for a
+// real mail provider: the spawned server appends each message it would have
+// sent as a JSON line instead, and this file reads the code back from there.
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
@@ -10,7 +13,6 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
-import { startControlPlaneStub, type ControlPlaneStub } from "./testing/control-plane-stub.ts";
 import { openSse } from "./testing/sse.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
@@ -20,8 +22,27 @@ const HOST = "agentada.test";
 
 let home: string;
 let child: ChildProcess;
-let stub: ControlPlaneStub;
+let captureFile: string;
 let stderr = "";
+
+interface CapturedMail { to: string; subject: string; text: string; at: string }
+
+function capturedMail(): CapturedMail[] {
+  try {
+    return readFileSync(captureFile, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as CapturedMail);
+  } catch {
+    return [];
+  }
+}
+
+/** The newest code this server emailed to `email`, read back from the
+ * capture file (server/mailer.ts createCaptureMailer). */
+function latestCode(email: string): string {
+  const messages = capturedMail().filter((m) => m.to.toLowerCase() === email.toLowerCase());
+  const match = messages.length ? /Your code is (\d{8})/.exec(messages[messages.length - 1]!.text) : null;
+  if (!match) throw new Error(`no captured sign-in code for ${email}`);
+  return match[1]!;
+}
 
 interface Reply {
   status: number;
@@ -75,7 +96,7 @@ const cookieOf = (reply: Reply): string => {
 
 async function signIn(email: string): Promise<string> {
   expect((await call("/api/auth/email/start", { body: { email } })).status).toBe(200);
-  const reply = await call("/api/auth/email/verify", { body: { email, code: stub.otp } });
+  const reply = await call("/api/auth/email/verify", { body: { email, code: latestCode(email) } });
   expect(reply.status).toBe(200);
   return cookieOf(reply);
 }
@@ -89,8 +110,8 @@ async function openEvents(cookie: string) {
 }
 
 beforeAll(async () => {
-  stub = await startControlPlaneStub();
   home = mkdtempSync(join(tmpdir(), "omb-email-signin-"));
+  captureFile = join(home, "mail-capture.jsonl");
   const staticDir = join(home, "static");
   mkdirSync(join(home, ".openmausbot"), { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });
@@ -112,7 +133,8 @@ beforeAll(async () => {
       OMB_PUBLIC_URL: `https://${HOST}`,
       OMB_ENVIRONMENT_LABEL: "agentada",
       OMB_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
-      OMB_CONTROL_PLANE_URL: stub.url,
+      OMB_MAIL_CAPTURE_FILE: captureFile,
+      OMB_TEST_SEAMS: "1",
       OMB_SSE_HEARTBEAT_MS: "50",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -133,7 +155,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await waitForExit(child, { signal: "SIGTERM" });
-  await stub.close();
   await removeTempDir(home);
 });
 
@@ -158,19 +179,19 @@ describe("sign in with your email on a hosted server", () => {
     const stranger = await call("/api/auth/email/start", { body: { email: "stranger@example.test" } });
     expect(stranger.status).toBe(403);
     expect(stranger.body.error).toMatch(/not on this server's sign-in list/);
-    expect(stub.calls).not.toContain("POST /api/auth/email-otp/send-verification-otp");
+    expect(capturedMail()).toEqual([]);
   });
 
   it("emails a code to a welcome address, then turns the code into an admin cookie session that shows its email", async () => {
     const started = await call("/api/auth/email/start", { body: { email: "her@example.test" } });
     expect(started.status).toBe(200);
-    expect(stub.calls).toContain("POST /api/auth/email-otp/send-verification-otp");
+    expect(capturedMail().some((m) => m.to === "her@example.test")).toBe(true);
 
     const wrong = await call("/api/auth/email/verify", { body: { email: "her@example.test", code: "00000000", label: "Her iPad" } });
     expect(wrong.status).toBe(401);
     expect(cookieOf(wrong)).toBe("");
 
-    const right = await call("/api/auth/email/verify", { body: { email: "her@example.test", code: stub.otp, label: "Her iPad" } });
+    const right = await call("/api/auth/email/verify", { body: { email: "her@example.test", code: latestCode("her@example.test"), label: "Her iPad" } });
     expect(right.status).toBe(200);
     expect(right.body.session).toMatchObject({ label: "Her iPad", scopes: ["admin", "client"], email: "her@example.test" });
     expect(right.body.environment.environmentId).toBeTruthy();
@@ -193,7 +214,7 @@ describe("sign in with your email on a hosted server", () => {
 
   it("a member address gets a chat-only session; a domain entry welcomes the whole company", async () => {
     await call("/api/auth/email/start", { body: { email: "staff@example.test" } });
-    const member = await call("/api/auth/email/verify", { body: { email: "staff@example.test", code: stub.otp, label: "Staff phone" } });
+    const member = await call("/api/auth/email/verify", { body: { email: "staff@example.test", code: latestCode("staff@example.test"), label: "Staff phone" } });
     expect(member.status).toBe(200);
     expect(member.body.session.scopes).toEqual(["client"]);
     const cookie = cookieOf(member);
@@ -202,8 +223,11 @@ describe("sign in with your email on a hosted server", () => {
     const config = await call("/api/config", { method: "PUT", body: { language: "en" }, headers: { cookie, origin: `https://${HOST}` } });
     expect(config.status).toBe(403);
 
-    await call("/api/auth/email/start", { body: { email: "anyone@agentada.test" } });
-    const colleague = await call("/api/auth/email/verify", { body: { email: "anyone@agentada.test", code: stub.otp } });
+    // A different local part than "anyone@agentada.test" below: that address
+    // is signed in three times in a later test (server/email-otp.ts caps
+    // sends per address at OTP_SENDS_PER_ADDRESS within the send window).
+    await call("/api/auth/email/start", { body: { email: "someone@agentada.test" } });
+    const colleague = await call("/api/auth/email/verify", { body: { email: "someone@agentada.test", code: latestCode("someone@agentada.test") } });
     expect(colleague.status).toBe(200);
     expect(colleague.body.session.scopes).toEqual(["admin", "client"]);
     // no label and no browser user agent in this test client: the generic fallback
@@ -218,8 +242,14 @@ describe("sign in with your email on a hosted server", () => {
       if (last === 429) break;
     }
     expect(last).toBe(429);
-    // the lockout is per source: someone else still gets in
-    const other = await call("/api/auth/email/verify", { body: { email: "her@example.test", code: stub.otp }, from: "198.51.100.43" });
+    // the lockout is per source: someone else still gets in, with a fresh
+    // code (the one issued before the lockout loop is long since spent).
+    // This is her@example.test's 2nd start in this file; the "revokes
+    // demoted…" test below signs her in once more, for exactly 3 — the
+    // OTP_SENDS_PER_ADDRESS cap (per 15-minute window). Do not add a 4th
+    // start for this address anywhere in this file.
+    await call("/api/auth/email/start", { body: { email: "her@example.test" } });
+    const other = await call("/api/auth/email/verify", { body: { email: "her@example.test", code: latestCode("her@example.test") }, from: "198.51.100.43" });
     expect(other.status).toBe(200);
   });
 

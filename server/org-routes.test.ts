@@ -1,13 +1,58 @@
-import { describe, expect, it } from "vitest";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterEach, describe, expect, it } from "vitest";
 import { parseStoredConfig } from "./config.ts";
+import { json, readBody } from "./harness/http.ts";
 import { signInListWithOpenInvites } from "./org-directory.ts";
-import { acceptInviteRoute, createOrgRoute, getOrgRoute, issueInviteRoute, revokeInviteRoute, type OrgState } from "./org-routes.ts";
+import {
+  acceptInviteRoute, createOrgRoute, createOrgRoutes, getOrgRoute, inviteMailMessage, issueInviteRoute, revokeInviteRoute,
+  type OrgRouteDeps, type OrgState,
+} from "./org-routes.ts";
 import { requiredScope } from "./request-auth.ts";
+import { dispatchRoutes } from "./routes/table.ts";
 
 const JC = "pr_00000000-0000-4000-8000-00000000000a";
 
 function emptyOrgState(): OrgState {
   return { org: null, invites: [], signIn: { admins: [], members: [] } };
+}
+
+function orgStateWithOwner(): OrgState {
+  const state = emptyOrgState();
+  createOrgRoute(state, { name: "GOX", ownerUserId: JC, host: { kind: "server", url: "https://pulsa.gox.ca" } });
+  return state;
+}
+
+const servers: Server[] = [];
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map((server) => new Promise((done) => server.close(done))));
+});
+
+/** Boots the real route table over an actual HTTP server, the way
+ * bot-presets.test.ts and the running server do, so `req` is a genuine
+ * IncomingMessage and `requestOrigin(req)` sees real headers. */
+async function serveOrgRoutes(deps: Partial<OrgRouteDeps> & { state: OrgState }): Promise<string> {
+  const routes = [createOrgRoutes({ actorId: () => JC, actorEmail: () => "jc@gox.ca", ...deps })];
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const handled = await dispatchRoutes(routes, {
+      req, res, url, path: url.pathname, method: req.method ?? "GET",
+      auth: { kind: "loopback", scopes: ["admin", "client"] }, json, readBody,
+    });
+    if (!handled) json(res, 404, { from: "inline routes" });
+  });
+  servers.push(server);
+  await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+async function postInvite(base: string, email = "zachary@example.test") {
+  const res = await fetch(`${base}/api/org/invites`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return { status: res.status, body: (await res.json()) as { invite?: { token: string; email: string }; mailed?: boolean } };
 }
 
 describe("org routes", () => {
@@ -157,5 +202,73 @@ describe("org routes", () => {
     const saved: unknown[] = [];
     createOrgRoute(state, input, (org) => { saved.push(org); expect(state.org).toBeNull(); });
     expect(saved).toEqual([state.org]);
+  });
+});
+
+describe("invite mail", () => {
+  it("reports mailed:true and persists when the hook sends", async () => {
+    const state = orgStateWithOwner();
+    let persisted = false;
+    const base = await serveOrgRoutes({ state, persist: () => { persisted = true; }, mailInvite: async () => true });
+    const { status, body } = await postInvite(base);
+    expect(status).toBe(200);
+    expect(body.mailed).toBe(true);
+    expect(persisted).toBe(true);
+    expect(state.invites).toHaveLength(1);
+    expect(state.invites[0]?.email).toBe("zachary@example.test");
+  });
+
+  it("still returns 200 with mailed:false, and keeps the invite, when the hook resolves false", async () => {
+    const state = orgStateWithOwner();
+    const base = await serveOrgRoutes({ state, mailInvite: async () => false });
+    const { status, body } = await postInvite(base);
+    expect(status).toBe(200);
+    expect(body.mailed).toBe(false);
+    expect(state.invites).toHaveLength(1);
+  });
+
+  it("still returns 200 with mailed:false, and keeps the invite, when the hook throws", async () => {
+    const state = orgStateWithOwner();
+    const base = await serveOrgRoutes({ state, mailInvite: async () => { throw new Error("smtp exploded"); } });
+    const { status, body } = await postInvite(base);
+    expect(status).toBe(200);
+    expect(body.mailed).toBe(false);
+    expect(state.invites).toHaveLength(1);
+  });
+
+  it("reports mailed:false and still keeps the invite with no mailInvite hook at all", async () => {
+    const state = orgStateWithOwner();
+    const base = await serveOrgRoutes({ state });
+    const { status, body } = await postInvite(base);
+    expect(status).toBe(200);
+    expect(body.mailed).toBe(false);
+    expect(state.invites).toHaveLength(1);
+  });
+
+  it("passes the request's origin, the invite, and the inviter's email to the hook", async () => {
+    const state = orgStateWithOwner();
+    const seen: unknown[] = [];
+    const base = await serveOrgRoutes({
+      state,
+      mailInvite: async (input) => { seen.push(input); return true; },
+    });
+    await postInvite(base, "zachary@example.test");
+    expect(seen).toEqual([{ email: "zachary@example.test", token: expect.any(String), inviterEmail: "jc@gox.ca", origin: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/) }]);
+  });
+});
+
+describe("invite mail text (inviteMailMessage)", () => {
+  it("names the inviter and links the public URL when both are known", () => {
+    expect(inviteMailMessage({ orgName: "GOX", inviterEmail: "jc@gox.ca", base: "https://pulsa.gox.ca" })).toEqual({
+      subject: "You are invited to GOX on Pulsa Bot",
+      text: "jc@gox.ca invited you to GOX. Sign in with this address at https://pulsa.gox.ca/pair within 7 days.",
+    });
+  });
+
+  it("falls back to a generic greeting and drops the link clause when neither is known", () => {
+    expect(inviteMailMessage({ orgName: "GOX", base: null })).toEqual({
+      subject: "You are invited to GOX on Pulsa Bot",
+      text: "You were invited to GOX. Sign in with this address on this server's sign-in page within 7 days.",
+    });
   });
 });

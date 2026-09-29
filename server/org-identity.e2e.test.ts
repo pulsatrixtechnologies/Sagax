@@ -296,3 +296,82 @@ posixOnly("org identity", () => {
     expect(typeof config.identityMigratedAt).toBe("number");
   }, 40_000);
 });
+
+// A separate boot: this server mails its own sign-in codes (server/mailer.ts,
+// server/mail-config.ts) rather than going through the control plane. This
+// harness spawns the server as a child process, so fetch cannot be stubbed;
+// OMB_MAIL_CAPTURE_FILE (server/index.ts, where `mailer()` is built) is the
+// test seam instead: the mailer appends each message as a JSON line to a
+// file rather than sending it.
+posixOnly("server-issued email sign-in", () => {
+  it("mails a code with the capture-file seam, verifies it, and signs in as the local operator", async () => {
+    const home2 = mkdtempSync(join(tmpdir(), "omb-email-signin-"));
+    const data2 = join(home2, ".openmausbot");
+    mkdirSync(data2, { recursive: true });
+    writeFileSync(join(data2, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" } }));
+    const captureFile = join(home2, "mail-capture.jsonl");
+    const port = 28800 + Math.floor(Math.random() * 10_000);
+    const base = `http://127.0.0.1:${port}`;
+    let log2 = "";
+    const child2 = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+      cwd: join(SERVER_DIR, ".."),
+      env: {
+        ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+        ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
+        HOME: home2, USERPROFILE: home2, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
+        OMB_MAIL_PROVIDER: "sendgrid", OMB_MAIL_FROM: "bot@gox.ca", OMB_SENDGRID_API_KEY: "test-key",
+        OMB_SIGNIN_EMAILS: "jc@gox.ca", OMB_MAIL_CAPTURE_FILE: captureFile, OMB_TEST_SEAMS: "1",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child2.stdout!.on("data", (c) => (log2 += c));
+    child2.stderr!.on("data", (c) => (log2 += c));
+    try {
+      const deadline = Date.now() + 20_000;
+      for (;;) {
+        try {
+          if ((await fetch(`${base}/api/health`)).ok) break;
+        } catch {
+          /* not up yet */
+        }
+        if (Date.now() > deadline) throw new Error(`server never came up:\n${log2}`);
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      const started = await fetch(`${base}/api/auth/email/start`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "jc@gox.ca" }),
+      });
+      expect(started.status).toBe(200);
+      const captured = await until(() => {
+        try {
+          return readFileSync(captureFile, "utf8").trim().length > 0;
+        } catch {
+          return false;
+        }
+      });
+      expect(captured).toBe(true);
+      const lines = readFileSync(captureFile, "utf8").trim().split("\n");
+      const message = JSON.parse(lines[lines.length - 1]!) as { to: string; subject: string; text: string };
+      expect(message.to).toBe("jc@gox.ca");
+      const match = /Your code is (\d{8})/.exec(message.text);
+      expect(match).toBeTruthy();
+      const verified = await fetch(`${base}/api/auth/email/verify`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "jc@gox.ca", code: match![1] }),
+      });
+      const verifiedBody = (await verified.json()) as { session: { principalId?: string } };
+      expect(verified.status, JSON.stringify(verifiedBody)).toBe(200);
+      const principals2 = JSON.parse(readFileSync(join(data2, "principals.json"), "utf8")) as {
+        principals: { id: string; local?: boolean; email?: string }[];
+      };
+      const local = principals2.principals.find((p) => p.local);
+      expect(local).toBeTruthy();
+      expect(verifiedBody.session.principalId).toBe(local!.id);
+    } finally {
+      await waitForExit(child2, { signal: "SIGTERM" });
+      await removeTempDir(home2);
+    }
+  }, 40_000);
+});

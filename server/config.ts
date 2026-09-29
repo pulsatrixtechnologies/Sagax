@@ -13,6 +13,7 @@ import { EFFORT_LEVELS, type EffortLevel } from "../shared/wire.ts";
 import { isModelVariant, type InstanceConfigMap, type ModelSelection } from "./contracts.ts";
 import { PROVIDER_ICON_PRESETS, providerIconError } from "../shared/provider-icon.ts";
 import type { McpServerSpec } from "./contracts.ts";
+import type { MailSettings } from "./mail-config.ts";
 import { isRemoteMcpServer, parseStoredMcpServer } from "./mcp-registry.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 import { CLOUD_SEAT_IDLE_STOP_MS } from "./cloud-overflow.ts";
@@ -404,6 +405,21 @@ const appConfigSchema = z.object({
     usedAt: z.number().optional(),
     revokedAt: z.number().optional(),
   })).max(5000).optional(),
+  /** Mail transport for server-issued sign-in codes and org invites
+   * (server/mail-config.ts, server/mailer.ts). OMB_MAIL_* environment
+   * variables always win over whatever is saved here. */
+  mail: z.object({
+    provider: z.enum(["smtp", "sendgrid"]).optional(),
+    from: optionalText,
+    smtp: z.object({
+      host: optionalText,
+      port: z.number().int().min(1).max(65535).optional(),
+      secure: z.enum(["tls", "starttls", "none"]).optional(),
+      user: optionalText,
+      password: optionalText,
+    }).optional(),
+    sendgrid: z.object({ apiKey: optionalText }).optional(),
+  }).optional(),
   defaultModelSelection: defaultModelSelectionSchema.optional(),
   automaticRecovery: automaticRecoverySchema.optional(),
   newBotDefaults: newBotDefaultsSchema.optional(),
@@ -570,6 +586,7 @@ export interface AppConfig {
     usedAt?: number;
     revokedAt?: number;
   }>;
+  mail?: MailSettings;
   /** Preferred selection for newly created bots; existing bots keep theirs. */
   defaultModelSelection?: ModelSelection;
   /** Off by default; one backup attempt only before any work starts. */
