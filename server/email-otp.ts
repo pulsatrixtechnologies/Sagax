@@ -8,6 +8,7 @@ export const OTP_MAX_ATTEMPTS = 5;
 export const OTP_SENDS_PER_ADDRESS = 3;
 export const OTP_SENDS_PER_SOURCE = 10;
 export const OTP_SEND_WINDOW_MS = 15 * 60_000;
+export const OTP_MAX_TRACKED = 10_000;
 
 const digest = (value: string) => createHash("sha256").update(value).digest();
 const key = (email: string) => email.trim().toLowerCase();
@@ -27,10 +28,25 @@ export class EmailOtpStore {
 
   issue(email: string, source: string): { ok: true; code: string } | { ok: false; status: 429; error: string } {
     const now = this.now();
+    this.sweep(now);
     const address = key(email);
-    if (!this.allowSend(`a:${address}`, OTP_SENDS_PER_ADDRESS, now) || !this.allowSend(`s:${source}`, OTP_SENDS_PER_SOURCE, now)) {
+    const addressBucket = `a:${address}`;
+    const sourceBucket = `s:${source}`;
+
+    // Check both buckets without charging
+    if (!this.hasRoom(addressBucket, OTP_SENDS_PER_ADDRESS, now) || !this.hasRoom(sourceBucket, OTP_SENDS_PER_SOURCE, now)) {
       return { ok: false, status: 429, error: "too many codes requested; wait a few minutes and try again" };
     }
+
+    // Check the hard cap
+    if (this.pending.size >= OTP_MAX_TRACKED) {
+      return { ok: false, status: 429, error: "too many codes requested; wait a few minutes and try again" };
+    }
+
+    // Charge both buckets
+    this.charge(addressBucket, now);
+    this.charge(sourceBucket, now);
+
     const code = this.random();
     this.pending.set(address, { hash: digest(code), expiresAt: now + OTP_TTL_MS, attempts: 0 });
     return { ok: true, code };
@@ -54,11 +70,38 @@ export class EmailOtpStore {
     return { ok: true };
   }
 
-  private allowSend(bucket: string, limit: number, now: number): boolean {
+  /** Expose internal sizes for testing. */
+  size(): { pending: number; buckets: number } {
+    return { pending: this.pending.size, buckets: this.sends.size };
+  }
+
+  private hasRoom(bucket: string, limit: number, now: number): boolean {
     const recent = (this.sends.get(bucket) ?? []).filter((at) => now - at <= OTP_SEND_WINDOW_MS);
-    if (recent.length >= limit) { this.sends.set(bucket, recent); return false; }
+    return recent.length < limit;
+  }
+
+  private charge(bucket: string, now: number): void {
+    const recent = (this.sends.get(bucket) ?? []).filter((at) => now - at <= OTP_SEND_WINDOW_MS);
     recent.push(now);
     this.sends.set(bucket, recent);
-    return true;
+  }
+
+  private sweep(now: number): void {
+    // Clean expired pending codes
+    for (const [address, entry] of this.pending.entries()) {
+      if (now > entry.expiresAt) {
+        this.pending.delete(address);
+      }
+    }
+
+    // Clean expired sends and remove empty buckets
+    for (const [bucket, times] of this.sends.entries()) {
+      const recent = times.filter((at) => now - at <= OTP_SEND_WINDOW_MS);
+      if (recent.length === 0) {
+        this.sends.delete(bucket);
+      } else {
+        this.sends.set(bucket, recent);
+      }
+    }
   }
 }

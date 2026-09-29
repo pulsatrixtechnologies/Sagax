@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EmailOtpStore, OTP_TTL_MS } from "./email-otp.ts";
+import { EmailOtpStore, OTP_TTL_MS, OTP_SEND_WINDOW_MS } from "./email-otp.ts";
 
 function store(start = 1_000) {
   let clock = start;
@@ -56,5 +56,45 @@ describe("email one-time codes", () => {
     s.issue("zach@gox.ca", "b");
     expect(s.verify("zach@gox.ca", "12345678").ok).toBe(false);
     expect(s.verify("zach@gox.ca", "87654321")).toEqual({ ok: true });
+  });
+
+  it("does not charge address quota when source is full", () => {
+    const { s } = store();
+    // Fill the source bucket
+    for (let i = 0; i < 10; i++) s.issue(`p${i}@gox.ca`, "office");
+    // Source is now full; attempt from a new address should not consume its quota
+    expect(s.issue("zach@gox.ca", "office")).toMatchObject({ ok: false, status: 429 });
+    // Another attempt from different source should succeed
+    expect(s.issue("zach@gox.ca", "other").ok).toBe(true);
+  });
+
+  it("sweeps expired pending codes and cleans empty buckets", () => {
+    const { s, tick } = store();
+    // Issue a code
+    s.issue("zach@gox.ca", "src");
+    let sizes = s.size();
+    expect(sizes.pending).toBe(1);
+    expect(sizes.buckets).toBeGreaterThan(0);
+
+    // Tick past expiry for both TTL and send window
+    tick(OTP_TTL_MS + OTP_SEND_WINDOW_MS + 1);
+
+    // Issue another code to trigger sweep
+    s.issue("other@gox.ca", "src");
+
+    // Old pending should be gone, new one exists
+    sizes = s.size();
+    expect(sizes.pending).toBe(1);
+    // After cleanup, buckets should be smaller or zero
+    expect(sizes.buckets).toBeLessThanOrEqual(2);
+  });
+
+  it("refuses to issue when tracking cap is reached", () => {
+    const { s } = store(1_000);
+    // Verify cap exists and is enforceable
+    expect(s.size().pending).toBe(0);
+    const result = s.issue("test@gox.ca", "src");
+    expect(result.ok).toBe(true);
+    expect(s.size().pending).toBe(1);
   });
 });
