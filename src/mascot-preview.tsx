@@ -18,7 +18,10 @@ import {
 } from "@/lib/mascot";
 import { EXPRESSION_COUNT } from "@/components/CursorAvatar";
 import { OwlAvatar, type OwlAvatarHandle } from "@/components/OwlAvatar";
-import type { OwlWingMove } from "@/lib/owl/owl-art";
+import { BotProfileAvatarCard } from "@/components/BotProfileAvatarCard";
+import { OWL_WING_MOVES, type OwlWingMove } from "@/lib/owl/owl-art";
+import { StoreProvider, type Bot } from "@/state/store";
+import { MASCOT_SKIN_IDS, botMascotSkin, type MascotSkinId } from "../shared/mascot-skins";
 import "./styles.css";
 import "./mascot-preview.css";
 
@@ -283,6 +286,111 @@ function MotionCard({
   );
 }
 
+/** Every skin doing every wing move, one row per skin, on the bot color picked. */
+function SkinMoves({ skin, color, replayAll }: { skin: MascotSkinId; color: MausColor; replayAll: number }) {
+  const handles = useRef<(OwlAvatarHandle | null)[]>([]);
+  useEffect(() => {
+    handles.current.forEach((h, i) => h?.flourish(OWL_WING_MOVES[i]));
+  }, [replayAll]);
+  return (
+    <div className="matrix-row">
+      <div className="row-label">
+        <span className="swatch" style={{ background: MAUS_COLORS[color] }} />
+        <strong>{skin}</strong>
+        <code>{color}</code>
+      </div>
+      {OWL_WING_MOVES.map((move, i) => (
+        <div className="mascot-cell" key={move}>
+          <OwlAvatar
+            ref={(h) => {
+              handles.current[i] = h;
+            }}
+            color={color}
+            skin={skin}
+            size={110}
+            label={`${skin} ${move}`}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkinLibrary({ replayAll }: { replayAll: number }) {
+  const [color, setColor] = useState<MausColor>("black");
+  return (
+    <>
+      <section className="expression-library" aria-labelledby="skins-heading">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Special editions · {MASCOT_SKIN_IDS.length} skins · {MAUS_COLOR_NAMES.length} colors</p>
+            <h2 id="skins-heading">Colors and skins</h2>
+          </div>
+          <p>Full effects from {36}px; the sidebar size keeps the tint and aura only.</p>
+        </div>
+        <div className="matrix-wrap">
+          <div className="matrix" style={{ gridTemplateColumns: `150px repeat(${MASCOT_SKIN_IDS.length}, minmax(116px, 1fr))`, minWidth: 1000 }}>
+            <div className="corner-label">Color ↓ / skin →</div>
+            {MASCOT_SKIN_IDS.map((skin) => (
+              <div className="column-label" key={skin}>
+                <strong>{skin}</strong>
+                <span>
+                  <OwlAvatar color="black" skin={skin} size={28} animated={false} /> sidebar
+                </span>
+              </div>
+            ))}
+            {MAUS_COLOR_NAMES.map((c) => (
+              <div className="matrix-row" key={c}>
+                <div className="row-label">
+                  <span className="swatch" style={{ background: MAUS_COLORS[c] }} />
+                  <strong>{c}</strong>
+                  <code>{MAUS_COLORS[c]}</code>
+                </div>
+                {MASCOT_SKIN_IDS.map((skin) => (
+                  <div className="mascot-cell" key={`${c}-${skin}`}>
+                    <OwlAvatar color={c} skin={skin} size={86} label={`${c} ${skin} owl`} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="expression-library" aria-labelledby="skin-moves-heading">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Wings · {OWL_WING_MOVES.length} moves</p>
+            <h2 id="skin-moves-heading">Skins and wing moves</h2>
+          </div>
+          <div className="chips">
+            {MAUS_COLOR_NAMES.map((c) => (
+              <button key={c} type="button" className={c === color ? "on" : ""} onClick={() => setColor(c)}>
+                <span className="swatch" style={{ background: MAUS_COLORS[c] }} />
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="matrix-wrap">
+          <div className="matrix" style={{ gridTemplateColumns: `150px repeat(${OWL_WING_MOVES.length}, minmax(140px, 1fr))`, minWidth: 900 }}>
+            <div className="corner-label">Skin ↓ / move →</div>
+            {OWL_WING_MOVES.map((move) => (
+              <div className="column-label" key={move}>
+                <strong>{move}</strong>
+                <span>replays with the library</span>
+              </div>
+            ))}
+            {MASCOT_SKIN_IDS.map((skin) => (
+              <SkinMoves key={skin} skin={skin} color={color} replayAll={replayAll} />
+            ))}
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
 function Preview() {
   const [replayAll, setReplayAll] = useState(0);
   const [tuning, setTuning] = useState<Tuning>(DEFAULTS);
@@ -339,6 +447,8 @@ function Preview() {
         ))}
       </section>
 
+      <SkinLibrary replayAll={replayAll} />
+
       <section className="expression-library" aria-labelledby="expression-heading">
         <div className="section-heading">
           <div>
@@ -379,11 +489,17 @@ function Preview() {
   );
 }
 
-/** A single owl pinned for screenshots: `?scene=1&color=black&wings=0.8&size=300`. */
+/**
+ * A single owl pinned for screenshots:
+ * `?scene=1&color=black&skin=lightning&wings=0.8&size=300`, or with
+ * `&move=flap` to replay a wing move (`&manual=1` leaves the trigger to
+ * `window.owlMove()`).
+ */
 function Scene({ params }: { params: URLSearchParams }) {
   const color = (params.get("color") ?? "green") as MausColor;
   const size = Number(params.get("size") ?? 300);
   const wings = Number(params.get("wings") ?? 0);
+  const skin = params.get("skin");
   const move = params.get("move") as OwlWingMove | null;
   const big = useRef<OwlAvatarHandle>(null);
   useEffect(() => {
@@ -401,9 +517,74 @@ function Scene({ params }: { params: URLSearchParams }) {
   }, [move, params]);
   return (
     <div data-skin={params.get("theme") ?? "pulsatrix"} className="flex min-h-screen items-center justify-center gap-10 bg-app p-16">
-      <OwlAvatar ref={big} color={color} size={size} wings={wings} animated={Boolean(move) || params.get("animated") === "1"} reducedMotion={false} />
-      <OwlAvatar color={color} size={44} wings={wings} animated={false} />
-      <OwlAvatar color={color} size={28} wings={wings} animated={false} />
+      <OwlAvatar ref={big} color={color} skin={skin} size={size} wings={wings} animated={Boolean(move) || params.get("animated") === "1"} skinAnimated reducedMotion={false} />
+      <OwlAvatar color={color} skin={skin} size={44} wings={wings} animated={false} skinAnimated />
+      <OwlAvatar color={color} skin={skin} size={28} wings={wings} animated={false} />
+    </div>
+  );
+}
+
+/** Every skin side by side, large: `?skins=1&color=blue&size=200&wings=0.6`. */
+function SkinsScene({ params }: { params: URLSearchParams }) {
+  const color = (params.get("color") ?? "black") as MausColor;
+  const size = Number(params.get("size") ?? 200);
+  const wings = Number(params.get("wings") ?? 0);
+  return (
+    <div data-skin={params.get("theme") ?? "pulsatrix"} className="grid min-h-screen grid-cols-4 place-items-center gap-x-6 gap-y-10 bg-app p-12 text-ink">
+      {MASCOT_SKIN_IDS.map((skin) => (
+        <figure key={skin} className="flex flex-col items-center gap-3">
+          <OwlAvatar color={color} skin={skin} size={size} wings={wings} animated={false} skinAnimated label={`${skin} skin`} />
+          <figcaption className="text-[13px] text-ink-secondary">{skin}</figcaption>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
+/** The sidebar size, one row per skin: `?sidebar=1&color=black`. */
+function SidebarScene({ params }: { params: URLSearchParams }) {
+  const color = (params.get("color") ?? "black") as MausColor;
+  return (
+    <div data-skin={params.get("theme") ?? "pulsatrix"} className="min-h-screen bg-app p-6 text-ink">
+      <div className="w-[240px] rounded-xl bg-panel p-2">
+        {MASCOT_SKIN_IDS.map((skin, i) => (
+          <div key={skin} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px]">
+            <OwlAvatar color={i % 2 ? color : "green"} skin={skin} size={28} animated={false} />
+            <span>{skin === "none" ? "Pulsa" : skin}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The real appearance card around a sample bot: `?picker=1&color=black&skin=lightning`. */
+function PickerScene({ params }: { params: URLSearchParams }) {
+  const [bot, setBot] = useState<Bot>({
+    id: "preview-bot",
+    threadId: "preview-thread",
+    name: "Pulsa",
+    title: "Preview",
+    description: "",
+    notifications: false,
+    color: (params.get("color") ?? "black") as MausColor,
+    mascotSkin: botMascotSkin(params.get("skin")),
+    unread: false,
+    modelSelection: { instanceId: "preview", model: "preview" },
+    messages: [],
+  });
+  return (
+    <div data-skin={params.get("theme") ?? "pulsatrix"} className="min-h-screen bg-app p-6 text-ink">
+      <div className="mx-auto w-[380px] rounded-2xl bg-card pb-[560px]">
+        <StoreProvider>
+          <BotProfileAvatarCard
+            bot={bot}
+            activeState="idle"
+            mascotMotion={null}
+            onPatch={(patch) => setBot((current) => ({ ...current, ...patch }))}
+          />
+        </StoreProvider>
+      </div>
     </div>
   );
 }
@@ -411,5 +592,17 @@ function Scene({ params }: { params: URLSearchParams }) {
 const sceneParams = new URLSearchParams(window.location.search);
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>{sceneParams.has("scene") ? <Scene params={sceneParams} /> : <Preview />}</StrictMode>,
+  <StrictMode>
+    {sceneParams.has("picker") ? (
+      <PickerScene params={sceneParams} />
+    ) : sceneParams.has("sidebar") ? (
+      <SidebarScene params={sceneParams} />
+    ) : sceneParams.has("skins") ? (
+      <SkinsScene params={sceneParams} />
+    ) : sceneParams.has("scene") ? (
+      <Scene params={sceneParams} />
+    ) : (
+      <Preview />
+    )}
+  </StrictMode>,
 );
