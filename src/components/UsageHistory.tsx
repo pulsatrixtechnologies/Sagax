@@ -7,6 +7,7 @@ import { Download, Loader2 } from "lucide-react";
 import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import type { LocaleKey } from "@/locales";
 import { cachedUsageNote, formatTokens, formatUsd, hasFiniteCost, headlineTokens, tokensColumnLabel } from "@/lib/usage";
 import { Card } from "./SettingsPrimitives";
 import { UsageBudgetCards, type BudgetState } from "./UsageBudget";
@@ -41,6 +42,12 @@ export interface UsageSummary {
   budget?: BudgetState | null;
   billing?: { currency: string } | null;
 }
+
+const PERIOD_LABEL_KEYS = {
+  month: "usage.history.thisMonth",
+  lastMonth: "usage.history.lastMonth",
+  days30: "usage.history.last30Days",
+} as const satisfies Record<UsagePeriod, LocaleKey>;
 
 /** Inclusive day bounds (UTC) for a preset period. */
 export function usagePeriodRange(period: UsagePeriod, now = new Date()): { from: string; to: string } {
@@ -165,7 +172,14 @@ export function UsageHistory({ load = fetchUsage }: { load?: typeof fetchUsage }
   return (
     <>
     <UsageBudgetCards budget={summary?.budget ?? null} />
-    <Card title={t("usage.history.title")} subtitle={t("usage.history.subtitle")}>
+    <Card
+      collapsible
+      cardId="usage.history"
+      defaultOpen={false}
+      title={t("usage.history.title")}
+      subtitle={t("usage.history.subtitle")}
+      summary={t(PERIOD_LABEL_KEYS[period])}
+    >
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select
           value={period}

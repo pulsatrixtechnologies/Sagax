@@ -10,7 +10,7 @@ import { t } from "@/lib/i18n";
 import { formatUsd, hasFiniteCost } from "@/lib/usage";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CopyLink } from "./PeopleSection";
-import { Card } from "./SettingsPrimitives";
+import { Card, cardCount } from "./SettingsPrimitives";
 
 export interface FleetWorkspaceView {
   slug: string;
@@ -250,7 +250,13 @@ export function WorkspacesSection({ load = fetchFleet }: { load?: () => Promise<
   if (!workspacesAvailable(state.config)) return null;
   return (
     <div className="flex flex-col gap-5">
-      <Card title={t("workspaces.title")} subtitle={t("workspaces.subtitle")}>
+      <Card
+        collapsible
+        cardId="workspaces.fleet"
+        title={t("workspaces.title")}
+        subtitle={t("workspaces.subtitle")}
+        summary={cardCount("workspaces", fleet?.workspaces.length ?? 0)}
+      >
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => void refresh()} disabled={loading || busy !== null} className="flex items-center gap-1 text-[12px] text-ink-secondary hover:text-ink disabled:opacity-50"><RefreshCw size={12} className={cn(loading && "animate-spin")} />{t("workspaces.refresh")}</button>
           <button type="button" onClick={() => setCreating((value) => !value)} disabled={busy !== null} className="ml-auto flex items-center gap-1.5 rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink-secondary hover:bg-raised/50 hover:text-ink disabled:opacity-50"><Plus size={13} />{t("workspaces.new")}</button>

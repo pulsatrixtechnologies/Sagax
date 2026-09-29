@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { ACTIVITY_WHATS, activityQuery, describeEntry, formatValue, whoLabel, type ActivityEntry, type ActivityFilters, type ActivityWhat } from "@/lib/activity";
 import type { LocaleKey } from "@/locales";
-import { Card } from "./SettingsPrimitives";
+import { Card, cardCount } from "./SettingsPrimitives";
 
 const inputClass = "rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none [color-scheme:dark]";
 
@@ -87,7 +87,13 @@ export function ActivitySection() {
 
   const set = (patch: Partial<ActivityFilters>) => setFilters((current) => ({ ...current, ...patch }));
   return (
-    <Card title={t("activity.title")} subtitle={t("activity.subtitle", { days: String(days ?? 180) })}>
+    <Card
+      collapsible
+      cardId="activity.log"
+      title={t("activity.title")}
+      subtitle={t("activity.subtitle", { days: String(days ?? 180) })}
+      summary={cardCount("entries", total)}
+    >
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-[12px] text-ink-secondary">
           {t("activity.who")}

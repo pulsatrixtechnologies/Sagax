@@ -16,7 +16,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { Card, CommandLine } from "./SettingsPrimitives";
+import { Card, CommandLine, cardCount } from "./SettingsPrimitives";
 import { MacLocalControl } from "./MacLocalControl";
 import { cn } from "@/lib/cn";
 
@@ -381,7 +381,7 @@ export function VpsComputersCard({
       subtitle={t("vm.vps.subtitle")}
       summary={configured === false || !sshAlias
         ? t("settings.card.notSet")
-        : `${sshAlias} · ${t("settings.card.computers", { count: instances.length })}`}
+        : `${sshAlias} · ${cardCount("computers", instances.length)}`}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="text-[12px] text-ink-secondary">
@@ -521,7 +521,7 @@ export function CloudComputersCard({
       subtitle={t("vm.cloud.subtitle")}
       summary={configured === false
         ? t("settings.card.notConnected")
-        : t("settings.card.computers", { count: instances.length })}
+        : cardCount("computers", instances.length)}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="text-[12px] text-ink-secondary">
@@ -666,7 +666,12 @@ export function LocalVmInventoryCard({
 }) {
   return (
     <Card
+      collapsible
+      cardId="computer.perBotInventory"
       title={t("vm.perBot.title")}
+      summary={unavailableReason
+        ? t("vm.perBot.inventoryUnavailable")
+        : t("vm.perBot.created", { count: instances.length, max: maxInstances })}
       subtitle={t("vm.perBot.subtitle", {
         count: unavailableReason
           ? t("vm.perBot.inventoryUnavailable")
@@ -1244,6 +1249,18 @@ export function LocalComputerSection() {
   const perBotRuntimeUnsupported = perBot && status?.runtime === "container";
   const headerReady = perBot ? Boolean(status?.daemonUp && status?.image && !perBotRuntimeUnsupported) : ready;
 
+  const statusText = loading
+    ? t("common.checking")
+    : unavailable
+      ? t("vm.main.statusUnavailable")
+      : perBot && headerReady
+        ? t("vm.main.readyPerBot")
+        : perBotRuntimeUnsupported
+          ? t("vm.main.perBotUnsupported")
+          : ready
+            ? t("vm.main.ready")
+            : (status?.problem ?? t("vm.main.notReady"));
+
   return (
     <>
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">{announcement}</p>
@@ -1274,7 +1291,10 @@ export function LocalComputerSection() {
       <MacLocalControl />
 
       <Card
+        collapsible
+        cardId="computer.main"
         title={t("vm.main.title")}
+        summary={statusText}
         subtitle={perBot
           ? t("vm.main.perBotSubtitle", { host })
           : t("vm.main.sharedSubtitle", { host })}
@@ -1288,17 +1308,7 @@ export function LocalComputerSection() {
             )}
           >
             {loading ? <Loader2 size={12} className="animate-spin" /> : headerReady ? <Check size={12} /> : <Circle size={9} />}
-            {loading
-              ? t("common.checking")
-              : unavailable
-                ? t("vm.main.statusUnavailable")
-                : perBot && headerReady
-                  ? t("vm.main.readyPerBot")
-                  : perBotRuntimeUnsupported
-                    ? t("vm.main.perBotUnsupported")
-                  : ready
-                    ? t("vm.main.ready")
-                    : (status?.problem ?? t("vm.main.notReady"))}
+            {statusText}
           </span>
           <button
             onClick={() => {
@@ -1482,12 +1492,10 @@ export function LocalComputerSection() {
       )}
 
       {unavailable && (
-        <Card>
-          <div className="flex gap-2 text-[13px] text-ink-secondary">
-            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-warning" />
-            <span>{t("vm.inspectFailed")}</span>
-          </div>
-        </Card>
+        <div role="status" className="flex gap-2 rounded-[14px] border-[0.5px] border-border px-3.5 py-3 text-[13px] text-ink-secondary">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0 text-warning" />
+          <span>{t("vm.inspectFailed")}</span>
+        </div>
       )}
 
       <Card

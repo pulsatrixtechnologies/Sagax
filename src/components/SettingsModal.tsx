@@ -25,7 +25,7 @@ import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { CloudAccountSettings } from "./CloudAccountSettings";
-import { Card, SettingRow, Switch, requestSettingsCard } from "./SettingsPrimitives";
+import { Card, SettingRow, Switch, requestSettingsCard, cardCount } from "./SettingsPrimitives";
 import { effortLabel } from "./ModelPicker";
 import { EFFORT_LEVELS, isEffortLevel } from "../../shared/wire";
 import { shortcutLabel } from "./ShortcutHint";
@@ -33,6 +33,7 @@ import { UsageSection } from "./UsageSection";
 import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { WorkspacesSection, workspacesAvailable } from "./WorkspacesSection";
 import { SkinPicker } from "./SkinPicker";
+import { SKINS, readSkin } from "@/lib/skins";
 import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { loadSidebarDensity, saveSidebarDensity, subscribeSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
@@ -610,7 +611,13 @@ function ExperimentalFeaturesRow() {
   };
 
   return (
-    <Card title={t("settings.experimental.title")} subtitle={t("settings.experimental.subtitle")}>
+    <Card
+      collapsible
+      cardId="experimental.features"
+      title={t("settings.experimental.title")}
+      subtitle={t("settings.experimental.subtitle")}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser), total: 2 })}
+    >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <div className="text-[14px] font-medium text-ink">{t("settings.experimental.skillAuthoring")}</div>
@@ -652,12 +659,26 @@ function ExperimentalFeaturesRow() {
   );
 }
 
+/** Reads the skin when the collapsed summary mounts, so a skin picked while
+ * the card was open is the one it names. */
+function CurrentSkinName() {
+  const id = readSkin();
+  return <>{SKINS.find((skin) => skin.id === id)?.name ?? id}</>;
+}
+
 function BrowserProfilesRow() {
   const { state } = useStore();
   const profiles = state.config?.browserProfiles ?? [];
   if (!builtInBrowserEnabled(state.config) && profiles.length === 0) return null;
   return (
-    <Card title={t("settings.profiles.title")} subtitle={t("settings.profiles.sharedSubtitle")}>
+    <Card
+      collapsible
+      cardId="experimental.browserProfiles"
+      defaultOpen={false}
+      title={t("settings.profiles.title")}
+      subtitle={t("settings.profiles.sharedSubtitle")}
+      summary={cardCount("profiles", profiles.length)}
+    >
       <BrowserProfilesManager />
     </Card>
   );
@@ -883,7 +904,12 @@ export function SettingsModal() {
             {section === "general" && (
               <>
                 <ThisComputerSettings />
-                <Card title={t("settings.profile.title")}>
+                <Card
+                  collapsible
+                  cardId="general.profile"
+                  title={t("settings.profile.title")}
+                  summary={state.config?.profile?.name || state.config?.profile?.email || t("settings.card.notSet")}
+                >
                   <ProfileFields />
                 </Card>
                 <Card
@@ -930,7 +956,13 @@ export function SettingsModal() {
 
             {section === "appearance" && (
               <>
-                <Card title={t("settings.skin.title")} subtitle={t("settings.skin.subtitle")}>
+                <Card
+                  collapsible
+                  cardId="appearance.skin"
+                  title={t("settings.skin.title")}
+                  subtitle={t("settings.skin.subtitle")}
+                  summary={<CurrentSkinName />}
+                >
                   <SkinPicker />
                 </Card>
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">

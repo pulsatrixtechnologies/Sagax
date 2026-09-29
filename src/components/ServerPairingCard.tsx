@@ -5,7 +5,7 @@ import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
 import { isOwnerOrAdmin, readSessionState, type SessionState } from "../lib/session";
 import { readMembership } from "../lib/membership";
-import { Card } from "./SettingsPrimitives";
+import { Card, cardCount } from "./SettingsPrimitives";
 
 /** What the server hands out for a new device (POST /api/auth/pairing). */
 export interface PairingOffer {
@@ -104,7 +104,7 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
   if (!canPairDevices(session)) {
     if (pairingBlockedReason(session) !== "chat-only") return null;
     return (
-      <Card title={t("remote.serverPairing.title")} subtitle={t(pairingCodes ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")}>
+      <Card collapsible cardId="companion.pairing" title={t("remote.serverPairing.title")} subtitle={t(pairingCodes ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")} summary={t("settings.card.chatOnly")}>
         <p data-server-pairing-chat-only className="mt-3 text-[13px] text-ink-secondary">{t(pairingCodes ? "remote.serverPairing.chatOnly" : "remote.serverPairing.portalChatOnly")}</p>
       </Card>
     );
@@ -147,7 +147,13 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
   }
 
   return (
-    <Card title={t("remote.serverPairing.title")} subtitle={t(pairingCodes ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")}>
+    <Card
+      collapsible
+      cardId="companion.pairing"
+      title={t("remote.serverPairing.title")}
+      subtitle={t(pairingCodes ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")}
+      summary={cardCount("devices", devices.length)}
+    >
       {pairingCodes ? <div className="mt-3 flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-1.5 text-[13px] text-ink">
           <input type="radio" name="server-pairing-scope" checked={scope === "admin"} onChange={() => setScope("admin")} />
