@@ -14,8 +14,28 @@ import {
   previewImage,
   previewKeyAction,
   safeDownloadFilename,
+  steppedZoom,
+  MAX_ZOOM,
   wrappedImageIndex,
 } from "./AttachmentPreview";
+
+describe("lightbox zoom", () => {
+  it("maps zoom keys whatever the image count", () => {
+    expect(previewKeyAction("+", 1)).toBe("zoom-in");
+    expect(previewKeyAction("=", 1)).toBe("zoom-in");
+    expect(previewKeyAction("-", 4)).toBe("zoom-out");
+    expect(previewKeyAction("0", 1)).toBe("zoom-reset");
+  });
+
+  it("steps zoom by half again, clamped between fit and the maximum", () => {
+    expect(steppedZoom(1, 1)).toBe(1.5);
+    expect(steppedZoom(1.5, -1)).toBe(1);
+    expect(steppedZoom(1, -1)).toBe(1);
+    let zoom = 1;
+    for (let step = 0; step < 20; step += 1) zoom = steppedZoom(zoom, 1);
+    expect(zoom).toBe(MAX_ZOOM);
+  });
+});
 
 describe("attachment image navigation", () => {
   it("wraps previous and next navigation", () => {
