@@ -24,6 +24,7 @@ import { z } from "zod";
 
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startFakeHttpMcp } from "./testing/fake-http-mcp-server.ts";
+import { startFakeOAuthMcp } from "./testing/fake-oauth-mcp-server.ts";
 import { freePortBlock } from "./testing/ports.ts";
 import { openSse } from "./testing/sse.ts";
 import { FILE_MAX_BYTES, IMAGE_MAX_BYTES } from "./attachments.ts";
@@ -7109,7 +7110,7 @@ describe("harness HTTP API", () => {
     try {
       const created = await api("POST", "/api/mcp/servers", { name: "docs", url: fake.url, headers: { Authorization: secret } });
       expect(created.status).toBe(201);
-      expect(created.body.servers).toEqual([{ name: "docs", type: "http", url: fake.url, headerKeys: ["Authorization"], enabled: false }]);
+      expect(created.body.servers).toEqual([{ name: "docs", type: "http", url: fake.url, headerKeys: ["Authorization"], enabled: false, auth: "none" }]);
       expect(JSON.stringify(created.body)).not.toContain(secret);
 
       const tested = await api("POST", "/api/mcp/servers/docs/test");
@@ -7143,6 +7144,57 @@ describe("harness HTTP API", () => {
     } finally {
       await fake.close();
       await api("DELETE", "/api/mcp/servers/docs").catch(() => undefined);
+    }
+  });
+
+  it("signs in to an OAuth MCP server through the loopback callback and never exposes the token", async () => {
+    const fake = await startFakeOAuthMcp();
+    try {
+      const created = await api("POST", "/api/mcp/servers", { name: "oauthdocs", url: fake.mcpUrl });
+      expect(created.status).toBe(201);
+      expect(created.body.servers).toEqual([expect.objectContaining({ name: "oauthdocs", auth: "required", authClient: "dynamic", authIssuer: new URL(fake.base).host })]);
+
+      // the sign-in body is validated before anything is registered
+      const junk = await api("POST", "/api/mcp/servers/oauthdocs/oauth/start", { clientId: "a b" });
+      expect(junk.status).toBe(400);
+      const started = await api("POST", "/api/mcp/servers/oauthdocs/oauth/start", {});
+      expect(started.status).toBe(200);
+      const authorizationUrl = new URL(started.body.authorizationUrl);
+      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(`${BASE}/api/mcp-oauth/callback`);
+      expect(fake.registrations[0]?.redirect_uris).toEqual([`${BASE}/api/mcp-oauth/callback`]);
+      const pending = await api("GET", "/api/mcp/servers/oauthdocs/oauth/status");
+      expect(pending.body).toMatchObject({ auth: "required", pending: true });
+
+      // the browser consents and lands on the harness's public callback
+      const back = await fake.authorize(started.body.authorizationUrl);
+      const landed = await fetch(back);
+      expect(landed.status).toBe(200);
+      const page = await landed.text();
+      expect(page).toContain("Sign-in complete");
+      const access = [...fake.validAccess][0]!;
+      expect(page).not.toContain(access);
+      // the state is single use
+      expect((await fetch(back)).status).toBe(400);
+
+      const listed = await api("GET", "/api/mcp/servers");
+      expect(listed.body.servers[0]).toMatchObject({ name: "oauthdocs", auth: "connected" });
+      const tested = await api("POST", "/api/mcp/servers/oauthdocs/test");
+      expect(tested.body).toEqual({ ok: true, tools: [{ name: "read_notes", description: "Read saved notes" }] });
+      expect(fake.mcpAuthorizations.at(-1)).toBe(`Bearer ${access}`);
+
+      const disk = readFileSync(join(home, ".openmausbot", "config.json"), "utf8");
+      for (const text of [disk, JSON.stringify(listed.body), JSON.stringify(tested.body)]) {
+        expect(text).not.toContain(access);
+        expect(text).not.toMatch(/fake-refresh-/);
+      }
+      expect(JSON.parse(disk).mcpServers.oauthdocs).toEqual({ type: "http", url: fake.mcpUrl, headers: {}, enabled: false });
+
+      const out = await api("POST", "/api/mcp/servers/oauthdocs/oauth/disconnect", {});
+      expect(out.body.servers[0]).toMatchObject({ auth: "required" });
+      expect(fake.revoked).toContain(access);
+    } finally {
+      await fake.close();
+      await api("DELETE", "/api/mcp/servers/oauthdocs").catch(() => undefined);
     }
   });
 

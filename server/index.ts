@@ -213,8 +213,11 @@ import {
   parseMcpServerMutation,
   parseMcpServersImport,
   parseStoredMcpServer,
+  isRemoteMcpServer,
+  type StoredRemoteMcpServer,
 } from "./mcp-registry.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
+import { callbackPage, McpOAuthError, McpOAuthManager, McpOAuthVault, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
   GROUP_GOAL_MAX_TURNS,
   groupGoalAssignmentKey,
@@ -1515,6 +1518,17 @@ const companyRuntimeStarted = new Promise<void>(resolve => { companyRuntimeReady
 /** The enrolled organisation's desktop policy: in memory only, read-only, and
  * inert (null) unless Electron's enrolled parent sends one. */
 const managedPolicy = new ManagedDesktopPolicy({ onChange: () => broadcast({ kind: "config", ...configStatus() }) });
+// OAuth sign-ins for remote MCP servers (server/mcp-oauth.ts). Tokens live in
+// an encrypted vault beside config.json, never in it; the key comes from the
+// desktop's OS-encrypted store, or a 0600 key file on a headless server.
+let mcpOAuthKey: VaultKeySource | null = null;
+const mcpOAuth = new McpOAuthManager({
+  vault: new McpOAuthVault(DATA_DIR, () => {
+    if (mcpOAuthKey?.kind === "key") return mcpOAuthKey;
+    mcpOAuthKey = resolveVaultKey(DATA_DIR);
+    return mcpOAuthKey;
+  }),
+});
 /** Why the organisation refuses this instance for bots, or undefined. */
 function policyModelRefusal(instance: { instanceId: string; driverKind: string }): string | undefined {
   const engine = BUILT_IN_DRIVERS.find(driver => driver.driverKind === instance.driverKind)?.metadata.displayName;
@@ -8961,6 +8975,7 @@ async function startTurn(
       // composio — only to a driver that can mount them. Their tools are
       // never pre-allowed, so every call rides the normal permission flow.
       if (instance.adapter.capabilities.customMcp === true) {
+        await refreshMcpOAuth(bot);
         const custom = engineMcpServers(bot);
         if (Object.keys(custom).length) integrations.custom = custom;
       }
@@ -11311,6 +11326,7 @@ async function runGroupMemberTurn(
   }
   // user-configured MCP servers: same gating as the 1:1 site above.
   if (instance.adapter.capabilities.customMcp === true) {
+    await refreshMcpOAuth(bot);
     const custom = engineMcpServers(bot);
     if (Object.keys(custom).length) integrations.custom = custom;
   }
@@ -13929,8 +13945,12 @@ function mcpServerResponse() {
   // While enrolled with custom servers off, say which servers stay configured
   // but never reach bots, and why. Nothing here is written to config.json.
   const policy = managedPolicy.current();
-  const servers = listMcpServers(cfg.mcpServers).map(server =>
-    managedPolicy.mcpAllowed(server.name, "url" in server ? server.url : undefined) ? server : { ...server, managedBy: policy!.organizationName });
+  const remote = remoteMcpServers();
+  const servers = listMcpServers(cfg.mcpServers).map(server => {
+    const auth = "url" in server && remote[server.name] ? mcpOAuth.status(server.name, remote[server.name]) : undefined;
+    const listed = auth ? { ...server, ...auth, ...(auth.auth === "required" && mcpOAuth.pendingFor(server.name) ? { authPending: true } : {}) } : server;
+    return managedPolicy.mcpAllowed(server.name, "url" in server ? server.url : undefined) ? listed : { ...listed, managedBy: policy!.organizationName };
+  });
   return { servers, ...(policy && !policy.mcp.allowCustom ? { managed: { organizationName: policy.organizationName, allowlist: policy.mcp.allowlist } } : {}) };
 }
 /** Adding or editing a server the organisation has not approved is refused. */
@@ -13954,7 +13974,47 @@ function mcpServerBody(body: unknown): Record<string, unknown> {
 /** Configured MCP servers that may reach this bot's engine. While enrolled,
  * the organisation's allow-list filters them; config.json is never changed. */
 function engineMcpServers(bot: BotRecord) {
-  return managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers));
+  return mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers)));
+}
+
+/** Refresh the OAuth tokens a turn is about to hand its engine. A failure
+ * only marks that server expired; the turn still starts without it signed in. */
+async function refreshMcpOAuth(bot: BotRecord): Promise<void> {
+  await mcpOAuth.refreshDue(managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers))).catch(() => undefined);
+}
+
+/** Every configured remote server, parsed, keyed by name. */
+function remoteMcpServers(names?: string[]): Record<string, StoredRemoteMcpServer> {
+  const out: Record<string, StoredRemoteMcpServer> = {};
+  for (const [name, raw] of Object.entries(cfg.mcpServers ?? {})) {
+    if (names && !names.includes(name)) continue;
+    const parsed = parseStoredMcpServer(name, raw);
+    if (parsed.ok && isRemoteMcpServer(parsed.server)) out[name] = parsed.server;
+  }
+  return out;
+}
+
+/** Ask newly seen remote servers whether they want a sign-in, bounded so a
+ * slow server never holds the list for long. */
+async function probeMcpOAuth(names?: string[], force = false): Promise<void> {
+  // A server the organisation has not approved is never contacted.
+  const servers = Object.fromEntries(Object.entries(remoteMcpServers(names)).filter(([name, server]) => managedPolicy.mcpAllowed(name, server.url)));
+  await mcpOAuth.probeUnknown(servers, { force, signal: AbortSignal.timeout(4_000) }).catch(() => undefined);
+}
+
+/** A sign-in may carry a client the user registered with the provider,
+ * for servers that offer no dynamic registration. */
+const mcpOAuthStartSchema = z.object({
+  clientId: z.string().trim().min(1).max(512).regex(/^[\x21-\x7e]+$/, "The client ID has characters that are not allowed.").optional(),
+  clientSecret: z.string().trim().max(2_048).regex(/^[\x21-\x7e]*$/, "The client secret has characters that are not allowed.").optional(),
+}).strict();
+
+/** Where the authorization server sends the browser back: this server on
+ * loopback, or its public address when the request came from elsewhere. */
+function mcpOAuthRedirectUri(req: IncomingMessage): string {
+  const remote = !isLoopbackHost(req.headers.host) || isProxied(req);
+  const base = remote ? publicUrl() : null;
+  return `${base ?? `http://127.0.0.1:${PORT}`}/api/mcp-oauth/callback`;
 }
 
 function persistMcpServers(next: Record<string, unknown>): void {
@@ -14607,6 +14667,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
     if (method === "GET" && path === "/.well-known/openmausbot/environment") {
       return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && emailSignIn.enabled(), sharedComputers: sharedComputersEnabled(cfg) }));
+    }
+    // The browser lands here after an MCP server's sign-in. Public: the
+    // single-use `state` bound to the pending flow is the authorization.
+    if (method === "GET" && path === "/api/mcp-oauth/callback") {
+      const result = await mcpOAuth.callback(url.searchParams, AbortSignal.timeout(15_000));
+      const page = callbackPage(result, typeof req.headers["accept-language"] === "string" ? req.headers["accept-language"] : undefined);
+      res.writeHead(result.ok ? 200 : 400, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${page.nonce}'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`,
+      });
+      res.end(page.html);
+      return;
     }
     const domainCheck = /^\/\.well-known\/openmausbot\/domain-check\/([a-f0-9]{64})$/.exec(path);
     if (method === "GET" && domainCheck) {
@@ -22030,7 +22105,50 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
     // ── custom MCP servers (a local command or a URL; secrets write-only) ──
     if (method === "GET" && path === "/api/mcp/servers") {
+      await probeMcpOAuth(undefined, url.searchParams.get("reprobe") === "1");
       return json(res, 200, mcpServerResponse());
+    }
+
+    // ── OAuth sign-in for a remote MCP server (server/mcp-oauth.ts) ──
+    const mcpOAuthRoute = /^\/api\/mcp\/servers\/([a-z][a-z0-9_-]{0,31})\/oauth\/(start|disconnect|probe|status)$/.exec(path);
+    if (mcpOAuthRoute) {
+      const [, name, action] = mcpOAuthRoute;
+      const expected = action === "status" ? "GET" : "POST";
+      if (method !== expected) return json(res, 405, { error: "method not allowed" });
+      if (method === "POST" && !String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+        return json(res, 415, { error: "content-type must be application/json" });
+      }
+      const server = remoteMcpServers([name])[name];
+      if (!server) return json(res, 404, { error: "Remote MCP server not found." });
+      res.setHeader("cache-control", "no-store");
+      if (action === "status") {
+        return json(res, 200, { ...(mcpOAuth.status(name, server) ?? { auth: "none" }), pending: mcpOAuth.pendingFor(name) });
+      }
+      const body = await readBody(req);
+      if (action === "probe") {
+        if (!managedPolicy.mcpAllowed(name, server.url)) return json(res, 403, { error: mcpPolicyRefusal(name, server) ?? "Your organization has not approved this server.", code: "managed_policy" });
+        await mcpOAuth.probe(name, server, AbortSignal.timeout(10_000)).catch(() => undefined);
+        return json(res, 200, mcpServerResponse());
+      }
+      if (action === "disconnect") {
+        await mcpOAuth.disconnect(name, server).catch(() => undefined);
+        return json(res, 200, mcpServerResponse());
+      }
+      if (!managedPolicy.mcpAllowed(name, server.url)) {
+        return json(res, 403, { error: mcpPolicyRefusal(name, server) ?? "Your organization has not approved this server.", code: "managed_policy" });
+      }
+      const input = mcpOAuthStartSchema.safeParse(body ?? {});
+      if (!input.success) return json(res, 400, { error: input.error.issues[0]?.message ?? "Invalid sign-in request." });
+      const redirectUri = mcpOAuthRedirectUri(req);
+      try {
+        const started = await mcpOAuth.start(name, server, { redirectUri, ...input.data }, AbortSignal.timeout(15_000));
+        return json(res, 200, started);
+      } catch (error) {
+        if (error instanceof McpOAuthError) {
+          return json(res, 400, { error: error.message, ...(error.code ? { code: error.code } : {}), ...(error.code === "client_required" ? { redirectUri } : {}) });
+        }
+        return json(res, 502, { error: "The sign-in could not be started." });
+      }
     }
 
     const mcpTest = /^\/api\/mcp\/servers\/([a-z][a-z0-9_-]{0,31})\/test$/.exec(path);
@@ -22049,7 +22167,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.once("close", disconnect);
       mcpProbesInFlight += 1;
       try {
-        return json(res, 200, await probeMcpServer(parsed.server, undefined, controller.signal));
+        const name = mcpTest[1];
+        const server = parsed.server;
+        if (!isRemoteMcpServer(server)) return json(res, 200, await probeMcpServer(server, undefined, controller.signal));
+        await mcpOAuth.refresh(name, server, false, controller.signal).catch(() => false);
+        let result = await probeMcpServer({ ...server, ...mcpOAuth.withAuthHeaders({ [name]: server })[name] }, undefined, controller.signal);
+        // A token the server refuses: one forced refresh, then one retry.
+        if (!result.ok && /HTTP 401\b/.test(result.error) && await mcpOAuth.refresh(name, server, true, controller.signal).catch(() => false)) {
+          result = await probeMcpServer({ ...server, ...mcpOAuth.withAuthHeaders({ [name]: server })[name] }, undefined, controller.signal);
+        }
+        if (!result.ok && /HTTP 40[13]\b/.test(result.error)) await mcpOAuth.probe(name, server, controller.signal).catch(() => undefined);
+        return json(res, 200, result);
       } finally {
         res.off("close", disconnect);
         mcpProbesInFlight -= 1;
@@ -22075,6 +22203,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refusal = mcpPolicyRefusal(name, parsed.server);
         if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
         persistMcpServers({ ...current, [name]: parsed.server });
+        await mcpOAuth.forget(name).catch(() => undefined);
+        await probeMcpOAuth([name]);
         return json(res, 201, mcpServerResponse());
       } finally {
         mcpConfigBusy = false;
@@ -22110,6 +22240,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refused = names.filter(name => mcpPolicyRefusal(name, parsed.servers[name] as object));
         if (refused.length) return json(res, 403, { error: `${mcpPolicyRefusal(refused[0]!, parsed.servers[refused[0]!] as object)} Not approved: ${refused.join(", ")}.`, code: "managed_policy" });
         persistMcpServers({ ...current, ...parsed.servers });
+        for (const added of names) await mcpOAuth.forget(added).catch(() => undefined);
+        await probeMcpOAuth(names);
         return json(res, 201, { ...mcpServerResponse(), added: names });
       } finally {
         mcpConfigBusy = false;
@@ -22131,6 +22263,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const next = { ...current };
           delete next[name];
           persistMcpServers(next);
+          await mcpOAuth.forget(name).catch(() => undefined);
           return json(res, 200, mcpServerResponse());
         }
 
@@ -22151,6 +22284,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refusal = mcpPolicyRefusal(name, parsed.server);
         if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
         persistMcpServers({ ...current, [name]: parsed.server });
+        // A new address is a new resource: the old sign-in must not follow it.
+        const previousUrl = isRemoteMcpServer(existing.server) ? existing.server.url : undefined;
+        const nextUrl = isRemoteMcpServer(parsed.server) ? parsed.server.url : undefined;
+        if (previousUrl !== nextUrl) await mcpOAuth.forget(name).catch(() => undefined);
+        if (nextUrl) await probeMcpOAuth([name]);
         return json(res, 200, mcpServerResponse());
       } finally {
         mcpConfigBusy = false;
