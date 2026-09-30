@@ -34,7 +34,7 @@ import type {
   TextGenerationOptions,
 } from "../contracts.ts";
 import { gateServer, resultBudget } from "../mcp-gate-config.ts";
-import { newEventId, newId } from "../contracts.ts";
+import { newEventId, newId, type TurnAccessInput } from "../contracts.ts";
 import { askInputSummary, commandSummary, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
@@ -1051,8 +1051,19 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
 
   async create(input: DriverCreateInput<ClaudeConfig>): Promise<ProviderInstance> {
     const { instanceId, config } = input;
-    const environment = (model?: string | null) =>
-      claudeEnvironment(config.managed ? undefined : model, { ...process.env, ...input.environment }, config.configDir, input.environment);
+    const environment = (model?: string | null, access?: TurnAccessInput) => {
+      // Slice 4: an owner's key rides as instance environment for this one
+      // turn (so claudeEnvironment keeps it); a person's own subscription
+      // runs from their login directory with no key at all.
+      const instanceEnvironment = access?.environment ? { ...input.environment, ...access.environment } : input.environment;
+      const configDir = access?.via === "subscription" && access.claudeConfigDir ? access.claudeConfigDir : config.configDir;
+      const env = claudeEnvironment(config.managed ? undefined : model, { ...process.env, ...instanceEnvironment }, configDir, instanceEnvironment);
+      if (access?.via === "subscription") {
+        delete env.ANTHROPIC_API_KEY;
+        delete env.ANTHROPIC_AUTH_TOKEN;
+      }
+      return env;
+    };
     const catalogEnv = environment();
     // Say it once where a headless or source run reads its logs; the Engines
     // page carries the same warning for the desktop (claudeInheritWarning).
@@ -1428,7 +1439,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         args.push("--allowedTools", allowed.join(","));
       }
 
-      const env = environment(turnModel);
+      const env = environment(turnModel, turn.access);
       const authSettings = isolated && !injected.injected
         ? readClaudeAuthSettings(env, input.environment) : {};
       // Harness hooks (item 0.2): one helper command for the events the
@@ -1475,6 +1486,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         configDir: env.CLAUDE_CONFIG_DIR ?? null,
         // hooks on/off changes the settings file the process was launched with
         hooks: Boolean(hooks),
+        // Slice 4: another person's credentials never reuse this process.
+        access: turn.access?.identity ?? null,
         // Rotating an account's key/helper must not reuse the old process.
         auth: createHash("sha256").update(JSON.stringify({
           settings: authSettings,

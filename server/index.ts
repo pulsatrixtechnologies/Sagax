@@ -100,7 +100,7 @@ import { groupTurnCwd } from "./room-cwd.ts";
 import { RoomTurnDeadline, RoomTurnStallRegistry, roomTurnTimeoutMessage } from "./room-turn-timeout.ts";
 import * as boat from "./boat.ts";
 import { TeamComputers, teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
-import { isEffortLevel, type BotVisibility, type CardAnswerer, type ResolvedSender, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
+import { isEffortLevel, type BotVisibility, type CardAnswerer, type ResolvedSender, type WireAccessCard, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
 import type { TeamComputersPayload } from "../shared/team-computer.ts";
 import { boatCreateRecoverySnapshot, retireDeletedBoatCreate } from "./boat-create-idempotency.ts";
 import { boatDeletionSnapshot } from "./boat-delete-journal.ts";
@@ -511,6 +511,8 @@ import {
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
+import { materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, type EngineCredentialInput, type TurnAccess } from "./engine-credentials.ts";
+import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { applyIdentityMigration, principalIdFor } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
@@ -585,7 +587,7 @@ import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, i
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
+import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -3114,6 +3116,18 @@ const principals = new PrincipalRegistry({ path: join(DATA_DIR, "principals.json
 principals.localOperator(cfg.profile?.email);
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
 const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
+/** Slice 4 (D10): each person's own engine sign-ins, organization mode. */
+const engineLogins = IDENTITY.kind === "perspicax"
+  ? new PrincipalEngineLogins({
+    dataDir: DATA_DIR,
+    instance: (instanceId) => {
+      const entry = instanceConfigs(cfg)[instanceId];
+      if (!entry) return null;
+      const cli = typeof (entry.config as { cli?: unknown } | undefined)?.cli === "string" ? (entry.config as { cli: string }).cli : entry.driver === "codex" ? "codex" : "claude";
+      return { driver: entry.driver, cli, environment: entry.environment ?? {} };
+    },
+  })
+  : null;
 /** Slice 4: shared sidebar sections (section-channels.ts), organization mode. */
 let sectionChannels: { accessFor(name: string): SectionAccess | null } | null = null;
 // A person's teams changed (a refreshed id_token or a directory sync): every
@@ -5131,6 +5145,7 @@ function closeSessionStreams(sessionId: string): void {
 }
 sessions.onSessionRevoked((sessionId) => {
   providerAuthSessions.revokeOwner(sessionId);
+  engineLogins?.revokeOwner(sessionId);
   closeSessionStreams(sessionId);
 });
 
@@ -7350,12 +7365,15 @@ bus.subscribe((event: RuntimeEvent) => {
       // Organization server: a key-backed engine whose provider refused the
       // key gets the key_refused card, not the generic error row.
       const refusedInstance = bot ? registry.get(event.providerInstanceId ?? bot.modelSelection.instanceId) : null;
+      const ranOn = turnAccessByThread.get(event.threadId);
       const keyRefused = bot && refusedInstance ? keyRefusedCard({
         identity: IDENTITY.kind, setup: event.setup, claudeUpdate: event.claudeUpdate,
-        keyBacked: driverKeyBacked(cfg, refusedInstance.driverKind),
+        keyBacked: driverKeyBacked(cfg, refusedInstance.driverKind) || ranOn?.via === "owner-key",
         message: event.message, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
         engine: refusedInstance.displayName || refusedInstance.driverKind, redact: redactSecretsInText,
       }) : null;
+      // An owner-key turn (slice 4) also counts: that key is dropped at once.
+      if (keyRefused && ranOn?.via === "owner-key" && ranOn.ownerSub && ranOn.provider) perspicaxDirectory?.invalidate(ranOn.ownerSub, ranOn.provider);
       if (keyRefused && bot) {
         pushMessage({ role: "bot", kind: "access", access: keyRefused });
         notify(buildNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }));
@@ -8913,7 +8931,7 @@ async function startTurn(
     store.appendMessage(threadId, {
       role: "bot",
       kind: "access",
-      access: { reason: accessRefusal, engine, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot) },
+      access: accessCardFor(bot, accessRefusal, engine),
     });
     const notice = engineAccessNotice(accessRefusal, engine);
     notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
@@ -9867,9 +9885,12 @@ async function startTurn(
       if (strictResume && !(opts?.cardContinuation && continuingRoutine) && dispatchedConfig !== plannedConfig) dispatchContext = decideContext(dispatchedConfig);
       // Before sendTurn: an adapter may emit the whole turn before it resolves.
       handoffs.dispatching(threadId, dispatchClaimId, dispatchContext.handoff);
+      // Slice 4: this turn's credentials (an owner key is read now).
+      const turnAccess = await orgTurnAccess(threadId, bot, instance, speaker);
       const dispatch = await guardTurnDispatch(instance.adapter.sendTurn({
         threadId,
         botId: bot.id,
+        ...(turnAccess ? { access: turnAccess } : {}),
         startupRecovery: cfg.automaticRecovery?.enabled === true && !opts?.automaticRecoveryAttempted,
         text: withRecalled(recalled, dispatchContext.turnText),
         refreshSystemPrompt: true,
@@ -10040,10 +10061,18 @@ async function startTurn(
           }
         } else if (refusal) message = `Automatic recovery unavailable: ${refusal} Original error: ${message}`;
       }
+      if (e instanceof EngineAccessLost) {
+        // The owner key went away between admission and dispatch: the same
+        // card and notice a refusal at admission gives.
+        const engine = engineDisplayName(instance);
+        store.appendMessage(threadId, { role: "bot", kind: "access", access: accessCardFor(bot, e.reason, engine, e.detail) });
+        message = engineAccessNotice(e.reason, engine);
+        notify(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }));
+      }
       settleDirectFollowup(dispatchClaimId, { ok: false, text: message });
       // The wait already wrote its failure resolution; keep all dispatch
       // failure bookkeeping below without adding the same error twice.
-      if (!(e instanceof ComputerWaitGaveUp)) store.appendMessage(threadId, {
+      if (!(e instanceof ComputerWaitGaveUp) && !(e instanceof EngineAccessLost)) store.appendMessage(threadId, {
         role: "bot",
         kind: "activity",
         turnSucceeded: false,
@@ -11416,7 +11445,7 @@ async function runGroupMemberTurn(
       role: "bot",
       kind: "access",
       from: { botId: bot.id, name: bot.name, color: bot.color },
-      access: { reason: roomAccessRefusal, engine, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot) },
+      access: accessCardFor(bot, roomAccessRefusal, engine),
     });
     const notice = engineAccessNotice(roomAccessRefusal, engine);
     notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
@@ -12064,9 +12093,11 @@ async function runGroupMemberTurn(
     // notes only in a room: a private chat reaches a room through the
     // explicit, disclosed session_search, never automatically
     const roomRecalled = cardContinuation ? "" : autoRecallPrompt(bot, threadId, resolvedLatestImages.text, { conversations: false, userName });
-    guardTurnDispatch(instance.adapter.sendTurn({
+    const roomSpeaker: TurnSpeaker = roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "operator" };
+    guardTurnDispatch(orgTurnAccess(threadId, readyBot, instance, roomSpeaker).then((roomTurnAccess) => instance.adapter.sendTurn({
         threadId,
         botId: readyBot.id,
+        ...(roomTurnAccess ? { access: roomTurnAccess } : {}),
         text: withRecalled(roomRecalled, text),
         refreshSystemPrompt: true,
         images: turnImages,
@@ -12080,7 +12111,7 @@ async function runGroupMemberTurn(
         ...(instance.instanceId === readyBot.modelSelection.instanceId
           ? memberTurnSelection(readyBot.modelSelection)
           : { model: instance.models.default }),
-      }), () => abandoned || Boolean(isCancelled?.()), async () => {
+      })), () => abandoned || Boolean(isCancelled?.()), async () => {
         // Stop may have landed while the adapter was authenticating, before
         // it had an active process for the first interrupt to reach. Now that
         // sendTurn completed setup, revoke again and interrupt the real turn.
@@ -12106,8 +12137,13 @@ async function runGroupMemberTurn(
         onProviderHandshakeSettled?.();
         clearCancelledProviderHandshake(threadId, retirementOwner);
         if (abandoned) return;
-        const message = err instanceof Error ? err.message : "turn failed";
-        store.appendMessage(threadId, {
+        let message = err instanceof Error ? err.message : "turn failed";
+        if (err instanceof EngineAccessLost) {
+          const engine = engineDisplayName(instance);
+          store.appendMessage(threadId, { role: "bot", kind: "access", from: { botId: bot.id, name: bot.name, color: bot.color }, access: accessCardFor(bot, err.reason, engine, err.detail) });
+          message = engineAccessNotice(err.reason, engine);
+          notify(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }));
+        } else store.appendMessage(threadId, {
           role: "bot",
           kind: "activity",
           from: { botId: bot.id, name: bot.name, color: bot.color },
@@ -14353,21 +14389,67 @@ function orgJoinsRunningTurn(bot: { ownerUserId?: unknown }, threadId: string, s
   const joining = orgSpeakerPrincipal(bot, speaker);
   return Boolean(running) && running === joining;
 }
-/** Slice 3 (D13): the organization refusal for a turn, or null. */
-function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): EngineAccessRefusal | null {
-  if (IDENTITY.kind !== "perspicax") return null;
-  const access = engineAccessFor({
+/** Slice 4 (D8): the facts engine-credentials.ts decides a turn's access from. */
+function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): EngineCredentialInput {
+  const ownerId = effectiveBotOwner(bot);
+  const owner = principals.byId(ownerId);
+  const sub = IDENTITY.kind === "perspicax" && owner?.subject?.iss === IDENTITY.issuer ? owner.subject.sub : undefined;
+  return {
     identity: IDENTITY.kind,
     speaker,
     peerOwnerPrincipalId: peerOwnerPrincipal(speaker),
-    ownerPrincipalId: effectiveBotOwner(bot),
-    ownerOrgRole: botOwnerOrgRole(bot),
+    owner: { principalId: ownerId, ...(sub ? { sub } : {}), orgRole: botOwnerOrgRole(bot) },
+    instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId) },
+    subscriptionSignedIn: (principalId, driver) => engineLogins?.signedIn(principalId, driver) ?? false,
+    ownerHasKey: (ownerSub, provider) => perspicaxDirectory?.providerKeys(ownerSub).includes(provider) ?? false,
     memberBotsUseOrgKey: orgSettings().memberBotsUseOrgKey,
-    driver: instance.driverKind,
     keyBacked: driverKeyBacked(cfg, instance.driverKind),
-    installed: engineInstalled(instance.instanceId),
+  };
+}
+/** The organization refusal for a turn, or null (checked when the turn is
+ * admitted; the owner key itself is read at dispatch). */
+function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): EngineAccessRefusal | null {
+  if (IDENTITY.kind !== "perspicax") return null;
+  const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+  return plan.ok ? null : plan.reason;
+}
+/** A turn admitted with an owner key whose key Perspicax no longer gives
+ * (and nothing after it serves): the dispatch stops with the access card. */
+class EngineAccessLost extends Error {
+  readonly reason: EngineAccessRefusal;
+  readonly detail?: string;
+  constructor(reason: EngineAccessRefusal, detail?: string) {
+    super(reason === "engine_missing" ? "the engine is not installed" : "no engine access for this turn");
+    this.reason = reason;
+    if (detail) this.detail = detail;
+  }
+}
+/** Who ran each thread's current turn, for a key the provider refuses. */
+const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; ownerSub?: string; provider?: "anthropic" | "openai" }>();
+/** Slice 4: the credentials of one turn on an organization server, fetched
+ * at dispatch; undefined in solo mode. Throws EngineAccessLost. */
+async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): Promise<TurnAccess | undefined> {
+  if (IDENTITY.kind !== "perspicax") return undefined;
+  const input = orgEngineInput(bot, instance, speaker);
+  const outcome = await materializeEngineAccess(input, resolveEngineAccess(input), {
+    dataDir: DATA_DIR,
+    resolveKey: (sub, provider) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, provider) : Promise.resolve({ ok: false as const, error: "link" as const }),
+    invalidate: (sub, provider) => perspicaxDirectory?.invalidate(sub, provider),
+    loginDir: (principalId, driver) => engineLogins?.loginDir(principalId, driver) ?? join(DATA_DIR, "principals", principalId, driver === "claudeAgent" ? "claude" : "codex"),
   });
-  return access.ok ? null : access.reason;
+  if (!outcome.ok) throw new EngineAccessLost(outcome.reason, outcome.detail);
+  const provider = providerOfDriver(instance.driverKind) ?? undefined;
+  turnAccessByThread.set(threadId, { via: outcome.access.via, ...(input.owner.sub ? { ownerSub: input.owner.sub } : {}), ...(provider ? { provider } : {}) });
+  return outcome.access;
+}
+/** Where an owner sets their model keys (Perspicax console, slice 4). */
+function perspicaxKeysUrl(): string | undefined {
+  return IDENTITY.kind === "perspicax" ? `${IDENTITY.issuer.replace(/\/+$/, "")}/console/pulsabot/keys` : undefined;
+}
+/** The access card of a refused or lost turn. */
+function accessCardFor(bot: BotRecord, reason: EngineAccessRefusal, engine: string, detail?: string): WireAccessCard {
+  const keysUrl = reason === "no_access" ? perspicaxKeysUrl() : undefined;
+  return { reason, engine, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot), ...(detail ? { detail } : {}), ...(keysUrl ? { keysUrl } : {}) };
 }
 
 async function describeInstances() {
@@ -15096,6 +15178,88 @@ if (IDENTITY.kind === "perspicax") {
     });
     res.setHeader("cache-control", "no-store");
     return json(res, 200, { bots });
+  });
+}
+// Slice 4 (D10): a person's own engines. Which answer for whom, and their
+// own subscription sign-in, in their own login directory.
+if (IDENTITY.kind === "perspicax" && engineLogins) {
+  const logins = engineLogins;
+  ROUTES.push(async ({ req, res, url, path, method, auth, json, readBody }) => {
+    if (path !== "/api/me/engines" && !path.startsWith("/api/me/engines/")) return PASS;
+    res.setHeader("cache-control", "no-store");
+    const principalId = auth.kind === "session" ? auth.session.principalId?.trim() || "" : localPrincipalId();
+    if (!principalId || !isPrincipalId(principalId)) return json(res, 403, { error: "sign in as a person first" });
+    const person = principals.byId(principalId);
+    const sub = person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+    const admin = orgAdminCaller(auth);
+    if (method === "GET" && path === "/api/me/engines") {
+      const engines = registry.entries().map((entry) => {
+        const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
+        const installed = engineInstalled(entry.instanceId);
+        const supported = isLoginDriver(driver);
+        const signedIn = supported && logins.signedIn(principalId, driver);
+        const provider = providerOfDriver(driver);
+        const ownerKey = Boolean(provider && sub && perspicaxDirectory?.providerKeys(sub).includes(provider));
+        const orgKey = orgSettings().memberBotsUseOrgKey && driverKeyBacked(cfg, driver);
+        const answersFor = !installed ? "nobody" : ownerKey || orgKey ? "everyone" : signedIn || admin ? "me" : "nobody";
+        const live = registry.get(entry.instanceId);
+        return {
+          instanceId: entry.instanceId,
+          driver,
+          displayName: live ? engineDisplayName(live) : entry.instanceId,
+          installed,
+          subscription: { supported, signedIn },
+          ownerKey,
+          orgKey,
+          answersFor,
+        };
+      });
+      return json(res, 200, { engines, ...(perspicaxKeysUrl() ? { keysUrl: perspicaxKeysUrl() } : {}) });
+    }
+    const status = /^\/api\/me\/engines\/([\w.-]+)\/login\/status$/.exec(path);
+    const action = /^\/api\/me\/engines\/([\w.-]+)\/login\/(start|complete|cancel|sign-out)$/.exec(path);
+    const instanceId = (status ?? action)?.[1];
+    if (!instanceId) return json(res, 404, { error: "not found" });
+    const entry = registry.entries().find((candidate) => candidate.instanceId === instanceId);
+    const driver = entry?.shadow?.driverKind ?? entry?.live?.driverKind ?? "";
+    if (!entry || !subscriptionDriver(driver)) return json(res, 404, { error: "This engine has no personal sign-in." });
+    const owner = auth.kind === "session" ? auth.session.id : "loopback";
+    try {
+      if (status && method === "GET") {
+        return json(res, 200, { auth: await logins.status(principalId, instanceId, owner, url.searchParams.get("flowId") ?? "") });
+      }
+      if (!action || method !== "POST") return json(res, 405, { error: "method not allowed" });
+      if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+        return json(res, 415, { error: "content-type must be application/json" });
+      }
+      const verb = action[2];
+      if (verb === "start") {
+        const started = await logins.start(principalId, instanceId, owner);
+        if (auth.kind === "session" && !sessions.isLive(auth.session.id)) {
+          logins.revokeOwner(owner);
+          return json(res, 401, { error: "Your session ended. Start a new sign-in." });
+        }
+        return json(res, 200, { auth: started });
+      }
+      if (verb === "sign-out") {
+        await logins.signOut(principalId, instanceId, owner);
+        return json(res, 200, { ok: true });
+      }
+      const body = await readBody(req, 4096);
+      const flowId = typeof body?.flowId === "string" ? body.flowId : "";
+      if (verb === "complete") {
+        const pasted = typeof body?.callbackUrl === "string" ? body.callbackUrl : typeof body?.code === "string" ? body.code : "";
+        if (!flowId || !pasted) return json(res, 400, { error: "flowId and a code or callbackUrl are required" });
+        await logins.complete(principalId, instanceId, owner, flowId, pasted);
+        return json(res, 200, { ok: true });
+      }
+      await logins.cancel(principalId, instanceId, owner, flowId);
+      return json(res, 200, { ok: true });
+    } catch (error) {
+      const requested = error && typeof error === "object" ? (error as { status?: unknown }).status : undefined;
+      const code = typeof requested === "number" && [400, 401, 404, 409, 413, 415].includes(requested) ? requested : 500;
+      return json(res, code, { error: error instanceof Error ? error.message : String(error) });
+    }
   });
 }
 ROUTES.push(createDirectGrantRoutes({

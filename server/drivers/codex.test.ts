@@ -19,6 +19,7 @@ import {
   CodexDriver,
   codexNativeIncomingLogMessage,
   codexUpdateCommand,
+  ownerKeyCodexArgs,
 } from "./codex.ts";
 import { removeTempDir } from "../testing/cleanup.ts";
 import * as procs from "../procs.ts";
@@ -668,6 +669,52 @@ describe("CodexDriver turns (fake app-server)", () => {
     await recorder.until((event) => event.type === "turn.completed");
 
     expect(JSON.parse(readFileSync(dump, "utf8")).env.CODEX_HOME).toBe(codexHome);
+  });
+
+  it("slice 4: an owner key runs on the pulsa_owner provider from its own empty home, the key in env only", async () => {
+    await create();
+    const dump = join(scratch, "owner-key.json");
+    process.env.FAKE_CODEX_DUMP = dump;
+    process.env.OPENAI_API_KEY = "sk-should-not-leak";
+    const home = join(scratch, "principals", "pr_a", "codex-key");
+    await instance.adapter.sendTurn({
+      threadId: "t-owner-key", text: "hi",
+      access: { via: "owner-key", identity: "owner-key:pr_a:fp", environment: { OMB_OWNER_OPENAI_API_KEY: "sk-test-openai-owner-00000001" }, codexHome: home, codexOwnerKey: true },
+    });
+    await recorder.until((event) => event.type === "turn.completed");
+    delete process.env.OPENAI_API_KEY;
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.env.OMB_OWNER_OPENAI_API_KEY).toBe("sk-test-openai-owner-00000001");
+    expect(seen.env.OPENAI_API_KEY).toBeUndefined();
+    expect(seen.env.CODEX_HOME).toBe(home);
+    expect(seen.argv).toEqual(expect.arrayContaining(ownerKeyCodexArgs()));
+    expect(JSON.stringify(seen.argv)).not.toContain("sk-test-openai-owner");
+  });
+
+  it("slice 4: a person's subscription sets CODEX_HOME to their login directory", async () => {
+    await create();
+    const dump = join(scratch, "subscription.json");
+    process.env.FAKE_CODEX_DUMP = dump;
+    const home = join(scratch, "principals", "pr_a", "codex");
+    await instance.adapter.sendTurn({ threadId: "t-subscription", text: "hi", access: { via: "subscription", identity: "subscription:pr_a", codexHome: home } });
+    await recorder.until((event) => event.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.env.CODEX_HOME).toBe(home);
+    expect(seen.env.OMB_OWNER_OPENAI_API_KEY).toBeUndefined();
+    expect(seen.argv.join(" ")).not.toContain("pulsa_owner");
+  });
+
+  it("slice 4: ownerKeyCodexArgs has the managed shape with the owner's env key", () => {
+    expect(ownerKeyCodexArgs()).toEqual([
+      "-c", 'model_provider="pulsa_owner"',
+      "-c", 'model_providers.pulsa_owner.name="Owner key"',
+      "-c", 'model_providers.pulsa_owner.base_url="https://api.openai.com/v1"',
+      "-c", 'model_providers.pulsa_owner.env_key="OMB_OWNER_OPENAI_API_KEY"',
+      "-c", 'model_providers.pulsa_owner.wire_api="responses"',
+      "-c", "model_providers.pulsa_owner.requires_openai_auth=false",
+      "-c", 'cli_auth_credentials_store="ephemeral"',
+      "-c", "shell_environment_policy.ignore_default_excludes=false",
+    ]);
   });
 
   it("mounts connected apps without placing credential values in argv", async () => {

@@ -1,0 +1,186 @@
+// A person's own engine subscriptions on an organization server (slice 4,
+// decision D10). Each person signs in to Claude or Codex with their own
+// account; the login lives in their own directory:
+//
+//   ${DATA_DIR}/principals/<principalId>/claude   (CLAUDE_CONFIG_DIR, 0700)
+//   ${DATA_DIR}/principals/<principalId>/codex    (CODEX_HOME, 0700)
+//
+// Signed in means our marker `<dir>/.pulsabot-login.json` ({ at }, 0600),
+// written when the CLI reports success and removed on sign-out; nothing else
+// is trusted. The flows are the drivers' own login controllers
+// (ClaudeLoginController, CodexDeviceAuthController) pointed at that
+// directory, one flow per (person, engine), owned by the session that
+// started it and ended with it (provider-auth-sessions.ts).
+//
+// A subscription only ever serves its owner speaking (engine-credentials.ts).
+import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+
+import { writeFileAtomic } from "./atomic.ts";
+import type { ProviderAuthenticationStart, ProviderAuthenticationStatus } from "./contracts.ts";
+import { ClaudeLoginController } from "./drivers/claude-login-auth.ts";
+import { CodexDeviceAuthController } from "./drivers/codex-device-auth.ts";
+import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
+import { isPrincipalId } from "./principals.ts";
+
+export const LOGIN_MARKER = ".pulsabot-login.json";
+export type LoginDriver = "claudeAgent" | "codex";
+
+export interface LoginController {
+  start(): Promise<ProviderAuthenticationStart>;
+  get(flowId: string): Promise<ProviderAuthenticationStatus>;
+  complete?(flowId: string, pasted: string): Promise<void>;
+  cancel(): Promise<void>;
+  signOut(): Promise<void>;
+  dispose?(): Promise<void>;
+}
+
+export interface LoginInstanceFacts {
+  driver: string;
+  cli: string;
+  /** The instance's own environment (Settings), merged over the process's. */
+  environment?: Record<string, string | undefined>;
+}
+
+export interface PrincipalEngineLoginsOptions {
+  dataDir: string;
+  /** The instance's driver, CLI and environment, or null when unknown. */
+  instance(instanceId: string): LoginInstanceFacts | null;
+  /** Tests pass fakes; the default is the drivers' own controllers. */
+  controller?(input: { driver: LoginDriver; cli: string; environment: () => Record<string, string | undefined>; onAuthenticated: () => Promise<void> }): LoginController;
+  now?: () => number;
+}
+
+const failure = (message: string, status: number) => Object.assign(new Error(message), { status });
+
+export function isLoginDriver(driver: string): driver is LoginDriver {
+  return driver === "claudeAgent" || driver === "codex";
+}
+
+export class PrincipalEngineLogins {
+  private readonly options: PrincipalEngineLoginsOptions;
+  private readonly sessions = new ProviderAuthSessions();
+  private readonly controllers = new Map<string, LoginController>();
+  private readonly now: () => number;
+
+  constructor(options: PrincipalEngineLoginsOptions) {
+    this.options = options;
+    this.now = options.now ?? Date.now;
+  }
+
+  /** The person's login directory for a driver (not created). */
+  loginDir(principalId: string, driver: LoginDriver): string {
+    if (!isPrincipalId(principalId)) throw failure("not a person", 400);
+    return join(this.options.dataDir, "principals", principalId, driver === "claudeAgent" ? "claude" : "codex");
+  }
+
+  signedIn(principalId: string, driver: string): boolean {
+    if (!isLoginDriver(driver) || !isPrincipalId(principalId)) return false;
+    return existsSync(join(this.loginDir(principalId, driver), LOGIN_MARKER));
+  }
+
+  private ensureDir(principalId: string, driver: LoginDriver): string {
+    const personDir = join(this.options.dataDir, "principals", principalId);
+    mkdirSync(personDir, { recursive: true, mode: 0o700 });
+    const dir = this.loginDir(principalId, driver);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try {
+      chmodSync(personDir, 0o700);
+      chmodSync(dir, 0o700);
+    } catch {
+      /* best effort on filesystems without modes */
+    }
+    return dir;
+  }
+
+  private markSignedIn(principalId: string, driver: LoginDriver): void {
+    const dir = this.ensureDir(principalId, driver);
+    writeFileAtomic(join(dir, LOGIN_MARKER), JSON.stringify({ at: this.now() }), { mode: 0o600 });
+  }
+
+  private flowKey(principalId: string, instanceId: string): string {
+    return `${principalId}/${instanceId}`;
+  }
+
+  private loginInstance(principalId: string, instanceId: string) {
+    const facts = this.options.instance(instanceId);
+    if (!facts || !isLoginDriver(facts.driver)) throw failure("This engine has no personal sign-in.", 404);
+    const driver = facts.driver;
+    const key = this.flowKey(principalId, instanceId);
+    let controller = this.controllers.get(key);
+    if (!controller) {
+      const dir = this.ensureDir(principalId, driver);
+      const environment = () => {
+        const env: Record<string, string | undefined> = { ...process.env, ...facts.environment };
+        if (driver === "claudeAgent") {
+          env.CLAUDE_CONFIG_DIR = dir;
+          delete env.ANTHROPIC_API_KEY;
+          delete env.ANTHROPIC_AUTH_TOKEN;
+        } else {
+          env.CODEX_HOME = dir;
+          delete env.OPENAI_API_KEY;
+        }
+        return env;
+      };
+      const onAuthenticated = async () => { this.markSignedIn(principalId, driver); };
+      controller = this.options.controller
+        ? this.options.controller({ driver, cli: facts.cli, environment, onAuthenticated })
+        : driver === "claudeAgent"
+          ? new ClaudeLoginController({ cli: facts.cli, environment: environment as () => NodeJS.ProcessEnv, onAuthenticated })
+          : new CodexDeviceAuthController({ cli: facts.cli, environment, onAuthenticated });
+      this.controllers.set(key, controller);
+    }
+    const bound = controller;
+    return {
+      driver,
+      instance: {
+        instanceId: key,
+        startAuthentication: () => bound.start(),
+        getAuthentication: async (flowId: string) => {
+          const status = await bound.get(flowId);
+          // The marker follows the CLI's verdict even when the callback raced.
+          if (status.phase === "succeeded" && !this.signedIn(principalId, driver)) this.markSignedIn(principalId, driver);
+          return status;
+        },
+        ...(bound.complete ? { completeAuthentication: (flowId: string, pasted: string) => bound.complete!(flowId, pasted) } : {}),
+        cancelAuthentication: () => bound.cancel(),
+        signOut: async () => {
+          try {
+            await bound.signOut();
+          } catch {
+            /* the directory goes below either way */
+          }
+          rmSync(this.loginDir(principalId, driver), { recursive: true, force: true });
+        },
+      },
+    };
+  }
+
+  async start(principalId: string, instanceId: string, sessionId: string): Promise<ProviderAuthenticationStart> {
+    const { instance } = this.loginInstance(principalId, instanceId);
+    return this.sessions.start(instance, sessionId);
+  }
+
+  async status(principalId: string, instanceId: string, sessionId: string, flowId: string): Promise<ProviderAuthenticationStatus> {
+    return this.sessions.status(this.flowKey(principalId, instanceId), sessionId, flowId);
+  }
+
+  async complete(principalId: string, instanceId: string, sessionId: string, flowId: string, pasted: string): Promise<void> {
+    this.loginInstance(principalId, instanceId);
+    return this.sessions.complete(this.flowKey(principalId, instanceId), sessionId, flowId, pasted);
+  }
+
+  async cancel(principalId: string, instanceId: string, sessionId: string, flowId: string): Promise<void> {
+    return this.sessions.cancel(this.flowKey(principalId, instanceId), sessionId, flowId);
+  }
+
+  async signOut(principalId: string, instanceId: string, sessionId: string): Promise<void> {
+    const { instance } = this.loginInstance(principalId, instanceId);
+    await this.sessions.signOut(instance, sessionId);
+  }
+
+  /** A session ended: its flows end with it. */
+  revokeOwner(sessionId: string): void {
+    this.sessions.revokeOwner(sessionId);
+  }
+}

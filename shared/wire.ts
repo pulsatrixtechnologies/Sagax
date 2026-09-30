@@ -386,6 +386,9 @@ export interface WireAccessCard {
   botId: string;
   ownerPrincipalId: string;
   detail?: string;
+  /** Slice 4: where the owner sets their model keys (Perspicax console),
+   * on a no_access card of an organization server. */
+  keysUrl?: string;
 }
 
 /** One transcript line. Serialized as stored — the durable delivery

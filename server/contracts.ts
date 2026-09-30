@@ -103,6 +103,18 @@ export type RequestOutcome = "allowed-once" | "rejected" | "answered" | "unavail
 // becomes onEvent(listener) → unsubscribe; sessions start implicitly on
 // the first turn (the agentcal per-turn-process model) with resumeCursor
 // carrying the provider-native continuation (e.g. a claude session id).
+/** See SendTurnInput.access. `identity` is a non-secret label
+ * (subscription:<pid>, owner-key:<pid>:<fingerprint>, server, org-key); a
+ * driver never reuses a process started under another identity. */
+export interface TurnAccessInput {
+  via: "subscription" | "owner-key" | "server" | "org-key";
+  identity: string;
+  environment?: Record<string, string>;
+  claudeConfigDir?: string;
+  codexHome?: string;
+  codexOwnerKey?: boolean;
+}
+
 export interface SendTurnInput {
   threadId: ThreadId;
   /** The bot this turn belongs to. threadIds are meant to be unique per bot
@@ -113,6 +125,10 @@ export interface SendTurnInput {
    * collide with another bot's live session or broker (see #1017). */
   botId?: string;
   text: string;
+  /** Organization server (slice 4, server/engine-credentials.ts): which
+   * credentials this one turn runs with. Absent in solo mode: the instance's
+   * own configuration, as always. */
+  access?: TurnAccessInput;
   /** Per-bot approval policy, reasserted by providers on every turn so a
    * resumed native session cannot retain a stale, more permissive mode. */
   approvalMode?: ApprovalMode;

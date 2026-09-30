@@ -21,6 +21,8 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import { resolveEngineAccess } from "./engine-credentials.ts";
+
 export type EngineAccessRefusal = "engine_missing" | "no_access";
 
 /** Who a turn speaks for, stated by the path that starts it (the gate
@@ -88,16 +90,22 @@ export interface EngineAccessInput {
 
 export type EngineAccess = { ok: true; via: "server" | "org-key" } | { ok: false; reason: EngineAccessRefusal };
 
-const key = (id: string | undefined) => id?.trim().toLowerCase() ?? "";
-
+/** The slice 3 gate: server/engine-credentials.ts with no subscription and
+ * no owner key (slice 4 adds both steps; this wrapper keeps the old answers). */
 export function engineAccessFor(input: EngineAccessInput): EngineAccess {
-  if (input.identity !== "perspicax") return { ok: true, via: "server" };
-  if (!input.installed) return { ok: false, reason: "engine_missing" };
-  const speaker = key(speakerPrincipal(input.speaker, input.ownerPrincipalId, input.peerOwnerPrincipalId));
-  const ownerSpeaks = speaker !== "" && speaker === key(input.ownerPrincipalId);
-  if (ownerSpeaks && input.ownerOrgRole === "admin") return { ok: true, via: "server" };
-  if (input.memberBotsUseOrgKey && input.keyBacked) return { ok: true, via: "org-key" };
-  return { ok: false, reason: "no_access" };
+  const plan = resolveEngineAccess({
+    identity: input.identity,
+    speaker: input.speaker,
+    ...(input.peerOwnerPrincipalId !== undefined ? { peerOwnerPrincipalId: input.peerOwnerPrincipalId } : {}),
+    owner: { principalId: input.ownerPrincipalId, orgRole: input.ownerOrgRole },
+    instance: { instanceId: "", driver: input.driver, installed: input.installed },
+    subscriptionSignedIn: () => false,
+    ownerHasKey: () => false,
+    memberBotsUseOrgKey: input.memberBotsUseOrgKey,
+    keyBacked: input.keyBacked,
+  });
+  if (!plan.ok) return plan;
+  return { ok: true, via: plan.via === "org-key" ? "org-key" : "server" };
 }
 
 /** The notification body for a refused turn (never provider text). */

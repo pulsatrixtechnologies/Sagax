@@ -599,6 +599,40 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.env.ANTHROPIC_API_KEY).toBe("sk-ant-workspace-fixture");
   });
 
+  it("slice 4: an owner key reaches the CLI over the workspace key, and a subscription runs from the person's directory with no key", async () => {
+    await create(undefined, { ANTHROPIC_API_KEY: "sk-ant-workspace-fixture" });
+    const dump = join(scratch, "dump-owner-key.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await instance.adapter.sendTurn({ threadId: "t-owner-key", text: "hello", access: { via: "owner-key", identity: "owner-key:pr_a:fp", environment: { ANTHROPIC_API_KEY: "sk-ant-test-alice-key-0001" } } });
+    await recorder.until((e) => e.type === "turn.completed" && e.threadId === "t-owner-key");
+    expect(JSON.parse(readFileSync(dump, "utf8")).env.ANTHROPIC_API_KEY).toBe("sk-ant-test-alice-key-0001");
+    const personal = join(scratch, "principals", "pr_a", "claude");
+    mkdirSync(personal, { recursive: true });
+    const subDump = join(scratch, "dump-subscription.json");
+    process.env.FAKE_CLAUDE_DUMP = subDump;
+    await instance.adapter.sendTurn({ threadId: "t-subscription", text: "hello", access: { via: "subscription", identity: "subscription:pr_a", claudeConfigDir: personal } });
+    await recorder.until((e) => e.type === "turn.completed" && e.threadId === "t-subscription");
+    const seen = JSON.parse(readFileSync(subDump, "utf8"));
+    expect(seen.env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(realpathSync(seen.env.CLAUDE_CONFIG_DIR)).toBe(realpathSync(personal));
+  });
+
+  it("slice 4: a turn under another identity never reuses the retained process", async () => {
+    await create(undefined, { ANTHROPIC_API_KEY: "sk-ant-workspace-fixture" });
+    const dump = join(scratch, "dump-identity.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const send = async (identity: string, key: string) => {
+      const before = recorder.events.filter((e) => e.type === "turn.completed").length;
+      await instance.adapter.sendTurn({ threadId: "t-identity", text: "hello", access: { via: "owner-key", identity, environment: { ANTHROPIC_API_KEY: key } } });
+      await recorder.until(() => recorder.events.filter((e) => e.type === "turn.completed").length > before);
+      return JSON.parse(readFileSync(dump, "utf8")) as { pid: number; env: Record<string, string> };
+    };
+    const first = await send("owner-key:pr_a:fp1", "sk-ant-test-alice-key-0001");
+    const second = await send("owner-key:pr_b:fp2", "sk-ant-test-erin-key-00002");
+    expect(second.pid).not.toBe(first.pid);
+    expect(second.env.ANTHROPIC_API_KEY).toBe("sk-ant-test-erin-key-00002");
+  });
+
   it("hands a hosted tenant's CLI the hosted model token but none of the operator's control-plane secrets", async () => {
     // server/hosted-models.ts delivers the model token as the provider key.
     await create(undefined, { ANTHROPIC_API_KEY: "omb_workspace_fixture", ANTHROPIC_AUTH_TOKEN: "omb_workspace_fixture" });

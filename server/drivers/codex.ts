@@ -10,7 +10,7 @@ import { codexToolSurfaceArgs } from "./codex-tool-surface.ts";
 //
 // resumeCursor is the codex thread id; a later turn tries thread/resume
 // and preserves that history or reports a failed resume.
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { codexConfigMcpServerNames, mountedMcpServerName } from "./codex-mcp-names.ts";
 
@@ -29,7 +29,7 @@ import type {
   SendTurnInput,
   SteerOutcome,
 } from "../contracts.ts";
-import { newEventId, newId } from "../contracts.ts";
+import { newEventId, newId, type TurnAccessInput } from "../contracts.ts";
 import { decodeCodexSelection, readCodexModelCatalog, STATIC_CODEX_MODELS } from "./codex-catalog.ts";
 import { codexLocalProviderArgs } from "./local-inject.ts";
 import { augmentedPath, splitCliString } from "../env-path.ts";
@@ -140,6 +140,41 @@ export function managedCodexArgs(config: NonNullable<CodexConfig["managed"]>): s
     "-c", 'cli_auth_credentials_store="ephemeral"',
     "-c", "shell_environment_policy.ignore_default_excludes=false",
   ];
+}
+
+/** Slice 4: a turn on the bot owner's own OpenAI key (kept in Perspicax,
+ * read for this turn only). Same shape as managedCodexArgs: the key rides in
+ * OMB_OWNER_OPENAI_API_KEY in the child environment, never argv or a file,
+ * and no login is stored. */
+export function ownerKeyCodexArgs(): string[] {
+  return [
+    "-c", 'model_provider="pulsa_owner"',
+    "-c", 'model_providers.pulsa_owner.name="Owner key"',
+    "-c", 'model_providers.pulsa_owner.base_url="https://api.openai.com/v1"',
+    "-c", 'model_providers.pulsa_owner.env_key="OMB_OWNER_OPENAI_API_KEY"',
+    "-c", 'model_providers.pulsa_owner.wire_api="responses"',
+    "-c", "model_providers.pulsa_owner.requires_openai_auth=false",
+    "-c", 'cli_auth_credentials_store="ephemeral"',
+    "-c", "shell_environment_policy.ignore_default_excludes=false",
+  ];
+}
+
+/** The child environment and provider args one turn's credentials call for. */
+export function codexAccessLaunch(env: Record<string, string | undefined>, access: TurnAccessInput | undefined): { ownerKey: boolean } {
+  if (!access) return { ownerKey: false };
+  if (access.via === "subscription" && access.codexHome) {
+    env.CODEX_HOME = access.codexHome;
+    return { ownerKey: false };
+  }
+  if (access.via === "owner-key" && access.codexOwnerKey && access.environment?.OMB_OWNER_OPENAI_API_KEY) {
+    if (access.codexHome) {
+      mkdirSync(access.codexHome, { recursive: true, mode: 0o700 });
+      env.CODEX_HOME = access.codexHome;
+    }
+    env.OMB_OWNER_OPENAI_API_KEY = access.environment.OMB_OWNER_OPENAI_API_KEY;
+    return { ownerKey: true };
+  }
+  return { ownerKey: false };
 }
 
 const DENY_TIMEOUT_NOTE =
@@ -661,7 +696,8 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
 
       const launchAttempt = async (attempt: number): Promise<void> => {
         const env = childEnv();
-        const appServerArgs = ["app-server", ...(config.managed ? managedCodexArgs(config.managed) : codexLocalProviderArgs(env, turn.model)), ...codexToolSurfaceArgs()];
+        const launch = codexAccessLaunch(env, turn.access);
+        const appServerArgs = ["app-server", ...(launch.ownerKey ? ownerKeyCodexArgs() : config.managed ? managedCodexArgs(config.managed) : codexLocalProviderArgs(env, turn.model)), ...codexToolSurfaceArgs()];
         if (turn.integrations?.composio) {
           mountMcpServer(appServerArgs, env, "openmausbot_connectors", turn.integrations.composio);
         }
