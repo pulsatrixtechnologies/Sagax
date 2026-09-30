@@ -3,7 +3,7 @@
 // HTTP. Every refusal the spec lists (T10) is proven by bending one thing.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { accessExpiresIn, OIDC_MAX_PENDING_FLOWS, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
+import { accessExpiresIn, OIDC_MAX_PENDING_FLOWS, ROUTINE_DELEGATION_SCOPES, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
 
 const REDIRECT = "http://127.0.0.1:9/auth/oidc/callback";
@@ -49,6 +49,8 @@ describe("OIDC relying party", () => {
     expect(outcome).toEqual({
       ok: true,
       client: "web",
+      purpose: "signin",
+      grantedScope: "openid profile email offline_access",
       // slice 5: the access token rides along, for memory only (idp-session.ts)
       grant: { refreshToken: expect.stringMatching(/^pxlr1\./), accessToken: expect.stringMatching(/^pxlo1\./), accessExpiresAt: expect.any(Number) },
       identity: expect.objectContaining({ iss: idp.issuer, sub: "01J0000000000000000000ADMN", email: "ada@example.test", name: "Ada Admin", preferredUsername: "ada", role: "admin" }),
@@ -473,5 +475,55 @@ describe("the access token's life (slice 5)", () => {
     expect(accessExpiresIn(-5)).toBe(3600);
     expect(accessExpiresIn("60")).toBe(3600);
     expect(accessExpiresIn(10 ** 9)).toBe(86_400);
+  });
+});
+
+describe("routine delegation flows (slice 6)", () => {
+  const expectation = { principalId: "p-ada", subject: { iss: "", sub: "01J0000000000000000000ADMN" }, sessionId: "s-1" };
+
+  it("asks the delegation scope and forces the web client whatever client was passed", async () => {
+    const party = rp();
+    const started = await party.start({ client: "phone", purpose: "routines", ...expectation, subject: { iss: idp.issuer, sub: expectation.subject.sub } });
+    const res = await fetch(started.authorizationUrl, { redirect: "manual" });
+    expect(idp.lastAuthorize!.scope).toBe("openid profile email offline_access pulsabot:routines");
+    expect(ROUTINE_DELEGATION_SCOPES).toBe("openid profile email offline_access pulsabot:routines");
+    const outcome = await party.callback(new URL(res.headers.get("location")!).searchParams, started.binding);
+    expect(outcome).toMatchObject({
+      ok: true,
+      client: "web",
+      purpose: "routines",
+      grantedScope: "openid profile email offline_access pulsabot:routines",
+      expect: { principalId: "p-ada", subject: { iss: idp.issuer, sub: expectation.subject.sub }, sessionId: "s-1" },
+    });
+  });
+
+  it("refuses to start a delegation without its principal, subject or session", async () => {
+    const party = rp();
+    for (const missing of ["principalId", "subject", "sessionId"] as const) {
+      const options: Record<string, unknown> = { purpose: "routines", ...expectation };
+      delete options[missing];
+      await expect(party.start(options as Parameters<OidcRelyingParty["start"]>[0])).rejects.toMatchObject({ code: "routines_session" });
+    }
+    expect(party.pendingCount()).toBe(0);
+  });
+
+  it("carries the purpose and the scope the provider granted, marker or not", async () => {
+    const party = rp();
+    idp.tamper = { omitRoutinesMarker: true };
+    const started = await party.start({ purpose: "routines", ...expectation });
+    const res = await fetch(started.authorizationUrl, { redirect: "manual" });
+    const outcome = await party.callback(new URL(res.headers.get("location")!).searchParams, started.binding);
+    expect(outcome).toMatchObject({ ok: true, purpose: "routines", grantedScope: "openid profile email offline_access" });
+  });
+
+  it("carries the purpose of a failed callback once the flow was found, not before", async () => {
+    const party = rp();
+    const started = await party.start({ purpose: "routines", ...expectation });
+    const res = await fetch(started.authorizationUrl, { redirect: "manual" });
+    const params = new URL(res.headers.get("location")!).searchParams;
+    expect(await party.callback(params, "wrong")).toMatchObject({ ok: false, code: "binding", client: "web", purpose: "routines" });
+    const unknown = await party.callback(new URLSearchParams({ state: "nope", code: "x" }), started.binding);
+    expect(unknown).toMatchObject({ ok: false, code: "state" });
+    expect(unknown).not.toHaveProperty("purpose");
   });
 });

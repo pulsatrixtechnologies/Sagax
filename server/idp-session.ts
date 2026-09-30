@@ -70,8 +70,18 @@ const grantSchema = z.object({
   /** Last transient failure, and the first one since the last success. */
   failedAt: z.number().optional(),
   failingSince: z.number().optional(),
+  /** Slice 6: "session" (a sign-in, the default) or "routines" (a routine
+   * delegation: never bound to a session, never swept, one per principal;
+   * RoutineDelegations owns it, IdpSessionManager never touches it). */
+  kind: z.enum(["session", "routines"]).default("session"),
+  /** The principal a routines grant acts for. */
+  principalId: z.string().max(64).optional(),
 });
-export type IdpGrant = z.infer<typeof grantSchema>;
+export type IdpGrant = z.input<typeof grantSchema>;
+/** Whether a grant belongs to a sign-in (IdpSessionManager's), not a routine delegation. */
+export function isSessionGrant(grant: Pick<IdpGrant, "kind">): boolean {
+  return grant.kind !== "routines";
+}
 
 const vaultSchema = z.object({ version: z.literal(1), grants: z.record(z.string(), grantSchema) });
 type VaultDocument = z.infer<typeof vaultSchema>;
@@ -376,7 +386,7 @@ export class IdpSessionManager {
     }
     if (this.vault.unavailableReason()) return "idp_unreachable";
     const grant = this.vault.get(ref);
-    if (!grant) return "idp_session_ended";
+    if (!grant || !isSessionGrant(grant)) return "idp_session_ended";
     if (this.pastGrace(grant)) return "idp_unreachable";
     return null;
   }
@@ -416,7 +426,7 @@ export class IdpSessionManager {
     } catch {
       return done;
     }
-    if (!grant) return done;
+    if (!grant || !isSessionGrant(grant)) return done;
     const now = this.now();
     if (now - grant.refreshedAt < this.refreshAfter) return done;
     if (grant.failedAt !== undefined && now - grant.failedAt < IDP_RETRY_AFTER_FAILURE_MS) return done;
@@ -479,7 +489,7 @@ export class IdpSessionManager {
 
   /** The person's grants that stand on a live session of their own. */
   private liveGrantsFor(subject: { iss: string; sub: string }): IdpGrant[] {
-    return this.vault.list().filter((grant) =>
+    return this.vault.list().filter((grant) => isSessionGrant(grant) &&
       grant.iss === subject.iss && grant.sub === subject.sub &&
       grant.sessionId !== undefined && this.sessions.byId(grant.sessionId) !== null);
   }
@@ -597,7 +607,7 @@ export class IdpSessionManager {
       for (const other of this.safeList()) {
         // An unbound grant (a native sign-in waiting for its exchange) has no
         // session to release it: revoke it here.
-        if (other.iss === subject.iss && other.sub === subject.sub && !other.sessionId) {
+        if (isSessionGrant(other) && other.iss === subject.iss && other.sub === subject.sub && !other.sessionId) {
           this.safeDelete(other.grantRef);
           this.revokeAtProvider(other, "person out");
         }
@@ -622,7 +632,7 @@ export class IdpSessionManager {
   release(sessionId: string, options: { revokeAtIdp: boolean }): void {
     let grants: IdpGrant[];
     try {
-      grants = this.vault.list().filter((grant) => grant.sessionId === sessionId);
+      grants = this.vault.list().filter((grant) => isSessionGrant(grant) && grant.sessionId === sessionId);
     } catch {
       return;
     }
@@ -637,6 +647,8 @@ export class IdpSessionManager {
     const now = this.now();
     let swept = 0;
     for (const grant of this.vault.list()) {
+      // A routine delegation has no session by design (RoutineDelegations).
+      if (!isSessionGrant(grant)) continue;
       const orphan = grant.sessionId
         ? !this.sessions.byId(grant.sessionId)
         : now > (grant.bindBy ?? grant.createdAt + IDP_WEB_BIND_MS);
@@ -673,7 +685,9 @@ export class IdpSessionManager {
     // Grants first, so the session listeners find nothing to revoke at the
     // provider: the provider already ended them.
     for (const grant of this.vault.list()) {
-      if (grant.iss === input.iss && grant.sub === input.sub) this.safeDelete(grant.grantRef);
+      // A routine delegation is ended by its own manager (the wiring calls
+      // RoutineDelegations.endForSubject), so its routines learn why.
+      if (isSessionGrant(grant) && grant.iss === input.iss && grant.sub === input.sub) this.safeDelete(grant.grantRef);
     }
     const principal = this.principals.bySubject(input.iss, input.sub);
     const revoked = this.sessions.revokeWhere((session) =>

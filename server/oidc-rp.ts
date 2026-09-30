@@ -130,8 +130,26 @@ export function validInternalBase(value: string | undefined): string | null {
  * system browser, or a phone through its authentication sheet. */
 export type OidcClientKind = "web" | "desktop" | "phone";
 
+/** Slice 6: the scope marker of a routine delegation. */
+export const ROUTINE_DELEGATION_SCOPE = "pulsabot:routines";
+/** The scope a routine delegation asks: `profile email` keep the person's
+ * name and address on each refresh (principals drop claims a token lacks). */
+export const ROUTINE_DELEGATION_SCOPES = `openid profile email offline_access ${ROUTINE_DELEGATION_SCOPE}`;
+
+/** What a flow is for: a sign-in, or a routine delegation (slice 6). */
+export type OidcFlowPurpose = "signin" | "routines";
+
+/** Who started a routine delegation flow, checked at the callback (D10). */
+export interface RoutineDelegationExpectation {
+  principalId: string;
+  subject: { iss: string; sub: string };
+  sessionId: string;
+}
+
 interface PendingFlow {
   client: OidcClientKind;
+  purpose: OidcFlowPurpose;
+  expect?: RoutineDelegationExpectation;
   state: string;
   nonce: string;
   verifier: string;
@@ -149,9 +167,20 @@ export interface StartedFlow {
 }
 
 export type CallbackOutcome =
-  | { ok: true; identity: OidcIdentity; client: OidcClientKind; grant: { refreshToken?: string; accessToken?: string; accessExpiresAt?: number } }
-  /** `client` is known once the pending flow was found. */
-  | { ok: false; code: string; error: string; client?: OidcClientKind };
+  | {
+    ok: true;
+    identity: OidcIdentity;
+    client: OidcClientKind;
+    grant: { refreshToken?: string; accessToken?: string; accessExpiresAt?: number };
+    /** Slice 6: what the flow was for, the scope the token answer granted
+     * (absent when the provider sent none), and for a routine delegation who
+     * started it. */
+    purpose: OidcFlowPurpose;
+    grantedScope?: string;
+    expect?: RoutineDelegationExpectation;
+  }
+  /** `client` (and `purpose`) are known once the pending flow was found. */
+  | { ok: false; code: string; error: string; client?: OidcClientKind; purpose?: OidcFlowPurpose };
 
 /** OAuth errors that mean the grant is gone for good (RFC 6749 5.2, RFC 8707). */
 const REJECTED_GRANT_ERRORS = new Set(["invalid_grant", "invalid_client", "unauthorized_client", "invalid_target", "unsupported_grant_type"]);
@@ -529,7 +558,13 @@ export class OidcRelyingParty {
 
   /** Begin a sign-in: remember state, nonce and PKCE verifier, and return
    * the authorization URL and the browser binding. */
-  async start(options: { client?: OidcClientKind } = {}): Promise<StartedFlow> {
+  async start(options: { client?: OidcClientKind; purpose?: OidcFlowPurpose; principalId?: string; subject?: { iss: string; sub: string }; sessionId?: string } = {}): Promise<StartedFlow> {
+    const purpose = options.purpose ?? "signin";
+    let expect: RoutineDelegationExpectation | undefined;
+    if (purpose === "routines") {
+      if (!options.principalId || !options.subject || !options.sessionId) throw new OidcError("routines_session", "A routine delegation starts from a signed-in session.");
+      expect = { principalId: options.principalId, subject: { ...options.subject }, sessionId: options.sessionId };
+    }
     const discovery = await this.discover();
     this.prune();
     while (this.pending.size >= OIDC_MAX_PENDING_FLOWS) {
@@ -541,12 +576,21 @@ export class OidcRelyingParty {
     const nonce = randomToken();
     const binding = randomToken();
     const { verifier, challenge } = pkcePair();
-    this.pending.set(state, { client: options.client ?? "web", state, nonce, verifier, bindingHash: sha256Hex(binding), createdAt: this.now() });
+    this.pending.set(state, {
+      client: purpose === "routines" ? "web" : options.client ?? "web",
+      purpose,
+      ...(expect ? { expect } : {}),
+      state,
+      nonce,
+      verifier,
+      bindingHash: sha256Hex(binding),
+      createdAt: this.now(),
+    });
     const url = new URL(discovery.authorizationEndpoint);
     url.searchParams.set("response_type", "code");
     url.searchParams.set("client_id", this.clientId);
     url.searchParams.set("redirect_uri", this.redirectUri);
-    url.searchParams.set("scope", this.scope);
+    url.searchParams.set("scope", purpose === "routines" ? ROUTINE_DELEGATION_SCOPES : this.scope);
     url.searchParams.set("state", state);
     url.searchParams.set("nonce", nonce);
     url.searchParams.set("code_challenge", challenge);
@@ -558,7 +602,7 @@ export class OidcRelyingParty {
   /** Finish a sign-in from the callback's query and the browser binding
    * cookie. The pending flow is consumed whatever the outcome. */
   async callback(params: URLSearchParams, binding: string | undefined): Promise<CallbackOutcome> {
-    const seen: { client?: OidcClientKind } = {};
+    const seen: { client?: OidcClientKind; purpose?: OidcFlowPurpose } = {};
     try {
       const done = await this.finish(params, binding, seen);
       return {
@@ -569,21 +613,28 @@ export class OidcRelyingParty {
           ...(done.refreshToken ? { refreshToken: done.refreshToken } : {}),
           ...(done.accessToken ? { accessToken: done.accessToken, accessExpiresAt: done.accessExpiresAt } : {}),
         },
+        purpose: done.purpose,
+        ...(done.grantedScope !== undefined ? { grantedScope: done.grantedScope } : {}),
+        ...(done.expect ? { expect: done.expect } : {}),
       };
     } catch (error) {
-      const client = seen.client ? { client: seen.client } : {};
+      const client = {
+        ...(seen.client ? { client: seen.client } : {}),
+        ...(seen.purpose ? { purpose: seen.purpose } : {}),
+      };
       if (error instanceof OidcError) return { ok: false, code: error.code, error: error.message, ...client };
       return { ok: false, code: "internal", error: error instanceof Error ? error.message : String(error), ...client };
     }
   }
 
-  private async finish(params: URLSearchParams, binding: string | undefined, seen: { client?: OidcClientKind }): Promise<{ identity: OidcIdentity; client: OidcClientKind; refreshToken?: string; accessToken?: string; accessExpiresAt?: number }> {
+  private async finish(params: URLSearchParams, binding: string | undefined, seen: { client?: OidcClientKind; purpose?: OidcFlowPurpose }): Promise<{ identity: OidcIdentity; client: OidcClientKind; purpose: OidcFlowPurpose; grantedScope?: string; expect?: RoutineDelegationExpectation; refreshToken?: string; accessToken?: string; accessExpiresAt?: number }> {
     this.prune();
     const state = params.get("state") ?? "";
     const flow = state ? this.pending.get(state) : undefined;
     if (!flow) throw new OidcError("state", "This sign-in link is unknown, already used or expired. Start again.");
     this.pending.delete(state); // single use, whatever happens next
     seen.client = flow.client;
+    seen.purpose = flow.purpose;
     if (!binding || !sameText(sha256Hex(binding), flow.bindingHash)) {
       throw new OidcError("binding", "This sign-in was started in another browser. Start again here.");
     }
@@ -630,9 +681,13 @@ export class OidcRelyingParty {
         keyFor: (kid) => this.keyFor(kid),
         nowSeconds: Math.floor(this.now() / 1000),
       });
+      const grantedScope = typeof got.body.scope === "string" ? got.body.scope.slice(0, 1024) : undefined;
       return {
         identity,
         client: flow.client,
+        purpose: flow.purpose,
+        ...(grantedScope !== undefined ? { grantedScope } : {}),
+        ...(flow.expect ? { expect: flow.expect } : {}),
         ...(refresh ? { refreshToken: refresh } : {}),
         ...(access ? { accessToken: access, accessExpiresAt: this.now() + accessExpiresIn(got.body.expires_in) * 1000 } : {}),
       };

@@ -41,6 +41,9 @@ export interface FakeOidcTamper {
   authorizeError?: string;
   /** Return no id_token. */
   noIdToken?: boolean;
+  /** Slice 6: drop the `pulsabot:routines` marker from token answers (an
+   * older Perspicax), so a delegation code answer lacks it. */
+  omitRoutinesMarker?: boolean;
 }
 
 export interface FakeDirectoryPerson {
@@ -55,6 +58,9 @@ export interface FakeDirectoryPerson {
   provider_keys?: string[];
   /** Slice 5: the MCP profile ids this person holds (else profilesBySub). */
   profiles?: string[];
+  /** Slice 6: set to leave the field out (an older Perspicax); else the
+   * provider reports the live delegation family of this person. */
+  omitRoutineDelegation?: boolean;
 }
 
 /** Slice 5: one /mcp request as the fake Perspicax saw it. */
@@ -96,6 +102,14 @@ export interface FakeOidcProvider {
   lastAuthorize: Record<string, string> | null;
   /** Refresh grants answered 200. */
   refreshCount: number;
+  /** Slice 6: every refresh answered 200, with whether its family is a
+   * routine delegation. */
+  refreshes: Array<{ sub: string; delegation: boolean; at: number }>;
+  /** Slice 6: the console revoke stand-in: end this person's routine
+   * delegation family; returns how many ended. */
+  revokeDelegation(sub: string): number;
+  /** Slice 6: the live delegation of this person, if any. */
+  delegationOf(sub: string): { consentedAt: number; renewedAt: number } | null;
   /** Refresh tokens that are live right now. */
   liveRefreshTokens(): string[];
   /** Refresh -> 400 invalid_grant for this subject from now on (disabled user). */
@@ -146,10 +160,27 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
   const clientId = options.clientId ?? "pulsa-bot";
   let key = newKey();
   const stray = newKey();
-  const codes = new Map<string, { clientId: string; redirectUri: string; challenge: string; nonce: string; user: FakeOidcUser; resource?: string }>();
+  const codes = new Map<string, { clientId: string; redirectUri: string; challenge: string; nonce: string; user: FakeOidcUser; resource?: string; scope: string }>();
   /** Live refresh tokens: token -> family, the person and the resource. */
   const refreshTokens = new Map<string, { family: string; user: FakeOidcUser; resource?: string }>();
   const deadFamilies = new Set<string>();
+  /** Slice 6: routine delegation families (one live per sub). */
+  const delegations = new Map<string, { sub: string; consentedAt: number; renewedAt: number }>();
+  const endFamily = (family: string) => {
+    deadFamilies.add(family);
+    delegations.delete(family);
+    for (const [token, entry] of refreshTokens) if (entry.family === family) refreshTokens.delete(token);
+  };
+  const endDelegationsOf = (sub: string): number => {
+    let ended = 0;
+    for (const [family, entry] of [...delegations]) {
+      if (entry.sub !== sub) continue;
+      endFamily(family);
+      ended += 1;
+    }
+    return ended;
+  };
+  const MARKER = "pulsabot:routines";
   const disabled = new Set<string>();
   const roles = new Map<string, string | undefined>();
   const teamsBySub = new Map<string, FakeOidcUser["teams"]>();
@@ -184,9 +215,17 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
     lastAuthorize: null,
     revoked: [],
     refreshCount: 0,
+    refreshes: [],
+    revokeDelegation: (sub) => endDelegationsOf(sub),
+    delegationOf(sub) {
+      for (const entry of delegations.values()) if (entry.sub === sub) return { consentedAt: entry.consentedAt, renewedAt: entry.renewedAt };
+      return null;
+    },
     liveRefreshTokens: () => [...refreshTokens.keys()],
     disable(sub) {
       disabled.add(sub);
+      // Slice 6: a disable ends the routine delegation for good.
+      endDelegationsOf(sub);
     },
     enable(sub) {
       disabled.delete(sub);
@@ -239,6 +278,12 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
     close: () => new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve())),
   };
 
+  const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const routineDelegationOf = (person: FakeDirectoryPerson) => {
+    const live = person.status === "disabled" || disabled.has(person.sub) ? null : provider.delegationOf(person.sub);
+    return live ? { consented_at: iso(live.consentedAt), renewed_at: iso(live.renewedAt), expires_at: iso(live.renewedAt + 30 * 86_400_000) } : null;
+  };
+
   const send = (res: import("node:http").ServerResponse, status: number, body: unknown) => {
     res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
     res.end(JSON.stringify(body));
@@ -288,8 +333,9 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       if (headers.authorization !== `Bearer ${provider.linkToken}`) return send(res, 401, { error: "unauthorized" });
       const body = JSON.stringify({
         server_id: provider.serverId,
-        people: [...provider.directoryPeople].sort((a, b) => a.sub.localeCompare(b.sub)).map((person) => ({
+        people: [...provider.directoryPeople].sort((a, b) => a.sub.localeCompare(b.sub)).map(({ omitRoutineDelegation, ...person }) => ({
           ...person,
+          ...(omitRoutineDelegation ? {} : { routine_delegation: routineDelegationOf(person) }),
           provider_keys: person.provider_keys ?? ["anthropic", "openai"].filter((name) => provider.providerKeys.has(`${person.sub}/${name}`)),
           ...(provider.profiles.length ? { profiles: [...held(person.sub)].sort() } : {}),
         })),
@@ -341,7 +387,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         back.searchParams.set("error", provider.tamper.authorizeError);
       } else {
         const code = randomBytes(24).toString("base64url");
-        codes.set(code, { clientId: q.client_id, redirectUri: q.redirect_uri, challenge: q.code_challenge, nonce: q.nonce ?? "", user: { ...provider.user }, ...(q.resource ? { resource: q.resource } : {}) });
+        codes.set(code, { clientId: q.client_id, redirectUri: q.redirect_uri, challenge: q.code_challenge, nonce: q.nonce ?? "", user: { ...provider.user }, ...(q.resource ? { resource: q.resource } : {}), scope: q.scope ?? "" });
         back.searchParams.set("code", code);
       }
       res.writeHead(302, { location: back.toString() });
@@ -397,6 +443,9 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
           if (held.resource && form.resource !== held.resource) return send(res, 400, { error: "invalid_target" });
           if (disabled.has(held.user.sub)) return send(res, 400, { error: "invalid_grant" });
           refreshTokens.delete(form.refresh_token!); // rotation: the old token is dead
+          const delegation = delegations.get(held.family);
+          if (delegation) delegation.renewedAt = Date.now();
+          provider.refreshes.push({ sub: held.user.sub, delegation: Boolean(delegation), at: Date.now() });
           const user: FakeOidcUser = withTeams({ ...held.user });
           if (roles.has(user.sub)) {
             const role = roles.get(user.sub);
@@ -409,6 +458,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
             refresh_token: issueRefresh(held.family, held.user, held.resource),
             token_type: "Bearer",
             expires_in: 3600,
+            scope: delegation && !provider.tamper.omitRoutinesMarker ? `openid profile email offline_access ${MARKER}` : "openid profile email offline_access",
             ...(provider.tamper.noIdToken ? {} : { id_token: idToken(user, null) }),
           });
         }
@@ -418,12 +468,21 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         if (form.client_id !== grant.clientId || form.redirect_uri !== grant.redirectUri) return send(res, 400, { error: "invalid_grant" });
         const challenge = createHash("sha256").update(form.code_verifier ?? "").digest("base64url");
         if (challenge !== grant.challenge) return send(res, 400, { error: "invalid_grant", error_description: "PKCE verification failed" });
+        // Slice 6: the marker is kept for this client, a bound audience, and
+        // openid plus offline_access; a new delegation ends the older one.
+        const asked = grant.scope.split(" ");
+        const marked = !provider.tamper.omitRoutinesMarker && asked.includes(MARKER) && asked.includes("openid") && asked.includes("offline_access") && Boolean(grant.resource);
+        const family = randomBytes(8).toString("hex");
+        if (marked) {
+          endDelegationsOf(grant.user.sub);
+          delegations.set(family, { sub: grant.user.sub, consentedAt: Date.now(), renewedAt: Date.now() });
+        }
         return send(res, 200, {
           access_token: newAccess(grant.user.sub),
-          refresh_token: issueRefresh(randomBytes(8).toString("hex"), grant.user, grant.resource),
+          refresh_token: issueRefresh(family, grant.user, grant.resource),
           token_type: "Bearer",
           expires_in: 3600,
-          scope: "openid profile email offline_access",
+          scope: marked ? `openid profile email offline_access ${MARKER}` : "openid profile email offline_access",
           ...(provider.tamper.noIdToken ? {} : { id_token: idToken(withTeams(grant.user), grant.nonce) }),
         });
       });
@@ -447,10 +506,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         }
         provider.revoked.push(form);
         const held = form.token ? refreshTokens.get(form.token) : undefined;
-        if (held) {
-          deadFamilies.add(held.family);
-          for (const [token, entry] of refreshTokens) if (entry.family === held.family) refreshTokens.delete(token);
-        }
+        if (held) endFamily(held.family);
         send(res, 200, {});
       });
       return;

@@ -610,3 +610,47 @@ describe("the sign-in access token as a token exchange subject (slice 5)", () =>
     }
   });
 });
+
+describe("routine delegations beside the sign-in grants (slice 6)", () => {
+  const delegation = (principalId: string, sub: string, at: number) => ({
+    grantRef: `rd-${sub}`, iss: ISS, sub, refreshToken: `pxlr1.delegation-${sub}`, createdAt: at, refreshedAt: at, lastOkAt: at, kind: "routines" as const, principalId,
+  });
+
+  it("keeps a routines grant through the sweep, release, a rejected sign-in refresh and a back-channel logout", async () => {
+    const { manager, provider, vault, signIn, sessions } = setup({ refreshAfterMs: 1000 });
+    const bob = signIn("B1");
+    vault.set(delegation(bob.principal.id, "B1", clock));
+    expect(vault.get("rd-B1")?.kind).toBe("routines");
+    // older grants read back as sign-ins
+    expect(vault.get(bob.grantRef)?.kind).toBe("session");
+    clock += 5 * 60_000;
+    expect(manager.sweep()).toBe(0);
+    sessions.revoke(bob.sessionId);
+    await manager.settled();
+    expect(vault.get("rd-B1")).toBeDefined();
+    const again = signIn("B1");
+    clock += 1000;
+    provider.script.push({ ok: false, kind: "rejected", error: "invalid_grant" });
+    manager.touch(again.record()!);
+    await manager.settled();
+    expect(vault.get(again.grantRef)).toBeUndefined();
+    expect(vault.get("rd-B1")).toBeDefined();
+    signIn("B1");
+    manager.backchannelLogout({ iss: ISS, sub: "B1" });
+    expect(vault.get("rd-B1")).toBeDefined();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(provider.revoked).not.toContain("pxlr1.delegation-B1");
+  });
+
+  it("never serves a routines grant as a session's subject token or refreshes it on touch", async () => {
+    const { manager, provider, vault, principals } = setup({ refreshAfterMs: 1000 });
+    const p = principals.forSubject({ iss: ISS, sub: "C1", orgRole: "member" });
+    vault.set({ ...delegation(p.id, "C1", clock), sessionId: "not-a-session" });
+    clock += 60 * 60_000;
+    expect(await manager.subjectToken({ iss: ISS, sub: "C1" })).toEqual({ ok: false, error: "no_session" });
+    const session = { id: "x", idp: { iss: ISS, sub: "C1", role: "employee", grantRef: "rd-C1" } } as unknown as Parameters<IdpSessionManager["touch"]>[0];
+    await manager.touch(session);
+    expect(provider.calls).toEqual([]);
+    expect(manager.mustRefuse(session)).toBe("idp_session_ended");
+  });
+});
