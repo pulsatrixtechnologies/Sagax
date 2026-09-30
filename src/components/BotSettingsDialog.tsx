@@ -29,6 +29,7 @@ import { HistorySection, type HistoryRow } from "./bot-settings/HistorySection";
 import { UsageSection } from "./bot-settings/UsageSection";
 import { VisibilitySection } from "./bot-settings/VisibilitySection";
 import { SharingSection } from "./bot-settings/SharingSection";
+import { PerspicaxSection } from "./bot-settings/PerspicaxSection";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { FilesSection } from "./bot-settings/FilesSection";
 import { isAdvancedSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
@@ -109,7 +110,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
     .filter((entry) => isAdvancedSection(entry.id))
     .filter((entry) => entry.id !== "slack" || slackUrl !== null)
     .filter((entry) => entry.id !== "visibility" || (!window.ogb && ownerOrAdmin === true && perspicaxOrg === null))
-    .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null);
+    .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null)
+    .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null);
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
 
   const [overview, setOverview] = useState<BotOverview | null>(null);
@@ -344,6 +346,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
         return <VisibilitySection bot={bot} />;
       case "sharing":
         return <SharingSection bot={bot} />;
+      case "perspicax":
+        return <PerspicaxSection bot={bot} />;
       case "history":
         return historyRows === null && historyError ? (
           <div className="rounded-xl bg-card p-4 text-[13px] text-ink-secondary">Couldn’t load history.</div>

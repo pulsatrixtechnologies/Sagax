@@ -4673,7 +4673,22 @@
       "sectionMembers.defaultLevel": "9999a07eeda25ad5465fa7c0f219a5c5384fc0c5dcf62169daabf90d644384de",
       "sectionMembers.generalPersonal": "64dcaffc8483b5813042fc837040535289ae6e015bb0d4b084eb4ad63b547a39",
       "sectionMembers.save": "1509f561f2416598629b886ad7d3c05a7e221e4e0675c84bbff4ee6d9e03913d",
-      "sectionMembers.failed": "658721f9764a3753d65a23bf03984e67655026d934a98464c023a46e6acff49d"
+      "sectionMembers.failed": "658721f9764a3753d65a23bf03984e67655026d934a98464c023a46e6acff49d",
+      "botSettings.perspicax.title": "f43fa207d15f23c064b6de4e83dbee1b27d4efb9d0a3bbe029896dafc43651a8",
+      "botSettings.perspicax.help": "174ece5bef3b388fc7529e54c65d87739d68ea04b0c0d70a847a4c2165e960ca",
+      "botSettings.perspicax.notHeld": "655ee0de38af41ab202e62539a0f1e4543e464a5abec018b8cc3f3c5a73ec8c3",
+      "botSettings.perspicax.none": "2c1936f755ced973bb5e18900f404aa02179bd764234238a706178d382896f3a",
+      "botSettings.perspicax.routines": "a4b12ec3f2bf219ca6dee68a45ebece672847734c604e9bc7d304ac16ed41eee",
+      "botSettings.perspicax.save": "1509f561f2416598629b886ad7d3c05a7e221e4e0675c84bbff4ee6d9e03913d",
+      "botSettings.perspicax.saved": "fca046ccd586c67f7fe0b3c12c29873a8abf9376f7cd514fc6272ec03b2de0b3",
+      "botSettings.perspicax.remove": "c3812fc4acb861d5182fc2b8155f327f736fbe5e5eb86a7bd7afcb6dc5497282",
+      "botSettings.perspicax.loading": "3c790a9ac1d12b976144b7f940907c1794c998c34150d36f2f324816d09c4e99",
+      "botSettings.perspicax.unavailable": "3deb7b9f19528e33b153f5d02b87974dd76cf8d2421679435e6182f3f9c9e58f",
+      "botSettings.perspicax.readOnly": "9f80c66ae5b66cb7cfc13dee4030de5b1f38852d0fb26810670b88aa223619a0",
+      "botSettings.perspicax.error.profile_not_held": "bfbb90d75335cb55d217a3d5127fdb64abaed2d7c8650c3f08199f8909639303",
+      "botSettings.perspicax.error.needs_edit": "4a10122f0c081d0d77aaa0b228ef64a2422b8b26f975dc985a170ad6d56b5f18",
+      "botSettings.perspicax.error.unknown_profile": "56b9d1ba68e4d6635057417cd99edadbe7cae63f8ad11bac9b8d64cb181c57bb",
+      "botSettings.perspicax.error.failed": "c1ae9753ec468ad736afdfce885165fee0aadd038ac1cf9ddea56476e618c785"
     },
     "hi": {
       "noEngines.title": "af88855a5f80377de709995229ba3907df9e8fb3b940fbf7c0d9cbe6eea54afe",

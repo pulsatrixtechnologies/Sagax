@@ -1,0 +1,175 @@
+// The Perspicax MCP profiles this bot offers, on a server linked to
+// Perspicax (slice 5). Each person who talks to the bot uses their own
+// Perspicax access: someone who does not hold a profile does not get its
+// tools. An editor adds only the profiles they hold; a profile someone else
+// put on the bot stays checked, shown as not held, and may be removed.
+// GET and PUT /api/bots/:id/perspicax (server/bot-perspicax.ts).
+import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
+
+import { api, ApiError, type Bot } from "@/state/store";
+import { t } from "@/lib/i18n";
+import type { LocaleKey } from "@/locales";
+
+export interface PerspicaxProfile {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+}
+
+export interface PerspicaxAnswer {
+  selected: Array<PerspicaxProfile & { heldByMe: boolean }>;
+  available: PerspicaxProfile[];
+  canEdit: boolean;
+}
+
+export interface PerspicaxRow {
+  profile: PerspicaxProfile;
+  checked: boolean;
+  /** Selected, but the viewer does not hold it: checked and disabled. */
+  notHeld: boolean;
+  disabled: boolean;
+}
+
+/** The rows the editor shows: every profile the viewer holds, then the
+ * selected ones they do not hold. `draft` is the ids checked now. */
+export function perspicaxRows(answer: PerspicaxAnswer, draft: readonly string[]): PerspicaxRow[] {
+  const checked = new Set(draft);
+  const rows: PerspicaxRow[] = answer.available.map((profile) => ({ profile, checked: checked.has(profile.id), notHeld: false, disabled: !answer.canEdit }));
+  const shown = new Set(answer.available.map((profile) => profile.id));
+  for (const selected of answer.selected) {
+    if (shown.has(selected.id) || selected.heldByMe) continue;
+    const { heldByMe: _held, ...profile } = selected;
+    rows.push({ profile, checked: checked.has(profile.id), notHeld: true, disabled: true });
+  }
+  return rows;
+}
+
+const ERROR_KEYS: Record<string, LocaleKey> = {
+  profile_not_held: "botSettings.perspicax.error.profile_not_held",
+  needs_edit: "botSettings.perspicax.error.needs_edit",
+  unknown_profile: "botSettings.perspicax.error.unknown_profile",
+};
+
+/** The message for a refused save. */
+export function perspicaxErrorKey(code: unknown): LocaleKey {
+  return (typeof code === "string" && ERROR_KEYS[code]) || "botSettings.perspicax.error.failed";
+}
+
+export function PerspicaxSection({ bot }: { bot: Pick<Bot, "id"> }) {
+  const [answer, setAnswer] = useState<PerspicaxAnswer | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [draft, setDraft] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<LocaleKey | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setAnswer(null);
+    setLoadFailed(false);
+    void api<PerspicaxAnswer>(`/api/bots/${bot.id}/perspicax`)
+      .then((body) => {
+        if (!alive) return;
+        setAnswer(body);
+        setDraft(body.selected.map((profile) => profile.id));
+      })
+      .catch(() => { if (alive) setLoadFailed(true); });
+    return () => { alive = false; };
+  }, [bot.id]);
+
+  if (loadFailed) return <p className="rounded-xl border border-hairline/40 p-4 text-[13px] text-ink-secondary">{t("botSettings.perspicax.unavailable")}</p>;
+  if (!answer) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-hairline/40 p-4 text-[13px] text-ink-secondary">
+        <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+        {t("botSettings.perspicax.loading")}
+      </div>
+    );
+  }
+
+  const rows = perspicaxRows(answer, draft);
+  const current = answer.selected.map((profile) => profile.id);
+  const changed = draft.length !== current.length || draft.some((id, index) => id !== current[index]);
+  const toggle = (id: string, on: boolean) => {
+    setSaved(false);
+    setError(null);
+    setDraft((before) => (on ? [...before.filter((entry) => entry !== id), id] : before.filter((entry) => entry !== id)));
+  };
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const body = await api<PerspicaxAnswer>(`/api/bots/${bot.id}/perspicax`, { method: "PUT", body: JSON.stringify({ profiles: draft }) });
+      setAnswer(body);
+      setDraft(body.selected.map((profile) => profile.id));
+      setSaved(true);
+    } catch (failure) {
+      setError(perspicaxErrorKey(failure instanceof ApiError ? failure.body?.code : undefined));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-hairline/40 p-4" data-bot-perspicax>
+      <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("botSettings.perspicax.help")}</p>
+      {rows.length === 0 ? (
+        <p className="text-[13px] text-ink-secondary">{t("botSettings.perspicax.none")}</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-hairline/40" aria-label={t("botSettings.perspicax.title")}>
+          {rows.map((row) => (
+            <li key={row.profile.id} className="py-2" data-perspicax-profile={row.profile.id}>
+              <label className={`flex min-w-0 items-start gap-2 ${row.disabled ? "" : "cursor-pointer"}`}>
+                <input
+                  type="checkbox"
+                  className="mt-0.5 shrink-0"
+                  checked={row.checked}
+                  disabled={row.disabled || saving || (row.notHeld && !answer.canEdit)}
+                  onChange={(event) => toggle(row.profile.id, event.target.checked)}
+                />
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-[13px] text-ink">
+                    {row.profile.name}
+                    {row.notHeld && <span className="ml-2 text-[11px] text-ink-secondary">{t("botSettings.perspicax.notHeld")}</span>}
+                  </span>
+                  {row.profile.description && <span className="text-[12px] text-ink-secondary">{row.profile.description}</span>}
+                </span>
+              </label>
+              {row.notHeld && answer.canEdit && row.checked && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => toggle(row.profile.id, false)}
+                  className="ml-6 mt-1 rounded-md bg-control px-2 py-0.5 text-[12px] text-ink hover:bg-control/70 disabled:opacity-50"
+                >
+                  {t("botSettings.perspicax.remove")}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[12px] text-ink-secondary">{t("botSettings.perspicax.routines")}</p>
+      {answer.canEdit ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={!changed || saving}
+            onClick={() => void save()}
+            className="flex items-center gap-1 rounded-md bg-control px-3 py-1 text-[12.5px] text-ink hover:bg-control/70 disabled:opacity-50"
+          >
+            {saving && <Loader2 size={12} className="animate-spin" aria-hidden="true" />}
+            {t("botSettings.perspicax.save")}
+          </button>
+          {saved && !changed && <span className="text-[12px] text-ink-secondary" role="status">{t("botSettings.perspicax.saved")}</span>}
+          {error && <span className="text-[12px] text-danger" role="alert">{t(error)}</span>}
+        </div>
+      ) : (
+        <p className="text-[12px] text-ink-secondary">{t("botSettings.perspicax.readOnly")}</p>
+      )}
+    </div>
+  );
+}

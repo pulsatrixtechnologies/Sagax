@@ -1896,5 +1896,20 @@
   "sectionMembers.defaultLevel": "Niveau par défaut sur ses bots",
   "sectionMembers.generalPersonal": "General est personnel et ne peut pas être partagé.",
   "sectionMembers.save": "Enregistrer",
-  "sectionMembers.failed": "Les membres n'ont pas pu être enregistrés."
+  "sectionMembers.failed": "Les membres n'ont pas pu être enregistrés.",
+  "botSettings.perspicax.title": "Outils Perspicax",
+  "botSettings.perspicax.help": "Chaque personne qui parle à ce bot utilise son propre accès Perspicax. Une personne qui ne détient pas un profil n'obtient pas ses outils.",
+  "botSettings.perspicax.notHeld": "Vous ne détenez pas ce profil",
+  "botSettings.perspicax.none": "Vous ne détenez aucun profil Perspicax.",
+  "botSettings.perspicax.routines": "Les routines n'utilisent pas encore ces outils.",
+  "botSettings.perspicax.save": "Enregistrer",
+  "botSettings.perspicax.saved": "Enregistré.",
+  "botSettings.perspicax.remove": "Retirer",
+  "botSettings.perspicax.loading": "Chargement des profils Perspicax",
+  "botSettings.perspicax.unavailable": "Les outils Perspicax ne sont pas disponibles sur ce serveur pour le moment.",
+  "botSettings.perspicax.readOnly": "Vous pouvez utiliser ce bot, mais pas changer ses outils.",
+  "botSettings.perspicax.error.profile_not_held": "Vous pouvez seulement ajouter un profil que vous détenez dans Perspicax.",
+  "botSettings.perspicax.error.needs_edit": "Pour changer ces outils, il faut le droit de modifier ce bot.",
+  "botSettings.perspicax.error.unknown_profile": "Perspicax ne liste plus ce profil.",
+  "botSettings.perspicax.error.failed": "Le changement n'a pas pu être enregistré."
 }
