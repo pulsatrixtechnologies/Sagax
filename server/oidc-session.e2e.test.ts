@@ -39,6 +39,8 @@ const CAROL: FakeOidcUser = { sub: "01J9S2CAROL00000000000000C", email: "carol@e
 const DAVE: FakeOidcUser = { sub: "01J9S2DAVE000000000000000D", email: "dave@example.test", name: "Dave", preferred_username: "dave", role: "employee" };
 const ERIN: FakeOidcUser = { sub: "01J9S2ERIN000000000000000E", email: "erin@example.test", name: "Erin", preferred_username: "erin", role: "admin" };
 const GRACE: FakeOidcUser = { sub: "01J9S2GRACE00000000000000G", email: "grace@example.test", name: "Grace", preferred_username: "grace", role: "admin" };
+const HANK: FakeOidcUser = { sub: "01J9S2HANK000000000000000H", email: "hank@example.test", name: "Hank", preferred_username: "hank", role: "admin" };
+const IVY: FakeOidcUser = { sub: "01J9S2IVY0000000000000000I", email: "ivy@example.test", name: "Ivy", preferred_username: "ivy", role: "employee" };
 const FRANK: FakeOidcUser = { sub: "01J9S2FRANK00000000000000F", email: "frank@example.test", name: "Frank", preferred_username: "frank", role: "employee" };
 
 let PORT = 0;
@@ -207,6 +209,30 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
     expect(after?.body).toMatchObject({ scopes: ["client"], role: "employee", orgRole: "member" });
     expect((await api("GET", "/api/auth/pairing", carol)).status).toBe(403);
     idp.setRole(CAROL.sub, "admin");
+  });
+
+  it("S2-2 strict: the one request that finds the grant due is already served with the provider's new role", async () => {
+    const hank = await signIn(HANK);
+    expect((await api("GET", "/api/auth/pairing", hank)).status).toBe(200);
+    idp.setRole(HANK.sub, "employee");
+    try {
+      await sleep(1_100);
+      expect((await api("GET", "/api/auth/pairing", hank)).status).toBe(403);
+      expect((await api("GET", "/api/auth/session", hank)).body).toMatchObject({ scopes: ["client"], role: "employee" });
+    } finally {
+      idp.setRole(HANK.sub, "admin");
+    }
+  });
+
+  it("the one request that finds the grant due is refused when the provider disabled the person", async () => {
+    const ivy = await signIn(IVY);
+    idp.disable(IVY.sub);
+    try {
+      await sleep(1_100);
+      expect((await api("GET", "/api/auth/session", ivy)).status).toBe(401);
+    } finally {
+      idp.enable(IVY.sub);
+    }
   });
 
   it("S2-3 and S2-6: forged logout tokens change nothing; a valid one ends the person's sessions and stream at once; a replay is refused", async () => {

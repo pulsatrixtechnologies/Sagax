@@ -12,6 +12,8 @@ import {
   DEFAULT_REFRESH_AFTER_SECONDS,
   IDP_KEY_FILE,
   IDP_RETRY_AFTER_FAILURE_MS,
+  IDP_SWEEP_INTERVAL_MS,
+  IDP_SWEEP_SLACK_MS,
   IDP_UNREACHABLE_GRACE_MS,
   IDP_VAULT_FILE,
   IdpGrantVault,
@@ -113,7 +115,8 @@ function setup(options: { refreshAfterMs?: number } = {}) {
   const principals = new PrincipalRegistry({ path: join(dir, "principals.json"), now: () => clock, newId: () => `pr_00000000-0000-4000-8000-${String(++id).padStart(12, "0")}` });
   const vault = new IdpGrantVault(dir, () => ({ kind: "key", key: Buffer.from(KEY, "hex") }));
   const logs: string[] = [];
-  const manager = new IdpSessionManager({ vault, rp: provider.rp, sessions, principals, now: () => clock, refreshAfterMs: options.refreshAfterMs ?? 3_000_000, log: (l) => logs.push(l) });
+  const timers: Array<{ run: () => void; at: number }> = [];
+  const manager = new IdpSessionManager({ vault, rp: provider.rp, sessions, principals, now: () => clock, refreshAfterMs: options.refreshAfterMs ?? 3_000_000, log: (l) => logs.push(l), schedule: (run, delayMs) => { timers.push({ run, at: clock + delayMs }); } });
   sessions.onSessionRevoked((sessionId) => manager.release(sessionId, { revokeAtIdp: true }));
   sessions.onExchanged((session) => { if (session.idp?.grantRef) manager.bindSession(session.idp.grantRef, session.id); });
   /** A web sign-in: principal, grant, session bound to it. */
@@ -124,10 +127,31 @@ function setup(options: { refreshAfterMs?: number } = {}) {
     manager.bindSession(grantRef, issued.session.id);
     return { principal, grantRef, sessionId: issued.session.id, record: () => sessions.byId(issued.session.id) };
   };
-  return { provider, sessions, principals, vault, manager, signIn, logs };
+  /** Advance the clock, firing the timers that come due. */
+  const advance = (ms: number) => {
+    clock += ms;
+    for (const timer of timers.splice(0).sort((a, b) => a.at - b.at)) {
+      if (timer.at <= clock) timer.run();
+      else timers.push(timer);
+    }
+  };
+  return { provider, sessions, principals, vault, manager, signIn, logs, timers, advance };
 }
 
 describe("refresh on use", () => {
+  it("hands back the refresh in flight, so the request that found it due can wait for the new role", async () => {
+    const { manager, provider, signIn, sessions } = setup({ refreshAfterMs: 1000 });
+    const a = signIn("S9", "admin");
+    await expect(manager.touch(a.record()!)).resolves.toBeUndefined();
+    expect(provider.calls).toEqual([]);
+    clock += 1000;
+    provider.script.push({ ok: true, refreshToken: "pxlr1.demoted", identity: { iss: ISS, sub: "S9", role: "employee" } });
+    const first = manager.touch(a.record()!);
+    expect(manager.touch(a.record()!)).toBe(first); // single flight, the same promise
+    await first;
+    expect(sessions.byId(a.sessionId)?.scopes).toEqual(["client"]);
+  });
+
   it("does nothing before it is due, then refreshes once in the background and keeps the rotated token", async () => {
     const { manager, provider, vault, signIn } = setup();
     const a = signIn("S1");
@@ -394,6 +418,20 @@ describe("release, sweep and back-channel logout", () => {
     expect(manager.sweep()).toBe(1);
     expect(provider.revoked).toContain(orphanVault.refreshToken);
     expect(vault.get(redeemed)).toBeDefined();
+  });
+
+  it("revokes an unredeemed native grant at the provider as soon as its window closes, not at the next periodic sweep", async () => {
+    const { manager, provider, vault, advance } = setup();
+    // a desktop sign-in: 120 s credential plus the bind grace
+    const pending = manager.createGrant({ iss: ISS, sub: "D2", refreshToken: "pxlr1.never-redeemed", bindBy: clock + 180_000 });
+    advance(180_000);
+    expect(vault.get(pending)).toBeDefined();
+    advance(IDP_SWEEP_SLACK_MS);
+    expect(vault.get(pending)).toBeUndefined();
+    await manager.settled();
+    expect(provider.revoked).toEqual(["pxlr1.never-redeemed"]);
+    // the periodic backstop (a restart lost the timer) is at most a minute late
+    expect(IDP_SWEEP_INTERVAL_MS).toBeLessThanOrEqual(60_000);
   });
 
   it("back-channel logout revokes by subject and by principal, drops grants silently, cancels codes and marks the person out", async () => {

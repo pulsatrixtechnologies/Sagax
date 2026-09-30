@@ -250,7 +250,28 @@ export interface IdpSessionManagerOptions {
   now?: () => number;
   refreshAfterMs?: number;
   log?: (line: string) => void;
+  /** Runs `run` after `delayMs` (tests pass a recorder). The default is an
+   * unref'd `setTimeout`. */
+  schedule?: (run: () => void, delayMs: number) => void;
 }
+
+/** How long a request that found its grant due waits for the refresh before
+ * it is served anyway (the refresh then finishes in the background). */
+export const IDP_REFRESH_WAIT_MS = 5_000;
+
+/** Resolves when `promise` settles or after `ms`, whichever comes first. */
+export function settledWithin(promise: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); });
+  return Promise.race([promise.then(() => {}, () => {}), bound]).finally(() => clearTimeout(timer));
+}
+
+/** A grant left unbound is swept this long after its `bindBy` at the latest. */
+export const IDP_SWEEP_SLACK_MS = 1_000;
+/** The periodic sweep, a backstop for the per-grant timers (a restart, a
+ * clock jump): short enough that no unredeemed grant outlives its window by
+ * more than a minute. */
+export const IDP_SWEEP_INTERVAL_MS = 60_000;
 
 /** Why a session must not be served, as the 401 `code`. */
 export type IdpRefusal = "idp_unreachable" | "idp_session_ended";
@@ -264,6 +285,7 @@ export class IdpSessionManager {
   private readonly refreshAfter: number;
   private readonly log: (line: string) => void;
   private readonly inflight = new Map<string, Promise<void>>();
+  private readonly schedule: (run: () => void, delayMs: number) => void;
 
   constructor(options: IdpSessionManagerOptions) {
     this.vault = options.vault;
@@ -273,6 +295,7 @@ export class IdpSessionManager {
     this.now = options.now ?? Date.now;
     this.refreshAfter = options.refreshAfterMs ?? DEFAULT_REFRESH_AFTER_SECONDS * 1000;
     this.log = options.log ?? ((line) => console.warn(line));
+    this.schedule = options.schedule ?? ((run, delayMs) => { setTimeout(run, delayMs).unref(); });
   }
 
   /** Null when grants can be kept; a reason otherwise (sign-in is refused). */
@@ -286,6 +309,15 @@ export class IdpSessionManager {
     const now = this.now();
     const grantRef = randomUUID();
     this.vault.set({ grantRef, iss: input.iss, sub: input.sub, refreshToken: input.refreshToken, createdAt: now, refreshedAt: now, lastOkAt: now, bindBy: input.bindBy });
+    // Revoked at the provider as soon as its window closes unredeemed, not
+    // at the next periodic sweep.
+    this.schedule(() => {
+      try {
+        this.sweep();
+      } catch {
+        /* the periodic sweep retries */
+      }
+    }, Math.max(0, input.bindBy - now) + IDP_SWEEP_SLACK_MS);
     return grantRef;
   }
 
@@ -336,31 +368,42 @@ export class IdpSessionManager {
     return kept.length === session.scopes.length ? null : kept;
   }
 
-  /** Refresh the session's grant in the background when it is due. Never
-   * delays the request and never throws. A session with no grant of its own
-   * refreshes the freshest live grant of its person. */
-  touch(session: Readonly<SessionRecord>): void {
+  /** Start the refresh of the session's grant when it is due, in a single
+   * flight per grant. Never throws. Returns the refresh in flight (resolved
+   * when nothing is due), so the server can serve the request that found it
+   * due with the provider's current answer (role, disabled). A session with
+   * no grant of its own refreshes the freshest live grant of its person. */
+  touch(session: Readonly<SessionRecord>): Promise<void> {
+    const done = Promise.resolve();
     let ref = session.idp?.grantRef;
     if (!ref && session.idp) {
       let live: IdpGrant[];
       try {
         live = this.liveGrantsFor(session.idp);
       } catch {
-        return;
+        return done;
       }
       ref = live.sort((a, b) => b.refreshedAt - a.refreshedAt)[0]?.grantRef;
     }
-    if (!ref || this.inflight.has(ref)) return;
-    const grant = this.vault.get(ref);
-    if (!grant) return;
+    if (!ref) return done;
+    const pending = this.inflight.get(ref);
+    if (pending) return pending;
+    let grant: IdpGrant | undefined;
+    try {
+      grant = this.vault.get(ref);
+    } catch {
+      return done;
+    }
+    if (!grant) return done;
     const now = this.now();
-    if (now - grant.refreshedAt < this.refreshAfter) return;
-    if (grant.failedAt !== undefined && now - grant.failedAt < IDP_RETRY_AFTER_FAILURE_MS) return;
+    if (now - grant.refreshedAt < this.refreshAfter) return done;
+    if (grant.failedAt !== undefined && now - grant.failedAt < IDP_RETRY_AFTER_FAILURE_MS) return done;
     const key = ref;
     const flight = this.refreshGrant(key).catch((error: unknown) => {
       this.log(`idp: refresh of a grant failed unexpectedly: ${error instanceof Error ? error.message : String(error)}`);
     }).finally(() => this.inflight.delete(key));
     this.inflight.set(key, flight);
+    return flight;
   }
 
   /** The person's grants that stand on a live session of their own. */

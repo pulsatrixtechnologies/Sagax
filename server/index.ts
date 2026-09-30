@@ -574,7 +574,7 @@ import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, oidcSessionFields } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
-import { IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey } from "./idp-session.ts";
+import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
 import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import {
@@ -14762,7 +14762,7 @@ if (idpSessions) {
   }
   setInterval(() => {
     try { idpSessions.sweep(); } catch { /* retried on the next tick */ }
-  }, 5 * 60_000).unref();
+  }, IDP_SWEEP_INTERVAL_MS).unref();
 }
 const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
   ? createOidcLoginRoutes({
@@ -15024,37 +15024,48 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     const auth = gate.auth;
     // Organization server: a person the provider signalled out is not
     // served, and a session whose grant the provider stopped refreshing ends
-    // (server/idp-session.ts). Otherwise the grant is refreshed when due, in
-    // the background.
+    // (server/idp-session.ts). A grant due for its refresh is refreshed
+    // before the request is served (bounded wait), so the very request that
+    // found it due already carries the provider's answer: a demotion, a
+    // disabled person.
     if (idpSessions && auth.kind === "session") {
-      const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
-      if (person?.disabledAt !== undefined) {
+      const endSession = (status: number, code: string, error: string) => {
         sessions.revoke(auth.session.id);
         if (auth.via === "cookie") res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
-        return json(res, 401, { error: "Your account is disabled in Pulsatrix. Ask an administrator.", code: "principal_disabled" });
-      }
-      const refusal = idpSessions.mustRefuse(auth.session);
-      if (refusal) {
-        sessions.revoke(auth.session.id);
+        return json(res, status, { error, code });
+      };
+      const disabled = () => {
+        const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
+        return person?.disabledAt !== undefined;
+      };
+      if (disabled()) return endSession(401, "principal_disabled", "Your account is disabled in Pulsatrix. Ask an administrator.");
+      // What the gate checked the route against, before any refresh.
+      const gated = [...auth.scopes];
+      await settledWithin(idpSessions.touch(auth.session), IDP_REFRESH_WAIT_MS);
+      const current = sessions.byId(auth.session.id);
+      if (!current || disabled()) {
         if (auth.via === "cookie") res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
-        return json(res, 401, { error: "Your Pulsatrix sign-in has ended. Sign in again.", code: refusal });
+        return json(res, 401, { error: "Your Pulsatrix sign-in has ended. Sign in again.", code: "idp_session_ended" });
       }
+      const refusal = idpSessions.mustRefuse(current);
+      if (refusal) return endSession(401, refusal, "Your Pulsatrix sign-in has ended. Sign in again.");
       // A device with no grant of its own never holds more than its person's
       // organization role now, even when no grant of theirs was refreshed.
-      const clamped = idpSessions.clampScopes(auth.session, person?.orgRole);
+      const person = current.principalId ? principals.byId(current.principalId) : null;
+      const clamped = idpSessions.clampScopes(current, person?.orgRole);
       if (clamped) {
-        if (!clamped.length) {
-          sessions.revoke(auth.session.id);
-          if (auth.via === "cookie") res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
-          return json(res, 401, { error: "Your Pulsatrix sign-in has ended. Sign in again.", code: "idp_session_ended" });
-        }
-        sessions.setScopes(auth.session.id, clamped);
-        auth.session.scopes = clamped;
-        auth.scopes = clamped;
-        const needed = requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax" });
-        if (!clamped.includes(needed)) return json(res, 403, { error: `forbidden: this session lacks the ${needed} scope` });
+        if (!clamped.length) return endSession(401, "idp_session_ended", "Your Pulsatrix sign-in has ended. Sign in again.");
+        sessions.setScopes(current.id, clamped);
       }
-      idpSessions.touch(auth.session);
+      const scopes = clamped ?? current.scopes;
+      const narrowed = gated.some((scope) => !scopes.includes(scope));
+      auth.session.scopes = scopes;
+      auth.scopes = scopes;
+      if (current.idp) auth.session.idp = current.idp;
+      if (narrowed) {
+        const needed = requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax" });
+        if (!scopes.includes(needed)) return json(res, 403, { error: `forbidden: this session lacks the ${needed} scope` });
+      }
     }
     if (HOSTED_WORKSPACE && auth.kind === "session") {
       const failure = workspaceAccess
