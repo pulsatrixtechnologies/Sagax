@@ -269,7 +269,7 @@ export function SidebarProfileMenu({ avatarOnly = false }: {
                 title={update.label}
                 aria-label={update.label}
                 className={cn(
-                  "absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-panel",
+                  "absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-sidebar",
                   update.phase === "error" ? "bg-danger" : "bg-accent",
                 )}
               />
@@ -280,7 +280,7 @@ export function SidebarProfileMenu({ avatarOnly = false }: {
             ref={triggerRef}
             className={cn(
               "flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors",
-              open ? "bg-raised" : "hover:bg-raised/50",
+              open ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
             )}
           >
             {profile?.avatarUrl ? (
@@ -288,7 +288,7 @@ export function SidebarProfileMenu({ avatarOnly = false }: {
             ) : (
               <InitialsAvatar initials={profileInitials(profile)} size={28} />
             )}
-            <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{name}</span>
+            <span className="min-w-0 flex-1 truncate text-[14px] text-sidebar-ink">{name}</span>
             {/* an update is the one thing worth interrupting the name for, so
               * it sits on the row rather than waiting to be found in the menu */}
             {update && updateNoteworthy(update.phase, update.pending) && (

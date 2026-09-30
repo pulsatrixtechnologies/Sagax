@@ -252,7 +252,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     <div className="flex h-full flex-col">
       {/* fixed-position popup, bottom-left — outside the layout flow */}
       <UpdateBanner />
-      <div className="relative flex min-h-0 flex-1">
+      <div className="app-shell-row relative flex min-h-0 flex-1">
       <button
         type="button"
         ref={menuButtonRef}
@@ -279,7 +279,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
           menuButtonRef.current?.focus();
         }}
       />
-      <div className="relative flex h-full min-w-0 flex-1 flex-col">
+      <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col">
       {composeOpen && (group || bot) ? (
         group ? <GroupView key={group.id} group={group} /> : bot ? <ChatView bot={bot} /> : null
       ) : calendarFillsMain ? (

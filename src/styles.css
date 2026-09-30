@@ -102,6 +102,16 @@
      there `raised` is pure white and a card is too. */
   --color-control: #2f2f2f;
   --color-hairline: #333333;
+  /* The persistent left rail. Every skin but Pulsatrix Light paints it in
+     `panel`/`ink`/`hover`/`selected`/`hairline`, unchanged from before these
+     tokens existed; see the comment above `[data-skin="pulsatrix-light"]`
+     for the one skin that gives the rail its own navy chrome. */
+  --color-sidebar: #111111;
+  --color-sidebar-ink: #fcfcfc;
+  --color-sidebar-ink-secondary: #fcfcfc99;
+  --color-sidebar-hover: #7777772c;
+  --color-sidebar-selected: #77777752;
+  --color-sidebar-hairline: #363636;      /* #333333 measured 1.49:1 on the sidebar; nudged to clear 1.5:1 */
   --color-ink: #fcfcfc;
   --color-ink-secondary: #fcfcfc99;
   --color-accent: #d6d6d6;
@@ -194,6 +204,12 @@
   --color-inset: #081427;
   --color-control: #16233c;       /* = raised: unchanged */
   --color-hairline: #223353;
+  --color-sidebar: #060f20;              /* = panel: unchanged */
+  --color-sidebar-ink: #eef2fb;           /* = ink: unchanged */
+  --color-sidebar-ink-secondary: #9aa6c2; /* = ink-secondary: unchanged */
+  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
+  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
+  --color-sidebar-hairline: #223353;      /* = hairline: unchanged */
 
   --color-ink: #eef2fb;
   --color-ink-secondary: #9aa6c2;   /* 5.62:1 on raised-hover, the tightest surface */
@@ -244,6 +260,16 @@
    the nearest thing v3 has: the --fg-ok and --fg-write badge inks, already
    tuned for 4.5:1 on a white card. The user's own bubble takes v3's
    --bg-query tint, the softest of its blue badges.
+
+   The rail is the one place this skin departs from "light": v3's chrome is
+   navy in both of its own themes (index.css, the `.px-chrome` block, the
+   "softer slate navy" variant used before its own dark media query/class
+   override goes deeper). --color-sidebar and its ink/hover/selected/hairline
+   below are that block's --bg/--fg/--muted-fg/--sidebar-accent/
+   --sidebar-accent-active/--border, carried verbatim (its two alpha
+   overlays converted to 8-digit hex: 7% of --fg, 22% of its accent-brand-
+   hover). The content frame stays this skin's own light surfaces, inset
+   over that navy the way v3's card sits inside its shell.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="pulsatrix-light"] {
   --code-color-scheme: light;
@@ -260,6 +286,12 @@
   --color-hairline: #b8c3d9;         /* v3's own #c8d1e3 measures 1.37:1 on the
                                          app ground; darkened to the nearest
                                          step that clears 1.5:1 */
+  --color-sidebar: #24324d;               /* v3's .px-chrome --bg (light variant) */
+  --color-sidebar-ink: #eef2fb;           /* v3's .px-chrome --fg */
+  --color-sidebar-ink-secondary: #c3cce0; /* v3's .px-chrome --muted-fg */
+  --color-sidebar-hover: #eef2fb12;       /* v3's --sidebar-accent, rgb(238 242 251 / 7%) */
+  --color-sidebar-selected: #6b9bff38;    /* v3's --sidebar-accent-active, rgb(107 155 255 / 22%) */
+  --color-sidebar-hairline: #41526f;      /* v3's .px-chrome --border */
 
   --color-ink: #0b1526;
   --color-ink-secondary: #545e6e;   /* v3's #5a6577 darkened one notch for 4.5:1 on inset */
@@ -312,6 +344,13 @@
   --color-inset: #191919;
   --color-control: #2f2f2f;       /* = raised: Midnight is unchanged */
   --color-hairline: #333333;
+  --color-sidebar: #111111;              /* = panel: unchanged */
+  --color-sidebar-ink: #fcfcfc;           /* = ink: unchanged */
+  --color-sidebar-ink-secondary: #fcfcfc99; /* = ink-secondary: unchanged */
+  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
+  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
+  --color-sidebar-hairline: #363636;      /* hairline (#333333) measures 1.49:1
+                                              on the sidebar; nudged to clear 1.5:1 */
   --color-ink: #fcfcfc;
   --color-ink-secondary: #fcfcfc99;
   --color-accent: #d6d6d6;
@@ -360,6 +399,12 @@
                                      a control needs its own tone: 1.26:1 on a
                                      card, and raised-hover still lifts off it */
   --color-hairline: #c8bda8;      /* #ece7dd was 1.11:1 on the rail → 1.65:1 */
+  --color-sidebar: #fbf8f2;              /* = panel: unchanged */
+  --color-sidebar-ink: #1a1a18;           /* = ink: unchanged */
+  --color-sidebar-ink-secondary: #6b6559; /* = ink-secondary: unchanged */
+  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
+  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
+  --color-sidebar-hairline: #c8bda8;      /* = hairline: unchanged */
 
   --color-ink: #1a1a18;           /* 17.4:1 on white */
   --color-ink-secondary: #6b6559; /* #8b8578 was 3.67:1 → 5.78:1 */
@@ -419,6 +464,12 @@
   --color-inset: #0b0a08;         /* inset sinks below the ground */
   --color-control: #262019;       /* = raised: Foundry is unchanged */
   --color-hairline: #3d3529;      /* visible on purpose — this UI has edges */
+  --color-sidebar: #171410;              /* = panel: unchanged */
+  --color-sidebar-ink: #f4efe4;           /* = ink: unchanged */
+  --color-sidebar-ink-secondary: #b0a696; /* = ink-secondary: unchanged */
+  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
+  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
+  --color-sidebar-hairline: #3d3529;      /* = hairline: unchanged */
 
   --color-ink: #f4efe4;           /* warm off-white, never pure #fff */
   --color-ink-secondary: #b0a696; /* 6.7:1 on raised, 5.9:1 on hover */
@@ -484,6 +535,12 @@
                                      card, 1.29:1 on the panel, 1.13:1 on an
                                      inset row, 1.09:1 under the hover tone. */
   --color-hairline: #aebfbd;      /* 1.60:1 — level with the other three */
+  --color-sidebar: #ecf4f3;              /* = panel: unchanged */
+  --color-sidebar-ink: #14201f;           /* = ink: unchanged */
+  --color-sidebar-ink-secondary: #4d5c5b; /* = ink-secondary: unchanged */
+  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
+  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
+  --color-sidebar-hairline: #aebfbd;      /* = hairline: unchanged */
 
   --color-ink: #14201f;           /* dark petrol; a neutral black would read
                                      as a foreign object on a tinted ground */
@@ -530,6 +587,12 @@
   --color-inset: #0d0e10;
   --color-control: #2a2d32;
   --color-hairline: #3b4048;
+  --color-sidebar: #181a1d;              /* = panel: unchanged */
+  --color-sidebar-ink: #f2f4f7;           /* = ink: unchanged */
+  --color-sidebar-ink-secondary: #b3b8c2; /* = ink-secondary: unchanged */
+  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
+  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
+  --color-sidebar-hairline: #3b4048;      /* = hairline: unchanged */
 
   --color-ink: #f2f4f7;
   --color-ink-secondary: #b3b8c2;
@@ -575,6 +638,12 @@
   --color-inset: #e6e9ee;
   --color-control: #d3d9e1;
   --color-hairline: #b4bbc5;
+  --color-sidebar: #f5f6f8;              /* = panel: unchanged */
+  --color-sidebar-ink: #1d2229;           /* = ink: unchanged */
+  --color-sidebar-ink-secondary: #59616c; /* = ink-secondary: unchanged */
+  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
+  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
+  --color-sidebar-hairline: #b4bbc5;      /* = hairline: unchanged */
 
   --color-ink: #1d2229;
   --color-ink-secondary: #59616c;
@@ -619,6 +688,12 @@
   --color-inset: #0d0b0f;
   --color-control: #2b2630;
   --color-hairline: #403847;
+  --color-sidebar: #19161c;              /* = panel: unchanged */
+  --color-sidebar-ink: #f4eff6;           /* = ink: unchanged */
+  --color-sidebar-ink-secondary: #b9afbd; /* = ink-secondary: unchanged */
+  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
+  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
+  --color-sidebar-hairline: #403847;      /* = hairline: unchanged */
 
   --color-ink: #f4eff6;
   --color-ink-secondary: #b9afbd;
@@ -671,6 +746,13 @@
      and every border is drawn at /40 on top of that. #d0d0d0 is the lightest
      grey that still passes; see scripts/check-skin-contrast.mjs. */
   --color-hairline: #d0d0d0;
+  --color-sidebar: #f7f7f7;              /* = panel: unchanged */
+  --color-sidebar-ink: #0d0d0d;           /* = ink: unchanged */
+  --color-sidebar-ink-secondary: #575757; /* = ink-secondary: unchanged */
+  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
+  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
+  --color-sidebar-hairline: #c8c8c8;      /* hairline (#d0d0d0) measures 1.44:1
+                                              on the sidebar; nudged to clear 1.5:1 */
 
   --color-ink: #0d0d0d;
   --color-ink-secondary: #575757;
@@ -757,6 +839,40 @@
   background-image: var(--app-glow);
   background-repeat: no-repeat;
   background-attachment: local;
+}
+
+/* Pulsatrix Light's rail borrows v3's own nav-group-header treatment: small
+   capitals rather than sentence case (.px-nav-group-btn, index.css). Every
+   other skin keeps the plain label; this is the one purely typographic
+   detail this skin adds on top of its own tokens. */
+[data-skin="pulsatrix-light"] .sidebar-section-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Pulsatrix Light's content frame: v3's light-mode page is a light card
+   inset over its own always-navy chrome (App.tsx wraps the sidebar row in
+   `.app-shell-row` and the chat/group/routines/etc. column in
+   `.app-content-frame`; every other skin paints both transparent, so this
+   is the one place they carry a rule at all). The row behind both takes
+   the same navy as the rail so the inset reads as one continuous chrome,
+   not a second stripe of colour; the frame itself keeps 8px clear on every
+   edge but the one flush against the sidebar, so the top-left corner is
+   the one that visibly tucks into the chrome. */
+[data-skin="pulsatrix-light"] .app-shell-row {
+  background: var(--color-sidebar);
+}
+[data-skin="pulsatrix-light"] .app-content-frame {
+  /* `h-full` (Tailwind, height: 100%) plus a non-zero margin would overflow
+     the row by exactly the margin, since a percentage height does not
+     subtract it. `auto` lets the row's own `align-items: stretch` (the
+     flex default, unset by `.app-shell-row`) size this item to the row's
+     cross size minus its margin instead, the same fill, correctly. */
+  height: auto;
+  margin: 8px 8px 8px 0;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-hairline);
+  overflow: hidden;
 }
 
 html,

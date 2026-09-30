@@ -176,9 +176,9 @@ export function SidebarPhoneStatusButton({
       data-phone-status={status.kind}
       data-sidebar-density={density}
       className={cn(
-        "relative flex size-10 shrink-0 items-center justify-center rounded-md hover:bg-raised",
+        "relative flex size-10 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-hover",
         density === "icons" && "mx-auto",
-        connected ? "text-success" : "text-ink-secondary hover:text-ink",
+        connected ? "text-success" : "text-sidebar-ink-secondary hover:text-sidebar-ink",
       )}
     >
       <TabletSmartphone size={18} strokeWidth={1.8} />
@@ -186,7 +186,7 @@ export function SidebarPhoneStatusButton({
         <span
           aria-hidden="true"
           data-phone-plus
-          className="absolute bottom-1 right-1 flex size-3.5 items-center justify-center rounded-full border border-panel bg-panel"
+          className="absolute bottom-1 right-1 flex size-3.5 items-center justify-center rounded-full border border-sidebar bg-sidebar"
         >
           <Plus size={10} strokeWidth={2.8} />
         </span>

@@ -97,15 +97,15 @@ export function SidebarSectionHeader({
                 ? t("sidebar.section.expand", { name })
                 : t("sidebar.section.collapse", { name })
           }
-          className="group/section flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-2 pb-1.5 pt-2 text-left transition-colors hover:bg-hover"
+          className="group/section flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-2 pb-1.5 pt-2 text-left transition-colors hover:bg-sidebar-hover"
         >
-          <span className="truncate text-[12px] leading-4 text-ink-secondary">{name}</span>
+          <span className="sidebar-section-label truncate text-[12px] leading-4 text-sidebar-ink-secondary">{name}</span>
           {marks}
-          <Chevron size={14} strokeWidth={2} className={cn("ml-auto shrink-0 text-ink-secondary transition-opacity", !collapsed && "opacity-0 group-hover/section:opacity-100 group-focus-visible/section:opacity-100")} aria-hidden="true" />
+          <Chevron size={14} strokeWidth={2} className={cn("ml-auto shrink-0 text-sidebar-ink-secondary transition-opacity", !collapsed && "opacity-0 group-hover/section:opacity-100 group-focus-visible/section:opacity-100")} aria-hidden="true" />
         </button>
       ) : (
         <div className="flex h-[30px] min-w-0 items-center gap-2 px-2 pb-1.5 pt-2">
-          <span className="truncate text-[12px] leading-4 text-ink-secondary">{name}</span>
+          <span className="sidebar-section-label truncate text-[12px] leading-4 text-sidebar-ink-secondary">{name}</span>
           {marks}
         </div>
       )}

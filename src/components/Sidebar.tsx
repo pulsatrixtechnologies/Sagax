@@ -279,7 +279,7 @@ export function GroupListItem({
         "relative flex w-full items-center rounded-[10px] text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
         density === "icons" ? "justify-center px-1 py-1.5" : density === "compact" ? "gap-2 py-1.5 pr-9" : "min-h-[54px] gap-2 py-2 pr-2",
         density !== "icons" && (hasThreadList ? "pl-5" : "pl-2"),
-        selected && !expanded ? "bg-selected" : "hover:bg-hover",
+        selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
       title={density === "icons" ? group.name : undefined}
       aria-label={density === "icons" ? group.name : undefined}
@@ -287,26 +287,26 @@ export function GroupListItem({
       <StackedMauses members={members} density={density} />
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
-          {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-ink-tertiary">{formatTime(last.at)}</span>}
+          <span className="truncate text-[14px] font-medium leading-5 text-sidebar-ink">{group.name}</span>
+          {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
           {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
         {!expanded && (!quiet || groupStatus) && <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[13px] leading-[18px] text-ink-secondary">{groupPreview(group, state.bots)}</span>
+          <span className="truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">{groupPreview(group, state.bots)}</span>
           {group.unread && <span className="size-2 shrink-0 rounded-full bg-accent" />}
         </div>}
       </div>
       {density === "icons" && group.unread && (
-        <span className="absolute bottom-1.5 right-1.5 size-2 rounded-full border border-panel bg-accent" />
+        <span className="absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-accent" />
       )}
     </button>
     {!group.dm && density !== "icons" && hasThreadList && <button type="button" aria-label={t(expanded ? "task.collapseNamed" : "task.expandNamed", { name: group.name })} aria-expanded={expanded}
-      onClick={() => setThreadsOpen((open) => !open)} className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-ink-secondary outline-none hover:text-ink focus-visible:ring-1 focus-visible:ring-accent/60">
+      onClick={() => setThreadsOpen((open) => !open)} className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60">
       <ChevronRight aria-hidden="true" size={12} className={cn("transition-transform", expanded && "rotate-90")} />
     </button>}
     {!group.dm && density !== "icons" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
       onClick={() => { setThreadsOpen(true); dispatch({ type: "newGroupTask", groupId: group.id }); }}
-      className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-ink-secondary opacity-0 hover:bg-raised hover:text-ink disabled:opacity-40 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70"><Plus size={14} /></button>}
+      className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink disabled:opacity-40 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70"><Plus size={14} /></button>}
     </div>
     {expanded && <GroupThreadList group={group} selected={selected} density={density} query={group.name.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
     </>
@@ -1092,16 +1092,16 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
               if (from) saveOrder(placeFolder(projectIds, from, project.id, event.clientY < rect.top + rect.height / 2 ? "before" : "after"));
               resetFolderDrag();
             }}
-            className={cn("group/folder flex items-center gap-0.5 rounded-md pl-0.5 text-ink-secondary hover:bg-raised/30",
+            className={cn("group/folder flex items-center gap-0.5 rounded-md pl-0.5 text-sidebar-ink-secondary hover:bg-sidebar-hover",
               folderDrop?.id === project.id && draggingFolder.current !== project.id && (folderDrop.place === "before" ? "shadow-[0_-2px_var(--color-accent)]" : "shadow-[0_2px_var(--color-accent)]"))}>
             <button type="button" aria-expanded={open} onClick={() => setCollapsed((previous) => {
               const next = new Set(previous);
               if (next.has(project.id)) next.delete(project.id); else next.add(project.id);
               return next;
-            })} className="flex size-6 shrink-0 items-center justify-center rounded outline-none hover:text-ink focus-visible:ring-1 focus-visible:ring-accent/60" aria-label={t(open ? "task.collapseNamed" : "task.expandNamed", { name: project.name })}>
+            })} className="flex size-6 shrink-0 items-center justify-center rounded outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60" aria-label={t(open ? "task.collapseNamed" : "task.expandNamed", { name: project.name })}>
               <ChevronRight aria-hidden="true" size={11} className={cn("shrink-0 transition-transform", open && "rotate-90")} />
             </button>
-            <button type="button" aria-label={t("folder.iconNamed", { name: project.name })} title={t("folder.iconNamed", { name: project.name })} onClick={() => setEditingProject(project.id)} className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-raised"><FolderIcon emoji={project.emoji} size={14} /></button>
+            <button type="button" aria-label={t("folder.iconNamed", { name: project.name })} title={t("folder.iconNamed", { name: project.name })} onClick={() => setEditingProject(project.id)} className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-sidebar-hover"><FolderIcon emoji={project.emoji} size={14} /></button>
             <button type="button" data-sidebar-folder-label={project.id} draggable={!reordering} aria-expanded={open} onClick={() => setCollapsed((previous) => {
               const next = new Set(previous);
               if (next.has(project.id)) next.delete(project.id); else next.add(project.id);
@@ -1112,7 +1112,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
               {!open && (waiting ? <span className="text-[10px] text-warning">{t("task.waiting")}</span> : working ? <Loader2 size={10} className="shrink-0 animate-spin text-success" /> : projectTasks.some((task) => task.unread) ? <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} /> : null)}
             </button>
             <button type="button" title={t("task.newIn", { name: project.name })} aria-label={t("task.newIn", { name: project.name })} onClick={() => dispatch({ type: "newTask", botId: bot.id, projectId: project.id })}
-              className="flex size-6 items-center justify-center rounded opacity-0 hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover/folder:opacity-100 max-md:opacity-70"><Plus size={12} /></button>
+              className="flex size-6 items-center justify-center rounded opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:opacity-100 group-hover/folder:opacity-100 max-md:opacity-70"><Plus size={12} /></button>
             <FolderActions project={project} canMoveUp={index > 0} canMoveDown={index < projects.length - 1} canMarkRead={folderUnreadThreadIds(bot, project.id).length > 0} saving={reordering || markingRead}
               menu={folderMenu?.projectId === project.id ? folderMenu : null} onMenuChange={(menu) => setFolderMenu(menu ? { ...menu, projectId: project.id } : null)}
               onEdit={() => setEditingProject(project.id)} onMove={(direction, onSaved) => saveOrder(moveFolder(projectIds, project.id, direction), onSaved)}
@@ -1120,7 +1120,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
           </div>
           {open && <div role="group" aria-label={t("task.namedList", { name: project.name })}>
             {visible.map(renderThread)}
-            {projectTasks.length === 0 && <p className="px-2.5 py-1 text-[11px] text-ink-secondary/70">{t("task.empty")}</p>}
+            {projectTasks.length === 0 && <p className="px-2.5 py-1 text-[11px] text-sidebar-ink-secondary/70">{t("task.empty")}</p>}
           </div>}
         </div>;
       })}
@@ -1128,9 +1128,9 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
       <span role="status" className="sr-only">{reorderStatus}</span>
       {readError && <p role="alert" className="px-2.5 py-1 text-[12px] text-danger">{readError}</p>}
       <span role="status" className="sr-only">{readStatus}</span>
-      {projects.length > 0 && ungrouped.length > 0 && <div className="pl-6 pr-3 pb-1 pt-2 text-[10.5px] text-ink-secondary/70">{t("task.list")}</div>}
+      {projects.length > 0 && ungrouped.length > 0 && <div className="pl-6 pr-3 pb-1 pt-2 text-[10.5px] text-sidebar-ink-secondary/70">{t("task.list")}</div>}
       {ungrouped.map(renderThread)}
-      {!query && !showAll && tasks.length > visibleTasks.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-ink-secondary hover:text-ink">{t("task.showAll", { count: tasks.length })}</button>}
+      {!query && !showAll && tasks.length > visibleTasks.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.showAll", { count: tasks.length })}</button>}
       {projectToEdit && <BotProjectDialog bot={bot} project={projectToEdit} onClose={() => setEditingProject(null)} />}
       </>}
     </div>
@@ -1196,7 +1196,7 @@ export function BotListItem({
     // Chief of Staff is called out by the crown label below, not by tinting
     // the whole row — an accent border + fill read as "selected" even when
     // another bot was active.
-    selected ? "bg-selected" : "hover:bg-hover",
+    selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
   );
   const activityTasks = sidebarBotActivityTasks(bot, state.pendingQueued);
   const waiting = bot.activity === "waiting-on-you" || activityTasks.some((task) => task.activity === "waiting-on-you");
@@ -1232,22 +1232,22 @@ export function BotListItem({
           <span
             data-testid="working-dot"
             className={cn(
-              "absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-panel bg-success",
+              "absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-success",
               iconOnly ? "size-3" : "size-2.5",
             )}
           />
         )}
         {waiting && <span data-testid="waiting-dot" role="status" aria-label={t("sidebar.preview.waiting")} title={t("sidebar.preview.waiting")}
-          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-panel bg-warning", iconOnly ? "size-3" : "size-2.5")} />}
+          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-warning", iconOnly ? "size-3" : "size-2.5")} />}
         {teammateWait && <span data-testid="teammate-wait-dot" role="status" aria-label={t("sidebar.preview.waitingOnTeammate")} title={t("sidebar.preview.waitingOnTeammate")}
-          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-panel bg-accent", iconOnly ? "size-3" : "size-2.5")} />}
+          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-accent", iconOnly ? "size-3" : "size-2.5")} />}
         {!teammateWait && !waiting && !working && queued && <span data-testid="queued-dot" role="status" aria-label={t("task.queued")} title={t("task.queued")}
-          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-panel bg-ink-secondary", iconOnly ? "size-3" : "size-2.5")} />}
+          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-sidebar-ink-secondary", iconOnly ? "size-3" : "size-2.5")} />}
       </span>
       <div className={cn("min-w-0 flex-1", iconOnly && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className="flex min-w-0 grow items-center gap-1.5 text-[14px] font-medium leading-5 text-ink">
-            {bot.pinned && <Pin size={12} className="shrink-0 text-ink-secondary" />}
+          <span className="flex min-w-0 grow items-center gap-1.5 text-[14px] font-medium leading-5 text-sidebar-ink">
+            {bot.pinned && <Pin size={12} className="shrink-0 text-sidebar-ink-secondary" />}
             <RenameTitle
               key={iconOnly ? "icons" : "expanded"}
               value={bot.name}
@@ -1269,7 +1269,7 @@ export function BotListItem({
               inputClassName="w-full rounded bg-inset px-1 py-0.5 text-[14px] font-medium"
             />
             {title && !renaming && !quiet && (
-              <span className="max-w-[46%] shrink truncate rounded-[5px] border border-hairline-weak bg-elevated px-1.5 text-[11px] leading-4 text-ink-secondary">{title}</span>
+              <span className="max-w-[46%] shrink truncate rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1.5 text-[11px] leading-4 text-sidebar-ink-secondary">{title}</span>
             )}
             {bot.chiefOfStaff && !renaming && (
               <Crown size={12} className="shrink-0 text-accent" role="img" aria-label={t("sidebar.bot.chiefOfStaff")} data-testid="chief-crown">
@@ -1278,7 +1278,7 @@ export function BotListItem({
             )}
           </span>
           {selected && last && !renaming && !expanded && (
-            <span className="shrink-0 text-[12px] leading-4 text-ink-tertiary transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
+            <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
               {formatTime(last.at)}
             </span>
           )}
@@ -1286,12 +1286,12 @@ export function BotListItem({
         </div>
         {(!expanded || deleting) && (!quiet || statusLine) && <div className="flex items-center justify-between gap-2">
           {deleting ? (
-            <span role="status" className="flex min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px] text-ink-secondary">
+            <span role="status" className="flex min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">
               <Loader2 size={12} className="shrink-0 animate-spin" />
               {t("sidebar.bot.deletingRow")}
             </span>
           ) : (
-            <span className="flex min-h-[18px] min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px] text-ink-secondary">
+            <span className="flex min-h-[18px] min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">
               {working ? (
                 // the same typing dots as the chat header; sized to the text's
                 // line box so the row does not jump when work starts or ends
@@ -1946,7 +1946,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       data-sidebar
       style={density === "icons" ? { width: 80 } : { width: sidebarWidth }}
       className={cn(
-        "relative flex h-full shrink-0 flex-col border-r-[0.5px] border-hairline-weak bg-panel",
+        "relative flex h-full shrink-0 flex-col border-r-[0.5px] border-hairline-weak bg-sidebar",
         // Below md only: the sidebar leaves the flow and slides in over the chat.
         // Scoped with max-md: rather than cancelled with md: on purpose — Tailwind
         // v4 emits the native `translate` property, and any value other than
@@ -1980,7 +1980,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             type="button"
             onClick={() => setSearchModal(true)}
             aria-label={t("sidebar.searchAria")}
-            className="flex size-9 items-center justify-center rounded-full border border-hairline-weak bg-elevated text-ink transition-colors hover:bg-elevated-hover"
+            className="flex size-9 items-center justify-center rounded-full border border-sidebar-hairline text-sidebar-ink transition-colors hover:bg-sidebar-hover"
           >
             <Search size={18} strokeWidth={1.75} />
           </button>
@@ -1989,7 +1989,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             onClick={() => onCompose?.()}
             aria-expanded={composeOpen}
             aria-label={t("sidebar.new")}
-            className="flex size-9 items-center justify-center rounded-full border border-hairline-weak bg-elevated text-ink transition-colors hover:bg-elevated-hover"
+            className="flex size-9 items-center justify-center rounded-full border border-sidebar-hairline text-sidebar-ink transition-colors hover:bg-sidebar-hover"
             title={t("sidebar.new")}
           >
             <Plus size={18} strokeWidth={1.75} />
@@ -2016,12 +2016,12 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                     setMenu({ botId: bot.id, x: event.clientX, y: event.clientY });
                   }}
                   aria-current={selected ? "page" : undefined}
-                  className={cn("flex w-20 min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 pb-1 pt-1.5", selected ? "bg-selected" : "hover:bg-hover")}
+                  className={cn("flex w-20 min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 pb-1 pt-1.5", selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover")}
                 >
                   <BotAvatar bot={bot} state="idle" size={density === "icons" ? 36 : 72} animated={false} />
-                  {density !== "icons" && <span className="w-full truncate text-center text-[11px] leading-4 tracking-[.005em] text-ink">{bot.name}</span>}
+                  {density !== "icons" && <span className="w-full truncate text-center text-[11px] leading-4 tracking-[.005em] text-sidebar-ink">{bot.name}</span>}
                   {density !== "icons" && title ? (
-                    <span className="max-w-full truncate rounded-[5px] border border-hairline-weak bg-elevated px-1.5 text-[10px] leading-4 text-ink-secondary">{title}</span>
+                    <span className="max-w-full truncate rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1.5 text-[10px] leading-4 text-sidebar-ink-secondary">{title}</span>
                   ) : null}
                 </button>
               );
@@ -2030,7 +2030,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         )}
         <div className="flex flex-col gap-1">
           {matchingBots.length === 0 && visibleGroups.length === 0 && q && q.length < MIN_QUERY && (
-            <div className="px-3 py-6 text-center text-[13px] text-ink-secondary">{t("sidebar.noMatch", { query: q })}</div>
+            <div className="px-3 py-6 text-center text-[13px] text-sidebar-ink-secondary">{t("sidebar.noMatch", { query: q })}</div>
           )}
           {sectionIds.map((id, index) => {
             const team = teamMap.find((item) => (item.key ? userSectionId(item.key) : GENERAL_SECTION_ID) === id);
@@ -2092,7 +2092,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                 )}
                 {collapsed && queued.length > 0 && <button type="button" onClick={() => toggleSection(id)}
                   title={`${t("task.queued")} · ${queued.join(", ")}`} aria-label={`${t("sidebar.section.expand", { name: sectionLabel(id) })} · ${t("task.queued")} · ${queued.join(", ")}`}
-                  className="mx-3 mb-1 self-start rounded bg-raised/50 px-2 py-0.5 text-[10px] text-ink-secondary hover:text-ink">{t("task.queued")} · {queued.length}</button>}
+                  className="mx-3 mb-1 self-start rounded bg-sidebar-hover px-2 py-0.5 text-[10px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.queued")} · {queued.length}</button>}
                 {!collapsed && (
                   <>
                     {sectionChiefItems.map((bot) => (
@@ -2155,10 +2155,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             className={cn(
               "flex min-h-10 w-full items-center rounded-xl py-2 text-left transition-colors",
               density === "icons" ? "justify-center px-2" : "gap-3 px-3",
-              state.activeView === "team-map" ? "bg-raised text-ink" : "text-ink hover:bg-raised/50",
+              state.activeView === "team-map" ? "bg-sidebar-selected text-sidebar-ink" : "text-sidebar-ink hover:bg-sidebar-hover",
             )}
           >
-            <Network size={20} className={state.activeView === "team-map" ? "text-accent" : "text-ink-secondary"} />
+            <Network size={20} className={state.activeView === "team-map" ? "text-accent" : "text-sidebar-ink-secondary"} />
             <span className={cn("flex-1 text-[14px]", density === "icons" && "hidden")}>{t("sidebar.nav.teamMap")}</span>
           </button>
           <button
@@ -2169,10 +2169,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             className={cn(
               "flex min-h-10 w-full items-center rounded-xl py-2 text-left transition-colors",
               density === "icons" ? "justify-center px-2" : "gap-3 px-3",
-              state.activeView === "routines" ? "bg-raised text-ink" : "text-ink hover:bg-raised/50",
+              state.activeView === "routines" ? "bg-sidebar-selected text-sidebar-ink" : "text-sidebar-ink hover:bg-sidebar-hover",
             )}
           >
-            <CalendarDays size={20} className={state.activeView === "routines" ? "text-accent" : "text-ink-secondary"} />
+            <CalendarDays size={20} className={state.activeView === "routines" ? "text-accent" : "text-sidebar-ink-secondary"} />
             <span className={cn("flex-1 text-[14px]", density === "icons" && "hidden")}>{t("sidebar.nav.automations")}</span>
             {state.routineRuns.some((run) => isRoutineProblemRun(run) && !run.seenAt) && (
               <span className="size-2 rounded-full bg-danger" />
@@ -2180,12 +2180,12 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           </button>
           <button
             onClick={() => dispatch({ type: "togglePlugins", open: true })}
-            className={cn("flex min-h-10 w-full items-center rounded-xl py-2 text-left hover:bg-raised/50", density === "icons" ? "justify-center px-2" : "gap-3 px-3")}
+            className={cn("flex min-h-10 w-full items-center rounded-xl py-2 text-left hover:bg-sidebar-hover", density === "icons" ? "justify-center px-2" : "gap-3 px-3")}
             aria-label={density === "icons" ? t("sidebar.nav.connectedApps") : undefined}
             title={density === "icons" ? t("sidebar.nav.connectedApps") : undefined}
           >
-            <Puzzle size={20} className="text-ink-secondary" />
-            <span className={cn("text-[14px] text-ink", density === "icons" && "hidden")}>{t("sidebar.nav.connectedApps")}</span>
+            <Puzzle size={20} className="text-sidebar-ink-secondary" />
+            <span className={cn("text-[14px] text-sidebar-ink", density === "icons" && "hidden")}>{t("sidebar.nav.connectedApps")}</span>
           </button>
           {!remoteClient && (
             <button
@@ -2193,7 +2193,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               onClick={() => setTeamLibraryOpen(true)}
               aria-label={t("sidebar.teamLibrary")}
               title={t("sidebar.teamLibrary")}
-              className="flex min-h-10 w-full items-center justify-center rounded-xl px-2 py-2 text-ink-secondary hover:bg-raised/50 hover:text-ink"
+              className="flex min-h-10 w-full items-center justify-center rounded-xl px-2 py-2 text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
             >
               <Library size={20} />
             </button>
@@ -2204,7 +2204,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               onClick={() => setArchivedBotsOpen(true)}
               aria-label={t("sidebar.archived.title")}
               title={t("sidebar.archived.title")}
-              className="flex min-h-10 w-full items-center justify-center rounded-xl px-2 py-2 text-ink-secondary hover:bg-raised/50 hover:text-ink"
+              className="flex min-h-10 w-full items-center justify-center rounded-xl px-2 py-2 text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
             >
               <Archive size={20} />
             </button>
@@ -2221,7 +2221,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           <div className="flex items-center justify-center">
             <button
               onClick={() => dispatch({ type: "toggleAppSettings" })}
-              className="flex min-w-0 items-center justify-center rounded-xl px-2 py-2 text-left hover:bg-raised/50"
+              className="flex min-w-0 items-center justify-center rounded-xl px-2 py-2 text-left hover:bg-sidebar-hover"
               aria-label={t("sidebar.appSettings")}
               title={state.config?.profile?.name?.trim() || t("sidebar.appSettings")}
             >
