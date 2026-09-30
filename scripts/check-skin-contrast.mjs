@@ -108,6 +108,12 @@ const PAIRS = [
   ["--color-hairline", "--color-app", 1.5],
   ["--color-accent", "--color-app", 3],
   ["--color-scrollbar", "--color-app", 1.5],
+  // The persistent left rail: Pulsatrix Light paints it in its own navy
+  // chrome, not `panel`/`ink`, so it needs its own pair rather than riding
+  // the SURFACES loop above (`--color-sidebar` isn't in that list).
+  ["--color-sidebar-ink", "--color-sidebar", 4.5],
+  ["--color-sidebar-ink-secondary", "--color-sidebar", 4.5],
+  ["--color-sidebar-hairline", "--color-sidebar", 1.5],
   // The focus ring sits outside the control (outline-offset: 2px), so it
   // lands on whatever surface is behind it — a skin that inherits another
   // skin's ring keeps a colour that was never checked against its ground.
