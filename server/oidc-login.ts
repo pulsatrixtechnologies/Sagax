@@ -34,6 +34,7 @@
 // sections 2, 3 and 10 (slice 1).
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { immediateRevocations, type RevocationSink } from "./idp-revocations.ts";
 import { OidcRelyingParty, ROUTINE_DELEGATION_SCOPE, validInternalBase, validIssuer, type OidcClientKind, type OidcIdentity } from "./oidc-rp.ts";
 import type { Principal } from "./principals.ts";
 import { cookieMaxAgeSeconds, type PublicSession, type Scope, type SessionRecord } from "./sessions.ts";
@@ -188,6 +189,10 @@ export interface OidcLoginDeps {
   serverName: () => string;
   now?: () => number;
   log?: (line: string) => void;
+  /** Where the refresh token of a refused sign-in or delegation is revoked
+   * (the durable queue, server/idp-revocations.ts); a single call now
+   * without one. */
+  revocations?: RevocationSink;
 }
 
 function redirect(res: ServerResponse, location: string, cookies: string[]): void {
@@ -263,6 +268,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
   const log = deps.log ?? ((line: string) => console.warn(line));
   const now = deps.now ?? Date.now;
   const origin = deps.config.publicOrigin;
+  const revocations = deps.revocations ?? immediateRevocations((token, hint) => rp.revokeToken(token, hint), log, "oidc");
   const fail = (res: ServerResponse, code: string, cookies: string[] = [], client: OidcClientKind = "web") =>
     redirect(res, client === "desktop" ? desktopReturnLink(origin, { error: code }) : `/pair#signin_error=${encodeURIComponent(code)}`, cookies);
   /** Logout token ids already honoured, until they expire (+60 s). */
@@ -321,7 +327,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     const expect = outcome.expect;
     const refuse = (code: string, why: string) => {
       log(`oidc routine delegation refused (${code}): ${why}`);
-      if (refreshToken) void rp.revokeToken(refreshToken, "refresh_token");
+      if (refreshToken) revocations.enqueue(refreshToken, "refresh_token", `a refused routine delegation (${code})`);
       redirect(res, routineDelegationReturn({ error: code }), [clearBinding]);
     };
     if (!expect) return refuse("routines_session", "the flow did not remember who started it");
@@ -421,7 +427,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     const refreshToken = outcome.grant.refreshToken;
     const refuse = (code: string, why: string) => {
       log(`oidc sign-in refused (${code}): ${why}`);
-      if (refreshToken) void rp.revokeToken(refreshToken, "refresh_token");
+      if (refreshToken) revocations.enqueue(refreshToken, "refresh_token", `a refused sign-in (${code})`);
       fail(res, code, [clearBinding], client);
     };
     const scopes = scopesForRole(identity.role);

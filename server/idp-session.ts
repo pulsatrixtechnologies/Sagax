@@ -24,6 +24,7 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { immediateRevocations, type RevocationSink } from "./idp-revocations.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
 import { orgRoleForRole, scopesForRole } from "./oidc-login.ts";
 import type { OidcIdentity, RefreshOutcome } from "./oidc-rp.ts";
@@ -265,6 +266,9 @@ export interface IdpSessionManagerOptions {
   schedule?: (run: () => void, delayMs: number) => void;
   /** Slice 4: the team names a refreshed id_token carries (org-teams.ts). */
   teamNames?: (teams: { id: string; name: string }[]) => void;
+  /** Where provider revocations go (the durable queue, idp-revocations.ts);
+   * without one, each is a single call now. */
+  revocations?: RevocationSink;
 }
 
 /** The Perspicax role claim as a known role, or undefined. */
@@ -290,7 +294,7 @@ export const IDP_SUBJECT_MIN_LIFE_MS = 600_000;
 /** The speaker's sign-in access token for a token exchange, or why none. */
 export type SubjectTokenOutcome =
   | { ok: true; token: string; expiresAt: number }
-  | { ok: false; error: "no_session" | "unreachable" | "ended" };
+  | { ok: false; error: "no_session" | "unreachable" | "ended" | "rate_limited"; retryAfterMs?: number };
 
 /** A grant left unbound is swept this long after its `bindBy` at the latest. */
 export const IDP_SWEEP_SLACK_MS = 1_000;
@@ -319,6 +323,10 @@ export class IdpSessionManager {
   private readonly access = new Map<string, { token: string; expiresAt: number }>();
   private readonly schedule: (run: () => void, delayMs: number) => void;
   private readonly teamNames?: (teams: { id: string; name: string }[]) => void;
+  private readonly revocations: RevocationSink;
+  /** No refresh of a grant before `until` (memory only): a minute after a
+   * transient failure, max(60 s, Retry-After) after a rate limit. */
+  private readonly gates = new Map<string, { until: number; rateLimited: boolean }>();
 
   constructor(options: IdpSessionManagerOptions) {
     this.teamNames = options.teamNames;
@@ -330,6 +338,15 @@ export class IdpSessionManager {
     this.refreshAfter = options.refreshAfterMs ?? DEFAULT_REFRESH_AFTER_SECONDS * 1000;
     this.log = options.log ?? ((line) => console.warn(line));
     this.schedule = options.schedule ?? ((run, delayMs) => { setTimeout(run, delayMs).unref(); });
+    this.revocations = options.revocations ?? immediateRevocations((token, hint) => this.rp.revokeToken(token, hint), this.log, "idp");
+  }
+
+  /** The retry gate of a grant still closed now, or undefined. Without a
+   * gate in memory (a restart), a minute after its last failure. */
+  private gateOf(grant: IdpGrant): { until: number; rateLimited: boolean } | undefined {
+    const now = this.now();
+    const gate = this.gates.get(grant.grantRef) ?? (grant.failedAt !== undefined ? { until: grant.failedAt + IDP_RETRY_AFTER_FAILURE_MS, rateLimited: false } : undefined);
+    return gate && now < gate.until ? gate : undefined;
   }
 
   /** Null when grants can be kept; a reason otherwise (sign-in is refused). */
@@ -432,7 +449,7 @@ export class IdpSessionManager {
     if (!grant || !isSessionGrant(grant)) return done;
     const now = this.now();
     if (now - grant.refreshedAt < this.refreshAfter) return done;
-    if (grant.failedAt !== undefined && now - grant.failedAt < IDP_RETRY_AFTER_FAILURE_MS) return done;
+    if (this.gateOf(grant)) return done;
     return this.startRefresh(ref);
   }
 
@@ -474,7 +491,8 @@ export class IdpSessionManager {
     if (fresh) return { ok: true, token: fresh.token, expiresAt: fresh.expiresAt };
     let flight = this.inflight.get(ref);
     if (!flight) {
-      if (grant.failedAt !== undefined && this.now() - grant.failedAt < IDP_RETRY_AFTER_FAILURE_MS) return { ok: false, error: "unreachable" };
+      const gate = this.gateOf(grant);
+      if (gate) return gate.rateLimited ? { ok: false, error: "rate_limited", retryAfterMs: gate.until - this.now() } : { ok: false, error: "unreachable" };
       flight = this.startRefresh(ref);
     }
     await settledWithin(flight, IDP_REFRESH_WAIT_MS);
@@ -487,6 +505,8 @@ export class IdpSessionManager {
     if (!after) return { ok: false, error: "ended" };
     const renewed = usable();
     if (renewed) return { ok: true, token: renewed.token, expiresAt: renewed.expiresAt };
+    const gate = this.gates.get(ref);
+    if (gate?.rateLimited && this.now() < gate.until) return { ok: false, error: "rate_limited", retryAfterMs: gate.until - this.now() };
     return { ok: false, error: "unreachable" };
   }
 
@@ -516,7 +536,7 @@ export class IdpSessionManager {
       if (!current) {
         // Released while the refresh was out (logout, back-channel): the
         // rotated token must not outlive it.
-        void this.rp.revokeToken(outcome.refreshToken, "refresh_token");
+        this.revocations.enqueue(outcome.refreshToken, "refresh_token", "rotated after its session ended");
         return;
       }
       const now = this.now();
@@ -524,12 +544,13 @@ export class IdpSessionManager {
       if (outcome.accessToken) this.access.set(ref, { token: outcome.accessToken, expiresAt: now + (outcome.expiresIn ?? 3600) * 1000 });
       delete next.failedAt;
       delete next.failingSince;
+      this.gates.delete(ref);
       // The rotated token is persisted before anything else: the old one is dead.
       try {
         this.vault.set(next);
       } catch (error) {
         this.log(`idp: could not keep a rotated grant: ${error instanceof Error ? error.message : String(error)}`);
-        void this.rp.revokeToken(outcome.refreshToken, "refresh_token");
+        this.revocations.enqueue(outcome.refreshToken, "refresh_token", "a rotated grant that could not be kept");
         this.endGrant(ref, "the rotated grant could not be kept");
         return;
       }
@@ -557,6 +578,20 @@ export class IdpSessionManager {
       return;
     }
     const now = this.now();
+    if (outcome.rateLimited) {
+      // A rate limit is an answer, not an outage: the 24 h grace never
+      // counts it (failingSince is neither set nor moved).
+      const wait = Math.max(IDP_RETRY_AFTER_FAILURE_MS, outcome.retryAfterMs ?? IDP_RETRY_AFTER_FAILURE_MS);
+      this.gates.set(ref, { until: now + wait, rateLimited: true });
+      try {
+        this.vault.set({ ...current, failedAt: now });
+      } catch {
+        /* the gate in memory holds */
+      }
+      this.log(`idp: renewal deferred (Perspicax is rate limiting this server; retry in ${Math.ceil(wait / 1000)} s)`);
+      return;
+    }
+    this.gates.set(ref, { until: now + IDP_RETRY_AFTER_FAILURE_MS, rateLimited: false });
     try {
       this.vault.set({ ...current, failedAt: now, failingSince: current.failingSince ?? now });
     } catch {
@@ -733,6 +768,7 @@ export class IdpSessionManager {
 
   private safeDelete(grantRef: string): void {
     this.access.delete(grantRef);
+    this.gates.delete(grantRef);
     try {
       this.vault.delete(grantRef);
     } catch (error) {
@@ -741,8 +777,6 @@ export class IdpSessionManager {
   }
 
   private revokeAtProvider(grant: IdpGrant, why: string): void {
-    void this.rp.revokeToken(grant.refreshToken, "refresh_token").then((ok) => {
-      if (!ok) this.log(`idp: revoking a grant (${why}) at the provider did not succeed; it expires on its own`);
-    });
+    this.revocations.enqueue(grant.refreshToken, "refresh_token", why);
   }
 }

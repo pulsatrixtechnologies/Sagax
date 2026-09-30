@@ -28,6 +28,7 @@ import {
   type IdpRelyingParty,
   type SubjectTokenOutcome,
 } from "./idp-session.ts";
+import { immediateRevocations, type RevocationSink } from "./idp-revocations.ts";
 import { orgRoleForRole } from "./oidc-login.ts";
 import type { OidcIdentity } from "./oidc-rp.ts";
 
@@ -53,7 +54,14 @@ export type RoutineConsentStatus =
   | { state: "active"; consentedAt: number; renewedAt: number; expiresAt: number }
   | { state: "none" };
 
-export type RoutineConsentPrepare = { ok: true } | { ok: false; error: "missing" | "ended" | "unreachable" };
+export type RoutineConsentPrepare =
+  | { ok: true }
+  | { ok: false; error: "missing" | "ended" | "unreachable" }
+  /** Perspicax is rate limiting this server: the run is retried later. */
+  | { ok: false; error: "rate_limited"; retryAfterMs: number };
+
+/** A rate-limited renewal is not tried again for at least this long. */
+export const ROUTINE_CONSENT_RATE_LIMIT_MIN_MS = 60_000;
 
 export interface RoutineConsentsOptions {
   vault: IdpGrantVault;
@@ -67,9 +75,11 @@ export interface RoutineConsentsOptions {
   onEnded?: (principalId: string, reason: RoutineConsentEnd) => void;
   /** The person consented: their suspended routines resume. */
   onActive?: (principalId: string) => void;
+  /** Where provider revocations go (the durable queue, idp-revocations.ts). */
+  revocations?: RevocationSink;
 }
 
-type RefreshResult = "ok" | "ended" | "unreachable";
+type RefreshResult = "ok" | "ended" | "unreachable" | "rate_limited";
 
 export class RoutineConsents {
   private readonly vault: IdpGrantVault;
@@ -87,6 +97,9 @@ export class RoutineConsents {
   /** Principals whose reuse window was dropped (an exchange refused the
    * cached subject): the next prepare refreshes at once. */
   private readonly stale = new Set<string>();
+  /** principalId -> no renewal before this time (Perspicax rate limited it). */
+  private readonly retryAt = new Map<string, number>();
+  private readonly revocations: RevocationSink;
 
   constructor(options: RoutineConsentsOptions) {
     this.vault = options.vault;
@@ -97,6 +110,19 @@ export class RoutineConsents {
     this.log = options.log ?? ((line) => console.warn(line));
     this.onEnded = options.onEnded ?? (() => {});
     this.onActive = options.onActive ?? (() => {});
+    this.revocations = options.revocations ?? immediateRevocations((token, hint) => this.rp.revokeToken(token, hint), this.log, "routine delegation");
+  }
+
+  /** How long the rate limit window of this person still lasts (0: none). */
+  private rateLimitedFor(principalId: string): number {
+    const until = this.retryAt.get(principalId);
+    if (until === undefined) return 0;
+    const left = until - this.now();
+    if (left <= 0) {
+      this.retryAt.delete(principalId);
+      return 0;
+    }
+    return left;
   }
 
   /** Null when delegations can be kept. */
@@ -156,8 +182,11 @@ export class RoutineConsents {
     if (grant === null) return { ok: false, error: "unreachable" };
     if (!grant) return { ok: false, error: "missing" };
     if (!this.stale.has(principalId) && this.now() - grant.refreshedAt < this.renewMs && this.usable(principalId)) return { ok: true };
+    const waiting = this.rateLimitedFor(principalId);
+    if (waiting) return { ok: false, error: "rate_limited", retryAfterMs: waiting };
     const result = await this.refreshWithin(principalId, grant);
     if (result === "ok") return { ok: true };
+    if (result === "rate_limited") return { ok: false, error: "rate_limited", retryAfterMs: this.rateLimitedFor(principalId) || ROUTINE_CONSENT_RATE_LIMIT_MIN_MS };
     return { ok: false, error: result === "ended" ? "ended" : "unreachable" };
   }
 
@@ -169,8 +198,11 @@ export class RoutineConsents {
     if (!grant) return { ok: false, error: "no_session" };
     const cached = this.stale.has(principalId) ? undefined : this.usable(principalId);
     if (cached) return { ok: true, token: cached.token, expiresAt: cached.expiresAt };
+    const waiting = this.rateLimitedFor(principalId);
+    if (waiting) return { ok: false, error: "rate_limited", retryAfterMs: waiting };
     const result = await this.refreshWithin(principalId, grant);
     if (result === "ended") return { ok: false, error: "ended" };
+    if (result === "rate_limited") return { ok: false, error: "rate_limited", retryAfterMs: this.rateLimitedFor(principalId) || ROUTINE_CONSENT_RATE_LIMIT_MIN_MS };
     const renewed = this.usable(principalId);
     if (result === "ok" && renewed) return { ok: true, token: renewed.token, expiresAt: renewed.expiresAt };
     return { ok: false, error: "unreachable" };
@@ -252,6 +284,7 @@ export class RoutineConsents {
   private forget(principalId: string): void {
     this.access.delete(principalId);
     this.stale.delete(principalId);
+    this.retryAt.delete(principalId);
   }
 
   /** Join or start the single flight, waiting at most IDP_REFRESH_WAIT_MS. */
@@ -300,6 +333,7 @@ export class RoutineConsents {
         return "ended";
       }
       this.stale.delete(principalId);
+      this.retryAt.delete(principalId);
       if (outcome.accessToken) this.access.set(principalId, { token: outcome.accessToken, expiresAt: now + (outcome.expiresIn ?? 3600) * 1000 });
       if (outcome.identity && !this.applyIdentity(next, outcome.identity)) {
         this.revokeAtProvider(outcome.refreshToken, "role gone");
@@ -314,6 +348,12 @@ export class RoutineConsents {
       return "ended";
     }
     const now = this.now();
+    if (outcome.rateLimited) {
+      // An answer, not an outage: failingSince stays as it was.
+      this.retryAt.set(principalId, now + Math.max(ROUTINE_CONSENT_RATE_LIMIT_MIN_MS, outcome.retryAfterMs ?? ROUTINE_CONSENT_RATE_LIMIT_MIN_MS));
+      this.log("routine delegation: renewal deferred (Perspicax is rate limiting this server); the run is retried, the permission kept");
+      return "rate_limited";
+    }
     try {
       this.vault.set({ ...current, failedAt: now, failingSince: current.failingSince ?? now });
     } catch {
@@ -354,8 +394,6 @@ export class RoutineConsents {
   }
 
   private revokeAtProvider(refreshToken: string, why: string): void {
-    void this.rp.revokeToken(refreshToken, "refresh_token").then((ok) => {
-      if (!ok) this.log(`routine delegation: revoking a grant (${why}) at the provider did not succeed; it expires on its own`);
-    }, () => {});
+    this.revocations.enqueue(refreshToken, "refresh_token", why);
   }
 }

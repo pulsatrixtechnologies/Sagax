@@ -210,4 +210,40 @@ describe("routine delegations (slice 6)", () => {
     expect(raw).not.toMatch(/pxl[ro]1\./);
     expect(JSON.stringify(consents.status(alice.id))).not.toMatch(/pxl/);
   });
+
+  it("defers a rate-limited renewal without a call inside its window, keeps failingSince and the permission (fix 2)", async () => {
+    const { consents, vault, script, calls, ended, alice, consent, logs } = setup();
+    consent();
+    clock += ROUTINE_CONSENT_RENEW_MS;
+    script.push({ ok: false, kind: "transient", rateLimited: true, retryAfterMs: 90_000, error: "Perspicax is rate limiting this server (retry in 90 s)" });
+    expect(await consents.prepare(alice.id)).toEqual({ ok: false, error: "rate_limited", retryAfterMs: 90_000 });
+    expect(calls).toHaveLength(1);
+    expect(vault.list()[0]?.failingSince).toBeUndefined();
+    expect(ended).toEqual([]);
+    expect(logs).toContain("routine delegation: renewal deferred (Perspicax is rate limiting this server); the run is retried, the permission kept");
+    clock += 30_000;
+    expect(await consents.prepare(alice.id)).toEqual({ ok: false, error: "rate_limited", retryAfterMs: 60_000 });
+    consents.dropCache(alice.id);
+    expect(await consents.subjectToken(alice.id)).toEqual({ ok: false, error: "rate_limited", retryAfterMs: 60_000 });
+    expect(calls).toHaveLength(1);
+    clock += 60_000;
+    expect(await consents.prepare(alice.id)).toEqual({ ok: true });
+    expect(calls).toHaveLength(2);
+    // A short Retry-After still waits the minute.
+    clock += ROUTINE_CONSENT_RENEW_MS;
+    script.push({ ok: false, kind: "transient", rateLimited: true, retryAfterMs: 1_000, error: "Perspicax is rate limiting this server (retry in 1 s)" });
+    expect(await consents.prepare(alice.id)).toEqual({ ok: false, error: "rate_limited", retryAfterMs: 60_000 });
+  });
+
+  it("revokes through the revocation sink when one is given", async () => {
+    const queued: Array<[string, string]> = [];
+    const { alice, principals } = setup();
+    const vault = new IdpGrantVault(join(dir, "other"), () => ({ kind: "key", key: Buffer.from(KEY, "hex") }));
+    const rp: IdpRelyingParty = { refresh: async () => ({ ok: false, kind: "transient", error: "x" }), revokeToken: async () => { throw new Error("never called directly"); } };
+    const consents = new RoutineConsents({ vault, rp, principals, now: () => clock, log: () => {}, revocations: { enqueue: (token, _hint, why) => queued.push([token, why]) } });
+    consents.create({ principalId: alice.id, iss: ISS, sub: "A1", refreshToken: "pxlr1.one" });
+    consents.create({ principalId: alice.id, iss: ISS, sub: "A1", refreshToken: "pxlr1.two" });
+    consents.revoke(alice.id);
+    expect(queued).toEqual([["pxlr1.one", "replaced"], ["pxlr1.two", "revoked"]]);
+  });
 });

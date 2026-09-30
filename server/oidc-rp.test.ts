@@ -536,7 +536,7 @@ describe("rate limits at the provider (slice 6, fix 2)", () => {
   /** A provider that answers discovery and hands the token and revocation
    * calls to `token` / `revoke`. */
   function fakeFetch(answer: { token?: () => Response; revoke?: () => Response }, calls: string[] = []): typeof fetch {
-    return (async (input: RequestInfo | URL) => {
+    return (async (input: string | URL | Request) => {
       const url = String(input);
       calls.push(url);
       if (url.includes("openid-configuration") || url.includes("oauth-authorization-server")) {

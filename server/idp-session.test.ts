@@ -24,7 +24,9 @@ import {
   resolveIdpVaultKey,
   type IdpRelyingParty,
 } from "./idp-session.ts";
-import type { RefreshOutcome } from "./oidc-rp.ts";
+import { RevocationQueue, type RevocationSink } from "./idp-revocations.ts";
+import { TokenCallPacer } from "./idp-token-pacer.ts";
+import type { RefreshOutcome, RevokeAttempt } from "./oidc-rp.ts";
 import { PrincipalRegistry } from "./principals.ts";
 import { SessionRegistry, type Scope } from "./sessions.ts";
 
@@ -110,7 +112,7 @@ function scriptedProvider() {
   return { rp, script, calls, revoked };
 }
 
-function setup(options: { refreshAfterMs?: number } = {}) {
+function setup(options: { refreshAfterMs?: number; revocations?: RevocationSink } = {}) {
   const provider = scriptedProvider();
   const sessions = new SessionRegistry({ file: join(dir, "sessions.json"), now: () => clock });
   let id = 0;
@@ -118,7 +120,7 @@ function setup(options: { refreshAfterMs?: number } = {}) {
   const vault = new IdpGrantVault(dir, () => ({ kind: "key", key: Buffer.from(KEY, "hex") }));
   const logs: string[] = [];
   const timers: Array<{ run: () => void; at: number }> = [];
-  const manager = new IdpSessionManager({ vault, rp: provider.rp, sessions, principals, now: () => clock, refreshAfterMs: options.refreshAfterMs ?? 3_000_000, log: (l) => logs.push(l), schedule: (run, delayMs) => { timers.push({ run, at: clock + delayMs }); } });
+  const manager = new IdpSessionManager({ vault, rp: provider.rp, sessions, principals, now: () => clock, refreshAfterMs: options.refreshAfterMs ?? 3_000_000, log: (l) => logs.push(l), schedule: (run, delayMs) => { timers.push({ run, at: clock + delayMs }); }, ...(options.revocations ? { revocations: options.revocations } : {}) });
   sessions.onSessionRevoked((sessionId) => manager.release(sessionId, { revokeAtIdp: true }));
   sessions.onExchanged((session) => { if (session.idp?.grantRef) manager.bindSession(session.idp.grantRef, session.id); });
   /** A web sign-in: principal, grant, session bound to it. */
@@ -697,5 +699,85 @@ describe("routine delegations beside the sign-in grants (slice 6)", () => {
     await manager.touch(session);
     expect(provider.calls).toEqual([]);
     expect(manager.mustRefuse(session)).toBe("idp_session_ended");
+  });
+});
+
+describe("rate limits (slice 6, fix 2)", () => {
+  const limited = (retryAfterMs = 60_000): RefreshOutcome => ({ ok: false, kind: "transient", rateLimited: true, retryAfterMs, error: `Perspicax is rate limiting this server (retry in ${retryAfterMs / 1000} s)` });
+
+  it("25 hours of 429 answers never end a session; 25 hours of network errors still do", async () => {
+    const { manager, provider, vault, signIn, sessions, logs } = setup({ refreshAfterMs: 1000 });
+    const a = signIn("S1");
+    const end = clock + 25 * 3_600_000;
+    while (clock < end) {
+      clock += 600_000;
+      provider.script.push(limited());
+      manager.touch(a.record()!);
+      await manager.settled();
+    }
+    expect(vault.get(a.grantRef)?.failingSince).toBeUndefined();
+    expect(manager.mustRefuse(a.record()!)).toBeNull();
+    expect(sessions.byId(a.sessionId)).not.toBeNull();
+    expect(logs).toContain("idp: renewal deferred (Perspicax is rate limiting this server; retry in 60 s)");
+
+    const b = signIn("S2");
+    const stop = clock + 25 * 3_600_000;
+    while (clock < stop) {
+      clock += 600_000;
+      provider.script.push({ ok: false, kind: "transient", error: "the identity provider could not be reached" });
+      manager.touch(b.record()!);
+      await manager.settled();
+    }
+    expect(manager.mustRefuse(b.record()!)).toBe("idp_unreachable");
+  });
+
+  it("waits max(60 s, Retry-After) before the next attempt, and answers rate_limited meanwhile", async () => {
+    const { manager, provider, signIn } = setup({ refreshAfterMs: 1000 });
+    const a = signIn("S1", "employee", undefined, { accessToken: "pxlo1.S1.old", accessExpiresAt: clock + 1000 });
+    provider.script.push(limited(120_000));
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toEqual({ ok: false, error: "rate_limited", retryAfterMs: 120_000 });
+    clock += 90_000;
+    manager.touch(a.record()!);
+    await manager.settled();
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toEqual({ ok: false, error: "rate_limited", retryAfterMs: 30_000 });
+    expect(provider.calls).toHaveLength(1);
+    clock += 30_000;
+    provider.script.push({ ok: true, refreshToken: "pxlr1.back", accessToken: "pxlo1.S1.back", expiresIn: 3600 });
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toMatchObject({ ok: true, token: "pxlo1.S1.back" });
+    // A short Retry-After still waits the minute.
+    const b = signIn("S2", "employee", undefined, { accessToken: "pxlo1.S2.old", accessExpiresAt: clock + 1000 });
+    provider.script.push(limited(5_000));
+    await manager.subjectToken({ iss: ISS, sub: "S2" });
+    clock += 30_000;
+    manager.touch(b.record()!);
+    await manager.settled();
+    expect(provider.calls).toHaveLength(3);
+  });
+
+  it("sends 120 releases in one tick through the queue at most 35 a rolling minute with a budget of 45, all within 4 minutes", async () => {
+    const pacer = new TokenCallPacer({ budget: 45, now: () => clock });
+    const sent: number[] = [];
+    const queue = new RevocationQueue({
+      dataDir: dir,
+      keySource: () => ({ kind: "key", key: Buffer.from(KEY, "hex") }),
+      pacer,
+      send: async (): Promise<RevokeAttempt> => { sent.push(clock); return { kind: "done" }; },
+      now: () => clock,
+      log: () => {},
+      schedule: () => () => {},
+    });
+    const { signIn, sessions } = setup({ revocations: queue });
+    const ids = Array.from({ length: 120 }, (_, i) => signIn(`S${i}`).sessionId);
+    const start = clock;
+    sessions.revokeWhere((session) => ids.includes(session.id));
+    expect(queue.size()).toBe(120);
+    while (sent.length < 120 && clock - start <= 4 * 60_000) {
+      await queue.pump();
+      clock += 1_000;
+    }
+    expect(sent).toHaveLength(120);
+    expect(Math.max(...sent) - start).toBeLessThanOrEqual(4 * 60_000);
+    for (const at of sent) expect(sent.filter((other) => other >= at && other < at + 60_000).length).toBeLessThanOrEqual(35);
+    expect(queue.size()).toBe(0);
   });
 });

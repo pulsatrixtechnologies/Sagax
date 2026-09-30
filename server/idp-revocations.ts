@@ -92,6 +92,7 @@ export class RevocationQueue implements RevocationSink {
   private running: Promise<void> | null = null;
   private cancelTimer: (() => void) | null = null;
   private stopped = false;
+  private persistQueued = false;
 
   constructor(options: RevocationQueueOptions) {
     this.file = join(options.dataDir, IDP_REVOCATIONS_FILE);
@@ -128,11 +129,7 @@ export class RevocationQueue implements RevocationSink {
   enqueue(token: string, hint: RevocationHint, why: string): void {
     const now = this.now();
     const entry: RevocationEntry = { id: randomUUID(), token, hint, why: why.slice(0, 200), enqueuedAt: now, attempts: 0, nextAt: now };
-    const previous = this.entries;
-    this.entries = [...this.entries, entry];
-    this.trim();
-    if (!this.persist()) {
-      this.entries = previous.filter((kept) => this.entries.includes(kept));
+    if (!this.canSeal()) {
       this.log(`idp revocations: a revocation (${entry.why}) could not be kept (${this.unwritable ?? "the store is unavailable"}); one attempt now`);
       void this.send(token, hint).then((result) => {
         if (result.kind === "rate_limited") this.pacer.noteRateLimited(result.retryAfterMs);
@@ -140,7 +137,31 @@ export class RevocationQueue implements RevocationSink {
       }, () => {});
       return;
     }
+    this.entries = [...this.entries, entry];
+    this.trim();
+    // A burst (a person out, a sweep) is sealed once, at the end of the tick.
+    this.persistSoon();
     this.arm(0);
+  }
+
+  private persistSoon(): void {
+    if (this.persistQueued) return;
+    this.persistQueued = true;
+    queueMicrotask(() => {
+      this.persistQueued = false;
+      this.persist();
+    });
+  }
+
+  /** Whether the store can be written on this launch. */
+  private canSeal(): boolean {
+    if (this.unwritable) return false;
+    const source = this.keySource();
+    if (source.kind === "unavailable") {
+      this.unwritable = source.reason;
+      return false;
+    }
+    return true;
   }
 
   /** Send what is due, one call at a time, while the budget allows; then

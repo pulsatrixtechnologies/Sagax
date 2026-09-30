@@ -81,8 +81,10 @@ export class TokenCallPacer {
     this.pausedUntil = Math.max(this.pausedUntil, this.now() + Math.max(0, ms));
   }
 
+  /** Revocations keep the reserve free, but never starve outright: on a
+   * budget of 1 one still goes a minute. */
   private limitFor(kind: TokenCallKind): number {
-    return kind === "revoke" ? this.budget - this.reserve : this.budget;
+    return kind === "revoke" ? Math.max(1, this.budget - this.reserve) : this.budget;
   }
 
   /** When a slot of `kind` frees at the earliest (now when one is free). */
