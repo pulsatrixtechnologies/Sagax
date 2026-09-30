@@ -1,0 +1,324 @@
+// Slice 3 of the Perspicax organization through the real server, against the
+// local fake provider (server/testing/fake-oidc-provider.ts, now with the
+// Pulsa Bot directory) and the fake Claude CLI:
+//
+//   S3-3  the directory creates principals before anyone signs in; the first
+//         sign-in lands on the same principal
+//   S3-4  B: an admin shares a bot with bob; bob sees it, writes, gets a reply
+//         produced with the organization key; dave sees nothing of it
+//   S3-5  C: the grant removed, bob's stream ends and the bot is gone at once
+//   S3-6  F: no org key or no installed engine gives an access card, no turn
+//   S3-7  a member's bot never gets full access
+//   S3-10 the directory is the backstop: a disabled person's session ends
+//   S3-11 the authenticated health lists the engines and whether installed
+import { spawn, type ChildProcess } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { request } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
+import { freePortBlock } from "./testing/ports.ts";
+
+const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
+const FAKE_CLAUDE = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
+const FAKE_ACP = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
+const posixOnly = describe.skipIf(process.platform === "win32");
+const ORG_KEY = "sk-ant-test-org-key";
+const ALICE: FakeOidcUser = { sub: "01J9S3ALICE00000000000000A", email: "alice@example.test", name: "Alice", preferred_username: "alice", role: "admin" };
+const BOB: FakeOidcUser = { sub: "01J9S3BOB000000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee" };
+const DAVE: FakeOidcUser = { sub: "01J9S3DAVE000000000000000D", email: "dave@example.test", name: "Dave", preferred_username: "dave", role: "employee" };
+const ERIN: FakeOidcUser = { sub: "01J9S3ERIN000000000000000E", email: "erin@example.test", name: "Erin", preferred_username: "erin", role: "employee" };
+const PACKAGE_VERSION = (JSON.parse(readFileSync(join(SERVER_DIR, "..", "package.json"), "utf8")) as { version: string }).version;
+
+let PORT = 0;
+let BASE = "";
+let child: ChildProcess;
+let home: string;
+let dump = "";
+let log = "";
+let idp: FakeOidcProvider;
+
+type Auth = { cookie?: string };
+const api = async (method: string, path: string, auth?: Auth, body?: unknown): Promise<{ status: number; body: any; text: string }> => {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(auth?.cookie ? { cookie: auth.cookie } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let parsed: any = {};
+  try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+  return { status: res.status, body: parsed, text };
+};
+const cookiePair = (setCookie: string) => setCookie.split(";")[0]!;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function signIn(user: FakeOidcUser): Promise<Auth> {
+  idp.user = { ...user };
+  const start = await fetch(`${BASE}/auth/oidc/start`, { redirect: "manual" });
+  const binding = cookiePair(start.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
+  const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
+  const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
+  const session = callback.headers.getSetCookie().find((c) => c.startsWith("omb_session_") && !c.includes("_oidc="));
+  expect(callback.headers.get("location"), log.slice(-2000)).toBe("/");
+  return { cookie: cookiePair(session!) };
+}
+
+async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms = 15_000): Promise<T> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const value = await read();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`timed out. server log:\n${log.slice(-3000)}`);
+    await sleep(150);
+  }
+}
+
+/** An open /api/events stream: everything it received so far, and whether the server ended it. */
+async function openStream(auth: Auth): Promise<{ text: () => string; ended: Promise<void>; close: () => void }> {
+  const { body } = await api("POST", "/api/auth/stream-ticket", auth);
+  expect(body.ticket).toMatch(/^omb_tick_/);
+  return new Promise((resolve, reject) => {
+    let received = "";
+    const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
+      expect(res.statusCode).toBe(200);
+      const ended = new Promise<void>((done) => { res.on("end", () => done()); res.on("close", () => done()); res.on("error", () => done()); });
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => { received += chunk; });
+      resolve({ text: () => received, ended, close: () => req.destroy() });
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+const botsOf = async (auth: Auth) => (await api("GET", "/api/bots", auth)).body.bots as Array<{ id: string; threadId: string; messages: Array<{ kind: string; role: string; text?: string; access?: any }> }>;
+
+async function createBot(auth: Auth, name: string, instanceId: string): Promise<{ id: string; threadId: string }> {
+  const created = await api("POST", "/api/bots", auth, { name });
+  expect(created.status, created.text).toBe(201);
+  const bot = created.body.bot;
+  const patched = await api("PATCH", `/api/bots/${bot.id}`, auth, { modelSelection: { instanceId, model: "fake-model" } });
+  expect(patched.status, patched.text).toBe(200);
+  return { id: bot.id, threadId: bot.threadId };
+}
+
+async function start() {
+  child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+    cwd: join(SERVER_DIR, ".."),
+    env: {
+      ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
+      OMB_IDENTITY: "perspicax",
+      OMB_PERSPICAX_ISSUER: idp.issuer,
+      OMB_PUBLIC_URL: BASE,
+      OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+      OMB_PERSPICAX_DIRECTORY_SECONDS: "5",
+      OMB_ANTHROPIC_API_KEY: ORG_KEY,
+      OMB_ORG_NAME: "Acme",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout!.on("data", (c) => (log += c));
+  child.stderr!.on("data", (c) => (log += c));
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      if ((await fetch(`${BASE}/api/health`)).ok) return;
+    } catch {
+      /* not up yet */
+    }
+    if (Date.now() > deadline) throw new Error(`server never came up:\n${log}`);
+    await sleep(150);
+  }
+}
+
+posixOnly("Perspicax organization, slice 3: directory, sharing with a user, access cards", () => {
+  let alice: Auth;
+  let bobId = "";
+  let daveId = "";
+  let shared: { id: string; threadId: string };
+
+  beforeAll(async () => {
+    chmodSync(FAKE_CLAUDE, 0o755);
+    chmodSync(FAKE_ACP, 0o755);
+    idp = await startFakeOidcProvider({ user: ALICE });
+    idp.directoryPeople = [ALICE, BOB, DAVE, ERIN].map((user) => idp.personOf(user));
+    PORT = await freePortBlock([0, 1]);
+    BASE = `http://127.0.0.1:${PORT}`;
+    home = mkdtempSync(join(tmpdir(), "omb-org-sharing-"));
+    const data = join(home, ".openmausbot");
+    mkdirSync(data, { recursive: true });
+    mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
+    writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
+      version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
+    }), { mode: 0o640 });
+    dump = join(home, "claude-dump.json");
+    writeFileSync(join(data, "config.json"), JSON.stringify({
+      instances: {
+        claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: dump }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
+        ghost: { driver: "claudeAgent", config: { cli: "/nonexistent/claude", fullAuto: true } },
+        grok: { driver: "grokAgent", config: { cli: FAKE_ACP, fullAuto: false } },
+      },
+    }));
+    await start();
+    alice = await signIn(ALICE);
+  }, 40_000);
+
+  afterAll(async () => {
+    child?.kill("SIGTERM");
+    if (child) await waitForExit(child);
+    await idp?.close();
+    if (home) removeTempDir(home);
+  });
+
+  it("S3-3: lists the directory's people with principal ids before they sign in, and a sign-in lands on the same one", async () => {
+    const org = await waitFor(async () => {
+      const got = await api("GET", "/api/org", alice);
+      return got.body.link?.state === "ok" ? got.body : null;
+    });
+    expect(org).toMatchObject({ org: { name: "Acme", identity: { kind: "perspicax", issuer: idp.issuer, serverId: idp.serverId } }, viewerRole: "admin", settings: { memberBotsUseOrgKey: false } });
+    expect(idp.directoryRequests.at(-1)).toMatchObject({ authorization: `Bearer ${idp.linkToken}`, "x-pulsabot-version": PACKAGE_VERSION });
+    const people = (await api("GET", "/api/org/directory", alice)).body.people as Array<{ principalId: string; login: string; role: string; disabled: boolean }>;
+    expect(people.map((p) => p.login)).toEqual(["alice", "bob", "dave", "erin"]);
+    expect(people.find((p) => p.login === "alice")?.role).toBe("admin");
+    bobId = people.find((p) => p.login === "bob")!.principalId;
+    daveId = people.find((p) => p.login === "dave")!.principalId;
+    expect(bobId).toMatch(/^pr_/);
+    const bob = await signIn(BOB);
+    expect((await api("GET", "/api/auth/session", bob)).body.principalId).toBe(bobId);
+    // a member reads the directory and the organization, never changes the settings
+    expect((await api("GET", "/api/org/directory", bob)).status).toBe(200);
+    expect((await api("GET", "/api/org", bob)).body.viewerRole).toBe("member");
+    expect((await api("PATCH", "/api/org/settings", bob, { memberBotsUseOrgKey: true })).status).toBe(403);
+    expect((await api("POST", "/api/org/invites", alice, { email: "x@example.test" })).status).toBe(403);
+  });
+
+  it("S3-11: the authenticated health lists the engines and which are installed", async () => {
+    const engines = (await api("GET", "/api/health", alice)).body.engines as Array<{ instanceId: string; driver: string; installed: boolean }>;
+    expect(engines.find((e) => e.instanceId === "claude")).toMatchObject({ driver: "claudeAgent", installed: true });
+    expect(engines.find((e) => e.instanceId === "ghost")).toMatchObject({ driver: "claudeAgent", installed: false });
+    expect(engines.find((e) => e.instanceId === "grok")).toMatchObject({ installed: true });
+  });
+
+  it("S3-4 (B): shared with bob, answered with the org key; dave sees none of it", async () => {
+    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: true })).body).toEqual({ settings: { memberBotsUseOrgKey: true } });
+    shared = await createBot(alice, "Xavier", "claude");
+    const refusals = [
+      await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: "bob@example.test" }),
+      await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: (await api("GET", "/api/auth/session", alice)).body.principalId }),
+    ];
+    expect(refusals.map((r) => r.body.code)).toEqual(["unknown_person", "self"]);
+    const granted = await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: bobId });
+    expect(granted.status, granted.text).toBe(200);
+    expect(granted.body.directGrants).toEqual([bobId]);
+
+    const bob = await signIn(BOB);
+    const dave = await signIn(DAVE);
+    const daveStream = await openStream(dave);
+    expect((await botsOf(bob)).map((b) => b.id)).toContain(shared.id);
+    const sent = await api("POST", `/api/bots/${shared.id}/messages`, bob, { text: "ping from bob" });
+    expect(sent.status, sent.text).toBe(202);
+    const reply = await waitFor(async () => {
+      const bot = (await botsOf(bob)).find((b) => b.id === shared.id);
+      return bot?.messages.find((m) => m.role === "bot" && m.kind === "text" && m.text) ?? null;
+    }, 30_000);
+    expect(reply.text).toBeTruthy();
+    await waitFor(async () => existsSync(dump));
+    const env = (JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env;
+    expect(env.ANTHROPIC_API_KEY).toBe(ORG_KEY);
+    expect(log).toContain(`[omb-turn] bot=${shared.id}`);
+
+    expect((await botsOf(dave)).map((b) => b.id)).not.toContain(shared.id);
+    expect([403, 404]).toContain((await api("GET", `/api/threads/${shared.threadId}/messages`, dave)).status);
+    expect([403, 404]).toContain((await api("POST", `/api/bots/${shared.id}/messages`, dave, { text: "hi" })).status);
+    const search = await api("GET", `/api/search?q=${encodeURIComponent("ping from bob")}`, dave);
+    expect(search.text).not.toContain(shared.id);
+    expect(search.text).not.toContain(shared.threadId);
+    await sleep(300);
+    expect(daveStream.text()).not.toContain(shared.id);
+    expect(daveStream.text()).not.toContain(shared.threadId);
+    daveStream.close();
+  }, 60_000);
+
+  it("S3-5 (C): removing bob's grant ends his stream and the bot is gone for him at once", async () => {
+    const bob = await signIn(BOB);
+    const stream = await openStream(bob);
+    const removed = await api("DELETE", `/api/bots/${shared.id}/direct-grants/${bobId}`, alice);
+    expect(removed.status, removed.text).toBe(200);
+    expect(removed.body.directGrants).toEqual([]);
+    await Promise.race([stream.ended, sleep(5_000).then(() => { throw new Error("bob's stream stayed open"); })]);
+    expect((await botsOf(bob)).map((b) => b.id)).not.toContain(shared.id);
+    expect([403, 404]).toContain((await api("POST", `/api/bots/${shared.id}/messages`, bob, { text: "still here?" })).status);
+    expect([403, 404]).toContain((await api("GET", `/api/threads/${shared.threadId}/messages`, bob)).status);
+    // only the owner removes, and only a grant that exists
+    expect((await api("DELETE", `/api/bots/${shared.id}/direct-grants/${bobId}`, alice)).status).toBe(404);
+  });
+
+  it("S3-6 (F): without the org key or an installed engine, the send is accepted and the card says why", async () => {
+    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: false })).status).toBe(200);
+    expect((await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: bobId })).status).toBe(200);
+    const bob = await signIn(BOB);
+    const aliceStream = await openStream(alice);
+    const before = readFileSync(dump, "utf8");
+    const sent = await api("POST", `/api/bots/${shared.id}/messages`, bob, { text: "no key now" });
+    expect(sent.status, sent.text).toBe(202);
+    const card = await waitFor(async () => {
+      const bot = (await botsOf(bob)).find((b) => b.id === shared.id);
+      return bot?.messages.find((m) => m.kind === "access") ?? null;
+    });
+    expect(card.access).toMatchObject({ reason: "no_access", engine: "Claude", botId: shared.id });
+    expect(readFileSync(dump, "utf8")).toBe(before);
+    await waitFor(async () => aliceStream.text().includes("turn-failed"));
+    aliceStream.close();
+
+    const ghost = await createBot(alice, "Ghost", "ghost");
+    expect((await api("POST", `/api/bots/${ghost.id}/messages`, alice, { text: "hello?" })).status).toBe(202);
+    const missing = await waitFor(async () => (await botsOf(alice)).find((b) => b.id === ghost.id)?.messages.find((m) => m.kind === "access") ?? null);
+    expect(missing.access).toMatchObject({ reason: "engine_missing", botId: ghost.id });
+
+    // an admin's own bot on a login-backed engine still answers (scenario A)
+    const own = await createBot(alice, "Grokker", "grok");
+    expect((await api("POST", `/api/bots/${own.id}/messages`, alice, { text: "ping" })).status).toBe(202);
+    await waitFor(async () => (await botsOf(alice)).find((b) => b.id === own.id)?.messages.some((m) => m.role === "bot" && m.kind === "text" && m.text), 30_000);
+    expect((await botsOf(alice)).find((b) => b.id === own.id)?.messages.some((m) => m.kind === "access")).toBe(false);
+  }, 60_000);
+
+  it("S3-7: a member's bot never gets full access, even from an admin", async () => {
+    const erin = await signIn(ERIN);
+    const created = await api("POST", "/api/bots", erin, { name: "Zed" });
+    expect(created.status, created.text).toBe(201);
+    const zed = created.body.bot;
+    expect(zed.ownerUserId).toBe((await api("GET", "/api/auth/session", erin)).body.principalId);
+    // an admin reaches a member's Direct only when it is shared with them
+    expect((await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "full" })).status).toBe(404);
+    const aliceId = (await api("GET", "/api/auth/session", alice)).body.principalId;
+    expect((await api("POST", `/api/bots/${zed.id}/direct-grants`, erin, { userId: aliceId })).status).toBe(200);
+    // the member herself cannot set an approval level at all
+    expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full" })).status).toBe(403);
+    const full = await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "full" });
+    expect(full.status, full.text).toBe(409);
+    expect(full.body.code).toBe("member_bot_full_access");
+    expect((await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "custom" })).body.code).toBe("member_bot_full_access");
+    expect((await api("GET", "/api/org/approvals", alice)).body).toEqual({ approvals: [] });
+    expect((await api("GET", "/api/org/approvals", erin)).status).toBe(403);
+  });
+
+  it("S3-10: a person disabled in Perspicax is logged out by the directory, with no back-channel push", async () => {
+    const dave = await signIn(DAVE);
+    expect((await api("GET", "/api/auth/session", dave)).status).toBe(200);
+    idp.setDirectoryStatus(DAVE.sub, "disabled");
+    await waitFor(async () => (await api("GET", "/api/auth/session", dave)).status === 401, 15_000);
+    const people = (await api("GET", "/api/org/directory", alice)).body.people as Array<{ principalId: string; disabled: boolean }>;
+    expect(people.find((p) => p.principalId === daveId)?.disabled).toBe(true);
+    // a disabled person cannot be granted
+    expect((await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: daveId })).body.code).toBe("unknown_person");
+  }, 30_000);
+});

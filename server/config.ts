@@ -395,6 +395,10 @@ const appConfigSchema = z.object({
     ]),
     ownerUserId: z.string().min(1),
   }).optional(),
+  /** Organization server settings (OMB_IDENTITY=perspicax, slice 3):
+   * whether turns other than an admin owner's own may use the workspace
+   * keys (the organization's key) on key-backed engines. */
+  organization: z.object({ memberBotsUseOrgKey: z.boolean().optional() }).optional(),
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt: z.number().optional(),
   invites: z.array(z.object({
@@ -576,6 +580,8 @@ export interface AppConfig {
     host: { kind: "this-computer" } | { kind: "server"; url: string };
     ownerUserId: string;
   };
+  /** Organization server settings (slice 3); see appConfigSchema. */
+  organization?: { memberBotsUseOrgKey?: boolean };
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt?: number;
   invites?: Array<{
@@ -1246,6 +1252,7 @@ export function saveConfig(
   if (checkedPatch.customDomain !== undefined) disk.customDomain = checkedPatch.customDomain;
   if (checkedPatch.signIn !== undefined) disk.signIn = checkedPatch.signIn;
   if (checkedPatch.org !== undefined) disk.org = checkedPatch.org;
+  if (checkedPatch.organization !== undefined) disk.organization = checkedPatch.organization;
   if (checkedPatch.identityMigratedAt !== undefined) disk.identityMigratedAt = checkedPatch.identityMigratedAt;
   if (checkedPatch.invites !== undefined) disk.invites = checkedPatch.invites;
   // Replace the section so clearing a backup cannot revive the old selection.
@@ -1432,6 +1439,25 @@ function injectedEnvironment(cfg: AppConfig, driver: string): Map<string, string
   if (driver === "boxAgent" && cfg.box?.token) environment.set("BOX_TOKEN", cfg.box.token);
   if (driver === "opencodeGo" && cfg.opencodeGo?.apiKey) environment.set("OPENCODE_API_KEY", cfg.opencodeGo.apiKey);
   return environment;
+}
+
+/** The credential variable each key-backed driver reads. */
+const DRIVER_CREDENTIAL_VARIABLE: Record<string, string> = {
+  claudeAgent: "ANTHROPIC_API_KEY",
+  mistral: "MISTRAL_API_KEY",
+  grok: "XAI_API_KEY",
+  "openai-compat": "OPENAI_COMPAT_API_KEY",
+  opencodeGo: "OPENCODE_API_KEY",
+};
+
+/** Whether this driver's turns run on a key the workspace configured
+ * (Settings > Connections): the credential variable injectedEnvironment
+ * hands it. Login-backed engines (Codex, grokAgent, ACP agents) never are.
+ * Organization mode lets only such turns serve someone other than an admin
+ * owner (server/engine-access.ts). */
+export function driverKeyBacked(cfg: AppConfig, driver: string): boolean {
+  const variable = DRIVER_CREDENTIAL_VARIABLE[driver];
+  return variable !== undefined && Boolean(injectedEnvironment(cfg, driver).get(variable));
 }
 
 // Default fleet: one instance per built-in driver (upstream

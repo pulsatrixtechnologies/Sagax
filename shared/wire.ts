@@ -368,14 +368,28 @@ export type CardAnswerer =
   | { kind: "loopback" }
   | { kind: "worker" };
 
+export interface WireAccessCard {
+  reason: "engine_missing" | "no_access" | "key_refused";
+  /** The engine's display name, e.g. Claude. */
+  engine: string;
+  botId: string;
+  ownerPrincipalId: string;
+  detail?: string;
+}
+
 /** One transcript line. Serialized as stored — the durable delivery
  * identity (roomRequest) rides the wire unchanged. */
 export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction";
+  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access";
   text?: string;
+  /** kind "access" (organization server, slice 3): a turn that could not run
+   * for lack of engine access. Never provider text, except `detail` on
+   * key_refused (redacted, at most 200 characters), which only the bot's
+   * owner and the organization's admins receive. */
+  access?: WireAccessCard;
   digest?: TurnDigest;
   compaction?: {
     summary: string;
@@ -510,6 +524,10 @@ export interface OptionCardData {
   commandAllowlist?: CommandAllowlistCandidate;
   /** Local actions never share remembered grants with cloud/tool approvals. */
   approvalScope?: "local-computer";
+  /** Organization server (slice 3): a command on the server asked by a bot
+   * whose owner is not an organization admin. Only an admin answers it; the
+   * owner sees it waiting for an admin. Never remembered. */
+  adminApproval?: boolean;
   /** A durable chat-created routine proposal. */
   routineRequest?: RoutineRequestCardData;
   /** A durable profile-change proposal (propose_profile). */

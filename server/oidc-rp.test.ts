@@ -370,3 +370,59 @@ describe("OIDC relying party: back-channel logout tokens", () => {
     })).rejects.toMatchObject({ code: "id_token_typ" });
   });
 });
+
+describe("OIDC relying party: internal server-to-server base (slice 3, D17)", () => {
+  const ISSUER = "https://px.example.test";
+  const INTERNAL = "http://perspicax:8787";
+  function stub(doc: Record<string, unknown>) {
+    const seen: string[] = [];
+    const fetcher = (async (input: string | URL | Request) => {
+      const url = String(input);
+      seen.push(url);
+      if (url === `${INTERNAL}/.well-known/openid-configuration`) {
+        return new Response(JSON.stringify(doc), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+    return { seen, fetcher };
+  }
+  const metadata = {
+    issuer: ISSUER,
+    authorization_endpoint: `${ISSUER}/oauth/authorize`,
+    token_endpoint: `${ISSUER}/oauth/token`,
+    jwks_uri: `${ISSUER}/oauth/jwks`,
+    revocation_endpoint: `${ISSUER}/oauth/revoke`,
+    id_token_signing_alg_values_supported: ["ES256"],
+  };
+
+  it("fetches discovery at the internal origin and moves every server endpoint there, never the authorize one", async () => {
+    const { seen, fetcher } = stub(metadata);
+    const party = new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: "https://bot.example.test/auth/oidc/callback", internalBase: INTERNAL, fetch: fetcher });
+    const found = await party.discover();
+    expect(seen[0]).toBe(`${INTERNAL}/.well-known/openid-configuration`);
+    expect(found).toMatchObject({
+      issuer: ISSUER,
+      authorizationEndpoint: `${ISSUER}/oauth/authorize`,
+      tokenEndpoint: `${INTERNAL}/oauth/token`,
+      jwksUri: `${INTERNAL}/oauth/jwks`,
+      revocationEndpoint: `${INTERNAL}/oauth/revoke`,
+    });
+    const started = await party.start();
+    expect(started.authorizationUrl.startsWith(`${ISSUER}/oauth/authorize?`)).toBe(true);
+    expect(party.serverOrigin()).toBe(INTERNAL);
+  });
+
+  it("still refuses metadata naming another issuer", async () => {
+    const { fetcher } = stub({ ...metadata, issuer: "https://evil.example.test" });
+    const party = new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: "https://bot.example.test/auth/oidc/callback", internalBase: INTERNAL, fetch: fetcher });
+    await expect(party.discover()).rejects.toMatchObject({ code: "discovery" });
+  });
+
+  it("keeps an endpoint on another origin under the https rule, and refuses a bad internal base", async () => {
+    const { fetcher } = stub({ ...metadata, token_endpoint: "http://elsewhere.example.test/token" });
+    const party = new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: "https://bot.example.test/auth/oidc/callback", internalBase: INTERNAL, fetch: fetcher });
+    await expect(party.discover()).rejects.toMatchObject({ code: "discovery" });
+    expect(() => new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: "https://bot.example.test/auth/oidc/callback", internalBase: "http://perspicax:8787/path" })).toThrow();
+    expect(new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: "https://bot.example.test/auth/oidc/callback" }).serverOrigin()).toBe(ISSUER);
+  });
+});

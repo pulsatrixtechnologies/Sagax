@@ -4,7 +4,8 @@
 // endpoint that checks the code, client, redirect URI and PKCE S256 before
 // returning an ES256 id_token, a refresh grant with rotation (the old token
 // dies, the id_token carries no nonce), revocation of a whole family, and
-// back-channel logout tokens. `tamper` bends one thing at a time so a test
+// back-channel logout tokens, and the Pulsa Bot directory of slice 3
+// (bearer link token, ETag and 304, settable people and teams). `tamper` bends one thing at a time so a test
 // can prove the relying party refuses it. In-process only; imported by tests.
 import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -36,6 +37,18 @@ export interface FakeOidcTamper {
   /** Return no id_token. */
   noIdToken?: boolean;
 }
+
+export interface FakeDirectoryPerson {
+  sub: string;
+  login: string;
+  name: string;
+  email: string | null;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "disabled";
+  locale: string | null;
+}
+
+export interface FakeDirectoryTeam { id: string; name: string; managers: string[]; members: string[] }
 
 interface Key { kid: string; privateKey: KeyObject; publicJwk: Record<string, unknown> }
 
@@ -78,6 +91,18 @@ export interface FakeOidcProvider {
   logoutToken(input: { sub: string; claims?: (claims: Record<string, unknown>) => Record<string, unknown>; header?: (header: Record<string, unknown>) => Record<string, unknown>; strayKey?: boolean }): string;
   /** Replace the signing key (the old one leaves the JWKS). */
   rotateKey(): void;
+  /** Slice 3 directory: the link token it accepts (Bearer), this server's
+   * id, and the people and teams it lists. */
+  linkToken: string;
+  serverId: string;
+  directoryPeople: FakeDirectoryPerson[];
+  directoryTeams: FakeDirectoryTeam[];
+  /** Every directory request's headers (lowercase names). */
+  directoryRequests: Array<Record<string, string>>;
+  /** Mark one listed person active or disabled. */
+  setDirectoryStatus(sub: string, status: "active" | "disabled"): void;
+  /** A directory person from a user, active unless said otherwise. */
+  personOf(user: FakeOidcUser, status?: "active" | "disabled"): FakeDirectoryPerson;
   close(): Promise<void>;
 }
 
@@ -133,6 +158,18 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
     rotateKey() {
       key = newKey();
     },
+    linkToken: `pxat1.${randomBytes(32).toString("base64url")}`,
+    serverId: "01j9s3fake0000000000server",
+    directoryPeople: [],
+    directoryTeams: [],
+    directoryRequests: [],
+    setDirectoryStatus(sub, status) {
+      provider.directoryPeople = provider.directoryPeople.map((person) => (person.sub === sub ? { ...person, status } : person));
+    },
+    personOf(user, status = "active") {
+      const role = user.role === "admin" || user.role === "manager" ? user.role : "employee";
+      return { sub: user.sub, login: user.preferred_username ?? user.sub, name: user.name ?? user.preferred_username ?? user.sub, email: user.email ?? null, role, status, locale: null };
+    },
     close: () => new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve())),
   };
 
@@ -177,6 +214,25 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         subject_types_supported: ["public"],
         authorization_response_iss_parameter_supported: true,
       });
+    }
+    if (req.method === "GET" && url.pathname === "/api/v1/pulsabot/directory") {
+      const headers = Object.fromEntries(Object.entries(req.headers).map(([name, value]) => [name, Array.isArray(value) ? value.join(",") : value ?? ""]));
+      provider.directoryRequests.push(headers);
+      if (headers.authorization !== `Bearer ${provider.linkToken}`) return send(res, 401, { error: "unauthorized" });
+      const body = JSON.stringify({
+        server_id: provider.serverId,
+        people: [...provider.directoryPeople].sort((a, b) => a.sub.localeCompare(b.sub)),
+        teams: [...provider.directoryTeams].sort((a, b) => a.id.localeCompare(b.id)).map((team) => ({ ...team, managers: [...team.managers].sort(), members: [...team.members].sort() })),
+      });
+      const etag = `"${createHash("sha256").update(body).digest("hex").slice(0, 32)}"`;
+      if (headers["if-none-match"] === etag) {
+        res.writeHead(304, { etag, "cache-control": "no-store" });
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", etag });
+      res.end(body);
+      return;
     }
     if (req.method === "GET" && url.pathname === "/oauth/jwks") {
       provider.jwksFetches += 1;
