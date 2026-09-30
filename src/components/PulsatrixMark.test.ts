@@ -13,7 +13,7 @@ import { MARK_ON_DARK, MARK_ON_LIGHT, PulsatrixMark } from "./PulsatrixMark";
 const here = dirname(fileURLToPath(import.meta.url));
 const css = readFileSync(join(here, "../styles.css"), "utf8");
 
-describe("Perspicax mark", () => {
+describe("Pulsatrix owl mark", () => {
   it("draws both console files as plain images, one shown per skin, no mask", () => {
     const html = renderToStaticMarkup(createElement(PulsatrixMark, { size: 22 }));
     expect(html).toContain(`src="${MARK_ON_DARK}"`);
@@ -42,12 +42,11 @@ describe("Perspicax mark", () => {
     }
   });
 
-  it("ships the console's files verbatim, in colour", () => {
+  it("ships the owl-face mark files as real images", () => {
     const pub = join(here, "../../public");
-    const dark = readFileSync(join(pub, MARK_ON_DARK), "utf8");
-    const lightFile = readFileSync(join(pub, MARK_ON_LIGHT), "utf8");
-    expect(dark).toContain('fill="#4f86f7"');
-    expect(lightFile).toContain('fill="#0b1526"');
-    expect(dark).not.toContain("currentColor");
+    const png = (file: string) => readFileSync(join(pub, file)).subarray(0, 8).toString("hex");
+    expect(png(MARK_ON_DARK)).toBe("89504e470d0a1a0a");
+    expect(png(MARK_ON_LIGHT)).toBe("89504e470d0a1a0a");
+    expect(MARK_ON_DARK).not.toBe(MARK_ON_LIGHT);
   });
 });

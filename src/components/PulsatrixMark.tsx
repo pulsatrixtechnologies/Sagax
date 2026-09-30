@@ -1,8 +1,8 @@
-// The Perspicax mark (the owl bust over a panel bar), the exact files that sit
-// beside "Perspicax" in its console sidebar (console/src/assets/
-// perspicax-mark-{dark,light}.svg), drawn as plain images in their own
-// colours. The panel bar is the lifted blue on the dark-ground file and navy
-// on the light-ground one, so each reads on its own ground.
+// The Pulsatrix owl-face mark (outlined face, blue eyes, heartbeat line), the
+// files Perspicax's console used before its C3 icon (pulsatrix-v3
+// console/src/assets/pulsatrix-mark.png and pulsatrix-logo-light.png), drawn
+// as plain images in their own colours: white strokes on dark rails, dark
+// strokes on light ones.
 //
 // Which ground the sidebar is depends on the skin: the navy and dark rails
 // take the dark file, the light rails the light one. Both images are in the
@@ -12,8 +12,10 @@
 // (the Hibou 98 title bar is always navy).
 import { cn } from "@/lib/cn";
 
-export const MARK_ON_DARK = "/perspicax-mark-dark.svg";
-export const MARK_ON_LIGHT = "/perspicax-mark-light.svg";
+export const MARK_ON_DARK = "/pulsatrix-owl-mark-dark.png";
+export const MARK_ON_LIGHT = "/pulsatrix-owl-mark-light.png";
+/** the mark is wider than tall (489 x 381) */
+const ASPECT = 381 / 489;
 
 export function PulsatrixMark({
   size = 22,
@@ -30,11 +32,11 @@ export function PulsatrixMark({
       src={src}
       alt=""
       width={size}
-      height={size}
+      height={Math.round(size * ASPECT)}
       draggable={false}
       data-pulsatrix-mark={which}
       className={cn("shrink-0 object-contain", followSkin && `pulsatrix-mark-on-${which}`, className)}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: Math.round(size * ASPECT) }}
     />
   );
   if (ground) return img(ground === "dark" ? MARK_ON_DARK : MARK_ON_LIGHT, ground, false);
