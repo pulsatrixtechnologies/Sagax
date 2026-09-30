@@ -617,7 +617,12 @@ What changes:
   for such a server: `?client=phone` ends on the same
   `openmausbot://pair?address=...&token=...` link a pairing QR code carries.
   A signed-in member may also open a pairing code for their own device; the
-  device acts as them and never gets more than their own scopes.
+  device acts as them and never gets more than their own scopes. Such a
+  device has no grant of its own: it is served only while one of the
+  person's own sign-ins (web, desktop or phone) is live, it refreshes the
+  freshest of them when due, and it never holds more than the person's
+  current organization role. When the person's last sign-in ends, the
+  device answers `401 {code: "idp_session_ended"}`.
 
 Bots run on the server: an admin who signed in this way creates a bot and
 its turns run on the engines installed on the server (in the Docker image,

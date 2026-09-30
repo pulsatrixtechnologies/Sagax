@@ -12,7 +12,9 @@
 //         logout ends by principal
 //   plus: a provider refusing the refresh ends the session and, with no
 //   back-channel push at all, every device the person paired (T8); a member
-//   pairs their own device, never wider than themselves (D13).
+//   pairs their own device, never wider than themselves (D13); a device
+//   paired from a signed-in session follows the person's other grants after
+//   its creator logs out, and ends with the last one.
 //
 // OMB_OIDC_REFRESH_AFTER_SECONDS=1 makes every grant due after a second.
 import { spawn, type ChildProcess } from "node:child_process";
@@ -35,6 +37,9 @@ const ALICE: FakeOidcUser = { sub: "01J9S2ALICE00000000000000A", email: "alice@e
 const BOB: FakeOidcUser = { sub: "01J9S2BOB000000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee" };
 const CAROL: FakeOidcUser = { sub: "01J9S2CAROL00000000000000C", email: "carol@example.test", name: "Carol", preferred_username: "carol", role: "admin" };
 const DAVE: FakeOidcUser = { sub: "01J9S2DAVE000000000000000D", email: "dave@example.test", name: "Dave", preferred_username: "dave", role: "employee" };
+const ERIN: FakeOidcUser = { sub: "01J9S2ERIN000000000000000E", email: "erin@example.test", name: "Erin", preferred_username: "erin", role: "admin" };
+const GRACE: FakeOidcUser = { sub: "01J9S2GRACE00000000000000G", email: "grace@example.test", name: "Grace", preferred_username: "grace", role: "admin" };
+const FRANK: FakeOidcUser = { sub: "01J9S2FRANK00000000000000F", email: "frank@example.test", name: "Frank", preferred_username: "frank", role: "employee" };
 
 let PORT = 0;
 let BASE = "";
@@ -279,6 +284,75 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
       expect((await api("POST", "/api/pair", undefined, { credential: pending.body.credential, deviceName: "late" })).status).not.toBe(200);
     } finally {
       idp.enable(BOB.sub);
+    }
+  });
+
+  it("a device paired from the web follows the person's other grant after a web logout: a demotion with no push narrows it", async () => {
+    const web = await signIn(ERIN);
+    const laptop = await signIn(ERIN);
+    const code = await api("POST", "/api/auth/pairing", web, { scopes: ["admin", "client"], label: "Erin's phone" });
+    expect(code.status, JSON.stringify(code.body)).toBe(200);
+    const paired = await api("POST", "/api/pair", undefined, { credential: code.body.credential, deviceName: "Erin's phone", pairRequestId: "pair-request-follow-1" });
+    expect(paired.status).toBe(200);
+    const phone = { bearer: paired.body.token as string };
+    expect((await api("GET", "/api/auth/session", phone)).body.scopes).toEqual(["admin", "client"]);
+    expect((await api("POST", "/api/auth/logout", web)).status).toBe(200);
+    // Perspicax demotes Erin; no back-channel is sent for a role change
+    idp.setRole(ERIN.sub, "employee");
+    try {
+      const before = idp.refreshCount;
+      await sleep(1_100);
+      await api("GET", "/api/auth/session", phone);
+      expect(await waitFor(async () => idp.refreshCount > before)).toBe(true);
+      const narrowed = await waitFor(async () => {
+        const got = await api("GET", "/api/auth/session", phone);
+        return got.status === 200 && got.body.scopes.length === 1 ? got : null;
+      });
+      expect(narrowed?.body.scopes).toEqual(["client"]);
+      expect((await api("GET", "/api/auth/pairing", phone)).status).toBe(403);
+      expect((await api("GET", "/api/auth/session", laptop)).body).toMatchObject({ scopes: ["client"], role: "employee" });
+    } finally {
+      idp.setRole(ERIN.sub, "admin");
+    }
+  });
+
+  it("a device paired from the web never holds more than its person's organization role, on the very request", async () => {
+    const web = await signIn(GRACE);
+    const code = await api("POST", "/api/auth/pairing", web, { scopes: ["admin", "client"], label: "Grace's phone" });
+    const paired = await api("POST", "/api/pair", undefined, { credential: code.body.credential, deviceName: "Grace's phone", pairRequestId: "pair-request-follow-3" });
+    expect(paired.status).toBe(200);
+    const phone = { bearer: paired.body.token as string };
+    expect((await api("POST", "/api/auth/logout", web)).status).toBe(200);
+    // demoted, then signed in again on the web: the person is a member now
+    idp.setRole(GRACE.sub, "employee");
+    try {
+      const again = await signIn({ ...GRACE, role: "employee" });
+      expect((await api("GET", "/api/auth/session", again)).body).toMatchObject({ orgRole: "member" });
+      const admin = await api("GET", "/api/auth/pairing", phone);
+      expect(admin.status).toBe(403);
+      expect((await api("GET", "/api/auth/session", phone)).body.scopes).toEqual(["client"]);
+    } finally {
+      idp.setRole(GRACE.sub, "admin");
+    }
+  });
+
+  it("T8 with only a paired device left: after a web logout and a lost push, the device is refused", async () => {
+    const web = await signIn(FRANK);
+    const code = await api("POST", "/api/auth/pairing", web, { label: "Frank's phone" });
+    expect(code.status, JSON.stringify(code.body)).toBe(200);
+    const paired = await api("POST", "/api/pair", undefined, { credential: code.body.credential, deviceName: "Frank's phone", pairRequestId: "pair-request-follow-2" });
+    expect(paired.status).toBe(200);
+    const phone = { bearer: paired.body.token as string };
+    expect((await api("GET", "/api/auth/session", phone)).status).toBe(200);
+    expect((await api("POST", "/api/auth/logout", web)).status).toBe(200);
+    // Perspicax disables Frank while the push is lost
+    idp.disable(FRANK.sub);
+    try {
+      const refused = await api("GET", "/api/auth/session", phone);
+      expect(refused.status).toBe(401);
+      expect(refused.body).toMatchObject({ code: "idp_session_ended" });
+    } finally {
+      idp.enable(FRANK.sub);
     }
   });
 

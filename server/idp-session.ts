@@ -306,32 +306,72 @@ export class IdpSessionManager {
     this.revokeAtProvider(grant, "discarded");
   }
 
-  /** Whether the session must be refused right now (D2 grace, a lost grant). */
+  /** Whether the session must be refused right now (D2 grace, a lost grant).
+   * A session with a provider account but no grant of its own (a device
+   * paired from a signed-in person's session) is served only while one of
+   * that person's grants is live, and follows it. */
   mustRefuse(session: Readonly<SessionRecord>): IdpRefusal | null {
     if (!session.idp) return null;
     const ref = session.idp.grantRef;
-    if (!ref) return "idp_session_ended";
+    if (!ref) {
+      if (this.vault.unavailableReason()) return "idp_unreachable";
+      const live = this.liveGrantsFor(session.idp);
+      if (!live.length) return "idp_session_ended";
+      if (live.every((grant) => this.pastGrace(grant))) return "idp_unreachable";
+      return null;
+    }
     if (this.vault.unavailableReason()) return "idp_unreachable";
     const grant = this.vault.get(ref);
     if (!grant) return "idp_session_ended";
-    if (grant.failingSince !== undefined && this.now() - grant.failingSince >= IDP_UNREACHABLE_GRACE_MS) return "idp_unreachable";
+    if (this.pastGrace(grant)) return "idp_unreachable";
     return null;
   }
 
+  /** The scopes a session without a grant of its own may keep: never wider
+   * than its person's organization role now. Null when nothing changes. */
+  clampScopes(session: Readonly<SessionRecord>, orgRole: "admin" | "member" | undefined): Scope[] | null {
+    if (!session.idp || session.idp.grantRef) return null;
+    const allowed = scopesForRole(orgRole === "admin" ? "admin" : undefined) ?? [];
+    const kept = session.scopes.filter((scope) => allowed.includes(scope));
+    return kept.length === session.scopes.length ? null : kept;
+  }
+
   /** Refresh the session's grant in the background when it is due. Never
-   * delays the request and never throws. */
+   * delays the request and never throws. A session with no grant of its own
+   * refreshes the freshest live grant of its person. */
   touch(session: Readonly<SessionRecord>): void {
-    const ref = session.idp?.grantRef;
+    let ref = session.idp?.grantRef;
+    if (!ref && session.idp) {
+      let live: IdpGrant[];
+      try {
+        live = this.liveGrantsFor(session.idp);
+      } catch {
+        return;
+      }
+      ref = live.sort((a, b) => b.refreshedAt - a.refreshedAt)[0]?.grantRef;
+    }
     if (!ref || this.inflight.has(ref)) return;
     const grant = this.vault.get(ref);
     if (!grant) return;
     const now = this.now();
     if (now - grant.refreshedAt < this.refreshAfter) return;
     if (grant.failedAt !== undefined && now - grant.failedAt < IDP_RETRY_AFTER_FAILURE_MS) return;
-    const flight = this.refreshGrant(ref).catch((error: unknown) => {
+    const key = ref;
+    const flight = this.refreshGrant(key).catch((error: unknown) => {
       this.log(`idp: refresh of a grant failed unexpectedly: ${error instanceof Error ? error.message : String(error)}`);
-    }).finally(() => this.inflight.delete(ref));
-    this.inflight.set(ref, flight);
+    }).finally(() => this.inflight.delete(key));
+    this.inflight.set(key, flight);
+  }
+
+  /** The person's grants that stand on a live session of their own. */
+  private liveGrantsFor(subject: { iss: string; sub: string }): IdpGrant[] {
+    return this.vault.list().filter((grant) =>
+      grant.iss === subject.iss && grant.sub === subject.sub &&
+      grant.sessionId !== undefined && this.sessions.byId(grant.sessionId) !== null);
+  }
+
+  private pastGrace(grant: IdpGrant): boolean {
+    return grant.failingSince !== undefined && this.now() - grant.failingSince >= IDP_UNREACHABLE_GRACE_MS;
   }
 
   /** The refresh in flight for a grant, for tests. */

@@ -253,6 +253,66 @@ describe("refresh on use", () => {
     expect(manager.mustRefuse(sessions.byId(paired.session.id)!)).toBeNull();
   });
 
+  it("a device paired from a signed-in session follows its person's live grants, and ends with the last one", async () => {
+    const { manager, sessions, signIn } = setup();
+    const web = signIn("P1", "admin");
+    const phone = sessions.issue({ label: "phone", scopes: ["admin", "client"], principalId: web.principal.id, idp: { iss: ISS, sub: "P1" } });
+    const record = () => sessions.byId(phone.session.id)!;
+    expect(manager.mustRefuse(record())).toBeNull();
+    // an unbound grant (a native sign-in not yet exchanged) does not keep it
+    manager.createGrant({ iss: ISS, sub: "P1", refreshToken: "pxlr1.unbound", bindBy: clock + 60_000 });
+    sessions.revoke(web.sessionId);
+    expect(manager.mustRefuse(record())).toBe("idp_session_ended");
+    // another person's live grant does not either
+    signIn("P2");
+    expect(manager.mustRefuse(record())).toBe("idp_session_ended");
+  });
+
+  it("a device with no grant of its own is refused as unreachable when every grant of its person is past the grace", async () => {
+    const { manager, sessions, vault, signIn } = setup();
+    const web = signIn("P1");
+    const phone = sessions.issue({ label: "phone", scopes: ["client"], principalId: web.principal.id, idp: { iss: ISS, sub: "P1" } });
+    vault.set({ ...vault.get(web.grantRef)!, failingSince: clock });
+    clock += IDP_UNREACHABLE_GRACE_MS;
+    expect(manager.mustRefuse(sessions.byId(phone.session.id)!)).toBe("idp_unreachable");
+    const web2 = signIn("P1");
+    expect(manager.mustRefuse(sessions.byId(phone.session.id)!)).toBeNull();
+    expect(web2.grantRef).toBeTruthy();
+  });
+
+  it("a device with no grant of its own refreshes its person's freshest grant: a demotion narrows it, a refusal ends it", async () => {
+    const { manager, provider, sessions, vault, signIn } = setup({ refreshAfterMs: 1000 });
+    const older = signIn("P1", "admin");
+    clock += 10;
+    const newer = signIn("P1", "admin");
+    const phone = sessions.issue({ label: "phone", scopes: ["admin", "client"], principalId: older.principal.id, idp: { iss: ISS, sub: "P1" } });
+    clock += 1000;
+    provider.script.push({ ok: true, refreshToken: "pxlr1.demoted", identity: { iss: ISS, sub: "P1", role: "employee" } });
+    manager.touch(sessions.byId(phone.session.id)!);
+    await manager.settled();
+    expect(provider.calls).toEqual([`pxlr1.first-P1-${clock - 1000}`]);
+    expect(vault.get(newer.grantRef)!.refreshToken).toBe("pxlr1.demoted");
+    expect(sessions.byId(phone.session.id)!.scopes).toEqual(["client"]);
+    clock += 1000;
+    provider.script.push({ ok: false, kind: "rejected", error: "invalid_grant" });
+    manager.touch(sessions.byId(phone.session.id)!);
+    await manager.settled();
+    expect(sessions.byId(phone.session.id)).toBeNull();
+    expect(sessions.byId(older.sessionId)).toBeNull();
+  });
+
+  it("clamps a device with no grant of its own to its person's organization role", () => {
+    const { manager, sessions, signIn } = setup();
+    const web = signIn("P1", "admin");
+    const phone = sessions.issue({ label: "phone", scopes: ["admin", "client"], principalId: web.principal.id, idp: { iss: ISS, sub: "P1" } });
+    const record = sessions.byId(phone.session.id)!;
+    expect(manager.clampScopes(record, "admin")).toBeNull();
+    expect(manager.clampScopes(record, "member")).toEqual(["client"]);
+    expect(manager.clampScopes(record, undefined)).toEqual(["client"]);
+    // a session on its own grant follows its refresh instead
+    expect(manager.clampScopes(web.record()!, "member")).toBeNull();
+  });
+
   it("follows a role change: the grant's sessions take the new scopes, the person's other devices only narrow", async () => {
     const { manager, provider, signIn, sessions, principals } = setup({ refreshAfterMs: 1000 });
     const carol = signIn("C1", "admin");

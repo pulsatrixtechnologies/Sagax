@@ -15039,6 +15039,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (auth.via === "cookie") res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
         return json(res, 401, { error: "Your Pulsatrix sign-in has ended. Sign in again.", code: refusal });
       }
+      // A device with no grant of its own never holds more than its person's
+      // organization role now, even when no grant of theirs was refreshed.
+      const clamped = idpSessions.clampScopes(auth.session, person?.orgRole);
+      if (clamped) {
+        if (!clamped.length) {
+          sessions.revoke(auth.session.id);
+          if (auth.via === "cookie") res.setHeader("set-cookie", clearSessionCookie(SESSION_COOKIE));
+          return json(res, 401, { error: "Your Pulsatrix sign-in has ended. Sign in again.", code: "idp_session_ended" });
+        }
+        sessions.setScopes(auth.session.id, clamped);
+        auth.session.scopes = clamped;
+        auth.scopes = clamped;
+        const needed = requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax" });
+        if (!clamped.includes(needed)) return json(res, 403, { error: `forbidden: this session lacks the ${needed} scope` });
+      }
       idpSessions.touch(auth.session);
     }
     if (HOSTED_WORKSPACE && auth.kind === "session") {
@@ -15155,7 +15170,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const carriesPrincipal = (scopes?.length ? scopes : ["admin"]).includes("admin");
         principalId = carriesPrincipal ? actorPrincipalId(auth) || undefined : undefined;
       }
-      const opened = sessions.openPairing({ label: typeof body?.label === "string" ? body.label : undefined, scopes, principalId });
+      // A device paired by a person signed in with Pulsatrix follows that
+      // person's provider state (server/idp-session.ts): it carries their
+      // provider account, never the creator's grant.
+      const creatorIdp = auth.kind === "session" && principalId ? auth.session.idp : undefined;
+      const opened = sessions.openPairing({
+        label: typeof body?.label === "string" ? body.label : undefined,
+        scopes,
+        principalId,
+        ...(creatorIdp ? { idp: { iss: creatorIdp.iss, sub: creatorIdp.sub } } : {}),
+      });
       const origin = requestOrigin(req);
       const base = publicUrl() ?? (auth.kind === "session" && origin ? origin : null);
       const code = formatPairingCode(opened.code);
