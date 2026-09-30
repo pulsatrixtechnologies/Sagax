@@ -10,6 +10,7 @@
 // nothing in particular is startling on a row you pass over constantly.
 import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { bindHoverIntent, createHoverIntent } from "./sidebar-hover-intent";
 
 export interface SidebarMenuItem {
   key: string;
@@ -65,30 +66,33 @@ export function SidebarPopoverMenu({
   }) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [pinned, setPinned] = useState(false);
+  const [pinned, setPinnedState] = useState(false);
+  // the hover listeners are native and bound once, so they read the latest
+  // pin and mode through refs rather than a stale render's closure
+  const pinnedRef = useRef(false);
+  const openOnHoverRef = useRef(openOnHover);
+  openOnHoverRef.current = openOnHover;
+  const setPinned = (value: boolean) => {
+    pinnedRef.current = value;
+    setPinnedState(value);
+  };
   const rootRef = useRef<HTMLDivElement>(null);
-  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuId = useId();
 
-  const clearTimers = () => {
-    if (openTimer.current) clearTimeout(openTimer.current);
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    openTimer.current = null;
-    closeTimer.current = null;
-  };
-  useEffect(() => clearTimers, []);
+  const [hover] = useState(() =>
+    createHoverIntent({
+      openDelayMs: OPEN_DELAY_MS,
+      closeDelayMs: CLOSE_DELAY_MS,
+      active: () => openOnHoverRef.current && !pinnedRef.current,
+      setOpen,
+    }),
+  );
+  const clearTimers = hover.cancel;
+  useEffect(() => {
+    const root = rootRef.current;
+    return root ? bindHoverIntent(root, hover) : undefined;
+  }, [hover]);
 
-  const hoverOpen = () => {
-    if (!openOnHover || pinned) return;
-    clearTimers();
-    openTimer.current = setTimeout(() => setOpen(true), OPEN_DELAY_MS);
-  };
-  const hoverClose = () => {
-    if (!openOnHover || pinned) return;
-    clearTimers();
-    closeTimer.current = setTimeout(() => setOpen(false), CLOSE_DELAY_MS);
-  };
   const close = () => {
     clearTimers();
     setPinned(false);
@@ -121,12 +125,15 @@ export function SidebarPopoverMenu({
     <div
       ref={rootRef}
       className="relative"
-      onPointerEnter={hoverOpen}
-      onPointerLeave={hoverClose}
+      // hover is bound natively in the effect above (see sidebar-hover-intent)
       // a keyboard user tabbing in gets the same menu a pointer gets
-      onFocus={() => openOnHover && setOpen(true)}
+      onFocus={() => {
+        if (!openOnHover) return;
+        clearTimers();
+        setOpen(true);
+      }}
       onBlur={(event) => {
-        if (pinned) return;
+        if (pinnedRef.current) return;
         if (!event.relatedTarget || !rootRef.current?.contains(event.relatedTarget as Node)) setOpen(false);
       }}
     >

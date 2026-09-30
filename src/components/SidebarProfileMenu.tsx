@@ -259,11 +259,16 @@ export function SidebarProfileMenu({ avatarOnly = false }: {
               open ? "ring-2 ring-accent/60" : "hover:brightness-90",
             )}
           >
-            {profile?.avatarUrl ? (
-              <img src={profile.avatarUrl} alt="" className="size-9 rounded-full object-cover" />
-            ) : (
-              <InitialsAvatar initials={profileInitials(profile)} size={36} />
-            )}
+            {/* the footer avatar rests tinted like the app marks beside it
+              * and shows its real colours on hover, focus or while open
+              * (.footer-tint); the update dot stays outside the tint */}
+            <span className="footer-tint flex rounded-full">
+              {profile?.avatarUrl ? (
+                <img src={profile.avatarUrl} alt="" className="size-9 rounded-full object-cover" />
+              ) : (
+                <InitialsAvatar initials={profileInitials(profile)} size={36} />
+              )}
+            </span>
             {update && updateNoteworthy(update.phase, update.pending) && (
               <span
                 title={update.label}
