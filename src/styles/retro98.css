@@ -294,8 +294,10 @@
   background: #000080;
   color: #fff !important;
 }
-/* the footer: a small avatar and a plain push button */
-[data-skin="retro98"] [data-sidebar] > div:last-of-type {
+/* the footer: a small avatar and a plain push button (named by its data
+   attribute: a positional selector caught the resize handle instead when the
+   sidebar was expanded, so the two layouts sat 10px apart) */
+[data-skin="retro98"] [data-sidebar] [data-sidebar-foot] {
   padding: 4px 0 2px !important;
 }
 /* the account row: a flat button with the name, no modern pill */
@@ -311,6 +313,18 @@
 }
 [data-skin="retro98"] [data-sidebar] [data-sidebar-account] img,
 [data-skin="retro98"] [data-sidebar] [data-sidebar-account] > span:first-child > * {
+  width: 20px !important;
+  height: 20px !important;
+}
+/* the collapsed rail's avatar button: the same 23px row, so collapsing
+   keeps the places and the avatar at the same y */
+[data-skin="retro98"] [data-sidebar] [data-sidebar-account-rail] {
+  height: 23px !important;
+  padding: 0 4px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+[data-skin="retro98"] [data-sidebar] [data-sidebar-account-rail] > * {
   width: 20px !important;
   height: 20px !important;
 }
@@ -345,12 +359,16 @@
   outline: 1px dotted #ffff80;
   outline-offset: -1px;
 }
-/* the Gmail, Slack and GitHub marks are a modern flourish; Explorer lists names */
-[data-skin="retro98"] [data-sidebar] [data-sidebar-place] > span:not(.truncate):not([data-testid]) {
-  display: none;
-}
 [data-skin="retro98"] [data-sidebar] [data-sidebar-place] > [data-testid] {
   margin-left: auto;
+}
+/* the hairline under the places: an etched 98 separator */
+[data-skin="retro98"] [data-sidebar] [data-sidebar-foot-divider] {
+  height: 2px !important;
+  margin: 3px 2px !important;
+  background: transparent !important;
+  border-top: 1px solid #808080;
+  border-bottom: 1px solid #fff;
 }
 [data-skin="retro98"] [data-sidebar] span[title].size-9,
 [data-skin="retro98"] [data-sidebar] span[title].size-9 > * {

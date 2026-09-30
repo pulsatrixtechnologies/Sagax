@@ -17,6 +17,7 @@ import { usageChip } from "@/lib/usage";
 import { readRetroEnabled, retroSignal, setRetroEnabled } from "@/lib/retro98";
 import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { OwlFaceIcon } from "../retro-assistant/RetroArt";
+import { PulsatrixMark } from "../PulsatrixMark";
 import { Win98Button, Win98Window } from "../retro-assistant/Win98";
 import { PixelIcon, type PixelIconName } from "./pixel-icons";
 import { decorateRetroSurfaces } from "./decorate";
@@ -184,7 +185,7 @@ export function RetroTop({ onNewBot }: { onNewBot?: () => void }) {
   return (
     <div className="r98w-top" data-r98-chrome="">
       <div className={cn("r98w-titlebar", macInset && "r98w-titlebar-mac")}>
-        {!macInset && <span className="r98w-titlebar-icon" aria-hidden="true"><OwlFaceIcon /></span>}
+        {!macInset && <span className="r98w-titlebar-icon" aria-hidden="true"><PulsatrixMark size={16} ground="dark" /></span>}
         <span className="r98w-titlebar-text">{openName ? `${appName} - ${openName}` : appName}</span>
         {drawCaption && (
           <span className="r98w-caption">
