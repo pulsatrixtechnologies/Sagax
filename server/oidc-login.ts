@@ -129,7 +129,7 @@ export const INTERIM_SIGNIN_REFUSAL = {
 } as const;
 
 /** Extra fields for GET /api/auth/session on a session from this sign-in. */
-export function oidcSessionFields(session: SessionRecord, principal: Principal | null): Record<string, unknown> {
+export function oidcSessionFields(session: SessionRecord, principal: Principal | null, teamName?: (id: string) => string | undefined): Record<string, unknown> {
   if (!session.idp) return {};
   return {
     identity: "perspicax",
@@ -139,6 +139,9 @@ export function oidcSessionFields(session: SessionRecord, principal: Principal |
     ...(principal?.login ? { login: principal.login } : {}),
     ...(session.idp.role ? { role: session.idp.role } : {}),
     ...(principal?.orgRole ? { orgRole: principal.orgRole } : {}),
+    // Slice 4: the Perspicax role and teams (member or manager).
+    ...(principal?.perspicaxRole ? { perspicaxRole: principal.perspicaxRole } : {}),
+    teams: (principal?.teams ?? []).map((team) => ({ id: team.id, name: teamName?.(team.id) ?? team.id, manager: team.manager })),
   };
 }
 
@@ -156,7 +159,7 @@ export interface OidcLoginDeps {
   rp?: OidcRelyingParty;
   /** The Sagax session cookie name (server/request-auth.ts). */
   sessionCookie: string;
-  forSubject: (input: { iss: string; sub: string; claims: { email?: string; name?: string; login?: string }; orgRole: "admin" | "member" }) => Principal;
+  forSubject: (input: { iss: string; sub: string; claims: { email?: string; name?: string; login?: string }; orgRole: "admin" | "member"; teams?: { id: string; name: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }) => Principal;
   issueSession: (input: { label: string; scopes: Scope[]; email?: string; principalId: string; idp: NonNullable<SessionRecord["idp"]> }) => { token: string; session: PublicSession };
   /** Where each sign-in's refresh token is kept. */
   grants: OidcGrantKeeper;
@@ -367,6 +370,8 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
       sub: identity.sub,
       claims: { email: identity.email, name: identity.name, login: identity.preferredUsername },
       orgRole,
+      ...(identity.teams ? { teams: identity.teams } : {}),
+      ...(identity.role === "admin" || identity.role === "manager" || identity.role === "employee" ? { perspicaxRole: identity.role } : {}),
     });
     const native = client === "desktop" || client === "phone";
     let grantRef: string;

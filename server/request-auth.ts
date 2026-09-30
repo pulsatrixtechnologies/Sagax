@@ -376,6 +376,22 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // share with, from the Perspicax directory. Names, logins and addresses
   // only. PATCH /api/org/settings stays admin.
   { methods: ["GET"], path: /^\/api\/org\/directory$/, feature: "orgDirectory" },
+  // Organization server, slice 4: a bot's grants (user or team, with a
+  // level). server/bot-grants.ts decides who may read and change them (the
+  // owner, manage holders, organization admins, team managers).
+  { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/grants$/, feature: "orgDirectory" },
+  { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/grants\/(?:(?:user%3A|user:)pr_[0-9a-f-]{36}|(?:team%3A|team:)[0-9A-Za-z]{1,64})$/i, feature: "orgDirectory" },
+  // The bots whose sharing the caller administers (never their messages).
+  { methods: ["GET"], path: /^\/api\/org\/bots$/, feature: "orgDirectory" },
+  // Sidebar sections as channels (server/section-channels.ts checks the rights).
+  { methods: ["GET", "POST"], path: /^\/api\/org\/sections$/, feature: "orgDirectory" },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/org\/sections\/sec_[0-9a-f-]{36}$/, feature: "orgDirectory" },
+  { methods: ["PUT"], path: /^\/api\/org\/sections\/sec_[0-9a-f-]{36}\/(?:members|bots)$/, feature: "orgDirectory" },
+  // A person's own engines: which answer for whom, and their own
+  // subscription sign-in (server/principal-engine-logins.ts).
+  { methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/me\/engines\/[\w-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" },
+  { methods: ["GET"], path: /^\/api\/me\/engines\/[\w-]+\/login\/status$/, feature: "orgDirectory" },
   // A member's machine checks in as a worker. The handler binds it to the session user.
   // Pull and cancel stay on that session: registering does not run the queued turns.
   { methods: ["POST"], path: /^\/api\/workers$/ },

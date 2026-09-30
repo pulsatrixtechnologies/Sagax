@@ -87,6 +87,7 @@ describe("OMB_PERSPICAX_DIRECTORY_SECONDS", () => {
 type Reply = { status: number; body?: unknown; etag?: string } | "hang" | "throw";
 
 function harness(initial: Directory) {
+  const clock = { now: 1_000_000 };
   const dir = tempDir();
   const linkFile = join(dir, "pulsabot.json");
   writeLink(linkFile, linkDoc());
@@ -98,8 +99,20 @@ function harness(initial: Directory) {
   let directory = initial;
   let validToken = TOKEN_A;
   const queue: Reply[] = [];
+  const keys = new Map<string, { key?: string; status?: number }>();
+  const resolveCalls: Array<{ sub: string; provider: string; authorization: string }> = [];
+  const teamNames: Array<Array<{ id: string; name: string }>> = [];
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
     const headers = Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>));
+    if (String(input).endsWith("/api/v1/pulsabot/provider-keys/resolve")) {
+      const asked = JSON.parse(String(init?.body)) as { sub: string; provider: string };
+      resolveCalls.push({ ...asked, authorization: headers.authorization ?? "" });
+      if (headers.authorization !== `Bearer ${validToken}`) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+      const held = keys.get(`${asked.sub}/${asked.provider}`);
+      if (held?.status) return new Response(JSON.stringify({ error: held.status === 409 ? "user_inactive" : "x" }), { status: held.status });
+      if (!held?.key) return new Response(JSON.stringify({ error: "no_key" }), { status: 404 });
+      return new Response(JSON.stringify({ provider: asked.provider, key: held.key, fingerprint: `fp-${held.key.slice(-4)}` }), { status: 200, headers: { "cache-control": "no-store" } });
+    }
     requests.push({ url: String(input), headers });
     const next = queue.shift();
     if (next === "throw") throw new Error("connect ECONNREFUSED");
@@ -121,12 +134,14 @@ function harness(initial: Directory) {
     onPersonOut: (iss, sub) => { out.push(sub); principals.markDisabled(iss, sub); },
     onRoleNarrowed: (id) => narrowed.push(id),
     version: "0.1.89",
+    teamNames: { replaceFromDirectory: (teams) => { teamNames.push([...teams]); return true; } },
+    now: () => clock.now,
     fetch: fetcher,
     log: () => {},
     timeoutMs: 200,
   });
   return {
-    sync, principals, out, narrowed, requests, queue, linkFile,
+    sync, principals, out, narrowed, requests, queue, linkFile, keys, resolveCalls, teamNames, clock,
     setDirectory: (next: Directory) => { directory = next; },
     rotate: (token: string) => { validToken = token; },
   };
@@ -235,5 +250,79 @@ describe("PerspicaxDirectory", () => {
     chmodSync(h.linkFile, 0o644);
     expect(await h.sync.refresh()).toMatchObject({ state: "error", error: "link_invalid" });
     expect(h.requests).toHaveLength(0);
+  });
+});
+
+describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
+  const withTeams = (people: Directory["people"], teams: Directory["teams"]): Directory => ({ server_id: SERVER_ID, people, teams });
+
+  it("gives each person the teams the directory lists (manager wins) and hands the names over", async () => {
+    const h = harness(withTeams([person("CAROL"), person("MIA", { role: "manager" }), person("DAVE")], [
+      { id: "01TEAMT", name: "T", managers: ["MIA"], members: ["CAROL", "MIA"] },
+      { id: "01TEAMU", name: "U", managers: [], members: ["DAVE"] },
+    ]));
+    const changed: string[] = [];
+    h.principals.onAccessChanged((id) => changed.push(id));
+    await h.sync.refresh();
+    expect(h.principals.bySubject(ISSUER, "CAROL")?.teams).toEqual([{ id: "01TEAMT", manager: false }]);
+    expect(h.principals.bySubject(ISSUER, "MIA")).toMatchObject({ teams: [{ id: "01TEAMT", manager: true }], perspicaxRole: "manager" });
+    expect(h.principals.bySubject(ISSUER, "DAVE")?.teams).toEqual([{ id: "01TEAMU", manager: false }]);
+    expect(h.teamNames.at(-1)).toEqual([{ id: "01TEAMT", name: "T" }, { id: "01TEAMU", name: "U" }]);
+    expect(changed).toEqual([]);
+    // carol leaves T: her teams empty and her access is recomputed
+    h.setDirectory(withTeams([person("CAROL"), person("MIA", { role: "manager" }), person("DAVE")], [
+      { id: "01TEAMT", name: "T", managers: ["MIA"], members: ["MIA"] },
+      { id: "01TEAMU", name: "U", managers: [], members: ["DAVE"] },
+    ]));
+    await h.sync.refresh();
+    expect(h.principals.bySubject(ISSUER, "CAROL")?.teams).toBeUndefined();
+    expect(changed).toEqual([h.principals.bySubject(ISSUER, "CAROL")!.id]);
+  });
+
+  it("keeps provider_keys per person, names only", async () => {
+    const h = harness(withTeams([person("ALICE", { provider_keys: ["anthropic"] }), person("BOB")], []));
+    await h.sync.refresh();
+    expect(h.sync.providerKeys("ALICE")).toEqual(["anthropic"]);
+    expect(h.sync.providerKeys("BOB")).toEqual([]);
+    expect(h.sync.providerKeys("NOBODY")).toEqual([]);
+  });
+
+  it("resolves an owner key with the link token, caches it 60 s, and invalidates", async () => {
+    const h = harness(withTeams([person("ALICE", { provider_keys: ["anthropic"] })], []));
+    await h.sync.refresh();
+    h.keys.set("ALICE/anthropic", { key: "sk-ant-test-alice-key-0001" });
+    expect(await h.sync.resolveProviderKey("ALICE", "anthropic")).toEqual({ ok: true, key: "sk-ant-test-alice-key-0001", fingerprint: "fp-0001" });
+    expect(h.resolveCalls).toEqual([{ sub: "ALICE", provider: "anthropic", authorization: `Bearer ${TOKEN_A}` }]);
+    // cached: no second call within 60 s
+    h.keys.set("ALICE/anthropic", { key: "sk-ant-test-alice-key-0002" });
+    expect((await h.sync.resolveProviderKey("ALICE", "anthropic")) as { key: string }).toMatchObject({ key: "sk-ant-test-alice-key-0001" });
+    expect(h.resolveCalls).toHaveLength(1);
+    h.clock.now += 60_001;
+    expect((await h.sync.resolveProviderKey("ALICE", "anthropic")) as { key: string }).toMatchObject({ key: "sk-ant-test-alice-key-0002" });
+    h.sync.invalidate("ALICE", "anthropic");
+    await h.sync.resolveProviderKey("ALICE", "anthropic");
+    expect(h.resolveCalls).toHaveLength(3);
+    // the directory dropping the provider drops the cached key
+    h.setDirectory(withTeams([person("ALICE")], []));
+    await h.sync.refresh();
+    await h.sync.resolveProviderKey("ALICE", "anthropic");
+    expect(h.resolveCalls).toHaveLength(4);
+  });
+
+  it("answers no_key, user_inactive, link and unreachable", async () => {
+    const h = harness(withTeams([person("ALICE")], []));
+    await h.sync.refresh();
+    expect(await h.sync.resolveProviderKey("ALICE", "openai")).toEqual({ ok: false, error: "no_key" });
+    h.keys.set("ALICE/openai", { status: 409 });
+    expect(await h.sync.resolveProviderKey("ALICE", "openai")).toEqual({ ok: false, error: "user_inactive" });
+    h.keys.set("ALICE/openai", { status: 500 });
+    expect(await h.sync.resolveProviderKey("ALICE", "openai")).toEqual({ ok: false, error: "unreachable" });
+    h.rotate(TOKEN_B);
+    expect(await h.sync.resolveProviderKey("ALICE", "openai")).toEqual({ ok: false, error: "link" });
+    // on 401 it re-reads the link file once
+    writeLink(h.linkFile, linkDoc({ link_token: TOKEN_B }));
+    h.keys.set("ALICE/openai", { key: "sk-test-openai-key-000000001" });
+    expect(await h.sync.resolveProviderKey("ALICE", "openai")).toMatchObject({ ok: true, key: "sk-test-openai-key-000000001" });
+    expect(h.resolveCalls.at(-1)!.authorization).toBe(`Bearer ${TOKEN_B}`);
   });
 });

@@ -7,6 +7,13 @@ import { z } from "zod";
 import { writeFileAtomic } from "./atomic.ts";
 
 const PRINCIPAL_ID_REGEX = /^pr_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** A Perspicax team id (slice 4): a ULID in practice, any short alphanumeric id accepted. */
+export const TEAM_ID_REGEX = /^[0-9A-Za-z]{1,64}$/;
+export const MAX_PRINCIPAL_TEAMS = 1000;
+
+const teamMembershipSchema = z.object({ id: z.string().regex(TEAM_ID_REGEX), manager: z.boolean() });
+export type TeamMembership = z.infer<typeof teamMembershipSchema>;
+export type PerspicaxRole = "admin" | "manager" | "employee";
 
 const principalSchema = z.object({
   id: z.string().regex(PRINCIPAL_ID_REGEX),
@@ -22,6 +29,11 @@ const principalSchema = z.object({
   /** The last Sagax organization role computed from the provider's
    * `role` claim, for display while offline. */
   orgRole: z.enum(["admin", "member"]).optional(),
+  /** Slice 4: the Perspicax teams this person is in (member or manager),
+   * from the id_token `teams` claim or the directory, whichever came last. */
+  teams: z.array(teamMembershipSchema).max(MAX_PRINCIPAL_TEAMS).optional(),
+  /** Slice 4: the Perspicax role verbatim (admin, manager, employee). */
+  perspicaxRole: z.enum(["admin", "manager", "employee"]).optional(),
   /** Set when the identity provider signalled that this person is out
    * (back-channel logout: disabled, deleted, sessions revoked). Cleared by
    * the next successful sign-in or refresh. While set, no session of theirs
@@ -95,12 +107,26 @@ export function mergePrincipalFiles(destination: unknown, incoming: unknown): { 
   return { version: 1, principals: kept };
 }
 
+/** Team memberships as stored: valid ids only, one entry per team (manager
+ * wins), sorted by id, at most 1000. */
+export function normalizeTeams(teams: readonly { id: string; manager?: boolean }[]): TeamMembership[] {
+  const byId = new Map<string, boolean>();
+  for (const team of teams) {
+    if (!team || typeof team.id !== "string" || !TEAM_ID_REGEX.test(team.id)) continue;
+    byId.set(team.id, (byId.get(team.id) ?? false) || team.manager === true);
+  }
+  return [...byId].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).slice(0, MAX_PRINCIPAL_TEAMS).map(([id, manager]) => ({ id, manager }));
+}
+
+const sameTeams = (a: TeamMembership[] | undefined, b: TeamMembership[] | undefined) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+
 export class PrincipalRegistry {
   private readonly path: string;
   private readonly now: () => number;
   private readonly newId: () => string;
   private principals: Principal[] = [];
   private writable = true;
+  private readonly accessListeners: Array<(principalId: string) => void> = [];
 
   constructor(options: { path: string; now?: () => number; newId?: () => string }) {
     this.path = options.path;
@@ -160,6 +186,48 @@ export class PrincipalRegistry {
     return this.principals.map((p) => ({ ...p }));
   }
 
+  /** Called after a person's teams changed (slice 4): whatever reaches them
+   * through a team must be recomputed at once. */
+  onAccessChanged(listener: (principalId: string) => void): void {
+    this.accessListeners.push(listener);
+  }
+
+  private accessChanged(principalId: string): void {
+    for (const listener of this.accessListeners) {
+      try {
+        listener(principalId);
+      } catch (error) {
+        console.error(`principals: an access listener failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  /** Apply a team list to a stored person; true when it changed. */
+  private applyTeams(found: Principal, teams: readonly { id: string; manager?: boolean }[] | undefined): boolean {
+    if (teams === undefined) return false;
+    const next = normalizeTeams(teams);
+    if (sameTeams(found.teams, next)) return false;
+    if (next.length) found.teams = next;
+    else delete found.teams;
+    return true;
+  }
+
+  /** Replace a person's teams (slice 4). Null for an unknown id. */
+  setTeams(principalId: string, teams: readonly { id: string; manager?: boolean }[]): Principal | null {
+    const found = this.principals.find((p) => p.id === principalId);
+    if (!found) return null;
+    if (this.applyTeams(found, teams)) {
+      this.persist();
+      this.accessChanged(found.id);
+    }
+    return { ...found };
+  }
+
+  /** Everyone in a team (member or manager), from what each person carries. */
+  membersOfTeam(teamId: string): Principal[] {
+    return this.principals.filter((p) => p.teams?.some((team) => team.id === teamId)).map((p) => ({ ...p }));
+  }
+
   byId(id: string): Principal | null {
     return this.principals.find((p) => p.id === id) ?? null;
   }
@@ -204,7 +272,7 @@ export class PrincipalRegistry {
    * `iss` + `sub` only. Name, login, address and role are attributes,
    * refreshed on every sign-in; an address that is not an account email is
    * dropped rather than stored. */
-  forSubject(input: { iss: string; sub: string; claims?: { email?: string; name?: string; login?: string }; orgRole?: "admin" | "member" }): Principal {
+  forSubject(input: { iss: string; sub: string; claims?: { email?: string; name?: string; login?: string }; orgRole?: "admin" | "member"; teams?: readonly { id: string; manager?: boolean }[]; perspicaxRole?: PerspicaxRole }): Principal {
     const iss = input.iss.trim();
     const sub = input.sub.trim();
     if (!iss || iss.length > 2048 || !sub || sub.length > 255) throw new Error("an issuer and a subject are required");
@@ -225,9 +293,13 @@ export class PrincipalRegistry {
     if (login) found.login = login;
     else delete found.login;
     if (input.orgRole) found.orgRole = input.orgRole;
+    if (input.perspicaxRole) found.perspicaxRole = input.perspicaxRole;
+    // An absent claim leaves the teams as they are (never "no teams").
+    const teamsChanged = this.applyTeams(found, input.teams);
     // A verified sign-in or refresh is the provider saying this person is in.
     delete found.disabledAt;
     if (created || JSON.stringify(found) !== before) this.persist();
+    if (teamsChanged && !created) this.accessChanged(found.id);
     return { ...found };
   }
 
@@ -236,7 +308,7 @@ export class PrincipalRegistry {
    * sign-in), else their name, login, address and organization role are
    * refreshed. `disabledAt` is left alone: only a sign-in or a refresh says
    * a person is back in. An absent attribute is dropped, as on a sign-in. */
-  upsertFromDirectory(input: { iss: string; sub: string; name?: string | null; login?: string | null; email?: string | null; orgRole: "admin" | "member" }): Principal {
+  upsertFromDirectory(input: { iss: string; sub: string; name?: string | null; login?: string | null; email?: string | null; orgRole: "admin" | "member"; teams?: readonly { id: string; manager?: boolean }[]; perspicaxRole?: PerspicaxRole }): Principal {
     const iss = input.iss.trim();
     const sub = input.sub.trim();
     if (!iss || iss.length > 2048 || !sub || sub.length > 255) throw new Error("an issuer and a subject are required");
@@ -257,7 +329,10 @@ export class PrincipalRegistry {
     if (login) found.login = login;
     else delete found.login;
     found.orgRole = input.orgRole;
+    if (input.perspicaxRole) found.perspicaxRole = input.perspicaxRole;
+    const teamsChanged = this.applyTeams(found, input.teams);
     if (created || JSON.stringify(found) !== before) this.persist();
+    if (teamsChanged && !created) this.accessChanged(found.id);
     return { ...found };
   }
 

@@ -3,15 +3,27 @@
 A channel is visible only when `viewerId` is in `humanIds`. Direct shows
 the owner's own bot always, and anyone else only when they are in
 `directGrants`. An empty grant list hides the bot from everyone except
-the owner. Pure: no store. */
+the owner. Pure: no store.
+
+Slice 4: the rules themselves live in authz.ts (levels, team grants,
+`team:` entries in a room, shared sections); these helpers keep their
+names and answers and delegate there. A caller that knows the viewer's
+teams passes `viewer` (and a bot's `grants` and `sections`). */
+import { canInChannel, canOnBot, targetNamesViewer, type BotGrant, type SectionAccess, type Viewer } from "./authz.ts";
 
 function actorKey(id: string): string {
   return id.trim().toLowerCase();
 }
 
-export function canSeeChannel(input: { humanIds: string[]; viewerId: string }): boolean {
-  const viewer = actorKey(input.viewerId);
-  return input.humanIds.some((id) => actorKey(id) === viewer);
+/** A viewer known only by id: no team, not an admin. */
+function bareViewer(viewerId: string): Viewer {
+  return { principalId: viewerId, orgAdmin: false, teams: [], disabled: false };
+}
+
+export function canSeeChannel(input: { humanIds: string[]; viewerId: string; viewer?: Viewer; section?: SectionAccess | null }): boolean {
+  const viewer = input.viewer ?? bareViewer(input.viewerId);
+  if (input.viewer || input.section) return canInChannel(viewer, "channel.read", { humanIds: input.humanIds, section: input.section ?? null });
+  return input.humanIds.some((id) => targetNamesViewer(viewer, id));
 }
 
 export function canSeeDirectBot(input: { ownerUserId: string; viewerId: string; directGrants: string[] }): boolean {
@@ -35,9 +47,9 @@ export function channelViewerId(auth: {
 
 /** The GET /api/groups filter. No viewer id (local operator) sees every
  * group. A signed-in id sees a channel only when canSeeChannel is true. */
-export function seesChannel(group: { humanIds?: string[] }, viewerId: string | undefined): boolean {
+export function seesChannel(group: { humanIds?: string[] }, viewerId: string | undefined, viewer?: Viewer, section?: SectionAccess | null): boolean {
   if (!viewerId) return true;
-  return canSeeChannel({ humanIds: group.humanIds ?? [], viewerId });
+  return canSeeChannel({ humanIds: group.humanIds ?? [], viewerId, ...(viewer ? { viewer } : {}), ...(section ? { section } : {}) });
 }
 
 /** Signed-in viewers, including admin, have live frames filtered. Loopback
@@ -71,9 +83,18 @@ export function seesBotForViewer(input: {
   viewerId: string | undefined;
   ownerUserId?: string;
   directGrants: string[];
-  inChannels: { humanIds?: string[] }[];
+  inChannels: { humanIds?: string[]; section?: SectionAccess | null }[];
+  /** Slice 4: the full viewer, the bot's grants and its shared sections. */
+  viewer?: Viewer;
+  grants?: readonly BotGrant[];
+  sections?: readonly SectionAccess[];
 }): boolean {
   if (!input.viewerId) return true;
+  if (input.viewer && input.ownerUserId) {
+    const grants = input.grants ?? input.directGrants.map((id) => ({ target: `user:${id}`, level: "use" as const, by: input.ownerUserId!, at: 0 }));
+    if (canOnBot(input.viewer, "bot.use", { ownerPrincipalId: input.ownerUserId, grants, sections: input.sections ?? [] })) return true;
+    return input.inChannels.some((group) => canInChannel(input.viewer, "channel.read", { humanIds: group.humanIds ?? [], section: group.section ?? null }));
+  }
   if (input.ownerUserId && canSeeDirectBot({ ownerUserId: input.ownerUserId, viewerId: input.viewerId, directGrants: input.directGrants })) return true;
   if (!input.ownerUserId && input.directGrants.some((id) => actorKey(id) === actorKey(input.viewerId!))) return true;
   return input.inChannels.some((group) => seesChannel(group, input.viewerId));

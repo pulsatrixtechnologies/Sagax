@@ -475,3 +475,29 @@ describe("a demotion the Perspicax directory reports (slice 3)", () => {
     expect(carol.record()?.scopes).toEqual(["client"]);
   });
 });
+
+describe("teams on refresh (slice 4)", () => {
+  it("a refreshed id_token's teams replace the person's, an absent claim leaves them, and the access listener fires", async () => {
+    const { manager, provider, signIn, principals } = setup({ refreshAfterMs: 1000 });
+    const changed: string[] = [];
+    principals.onAccessChanged((id) => changed.push(id));
+    const carol = signIn("C4");
+    clock += 1000;
+    provider.script.push({ ok: true, refreshToken: "pxlr1.t1", identity: { iss: ISS, sub: "C4", role: "employee", teams: [{ id: "T", name: "Team T", manager: false }] } });
+    manager.touch(carol.record()!);
+    await manager.settled();
+    expect(principals.byId(carol.principal.id)).toMatchObject({ teams: [{ id: "T", manager: false }], perspicaxRole: "employee" });
+    expect(changed).toEqual([carol.principal.id]);
+    clock += 1000;
+    provider.script.push({ ok: true, refreshToken: "pxlr1.t2", identity: { iss: ISS, sub: "C4", role: "employee" } });
+    manager.touch(carol.record()!);
+    await manager.settled();
+    expect(principals.byId(carol.principal.id)?.teams).toEqual([{ id: "T", manager: false }]);
+    clock += 1000;
+    provider.script.push({ ok: true, refreshToken: "pxlr1.t3", identity: { iss: ISS, sub: "C4", role: "employee", teams: [] } });
+    manager.touch(carol.record()!);
+    await manager.settled();
+    expect(principals.byId(carol.principal.id)?.teams).toBeUndefined();
+    expect(changed).toEqual([carol.principal.id, carol.principal.id]);
+  });
+});

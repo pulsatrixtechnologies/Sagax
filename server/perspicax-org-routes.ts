@@ -28,6 +28,22 @@ export interface OrgDirectoryEntry {
   email?: string;
   role: "admin" | "member";
   disabled: boolean;
+  /** Slice 4: the teams this person is in. */
+  teams?: { id: string; manager: boolean }[];
+}
+
+export interface OrgDirectoryTeam {
+  id: string;
+  name: string;
+  managers: string[];
+  members: string[];
+}
+
+export interface OrgDirectoryViewer {
+  principalId: string | null;
+  orgRole: "admin" | "member";
+  perspicaxRole?: "admin" | "manager" | "employee";
+  managedTeamIds: string[];
 }
 
 export interface PendingAdminApproval {
@@ -52,6 +68,10 @@ export interface PerspicaxOrgRouteDeps {
   /** Saves the settings; throws when they could not be written. */
   saveSettings(next: OrgSettings, auth: RequestAuth): void;
   pendingAdminApprovals(): PendingAdminApproval[];
+  /** Slice 4: the teams with their people (principal ids). */
+  teams?(): OrgDirectoryTeam[];
+  /** Slice 4: who is asking. */
+  viewer?(auth: RequestAuth): OrgDirectoryViewer;
 }
 
 /** The directory as principals, sorted by name then login. Only people the
@@ -69,6 +89,7 @@ export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], b
       ...(email ? { email } : {}),
       role: person.role === "admin" ? "admin" : "member",
       disabled: person.status === "disabled",
+      teams: (principal.teams ?? []).map((team) => ({ id: team.id, manager: team.manager })),
     });
   }
   const text = (value: string) => value.toLocaleLowerCase();
@@ -90,7 +111,11 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
     }
     if (method === "GET" && path === "/api/org/directory") {
       res.setHeader("cache-control", "no-store");
-      return json(res, 200, { people: directory ? orgDirectoryEntries(deps.issuer, directory.people(), deps.bySubject) : [] });
+      return json(res, 200, {
+        people: directory ? orgDirectoryEntries(deps.issuer, directory.people(), deps.bySubject) : [],
+        ...(deps.teams ? { teams: deps.teams() } : {}),
+        ...(deps.viewer ? { viewer: deps.viewer(auth) } : {}),
+      });
     }
     if (method === "PATCH" && path === "/api/org/settings") {
       if (deps.viewerRole(auth) !== "admin") return json(res, 403, { error: "Only an organization admin can change these settings." });

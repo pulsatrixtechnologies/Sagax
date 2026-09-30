@@ -104,6 +104,9 @@ const personSchema = z.object({
   role: z.enum(["admin", "manager", "employee"]),
   status: z.enum(["active", "disabled"]),
   locale: z.string().max(40).nullable().optional(),
+  /** Slice 4: which model providers this person keeps a key for in
+   * Perspicax (names only, never a key). */
+  provider_keys: z.array(z.string().max(32)).max(16).optional(),
 });
 const teamSchema = z.object({
   id: z.string().min(1).max(64),
@@ -130,9 +133,23 @@ export interface DirectoryState {
 }
 
 export interface DirectoryPrincipals {
-  upsertFromDirectory(input: { iss: string; sub: string; name?: string | null; login?: string | null; email?: string | null; orgRole: "admin" | "member" }): Principal;
+  upsertFromDirectory(input: { iss: string; sub: string; name?: string | null; login?: string | null; email?: string | null; orgRole: "admin" | "member"; teams?: { id: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }): Principal;
   listBySubjectIssuer(iss: string): Principal[];
 }
+
+/** The team names registry (org-teams.ts). */
+export interface DirectoryTeamNames {
+  replaceFromDirectory(teams: readonly { id: string; name: string }[]): boolean;
+}
+
+export const PROVIDER_KEY_RESOLVE_PATH = "/api/v1/pulsabot/provider-keys/resolve";
+export const PROVIDER_KEY_TIMEOUT_MS = 5_000;
+export const PROVIDER_KEY_MAX_BYTES = 8 * 1024;
+export const PROVIDER_KEY_CACHE_MS = 60_000;
+export type ModelProvider = "anthropic" | "openai";
+export type ProviderKeyResult =
+  | { ok: true; key: string; fingerprint: string }
+  | { ok: false; error: "no_key" | "user_inactive" | "unreachable" | "link" };
 
 export interface PerspicaxDirectoryOptions {
   /** OMB_PERSPICAX_ISSUER: the subjects' `iss`. */
@@ -150,6 +167,8 @@ export interface PerspicaxDirectoryOptions {
   onRoleNarrowed: (principalId: string) => void;
   /** Pulsa Bot's version, sent as X-Pulsabot-Version. */
   version: string;
+  /** Slice 4: team names (org-teams.ts), replaced from each directory. */
+  teamNames?: DirectoryTeamNames;
   fetch?: typeof fetch;
   now?: () => number;
   log?: (line: string) => void;
@@ -189,6 +208,10 @@ export class PerspicaxDirectory {
   private current: DirectoryState = { state: "missing", error: "link_missing" };
   private inflight: Promise<DirectoryState> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Slice 4: provider names per subject, from the last directory. */
+  private keysBySub = new Map<string, string[]>();
+  /** Slice 4: owner keys read through the link, in memory only. */
+  private readonly keyCache = new Map<string, { key: string; fingerprint: string; until: number }>();
 
   constructor(options: PerspicaxDirectoryOptions) {
     this.options = options;
@@ -213,6 +236,81 @@ export class PerspicaxDirectory {
 
   people(): DirectoryPerson[] {
     return this.data ? [...this.data.people] : [];
+  }
+
+  /** The providers this subject keeps a key for in Perspicax (slice 4),
+   * from the last directory; [] when unknown. */
+  providerKeys(sub: string): string[] {
+    return [...(this.keysBySub.get(sub) ?? [])];
+  }
+
+  /** Drop a cached owner key (a provider refused it, or the owner lost it). */
+  invalidate(sub: string, provider: string): void {
+    this.keyCache.delete(`${sub}\u0000${provider}`);
+  }
+
+  /** An owner's model key, read through the link (slice 4, contract 3):
+   * cached in memory for 60 s at most, never logged, never written. */
+  async resolveProviderKey(sub: string, provider: ModelProvider): Promise<ProviderKeyResult> {
+    const cacheKey = `${sub}\u0000${provider}`;
+    const cached = this.keyCache.get(cacheKey);
+    if (cached && cached.until > this.now()) return { ok: true, key: cached.key, fingerprint: cached.fingerprint };
+    this.keyCache.delete(cacheKey);
+    let link = this.link ?? this.readLink();
+    if (!link) return { ok: false, error: "link" };
+    const call = (token: string) => this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}${PROVIDER_KEY_RESOLVE_PATH}`, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(PROVIDER_KEY_TIMEOUT_MS),
+      headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ sub, provider }),
+    });
+    let response: Response;
+    try {
+      response = await call(link.linkToken);
+      if (response.status === 401) {
+        void response.body?.cancel().catch(() => {});
+        const again = this.readLink();
+        if (!again) return { ok: false, error: "link" };
+        link = again;
+        response = await call(link.linkToken);
+      }
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    if (response.status === 401 || response.status === 403) {
+      void response.body?.cancel().catch(() => {});
+      return { ok: false, error: "link" };
+    }
+    if (response.status === 404 || response.status === 409) {
+      void response.body?.cancel().catch(() => {});
+      return { ok: false, error: response.status === 404 ? "no_key" : "user_inactive" };
+    }
+    if (response.status !== 200) {
+      void response.body?.cancel().catch(() => {});
+      return { ok: false, error: "unreachable" };
+    }
+    let text: string | null;
+    try {
+      text = await readLimited(response, PROVIDER_KEY_MAX_BYTES);
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    if (text === null) return { ok: false, error: "unreachable" };
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const key = record.key;
+    const fingerprint = typeof record.fingerprint === "string" ? record.fingerprint.slice(0, 128) : "";
+    if (record.provider !== provider || typeof key !== "string" || key.length < 20 || key.length > 512 || [...key].some((char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127) || /\s/.test(key)) {
+      return { ok: false, error: "unreachable" };
+    }
+    this.keyCache.set(cacheKey, { key, fingerprint, until: this.now() + PROVIDER_KEY_CACHE_MS });
+    return { ok: true, key, fingerprint };
   }
 
   start(intervalMs: number): void {
@@ -356,13 +454,41 @@ export class PerspicaxDirectory {
     const iss = this.options.issuer;
     const known = new Map(this.options.principals.listBySubjectIssuer(iss).map((p) => [p.subject!.sub, p] as const));
     const listed = new Set<string>();
+    // Slice 4: each person's teams from the members and managers lists
+    // (manager wins), and the team names.
+    const teamsBySub = new Map<string, Map<string, boolean>>();
+    const addTeam = (sub: string, id: string, manager: boolean) => {
+      const teams = teamsBySub.get(sub) ?? new Map<string, boolean>();
+      teams.set(id, (teams.get(id) ?? false) || manager);
+      teamsBySub.set(sub, teams);
+    };
+    for (const team of directory.teams) {
+      for (const sub of team.members) addTeam(sub, team.id, false);
+      for (const sub of team.managers) addTeam(sub, team.id, true);
+    }
+    this.options.teamNames?.replaceFromDirectory(directory.teams.map((team) => ({ id: team.id, name: team.name })));
+    const keys = new Map<string, string[]>();
+    for (const person of directory.people) {
+      const names: string[] = [...new Set((person.provider_keys ?? []).filter((name) => name === "anthropic" || name === "openai"))].sort();
+      keys.set(person.sub, names);
+      // A provider the directory no longer lists for this person: drop its key.
+      for (const name of ["anthropic", "openai"]) if (!names.includes(name)) this.invalidate(person.sub, name);
+    }
+    for (const sub of this.keysBySub.keys()) {
+      if (!keys.has(sub)) {
+        this.invalidate(sub, "anthropic");
+        this.invalidate(sub, "openai");
+      }
+    }
+    this.keysBySub = keys;
     for (const person of directory.people) {
       listed.add(person.sub);
       const before = known.get(person.sub);
       const orgRole = person.role === "admin" ? "admin" as const : "member" as const;
+      const teams = [...(teamsBySub.get(person.sub) ?? new Map<string, boolean>())].map(([id, manager]) => ({ id, manager }));
       let after: Principal;
       try {
-        after = this.options.principals.upsertFromDirectory({ iss, sub: person.sub, name: person.name || person.login, login: person.login, email: person.email, orgRole });
+        after = this.options.principals.upsertFromDirectory({ iss, sub: person.sub, name: person.name || person.login, login: person.login, email: person.email, orgRole, teams, perspicaxRole: person.role });
       } catch (error) {
         this.log(`perspicax directory: skipped a person (${error instanceof Error ? error.message : String(error)})`);
         continue;

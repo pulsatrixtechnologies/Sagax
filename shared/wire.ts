@@ -226,6 +226,13 @@ export const CONNECTOR_TOOL_NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
  * settlement receipts (lastProfileRequestId, lastTeamSetupReceipt); the
  * projected tasks are WireTask[] and avatarUrl is always present
  * (null when the bot has none). */
+export interface WireBotGrant {
+  target: string;
+  level: "use" | "run" | "edit" | "manage";
+  by: string;
+  at: number;
+}
+
 export interface WireBot {
   waitingForTeammates?: boolean;
   id: string;
@@ -337,6 +344,10 @@ export interface WireBot {
   /** User ids this bot's owner opened Direct to. Absent or empty: only the
    * owner sees the bot in Direct. */
   directGrants?: string[];
+  /** Slice 4 (organization server): who may reach this bot and how far.
+   * `target` is `user:<principal id>` or `team:<Perspicax team id>`;
+   * `directGrants` mirrors the `user:` targets for older clients. */
+  grants?: WireBotGrant[];
   /** Lowercased user id of the person who created the bot. Absent on older
    * records: the org owner is the owner. */
   ownerUserId?: string;

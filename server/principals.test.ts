@@ -210,3 +210,36 @@ describe("principals from the Perspicax directory (upsertFromDirectory)", () => 
     expect(() => reg.upsertFromDirectory({ iss: ISS, sub: " ", orgRole: "member" })).toThrow();
   });
 });
+
+describe("slice 4: teams and the Perspicax role", () => {
+  it("a sign-in sets teams and role; an absent claim leaves the teams alone; a change calls the listener", () => {
+    const { reg, path } = registry();
+    const changed: string[] = [];
+    reg.onAccessChanged((id) => changed.push(id));
+    const carol = reg.forSubject({ iss: "https://px", sub: "C", orgRole: "member", perspicaxRole: "employee", teams: [{ id: "T2", manager: false }, { id: "T1", manager: false }, { id: "T1", manager: true }, { id: "bad id", manager: true }] });
+    expect(carol).toMatchObject({ perspicaxRole: "employee", teams: [{ id: "T1", manager: true }, { id: "T2", manager: false }] });
+    expect(changed).toEqual([]); // a new person has nothing to recompute
+    expect(reg.forSubject({ iss: "https://px", sub: "C", orgRole: "member" }).teams).toHaveLength(2);
+    expect(changed).toEqual([]);
+    reg.forSubject({ iss: "https://px", sub: "C", orgRole: "member", teams: [] });
+    expect(reg.byId(carol.id)?.teams).toBeUndefined();
+    expect(changed).toEqual([carol.id]);
+    expect(JSON.parse(readFileSync(path, "utf8")).principals[0].perspicaxRole).toBe("employee");
+  });
+
+  it("the directory, setTeams and membersOfTeam", () => {
+    const { reg } = registry();
+    const changed: string[] = [];
+    reg.onAccessChanged((id) => changed.push(id));
+    const mia = reg.upsertFromDirectory({ iss: "https://px", sub: "M", orgRole: "member", perspicaxRole: "manager", teams: [{ id: "T", manager: true }] });
+    const dave = reg.upsertFromDirectory({ iss: "https://px", sub: "D", orgRole: "member", teams: [{ id: "U", manager: false }] });
+    expect(reg.membersOfTeam("T").map((p) => p.id)).toEqual([mia.id]);
+    expect(reg.setTeams(dave.id, [{ id: "T", manager: false }])?.teams).toEqual([{ id: "T", manager: false }]);
+    expect(changed).toEqual([dave.id]);
+    expect(reg.membersOfTeam("T").map((p) => p.id).sort()).toEqual([mia.id, dave.id].sort());
+    expect(reg.setTeams("pr_nobody", [])).toBeNull();
+    // the same teams again change nothing
+    reg.upsertFromDirectory({ iss: "https://px", sub: "D", orgRole: "member", teams: [{ id: "T", manager: false }] });
+    expect(changed).toEqual([dave.id]);
+  });
+});

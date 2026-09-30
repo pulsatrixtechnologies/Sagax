@@ -17,6 +17,8 @@ export interface FakeOidcUser {
   name?: string;
   preferred_username?: string;
   role?: string;
+  /** Slice 4: the `teams` claim, when set. */
+  teams?: Array<{ id: string; name: string; manager: boolean }>;
 }
 
 export interface FakeOidcTamper {
@@ -46,6 +48,8 @@ export interface FakeDirectoryPerson {
   role: "admin" | "manager" | "employee";
   status: "active" | "disabled";
   locale: string | null;
+  /** Slice 4: provider names this person keeps a key for. */
+  provider_keys?: string[];
 }
 
 export interface FakeDirectoryTeam { id: string; name: string; managers: string[]; members: string[] }
@@ -99,6 +103,13 @@ export interface FakeOidcProvider {
   directoryTeams: FakeDirectoryTeam[];
   /** Every directory request's headers (lowercase names). */
   directoryRequests: Array<Record<string, string>>;
+  /** Slice 4: the `teams` claim the next id_token (sign-in or refresh)
+   * carries for this subject; undefined drops the claim. */
+  setTeams(sub: string, teams: Array<{ id: string; name: string; manager: boolean }> | undefined): void;
+  /** Slice 4: owner keys the resolve endpoint answers, by `${sub}/${provider}`. */
+  providerKeys: Map<string, string>;
+  /** Every resolve request's body (never the answer). */
+  resolveRequests: Array<{ sub: string; provider: string }>;
   /** Mark one listed person active or disabled. */
   setDirectoryStatus(sub: string, status: "active" | "disabled"): void;
   /** A directory person from a user, active unless said otherwise. */
@@ -116,6 +127,15 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
   const deadFamilies = new Set<string>();
   const disabled = new Set<string>();
   const roles = new Map<string, string | undefined>();
+  const teamsBySub = new Map<string, FakeOidcUser["teams"]>();
+  const withTeams = (user: FakeOidcUser): FakeOidcUser => {
+    if (!teamsBySub.has(user.sub)) return user;
+    const teams = teamsBySub.get(user.sub);
+    const next = { ...user };
+    if (teams === undefined) delete next.teams;
+    else next.teams = teams;
+    return next;
+  };
   let failNext: number | null = null;
   let server: Server | null = null;
 
@@ -163,6 +183,11 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
     directoryPeople: [],
     directoryTeams: [],
     directoryRequests: [],
+    setTeams(sub, teams) {
+      teamsBySub.set(sub, teams);
+    },
+    providerKeys: new Map(),
+    resolveRequests: [],
     setDirectoryStatus(sub, status) {
       provider.directoryPeople = provider.directoryPeople.map((person) => (person.sub === sub ? { ...person, status } : person));
     },
@@ -187,6 +212,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       ...(user.name ? { name: user.name } : {}),
       ...(user.preferred_username ? { preferred_username: user.preferred_username } : {}),
       ...(user.role ? { role: user.role } : {}),
+      ...(user.teams ? { teams: user.teams } : {}),
     };
     if (provider.tamper.claims) claims = provider.tamper.claims(claims);
     let header: Record<string, unknown> = { alg: "ES256", typ: "JWT", kid: key.kid };
@@ -221,7 +247,10 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       if (headers.authorization !== `Bearer ${provider.linkToken}`) return send(res, 401, { error: "unauthorized" });
       const body = JSON.stringify({
         server_id: provider.serverId,
-        people: [...provider.directoryPeople].sort((a, b) => a.sub.localeCompare(b.sub)),
+        people: [...provider.directoryPeople].sort((a, b) => a.sub.localeCompare(b.sub)).map((person) => ({
+          ...person,
+          provider_keys: person.provider_keys ?? ["anthropic", "openai"].filter((name) => provider.providerKeys.has(`${person.sub}/${name}`)),
+        })),
         teams: [...provider.directoryTeams].sort((a, b) => a.id.localeCompare(b.id)).map((team) => ({ ...team, managers: [...team.managers].sort(), members: [...team.members].sort() })),
       });
       const etag = `"${createHash("sha256").update(body).digest("hex").slice(0, 32)}"`;
@@ -232,6 +261,24 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       }
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", etag });
       res.end(body);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/v1/pulsabot/provider-keys/resolve") {
+      let raw = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk: string) => (raw += chunk));
+      req.on("end", () => {
+        if (req.headers.authorization !== `Bearer ${provider.linkToken}`) return send(res, 401, { error: "unauthorized" });
+        let asked: { sub?: unknown; provider?: unknown } = {};
+        try { asked = JSON.parse(raw) as typeof asked; } catch { return send(res, 400, { error: "bad_request" }); }
+        if (typeof asked.sub !== "string" || (asked.provider !== "anthropic" && asked.provider !== "openai")) return send(res, 400, { error: "bad_request" });
+        provider.resolveRequests.push({ sub: asked.sub, provider: asked.provider });
+        const person = provider.directoryPeople.find((entry) => entry.sub === asked.sub);
+        const key = provider.providerKeys.get(`${asked.sub}/${asked.provider}`);
+        if (!person || !key) return send(res, 404, { error: "no_key" });
+        if (person.status === "disabled") return send(res, 409, { error: "user_inactive" });
+        return send(res, 200, { provider: asked.provider, key, fingerprint: createHash("sha256").update(key).digest("hex").slice(0, 16) });
+      });
       return;
     }
     if (req.method === "GET" && url.pathname === "/oauth/jwks") {
@@ -281,7 +328,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
           if (held.resource && form.resource !== held.resource) return send(res, 400, { error: "invalid_target" });
           if (disabled.has(held.user.sub)) return send(res, 400, { error: "invalid_grant" });
           refreshTokens.delete(form.refresh_token!); // rotation: the old token is dead
-          const user: FakeOidcUser = { ...held.user };
+          const user: FakeOidcUser = withTeams({ ...held.user });
           if (roles.has(user.sub)) {
             const role = roles.get(user.sub);
             if (role === undefined) delete user.role;
@@ -308,7 +355,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
           token_type: "Bearer",
           expires_in: 3600,
           scope: "openid profile email offline_access",
-          ...(provider.tamper.noIdToken ? {} : { id_token: idToken(grant.user, grant.nonce) }),
+          ...(provider.tamper.noIdToken ? {} : { id_token: idToken(withTeams(grant.user), grant.nonce) }),
         });
       });
       return;

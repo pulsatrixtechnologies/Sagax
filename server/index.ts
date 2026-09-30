@@ -305,6 +305,8 @@ import {
   roomResponders,
   sectionKey,
   Store,
+  cleanBotGrants,
+  grantsFromDirect,
   titleFromLlm,
   type BotRecord,
   type GroupDefaultResponder,
@@ -508,6 +510,8 @@ import {
 } from "./request-auth.ts";
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.ts";
+import { OrgTeams } from "./org-teams.ts";
+import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { applyIdentityMigration, principalIdFor } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
 import {
@@ -560,7 +564,8 @@ import {
   type PhoneSecretContext,
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
-import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, seesChannelFrame, sseFrameProjection } from "./channel-visibility.ts";
+import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
+import { atLeast, botLevel, canEditRoomHumans, canInChannel, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { roleOf, signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
@@ -568,7 +573,7 @@ import { configForViewer, displayNameFromEmail, sessionIsOperator, type ViewerId
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
-import { ROUTES, dispatchRoutes } from "./routes/table.ts";
+import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
@@ -1059,6 +1064,17 @@ function subjectVisible(subject: PathSubject, visible: VisibleSet): boolean {
 }
 
 /** A member may schedule a routine only for a bot or room they can see. */
+/** Slice 4: a routine on a bot the caller does not own needs run on it. */
+const NEEDS_RUN = { error: "you need the right to run this bot's routines", code: "needs_run" } as const;
+function routineBotId(routineId: string): string | undefined {
+  return routines?.listRoutines().find((routine) => routine.id === routineId)?.botId ?? undefined;
+}
+function routineNeedsRun(auth: RequestAuth, botId: unknown): boolean {
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session" || typeof botId !== "string") return false;
+  const bot = store.bot(botId);
+  if (!bot) return false;
+  return !atLeast(viewerBotLevel(auth, bot), "run");
+}
 function hiddenRoutineTarget(body: unknown, visible: VisibleSet): string | null {
   if (visible.everything || !body || typeof body !== "object") return null;
   const { botId, groupId } = body as { botId?: unknown; groupId?: unknown };
@@ -3096,6 +3112,13 @@ if (browserCleanupReferencesReconciled) browserCleanup.startPending();
 // `identityMigratedAt` only records when that first happened.
 const principals = new PrincipalRegistry({ path: join(DATA_DIR, "principals.json") });
 principals.localOperator(cfg.profile?.email);
+// Slice 4: the Perspicax team names (who is in a team lives on each person).
+const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
+/** Slice 4: shared sidebar sections (section-channels.ts), organization mode. */
+let sectionChannels: { accessFor(name: string): SectionAccess | null } | null = null;
+// A person's teams changed (a refreshed id_token or a directory sync): every
+// member stream reconnects to a fresh snapshot of what they may see now.
+principals.onAccessChanged(() => audienceChanged());
 applyIdentityMigration({
   registry: principals,
   org: cfg.org ?? null,
@@ -14722,40 +14745,89 @@ function botDirectGrants(bot: { directGrants?: unknown }): string[] {
     ? bot.directGrants.filter((id): id is string => typeof id === "string")
     : [];
 }
-function listedBotVisible(bot: { id: string; ownerUserId?: unknown; directGrants?: unknown }, viewerId: string | undefined): boolean {
+/** Slice 4: a bot's grants with levels; a record from before them reads its
+ * directGrants as `user:` grants at level use. */
+function botGrants(bot: { grants?: unknown; directGrants?: unknown; ownerUserId?: unknown; createdAt?: unknown }): BotGrant[] {
+  if (Array.isArray(bot.grants)) return cleanBotGrants(bot.grants);
+  return grantsFromDirect(botDirectGrants(bot), recordedBotOwner(bot), typeof bot.createdAt === "number" ? bot.createdAt : 0);
+}
+/** The shared section a bot or room sits in (slice 4, section-channels.ts). */
+function sectionAccessFor(name: unknown): SectionAccess | null {
+  if (IDENTITY.kind !== "perspicax" || typeof name !== "string" || !name) return null;
+  return sectionChannels?.accessFor(name) ?? null;
+}
+/** Owner, grants and shared section of a bot, for server/authz.ts. */
+function botFacts(bot: { ownerUserId?: unknown; grants?: unknown; directGrants?: unknown; section?: unknown; createdAt?: unknown }): BotFacts {
+  const section = sectionAccessFor(bot.section);
+  return { ownerPrincipalId: effectiveBotOwner(bot), grants: botGrants(bot), sections: section ? [section] : [] };
+}
+/** A person's teams, for the manager rules. */
+function principalTeams(principalId: string): TeamRef[] {
+  return principals.byId(principalId)?.teams ?? [];
+}
+/** The authz viewer behind a channel viewer id (undefined: the operator). */
+function authzViewerFromId(viewerId: string | undefined): AuthzViewer | undefined {
+  if (!viewerId) return undefined;
+  const person = isPrincipalId(viewerId) ? principals.byId(viewerId) : null;
+  return {
+    principalId: viewerId,
+    orgAdmin: person?.local === true || person?.orgRole === "admin",
+    teams: IDENTITY.kind === "perspicax" ? person?.teams ?? [] : [],
+    disabled: person?.disabledAt !== undefined && person?.disabledAt !== null,
+  };
+}
+/** The authz viewer of a request (undefined: the operator at this computer). */
+function authzViewerFor(auth: RequestAuth): AuthzViewer | undefined {
+  const viewerId = channelViewerId(auth);
+  const viewer = authzViewerFromId(viewerId);
+  if (viewer) viewer.orgAdmin = orgAdminCaller(auth);
+  return viewer;
+}
+/** channel.read on a room: listed people (by id or `team:`), and the members
+ * of its shared section. */
+function groupVisible(group: { humanIds?: string[]; section?: unknown }, viewerId: string | undefined): boolean {
+  if (!viewerId) return true;
+  return seesChannel(group, viewerId, authzViewerFromId(viewerId), sectionAccessFor(group.section));
+}
+/** channel.post on a room (a read-only section member reads only). */
+function groupPostAllowed(group: { humanIds?: string[]; section?: unknown }, viewerId: string | undefined): boolean {
+  if (!viewerId) return true;
+  return canInChannel(authzViewerFromId(viewerId), "channel.post", { humanIds: group.humanIds ?? [], section: sectionAccessFor(group.section) });
+}
+function listedBotVisible(bot: { id: string; ownerUserId?: unknown; directGrants?: unknown; grants?: unknown; section?: unknown }, viewerId: string | undefined): boolean {
+  const facts = botFacts(bot);
   return seesBotForViewer({
     viewerId,
-    ownerUserId: effectiveBotOwner(bot),
+    ownerUserId: facts.ownerPrincipalId,
     directGrants: botDirectGrants(bot),
-    inChannels: store.groups.filter((group) => group.memberIds.includes(bot.id)),
+    inChannels: store.groups.filter((group) => group.memberIds.includes(bot.id)).map((group) => ({ humanIds: group.humanIds ?? [], section: sectionAccessFor(group.section) })),
+    viewer: authzViewerFromId(viewerId),
+    grants: facts.grants,
+    sections: facts.sections,
   });
+}
+/** A viewer's level on a bot (undefined viewer: the operator, "owner"). */
+function viewerBotLevel(auth: RequestAuth, bot: Parameters<typeof botFacts>[0]): Level | "owner" | null {
+  const viewer = authzViewerFor(auth);
+  if (!viewer) return "owner";
+  return botLevel({ viewer, ...botFacts(bot) });
 }
 function searchHitVisibleNow(threadId: string, viewerId: string | undefined): boolean {
   const bot = store.botByThread(threadId);
-  if (bot) {
-    return searchHitVisible({
-      viewerId,
-      channel: null,
-      bot: {
-        ownerUserId: effectiveBotOwner(bot),
-        directGrants: botDirectGrants(bot),
-        inChannels: store.groups.filter((group) => group.memberIds.includes(bot.id)),
-      },
-    });
-  }
+  if (bot) return listedBotVisible(bot, viewerId);
   const group = store.groupByThread(threadId);
-  if (group) return searchHitVisible({ viewerId, channel: group, bot: null });
+  if (group) return groupVisible(group, viewerId);
   return searchHitVisible({ viewerId, channel: null, bot: null });
 }
 
 function subjectSeesChannel(subject: PathSubject, viewerId: string): boolean {
   if (subject.kind === "group") {
     const group = store.group(subject.id);
-    return !group || seesChannel(group, viewerId);
+    return !group || groupVisible(group, viewerId);
   }
   if (subject.kind === "thread") {
     const group = store.groupByThread(subject.id);
-    if (group) return seesChannel(group, viewerId);
+    if (group) return groupVisible(group, viewerId);
     // A bot's conversation by its thread id: the same rule as the bot
     // itself, so a direct URL never opens a Direct nobody shared (slice 3).
     const bot = store.botByThread(subject.id);
@@ -14773,16 +14845,9 @@ function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): bo
   const groupId = typeof payload.groupId === "string" ? payload.groupId : typeof groupField === "string" ? groupField : undefined;
   if (typeof groupId === "string") {
     const group = store.group(groupId);
-    if (group) {
-      return seesChannelFrame({
-        humanIds: group.humanIds ?? [],
-        viewerId,
-        speakingOwnerUserId: typeof payload.botId === "string"
-          ? (store.bot(payload.botId) as { ownerUserId?: string } | undefined)?.ownerUserId
-          : undefined,
-        speakingDirectGrants: [],
-      });
-    }
+    // A channel frame is judged by the channel alone (its people, teams and
+    // section), never by the speaking bot's grants.
+    if (group) return groupVisible(group, viewerId);
   }
   // A frame names its thread at the top (message, message.patch), inside a
   // runtime event, or inside a notification; and its bot the same ways.
@@ -14794,7 +14859,7 @@ function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): bo
   const threadId = typeof payload.threadId === "string" ? payload.threadId : nested("event", "threadId") ?? nested("notification", "threadId");
   if (typeof threadId === "string") {
     const group = store.groupByThread(threadId);
-    if (group) return seesChannel(group, viewerId);
+    if (group) return groupVisible(group, viewerId);
     // A bot's own conversation: the viewer sees it only when they see the bot.
     const owner = store.botByThread(threadId);
     if (owner && !listedBotVisible(owner, viewerId)) return false;
@@ -14911,11 +14976,25 @@ function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already
   return null;
 }
 
-function refuseHumanEdit(auth: RequestAuth, body: unknown): string | null {
+function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly string[] = []): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   if (!Object.prototype.hasOwnProperty.call(body, "humanIds")) return null;
+  const after = (body as { humanIds?: unknown }).humanIds;
+  if (IDENTITY.kind === "perspicax" && Array.isArray(after)) {
+    // Slice 4 (D5): `team:<id>` names a Perspicax team this server knows.
+    for (const entry of after) {
+      if (typeof entry !== "string" || !entry.startsWith("team:")) continue;
+      const id = entry.slice(5);
+      if (!/^[0-9A-Za-z]{1,64}$/.test(id) || !(orgTeams.has(id) || principals.membersOfTeam(id).length)) return "unknown team: choose a team from the organization directory";
+    }
+  }
   const role = channelActorRole(auth);
   if (role && canEditHumans(role)) return null;
+  // A team manager changes the entries of their teams and members; adding
+  // one needs the room to list one of their teams already.
+  if (IDENTITY.kind === "perspicax" && Array.isArray(after) && after.every((entry) => typeof entry === "string")) {
+    if (canEditRoomHumans(authzViewerFor(auth), { before, after: after as string[], teamsOf: principalTeams })) return null;
+  }
   return "forbidden: only an owner or an admin can change channel people";
 }
 
@@ -14933,9 +15012,107 @@ function resolveOrgGrantee(ref: string): { ok: true; id: string } | { ok: false;
   }
   return principal.disabledAt === undefined ? { ok: true, id: principal.id } : { ok: false, code: "unknown_person" };
 }
+/** Slice 4: the organization's teams with their people, from what each
+ * person carries (claims and directory) and the team names. */
+function orgDirectoryTeams(): { id: string; name: string; managers: string[]; members: string[] }[] {
+  const byId = new Map<string, { id: string; name: string; managers: string[]; members: string[] }>();
+  for (const team of orgTeams.list()) byId.set(team.id, { id: team.id, name: team.name, managers: [], members: [] });
+  for (const person of principals.list()) {
+    if (person.disabledAt !== undefined) continue;
+    for (const team of person.teams ?? []) {
+      const entry = byId.get(team.id) ?? { id: team.id, name: team.id, managers: [], members: [] };
+      (team.manager ? entry.managers : entry.members).push(person.id);
+      byId.set(team.id, entry);
+    }
+  }
+  return [...byId.values()].map((team) => ({ ...team, managers: team.managers.sort(), members: team.members.sort() }))
+    .sort((a, b) => a.name.toLocaleLowerCase().localeCompare(b.name.toLocaleLowerCase()) || a.id.localeCompare(b.id));
+}
+/** Slice 4: how a grant target reads in the editor (never an email). */
+function describeGrantTarget(target: string): { label: string; disabled?: boolean } {
+  if (target.startsWith("team:")) {
+    const id = target.slice(5);
+    return { label: orgTeams.name(id) || id };
+  }
+  const id = target.startsWith("user:") ? target.slice(5) : target;
+  const person = principals.byId(id);
+  if (!person) return { label: id, disabled: true };
+  const listed = person.subject ? perspicaxDirectory?.directory()?.people.find((entry) => entry.sub === person.subject!.sub) : undefined;
+  const disabled = person.disabledAt !== undefined || listed?.status === "disabled";
+  return { label: listed?.name || person.name || listed?.login || person.login || id, ...(disabled ? { disabled: true } : {}) };
+}
+/** A bot's grants changed: the owner's list gets the bot's new grants and
+ * every member stream reconnects to what that person may see now. */
+function botAccessChanged(botId: string): void {
+  const bot = store.bot(botId);
+  if (bot) broadcast({ kind: "bot", bot: wireBot(bot) });
+  audienceChanged();
+}
+function engineOfBot(bot: { modelSelection?: { instanceId?: string } }): { instanceId: string; driver: string } {
+  const instanceId = bot.modelSelection?.instanceId ?? "";
+  const entry = registry.entries().find((candidate) => candidate.instanceId === instanceId);
+  return { instanceId, driver: entry?.shadow?.driverKind ?? entry?.live?.driverKind ?? "" };
+}
+if (IDENTITY.kind === "perspicax") {
+  ROUTES.push(createBotGrantRoutes({
+    bot: (id) => {
+      const bot = store.bot(id);
+      return bot ? { id: bot.id, grants: botGrants(bot) } : undefined;
+    },
+    facts: (id) => botFacts(store.bot(id)!),
+    viewer: authzViewerFor,
+    teamsOf: principalTeams,
+    resolvePerson: resolveOrgGrantee,
+    teamKnown: (id) => orgTeams.has(id) || principals.membersOfTeam(id).length > 0,
+    describe: describeGrantTarget,
+    setGrants: (id, grants) => { store.setBotGrants(id, grants); },
+    onChanged: botAccessChanged,
+  }));
+  // D14: the bots whose sharing the caller administers, with their grants,
+  // never their messages. Admin: every bot; a team manager: bots shared with
+  // one of their teams or members; anyone else: bots they own or manage.
+  ROUTES.push(async ({ res, path, method, auth, json }) => {
+    if (path !== "/api/org/bots") return PASS;
+    if (method !== "GET") return json(res, 405, { error: "method not allowed" });
+    const viewer = authzViewerFor(auth);
+    const bots = store.bots.flatMap((bot) => {
+      const facts = botFacts(bot);
+      const shown = visibleGrants(viewer, facts, principalTeams);
+      if (!viewer || viewer.orgAdmin) {
+        // everything
+      } else if (!shown) {
+        return [];
+      }
+      const owner = principals.byId(facts.ownerPrincipalId);
+      return [{
+        id: bot.id,
+        name: bot.name,
+        ownerPrincipalId: facts.ownerPrincipalId,
+        ownerName: owner ? describeGrantTarget(`user:${owner.id}`).label : "",
+        ...(bot.section ? { section: bot.section } : {}),
+        engine: engineOfBot(bot),
+        grants: wireGrants(shown ?? facts.grants, describeGrantTarget),
+      }];
+    });
+    res.setHeader("cache-control", "no-store");
+    return json(res, 200, { bots });
+  });
+}
 ROUTES.push(createDirectGrantRoutes({
   bot: (id) => store.bot(id) ?? undefined,
-  patchBot: (id, patch) => store.patchBot(id, patch),
+  // The slice 3 routes speak directGrants: user grants at level use; every
+  // other grant (teams, higher levels of people still listed) is kept.
+  patchBot: (id, patch) => {
+    const bot = store.bot(id);
+    if (!bot) return null;
+    const kept = botGrants(bot);
+    const wanted = new Set(patch.directGrants.map((entry) => `user:${entry.trim().toLowerCase()}`));
+    const next = kept.filter((grant) => !grant.target.startsWith("user:") || wanted.has(grant.target));
+    for (const target of wanted) {
+      if (!next.some((grant) => grant.target === target)) next.push({ target, level: "use", by: effectiveBotOwner(bot), at: Date.now() });
+    }
+    return store.setBotGrants(id, next);
+  },
   actorId: channelActorId,
   // Called only once the actor owns the bot: resolving an email may create
   // its principal. Anything that is not a principal id or an account email
@@ -14978,6 +15155,17 @@ if (IDENTITY.kind === "perspicax") {
       });
     },
     pendingAdminApprovals,
+    teams: orgDirectoryTeams,
+    viewer: (auth) => {
+      const principalId = auth.kind === "session" ? auth.session.principalId?.trim() || null : localPrincipalId();
+      const person = principalId ? principals.byId(principalId) : null;
+      return {
+        principalId,
+        orgRole: orgAdminCaller(auth) ? "admin" as const : "member" as const,
+        ...(person?.perspicaxRole ? { perspicaxRole: person.perspicaxRole } : {}),
+        managedTeamIds: (person?.teams ?? []).filter((team) => team.manager).map((team) => team.id),
+      };
+    },
   }));
 }
 ROUTES.push(createWorkerRoutes({
@@ -15109,6 +15297,7 @@ const idpSessions = oidcRp
     sessions,
     principals,
     refreshAfterMs: refreshAfterMs(process.env.OMB_OIDC_REFRESH_AFTER_SECONDS),
+    teamNames: (teams) => { orgTeams.mergeFromClaims(teams); },
   })
   : null;
 if (idpSessions) {
@@ -15151,6 +15340,7 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PE
     linkFile: process.env.OMB_PERSPICAX_LINK_FILE.trim(),
     expect: { issuer: IDENTITY.issuer, publicOrigin: IDENTITY.publicOrigin, clientId: IDENTITY.clientId },
     principals,
+    teamNames: orgTeams,
     onPersonOut: (iss, sub) => {
       const done = manager.backchannelLogout({ iss, sub });
       console.log(`perspicax directory: a person is out; ${done.sessions} session(s) ended, ${done.pairings} pairing code(s) cancelled`);
@@ -15172,6 +15362,7 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
     // A successful sign-in also refreshes the directory (fire and forget):
     // a person added in Perspicax a minute ago becomes pickable at once.
     forSubject: (input) => {
+      if (input.teams?.length) orgTeams.mergeFromClaims(input.teams);
       const principal = principals.forSubject(input);
       void perspicaxDirectory?.refresh("sign-in");
       return principal;
@@ -15504,7 +15695,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the teammates they cannot see, whichever route answers.
       onJsonBody(res, (body) => memberBody(body, visible));
     }
-    if (viewerId && !adminAnswersPendingApproval(method, path, auth)) {
+    // A bot's grants are judged by server/bot-grants.ts (slice 4): an admin
+    // or a team manager administers them without seeing the bot.
+    const grantRoute = IDENTITY.kind === "perspicax" && /^\/api\/bots\/[\w-]+\/grants(?:\/[^/]+)?$/.test(path);
+    if (viewerId && !grantRoute && !adminAnswersPendingApproval(method, path, auth)) {
       const subject = pathSubject(path);
       if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
     }
@@ -15548,7 +15742,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               // sign-in (docs/cloud-pro.md). Absent everywhere else.
               ...(CLOUD_HOME ? { cloudHome: true } : {}),
               // who signed in with Pulsatrix: principal, name and role
-              ...oidcSessionFields(auth.session, auth.session.principalId ? principals.byId(auth.session.principalId) : null),
+              ...oidcSessionFields(auth.session, auth.session.principalId ? principals.byId(auth.session.principalId) : null, (id) => orgTeams.name(id)),
             },
       );
     }
@@ -18069,6 +18263,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       const hidden = hiddenRoutineTarget(body, visible);
       if (hidden) return json(res, 404, { error: hidden });
+      if (routineNeedsRun(auth, (body as { botId?: unknown } | null)?.botId)) return json(res, 403, NEEDS_RUN);
       return json(res, 201, { routine: routines!.create(body) });
     }
     // The desktop shell polls this to decide whether to hold the computer
@@ -18078,6 +18273,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     let routineMatch = path.match(/^\/api\/routines\/([\w-]+)\/run$/);
     if (routineMatch && method === "POST") {
+      if (routineNeedsRun(auth, routineBotId(routineMatch[1]))) return json(res, 403, NEEDS_RUN);
       const run = routines!.runNow(routineMatch[1]);
       return run ? json(res, 201, { run }) : json(res, 404, { error: "no such routine" });
     }
@@ -18086,10 +18282,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       const hidden = hiddenRoutineTarget(body, visible);
       if (hidden) return json(res, 404, { error: hidden });
+      if (routineNeedsRun(auth, routineBotId(routineMatch[1])) || routineNeedsRun(auth, (body as { botId?: unknown } | null)?.botId)) return json(res, 403, NEEDS_RUN);
       const routine = routines!.update(routineMatch[1], body);
       return routine ? json(res, 200, { routine }) : json(res, 404, { error: "no such routine" });
     }
     if (routineMatch && method === "DELETE") {
+      if (routineNeedsRun(auth, routineBotId(routineMatch[1]))) return json(res, 403, NEEDS_RUN);
       return routines!.remove(routineMatch[1])
         ? json(res, 200, { ok: true })
         : json(res, 404, { error: "no such routine" });
@@ -18253,7 +18451,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // What this person's hydration (GET /api/bots, narrowed the same way) showed them.
         seen: viewer.kind === "all" ? { bots: new Set(), groups: new Set() } : {
           bots: new Set(store.bots.filter((bot) => visibleNow.bot(bot.id) && listedBotVisible(bot, viewerId)).map((bot) => bot.id)),
-          groups: new Set(store.groups.filter((group) => visibleNow.group(group.id) && seesChannel(group, viewerId)).map((group) => group.id)),
+          groups: new Set(store.groups.filter((group) => visibleNow.group(group.id) && groupVisible(group, viewerId)).map((group) => group.id)),
         },
       };
       if (auth.kind === "session") {
@@ -18369,7 +18567,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }, visible)),
         botQueuedMessages: visible.everything ? queued : Object.fromEntries(Object.entries(queued).filter(([threadId]) => visible.thread(threadId))),
         sections: visible.sections(store.sections),
-        groups: store.groups.filter((g) => visible.group(g.id) && seesChannel(g, viewerId)).map((g) => {
+        groups: store.groups.filter((g) => visible.group(g.id) && groupVisible(g, viewerId)).map((g) => {
           const room = { ...publicGroupState(g), ...messagePage(g.threadId, limit, null, viewerForApproval(auth)) };
           return visible.everything ? room : memberGroup(room);
         }),
@@ -18897,7 +19095,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // ── channels (persisted internally as groups) ───────────────────────
     if (method === "GET" && path === "/api/groups") {
       return json(res, 200, {
-        groups: store.groups.filter((g) => visible.group(g.id) && seesChannel(g, viewerId)).map((g) => {
+        groups: store.groups.filter((g) => visible.group(g.id) && groupVisible(g, viewerId)).map((g) => {
           const room = publicGroupState(g);
           return visible.everything ? room : memberGroup(room);
         }),
@@ -18910,7 +19108,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (placed) return json(res, 403, { error: placed });
       }
       const humans = refuseHumanEdit(auth, body);
-      if (humans) return json(res, 403, { error: humans });
+      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
       // A member may only put bots they can see in a room: the room would
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
@@ -19476,8 +19674,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const placed = refusePlacedBots(auth, body.memberIds, new Set(existingGroup.memberIds));
         if (placed) return json(res, 403, { error: placed });
       }
-      const humans = refuseHumanEdit(auth, body);
-      if (humans) return json(res, 403, { error: humans });
+      const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? []);
+      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
         const field = clientGroupPatchViolation(body);
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
@@ -19524,6 +19722,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!text) return json(res, 400, { error: "text required" });
       const group = store.group(m[1]);
       if (!group) return json(res, 404, { error: "no such group" });
+      // Slice 4: a read-only member of a shared section reads its rooms only.
+      if (IDENTITY.kind === "perspicax" && !groupPostAllowed(group, channelViewerId(auth))) {
+        return json(res, 403, { error: "you may read this channel, not post in it", code: "read_only" });
+      }
       if (body.mode !== undefined && body.mode !== "chat" && body.mode !== "goal") {
         return json(res, 400, { error: "mode must be chat or goal" });
       }
@@ -20301,15 +20503,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ) {
           return json(res, 409, MEMBER_BOT_FULL_ACCESS);
         }
-        const field = own ? memberBotFieldViolation(body) : clientBotPatchViolation(body);
+        // Slice 4: someone granted edit changes what the owner could as a
+        // member (MEMBER_BOT_FIELDS); never the approval level or anything
+        // that decides where or how far the bot runs.
+        const editor = !own && Boolean(target) && IDENTITY.kind === "perspicax" && atLeast(viewerBotLevel(auth, target!), "edit");
+        const field = own || editor ? memberBotFieldViolation(body) : clientBotPatchViolation(body);
         if (field) {
           return json(res, 403, {
-            error: own
+            error: own || editor
               ? `forbidden: a member may change their bot's name, look, instructions and model, not "${field}"`
               : `forbidden: this session may change how a bot looks, not "${field}" (needs the admin scope)`,
           });
         }
-        if (!own && target && botEditsNeedOwner(auth) && Object.keys(body).some((key) => key === "color" || key.startsWith("mascot"))) {
+        if (!own && !editor && target && botEditsNeedOwner(auth) && Object.keys(body).some((key) => key === "color" || key.startsWith("mascot"))) {
           return json(res, 403, { error: "forbidden: only the bot owner can change how it looks" });
         }
       }

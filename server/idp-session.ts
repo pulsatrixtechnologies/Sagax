@@ -237,7 +237,7 @@ export interface IdpSessionStore {
 }
 
 export interface IdpPrincipalStore {
-  forSubject(input: { iss: string; sub: string; claims?: { email?: string; name?: string; login?: string }; orgRole?: "admin" | "member" }): Principal;
+  forSubject(input: { iss: string; sub: string; claims?: { email?: string; name?: string; login?: string }; orgRole?: "admin" | "member"; teams?: { id: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }): Principal;
   bySubject(iss: string, sub: string): Principal | null;
   markDisabled(iss: string, sub: string, at?: number): Principal | null;
 }
@@ -253,6 +253,13 @@ export interface IdpSessionManagerOptions {
   /** Runs `run` after `delayMs` (tests pass a recorder). The default is an
    * unref'd `setTimeout`. */
   schedule?: (run: () => void, delayMs: number) => void;
+  /** Slice 4: the team names a refreshed id_token carries (org-teams.ts). */
+  teamNames?: (teams: { id: string; name: string }[]) => void;
+}
+
+/** The Perspicax role claim as a known role, or undefined. */
+export function perspicaxRoleOf(role: string | undefined): "admin" | "manager" | "employee" | undefined {
+  return role === "admin" || role === "manager" || role === "employee" ? role : undefined;
 }
 
 /** How long a request that found its grant due waits for the refresh before
@@ -286,8 +293,10 @@ export class IdpSessionManager {
   private readonly log: (line: string) => void;
   private readonly inflight = new Map<string, Promise<void>>();
   private readonly schedule: (run: () => void, delayMs: number) => void;
+  private readonly teamNames?: (teams: { id: string; name: string }[]) => void;
 
   constructor(options: IdpSessionManagerOptions) {
+    this.teamNames = options.teamNames;
     this.vault = options.vault;
     this.rp = options.rp;
     this.sessions = options.sessions;
@@ -478,7 +487,10 @@ export class IdpSessionManager {
       sub: grant.sub,
       claims: { email: identity.email, name: identity.name, login: identity.preferredUsername },
       orgRole,
+      ...(identity.teams ? { teams: identity.teams.map(({ id, manager }) => ({ id, manager })) } : {}),
+      ...(perspicaxRoleOf(identity.role) ? { perspicaxRole: perspicaxRoleOf(identity.role) } : {}),
     });
+    if (identity.teams?.length) this.teamNames?.(identity.teams.map(({ id, name }) => ({ id, name })));
     const narrowed: string[] = [];
     for (const session of this.sessions.forPrincipal(principal.id)) {
       if (session.idp?.grantRef === grant.grantRef) {

@@ -3,7 +3,7 @@
 // HTTP. Every refusal the spec lists (T10) is proven by bending one thing.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { OIDC_MAX_PENDING_FLOWS, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, validIssuer } from "./oidc-rp.ts";
+import { OIDC_MAX_PENDING_FLOWS, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
 
 const REDIRECT = "http://127.0.0.1:9/auth/oidc/callback";
@@ -424,5 +424,41 @@ describe("OIDC relying party: internal server-to-server base (slice 3, D17)", ()
     await expect(party.discover()).rejects.toMatchObject({ code: "discovery" });
     expect(() => new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: "https://bot.example.test/auth/oidc/callback", internalBase: "http://perspicax:8787/path" })).toThrow();
     expect(new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: "https://bot.example.test/auth/oidc/callback" }).serverOrigin()).toBe(ISSUER);
+  });
+});
+
+describe("OIDC relying party: the teams claim (slice 4)", () => {
+  it("reads teams from the id_token and leaves identity.teams undefined when the claim is absent", async () => {
+    idp.user = { ...idp.user, role: "employee", teams: [{ id: "01TEAMT", name: "T", manager: false }, { id: "01TEAMA", name: "A", manager: true }] };
+    const party = rp();
+    const { started, params } = await authorize(party);
+    const outcome = await party.callback(params, started.binding);
+    expect(outcome).toMatchObject({ ok: true, identity: { teams: [{ id: "01TEAMA", name: "A", manager: true }, { id: "01TEAMT", name: "T", manager: false }] } });
+    idp.user = { ...idp.user, teams: undefined };
+    const second = await authorize(party);
+    const plain = await party.callback(second.params, second.started.binding);
+    expect(plain.ok && plain.identity.teams).toBeUndefined();
+    idp.user = { ...idp.user, teams: [] };
+    const third = await authorize(party);
+    const empty = await party.callback(third.params, third.started.binding);
+    expect(empty.ok && empty.identity.teams).toEqual([]);
+  });
+
+  it("drops malformed entries, keeps one per id with manager winning, reads 1000 at most", () => {
+    expect(parseTeamsClaim(undefined)).toBeUndefined();
+    expect(parseTeamsClaim("T")).toBeUndefined();
+    expect(parseTeamsClaim([
+      { id: "B", name: "Bravo", manager: false },
+      { id: "B", name: "Bravo", manager: true },
+      { id: "bad id", name: "x", manager: false },
+      { id: "C", name: "x".repeat(201), manager: false },
+      { id: "D", name: "Delta", manager: "yes" },
+      { id: "x".repeat(65), name: "long", manager: false },
+      null,
+      "E",
+      { id: "A", name: "Alpha", manager: false },
+    ])).toEqual([{ id: "A", name: "Alpha", manager: false }, { id: "B", name: "Bravo", manager: true }]);
+    const many = Array.from({ length: 1200 }, (_, i) => ({ id: `T${i}`, name: `T${i}`, manager: false }));
+    expect(parseTeamsClaim(many)).toHaveLength(1000);
   });
 });

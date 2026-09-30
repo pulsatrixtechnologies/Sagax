@@ -35,7 +35,7 @@ import type {
   ConnectorToolGrant, OptionCardData, TaskClosedBy, TaskOpenedBy, TaskUsage, WireBot, WireGroup,
   WireMessage, WireTask, BotProject as BotProjectRecord,
 } from "../shared/wire.ts";
-import { CONNECTOR_SLUG_PATTERN, CONNECTOR_TOOL_NAME_PATTERN } from "../shared/wire.ts";
+import { CONNECTOR_SLUG_PATTERN, CONNECTOR_TOOL_NAME_PATTERN, type WireBotGrant } from "../shared/wire.ts";
 // Re-exported under their historical names so server-side importers keep working.
 export type {
   BotActivity, ConnectorCardData, GroupDefaultResponder, OptionCardData,
@@ -589,6 +589,33 @@ interface ThreadState {
   activeLeafId: string | null;
 }
 
+/** A stored grant (slice 4); see server/authz.ts. */
+export type BotGrant = WireBotGrant;
+const GRANT_TARGET = /^(?:user:pr_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|team:[0-9A-Za-z]{1,64})$/;
+const GRANT_LEVELS = new Set(["use", "run", "edit", "manage"]);
+export const MAX_BOT_GRANTS = 1000;
+
+/** Valid grants only, one per target (the last wins), at most 1000. */
+export function cleanBotGrants(grants: unknown): BotGrant[] {
+  if (!Array.isArray(grants)) return [];
+  const byTarget = new Map<string, BotGrant>();
+  for (const grant of grants) {
+    if (!grant || typeof grant !== "object") continue;
+    const { target, level, by, at } = grant as Record<string, unknown>;
+    if (typeof target !== "string" || !GRANT_TARGET.test(target) || typeof level !== "string" || !GRANT_LEVELS.has(level)) continue;
+    byTarget.set(target, { target, level: level as BotGrant["level"], by: typeof by === "string" ? by.slice(0, 64) : "", at: typeof at === "number" && Number.isFinite(at) ? at : 0 });
+  }
+  return [...byTarget.values()].slice(0, MAX_BOT_GRANTS);
+}
+
+export function grantsFromDirect(directGrants: readonly unknown[], owner: string | undefined, at: number | undefined): BotGrant[] {
+  return cleanBotGrants(directGrants.filter((id): id is string => typeof id === "string").map((id) => ({ target: `user:${id.trim().toLowerCase()}`, level: "use", by: owner ?? "", at: at ?? 0 })));
+}
+
+export function directFromGrants(grants: readonly BotGrant[]): string[] {
+  return grants.filter((grant) => grant.target.startsWith("user:")).map((grant) => grant.target.slice(5));
+}
+
 export class Store {
   bots: BotRecord[] = [];
   groups: GroupRecord[] = [];
@@ -876,6 +903,22 @@ export class Store {
       }
       this.mirrorActiveTask(b, active);
       b.unread = b.tasks.some((task) => task.unread);
+    }
+    // Slice 4: grants with levels replace directGrants (each becomes a
+    // `user:` grant at level use, given by the owner), once; malformed
+    // grants are dropped.
+    for (const b of this.bots) {
+      if (b.grants === undefined && Array.isArray(b.directGrants) && b.directGrants.length) {
+        b.grants = grantsFromDirect(b.directGrants, b.ownerUserId, b.createdAt);
+        botsMigrated = true;
+      } else if (b.grants !== undefined) {
+        const clean = cleanBotGrants(b.grants);
+        if (clean.length !== (Array.isArray(b.grants) ? b.grants.length : -1)) {
+          b.grants = clean;
+          b.directGrants = directFromGrants(clean);
+          botsMigrated = true;
+        }
+      }
     }
     if (botsMigrated) this.saveBots();
     // Search reads SQLite directly, so migrate every known legacy transcript
@@ -1913,6 +1956,13 @@ export class Store {
     removeBotFolder(id);
     this.emit({ type: "bot.deleted", botId: id });
     return true;
+  }
+
+  /** Slice 4: replace a bot's grants; `directGrants` follows as the list of
+   * `user:` targets (older clients, identity-migration.ts). */
+  setBotGrants(id: string, grants: BotGrant[]): BotRecord | null {
+    const clean = cleanBotGrants(grants);
+    return this.patchBot(id, { grants: clean, directGrants: directFromGrants(clean) });
   }
 
   patchBot(id: string, patch: Partial<BotRecord>): BotRecord | null {

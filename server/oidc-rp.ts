@@ -37,7 +37,37 @@ export interface OidcIdentity {
   preferredUsername?: string;
   /** Perspicax role claim, verbatim: `admin`, `manager` or `employee`. */
   role?: string;
+  /** Slice 4: the Perspicax `teams` claim, malformed entries dropped.
+   * Undefined when the token carries no such claim (never "no teams"). */
+  teams?: OidcTeamClaim[];
   authTime?: number;
+}
+
+export interface OidcTeamClaim {
+  id: string;
+  name: string;
+  manager: boolean;
+}
+
+const TEAM_CLAIM_ID = /^[0-9A-Za-z]{1,64}$/;
+export const OIDC_MAX_TEAM_CLAIMS = 1000;
+
+/** The `teams` claim: an array of `{ id, name, manager }`; anything else in
+ * it is dropped, one entry per id (manager wins), at most 1000 read.
+ * Undefined when the claim is absent or not an array. */
+export function parseTeamsClaim(value: unknown): OidcTeamClaim[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const byId = new Map<string, OidcTeamClaim>();
+  for (const entry of value.slice(0, OIDC_MAX_TEAM_CLAIMS)) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const { id, name, manager } = entry as Record<string, unknown>;
+    if (typeof id !== "string" || !TEAM_CLAIM_ID.test(id)) continue;
+    if (typeof name !== "string" || name.length > 200) continue;
+    if (typeof manager !== "boolean") continue;
+    const known = byId.get(id);
+    byId.set(id, { id, name, manager: manager || (known?.manager ?? false) });
+  }
+  return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 export interface OidcDiscovery {
@@ -257,6 +287,8 @@ export async function verifyIdToken(input: VerifyIdTokenInput): Promise<OidcIden
   if (login) identity.preferredUsername = login;
   const role = stringClaim(claims.role, 40);
   if (role) identity.role = role;
+  const teams = parseTeamsClaim(claims.teams);
+  if (teams) identity.teams = teams;
   if (typeof claims.auth_time === "number" && Number.isFinite(claims.auth_time)) identity.authTime = claims.auth_time;
   return identity;
 }
