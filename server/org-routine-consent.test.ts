@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { IDP_VAULT_FILE, IdpGrantVault, isSessionGrant, type IdpRelyingParty } from "./idp-session.ts";
 import type { OidcIdentity, RefreshOutcome } from "./oidc-rp.ts";
-import { ROUTINE_CONSENT_LIFE_MS, ROUTINE_CONSENT_RENEW_MS, RoutineConsents, type RoutineConsentEnd } from "./org-routine-consent.ts";
+import { ROUTINE_CONSENT_LIFE_MS, ROUTINE_CONSENT_RENEW_MS, RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { PrincipalRegistry } from "./principals.ts";
 
 const ISS = "https://px.example.test";
@@ -193,6 +193,12 @@ describe("routine delegations (slice 6)", () => {
     expect(revoked).toEqual(["pxlr1.first"]);
     expect(ended).toEqual([[alice.id, "delegation_revoked"], [bob.id, "person_out"]]);
     expect(consents.principalsWithConsent()).toEqual([]);
+  });
+
+  it("reads OMB_ROUTINE_RENEW_SECONDS as 1 to 600, else 10 minutes", () => {
+    expect(routineRenewMs(undefined)).toBe(ROUTINE_CONSENT_RENEW_MS);
+    expect(routineRenewMs("20")).toBe(20_000);
+    for (const bad of ["0", "601", "1.5", "x", ""]) expect(routineRenewMs(bad)).toBe(ROUTINE_CONSENT_RENEW_MS);
   });
 
   it("never writes a token in plain text", async () => {

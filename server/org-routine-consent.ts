@@ -33,6 +33,14 @@ import type { OidcIdentity } from "./oidc-rp.ts";
 
 /** A run renews the delegation at most this often (D6). */
 export const ROUTINE_CONSENT_RENEW_MS = 600_000;
+
+/** OMB_ROUTINE_RENEW_SECONDS (tests): a whole number from 1 to 600, else
+ * the default. A shorter window only renews more often. */
+export function routineRenewMs(value: string | undefined): number {
+  const seconds = Number(value);
+  const ok = value !== undefined && value.trim() !== "" && Number.isInteger(seconds) && seconds >= 1 && seconds <= ROUTINE_CONSENT_RENEW_MS / 1000;
+  return ok ? seconds * 1000 : ROUTINE_CONSENT_RENEW_MS;
+}
 /** Perspicax keeps a delegation this long after its last renewal. */
 export const ROUTINE_CONSENT_LIFE_MS = 30 * 86_400_000;
 /** The directory may end a delegation only if it was created this long
@@ -52,6 +60,8 @@ export interface RoutineConsentsOptions {
   rp: IdpRelyingParty;
   principals: Pick<IdpPrincipalStore, "forSubject" | "bySubject">;
   now?: () => number;
+  /** How long a renewal is reused (ROUTINE_CONSENT_RENEW_MS). */
+  renewMs?: number;
   log?: (line: string) => void;
   /** The person's routines stop (suspendFor, forget MCP entries, audit). */
   onEnded?: (principalId: string, reason: RoutineConsentEnd) => void;
@@ -66,6 +76,7 @@ export class RoutineConsents {
   private readonly rp: IdpRelyingParty;
   private readonly principals: RoutineConsentsOptions["principals"];
   private readonly now: () => number;
+  private readonly renewMs: number;
   private readonly log: (line: string) => void;
   private readonly onEnded: (principalId: string, reason: RoutineConsentEnd) => void;
   private readonly onActive: (principalId: string) => void;
@@ -82,6 +93,7 @@ export class RoutineConsents {
     this.rp = options.rp;
     this.principals = options.principals;
     this.now = options.now ?? Date.now;
+    this.renewMs = options.renewMs ?? ROUTINE_CONSENT_RENEW_MS;
     this.log = options.log ?? ((line) => console.warn(line));
     this.onEnded = options.onEnded ?? (() => {});
     this.onActive = options.onActive ?? (() => {});
@@ -143,7 +155,7 @@ export class RoutineConsents {
     const grant = this.safeGrantOf(principalId);
     if (grant === null) return { ok: false, error: "unreachable" };
     if (!grant) return { ok: false, error: "missing" };
-    if (!this.stale.has(principalId) && this.now() - grant.refreshedAt < ROUTINE_CONSENT_RENEW_MS && this.usable(principalId)) return { ok: true };
+    if (!this.stale.has(principalId) && this.now() - grant.refreshedAt < this.renewMs && this.usable(principalId)) return { ok: true };
     const result = await this.refreshWithin(principalId, grant);
     if (result === "ok") return { ok: true };
     return { ok: false, error: result === "ended" ? "ended" : "unreachable" };
