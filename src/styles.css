@@ -800,6 +800,12 @@
   --code-color-scheme: light;
   --color-app: #ffffff;           /* a window's white client area */
   --color-panel: #c0c0c0;         /* the silver chrome */
+  --color-sidebar: #c0c0c0;              /* = panel: the silver chrome */
+  --color-sidebar-ink: #000000;
+  --color-sidebar-ink-secondary: #3c3c3c;
+  --color-sidebar-hover: #00008014;
+  --color-sidebar-selected: #00008033;
+  --color-sidebar-hairline: #808080;
   --color-raised: #c0c0c0;
   --color-raised-hover: #b4b4b4;
   --color-composer: #ffffff;      /* a sunken edit field */
