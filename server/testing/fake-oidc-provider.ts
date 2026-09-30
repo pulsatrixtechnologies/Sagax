@@ -5,7 +5,10 @@
 // returning an ES256 id_token, a refresh grant with rotation (the old token
 // dies, the id_token carries no nonce), revocation of a whole family, and
 // back-channel logout tokens, and the Pulsa Bot directory of slice 3
-// (bearer link token, ETag and 304, settable people and teams). `tamper` bends one thing at a time so a test
+// (bearer link token, ETag and 304, settable people and teams). Slice 5 adds
+// MCP profiles in the directory, the RFC 8693 token exchange authenticated
+// by the link (Basic), its revocation, and a small /mcp endpoint that
+// records who called with which token, session and clientInfo. `tamper` bends one thing at a time so a test
 // can prove the relying party refuses it. In-process only; imported by tests.
 import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -50,6 +53,19 @@ export interface FakeDirectoryPerson {
   locale: string | null;
   /** Slice 4: provider names this person keeps a key for. */
   provider_keys?: string[];
+  /** Slice 5: the MCP profile ids this person holds (else profilesBySub). */
+  profiles?: string[];
+}
+
+/** Slice 5: one /mcp request as the fake Perspicax saw it. */
+export interface FakeMcpRequest {
+  method: string;
+  sub: string | null;
+  profile: string | null;
+  sessionId: string | null;
+  rpcMethod?: string;
+  clientInfo?: unknown;
+  status: number;
 }
 
 export interface FakeDirectoryTeam { id: string; name: string; managers: string[]; members: string[] }
@@ -110,6 +126,15 @@ export interface FakeOidcProvider {
   providerKeys: Map<string, string>;
   /** Every resolve request's body (never the answer). */
   resolveRequests: Array<{ sub: string; provider: string }>;
+  /** Slice 5: the profile catalog, who holds what (by sub), every exchange
+   * (sub, profile, outcome), revocations of exchanged tokens, and /mcp. */
+  profiles: Array<{ id: string; slug: string; name: string; description: string }>;
+  profilesBySub: Map<string, string[]>;
+  exchanges: Array<{ sub: string | null; profile: string | null; ok: boolean; error?: string; token?: string }>;
+  exchangeRevoked: string[];
+  mcpRequests: FakeMcpRequest[];
+  /** Every access token this provider issued to the sign-in client. */
+  issuedAccessTokens(): string[];
   /** Mark one listed person active or disabled. */
   setDirectoryStatus(sub: string, status: "active" | "disabled"): void;
   /** A directory person from a user, active unless said otherwise. */
@@ -138,6 +163,16 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
   };
   let failNext: number | null = null;
   let server: Server | null = null;
+  /** Slice 5: sign-in access tokens (the exchange subjects) and exchanged MCP tokens. */
+  const accessTokens = new Map<string, { sub: string; exp: number }>();
+  const exchanged = new Map<string, { sub: string; profile: string; exp: number; revoked: boolean }>();
+  const newAccess = (sub: string) => {
+    const token = `pxlo1.${randomBytes(16).toString("hex")}`;
+    accessTokens.set(token, { sub, exp: Date.now() + 3_600_000 });
+    return token;
+  };
+  const linkBasicOk = (header: string | undefined) => header === `Basic ${Buffer.from(`pulsa-bot-server:${provider.linkToken}`).toString("base64")}`;
+  const held = (sub: string) => provider.directoryPeople.find((person) => person.sub === sub)?.profiles ?? provider.profilesBySub.get(sub) ?? [];
 
   const provider: FakeOidcProvider = {
     issuer: "",
@@ -188,6 +223,12 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
     },
     providerKeys: new Map(),
     resolveRequests: [],
+    profiles: [],
+    profilesBySub: new Map(),
+    exchanges: [],
+    exchangeRevoked: [],
+    mcpRequests: [],
+    issuedAccessTokens: () => [...accessTokens.keys()],
     setDirectoryStatus(sub, status) {
       provider.directoryPeople = provider.directoryPeople.map((person) => (person.sub === sub ? { ...person, status } : person));
     },
@@ -250,7 +291,9 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         people: [...provider.directoryPeople].sort((a, b) => a.sub.localeCompare(b.sub)).map((person) => ({
           ...person,
           provider_keys: person.provider_keys ?? ["anthropic", "openai"].filter((name) => provider.providerKeys.has(`${person.sub}/${name}`)),
+          ...(provider.profiles.length ? { profiles: [...held(person.sub)].sort() } : {}),
         })),
+        ...(provider.profiles.length ? { profiles: [...provider.profiles].sort((a, b) => a.id.localeCompare(b.id)) } : {}),
         teams: [...provider.directoryTeams].sort((a, b) => a.id.localeCompare(b.id)).map((team) => ({ ...team, managers: [...team.managers].sort(), members: [...team.members].sort() })),
       });
       const etag = `"${createHash("sha256").update(body).digest("hex").slice(0, 32)}"`;
@@ -311,6 +354,32 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       req.on("data", (chunk: string) => (raw += chunk));
       req.on("end", () => {
         const form = Object.fromEntries(new URLSearchParams(raw));
+        if (form.grant_type === "urn:ietf:params:oauth:grant-type:token-exchange") {
+          const fail = (status: number, error: string, sub: string | null = null, profile: string | null = null) => {
+            provider.exchanges.push({ sub, profile, ok: false, error });
+            if (status === 401) {
+              res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store", "www-authenticate": 'Basic realm="perspicax"' });
+              res.end(JSON.stringify({ error }));
+              return;
+            }
+            send(res, status, { error });
+          };
+          if (!linkBasicOk(req.headers.authorization)) return fail(401, "invalid_client");
+          if (form.subject_token_type !== "urn:ietf:params:oauth:token-type:access_token" || !form.subject_token || form.actor_token) return fail(400, "invalid_request");
+          const subject = accessTokens.get(form.subject_token);
+          if (!subject || subject.exp - Date.now() < 60_000 || disabled.has(subject.sub)) return fail(400, "invalid_grant", subject?.sub ?? null);
+          let profile: string | null = null;
+          try {
+            const target = new URL(form.resource ?? "");
+            if (`${target.origin}${target.pathname}` === `${provider.issuer}/mcp`) profile = target.searchParams.get("profile");
+          } catch { /* not a URL */ }
+          if (!profile || !provider.profiles.some((entry) => entry.id === profile) || !held(subject.sub).includes(profile)) return fail(400, "invalid_target", subject.sub, profile);
+          const token = `pxlo1.${subject.sub}.${randomBytes(16).toString("hex")}`;
+          const expiresIn = Math.min(900, Math.floor((subject.exp - Date.now()) / 1000));
+          exchanged.set(token, { sub: subject.sub, profile, exp: Date.now() + expiresIn * 1000, revoked: false });
+          provider.exchanges.push({ sub: subject.sub, profile, ok: true, token });
+          return send(res, 200, { access_token: token, issued_token_type: "urn:ietf:params:oauth:token-type:access_token", token_type: "Bearer", expires_in: expiresIn, scope: `profile:${profile}` });
+        }
         provider.lastTokenRequest = form;
         if (failNext !== null) {
           const status = failNext;
@@ -336,7 +405,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
           }
           provider.refreshCount += 1;
           return send(res, 200, {
-            access_token: `pxlo1.${randomBytes(16).toString("hex")}`,
+            access_token: newAccess(held.user.sub),
             refresh_token: issueRefresh(held.family, held.user, held.resource),
             token_type: "Bearer",
             expires_in: 3600,
@@ -350,7 +419,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         const challenge = createHash("sha256").update(form.code_verifier ?? "").digest("base64url");
         if (challenge !== grant.challenge) return send(res, 400, { error: "invalid_grant", error_description: "PKCE verification failed" });
         return send(res, 200, {
-          access_token: `pxlo1.${randomBytes(16).toString("hex")}`,
+          access_token: newAccess(grant.user.sub),
           refresh_token: issueRefresh(randomBytes(8).toString("hex"), grant.user, grant.resource),
           token_type: "Bearer",
           expires_in: 3600,
@@ -366,6 +435,16 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       req.on("data", (chunk: string) => (raw += chunk));
       req.on("end", () => {
         const form = Object.fromEntries(new URLSearchParams(raw));
+        if (req.headers.authorization?.startsWith("Basic ")) {
+          // Slice 5: an exchanged token, revoked by the linked server.
+          if (!linkBasicOk(req.headers.authorization)) return send(res, 401, { error: "invalid_client" });
+          const entry = form.token ? exchanged.get(form.token) : undefined;
+          if (entry && !entry.revoked) {
+            entry.revoked = true;
+            provider.exchangeRevoked.push(form.token!);
+          }
+          return send(res, 200, {});
+        }
         provider.revoked.push(form);
         const held = form.token ? refreshTokens.get(form.token) : undefined;
         if (held) {
@@ -373,6 +452,60 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
           for (const [token, entry] of refreshTokens) if (entry.family === held.family) refreshTokens.delete(token);
         }
         send(res, 200, {});
+      });
+      return;
+    }
+    if (url.pathname === "/mcp" && (req.method === "POST" || req.method === "DELETE")) {
+      let raw = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk: string) => (raw += chunk));
+      req.on("end", () => {
+        const bearer = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : "";
+        const entry = exchanged.get(bearer);
+        const live = entry && !entry.revoked && entry.exp > Date.now() && !disabled.has(entry.sub) &&
+          provider.directoryPeople.find((person) => person.sub === entry.sub)?.status !== "disabled";
+        const sessionHeader = req.headers["mcp-session-id"];
+        const sessionId = typeof sessionHeader === "string" ? sessionHeader : null;
+        let frame: Record<string, any> = {};
+        try { frame = raw ? JSON.parse(raw) as Record<string, any> : {}; } catch { /* not JSON */ }
+        const record: FakeMcpRequest = {
+          method: req.method!, sub: live ? entry.sub : null, profile: live ? entry.profile : null, sessionId,
+          ...(typeof frame.method === "string" ? { rpcMethod: frame.method } : {}),
+          ...(frame.method === "initialize" ? { clientInfo: frame.params?.clientInfo } : {}),
+          status: live ? 200 : 401,
+        };
+        if (!live) {
+          provider.mcpRequests.push(record);
+          res.writeHead(401, { "content-type": "application/json", "www-authenticate": "Bearer" });
+          res.end(JSON.stringify({ error: "invalid_token" }));
+          return;
+        }
+        if (req.method === "DELETE") {
+          record.status = 204;
+          provider.mcpRequests.push(record);
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+        if (frame.id === undefined) {
+          record.status = 202;
+          provider.mcpRequests.push(record);
+          res.writeHead(202);
+          res.end();
+          return;
+        }
+        provider.mcpRequests.push(record);
+        const headers: Record<string, string> = { "content-type": "text/event-stream", "cache-control": "no-store" };
+        if (frame.method === "initialize") headers["mcp-session-id"] = `sess-${randomBytes(6).toString("hex")}`;
+        const result = frame.method === "initialize"
+          ? { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fake-perspicax", version: "1" } }
+          : frame.method === "tools/list"
+            ? { tools: [{ name: "api_list", description: "List the APIs of this profile", inputSchema: { type: "object" } }] }
+            : frame.method === "tools/call"
+              ? { content: [{ type: "text", text: `profile ${entry.profile} for ${entry.sub}` }] }
+              : {};
+        res.writeHead(200, headers);
+        res.end(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: frame.id, result })}\n\n`);
       });
       return;
     }

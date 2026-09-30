@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, mkdirSync, rmSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { applyHumanIds } from "./channel-membership.ts";
@@ -393,6 +394,25 @@ export interface BotRecord extends Omit<WireBot, "avatarUrl" | "tasks"> {
   /** Organization library only: each part's release and written hashes
    * (server/package-parts.ts), for the later automatic update. */
   packageBase?: Partial<Record<AgentPart, PartPair>>;
+  /** Slice 5 (organization server): the Perspicax MCP profiles this bot
+   * mounts, by profile id. Each person who speaks uses their own access;
+   * changed only through /api/bots/:id/perspicax, never PATCH, never in a
+   * package or an export. */
+  perspicax?: BotPerspicax;
+}
+
+/** Slice 5: at most 8 profile ids per bot. */
+export const MAX_BOT_PERSPICAX_PROFILES = 8;
+const PERSPICAX_PROFILE_ID = /^[0-9A-Za-z_.:-]{1,64}$/;
+export const botPerspicaxSchema = z.object({
+  profiles: z.array(z.string().regex(PERSPICAX_PROFILE_ID)).max(MAX_BOT_PERSPICAX_PROFILES).transform((ids) => [...new Set(ids)]),
+});
+export type BotPerspicax = z.infer<typeof botPerspicaxSchema>;
+
+/** A stored `perspicax` value as a valid one, or undefined (dropped). */
+export function cleanBotPerspicax(value: unknown): BotPerspicax | undefined {
+  const parsed = botPerspicaxSchema.safeParse(value);
+  return parsed.success && parsed.data.profiles.length ? parsed.data : undefined;
 }
 
 /** BotRecord fields no client may see, plus the two the projection
@@ -400,7 +420,7 @@ export interface BotRecord extends Omit<WireBot, "avatarUrl" | "tasks"> {
  * WireTask[], avatarUrl is coerced to always-present). The exactness
  * assertion fails to compile when either side drifts, so a new server
  * field forces a decision — wire-visible or private here. */
-export type BotWirePrivateKeys = "resumeCursors" | "tasks" | "avatarUrl" | "approvalGrant" | "lastProfileRequestId" | "lastTighteningRequestId" | "lastTeamSetupReceipt" | "packageBase";
+export type BotWirePrivateKeys = "resumeCursors" | "tasks" | "avatarUrl" | "approvalGrant" | "lastProfileRequestId" | "lastTighteningRequestId" | "lastTeamSetupReceipt" | "packageBase" | "perspicax";
 export type BotWireProjection = Pick<BotRecord, Exclude<keyof BotRecord, BotWirePrivateKeys>>;
 export type BotWireProjectionIsExact = AssertExact<Omit<WireBot, "avatarUrl" | "tasks">, BotWireProjection> & AssertSameKeys<Omit<WireBot, "avatarUrl" | "tasks">, BotWireProjection>;
 export const botWireProjectionIsExact: BotWireProjectionIsExact = true;
@@ -918,6 +938,16 @@ export class Store {
           b.directGrants = directFromGrants(clean);
           botsMigrated = true;
         }
+      }
+    }
+    // Slice 5: a malformed Perspicax profile list is dropped.
+    for (const b of this.bots) {
+      if (b.perspicax === undefined) continue;
+      const clean = cleanBotPerspicax(b.perspicax);
+      if (JSON.stringify(clean) !== JSON.stringify(b.perspicax)) {
+        if (clean) b.perspicax = clean;
+        else delete b.perspicax;
+        botsMigrated = true;
       }
     }
     if (botsMigrated) this.saveBots();
@@ -1963,6 +1993,18 @@ export class Store {
   setBotGrants(id: string, grants: BotGrant[]): BotRecord | null {
     const clean = cleanBotGrants(grants);
     return this.patchBot(id, { grants: clean, directGrants: directFromGrants(clean) });
+  }
+
+  /** Slice 5: replace a bot's Perspicax profiles ([] removes the field). */
+  setBotPerspicax(id: string, profiles: readonly string[]): BotRecord | null {
+    const bot = this.bot(id);
+    if (!bot) return null;
+    const clean = cleanBotPerspicax({ profiles: [...profiles] });
+    if (clean) bot.perspicax = clean;
+    else delete bot.perspicax;
+    this.saveBots();
+    this.emit({ type: "bot", botId: id });
+    return bot;
   }
 
   patchBot(id: string, patch: Partial<BotRecord>): BotRecord | null {

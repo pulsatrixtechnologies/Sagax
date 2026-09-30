@@ -72,6 +72,7 @@ const ENTRY_POINTS = [
   "vps-container-mcp.ts",
   "permission-proxy.ts",
   "connector-proxy.ts",
+  "perspicax-mcp-bridge.ts",
   "mcp-gate.ts",
   "browser-proxy.ts",
   "drivers/agents-proxy.ts",

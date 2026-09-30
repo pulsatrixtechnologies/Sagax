@@ -381,6 +381,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // owner, manage holders, organization admins, team managers).
   { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/grants$/, feature: "orgDirectory" },
   { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/grants\/(?:(?:user%3A|user:)pr_[0-9a-f-]{36}|(?:team%3A|team:)[0-9A-Za-z]{1,64})$/i, feature: "orgDirectory" },
+  // Slice 5: the Perspicax MCP profiles a bot mounts. server/bot-perspicax.ts
+  // decides (use reads, edit changes, adding needs holding the profile).
+  { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/perspicax$/, feature: "orgDirectory" },
   // The bots whose sharing the caller administers (never their messages).
   { methods: ["GET"], path: /^\/api\/org\/bots$/, feature: "orgDirectory" },
   // Sidebar sections as channels (server/section-channels.ts checks the rights).

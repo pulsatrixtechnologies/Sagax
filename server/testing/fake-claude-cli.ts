@@ -80,9 +80,20 @@
 //   FAKE_CLAUDE_RESUMED_API_ERROR 1: a --resume launch plays its first turn
 //                      the `api-error` way — an error result with no cost
 //                      figure — and its later turns normally.
+//   FAKE_CLAUDE_MCP_CALLS JSON array of {server, tool, arguments}: before its
+//                      reply, each turn really talks to the stdio MCP servers
+//                      of its --mcp-config whose name matches `server` (a
+//                      name, or a prefix ending with *): spawn command, args
+//                      and env, then initialize, notifications/initialized,
+//                      tools/list and tools/call. The reply then carries
+//                      mcp:<tool>:ok, mcp:<tool>:error or mcp:absent.
+//   FAKE_CLAUDE_MCP_PAUSE_MS a pause between two calls (a test can change
+//                      the world in between).
+//   FAKE_CLAUDE_MCP_DUMP path to write {servers, calls:[{server, tool, listed,
+//                      ok, text}]} as JSON after the calls.
 //
 // Keep this file dependency-free — it runs as a bare `node` subprocess.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runRoomHandoffAgent } from "./room-handoff-agent.ts";
@@ -499,7 +510,110 @@ const playTurn = (prompt: JsonValue) => {
     });
   }
 
+  if (fakeMcpCalls) {
+    void runFakeMcpCalls(fakeMcpCalls, argAfter("--mcp-config")).then(
+      (note) => playReply(prompt, note),
+      (error: unknown) => playReply(prompt, `mcp:error:${error instanceof Error ? error.message : String(error)}`),
+    );
+    return;
+  }
+  playReply(prompt, "");
+};
+
+type FakeMcpCall = { server: string; tool: string; arguments: Record<string, unknown> };
+const fakeMcpCalls: FakeMcpCall[] | null = (() => {
+  const raw = process.env.FAKE_CLAUDE_MCP_CALLS;
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed
+      .filter((call): call is { server: string; tool: string; arguments?: unknown } => typeof call?.server === "string" && typeof call?.tool === "string")
+      .map((call) => ({ server: call.server, tool: call.tool, arguments: call.arguments && typeof call.arguments === "object" && !Array.isArray(call.arguments) ? call.arguments as Record<string, unknown> : {} }));
+  } catch {
+    return null;
+  }
+})();
+
+/** One stdio MCP client session: newline-delimited JSON-RPC. */
+function fakeMcpSession(server: { command: string; args?: string[]; env?: Record<string, string> }) {
+  const child = spawn(server.command, server.args ?? [], { env: { ...process.env, ...server.env }, stdio: ["pipe", "pipe", "ignore"] });
+  const waiting = new Map<unknown, (frame: Record<string, unknown>) => void>();
+  let buffer = "";
+  child.stdout.on("data", (chunk) => {
+    buffer += String(chunk);
+    let nl;
+    while ((nl = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line) continue;
+      try {
+        const frame = JSON.parse(line) as Record<string, unknown>;
+        waiting.get(frame.id)?.(frame);
+        waiting.delete(frame.id);
+      } catch { /* not a frame */ }
+    }
+  });
+  let next = 0;
+  const request = (method: string, params: Record<string, unknown>) => new Promise<Record<string, unknown>>((resolve) => {
+    const id = ++next;
+    const timer = setTimeout(() => { waiting.delete(id); resolve({ id, error: { code: -1, message: "timeout" } }); }, 20_000);
+    waiting.set(id, (frame) => { clearTimeout(timer); resolve(frame); });
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+  });
+  const notify = (method: string) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method })}\n`);
+  const close = () => { child.stdin.end(); setTimeout(() => child.kill("SIGKILL"), 2_000).unref(); };
+  return { request, notify, close };
+}
+
+async function runFakeMcpCalls(calls: FakeMcpCall[], configPath: string | null): Promise<string> {
+  let servers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> = {};
+  if (configPath) {
+    try {
+      const config = JSON.parse(readFileSync(configPath, "utf8")) as { mcpServers?: typeof servers };
+      servers = config.mcpServers ?? {};
+    } catch { /* no servers */ }
+  }
+  const matches = (pattern: string, name: string) => (pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern);
+  const results: Array<{ server: string; tool: string; listed: boolean; ok: boolean; text: string }> = [];
+  const notes: string[] = [];
+  const pauseMs = Number(process.env.FAKE_CLAUDE_MCP_PAUSE_MS) || 0;
+  let first = true;
+  for (const call of calls) {
+    const names = Object.keys(servers).filter((name) => matches(call.server, name) && typeof servers[name]?.command === "string");
+    if (!names.length) {
+      notes.push("mcp:absent");
+      continue;
+    }
+    for (const name of names) {
+      if (!first && pauseMs > 0) await new Promise((resolve) => setTimeout(resolve, pauseMs));
+      first = false;
+      const session = fakeMcpSession(servers[name] as { command: string; args?: string[]; env?: Record<string, string> });
+      try {
+        await session.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fake-claude", version: "0" } });
+        session.notify("notifications/initialized");
+        const listed = await session.request("tools/list", {});
+        const tools = ((listed.result as { tools?: Array<{ name?: string }> } | undefined)?.tools ?? []).map((tool) => tool.name);
+        const answer = await session.request("tools/call", { name: call.tool, arguments: call.arguments });
+        const result = answer.result as { isError?: boolean; content?: Array<{ text?: string }> } | undefined;
+        const ok = Boolean(result) && result?.isError !== true && !answer.error;
+        const text = answer.error ? String((answer.error as { message?: unknown }).message ?? "error") : (result?.content ?? []).map((part) => part.text ?? "").join(" ").slice(0, 500);
+        results.push({ server: name, tool: call.tool, listed: tools.includes(call.tool), ok, text });
+        notes.push(`mcp:${call.tool}:${ok ? "ok" : "error"}`);
+      } finally {
+        session.close();
+      }
+    }
+  }
+  if (process.env.FAKE_CLAUDE_MCP_DUMP) {
+    writeFileSync(process.env.FAKE_CLAUDE_MCP_DUMP, JSON.stringify({ servers: Object.keys(servers), calls: results }, null, 2));
+  }
+  return notes.join(" ");
+}
+
+const playReply = (prompt: JsonValue, mcpNote: string) => {
   let replyParts = nextScriptedReply();
+  if (mcpNote) replyParts = [...replyParts.slice(0, -1), `${replyParts.at(-1) ?? ""}\n${mcpNote}`];
   const defaultToolId = `tu-${process.pid}-${++toolUseCount}`;
   // FAKE_CLAUDE_TURN_STATE: a counter file so "second turn" survives a
   // respawn between turns (the harness may relaunch the CLI legitimately)

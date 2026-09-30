@@ -200,6 +200,7 @@ import { blockedTarget, buildNotification, buildSpendNotification, type Notifica
 import {
   isModelVariant,
   TurnNotStartedError,
+  type McpServerSpec,
   type ModelSelection,
   type RequestOutcome,
   type RuntimeEvent,
@@ -515,6 +516,7 @@ import { materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscri
 import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
+import { createBotPerspicaxRoutes } from "./bot-perspicax.ts";
 import { applyIdentityMigration, principalIdFor } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
 import {
@@ -587,6 +589,7 @@ import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionMa
 import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
+import { PerspicaxMcp, type PerspicaxTurnPlan } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
@@ -1663,7 +1666,9 @@ type InternalCapability = {
   threadId: string;
   generation: string;
   depth: number;
-  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone";
+  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax";
+  /** Slice 5: the one Perspicax profile a "perspicax" capability relays for. */
+  perspicaxProfile?: string;
   skillAuthoring: boolean;
   createdBots: number;
   createdRooms?: number;
@@ -1688,6 +1693,12 @@ const MAX_ATTACHED_FILES_PER_TURN = 10;
 // synchronously and app restart destroys this in-memory set.
 const INTERNAL_CAPABILITY_ORPHAN_MS = 30 * 24 * 60 * 60_000;
 const internalCapabilities = new Map<string, InternalCapability>();
+/** Slice 5: per-turn Perspicax MCP tokens (server/perspicax-mcp.ts), set once
+ * the server is linked to Perspicax; declared here because capability revokes
+ * reach it. */
+let perspicaxMcp: PerspicaxMcp | null = null;
+/** The revocations started by the last revokeAllInternalCapabilities (shutdown waits for them). */
+let perspicaxEnding: Promise<void> = Promise.resolve();
 const activeInternalGenerationByThread = new Map<string, string>();
 const internalGenerationByProviderTurn = new ProviderTurnGenerationRegistry();
 const computerSelectionTurns = new Map<string, {
@@ -1758,6 +1769,8 @@ function mintInternalCapability(capability: Omit<InternalCapability, "orphanExpi
 }
 
 function revokeInternalCapabilityGeneration(threadId: string, generation: string): void {
+  // Slice 5: the turn's Perspicax MCP tokens go with its capabilities.
+  void perspicaxMcp?.endGeneration(threadId, generation);
   for (const [token, capability] of internalCapabilities) {
     if (capability.threadId === threadId && capability.generation === generation) {
       internalCapabilities.delete(token);
@@ -1771,6 +1784,7 @@ function revokeInternalCapabilityGeneration(threadId: string, generation: string
 
 function revokeInternalCapabilitiesForThread(threadId: string): void {
   computerSelectionTurns.delete(threadId);
+  void perspicaxMcp?.endThread(threadId);
   const generation = activeInternalGenerationByThread.get(threadId);
   if (generation) revokeInternalCapabilityGeneration(threadId, generation);
   // Defensive cleanup for any generation orphaned before exact ownership was
@@ -1783,6 +1797,7 @@ function revokeInternalCapabilitiesForThread(threadId: string): void {
 
 function revokeAllInternalCapabilities(): void {
   computerSelectionTurns.clear();
+  if (perspicaxMcp) perspicaxEnding = perspicaxMcp.endAll();
   internalCapabilities.clear();
   activeInternalGenerationByThread.clear();
   internalGenerationByProviderTurn.clear();
@@ -1865,6 +1880,7 @@ const phoneSecretEnvelopeSchema = z.object({
 // path happened to survive bundling, but it goes through the same anchor so
 // there is exactly one way proxies are located.
 const agentsProxyPath = SPAWNED_PROXIES.agents;
+const perspicaxBridgePath = SPAWNED_PROXIES.perspicax;
 const phoneProxyPath = SPAWNED_PROXIES.phone;
 // in the packaged app process.execPath is Electron — run the proxy as node
 const AGENTS_NODE_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
@@ -2619,6 +2635,107 @@ function phoneIntegration(botId: string, threadId: string, generation: string) {
   return { command: process.execPath, args: [phoneProxyPath], env };
 }
 
+// ── Perspicax MCP for the person who speaks (slice 5) ─────────────────
+/** An engine-side server name for a profile: `perspicax_<slug or id>`,
+ * [a-z0-9_], at most 40 characters, with a suffix on a collision. */
+function perspicaxServerName(label: string, taken: ReadonlySet<string>): string {
+  const base = `perspicax_${label.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "profile"}`.slice(0, 40);
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const suffix = `_${n}`;
+    const candidate = `${base.slice(0, 40 - suffix.length)}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+const PERSPICAX_UNAVAILABLE_WHY: Record<PerspicaxTurnPlan["unavailable"][number]["reason"], string> = {
+  not_held: "the person speaking does not hold this profile in Perspicax",
+  no_session: "the person speaking has no live Perspicax sign-in on this server",
+  unreachable: "Perspicax could not be reached",
+  routine: "Perspicax tools reach routines once routine delegation is on",
+  unknown_speaker: "the person speaking is not known to Perspicax",
+  unknown_profile: "Perspicax no longer lists this profile",
+};
+/** The engine servers, the system note and the activity rows of a turn's
+ * Perspicax profiles, for whoever speaks (never the owner for someone
+ * else). Nothing in solo mode, without a link, or for a bot without
+ * profiles. The bridge holds only a turn capability; the tokens stay in
+ * perspicaxMcp. */
+async function perspicaxTurnIntegration(input: {
+  bot: BotRecord;
+  threadId: string;
+  generation: string;
+  speaker: TurnSpeaker;
+  taken: readonly string[];
+  from?: { botId: string; name: string; color: string };
+}): Promise<{ custom: Record<string, McpServerSpec>; prompt: string }> {
+  const none = { custom: {}, prompt: "" };
+  if (IDENTITY.kind !== "perspicax" || !perspicaxMcp) return none;
+  const live = store.bot(input.bot.id) ?? input.bot;
+  if (!live.perspicax?.profiles.length) return none;
+  const speakerPrincipalId = input.speaker.origin === "owner-routine" ? "" : orgSpeakerPrincipal(live, input.speaker);
+  const plan = await perspicaxMcp.prepareTurn({
+    threadId: input.threadId,
+    generation: input.generation,
+    bot: { id: live.id, perspicax: live.perspicax },
+    speakerPrincipalId,
+    speakerOrigin: input.speaker.origin,
+  });
+  const custom: Record<string, McpServerSpec> = {};
+  const taken = new Set(input.taken);
+  for (const profile of plan.mounted) {
+    let token: string;
+    try {
+      token = mintInternalCapability({
+        botId: live.id,
+        threadId: input.threadId,
+        generation: input.generation,
+        depth: 0,
+        kind: "perspicax",
+        perspicaxProfile: profile.profileId,
+        skillAuthoring: false,
+        createdBots: 0,
+        openedThreads: 0,
+      });
+    } catch {
+      // The turn ended while the exchange ran: its generation revoke drops
+      // the tokens.
+      continue;
+    }
+    const name = perspicaxServerName(profile.slug || profile.profileId, taken);
+    taken.add(name);
+    custom[name] = {
+      command: process.execPath,
+      args: [perspicaxBridgePath],
+      env: {
+        ...AGENTS_NODE_FLAG,
+        OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+        OMB_PERSPICAX_TOKEN: token,
+        OMB_PERSPICAX_PROFILE: profile.profileId,
+        OMB_BOT_ID: live.id,
+        OMB_THREAD_ID: input.threadId,
+      },
+    };
+  }
+  if (!plan.unavailable.length) return { custom, prompt: "" };
+  const lines = plan.unavailable.map((entry) => entry.reason === "routine"
+    ? `Perspicax tools of profile "${entry.name}" are not available in this routine run: ${PERSPICAX_UNAVAILABLE_WHY.routine}.`
+    : `Perspicax tools of profile "${entry.name}" are not available in this turn: ${PERSPICAX_UNAVAILABLE_WHY[entry.reason]}. Tell them so if they ask for these tools.`);
+  const speakerName = input.speaker.origin === "owner-routine"
+    ? "a routine"
+    : (speakerPrincipalId && principals.byId(speakerPrincipalId)?.name) || "an unknown person";
+  const byReason = new Map<string, string[]>();
+  for (const entry of plan.unavailable) byReason.set(entry.reason, [...(byReason.get(entry.reason) ?? []), entry.name]);
+  for (const [reason, names] of byReason) {
+    store.appendMessage(input.threadId, {
+      role: "bot",
+      kind: "activity",
+      ...(input.from ? { from: input.from } : {}),
+      tool: { name: `Perspicax: ${names.join(", ")} unavailable for ${speakerName} (${reason})`, ok: false },
+    });
+  }
+  return { custom, prompt: lines.join("\n") };
+}
+
 function connectedAppsIntegration(bot: Pick<BotRecord, "id" | "connectorTools">, threadId: string, generation: string) {
   const token = mintInternalCapability({
     botId: bot.id,
@@ -3170,7 +3287,7 @@ const wireTask = (task: TaskRecord): WireTask => {
 };
 
 const wireBot = (bot: BotRecord): WireBot => {
-  const { resumeCursors: _resumeCursors, tasks, approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTighteningRequestId: _lastTighteningRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, ...rest } = bot;
+  const { resumeCursors: _resumeCursors, tasks, approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTighteningRequestId: _lastTighteningRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, ...rest } = bot;
   // An elevated selection is inert until the desktop confirms its exact
   // private reply. Every ordinary client sees the effective Ask state during
   // that two-phase window, never a grant that may still roll back.
@@ -3184,7 +3301,7 @@ const wireBot = (bot: BotRecord): WireBot => {
 /** The correlated private response carries the requested value so Electron
  * can validate it before sending the confirmation that makes it effective. */
 const wireTrustedApprovalBot = (bot: NonNullable<ReturnType<typeof store.bot>>) => {
-  const { resumeCursors: _resumeCursors, tasks, approvalGrant: _approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTighteningRequestId: _lastTighteningRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, ...rest } = bot;
+  const { resumeCursors: _resumeCursors, tasks, approvalGrant: _approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTighteningRequestId: _lastTighteningRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, ...rest } = bot;
   return { ...rest, approvalMode: approvalModeFor(rest), avatarUrl: rest.avatarUrl ?? null, ...(tasks ? { tasks: tasks.map(wireTask) } : {}) };
 };
 
@@ -9222,6 +9339,13 @@ async function startTurn(
         const custom = engineMcpServers(bot);
         if (Object.keys(custom).length) integrations.custom = custom;
       }
+      // Slice 5: the bot's Perspicax profiles, as the person who speaks.
+      let perspicaxPrompt = "";
+      if (IDENTITY.kind === "perspicax" && instance.adapter.capabilities.customMcp === true && (store.bot(bot.id) ?? bot).perspicax?.profiles.length) {
+        const perspicax = await perspicaxTurnIntegration({ bot, threadId, generation: dispatchClaimId, speaker, taken: Object.keys(integrations.custom ?? {}) });
+        if (Object.keys(perspicax.custom).length) integrations.custom = { ...integrations.custom, ...perspicax.custom };
+        perspicaxPrompt = perspicax.prompt;
+      }
       // CLI engines work inside the bot's own workspace directory rather
       // than the user's home: a bot with file tools and acceptEdits gets a
       // desk, not the whole house — and the workspace is where its
@@ -9840,6 +9964,7 @@ async function startTurn(
         // bot whose driver actually mounted the tools
         { id: "composio", label: "Connected apps", text: integrations.composio ? composioSystemPrompt(liveBot?.connectorTools ?? bot.connectorTools) : "" },
         { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
+        { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
         { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT : "" },
         { id: "coordination", label: "Team", text: coordinationPrompt ? ` ${coordinationPrompt}` : "" },
         { id: "assignment", label: "Teammate task", text: coordinationNode ? `\n${coordinationSystemInstructions()}` : "" },
@@ -11608,6 +11733,20 @@ async function runGroupMemberTurn(
     const custom = engineMcpServers(bot);
     if (Object.keys(custom).length) integrations.custom = custom;
   }
+  // Slice 5: the bot's Perspicax profiles, as the person who speaks in the room.
+  let roomPerspicaxPrompt = "";
+  if (IDENTITY.kind === "perspicax" && instance.adapter.capabilities.customMcp === true && (store.bot(bot.id) ?? bot).perspicax?.profiles.length) {
+    const perspicax = await perspicaxTurnIntegration({
+      bot,
+      threadId,
+      generation: internalGeneration,
+      speaker: roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "operator" },
+      taken: Object.keys(integrations.custom ?? {}),
+      from: { botId: bot.id, name: bot.name, color: bot.color },
+    });
+    if (Object.keys(perspicax.custom).length) integrations.custom = { ...integrations.custom, ...perspicax.custom };
+    roomPerspicaxPrompt = perspicax.prompt;
+  }
   // Connected-app discovery is intentionally awaited before a provider owns
   // the bot. An interrupt during that setup window must still stop the queued
   // room operation before it starts a process.
@@ -11976,6 +12115,7 @@ async function runGroupMemberTurn(
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
+    { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(roomTeamComputer) },
     { id: "plan", label: "Surface", text: surfacePrompt({ computer: roomTeamComputer ? "cloud" : roomVmTarget ? "vm" : surfaceOfComputerKind(roomComputerKind), browser: Boolean(integrations.browser) }, { note: roomPlan.note }) },
@@ -15218,6 +15358,27 @@ if (IDENTITY.kind === "perspicax") {
     setGrants: (id, grants) => { store.setBotGrants(id, grants); },
     onChanged: botAccessChanged,
   }));
+  // Slice 5: the Perspicax MCP profiles a bot mounts (server/bot-perspicax.ts);
+  // only once the server is linked to Perspicax.
+  ROUTES.push(createBotPerspicaxRoutes({
+    linked: () => perspicaxDirectory !== null,
+    profilesOf: (id) => {
+      const bot = store.bot(id);
+      return bot ? [...(bot.perspicax?.profiles ?? [])] : undefined;
+    },
+    facts: (id) => botFacts(store.bot(id)!),
+    viewer: authzViewerFor,
+    heldBy: (auth) => {
+      const person = principals.byId(actorPrincipalId(auth));
+      return person?.subject?.iss === IDENTITY.issuer && person.disabledAt === undefined ? perspicaxDirectory?.profilesOf(person.subject.sub) ?? [] : [];
+    },
+    catalog: () => perspicaxDirectory?.profileCatalog() ?? [],
+    setProfiles: (id, profiles) => { store.setBotPerspicax(id, profiles); },
+    onChanged: (id) => {
+      const bot = store.bot(id);
+      if (bot) broadcast({ kind: "bot", bot: wireBot(bot) });
+    },
+  }));
   // D14: the bots whose sharing the caller administers, with their grants,
   // never their messages. Admin: every bot; a team manager: bots shared with
   // one of their teams or members; anyone else: bots they own or manage.
@@ -15652,6 +15813,7 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PE
     principals,
     teamNames: orgTeams,
     onPersonOut: (iss, sub) => {
+      perspicaxMcp?.forgetSubject(iss, sub);
       const done = manager.backchannelLogout({ iss, sub });
       console.log(`perspicax directory: a person is out; ${done.sessions} session(s) ended, ${done.pairings} pairing code(s) cancelled`);
     },
@@ -15662,6 +15824,20 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PE
     version,
   });
   perspicaxDirectory.start(intervalMs);
+  // Slice 5: per-turn MCP tokens for the person who speaks.
+  const directory = perspicaxDirectory;
+  const issuer = IDENTITY.issuer;
+  perspicaxMcp = new PerspicaxMcp({
+    issuer,
+    link: () => directory,
+    subjectOf: (principalId) => {
+      const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;
+      return person?.subject ? { iss: person.subject.iss, sub: person.subject.sub, disabled: person.disabledAt !== undefined } : null;
+    },
+    subjectToken: (subject) => manager.subjectToken(subject),
+    botProfiles: (id) => store.bot(id)?.perspicax?.profiles,
+    version,
+  });
 }
 
 const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
@@ -15686,6 +15862,7 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
       discard: (grantRef) => idpSessions.discard(grantRef),
       backchannelLogout: (input) => {
         perspicaxDirectory?.forgetSubject(input.sub);
+        perspicaxMcp?.forgetSubject(input.iss, input.sub);
         return idpSessions.backchannelLogout(input);
       },
     },
@@ -16302,6 +16479,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? "browser"
         : path === "/api/internal/phone/claim"
         ? "phone"
+        : path === "/api/internal/perspicax/mcp"
+        ? "perspicax"
         : path.startsWith("/api/internal/connectors/")
         ? "connectors"
         : path === "/api/internal/computer-control"
@@ -18337,6 +18516,29 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }
           throw error;
         }
+      }
+      // Slice 5: a Perspicax MCP frame from the stdio bridge of this turn
+      // (server/perspicax-mcp-bridge.ts). The Perspicax token never leaves
+      // this process: server/perspicax-mcp.ts holds it and relays.
+      if (method === "POST" && path === "/api/internal/perspicax/mcp") {
+        const profileId = url.searchParams.get("profile") ?? "";
+        if (!perspicaxMcp || !profileId || internalCapability.perspicaxProfile !== profileId) {
+          return json(res, 403, { error: "this Perspicax profile is not mounted in this turn", code: "profile_not_mounted" });
+        }
+        const frame = await readInternalBody();
+        const answer = await perspicaxMcp.relay({
+          threadId: internalCapability.threadId,
+          generation: internalCapability.generation,
+          botId: internalCapability.botId,
+          profileId,
+          frame,
+        });
+        if (answer.body === undefined) {
+          res.writeHead(answer.status, { "cache-control": "no-store" });
+          return res.end();
+        }
+        res.writeHead(answer.status, { "content-type": "application/json", "cache-control": "no-store" });
+        return res.end(JSON.stringify(answer.body));
       }
       if (method === "POST" && path === "/api/internal/connectors/mcp") {
         const body = await readInternalBody();
@@ -24789,6 +24991,8 @@ const gracefulShutdown = createGracefulShutdown({
       await Promise.all([...temporaryBrowserSessions.keys()].map((botId) => forgetTemporaryBrowser(botId)));
       await browserRuntime.closeAll();
     },
+    // Slice 5: the Perspicax MCP tokens revoked above, bounded.
+    async () => { await settledWithin(perspicaxEnding, 3_000); },
     () => flushAllProfileHistory(),
     () => flushAllMemoryJournals(),
     () => flushUsageLedger(DATA_DIR),
