@@ -90,6 +90,7 @@
   "sidebar.aria": "Bots et navigation",
   "sidebar.search": "Rechercher",
   "sidebar.searchAria": "Rechercher des bots et des messages",
+  "sidebar.searchPlaceholder": "Rechercher…",
   "sidebar.noMatch": "Rien ne correspond à « {query} »",
   "sidebar.preview.waiting": "En attente de vous…",
   "sidebar.preview.working": "En cours…",
@@ -174,7 +175,6 @@
   "sidebar.nav.connectedApps": "Applications connectées",
   "sidebar.appSettings": "Paramètres de l'application",
   "sidebar.tools": "Outils",
-  "sidebar.connectTools": "Connecter apps et outils",
   "botPanel.tabsAria": "Panneau du bot",
   "botPanel.tab.details": "Détails",
   "botPanel.tab.routines": "Routines",
@@ -1813,5 +1813,6 @@
   "retro.custom.state.send": "Envoie",
   "retro.custom.problem.type": "Seules les images PNG ou GIF sont acceptées.",
   "retro.custom.problem.size": "Cette image est trop lourde. Choisissez-en une de moins de 2 Mo.",
-  "retro.custom.problem.storage": "Ce navigateur n'a pas pu enregistrer l'image. La navigation privée peut l'empêcher."
+  "retro.custom.problem.storage": "Ce navigateur n'a pas pu enregistrer l'image. La navigation privée peut l'empêcher.",
+  "onboarding.tour.tools": "Votre nom, au bas de la barre latérale. Son menu regroupe les apps connectées, les automatisations et la carte d’équipe, puis vos réglages. Ouvrons-le."
 }

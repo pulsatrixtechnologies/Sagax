@@ -88,6 +88,7 @@
   "sidebar.aria": "बॉट और नेविगेशन",
   "sidebar.search": "खोजें",
   "sidebar.searchAria": "बॉट और संदेश खोजें",
+  "sidebar.searchPlaceholder": "खोजें…",
   "sidebar.noMatch": "“{query}” से कुछ मेल नहीं खाता",
   "sidebar.preview.waiting": "आपका इंतज़ार…",
   "sidebar.preview.working": "काम जारी…",

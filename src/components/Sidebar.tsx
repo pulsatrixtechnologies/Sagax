@@ -17,6 +17,8 @@ import {
   Loader2,
   Network,
   MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Pin,
   PinOff,
@@ -46,7 +48,9 @@ import { WorkingDots } from "./WorkingIndicator";
 import { nextRename } from "@/lib/rename";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { MIN_QUERY } from "./SearchResults";
-import { SidebarSearchModal } from "./SidebarSearchModal";
+import { openCommandPalette } from "./CommandPalette";
+import { APP_NAME } from "@/lib/app-links";
+import { isMacPlatform, SHORTCUT_GROUPS, shortcutKeysForPlatform } from "@/lib/keyboard-shortcuts";
 import { TeamLibraryPanel } from "./TeamLibraryPanel";
 import { ShareTeamDialog } from "./ShareTeamDialog";
 import { TeamDialog } from "./TeamDialog";
@@ -63,6 +67,7 @@ import {
   saveSectionOrder,
   subscribeSidebarDensity,
   toggleCollapsedSection,
+  toggleSidebarCollapsed,
   type SidebarDensity,
 } from "@/lib/sidebar-preferences";
 import {
@@ -89,7 +94,8 @@ import { buildTeamMapSections } from "@/lib/team-map";
 import { sidebarSectionAttention } from "@/lib/sidebar-attention";
 import { botListItemPointerIntent } from "@/lib/sidebar-selection";
 import { phoneSettingsAction, SidebarPhoneButton } from "./SidebarPhoneButton";
-import { SidebarMoreMenu } from "./SidebarMoreMenu";
+import { AppMarks } from "./SidebarAppMarks";
+import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 
 import { profileInitials, SidebarProfileMenu } from "./SidebarProfileMenu";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
@@ -104,6 +110,15 @@ const SIDEBAR_WIDTH_KEY = "omb-sidebar-width-v2";
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 400;
 const SIDEBAR_DEFAULT_WIDTH = 280;
+/** The head's icon buttons (New, collapse): Perspicax's 28px ghost square,
+ * a touch larger so the 18px glyphs keep the rail's weight. */
+const SIDEBAR_ICON_BUTTON = "flex size-8 items-center justify-center rounded-lg text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
+
+/** The palette chord as this platform spells it, for the search field. */
+function paletteShortcutKeys(): string[] {
+  const item = SHORTCUT_GROUPS.flatMap((group) => group.items).find((entry) => entry.id === "command-palette");
+  return item ? shortcutKeysForPlatform(item) : ["⌘", "K"];
+}
 
 /** Fade the list's edges the way Grok Bot does: the top 28px once there is
  * something scrolled above, the bottom 48px while there is more below. The
@@ -276,7 +291,7 @@ export function GroupListItem({
         onMenu({ groupId: group.id, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
       }}
       className={cn(
-        "relative flex w-full items-center rounded-[10px] text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
+        "relative flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
         density === "icons" ? "justify-center px-1 py-1.5" : density === "compact" ? "gap-2 py-1.5 pr-9" : "min-h-[54px] gap-2 py-2 pr-2",
         density !== "icons" && (hasThreadList ? "pl-5" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
@@ -287,7 +302,7 @@ export function GroupListItem({
       <StackedMauses members={members} density={density} />
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[14px] font-medium leading-5 text-sidebar-ink">{group.name}</span>
+          <span className={cn("truncate text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>{group.name}</span>
           {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
           {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
@@ -1187,7 +1202,7 @@ export function BotListItem({
   // line above the name lets both truncate independently instead.
   const title = bot.title.trim();
   const rowClass = cn(
-    "flex w-full items-center rounded-[10px] text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
+    "flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
     iconOnly
       ? "justify-center px-1 py-1.5"
       : density === "compact"
@@ -1246,7 +1261,7 @@ export function BotListItem({
       </span>
       <div className={cn("min-w-0 flex-1", iconOnly && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className="flex min-w-0 grow items-center gap-1.5 text-[14px] font-medium leading-5 text-sidebar-ink">
+          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", selected ? "font-semibold" : "font-medium")}>
             {bot.pinned && <Pin size={12} className="shrink-0 text-sidebar-ink-secondary" />}
             <RenameTitle
               key={iconOnly ? "icons" : "expanded"}
@@ -1694,7 +1709,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     text: string;
     restoreBot?: { id: string; name: string };
   } | null>(null);
-  const [searchModal, setSearchModal] = useState(false);
+  const paletteKeys = paletteShortcutKeys();
   // null on 404 and on any other failure, so the roster stays.
   const density = useSyncExternalStore(subscribeSidebarDensity, loadSidebarDensity, () => "comfortable" as const);
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
@@ -1937,6 +1952,48 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // same rule and order as the sidebar tree, so the bell can never
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
+  // What the old apps pill folded away, now the head of the footer menu.
+  const places: SidebarMenuItem[] = [
+    {
+      key: "team-map",
+      label: t("sidebar.nav.teamMap"),
+      icon: <Network size={18} />,
+      active: state.activeView === "team-map",
+      onSelect: () => dispatch({ type: "showTeamMap" }),
+    },
+    {
+      key: "routines",
+      tourId: "nav-automations",
+      label: t("sidebar.nav.automations"),
+      icon: <CalendarDays size={18} />,
+      active: state.activeView === "routines",
+      // folded away, this dot would otherwise vanish with the row; the
+      // footer row carries it while the menu is closed
+      attention: state.routineRuns.some((run) => isRoutineProblemRun(run) && !run.seenAt),
+      onSelect: () => dispatch({ type: "showRoutines" }),
+    },
+    {
+      key: "plugins",
+      tourId: "nav-apps",
+      label: t("sidebar.nav.connectedApps"),
+      icon: <Puzzle size={18} />,
+      trailing: <AppMarks />,
+      onSelect: () => dispatch({ type: "togglePlugins", open: true }),
+    },
+    ...(!remoteClient ? [{
+      key: "templates",
+      label: t("sidebar.teamLibrary"),
+      icon: <Library size={18} />,
+      onSelect: () => setTeamLibraryOpen(true),
+    }] : []),
+    ...(!remoteClient && archivedBots.length > 0 ? [{
+      key: "archived",
+      label: t("sidebar.archived.title"),
+      icon: <Archive size={18} />,
+      trailing: <span className="text-[11.5px] text-ink-secondary">{archivedBots.length}</span>,
+      onSelect: () => setArchivedBotsOpen(true),
+    }] : []),
+  ];
   return (
     <aside
       ref={sidebarRef}
@@ -1958,48 +2015,114 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         open ? "max-md:translate-x-0" : "max-md:-translate-x-full",
       )}
     >
-      {/* macOS owns inset traffic lights; Linux/Windows use native chrome. */}
-      <div
-        className={cn("flex min-h-[52px] items-center py-3", density === "icons" ? "flex-col gap-1 px-2" : "justify-between px-4")}
-        style={windowDragStyle}
-      >
-        {macInset ? (
-          <div className={density === "icons" ? "h-5 w-full" : "w-14"} />
-        ) : browser ? (
-          <div className="flex items-center gap-2">
-            <span className="size-3 rounded-full bg-[#ff5f57]" />
-            <span className="size-3 rounded-full bg-[#febc2e]" />
-            <span className="size-3 rounded-full bg-[#28c840]" />
+      {/* The head, like Perspicax's: the brand row (the owl and the name, then
+          New and the collapse button) and a full-width search field that
+          opens the command palette. macOS owns inset traffic lights above the
+          brand row; the whole head is the window's drag handle there and on
+          Windows, with every control opted out. */}
+      <div data-sidebar-head style={windowDragStyle} className="shrink-0">
+        {(macInset || browser) && (
+          <div className={cn("flex h-9 items-center", density === "icons" ? "justify-center" : "px-4")} aria-hidden={browser ? true : undefined}>
+            {browser && (
+              <div className="flex items-center gap-2">
+                <span className="size-3 rounded-full bg-[#ff5f57]" />
+                <span className="size-3 rounded-full bg-[#febc2e]" />
+                <span className="size-3 rounded-full bg-[#28c840]" />
+              </div>
+            )}
           </div>
-        ) : <div />}
-        <div
-          className={cn("relative flex items-center gap-2", density === "icons" && "flex-col")}
-          style={windowNoDragStyle}
-        >
-          <button
-            type="button"
-            onClick={() => setSearchModal(true)}
-            aria-label={t("sidebar.searchAria")}
-            className="flex size-9 items-center justify-center rounded-full border border-sidebar-hairline text-sidebar-ink transition-colors hover:bg-sidebar-hover"
-          >
-            <Search size={18} strokeWidth={1.75} />
-          </button>
-          <button
-            ref={importReturnRef}
-            onClick={() => onCompose?.()}
-            aria-expanded={composeOpen}
-            aria-label={t("sidebar.new")}
-            className="flex size-9 items-center justify-center rounded-full border border-sidebar-hairline text-sidebar-ink transition-colors hover:bg-sidebar-hover"
-            title={t("sidebar.new")}
-          >
-            <Plus size={18} strokeWidth={1.75} />
-          </button>
-        </div>
+        )}
+        {density === "icons" ? (
+          <div className="flex flex-col items-center gap-1 px-2 pb-2 pt-1" style={windowNoDragStyle}>
+            <button
+              type="button"
+              onClick={() => toggleSidebarCollapsed()}
+              aria-label={t("sidebar.density.expand")}
+              title={t("sidebar.density.expand")}
+              data-sidebar-collapse
+              className={SIDEBAR_ICON_BUTTON}
+            >
+              <PanelLeftOpen size={18} strokeWidth={1.75} />
+            </button>
+            <button
+              type="button"
+              onClick={openCommandPalette}
+              aria-label={t("sidebar.searchAria")}
+              aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
+              title={`${t("sidebar.searchAria")} (${paletteKeys.join(" ")})`}
+              className={SIDEBAR_ICON_BUTTON}
+            >
+              <Search size={18} strokeWidth={1.75} />
+            </button>
+            <button
+              ref={importReturnRef}
+              type="button"
+              onClick={() => onCompose?.()}
+              aria-expanded={composeOpen}
+              aria-label={t("sidebar.new")}
+              title={t("sidebar.new")}
+              className={SIDEBAR_ICON_BUTTON}
+            >
+              <Plus size={18} strokeWidth={1.75} />
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className={cn("flex h-11 items-center justify-between gap-2 pl-4 pr-3", !(macInset || browser) && "mt-2")}>
+              <span className="flex min-w-0 items-center gap-2.5 text-sidebar-ink" data-sidebar-brand>
+                <img src="/pulsa-mark.svg" alt="" width={24} height={24} className="size-6 shrink-0" />
+                <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
+                <button
+                  ref={importReturnRef}
+                  type="button"
+                  onClick={() => onCompose?.()}
+                  aria-expanded={composeOpen}
+                  aria-label={t("sidebar.new")}
+                  title={t("sidebar.new")}
+                  className={SIDEBAR_ICON_BUTTON}
+                >
+                  <Plus size={18} strokeWidth={1.75} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleSidebarCollapsed()}
+                  aria-label={t("sidebar.density.collapseAria")}
+                  title={t("sidebar.density.collapseAria")}
+                  data-sidebar-collapse
+                  className={SIDEBAR_ICON_BUTTON}
+                >
+                  <PanelLeftClose size={18} strokeWidth={1.75} />
+                </button>
+              </span>
+            </div>
+            <div className="pb-2 pl-2 pr-3 pt-1.5" style={windowNoDragStyle}>
+              {/* Looks like a field, opens the palette: bots, rooms and
+                  transcript hits live there, the same place ⌘K goes. */}
+              <button
+                type="button"
+                data-sidebar-search
+                onClick={openCommandPalette}
+                aria-label={t("sidebar.searchAria")}
+                aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
+                className="flex h-8 w-full items-center gap-2 rounded-lg border border-sidebar-hairline bg-sidebar-hover pl-2.5 pr-1.5 text-left text-sidebar-ink-secondary transition-colors hover:border-sidebar-ink-secondary/50 hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              >
+                <Search size={14} strokeWidth={2} className="shrink-0" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{t("sidebar.searchPlaceholder")}</span>
+                <span className="flex shrink-0 items-center gap-0.5" aria-hidden="true">
+                  {paletteKeys.map((key) => (
+                    <kbd key={key} className="flex h-4 min-w-4 items-center justify-center rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1 font-sans text-[11px] leading-none text-sidebar-ink-secondary">{key}</kbd>
+                  ))}
+                </span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
-      {searchModal && <SidebarSearchModal onClose={() => setSearchModal(false)} />}
 
       {/* Bot list. GET /api/org 404 keeps this roster. */}
-      <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto pb-6 pt-1", density === "icons" ? "px-2" : "px-3")}>
+      <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto pb-6 pt-1", density === "icons" ? "px-2" : "pl-2 pr-3")}>
         {pinnedBots.length > 0 && (
           <div className={cn("mb-2 grid py-1.5", density === "icons" ? "grid-cols-1 gap-1" : "grid-cols-[repeat(auto-fit,minmax(80px,max-content))] justify-center gap-x-2 gap-y-3")}>
             {pinnedBots.map((bot) => {
@@ -2094,7 +2217,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   title={`${t("task.queued")} · ${queued.join(", ")}`} aria-label={`${t("sidebar.section.expand", { name: sectionLabel(id) })} · ${t("task.queued")} · ${queued.join(", ")}`}
                   className="mx-3 mb-1 self-start rounded bg-sidebar-hover px-2 py-0.5 text-[10px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.queued")} · {queued.length}</button>}
                 {!collapsed && (
-                  <>
+                  // Perspicax nests a group's items behind a thin guide line;
+                  // the icons rail has no room for the indent
+                  <div
+                    data-sidebar-nest
+                    role="group"
+                    aria-label={team?.name ?? sectionLabel(id)}
+                    className={density === "icons" ? "flex flex-col gap-1" : "ml-3.5 flex flex-col gap-0.5 border-l border-sidebar-hairline pl-1"}
+                  >
                     {sectionChiefItems.map((bot) => (
                       <BotListItem
                         key={bot.id}
@@ -2129,7 +2259,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                         onRenameStarted={() => setRenameBotId(null)}
                       />
                     ))}
-                  </>
+                  </div>
                 )}
                 {dropTarget?.id === id && dropTarget.place === "after" && draggingSectionId !== id && (
                   <div className="mx-2 h-0.5 rounded-full bg-accent" />
@@ -2145,7 +2275,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       </p>
 
       {/* Footer */}
-      <div className={cn(density === "icons" ? "px-2 pb-3 pt-2" : "px-4 pb-4")}>
+      <div data-sidebar-foot className={cn(density === "icons" ? "px-2 pb-3 pt-2" : "pb-3 pl-2 pr-3 pt-1")}>
         {density === "icons" && (
           <>
           <button
@@ -2229,60 +2359,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             </button>
           </div>
         ) : (
-          // One row, the way Grok Bot lays out its footer: your avatar
-          // (profile and app menu) on the left, the apps and tools pill
-          // filling the rest. The name lives in the avatar's tooltip.
-          <div className="flex items-center gap-2">
-            <div className="shrink-0">
-              <SidebarProfileMenu avatarOnly />
-            </div>
-            <div className="min-w-0 flex-1">
-              <SidebarMoreMenu
-      items={[
-        {
-          key: "team-map",
-          label: t("sidebar.nav.teamMap"),
-          icon: <Network size={18} />,
-          active: state.activeView === "team-map",
-          onSelect: () => dispatch({ type: "showTeamMap" }),
-        },
-        {
-          key: "routines",
-          tourId: "nav-automations",
-          label: t("sidebar.nav.automations"),
-          icon: <CalendarDays size={18} />,
-          active: state.activeView === "routines",
-          // folded away, this dot would otherwise vanish with the row
-          attention: state.routineRuns.some(
-            (run) => isRoutineProblemRun(run) && !run.seenAt,
-          ),
-          onSelect: () => dispatch({ type: "showRoutines" }),
-        },
-        {
-          key: "plugins",
-          tourId: "nav-apps",
-          label: t("sidebar.nav.connectedApps"),
-          icon: <Puzzle size={18} />,
-          onSelect: () => dispatch({ type: "togglePlugins", open: true }),
-        },
-        ...(!remoteClient ? [{
-          key: "templates",
-          label: t("sidebar.teamLibrary"),
-          icon: <Library size={18} />,
-          separatorBefore: true,
-          onSelect: () => setTeamLibraryOpen(true),
-        }] : []),
-        ...(!remoteClient && archivedBots.length > 0 ? [{
-          key: "archived",
-          label: t("sidebar.archived.title"),
-          icon: <Archive size={18} />,
-          trailing: <span className="text-[11.5px] text-ink-secondary">{archivedBots.length}</span>,
-          onSelect: () => setArchivedBotsOpen(true),
-        }] : []),
-      ]}
-    />
-            </div>
-          </div>
+          // One row, the way Perspicax lays out its account footer: your
+          // avatar and your full name, opening one menu with the sidebar's
+          // places first and the profile items after them.
+          <SidebarProfileMenu places={places} />
         )}
       </div>
 

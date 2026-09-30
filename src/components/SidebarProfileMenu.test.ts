@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  footerMenuItems,
   profileInitials,
   profileLabel,
   updateBusy,
@@ -164,5 +165,24 @@ describe("outward links", () => {
     expect(RELEASES_URL).toBe(`${APP_REPOSITORY}/releases`);
     expect(LICENSE_URL).toBe(`${APP_REPOSITORY}/blob/main/LICENSE`);
     expect(APP_REPOSITORY).toBe("https://github.com/pulsatrixtechnologies/pulsa-bot");
+  });
+});
+
+describe("footerMenuItems", () => {
+  const item = (key: string) => ({ key, label: key, onSelect: () => {} });
+
+  it("lists the places first, then a hairline, then the profile items", () => {
+    const merged = footerMenuItems(
+      [item("team-map"), item("routines"), item("plugins"), item("templates")],
+      [item("phone"), item("settings"), item("about")],
+    );
+    expect(merged.map((entry) => entry.key)).toEqual(["team-map", "routines", "plugins", "templates", "phone", "settings", "about"]);
+    expect(merged.find((entry) => entry.key === "phone")?.separatorBefore).toBe(true);
+    expect(merged.filter((entry) => entry.separatorBefore)).toHaveLength(1);
+  });
+
+  it("is the profile menu alone without places", () => {
+    const profile = [item("phone"), item("settings")];
+    expect(footerMenuItems([], profile)).toBe(profile);
   });
 });
