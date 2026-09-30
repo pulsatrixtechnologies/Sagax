@@ -2218,13 +2218,11 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   title={`${t("task.queued")} · ${queued.join(", ")}`} aria-label={`${t("sidebar.section.expand", { name: sectionLabel(id) })} · ${t("task.queued")} · ${queued.join(", ")}`}
                   className="mx-3 mb-1 self-start rounded bg-sidebar-hover px-2 py-0.5 text-[10px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.queued")} · {queued.length}</button>}
                 {!collapsed && (
-                  // Perspicax nests a group's items behind a thin guide line;
-                  // the icons rail has no room for the indent
                   <div
                     data-sidebar-nest
                     role="group"
                     aria-label={team?.name ?? sectionLabel(id)}
-                    className={density === "icons" ? "flex flex-col gap-1" : "ml-3.5 flex flex-col gap-0.5 border-l border-sidebar-hairline pl-1"}
+                    className={density === "icons" ? "flex flex-col gap-1" : "flex flex-col gap-0.5"}
                   >
                     {sectionChiefItems.map((bot) => (
                       <BotListItem
