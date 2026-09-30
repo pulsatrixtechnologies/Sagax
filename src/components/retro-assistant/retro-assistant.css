@@ -1,0 +1,687 @@
+/* Hibou 98: the retro assistant's own chrome. Self-contained (it does not
+   lean on the retro98 skin), loaded with the lazy chunk, every rule under
+   .r98-root. Late-90s UI language, drawn from scratch: silver bevels, navy
+   title bars, a pale-yellow balloon, dithered shadows, a small bitmap-ish
+   sans at 12px. */
+
+.r98-root {
+  --r98-face: #c0c0c0;
+  --r98-light: #ffffff;
+  --r98-hilite: #dfdfdf;
+  --r98-shadow: #808080;
+  --r98-dark: #000000;
+  --r98-navy: #000080;
+  --r98-title-2: #1084d0;
+  --r98-tip: #ffffe1;
+  --r98-font: Geneva, "Liberation Sans", "Nimbus Sans", "Helvetica Neue", Arial, sans-serif;
+  /* a 50% checkerboard, the era's stand-in for transparency */
+  --r98-dither: repeating-conic-gradient(#000 0% 25%, transparent 0% 50%) 0 0 / 2px 2px;
+  font-family: var(--r98-font);
+  font-size: 12px;
+  line-height: 1.35;
+  color: #000;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: auto;
+  color-scheme: light;
+}
+
+.r98-root *,
+.r98-root *::before,
+.r98-root *::after {
+  box-sizing: border-box;
+}
+
+/* ─── the owl on stage ─────────────────────────────────────────────────── */
+
+.r98-root .r98-stage {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+}
+.r98-root .r98-body {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+}
+.r98-root .r98-owl {
+  pointer-events: auto;
+  display: block;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  cursor: grab;
+  touch-action: none;
+  border-radius: 50%;
+}
+.r98-root .r98-owl:active {
+  cursor: grabbing;
+}
+.r98-root .r98-owl:focus-visible {
+  outline: 1px dotted #000;
+  outline-offset: 2px;
+}
+/* a dithered floor shadow under the feet */
+.r98-root .r98-floor {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: -3px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--r98-dither);
+  opacity: 0.45;
+}
+
+.r98-root .r98-bulb {
+  pointer-events: auto;
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  margin-left: -13px;
+  width: 26px;
+  height: 32px;
+  padding: 2px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  animation: r98-bob 1.6s ease-in-out infinite;
+  filter: drop-shadow(0 0 4px #ffff66);
+}
+.r98-root .r98-bulb:focus-visible {
+  outline: 1px dotted #000;
+}
+
+.r98-root .r98-notebook {
+  position: absolute;
+  left: -22px;
+  bottom: 4px;
+  transform: rotate(-8deg);
+}
+.r98-root .r98-scribble {
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: r98-write 1.8s steps(12) infinite;
+}
+.r98-root .r98-pencil {
+  animation: r98-pencil 0.3s steps(2) infinite;
+}
+
+.r98-root .r98-zzz {
+  position: absolute;
+  top: 2px;
+  left: 18px;
+  font: bold 14px/1 var(--r98-font);
+  color: var(--r98-navy);
+  text-shadow: 1px 1px 0 #fff;
+}
+.r98-root .r98-zzz span {
+  position: absolute;
+  opacity: 0;
+  animation: r98-z 2.4s linear infinite;
+}
+.r98-root .r98-zzz span:nth-child(2) {
+  animation-delay: 0.8s;
+  font-size: 17px;
+}
+.r98-root .r98-zzz span:nth-child(3) {
+  animation-delay: 1.6s;
+  font-size: 21px;
+}
+
+/* tapping on the glass: two knock marks where the wing meets the "screen" */
+.r98-root .r98-tap {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+}
+.r98-root .r98-tap span {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: -9px;
+  border: 2px dotted #000;
+  border-radius: 50%;
+  opacity: 0;
+  animation: r98-knock 0.55s steps(4) 2;
+}
+.r98-root .r98-tap span:nth-child(2) {
+  animation-delay: 0.14s;
+  left: 10px;
+  top: -8px;
+}
+
+.r98-root .r98-envelope {
+  position: absolute;
+  left: 20px;
+  top: 30px;
+  animation: r98-mail 1.3s cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+
+.r98-root .r98-puff {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+.r98-root .r98-puff > span {
+  position: absolute;
+  margin: -5px;
+  animation: r98-sparkle 0.7s ease-out forwards;
+  transform: rotate(calc(var(--i) * 45deg)) translateY(0);
+}
+
+/* ─── acts and moods ───────────────────────────────────────────────────── */
+
+.r98-root .r98-act-enter .r98-body {
+  animation: r98-enter 1s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.r98-root .r98-act-leave .r98-body {
+  animation: r98-leave 0.7s ease-in forwards;
+}
+.r98-root .r98-act-leave .r98-floor {
+  animation: r98-fade 0.5s ease-in forwards;
+}
+.r98-root .r98-act-tap .r98-body {
+  animation: r98-lean 0.55s ease-in-out 2;
+}
+.r98-root .r98-act-lookAround .r98-body,
+.r98-root .r98-mood-look .r98-body {
+  animation: r98-tilt 2.2s ease-in-out;
+}
+.r98-root .r98-act-yawn .r98-body {
+  animation: r98-yawn 2.2s ease-in-out;
+}
+.r98-root .r98-act-celebrate .r98-body {
+  animation: r98-hop 0.6s cubic-bezier(0.3, 0, 0.3, 1) 2;
+}
+.r98-root .r98-mood-doze .r98-body {
+  animation: r98-breathe 3s ease-in-out infinite;
+}
+
+/* ─── the balloon ──────────────────────────────────────────────────────── */
+
+.r98-root .r98-balloon {
+  position: fixed;
+  z-index: 41;
+  width: 262px;
+  pointer-events: auto;
+  animation: r98-pop 0.16s steps(3) both;
+}
+/* dithered drop shadow, offset like the era's */
+.r98-root .r98-balloon-shade {
+  position: absolute;
+  inset: 0;
+  transform: translate(4px, 4px);
+  border-radius: 9px;
+  background: var(--r98-dither);
+  opacity: 0.5;
+}
+.r98-root .r98-balloon-face {
+  position: relative;
+  padding: 9px 10px 10px;
+  background: var(--r98-tip);
+  border: 1px solid #000;
+  border-radius: 9px;
+}
+/* the tail, pointing down to the owl: a black wedge with a yellow wedge inside */
+.r98-root .r98-tail {
+  position: absolute;
+  right: 44px;
+  bottom: -15px;
+  width: 22px;
+  height: 15px;
+  background: #000;
+  clip-path: polygon(0 0, 100% 0, 80% 100%);
+}
+.r98-root .r98-tail::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: -1px;
+  width: 17px;
+  height: 13px;
+  background: var(--r98-tip);
+  clip-path: polygon(0 0, 100% 0, 80% 100%);
+}
+.r98-root .r98-balloon-below .r98-tail {
+  bottom: auto;
+  top: -15px;
+  clip-path: polygon(80% 0, 0 100%, 100% 100%);
+}
+.r98-root .r98-balloon-below .r98-tail::after {
+  top: 3px;
+  clip-path: polygon(80% 0, 0 100%, 100% 100%);
+}
+.r98-root .r98-balloon p {
+  margin: 0 0 7px;
+}
+.r98-root .r98-question {
+  font-weight: bold;
+}
+.r98-root .r98-tip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+
+.r98-root .r98-bullets {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.r98-root .r98-bullets button {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  padding: 2px 2px 2px 0;
+  border: 1px dotted transparent;
+  background: none;
+  color: #000;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.r98-root .r98-bullets button:hover span:last-child {
+  color: var(--r98-navy);
+  text-decoration: underline;
+}
+.r98-root .r98-bullets button:focus-visible {
+  outline: none;
+  border-color: #000;
+}
+/* the round blue bullet, lit from the top left */
+.r98-root .r98-dot {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #cfe6ff 0 18%, #3d7cff 38%, #0020a8 78%, #000c50 100%);
+  box-shadow: 1px 1px 0 #8080804d;
+}
+
+.r98-root .r98-ask {
+  margin: 0;
+}
+.r98-root .r98-ask-label {
+  display: block;
+  margin-bottom: 3px;
+}
+
+/* ─── controls ─────────────────────────────────────────────────────────── */
+
+.r98-root .r98-field {
+  display: block;
+  width: 100%;
+  height: 21px;
+  margin-bottom: 7px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+  font: inherit;
+  box-shadow:
+    inset 1px 1px 0 var(--r98-shadow),
+    inset -1px -1px 0 var(--r98-light),
+    inset 2px 2px 0 var(--r98-dark),
+    inset -2px -2px 0 var(--r98-hilite);
+}
+.r98-root .r98-field::placeholder {
+  color: #6a6a6a;
+}
+.r98-root .r98-field:focus {
+  outline: none;
+}
+
+.r98-root .r98-btn {
+  min-width: 70px;
+  min-height: 23px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 0;
+  background: var(--r98-face);
+  color: #000;
+  font: inherit;
+  cursor: pointer;
+  box-shadow:
+    inset -1px -1px 0 var(--r98-dark),
+    inset 1px 1px 0 var(--r98-light),
+    inset -2px -2px 0 var(--r98-shadow),
+    inset 2px 2px 0 var(--r98-hilite);
+}
+.r98-root .r98-btn:active {
+  padding: 4px 9px 2px 11px;
+  box-shadow:
+    inset -1px -1px 0 var(--r98-light),
+    inset 1px 1px 0 var(--r98-dark),
+    inset -2px -2px 0 var(--r98-hilite),
+    inset 2px 2px 0 var(--r98-shadow);
+}
+.r98-root .r98-btn.r98-default {
+  outline: 1px solid #000;
+  outline-offset: -1px;
+}
+.r98-root .r98-btn:focus-visible {
+  outline: 1px dotted #000;
+  outline-offset: -5px;
+}
+.r98-root .r98-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+.r98-root .r98-row-3 .r98-btn {
+  min-width: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.r98-root .r98-row-start {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.r98-root .r98-row-split {
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.r98-root .r98-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+.r98-root .r98-check input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.r98-root .r98-check-box {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  background: #fff;
+  color: transparent;
+  box-shadow:
+    inset 1px 1px 0 var(--r98-shadow),
+    inset -1px -1px 0 var(--r98-light),
+    inset 2px 2px 0 var(--r98-dark),
+    inset -2px -2px 0 var(--r98-hilite);
+}
+.r98-root .r98-check input:checked + .r98-check-box {
+  color: #000;
+}
+.r98-root .r98-check input:focus-visible ~ span:last-child {
+  outline: 1px dotted #000;
+}
+
+/* ─── windows, menus ───────────────────────────────────────────────────── */
+
+.r98-root .r98-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.r98-root .r98-window-wrap {
+  position: relative;
+  pointer-events: auto;
+  max-width: calc(100vw - 24px);
+  animation: r98-pop 0.12s steps(3) both;
+}
+.r98-root .r98-window-shade {
+  position: absolute;
+  inset: 0;
+  transform: translate(5px, 5px);
+  background: var(--r98-dither);
+  opacity: 0.4;
+}
+.r98-root .r98-window {
+  position: relative;
+  padding: 3px;
+  background: var(--r98-face);
+  box-shadow:
+    inset -1px -1px 0 var(--r98-dark),
+    inset 1px 1px 0 var(--r98-hilite),
+    inset -2px -2px 0 var(--r98-shadow),
+    inset 2px 2px 0 var(--r98-light);
+}
+.r98-root .r98-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 2px 0 3px;
+  background: linear-gradient(90deg, var(--r98-navy), var(--r98-title-2));
+  color: #fff;
+  font-weight: bold;
+}
+.r98-root .r98-titlebar-icon {
+  display: inline-flex;
+}
+.r98-root .r98-titlebar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.r98-root .r98-titlebar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: var(--r98-face);
+  color: #000;
+  cursor: pointer;
+  box-shadow:
+    inset -1px -1px 0 var(--r98-dark),
+    inset 1px 1px 0 var(--r98-light),
+    inset -2px -2px 0 var(--r98-shadow),
+    inset 2px 2px 0 var(--r98-hilite);
+}
+.r98-root .r98-titlebar-btn:active {
+  box-shadow:
+    inset -1px -1px 0 var(--r98-light),
+    inset 1px 1px 0 var(--r98-dark),
+    inset -2px -2px 0 var(--r98-hilite),
+    inset 2px 2px 0 var(--r98-shadow);
+}
+.r98-root .r98-window-body {
+  padding: 10px 9px 9px;
+}
+.r98-root .r98-group {
+  margin: 0 0 10px;
+  padding: 8px 10px 6px;
+  border: 0;
+  box-shadow:
+    inset 1px 1px 0 var(--r98-shadow),
+    inset -1px -1px 0 var(--r98-light),
+    inset 2px 2px 0 var(--r98-light),
+    inset -2px -2px 0 var(--r98-shadow);
+}
+.r98-root .r98-group legend {
+  padding: 0 3px;
+  margin-left: -2px;
+}
+.r98-root .r98-hint {
+  margin: 0 0 6px;
+  color: #000;
+}
+.r98-root .r98-sunken {
+  background: #fff;
+  box-shadow:
+    inset 1px 1px 0 var(--r98-shadow),
+    inset -1px -1px 0 var(--r98-light),
+    inset 2px 2px 0 var(--r98-dark),
+    inset -2px -2px 0 var(--r98-hilite);
+}
+.r98-root .r98-gallery {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+.r98-root .r98-gallery-stage {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 140px;
+  height: 150px;
+  background-color: #008080;
+}
+.r98-root .r98-gallery-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.r98-root .r98-gallery-text p {
+  margin: 4px 0 8px;
+  flex: 1;
+}
+.r98-root .r98-gallery-name {
+  font-size: 13px;
+}
+
+.r98-root .r98-menu {
+  position: fixed;
+  z-index: 61;
+  padding: 3px;
+  background: var(--r98-face);
+  box-shadow:
+    inset -1px -1px 0 var(--r98-dark),
+    inset 1px 1px 0 var(--r98-hilite),
+    inset -2px -2px 0 var(--r98-shadow),
+    inset 2px 2px 0 var(--r98-light),
+    3px 3px 0 #00000059;
+}
+.r98-root .r98-menu-item {
+  display: block;
+  width: 100%;
+  padding: 3px 18px 3px 20px;
+  border: 0;
+  background: none;
+  color: #000;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.r98-root .r98-menu-item:hover,
+.r98-root .r98-menu-item:focus {
+  outline: none;
+  background: var(--r98-navy);
+  color: #fff;
+}
+.r98-root .r98-menu-sep {
+  height: 2px;
+  margin: 3px 1px;
+  border-top: 1px solid var(--r98-shadow);
+  border-bottom: 1px solid var(--r98-light);
+}
+
+/* ─── keyframes ────────────────────────────────────────────────────────── */
+
+@keyframes r98-enter {
+  0% { transform: translate(140%, 30%) rotate(18deg); opacity: 0; }
+  45% { transform: translate(-6%, -34%) rotate(-6deg); opacity: 1; }
+  62% { transform: translate(0, 0) scale(1.08, 0.9); }
+  74% { transform: translate(0, -12%) scale(0.96, 1.05); }
+  86% { transform: translate(0, 0) scale(1.03, 0.97); }
+  100% { transform: none; }
+}
+@keyframes r98-leave {
+  0% { transform: none; opacity: 1; }
+  30% { transform: scale(1.12, 0.88); opacity: 1; }
+  100% { transform: scale(0.05) rotate(40deg); opacity: 0; }
+}
+@keyframes r98-fade {
+  to { opacity: 0; }
+}
+@keyframes r98-sparkle {
+  0% { transform: rotate(calc(var(--i) * 45deg)) translateY(0) scale(0.4); opacity: 1; }
+  100% { transform: rotate(calc(var(--i) * 45deg)) translateY(-54px) scale(1.2); opacity: 0; }
+}
+@keyframes r98-lean {
+  0%, 100% { transform: none; }
+  40% { transform: translateY(2px) rotate(-7deg) scale(1.04); }
+  55% { transform: translateY(0) rotate(-3deg) scale(1.06); }
+}
+@keyframes r98-tilt {
+  0%, 100% { transform: none; }
+  25% { transform: rotate(-9deg); }
+  60% { transform: rotate(8deg); }
+}
+@keyframes r98-yawn {
+  0%, 100% { transform: none; }
+  35% { transform: scale(0.97, 1.08); }
+  55% { transform: scale(1.02, 1.1) rotate(-3deg); }
+}
+@keyframes r98-hop {
+  0%, 100% { transform: none; }
+  45% { transform: translateY(-16px) scale(0.97, 1.04); }
+  80% { transform: translateY(0) scale(1.05, 0.95); }
+}
+@keyframes r98-breathe {
+  0%, 100% { transform: none; }
+  50% { transform: scale(1.02, 0.97) translateY(1px); }
+}
+@keyframes r98-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes r98-write {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes r98-pencil {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-2px, 1px); }
+}
+@keyframes r98-z {
+  0% { transform: translate(0, 0); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translate(-16px, -34px); opacity: 0; }
+}
+@keyframes r98-knock {
+  0% { transform: scale(0.3); opacity: 1; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+@keyframes r98-mail {
+  0% { transform: scale(0.2) rotate(0); opacity: 0; }
+  18% { transform: scale(1) rotate(-6deg); opacity: 1; }
+  35% { transform: translate(-6px, 4px) scale(1) rotate(-10deg); opacity: 1; }
+  100% { transform: translate(-260px, -340px) scale(0.5) rotate(-30deg); opacity: 0; }
+}
+@keyframes r98-pop {
+  0% { transform: scale(0.85); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+
+/* Reduced motion: the owl stays, readable and still (blinks only, from
+   OwlAvatar). Nothing slides, bounces, flies or floats. */
+.r98-root[data-reduced] *,
+.r98-root[data-reduced] *::before,
+.r98-root[data-reduced] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .r98-root *,
+  .r98-root *::before,
+  .r98-root *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
