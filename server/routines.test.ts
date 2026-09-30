@@ -10,6 +10,7 @@ import {
   nextOccurrence,
   RoutineManager,
   RoutineScheduleError,
+  RoutineInputError,
   type RoutineManagerOptions,
   type RoutineRun,
   type RoutineSchedule,
@@ -408,6 +409,18 @@ describe("cron routines use the existing persistent scheduler", () => {
       catch (error) { expect(error).toMatchObject({ status: 400 }); }
     }
     expect(readFileSync(h.options.file!, "utf8")).toBe(before);
+  });
+
+  it("answers a room goal without a room, or a nameless routine, as a 400 input error", () => {
+    const h = harness(start);
+    for (const bad of [{ ...input(), target: "room-goal" as const }, { ...input(), name: "" }]) {
+      try { h.manager.create(bad); throw new Error("expected rejection"); }
+      catch (error) {
+        expect(error).toBeInstanceOf(RoutineInputError);
+        expect(error).toMatchObject({ status: 400 });
+      }
+    }
+    expect(() => h.manager.create({ ...input(), target: "room-goal" })).toThrow("Choose a room for this goal");
   });
 });
 

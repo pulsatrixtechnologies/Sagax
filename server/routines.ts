@@ -621,6 +621,21 @@ export class RoutineScheduleError extends Error {
   readonly status = 400;
 }
 
+/** A routine the caller described wrongly (no room for a room goal, no
+ * name, a target that no longer exists): a 400, not a server fault. */
+export class RoutineInputError extends Error {
+  readonly status = 400;
+}
+
+function validInput(input: RoutineInput, after: number): ReturnType<typeof sanitizeInput> {
+  try {
+    return sanitizeInput(input, after);
+  } catch (error) {
+    if (error instanceof RoutineScheduleError || error instanceof RoutineInputError || !(error instanceof Error)) throw error;
+    throw new RoutineInputError(error.message);
+  }
+}
+
 function parseSchedule(schedule: RoutineScheduleInput, after: number): RoutineSchedule {
   if (schedule?.type === "cron") return normalizeCronSchedule(schedule, after);
   if (schedule?.type === "once") {
@@ -1089,8 +1104,8 @@ export class RoutineManager {
       }
     }
     const at = this.now();
-    const clean = sanitizeInput(input, at);
-    if (this.targetState(clean) === "missing") throw new Error(this.missingTargetMessage(clean.target));
+    const clean = validInput(input, at);
+    if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
     const nextRunAt = clean.enabled ? this.initialOccurrence(clean.schedule, at) : null;
     if (clean.schedule.type === "interval" && clean.enabled && nextRunAt === null) {
       throw new Error("This interval has no future runs. Choose a later end date or turn it off.");
@@ -1131,7 +1146,7 @@ export class RoutineManager {
     const routine = this.routines.find((r) => r.id === id);
     if (!routine) return null;
     const now = this.now();
-    const clean = sanitizeInput({
+    const clean = validInput({
       name: patch.name ?? routine.name,
       prompt: patch.prompt ?? routine.prompt,
       target: patch.target ?? routine.target,
@@ -1146,7 +1161,7 @@ export class RoutineManager {
       continuity: patch.continuity ?? routine.continuity,
       overlap: Object.hasOwn(patch, "overlap") ? patch.overlap : routine.overlap,
     }, now);
-    if (this.targetState(clean) === "missing") throw new Error(this.missingTargetMessage(clean.target));
+    if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
     const scheduleChanged = JSON.stringify(clean.schedule) !== JSON.stringify(routine.schedule);
     const enabledChanged = clean.enabled !== routine.enabled;
     // Definition-only edits retain due work and offline catch-up.
