@@ -245,6 +245,11 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       return bot?.messages.find((m) => m.role === "bot" && m.kind === "text" && m.text) ?? null;
     }, 30_000);
     expect(reply.text).toBeTruthy();
+    // organization mode names the person by their display name, never their email
+    const asked = (await botsOf(bob)).find((b) => b.id === shared.id)?.messages
+      .find((m) => m.role === "user" && m.text === "ping from bob") as { sender?: { name: string } } | undefined;
+    expect(asked?.sender?.name).toBe("Bob");
+    expect(JSON.stringify(asked)).not.toContain("bob@example.test");
     await waitFor(async () => existsSync(dump));
     const env = (JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env;
     expect(env.ANTHROPIC_API_KEY).toBe(ORG_KEY);
@@ -386,8 +391,13 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect((await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "full" })).status).toBe(404);
     const aliceId = (await api("GET", "/api/auth/session", alice)).body.principalId;
     expect((await api("POST", `/api/bots/${zed.id}/direct-grants`, erin, { userId: aliceId })).status).toBe(200);
-    // the member herself cannot set an approval level at all
-    expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full" })).status).toBe(403);
+    // the member owner asking Full or Custom gets the org rule, not a field refusal
+    const ownFull = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full" });
+    expect(ownFull.status, ownFull.text).toBe(409);
+    expect(ownFull.body.code).toBe("member_bot_full_access");
+    expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "custom" })).body.code).toBe("member_bot_full_access");
+    // any other approval level stays outside a member's fields
+    expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "auto" })).status).toBe(403);
     const full = await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "full" });
     expect(full.status, full.text).toBe(409);
     expect(full.body.code).toBe("member_bot_full_access");

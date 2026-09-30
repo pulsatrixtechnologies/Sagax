@@ -828,6 +828,13 @@ const turnSpeakerPrincipals = new Map<string, string>();
  * chose while pairing. */
 function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   if (auth.kind !== "session") return undefined;
+  // Organization mode shows no email: the person reads as their provider
+  // display name, then their login.
+  if (IDENTITY.kind === "perspicax") {
+    const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
+    const orgName = (person?.name?.trim() || person?.login?.trim() || auth.session.label?.trim() || "");
+    return orgName ? { name: orgName, id: personKey(auth.session) } : undefined;
+  }
   const name = (auth.session.email ?? auth.session.label ?? "").trim();
   return name ? { name, id: personKey(auth.session) } : undefined;
 }
@@ -20286,6 +20293,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
         const target = store.bot(m[1]);
         const own = Boolean(target && memberOwnsBot(auth, target));
+        // A member asking Full or Custom for their own bot hits the org rule
+        // first (S3-7): the answer is the same 409 an admin gets.
+        if (
+          own && target && memberOwnedInOrg(target) &&
+          (body.approvalMode === "full" || body.approvalMode === "custom")
+        ) {
+          return json(res, 409, MEMBER_BOT_FULL_ACCESS);
+        }
         const field = own ? memberBotFieldViolation(body) : clientBotPatchViolation(body);
         if (field) {
           return json(res, 403, {
