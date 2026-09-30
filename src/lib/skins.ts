@@ -15,6 +15,7 @@ export const SKIN_IDS = [
   "linen",
   "dusk",
   "daylight",
+  "retro98",
 ] as const;
 export type SkinId = (typeof SKIN_IDS)[number];
 
@@ -23,6 +24,8 @@ export type Skin = {
   name: string;
   /** One line, shown under the name in the picker. */
   tagline: string;
+  /** A secret skin: the picker lists it only once this device has unlocked it. */
+  secret?: boolean;
 };
 
 export const SKINS: readonly Skin[] = [
@@ -36,7 +39,13 @@ export const SKINS: readonly Skin[] = [
   { id: "linen", name: "Linen", tagline: "Clean daylight with a restrained navy accent." },
   { id: "dusk", name: "Dusk", tagline: "Muted plum after dark, calm and low-key." },
   { id: "daylight", name: "Daylight", tagline: "Midnight in reverse. Near-white, ink-black bubbles." },
+  { id: "retro98", name: "Hibou 98", tagline: "Bevelled grey windows on a teal desktop, straight out of the late 90s.", secret: true },
 ];
+
+/** The skins the picker shows: every public one, plus the secret ones this device unlocked. */
+export function visibleSkins(unlocked: boolean, active?: SkinId): readonly Skin[] {
+  return SKINS.filter((skin) => !skin.secret || unlocked || skin.id === active);
+}
 
 export const DEFAULT_SKIN: SkinId = "pulsatrix";
 
@@ -78,6 +87,10 @@ export function readSkin(): SkinId {
  * attribute rather than a class so it can never collide with Tailwind.
  */
 export function applySkin(id: SkinId): void {
+  // A structural skin brings a stylesheet layer that tokens cannot express.
+  // It is fetched only when that skin is worn, and every rule in it is scoped
+  // to the skin, so it stays inert after switching away.
+  if (id === "retro98") void import("../styles/retro98.css").catch(() => undefined);
   document.documentElement.dataset.skin = id;
   try {
     getStore()?.setItem(KEY, id);

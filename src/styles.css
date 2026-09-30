@@ -788,6 +788,60 @@
   --radius-xl: 14px;
 }
 
+/* ── Hibou 98 (secret) ─────────────────────────────────────────────────────
+   The easter-egg skin, unlocked by the retro owl assistant. A late-90s
+   desktop look drawn from the era's shared UI language only: silver-grey
+   chrome, white client areas, navy selection, square corners. No brand art.
+   These tokens are the part a palette can express; the bevels, title bars,
+   the teal desktop and the scrollbars live in src/styles/retro98.css, which
+   is loaded only while this skin is worn. A light skin on every OS setting.
+   ───────────────────────────────────────────────────────────────────────── */
+[data-skin="retro98"] {
+  --code-color-scheme: light;
+  --color-app: #ffffff;           /* a window's white client area */
+  --color-panel: #c0c0c0;         /* the silver chrome */
+  --color-sidebar: #c0c0c0;              /* = panel: the silver chrome */
+  --color-sidebar-ink: #000000;
+  --color-sidebar-ink-secondary: #3c3c3c;
+  --color-sidebar-hover: #00008014;
+  --color-sidebar-selected: #00008033;
+  --color-sidebar-hairline: #808080;
+  --color-raised: #c0c0c0;
+  --color-raised-hover: #b4b4b4;
+  --color-composer: #ffffff;      /* a sunken edit field */
+  --color-composer-ring: #808080;
+  --color-card: #e4e4e4;          /* a bot's reply, a bevelled panel */
+  --color-menu: #c0c0c0;
+  --color-inset: #ffffff;
+  --color-control: #d4d0c8;
+  --color-hairline: #808080;
+
+  --color-ink: #000000;
+  --color-ink-secondary: #3c3c3c;
+
+  --color-accent: #000080;        /* the era's selection navy */
+  --color-accent-border: #000080;
+  --color-accent-text: #000080;
+  --color-focus: #000000;
+  --color-accent-ink: #ffffff;
+  --color-bubble-user: #000080;
+  --color-bubble-user-ink: #ffffff;
+
+  --color-success: #006400;
+  --color-danger: #a00000;
+  --color-danger-ink: #ffffff;
+  --color-success-ink: #ffffff;
+  --color-warning: #705000;
+  --color-scrollbar: #808080;
+  --color-maus-line: #3c3c3c;
+  --app-glow: none;
+
+  --font-sans: Geneva, "Liberation Sans", "Nimbus Sans", "Helvetica Neue", Arial, sans-serif;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  color-scheme: light;
+}
+
 /* Shiki emits both palettes so cached blocks follow the nearest skin without
    re-tokenizing. Scope the scheme to code; native controls keep their styling. */
 .chat-md .shiki {
