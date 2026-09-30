@@ -229,9 +229,17 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     // a session that is gone is refused (the loopback without any session
     // is refused by the gate before the route)
     const gone = { cookie: `${alice.cookie!.split("=")[0]}=omb_s_gone` };
-    expect((await api("GET", "/api/org/routine-delegation", gone)).status).toBe(401);
-    expect((await api("POST", "/api/org/routine-delegation", gone, {})).status).toBe(401);
-    expect((await api("GET", "/api/org/routine-delegation")).status).toBeGreaterThanOrEqual(401);
+    for (const method of ["GET", "POST", "DELETE"]) {
+      // fix 2 contract item 5: a session that expired or was revoked is the
+      // gate's 401; no session under service trust (the organization
+      // default) is the gate's 403.
+      const expired = await api(method, "/api/org/routine-delegation", gone, method === "POST" ? {} : undefined);
+      expect(expired.status, expired.text).toBe(401);
+      expect(expired.body.error).toMatch(/^unauthorized: this session has expired or was revoked; /);
+      const anonymous = await api(method, "/api/org/routine-delegation", undefined, method === "POST" ? {} : undefined);
+      expect(anonymous.status, anonymous.text).toBe(403);
+      expect(anonymous.body.error).toMatch(/^forbidden: on this shared server a local request without a session may only use the service routes; /);
+    }
     expect((await api("GET", "/api/org/routine-delegation", alice)).body).toEqual({ state: "none", suspended: 0 });
     expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
     const status = (await api("GET", "/api/org/routine-delegation", alice)).body;
