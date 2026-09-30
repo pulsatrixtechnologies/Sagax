@@ -214,6 +214,20 @@ Un module `server/authz.ts` absorbe `channel-visibility.ts` et `direct-grants.ts
 
 La branche `fix/member-identity` (`server/viewer-identity.ts`, `memberBotFieldViolation` dans `request-auth.ts`) se garde telle quelle: le nom et le courriel viennent des claims au lieu de l'adresse de connexion.
 
+### Les sections de la barre latérale sont des canaux (décision de JC, 2026-09-30)
+
+Aujourd'hui une section de la barre latérale n'est qu'une étiquette texte posée sur un bot (`bot.section`, créée depuis le menu d'un bot: « Déplacer vers l'équipe » puis « Nouvelle équipe… », `Sidebar.tsx`). JC veut qu'une section soit vue comme un canal, au sens Discord ou Teams:
+
+- Une section **est** un canal d'organisation: elle a un identifiant, un nom, des membres (utilisateurs ou équipes Perspicax, `user:<ulid>` / `team:<ulid>`, avec les rôles de canal `moderator`, `participant`, `readonly`) et sa propre conversation de groupe.
+- Les bots rangés dans une section sont les bots du canal: être membre de la section donne `bot.use` sur ces bots (niveau par défaut réglable par section, jamais plus que `run` sans droit explicite), et l'accès suit l'appartenance, comme un droit d'équipe. Retirer quelqu'un de la section lui retire cet accès tout de suite (scénario C).
+- Partager une section avec une équipe Perspicax partage d'un coup tous ses bots et sa conversation: c'est la voie normale de partage; le droit par bot reste pour les exceptions.
+- « General » est la section par défaut et personnelle: non partageable, non renommable, non supprimable.
+- Gestion par clic droit dans la barre latérale: sur l'en-tête d'une section, « Nouvelle section… », « Renommer… », « Membres et partage… », « Monter » / « Descendre », « Tout replier / Tout déplier », « Supprimer la section » (ses bots retournent dans General); sur l'espace vide de la liste, « Nouvelle section… ». Création et renommage en place dans l'en-tête (Entrée valide, Échap annule); Maj+F10 ou la touche menu ouvre le même menu au clavier. Qui peut faire quoi passe par `can()` (`channel.moderate` pour renommer, gérer les membres et supprimer).
+- Migration: chaque étiquette `bot.section` existante devient une section-canal privée à son propriétaire, sans aucun membre de plus; rien n'est partagé sans action de quelqu'un.
+- En mode solo, les sections restent de simples groupes locaux (mêmes menus, sans « Membres et partage… »).
+
+Tranche: la tranche 3 livre le modèle (section = canal, migration, clic droit, conversation de section) avec le partage à un utilisateur; la tranche 4 ajoute le partage d'une section à une équipe Perspicax et les niveaux par défaut. Si la tranche 3 est déjà en cours ou livrée au moment de lire ceci, tout va dans la tranche 4.
+
 ## 4. MCP configuré automatiquement
 
 ### Recommandation: échange de jeton RFC 8693, pas un second OAuth par personne
