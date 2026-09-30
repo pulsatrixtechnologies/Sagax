@@ -15419,6 +15419,16 @@ function botUserName(bot: { ownerUserId?: unknown }): string {
   return displayNameFromEmail(principals.byId(owner)?.email) || "User";
 }
 
+/** Organization server: a room a signed-in person creates without naming
+ * its people lists them, or its creator could not see it (channel.read
+ * needs humanIds). An explicit humanIds list is kept as sent. */
+function withCreatorListed(auth: RequestAuth, body: unknown): unknown {
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return body;
+  if (!body || typeof body !== "object" || Array.isArray(body) || Object.prototype.hasOwnProperty.call(body, "humanIds")) return body;
+  const principalId = auth.session.principalId?.trim();
+  return principalId ? { ...(body as Record<string, unknown>), humanIds: [principalId] } : body;
+}
+
 function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already: ReadonlySet<string>): string | null {
   const actorId = channelActorId(auth);
   for (const id of botIds) {
@@ -19872,7 +19882,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
       if (hiddenMember) return json(res, 400, { error: `unknown channel member: ${String(hiddenMember)}` });
-      const group = createChannel(body);
+      const group = createChannel(withCreatorListed(auth, body));
       // Created in a section by one of its members: the section opens it.
       if (group.section && mayPlaceRoomIn(auth, group.section)) sectionChannels?.recordRoomPlacement(group.section, group.id);
       return json(res, 201, { group: { ...publicGroupState(group), messages: [] } });

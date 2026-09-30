@@ -354,6 +354,26 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     expect(edited.body.routine.suspended).toBeUndefined();
   }, 150_000);
 
+  it("a room bob creates without naming its people is his to see, and a room goal on it is his", async () => {
+    const own = await api("POST", "/api/bots", bob, { name: "Yann" });
+    expect(own.status, own.text).toBe(201);
+    const room = await api("POST", "/api/groups", bob, { name: "Bob's room", memberIds: [own.body.bot.id], setup: { bulletin: "", defaultResponder: { kind: "everyone" } } });
+    expect(room.status, room.text).toBe(201);
+    const roomId = room.body.group.id as string;
+    expect(((await api("GET", "/api/groups", bob)).body.groups as Array<{ id: string }>).map((g) => g.id)).toContain(roomId);
+    // carol, not listed, does not see it
+    const carol = await signIn(CAROL);
+    expect(((await api("GET", "/api/groups", carol)).body.groups as Array<{ id: string }>).map((g) => g.id)).not.toContain(roomId);
+    const schedule = { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 };
+    const noRoom = await api("POST", "/api/routines", bob, { name: "Goal", botId: own.body.bot.id, prompt: "Plan.", target: "room-goal", enabled: false, schedule });
+    expect(noRoom.status, noRoom.text).toBe(400);
+    expect(noRoom.body.error).toBe("Choose a room for this goal");
+    const goal = await api("POST", "/api/routines", bob, { name: "Goal", botId: own.body.bot.id, prompt: "Plan.", target: "room-goal", groupId: roomId, enabled: false, schedule });
+    expect(goal.status, goal.text).toBe(201);
+    expect(goal.body.routine.runAs).toEqual({ principalId: ids.bob, name: "Bob" });
+    expect(goal.body.routine.suspended).toBeUndefined();
+  }, 60_000);
+
   it("a disable in Perspicax pauses her routine person_out, and no run follows", async () => {
     idp.disable(ALICE.sub);
     idp.setDirectoryStatus(ALICE.sub, "disabled");
