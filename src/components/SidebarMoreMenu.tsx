@@ -75,7 +75,10 @@ function AppStack() {
             FAN[i],
           )}
         >
-          <Mark />
+          {/* tinted at rest, real colours on hover/focus/open (.footer-tint) */}
+          <span className="footer-tint flex">
+            <Mark />
+          </span>
         </span>
       ))}
     </span>
