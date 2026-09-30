@@ -7,6 +7,9 @@
 //   PATCH /api/org/settings   { memberBotsUseOrgKey } (organization admin)
 //   GET   /api/org/approvals  approvals waiting for an organization admin
 //                             (server commands of members' bots)
+//   GET, POST, DELETE /api/org/routine-delegation
+//                             the caller's own routine delegation (slice 6):
+//                             status, start the Perspicax consent, revoke
 //
 // Registered before the interim organization routes, which answer only in
 // solo mode (server/org-routes.ts).
@@ -72,6 +75,18 @@ export interface PerspicaxOrgRouteDeps {
   teams?(): OrgDirectoryTeam[];
   /** Slice 4: who is asking. */
   viewer?(auth: RequestAuth): OrgDirectoryViewer;
+  /** Slice 6: the caller's routine delegation. */
+  routineDelegation?: RoutineDelegationRouteDeps;
+}
+
+export interface RoutineDelegationRouteDeps {
+  status(principalId: string): { state: "active"; consentedAt: number; renewedAt: number; expiresAt: number } | { state: "none" };
+  /** The caller's enabled routines that are suspended now. */
+  suspendedCount(principalId: string): number;
+  /** Start the consent at Perspicax: the authorization URL and the flow
+   * binding cookie, or why it cannot start. */
+  start(input: { principalId: string; sessionId: string }): Promise<{ ok: true; authorizationUrl: string; cookie: string } | { ok: false; status: number; error: string; code: string }>;
+  revoke(principalId: string): boolean;
 }
 
 /** The directory as principals, sorted by name then login. Only people the
@@ -135,6 +150,21 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       if (deps.viewerRole(auth) !== "admin") return json(res, 403, { error: "Only an organization admin can answer these approvals." });
       res.setHeader("cache-control", "no-store");
       return json(res, 200, { approvals: deps.pendingAdminApprovals() });
+    }
+    if (path === "/api/org/routine-delegation" && (method === "GET" || method === "POST" || method === "DELETE")) {
+      res.setHeader("cache-control", "no-store");
+      if (auth.kind !== "session") return json(res, 401, { error: "Sign in with Pulsatrix to allow your routines.", code: "session_required" });
+      const principalId = auth.session.principalId?.trim();
+      if (!principalId || !auth.session.idp || !deps.routineDelegation) {
+        return json(res, 403, { error: "Routine delegation needs a person signed in with Pulsatrix.", code: "identity_perspicax" });
+      }
+      const routines = deps.routineDelegation;
+      if (method === "GET") return json(res, 200, { ...routines.status(principalId), suspended: routines.suspendedCount(principalId) });
+      if (method === "DELETE") return json(res, 200, { revoked: routines.revoke(principalId) });
+      const started = await routines.start({ principalId, sessionId: auth.session.id });
+      if (!started.ok) return json(res, started.status, { error: started.error, code: started.code });
+      res.setHeader("set-cookie", started.cookie);
+      return json(res, 200, { authorizationUrl: started.authorizationUrl });
     }
     // The interim invitation and creation routes do not exist here.
     if (path === "/api/org" || path.startsWith("/api/org/invites")) {

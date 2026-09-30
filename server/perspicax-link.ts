@@ -110,6 +110,13 @@ const personSchema = z.object({
   /** Slice 5: the Perspicax MCP profiles this person holds (directly or
    * through a team), by id. */
   profiles: z.array(z.string().min(1).max(64)).max(1_000).optional(),
+  /** Slice 6: this person's routine delegation for this server (null: none,
+   * or the person is disabled; absent: an older Perspicax, unknown). */
+  routine_delegation: z.object({
+    consented_at: z.string().max(40),
+    renewed_at: z.string().max(40),
+    expires_at: z.string().max(40),
+  }).nullable().optional(),
 });
 const profileSchema = z.object({
   id: z.string().min(1).max(64),
@@ -192,6 +199,10 @@ export interface PerspicaxDirectoryOptions {
   onPersonOut: (iss: string, sub: string) => void;
   /** This principal was an admin and no longer is: narrow its sessions now. */
   onRoleNarrowed: (principalId: string) => void;
+  /** Slice 6: after each full answer (never a 304), whether each subject
+   * holds a routine delegation (undefined: unknown), and when the fetch
+   * started (RoutineConsents.reconcile). */
+  onDelegations?: (present: (sub: string) => boolean | undefined, fetchStartedAt: number) => void;
   /** Pulsa Bot's version, sent as X-Pulsabot-Version. */
   version: string;
   /** Slice 4: team names (org-teams.ts), replaced from each directory. */
@@ -527,6 +538,7 @@ export class PerspicaxDirectory {
   private async run(): Promise<DirectoryState> {
     let link = this.readLink();
     if (!link) return this.state();
+    const fetchStartedAt = this.now();
     let response: Response;
     try {
       response = await this.call(link);
@@ -589,6 +601,18 @@ export class PerspicaxDirectory {
     }
     this.apply(parsed);
     this.data = parsed;
+    if (this.options.onDelegations) {
+      const bySub = new Map(parsed.people.map((person) => [person.sub, person] as const));
+      try {
+        this.options.onDelegations((sub) => {
+          const person = bySub.get(sub);
+          if (!person || person.routine_delegation === undefined) return undefined;
+          return person.status === "disabled" ? false : person.routine_delegation !== null;
+        }, fetchStartedAt);
+      } catch (error) {
+        this.log(`perspicax directory: routine delegations could not be reconciled: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     const etag = response.headers.get("etag");
     this.etag = etag && etag.length <= 128 ? etag : null;
     this.current = { state: "ok", syncedAt: this.now() };

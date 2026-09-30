@@ -380,7 +380,9 @@ export type CardAnswerer =
   | { kind: "worker" };
 
 export interface WireAccessCard {
-  reason: "engine_missing" | "no_access" | "key_refused";
+  /** `routine_delegation` (slice 6): an organization routine paused because
+   * it cannot act in its person's name (`engine` is then ""). */
+  reason: "engine_missing" | "no_access" | "key_refused" | "routine_delegation";
   /** The engine's display name, e.g. Claude. */
   engine: string;
   botId: string;
@@ -389,6 +391,12 @@ export interface WireAccessCard {
   /** Slice 4: where the owner sets their model keys (Perspicax console),
    * on a no_access card of an organization server. */
   keysUrl?: string;
+  /** Slice 6, routine_delegation: who the routine runs as, which routine,
+   * and why it is paused. */
+  runAsPrincipalId?: string;
+  routineId?: string;
+  routineName?: string;
+  suspendReason?: "delegation_missing" | "delegation_ended" | "delegation_revoked" | "person_out" | "no_right";
 }
 
 /** One transcript line. Serialized as stored — the durable delivery

@@ -30,17 +30,19 @@ export type EngineAccessRefusal = "engine_missing" | "no_access";
  *   - person: a person's message; with no principal id the person is
  *     unknown and never counts as the owner;
  *   - operator: the operator at this computer (a loopback request);
- *   - owner-routine: the owner's routine, webhook or other automation;
+ *   - owner-routine: a routine, webhook or other automation; `principalId`
+ *     is the person it runs as (slice 6: its runAs), absent the owner;
  *   - peer: another bot's hop (ask_bot, delegation, an opened thread, an
  *     aside, a Chief's retry). `principalId` is whoever the source turn spoke
  *     for ("" when that was an unknown person); absent, the requesting bot's
  *     owner speaks. `routine` marks a hop a routine or other automation
- *     started, directly or through other hops: it never reaches anyone's
- *     Perspicax access (slice 5, D5), whoever it speaks for. */
+ *     started, directly or through other hops: from slice 6 it reaches
+ *     Perspicax only through the routine delegation of the person it speaks
+ *     for, never through a sign-in. */
 export type TurnSpeaker =
   | { origin: "person"; principalId?: string }
   | { origin: "operator" }
-  | { origin: "owner-routine" }
+  | { origin: "owner-routine"; principalId?: string }
   | { origin: "peer"; fromBotId?: string; principalId?: string; routine?: true };
 
 /** A turn a routine or other automation started, directly or through hops. */
@@ -70,8 +72,8 @@ export function resolveTurnSpeaker(input: {
 export function speakerPrincipal(speaker: TurnSpeaker, ownerPrincipalId: string, peerOwnerPrincipalId?: string): string {
   switch (speaker.origin) {
     case "person": return speaker.principalId ?? "";
-    case "operator":
-    case "owner-routine": return ownerPrincipalId;
+    case "operator": return ownerPrincipalId;
+    case "owner-routine": return speaker.principalId ?? ownerPrincipalId;
     case "peer": return speaker.principalId ?? peerOwnerPrincipalId ?? "";
   }
 }

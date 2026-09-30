@@ -104,10 +104,17 @@ export interface Routine {
   attachments?: RoutineContextAttachment[];
   sourceThreadId?: string;
   resultsThreadId?: string;
+  /** Slice 6 (organization server): the person this routine runs as. */
+  runAs?: { principalId: string; name: string };
+  /** Slice 6: paused because it cannot act in its person's name. */
+  suspended?: { reason: RoutineSuspendReason; at: number };
   nextRunAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
+
+/** Slice 6: why an organization routine is paused by the server. */
+export type RoutineSuspendReason = "delegation_missing" | "delegation_ended" | "delegation_revoked" | "person_out" | "no_right";
 
 export interface RoutineRun {
   id: string;

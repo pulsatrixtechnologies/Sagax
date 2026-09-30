@@ -395,6 +395,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/engines\/[\w-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/me\/engines\/[\w-]+\/login\/status$/, feature: "orgDirectory" },
+  // Slice 6: the caller's own routine delegation (allow, status, revoke).
+  { methods: ["GET", "POST", "DELETE"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
   // A member's machine checks in as a worker. The handler binds it to the session user.
   // Pull and cancel stay on that session: registering does not run the queued turns.
   { methods: ["POST"], path: /^\/api\/workers$/ },

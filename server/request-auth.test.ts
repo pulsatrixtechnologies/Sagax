@@ -592,6 +592,15 @@ describe("organization sharing routes (OMB_IDENTITY=perspicax, slice 3)", () => 
     expect(requiredScope("GET", "/api/org/approvals", { orgDirectory: true, orgPairing: true })).toBe("admin");
   });
 
+  it("opens the caller's routine delegation to members on an organization server only (slice 6)", () => {
+    for (const method of ["GET", "POST", "DELETE"]) {
+      expect(requiredScope(method, "/api/org/routine-delegation", { orgDirectory: true })).toBe("client");
+      expect(requiredScope(method, "/api/org/routine-delegation")).toBe("admin");
+    }
+    expect(requiredScope("PATCH", "/api/org/routine-delegation", { orgDirectory: true })).toBe("admin");
+    expect(requiredScope("GET", "/api/org/routine-delegation/x", { orgDirectory: true })).toBe("admin");
+  });
+
   it("lets the owner remove a grant by principal id at client scope", () => {
     expect(requiredScope("DELETE", "/api/bots/aurora/direct-grants/pr_00000000-0000-4000-8000-000000000001")).toBe("client");
     expect(requiredScope("DELETE", "/api/bots/aurora/direct-grants/someone")).toBe("admin");

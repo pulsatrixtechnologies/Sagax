@@ -34,7 +34,7 @@
 // sections 2, 3 and 10 (slice 1).
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { OidcRelyingParty, validInternalBase, validIssuer, type OidcClientKind, type OidcIdentity } from "./oidc-rp.ts";
+import { OidcRelyingParty, ROUTINE_DELEGATION_SCOPE, validInternalBase, validIssuer, type OidcClientKind, type OidcIdentity } from "./oidc-rp.ts";
 import type { Principal } from "./principals.ts";
 import { cookieMaxAgeSeconds, type PublicSession, type Scope, type SessionRecord } from "./sessions.ts";
 import { labelFromUserAgent, parseCookies, serializeSessionCookie } from "./request-auth.ts";
@@ -153,6 +153,24 @@ export interface OidcGrantKeeper {
   bindSession(grantRef: string, sessionId: string): boolean;
   discard(grantRef: string): void;
   backchannelLogout(input: { iss: string; sub: string }): { sessions: number; pairings: number };
+  /** Slice 6: keep a routine delegation (RoutineConsents.create). Absent:
+   * a delegation callback answers `unavailable`. */
+  createRoutineDelegation?(input: { principalId: string; iss: string; sub: string; refreshToken: string; accessToken?: string; accessExpiresAt?: number }): void;
+  /** Slice 6: the principal of a live session, or null when it is gone. */
+  sessionPrincipal?(sessionId: string): string | null;
+}
+
+/** The browser binding cookie of a sign-in or delegation flow: the same
+ * name and attributes wherever a flow starts (slice 6 starts one from
+ * POST /api/org/routine-delegation). */
+export function oidcBindingCookie(sessionCookie: string, redirectUri: string, binding: string | null): string {
+  const attributes = `Path=/auth/oidc; HttpOnly; SameSite=Lax${redirectUri.startsWith("https://") ? "; Secure" : ""}`;
+  return binding === null ? `${sessionCookie}_oidc=; ${attributes}; Max-Age=0` : `${sessionCookie}_oidc=${binding}; ${attributes}; Max-Age=600`;
+}
+
+/** Slice 6: where a routine delegation flow lands in the web app. */
+export function routineDelegationReturn(outcome: { ok: true } | { error: string }): string {
+  return "ok" in outcome ? "/#routine-delegation=ok" : `/#routine-delegation-error=${encodeURIComponent(outcome.error)}`;
 }
 
 export interface OidcLoginDeps {
@@ -241,8 +259,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
   });
   const secure = deps.config.redirectUri.startsWith("https://");
   const bindingCookie = `${deps.sessionCookie}_oidc`;
-  const bindingAttributes = `Path=/auth/oidc; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
-  const clearBinding = `${bindingCookie}=; ${bindingAttributes}; Max-Age=0`;
+  const clearBinding = oidcBindingCookie(deps.sessionCookie, deps.config.redirectUri, null);
   const log = deps.log ?? ((line: string) => console.warn(line));
   const now = deps.now ?? Date.now;
   const origin = deps.config.publicOrigin;
@@ -295,6 +312,57 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     jsonAnswer(res, 200, {});
   };
 
+  /** Slice 6 (D10): a routine delegation comes back. It must carry the
+   * marker, be the subject and the live session that started it, and hold a
+   * refresh token; any refusal revokes what the provider gave. */
+  const delegationCallback = (res: ServerResponse, outcome: Extract<Awaited<ReturnType<OidcRelyingParty["callback"]>>, { ok: true }>): void => {
+    const identity = outcome.identity;
+    const refreshToken = outcome.grant.refreshToken;
+    const expect = outcome.expect;
+    const refuse = (code: string, why: string) => {
+      log(`oidc routine delegation refused (${code}): ${why}`);
+      if (refreshToken) void rp.revokeToken(refreshToken, "refresh_token");
+      redirect(res, routineDelegationReturn({ error: code }), [clearBinding]);
+    };
+    if (!expect) return refuse("routines_session", "the flow did not remember who started it");
+    if (!(outcome.grantedScope ?? "").split(" ").includes(ROUTINE_DELEGATION_SCOPE)) {
+      return refuse("routines_scope", "Perspicax did not grant the routine delegation scope");
+    }
+    if (identity.iss !== expect.subject.iss || identity.sub !== expect.subject.sub) {
+      return refuse("routines_subject", "another account signed in at Perspicax");
+    }
+    if (!deps.grants.sessionPrincipal || deps.grants.sessionPrincipal(expect.sessionId) !== expect.principalId) {
+      return refuse("routines_session", "the session that started the delegation is gone");
+    }
+    const orgRole = orgRoleForRole(identity.role);
+    if (!scopesForRole(identity.role) || !orgRole) return refuse("role", `subject ${identity.sub.slice(0, 64)} has no person role`);
+    if (!refreshToken) return refuse("grant", "the identity provider returned no refresh token");
+    const unavailable = deps.grants.unavailableReason();
+    if (unavailable || !deps.grants.createRoutineDelegation) return refuse("unavailable", unavailable ?? "routine delegations are not kept on this server");
+    deps.forSubject({
+      iss: identity.iss,
+      sub: identity.sub,
+      claims: { email: identity.email, name: identity.name, login: identity.preferredUsername },
+      orgRole,
+      ...(identity.teams ? { teams: identity.teams } : {}),
+      ...(identity.role === "admin" || identity.role === "manager" || identity.role === "employee" ? { perspicaxRole: identity.role } : {}),
+    });
+    try {
+      deps.grants.createRoutineDelegation({
+        principalId: expect.principalId,
+        iss: identity.iss,
+        sub: identity.sub,
+        refreshToken,
+        ...(outcome.grant.accessToken && outcome.grant.accessExpiresAt !== undefined
+          ? { accessToken: outcome.grant.accessToken, accessExpiresAt: outcome.grant.accessExpiresAt }
+          : {}),
+      });
+    } catch (error) {
+      return refuse("unavailable", error instanceof Error ? error.message : String(error));
+    }
+    redirect(res, routineDelegationReturn({ ok: true }), [clearBinding]);
+  };
+
   return async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> => {
     const path = url.pathname;
     if (path === OIDC_BACKCHANNEL_LOGOUT_PATH) {
@@ -332,14 +400,19 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
         fail(res, "unavailable", [], client);
         return true;
       }
-      redirect(res, started.authorizationUrl, [`${bindingCookie}=${started.binding}; ${bindingAttributes}; Max-Age=600`]);
+      redirect(res, started.authorizationUrl, [oidcBindingCookie(deps.sessionCookie, deps.config.redirectUri, started.binding)]);
       return true;
     }
     const binding = parseCookies(req.headers.cookie).get(bindingCookie);
     const outcome = await rp.callback(url.searchParams, binding);
     if (!outcome.ok) {
-      log(`oidc sign-in refused (${outcome.code}): ${outcome.error}`);
-      fail(res, outcome.code, [clearBinding], outcome.client);
+      log(`oidc ${outcome.purpose === "routines" ? "routine delegation" : "sign-in"} refused (${outcome.code}): ${outcome.error}`);
+      if (outcome.purpose === "routines") redirect(res, routineDelegationReturn({ error: outcome.code }), [clearBinding]);
+      else fail(res, outcome.code, [clearBinding], outcome.client);
+      return true;
+    }
+    if (outcome.purpose === "routines") {
+      delegationCallback(res, outcome);
       return true;
     }
     const identity: OidcIdentity = outcome.identity;

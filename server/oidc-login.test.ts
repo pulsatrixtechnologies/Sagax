@@ -9,6 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { IDP_SWEEP_SLACK_MS, IdpGrantVault, IdpSessionManager } from "./idp-session.ts";
 import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneReturnLink, scopesForRole } from "./oidc-login.ts";
+import { RoutineConsents } from "./org-routine-consent.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import { PrincipalRegistry } from "./principals.ts";
 import { SessionRegistry } from "./sessions.ts";
@@ -86,6 +87,8 @@ describe("the sign-in routes (in process)", () => {
   let manager: IdpSessionManager;
   let vaultOk = true;
   const createdGrants: Array<{ bindBy: number; at: number }> = [];
+  let rp: OidcRelyingParty;
+  let consents: RoutineConsents;
 
   beforeAll(async () => {
     provider = await startFakeOidcProvider({ user: USER });
@@ -94,11 +97,12 @@ describe("the sign-in routes (in process)", () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const config = { kind: "perspicax" as const, issuer: provider.issuer, clientId: "pulsa-bot", publicOrigin: base, redirectUri: `${base}/auth/oidc/callback` };
-    const rp = new OidcRelyingParty({ issuer: config.issuer, clientId: config.clientId, redirectUri: config.redirectUri, resource: base });
+    rp = new OidcRelyingParty({ issuer: config.issuer, clientId: config.clientId, redirectUri: config.redirectUri, resource: base });
     sessions = new SessionRegistry({ file: join(dir, "sessions.json") });
     principals = new PrincipalRegistry({ path: join(dir, "principals.json") });
     const vault = new IdpGrantVault(dir, () => vaultOk ? { kind: "key", key: Buffer.alloc(32, 7) } : { kind: "unavailable", reason: "no key" });
     manager = new IdpSessionManager({ vault, rp, sessions, principals, log: () => {} });
+    consents = new RoutineConsents({ vault, rp, principals, log: () => {} });
     sessions.onExchanged((session) => { if (session.idp?.grantRef) manager.bindSession(session.idp.grantRef, session.id); });
     const routes = createOidcLoginRoutes({
       config, rp, sessionCookie: "omb_session_test",
@@ -110,6 +114,8 @@ describe("the sign-in routes (in process)", () => {
         bindSession: (ref, id) => manager.bindSession(ref, id),
         discard: (ref) => manager.discard(ref),
         backchannelLogout: (input) => manager.backchannelLogout(input),
+        createRoutineDelegation: (input) => consents.create(input),
+        sessionPrincipal: (id) => sessions.byId(id)?.principalId ?? null,
       },
       openPairing: (input) => sessions.openPairing(input),
       serverName: () => "Acme & Co bots",
@@ -203,6 +209,61 @@ describe("the sign-in routes (in process)", () => {
     expect((await walk("desktop")).location).toBe(`openmausbot://auth?origin=${encodeURIComponent(base)}#error=role`);
     await new Promise((r) => setTimeout(r, 100));
     expect(provider.revoked.length).toBe(revokedBefore + 1); // the refused sign-in's grant is revoked
+  });
+
+  /** Slice 6: sign in on the web, then walk a routine delegation flow the
+   * way POST /api/org/routine-delegation starts it. */
+  async function delegate(options: { as?: typeof USER; sessionGone?: boolean; binding?: string } = {}) {
+    const { callback } = await walk();
+    const cookie = callback!.headers.getSetCookie().find((c) => c.startsWith("omb_session_test="))!;
+    const record = sessions.authenticate(decodeURIComponent(cookie.split(";")[0]!.split("=")[1]!))!;
+    const started = await rp.start({ purpose: "routines", principalId: record.principalId!, subject: { iss: provider.issuer, sub: record.idp!.sub }, sessionId: record.id });
+    if (options.as) provider.user = { ...options.as };
+    if (options.sessionGone) {
+      sessions.revokeWhere((session) => session.id === record.id);
+      manager.release(record.id, { revokeAtIdp: true });
+    }
+    const authorize = await fetch(started.authorizationUrl, { redirect: "manual" });
+    const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: options.binding ?? `omb_session_test_oidc=${started.binding}` } });
+    return { back, location: back.headers.get("location") ?? "", principalId: record.principalId! };
+  }
+
+  it("keeps a routine delegation and lands on #routine-delegation=ok (slice 6)", async () => {
+    const { back, location, principalId } = await delegate();
+    expect(back.status).toBe(303);
+    expect(location).toBe("/#routine-delegation=ok");
+    expect(back.headers.getSetCookie().some((c) => c.startsWith("omb_session_test_oidc=;") && c.includes("Max-Age=0"))).toBe(true);
+    expect(back.headers.getSetCookie().some((c) => c.startsWith("omb_session_test="))).toBe(false);
+    expect(consents.status(principalId).state).toBe("active");
+    expect(provider.delegationOf(USER.sub)).not.toBeNull();
+    consents.revoke(principalId);
+  });
+
+  it("refuses another subject, a gone session, a missing marker and a wrong binding, and revokes (slice 6)", async () => {
+    const other = { ...USER, sub: "01J9OTHER00000000000000000", email: "eve@example.test" };
+    let revokedBefore = provider.revoked.length;
+    const wrong = await delegate({ as: other });
+    expect(wrong.location).toBe("/#routine-delegation-error=routines_subject");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(provider.revoked.length).toBeGreaterThan(revokedBefore);
+    // the family the other account got is dead at the provider
+    expect(provider.delegationOf(other.sub)).toBeNull();
+    expect(consents.status(wrong.principalId).state).toBe("none");
+    provider.user = { ...USER };
+    revokedBefore = provider.revoked.length;
+    const gone = await delegate({ sessionGone: true });
+    expect(gone.location).toBe("/#routine-delegation-error=routines_session");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(provider.revoked.length).toBeGreaterThan(revokedBefore);
+    expect(provider.delegationOf(USER.sub)).toBeNull();
+    provider.tamper = { omitRoutinesMarker: true };
+    try {
+      expect((await delegate()).location).toBe("/#routine-delegation-error=routines_scope");
+    } finally {
+      provider.tamper = {};
+    }
+    expect((await delegate({ binding: "omb_session_test_oidc=wrong" })).location).toBe("/#routine-delegation-error=binding");
+    expect(consents.principalsWithConsent()).toEqual([]);
   });
 
   it("binds a web sign-in's grant to its session at once", async () => {

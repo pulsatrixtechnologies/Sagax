@@ -102,6 +102,7 @@ function harness(initial: Directory) {
   const keys = new Map<string, { key?: string; status?: number }>();
   const resolveCalls: Array<{ sub: string; provider: string; authorization: string }> = [];
   const teamNames: Array<Array<{ id: string; name: string }>> = [];
+  const delegationCalls: Array<{ present: (sub: string) => boolean | undefined; at: number }> = [];
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
     const headers = Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>));
     if (String(input).endsWith("/api/v1/pulsabot/provider-keys/resolve")) {
@@ -133,6 +134,7 @@ function harness(initial: Directory) {
     principals,
     onPersonOut: (iss, sub) => { out.push(sub); principals.markDisabled(iss, sub); },
     onRoleNarrowed: (id) => narrowed.push(id),
+    onDelegations: (present, at) => delegationCalls.push({ present, at }),
     version: "0.1.89",
     teamNames: { replaceFromDirectory: (teams) => { teamNames.push([...teams]); return true; } },
     now: () => clock.now,
@@ -141,7 +143,7 @@ function harness(initial: Directory) {
     timeoutMs: 200,
   });
   return {
-    sync, principals, out, narrowed, requests, queue, linkFile, keys, resolveCalls, teamNames, clock,
+    sync, principals, out, narrowed, requests, queue, linkFile, keys, resolveCalls, teamNames, clock, delegationCalls,
     setDirectory: (next: Directory) => { directory = next; },
     rotate: (token: string) => { validToken = token; },
   };
@@ -455,5 +457,35 @@ describe("PerspicaxDirectory, slice 5: profiles and token exchange", () => {
     expect(await h.sync.revokeExchanged("pxlo1.BOB.exchanged-secret")).toBe(false);
     expect(h.logs).toHaveLength(2);
     expect(h.logs.join("\n")).not.toContain("exchanged-secret");
+  });
+});
+
+describe("PerspicaxDirectory, slice 6: routine delegations", () => {
+  it("reports each person's delegation after a full answer, never after a 304", async () => {
+    const dates = { consented_at: "2026-09-30T10:00:00Z", renewed_at: "2026-09-30T10:05:00Z", expires_at: "2026-10-30T10:05:00Z" };
+    const h = harness(directoryOf([
+      person("ALICE", { routine_delegation: dates }),
+      person("BOB", { routine_delegation: null }),
+      person("CAROL"),
+      person("DAVE", { status: "disabled", routine_delegation: dates }),
+    ]));
+    h.clock.now = 7_000_000;
+    await h.sync.refresh();
+    expect(h.delegationCalls).toHaveLength(1);
+    const { present, at } = h.delegationCalls[0]!;
+    expect(at).toBe(7_000_000);
+    expect(present("ALICE")).toBe(true);
+    expect(present("BOB")).toBe(false);
+    expect(present("CAROL")).toBeUndefined();
+    expect(present("DAVE")).toBe(false);
+    expect(present("NOBODY")).toBeUndefined();
+    await h.sync.refresh();
+    expect(h.delegationCalls).toHaveLength(1);
+  });
+
+  it("refuses a malformed delegation field", async () => {
+    const h = harness({ ...directoryOf([]), people: [{ ...person("ALICE"), routine_delegation: { consented_at: 5 } }] } as unknown as Directory);
+    expect((await h.sync.refresh()).state).toBe("error");
+    expect(h.delegationCalls).toEqual([]);
   });
 });

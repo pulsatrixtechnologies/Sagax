@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, serverCommandApproval, type EngineAccessInput } from "./engine-access.ts";
+import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, serverCommandApproval, speakerPrincipal, type EngineAccessInput } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -106,6 +106,12 @@ describe("the helpers around it", () => {
     expect(routineLineage({ origin: "peer", fromBotId: "b", principalId: "pr_alice" })).toBe(false);
     expect(routineLineage({ origin: "person", principalId: "pr_alice" })).toBe(false);
     expect(routineLineage({ origin: "operator" })).toBe(false);
+  });
+
+  it("speaks for a routine's runAs, else the owner (slice 6)", () => {
+    expect(speakerPrincipal({ origin: "owner-routine", principalId: BOB }, "pr_owner")).toBe(BOB);
+    expect(speakerPrincipal({ origin: "owner-routine" }, "pr_owner")).toBe("pr_owner");
+    expect(routineLineage({ origin: "owner-routine", principalId: BOB })).toBe(true);
   });
 
   it("says why in plain words, never with provider text", () => {

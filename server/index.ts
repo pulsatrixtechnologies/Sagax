@@ -410,7 +410,8 @@ import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts
 import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
-import { RoutineManager, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger } from "./routines.ts";
+import { RoutineManager, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
+import { RoutineConsents, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT } from "./browser-engine.ts";
 import { BrowserRuntime } from "./browser-runtime.ts";
@@ -583,7 +584,7 @@ import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
-import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, oidcSessionFields } from "./oidc-login.ts";
+import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, oidcBindingCookie, oidcSessionFields } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
 import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
@@ -836,6 +837,9 @@ const turnSpeakerPrincipals = new Map<string, string>();
  * or other automation: a bot hop it starts carries the mark, so no turn a
  * routine started ever reaches someone's Perspicax access (slice 5, D5). */
 const turnRoutineLineage = new Set<string>();
+/** Slice 6: the routine delegations of an organization server (set with
+ * the sign-in grants, below); null in solo mode. */
+let routineConsents: RoutineConsents | null = null;
 /** Who a user message is from, when that is someone other than the desktop
  * owner. Loopback is the owner by design, so it stays unstamped and reads as
  * the profile name; a paired or signed-in session names the person, by
@@ -2655,7 +2659,7 @@ const PERSPICAX_UNAVAILABLE_WHY: Record<PerspicaxTurnPlan["unavailable"][number]
   not_held: "the person speaking does not hold this profile in Perspicax",
   no_session: "the person speaking has no live Perspicax sign-in on this server",
   unreachable: "Perspicax could not be reached",
-  routine: "Perspicax tools reach routines once routine delegation is on",
+  no_delegation: "the person it runs as has not allowed routines to act in their name",
   unknown_speaker: "the person speaking is not known to Perspicax",
   unknown_profile: "Perspicax no longer lists this profile",
 };
@@ -2677,10 +2681,11 @@ async function perspicaxTurnIntegration(input: {
   const live = store.bot(input.bot.id) ?? input.bot;
   if (!live.perspicax?.profiles.length) return none;
   const routine = routineLineage(input.speaker);
-  // MCP speaks only for a known person: a routine's lineage speaks for no
-  // one, and a peer hop whose source speaker is not known is an unknown
-  // person, never the asking bot's owner.
-  const speakerPrincipalId = routine || (input.speaker.origin === "peer" && input.speaker.principalId === undefined)
+  // MCP speaks only for a known person: a routine's lineage speaks for the
+  // person it runs as, through their routine delegation (slice 6), and a
+  // peer hop whose source speaker is not known is an unknown person, never
+  // the asking bot's owner.
+  const speakerPrincipalId = input.speaker.origin === "peer" && input.speaker.principalId === undefined
     ? ""
     : orgSpeakerPrincipal(live, input.speaker);
   const plan = await perspicaxMcp.prepareTurn({
@@ -2728,12 +2733,13 @@ async function perspicaxTurnIntegration(input: {
     };
   }
   if (!plan.unavailable.length) return { custom, prompt: "" };
-  const lines = plan.unavailable.map((entry) => entry.reason === "routine"
-    ? `Perspicax tools of profile "${entry.name}" are not available in this routine run: ${PERSPICAX_UNAVAILABLE_WHY.routine}.`
+  const lines = plan.unavailable.map((entry) => entry.reason === "no_delegation"
+    ? `Perspicax tools of profile "${entry.name}" are not available in this routine run: ${PERSPICAX_UNAVAILABLE_WHY.no_delegation}.`
     : `Perspicax tools of profile "${entry.name}" are not available in this turn: ${PERSPICAX_UNAVAILABLE_WHY[entry.reason]}. Tell them so if they ask for these tools.`);
+  const personName = (speakerPrincipalId && principals.byId(speakerPrincipalId)?.name) || "";
   const speakerName = routine
-    ? "a routine"
-    : (speakerPrincipalId && principals.byId(speakerPrincipalId)?.name) || "an unknown person";
+    ? (personName ? `a routine of ${personName}` : "a routine")
+    : personName || "an unknown person";
   const byReason = new Map<string, string[]>();
   for (const entry of plan.unavailable) byReason.set(entry.reason, [...(byReason.get(entry.reason) ?? []), entry.name]);
   for (const [reason, names] of byReason) {
@@ -7863,6 +7869,120 @@ const delegationWatch = new Map<string, {
 const delegationWakeBudget = new DelegationWakeBudget();
 const pendingDelegationWakes = new Map<string, { botId: string; targetName: string; failureReason?: string; routineRunId?: string; budgetAcquired?: boolean }>();
 
+/** Slice 6: a routine on the wire: runAs as the person (name included) in
+ * organization mode, nothing in solo mode. */
+function routineOnWire(routine: Routine): Omit<Routine, "runAs"> & { runAs?: { principalId: string; name: string } } {
+  const { runAs: _runAs, ...rest } = routine;
+  if (IDENTITY.kind !== "perspicax") return rest;
+  const principalId = effectiveRunAs(routine);
+  if (!principalId) return rest;
+  const person = principals.byId(principalId);
+  return { ...rest, runAs: { principalId, name: person?.name || person?.login || "" } };
+}
+/** The principal of an organization request, when it is a signed-in person
+ * (a routine they write runs as them); undefined otherwise (D5). */
+function routineActor(auth: RequestAuth): { actorPrincipalId: string } | undefined {
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return undefined;
+  const principalId = auth.session.principalId?.trim();
+  return principalId ? { actorPrincipalId: principalId } : undefined;
+}
+/** Whether this person may still run the routine's work: `run` on its bot,
+ * and for a room goal, the room too. */
+function principalMayRunRoutine(principalId: string, run: { botId: string; target?: string; groupId?: string }): boolean {
+  const bot = store.bot(run.botId);
+  if (!bot) return false;
+  const viewer = authzViewerFromId(principalId);
+  if (!viewer || !atLeast(botLevel({ viewer, ...botFacts(bot) }), "run")) return false;
+  if (run.target === "room-goal" && run.groupId) {
+    const group = store.group(run.groupId);
+    if (!group || !groupVisible(group, principalId)) return false;
+  }
+  return true;
+}
+/** Slice 6 (D4): an organization routine run needs its person, their right
+ * to run the bot, and a live routine delegation. */
+async function routineAdmission(run: RoutineRun, _routine: Routine | undefined): Promise<RoutineAdmission> {
+  if (IDENTITY.kind !== "perspicax") return { ok: true };
+  const principalId = effectiveRunAs(run);
+  const person = principalId ? principals.byId(principalId) : null;
+  if (!principalId || !person || person.subject?.iss !== IDENTITY.issuer) {
+    return { ok: false, error: "This routine runs as someone who is not in this organization", suspend: "no_right" };
+  }
+  const name = person.name || person.login || "its person";
+  if (person.disabledAt !== undefined) return { ok: false, error: "The person this routine runs as was signed out by Perspicax", suspend: "person_out" };
+  if (!principalMayRunRoutine(principalId, run)) return { ok: false, error: `${name} can no longer run this bot's routines`, suspend: "no_right" };
+  if (!routineConsents) return { ok: false, error: "Perspicax is unreachable; this run is skipped" };
+  const prepared = await routineConsents.prepare(principalId);
+  if (prepared.ok) return { ok: true };
+  if (prepared.error === "missing") return { ok: false, error: `This routine cannot act in ${name}'s name: routines are not allowed yet`, suspend: "delegation_missing" };
+  if (prepared.error === "ended") return { ok: false, error: `This routine can no longer act in ${name}'s name`, suspend: "delegation_ended" };
+  return { ok: false, error: "Perspicax is unreachable; this run is skipped" };
+}
+/** Slice 6: one access card in the routine's results thread, and a
+ * notification, when a routine is paused. */
+function routineSuspended(routine: Routine, _run: RoutineRun | null, reason: RoutineSuspendReason): void {
+  const bot = store.bot(routine.botId);
+  const runAs = effectiveRunAs(routine);
+  routineAudit("routine.suspended", runAs, { routine, reason });
+  if (!bot) return;
+  const group = routine.target === "room-goal" && routine.groupId ? store.group(routine.groupId) : undefined;
+  const threadId = routineSourceOwner(routine)?.threadId ?? group?.threadId ?? bot.threadId;
+  try {
+    store.appendMessage(threadId, {
+      role: "bot",
+      kind: "access",
+      from: { botId: bot.id, name: bot.name, color: bot.color },
+      access: {
+        reason: "routine_delegation", engine: "", botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
+        ...(runAs ? { runAsPrincipalId: runAs } : {}),
+        routineId: routine.id, routineName: redactSecretsInText(routine.name).slice(0, 200), suspendReason: reason,
+      },
+    });
+  } catch (error) {
+    console.error(`routine: the pause card could not be written: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  notify(buildNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused, it cannot act in its person's name`));
+}
+/** Slice 6: the audit rows of routine delegations and paused routines. */
+function routineAudit(action: string, principalId: string | undefined, extra: { routine?: Pick<Routine, "id" | "name">; reason?: string; auth?: RequestAuth } = {}): void {
+  const person = principalId ? principals.byId(principalId) : null;
+  appendAdminAction(DATA_DIR, {
+    category: extra.routine ? "bot" : "people",
+    action,
+    target: extra.routine
+      ? { kind: "routine", id: extra.routine.id, name: extra.routine.name }
+      : { kind: "person", ...(principalId ? { id: principalId } : {}), ...(person?.name ? { name: person.name } : {}) },
+    ...(extra.reason ? { after: { reason: extra.reason } } : {}),
+    actor: extra.auth ? decisionActorFor(extra.auth) : { kind: "worker" },
+  });
+}
+/** Slice 6: a person's routine delegation ended or was revoked. */
+function routineConsentEnded(principalId: string, reason: RoutineConsentEnd): void {
+  perspicaxMcp?.forgetPrincipal(principalId);
+  if (reason !== "delegation_revoked") routineAudit("routine_delegation.ended", principalId, { reason });
+  routines?.suspendFor(principalId, reason, (routine) => effectiveRunAs({ botId: routine.botId }));
+}
+
+/** Slice 6 (D5): the person a routine run acts as: its runAs, else the
+ * owner of its bot (the coordinator for a room goal). */
+function effectiveRunAs(run: { runAs?: string; botId: string }): string | undefined {
+  if (run.runAs) return run.runAs;
+  const bot = store.bot(run.botId);
+  return bot ? effectiveBotOwner(bot) || undefined : undefined;
+}
+/** The speaker of a routine run's turns. */
+function routineRunSpeaker(run: { runAs?: string; botId: string }): TurnSpeaker {
+  const principalId = effectiveRunAs(run);
+  return principalId ? { origin: "owner-routine", principalId } : { origin: "owner-routine" };
+}
+/** A room turn no person asked for: a goal routine's run speaks as its
+ * runAs; any other automation stays the operator (engine) or the owner's
+ * routine (Perspicax MCP). */
+function roomRoutineSpeaker(threadId: string): TurnSpeaker | null {
+  const run = routines?.runForThread(threadId);
+  return run && run.target === "room-goal" ? routineRunSpeaker(run) : null;
+}
+
 function activeRoutineRunForThread(threadId: string): RoutineRun | null {
   const run = routines?.runForThread(threadId);
   return run && ["running", "waiting"].includes(run.status) ? run : null;
@@ -8906,6 +9026,8 @@ async function startTurn(
       ...opts,
       runOn: continuingRoutine.runOn,
       automationSource: continuingRoutine.triggerSource ?? (continuingRoutine.manual ? "manual" : "schedule"),
+      // Slice 6: the routine still speaks as the person it runs as.
+      speaker: routineRunSpeaker(continuingRoutine),
       onDispatchError: (message) => {
         routines?.failThread(threadId, message);
         onDispatchError?.(message);
@@ -10475,7 +10597,14 @@ const commsBus: CommsBus = {
 _loadPending();
 
 routines = new RoutineManager({
-  emit: broadcast,
+  emit: (payload) => broadcast(payload.kind === "routine" && payload.routine && typeof payload.routine === "object"
+    ? { ...payload, routine: routineOnWire(payload.routine as Routine) }
+    : payload),
+  ...(IDENTITY.kind === "perspicax" ? {
+    admit: routineAdmission,
+    onSuspended: routineSuspended,
+    onResumed: (routine: Routine) => routineAudit("routine.resumed", effectiveRunAs(routine), { routine }),
+  } : {}),
   hasPendingDelegations: (threadId) => pendingThreads().includes(threadId) ||
     [...delegationWatch.values()].some((watch) => watch.sourceThreadId === threadId) ||
     pendingDelegationWakes.has(threadId),
@@ -10529,8 +10658,12 @@ routines = new RoutineManager({
       handoffs.forget(threadId);
     }
   },
-  startTurn: async (botId, threadId, prompt, runOn, triggerSource, onDispatchError) => {
-    await startTurn(botId, prompt, { threadId, runOn, automationSource: triggerSource, onDispatchError });
+  startTurn: async (botId, threadId, prompt, runOn, triggerSource, onDispatchError, run) => {
+    await startTurn(botId, prompt, {
+      threadId, runOn, automationSource: triggerSource, onDispatchError,
+      // Slice 6: a routine speaks as the person it runs as (D5).
+      ...(run ? { speaker: routineRunSpeaker(run) } : {}),
+    });
   },
   startGoal: async (groupId, threadId, prompt, coordinatorBotId, runId, _onDispatchError) => {
     startGroupTurn(groupId, prompt, undefined, undefined, "goal", undefined, {
@@ -11193,7 +11326,7 @@ function sendRoutineResolution(
 }
 function resolveAndSendRoutine(
   res: ServerResponse,
-  args: { botId: string; botName?: string; threadId: string; requestId: string; behavior: string },
+  args: { botId: string; botName?: string; threadId: string; requestId: string; behavior: string; actorPrincipalId?: string },
 ): boolean {
   const card = store.messagesFor(args.threadId).find(
     (message) => message.card?.requestId === args.requestId && message.card.routineRequest,
@@ -11599,7 +11732,7 @@ async function runGroupMemberTurn(
     else turnRoutineLineage.add(threadId);
   }
   const roomAccessRefusal = cardContinuation ? null
-    : orgEngineRefusal(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "operator" });
+    : orgEngineRefusal(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" });
   if (roomAccessRefusal) {
     const engine = engineDisplayName(instance);
     store.appendMessage(threadId, {
@@ -11771,7 +11904,7 @@ async function runGroupMemberTurn(
       bot,
       threadId,
       generation: internalGeneration,
-      speaker: roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "owner-routine" },
+      speaker: roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "owner-routine" },
       taken: Object.keys(integrations.custom ?? {}),
       from: { botId: bot.id, name: bot.name, color: bot.color },
     });
@@ -12271,7 +12404,7 @@ async function runGroupMemberTurn(
     // notes only in a room: a private chat reaches a room through the
     // explicit, disclosed session_search, never automatically
     const roomRecalled = cardContinuation ? "" : autoRecallPrompt(bot, threadId, resolvedLatestImages.text, { conversations: false, userName });
-    const roomSpeaker: TurnSpeaker = roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "operator" };
+    const roomSpeaker: TurnSpeaker = roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" };
     const sendRoomTurn = (roomTurnAccess: TurnAccess | undefined) => instance.adapter.sendTurn({
         threadId,
         botId: readyBot.id,
@@ -15672,7 +15805,40 @@ if (IDENTITY.kind === "perspicax") {
         managedTeamIds: (person?.teams ?? []).filter((team) => team.manager).map((team) => team.id),
       };
     },
+    // Slice 6: the caller's routine delegation.
+    routineDelegation: {
+      status: (principalId) => routineConsents?.status(principalId) ?? { state: "none" as const },
+      suspendedCount: (principalId) => (routines?.listRoutines() ?? [])
+        .filter((routine) => routine.enabled && routine.suspended && effectiveRunAs(routine) === principalId).length,
+      start: async ({ principalId, sessionId }) => {
+        const person = principals.byId(principalId);
+        const unavailable = routineConsents?.unavailableReason();
+        if (!oidcRp || !routineConsents || unavailable) {
+          return { ok: false as const, status: 503, error: "Routine delegations cannot be kept on this server right now.", code: "unavailable" };
+        }
+        if (!person?.subject || person.subject.iss !== IDENTITY.issuer) {
+          return { ok: false as const, status: 403, error: "Routine delegation needs a person signed in with Pulsatrix.", code: "identity_perspicax" };
+        }
+        try {
+          const started = await oidcRp.start({ purpose: "routines", principalId, subject: { iss: person.subject.iss, sub: person.subject.sub }, sessionId });
+          return { ok: true as const, authorizationUrl: started.authorizationUrl, cookie: oidcBindingCookie(SESSION_COOKIE, IDENTITY.redirectUri, started.binding) };
+        } catch (error) {
+          console.warn(`routine delegation could not start: ${error instanceof Error ? error.message : String(error)}`);
+          return { ok: false as const, status: 503, error: "Perspicax could not be reached. Try again.", code: "unavailable" };
+        }
+      },
+      revoke: (principalId) => {
+        const revoked = routineConsents?.revoke(principalId) ?? false;
+        if (revoked) routineAudit("routine_delegation.revoked", principalId);
+        return revoked;
+      },
+    },
   }));
+} else {
+  // Slice 6: routine delegation exists only on an organization server.
+  ROUTES.push(async ({ res, path, json }) => path === "/api/org/routine-delegation"
+    ? json(res, 403, { error: "This server does not sign people in with Pulsatrix.", code: "identity_perspicax" })
+    : PASS);
 }
 ROUTES.push(createWorkerRoutes({
   workers: () => registeredWorkers,
@@ -15796,9 +15962,11 @@ const oidcRp = IDENTITY.kind === "perspicax"
   ? new OidcRelyingParty({ issuer: IDENTITY.issuer, clientId: IDENTITY.clientId, redirectUri: IDENTITY.redirectUri, resource: IDENTITY.publicOrigin, ...(IDENTITY.internalBase ? { internalBase: IDENTITY.internalBase } : {}) })
   : null;
 let idpVaultKey: ReturnType<typeof resolveIdpVaultKey> | null = null;
-const idpSessions = oidcRp
+// One vault holds the sign-in grants and the routine delegations (slice 6).
+const idpVault = oidcRp ? new IdpGrantVault(DATA_DIR, () => (idpVaultKey ??= resolveIdpVaultKey(DATA_DIR))) : null;
+const idpSessions = oidcRp && idpVault
   ? new IdpSessionManager({
-    vault: new IdpGrantVault(DATA_DIR, () => (idpVaultKey ??= resolveIdpVaultKey(DATA_DIR))),
+    vault: idpVault,
     rp: oidcRp,
     sessions,
     principals,
@@ -15806,6 +15974,15 @@ const idpSessions = oidcRp
     teamNames: (teams) => { orgTeams.mergeFromClaims(teams); },
   })
   : null;
+if (oidcRp && idpVault) {
+  routineConsents = new RoutineConsents({
+    vault: idpVault,
+    rp: oidcRp,
+    principals,
+    onEnded: routineConsentEnded,
+    onActive: (principalId) => { routines?.resumeFor(principalId, (routine) => effectiveRunAs({ botId: routine.botId })); },
+  });
+}
 if (idpSessions) {
   const unavailable = idpSessions.unavailableReason();
   if (unavailable) console.error(`sign-in with Pulsatrix is unavailable: ${unavailable}`);
@@ -15849,12 +16026,18 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PE
     teamNames: orgTeams,
     onPersonOut: (iss, sub) => {
       perspicaxMcp?.forgetSubject(iss, sub);
+      routineConsents?.endForSubject(iss, sub);
       const done = manager.backchannelLogout({ iss, sub });
       console.log(`perspicax directory: a person is out; ${done.sessions} session(s) ended, ${done.pairings} pairing code(s) cancelled`);
     },
     onRoleNarrowed: (principalId) => {
       const narrowed = manager.narrowToOrgRole(principalId, "member");
       if (narrowed) console.log(`perspicax directory: a demotion narrowed ${narrowed} session(s)`);
+    },
+    // Slice 6: a delegation revoked in the console ends here at the next poll.
+    onDelegations: (present, fetchStartedAt) => {
+      const ended = routineConsents?.reconcile(present, fetchStartedAt) ?? 0;
+      if (ended) console.log(`perspicax directory: ${ended} routine delegation(s) ended in Perspicax`);
     },
     version,
   });
@@ -15870,6 +16053,9 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PE
       return person?.subject ? { iss: person.subject.iss, sub: person.subject.sub, disabled: person.disabledAt !== undefined } : null;
     },
     subjectToken: (subject) => manager.subjectToken(subject),
+    // Slice 6: routine lineage speaks through the runAs's delegation.
+    routineSubjectToken: (principalId) => routineConsents ? routineConsents.subjectToken(principalId) : Promise.resolve({ ok: false as const, error: "no_session" as const }),
+    delegationRefused: (principalId) => routineConsents?.dropCache(principalId),
     botProfiles: (id) => store.bot(id)?.perspicax?.profiles,
     version,
   });
@@ -15898,8 +16084,16 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
       backchannelLogout: (input) => {
         perspicaxDirectory?.forgetSubject(input.sub);
         perspicaxMcp?.forgetSubject(input.iss, input.sub);
+        // Slice 6: the delegation goes too; the person's routines pause.
+        routineConsents?.endForSubject(input.iss, input.sub);
         return idpSessions.backchannelLogout(input);
       },
+      createRoutineDelegation: (input) => {
+        if (!routineConsents) throw new Error("routine delegations are unavailable");
+        routineConsents.create(input);
+        routineAudit("routine_delegation.granted", input.principalId);
+      },
+      sessionPrincipal: (sessionId) => sessions.byId(sessionId)?.principalId ?? null,
     },
     openPairing: (input) => sessions.openPairing(input),
     serverName: () => environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED }).label,
@@ -18815,7 +19009,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const from = fromParam == null ? undefined : Number(fromParam);
       const to = toParam == null ? undefined : Number(toParam);
       return json(res, 200, {
-        routines: routines!.listRoutines().filter((routine) => routineVisible(routine, visible)),
+        routines: routines!.listRoutines().filter((routine) => routineVisible(routine, visible)).map(routineOnWire),
         runs: routines!.listRuns(from != null && Number.isFinite(from) ? from : undefined, to != null && Number.isFinite(to) ? to : undefined)
           .filter((run) => routineVisible(run, visible)),
       });
@@ -18825,7 +19019,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const hidden = hiddenRoutineTarget(body, visible);
       if (hidden) return json(res, 404, { error: hidden });
       if (routineNeedsRun(auth, (body as { botId?: unknown } | null)?.botId)) return json(res, 403, NEEDS_RUN);
-      return json(res, 201, { routine: routines!.create(body) });
+      return json(res, 201, { routine: routineOnWire(routines!.create(body, undefined, routineActor(auth))) });
     }
     // The desktop shell polls this to decide whether to hold the computer
     // awake: a run in flight, or a routine due within the hour.
@@ -18844,8 +19038,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const hidden = hiddenRoutineTarget(body, visible);
       if (hidden) return json(res, 404, { error: hidden });
       if (routineNeedsRun(auth, routineBotId(routineMatch[1])) || routineNeedsRun(auth, (body as { botId?: unknown } | null)?.botId)) return json(res, 403, NEEDS_RUN);
-      const routine = routines!.update(routineMatch[1], body);
-      return routine ? json(res, 200, { routine }) : json(res, 404, { error: "no such routine" });
+      const routine = routines!.update(routineMatch[1], body, undefined, routineActor(auth));
+      return routine ? json(res, 200, { routine: routineOnWire(routine) }) : json(res, 404, { error: "no such routine" });
     }
     if (routineMatch && method === "DELETE") {
       if (routineNeedsRun(auth, routineBotId(routineMatch[1]))) return json(res, 403, NEEDS_RUN);
@@ -22380,6 +22574,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           threadId: bot.threadId,
           requestId: String(body.requestId),
           behavior,
+          ...routineActor(auth),
         })) return;
         if (resolveAndSendProfile(res, {
           botId: bot.id,
@@ -22476,6 +22671,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             threadId,
             requestId,
             behavior,
+            ...routineActor(auth),
           })) return;
         }
         const setupCard = store.messagesFor(threadId).find((message) => message.card?.requestId === requestId && message.card.teamSetupRequest);
