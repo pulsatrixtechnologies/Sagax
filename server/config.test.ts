@@ -1346,6 +1346,8 @@ describe("workspace credential env strip", () => {
       OMB_CLOUD_READY_TOKEN: "ready", OMB_CLOUD_BOOTSTRAP: "bootstrap", OMB_CLOUD_GATEWAY_TOKEN: "gateway",
       OMB_CLOUD_MODELS: "models", OMB_CLOUD_REVISION: "revision", OMB_CLOUD_FUTURE_SECRET: "later",
       OMB_LICENSE_KEY: "license", OMB_INSTALLATION_CREDENTIAL: "fleet", omb_cloud_ready_token: "windows-spelling",
+      OMB_PERSPICAX_LINK_FILE: "/run/pulsabot/link.json", OMB_PERSPICAX_ISSUER: "https://px.example.test",
+      OMB_PERSPICAX_INTERNAL_URL: "http://perspicax:8787",
     };
     // What an engine deliberately receives (server/hosted-models.ts passes the
     // hosted model token as the provider key), plus look-alike names.

@@ -202,6 +202,7 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
             FAKE_CLAUDE_MCP_CALLS: JSON.stringify([
               { server: "agents", tool: "ask_bot", arguments: { bot_id: "Xavier", message: "ping from Rita" }, when: "ASK-XAVIER" },
               { server: "agents", tool: "start_thread", arguments: { title: "Own job", message: "ping own job" }, when: "OPEN-OWN" },
+              { server: "agents", tool: "coordinate_bots", arguments: { bot_ids: ["Xavier"], message: "check the board for the person", request_key: "bob-hop" }, when: "COORD-XAVIER" },
               { server: "perspicax_*", tool: "api_list", arguments: {} },
             ]),
             FAKE_CLAUDE_MCP_DUMP: mcpDump,
@@ -276,6 +277,9 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect(seen).toContain("perspicax_dispatch");
     expect(seen).not.toMatch(/pxlo1\./);
     expect(seen).not.toContain(idp.linkToken);
+    // nor where the link token lives, nor the issuer to use it with
+    for (const name of ["OMB_PERSPICAX_LINK_FILE", "OMB_PERSPICAX_ISSUER"]) expect(Object.keys(engine.env)).not.toContain(name);
+    expect(JSON.stringify(engine.env)).not.toContain(join(home, "link"));
     for (const token of [...idp.issuedAccessTokens(), ...idp.exchanges.flatMap((e) => (e.token ? [e.token] : []))]) {
       expect(seen).not.toContain(token);
       expect(log).not.toContain(token);
@@ -293,6 +297,8 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     const engine = JSON.parse(readFileSync(dump, "utf8")) as { mcpConfig: { mcpServers: Record<string, unknown> }; systemPrompt: string };
     expect(Object.keys(engine.mcpConfig.mcpServers).some((name) => name.startsWith("perspicax_"))).toBe(false);
     expect(engine.systemPrompt).toContain('Perspicax tools of profile "Dispatch" are not available in this turn: the person speaking does not hold this profile in Perspicax.');
+    // its own paragraph, never glued to the section before it
+    expect(engine.systemPrompt).toMatch(/\n\nPerspicax tools of profile "Dispatch"/);
     expect(idp.exchanges.slice(exchangesBefore)).toEqual([{ sub: CAROL.sub, profile: PROFILE.id, ok: false, error: "invalid_target" }]);
     expect(idp.mcpRequests.slice(callsBefore)).toEqual([]);
     const row = (await threadMessages(carol, x.threadId)).find((m) => m.kind === "activity" && m.tool?.name.startsWith("Perspicax:"));
@@ -370,5 +376,29 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect(routine.status, routine.text).toBe(201);
     // one row for the routine run, one for the thread it opened
     await routineLineageMountsNothing(routine.body.routine.id, 2);
+  }, 120_000);
+  it("scenario E hop: a teammate bob's Direct turn reaches through coordinate_bots runs as bob", async () => {
+    await allIdle(alice);
+    const created = await api("POST", "/api/bots", alice, { name: "Yves" });
+    expect(created.status, created.text).toBe(201);
+    const y = { id: created.body.bot.id as string, threadId: created.body.bot.threadId as string };
+    expect((await api("PATCH", `/api/bots/${y.id}`, alice, { modelSelection: { instanceId: "claude", model: "fake-model" } })).status).toBe(200);
+    expect((await api("PUT", `/api/bots/${y.id}/grants`, alice, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
+    const bob = await signIn(BOB);
+    const before = await perspicaxRows(alice);
+    const exchangesBefore = idp.exchanges.length;
+    const callsBefore = idp.mcpRequests.length;
+    const sent = await api("POST", `/api/bots/${y.id}/messages`, bob, { text: "COORD-XAVIER about the board" });
+    expect(sent.status, sent.text).toBe(202);
+    // Yves lists no profile: the only exchange is Xavier's, for the hop
+    await waitFor(async () => idp.exchanges.length > exchangesBefore, 60_000);
+    await allIdle(alice);
+    const exchanges = idp.exchanges.slice(exchangesBefore);
+    expect(exchanges.map((e) => ({ sub: e.sub, profile: e.profile, ok: e.ok }))).toEqual([{ sub: BOB.sub, profile: PROFILE.id, ok: true }]);
+    const calls = idp.mcpRequests.slice(callsBefore).filter((r) => r.method === "POST");
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((r) => r.sub === BOB.sub && r.profile === PROFILE.id)).toBe(true);
+    const added = [...(await perspicaxRows(alice)).entries()].filter(([at]) => !before.has(at)).map(([, name]) => name);
+    expect(added.filter((name) => name.includes("unknown")), added.join("\n")).toEqual([]);
   }, 120_000);
 });

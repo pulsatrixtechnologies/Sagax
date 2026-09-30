@@ -1154,8 +1154,14 @@ export const WORKSPACE_CREDENTIAL_ENV = [
  * ends in an underscore on purpose: `OMB_CLOUDFLARED_PATH` is not one of them.
  * What an engine is meant to receive arrives under another name through its
  * instance environment (the hosted model token as ANTHROPIC_API_KEY or
- * OPENMAUSBOT_COMPANY_API_KEY), so nothing here is ever an engine's input. */
-export const CONTROL_PLANE_ENV = ["OMB_LICENSE_KEY", "OMB_INSTALLATION_CREDENTIAL"] as const;
+ * OPENMAUSBOT_COMPANY_API_KEY), so nothing here is ever an engine's input.
+ * The Perspicax link settings belong here too: the link file holds the
+ * server's link token, and an engine that learnt its path (or the issuer to
+ * use it with) could read it as the same user. */
+export const CONTROL_PLANE_ENV = [
+  "OMB_LICENSE_KEY", "OMB_INSTALLATION_CREDENTIAL",
+  "OMB_PERSPICAX_LINK_FILE", "OMB_PERSPICAX_ISSUER", "OMB_PERSPICAX_INTERNAL_URL",
+] as const;
 export const CONTROL_PLANE_ENV_PREFIX = "OMB_CLOUD_";
 
 /** Drop every control-plane secret from a child-process env (in place). No

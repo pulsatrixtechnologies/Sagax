@@ -2744,7 +2744,8 @@ async function perspicaxTurnIntegration(input: {
       tool: { name: `Perspicax: ${names.join(", ")} unavailable for ${speakerName} (${reason})`, ok: false },
     });
   }
-  return { custom, prompt: lines.join("\n") };
+  // sections are concatenated as is: this one brings its own separation
+  return { custom, prompt: `\n\n${lines.join("\n")}` };
 }
 
 function connectedAppsIntegration(bot: Pick<BotRecord, "id" | "connectorTools">, threadId: string, generation: string) {
@@ -4615,8 +4616,13 @@ const roomHandoffs = new RoomHandoffs(join(DATA_DIR, "room-handoffs.json"), {
       };
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) { abort(); return; }
+      // A delegated turn speaks for whoever the asking turn spoke for, as an
+      // ask_bot hop does; a resume keeps the speaker its thread was admitted
+      // with (slice 5: MCP runs as that person, never as nobody or the owner).
+      const hopSpeaker = parent && sender ? peerSpeaker(sender.id, parent.threadId) : turnSpeakers.get(node.threadId);
       void startTurn(bot.id, turnText, {
         threadId: node.threadId, cardContinuation: true, commsDepth: MAX_COMMS_DEPTH,
+        ...(hopSpeaker ? { speaker: hopSpeaker } : {}),
         requestMessageId: directRequestOwners.get(node.threadId)?.generations.has(node.rootId)
           ? directRequestOwners.get(node.threadId)?.messageId : undefined,
         unattended: isUnattended(bot.id, node.threadId),
@@ -9058,8 +9064,10 @@ async function startTurn(
   // an automatic recovery re-enters with these options: same speaker
   opts = { ...opts, speaker };
   // A compaction summarizes with the bot's engine too, so it is gated like
-  // a turn; other card continuations resume a turn already admitted.
-  const accessRefusal = opts.cardContinuation && !opts.compactOnly ? null : orgEngineRefusal(bot, instance, speaker);
+  // a turn, and so is a fresh delegated turn (a hop, as ask_bot's is); other
+  // card continuations resume a turn already admitted.
+  const freshHop = Boolean(opts.coordination && !opts.coordination.resumed);
+  const accessRefusal = opts.cardContinuation && !opts.compactOnly && !freshHop ? null : orgEngineRefusal(bot, instance, speaker);
   if (accessRefusal) {
     const engine = engineDisplayName(instance);
     store.appendMessage(threadId, {
@@ -9081,7 +9089,9 @@ async function startTurn(
   // Admitted: every refusal above has passed and no other turn runs on this
   // thread, so this is the one moment the ledger's "who asked" may change.
   if (opts?.trigger) turnTriggers.set(threadId, opts.trigger);
-  if (!opts.cardContinuation) {
+  // A fresh delegated turn (coordinate_bots) is a new hop on its thread:
+  // it records its speaker so a hop it starts in turn carries the same one.
+  if (!opts.cardContinuation || (opts.coordination && !opts.coordination.resumed)) {
     turnSpeakers.set(threadId, speaker);
     turnSpeakerPrincipals.set(threadId, orgSpeakerPrincipal(bot, speaker));
     if (routineLineage(speaker)) turnRoutineLineage.add(threadId);
