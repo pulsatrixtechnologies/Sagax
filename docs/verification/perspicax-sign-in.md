@@ -186,7 +186,9 @@ and `directoryTeams`, and `setDirectoryStatus(sub, status)`.
 - `server/org-sharing.e2e.test.ts` (real server, fake provider, fake Claude
   CLI with `OMB_ANTHROPIC_API_KEY` and `FAKE_CLAUDE_DUMP`): S3-3 the
   directory before and after a sign-in, S3-11 the engines in the
-  authenticated health, S3-4 a bot shared with bob answered with the
+  authenticated health (an admin and a member read them; a session-less
+  local caller, which on an organization server is any bot's shell, gets
+  exactly `{"app":"openmausbot"}`), S3-4 a bot shared with bob answered with the
   organization key while dave sees nothing (list, thread, search, stream),
   S3-5 the grant removed ends bob's stream and access at once, S3-6 the
   no_access and engine_missing cards (and an admin's own login-backed bot
@@ -293,3 +295,248 @@ Chrome (right-click the empty sidebar, "New section…", "Members and
 sharing…"), a room with `team:U`, the section migration on a slice 3 data
 directory, the Members page, a disabled owner, and the slice 2 and 3
 regressions.
+
+## Health: who learns what
+
+`GET /api/health` answers by caller (`server/request-auth.ts`,
+`healthDetail`):
+
+| Caller | Answer |
+|---|---|
+| anyone signed in (admin or member, cookie or bearer) | `app`, `pid`, `static`, `capabilities`, `engines` (each instance, its driver, `installed`, and `version` when the CLI reports one) |
+| loopback trusted as the owner (desktop, a one-person server) | the same |
+| the `openmausbot serve` CLI, with its per-launch secret | the same (it waits on the pid it started) |
+| session-less loopback on a hosted workspace (service trust) | `app` and `capabilities` (the Slack worker's guarded send contract) |
+| session-less loopback on an organization server, or anyone remote without a session | `{"app":"openmausbot"}` only |
+
+```sh
+pnpm exec vitest run server/request-auth.test.ts server/org-sharing.e2e.test.ts server/hosted-access.test.ts
+```
+
+By hand on an isolated organization server (port 19092 below):
+`curl -s http://127.0.0.1:19092/api/health` prints `{"app":"openmausbot"}`;
+the same with a signed-in cookie or `Authorization: Bearer omb_sess_...`
+lists `engines`.
+
+## Slice 5: Perspicax MCP per bot, as the person who speaks
+
+### Automated (fake provider)
+
+```sh
+pnpm exec vitest run server/perspicax-mcp.test.ts server/perspicax-mcp-bridge.test.ts server/bot-perspicax.test.ts \
+  server/perspicax-link.test.ts server/idp-session.test.ts server/oidc-rp.test.ts server/request-auth.test.ts \
+  server/org-mcp.e2e.test.ts server/org-sharing.e2e.test.ts server/oidc-session.e2e.test.ts \
+  src/components/bot-settings/PerspicaxSection.test.ts
+pnpm -s i18n:check
+```
+
+The fake provider now answers the RFC 8693 token exchange at its token
+endpoint (Basic auth with the link token, `subject_token` = the speaker's
+sign-in access token, `resource` = its `/mcp`), lists `profiles` per person
+in the directory, and serves a small `/mcp` that records who called which
+tool. The fake Claude CLI calls MCP tools from `FAKE_CLAUDE_MCP_CALLS`
+(for example `[{"server":"perspicax_*","tool":"api_list","arguments":{}}]`)
+and writes what it saw to `FAKE_CLAUDE_MCP_DUMP`.
+
+- `server/perspicax-mcp.test.ts`: who speaks for a turn (the Direct's
+  person, a hop through `ask_bot` or `coordinate_bots`, a room member, a
+  routine's person), the exchange per profile, `invalid_target` for a
+  profile not held, the per-turn tokens revoked after the turn, no cache
+  across people.
+- `server/perspicax-mcp-bridge.test.ts`: the stdio bridge the harness holds;
+  the engine sees only a turn capability, which answers 401 once the turn
+  ends.
+- `server/bot-perspicax.test.ts`: `GET` and `PUT /api/bots/:id/perspicax`
+  (`available`, `profile_not_held`, `needs_edit`, `unknown_profile`).
+- `server/org-mcp.e2e.test.ts` (real server): the editor offers alice's
+  profiles, scenario E (bob's turn reaches Perspicax as bob, client
+  `pulsa-bot:<server id>`, `client_name` `Pulsa Bot (<bot id>)`, tokens
+  revoked after it), T1 (no sign-in or Perspicax token in the engine's argv,
+  environment or MCP configuration), the negative (carol holds no profile:
+  no server, a note in the prompt, an activity row), the `coordinate_bots`
+  hop, and the routine lineage cases below.
+
+### Against a real Perspicax (manual)
+
+Isolated instances only. Build `pulsatrix-connector` from the slice 5 head
+(Perspicax 19091, Sagax 19092, webhook 19093) and start Sagax as in slice 4
+with `FAKE_CLAUDE_MCP_CALLS` and `FAKE_CLAUDE_MCP_DUMP=$S/mcp-dump.json`.
+Create profile P ("Dispatch", slug `dispatch`, meta tool `api_list`) held by
+alice and bob; carol and dave hold none. Then walk S5-1 to S5-12 of the
+slice 5 acceptance:
+
+1. Discovery lists the token-exchange grant; the directory shows each
+   person's `profiles`; `GET /api/bots/X/perspicax` as alice offers P.
+2. The exchange contract by curl: `expires_in` at most 900, no
+   `refresh_token`, the token lists only P's tools on `/mcp`; the subject
+   token itself, a missing Basic header, a console `pxat1.`, an ordinary
+   `/mcp` token, a profile not held and a foreign resource are refused with
+   the codes in the plan; `token_exchanged` in auth_events.
+3. The "Outils Perspicax" section of bot settings in headless Chrome at
+   1280 and 390 px; the edit rules above by API.
+4. Scenario E: bob (`use` on X) sends "ping"; the reply has
+   `mcp:api_list:ok`; Perspicax's journal has the rows under bob, none
+   under alice; `token_revoked` within 10 s after the turn.
+5. carol gets `mcp:absent`, the note naming Dispatch and the activity row;
+   granting P to her team T turns it on within one directory period, and
+   removing her from T turns it off at once.
+6. No `pxlo1.` in `claude-dump.json`, `mcp-dump.json`, the Sagax log or
+   `ps -Eww` during a turn; a person disabled mid-turn gets an MCP error on
+   the next call, never a result.
+7. `PXC_INTERNAL_HOSTS=perspicax:8787` lets the compose's internal host past
+   the Host check (`deploy/docker-compose.pulsabot.yml` sets it).
+
+## Slice 6: routines in the owner's name
+
+### Automated (fake provider)
+
+```sh
+pnpm exec vitest run server/org-routine-consent.test.ts server/routines.test.ts server/idp-session.test.ts \
+  server/perspicax-mcp.test.ts server/authz.test.ts server/request-auth.test.ts \
+  server/org-routines.e2e.test.ts server/org-mcp.e2e.test.ts server/org-sharing.e2e.test.ts \
+  server/oidc-session.e2e.test.ts server/routine-delegation.e2e.test.ts \
+  src/components/settings/MyRoutineDelegation.test.ts
+pnpm -s i18n:check
+```
+
+The fake provider now issues routine delegation families
+(`scope` with `pulsabot:routines`, a refresh token that survives the
+person's sign-outs), lists `routine_delegation` per person in the
+directory, and revokes a family from its fake console.
+`OMB_ROUTINE_RENEW_SECONDS` shortens the renewal window for tests.
+
+- `server/org-routine-consent.test.ts`: one delegation per person (a new
+  consent revokes the previous one), the renewal reused for its window and
+  refreshed once for concurrent runs, a refusal ending the delegation with
+  one notice, a transient failure skipping the run, the refreshed claims,
+  reconciliation with the directory, the delegation's access token as the
+  token exchange subject, a revoke from Sagax, a person out, and no token in
+  plain text. The consent's refusals (`routines_subject`, `binding`,
+  `routines_session`, 401 without a session) are in
+  `server/oidc-login.test.ts` and `server/org-routines.e2e.test.ts`; the
+  solo server's 403 `identity_perspicax` is checked by hand (S6-12).
+- `server/routines.test.ts` ("slice 6: routines in their person's name"):
+  `runAs` from the creator and moved by a work-field edit, snapshotted on the
+  run, a refused run suspending its routine once (`delegation_missing`,
+  `delegation_revoked`, `no_right`, `person_out`), a transient refusal
+  failing without suspending, a consent resuming from now.
+- `server/org-routines.e2e.test.ts` (real server): consent, scenario D (the
+  routine runs while alice has no session, on her key and her delegation),
+  renewal reused within the window, Perspicax unreachable (skipped, not
+  suspended), revoke from Sagax (one card, consent resumes), revoke from
+  the console seen through the directory, a consent finished as another
+  account, bob's routine on alice's bot (runs as bob on alice's key, then
+  `no_right`), a room goal, a disable pausing `person_out`, and no refresh
+  or access token written in clear.
+
+### Against a real Perspicax (manual)
+
+Same setup as slice 5, with the slice 6 connector build, the accounts
+`root` (second admin), `mona` (manager of T) and `max` (manager of U), and
+routines on cron `* * * * *` (a stand-in for scenario D's hourly routine).
+Walk S6-1 to S6-13 of the slice 6 acceptance:
+
+1. Settings > Organization > "Routines en mon nom" shows "Non autorisé";
+   "Autoriser mes routines à agir en mon nom" goes through the Perspicax
+   sign-in (the notice names Sagax) and back with the toast and the dates.
+2. alice signs out everywhere; her routine R1 on X still runs within 90 s,
+   on her owner key, with MCP rows under alice and `token_refreshed`
+   detail `routine delegation`.
+3. `root` disables alice: R1 `person_out` within 10 s, the held run
+   cancelled; re-enabling keeps it suspended until she consents again.
+4. Revoke from Sagax, then from the console Members page (a manager of a
+   team alice belongs to; others get 404 or 403): one card each, no run
+   afterwards, "Reconnecter mes routines" for alice only.
+5. bob's routine on X runs as bob and never under alice; losing `run`
+   pauses it `no_right`; a member-owned bot's server command still waits
+   for an admin approval.
+6. Stopping Perspicax (its PID only) skips runs without suspending;
+   `grep -r 'pxlr1\.\|pxlo1\.'` over the data directory and logs finds
+   nothing.
+
+## Slice 7: the Sagax console in Perspicax
+
+Spec section 5. Not on this branch yet: this is what the slice must pass
+when it lands.
+
+### Automated
+
+- Sagax: the admin API under `/api/org/admin/*` accepts only a Perspicax
+  console assertion (ES256, 60 s, `aud` = this server's origin,
+  `act.sub = "console"`, a `jti` never seen before) verified with the same
+  JWKS as the `id_token`, and applies `can()` as the console's person. The
+  test suite covers a replayed `jti`, an expired or foreign-audience
+  assertion, a missing `act`, and a manager reaching only their teams' bots.
+- Perspicax: `crates/gateway/tests/route_roles.rs` has a row per new route
+  (`/api/v1/pulsabot/servers/{id}/proxy/{*path}` Manager or Any per page),
+  the proxy refuses an impersonating session, and `console/e2e/routes.ts`
+  lists the Bots, Usage, Approvals and Audit pages.
+
+### Against a real Perspicax (manual)
+
+Isolated instances as in slice 6. As alice (admin), mona (manager of T) and
+bob (employee), open `/console/pulsabot/bots`, `usage`, `approvals` and
+`audit` in headless Chrome at 1280 and 390 px:
+
+1. Bots: alice sees every bot with owner, engine, profiles and grants; mona
+   only her teams' bots; bob has no Bots page.
+2. Usage: turns, model tokens and MCP calls per person, bot and day match
+   the Sagax usage page for the same window.
+3. Approvals: each person sees only the cards they may answer (decision 5),
+   with a link to the thread in Sagax; answering a member bot's server
+   command needs an org admin.
+4. Audit: Sagax's rights, sharing, ownership and link rows appear beside
+   Perspicax's `admin_audit`.
+5. Every call from the console goes through Perspicax's proxy (the browser
+   never calls Sagax: check the network panel); a replayed assertion is
+   refused (401) and an impersonated console session is refused by the
+   proxy.
+
+## Slice 8: joining an organization from solo, and cleanup
+
+Spec sections 1 ("Passer de solo à organisation", "Revenir en solo",
+"Serveur intérim déjà en organisation") and 8. Not on this branch yet: this
+is what the slice must pass when it lands.
+
+### Automated
+
+- `POST /api/org/import` on the organization server takes the team backup
+  the local harness exports (`server/team-backup.ts`: bots, tasks with their
+  messages, routines, memory). Every reference to the local principal
+  (`ownerUserId`, `humanIds`, `directGrants`, `runAs`) becomes the joining
+  person's organization principal through an explicit rewrite table; any
+  other person is dropped and listed in the import report, never turned
+  into a right. No imported bot is ever ownerless. Provider keys stay
+  redacted.
+- A channel follows only when its only humans are the joining person.
+- An interim principal created by email is attached once to the first OIDC
+  sign-in of an unknown `sub` with the same email, written to the audit
+  log, and never after the migration period.
+- With `OMB_IDENTITY=perspicax` the interim code of spec section 1 is gone
+  or refused: `/join#token` invitation links, email codes, the organization
+  directory's roles, the organization people list, the identity mailer and
+  the single organization owner.
+
+### Against a real Perspicax (manual)
+
+Isolated instances only, never `~/.openmausbot`. Start a solo Sagax on a
+temporary data directory with two bots (one with threads and memory), a
+routine and a channel with only its owner; then:
+
+1. Settings > Organization > "Rejoindre un serveur Perspicax", paste the
+   organization server's address: the app reads
+   `/.well-known/openmausbot/environment` (`identity.kind = "oidc"`) and
+   signs in with Perspicax.
+2. "Copier des bots vers l'organisation": pick the bots, with and without
+   threads and memory. On the organization server they belong to the
+   joining person, the routine's `runAs` is them (it runs after their
+   routine consent), the channel followed; the import report lists every
+   dropped reference.
+3. It is a copy: the local bots are untouched until "Retirer ces bots de
+   cet ordinateur", bot by bot. Provider keys did not travel; the owner
+   enters them in Perspicax.
+4. No email is sent or asked for; the invitation and email sign-in routes
+   answer as retired; `/api/health` without a session gives the app name
+   only.
+5. "Quitter l'organisation" revokes the Sagax session and the Perspicax
+   refresh token and removes the environment; the local copies stay.
