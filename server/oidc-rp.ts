@@ -149,15 +149,29 @@ export interface StartedFlow {
 }
 
 export type CallbackOutcome =
-  | { ok: true; identity: OidcIdentity; client: OidcClientKind; grant: { refreshToken?: string } }
+  | { ok: true; identity: OidcIdentity; client: OidcClientKind; grant: { refreshToken?: string; accessToken?: string; accessExpiresAt?: number } }
   /** `client` is known once the pending flow was found. */
   | { ok: false; code: string; error: string; client?: OidcClientKind };
 
 /** OAuth errors that mean the grant is gone for good (RFC 6749 5.2, RFC 8707). */
 const REJECTED_GRANT_ERRORS = new Set(["invalid_grant", "invalid_client", "unauthorized_client", "invalid_target", "unsupported_grant_type"]);
 
+/** Default and cap of an access token's life when `expires_in` is missing or
+ * out of range (seconds). */
+export const ACCESS_TOKEN_DEFAULT_SECONDS = 3600;
+export const ACCESS_TOKEN_MAX_SECONDS = 86_400;
+
+/** `expires_in` of a token answer as seconds: the default when missing or
+ * not a positive number, never above the cap. */
+export function accessExpiresIn(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return ACCESS_TOKEN_DEFAULT_SECONDS;
+  return Math.min(Math.floor(value), ACCESS_TOKEN_MAX_SECONDS);
+}
+
 export type RefreshOutcome =
-  | { ok: true; refreshToken: string; identity?: OidcIdentity }
+  /** `accessToken` (memory only, never kept on disk) and its `expiresIn` in
+   * seconds: slice 5 exchanges it for per-turn Perspicax MCP tokens. */
+  | { ok: true; refreshToken: string; identity?: OidcIdentity; accessToken?: string; expiresIn?: number }
   /** `rejected`: the provider ended the grant (or answered something that
    * cannot be trusted); `transient`: try again later. */
   | { ok: false; kind: "rejected" | "transient"; error: string };
@@ -547,7 +561,15 @@ export class OidcRelyingParty {
     const seen: { client?: OidcClientKind } = {};
     try {
       const done = await this.finish(params, binding, seen);
-      return { ok: true, identity: done.identity, client: done.client, grant: done.refreshToken ? { refreshToken: done.refreshToken } : {} };
+      return {
+        ok: true,
+        identity: done.identity,
+        client: done.client,
+        grant: {
+          ...(done.refreshToken ? { refreshToken: done.refreshToken } : {}),
+          ...(done.accessToken ? { accessToken: done.accessToken, accessExpiresAt: done.accessExpiresAt } : {}),
+        },
+      };
     } catch (error) {
       const client = seen.client ? { client: seen.client } : {};
       if (error instanceof OidcError) return { ok: false, code: error.code, error: error.message, ...client };
@@ -555,7 +577,7 @@ export class OidcRelyingParty {
     }
   }
 
-  private async finish(params: URLSearchParams, binding: string | undefined, seen: { client?: OidcClientKind }): Promise<{ identity: OidcIdentity; client: OidcClientKind; refreshToken?: string }> {
+  private async finish(params: URLSearchParams, binding: string | undefined, seen: { client?: OidcClientKind }): Promise<{ identity: OidcIdentity; client: OidcClientKind; refreshToken?: string; accessToken?: string; accessExpiresAt?: number }> {
     this.prune();
     const state = params.get("state") ?? "";
     const flow = state ? this.pending.get(state) : undefined;
@@ -608,7 +630,12 @@ export class OidcRelyingParty {
         keyFor: (kid) => this.keyFor(kid),
         nowSeconds: Math.floor(this.now() / 1000),
       });
-      return { identity, client: flow.client, ...(refresh ? { refreshToken: refresh } : {}) };
+      return {
+        identity,
+        client: flow.client,
+        ...(refresh ? { refreshToken: refresh } : {}),
+        ...(access ? { accessToken: access, accessExpiresAt: this.now() + accessExpiresIn(got.body.expires_in) * 1000 } : {}),
+      };
     } catch (error) {
       // A sign-in that does not verify keeps nothing: end the grant it
       // produced rather than leave a live refresh family at the provider
@@ -652,8 +679,10 @@ export class OidcRelyingParty {
     }
     const next = typeof got.body?.refresh_token === "string" && got.body.refresh_token ? got.body.refresh_token : undefined;
     if (!next) return { ok: false, kind: "rejected", error: "the identity provider returned no refresh token" };
+    const accessToken = typeof got.body?.access_token === "string" && got.body.access_token ? got.body.access_token : undefined;
+    const access = accessToken ? { accessToken, expiresIn: accessExpiresIn(got.body?.expires_in) } : {};
     const idToken = got.body?.id_token;
-    if (idToken === undefined) return { ok: true, refreshToken: next };
+    if (idToken === undefined) return { ok: true, refreshToken: next, ...access };
     try {
       if (typeof idToken !== "string") throw new OidcError("id_token_malformed", "The refreshed id_token is not a string.");
       const identity = await verifyIdToken({
@@ -665,7 +694,7 @@ export class OidcRelyingParty {
         nowSeconds: Math.floor(this.now() / 1000),
       });
       if (identity.sub !== expect.sub) throw new OidcError("id_token_sub", "The refreshed id_token names another subject.");
-      return { ok: true, refreshToken: next, identity };
+      return { ok: true, refreshToken: next, identity, ...access };
     } catch (error) {
       // The rotation already happened: the new token must not live on.
       if (discovery.revocationEndpoint) this.revoke(discovery.revocationEndpoint, next, "refresh_token");

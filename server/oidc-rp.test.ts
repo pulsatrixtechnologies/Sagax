@@ -3,7 +3,7 @@
 // HTTP. Every refusal the spec lists (T10) is proven by bending one thing.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { OIDC_MAX_PENDING_FLOWS, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
+import { accessExpiresIn, OIDC_MAX_PENDING_FLOWS, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
 
 const REDIRECT = "http://127.0.0.1:9/auth/oidc/callback";
@@ -49,7 +49,8 @@ describe("OIDC relying party", () => {
     expect(outcome).toEqual({
       ok: true,
       client: "web",
-      grant: { refreshToken: expect.stringMatching(/^pxlr1\./) },
+      // slice 5: the access token rides along, for memory only (idp-session.ts)
+      grant: { refreshToken: expect.stringMatching(/^pxlr1\./), accessToken: expect.stringMatching(/^pxlo1\./), accessExpiresAt: expect.any(Number) },
       identity: expect.objectContaining({ iss: idp.issuer, sub: "01J0000000000000000000ADMN", email: "ada@example.test", name: "Ada Admin", preferredUsername: "ada", role: "admin" }),
     });
     expect(sent.scope.split(" ")).toEqual(["openid", "profile", "email", "offline_access"]);
@@ -250,6 +251,8 @@ describe("OIDC relying party: refresh (slice 2)", () => {
     const first = await signedInGrant(party);
     const refreshed = await party.refresh(first, { sub: idp.user.sub });
     expect(refreshed).toMatchObject({ ok: true, refreshToken: expect.stringMatching(/^pxlr1\./), identity: expect.objectContaining({ sub: idp.user.sub, role: "admin" }) });
+    // slice 5: the new access token and its life (expires_in, default 3600, cap 86400)
+    expect(refreshed).toMatchObject({ accessToken: expect.stringMatching(/^pxlo1\./), expiresIn: 3600 });
     expect(idp.lastTokenRequest).toMatchObject({ grant_type: "refresh_token", client_id: "pulsa-bot", resource: "http://127.0.0.1:9" });
     if (!refreshed.ok) throw new Error("unreachable");
     expect(refreshed.refreshToken).not.toBe(first);
@@ -460,5 +463,15 @@ describe("OIDC relying party: the teams claim (slice 4)", () => {
     ])).toEqual([{ id: "A", name: "Alpha", manager: false }, { id: "B", name: "Bravo", manager: true }]);
     const many = Array.from({ length: 1200 }, (_, i) => ({ id: `T${i}`, name: `T${i}`, manager: false }));
     expect(parseTeamsClaim(many)).toHaveLength(1000);
+  });
+});
+
+describe("the access token's life (slice 5)", () => {
+  it("reads expires_in with a default of 3600 s and a cap of 86400 s", () => {
+    expect(accessExpiresIn(900)).toBe(900);
+    expect(accessExpiresIn(undefined)).toBe(3600);
+    expect(accessExpiresIn(-5)).toBe(3600);
+    expect(accessExpiresIn("60")).toBe(3600);
+    expect(accessExpiresIn(10 ** 9)).toBe(86_400);
   });
 });

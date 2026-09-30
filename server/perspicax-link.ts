@@ -107,6 +107,15 @@ const personSchema = z.object({
   /** Slice 4: which model providers this person keeps a key for in
    * Perspicax (names only, never a key). */
   provider_keys: z.array(z.string().max(32)).max(16).optional(),
+  /** Slice 5: the Perspicax MCP profiles this person holds (directly or
+   * through a team), by id. */
+  profiles: z.array(z.string().min(1).max(64)).max(1_000).optional(),
+});
+const profileSchema = z.object({
+  id: z.string().min(1).max(64),
+  slug: z.string().max(128),
+  name: z.string().max(200),
+  description: z.string().max(2_000),
 });
 const teamSchema = z.object({
   id: z.string().min(1).max(64),
@@ -118,7 +127,10 @@ export const directorySchema = z.object({
   server_id: z.string().min(1).max(64),
   people: z.array(personSchema).max(100_000),
   teams: z.array(teamSchema).max(100_000),
+  /** Slice 5: every MCP profile of the organization (catalog). */
+  profiles: z.array(profileSchema).max(10_000).optional(),
 });
+export type DirectoryProfile = z.infer<typeof profileSchema>;
 export type DirectoryPerson = z.infer<typeof personSchema>;
 export type DirectoryTeam = z.infer<typeof teamSchema>;
 export type Directory = z.infer<typeof directorySchema>;
@@ -150,6 +162,21 @@ export type ModelProvider = "anthropic" | "openai";
 export type ProviderKeyResult =
   | { ok: true; key: string; fingerprint: string }
   | { ok: false; error: "no_key" | "user_inactive" | "unreachable" | "link" };
+
+/** Slice 5 (contract 1): RFC 8693 token exchange for per-turn MCP tokens. */
+export const TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange";
+export const ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token";
+export const LINK_SERVER_CLIENT_ID = "pulsa-bot-server";
+export const EXCHANGE_TIMEOUT_MS = 5_000;
+export const EXCHANGE_MAX_BYTES = 8 * 1024;
+/** A Perspicax profile id as Pulsa Bot stores it on a bot. */
+export const PROFILE_ID = /^[0-9A-Za-z_.:-]{1,64}$/;
+export type ExchangeResult =
+  | { ok: true; token: string; expiresAt: number }
+  /** not_held: Perspicax answered invalid_target (profile unknown or not
+   * held); subject: invalid_grant (the sign-in token was refused); link: the
+   * link token was refused even after re-reading the file. */
+  | { ok: false; error: "not_held" | "subject" | "link" | "rate_limited" | "unreachable" };
 
 export interface PerspicaxDirectoryOptions {
   /** OMB_PERSPICAX_ISSUER: the subjects' `iss`. */
@@ -242,6 +269,120 @@ export class PerspicaxDirectory {
    * from the last directory; [] when unknown. */
   providerKeys(sub: string): string[] {
     return [...(this.keysBySub.get(sub) ?? [])];
+  }
+
+  /** Slice 5: every MCP profile Perspicax lists, sorted by id ([] before the
+   * first directory, or from a Perspicax without profiles). */
+  profileCatalog(): DirectoryProfile[] {
+    return [...(this.data?.profiles ?? [])].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  /** Slice 5: the profile ids this subject holds, from the last directory. */
+  profilesOf(sub: string): string[] {
+    const person = this.data?.people.find((entry) => entry.sub === sub);
+    if (!person || person.status !== "active") return [];
+    return [...new Set(person.profiles ?? [])].sort();
+  }
+
+  /** Slice 5: Perspicax's MCP endpoint as this server reaches it. */
+  mcpEndpoint(): string {
+    return `${this.options.serverBase.replace(/\/+$/, "")}/mcp`;
+  }
+
+  private basic(link: PerspicaxLink): string {
+    return `Basic ${Buffer.from(`${LINK_SERVER_CLIENT_ID}:${link.linkToken}`).toString("base64")}`;
+  }
+
+  /** Slice 5 (contract 1): exchange the speaker's sign-in access token for a
+   * short MCP token holding one profile. Authenticated by the link; a 401
+   * re-reads the link file once. Never logs a token or puts one in a result
+   * other than the ok one. */
+  async exchangeToken(subjectToken: string, profileId: string): Promise<ExchangeResult> {
+    if (!PROFILE_ID.test(profileId)) return { ok: false, error: "not_held" };
+    let link = this.link ?? this.readLink();
+    if (!link) return { ok: false, error: "link" };
+    const body = new URLSearchParams({
+      grant_type: TOKEN_EXCHANGE_GRANT,
+      subject_token: subjectToken,
+      subject_token_type: ACCESS_TOKEN_TYPE,
+      resource: `${trimSlash(this.options.issuer)}/mcp?profile=${profileId}`,
+    }).toString();
+    const call = (current: PerspicaxLink) => this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}/oauth/token`, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
+      headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded", authorization: this.basic(current) },
+      body,
+    });
+    let response: Response;
+    try {
+      response = await call(link);
+      if (response.status === 401) {
+        void response.body?.cancel().catch(() => {});
+        const again = this.readLink();
+        if (!again) return { ok: false, error: "link" };
+        link = again;
+        response = await call(link);
+        if (response.status === 401) {
+          void response.body?.cancel().catch(() => {});
+          return { ok: false, error: "link" };
+        }
+      }
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    if (response.status === 429) {
+      void response.body?.cancel().catch(() => {});
+      return { ok: false, error: "rate_limited" };
+    }
+    let text: string | null;
+    try {
+      text = await readLimited(response, EXCHANGE_MAX_BYTES);
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    let parsed: Record<string, unknown> = {};
+    try {
+      const value: unknown = text === null ? null : JSON.parse(text);
+      if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+    } catch {
+      /* not JSON */
+    }
+    if (response.status === 400) {
+      if (parsed.error === "invalid_target") return { ok: false, error: "not_held" };
+      if (parsed.error === "invalid_grant") return { ok: false, error: "subject" };
+      return { ok: false, error: "unreachable" };
+    }
+    if (response.status !== 200) return { ok: false, error: "unreachable" };
+    const token = parsed.access_token;
+    const expiresIn = parsed.expires_in;
+    if (typeof token !== "string" || !token || token.length > 4096 || /\s/.test(token)) return { ok: false, error: "unreachable" };
+    if (typeof parsed.token_type === "string" && parsed.token_type.toLowerCase() !== "bearer") return { ok: false, error: "unreachable" };
+    const seconds = typeof expiresIn === "number" && Number.isFinite(expiresIn) && expiresIn > 0 ? Math.min(expiresIn, 900) : 0;
+    if (!seconds) return { ok: false, error: "unreachable" };
+    return { ok: true, token, expiresAt: this.now() + seconds * 1000 };
+  }
+
+  /** Slice 5 (contract 2): revoke an exchanged token (RFC 7009) with the
+   * link's Basic header. Best effort; a failure is logged without the token. */
+  async revokeExchanged(token: string): Promise<boolean> {
+    const link = this.link ?? this.readLink();
+    if (!link) return false;
+    try {
+      const response = await this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}/oauth/revoke`, {
+        method: "POST",
+        redirect: "error",
+        signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
+        headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded", authorization: this.basic(link) },
+        body: new URLSearchParams({ token, token_type_hint: "access_token" }).toString(),
+      });
+      void response.body?.cancel().catch(() => {});
+      if (!response.ok) this.log(`perspicax: revoking an exchanged MCP token answered ${response.status}; it expires on its own`);
+      return response.ok;
+    } catch (error) {
+      this.log(`perspicax: revoking an exchanged MCP token failed (${error instanceof Error ? error.name : "error"}); it expires on its own`);
+      return false;
+    }
   }
 
   /** Drop a cached owner key (a provider refused it, or the owner lost it). */

@@ -273,6 +273,15 @@ export function settledWithin(promise: Promise<unknown>, ms: number): Promise<vo
   return Promise.race([promise.then(() => {}, () => {}), bound]).finally(() => clearTimeout(timer));
 }
 
+/** A cached sign-in access token with less than this left is refreshed
+ * before it is used as a token exchange subject (slice 5, D7). */
+export const IDP_SUBJECT_MIN_LIFE_MS = 600_000;
+
+/** The speaker's sign-in access token for a token exchange, or why none. */
+export type SubjectTokenOutcome =
+  | { ok: true; token: string; expiresAt: number }
+  | { ok: false; error: "no_session" | "unreachable" | "ended" };
+
 /** A grant left unbound is swept this long after its `bindBy` at the latest. */
 export const IDP_SWEEP_SLACK_MS = 1_000;
 /** The periodic sweep, a backstop for the per-grant timers (a restart, a
@@ -292,6 +301,9 @@ export class IdpSessionManager {
   private readonly refreshAfter: number;
   private readonly log: (line: string) => void;
   private readonly inflight = new Map<string, Promise<void>>();
+  /** The latest access token of each grant: memory only, never in the vault,
+   * never logged, never in an error (slice 5, D7). */
+  private readonly access = new Map<string, { token: string; expiresAt: number }>();
   private readonly schedule: (run: () => void, delayMs: number) => void;
   private readonly teamNames?: (teams: { id: string; name: string }[]) => void;
 
@@ -314,10 +326,11 @@ export class IdpSessionManager {
 
   /** Keep a new sign-in's refresh token. Unbound until `bindSession`; the
    * sweep revokes it after `bindBy`. Throws when the vault is unavailable. */
-  createGrant(input: { iss: string; sub: string; refreshToken: string; bindBy: number }): string {
+  createGrant(input: { iss: string; sub: string; refreshToken: string; bindBy: number; accessToken?: string; accessExpiresAt?: number }): string {
     const now = this.now();
     const grantRef = randomUUID();
     this.vault.set({ grantRef, iss: input.iss, sub: input.sub, refreshToken: input.refreshToken, createdAt: now, refreshedAt: now, lastOkAt: now, bindBy: input.bindBy });
+    if (input.accessToken && input.accessExpiresAt !== undefined) this.access.set(grantRef, { token: input.accessToken, expiresAt: input.accessExpiresAt });
     // Revoked at the provider as soon as its window closes unredeemed, not
     // at the next periodic sweep.
     this.schedule(() => {
@@ -407,12 +420,61 @@ export class IdpSessionManager {
     const now = this.now();
     if (now - grant.refreshedAt < this.refreshAfter) return done;
     if (grant.failedAt !== undefined && now - grant.failedAt < IDP_RETRY_AFTER_FAILURE_MS) return done;
-    const key = ref;
-    const flight = this.refreshGrant(key).catch((error: unknown) => {
+    return this.startRefresh(ref);
+  }
+
+  /** The one refresh in flight for a grant: a second caller joins it. Two
+   * refreshes of one grant must never race (rotation reuse would end the
+   * whole family at the provider). */
+  private startRefresh(ref: string): Promise<void> {
+    const pending = this.inflight.get(ref);
+    if (pending) return pending;
+    const flight = this.refreshGrant(ref).catch((error: unknown) => {
       this.log(`idp: refresh of a grant failed unexpectedly: ${error instanceof Error ? error.message : String(error)}`);
-    }).finally(() => this.inflight.delete(key));
-    this.inflight.set(key, flight);
+    }).finally(() => this.inflight.delete(ref));
+    this.inflight.set(ref, flight);
     return flight;
+  }
+
+  /** Slice 5 (D7): the person's current sign-in access token, the subject of
+   * a token exchange for their MCP tools. Taken from their freshest live
+   * grant; a cached token with at least 10 minutes left is returned as is,
+   * otherwise the grant is refreshed through the same single flight as
+   * `touch` (whatever `refreshAfter` says, but never sooner than the retry
+   * delay after a transient failure), waiting at most IDP_REFRESH_WAIT_MS.
+   * Never throws; never puts the token in an error or a log line. */
+  async subjectToken(subject: { iss: string; sub: string }): Promise<SubjectTokenOutcome> {
+    let live: IdpGrant[];
+    try {
+      live = this.liveGrantsFor(subject);
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    const grant = live.sort((a, b) => b.refreshedAt - a.refreshedAt)[0];
+    if (!grant) return { ok: false, error: "no_session" };
+    const ref = grant.grantRef;
+    const usable = () => {
+      const cached = this.access.get(ref);
+      return cached && cached.expiresAt - this.now() >= IDP_SUBJECT_MIN_LIFE_MS ? cached : undefined;
+    };
+    const fresh = usable();
+    if (fresh) return { ok: true, token: fresh.token, expiresAt: fresh.expiresAt };
+    let flight = this.inflight.get(ref);
+    if (!flight) {
+      if (grant.failedAt !== undefined && this.now() - grant.failedAt < IDP_RETRY_AFTER_FAILURE_MS) return { ok: false, error: "unreachable" };
+      flight = this.startRefresh(ref);
+    }
+    await settledWithin(flight, IDP_REFRESH_WAIT_MS);
+    let after: IdpGrant | undefined;
+    try {
+      after = this.vault.get(ref);
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    if (!after) return { ok: false, error: "ended" };
+    const renewed = usable();
+    if (renewed) return { ok: true, token: renewed.token, expiresAt: renewed.expiresAt };
+    return { ok: false, error: "unreachable" };
   }
 
   /** The person's grants that stand on a live session of their own. */
@@ -446,6 +508,7 @@ export class IdpSessionManager {
       }
       const now = this.now();
       const next: IdpGrant = { ...current, refreshToken: outcome.refreshToken, refreshedAt: now, lastOkAt: now };
+      if (outcome.accessToken) this.access.set(ref, { token: outcome.accessToken, expiresAt: now + (outcome.expiresIn ?? 3600) * 1000 });
       delete next.failedAt;
       delete next.failingSince;
       // The rotated token is persisted before anything else: the old one is dead.
@@ -624,6 +687,7 @@ export class IdpSessionManager {
   }
 
   private safeDelete(grantRef: string): void {
+    this.access.delete(grantRef);
     try {
       this.vault.delete(grantRef);
     } catch (error) {

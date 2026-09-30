@@ -351,3 +351,109 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
     expect(h.resolveCalls.at(-1)!.authorization).toBe(`Bearer ${TOKEN_B}`);
   });
 });
+
+describe("PerspicaxDirectory, slice 5: profiles and token exchange", () => {
+  type Answer = { status: number; body?: unknown } | "throw";
+  function exchangeHarness(answers: Answer[] = []) {
+    const dir = tempDir();
+    const linkFile = join(dir, "pulsabot.json");
+    writeLink(linkFile, linkDoc());
+    const principals = new PrincipalRegistry({ path: join(dir, "principals.json") });
+    const calls: Array<{ url: string; method: string; headers: Record<string, string>; body: string }> = [];
+    const logs: string[] = [];
+    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(input), method: String(init?.method), headers: { ...(init?.headers as Record<string, string>) }, body: String(init?.body ?? ""), ...(init?.redirect ? { redirect: init.redirect } : {}) });
+      const next = answers.shift() ?? { status: 200, body: {} };
+      if (next === "throw") throw new Error("connect ECONNREFUSED");
+      return new Response(next.body === undefined ? null : typeof next.body === "string" ? next.body : JSON.stringify(next.body), { status: next.status });
+    }) as typeof fetch;
+    const sync = new PerspicaxDirectory({
+      issuer: `${ISSUER}/`, serverBase: "http://perspicax:8787/", linkFile, expect: EXPECT, principals,
+      onPersonOut: () => {}, onRoleNarrowed: () => {}, version: "0.1.89", now: () => 5_000_000, fetch: fetcher, log: (l) => logs.push(l),
+    });
+    return { sync, calls, answers, linkFile, logs };
+  }
+  const ok = { status: 200, body: { access_token: "pxlo1.BOB.exchanged-secret", issued_token_type: "urn:ietf:params:oauth:token-type:access_token", token_type: "Bearer", expires_in: 900, scope: "profile:P1" } };
+
+  it("an old directory without profiles still parses; the new fields are read and sorted", async () => {
+    const h = harness(directoryOf([person("BOB")]));
+    expect(await h.sync.refresh()).toMatchObject({ state: "ok" });
+    expect(h.sync.profileCatalog()).toEqual([]);
+    expect(h.sync.profilesOf("BOB")).toEqual([]);
+    h.setDirectory({
+      ...directoryOf([person("BOB", { profiles: ["P2", "P1", "P1"] }), person("DAVE", { status: "disabled", profiles: ["P1"] }), person("CAROL")]),
+      profiles: [{ id: "P2", slug: "billing", name: "Billing", description: "" }, { id: "P1", slug: "dispatch", name: "Dispatch", description: "CW dispatch" }],
+    });
+    expect(await h.sync.refresh()).toMatchObject({ state: "ok" });
+    expect(h.sync.profileCatalog().map((p) => p.id)).toEqual(["P1", "P2"]);
+    expect(h.sync.profilesOf("BOB")).toEqual(["P1", "P2"]);
+    expect(h.sync.profilesOf("CAROL")).toEqual([]);
+    expect(h.sync.profilesOf("DAVE")).toEqual([]);
+    expect(h.sync.profilesOf("NOBODY")).toEqual([]);
+  });
+
+  it("sends the exchange with the link's Basic header and the contract's form", async () => {
+    const h = exchangeHarness([ok]);
+    expect(h.sync.mcpEndpoint()).toBe("http://perspicax:8787/mcp");
+    expect(await h.sync.exchangeToken("pxlo1.BOB.subject", "P1")).toEqual({ ok: true, token: "pxlo1.BOB.exchanged-secret", expiresAt: 5_000_000 + 900_000 });
+    const [call] = h.calls;
+    expect(call).toMatchObject({ url: "http://perspicax:8787/oauth/token", method: "POST", redirect: "error" });
+    expect(call!.headers.authorization).toBe(`Basic ${Buffer.from(`pulsa-bot-server:${TOKEN_A}`).toString("base64")}`);
+    expect(call!.headers["content-type"]).toBe("application/x-www-form-urlencoded");
+    expect(Object.fromEntries(new URLSearchParams(call!.body))).toEqual({
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      subject_token: "pxlo1.BOB.subject",
+      subject_token_type: "urn:ietf:params:oauth:token-type:access_token",
+      resource: `${ISSUER}/mcp?profile=P1`,
+    });
+    expect(call!.body).toContain(`resource=${encodeURIComponent(`${ISSUER}/mcp?profile=P1`)}`);
+  });
+
+  it("maps every answer", async () => {
+    const cases: Array<[Answer, string]> = [
+      [{ status: 400, body: { error: "invalid_target" } }, "not_held"],
+      [{ status: 400, body: { error: "invalid_grant" } }, "subject"],
+      [{ status: 400, body: { error: "invalid_request" } }, "unreachable"],
+      [{ status: 429, body: { error: "slow_down" } }, "rate_limited"],
+      [{ status: 500, body: "oops" }, "unreachable"],
+      [{ status: 200, body: { token_type: "Bearer" } }, "unreachable"],
+      [{ status: 200, body: "x".repeat(9000) }, "unreachable"],
+      ["throw", "unreachable"],
+    ];
+    for (const [answer, error] of cases) {
+      const h = exchangeHarness([answer]);
+      expect(await h.sync.exchangeToken("pxlo1.BOB.subject", "P1")).toEqual({ ok: false, error });
+    }
+    const bad = exchangeHarness([ok]);
+    expect(await bad.sync.exchangeToken("pxlo1.BOB.subject", "P1&x=y")).toEqual({ ok: false, error: "not_held" });
+    expect(bad.calls).toHaveLength(0);
+  });
+
+  it("a 401 re-reads the link file once and retries, then answers link", async () => {
+    const h = exchangeHarness([{ status: 401, body: { error: "invalid_client" } }, ok]);
+    expect(await h.sync.exchangeToken("pxlo1.BOB.subject", "P1")).toMatchObject({ ok: true });
+    expect(h.calls).toHaveLength(2);
+    const twice = exchangeHarness([{ status: 401 }, { status: 401 }]);
+    expect(await twice.sync.exchangeToken("pxlo1.BOB.subject", "P1")).toEqual({ ok: false, error: "link" });
+    expect(twice.calls).toHaveLength(2);
+    // the retry uses the rotated token from the file
+    const rotated = exchangeHarness([{ status: 401 }, ok]);
+    await rotated.sync.exchangeToken("pxlo1.BOB.subject", "P1");
+    writeLink(rotated.linkFile, linkDoc({ link_token: TOKEN_B }));
+    rotated.answers.push({ status: 401 }, ok);
+    await rotated.sync.exchangeToken("pxlo1.BOB.subject", "P1");
+    expect(rotated.calls.at(-1)!.headers.authorization).toBe(`Basic ${Buffer.from(`pulsa-bot-server:${TOKEN_B}`).toString("base64")}`);
+  });
+
+  it("revokes with the Basic header and logs a failure without the token", async () => {
+    const h = exchangeHarness([{ status: 200, body: {} }, { status: 503 }, "throw"]);
+    expect(await h.sync.revokeExchanged("pxlo1.BOB.exchanged-secret")).toBe(true);
+    expect(h.calls[0]).toMatchObject({ url: "http://perspicax:8787/oauth/revoke", method: "POST" });
+    expect(h.calls[0]!.headers.authorization).toMatch(/^Basic /);
+    expect(Object.fromEntries(new URLSearchParams(h.calls[0]!.body))).toEqual({ token: "pxlo1.BOB.exchanged-secret", token_type_hint: "access_token" });
+    expect(await h.sync.revokeExchanged("pxlo1.BOB.exchanged-secret")).toBe(false);
+    expect(await h.sync.revokeExchanged("pxlo1.BOB.exchanged-secret")).toBe(false);
+    expect(h.logs).toHaveLength(2);
+    expect(h.logs.join("\n")).not.toContain("exchanged-secret");
+  });
+});

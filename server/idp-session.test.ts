@@ -11,7 +11,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_REFRESH_AFTER_SECONDS,
   IDP_KEY_FILE,
+  IDP_REFRESH_WAIT_MS,
   IDP_RETRY_AFTER_FAILURE_MS,
+  IDP_SUBJECT_MIN_LIFE_MS,
   IDP_SWEEP_INTERVAL_MS,
   IDP_SWEEP_SLACK_MS,
   IDP_UNREACHABLE_GRACE_MS,
@@ -120,9 +122,9 @@ function setup(options: { refreshAfterMs?: number } = {}) {
   sessions.onSessionRevoked((sessionId) => manager.release(sessionId, { revokeAtIdp: true }));
   sessions.onExchanged((session) => { if (session.idp?.grantRef) manager.bindSession(session.idp.grantRef, session.id); });
   /** A web sign-in: principal, grant, session bound to it. */
-  const signIn = (sub: string, role = "employee", scopes: Scope[] = role === "admin" ? ["admin", "client"] : ["client"]) => {
+  const signIn = (sub: string, role = "employee", scopes: Scope[] = role === "admin" ? ["admin", "client"] : ["client"], access?: { accessToken: string; accessExpiresAt: number }) => {
     const principal = principals.forSubject({ iss: ISS, sub, orgRole: role === "admin" ? "admin" : "member" });
-    const grantRef = manager.createGrant({ iss: ISS, sub, refreshToken: `pxlr1.first-${sub}-${clock}`, bindBy: clock + 60_000 });
+    const grantRef = manager.createGrant({ iss: ISS, sub, refreshToken: `pxlr1.first-${sub}-${clock}`, bindBy: clock + 60_000, ...access });
     const issued = sessions.issue({ label: "web", scopes, principalId: principal.id, idp: { iss: ISS, sub, role, grantRef } });
     manager.bindSession(grantRef, issued.session.id);
     return { principal, grantRef, sessionId: issued.session.id, record: () => sessions.byId(issued.session.id) };
@@ -499,5 +501,112 @@ describe("teams on refresh (slice 4)", () => {
     await manager.settled();
     expect(principals.byId(carol.principal.id)?.teams).toBeUndefined();
     expect(changed).toEqual([carol.principal.id, carol.principal.id]);
+  });
+});
+
+describe("the sign-in access token as a token exchange subject (slice 5)", () => {
+  it("returns the cached access token while at least 10 minutes remain, without a refresh", async () => {
+    const { manager, provider, signIn } = setup();
+    signIn("S1", "employee", undefined, { accessToken: "pxlo1.S1.access-one", accessExpiresAt: clock + 3_600_000 });
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toEqual({ ok: true, token: "pxlo1.S1.access-one", expiresAt: clock + 3_600_000 });
+    clock += 3_600_000 - IDP_SUBJECT_MIN_LIFE_MS;
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toMatchObject({ ok: true, token: "pxlo1.S1.access-one" });
+    expect(provider.calls).toEqual([]);
+  });
+
+  it("refreshes the grant when less than 10 minutes remain, and keeps the new access token", async () => {
+    const { manager, provider, vault, signIn } = setup();
+    const a = signIn("S1", "employee", undefined, { accessToken: "pxlo1.S1.old", accessExpiresAt: clock + 3_600_000 });
+    clock += 3_600_000 - IDP_SUBJECT_MIN_LIFE_MS + 1;
+    provider.script.push({ ok: true, refreshToken: "pxlr1.next", accessToken: "pxlo1.S1.new", expiresIn: 3600 });
+    const got = await manager.subjectToken({ iss: ISS, sub: "S1" });
+    expect(got).toEqual({ ok: true, token: "pxlo1.S1.new", expiresAt: clock + 3_600_000 });
+    expect(provider.calls).toHaveLength(1);
+    expect(vault.get(a.grantRef)?.refreshToken).toBe("pxlr1.next");
+    // a grant with no access token yet (signed in before this build) refreshes too
+    signIn("S2");
+    provider.script.push({ ok: true, refreshToken: "pxlr1.s2", accessToken: "pxlo1.S2.a", expiresIn: 900 });
+    await expect(manager.subjectToken({ iss: ISS, sub: "S2" })).resolves.toMatchObject({ ok: true, token: "pxlo1.S2.a" });
+  });
+
+  it("touch and subjectToken at the same moment make one provider refresh", async () => {
+    const { manager, provider, signIn } = setup({ refreshAfterMs: 1000 });
+    const a = signIn("S1", "employee", undefined, { accessToken: "pxlo1.S1.old", accessExpiresAt: clock + 60_000 });
+    clock += 1000;
+    let release!: (outcome: RefreshOutcome) => void;
+    provider.script.push(new Promise<RefreshOutcome>((resolve) => { release = resolve; }));
+    const touched = manager.touch(a.record()!);
+    const subject = manager.subjectToken({ iss: ISS, sub: "S1" });
+    const touchedAgain = manager.touch(a.record()!);
+    expect(touchedAgain).toBe(touched);
+    release({ ok: true, refreshToken: "pxlr1.once", accessToken: "pxlo1.S1.once", expiresIn: 3600 });
+    await touched;
+    await expect(subject).resolves.toMatchObject({ ok: true, token: "pxlo1.S1.once" });
+    expect(provider.calls).toHaveLength(1);
+    // and the other way round: a subject refresh in flight is joined by touch
+    clock += 3_600_000;
+    let second!: (outcome: RefreshOutcome) => void;
+    provider.script.push(new Promise<RefreshOutcome>((resolve) => { second = resolve; }));
+    const subject2 = manager.subjectToken({ iss: ISS, sub: "S1" });
+    await Promise.resolve();
+    void manager.touch(a.record()!);
+    second({ ok: true, refreshToken: "pxlr1.twice", accessToken: "pxlo1.S1.twice", expiresIn: 3600 });
+    await expect(subject2).resolves.toMatchObject({ ok: true, token: "pxlo1.S1.twice" });
+    await manager.settled();
+    expect(provider.calls).toHaveLength(2);
+  });
+
+  it("a rejected refresh answers ended and puts the person out", async () => {
+    const { manager, provider, signIn, sessions, principals } = setup();
+    const a = signIn("S1", "employee", undefined, { accessToken: "pxlo1.S1.old", accessExpiresAt: clock + 1000 });
+    provider.script.push({ ok: false, kind: "rejected", error: "invalid_grant" });
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toEqual({ ok: false, error: "ended" });
+    expect(sessions.byId(a.sessionId)).toBeNull();
+    expect(principals.byId(a.principal.id)?.disabledAt).toBe(clock);
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toEqual({ ok: false, error: "no_session" });
+  });
+
+  it("a transient failure answers unreachable and waits the retry delay before the next attempt", async () => {
+    const { manager, provider, signIn, sessions } = setup();
+    const a = signIn("S1", "employee", undefined, { accessToken: "pxlo1.S1.old", accessExpiresAt: clock + 1000 });
+    provider.script.push({ ok: false, kind: "transient", error: "HTTP 503" });
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toEqual({ ok: false, error: "unreachable" });
+    expect(sessions.byId(a.sessionId)).not.toBeNull();
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toEqual({ ok: false, error: "unreachable" });
+    expect(provider.calls).toHaveLength(1);
+    clock += IDP_RETRY_AFTER_FAILURE_MS;
+    provider.script.push({ ok: true, refreshToken: "pxlr1.back", accessToken: "pxlo1.S1.back", expiresIn: 3600 });
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toMatchObject({ ok: true, token: "pxlo1.S1.back" });
+    // a refresh that hangs is waited on for a bounded time only
+    expect(IDP_REFRESH_WAIT_MS).toBeLessThanOrEqual(5_000);
+  });
+
+  it("answers no_session without a live sign-in, and drops the token with the grant", async () => {
+    const { manager, signIn, sessions } = setup();
+    await expect(manager.subjectToken({ iss: ISS, sub: "nobody" })).resolves.toEqual({ ok: false, error: "no_session" });
+    const a = signIn("S1", "employee", undefined, { accessToken: "pxlo1.S1.gone", accessExpiresAt: clock + 3_600_000 });
+    sessions.revokeWhere((session) => session.id === a.sessionId);
+    await expect(manager.subjectToken({ iss: ISS, sub: "S1" })).resolves.toEqual({ ok: false, error: "no_session" });
+    const b = signIn("S2", "employee", undefined, { accessToken: "pxlo1.S2.gone", accessExpiresAt: clock + 3_600_000 });
+    manager.backchannelLogout({ iss: ISS, sub: "S2" });
+    expect(sessions.byId(b.sessionId)).toBeNull();
+    await expect(manager.subjectToken({ iss: ISS, sub: "S2" })).resolves.toEqual({ ok: false, error: "no_session" });
+  });
+
+  it("never writes an access token to the vault file or a log line", async () => {
+    const { manager, provider, signIn, logs } = setup();
+    signIn("S1", "employee", undefined, { accessToken: "pxlo1.S1.secret-sign-in", accessExpiresAt: clock + 1000 });
+    provider.script.push({ ok: true, refreshToken: "pxlr1.r", accessToken: "pxlo1.S1.secret-refreshed", expiresIn: 3600 });
+    await manager.subjectToken({ iss: ISS, sub: "S1" });
+    provider.script.push({ ok: false, kind: "transient", error: "HTTP 503" });
+    clock += 3_600_000;
+    await manager.subjectToken({ iss: ISS, sub: "S1" });
+    const raw = readFileSync(join(dir, IDP_VAULT_FILE), "utf8");
+    const key = Buffer.from(KEY, "hex");
+    const plain = JSON.stringify(new IdpGrantVault(dir, () => ({ kind: "key", key })).list());
+    for (const text of [raw, plain, logs.join("\n")]) {
+      expect(text).not.toContain("secret-sign-in");
+      expect(text).not.toContain("secret-refreshed");
+    }
   });
 });

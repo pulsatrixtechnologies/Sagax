@@ -148,7 +148,8 @@ export function oidcSessionFields(session: SessionRecord, principal: Principal |
 /** The grant side of a sign-in (server/idp-session.ts IdpSessionManager). */
 export interface OidcGrantKeeper {
   unavailableReason(): string | null;
-  createGrant(input: { iss: string; sub: string; refreshToken: string; bindBy: number }): string;
+  /** `accessToken` stays in memory only (slice 5 token exchange). */
+  createGrant(input: { iss: string; sub: string; refreshToken: string; bindBy: number; accessToken?: string; accessExpiresAt?: number }): string;
   bindSession(grantRef: string, sessionId: string): boolean;
   discard(grantRef: string): void;
   backchannelLogout(input: { iss: string; sub: string }): { sessions: number; pairings: number };
@@ -380,6 +381,9 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
         iss: identity.iss,
         sub: identity.sub,
         refreshToken,
+        ...(outcome.grant.accessToken && outcome.grant.accessExpiresAt !== undefined
+          ? { accessToken: outcome.grant.accessToken, accessExpiresAt: outcome.grant.accessExpiresAt }
+          : {}),
         bindBy: now() + (native ? OIDC_NATIVE_PAIRING_TTL_MS + OIDC_NATIVE_BIND_GRACE_MS : 60_000),
       });
     } catch (error) {
