@@ -113,8 +113,10 @@ export function parseTarget(target: string): { kind: "user" | "team"; id: string
  * store people) names this viewer. */
 export function targetNamesViewer(viewer: Viewer, target: string): boolean {
   if (target.startsWith("team:")) {
+    // A team's members; its managers administer its grants but open
+    // nothing through them (JC: a manager never reads a Direct unasked).
     const id = target.slice(5);
-    return viewer.teams.some((team) => team.id === id);
+    return viewer.teams.some((team) => team.id === id && !team.manager);
   }
   const id = target.startsWith("user:") ? target.slice(5) : target;
   return key(id) === key(viewer.principalId);
@@ -149,7 +151,9 @@ export function botLevel(input: { viewer: Viewer } & BotFacts): Level | "owner" 
   if (key(input.ownerPrincipalId) === key(viewer.principalId)) return "owner";
   let best: Level | null = grantLevel(viewer, input.grants);
   for (const section of input.sections ?? []) {
-    const role = sectionRole(viewer, section);
+    // Member entries only: owning a section never opens the bots others
+    // placed in it before it was shared.
+    const role = sectionRole(viewer, { ...section, ownerPrincipalId: undefined });
     if (!role) continue;
     const level = capLevel(section.defaultLevel, "run");
     if (levelRank(level) > levelRank(best)) best = level;

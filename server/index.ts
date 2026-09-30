@@ -513,6 +513,7 @@ import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.t
 import { OrgTeams } from "./org-teams.ts";
 import { materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, type EngineCredentialInput, type TurnAccess } from "./engine-credentials.ts";
 import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
+import { createSectionChannelRoutes, migrationOwner, SectionChannels } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { applyIdentityMigration, principalIdFor } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
@@ -567,7 +568,7 @@ import {
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
-import { atLeast, botLevel, canEditRoomHumans, canInChannel, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
+import { atLeast, botLevel, canEditRoomHumans, canInChannel, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { roleOf, signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
@@ -3129,7 +3130,7 @@ const engineLogins = IDENTITY.kind === "perspicax"
   })
   : null;
 /** Slice 4: shared sidebar sections (section-channels.ts), organization mode. */
-let sectionChannels: { accessFor(name: string): SectionAccess | null } | null = null;
+const sectionChannels: SectionChannels | null = IDENTITY.kind === "perspicax" ? new SectionChannels({ path: join(DATA_DIR, "section-channels.json") }) : null;
 // A person's teams changed (a refreshed id_token or a directory sync): every
 // member stream reconnects to a fresh snapshot of what they may see now.
 principals.onAccessChanged(() => audienceChanged());
@@ -5504,6 +5505,11 @@ function memberFrame(client: SseClient, seq: number, payload: Record<string, unk
   // A frame kept from clients altogether stays kept: never the admin copy.
   if (clientFrame === null) return null;
   if (liveFramesNeedChannelFilter(client.viewerId) && client.viewerId && !memberSeesFrame(payload, client.viewerId)) return null;
+  // Slice 4: an organization member hears only the section names they see.
+  if (IDENTITY.kind === "perspicax" && client.viewerId && payload.kind === "sections" && Array.isArray(payload.sections)) {
+    const sections = orgVisibleSections(payload.sections.filter((name): name is string => typeof name === "string"), client.viewerId);
+    return memberFrame({ ...client, viewerId: undefined }, seq, { ...payload, sections }, `id: ${STREAM_ID}:${seq}\ndata: ${JSON.stringify({ ...payload, sections, seq })}\n\n`);
+  }
   if (client.viewer.kind === "all") return clientFrame;
   const visible = visibleTo(client.viewer);
   if (visible.everything) {
@@ -15262,6 +15268,77 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
     }
   });
 }
+/** Slice 4: who owns a section at its first organization boot (the owner
+ * of most of its bots; else the first organization admin). */
+function sectionMigrationOwner(name: string): string {
+  const bots = store.bots.filter((bot) => sectionKey(bot.section) === name).map((bot) => ({ ownerPrincipalId: effectiveBotOwner(bot), createdAt: typeof bot.createdAt === "number" ? bot.createdAt : 0 }));
+  const firstAdmin = principals.list().filter((person) => person.orgRole === "admin" && person.subject && person.disabledAt === undefined).sort((a, b) => a.createdAt - b.createdAt)[0]?.id ?? localPrincipalId();
+  return migrationOwner(bots, firstAdmin);
+}
+/** The store's section names, every one with its record. */
+function orgSectionNames(): string[] {
+  const names = store.sections;
+  sectionChannels?.migrate(names, sectionMigrationOwner);
+  return names;
+}
+/** The section names an organization member may see: the ones they own or
+ * belong to, and the ones holding a bot or room they see. */
+function orgVisibleSections(all: readonly string[], viewerId: string | undefined): string[] {
+  if (IDENTITY.kind !== "perspicax" || !viewerId || !sectionChannels) return [...all];
+  const viewer = authzViewerFromId(viewerId)!;
+  return all.filter((name) => {
+    const record = sectionChannels!.byName(name);
+    if (record && (record.ownerPrincipalId === viewerId || (record.members.length && sectionRole(viewer, { ...record }) !== null))) return true;
+    return store.bots.some((bot) => sectionKey(bot.section) === name && listedBotVisible(bot, viewerId)) ||
+      store.groups.some((group) => sectionKey(group.section) === name && groupVisible(group, viewerId));
+  });
+}
+if (sectionChannels) {
+  // First organization boot of slice 4: every existing section becomes a
+  // private record (no member): nothing is shared without someone's action.
+  const created = sectionChannels.migrate(store.sections, sectionMigrationOwner);
+  if (created) console.log(`sections: ${created} existing section(s) became private channels`);
+  const channels = sectionChannels;
+  ROUTES.push(createSectionChannelRoutes({
+    channels,
+    viewer: authzViewerFor,
+    principalId: (auth) => (auth.kind === "session" ? auth.session.principalId?.trim() || "" : localPrincipalId()),
+    teamsOf: principalTeams,
+    resolvePerson: resolveOrgGrantee,
+    teamKnown: (id) => orgTeams.has(id) || principals.membersOfTeam(id).length > 0,
+    sections: orgSectionNames,
+    createSection: (name) => {
+      const result = store.setBotsSection([], name);
+      return result.ok ? undefined : "the section could not be created";
+    },
+    renameSection: (name, nextName) => store.renameSection(name, nextName, teamComputers),
+    deleteSection: (name) => (teamComputers.forSection(name) ? "Unassign this section's computer before deleting it" : store.deleteSection(name)),
+    moveBots: (name, add, remove) => {
+      const result = store.updateTeamMembers(name, add, remove);
+      return result.ok ? undefined : result.reason === "chief-conflict" ? "A section can have only one Chief of Staff." : "One or more bots are unavailable";
+    },
+    botExists: (id) => Boolean(store.bot(id)),
+    botSection: (id) => sectionKey(store.bot(id)?.section) || undefined,
+    managesBot: (auth, id) => {
+      const bot = store.bot(id);
+      return Boolean(bot) && atLeast(viewerBotLevel(auth, bot!), "manage");
+    },
+    createRoom: (name) => {
+      try {
+        const botIds = store.bots.filter((bot) => sectionKey(bot.section) === name && !bot.hidden).map((bot) => bot.id);
+        return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" }, completed: true }, []).id;
+      } catch (error) {
+        console.error(`sections: the conversation of a shared section could not be created: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
+      }
+    },
+    roomExists: (id) => Boolean(store.group(id)),
+    onChanged: () => {
+      broadcast({ kind: "sections", sections: store.sections });
+      audienceChanged();
+    },
+  }));
+}
 ROUTES.push(createDirectGrantRoutes({
   bot: (id) => store.bot(id) ?? undefined,
   // The slice 3 routes speak directGrants: user grants at level use; every
@@ -18730,7 +18807,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ...messagePage(bot.threadId, limit, null, viewerForApproval(auth)),
         }, visible)),
         botQueuedMessages: visible.everything ? queued : Object.fromEntries(Object.entries(queued).filter(([threadId]) => visible.thread(threadId))),
-        sections: visible.sections(store.sections),
+        sections: orgVisibleSections(visible.sections(store.sections), viewerId),
         groups: store.groups.filter((g) => visible.group(g.id) && groupVisible(g, viewerId)).map((g) => {
           const room = { ...publicGroupState(g), ...messagePage(g.threadId, limit, null, viewerForApproval(auth)) };
           return visible.everything ? room : memberGroup(room);
@@ -20227,6 +20304,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const error = nextName === null ? store.deleteSection(section) : store.renameSection(section, nextName, teamComputers);
       if (error) return json(res, error === "No such team" ? 404 : 409, { error });
+      // Slice 4: the section's channel record follows its name.
+      if (nextName === null) sectionChannels?.removeByName(section);
+      else sectionChannels?.rename(section, nextName);
       return json(res, 200, { sections: store.sections });
     }
     if (method === "PUT" && path === "/api/sidebar-sections") {

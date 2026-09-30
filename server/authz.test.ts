@@ -58,12 +58,12 @@ describe("levels", () => {
 });
 
 describe("botLevel", () => {
-  it("owner above everything, user grant, team grant through member and manager, highest wins", () => {
+  it("owner above everything, user grant, team grant through membership (not the manager flag), highest wins", () => {
     const facts = bot([grant(`user:${BOB}`, "run"), grant("team:T", "use"), grant(`user:${CAROL}`, "edit")]);
     expect(botLevel({ viewer: viewer(ALICE), ...facts })).toBe("owner");
     expect(botLevel({ viewer: viewer(BOB), ...facts })).toBe("run");
     expect(botLevel({ viewer: viewer(CAROL), ...facts })).toBe("edit");
-    expect(botLevel({ viewer: viewer(MIA), ...facts })).toBe("use");
+    expect(botLevel({ viewer: viewer(MIA), ...facts })).toBeNull();
     expect(botLevel({ viewer: viewer(DAVE), ...facts })).toBeNull();
   });
 
