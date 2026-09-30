@@ -190,7 +190,7 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
   const total = lens === "raw" ? (page?.total.native ?? 0) : (page?.total.runtime ?? 0);
 
   return (
-    <aside aria-label="Inspector" className="animate-panel-in absolute inset-0 z-40 flex h-full min-w-0 flex-col border-l-[0.5px] border-hairline-weak bg-app lg:static lg:z-auto lg:w-[min(460px,45vw)] lg:shrink-0">
+    <aside aria-label="Inspector" className="app-docked-panel animate-panel-in absolute inset-0 z-40 flex h-full min-w-0 flex-col border-l-[0.5px] border-hairline-weak bg-app lg:static lg:z-auto lg:w-[min(460px,45vw)] lg:shrink-0">
       <div className={cn("flex items-center justify-between px-4 py-3", padClass)}>
         <span className="flex items-center gap-2 text-[13px] font-medium leading-[18px] text-ink">
           <Bug size={16} className="text-ink-secondary" /> Inspector

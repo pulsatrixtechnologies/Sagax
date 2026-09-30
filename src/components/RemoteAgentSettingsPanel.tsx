@@ -75,7 +75,7 @@ export function RemoteAgentSettingsPanel({ bot }: { bot: Bot }) {
   };
 
   return (
-    <aside className="animate-panel-in relative z-20 flex h-full w-[400px] shrink-0 flex-col border-l border-hairline/40 bg-panel">
+    <aside className="app-docked-panel animate-panel-in relative z-20 flex h-full w-[400px] shrink-0 flex-col border-l border-hairline/40 bg-panel">
       <div className={cn("flex items-center justify-between px-4 py-3", padClass)}>
         <button
           onClick={close}

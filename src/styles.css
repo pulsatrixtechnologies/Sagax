@@ -850,19 +850,29 @@
   letter-spacing: 0.04em;
 }
 
-/* Pulsatrix Light's content frame: v3's light-mode page is a light card
-   inset over its own always-navy chrome (App.tsx wraps the sidebar row in
+/* Pulsatrix Light's content frame(s): v3's light-mode page is a light card
+   inset over its own always-navy chrome. App.tsx wraps the sidebar row in
    `.app-shell-row` and the chat/group/routines/etc. column in
-   `.app-content-frame`; every other skin paints both transparent, so this
-   is the one place they carry a rule at all). The row behind both takes
-   the same navy as the rail so the inset reads as one continuous chrome,
-   not a second stripe of colour; the frame itself keeps 8px clear on every
-   edge but the one flush against the sidebar, so the top-left corner is
-   the one that visibly tucks into the chrome. */
+   `.app-content-frame`; BotSettingsDialog, InspectorPanel and
+   RemoteAgentSettingsPanel (the docked Details/Routines/Files/Computer/
+   Inspector panel, whichever is open) carry `.app-docked-panel` on the
+   same row, right of it. Every other skin paints all of these transparent,
+   so this is the one place they carry a rule at all. The row behind them
+   takes the same navy as the rail so the inset reads as one continuous
+   chrome, not a second stripe of colour, and each frame keeps 8px clear on
+   every edge but the one flush against its left neighbour (the sidebar for
+   the content frame, the content frame for the docked panel); that leaves
+   one 8px navy seam between the two when both are open, and a navy gutter
+   on every outer edge either way, the way v3's own content card sits on
+   its shell. The `border` shorthand below also replaces each panel's own
+   translucent, ink-tinted `border-l` (right for a light ground on both
+   sides, a stray bright line once the ground to its left is navy) with a
+   full, opaque hairline. */
 [data-skin="pulsatrix-light"] .app-shell-row {
   background: var(--color-sidebar);
 }
-[data-skin="pulsatrix-light"] .app-content-frame {
+[data-skin="pulsatrix-light"] .app-content-frame,
+[data-skin="pulsatrix-light"] .app-docked-panel {
   /* `h-full` (Tailwind, height: 100%) plus a non-zero margin would overflow
      the row by exactly the margin, since a percentage height does not
      subtract it. `auto` lets the row's own `align-items: stretch` (the
