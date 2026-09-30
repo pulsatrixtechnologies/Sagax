@@ -260,6 +260,9 @@ function queuePackageInstall(rawLink) {
 // "Sign in with Pulsatrix" in the system browser (electron/oidc-login-window.cjs):
 // the one sign-in this app is waiting for, and its return link.
 const pendingSystemSignIn = oidcLoginWindowModule.createPendingSystemSignIn();
+// The credential just loaded into the main window's /pair from that return:
+// /pair redeems it without asking only when this confirms it.
+const signInHandoff = oidcLoginWindowModule.createSignInHandoff();
 
 /** Does this saved server end a desktop sign-in on openmausbot://auth? */
 async function serverReturnsToNativeApps(origin) {
@@ -314,6 +317,7 @@ function takeAuthReturnLink(rawUrl) {
     slog(`ignored a sign-in return from ${parsed.origin}: that server is no longer the selected one`);
     return true;
   }
+  signInHandoff.accept(parsed);
   void win.loadURL(oidcLoginWindowModule.authReturnTarget(parsed));
   if (win.isMinimized()) win.restore();
   win.show();
@@ -2403,6 +2407,21 @@ function createWindow({ deferNavigation = false } = {}) {
 
 // Local-control screen preview — served from the main process so the Screen
 // Recording permission prompt attributes to the app, never the server
+// /pair in the main window asks whether the credential in its address is the
+// one this app just handed it from a sign-in return (PairPage). Only the main
+// window's top frame, on the origin of that return, can claim it, once.
+ipcMain.handle("auth-return:take", (event, code) => {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) return false;
+  let origin;
+  try {
+    origin = new URL(event.senderFrame.url).origin;
+  } catch {
+    return false;
+  }
+  return signInHandoff.redeem(origin, code);
+});
+
 ipcMain.handle("screen:frame", localOnly("screen:frame", async () => {
   if (process.platform !== "darwin") return null;
   const sources = await desktopCapturer.getSources({

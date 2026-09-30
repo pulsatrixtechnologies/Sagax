@@ -29,6 +29,24 @@ function signInErrorText(code: string): string {
   return t("pair.pulsatrix.error");
 }
 
+/** Redeem a credential the desktop app brought back from "Sign in with
+ * Pulsatrix" without asking, but only when the app's main process says it
+ * handed over that exact credential (a return it was waiting for). A plain
+ * browser, or any page opened from a link somebody posted, gets "ask": the
+ * code form, and a click. Otherwise a member could post
+ * /pair#code=<their credential>&auto=1 and sign whoever opens it in as them. */
+export async function finishReturnedSignIn<R>({ code, bridge, pair }: { code: string; bridge: Pick<NonNullable<Window["ogb"]>, "takeSignInReturn"> | undefined; pair: () => Promise<R> }): Promise<R | "ask"> {
+  const take = bridge?.takeSignInReturn;
+  if (typeof take !== "function") return "ask";
+  let handed = false;
+  try {
+    handed = (await take(code)) === true;
+  } catch {
+    handed = false;
+  }
+  return handed ? pair() : "ask";
+}
+
 /** The page a pairing link opens: /pair#code=XXXX-XXXX-XXXX. Also what the
  * app shows instead of itself when a remote browser has no session yet.
  * When the server has a sign-in allow-list, "sign in with your email" comes
@@ -48,14 +66,25 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
   const [otp, setOtp] = useState("");
   const [sent, setSent] = useState(false);
   // The desktop app came back from "Sign in with Pulsatrix" in the system
-  // browser: redeem its credential once, without asking; a failure falls
-  // back to the code form with the error.
-  const [finishing, setFinishing] = useState(autoSubmit && Boolean(initialCode));
+  // browser: redeem its credential once, without asking, when the app's main
+  // process confirms it handed it over; anything else (a plain browser, a
+  // posted link, a failure) falls back to the code form.
+  const [finishing, setFinishing] = useState(
+    autoSubmit && Boolean(initialCode) && typeof window !== "undefined" && typeof window.ogb?.takeSignInReturn === "function",
+  );
   const autoStarted = useRef(false);
   useEffect(() => {
     if (!finishing || !initialCode || autoStarted.current) return;
     autoStarted.current = true;
-    void pairWithCode({ code: initialCode, label: defaultDeviceLabel(), attemptId }).then((result) => {
+    void finishReturnedSignIn({
+      code: initialCode,
+      bridge: window.ogb,
+      pair: () => pairWithCode({ code: initialCode, label: defaultDeviceLabel(), attemptId }),
+    }).then((result) => {
+      if (result === "ask") {
+        setFinishing(false);
+        return;
+      }
       if (result.ok) {
         location.replace("/");
         return;

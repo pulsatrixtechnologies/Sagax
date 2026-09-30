@@ -112,3 +112,23 @@ test("only the sign-in this app started, for ten minutes, once", () => {
   clock += SYSTEM_SIGN_IN_TTL_MS;
   assert.equal(pending.take(ORG), false); // expired
 });
+
+test("the /pair page may redeem a returned credential without asking only when this app handed it over, once, briefly", () => {
+  const { createSignInHandoff, SIGN_IN_HANDOFF_TTL_MS } = require("./oidc-login-window.cjs");
+  let clock = 1_000;
+  const handoff = createSignInHandoff({ now: () => clock });
+  // a plain link somebody posted: nothing was handed over
+  assert.equal(handoff.redeem(ORG, CREDENTIAL), false);
+  handoff.accept({ origin: ORG, code: CREDENTIAL });
+  assert.equal(handoff.redeem("https://other.example.test", CREDENTIAL), false);
+  assert.equal(handoff.redeem(ORG, `omb_pair_${"Z".repeat(43)}`), false);
+  assert.equal(handoff.redeem(ORG, 42), false);
+  assert.equal(handoff.redeem(ORG, CREDENTIAL), true);
+  assert.equal(handoff.redeem(ORG, CREDENTIAL), false); // once
+  handoff.accept({ origin: ORG, code: CREDENTIAL });
+  clock += SIGN_IN_HANDOFF_TTL_MS;
+  assert.equal(handoff.redeem(ORG, CREDENTIAL), false); // expired
+  // an error return hands nothing over
+  handoff.accept({ origin: ORG, error: "role" });
+  assert.equal(handoff.redeem(ORG, CREDENTIAL), false);
+});

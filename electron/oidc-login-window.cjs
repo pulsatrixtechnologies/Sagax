@@ -15,9 +15,10 @@
 // sign-in runs in the person's own browser instead (RFC 8252), where their
 // password manager and passkeys live. The server ends that flow on
 // openmausbot://auth?origin=<o>#code=<credential>; the app then opens
-// <o>/pair#code=<credential>&auto=1 in the main window, which redeems it.
-// Only a return this app is waiting for (same origin, under ten minutes, one
-// at a time) is honoured.
+// <o>/pair#code=<credential>&auto=1 in the main window, which redeems it
+// without asking only after the main process confirms the handoff
+// (createSignInHandoff). Only a return this app is waiting for (same origin,
+// under ten minutes, one at a time) is honoured.
 const OIDC_START_PATH = "/auth/oidc/start";
 const SYSTEM_SIGN_IN_TTL_MS = 10 * 60_000;
 
@@ -61,6 +62,34 @@ function createPendingSystemSignIn({ now = Date.now } = {}) {
       }
       if (current.origin !== origin) return false;
       pending = null;
+      return true;
+    },
+  };
+}
+
+/** How long /pair has to claim a credential the app just handed it. */
+const SIGN_IN_HANDOFF_TTL_MS = 60_000;
+
+/** The credential this app just loaded into /pair from an honoured return
+ * link. /pair redeems a credential without asking only when this confirms
+ * it (preload takeSignInReturn): the same origin, that exact credential,
+ * once, within a minute. A /pair#code=...&auto=1 link opened any other way
+ * gets the ordinary code form. */
+function createSignInHandoff({ now = Date.now } = {}) {
+  let handed = null;
+  return {
+    accept(parsed) {
+      handed = parsed && typeof parsed.code === "string" ? { origin: parsed.origin, code: parsed.code, at: now() } : null;
+    },
+    redeem(origin, code) {
+      const current = handed;
+      if (!current || typeof code !== "string") return false;
+      if (now() - current.at >= SIGN_IN_HANDOFF_TTL_MS) {
+        handed = null;
+        return false;
+      }
+      if (current.origin !== origin || current.code !== code) return false;
+      handed = null;
       return true;
     },
   };
@@ -121,4 +150,4 @@ function openOidcLoginWindow({ BrowserWindow, parent, url, onDone, log = () => {
   return login;
 }
 
-module.exports = { OIDC_START_PATH, SYSTEM_SIGN_IN_TTL_MS, authReturnTarget, createPendingSystemSignIn, oidcLoginStartUrl, oidcLoginReturnUrl, openOidcLoginWindow, systemBrowserStartUrl };
+module.exports = { OIDC_START_PATH, SIGN_IN_HANDOFF_TTL_MS, SYSTEM_SIGN_IN_TTL_MS, authReturnTarget, createPendingSystemSignIn, createSignInHandoff, oidcLoginStartUrl, oidcLoginReturnUrl, openOidcLoginWindow, systemBrowserStartUrl };

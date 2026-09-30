@@ -114,6 +114,10 @@ const __BASE_VERSION__: string;
   interface Window {
     ogb?: {
       platform: NodeJS.Platform;
+      /** Desktop only: true once when the main process handed this exact
+       * credential to /pair from a "Sign in with Pulsatrix" return it was
+       * waiting for (electron/oidc-login-window.cjs createSignInHandoff). */
+      takeSignInReturn?: (code: string) => Promise<boolean>;
       organization?: import("../../electron/managed-desktop.mjs").ManagedDesktopBridge;
       cloudAccount?: import("../../electron/cloud-account.mjs").CloudAccountBridge;
       companyBackups?: {

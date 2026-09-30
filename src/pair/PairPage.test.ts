@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import { parsePairingHash, takePairingFromLocation } from "@/lib/session";
-import { PairPage } from "./PairPage";
+import { PairPage, finishReturnedSignIn } from "./PairPage";
 
 const CREDENTIAL = `omb_pair_${"A1b2_C3d4-".repeat(4)}xyz`;
 
@@ -37,16 +37,46 @@ describe("the pairing hash", () => {
     expect(replaceState).toHaveBeenCalledWith(null, "", "/pair");
   });
 
-  it("shows the finishing state while a returned credential is redeemed", () => {
+  it("shows the finishing state while a returned credential is redeemed in the desktop app", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
     vi.stubGlobal("location", { hash: "", pathname: "/pair", search: "" });
     vi.stubGlobal("navigator", { userAgent: "test" });
-    vi.stubGlobal("window", {});
+    vi.stubGlobal("window", { ogb: { platform: "darwin", takeSignInReturn: async () => true } });
     const html = renderToStaticMarkup(createElement(PairPage, { initialCode: CREDENTIAL, autoSubmit: true }));
     expect(html).toContain("Finishing sign-in...");
     expect(html).not.toContain("pair-code");
     const form = renderToStaticMarkup(createElement(PairPage, { initialCode: "ABCD-EFGH-JKLM" }));
     expect(form).toContain("pair-code");
     expect(form).not.toContain("Finishing sign-in...");
+  });
+
+  it("a plain browser opening #code=<credential>&auto=1 shows the form and never redeems it on its own", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    vi.stubGlobal("location", { hash: "", pathname: "/pair", search: "" });
+    vi.stubGlobal("navigator", { userAgent: "test" });
+    vi.stubGlobal("window", {});
+    const html = renderToStaticMarkup(createElement(PairPage, { initialCode: CREDENTIAL, autoSubmit: true }));
+    expect(html).not.toContain("Finishing sign-in...");
+    expect(html).toContain("pair-code");
+    const pair = vi.fn(async () => ({ ok: true as const }));
+    expect(await finishReturnedSignIn({ code: CREDENTIAL, bridge: undefined, pair })).toBe("ask");
+    expect(pair).not.toHaveBeenCalled();
+    // a remote page's bridge without the handoff (an older app) asks too
+    expect(await finishReturnedSignIn({ code: CREDENTIAL, bridge: {}, pair })).toBe("ask");
+    expect(pair).not.toHaveBeenCalled();
+  });
+
+  it("the desktop app redeems a returned credential only when its main process handed that exact one over", async () => {
+    const pair = vi.fn(async () => ({ ok: true as const }));
+    const refused = vi.fn(async () => false);
+    expect(await finishReturnedSignIn({ code: CREDENTIAL, bridge: { takeSignInReturn: refused }, pair })).toBe("ask");
+    expect(refused).toHaveBeenCalledWith(CREDENTIAL);
+    expect(pair).not.toHaveBeenCalled();
+    const broken = vi.fn(async () => { throw new Error("no handler"); });
+    expect(await finishReturnedSignIn({ code: CREDENTIAL, bridge: { takeSignInReturn: broken }, pair })).toBe("ask");
+    expect(pair).not.toHaveBeenCalled();
+    const handed = vi.fn(async () => true);
+    expect(await finishReturnedSignIn({ code: CREDENTIAL, bridge: { takeSignInReturn: handed }, pair })).toEqual({ ok: true });
+    expect(pair).toHaveBeenCalledTimes(1);
   });
 });
