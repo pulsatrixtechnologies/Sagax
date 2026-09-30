@@ -15,7 +15,7 @@ import { Bug, ChevronDown, ChevronRight, PanelRight, RefreshCw } from "lucide-re
 import { useStore, visibleMessages, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
-import { useCaptionChrome } from "@/components/DesktopCapabilities";
+import { useCaptionChrome, useMacInsetChrome } from "@/components/DesktopCapabilities";
 import { formatTime, toRows, type InspectorEntry, type InspectorPage, type InspectorRow } from "@/lib/inspector";
 import { openLiveEvents } from "@/lib/live-events";
 import type { RuntimeEvent } from "../../shared/runtime-events";
@@ -29,6 +29,7 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
   // Docked flush under the Windows caption corner: drop the header 16px.
   const { padClass } = useCaptionChrome();
+  const { macInset, browser } = useMacInsetChrome();
   const threadId = bot.threadId;
   const [lens, setLens] = useState<Lens>("run");
   const activity = useMemo(() => timelineEvents(visibleMessages(bot)), [bot]);
@@ -191,7 +192,8 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
 
   return (
     <aside aria-label="Inspector" className="app-docked-panel animate-panel-in absolute inset-0 z-40 flex h-full min-w-0 flex-col border-l-[0.5px] border-hairline-weak bg-app lg:static lg:z-auto lg:w-[min(460px,45vw)] lg:shrink-0">
-      <div className={cn("flex items-center justify-between px-4 py-3", padClass)}>
+      {(macInset || browser) && <div className="content-topbar-strip" />}
+      <div className={cn("content-topbar flex items-center justify-between px-4 py-3", padClass)}>
         <span className="flex items-center gap-2 text-[13px] font-medium leading-[18px] text-ink">
           <Bug size={16} className="text-ink-secondary" /> Inspector
         </span>
@@ -205,6 +207,7 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
         </button>
       </div>
 
+      <div className="content-card-body flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-hairline/40 px-4 pb-3">
         <div role="tablist" aria-label={t("inspector.views")} className="flex rounded-lg bg-inset p-0.5" onKeyDown={(event) => {
           const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
@@ -256,6 +259,7 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
           <Row key={row.key} row={row} open={expanded.has(row.key)} onToggle={() => toggle(row.key)} />
         ))}
       </div>}
+      </div>
       </div>
     </aside>
   );

@@ -34,7 +34,7 @@ import { FilesSection } from "./bot-settings/FilesSection";
 import { isAdvancedSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
 import { ComputerPanel } from "./ComputerPanel";
 import { BotProfileAvatarCard } from "./BotProfileAvatarCard";
-import { useCaptionChrome } from "./DesktopCapabilities";
+import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import type { PromptPreviewData } from "./bot-settings/PromptPreview";
@@ -62,6 +62,7 @@ function readSettingsWidth(): number {
 export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpenVmWorkspace?: (botId: string) => void }) {
   const { state, dispatch, flushBotPatches } = useStore();
   const { padClass } = useCaptionChrome();
+  const { macInset, browser } = useMacInsetChrome();
   const section = state.botSettingsSection;
   const derived = useBotSettingsDerived(bot);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -413,11 +414,12 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
               return next;
             });
           }}
-          className="absolute inset-y-0 -left-1.5 z-10 hidden w-3 cursor-col-resize focus-visible:bg-accent/40 lg:block"
+          className="app-resize-handle absolute inset-y-0 -left-1.5 z-10 hidden w-3 cursor-col-resize focus-visible:bg-accent/40 lg:block"
         />
+        {(macInset || browser) && <div className="content-topbar-strip" />}
         {/* Top bar: only the controls, the way Grok Bot's panel opens. On
             Windows it drops below the caption buttons (padClass). */}
-        <div className={cn("relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
+        <div className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
           {tab === "advanced" && !collapsed ? (
             <button
               type="button"
@@ -451,7 +453,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="content-card-body flex min-h-0 flex-1 flex-col overflow-y-auto">
           {/* Who this is, then the tabs */}
           <div className="flex shrink-0 flex-col items-center px-4 pb-3">
             <BotProfileAvatarCard bot={bot} activeState={derived.activeState} mascotMotion={derived.mascotMotion} onPatch={derived.patch} />

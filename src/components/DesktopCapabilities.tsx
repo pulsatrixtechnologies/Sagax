@@ -44,6 +44,22 @@ export function useDesktopCapabilities(): DesktopState {
 }
 
 /**
+ * Whether this window shows macOS's own inset traffic lights (so the
+ * sidebar's own head reserves a strip for them), or is running in a plain
+ * browser tab (same strip, empty). Shared with Sidebar.tsx's own copy of
+ * this check, so a page header that wants to reserve the same strip above
+ * it (Pulsatrix Light's navy top band) stays vertically aligned with the
+ * sidebar's brand row without duplicating the capability lookup.
+ */
+export function useMacInsetChrome() {
+  const { capabilities } = useDesktopCapabilities();
+  return {
+    macInset: capabilities.windowChrome === "mac-inset",
+    browser: capabilities.host.label === "Browser",
+  };
+}
+
+/**
  * Shared chrome styles for the overlay-less frameless Windows window: headers
  * become window drag regions, and the controls at a header's right end drop
  * 16px below the 26px-tall renderer-drawn caption buttons that occupy the

@@ -54,7 +54,7 @@ import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
 import { ManageMembersPanel } from "./ManageMembersPanel";
 import { groupActivityRuns } from "@/lib/activity-runs";
 import { ActivityRun } from "./ActivityRun";
-import { useDesktopCapabilities, useCaptionChrome } from "./DesktopCapabilities";
+import { useDesktopCapabilities, useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { cn } from "@/lib/cn";
 import { useFocusMessage } from "@/lib/focus-message";
 import { shortPath } from "@/lib/short-path";
@@ -952,6 +952,9 @@ export function GroupView({ group }: { group: Group }) {
   // Same Windows caption handling as ChatView: drag on the header, shift the
   // right-hand controls below the renderer-drawn caption buttons.
   const { dragStyle: headerDragStyle, noDragStyle: headerNoDragStyle, controlsShiftStyle } = useCaptionChrome();
+  // Pulsatrix Light's navy top band mirrors the sidebar's own macOS-inset
+  // strip, so the two stay vertically aligned; every other skin ignores it.
+  const { macInset, browser } = useMacInsetChrome();
   const stream = useStreaming();
   const streaming = stream.streaming[group.threadId];
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1214,10 +1217,12 @@ export function GroupView({ group }: { group: Group }) {
       {membersOpen && !remoteClient && !group.dm && (
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
       )}
+      {(macInset || browser) && <div className="content-topbar-strip" />}
       {/* Header: static member avatars; a ring + dot marks the working bot. */}
       <div
         style={headerDragStyle}
         className={cn(
+          "content-topbar",
           "flex items-center justify-between px-5 py-3",
           // Room for the drawer button, which overlays this corner below md.
           "pl-11 md:pl-5",
@@ -1257,6 +1262,7 @@ export function GroupView({ group }: { group: Group }) {
         </div>
       </div>
 
+      <div className="content-card-body flex min-h-0 flex-1 flex-col">
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
 
       {/* Bulletin: one pinned line; click to edit */}
@@ -1480,6 +1486,7 @@ export function GroupView({ group }: { group: Group }) {
         onConsumeReply={consumeReply}
         onRestoreReply={restoreReply}
       />
+      </div>
       </div>
       </div>
       </div>

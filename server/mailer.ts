@@ -1,5 +1,6 @@
 // Sends mail through whichever provider `MailSettings` names: SMTP via
-// nodemailer, or SendGrid via its HTTP API (no SDK — Node 24 has fetch).
+// nodemailer, or SendGrid or the Twilio Email API over HTTP (no SDK: Node
+// 24 has fetch).
 // `createMailer` returns null when settings are not `mailReady`, so callers
 // just check for a mailer rather than re-validating settings themselves.
 import { appendFileSync } from "node:fs";
@@ -47,6 +48,83 @@ function createSendGridMailer(settings: MailSettings, fetchImpl: typeof fetch): 
   };
 }
 
+const TWILIO_EMAIL_URL = "https://comms.twilio.com/v1/Emails";
+
+/** `from` may be a bare address or `Name <address>`. */
+function parseFromAddress(from: string): { address: string; name?: string } {
+  const match = /^\s*(.*?)\s*<([^<>\s]+)>\s*$/.exec(from);
+  if (!match) return { address: from.trim() };
+  const name = match[1]!.replace(/^"(.*)"$/, "$1").trim();
+  return name ? { address: match[2]!, name } : { address: match[2]! };
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+const TWILIO_ERROR_DETAIL_MAX = 500;
+
+async function twilioErrorDetail(response: Response, secrets: string[]): Promise<string> {
+  let messages: string[] = [];
+  try {
+    const body = (await response.json()) as { errors?: Array<{ code?: unknown; message?: unknown }> };
+    messages = (Array.isArray(body?.errors) ? body.errors : [])
+      .map((e) => {
+        const message = typeof e?.message === "string" ? e.message : "";
+        const code = typeof e?.code === "string" || typeof e?.code === "number" ? String(e.code) : "";
+        return message && code ? `${message} (${code})` : message;
+      })
+      .filter((m) => m !== "");
+  } catch {
+    return "";
+  }
+  let detail = messages.join("; ");
+  for (const secret of secrets) {
+    if (secret) detail = detail.split(secret).join("[redacted]");
+  }
+  return detail.length > TWILIO_ERROR_DETAIL_MAX ? `${detail.slice(0, TWILIO_ERROR_DETAIL_MAX)}...` : detail;
+}
+
+function createTwilioMailer(settings: MailSettings, fetchImpl: typeof fetch): Mailer {
+  const { apiKeySid, apiKeySecret } = settings.twilio!;
+  const authorization = `Basic ${Buffer.from(`${apiKeySid!}:${apiKeySecret!}`).toString("base64")}`;
+  const from = parseFromAddress(settings.from!);
+  return {
+    async send(message) {
+      const response = await fetchImpl(TWILIO_EMAIL_URL, {
+        method: "POST",
+        headers: {
+          authorization,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          from,
+          to: [{ address: message.to }],
+          content: {
+            subject: message.subject,
+            html: escapeHtml(message.text).replace(/\r?\n/g, "<br>\n"),
+            text: message.text,
+          },
+        }),
+      });
+      // The Email API accepts a message with 202 and delivers it later.
+      // A refusal reads `{"errors":[{"code","message"}],"status"}`; its
+      // messages ("The from.address domain ... is not valid or authorized.")
+      // are what an operator needs, so they go into the error, scrubbed of
+      // anything that echoes the credential back.
+      if (!response.ok) {
+        const detail = await twilioErrorDetail(response, [apiKeySecret!, authorization.slice("Basic ".length)]);
+        throw new Error(`Twilio refused the message (${response.status})${detail ? `: ${detail}` : ""}`);
+      }
+    },
+  };
+}
+
 function createSmtpMailer(settings: MailSettings, smtpTransport: (options: object) => SmtpTransport): Mailer {
   const smtp = settings.smtp!;
   const from = settings.from!;
@@ -80,6 +158,9 @@ export function createMailer(settings: MailSettings, deps: MailerDeps = {}): Mai
   if (!mailReady(settings)) return null;
   if (settings.provider === "sendgrid") {
     return createSendGridMailer(settings, deps.fetchImpl ?? fetch);
+  }
+  if (settings.provider === "twilio") {
+    return createTwilioMailer(settings, deps.fetchImpl ?? fetch);
   }
   const smtpTransport = deps.smtpTransport ?? ((options: object) => nodemailer.createTransport(options));
   return createSmtpMailer(settings, smtpTransport);

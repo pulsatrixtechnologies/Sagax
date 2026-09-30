@@ -1699,6 +1699,10 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
     if (["failed", "missed"].includes(run.status) && !run.seenAt) dispatch({ type: "markRoutineRunSeen", runId: run.id });
   };
   const macInset = capabilities.windowChrome === "mac-inset";
+  // Pulsatrix Light's navy top band mirrors the sidebar's own macOS-inset
+  // strip in `fill` mode (the only mode it takes over the content frame);
+  // every other skin ignores it.
+  const browser = capabilities.host.label === "Browser";
   const windowDragStyle = macInset
     ? ({ WebkitAppRegion: "drag" } as CSSProperties)
     : undefined;
@@ -1808,8 +1812,9 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
 
   return (
     <main className={cn("flex h-full min-w-0 flex-col bg-app", fill ? "flex-1" : embedded ? "w-[min(820px,48vw)] min-w-[420px] shrink-0 border-l border-hairline/40" : "flex-1 animate-workspace-in")}>
+      {fill && (macInset || browser) && <div className="content-topbar-strip" />}
       <header
-        className={cn("shrink-0 border-b border-hairline/35 bg-app py-3 pr-4", !embedded && !fill && macInset ? "pl-[86px]" : "pl-4")}
+        className={cn(fill && "content-topbar", "shrink-0 border-b border-hairline/35 bg-app py-3 pr-4", !embedded && !fill && macInset ? "pl-[86px]" : "pl-4")}
         style={embedded || fill ? undefined : windowDragStyle}
       >
         <div className="flex flex-wrap items-center gap-2">
@@ -1843,6 +1848,11 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
           {section === "calendar" && scheduleView === "calendar" && state.routinesLoadState === "loading" && state.routines.length === 0 && <p role="status" className="w-full text-[11.5px] text-ink-secondary">{t("routines.loading")}</p>}
         </div>}
       </header>
+      {/* `display: contents` outside `fill` mode: the wrapper takes no part
+          in layout, so embedded/standalone keep their exact original flex
+          children. Only `fill` (the one mode rendered inside the content
+          frame) opts into the card treatment. */}
+      <div className={cn(fill ? "content-card-body flex min-h-0 flex-1 flex-col" : "contents")}>
       <RoutineWakeBar />
 
       {section === "webhooks" ? <WebhooksPanel bots={visibleBots} createRequest={webhookCreateRequest} onCreateHandled={handleWebhookCreateHandled} /> : section === "logs" ? (
@@ -1868,6 +1878,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
           )}
         </div>
       )}
+      </div>
 
       {quick && <><div className="fixed inset-0 z-40 bg-black/25" onMouseDown={() => setQuick(null)} /><QuickComposer seed={quick} bots={visibleBots} routinesOnly={routinesOnly} onClose={() => setQuick(null)} onMore={(seed) => { setQuick(null); setEditor(seed); }} onSavedRoutine={(routine) => dispatch({ type: "routinePatched", routine })} onSavedCall={upsertCall} /></>}
       {editor && <EventEditor seed={editor} bots={visibleBots} routinesOnly={routinesOnly} onClose={() => setEditor(null)} onSavedCall={upsertCall} />}

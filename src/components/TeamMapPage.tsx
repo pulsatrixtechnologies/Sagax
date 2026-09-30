@@ -17,6 +17,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { t } from "@/lib/i18n";
 import { CanvasComputers } from "./CanvasComputers";
 import type { TeamComputer } from "../../shared/team-computer";
+import { useMacInsetChrome } from "./DesktopCapabilities";
 
 function EdgeRow({ edge, bots }: { edge: TeamMapEdge; bots: Bot[] }) {
   const { dispatch } = useStore();
@@ -251,6 +252,9 @@ function SectionContextDialog({ section, label, onClose }: { section: string; la
 export function TeamMapPage() {
   const { state, dispatch } = useStore();
   const remoteClient = window.ogb?.remoteClient?.active === true;
+  // Pulsatrix Light's navy top band mirrors the sidebar's own macOS-inset
+  // strip, so the two stay vertically aligned; every other skin ignores it.
+  const { macInset, browser } = useMacInsetChrome();
   const [snapshot, setSnapshot] = useState<TeamMapSnapshot>(EMPTY_TEAM_MAP_SNAPSHOT);
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -316,7 +320,8 @@ export function TeamMapPage() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-app text-ink">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-hairline/40 px-6 py-4 max-md:pl-12">
+      {(macInset || browser) && <div className="content-topbar-strip" />}
+      <header className="content-topbar flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-hairline/40 px-6 py-4 max-md:pl-12">
         <div>
           <div className="flex items-center gap-2.5">
             <Network size={18} className="text-ink-secondary" />
@@ -341,6 +346,7 @@ export function TeamMapPage() {
           </details>
         </div>}
       </header>
+      <div className="content-card-body flex min-h-0 flex-1 flex-col">
       {(error || refreshError) && <div role="alert" className="flex shrink-0 items-center justify-between gap-3 border-b border-danger/20 bg-danger/10 px-6 py-2 text-[12px] text-danger">
         {error || refreshError}
         <button aria-label={t("common.close")} className="rounded p-1 hover:bg-danger/10" onClick={() => { setError(null); setRefreshError(null); }}><X size={14} /></button>
@@ -363,6 +369,7 @@ export function TeamMapPage() {
         <summary className="cursor-pointer text-[12px] text-ink-secondary">{t("canvas.handoffs")} · {edges.length}</summary>
         <div className="mt-3 max-h-48 space-y-2 overflow-y-auto">{edges.slice(0, 12).map((edge) => <EdgeRow key={`${edge.sourceBotId}:${edge.targetBotId}`} edge={edge} bots={bots} />)}</div>
       </details>}
+      </div>
       {contextEditor && (
         <SectionContextDialog
           section={contextEditor.section}
