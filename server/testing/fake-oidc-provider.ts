@@ -173,7 +173,8 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
   };
   const endDelegationsOf = (sub: string): number => {
     let ended = 0;
-    for (const [family, entry] of [...delegations]) {
+    // entries are deleted while iterating: walk a copy
+    for (const [family, entry] of Array.from(delegations)) {
       if (entry.sub !== sub) continue;
       endFamily(family);
       ended += 1;

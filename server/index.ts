@@ -7923,6 +7923,8 @@ async function routineAdmission(run: RoutineRun, _routine: Routine | undefined):
 function routineSuspended(routine: Routine, _run: RoutineRun | null, reason: RoutineSuspendReason): void {
   const bot = store.bot(routine.botId);
   const runAs = effectiveRunAs(routine);
+  const runAsPerson = runAs ? principals.byId(runAs) : null;
+  const runAsName = runAsPerson?.name || runAsPerson?.login || "";
   routineAudit("routine.suspended", runAs, { routine, reason });
   if (!bot) return;
   const group = routine.target === "room-goal" && routine.groupId ? store.group(routine.groupId) : undefined;
@@ -7935,7 +7937,7 @@ function routineSuspended(routine: Routine, _run: RoutineRun | null, reason: Rou
       access: {
         reason: "routine_delegation", engine: "", botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
         ...(runAs ? { runAsPrincipalId: runAs } : {}),
-        ...(runAs && (principals.byId(runAs)?.name || principals.byId(runAs)?.login) ? { runAsName: (principals.byId(runAs)?.name || principals.byId(runAs)?.login)!.slice(0, 200) } : {}),
+        ...(runAsName ? { runAsName: runAsName.slice(0, 200) } : {}),
         routineId: routine.id, routineName: redactSecretsInText(routine.name).slice(0, 200), suspendReason: reason,
       },
     });
