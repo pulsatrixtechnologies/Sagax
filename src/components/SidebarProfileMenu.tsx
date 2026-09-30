@@ -277,9 +277,8 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const placeAttention = places.some((item) => item.attention);
 
   const avatar = (size: number) => (
-    // the footer avatar rests tinted and shows its real colours on hover,
-    // focus or while its menu is open (.footer-tint)
-    <span className="footer-tint flex shrink-0 rounded-full">
+    // the footer avatar, always in its real colours
+    <span className="flex shrink-0 rounded-full">
       {profile?.avatarUrl ? (
         <img src={profile.avatarUrl} alt="" style={{ width: size, height: size }} className="rounded-full object-cover" />
       ) : (

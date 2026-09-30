@@ -23,12 +23,13 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("sidebar footer row", () => {
-  it("shows the avatar and the full name, tinted until hover, without the places' tour anchor", () => {
+  it("shows the avatar in its real colours and the full name, without the places' tour anchor", () => {
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { places: [place("archived")] }));
     expect(html).toContain(">Jean-Christophe Proulx</span>");
     expect(html).not.toContain('data-tour="tools"');
     expect(html).toContain('aria-haspopup="menu"');
-    expect(html).toContain("footer-tint");
+    expect(html).not.toContain("footer-tint");
+    expect(html).not.toContain("filter");
     expect(html).toContain(">JP<");
     expect(html).not.toContain('data-testid="footer-attention"');
   });

@@ -94,7 +94,6 @@ import { buildTeamMapSections } from "@/lib/team-map";
 import { sidebarSectionAttention } from "@/lib/sidebar-attention";
 import { botListItemPointerIntent } from "@/lib/sidebar-selection";
 import { phoneSettingsAction, SidebarPhoneButton } from "./SidebarPhoneButton";
-import { AppMarks } from "./SidebarAppMarks";
 import { SidebarPlaces, type SidebarPlace } from "./SidebarPlaces";
 import { PulsatrixMark } from "./PulsatrixMark";
 import type { SidebarMenuItem } from "./SidebarPopoverMenu";
@@ -1979,7 +1978,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       tourId: "nav-apps",
       label: t("sidebar.nav.connectedApps"),
       icon: Puzzle,
-      trailing: <AppMarks ringClassName="ring-sidebar group-hover:ring-sidebar-hover" />,
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
     },
     ...(!remoteClient ? [{
@@ -2277,16 +2275,19 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         {reorderAnnouncement}
       </p>
 
-      {/* Footer */}
-      <div data-sidebar-foot className={cn(density === "icons" ? "px-2 pb-3 pt-2" : "pb-3 pl-2 pr-3 pt-1")}>
-        <SidebarPlaces places={places} iconOnly={density === "icons"} />
+      {/* Footer. Collapsing the sidebar keeps the places and the avatar at
+          the same y: the same bottom padding, the same row metrics
+          (SidebarPlaces) and an account row of the same h-10 height in both
+          layouts. The rail's extra buttons (archived bots, phone) sit above
+          the places so they never push them. */}
+      <div data-sidebar-foot className={cn("pb-3 pt-1", density === "icons" ? "px-2" : "pl-2 pr-3")}>
         {density === "icons" && !remoteClient && archivedBots.length > 0 && (
           <button
             type="button"
             onClick={() => setArchivedBotsOpen(true)}
             aria-label={t("sidebar.archived.title")}
             title={t("sidebar.archived.title")}
-            className="flex min-h-10 w-full items-center justify-center rounded-xl px-2 py-2 text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
+            className="flex h-9 w-full items-center justify-center rounded-lg px-2 text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
           >
             <Archive size={20} />
           </button>
@@ -2297,11 +2298,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             onOpen={() => dispatch(phoneSettingsAction())}
           />
         )}
+        <SidebarPlaces places={places} iconOnly={density === "icons"} />
         {density === "icons" ? (
           <div className="flex items-center justify-center">
             <button
               onClick={() => dispatch({ type: "toggleAppSettings" })}
-              className="flex min-w-0 items-center justify-center rounded-xl px-2 py-2 text-left hover:bg-sidebar-hover"
+              data-sidebar-account-rail
+              className="flex h-10 min-w-0 items-center justify-center rounded-lg px-2 text-left hover:bg-sidebar-hover"
               aria-label={t("sidebar.appSettings")}
               title={state.config?.profile?.name?.trim() || t("sidebar.appSettings")}
             >
