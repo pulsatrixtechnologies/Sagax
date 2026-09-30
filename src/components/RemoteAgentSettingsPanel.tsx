@@ -3,7 +3,7 @@ import { Bell, ChevronLeft, ImagePlus, Loader2, Trash2, X } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
-import { useCaptionChrome } from "@/components/DesktopCapabilities";
+import { useCaptionChrome, useMacInsetChrome } from "@/components/DesktopCapabilities";
 import { VoiceSettings } from "./VoiceSettings";
 import { FilesSection } from "./bot-settings/FilesSection";
 import { t } from "@/lib/i18n";
@@ -21,6 +21,7 @@ export function RemoteAgentSettingsPanel({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
   // Docked flush under the Windows caption corner: drop the header 16px.
   const { padClass } = useCaptionChrome();
+  const { macInset, browser } = useMacInsetChrome();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -76,7 +77,8 @@ export function RemoteAgentSettingsPanel({ bot }: { bot: Bot }) {
 
   return (
     <aside className="app-docked-panel animate-panel-in relative z-20 flex h-full w-[400px] shrink-0 flex-col border-l border-hairline/40 bg-panel">
-      <div className={cn("flex items-center justify-between px-4 py-3", padClass)}>
+      {(macInset || browser) && <div className="content-topbar-strip" />}
+      <div className={cn("content-topbar flex items-center justify-between px-4 py-3", padClass)}>
         <button
           onClick={close}
           aria-label="Collapse remote agent settings"
@@ -94,7 +96,7 @@ export function RemoteAgentSettingsPanel({ bot }: { bot: Bot }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 pb-5">
+      <div className="content-card-body flex-1 overflow-y-auto px-5 pb-5">
         <div className="flex flex-col gap-4 pt-4">
           <div className="rounded-xl bg-card p-4">
             <div className="mb-4 flex items-center gap-3">

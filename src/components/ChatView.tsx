@@ -23,7 +23,7 @@ import {
 import { WorkingDots } from "@/components/WorkingIndicator";
 import { MessageActions, messageActionClass } from "@/components/MessageActions";
 import { useSpeech } from "@/lib/tts/useSpeech";
-import { useCaptionChrome, useDesktopCapabilities } from "@/components/DesktopCapabilities";
+import { useCaptionChrome, useDesktopCapabilities, useMacInsetChrome } from "@/components/DesktopCapabilities";
 import { UsagePill } from "./UsagePill";
 import {
   api,
@@ -958,6 +958,9 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   // WindowCaptionButtons); this header is the window drag region, and the
   // icon row shifts below the 26px-tall corner the buttons occupy.
   const { dragStyle: headerDragStyle, noDragStyle: headerNoDragStyle, controlsShiftStyle } = useCaptionChrome();
+  // Pulsatrix Light's navy top band mirrors the sidebar's own macOS-inset
+  // strip, so the two stay vertically aligned; every other skin ignores it.
+  const { macInset, browser } = useMacInsetChrome();
   const panelOpen = !remoteClient && (state.settingsOpen || state.computerOpen);
   const scrollRef = useRef<HTMLDivElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -1253,14 +1256,19 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
     <main className="app-glow relative flex h-full min-w-0 flex-1 flex-col bg-app">
       {/* Call mode covers the thread while the bot is on the line */}
       <CallOverlay bot={bot} />
+      {(macInset || browser) && <div className="content-topbar-strip" />}
       {/* Header */}
       <div
         style={headerDragStyle}
         className={cn(
+          "content-topbar",
           // @container so the chips on the right can fold to icon bubbles
           // when the column is narrow (side panel open, small window)
           // Grok-style: no bar. The header floats over the transcript, which
           // scrolls under it; only the bot pill and the controls show.
+          // Pulsatrix Light overrides `position` to `relative` (see
+          // styles.css): a normal band, not a float, but still the
+          // containing block the centered pill below needs.
           "@container/chathead absolute inset-x-0 top-0 z-[3] flex min-h-[52px] items-center justify-end px-5 py-2.5",
           // Room for the drawer button, which overlays this corner below md.
           "pl-11 md:pl-5",
@@ -1340,9 +1348,10 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
         </div>
       </div>
 
+      <div className="content-card-body flex min-h-0 flex-1 flex-col">
       {/* Banners sit below the floating header; the wrapper vanishes when
           none is showing so the transcript can run to the top. */}
-      <div className="pt-[52px] empty:hidden">
+      <div className="chat-banners pt-[52px] empty:hidden">
       <BotActivityPicker bot={bot} />
       {routineExecution && <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[11.5px] text-ink-secondary">
         <span className="min-w-0 flex-1 truncate">{t("routines.executionDetails", { name: routineExecution.routineName })}</span>
@@ -1553,6 +1562,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           ? () => setEditingId(lastUserMessage.id)
           : undefined}
       />
+      </div>
       </div>
       </div>
 

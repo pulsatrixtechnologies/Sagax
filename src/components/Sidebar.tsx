@@ -2493,7 +2493,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             setSidebarWidth(next);
             try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next)); } catch { /* session only */ }
           }}
-          className="absolute inset-y-0 -right-1.5 z-10 w-3 cursor-col-resize focus-visible:bg-accent/40"
+          className="app-resize-handle absolute inset-y-0 -right-1.5 z-10 w-3 cursor-col-resize focus-visible:bg-accent/40"
         />
       )}
     </aside>

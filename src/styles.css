@@ -931,24 +931,30 @@
   letter-spacing: 0.04em;
 }
 
-/* Pulsatrix Light's content frame(s): v3's light-mode page is a light card
-   inset over its own always-navy chrome. App.tsx wraps the sidebar row in
-   `.app-shell-row` and the chat/group/routines/etc. column in
-   `.app-content-frame`; BotSettingsDialog, InspectorPanel and
-   RemoteAgentSettingsPanel (the docked Details/Routines/Files/Computer/
-   Inspector panel, whichever is open) carry `.app-docked-panel` on the
-   same row, right of it. Every other skin paints all of these transparent,
-   so this is the one place they carry a rule at all. The row behind them
-   takes the same navy as the rail so the inset reads as one continuous
-   chrome, not a second stripe of colour, and each frame keeps 8px clear on
-   every edge but the one flush against its left neighbour (the sidebar for
-   the content frame, the content frame for the docked panel); that leaves
-   one 8px navy seam between the two when both are open, and a navy gutter
-   on every outer edge either way, the way v3's own content card sits on
-   its shell. The `border` shorthand below also replaces each panel's own
-   translucent, ink-tinted `border-l` (right for a light ground on both
-   sides, a stray bright line once the ground to its left is navy) with a
-   full, opaque hairline. */
+/* Pulsatrix Light's content frame(s): Perspicax's light-mode page is a
+   light card inset over its own always-navy chrome, and that chrome runs
+   across the TOP of the window too: the macOS inset strip and a page
+   header row sit on navy, full width, before the card starts. App.tsx
+   wraps the sidebar row in `.app-shell-row` and the chat/group/routines/
+   team-map column in `.app-content-frame`; BotSettingsDialog,
+   InspectorPanel and RemoteAgentSettingsPanel (the docked Details/
+   Routines/Files/Computer/Inspector panel, whichever is open) carry
+   `.app-docked-panel` on the same row, right of it. Every other skin
+   paints all of these transparent, so this is the one place they carry a
+   rule at all.
+
+   A page that has its own header opts into the split by wrapping
+   everything BELOW that header in `.content-card-body` (and, for a
+   floating header like Chat's, giving the header itself
+   `.content-topbar`/`.content-topbar-strip`); see ChatView.tsx,
+   GroupView.tsx, RoutineCalendarPage.tsx and TeamMapPage.tsx. A page that
+   does not (Local VM workspace, Cloud sign-in, engine setup, "No bots
+   yet") keeps the single rounded card this frame always painted before
+   this band existed, which is the default two rules below. `:has()` is
+   what tells them apart. The `border` shorthand also replaces each
+   docked panel's own translucent, ink-tinted `border-l` (right for a
+   light ground on both sides, a stray bright line once the ground to its
+   left is navy) with a full, opaque hairline. */
 [data-skin="pulsatrix-light"] .app-shell-row {
   background: var(--color-sidebar);
 }
@@ -965,19 +971,95 @@
   border: 1px solid var(--color-hairline);
   overflow: hidden;
 }
+[data-skin="pulsatrix-light"] .app-content-frame:has(.content-card-body),
+[data-skin="pulsatrix-light"] .app-docked-panel:has(.content-card-body) {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: var(--color-sidebar);
+}
+/* `<main>` still paints its own `bg-app`; once the frame around it has
+   gone navy, that has to go navy too, so the strip/header sit on it
+   without a square of light showing through behind them. `.content-card-
+   body`'s own opaque ground repaints the actual card over that. */
+[data-skin="pulsatrix-light"] .app-content-frame:has(.content-card-body) > main {
+  background: var(--color-sidebar);
+}
 /* With a docked panel open, the chat and the panel read as ONE light frame
    split by a hairline, not two cards with a navy seam between them. */
 @media (min-width: 1024px) {
-  [data-skin="pulsatrix-light"] .app-content-frame:has(~ .app-docked-panel) {
+  [data-skin="pulsatrix-light"] .app-content-frame:has(~ .app-docked-panel) .content-card-body {
     margin-right: 0;
     border-right: 0;
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
   }
-  [data-skin="pulsatrix-light"] .app-content-frame ~ .app-docked-panel {
+  [data-skin="pulsatrix-light"] .app-content-frame ~ .app-docked-panel .content-card-body {
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
   }
+}
+
+/* The navy top band. `.content-topbar-strip` mirrors the sidebar's own
+   macOS-inset spacer (same `useMacInsetChrome` check, same 36px); it is
+   only ever rendered when that check is true, so it costs the DOM node
+   but never the height anywhere else. `.content-topbar` is the page's own
+   header row (floating over the transcript in Chat, a normal block
+   elsewhere) turned into a plain, non-floating band the same height as
+   before (52px), holding its own ink/panel/hairline/raised tokens so
+   every button and pill already built from them (CIRCLE_BUTTON, the bot
+   pill, chips) recolors for navy without each needing its own class. */
+[data-skin="pulsatrix-light"] .content-topbar-strip {
+  flex: none;
+  height: 36px;
+  background: var(--color-sidebar);
+}
+[data-skin="pulsatrix-light"] .content-topbar {
+  position: relative;
+  flex: none;
+  min-height: 52px;
+  background: var(--color-sidebar);
+  --color-ink: var(--color-sidebar-ink);
+  --color-ink-secondary: var(--color-sidebar-ink-secondary);
+  --color-panel: var(--color-sidebar);
+  --color-hairline: var(--color-sidebar-hairline);
+  --color-raised: var(--color-sidebar-hover);
+  --color-raised-hover: var(--color-sidebar-selected);
+}
+/* Chat's banner stack still reserves the 52px its floating header used to
+   float over; the header is a normal block now, so that reservation would
+   double the gap. */
+[data-skin="pulsatrix-light"] .chat-banners {
+  padding-top: 0;
+}
+[data-skin="pulsatrix-light"] .content-card-body {
+  flex: 1;
+  min-height: 0;
+  margin: 8px 8px 8px 0;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-hairline);
+  overflow: hidden;
+  background: var(--color-app);
+}
+
+/* The sidebar's and the docked panel's own resize handles: an unfocused
+   `focus-visible:bg-accent/40` reads as a stray bright blue line sitting
+   on navy on both sides of it, and the app-wide `:focus-visible { outline:
+   2px solid var(--color-focus) }` rule (below) draws a second, brighter one
+   right on top of it. Invisible at rest in this skin; a subtle hairline
+   (not the brand accent, for either) on hover, drag or keyboard focus says
+   "draggable" without shouting. */
+[data-skin="pulsatrix-light"] .app-resize-handle {
+  background-color: transparent;
+}
+[data-skin="pulsatrix-light"] .app-resize-handle:hover,
+[data-skin="pulsatrix-light"] .app-resize-handle:active,
+[data-skin="pulsatrix-light"] .app-resize-handle:focus-visible {
+  background-color: var(--color-sidebar-hairline);
+}
+[data-skin="pulsatrix-light"] .app-resize-handle:focus-visible {
+  outline-color: var(--color-sidebar-hairline);
 }
 
 /* The Perspicax mark shows the file that reads on the sidebar's ground
