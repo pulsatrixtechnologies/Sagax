@@ -14847,9 +14847,13 @@ function sectionAccessFor(name: unknown): SectionAccess | null {
   return sectionChannels?.accessFor(name) ?? null;
 }
 /** Owner, grants and shared section of a bot, for server/authz.ts. */
-function botFacts(bot: { ownerUserId?: unknown; grants?: unknown; directGrants?: unknown; section?: unknown; createdAt?: unknown }): BotFacts {
-  const section = sectionAccessFor(bot.section);
-  return { ownerPrincipalId: effectiveBotOwner(bot), grants: botGrants(bot), sections: section ? [section] : [] };
+function botFacts(bot: { id?: unknown; ownerUserId?: unknown; grants?: unknown; directGrants?: unknown; section?: unknown; createdAt?: unknown }): BotFacts {
+  const ownerPrincipalId = effectiveBotOwner(bot);
+  // Only with the bot owner's consent (section-channels.ts header).
+  const section = IDENTITY.kind === "perspicax" && typeof bot.section === "string" && bot.section && typeof bot.id === "string"
+    ? sectionChannels?.accessForBot(bot.section, { id: bot.id, ownerPrincipalId }) ?? null
+    : null;
+  return { ownerPrincipalId, grants: botGrants(bot), sections: section ? [section] : [] };
 }
 /** A person's teams, for the manager rules. */
 function principalTeams(principalId: string): TeamRef[] {
@@ -15321,6 +15325,10 @@ if (sectionChannels) {
     },
     botExists: (id) => Boolean(store.bot(id)),
     botSection: (id) => sectionKey(store.bot(id)?.section) || undefined,
+    botOwner: (id) => {
+      const bot = store.bot(id);
+      return bot ? effectiveBotOwner(bot) : "";
+    },
     managesBot: (auth, id) => {
       const bot = store.bot(id);
       return Boolean(bot) && atLeast(viewerBotLevel(auth, bot!), "manage");

@@ -261,6 +261,21 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     const listed = (await api("GET", "/api/org/bots", mia)).body.bots as Array<{ id: string; grants: Array<{ target: string }> }>;
     expect(listed.find((b) => b.id === x.id)?.grants.map((g) => g.target)).toEqual([`team:${TEAM_T}`]);
     expect((await api("PUT", `/api/bots/${x.id}/grants`, mia, { target: `team:${TEAM_T}`, level: "run" })).status).toBe(403);
+    // she never opens what she administers: no entry for herself, on a bot,
+    // a section or a room that lists her team
+    expect((await api("PUT", `/api/bots/${x.id}/grants`, mia, { target: `user:${ids.mia}`, level: "use" })).status).toBe(403);
+    expect([403, 404]).toContain((await api("GET", `/api/threads/${x.threadId}/messages`, mia)).status);
+    const sec = await api("POST", "/api/org/sections", alice, { name: "Mia check" });
+    expect(sec.status, sec.text).toBe(201);
+    const secId = sec.body.section.id as string;
+    expect((await api("PUT", `/api/org/sections/${secId}/members`, alice, { members: [{ target: `team:${TEAM_T}`, role: "participant" }] })).status).toBe(200);
+    expect((await api("PUT", `/api/org/sections/${secId}/members`, mia, { members: [{ target: `team:${TEAM_T}`, role: "participant" }, { target: `user:${ids.mia}`, role: "participant" }] })).status).toBe(403);
+    await waitFor(async () => (await api("DELETE", `/api/org/sections/${secId}`, alice)).status === 200, 30_000);
+    const tRoom = await api("POST", "/api/groups", alice, { name: "Team T room", memberIds: [x.id], humanIds: [`team:${TEAM_T}`], setup: { bulletin: "", defaultResponder: { kind: "everyone" } } });
+    expect(tRoom.status, tRoom.text).toBe(201);
+    expect([403, 404]).toContain((await api("PATCH", `/api/groups/${tRoom.body.group.id}`, mia, { humanIds: [`team:${TEAM_T}`, ids.mia] })).status);
+    const roomsOfMia = ((await api("GET", "/api/bots", mia)).body.groups as Array<{ id: string }>).map((g) => g.id);
+    expect(roomsOfMia).not.toContain(tRoom.body.group.id);
     expect((await api("PUT", `/api/bots/${x.id}/grants`, mia, { target: `user:${ids.carol}`, level: "use" })).status).toBe(200);
     expect((await api("PUT", `/api/bots/${x.id}/grants`, mia, { target: `user:${ids.dave}`, level: "use" })).status).toBe(403);
     expect((await api("DELETE", `/api/bots/${x.id}/grants/${encodeURIComponent(`team:${TEAM_T}`)}`, mia)).status).toBe(200);

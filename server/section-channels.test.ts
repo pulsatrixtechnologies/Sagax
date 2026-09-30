@@ -98,6 +98,7 @@ function harness() {
     },
     botExists: (id) => id in bots,
     botSection: (id) => bots[id]?.section,
+    botOwner: (id) => bots[id]?.owner ?? "",
     managesBot: (auth, id) => {
       const actor = (auth as unknown as { actor: string }).actor;
       return bots[id]!.owner === actor || Boolean(bots[id]!.manage?.includes(actor));
@@ -122,6 +123,42 @@ function harness() {
   };
   return { channels, sections, bots, rooms, call, changed: () => changed };
 }
+
+describe("section access follows the bot owner's consent", () => {
+  it("a mixed section shared by one owner gives nothing on another owner's bot", async () => {
+    const h = harness();
+    // before slice 4: carol's bot y sat in Support with alice's v
+    h.bots.v!.section = "Support";
+    h.bots.y = { owner: CAROL, section: "Support" };
+    const record = h.channels.byName("Support")!;
+    expect(record.ownerPrincipalId).toBe(ALICE);
+    expect((await h.call(ALICE, "PUT", `/api/org/sections/${record.id}/members`, { members: [{ target: "team:U", role: "participant" }], defaultLevel: "run" })).status).toBe(200);
+    const onV = h.channels.accessForBot("Support", { id: "v", ownerPrincipalId: ALICE });
+    const onY = h.channels.accessForBot("Support", { id: "y", ownerPrincipalId: CAROL });
+    expect(onV).not.toBeNull();
+    expect(onY).toBeNull();
+    expect(botLevel({ viewer: viewerOf(DAVE), ownerPrincipalId: ALICE, grants: [], sections: onV ? [onV] : [] })).toBe("run");
+    expect(botLevel({ viewer: viewerOf(DAVE), ownerPrincipalId: CAROL, grants: [], sections: onY ? [onY] : [] })).toBeNull();
+  });
+
+  it("a bot placed through the section route by someone who manages it is shared; taking it out forgets it", async () => {
+    const h = harness();
+    const id = (await h.call(ALICE, "POST", "/api/org/sections", { name: "Ventes" })).body.section.id;
+    await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: `user:${BOB}`, role: "participant" }] });
+    expect((await h.call(BOB, "PUT", `/api/org/sections/${id}/bots`, { add: ["x"] })).status).toBe(200);
+    expect(h.channels.accessForBot("Ventes", { id: "x", ownerPrincipalId: BOB })).not.toBeNull();
+    // the consent is bob's: once x changes hands it no longer counts
+    expect(h.channels.accessForBot("Ventes", { id: "x", ownerPrincipalId: CAROL })).toBeNull();
+    expect((await h.call(BOB, "PUT", `/api/org/sections/${id}/bots`, { remove: ["x"] })).status).toBe(200);
+    expect(h.channels.accessForBot("Ventes", { id: "x", ownerPrincipalId: BOB })).toBeNull();
+    // alice holds manage on bob's w: placing it counts as bob's delegate
+    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { add: ["w"] })).status).toBe(200);
+    expect(h.channels.accessForBot("Ventes", { id: "w", ownerPrincipalId: BOB })).not.toBeNull();
+    // the consent survives a rename
+    expect((await h.call(ALICE, "PATCH", `/api/org/sections/${id}`, { name: "Ventes QC" })).status).toBe(200);
+    expect(h.channels.accessForBot("Ventes QC", { id: "w", ownerPrincipalId: BOB })).not.toBeNull();
+  });
+});
 
 describe("section routes", () => {
   it("creates a section owned by the caller, refuses General and duplicates", async () => {

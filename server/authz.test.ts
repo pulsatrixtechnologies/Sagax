@@ -27,11 +27,13 @@ const CAROL = pid(3); // in team T
 const DAVE = pid(4); // in team U
 const MIA = pid(5); // manager of T
 const ADMIN = pid(6);
+const NED = pid(7); // co-manager of T
 
 const teams: Record<string, TeamRef[]> = {
   [CAROL]: [{ id: "T", manager: false }],
   [DAVE]: [{ id: "U", manager: false }],
   [MIA]: [{ id: "T", manager: true }],
+  [NED]: [{ id: "T", manager: true }],
 };
 const teamsOf = (id: string) => teams[id] ?? [];
 const viewer = (id: string, patch: Partial<Viewer> = {}): Viewer => ({ principalId: id, orgAdmin: false, teams: teamsOf(id), disabled: false, ...patch });
@@ -154,6 +156,19 @@ describe("grant administration (D4)", () => {
     expect(canAdministerGrant(viewer(MIA), { bot: facts, target: "team:X", teamsOf })).toBe(false);
   });
 
+  it("a manager never adds or raises an entry for herself or a co-manager", () => {
+    const anchored = bot([grant("team:T", "run")]);
+    expect(canAdministerGrant(viewer(MIA), { bot: anchored, target: `user:${MIA}`, newLevel: "use", teamsOf })).toBe(false);
+    expect(canAdministerGrant(viewer(MIA), { bot: anchored, target: `user:${MIA}`, newLevel: "run", teamsOf })).toBe(false);
+    expect(botLevel({ viewer: viewer(MIA), ...anchored })).toBeNull();
+    expect(canAdministerGrant(viewer(MIA), { bot: anchored, target: `user:${NED}`, newLevel: "use", teamsOf })).toBe(false);
+    // an existing entry of hers: lowered or removed, never raised
+    const own = bot([grant("team:T", "run"), grant(`user:${MIA}`, "use", ADMIN)]);
+    expect(canAdministerGrant(viewer(MIA), { bot: own, target: `user:${MIA}`, newLevel: "run", teamsOf })).toBe(false);
+    expect(canAdministerGrant(viewer(MIA), { bot: own, target: `user:${MIA}`, newLevel: "use", teamsOf })).toBe(true);
+    expect(canAdministerGrant(viewer(MIA), { bot: own, target: `user:${MIA}`, teamsOf })).toBe(true);
+  });
+
   it("a disabled manager administers nothing", () => {
     expect(canAdministerGrant(viewer(MIA, { disabled: true }), { bot: bot([grant("team:T", "use")]), target: "team:T", teamsOf })).toBe(false);
   });
@@ -190,6 +205,16 @@ describe("rooms and sections", () => {
     expect(canAdministerSectionMember(viewer(MIA), { section: anchored, target: "team:U", role: "readonly", teamsOf })).toBe(false);
   });
 
+  it("a manager never adds or raises a section entry for herself or a co-manager", () => {
+    const anchored = { ownerPrincipalId: ALICE, members: [{ target: "team:T", role: "participant" as const }], defaultLevel: "use" as const };
+    expect(canAdministerSectionMember(viewer(MIA), { section: anchored, target: `user:${MIA}`, role: "participant", teamsOf })).toBe(false);
+    expect(canAdministerSectionMember(viewer(MIA), { section: anchored, target: `user:${MIA}`, role: "readonly", teamsOf })).toBe(false);
+    expect(canAdministerSectionMember(viewer(MIA), { section: anchored, target: `user:${NED}`, role: "readonly", teamsOf })).toBe(false);
+    const listed = { ...anchored, members: [...anchored.members, { target: `user:${MIA}`, role: "readonly" as const }] };
+    expect(canAdministerSectionMember(viewer(MIA), { section: listed, target: `user:${MIA}`, role: "participant", teamsOf })).toBe(false);
+    expect(canAdministerSectionMember(viewer(MIA), { section: listed, target: `user:${MIA}`, teamsOf })).toBe(true);
+  });
+
   it("room people: admins edit, a manager edits their entries with an anchor", () => {
     expect(canEditRoomHumans(viewer(ADMIN, { orgAdmin: true }), { before: [], after: ["team:U"], teamsOf })).toBe(true);
     expect(canEditRoomHumans(viewer(MIA), { before: [], after: ["team:T"], teamsOf })).toBe(false);
@@ -197,5 +222,13 @@ describe("rooms and sections", () => {
     expect(canEditRoomHumans(viewer(MIA), { before: ["team:T", CAROL], after: [], teamsOf })).toBe(true);
     expect(canEditRoomHumans(viewer(MIA), { before: ["team:T"], after: ["team:T", DAVE], teamsOf })).toBe(false);
     expect(canEditRoomHumans(viewer(BOB), { before: [], after: [BOB], teamsOf })).toBe(false);
+  });
+
+  it("a manager never adds herself or a co-manager to a room", () => {
+    expect(canEditRoomHumans(viewer(MIA), { before: ["team:T"], after: ["team:T", MIA], teamsOf })).toBe(false);
+    expect(canEditRoomHumans(viewer(MIA), { before: ["team:T"], after: ["team:T", `user:${MIA}`], teamsOf })).toBe(false);
+    expect(canEditRoomHumans(viewer(MIA), { before: ["team:T"], after: ["team:T", NED], teamsOf })).toBe(false);
+    // leaving is fine
+    expect(canEditRoomHumans(viewer(MIA), { before: ["team:T", MIA], after: ["team:T"], teamsOf })).toBe(true);
   });
 });

@@ -16,7 +16,8 @@
 // A team manager administers grants that target a team they manage or a
 // member of it: adding or raising needs an anchor (the bot already carries
 // a grant, given by someone else, to one of the teams they manage) and goes
-// up to that anchor's level; lowering or removing is always allowed.
+// up to that anchor's level; lowering or removing is always allowed. She
+// never adds or raises an entry for herself or a co-manager of her teams.
 //
 // The operator at this computer (loopback) has no viewer: undefined sees and
 // administers everything, as before.
@@ -185,6 +186,20 @@ export function managerReaches(viewer: Viewer, target: string, teamsOf: (princip
   return teamsOf(parsed.id).some((team) => managed.has(team.id));
 }
 
+/** Whether a manager may add or raise an entry for this target: it must be
+ * reachable, and name neither the manager herself nor another manager of
+ * one of her teams. A manager administers her teams' access without ever
+ * opening what she administers, and two managers can't open it for each
+ * other. Lowering or removing such an entry stays allowed. */
+export function managerMayGive(viewer: Viewer, target: string, teamsOf: (principalId: string) => readonly TeamRef[]): boolean {
+  if (!managerReaches(viewer, target, teamsOf)) return false;
+  const parsed = parseTarget(target);
+  if (!parsed || parsed.kind === "team") return Boolean(parsed);
+  if (key(parsed.id) === key(viewer.principalId)) return false;
+  const managed = new Set(managedTeamIds(viewer));
+  return !teamsOf(parsed.id).some((team) => team.manager && managed.has(team.id));
+}
+
 /** The anchor of a manager on a bot: the highest level of a grant, given by
  * someone else, to one of the teams they manage. */
 export function managerAnchor(viewer: Viewer, grants: readonly BotGrant[]): Level | null {
@@ -224,6 +239,7 @@ export function canAdministerGrant(viewer: Viewer | undefined, change: GrantChan
   // Lowering or removing a grant to their team or its members: always.
   if (change.newLevel === undefined) return current !== undefined;
   if (current !== undefined && levelRank(change.newLevel) <= levelRank(current)) return true;
+  if (!managerMayGive(viewer, change.target, change.teamsOf)) return false;
   const anchor = managerAnchor(viewer, change.bot.grants);
   return anchor !== null && levelRank(change.newLevel) <= levelRank(anchor);
 }
@@ -286,6 +302,7 @@ export function canAdministerSectionMember(viewer: Viewer | undefined, input: { 
   const current = input.section.members.find((member) => member.target === input.target)?.role;
   if (input.role === undefined) return current !== undefined;
   if (current !== undefined && roleRank(input.role) <= roleRank(current)) return true;
+  if (!managerMayGive(viewer, input.target, input.teamsOf)) return false;
   const managed = new Set(managedTeamIds(viewer));
   let anchor: SectionRole | null = null;
   for (const member of input.section.members) {
@@ -312,6 +329,7 @@ export function canEditRoomHumans(viewer: Viewer | undefined, input: { before: r
   const removed = [...before].filter((entry) => !after.has(entry));
   if ([...added, ...removed].some((entry) => !managerReaches(viewer, asTarget(entry), input.teamsOf))) return false;
   if (!added.length) return true;
+  if (added.some((entry) => !managerMayGive(viewer, asTarget(entry), input.teamsOf))) return false;
   return input.before.some((entry) => entry.startsWith("team:") && managed.has(entry.slice(5)));
 }
 

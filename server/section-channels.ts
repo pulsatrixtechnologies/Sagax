@@ -14,6 +14,12 @@
 // and posts in them (participant, moderator). Owning a section gives no
 // access to bots someone else placed in it, and a section with no member is
 // private: it changes nobody's access, exactly as before this slice.
+//
+// A shared section opens only the bots whose owner consented: the ones the
+// section owner owns, and the ones placed through PUT .../bots by someone
+// who manages them (the owner, or a manage holder the owner chose), recorded
+// with the owner at that time. A bot that sat in a section before this slice
+// and belongs to someone else stays closed until its owner places it again.
 // "General" (no section) is personal: never shared, renamed or deleted.
 //
 // File: section-channels.json, { version: 1, sections: [record] }, atomic,
@@ -51,6 +57,8 @@ const recordSchema = z.object({
   members: z.array(memberSchema).max(MAX_SECTION_MEMBERS),
   defaultLevel: z.enum(["use", "run"]),
   roomId: z.string().max(80).optional(),
+  /** Bots placed with their owner's consent (see the header). */
+  placedBots: z.array(z.object({ botId: z.string().min(1).max(80), ownerPrincipalId: z.string().min(1).max(64) })).max(2000).optional(),
   createdAt: z.number(),
 });
 const fileSchema = z.object({ version: z.literal(1), sections: z.array(z.unknown()) });
@@ -128,6 +136,33 @@ export class SectionChannels {
     const found = this.records.find((record) => record.name === name.trim());
     if (!found || !found.members.length) return null;
     return { ownerPrincipalId: found.ownerPrincipalId, members: found.members.map((member) => ({ ...member })), defaultLevel: found.defaultLevel };
+  }
+
+  /** The access facts of a section for one bot: null when the section is
+   * private, or when the bot's owner never consented to it (see the header). */
+  accessForBot(name: string, bot: { id: string; ownerPrincipalId: string }): SectionAccess | null {
+    const found = this.records.find((record) => record.name === name.trim());
+    if (!found || !found.members.length) return null;
+    const owner = bot.ownerPrincipalId.trim().toLowerCase();
+    const consented = found.ownerPrincipalId.trim().toLowerCase() === owner ||
+      (found.placedBots ?? []).some((entry) => entry.botId === bot.id && entry.ownerPrincipalId.trim().toLowerCase() === owner);
+    return consented ? this.accessFor(name) : null;
+  }
+
+  /** A bot placed in a section by someone who manages it, for its owner. */
+  recordPlacement(name: string, botId: string, ownerPrincipalId: string): void {
+    const found = this.records.find((record) => record.name === name.trim());
+    if (!found || !ownerPrincipalId) return;
+    found.placedBots = [...(found.placedBots ?? []).filter((entry) => entry.botId !== botId), { botId, ownerPrincipalId }];
+    this.save();
+  }
+
+  /** Forget a bot's placement in a section (taken out, or placed elsewhere). */
+  forgetPlacement(name: string, botId: string): void {
+    const found = this.records.find((record) => record.name === name.trim());
+    if (!found?.placedBots?.some((entry) => entry.botId === botId)) return;
+    found.placedBots = found.placedBots.filter((entry) => entry.botId !== botId);
+    this.save();
   }
 
   /** The record behind a name, created (private, no member) when missing. */
@@ -225,6 +260,8 @@ export interface SectionRouteDeps {
   moveBots(name: string, add: string[], remove: string[]): string | undefined;
   botExists(botId: string): boolean;
   botSection(botId: string): string | undefined;
+  /** The bot's owner (principal id). */
+  botOwner(botId: string): string;
   /** bot.manage on the bot. */
   managesBot(auth: RequestAuth, botId: string): boolean;
   /** The section's conversation, created at its first member. */
@@ -382,8 +419,15 @@ export function createSectionChannelRoutes(deps: SectionRouteDeps): RouteHandler
         if (!deps.managesBot(auth, id) && !canModerateSection(viewer, access)) return json(res, 403, NOT_ALLOWED);
         if (deps.botSection(id) !== record.name) return json(res, 409, { error: "that bot is not in this section" });
       }
+      const previous = new Map(add.map((id) => [id, deps.botSection(id)] as const));
       const error = deps.moveBots(record.name, add, remove);
       if (error) return json(res, 409, { error });
+      for (const id of remove) deps.channels.forgetPlacement(record.name, id);
+      for (const id of add) {
+        const from = previous.get(id);
+        if (from && from !== record.name) deps.channels.forgetPlacement(from, id);
+        deps.channels.recordPlacement(record.name, id, deps.botOwner(id));
+      }
       deps.onChanged();
       return json(res, 200, { section: sectionForViewer(viewer, deps.channels.byId(record.id)!, deps.teamsOf) });
     }
