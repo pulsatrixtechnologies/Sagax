@@ -1666,6 +1666,16 @@ function isExternalBot(bot: Bot, viewerId: string): boolean {
   return owner !== viewerId.trim().toLowerCase();
 }
 
+/** The bots the sidebar lists. On a shared workspace a bot someone else
+ * owns reaches you only through a room, so it stays out of the list. In an
+ * organization the server lists only bots you may open (yours and the ones
+ * shared with you), so all of them show; a shared bot filed in a section of
+ * its owner that you do not see goes to General. */
+export function sidebarListedBots(bots: Bot[], viewerId: string, orgMode: boolean, sections: readonly string[] = []): Bot[] {
+  if (!orgMode) return bots.filter((bot) => !isExternalBot(bot, viewerId));
+  return bots.map((bot) => (isExternalBot(bot, viewerId) && bot.section && !sections.includes(bot.section) ? { ...bot, section: undefined } : bot));
+}
+
 export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   open: boolean;
   onClose: () => void;
@@ -1890,7 +1900,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const q: string = "";
 
   const viewerId = orgViewerId(state);
-  const sidebarBots = state.bots.filter((bot) => !isExternalBot(bot, viewerId));
+  const sidebarBots = sidebarListedBots(state.bots, viewerId, orgMode, state.sections ?? []);
   const pinnedBots = sidebarBots.filter((bot) => !bot.hidden && bot.pinned);
   const matchingBots = sidebarBots
     .filter((b) => !b.hidden)
