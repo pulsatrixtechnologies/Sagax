@@ -1,4 +1,11 @@
 @import "tailwindcss";
+/* Geist (OFL-1.1, @fontsource-variable/geist 5.3.0), the Perspicax v3
+   interface face. Vite bundles the woff2 files with the app, so nothing is
+   fetched from a third party. Only the two Pulsatrix skins name it (see their
+   --font-sans below); a browser downloads a face only when text uses it, so the
+   other skins never load these files. Licence: third_party/geist/OFL.txt. */
+@import "@fontsource-variable/geist/wght.css";
+@import "@fontsource-variable/geist/wght-italic.css";
 
 /* Inline mentions keep the surrounding font metrics, including in the
    textarea mirror. No padding/border/font-weight changes that shift the caret. */
@@ -17,14 +24,30 @@
 .mention-editor-mirror {
   /* Match the native textarea's direction independently for each paragraph. */
   unicode-bidi: plaintext;
-  /* Must match the composer textarea exactly (px-1 py-1.5 text-[14px]
-     leading-5), or the visible text drifts from the caret. */
+  /* Must match the composer textarea exactly (px-1 py-1.5, and the size of
+     .chat-input-text below), or the visible text drifts from the caret. */
   padding: 6px 4px;
-  font-size: 14px;
-  line-height: 20px;
   white-space: pre-wrap;
   overflow-wrap: break-word;
   color: var(--color-ink);
+}
+/* The text a person types into a chat: the composer, its mention mirror and
+   the inline editor of a sent bubble. 13 px on a 20 px line, the Perspicax v3
+   body step. On a phone the field goes to 16 px, the size under which iOS
+   Safari zooms the page when a field takes focus (Perspicax fields are
+   `text-base md:text-sm` for the same reason). The mirror is in the same rule
+   so it can never drift from the textarea it paints over. */
+.chat-input-text,
+.mention-editor-mirror {
+  font-size: 13px;
+  line-height: 20px;
+}
+@media (pointer: coarse), (max-width: 767px) {
+  .chat-input-text,
+  .mention-editor-mirror {
+    font-size: 16px;
+    line-height: 24px;
+  }
 }
 .mention-editor textarea {
   position: relative;
@@ -240,7 +263,8 @@
     radial-gradient(ellipse 110% 62% at 50% 0%, color-mix(in oklch, var(--color-accent) 16%, transparent), transparent 70%),
     radial-gradient(ellipse 72% 44% at 80% 0%, color-mix(in oklch, var(--color-accent) 9%, transparent), transparent 68%);
 
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+  /* Geist, as in the Perspicax v3 console (imported at the top of this file). */
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
@@ -324,7 +348,8 @@
     radial-gradient(ellipse 110% 62% at 50% 0%, color-mix(in oklch, var(--color-accent) 8%, transparent), transparent 70%),
     radial-gradient(ellipse 72% 44% at 80% 0%, color-mix(in oklch, var(--color-accent) 5%, transparent), transparent 68%);
 
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+  /* Geist, as in the Perspicax v3 console (imported at the top of this file). */
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
