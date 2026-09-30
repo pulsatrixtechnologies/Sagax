@@ -12,9 +12,9 @@
 //
 //   - a person speaking uses their own access, never the owner's (T2); a
 //     peer hop speaks for its root human; `operator` is the owner;
-//   - a routine gets nothing until routine delegation (slice 6), and neither
-//     does anything it starts: a bot it asks, a thread it opens, a room goal
-//     it runs (routine lineage);
+//   - a routine, and anything it starts (a bot it asks, a thread it opens, a
+//     room goal it runs: routine lineage), uses the routine delegation of the
+//     person it runs as (slice 6), never a sign-in; without one, nothing;
 //   - a peer hop whose source speaker is not known is an unknown speaker,
 //     never the asking bot's owner;
 //   - a profile the speaker does not hold is not mounted: the turn gets a
@@ -27,7 +27,7 @@
 import type { SubjectTokenOutcome } from "./idp-session.ts";
 import type { DirectoryProfile, ExchangeResult } from "./perspicax-link.ts";
 
-export type PerspicaxUnavailableReason = "not_held" | "no_session" | "unreachable" | "routine" | "unknown_speaker" | "unknown_profile";
+export type PerspicaxUnavailableReason = "not_held" | "no_session" | "unreachable" | "no_delegation" | "unknown_speaker" | "unknown_profile";
 
 export interface PerspicaxMountedProfile {
   profileId: string;
@@ -58,6 +58,11 @@ export interface PerspicaxMcpOptions {
   subjectOf(principalId: string): { iss: string; sub: string; disabled: boolean } | null;
   /** IdpSessionManager.subjectToken. */
   subjectToken(subject: { iss: string; sub: string }): Promise<SubjectTokenOutcome>;
+  /** Slice 6: RoutineConsents.subjectToken, the subject of routine lineage. */
+  routineSubjectToken?(principalId: string): Promise<SubjectTokenOutcome>;
+  /** Slice 6: an exchange refused a delegation subject: forget its cache
+   * (RoutineConsents.dropCache), so the next run learns the end at once. */
+  delegationRefused?(principalId: string): void;
   /** The bot's current profile ids (undefined: the bot is gone). */
   botProfiles(botId: string): readonly string[] | undefined;
   /** Pulsa Bot's version, sent in `clientInfo`. */
@@ -80,6 +85,8 @@ interface Entry {
   profileId: string;
   principalId: string;
   subject: { iss: string; sub: string };
+  /** Slice 6: whose grant the subject came from, and so how to renew it. */
+  source: "session" | "delegation";
   token: string;
   expiresAt: number;
   mcpSessionId?: string;
@@ -185,10 +192,7 @@ export class PerspicaxMcp {
     const known = profiles.filter((id) => catalog.has(id));
     refuse(profiles.filter((id) => !catalog.has(id)), "unknown_profile");
     if (!known.length) return plan;
-    if (input.speakerOrigin === "owner-routine" || input.routine === true) {
-      refuse(known, "routine");
-      return plan;
-    }
+    const source: Entry["source"] = input.speakerOrigin === "owner-routine" || input.routine === true ? "delegation" : "session";
     const principalId = input.speakerPrincipalId.trim();
     const subject = principalId ? this.options.subjectOf(principalId) : null;
     if (!subject || subject.iss !== this.options.issuer) {
@@ -200,15 +204,16 @@ export class PerspicaxMcp {
       return plan;
     }
     const who = { iss: subject.iss, sub: subject.sub };
-    const signIn = await this.options.subjectToken(who);
+    const signIn = await this.subjectFor(source, principalId, who);
     if (!signIn.ok) {
-      refuse(known, signIn.error === "unreachable" ? "unreachable" : "no_session");
+      refuse(known, signIn.error === "unreachable" ? "unreachable" : source === "delegation" ? "no_delegation" : "no_session");
       return plan;
     }
     const results = await Promise.all(known.map(async (profileId) => ({ profileId, result: await link.exchangeToken(signIn.token, profileId) })));
+    if (source === "delegation" && results.some(({ result }) => !result.ok && result.error === "subject")) this.options.delegationRefused?.(principalId);
     for (const { profileId, result } of results) {
       if (!result.ok) {
-        const reason: PerspicaxUnavailableReason = result.error === "not_held" ? "not_held" : result.error === "subject" ? "no_session" : "unreachable";
+        const reason: PerspicaxUnavailableReason = result.error === "not_held" ? "not_held" : result.error === "subject" ? (source === "delegation" ? "no_delegation" : "no_session") : "unreachable";
         this.log(`perspicax mcp: profile ${profileId} not mounted for this turn (${reason})`);
         refuse([profileId], reason);
         continue;
@@ -223,6 +228,7 @@ export class PerspicaxMcp {
         profileId,
         principalId,
         subject: who,
+        source,
         token: result.token,
         expiresAt: Math.min(result.expiresAt, signIn.expiresAt),
       });
@@ -339,6 +345,22 @@ export class PerspicaxMcp {
     }
   }
 
+  /** Slice 6: the person's routine delegation ended: every token exchanged
+   * from it is revoked now, and those turns' calls end. */
+  forgetPrincipal(principalId: string): void {
+    for (const entry of this.entries.values()) {
+      if (entry.source === "delegation" && entry.principalId === principalId) this.end(entry);
+    }
+  }
+
+  /** The subject token of a turn: the sign-in's for a person, the routine
+   * delegation's for routine lineage. */
+  private subjectFor(source: Entry["source"], principalId: string, subject: { iss: string; sub: string }): Promise<SubjectTokenOutcome> {
+    if (source === "session") return this.options.subjectToken(subject);
+    if (!this.options.routineSubjectToken) return Promise.resolve({ ok: false, error: "no_session" });
+    return this.options.routineSubjectToken(principalId);
+  }
+
   /** How many turns hold tokens (tests, health). */
   size(): number {
     return this.entries.size;
@@ -373,8 +395,9 @@ export class PerspicaxMcp {
       this.end(entry);
       return false;
     }
-    const signIn = await this.options.subjectToken(entry.subject);
+    const signIn = await this.subjectFor(entry.source, entry.principalId, entry.subject);
     const result = signIn.ok ? await link.exchangeToken(signIn.token, entry.profileId) : null;
+    if (entry.source === "delegation" && result && !result.ok && result.error === "subject") this.options.delegationRefused?.(entry.principalId);
     if (entry.ended) {
       if (result?.ok) void this.revoke(result.token);
       return false;

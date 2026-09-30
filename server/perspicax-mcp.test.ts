@@ -29,6 +29,10 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
   const mcpCalls: Array<{ method: string; headers: Record<string, string>; body: any }> = [];
   const subjectCalls: string[] = [];
   let signInFails: SubjectTokenOutcome | null = null;
+  /** Slice 6: who allowed routines to act in their name. */
+  const delegations = new Set<string>();
+  const delegationCalls: string[] = [];
+  const refusedDelegations: string[] = [];
   let n = 0;
   const link: PerspicaxMcpLink = {
     exchangeToken: async (subjectToken, profileId): Promise<ExchangeResult> => {
@@ -65,6 +69,13 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
       if (signInFails) return signInFails;
       return { ok: true, token: `pxlo1.${subject.sub}.signin`, expiresAt: clock + 3_600_000 };
     },
+    routineSubjectToken: async (principalId) => {
+      delegationCalls.push(principalId);
+      if (!delegations.has(principalId)) return { ok: false, error: "no_session" };
+      const sub = subjects[principalId]!.sub;
+      return { ok: true, token: `pxlo1.${sub}.delegation`, expiresAt: clock + 3_600_000 };
+    },
+    delegationRefused: (principalId) => refusedDelegations.push(principalId),
     botProfiles: (id) => botProfiles[id],
     version: "0.1.89",
     fetch: fetcher,
@@ -72,7 +83,7 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
     log: (line) => logs.push(line),
   });
   return {
-    mcp, subjects, botProfiles, exchanges, revoked, logs, mcpCalls, subjectCalls,
+    mcp, subjects, botProfiles, exchanges, revoked, logs, mcpCalls, subjectCalls, delegations, delegationCalls, refusedDelegations,
     advance: (ms: number) => { clock += ms; },
     failSignIn: (outcome: SubjectTokenOutcome | null) => { signInFails = outcome; },
   };
@@ -93,11 +104,12 @@ describe("PerspicaxMcp", () => {
     expect(h.mcpCalls[0]!.headers).toMatchObject({ accept: "application/json, text/event-stream", authorization: "Bearer pxlo1.B.mcp-P1-1" });
   });
 
-  it("a routine, an unknown speaker, an unknown profile and solo mode mount nothing", async () => {
+  it("a routine without a delegation, an unknown speaker, an unknown profile and solo mode mount nothing", async () => {
     const h = harness();
     expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: ALICE, speakerOrigin: "owner-routine" })).toEqual({
-      mounted: [], unavailable: [{ profileId: "P1", name: "Dispatch", reason: "routine" }],
+      mounted: [], unavailable: [{ profileId: "P1", name: "Dispatch", reason: "no_delegation" }],
     });
+    expect(h.subjectCalls).toEqual([]);
     expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: "", speakerOrigin: "person" })).toMatchObject({ mounted: [], unavailable: [{ reason: "unknown_speaker" }] });
     expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: "pr_nobody", speakerOrigin: "peer" })).toMatchObject({ mounted: [], unavailable: [{ reason: "unknown_speaker" }] });
     expect(await h.mcp.prepareTurn({ ...turn, bot: { id: "x", perspicax: { profiles: ["GONE"] } }, speakerPrincipalId: BOB, speakerOrigin: "person" })).toMatchObject({ mounted: [], unavailable: [{ profileId: "GONE", name: "GONE", reason: "unknown_profile" }] });
@@ -107,14 +119,52 @@ describe("PerspicaxMcp", () => {
     expect(await solo.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" })).toEqual({ mounted: [], unavailable: [] });
   });
 
-  it("a turn in a routine's lineage mounts nothing, even for a peer hop that names a live person", async () => {
+  it("a turn in a routine's lineage never uses a sign-in, even for a peer hop that names a live person", async () => {
     const h = harness();
     expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: ALICE, speakerOrigin: "peer", routine: true })).toEqual({
-      mounted: [], unavailable: [{ profileId: "P1", name: "Dispatch", reason: "routine" }],
+      mounted: [], unavailable: [{ profileId: "P1", name: "Dispatch", reason: "no_delegation" }],
     });
-    expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person", routine: true })).toMatchObject({ mounted: [], unavailable: [{ reason: "routine" }] });
+    expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person", routine: true })).toMatchObject({ mounted: [], unavailable: [{ reason: "no_delegation" }] });
     expect(h.subjectCalls).toEqual([]);
     expect(h.exchanges).toEqual([]);
+  });
+
+  it("a routine exchanges its runAs person's delegation (slice 6)", async () => {
+    const h = harness();
+    h.delegations.add(BOB);
+    const plan = await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "owner-routine" });
+    expect(plan).toEqual({ mounted: [{ profileId: "P1", slug: "dispatch", name: "Dispatch" }], unavailable: [] });
+    expect(h.delegationCalls).toEqual([BOB]);
+    expect(h.subjectCalls).toEqual([]);
+    expect(h.exchanges).toEqual([{ subject: "pxlo1.B.delegation", profile: "P1" }]);
+    // a peer hop in the routine's lineage uses the root person's delegation
+    await h.mcp.prepareTurn({ threadId: "t2", generation: "g", bot, speakerPrincipalId: BOB, speakerOrigin: "peer", routine: true });
+    expect(h.exchanges.at(-1)).toEqual({ subject: "pxlo1.B.delegation", profile: "P1" });
+    expect(h.subjectCalls).toEqual([]);
+    // a token near its end renews through the delegation, not a sign-in
+    h.advance(900_000 - 30_000);
+    const answer = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
+    expect(answer).toMatchObject({ status: 200, body: { result: { seenAs: "B" } } });
+    expect(h.delegationCalls).toEqual([BOB, BOB, BOB]);
+    expect(h.subjectCalls).toEqual([]);
+    // the delegation ends: its tokens are revoked and calls end
+    const before = h.revoked.length;
+    h.mcp.forgetPrincipal(BOB);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(h.revoked.length).toBe(before + 2);
+    expect(await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 2, method: "tools/list" } })).toMatchObject({ body: { error: { message: PERSPICAX_ACCESS_ENDED } } });
+  });
+
+  it("a refused delegation subject drops the delegation's cache and reads no_delegation", async () => {
+    const h = harness();
+    h.delegations.add(BOB);
+    // the exchange refuses the subject (Perspicax revoked the family)
+    const link = (h.mcp as unknown as { options: { link(): PerspicaxMcpLink } }).options.link();
+    const exchange = link.exchangeToken;
+    link.exchangeToken = async () => ({ ok: false, error: "subject" });
+    expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "owner-routine" })).toMatchObject({ mounted: [], unavailable: [{ reason: "no_delegation" }] });
+    expect(h.refusedDelegations).toEqual([BOB]);
+    link.exchangeToken = exchange;
   });
 
   it("a profile the speaker does not hold is unavailable; no sign-in is no_session", async () => {
