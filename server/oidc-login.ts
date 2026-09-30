@@ -325,11 +325,12 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
       redirect(res, routineDelegationReturn({ error: code }), [clearBinding]);
     };
     if (!expect) return refuse("routines_session", "the flow did not remember who started it");
-    if (!(outcome.grantedScope ?? "").split(" ").includes(ROUTINE_DELEGATION_SCOPE)) {
-      return refuse("routines_scope", "Perspicax did not grant the routine delegation scope");
-    }
+    // The subject first: Perspicax drops the marker for another account.
     if (identity.iss !== expect.subject.iss || identity.sub !== expect.subject.sub) {
       return refuse("routines_subject", "another account signed in at Perspicax");
+    }
+    if (!(outcome.grantedScope ?? "").split(" ").includes(ROUTINE_DELEGATION_SCOPE)) {
+      return refuse("routines_scope", "Perspicax did not grant the routine delegation scope");
     }
     if (!deps.grants.sessionPrincipal || deps.grants.sessionPrincipal(expect.sessionId) !== expect.principalId) {
       return refuse("routines_session", "the session that started the delegation is gone");

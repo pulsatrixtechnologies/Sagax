@@ -388,7 +388,14 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         back.searchParams.set("error", provider.tamper.authorizeError);
       } else {
         const code = randomBytes(24).toString("base64url");
-        codes.set(code, { clientId: q.client_id, redirectUri: q.redirect_uri, challenge: q.code_challenge, nonce: q.nonce ?? "", user: { ...provider.user }, ...(q.resource ? { resource: q.resource } : {}), scope: q.scope ?? "" });
+        // Slice 6 (as Perspicax, local-oauth scope_for_signed_in): a
+        // delegation request names its person in login_hint; another account
+        // signing in gets no marker, so its own delegation is never replaced.
+        const hint = (q.login_hint ?? "").trim();
+        const scope = hint && hint !== provider.user.sub
+          ? (q.scope ?? "").split(" ").filter((name) => name && name !== MARKER).join(" ")
+          : q.scope ?? "";
+        codes.set(code, { clientId: q.client_id, redirectUri: q.redirect_uri, challenge: q.code_challenge, nonce: q.nonce ?? "", user: { ...provider.user }, ...(q.resource ? { resource: q.resource } : {}), scope });
         back.searchParams.set("code", code);
       }
       res.writeHead(302, { location: back.toString() });

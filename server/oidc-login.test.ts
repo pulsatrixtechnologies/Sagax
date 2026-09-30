@@ -266,6 +266,33 @@ describe("the sign-in routes (in process)", () => {
     expect(consents.principalsWithConsent()).toEqual([]);
   });
 
+  it("names its person in login_hint, so another account signing in keeps its own delegation (slice 6, S6-12)", async () => {
+    const bob = { ...USER, sub: "01J9BOB0000000000000000000", email: "bob@example.test" };
+    provider.user = { ...bob };
+    const own = await delegate();
+    expect(own.location).toBe("/#routine-delegation=ok");
+    expect(provider.lastAuthorize?.login_hint).toBe(bob.sub);
+    const bobsDelegation = provider.delegationOf(bob.sub);
+    expect(bobsDelegation).not.toBeNull();
+    try {
+      // Alice starts, Bob signs in at Perspicax
+      provider.user = { ...USER };
+      const revokedBefore = provider.revoked.length;
+      const wrong = await delegate({ as: bob });
+      expect(provider.lastAuthorize?.login_hint).toBe(USER.sub);
+      // the subject is checked before the scope (the marker was dropped)
+      expect(wrong.location).toBe("/#routine-delegation-error=routines_subject");
+      await new Promise((r) => setTimeout(r, 100));
+      expect(provider.revoked.length).toBeGreaterThan(revokedBefore);
+      expect(provider.delegationOf(bob.sub)).toEqual(bobsDelegation);
+      expect(consents.status(own.principalId).state).toBe("active");
+      expect(consents.status(wrong.principalId).state).toBe("none");
+    } finally {
+      provider.user = { ...USER };
+      consents.revoke(own.principalId);
+    }
+  });
+
   it("binds a web sign-in's grant to its session at once", async () => {
     const { location, callback } = await walk();
     expect(location).toBe("/");

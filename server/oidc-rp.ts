@@ -596,6 +596,10 @@ export class OidcRelyingParty {
     url.searchParams.set("code_challenge", challenge);
     url.searchParams.set("code_challenge_method", "S256");
     if (this.resource) url.searchParams.set("resource", this.resource);
+    // Slice 6: the delegation names who started it, so Perspicax never mints
+    // one for another account that signs in there (it would replace that
+    // account's own delegation).
+    if (expect) url.searchParams.set("login_hint", expect.subject.sub);
     return { authorizationUrl: url.toString(), binding, state };
   }
 
