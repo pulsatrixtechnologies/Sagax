@@ -3092,6 +3092,57 @@ describe("slice 6: routines in their person's name", () => {
     expect(h.started).toHaveLength(1);
   });
 
+  it("keeps a rate-limited run queued and retries it three times with back-off, then skips it; never suspends (fix 2)", async () => {
+    const hourly = { ...input, schedule: { type: "cron" as const, expression: "0 * * * *", timeZone: "UTC" } };
+    const h = withAdmission(() => ({ ok: false, error: "Perspicax is rate limiting this server; this run is retried", retryAfterMs: 30_000 }));
+    const routine = h.manager.create(hourly, undefined, { actorPrincipalId: "pr_alice" });
+    const due = routine.nextRunAt!;
+    h.setNow(due);
+    await h.manager.tick();
+    expect(h.manager.listRuns()[0]).toMatchObject({ status: "queued", admitAfter: due + 60_000, admitAttempts: 1 });
+    // not before its time
+    h.setNow(due + 59_000);
+    await h.manager.tick();
+    expect(h.admitted).toHaveLength(1);
+    h.setNow(due + 60_000);
+    await h.manager.tick();
+    expect(h.manager.listRuns()[0]).toMatchObject({ status: "queued", admitAfter: due + 60_000 + 120_000, admitAttempts: 2 });
+    h.setNow(due + 180_000);
+    await h.manager.tick();
+    expect(h.manager.listRuns()[0]).toMatchObject({ status: "queued", admitAfter: due + 180_000 + 240_000, admitAttempts: 3 });
+    h.setNow(due + 420_000);
+    await h.manager.tick();
+    expect(h.admitted).toHaveLength(4);
+    expect(h.manager.listRuns()[0]).toMatchObject({ status: "failed", error: "Perspicax is rate limiting this server; this run is skipped" });
+    expect(h.suspended).toEqual([]);
+    expect(h.manager.listRoutines()[0].suspended).toBeUndefined();
+    // the fields survive a reload
+    expect(new RoutineManager({ ...h.options, file: (h.manager as unknown as { options: { file: string } }).options.file }).listRuns()[0]).toMatchObject({ admitAttempts: 3 });
+  });
+
+  it("honors a Retry-After longer than the back-off, runs when a retry is admitted, and skips when the next occurrence comes first (fix 2)", async () => {
+    const hourly = { ...input, schedule: { type: "cron" as const, expression: "0 * * * *", timeZone: "UTC" } };
+    let answer: { ok: true } | { ok: false; error: string; retryAfterMs: number } = { ok: false, error: "Perspicax is rate limiting this server; this run is retried", retryAfterMs: 300_000 };
+    const h = withAdmission(() => answer);
+    const routine = h.manager.create(hourly, undefined, { actorPrincipalId: "pr_alice" });
+    const due = routine.nextRunAt!;
+    h.setNow(due);
+    await h.manager.tick();
+    expect(h.manager.listRuns()[0]).toMatchObject({ status: "queued", admitAfter: due + 300_000 });
+    answer = { ok: true };
+    h.setNow(due + 300_000);
+    await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+
+    // every minute: a 60 s wait reaches the next occurrence, so the run is skipped at once
+    const m = withAdmission(() => ({ ok: false, error: "Perspicax is rate limiting this server; this run is retried", retryAfterMs: 60_000 }));
+    const often = m.manager.create(input, undefined, { actorPrincipalId: "pr_alice" });
+    m.setNow(often.nextRunAt!);
+    await m.manager.tick();
+    expect(m.manager.listRuns()[0]).toMatchObject({ status: "failed", error: "Perspicax is rate limiting this server; this run is skipped" });
+    expect(m.manager.listRoutines()[0].suspended).toBeUndefined();
+  });
+
   it("resumes on consent from now, and suspendFor cancels the person's active runs", async () => {
     const h = withAdmission(() => ({ ok: true }));
     const ownerOf = () => "pr_owner";

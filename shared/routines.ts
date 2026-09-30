@@ -150,6 +150,10 @@ export interface RoutineRun {
   denials?: string[];
   createdAt: number;
   seenAt?: number;
+  /** Slice 6: a queued run Perspicax rate limited waits until then (ms). */
+  admitAfter?: number;
+  /** Slice 6: how many times admission was retried after a rate limit. */
+  admitAttempts?: number;
 }
 
 export interface RoutineInput {

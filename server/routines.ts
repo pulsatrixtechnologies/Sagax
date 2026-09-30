@@ -142,7 +142,19 @@ function loadSuspension(value: unknown): RoutineSuspension | undefined {
 }
 
 /** What admission answers for a run (slice 6). */
-export type RoutineAdmission = { ok: true } | { ok: false; error: string; suspend?: RoutineSuspendReason };
+export type RoutineAdmission = { ok: true } | { ok: false; error: string; suspend?: RoutineSuspendReason; retryAfterMs?: number };
+
+/** Slice 6, fix 2: a rate-limited admission is retried this many times. */
+export const ROUTINE_ADMIT_MAX_ATTEMPTS = 3;
+export const ROUTINE_ADMIT_BASE_MS = 60_000;
+export const ROUTINE_ADMIT_MAX_MS = 600_000;
+export const ROUTINE_RATE_LIMITED_SKIPPED = "Perspicax is rate limiting this server; this run is skipped";
+
+/** The wait before the next admission of a rate-limited run: the larger of
+ * Retry-After and 60 s doubling per attempt, at most 10 minutes. */
+export function routineAdmitDelayMs(retryAfterMs: number, attempts: number): number {
+  return Math.min(ROUTINE_ADMIT_MAX_MS, Math.max(retryAfterMs, ROUTINE_ADMIT_BASE_MS * 2 ** attempts));
+}
 
 /** Which organization install a routine came from, its key in the package,
  * and each part's release and written hashes (server/package-parts.ts). */
@@ -192,6 +204,10 @@ export interface RoutineRun {
   scheduledFor: number;
   status: RoutineRunStatus;
   manual: boolean;
+  /** Slice 6, fix 2: a run Perspicax rate limited stays queued until this
+   * time (ms), retried at most ROUTINE_ADMIT_MAX_ATTEMPTS times. */
+  admitAfter?: number;
+  admitAttempts?: number;
   /** First tick a queued run was skipped because its target bot or room was
    * busy. Deferral behind a busy target is unbounded, so this timestamp is
    * what surfaces the wait instead of leaving the run looking freshly queued. */
@@ -1599,6 +1615,8 @@ export class RoutineManager {
       for (const id of this.runs.map((run) => run.id)) {
         const run = this.runs.find((candidate) => candidate.id === id);
         if (!run || run.status !== "queued") continue;
+        // A run Perspicax rate limited waits its retry time.
+        if (run.admitAfter !== undefined && run.admitAfter > now) continue;
         // A queued interval represents the latest useful check, not a backlog
         // item. If the bot stayed busy across later occurrences, align this
         // scheduled receipt to the newest due point immediately before it can
@@ -1663,6 +1681,23 @@ export class RoutineManager {
           // The run may have been cancelled while admission was out.
           if (run.status !== "queued") continue;
           if (!admission.ok) {
+            if (admission.retryAfterMs !== undefined && !admission.suspend) {
+              // A rate limit is retried a few times before the next occurrence;
+              // the routine is never paused for it.
+              const attempts = run.admitAttempts ?? 0;
+              const at = this.now();
+              const delay = routineAdmitDelayMs(admission.retryAfterMs, attempts);
+              const nextRunAt = routine?.enabled && !routine.suspended ? routine.nextRunAt : null;
+              if (attempts < ROUTINE_ADMIT_MAX_ATTEMPTS && (nextRunAt == null || at + delay < nextRunAt)) {
+                run.admitAfter = at + delay;
+                run.admitAttempts = attempts + 1;
+                this.save();
+                this.emitRun(run);
+                continue;
+              }
+              this.failRun(run, ROUTINE_RATE_LIMITED_SKIPPED);
+              continue;
+            }
             this.failRun(run, admission.error);
             const current = this.runs.find((candidate) => candidate.id === run.id) ?? run;
             if (admission.suspend) this.suspendRoutine(run.routineId, admission.suspend, current);

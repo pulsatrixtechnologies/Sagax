@@ -29,6 +29,7 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
   const mcpCalls: Array<{ method: string; headers: Record<string, string>; body: any }> = [];
   const subjectCalls: string[] = [];
   let signInFails: SubjectTokenOutcome | null = null;
+  let exchangeFails: ExchangeResult | null = null;
   /** Slice 6: who allowed routines to act in their name. */
   const delegations = new Set<string>();
   const delegationCalls: string[] = [];
@@ -37,6 +38,7 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
   const link: PerspicaxMcpLink = {
     exchangeToken: async (subjectToken, profileId): Promise<ExchangeResult> => {
       exchanges.push({ subject: subjectToken, profile: profileId });
+      if (exchangeFails) return exchangeFails;
       const sub = subjectToken.split(".")[1]!;
       if (subjects[`pr_${{ A: "alice", B: "bob", C: "carol" }[sub]}`]?.disabled) return { ok: false, error: "subject" };
       if (!(held[sub] ?? []).includes(profileId)) return { ok: false, error: "not_held" };
@@ -86,6 +88,7 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
     mcp, subjects, botProfiles, exchanges, revoked, logs, mcpCalls, subjectCalls, delegations, delegationCalls, refusedDelegations,
     advance: (ms: number) => { clock += ms; },
     failSignIn: (outcome: SubjectTokenOutcome | null) => { signInFails = outcome; },
+    failExchange: (outcome: ExchangeResult | null) => { exchangeFails = outcome; },
   };
 }
 
@@ -208,6 +211,17 @@ describe("PerspicaxMcp", () => {
     expect(await h.mcp.prepareTurn({ threadId: "t3", generation: "g", bot, speakerPrincipalId: BOB, speakerOrigin: "person" })).toMatchObject({ unavailable: [{ reason: "no_session" }] });
     h.failSignIn({ ok: false, error: "unreachable" });
     expect(await h.mcp.prepareTurn({ threadId: "t3", generation: "g", bot, speakerPrincipalId: BOB, speakerOrigin: "person" })).toMatchObject({ unavailable: [{ reason: "unreachable" }] });
+  });
+
+  it("reports a rate limit as rate_limited, never as could not be reached (fix 2)", async () => {
+    const h = harness();
+    h.failExchange({ ok: false, error: "rate_limited" });
+    const plan = await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    expect(plan).toEqual({ mounted: [], unavailable: [{ profileId: "P1", name: "Dispatch", reason: "rate_limited" }] });
+    h.failExchange(null);
+    h.failSignIn({ ok: false, error: "rate_limited", retryAfterMs: 60_000 });
+    expect(await h.mcp.prepareTurn({ threadId: "t9", generation: "g", bot, speakerPrincipalId: BOB, speakerOrigin: "person" })).toMatchObject({ unavailable: [{ reason: "rate_limited" }] });
+    expect(h.logs.join("\n")).not.toMatch(/could not be reached/);
   });
 
   it("rewrites clientInfo on initialize, carries the session id, and a notification answers 202", async () => {

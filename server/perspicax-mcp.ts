@@ -27,7 +27,7 @@
 import type { SubjectTokenOutcome } from "./idp-session.ts";
 import type { DirectoryProfile, ExchangeResult } from "./perspicax-link.ts";
 
-export type PerspicaxUnavailableReason = "not_held" | "no_session" | "unreachable" | "no_delegation" | "unknown_speaker" | "unknown_profile";
+export type PerspicaxUnavailableReason = "not_held" | "no_session" | "unreachable" | "rate_limited" | "no_delegation" | "unknown_speaker" | "unknown_profile";
 
 export interface PerspicaxMountedProfile {
   profileId: string;
@@ -206,7 +206,7 @@ export class PerspicaxMcp {
     const who = { iss: subject.iss, sub: subject.sub };
     let signIn = await this.subjectFor(source, principalId, who);
     if (!signIn.ok) {
-      refuse(known, signIn.error === "unreachable" ? "unreachable" : source === "delegation" ? "no_delegation" : "no_session");
+      refuse(known, signIn.error === "unreachable" || signIn.error === "rate_limited" ? signIn.error : source === "delegation" ? "no_delegation" : "no_session");
       return plan;
     }
     const exchangeAll = (token: string) => Promise.all(known.map(async (profileId) => ({ profileId, result: await link.exchangeToken(token, profileId) })));
@@ -226,7 +226,9 @@ export class PerspicaxMcp {
     }
     for (const { profileId, result } of results) {
       if (!result.ok) {
-        const reason: PerspicaxUnavailableReason = result.error === "not_held" ? "not_held" : result.error === "subject" ? (source === "delegation" ? "no_delegation" : "no_session") : "unreachable";
+        const reason: PerspicaxUnavailableReason = result.error === "not_held" ? "not_held"
+          : result.error === "subject" ? (source === "delegation" ? "no_delegation" : "no_session")
+          : result.error === "rate_limited" ? "rate_limited" : "unreachable";
         this.log(`perspicax mcp: profile ${profileId} not mounted for this turn (${reason})`);
         refuse([profileId], reason);
         continue;

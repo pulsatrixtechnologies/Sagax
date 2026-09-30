@@ -587,6 +587,7 @@ import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, oidcBindingCookie, oidcSessionFields } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
+import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
 import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
@@ -2660,6 +2661,7 @@ const PERSPICAX_UNAVAILABLE_WHY: Record<PerspicaxTurnPlan["unavailable"][number]
   not_held: "the person speaking does not hold this profile in Perspicax",
   no_session: "the person speaking has no live Perspicax sign-in on this server",
   unreachable: "Perspicax could not be reached",
+  rate_limited: "Perspicax is rate limiting this server; try again in a minute",
   no_delegation: "the person it runs as has not allowed routines to act in their name",
   unknown_speaker: "the person speaking is not known to Perspicax",
   unknown_profile: "Perspicax no longer lists this profile",
@@ -7915,6 +7917,8 @@ async function routineAdmission(run: RoutineRun, _routine: Routine | undefined):
   if (!routineConsents) return { ok: false, error: "Perspicax is unreachable; this run is skipped" };
   const prepared = await routineConsents.prepare(principalId);
   if (prepared.ok) return { ok: true };
+  // Fix 2: a rate limit keeps the run queued (server/routines.ts retries it).
+  if (prepared.error === "rate_limited") return { ok: false, error: "Perspicax is rate limiting this server; this run is retried", retryAfterMs: prepared.retryAfterMs };
   if (prepared.error === "missing") return { ok: false, error: `This routine cannot act in ${name}'s name: routines are not allowed yet`, suspend: "delegation_missing" };
   if (prepared.error === "ended") return { ok: false, error: `This routine can no longer act in ${name}'s name`, suspend: "delegation_ended" };
   return { ok: false, error: "Perspicax is unreachable; this run is skipped" };
@@ -15978,6 +15982,20 @@ const oidcRp = IDENTITY.kind === "perspicax"
 let idpVaultKey: ReturnType<typeof resolveIdpVaultKey> | null = null;
 // One vault holds the sign-in grants and the routine delegations (slice 6).
 const idpVault = oidcRp ? new IdpGrantVault(DATA_DIR, () => (idpVaultKey ??= resolveIdpVaultKey(DATA_DIR))) : null;
+// Slice 6, fix 2: every revocation at Perspicax is durable and paced by the
+// relying party's budget (OMB_PERSPICAX_TOKEN_BUDGET); pending ones resume here.
+const idpRevocations = oidcRp
+  ? new RevocationQueue({
+    dataDir: DATA_DIR,
+    keySource: () => (idpVaultKey ??= resolveIdpVaultKey(DATA_DIR)),
+    pacer: oidcRp.pacer,
+    send: (token, hint) => oidcRp.revokeAttempt(token, hint),
+  })
+  : null;
+if (oidcRp && idpRevocations) {
+  oidcRp.setRevocations(idpRevocations);
+  idpRevocations.start();
+}
 const idpSessions = oidcRp && idpVault
   ? new IdpSessionManager({
     vault: idpVault,
@@ -15986,6 +16004,7 @@ const idpSessions = oidcRp && idpVault
     principals,
     refreshAfterMs: refreshAfterMs(process.env.OMB_OIDC_REFRESH_AFTER_SECONDS),
     teamNames: (teams) => { orgTeams.mergeFromClaims(teams); },
+    ...(idpRevocations ? { revocations: idpRevocations } : {}),
   })
   : null;
 if (oidcRp && idpVault) {
@@ -15994,6 +16013,7 @@ if (oidcRp && idpVault) {
     rp: oidcRp,
     principals,
     renewMs: routineRenewMs(process.env.OMB_ROUTINE_RENEW_SECONDS),
+    ...(idpRevocations ? { revocations: idpRevocations } : {}),
     onEnded: routineConsentEnded,
     onActive: (principalId) => { routines?.resumeFor(principalId, (routine) => effectiveRunAs({ botId: routine.botId })); },
   });
@@ -16080,6 +16100,7 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
   ? createOidcLoginRoutes({
     config: IDENTITY,
     rp: oidcRp,
+    ...(idpRevocations ? { revocations: idpRevocations } : {}),
     sessionCookie: SESSION_COOKIE,
     // A successful sign-in also refreshes the directory (fire and forget):
     // a person added in Perspicax a minute ago becomes pickable at once.
