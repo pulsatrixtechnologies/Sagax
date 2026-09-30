@@ -46,6 +46,8 @@ describe("Routines in my name (slice 6)", () => {
     expect(routineDelegationReturnText({ ok: false, code: "routines_scope" })).toBe("Perspicax did not grant routine delegation. It needs an update.");
     expect(routineDelegationReturnText({ ok: false, code: "routines_session" })).toBe("Your session ended during the authorization. Sign in and try again.");
     expect(routineDelegationReturnText({ ok: false, code: "binding" })).toBe("The authorization did not complete (binding).");
+    expect(routineDelegationReturnText({ ok: false, code: "rate_limited" })).toBe("Perspicax is busy right now. Wait a minute and allow your routines again.");
+    expect(parseRoutineDelegationHash("#routine-delegation-error=rate_limited")).toEqual({ ok: false, code: "rate_limited" });
   });
 });
 

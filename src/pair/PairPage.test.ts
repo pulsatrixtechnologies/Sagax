@@ -5,13 +5,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import { parsePairingHash, takePairingFromLocation } from "@/lib/session";
-import { PairPage, finishReturnedSignIn } from "./PairPage";
+import { PairPage, finishReturnedSignIn, signInErrorText } from "./PairPage";
 
 const CREDENTIAL = `omb_pair_${"A1b2_C3d4-".repeat(4)}xyz`;
 
 afterEach(() => {
   vi.unstubAllGlobals();
   setLocale("en");
+});
+
+describe("sign-in errors (slice 6, fix 2)", () => {
+  it("says Perspicax is busy on a rate limit, in English and Quebec French", () => {
+    expect(signInErrorText("rate_limited")).toBe("Perspicax is busy right now. Wait a minute and try again.");
+    setLocale("fr");
+    expect(signInErrorText("rate_limited")).toBe("Perspicax est occupé en ce moment. Attendez une minute et réessayez.");
+  });
 });
 
 describe("the pairing hash", () => {

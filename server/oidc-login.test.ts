@@ -213,7 +213,7 @@ describe("the sign-in routes (in process)", () => {
 
   /** Slice 6: sign in on the web, then walk a routine delegation flow the
    * way POST /api/org/routine-delegation starts it. */
-  async function delegate(options: { as?: typeof USER; sessionGone?: boolean; binding?: string } = {}) {
+  async function delegate(options: { as?: typeof USER; sessionGone?: boolean; binding?: string; failToken?: number } = {}) {
     const { callback } = await walk();
     const cookie = callback!.headers.getSetCookie().find((c) => c.startsWith("omb_session_test="))!;
     const record = sessions.authenticate(decodeURIComponent(cookie.split(";")[0]!.split("=")[1]!))!;
@@ -224,6 +224,7 @@ describe("the sign-in routes (in process)", () => {
       manager.release(record.id, { revokeAtIdp: true });
     }
     const authorize = await fetch(started.authorizationUrl, { redirect: "manual" });
+    if (options.failToken) provider.failNextToken(options.failToken);
     const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: options.binding ?? `omb_session_test_oidc=${started.binding}` } });
     return { back, location: back.headers.get("location") ?? "", principalId: record.principalId! };
   }
@@ -302,6 +303,18 @@ describe("the sign-in routes (in process)", () => {
     expect(record.idp?.grantRef).toBeTruthy();
     expect(manager.mustRefuse(record)).toBeNull();
     expect(manager.sweep()).toBe(0);
+  });
+
+  it("passes a rate-limited code exchange back as rate_limited, for a sign-in and a delegation (fix 2)", async () => {
+    const start = await fetch(`${base}/auth/oidc/start`, { redirect: "manual" });
+    const bindingCookie = start.headers.getSetCookie().find((c) => c.includes("_oidc="))!.split(";")[0]!;
+    const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
+    provider.failNextToken(429);
+    const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: bindingCookie } });
+    expect(callback.headers.get("location")).toBe("/pair#signin_error=rate_limited");
+    const delegated = await delegate({ failToken: 429 });
+    expect(delegated.location).toBe("/#routine-delegation-error=rate_limited");
+    expect(consents.status(delegated.principalId).state).toBe("none");
   });
 
   describe("POST /api/auth/oidc/backchannel-logout", () => {

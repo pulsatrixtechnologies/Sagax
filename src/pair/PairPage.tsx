@@ -22,8 +22,9 @@ const button = "mt-5 w-full rounded-md bg-accent px-4 py-2 text-[14px] font-medi
 const fieldLabel = "mt-4 block text-[12px] font-medium text-ink-secondary";
 
 /** Why "Sign in with Pulsatrix" came back here, in the reader's words. */
-function signInErrorText(code: string): string {
+export function signInErrorText(code: string): string {
   if (code === "role") return t("pair.pulsatrix.errorRole");
+  if (code === "rate_limited") return t("pair.pulsatrix.errorRateLimited");
   if (code === "unavailable") return t("pair.pulsatrix.errorUnavailable");
   if (code === "client") return t("pair.pulsatrix.errorClient");
   return t("pair.pulsatrix.error");

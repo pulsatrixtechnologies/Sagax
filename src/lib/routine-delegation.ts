@@ -52,6 +52,7 @@ export function routineDelegationReturnText(result: RoutineDelegationReturn): st
   if (result.code === "routines_subject") return t("org.routineDelegation.error.routines_subject");
   if (result.code === "routines_scope") return t("org.routineDelegation.error.routines_scope");
   if (result.code === "routines_session") return t("org.routineDelegation.error.routines_session");
+  if (result.code === "rate_limited") return t("org.routineDelegation.error.rate_limited");
   return t("org.routineDelegation.error.generic", { code: result.code });
 }
 
