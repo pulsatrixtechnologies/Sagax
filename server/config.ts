@@ -409,7 +409,7 @@ const appConfigSchema = z.object({
    * (server/mail-config.ts, server/mailer.ts). OMB_MAIL_* environment
    * variables always win over whatever is saved here. */
   mail: z.object({
-    provider: z.enum(["smtp", "sendgrid"]).optional(),
+    provider: z.enum(["smtp", "sendgrid", "twilio"]).optional(),
     from: optionalText,
     smtp: z.object({
       host: optionalText,
@@ -419,6 +419,7 @@ const appConfigSchema = z.object({
       password: optionalText,
     }).optional(),
     sendgrid: z.object({ apiKey: optionalText }).optional(),
+    twilio: z.object({ apiKeySid: optionalText, apiKeySecret: optionalText }).optional(),
   }).optional(),
   defaultModelSelection: defaultModelSelectionSchema.optional(),
   automaticRecovery: automaticRecoverySchema.optional(),

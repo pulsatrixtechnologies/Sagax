@@ -7,7 +7,7 @@
 // configured.
 import { readFileSync } from "node:fs";
 
-export type MailProvider = "smtp" | "sendgrid";
+export type MailProvider = "smtp" | "sendgrid" | "twilio";
 
 export interface MailSettings {
   provider?: MailProvider;
@@ -21,6 +21,10 @@ export interface MailSettings {
   };
   sendgrid?: {
     apiKey?: string;
+  };
+  twilio?: {
+    apiKeySid?: string;
+    apiKeySecret?: string;
   };
 }
 
@@ -43,11 +47,15 @@ export interface PublicMailStatus {
   sendgrid: {
     apiKeyConfigured: boolean;
   };
+  twilio: {
+    apiKeySid?: string;
+    apiKeySecretConfigured: boolean;
+  };
   envManaged: string[];
   ready: boolean;
 }
 
-const MAIL_PROVIDERS = new Set<MailProvider>(["smtp", "sendgrid"]);
+const MAIL_PROVIDERS = new Set<MailProvider>(["smtp", "sendgrid", "twilio"]);
 const SMTP_SECURE_MODES = new Set(["tls", "starttls", "none"]);
 // Full match only: "587abc" and "587.9" are not "close enough" to a port,
 // they are malformed input to be ignored, not coerced by parseInt.
@@ -134,6 +142,18 @@ export function resolveMailSettings(input: {
     envManaged.push("sendgrid.apiKey");
   }
 
+  const twilioApiKeySid = env.OMB_TWILIO_API_KEY_SID;
+  if (twilioApiKeySid !== undefined && twilioApiKeySid !== "") {
+    settings.twilio = { ...settings.twilio, apiKeySid: twilioApiKeySid };
+    envManaged.push("twilio.apiKeySid");
+  }
+
+  const twilioApiKeySecret = readSecret(env, "OMB_TWILIO_API_KEY_SECRET", readFile);
+  if (twilioApiKeySecret !== undefined) {
+    settings.twilio = { ...settings.twilio, apiKeySecret: twilioApiKeySecret };
+    envManaged.push("twilio.apiKeySecret");
+  }
+
   return { settings, envManaged };
 }
 
@@ -141,6 +161,7 @@ export function mailReady(settings: MailSettings): boolean {
   if (!settings.provider || !settings.from) return false;
   if (settings.provider === "smtp") return !!settings.smtp?.host;
   if (settings.provider === "sendgrid") return !!settings.sendgrid?.apiKey;
+  if (settings.provider === "twilio") return !!settings.twilio?.apiKeySid && !!settings.twilio?.apiKeySecret;
   return false;
 }
 
@@ -158,6 +179,10 @@ export function publicMailStatus(resolved: ResolvedMailSettings): PublicMailStat
     },
     sendgrid: {
       apiKeyConfigured: !!settings.sendgrid?.apiKey,
+    },
+    twilio: {
+      apiKeySid: settings.twilio?.apiKeySid,
+      apiKeySecretConfigured: !!settings.twilio?.apiKeySecret,
     },
     envManaged,
     ready: mailReady(settings),

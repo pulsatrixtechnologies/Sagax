@@ -25,6 +25,29 @@ describe("mail settings", () => {
     expect(mailReady({ provider: "smtp", from: "a@b.c" })).toBe(false);
     expect(mailReady({ provider: "smtp", from: "a@b.c", smtp: { host: "h" } })).toBe(true);
     expect(mailReady({ provider: "sendgrid", from: "a@b.c", sendgrid: { apiKey: "k" } })).toBe(true);
+    expect(mailReady({ provider: "twilio", from: "a@b.c", twilio: { apiKeySid: "SKfake" } })).toBe(false);
+    expect(mailReady({ provider: "twilio", from: "a@b.c", twilio: { apiKeySecret: "fake-secret" } })).toBe(false);
+    expect(mailReady({ provider: "twilio", twilio: { apiKeySid: "SKfake", apiKeySecret: "fake-secret" } })).toBe(false);
+    expect(mailReady({ provider: "twilio", from: "a@b.c", twilio: { apiKeySid: "SKfake", apiKeySecret: "fake-secret" } })).toBe(true);
+  });
+
+  it("reads Twilio settings from the environment, the secret from a _FILE path, and the direct value wins", () => {
+    const files: Record<string, string> = { "/run/secrets/twilio": "fake-secret-from-file\n" };
+    const read = (p: string) => files[p]!;
+    const fromFile = resolveMailSettings({
+      file: { provider: "smtp", twilio: { apiKeySid: "SKfile", apiKeySecret: "fake-secret-saved" } },
+      env: { OMB_MAIL_PROVIDER: "twilio", OMB_TWILIO_API_KEY_SID: "SKenv", OMB_TWILIO_API_KEY_SECRET_FILE: "/run/secrets/twilio" },
+      readFile: read,
+    });
+    expect(fromFile.settings.provider).toBe("twilio");
+    expect(fromFile.settings.twilio).toEqual({ apiKeySid: "SKenv", apiKeySecret: "fake-secret-from-file" });
+    expect(fromFile.envManaged.sort()).toEqual(["provider", "twilio.apiKeySecret", "twilio.apiKeySid"]);
+    const direct = resolveMailSettings({
+      file: undefined,
+      env: { OMB_TWILIO_API_KEY_SECRET_FILE: "/run/secrets/twilio", OMB_TWILIO_API_KEY_SECRET: "fake-secret-direct" },
+      readFile: read,
+    });
+    expect(direct.settings.twilio?.apiKeySecret).toBe("fake-secret-direct");
   });
 
   it("ignores a malformed SMTP port instead of truncating it", () => {
@@ -45,5 +68,14 @@ describe("mail settings", () => {
     expect(text).not.toContain("SG.secret");
     expect(status.smtp.passwordConfigured).toBe(true);
     expect(status.sendgrid.apiKeyConfigured).toBe(true);
+  });
+
+  it("shows the Twilio key SID but never its secret", () => {
+    const status = publicMailStatus(resolveMailSettings({ file: undefined, env: { OMB_MAIL_PROVIDER: "twilio", OMB_MAIL_FROM: "a@b.c", OMB_TWILIO_API_KEY_SID: "SKfakesid", OMB_TWILIO_API_KEY_SECRET: "fake-twilio-secret" } }));
+    expect(JSON.stringify(status)).not.toContain("fake-twilio-secret");
+    expect(status.twilio).toEqual({ apiKeySid: "SKfakesid", apiKeySecretConfigured: true });
+    expect(status.ready).toBe(true);
+    const empty = publicMailStatus(resolveMailSettings({ file: undefined, env: {} }));
+    expect(empty.twilio).toEqual({ apiKeySid: undefined, apiKeySecretConfigured: false });
   });
 });
