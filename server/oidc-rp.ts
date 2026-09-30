@@ -16,6 +16,8 @@
 // section 2 ("Flux de connexion", "Vérification de l'id_token") and T10.
 import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify as verifySignature, type JsonWebKeyInput, type KeyObject } from "node:crypto";
 
+import type { RevocationSink } from "./idp-revocations.ts";
+import { TokenCallPacer, tokenBudget } from "./idp-token-pacer.ts";
 import { authorizationServerMetadataUrls, pkcePair, readBounded, safeEndpoint } from "./mcp-oauth.ts";
 
 export const OIDC_PENDING_FLOW_TTL_MS = 10 * 60_000;
@@ -109,6 +111,9 @@ export interface OidcRelyingPartyOptions {
   internalBase?: string;
   fetch?: typeof fetch;
   now?: () => number;
+  /** The budget of token and revocation calls (server/idp-token-pacer.ts);
+   * one is made from OMB_PERSPICAX_TOKEN_BUDGET when absent. */
+  pacer?: TokenCallPacer;
 }
 
 /** A configured server-to-server origin: http or https, any host, no path,
@@ -203,7 +208,46 @@ export type RefreshOutcome =
   | { ok: true; refreshToken: string; identity?: OidcIdentity; accessToken?: string; expiresIn?: number }
   /** `rejected`: the provider ended the grant (or answered something that
    * cannot be trusted); `transient`: try again later. */
-  | { ok: false; kind: "rejected" | "transient"; error: string };
+  | { ok: false; kind: "rejected" | "transient"; error: string; rateLimited?: true; retryAfterMs?: number };
+
+/** A Retry-After Perspicax did not send, or sent unreadable, counts as this. */
+export const RETRY_AFTER_DEFAULT_MS = 60_000;
+export const RETRY_AFTER_MIN_MS = 1_000;
+export const RETRY_AFTER_MAX_MS = 600_000;
+
+/** A Retry-After header (delta seconds or an HTTP-date) in milliseconds,
+ * clamped to 1 s to 10 min; 60 s when missing or unreadable. */
+export function parseRetryAfter(value: string | null | undefined, now: number = Date.now()): number {
+  const text = value?.trim() ?? "";
+  let ms: number | null = null;
+  if (/^\d{1,10}$/.test(text)) ms = Number(text) * 1000;
+  else if (text) {
+    const at = Date.parse(text);
+    if (Number.isFinite(at)) ms = at - now;
+  }
+  if (ms === null || !Number.isFinite(ms)) return RETRY_AFTER_DEFAULT_MS;
+  return Math.min(RETRY_AFTER_MAX_MS, Math.max(RETRY_AFTER_MIN_MS, ms));
+}
+
+/** Whether a provider answer is a rate limit: a 429, or a body saying so. */
+export function isRateLimitAnswer(got: { status: number; body: Record<string, unknown> | null }): boolean {
+  return got.status === 429 || got.body?.error === "rate_limited";
+}
+
+/** The sentence of a deferred refresh. */
+export function rateLimitedText(retryAfterMs: number): string {
+  return `Perspicax is rate limiting this server (retry in ${Math.max(1, Math.ceil(retryAfterMs / 1000))} s)`;
+}
+
+/** One revocation call's outcome: `done` (2xx), `drop` (a definitive 400,
+ * or nothing to call), `rate_limited` (429), `retry` (anything else). */
+export type RevokeAttempt =
+  | { kind: "done" }
+  | { kind: "drop"; why: string }
+  | { kind: "rate_limited"; retryAfterMs: number }
+  | { kind: "retry"; why: string };
+
+export const RATE_LIMITED_SIGN_IN = "Perspicax is rate limiting sign-ins from this server. Wait a minute and try again.";
 
 const sha256Hex = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -386,6 +430,9 @@ export class OidcRelyingParty {
   private readonly internalBase: string | null;
   private readonly fetcher: typeof fetch;
   private readonly now: () => number;
+  /** The one budget of this server's /oauth/token and /oauth/revoke calls. */
+  readonly pacer: TokenCallPacer;
+  private revocations: RevocationSink | null = null;
   private readonly pending = new Map<string, PendingFlow>();
   private discovery: { value: OidcDiscovery; at: number } | null = null;
   private discovering: Promise<OidcDiscovery> | null = null;
@@ -408,6 +455,13 @@ export class OidcRelyingParty {
     if (options.internalBase !== undefined && !this.internalBase) throw new OidcError("config", "The internal provider URL must be an http or https origin with no path.");
     this.fetcher = options.fetch ?? fetch;
     this.now = options.now ?? Date.now;
+    this.pacer = options.pacer ?? new TokenCallPacer({ budget: tokenBudget(process.env.OMB_PERSPICAX_TOKEN_BUDGET), now: this.now });
+  }
+
+  /** Revocations this party starts go through `sink` (the durable queue,
+   * server/idp-revocations.ts) once set. */
+  setRevocations(sink: RevocationSink | null): void {
+    this.revocations = sink;
   }
 
   /** Where server-to-server calls reach the provider: the internal base
@@ -427,7 +481,7 @@ export class OidcRelyingParty {
     for (const [state, flow] of this.pending) if (now - flow.createdAt >= OIDC_PENDING_FLOW_TTL_MS) this.pending.delete(state);
   }
 
-  private async getJson(url: string, init?: RequestInit): Promise<{ status: number; body: Record<string, unknown> | null }> {
+  private async getJson(url: string, init?: RequestInit): Promise<{ status: number; body: Record<string, unknown> | null; retryAfterMs: number }> {
     let response: Response;
     try {
       response = await this.fetcher(url, { ...init, redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), headers: { accept: "application/json", ...init?.headers } });
@@ -441,7 +495,7 @@ export class OidcRelyingParty {
     } catch {
       body = null;
     }
-    return { status: response.status, body };
+    return { status: response.status, body, retryAfterMs: parseRetryAfter(response.headers.get("retry-after"), this.now()) };
   }
 
   /** The issuer's metadata, cached for an hour. The document's `issuer` must
@@ -456,7 +510,7 @@ export class OidcRelyingParty {
         const urls = authorizationServerMetadataUrls(this.issuer).map((u) => this.internalUrl(u));
         const ordered = [...urls.filter((u) => u.includes("openid-configuration")), ...urls.filter((u) => !u.includes("openid-configuration"))];
         for (const url of ordered) {
-          let got: { status: number; body: Record<string, unknown> | null };
+          let got: { status: number; body: Record<string, unknown> | null; retryAfterMs: number };
           try {
             got = await this.getJson(url);
           } catch (error) {
@@ -663,11 +717,16 @@ export class OidcRelyingParty {
       code_verifier: flow.verifier,
     });
     if (this.resource) form.set("resource", this.resource);
+    await this.pacer.acquire("exchange");
     const got = await this.getJson(discovery.tokenEndpoint, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: form.toString(),
     });
+    if (isRateLimitAnswer(got)) {
+      this.pacer.noteRateLimited(got.retryAfterMs);
+      throw new OidcError("rate_limited", RATE_LIMITED_SIGN_IN);
+    }
     if (got.status !== 200 || !got.body) {
       const reason = typeof got.body?.error === "string" ? got.body.error.slice(0, 64) : `HTTP ${got.status}`;
       throw new OidcError("token", `The identity provider refused the code exchange (${reason}).`);
@@ -700,7 +759,7 @@ export class OidcRelyingParty {
       // produced rather than leave a live refresh family at the provider
       // (RFC 7009; revoking the refresh token also ends its access tokens).
       if (discovery.revocationEndpoint && (refresh || access)) {
-        this.revoke(discovery.revocationEndpoint, refresh ?? access!, refresh ? "refresh_token" : "access_token");
+        this.revoke(refresh ?? access!, refresh ? "refresh_token" : "access_token", "a sign-in that did not verify");
       }
       throw error;
     }
@@ -719,7 +778,9 @@ export class OidcRelyingParty {
     }
     const form = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: this.clientId });
     if (this.resource) form.set("resource", this.resource);
-    let got: { status: number; body: Record<string, unknown> | null };
+    const slot = await this.pacer.acquire("refresh");
+    if (!slot.ok) return { ok: false, kind: "transient", rateLimited: true, retryAfterMs: slot.retryAfterMs, error: rateLimitedText(slot.retryAfterMs) };
+    let got: { status: number; body: Record<string, unknown> | null; retryAfterMs: number };
     try {
       got = await this.getJson(discovery.tokenEndpoint, {
         method: "POST",
@@ -728,6 +789,10 @@ export class OidcRelyingParty {
       });
     } catch (error) {
       return { ok: false, kind: "transient", error: error instanceof Error ? error.message : String(error) };
+    }
+    if (isRateLimitAnswer(got)) {
+      this.pacer.noteRateLimited(got.retryAfterMs);
+      return { ok: false, kind: "transient", rateLimited: true, retryAfterMs: got.retryAfterMs, error: rateLimitedText(got.retryAfterMs) };
     }
     const oauthError = typeof got.body?.error === "string" ? got.body.error.slice(0, 64) : undefined;
     if (got.status !== 200) {
@@ -756,31 +821,64 @@ export class OidcRelyingParty {
       return { ok: true, refreshToken: next, identity, ...access };
     } catch (error) {
       // The rotation already happened: the new token must not live on.
-      if (discovery.revocationEndpoint) this.revoke(discovery.revocationEndpoint, next, "refresh_token");
+      if (discovery.revocationEndpoint) this.revoke(next, "refresh_token", "a refreshed id_token that did not verify");
       return { ok: false, kind: "rejected", error: error instanceof Error ? error.message : String(error) };
     }
   }
 
-  /** Revoke a token at the provider (RFC 7009). Resolves to whether the
-   * provider answered 2xx; never throws and never logs the token. */
-  async revokeToken(token: string, hint: "refresh_token" | "access_token" = "refresh_token"): Promise<boolean> {
+  /** One revocation call at the provider (RFC 7009), unpaced: the durable
+   * queue (server/idp-revocations.ts) paces it. Never throws and never puts
+   * the token in a log line or a result. */
+  async revokeAttempt(token: string, hint: "refresh_token" | "access_token" = "refresh_token"): Promise<RevokeAttempt> {
+    let revocationEndpoint: string | undefined;
     try {
-      const { revocationEndpoint } = await this.discover();
-      if (!revocationEndpoint) return false;
-      const response = await this.fetcher(revocationEndpoint, {
+      ({ revocationEndpoint } = await this.discover());
+    } catch (error) {
+      return { kind: "retry", why: error instanceof Error ? error.message : String(error) };
+    }
+    if (!revocationEndpoint) return { kind: "drop", why: "the provider publishes no revocation endpoint" };
+    let response: Response;
+    try {
+      response = await this.fetcher(revocationEndpoint, {
         method: "POST",
         redirect: "error",
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
         body: new URLSearchParams({ token, token_type_hint: hint, client_id: this.clientId }).toString(),
       });
-      void response.body?.cancel().catch(() => {});
-      if (!response.ok) console.warn(`oidc: token revocation answered ${response.status}`);
-      return response.ok;
     } catch (error) {
-      console.warn(`oidc: token revocation failed: ${error instanceof Error ? error.message : String(error)}`);
-      return false;
+      return { kind: "retry", why: `the provider could not be reached: ${error instanceof Error ? error.message : String(error)}` };
     }
+    if (response.ok) {
+      void response.body?.cancel().catch(() => {});
+      return { kind: "done" };
+    }
+    let error: string | undefined;
+    try {
+      const parsed: unknown = JSON.parse(await readBounded(response));
+      if (parsed && typeof parsed === "object" && typeof (parsed as { error?: unknown }).error === "string") error = (parsed as { error: string }).error.slice(0, 64);
+    } catch {
+      /* no JSON body */
+    }
+    if (response.status === 429 || error === "rate_limited") {
+      const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"), this.now());
+      this.pacer.noteRateLimited(retryAfterMs);
+      return { kind: "rate_limited", retryAfterMs };
+    }
+    if (response.status === 400 && (error === "invalid_request" || error === "unsupported_token_type")) {
+      return { kind: "drop", why: `the provider answered 400 (${error})` };
+    }
+    return { kind: "retry", why: `the provider answered ${response.status}${error ? ` (${error})` : ""}` };
+  }
+
+  /** Revoke a token at the provider (RFC 7009), once and now. Resolves to
+   * whether the provider answered 2xx; never throws and never logs the
+   * token. Production revocations go through the durable queue. */
+  async revokeToken(token: string, hint: "refresh_token" | "access_token" = "refresh_token"): Promise<boolean> {
+    const attempt = await this.revokeAttempt(token, hint);
+    if (attempt.kind === "done") return true;
+    console.warn(`oidc: token revocation did not succeed: ${attempt.kind === "rate_limited" ? "rate limited" : attempt.why}`);
+    return false;
   }
 
   /** Verify a back-channel logout token from this issuer for this client. */
@@ -795,19 +893,14 @@ export class OidcRelyingParty {
     });
   }
 
-  /** Fire and forget: a revocation that fails leaves a token that expires on
-   * its own (access 1 h, refresh 30 days idle); it is logged, never thrown. */
-  private revoke(endpoint: string, token: string, hint: "refresh_token" | "access_token"): void {
-    const body = new URLSearchParams({ token, token_type_hint: hint, client_id: this.clientId }).toString();
-    void this.fetcher(endpoint, {
-      method: "POST",
-      redirect: "error",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-      body,
-    }).then(
-      (response) => { void response.body?.cancel().catch(() => {}); if (!response.ok) console.warn(`oidc: token revocation answered ${response.status}`); },
-      (error: unknown) => console.warn(`oidc: token revocation failed: ${error instanceof Error ? error.message : String(error)}`),
-    );
+  /** Through the durable queue when one is set; otherwise fire and forget
+   * (a revocation that fails leaves a token that expires on its own: access
+   * 1 h, refresh 30 days idle). Logged, never thrown. */
+  private revoke(token: string, hint: "refresh_token" | "access_token", why: string): void {
+    if (this.revocations) {
+      this.revocations.enqueue(token, hint, why);
+      return;
+    }
+    void this.revokeToken(token, hint);
   }
 }

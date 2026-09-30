@@ -3,7 +3,7 @@
 // HTTP. Every refusal the spec lists (T10) is proven by bending one thing.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { accessExpiresIn, OIDC_MAX_PENDING_FLOWS, ROUTINE_DELEGATION_SCOPES, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
+import { accessExpiresIn, OIDC_MAX_PENDING_FLOWS, ROUTINE_DELEGATION_SCOPES, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseRetryAfter, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
 
 const REDIRECT = "http://127.0.0.1:9/auth/oidc/callback";
@@ -294,12 +294,15 @@ describe("OIDC relying party: refresh (slice 2)", () => {
   });
 
   it("treats 5xx, 429 and an unreachable provider as transient", async () => {
-    const party = rp();
+    let skew = 0;
+    const party = rp(() => Date.now() + skew);
     const token = await signedInGrant(party);
     idp.failNextToken(503);
     expect(await party.refresh(token, { sub: idp.user.sub })).toMatchObject({ ok: false, kind: "transient" });
     idp.failNextToken(429);
-    expect(await party.refresh(token, { sub: idp.user.sub })).toMatchObject({ ok: false, kind: "transient" });
+    expect(await party.refresh(token, { sub: idp.user.sub })).toMatchObject({ ok: false, kind: "transient", rateLimited: true });
+    // fix 2: the 429 pauses refreshes for its Retry-After (60 s by default)
+    skew = 61_000;
     // the token survived both
     expect((await party.refresh(token, { sub: idp.user.sub })).ok).toBe(true);
     const offline = new OidcRelyingParty({ issuer: idp.issuer, clientId: "pulsa-bot", redirectUri: REDIRECT, fetch: () => Promise.reject(new Error("ECONNREFUSED")) });
@@ -525,5 +528,95 @@ describe("routine delegation flows (slice 6)", () => {
     const unknown = await party.callback(new URLSearchParams({ state: "nope", code: "x" }), started.binding);
     expect(unknown).toMatchObject({ ok: false, code: "state" });
     expect(unknown).not.toHaveProperty("purpose");
+  });
+});
+
+describe("rate limits at the provider (slice 6, fix 2)", () => {
+  const ISSUER = "https://idp.test";
+  /** A provider that answers discovery and hands the token and revocation
+   * calls to `token` / `revoke`. */
+  function fakeFetch(answer: { token?: () => Response; revoke?: () => Response }, calls: string[] = []): typeof fetch {
+    return (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("openid-configuration") || url.includes("oauth-authorization-server")) {
+        return new Response(JSON.stringify({
+          issuer: ISSUER,
+          authorization_endpoint: `${ISSUER}/oauth/authorize`,
+          token_endpoint: `${ISSUER}/oauth/token`,
+          jwks_uri: `${ISSUER}/oauth/jwks`,
+          revocation_endpoint: `${ISSUER}/oauth/revoke`,
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.endsWith("/oauth/token")) return answer.token!();
+      if (url.endsWith("/oauth/revoke")) return answer.revoke!();
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+  }
+  const limited = (headers: Record<string, string> = {}, status = 429) =>
+    () => new Response(JSON.stringify({ error: "rate_limited", message: "too many requests; slow down" }), { status, headers: { "content-type": "application/json", ...headers } });
+
+  it("reads Retry-After as seconds or an HTTP-date, clamped to 1 s to 10 min, 60 s by default", () => {
+    const now = Date.UTC(2026, 8, 30, 12, 0, 0);
+    expect(parseRetryAfter("60", now)).toBe(60_000);
+    expect(parseRetryAfter("0", now)).toBe(1_000);
+    expect(parseRetryAfter("99999", now)).toBe(600_000);
+    expect(parseRetryAfter(null, now)).toBe(60_000);
+    expect(parseRetryAfter("soon", now)).toBe(60_000);
+    expect(parseRetryAfter(new Date(now + 90_000).toUTCString(), now)).toBe(90_000);
+    expect(parseRetryAfter(new Date(now - 90_000).toUTCString(), now)).toBe(1_000);
+  });
+
+  it("defers a refresh on a 429 with its Retry-After, and without one at 60 s", async () => {
+    const party = new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: `${ISSUER}/cb`, fetch: fakeFetch({ token: limited({ "retry-after": "42" }) }) });
+    expect(await party.refresh("pxlr1.x", { sub: "s" })).toEqual({ ok: false, kind: "transient", rateLimited: true, retryAfterMs: 42_000, error: "Perspicax is rate limiting this server (retry in 42 s)" });
+    const bare = new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: `${ISSUER}/cb`, fetch: fakeFetch({ token: limited() }) });
+    expect(await bare.refresh("pxlr1.x", { sub: "s" })).toMatchObject({ ok: false, kind: "transient", rateLimited: true, retryAfterMs: 60_000 });
+  });
+
+  it("reads the HTTP-date form", async () => {
+    let clock = Date.UTC(2026, 8, 30, 12, 0, 0);
+    const party = new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: `${ISSUER}/cb`, now: () => clock, fetch: fakeFetch({ token: limited({ "retry-after": new Date(clock + 120_000).toUTCString() }) }) });
+    expect(await party.refresh("pxlr1.x", { sub: "s" })).toMatchObject({ rateLimited: true, retryAfterMs: 120_000 });
+    clock += 1;
+  });
+
+  it("never takes a 400 whose body says rate_limited for a rejected grant", async () => {
+    const party = new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: `${ISSUER}/cb`, fetch: fakeFetch({ token: limited({}, 400) }) });
+    const outcome = await party.refresh("pxlr1.x", { sub: "s" });
+    expect(outcome).toMatchObject({ ok: false, kind: "transient", rateLimited: true });
+  });
+
+  it("pauses refreshes after a 429 without calling again, and fails a code exchange with rate_limited", async () => {
+    const calls: string[] = [];
+    let clock = 1_000_000;
+    const party = new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: `${ISSUER}/cb`, now: () => clock, fetch: fakeFetch({ token: limited({ "retry-after": "60" }) }, calls) });
+    await party.refresh("pxlr1.x", { sub: "s" });
+    const tokenCalls = () => calls.filter((url) => url.endsWith("/oauth/token")).length;
+    expect(tokenCalls()).toBe(1);
+    const deferred = await party.refresh("pxlr1.x", { sub: "s" });
+    expect(deferred).toMatchObject({ ok: false, kind: "transient", rateLimited: true });
+    expect(tokenCalls()).toBe(1);
+    // A code coming back always goes, pause or not.
+    const started = await party.start();
+    const params = new URLSearchParams({ state: started.state, code: "c", iss: ISSUER });
+    expect(await party.callback(params, started.binding)).toMatchObject({ ok: false, code: "rate_limited", error: "Perspicax is rate limiting sign-ins from this server. Wait a minute and try again." });
+    expect(tokenCalls()).toBe(2);
+    clock += 61_000;
+  });
+
+  it("tells a revocation's outcomes apart: done, a definitive 400, a 429 and a failure", async () => {
+    const answers: Array<() => Response> = [
+      () => new Response(null, { status: 200 }),
+      () => new Response(JSON.stringify({ error: "unsupported_token_type" }), { status: 400 }),
+      limited({ "retry-after": "30" }),
+      () => new Response("", { status: 503 }),
+    ];
+    const party = new OidcRelyingParty({ issuer: ISSUER, clientId: "pulsa-bot", redirectUri: `${ISSUER}/cb`, fetch: fakeFetch({ revoke: () => answers.shift()!() }) });
+    expect(await party.revokeAttempt("t")).toEqual({ kind: "done" });
+    expect(await party.revokeAttempt("t")).toMatchObject({ kind: "drop" });
+    expect(await party.revokeAttempt("t")).toEqual({ kind: "rate_limited", retryAfterMs: 30_000 });
+    expect(await party.revokeAttempt("t")).toMatchObject({ kind: "retry" });
+    expect(party.pacer.pauseRemaining()).toBeGreaterThan(0);
   });
 });
