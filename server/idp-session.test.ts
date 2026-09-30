@@ -198,19 +198,63 @@ describe("refresh on use", () => {
     sessions.openPairing({ principalId: bob.principal.id, scopes: ["client"] });
     const alice = signIn("A1", "admin");
     clock += 1000;
-    provider.script.push({ ok: false, kind: "rejected", error: "invalid_grant" });
+    // Bob is disabled: his freshest other sign-in, checked next, is refused too
+    provider.script.push({ ok: false, kind: "rejected", error: "invalid_grant" }, { ok: false, kind: "rejected", error: "invalid_grant" });
     manager.touch(bob.record()!);
     await manager.settled();
+    expect(provider.calls).toHaveLength(2);
+    expect(provider.calls[1]).toBe(otherToken);
     for (const id of [bob.sessionId, bobWeb2.sessionId, phone.session.id]) expect(sessions.byId(id)).toBeNull();
     expect(vault.get(bob.grantRef)).toBeUndefined();
     expect(vault.get(bobWeb2.grantRef)).toBeUndefined();
     expect(sessions.openPairings()).toHaveLength(0);
     expect(principals.byId(bob.principal.id)?.disabledAt).toBe(clock);
     await new Promise((resolve) => setImmediate(resolve));
-    // the rejected grant is dead; the other one may still be live at the provider
-    expect(provider.revoked).toEqual([otherToken]);
+    // both grants were refused: nothing is left to revoke at the provider
+    expect(provider.revoked).toEqual([]);
     expect(sessions.byId(alice.sessionId)).not.toBeNull();
     expect(principals.byId(alice.principal.id)?.disabledAt).toBeUndefined();
+  });
+
+  it("a refused sign-in family ends only its session when the person's other sign-in still refreshes (a cap eviction, S6-3)", async () => {
+    const { manager, provider, vault, signIn, sessions, principals, logs } = setup({ refreshAfterMs: 1000 });
+    const evicted = signIn("A1", "admin");
+    clock += 1;
+    const kept = signIn("A1", "admin");
+    const phone = sessions.issue({ label: "phone", scopes: ["client"], principalId: evicted.principal.id, idp: { iss: ISS, sub: "A1" } });
+    sessions.openPairing({ principalId: evicted.principal.id, scopes: ["client"] });
+    vault.set({ grantRef: "rd-A1", iss: ISS, sub: "A1", refreshToken: "pxlr1.delegation-A1", createdAt: clock, refreshedAt: clock, lastOkAt: clock, kind: "routines", principalId: evicted.principal.id });
+    clock += 1000;
+    provider.script.push({ ok: false, kind: "rejected", error: "invalid_grant" });
+    manager.touch(evicted.record()!);
+    await manager.settled();
+    // the refused family's session ends; the freshest other one was checked and rotated
+    expect(sessions.byId(evicted.sessionId)).toBeNull();
+    expect(vault.get(evicted.grantRef)).toBeUndefined();
+    expect(provider.calls).toHaveLength(2);
+    expect(vault.get(kept.grantRef)).toMatchObject({ refreshToken: "pxlr1.rot1", lastOkAt: clock });
+    // the person stays in: other sessions, paired devices, open codes, the delegation
+    expect(principals.byId(evicted.principal.id)?.disabledAt).toBeUndefined();
+    expect(sessions.byId(kept.sessionId)).not.toBeNull();
+    expect(sessions.byId(phone.session.id)).not.toBeNull();
+    expect(manager.mustRefuse(sessions.byId(phone.session.id)!)).toBeNull();
+    expect(sessions.openPairings()).toHaveLength(1);
+    expect(vault.get("rd-A1")).toBeDefined();
+    expect(logs.some((line) => line.includes("person marked out"))).toBe(false);
+  });
+
+  it("a refused sign-in with a transient failure on the person's other sign-in keeps the person in", async () => {
+    const { manager, provider, signIn, sessions, principals } = setup({ refreshAfterMs: 1000 });
+    const first = signIn("A2");
+    clock += 1;
+    const second = signIn("A2");
+    clock += 1000;
+    provider.script.push({ ok: false, kind: "rejected", error: "invalid_grant" }, { ok: false, kind: "transient", error: "unreachable" });
+    manager.touch(first.record()!);
+    await manager.settled();
+    expect(sessions.byId(first.sessionId)).toBeNull();
+    expect(sessions.byId(second.sessionId)).not.toBeNull();
+    expect(principals.byId(first.principal.id)?.disabledAt).toBeUndefined();
   });
 
   it("a rotated grant that cannot be kept ends only its own session, not the person", async () => {
@@ -320,7 +364,8 @@ describe("refresh on use", () => {
     expect(vault.get(newer.grantRef)!.refreshToken).toBe("pxlr1.demoted");
     expect(sessions.byId(phone.session.id)!.scopes).toEqual(["client"]);
     clock += 1000;
-    provider.script.push({ ok: false, kind: "rejected", error: "invalid_grant" });
+    // the person is out: the grant tried and the other one checked are both refused
+    provider.script.push({ ok: false, kind: "rejected", error: "invalid_grant" }, { ok: false, kind: "rejected", error: "invalid_grant" });
     manager.touch(sessions.byId(phone.session.id)!);
     await manager.settled();
     expect(sessions.byId(phone.session.id)).toBeNull();

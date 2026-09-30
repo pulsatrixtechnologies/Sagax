@@ -311,6 +311,9 @@ export class IdpSessionManager {
   private readonly refreshAfter: number;
   private readonly log: (line: string) => void;
   private readonly inflight = new Map<string, Promise<void>>();
+  /** Grants refreshed to check a person after another grant was refused: a
+   * refusal of one of these puts the person out. */
+  private readonly witnessing = new Set<string>();
   /** The latest access token of each grant: memory only, never in the vault,
    * never logged, never in an error (slice 5, D7). */
   private readonly access = new Map<string, { token: string; expiresAt: number }>();
@@ -535,7 +538,22 @@ export class IdpSessionManager {
     }
     if (!current) return;
     if (outcome.kind === "rejected") {
-      this.endGrant(ref, outcome.error, { personOut: true });
+      const witness = this.witnessing.has(ref) ? undefined : this.witnessFor(current);
+      if (!witness) {
+        this.endGrant(ref, outcome.error, { personOut: true });
+        return;
+      }
+      // Spec section 3: an invalid_grant ends that one session. Perspicax may
+      // have evicted only this family (its cap per person) or let it expire,
+      // so the person is out only if their freshest other sign-in is refused
+      // too (T8, a disabled person whose back-channel push was lost).
+      this.endGrant(ref, `${outcome.error}; checking the person's other sign-in`);
+      this.witnessing.add(witness.grantRef);
+      try {
+        await this.startRefresh(witness.grantRef);
+      } finally {
+        this.witnessing.delete(witness.grantRef);
+      }
       return;
     }
     const now = this.now();
@@ -545,6 +563,19 @@ export class IdpSessionManager {
       /* the grace still counts from the last success */
     }
     this.log(`idp: refresh deferred (${outcome.error}); the session stays until the provider answers`);
+  }
+
+  /** The person's freshest other sign-in grant with a live session, refreshed
+   * to tell a single ended family from a person Perspicax put out. */
+  private witnessFor(grant: IdpGrant): IdpGrant | undefined {
+    let live: IdpGrant[];
+    try {
+      live = this.liveGrantsFor(grant);
+    } catch {
+      return undefined;
+    }
+    return live.filter((other) => other.grantRef !== grant.grantRef)
+      .sort((a, b) => b.refreshedAt - a.refreshedAt)[0];
   }
 
   /** D3: the provider's current claims flow into the person and the sessions. */
