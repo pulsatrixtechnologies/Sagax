@@ -299,7 +299,7 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
     expect(tablet.status).toBe(200);
     const pending = await api("POST", "/api/auth/pairing", bob, { label: "later" });
     expect(pending.status).toBe(200);
-    // Perspicax disables Bob, but the push is lost (Pulsa Bot was restarting)
+    // Perspicax disables Bob, but the push is lost (Sagax was restarting)
     idp.disable(BOB.sub);
     try {
       await sleep(1_100);

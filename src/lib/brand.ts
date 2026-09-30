@@ -1,6 +1,6 @@
 // The deployment's brand (name, tagline, accent, logo, support link), served
 // by GET /api/brand from a brand.json on the server and applied once before
-// the first paint. The default name is Pulsa Bot.
+// the first paint. The default name is Sagax.
 // Pure helpers live here so they can be unit-tested without a DOM.
 
 export interface Brand {
@@ -19,7 +19,7 @@ export interface BrandStatus {
   notice?: string;
 }
 
-export const DEFAULT_BRAND: Brand = { name: "Pulsa Bot" };
+export const DEFAULT_BRAND: Brand = { name: "Sagax" };
 
 let current: BrandStatus = { brand: DEFAULT_BRAND, source: "default", file: "" };
 

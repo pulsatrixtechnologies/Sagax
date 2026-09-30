@@ -14,7 +14,7 @@ shared control surface. Stop that fixture with Ctrl-C.
 Build the candidate Podman image from the same checkout. On Windows, enter the
 selected machine with `podman machine ssh MACHINE`, then run the Linux commands
 below. `repo` must be the candidate checkout's absolute Linux path, for example
-`/mnt/c/Projects/Pulsa Bot`:
+`/mnt/c/Projects/Sagax`:
 
 ```sh
 cd "$repo"

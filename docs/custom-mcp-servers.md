@@ -10,7 +10,7 @@ MCP server you trust. A server is one of two things:
   line). Most servers speak **Streamable HTTP**; pick **SSE** only for an
   older server that documents the `/sse` endpoint.
 
-Pulsa Bot saves a new server switched off. Use **Test** to start the command
+Sagax saves a new server switched off. Use **Test** to start the command
 (or connect to the address), complete the MCP handshake, and see the tools it
 advertises. Then turn it on. It becomes available to compatible bots on their
 next task; no app restart is needed.
@@ -21,11 +21,11 @@ Tokens for URL servers go in headers, never in the address.
 
 Many hosted servers (Linear, Notion, Sentry, GitHub and others) answer
 `401` until you sign in. When you add a URL server, or open the list,
-Pulsa Bot asks the server whether it needs a sign-in and shows the answer on
+Sagax asks the server whether it needs a sign-in and shows the answer on
 its row: **Sign-in required**, **Connected**, **Sign-in expired**, or
 **Sign-in unavailable** with the reason.
 
-Click **Sign in**. Pulsa Bot opens the provider's page in your browser; after
+Click **Sign in**. Sagax opens the provider's page in your browser; after
 you approve, the browser comes back to this app at
 `http://127.0.0.1:<port>/api/mcp-oauth/callback`, shows "Sign-in complete. You
 can close this tab.", and the row flips to **Connected** within a few seconds.
@@ -36,14 +36,14 @@ How it works, following the MCP authorization spec (2025-06-18 and
 2025-11-25):
 
 - **Discovery.** The server's `401` names its Protected Resource Metadata
-  (RFC 9728) in `WWW-Authenticate`; otherwise Pulsa Bot tries
+  (RFC 9728) in `WWW-Authenticate`; otherwise Sagax tries
   `/.well-known/oauth-protected-resource` on the server's origin. The
   authorization server's metadata comes from RFC 8414
   (`/.well-known/oauth-authorization-server`), with OpenID Connect discovery
   as the fallback. Metadata that describes another origin, or a server
   without PKCE `S256`, is refused.
 - **Client.** When the provider offers Dynamic Client Registration
-  (RFC 7591), Pulsa Bot registers itself as a public client. When it does not
+  (RFC 7591), Sagax registers itself as a public client. When it does not
   (GitHub, for example), the row asks for a **client ID** (and an optional
   secret) of an OAuth app you create with the provider, and shows the
   redirect URI to give that app.
@@ -64,10 +64,10 @@ How it works, following the MCP authorization spec (2025-06-18 and
   advertise the `http` or `sse` transport) through the headers of the ACP
   session's MCP servers. Servers a Cursor or Codex CLI loads from its own
   config file (`~/.cursor/mcp.json`, `~/.codex/config.toml`) are signed in
-  by that CLI, not by Pulsa Bot; add them here instead to sign in once.
+  by that CLI, not by Sagax; add them here instead to sign in once.
 
 Limits: a turn that outlives its access token (commonly one hour) is not
-refreshed mid-turn; the next turn is. When you use Pulsa Bot from another
+refreshed mid-turn; the next turn is. When you use Sagax from another
 computer, the callback goes to the server's public address (Settings,
 custom domain or `OMB_PUBLIC_URL`) if one is set, otherwise to
 `127.0.0.1`, which only works in a browser on the server's own machine.
@@ -124,10 +124,10 @@ server is still this page or the bot project's `.mcp.json`.
 
 The switch drops the CLI flag `--strict-mcp-config` (Claude Code 1.0.60+)
 while keeping `--setting-sources project` (1.0.122+). The environment variable
-`OMB_CLAUDE_INHERIT_USER_CONFIG=1` on the Pulsa Bot process remains the full
+`OMB_CLAUDE_INHERIT_USER_CONFIG=1` on the Sagax process remains the full
 escape hatch back to the old launch: it restores everything, for every Claude
 bot, until you remove it. The harness also picks the session's compaction
-window with `--autocompact` (2.1.122+). Pulsa Bot reads `claude --version`
+window with `--autocompact` (2.1.122+). Sagax reads `claude --version`
 whenever it lists engines (app load, the Engines page, after an update) and
 only passes each flag to a CLI that accepts it, so an older CLI keeps working
 — without the controls it predates — and the Engines page shows an update
@@ -151,7 +151,7 @@ Address entries are HTTPS only. The host is compared label by label, where
 and the path separately, where `*` matches anything.
 
 Limits: a personal **Codex** engine also loads MCP servers from your own
-`~/.codex/config.toml`, which Pulsa Bot does not filter. An organization that
+`~/.codex/config.toml`, which Sagax does not filter. An organization that
 must block those can allow only company models, or leave personal Codex off
 its engine list. Company Codex uses its own separate home, without your
 `config.toml`.
@@ -179,7 +179,7 @@ The same registry lives in `~/.openmausbot/config.json`:
 ```
 
 `type` is `http` (Streamable HTTP, the default) or `sse`. If you edit the file
-by hand, restart Pulsa Bot. Every bot whose engine can mount custom MCP
+by hand, restart Sagax. Every bot whose engine can mount custom MCP
 servers gets the enabled tools on its next task.
 
 ## Rules that keep this safe
@@ -207,7 +207,7 @@ servers gets the enabled tools on its next task.
   tokens scoped to the one server.
 - **Testing is bounded.** A command is stopped after the handshake (or eight
   seconds), its output is capped, and its stderr is never sent to the UI. It
-  inherits none of Pulsa Bot's workspace or provider credentials; only the
+  inherits none of Sagax's workspace or provider credentials; only the
   environment variables configured for that MCP server are added. A URL test
   reads at most 1 MB and reports only the HTTP status of a refusal.
 - **Addresses are checked.** A URL server needs a full `http://` or

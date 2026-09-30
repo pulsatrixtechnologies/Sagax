@@ -12,6 +12,7 @@ import { useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { brand } from "@/lib/brand";
+import { APP_FULL_NAME, APP_NAME } from "@/lib/app-links";
 import { usageChip } from "@/lib/usage";
 import { readRetroEnabled, retroSignal, setRetroEnabled } from "@/lib/retro98";
 import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
@@ -311,7 +312,8 @@ function AboutDialog({ appName, onClose }: { appName: string; onClose: () => voi
         <div className="r98w-about">
           <span className="r98w-about-icon" aria-hidden="true"><PixelIcon name="newBot" scale={2} /></span>
           <div>
-            <p><strong>{appName}</strong></p>
+            {/* the default brand gets its full name; a white-label keeps its own */}
+            <p><strong>{appName === APP_NAME ? APP_FULL_NAME : appName}</strong></p>
             <p>{t("retro.about.edition")}</p>
             <p>{t("retro.about.body")}</p>
           </div>

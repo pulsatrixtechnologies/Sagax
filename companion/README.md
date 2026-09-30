@@ -2,7 +2,7 @@
 
 The sidecar a phone talks to.
 
-Pulsa Bot's harness listens on `127.0.0.1` and nothing else, which is the
+Sagax's harness listens on `127.0.0.1` and nothing else, which is the
 right default and one it has recently gone out of its way to enforce: it now
 rejects any request whose `Host` is not loopback, defeating DNS rebinding.
 
@@ -120,7 +120,7 @@ it is switched on, so the opt-in is never implicit.
 
 `OMB_COMPANION_NAME` overrides a name the sidecar otherwise asks the harness
 for at startup — the profile from onboarding, as *"Ada's computer"*. It falls
-back to `Pulsa Bot` when the harness is not up or has no profile. Read once
+back to `Sagax` when the harness is not up or has no profile. Read once
 and cached: the name goes into the Bonjour record, and re-advertising under a
 new one later would show the phone two computers.
 

@@ -1,6 +1,6 @@
 // Part hashes for records added from an organization's library (contract
 // §1.6). Every part of an added team keeps two hashes: `r`, the value the
-// release shipped, and `w`, the value Pulsa Bot wrote at install. The
+// release shipped, and `w`, the value Sagax wrote at install. The
 // automatic updater compares them later: `hash(local) ≠ w` means the person
 // edited the part, `r(new release) ≠ r` means the publisher changed it. Only
 // the hashes are kept, never a second copy of the content.

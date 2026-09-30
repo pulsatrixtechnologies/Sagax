@@ -23,7 +23,7 @@ export function callCapabilityHelp(
       case "desktop-app-required":
         return {
           label: "Calls need the macOS desktop app",
-          reason: "Open it in Pulsa Bot for macOS to make calls with on-device speech recognition.",
+          reason: "Open it in Sagax for macOS to make calls with on-device speech recognition.",
         };
       case "unsupported-platform":
         return {
@@ -40,7 +40,7 @@ export function callCapabilityHelp(
   if (!speechServiceAvailable) {
     return {
       label: "The call service is unavailable",
-      reason: "The speech service is unavailable in this app build. Restart or update Pulsa Bot.",
+      reason: "The speech service is unavailable in this app build. Restart or update Sagax.",
     };
   }
   return null;

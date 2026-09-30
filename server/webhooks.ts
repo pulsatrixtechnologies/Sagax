@@ -245,7 +245,7 @@ function serializePayload(payload: JsonValue): string {
     }
   }
   if (text.length <= MAX_EVENT_CHARS) return text;
-  return `${text.slice(0, MAX_EVENT_CHARS)}\n\n[Payload truncated by Pulsa Bot]`;
+  return `${text.slice(0, MAX_EVENT_CHARS)}\n\n[Payload truncated by Sagax]`;
 }
 
 function previewPayload(payload: JsonValue): string {
@@ -435,7 +435,7 @@ export class WebhookManager {
       payload,
       contentType: "application/json",
       eventName,
-      userAgent: "Pulsa Bot webhook tester",
+      userAgent: "Sagax webhook tester",
       deliveryId: `test-${randomUUID()}`,
     });
   }

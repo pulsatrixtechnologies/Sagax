@@ -19,7 +19,7 @@ const principalSchema = z.object({
   subject: z.object({ iss: z.string().min(1).max(2048), sub: z.string().min(1).max(255) }).optional(),
   name: z.string().max(200).optional(),
   login: z.string().max(200).optional(),
-  /** The last Pulsa Bot organization role computed from the provider's
+  /** The last Sagax organization role computed from the provider's
    * `role` claim, for display while offline. */
   orgRole: z.enum(["admin", "member"]).optional(),
   /** Set when the identity provider signalled that this person is out

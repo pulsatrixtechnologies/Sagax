@@ -265,14 +265,14 @@ describe("invite mail", () => {
 describe("invite mail text (inviteMailMessage)", () => {
   it("names the inviter and gives the invite link when both are known", () => {
     expect(inviteMailMessage({ orgName: "GOX", inviterEmail: "jc@gox.ca", link: "https://pulsa.gox.ca/join#token=abc" })).toEqual({
-      subject: "You are invited to GOX on Pulsa Bot",
+      subject: "You are invited to GOX on Sagax",
       text: "jc@gox.ca invited you to GOX. Open https://pulsa.gox.ca/join#token=abc within 7 days to join GOX.",
     });
   });
 
   it("falls back to a generic greeting and drops the link clause when neither is known", () => {
     expect(inviteMailMessage({ orgName: "GOX", link: null })).toEqual({
-      subject: "You are invited to GOX on Pulsa Bot",
+      subject: "You are invited to GOX on Sagax",
       text: "You were invited to GOX. Sign in with this address on this server's sign-in page within 7 days.",
     });
   });

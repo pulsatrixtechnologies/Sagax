@@ -984,7 +984,7 @@ describe("RoutineManager", () => {
         routineName: "Morning brief",
         status: "failed",
         threadId: "thread-1",
-        error: "Pulsa Bot restarted while this routine was running",
+        error: "Sagax restarted while this routine was running",
       },
     ]);
   });

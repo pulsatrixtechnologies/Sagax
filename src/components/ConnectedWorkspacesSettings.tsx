@@ -95,7 +95,7 @@ export function ConnectedWorkspacesSettings() {
       cardId="organization.connectServer"
       defaultOpen={false}
       title="Connect to a server"
-      subtitle="Already running Pulsa Bot on a VPS, server, or another computer? Connect it here."
+      subtitle="Already running Sagax on a VPS, server, or another computer? Connect it here."
       summary={t("settings.card.byLink")}
     >
       <form className="flex flex-col gap-3" onSubmit={(event) => {

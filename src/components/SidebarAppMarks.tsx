@@ -1,12 +1,10 @@
-// The app marks shown beside "Connected apps" in the footer menu.
+// The app marks shown at the end of the Connected apps row.
 //
-// Team map, Automations, Connected apps and Templates used to fold behind a
-// "Connect apps & tools" pill beside the avatar. The footer is now one row,
-// the way Perspicax's console lays out its account footer: your avatar and
-// your full name, opening one menu that holds those places first and the
-// profile items after them (SidebarProfileMenu). The pill's Gmail, Slack and
-// GitHub marks moved with its items: they sit at the end of the Connected
-// apps row, tinted until the row is hovered or focused (.footer-tint).
+// Team map, Automations, Connected apps and Templates are always-visible
+// rows at the foot of the sidebar, above the account row (SidebarPlaces).
+// The Gmail, Slack and GitHub marks that once rode the "Connect apps &
+// tools" pill sit at the end of the Connected apps row, tinted until the row
+// is hovered or focused (.footer-tint).
 import { cn } from "@/lib/cn";
 
 // The marks are drawn inline rather than fetched: the catalog only carries
@@ -46,15 +44,16 @@ function GitHubMark() {
 /** Left to right. */
 const MARKS = [GmailMark, SlackMark, GitHubMark];
 
-/** The marks, overlapping a little, at the end of a menu row. */
-export function AppMarks({ className }: { className?: string }) {
+/** The marks, overlapping a little, at the end of a row. `ringClassName`
+ * matches the ground they sit on, so the overlap reads as a cut-out. */
+export function AppMarks({ className, ringClassName = "ring-elevated" }: { className?: string; ringClassName?: string }) {
   return (
     <span className={cn("flex h-[18px] shrink-0 items-center", className)} aria-hidden="true">
       {MARKS.map((Mark, i) => (
         <span
           key={i}
           style={{ zIndex: MARKS.length - i }}
-          className="relative -ml-1.5 flex items-center justify-center rounded-[4px] ring-2 ring-elevated first:ml-0"
+          className={cn("relative -ml-1.5 flex items-center justify-center rounded-[4px] ring-2 first:ml-0", ringClassName)}
         >
           {/* tinted at rest, real colours on hover/focus (.footer-tint) */}
           <span className="footer-tint flex">

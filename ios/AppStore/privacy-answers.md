@@ -37,14 +37,14 @@ production hosted service still match this repository.
 
 The iOS app does not receive the hosted account's user ID or the computer's
 hosted installation ID. Email sign-in for optional hosted access happens on the
-companion computer, and local Wi-Fi and Tailscale pairing require no Pulsa Bot
+companion computer, and local Wi-Fi and Tailscale pairing require no Sagax
 account. If the desktop user opts into **Use your phone anywhere**, Cloudflare
 proxies the encrypted phone traffic to that user's computer. The computer
 remains the only transcript store; the control plane does not receive a
 persistent cloud copy.
 
 Images and documents are transferred only after the user chooses them and taps
-**Send**. They are written to that computer's local Pulsa Bot attachments
+**Send**. They are written to that computer's local Sagax attachments
 directory; neither the iOS app, Share extension, nor hosted control plane keeps
 a persistent copy. The extension removes its temporary copy after completion
 or cancellation; if iOS terminates it during a transfer, the next Share-sheet

@@ -128,7 +128,7 @@ function parseRecord(path, invalidMessage, validate) {
     raw = readFileSync(path, "utf8");
   } catch (error) {
     if (error?.code === "ENOENT") return null;
-    throw leaseError("Pulsa Bot cannot read the data-directory lease; refusing to start to protect its state.", error);
+    throw leaseError("Sagax cannot read the data-directory lease; refusing to start to protect its state.", error);
   }
   let record;
   try {
@@ -143,7 +143,7 @@ function parseRecord(path, invalidMessage, validate) {
 function readOwner(path) {
   return parseRecord(
     path,
-    "The Pulsa Bot data-directory lease is invalid; refusing to start to protect its state.",
+    "The Sagax data-directory lease is invalid; refusing to start to protect its state.",
     isLeaseOwner,
   );
 }
@@ -151,7 +151,7 @@ function readOwner(path) {
 function readReaper(path, targetToken) {
   return parseRecord(
     path,
-    "The Pulsa Bot stale-lease recovery record is invalid; refusing to start to protect its state.",
+    "The Sagax stale-lease recovery record is invalid; refusing to start to protect its state.",
     (value) => isReaperOwner(value, targetToken),
   );
 }
@@ -164,7 +164,7 @@ function processIsAlive(pid) {
     if (error?.code === "ESRCH") return false;
     // EPERM means the pid exists but this account cannot signal it.
     if (error?.code === "EPERM") return true;
-    throw leaseError("Pulsa Bot could not verify the data-directory lease owner; refusing to start.", error);
+    throw leaseError("Sagax could not verify the data-directory lease owner; refusing to start.", error);
   }
 }
 
@@ -250,7 +250,7 @@ function publishRecord(path, record, prepareMessage, acquireMessage) {
       throw leaseError(acquireMessage, error);
     }
   } finally {
-    unlinkExact(candidatePath, "Pulsa Bot could not remove its lease candidate.");
+    unlinkExact(candidatePath, "Sagax could not remove its lease candidate.");
   }
 }
 
@@ -284,21 +284,21 @@ function claimReaperAuthority(leasePath, expected) {
     if (publishRecord(
       reaperPath,
       candidate,
-      "Pulsa Bot could not prepare stale-lease recovery.",
-      "Pulsa Bot could not safely recover the stale data-directory lease.",
+      "Sagax could not prepare stale-lease recovery.",
+      "Sagax could not safely recover the stale data-directory lease.",
     )) return true;
 
     const current = readReaper(reaperPath, expected.token);
     if (!current) continue;
     if (current.host !== candidate.host) {
       throw leaseError(
-        `A stale Pulsa Bot data-directory lease is being recovered on another machine. Recovery record: ${JSON.stringify(reaperPath)}.`,
+        `A stale Sagax data-directory lease is being recovered on another machine. Recovery record: ${JSON.stringify(reaperPath)}.`,
       );
     }
     if (ownerIsAlive(current)) return false;
     reaperPath = successorReaperPath(leasePath, expected.token, current.token);
   }
-  throw leaseError("Pulsa Bot could not recover the stale data-directory lease after repeated interrupted attempts.");
+  throw leaseError("Sagax could not recover the stale data-directory lease after repeated interrupted attempts.");
 }
 
 function retireDeadOwner(leasePath, expected) {
@@ -307,17 +307,17 @@ function retireDeadOwner(leasePath, expected) {
   if (!current || current.token !== expected.token) return true;
   if (current.host !== hostname()) {
     throw leaseError(
-      `The stale Pulsa Bot data-directory lease changed ownership to another machine. Lease record: ${JSON.stringify(leasePath)}.`,
+      `The stale Sagax data-directory lease changed ownership to another machine. Lease record: ${JSON.stringify(leasePath)}.`,
     );
   }
   if (ownerIsAlive(current)) return false;
-  unlinkExact(leasePath, "Pulsa Bot could not retire the stale data-directory lease.");
+  unlinkExact(leasePath, "Sagax could not retire the stale data-directory lease.");
   return true;
 }
 
 function validateDataDir(dataDir) {
   if (typeof dataDir !== "string" || dataDir.trim().length === 0 || /[\r\n\0]/.test(dataDir)) {
-    throw leaseError("Pulsa Bot cannot lease an invalid data directory.");
+    throw leaseError("Sagax cannot lease an invalid data directory.");
   }
   return dataDir;
 }
@@ -341,7 +341,7 @@ function prepareDataDir(dataDir, legacyDataDir) {
   try {
     mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   } catch (error) {
-    throw leaseError("Pulsa Bot cannot create its data directory.", error);
+    throw leaseError("Sagax cannot create its data directory.", error);
   }
   return join(dataDir, LEASE_NAME);
 }
@@ -352,12 +352,12 @@ function assertNoLiveDelegatedChild(dataDir) {
   if (!child) return;
   if (child.host !== hostname()) {
     throw leaseError(
-      `This Pulsa Bot data directory still has a delegated server on another machine. Delegated server lease: ${JSON.stringify(childLeasePath)}.`,
+      `This Sagax data directory still has a delegated server on another machine. Delegated server lease: ${JSON.stringify(childLeasePath)}.`,
     );
   }
   if (ownerIsAlive(child)) {
     throw leaseError(
-      `Pulsa Bot's previous server process ${child.pid} is still shutting down. Try again shortly.`,
+      `Sagax's previous server process ${child.pid} is still shutting down. Try again shortly.`,
     );
   }
 }
@@ -380,10 +380,10 @@ function consumeChildCapability(environment) {
   try {
     delete environment[CHILD_LEASE_ENV];
   } catch (error) {
-    throw leaseError("Pulsa Bot could not consume its private desktop lease delegation.", error);
+    throw leaseError("Sagax could not consume its private desktop lease delegation.", error);
   }
   if (environment[CHILD_LEASE_ENV] !== undefined) {
-    throw leaseError("Pulsa Bot could not consume its private desktop lease delegation.");
+    throw leaseError("Sagax could not consume its private desktop lease delegation.");
   }
   return value;
 }
@@ -391,7 +391,7 @@ function consumeChildCapability(environment) {
 function validateChildDelegation(dataDir, encoded) {
   validateDataDir(dataDir);
   const capability = parseCapability(encoded);
-  const invalid = () => leaseError("The Pulsa Bot desktop lease delegation is invalid; refusing to start to protect its state.");
+  const invalid = () => leaseError("The Sagax desktop lease delegation is invalid; refusing to start to protect its state.");
   if (!capability) throw invalid();
   const parentLeasePath = join(dataDir, LEASE_NAME);
   const matchesLiveParent = (owner) => Boolean(owner
@@ -440,7 +440,7 @@ function acquireDataDirLeaseInternal(dataDir, options = {}) {
   try {
     writeFileSync(candidatePath, `${JSON.stringify(owner)}\n`, { flag: "wx", mode: 0o600, flush: true });
   } catch (error) {
-    throw leaseError("Pulsa Bot cannot prepare its data-directory lease.", error);
+    throw leaseError("Sagax cannot prepare its data-directory lease.", error);
   }
 
   let acquired = false;
@@ -452,7 +452,7 @@ function acquireDataDirLeaseInternal(dataDir, options = {}) {
         break;
       } catch (error) {
         if (error?.code !== "EEXIST") {
-          throw leaseError("Pulsa Bot cannot acquire its data-directory lease.", error);
+          throw leaseError("Sagax cannot acquire its data-directory lease.", error);
         }
       }
 
@@ -460,23 +460,23 @@ function acquireDataDirLeaseInternal(dataDir, options = {}) {
       if (!current) continue;
       if (current.host !== owner.host) {
         throw leaseError(
-          `This Pulsa Bot data directory is already owned by a process on another machine. Lease record: ${JSON.stringify(leasePath)}.`,
+          `This Sagax data directory is already owned by a process on another machine. Lease record: ${JSON.stringify(leasePath)}.`,
         );
       }
       if (ownerIsAlive(current)) {
         throw leaseError(
-          `Pulsa Bot is already using this data directory (process ${current.pid}). Close the other instance first. If no Pulsa Bot is running, delete this lease record and start again: ${JSON.stringify(leasePath)}.`,
+          `Sagax is already using this data directory (process ${current.pid}). Close the other instance first. If no Sagax is running, delete this lease record and start again: ${JSON.stringify(leasePath)}.`,
         );
       }
       if (!retireDeadOwner(leasePath, current)) {
-        throw leaseError("A stale Pulsa Bot data-directory lease is already being recovered; try again shortly.");
+        throw leaseError("A stale Sagax data-directory lease is already being recovered; try again shortly.");
       }
     }
   } finally {
-    unlinkExact(candidatePath, "Pulsa Bot could not remove its lease candidate.");
+    unlinkExact(candidatePath, "Sagax could not remove its lease candidate.");
   }
 
-  if (!acquired) throw leaseError("Pulsa Bot could not acquire its data-directory lease.");
+  if (!acquired) throw leaseError("Sagax could not acquire its data-directory lease.");
   let released = false;
   return Object.freeze({
     ownerPid: owner.pid,
@@ -486,24 +486,24 @@ function acquireDataDirLeaseInternal(dataDir, options = {}) {
       if (options.guardDelegatedChild !== false) assertNoLiveDelegatedChild(dataDir);
       const current = readOwner(leasePath);
       if (!current || current.pid !== owner.pid || current.host !== owner.host || current.token !== owner.token) {
-        throw leaseError("Pulsa Bot will not release a data-directory lease owned by another process.");
+        throw leaseError("Sagax will not release a data-directory lease owned by another process.");
       }
       try {
         unlinkSync(leasePath);
       } catch (error) {
-        throw leaseError("Pulsa Bot could not release its data-directory lease.", error);
+        throw leaseError("Sagax could not release its data-directory lease.", error);
       }
       released = true;
       return true;
     },
     utilityServerLeaseEnvironment() {
-      if (released) throw leaseError("Pulsa Bot cannot delegate a released data-directory lease.");
+      if (released) throw leaseError("Sagax cannot delegate a released data-directory lease.");
       return Object.freeze({ [CHILD_LEASE_ENV]: capabilityFor(owner) });
     },
   });
 }
 
-/** Claim exclusive ownership of one persistent Pulsa Bot data directory. */
+/** Claim exclusive ownership of one persistent Sagax data directory. */
 export function acquireDataDirLease(dataDir, options = {}) {
   return acquireDataDirLeaseInternal(dataDir, options);
 }

@@ -39,7 +39,7 @@ There is no recording control in OMB's browser panel.
 ## Linux sandbox
 
 Use the `.deb` on Ubuntu 24.04. Its package hooks install a narrowly scoped
-AppArmor policy for the root-owned browser executable under `/opt/Pulsa Bot`.
+AppArmor policy for the root-owned browser executable under `/opt/Sagax`.
 They do not disable the browser sandbox or change the global user-namespace
 restriction. See [Linux desktop](linux-desktop.md).
 
@@ -63,9 +63,9 @@ Run the real browser check against an unpacked app:
 node scripts/smoke-browser-bundle.mjs --resources /absolute/app/resources
 ```
 
-On macOS, use `/absolute/Pulsa Bot.app/Contents/Resources`. On Linux, run as
+On macOS, use `/absolute/Sagax.app/Contents/Resources`. On Linux, run as
 an unprivileged user against the installed `.deb` at
-`/opt/Pulsa Bot/resources`. This check creates its own empty home and local
+`/opt/Sagax/resources`. This check creates its own empty home and local
 web page, checks automatic discovery, navigation, typing/clicking, screenshot
 delivery and two-bot cookie/storage isolation, then removes only its fixture.
 No model account or user browser profile is used. Cross-target `--check-only`
@@ -81,7 +81,7 @@ browser updater in the desktop bundle.
 
 ### Temporary Windows engine backport
 
-Windows uses an explicitly identified Pulsa Bot build of agent-browser
+Windows uses an explicitly identified Sagax build of agent-browser
 0.36.0, with the handle-inheritance fix from
 [upstream PR #1781](https://github.com/vercel-labs/agent-browser/pull/1781).
 The official 0.37.0 release does not contain this fix, so Windows stays on the

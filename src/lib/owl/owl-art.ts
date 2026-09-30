@@ -1,4 +1,4 @@
-// The Pulsa Bot owl: traced art, palette, geometry and the pure pose function.
+// The Sagax owl: traced art, palette, geometry and the pure pose function.
 // A TypeScript port of the approved owl.js (owlSvg / owlPalette / owlPose),
 // split so React can render the parts and a shared animation loop can drive
 // them. Nothing here touches the DOM.

@@ -1,4 +1,4 @@
-# Pulsa Bot documentation
+# Sagax documentation
 
 The public documentation site is a Next.js 16 + Fumadocs app. User-facing content lives in `content/docs`; the repository's top-level `docs` folder remains available for implementation notes and detailed platform records.
 

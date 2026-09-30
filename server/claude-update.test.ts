@@ -42,7 +42,7 @@ describe("updateClaudeCli", () => {
     };
 
     await expect(updateClaudeCli("claude", {}, execute)).rejects.toThrow(
-      "Claude finished updating, but Pulsa Bot could not verify",
+      "Claude finished updating, but Sagax could not verify",
     );
   });
 });

@@ -73,7 +73,7 @@ describe("call capability guidance", () => {
       onDevice: true,
     }), false)).toEqual({
       label: "The call service is unavailable",
-      reason: "The speech service is unavailable in this app build. Restart or update Pulsa Bot.",
+      reason: "The speech service is unavailable in this app build. Restart or update Sagax.",
     });
   });
 });

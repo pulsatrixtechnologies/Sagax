@@ -49,7 +49,7 @@ pulsatrix-connector --config-dir $PX local-auth enroll-totp alice > $PX/totp.txt
 PXC_PULSABOT_ORIGIN=http://localhost:18788 pulsatrix-connector --config-dir $PX serve
 ```
 
-Then an isolated Pulsa Bot with a temporary home and the fake engine:
+Then an isolated Sagax with a temporary home and the fake engine:
 
 ```sh
 H=$(mktemp -d); mkdir -p $H/.openmausbot
@@ -64,7 +64,7 @@ the password and a TOTP code on the Perspicax page, and land on the app. Check
 `GET /api/auth/session` shows `identity: "perspicax"`, the principal, the
 email and the role. A login access token (obtained by running the same code
 flow by hand) must get 401 on `http://localhost:18787/mcp`: its audience is
-the Pulsa Bot origin.
+the Sagax origin.
 
 With real engines, the server runs turns on the engines installed where it
 runs (the Docker image's `ENGINES` build argument) with the connection or key
@@ -117,7 +117,7 @@ family, and signs back-channel logout tokens; `disable(sub)`,
 
 ### Against a real Perspicax (manual)
 
-Start Perspicax and Pulsa Bot as above, with a short refresh period and, when
+Start Perspicax and Sagax as above, with a short refresh period and, when
 Perspicax should post to another address, its internal URL:
 
 ```sh

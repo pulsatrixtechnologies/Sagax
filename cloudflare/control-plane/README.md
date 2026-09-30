@@ -1,4 +1,4 @@
-# Pulsa Bot control plane
+# Sagax control plane
 
 This directory is an isolated Cloudflare Worker for cloud account identity,
 installation ownership, and per-installation managed companion endpoints. It

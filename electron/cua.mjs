@@ -2,8 +2,8 @@
 //
 // Two modes, per cua-driver's EMBEDDING.md:
 //  - "embedded" (packaged app): spawn our own private daemon via
-//    EmbeddedCuaDriverHost so TCC grants attribute to Pulsa Bot and the
-//    driver inherits them. One prompt, named Pulsa Bot, out of the box.
+//    EmbeddedCuaDriverHost so TCC grants attribute to Sagax and the
+//    driver inherits them. One prompt, named Sagax, out of the box.
 //  - "standalone" (dev): attach to an already-installed CuaDriver.app daemon
 //    (its own TCC identity, typically already granted on a dev machine).
 //
@@ -152,7 +152,7 @@ export function resolveEmbeddedDriverBinary(binary) {
   if (process.platform !== "win32" || !app.isPackaged || process.env.CUA_DRIVER_PATH ||
       binary !== path.join(process.resourcesPath, "cua-driver.exe")) return binary;
   const background = path.join(process.resourcesPath, "cua-driver-background.exe");
-  if (!fs.existsSync(background)) throw new Error("Packaged background CUA driver is missing; reinstall Pulsa Bot");
+  if (!fs.existsSync(background)) throw new Error("Packaged background CUA driver is missing; reinstall Sagax");
   return background;
 }
 
@@ -201,7 +201,7 @@ async function attachStandalone(signal) {
     signal.throwIfAborted();
     // Launch CuaDriver.app through LaunchServices so Accessibility /
     // Screen Recording stay on com.trycua.driver — the identity this
-    // machine already granted — instead of the freshly signed Pulsa Bot.
+    // machine already granted — instead of the freshly signed Sagax.
     const launch = execFileAsync("/usr/bin/open", ["-a", "CuaDriver"], {
       timeout: 8_000, killSignal: "SIGKILL", maxBuffer: 8_192,
     });
@@ -235,7 +235,7 @@ async function startEmbedded(binary, signal) {
   signal.throwIfAborted();
   // CUA's embedding contract requires grants before the child daemon starts;
   // these SDK calls execute in Electron main so macOS attributes them to
-  // Pulsa Bot rather than to a terminal or helper process.
+  // Sagax rather than to a terminal or helper process.
   if (process.platform === "darwin") {
     const permissionStatus = sdk.requestMacOSPermissions();
     if (!sdk.hasRequiredMacOSPermissions(permissionStatus)) {
@@ -243,7 +243,7 @@ async function startEmbedded(binary, signal) {
         !permissionStatus.accessibility && "Accessibility",
         !permissionStatus.screenRecording && "Screen Recording",
       ].filter(Boolean).join(" and ");
-      throw new Error(`${missing || "macOS permissions"} required; grant access in System Settings and restart Pulsa Bot`);
+      throw new Error(`${missing || "macOS permissions"} required; grant access in System Settings and restart Sagax`);
     }
   }
   // The native SDK owns the child lifecycle but exposes no windowsHide option.

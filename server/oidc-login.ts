@@ -3,7 +3,7 @@
 // OMB_IDENTITY=perspicax turns it on. The server then:
 //   - answers GET /auth/oidc/start (302 to the Perspicax authorize page) and
 //     GET /auth/oidc/callback (code exchange and id_token check in
-//     server/oidc-rp.ts, then a Pulsa Bot session cookie and 302 to /);
+//     server/oidc-rp.ts, then a Sagax session cookie and 302 to /);
 //   - resolves the person by (iss, sub) through PrincipalRegistry.forSubject;
 //   - maps the `role` claim: admin -> scopes ["admin", "client"] and the
 //     organization role "admin"; manager and employee -> ["client"] and
@@ -100,7 +100,7 @@ export function scopesForRole(role: string | undefined): Scope[] | null {
   return null;
 }
 
-/** The Pulsa Bot organization role for a Perspicax role. */
+/** The Sagax organization role for a Perspicax role. */
 export function orgRoleForRole(role: string | undefined): "admin" | "member" | null {
   if (role === "admin") return "admin";
   if (role === undefined || role === "manager" || role === "employee") return "member";
@@ -145,7 +145,7 @@ export interface OidcGrantKeeper {
 export interface OidcLoginDeps {
   config: Extract<IdentityConfig, { kind: "perspicax" }>;
   rp?: OidcRelyingParty;
-  /** The Pulsa Bot session cookie name (server/request-auth.ts). */
+  /** The Sagax session cookie name (server/request-auth.ts). */
   sessionCookie: string;
   forSubject: (input: { iss: string; sub: string; claims: { email?: string; name?: string; login?: string }; orgRole: "admin" | "member" }) => Principal;
   issueSession: (input: { label: string; scopes: Scope[]; email?: string; principalId: string; idp: NonNullable<SessionRecord["idp"]> }) => { token: string; session: PublicSession };
@@ -377,7 +377,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
         principalId: principal.id,
         scopes,
         ttlMs: OIDC_NATIVE_PAIRING_TTL_MS,
-        label: client === "desktop" ? "Pulsa Bot desktop" : "Pulsa Bot phone",
+        label: client === "desktop" ? "Sagax desktop" : "Sagax phone",
         idp,
       });
       redirect(res, client === "desktop"

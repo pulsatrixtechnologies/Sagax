@@ -15,10 +15,10 @@ export interface OTPEmailInput {
 }
 
 const SUBJECTS = {
-  "sign-in": "Your Pulsa Bot sign-in code",
-  "email-verification": "Verify your Pulsa Bot email",
-  "forget-password": "Reset your Pulsa Bot password",
-  "change-email": "Confirm your Pulsa Bot email change",
+  "sign-in": "Your Sagax sign-in code",
+  "email-verification": "Verify your Sagax email",
+  "forget-password": "Reset your Sagax password",
+  "change-email": "Confirm your Sagax email change",
 } as const satisfies Record<OTPEmailInput["type"], string>;
 
 export function buildOTPEmail(from: string, input: OTPEmailInput) {
@@ -27,7 +27,7 @@ export function buildOTPEmail(from: string, input: OTPEmailInput) {
   const html = `<!doctype html><html><body><h1>${subject}</h1><p>Your one-time code is:</p><p style="font-size:32px;font-weight:700;letter-spacing:0.15em">${input.otp}</p><p>It expires in 10 minutes. If you did not request this code, you can ignore this email.</p></body></html>`;
   return {
     to: input.email,
-    from: { email: from, name: "Pulsa Bot" },
+    from: { email: from, name: "Sagax" },
     subject,
     html,
     text,

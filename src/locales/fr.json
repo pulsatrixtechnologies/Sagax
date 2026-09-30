@@ -1658,7 +1658,7 @@
   "pair.pulsatrix.intro": "Votre organisation vous connecte avec Pulsatrix Perspicax : votre mot de passe et votre second facteur restent là-bas.",
   "pair.pulsatrix.useCode": "Vous avez plutôt un code d'appairage ?",
   "pair.pulsatrix.error": "La connexion n'a pas abouti. Réessayez.",
-  "pair.pulsatrix.errorRole": "Ce compte ne peut pas se connecter à Pulsa Bot. Demandez à un administrateur dans Perspicax.",
+  "pair.pulsatrix.errorRole": "Ce compte ne peut pas se connecter à Sagax. Demandez à un administrateur dans Perspicax.",
   "pair.pulsatrix.errorUnavailable": "Pulsatrix est injoignable. Réessayez dans un instant.",
   "pair.pulsatrix.finishing": "Connexion en cours...",
   "pair.pulsatrix.errorClient": "Ce lien de connexion ne vient pas de cette application. Recommencez depuis l'application.",
@@ -1814,5 +1814,5 @@
   "retro.custom.problem.type": "Seules les images PNG ou GIF sont acceptées.",
   "retro.custom.problem.size": "Cette image est trop lourde. Choisissez-en une de moins de 2 Mo.",
   "retro.custom.problem.storage": "Ce navigateur n'a pas pu enregistrer l'image. La navigation privée peut l'empêcher.",
-  "onboarding.tour.tools": "Votre nom, au bas de la barre latérale. Son menu regroupe les apps connectées, les automatisations et la carte d’équipe, puis vos réglages. Ouvrons-le."
+  "onboarding.tour.tools": "Le bas de la barre latérale : Carte de l’équipe, Automatisations, Applications connectées et Templates, toujours à un clic. Votre nom, juste en dessous, ouvre vos réglages."
 }

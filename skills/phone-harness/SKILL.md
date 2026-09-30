@@ -1,6 +1,6 @@
 ---
 name: phone-harness
-description: "Control, inspect, test, or automate a physical Android phone connected to Pulsa Bot over authorized USB debugging. Use for explicit Android, USB phone, ADB, mobile-app, tapping, typing, swiping, scrolling, screenshot, or phone-screen requests."
+description: "Control, inspect, test, or automate a physical Android phone connected to Sagax over authorized USB debugging. Use for explicit Android, USB phone, ADB, mobile-app, tapping, typing, swiping, scrolling, screenshot, or phone-screen requests."
 ---
 
 # Phone Harness

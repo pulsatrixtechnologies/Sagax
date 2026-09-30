@@ -4,7 +4,7 @@
 // inside the selected workspace (environments.cjs). The identity provider's
 // page must get neither, so the sign-in runs in its own small window: no
 // preload, sandboxed, context isolated, popups denied, sharing the main
-// window's session so the Pulsa Bot cookie the callback sets lands in the
+// window's session so the Sagax cookie the callback sets lands in the
 // same jar. When that window comes back to the workspace outside
 // /auth/oidc/, the main window loads that address and the sign-in window
 // closes. No provider token is ever seen here: the server is the OIDC client

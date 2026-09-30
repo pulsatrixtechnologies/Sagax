@@ -4428,7 +4428,7 @@
       "pair.pulsatrix.intro": "c16d83acd1c50961b481326d7e1fb0febd9d0c0011155e873419587c9d0ce5a0",
       "pair.pulsatrix.useCode": "7f8238d89374841b8a0fba93e2a6602917b90649d546e85cbabc7f67019652f4",
       "pair.pulsatrix.error": "eeb0c47464c645e0656106b0b46336db70fd7e861258b519ae1a1cef4a353387",
-      "pair.pulsatrix.errorRole": "7851d3903e29a6082952edf28cece939c960c2707898eba7e118bcd6e2ee7df2",
+      "pair.pulsatrix.errorRole": "5937a00cbe560e844ce36e5c1b3f8a9140843cf0e93ded0647a6835f764e0ee4",
       "pair.pulsatrix.errorUnavailable": "57861af655310fdedc46a2756707063963a3f4f3516af23628d6a091f0920584",
       "pair.pulsatrix.finishing": "16c16b0dd1d773310556dc725fd16c50e16ffc047990659f0f6dec9bf41c636f",
       "pair.pulsatrix.errorClient": "d3fdeb6d989b4064ef674bfe0d99c88b1c28450cda4be05a5ff7e6d95b34d1a1",
@@ -4591,7 +4591,7 @@
       "retro.custom.problem.type": "b3f16574113b31e55e77210a7fdda31ca23c04d8858cd2cbd69f7b3fa3b2170a",
       "retro.custom.problem.size": "194fac3d41f3bc51ca7a4d4ce409fe60d7dfb327c732df9fcf8250ec8389b07c",
       "retro.custom.problem.storage": "7a6e40ad24c49bdb148f9517cd5ea959055b80637d3f95f385636d05dcd0539d",
-      "onboarding.tour.tools": "37b98e0f8b2009e5f64b2a32232a578b3df4100cee100a5f387742a610e1185e"
+      "onboarding.tour.tools": "0144d628c77fe2ec4a8d2df90b0e5294cf44840268eb5f483a1216073fa38d3c"
     },
     "hi": {
       "noEngines.title": "af88855a5f80377de709995229ba3907df9e8fb3b940fbf7c0d9cbe6eea54afe",
@@ -10814,7 +10814,6 @@
       "onboarding.tour.composer": "fc2d77906a61cc1737c29da18d6e850fe73e3b85b3a3288496c9432b444783f1",
       "onboarding.tour.model": "b4a1d2b77899f3fb88b7fc42125dc8470e49d5c73539cb60c8dd8002221f21dd",
       "onboarding.tour.computer": "3e32749577b756af48dab1ef1ad072af183eaa81ac0dbeadc918c305d9b45e7e",
-      "onboarding.tour.tools": "37b98e0f8b2009e5f64b2a32232a578b3df4100cee100a5f387742a610e1185e",
       "onboarding.tour.apps": "ab67e3cb62027f398a503d8323d3af816f5ab9e345c110d85255983f13d77178",
       "onboarding.tour.apps-panel": "c05bbb6b6ee60e2c03244fb9656d08403bf74175f008ea583a4b2ec9c4a1fca6",
       "onboarding.tour.automations": "4b97476359e20700cd8e69cc5c8e7072eae8984f3ab839fc3fedd3fd3e3f5b8e",
@@ -12740,7 +12739,6 @@
       "onboarding.tour.composer": "fc2d77906a61cc1737c29da18d6e850fe73e3b85b3a3288496c9432b444783f1",
       "onboarding.tour.model": "b4a1d2b77899f3fb88b7fc42125dc8470e49d5c73539cb60c8dd8002221f21dd",
       "onboarding.tour.computer": "3e32749577b756af48dab1ef1ad072af183eaa81ac0dbeadc918c305d9b45e7e",
-      "onboarding.tour.tools": "37b98e0f8b2009e5f64b2a32232a578b3df4100cee100a5f387742a610e1185e",
       "onboarding.tour.apps": "ab67e3cb62027f398a503d8323d3af816f5ab9e345c110d85255983f13d77178",
       "onboarding.tour.apps-panel": "c05bbb6b6ee60e2c03244fb9656d08403bf74175f008ea583a4b2ec9c4a1fca6",
       "onboarding.tour.automations": "4b97476359e20700cd8e69cc5c8e7072eae8984f3ab839fc3fedd3fd3e3f5b8e",

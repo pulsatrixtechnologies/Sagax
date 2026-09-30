@@ -1,5 +1,5 @@
 // The identity provider grant behind each "Sign in with Pulsatrix" session
-// (spec section 2 "Session sur le serveur Pulsa Bot", section 8 and T3, T4,
+// (spec section 2 "Session sur le serveur Sagax", section 8 and T3, T4,
 // T8, T12). Slice 1 threw the provider's refresh token away; from slice 2 the
 // server keeps it, sealed, and a session lives exactly as long as Perspicax
 // keeps refreshing it:

@@ -148,7 +148,7 @@ if (existsSync(join(root, "enterprise", "server", "index.ts")) || existsSync(joi
   process.exit(1);
 }
 
-// pi-mcp-extension.ts is NOT an Pulsa Bot entry point: it is loaded by the
+// pi-mcp-extension.ts is NOT a Sagax entry point: it is loaded by the
 // external `pi` process (pi's own jiti), which resolves its
 // @earendil-works/pi-coding-agent and typebox imports from pi's install. Ship
 // it verbatim as .ts so the packaged app has it too — never bundle it, or

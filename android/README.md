@@ -1,7 +1,7 @@
-# Pulsa Bot Android companion
+# Sagax Android companion
 
 The Android counterpart to the iOS companion app: pair a phone with a computer
-running Pulsa Bot, then read and answer from the phone.
+running Sagax, then read and answer from the phone.
 
 - `applicationId` — `com.openmausbot.companion`
 - `minSdk` 26 (Android 8.0), `targetSdk` / `compileSdk` 37
@@ -35,7 +35,7 @@ cd android
 ```
 
 Install `app/build/outputs/apk/preview/app-preview.apk`. Its launcher name is
-**Pulsa Bot Preview**, its application ID is `com.openmausbot.companion.preview`,
+**Sagax Preview**, its application ID is `com.openmausbot.companion.preview`,
 and its version ends in `-threads-preview`. Gradle signs it with the local debug
 key, so no release signing material is needed. It installs beside the released
 app with separate pairing, preferences and messages; it does not update that app.
