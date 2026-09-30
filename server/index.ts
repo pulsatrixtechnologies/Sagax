@@ -11310,6 +11310,27 @@ async function runGroupMemberTurn(
     onDispatchError?.(message);
     return true;
   }
+  // Organization server (slice 3, D13): a room turn needs engine access for
+  // the person whose message it answers, as a Direct turn does.
+  const roomSpeakerId = store.activePath(threadId).findLast((message) => message.role === "user" && message.sender?.id)?.sender?.id;
+  const roomAccessRefusal = cardContinuation ? null : orgEngineRefusal(bot, instance, roomSpeakerId);
+  if (roomAccessRefusal) {
+    const engine = engineDisplayName(instance);
+    store.appendMessage(threadId, {
+      role: "bot",
+      kind: "access",
+      from: { botId: bot.id, name: bot.name, color: bot.color },
+      access: { reason: roomAccessRefusal, engine, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot) },
+    });
+    const notice = engineAccessNotice(roomAccessRefusal, engine);
+    notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
+    if (orchestration) {
+      orchestration.result.outcome = "dispatch_failed";
+      orchestration.result.replyText = "";
+    }
+    onDispatchError?.(notice);
+    return true;
+  }
   // One turn per bot at a time, across BOTH engines. Without this a bot
   // could run its 1:1 turn and a room turn concurrently — two provider
   // processes, interleaved token spend, and an interrupt that only ever

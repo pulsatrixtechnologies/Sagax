@@ -279,6 +279,20 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     await waitFor(async () => aliceStream.text().includes("turn-failed"));
     aliceStream.close();
 
+    // the same rule in a room: bob's message there gets the card, not a turn
+    const aliceId = (await api("GET", "/api/auth/session", alice)).body.principalId;
+    const room = await api("POST", "/api/groups", alice, { name: "Pay questions", memberIds: [shared.id], humanIds: [aliceId, bobId],
+      setup: { bulletin: "", defaultResponder: { kind: "everyone" } } });
+    expect(room.status, room.text).toBe(201);
+    const posted = await api("POST", `/api/groups/${room.body.group.id}/messages`, bob, { text: "room ping" });
+    expect(posted.status, posted.text).toBe(202);
+    const roomCard = await waitFor(async () => {
+      const got = await api("GET", `/api/threads/${room.body.group.threadId}/messages`, bob);
+      return (got.body.messages as Array<{ kind: string; access?: unknown }> | undefined)?.find((m) => m.kind === "access") ?? null;
+    });
+    expect(roomCard.access).toMatchObject({ reason: "no_access", botId: shared.id });
+    expect(readFileSync(dump, "utf8")).toBe(before);
+
     const ghost = await createBot(alice, "Ghost", "ghost");
     expect((await api("POST", `/api/bots/${ghost.id}/messages`, alice, { text: "hello?" })).status).toBe(202);
     const missing = await waitFor(async () => (await botsOf(alice)).find((b) => b.id === ghost.id)?.messages.find((m) => m.kind === "access") ?? null);
