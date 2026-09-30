@@ -9892,7 +9892,8 @@ async function startTurn(
       // Before sendTurn: an adapter may emit the whole turn before it resolves.
       handoffs.dispatching(threadId, dispatchClaimId, dispatchContext.handoff);
       // Slice 4: this turn's credentials (an owner key is read now).
-      const turnAccess = await orgTurnAccess(threadId, bot, instance, speaker);
+      // (solo mode takes no extra await: its dispatch timing is unchanged)
+      const turnAccess = IDENTITY.kind === "perspicax" ? await orgTurnAccess(threadId, bot, instance, speaker) : undefined;
       const dispatch = await guardTurnDispatch(instance.adapter.sendTurn({
         threadId,
         botId: bot.id,
@@ -12100,7 +12101,7 @@ async function runGroupMemberTurn(
     // explicit, disclosed session_search, never automatically
     const roomRecalled = cardContinuation ? "" : autoRecallPrompt(bot, threadId, resolvedLatestImages.text, { conversations: false, userName });
     const roomSpeaker: TurnSpeaker = roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "operator" };
-    guardTurnDispatch(orgTurnAccess(threadId, readyBot, instance, roomSpeaker).then((roomTurnAccess) => instance.adapter.sendTurn({
+    const sendRoomTurn = (roomTurnAccess: TurnAccess | undefined) => instance.adapter.sendTurn({
         threadId,
         botId: readyBot.id,
         ...(roomTurnAccess ? { access: roomTurnAccess } : {}),
@@ -12117,7 +12118,8 @@ async function runGroupMemberTurn(
         ...(instance.instanceId === readyBot.modelSelection.instanceId
           ? memberTurnSelection(readyBot.modelSelection)
           : { model: instance.models.default }),
-      })), () => abandoned || Boolean(isCancelled?.()), async () => {
+      });
+    guardTurnDispatch(IDENTITY.kind === "perspicax" ? orgTurnAccess(threadId, readyBot, instance, roomSpeaker).then(sendRoomTurn) : sendRoomTurn(undefined), () => abandoned || Boolean(isCancelled?.()), async () => {
         // Stop may have landed while the adapter was authenticating, before
         // it had an active process for the first interrupt to reach. Now that
         // sendTurn completed setup, revoke again and interrupt the real turn.
