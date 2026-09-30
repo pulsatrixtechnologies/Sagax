@@ -1,0 +1,383 @@
+// Slice 6 of the Perspicax organization through the real server: routines in
+// their person's name (scenario D). The fake provider keeps routine
+// delegation families apart from sign-in ones and reports them in its
+// directory; the fake Claude CLI really calls the Perspicax MCP profile of
+// the bot (FAKE_CLAUDE_MCP_CALLS).
+//
+//   consent     alice allows her routines at Perspicax; the callback keeps
+//               the delegation and lands on #routine-delegation=ok
+//   scenario D  her routine runs while she has no session: the engine uses
+//               her key (the bot owner's), the MCP call runs as her through
+//               her delegation, the exchanged token is revoked after
+//   renewal     a run within the renewal window refreshes nothing
+//   revoke      from Sagax: delegation_revoked and exactly one card; from the
+//               console (the directory): delegation_ended
+//   someone     bob's routine on alice's bot runs as bob (his delegation,
+//   else        alice's key), then pauses no_right when he loses `run`
+//   subject     a consent finished as another account is refused and revoked
+//   transient   Perspicax unreachable: the run fails, the routine is kept
+//   person out  a disable pauses the routine person_out; no runs follow
+//   disk        no refresh or access token is ever written in clear
+import { spawn, type ChildProcess } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
+import { freePortBlock } from "./testing/ports.ts";
+
+const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
+const FAKE_CLAUDE = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
+const posixOnly = describe.skipIf(process.platform === "win32");
+const ALICE_KEY = "sk-ant-test-alice-000000";
+const ALICE: FakeOidcUser = { sub: "01J9S6ALICE00000000000000A", email: "alice@example.test", name: "Alice", preferred_username: "alice", role: "admin" };
+const BOB: FakeOidcUser = { sub: "01J9S6BOB000000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee" };
+const CAROL: FakeOidcUser = { sub: "01J9S6CAROL00000000000000C", email: "carol@example.test", name: "Carol", preferred_username: "carol", role: "employee" };
+const PROFILE = { id: "01J9S6PROFILEDISPATCH00001", slug: "dispatch", name: "Dispatch", description: "Tickets and schedules" };
+/** The renewal window of this server (OMB_ROUTINE_RENEW_SECONDS). */
+const RENEW_SECONDS = 45;
+
+let PORT = 0;
+let BASE = "";
+let child: ChildProcess;
+let home: string;
+let dump = "";
+let log = "";
+let idp: FakeOidcProvider;
+
+type Auth = { cookie?: string };
+const api = async (method: string, path: string, auth?: Auth, body?: unknown): Promise<{ status: number; body: any; text: string }> => {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(auth?.cookie ? { cookie: auth.cookie } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let parsed: any = {};
+  try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+  return { status: res.status, body: parsed, text };
+};
+const cookiePair = (setCookie: string) => setCookie.split(";")[0]!;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function signIn(user: FakeOidcUser): Promise<Auth> {
+  idp.user = { ...user };
+  const start = await fetch(`${BASE}/auth/oidc/start`, { redirect: "manual" });
+  const binding = cookiePair(start.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
+  const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
+  const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
+  const session = callback.headers.getSetCookie().find((c) => c.startsWith("omb_session_") && !c.includes("_oidc="));
+  expect(callback.headers.get("location"), log.slice(-2000)).toBe("/");
+  return { cookie: cookiePair(session!) };
+}
+
+/** `auth` allows their routines to act in their name; the consent at the
+ * fake provider signs `as` in. Returns where the callback landed. */
+async function consent(auth: Auth, as: FakeOidcUser): Promise<string> {
+  idp.user = { ...as };
+  const started = await fetch(`${BASE}/api/org/routine-delegation`, { method: "POST", headers: { cookie: auth.cookie!, "content-type": "application/json" }, body: "{}" });
+  expect(started.status, await started.clone().text()).toBe(200);
+  const binding = started.headers.getSetCookie().find((c) => c.includes("_oidc="))!;
+  expect(binding).toMatch(/; Path=\/auth\/oidc; HttpOnly; SameSite=Lax; Max-Age=600$/);
+  const { authorizationUrl } = await started.json() as { authorizationUrl: string };
+  expect(new URL(authorizationUrl).searchParams.get("scope")).toBe("openid profile email offline_access pulsabot:routines");
+  const authorize = await fetch(authorizationUrl, { redirect: "manual" });
+  const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: cookiePair(binding) } });
+  expect(back.status).toBe(303);
+  return back.headers.get("location") ?? "";
+}
+
+async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms = 20_000): Promise<T> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const value = await read();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`timed out. server log:\n${log.slice(-4000)}`);
+    await sleep(150);
+  }
+}
+
+type Run = { id: string; routineId: string; status: string; error?: string; runAs?: string };
+type RoutineRow = { id: string; runAs?: { principalId: string; name: string }; suspended?: { reason: string } };
+type Message = { id: string; kind: string; role: string; access?: { reason: string; routineId?: string; runAsPrincipalId?: string; suspendReason?: string } };
+
+async function routineOf(auth: Auth, id: string): Promise<RoutineRow | undefined> {
+  return ((await api("GET", "/api/routines", auth)).body.routines as RoutineRow[] | undefined)?.find((r) => r.id === id);
+}
+async function runsOf(auth: Auth, routineId: string): Promise<Run[]> {
+  return (((await api("GET", "/api/routines", auth)).body.runs ?? []) as Run[]).filter((r) => r.routineId === routineId);
+}
+/** A run to its end, as a person who may run it. */
+async function runNow(auth: Auth, routineId: string): Promise<Run> {
+  const started = await api("POST", `/api/routines/${routineId}/run`, auth, {});
+  expect(started.status, started.text).toBe(201);
+  const id = started.body.run.id as string;
+  return waitFor(async () => (await runsOf(auth, routineId)).find((r) => r.id === id && ["completed", "failed", "cancelled"].includes(r.status)), 60_000);
+}
+async function cardsFor(auth: Auth, threadId: string, routineId: string): Promise<Message[]> {
+  const messages = ((await api("GET", `/api/threads/${threadId}/messages`, auth)).body.messages ?? []) as Message[];
+  return messages.filter((m) => m.kind === "access" && m.access?.reason === "routine_delegation" && m.access.routineId === routineId);
+}
+/** The scheduler's file, read while nobody is signed in. */
+const onDisk = () => JSON.parse(readFileSync(join(home, ".openmausbot", "routines.json"), "utf8")) as {
+  routines: Array<{ id: string; runAs?: string; suspended?: { reason: string } }>;
+  runs: Array<Run & { resultsThreadId?: string }>;
+};
+const engineEnv = () => (JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env;
+
+async function start() {
+  child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+    cwd: join(SERVER_DIR, ".."),
+    env: {
+      ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
+      OMB_IDENTITY: "perspicax",
+      OMB_PERSPICAX_ISSUER: idp.issuer,
+      OMB_PUBLIC_URL: BASE,
+      OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+      OMB_PERSPICAX_DIRECTORY_SECONDS: "5",
+      OMB_ROUTINE_RENEW_SECONDS: String(RENEW_SECONDS),
+      OMB_ORG_NAME: "Acme",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout!.on("data", (c) => (log += c));
+  child.stderr!.on("data", (c) => (log += c));
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      if ((await fetch(`${BASE}/api/health`)).ok) return;
+    } catch {
+      /* not up yet */
+    }
+    if (Date.now() > deadline) throw new Error(`server never came up:\n${log}`);
+    await sleep(150);
+  }
+}
+
+posixOnly("Perspicax organization, slice 6: routines in their person's name", () => {
+  let alice: Auth;
+  let bob: Auth;
+  const ids: Record<string, string> = {};
+  let x: { id: string; threadId: string };
+  let r1 = "";
+  let r1Thread = "";
+
+  beforeAll(async () => {
+    chmodSync(FAKE_CLAUDE, 0o755);
+    idp = await startFakeOidcProvider({ user: ALICE });
+    idp.profiles = [PROFILE];
+    idp.profilesBySub.set(ALICE.sub, [PROFILE.id]);
+    idp.profilesBySub.set(BOB.sub, [PROFILE.id]);
+    idp.providerKeys.set(`${ALICE.sub}/anthropic`, ALICE_KEY);
+    idp.directoryPeople = [ALICE, BOB, CAROL].map((user) => idp.personOf(user));
+    PORT = await freePortBlock([0, 1]);
+    BASE = `http://127.0.0.1:${PORT}`;
+    home = mkdtempSync(join(tmpdir(), "omb-org-routines-"));
+    const data = join(home, ".openmausbot");
+    mkdirSync(data, { recursive: true });
+    mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
+    writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
+      version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
+    }), { mode: 0o640 });
+    dump = join(home, "claude-dump.json");
+    writeFileSync(join(data, "config.json"), JSON.stringify({
+      organization: { memberBotsUseOrgKey: false },
+      instances: {
+        claude: {
+          driver: "claudeAgent",
+          environment: {
+            FAKE_CLAUDE_DUMP: dump,
+            FAKE_CLAUDE_MCP_CALLS: JSON.stringify([{ server: "perspicax_*", tool: "api_list", arguments: {} }]),
+            FAKE_CLAUDE_MCP_DUMP: join(home, "mcp-dump.json"),
+          },
+          config: { cli: FAKE_CLAUDE, fullAuto: true },
+        },
+      },
+    }));
+    await start();
+    alice = await signIn(ALICE);
+    const people = await waitFor(async () => {
+      const got = (await api("GET", "/api/org/directory", alice)).body.people as Array<{ principalId: string; login: string }> | undefined;
+      return got && got.length === 3 ? got : null;
+    });
+    for (const person of people) ids[person.login] = person.principalId;
+    const created = await api("POST", "/api/bots", alice, { name: "Xavier" });
+    expect(created.status, created.text).toBe(201);
+    x = { id: created.body.bot.id, threadId: created.body.bot.threadId };
+    expect((await api("PATCH", `/api/bots/${x.id}`, alice, { modelSelection: { instanceId: "claude", model: "fake-model" } })).status).toBe(200);
+    expect((await api("PUT", `/api/bots/${x.id}/perspicax`, alice, { profiles: [PROFILE.id] })).status).toBe(200);
+    expect((await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "run" })).status).toBe(200);
+    // the owner's key reaches the engine only once the directory lists it
+    await waitFor(async () => (await api("GET", "/api/me/engines", alice)).body.engines?.find((e: { instanceId: string }) => e.instanceId === "claude")?.ownerKey === true);
+  }, 90_000);
+
+  afterAll(async () => {
+    child?.kill("SIGTERM");
+    if (child) await waitForExit(child);
+    await idp?.close();
+    if (home) removeTempDir(home);
+  });
+
+  it("alice allows her routines to act in her name", async () => {
+    // a session that is gone is refused (the loopback without any session
+    // is refused by the gate before the route)
+    const gone = { cookie: `${alice.cookie!.split("=")[0]}=omb_s_gone` };
+    expect((await api("GET", "/api/org/routine-delegation", gone)).status).toBe(401);
+    expect((await api("POST", "/api/org/routine-delegation", gone, {})).status).toBe(401);
+    expect((await api("GET", "/api/org/routine-delegation")).status).toBeGreaterThanOrEqual(401);
+    expect((await api("GET", "/api/org/routine-delegation", alice)).body).toEqual({ state: "none", suspended: 0 });
+    expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
+    const status = (await api("GET", "/api/org/routine-delegation", alice)).body;
+    expect(status).toMatchObject({ state: "active", suspended: 0, consentedAt: expect.any(Number), renewedAt: expect.any(Number) });
+    expect(status.expiresAt - status.renewedAt).toBe(30 * 86_400_000);
+    expect(idp.delegationOf(ALICE.sub)).not.toBeNull();
+  }, 30_000);
+
+  it("scenario D: her routine runs while she has no session, on her key and her delegation", async () => {
+    const routine = await api("POST", "/api/routines", alice, { name: "Hourly report", botId: x.id, prompt: "Write the hourly report.",
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 4_000 } });
+    expect(routine.status, routine.text).toBe(201);
+    r1 = routine.body.routine.id;
+    expect(routine.body.routine.runAs).toEqual({ principalId: ids.alice, name: "Alice" });
+    // alice signs out of her only session before the routine is due
+    expect((await api("POST", "/api/auth/logout", alice, {})).status).toBe(200);
+    expect((await api("GET", "/api/org/routine-delegation", alice)).status).toBe(401);
+    if (existsSync(dump)) rmSync(dump);
+    const exchangesBefore = idp.exchanges.length;
+    const refreshesBefore = idp.refreshes.length;
+    const run = await waitFor(async () => existsSync(join(home, ".openmausbot", "routines.json")) &&
+      onDisk().runs.find((r) => r.routineId === r1 && ["completed", "failed"].includes(r.status)), 60_000);
+    expect(run.status, run.error).toBe("completed");
+    expect(run.runAs).toBe(ids.alice);
+    expect(engineEnv().ANTHROPIC_API_KEY).toBe(ALICE_KEY);
+    const exchanges = idp.exchanges.slice(exchangesBefore);
+    expect(exchanges.map((e) => ({ sub: e.sub, ok: e.ok }))).toEqual([{ sub: ALICE.sub, ok: true }]);
+    expect(idp.mcpRequests.filter((r) => r.method === "POST" && r.sub === ALICE.sub).length).toBeGreaterThan(0);
+    await waitFor(async () => idp.exchangeRevoked.includes(exchanges[0]!.token!));
+    // within the renewal window: nothing refreshed
+    expect(idp.refreshes.slice(refreshesBefore).filter((r) => r.delegation)).toEqual([]);
+    alice = await signIn(ALICE);
+    r1Thread = run.resultsThreadId ?? x.threadId;
+    // her report is in the results thread when she is back
+    const report = ((await api("GET", `/api/threads/${r1Thread}/messages`, alice)).body.messages ?? []) as Array<{ kind: string }>;
+    expect(report.some((m) => m.kind === "routine.run")).toBe(true);
+  }, 90_000);
+
+  it("a second run within the window reuses the renewal", async () => {
+    const refreshesBefore = idp.refreshes.length;
+    const run = await runNow(alice, r1);
+    expect(run.status, run.error).toBe("completed");
+    expect(idp.refreshes.slice(refreshesBefore).filter((r) => r.delegation)).toEqual([]);
+  }, 90_000);
+
+  it("Perspicax unreachable skips the run and keeps the routine", async () => {
+    // past the window, the next run renews: make that refresh fail once
+    await sleep(RENEW_SECONDS * 1000 + 500);
+    idp.failNextToken(503);
+    const failed = await runNow(alice, r1);
+    expect(failed).toMatchObject({ status: "failed", error: "Perspicax is unreachable; this run is skipped" });
+    expect((await routineOf(alice, r1))?.suspended).toBeUndefined();
+    const refreshesBefore = idp.refreshes.length;
+    const again = await runNow(alice, r1);
+    expect(again.status, again.error).toBe("completed");
+    expect(idp.refreshes.slice(refreshesBefore)).toEqual([expect.objectContaining({ sub: ALICE.sub, delegation: true })]);
+    expect((await api("GET", "/api/org/routine-delegation", alice)).body.state).toBe("active");
+  }, 150_000);
+
+  it("a revoke from Sagax pauses the routine with exactly one card, and a consent resumes it", async () => {
+    expect((await api("DELETE", "/api/org/routine-delegation", alice)).body).toEqual({ revoked: true });
+    await waitFor(async () => idp.delegationOf(ALICE.sub) === null);
+    await waitFor(async () => (await routineOf(alice, r1))?.suspended?.reason === "delegation_revoked");
+    const refused = await runNow(alice, r1);
+    expect(refused.status).toBe("failed");
+    const cards = await waitFor(async () => { const found = await cardsFor(alice, r1Thread, r1); return found.length ? found : null; });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.access).toMatchObject({ runAsPrincipalId: ids.alice, suspendReason: "delegation_revoked" });
+    expect(await cardsFor(alice, r1Thread, r1)).toHaveLength(1);
+    expect((await api("GET", "/api/org/routine-delegation", alice)).body).toMatchObject({ state: "none", suspended: 1 });
+    expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
+    expect((await routineOf(alice, r1))?.suspended).toBeUndefined();
+  }, 90_000);
+
+  it("a revoke in the console reaches Sagax through the directory: delegation_ended", async () => {
+    const cardsBefore = (await cardsFor(alice, r1Thread, r1)).length;
+    expect(idp.revokeDelegation(ALICE.sub)).toBe(1);
+    await waitFor(async () => (await routineOf(alice, r1))?.suspended?.reason === "delegation_ended", 20_000);
+    expect((await api("GET", "/api/org/routine-delegation", alice)).body.state).toBe("none");
+    expect(await cardsFor(alice, r1Thread, r1)).toHaveLength(cardsBefore + 1);
+    expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
+  }, 60_000);
+
+  it("a consent finished as another account is refused and revoked", async () => {
+    expect(await consent(alice, CAROL)).toBe("/#routine-delegation-error=routines_subject");
+    await waitFor(async () => idp.delegationOf(CAROL.sub) === null);
+    expect((await api("GET", "/api/org/routine-delegation", alice)).body.state).toBe("active");
+  }, 30_000);
+
+  it("bob's routine on alice's bot runs as bob, on alice's key, then pauses no_right", async () => {
+    bob = await signIn(BOB);
+    const created = await api("POST", "/api/routines", bob, { name: "Bob's check", botId: x.id, prompt: "Check for Bob.", enabled: false,
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
+    expect(created.status, created.text).toBe(201);
+    const r2 = created.body.routine.id as string;
+    expect(created.body.routine.runAs).toEqual({ principalId: ids.bob, name: "Bob" });
+    const refreshesBefore = idp.refreshes.length;
+    const missing = await runNow(bob, r2);
+    expect(missing).toMatchObject({ status: "failed", error: "This routine cannot act in Bob's name: routines are not allowed yet" });
+    expect((await routineOf(bob, r2))?.suspended?.reason).toBe("delegation_missing");
+    // alice's delegation was not touched for bob's routine
+    expect(idp.refreshes.slice(refreshesBefore).filter((r) => r.sub === ALICE.sub)).toEqual([]);
+    expect(await consent(bob, BOB)).toBe("/#routine-delegation=ok");
+    expect((await routineOf(bob, r2))?.suspended).toBeUndefined();
+    if (existsSync(dump)) rmSync(dump);
+    const exchangesBefore = idp.exchanges.length;
+    const ran = await runNow(bob, r2);
+    expect(ran.status, ran.error).toBe("completed");
+    expect(idp.exchanges.slice(exchangesBefore).map((e) => e.sub)).toEqual([BOB.sub]);
+    expect(engineEnv().ANTHROPIC_API_KEY).toBe(ALICE_KEY);
+    // bob loses run: the next run pauses the routine no_right
+    expect((await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
+    const refused = await runNow(alice, r2);
+    expect(refused).toMatchObject({ status: "failed", error: "Bob can no longer run this bot's routines" });
+    expect((await routineOf(alice, r2))?.suspended?.reason).toBe("no_right");
+    // alice rewrites its work: it runs as alice now
+    const edited = await api("PATCH", `/api/routines/${r2}`, alice, { prompt: "Check for Alice." });
+    expect(edited.status, edited.text).toBe(200);
+    expect(edited.body.routine.runAs).toEqual({ principalId: ids.alice, name: "Alice" });
+    expect(edited.body.routine.suspended).toBeUndefined();
+  }, 150_000);
+
+  it("a disable in Perspicax pauses her routine person_out, and no run follows", async () => {
+    idp.disable(ALICE.sub);
+    idp.setDirectoryStatus(ALICE.sub, "disabled");
+    await waitFor(async () => onDisk().routines.find((r) => r.id === r1)?.suspended?.reason === "person_out");
+    expect(idp.delegationOf(ALICE.sub)).toBeNull();
+    const runs = onDisk().runs.filter((r) => r.routineId === r1).length;
+    // the scheduler ticks every 10 s: nothing new for R1 over a tick
+    await sleep(12_000);
+    expect(onDisk().runs.filter((r) => r.routineId === r1).length).toBe(runs);
+  }, 60_000);
+
+  it("never writes a refresh or access token in clear", () => {
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        const stat = statSync(path);
+        if (stat.isDirectory()) walk(path);
+        else if (stat.isFile() && /pxl[ro]1\./.test(readFileSync(path, "latin1"))) hits.push(path);
+      }
+    };
+    walk(join(home, ".openmausbot"));
+    if (existsSync(dump)) walk(dirname(dump));
+    expect(hits.filter((path) => !path.startsWith(join(home, "link")))).toEqual([]);
+    expect(log).not.toMatch(/pxl[ro]1\./);
+  });
+});

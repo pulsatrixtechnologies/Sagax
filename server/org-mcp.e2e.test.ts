@@ -9,9 +9,11 @@
 //               bob's exchanged token and clientInfo "Pulsa Bot (<bot id>)"
 //   E negative  carol does not hold the profile: no server is mounted, the
 //               system prompt says why, and the thread shows an activity row
-//   routine     a routine run mounts nothing (slice 6 brings delegation),
-//               nor does anything a routine starts: a room goal routine, a
-//               bot a routine asks, a thread a routine opens on itself
+//   routine     slice 6: a routine run without its person's delegation is
+//               refused and paused; with it, the routine and everything it
+//               starts (a room goal routine, a bot a routine asks, a thread
+//               a routine opens on itself) exchange the runAs person's
+//               routine delegation, never a sign-in
 //   revocation  every exchanged token is revoked when its turn ends
 //   T1          no Perspicax or sign-in token reaches the engine: not in its
 //               argv, its environment or its MCP configuration
@@ -72,6 +74,19 @@ async function signIn(user: FakeOidcUser): Promise<Auth> {
   const session = callback.headers.getSetCookie().find((c) => c.startsWith("omb_session_") && !c.includes("_oidc="));
   expect(callback.headers.get("location"), log.slice(-2000)).toBe("/");
   return { cookie: cookiePair(session!) };
+}
+
+/** Slice 6: `auth` allows their routines to act in their name (the consent
+ * at the fake provider signs `as` in). Returns where the callback landed. */
+async function consent(auth: Auth, as: FakeOidcUser): Promise<string> {
+  idp.user = { ...as };
+  const started = await fetch(`${BASE}/api/org/routine-delegation`, { method: "POST", headers: { cookie: auth.cookie!, "content-type": "application/json" }, body: "{}" });
+  expect(started.status).toBe(200);
+  const binding = cookiePair(started.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
+  const { authorizationUrl } = await started.json() as { authorizationUrl: string };
+  const authorize = await fetch(authorizationUrl, { redirect: "manual" });
+  const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
+  return back.headers.get("location") ?? "";
 }
 
 async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms = 20_000): Promise<T> {
@@ -305,43 +320,55 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect(row?.tool).toEqual({ name: "Perspicax: Dispatch unavailable for Carol (not_held)", ok: false });
   }, 90_000);
 
-  it("a routine run mounts nothing and says why", async () => {
+  it("a routine run without its person's delegation is refused and paused, with one card (slice 6)", async () => {
     const routine = await api("POST", "/api/routines", alice, { name: "Morning", botId: x.id, prompt: "Check the board.", enabled: false,
       schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
     expect(routine.status, routine.text).toBe(201);
+    expect(routine.body.routine.runAs).toEqual({ principalId: ids.alice, name: "Alice" });
     const exchangesBefore = idp.exchanges.length;
     if (existsSync(dump)) rmSync(dump);
     const run = await api("POST", `/api/routines/${routine.body.routine.id}/run`, alice, {});
     expect(run.status, run.text).toBeLessThan(300);
-    const engine = await waitFor(async () => {
-      if (!existsSync(dump)) return null;
-      try { return JSON.parse(readFileSync(dump, "utf8")) as { mcpConfig: { mcpServers: Record<string, unknown> }; systemPrompt: string }; } catch { return null; }
+    const failed = await waitFor(async () => {
+      const runs = ((await api("GET", "/api/routines", alice)).body.runs ?? []) as Array<{ id: string; status: string; error?: string; resultsThreadId?: string }>;
+      return runs.find((r) => r.id === run.body.run.id && r.status === "failed");
     }, 40_000);
-    expect(Object.keys(engine.mcpConfig.mcpServers).some((name) => name.startsWith("perspicax_"))).toBe(false);
-    expect(engine.systemPrompt).toContain("Perspicax tools reach routines once routine delegation is on");
+    expect(failed.error).toBe("This routine cannot act in Alice's name: routines are not allowed yet");
+    const listed = ((await api("GET", "/api/routines", alice)).body.routines as Array<{ id: string; suspended?: { reason: string } }>).find((r) => r.id === routine.body.routine.id);
+    expect(listed?.suspended?.reason).toBe("delegation_missing");
+    expect(existsSync(dump)).toBe(false);
     expect(idp.exchanges.length).toBe(exchangesBefore);
+    const cards = (await threadMessages(alice, failed.resultsThreadId ?? x.threadId)).filter((m) => m.kind === "access") as Array<Message & { access?: { reason: string; routineId?: string } }>;
+    expect(cards.filter((m) => m.access?.reason === "routine_delegation" && m.access.routineId === routine.body.routine.id)).toHaveLength(1);
+    // the consent resumes it
+    expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
+    const resumed = ((await api("GET", "/api/routines", alice)).body.routines as Array<{ id: string; suspended?: unknown }>).find((r) => r.id === routine.body.routine.id);
+    expect(resumed?.suspended).toBeUndefined();
+    expect((await api("GET", "/api/org/routine-delegation", alice)).body).toMatchObject({ state: "active", suspended: 0 });
   }, 90_000);
 
-  /** Run a routine and wait until `rows` new "a routine" rows appear or an
-   * exchange happens (the bug), then check that nothing was exchanged. */
-  async function routineLineageMountsNothing(routineId: string, rows: number): Promise<string[]> {
+  /** Run a routine and wait until `count` exchanges happened, then check
+   * each used alice's routine delegation, every call ran as alice, and every
+   * exchanged token was revoked after its turn. */
+  async function routineLineageUsesDelegation(routineId: string, count: number): Promise<void> {
     const before = await perspicaxRows(alice);
     const exchangesBefore = idp.exchanges.length;
     const callsBefore = idp.mcpRequests.length;
     const run = await api("POST", `/api/routines/${routineId}/run`, alice, {});
     expect(run.status, run.text).toBeLessThan(300);
-    const fresh = async () => [...(await perspicaxRows(alice)).entries()].filter(([at]) => !before.has(at)).map(([, name]) => name);
-    await waitFor(async () => idp.exchanges.length > exchangesBefore || (await fresh()).length >= rows, 60_000);
+    await waitFor(async () => idp.exchanges.length - exchangesBefore >= count, 60_000);
     await allIdle(alice);
-    expect(idp.exchanges.slice(exchangesBefore)).toEqual([]);
-    expect(idp.mcpRequests.slice(callsBefore)).toEqual([]);
-    const added = await fresh();
-    expect(added.length).toBeGreaterThanOrEqual(rows);
-    expect(added.every((name) => name === "Perspicax: Dispatch unavailable for a routine (routine)"), added.join("\n")).toBe(true);
-    return added;
+    const exchanges = idp.exchanges.slice(exchangesBefore);
+    expect(exchanges.map((e) => ({ sub: e.sub, profile: e.profile, ok: e.ok }))).toEqual(Array.from({ length: exchanges.length }, () => ({ sub: ALICE.sub, profile: PROFILE.id, ok: true })));
+    const calls = idp.mcpRequests.slice(callsBefore).filter((r) => r.method === "POST");
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((r) => r.sub === ALICE.sub)).toBe(true);
+    await waitFor(async () => exchanges.every((e) => idp.exchangeRevoked.includes(e.token!)), 20_000);
+    const added = [...(await perspicaxRows(alice)).entries()].filter(([at]) => !before.has(at)).map(([, name]) => name);
+    expect(added, added.join("\n")).toEqual([]);
   }
 
-  it("a room goal routine mounts nothing for the coordinator, never under the owner's sign-in", async () => {
+  it("a room goal routine reaches Perspicax through its person's delegation", async () => {
     await allIdle(alice);
     const room = await api("POST", "/api/groups", alice, {
       name: "Dispatch room",
@@ -353,10 +380,10 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     const routine = await api("POST", "/api/routines", alice, { name: "Room goal", botId: x.id, prompt: "Check the board as a team.", target: "room-goal",
       groupId: room.body.group.id, enabled: false, schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
     expect(routine.status, routine.text).toBe(201);
-    await routineLineageMountsNothing(routine.body.routine.id, 1);
+    await routineLineageUsesDelegation(routine.body.routine.id, 1);
   }, 120_000);
 
-  it("a bot a routine asks mounts nothing, never under the routine owner's sign-in", async () => {
+  it("a bot a routine asks reaches Perspicax through the routine person's delegation", async () => {
     await allIdle(alice);
     const created = await api("POST", "/api/bots", alice, { name: "Rita" });
     expect(created.status, created.text).toBe(201);
@@ -365,18 +392,19 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     const routine = await api("POST", "/api/routines", alice, { name: "Ask Xavier", botId: rita.id, prompt: "ASK-XAVIER about the board.", enabled: false,
       schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
     expect(routine.status, routine.text).toBe(201);
-    // Rita lists no profile: the one row is Xavier's, for the hop
-    await routineLineageMountsNothing(routine.body.routine.id, 1);
+    // Rita lists no profile: the one exchange is Xavier's, for the hop
+    await routineLineageUsesDelegation(routine.body.routine.id, 1);
   }, 120_000);
 
-  it("a thread a routine opens on its own bot mounts nothing, never under the owner's sign-in", async () => {
+  it("a thread a routine opens on its own bot reaches Perspicax through the delegation", async () => {
     await allIdle(alice);
     const routine = await api("POST", "/api/routines", alice, { name: "Open own", botId: x.id, prompt: "OPEN-OWN for the board.", enabled: false,
       schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
     expect(routine.status, routine.text).toBe(201);
-    // one row for the routine run, one for the thread it opened
-    await routineLineageMountsNothing(routine.body.routine.id, 2);
+    // one exchange for the routine run, one for the thread it opened
+    await routineLineageUsesDelegation(routine.body.routine.id, 2);
   }, 120_000);
+
   it("scenario E hop: a teammate bob's Direct turn reaches through coordinate_bots runs as bob", async () => {
     await allIdle(alice);
     const created = await api("POST", "/api/bots", alice, { name: "Yves" });

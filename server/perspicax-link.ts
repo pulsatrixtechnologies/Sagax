@@ -199,7 +199,7 @@ export interface PerspicaxDirectoryOptions {
   onPersonOut: (iss: string, sub: string) => void;
   /** This principal was an admin and no longer is: narrow its sessions now. */
   onRoleNarrowed: (principalId: string) => void;
-  /** Slice 6: after each full answer (never a 304), whether each subject
+  /** Slice 6: after each answer (a 304 reports the cached one), whether each subject
    * holds a routine delegation (undefined: unknown), and when the fetch
    * started (RoutineConsents.reconcile). */
   onDelegations?: (present: (sub: string) => boolean | undefined, fetchStartedAt: number) => void;
@@ -574,6 +574,9 @@ export class PerspicaxDirectory {
         return this.state();
       }
       this.current = { state: "ok", syncedAt: this.now() };
+      // Unchanged is still the current truth: a delegation created and
+      // ended between two polls leaves the same body, and must still end.
+      this.reportDelegations(this.data, fetchStartedAt);
       return this.state();
     }
     if (response.status !== 200) {
@@ -601,22 +604,26 @@ export class PerspicaxDirectory {
     }
     this.apply(parsed);
     this.data = parsed;
-    if (this.options.onDelegations) {
-      const bySub = new Map(parsed.people.map((person) => [person.sub, person] as const));
-      try {
-        this.options.onDelegations((sub) => {
-          const person = bySub.get(sub);
-          if (!person || person.routine_delegation === undefined) return undefined;
-          return person.status === "disabled" ? false : person.routine_delegation !== null;
-        }, fetchStartedAt);
-      } catch (error) {
-        this.log(`perspicax directory: routine delegations could not be reconciled: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
+    this.reportDelegations(parsed, fetchStartedAt);
     const etag = response.headers.get("etag");
     this.etag = etag && etag.length <= 128 ? etag : null;
     this.current = { state: "ok", syncedAt: this.now() };
     return this.state();
+  }
+
+  /** Slice 6: each person's routine delegation, to RoutineConsents. */
+  private reportDelegations(directory: Directory, fetchStartedAt: number): void {
+    if (!this.options.onDelegations) return;
+    const bySub = new Map(directory.people.map((person) => [person.sub, person] as const));
+    try {
+      this.options.onDelegations((sub) => {
+        const person = bySub.get(sub);
+        if (!person || person.routine_delegation === undefined) return undefined;
+        return person.status === "disabled" ? false : person.routine_delegation !== null;
+      }, fetchStartedAt);
+    } catch (error) {
+      this.log(`perspicax directory: routine delegations could not be reconciled: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /** D10: people upsert their principal; the ones who are out (disabled, or

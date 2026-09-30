@@ -461,7 +461,7 @@ describe("PerspicaxDirectory, slice 5: profiles and token exchange", () => {
 });
 
 describe("PerspicaxDirectory, slice 6: routine delegations", () => {
-  it("reports each person's delegation after a full answer, never after a 304", async () => {
+  it("reports each person's delegation after each answer, a 304 with the cached people", async () => {
     const dates = { consented_at: "2026-09-30T10:00:00Z", renewed_at: "2026-09-30T10:05:00Z", expires_at: "2026-10-30T10:05:00Z" };
     const h = harness(directoryOf([
       person("ALICE", { routine_delegation: dates }),
@@ -479,8 +479,11 @@ describe("PerspicaxDirectory, slice 6: routine delegations", () => {
     expect(present("CAROL")).toBeUndefined();
     expect(present("DAVE")).toBe(false);
     expect(present("NOBODY")).toBeUndefined();
+    h.clock.now = 8_000_000;
     await h.sync.refresh();
-    expect(h.delegationCalls).toHaveLength(1);
+    expect(h.delegationCalls).toHaveLength(2);
+    expect(h.delegationCalls[1]!.at).toBe(8_000_000);
+    expect(h.delegationCalls[1]!.present("BOB")).toBe(false);
   });
 
   it("refuses a malformed delegation field", async () => {
