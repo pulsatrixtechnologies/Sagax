@@ -204,13 +204,26 @@ export class PerspicaxMcp {
       return plan;
     }
     const who = { iss: subject.iss, sub: subject.sub };
-    const signIn = await this.subjectFor(source, principalId, who);
+    let signIn = await this.subjectFor(source, principalId, who);
     if (!signIn.ok) {
       refuse(known, signIn.error === "unreachable" ? "unreachable" : source === "delegation" ? "no_delegation" : "no_session");
       return plan;
     }
-    const results = await Promise.all(known.map(async (profileId) => ({ profileId, result: await link.exchangeToken(signIn.token, profileId) })));
-    if (source === "delegation" && results.some(({ result }) => !result.ok && result.error === "subject")) this.options.delegationRefused?.(principalId);
+    const exchangeAll = (token: string) => Promise.all(known.map(async (profileId) => ({ profileId, result: await link.exchangeToken(token, profileId) })));
+    let results = await exchangeAll(signIn.token);
+    if (source === "delegation" && results.some(({ result }) => !result.ok && result.error === "subject")) {
+      // The cached delegation token was refused (revoked from the console,
+      // for one): drop it and renew once now. A live family mounts the tools
+      // for this very turn; an ended one is learned (and its routines
+      // paused) now rather than at the next run.
+      this.options.delegationRefused?.(principalId);
+      const renewed = await this.subjectFor(source, principalId, who);
+      if (renewed.ok) {
+        for (const { result } of results) if (result.ok) void this.revoke(result.token);
+        signIn = renewed;
+        results = await exchangeAll(renewed.token);
+      }
+    }
     for (const { profileId, result } of results) {
       if (!result.ok) {
         const reason: PerspicaxUnavailableReason = result.error === "not_held" ? "not_held" : result.error === "subject" ? (source === "delegation" ? "no_delegation" : "no_session") : "unreachable";

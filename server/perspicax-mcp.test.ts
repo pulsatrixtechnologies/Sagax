@@ -167,6 +167,35 @@ describe("PerspicaxMcp", () => {
     link.exchangeToken = exchange;
   });
 
+  it("a refused cached delegation token is renewed once for the same turn", async () => {
+    const h = harness();
+    h.delegations.add(BOB);
+    const link = (h.mcp as unknown as { options: { link(): PerspicaxMcpLink } }).options.link();
+    const exchange = link.exchangeToken;
+    // the first exchange refuses the cached subject; the renewed one passes
+    let refusals = 1;
+    link.exchangeToken = async (subjectToken, profileId) => (refusals-- > 0 ? { ok: false, error: "subject" } : exchange(subjectToken, profileId));
+    expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "owner-routine" })).toEqual({
+      mounted: [{ profileId: "P1", slug: "dispatch", name: "Dispatch" }], unavailable: [],
+    });
+    expect(h.refusedDelegations).toEqual([BOB]);
+    expect(h.delegationCalls).toEqual([BOB, BOB]);
+    link.exchangeToken = exchange;
+  });
+
+  it("a refused delegation whose renewal ends reads no_delegation without a second exchange", async () => {
+    const h = harness();
+    h.delegations.add(BOB);
+    const link = (h.mcp as unknown as { options: { link(): PerspicaxMcpLink } }).options.link();
+    const exchange = link.exchangeToken;
+    let exchanged = 0;
+    link.exchangeToken = async () => { exchanged++; h.delegations.delete(BOB); return { ok: false, error: "subject" }; };
+    expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "owner-routine" })).toMatchObject({ mounted: [], unavailable: [{ reason: "no_delegation" }] });
+    expect(exchanged).toBe(1);
+    expect(h.delegationCalls).toEqual([BOB, BOB]);
+    link.exchangeToken = exchange;
+  });
+
   it("a profile the speaker does not hold is unavailable; no sign-in is no_session", async () => {
     const h = harness();
     expect(await h.mcp.prepareTurn({ ...turn, bot: { id: "x", perspicax: { profiles: ["P1", "P2"] } }, speakerPrincipalId: BOB, speakerOrigin: "person" })).toEqual({
