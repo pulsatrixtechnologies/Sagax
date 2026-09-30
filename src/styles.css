@@ -965,6 +965,20 @@
   border: 1px solid var(--color-hairline);
   overflow: hidden;
 }
+/* With a docked panel open, the chat and the panel read as ONE light frame
+   split by a hairline, not two cards with a navy seam between them. */
+@media (min-width: 1024px) {
+  [data-skin="pulsatrix-light"] .app-content-frame:has(~ .app-docked-panel) {
+    margin-right: 0;
+    border-right: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  [data-skin="pulsatrix-light"] .app-content-frame ~ .app-docked-panel {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+}
 
 /* The Perspicax mark shows the file that reads on the sidebar's ground
    (see --sidebar-mark-on-dark / --sidebar-mark-on-light). */
