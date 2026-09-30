@@ -142,7 +142,7 @@ export function RichTable({ model, dir, caption }: { model: TableModel; dir?: "l
         </button>
       </div>
       <div className="max-h-[min(70vh,34rem)] overflow-auto overscroll-x-contain" tabIndex={0} role="region" aria-label={caption ?? t("rich.table.region")}>
-        <table dir={dir} className="w-full border-collapse text-[13.5px]">
+        <table dir={dir} className="w-full border-collapse text-[12.5px]">
           <thead>
             <tr>
               {model.header.map((cell, column) => {

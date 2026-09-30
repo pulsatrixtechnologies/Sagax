@@ -148,7 +148,7 @@ function DonutChart({ spec, colors, active, setActive }: {
           <path key={index} d={d} fill={colors[index % colors.length]} stroke="var(--color-inset)" strokeWidth={2} fillOpacity={active === null || active === index ? 1 : 0.45} onMouseEnter={() => setActive(index)} />
         );
       })}
-      <text x={cx} y={cy} dy="0.32em" textAnchor="middle" fontSize={15} fontWeight={600} fill="currentColor">{formatTick(total)}</text>
+      <text x={cx} y={cy} dy="0.32em" textAnchor="middle" fontSize={14} fontWeight={600} fill="currentColor">{formatTick(total)}</text>
     </g>
   );
 }
@@ -247,7 +247,7 @@ function ChartBlockComponent({ code, pending = false }: { code: string; pending?
         </div>
       ) : null}
       {(view === "source" || (!spec && !pending)) && (
-        <pre className="max-h-80 overflow-auto border-t border-hairline/30 p-3 text-[12.5px] leading-relaxed text-ink">{code}</pre>
+        <pre className="max-h-80 overflow-auto border-t border-hairline/30 p-3 text-[12px] leading-[18px] text-ink">{code}</pre>
       )}
     </BlockFrame>
   );

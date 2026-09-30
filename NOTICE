@@ -33,3 +33,8 @@ The Hibou 98 skin (src/styles/retro98.css and the retro window chrome) adapts
 bevel colors, box-shadows and control metrics from 98.css, Copyright 2020
 Jordan Scales, used under the MIT License (third_party/98.css/LICENSE). Its
 pixel font is not included.
+
+The Pulsatrix and Pulsatrix Light skins use the Geist typeface, Copyright
+2024 The Geist Project Authors (https://github.com/vercel/geist-font),
+bundled from @fontsource-variable/geist and used under the SIL Open Font
+License, Version 1.1 (third_party/geist/OFL.txt).
