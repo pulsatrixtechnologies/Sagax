@@ -414,7 +414,14 @@ directory, and revokes a family from its fake console.
   plain text. The consent's refusals (`routines_subject`, `binding`,
   `routines_session`, 401 without a session) are in
   `server/oidc-login.test.ts` and `server/org-routines.e2e.test.ts`; the
-  solo server's 403 `identity_perspicax` is checked by hand (S6-12).
+  solo server's 403 `identity_perspicax` is checked by hand (S6-12). Who gets
+  401 and who gets 403 on `/api/org/routine-delegation` (the gate's 403 for a
+  session-less local request under service trust, its 401 for an expired or
+  revoked session, the route's 401 `session_required` under
+  `OMB_LOOPBACK_TRUST=owner`, 403 `identity_perspicax` for a session without
+  a principal or on a solo server) is tabled in `docs/verification/routines.md`
+  ("Slice 6: rate limits at Perspicax"), with the rate limit behavior and the
+  durable revocation queue.
 - `server/routines.test.ts` ("slice 6: routines in their person's name"):
   `runAs` from the creator and moved by a work-field edit, snapshotted on the
   run, a refused run suspending its routine once (`delegation_missing`,

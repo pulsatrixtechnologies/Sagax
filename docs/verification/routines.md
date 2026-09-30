@@ -208,3 +208,88 @@ saved destination snapshots, dated result cards, approval links, deleted-thread
 fallback, and continued user conversations staying visible. Native decoding and
 thread-list tests retain hidden execution records for direct navigation and
 approvals while omitting them from ordinary iOS/Android thread pickers.
+
+## Slice 6: rate limits at Perspicax
+
+Perspicax answers an OAuth call over its budget with 429
+`{"error":"rate_limited","message":"too many requests; slow down"}` and
+`Retry-After` in seconds (60 today). `/oauth/token` (code exchange and
+refresh) and `/oauth/revoke` without the link's Basic header share 60 calls a
+minute per client address, and every call a Sagax server makes comes from one
+address. The link-authenticated token exchange and its revocations have their
+own budget (600 a minute per linked server) and are not paced by Sagax. A 429
+means nothing happened: no revocation, no code consumed, no refresh token
+rotated.
+
+What Sagax does:
+
+- **Its own budget.** `OMB_PERSPICAX_TOKEN_BUDGET` (a whole number from 1 to
+  60, default 45) caps Sagax's token and revocation calls per rolling minute
+  (`server/idp-token-pacer.ts`). A code exchange always goes (someone waits at
+  the browser). A refresh waits at most 5 s for a slot, else it is deferred as
+  rate limited without a call. Revocations use only what leaves 10 slots free
+  (1 on a budget below 11), one at a time. Any 429 pauses refreshes and
+  revocations for its `Retry-After` (read as seconds or an HTTP-date, clamped
+  to 1 s to 10 min, 60 s when missing).
+- **Never an outage.** A rate-limited refresh is retried after max(60 s,
+  `Retry-After`); it never counts toward the 24 hour unreachable grace, so a
+  session is never ended by rate limits (`idp: renewal deferred (Perspicax is
+  rate limiting this server; retry in N s)`). A turn whose Perspicax tools are
+  refused by a rate limit says "Perspicax is rate limiting this server; try
+  again in a minute", never "could not be reached".
+- **Routine runs.** A run whose delegation renewal is rate limited stays
+  queued (`admitAfter`, `admitAttempts` on the run) and is retried at most 3
+  times, after max(`Retry-After`, 60 s x 2^n), capped at 10 minutes, and only
+  while the retry comes before the routine's next occurrence. Then it fails
+  with "Perspicax is rate limiting this server; this run is skipped". A
+  routine is never paused for a rate limit; a real outage keeps "Perspicax is
+  unreachable; this run is skipped".
+- **Sign-in and consent.** A rate-limited code exchange comes back as
+  `/pair#signin_error=rate_limited` ("Perspicax is busy right now. Wait a
+  minute and try again.") or `#routine-delegation-error=rate_limited` ("...
+  Wait a minute and allow your routines again.").
+- **Durable revocations.** Every revocation at Perspicax (a session that
+  ends, a refused sign-in or consent, a replaced or withdrawn routine
+  delegation, a rotated token nobody can keep) goes through a queue sealed with
+  the sign-in vault key in `idp-revocations.enc` (0600, own AAD,
+  `server/idp-revocations.ts`). It is paced by the budget above, retried until
+  a 2xx or a definitive 400 (`invalid_request`, `unsupported_token_type`),
+  waits a 429's `Retry-After`, backs off 30 s doubling to 10 minutes on other
+  failures, resumes on boot, and drops entries after 30 days or past 5000
+  (oldest first; only the count is logged). When the vault cannot seal, one
+  attempt is made at once and the log says the entry was not kept. No token is
+  ever logged. `DELETE /api/org/routine-delegation` still answers
+  `{revoked:true}` at once.
+
+Who reaches `/api/org/routine-delegation` (GET, POST, DELETE):
+
+| Caller | Answer |
+|---|---|
+| Organization server, service loopback trust (the default), no session | 403 from the auth gate: "forbidden: on this shared server a local request without a session may only use the service routes; ..." |
+| A session that expired or was revoked | 401 from the auth gate: "unauthorized: this session has expired or was revoked; ..." |
+| `OMB_LOOPBACK_TRUST=owner`, loopback without a session | 401 `{code:"session_required"}` from the route |
+| A session without a principal or provider account, or a solo server | 403 `identity_perspicax` |
+
+```sh
+pnpm exec vitest run server/oidc-rp.test.ts server/idp-token-pacer.test.ts \
+  server/idp-revocations.test.ts server/idp-session.test.ts \
+  server/org-routine-consent.test.ts server/routines.test.ts \
+  server/perspicax-mcp.test.ts server/oidc-login.test.ts \
+  server/perspicax-org-routes.test.ts server/org-routines.e2e.test.ts \
+  src/pair/PairPage.test.ts src/components/settings/MyRoutineDelegation.test.ts
+```
+
+- `server/idp-token-pacer.test.ts`: with a budget of 5 the sixth refresh is
+  deferred without a call; a 429 pauses refreshes and revocations, never a
+  code exchange; revocations keep the reserve free.
+- `server/idp-revocations.test.ts`: a 429 with `Retry-After: 60` delays the
+  next attempt 60 s; a restart sends what was pending; the sealed file and
+  the log never hold a token; the 30 day and 5000 entry limits.
+- `server/idp-session.test.ts` ("rate limits"): 25 hours of 429 answers never
+  end a session while 25 hours of network errors still do; 120 releases in
+  one tick send at most 35 revocations per rolling minute with a budget of
+  45, all within 4 minutes.
+- `server/routines.test.ts` ("slice 6"): a rate-limited run retried three
+  times with back-off, then skipped without pausing the routine.
+- `server/org-routines.e2e.test.ts`: the gate's 401 and 403 above on a real
+  server.

@@ -640,6 +640,7 @@ server at it:
 OMB_PERSPICAX_LINK_FILE=/link/pulsabot.json    # written by Perspicax (PXC_PULSABOT_LINK_FILE)
 # OMB_PERSPICAX_INTERNAL_URL=http://perspicax:8787  # where this server reaches Perspicax inside the deployment
 # OMB_PERSPICAX_DIRECTORY_SECONDS=300              # 5 to 3600: how often the directory is read
+# OMB_PERSPICAX_TOKEN_BUDGET=45                    # 1 to 60: token and revocation calls to Perspicax per minute
 # OMB_ORG_NAME=Acme                                # shown in Settings > Organization (default Pulsatrix)
 ```
 
@@ -654,6 +655,13 @@ OMB_PERSPICAX_LINK_FILE=/link/pulsabot.json    # written by Perspicax (PXC_PULSA
   directory are reached there; the issuer is still checked against
   `OMB_PERSPICAX_ISSUER`, and the browser is still sent to the public
   authorization endpoint.
+- `OMB_PERSPICAX_TOKEN_BUDGET` (a whole number from 1 to 60, default 45):
+  how many sign-in, refresh and revocation calls this server makes to
+  Perspicax per rolling minute. Perspicax allows 60 a minute per client
+  address; lower it when several servers reach Perspicax from one address
+  (their budgets add up). Revocations always leave 10 calls free for
+  sign-ins and refreshes, and wait in a sealed queue (`idp-revocations.enc`)
+  until they go through.
 - The directory is read at start, every `OMB_PERSPICAX_DIRECTORY_SECONDS`,
   and after each sign-in. Everyone it lists becomes a person here (so a bot
   can be shared with someone before their first sign-in), with their name,
