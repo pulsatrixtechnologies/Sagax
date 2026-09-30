@@ -29,6 +29,7 @@ import {
   Trash2,
   Users,
   X,
+  PictureInPicture2,
 } from "lucide-react";
 import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
 
@@ -53,6 +54,7 @@ import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { MIN_QUERY } from "./SearchResults";
 import { openCommandPalette } from "./CommandPalette";
 import { APP_NAME } from "@/lib/app-links";
+import { isBotFloating, subscribeFloatingBots, toggleFloatingBot } from "@/lib/floating-bots";
 import { isMacPlatform, SHORTCUT_GROUPS, shortcutKeysForPlatform } from "@/lib/keyboard-shortcuts";
 import { TeamLibraryPanel } from "./TeamLibraryPanel";
 import { ShareTeamDialog } from "./ShareTeamDialog";
@@ -784,6 +786,7 @@ export function BotContextMenu({
   const showThreads = useShowThreads();
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const bot = state.bots.find((b) => b.id === menu.botId);
+  const floating = useSyncExternalStore(subscribeFloatingBots, () => isBotFloating(menu.botId), () => false);
   const menuRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const element = menuRef.current;
@@ -856,6 +859,12 @@ export function BotContextMenu({
     </button>
   );
   const divider = (key: string) => <div key={key} className="mx-2 my-1 h-[0.5px] bg-border" />;
+  // Put the bot on the desktop (or back): a floating character to chat with.
+  const floatItem = item(
+    <PictureInPicture2 size={16} className="text-ink" />,
+    floating ? t("floatingBots.menu.unfloat") : t("floatingBots.menu.float"),
+    () => toggleFloatingBot(bot.id),
+  );
 
   return createPortal(
     <div
@@ -873,6 +882,8 @@ export function BotContextMenu({
         {item(<FolderPlus size={16} className="text-ink" />, t("folder.new"), () => onNewFolder(bot.id))}
         {divider("threads")}
       </>}
+      {floatItem}
+      {divider("float")}
       {remoteClient ? [
         item(<FolderPlus size={16} className="text-ink" />, t("sidebar.bot.moveToSection"), () => {
           onClose();

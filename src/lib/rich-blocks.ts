@@ -206,7 +206,7 @@ export function clampWidgetHeight(value: unknown): number | null {
 export function buildWidgetDocument(source: string, scheme: "light" | "dark"): string {
   const dark = scheme === "dark";
   const base = `:root{color-scheme:${scheme};--omb-bg:${dark ? "#1b1b1b" : "#ffffff"};--omb-fg:${dark ? "#f2f2f2" : "#161616"};--omb-muted:${dark ? "#a3a3a3" : "#5c5c5c"};--omb-border:${dark ? "#3a3a3a" : "#dedede"};--omb-accent:${dark ? "#3987e5" : "#2a78d6"}}`
-    + "html,body{margin:0;padding:0}body{padding:12px;background:var(--omb-bg);color:var(--omb-fg);font:14px/1.5 Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;overflow-x:auto}"
+    + "html,body{margin:0;padding:0}body{padding:12px;background:var(--omb-bg);color:var(--omb-fg);font:13px/20px Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;overflow-x:auto}"
     + "button,input,select,textarea{font:inherit}*,*::before,*::after{box-sizing:border-box}"
     + "@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}";
   const reporter = `(function(){var last=0;function send(){var h=Math.ceil(Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0));if(h!==last){last=h;parent.postMessage({type:${JSON.stringify(WIDGET_MESSAGE)},height:h},"*");}}`

@@ -43,7 +43,11 @@ export function MentionTextarea({ inputRef, peers, everyone = false, ...props }:
   }, [inputRef, resize, sync]);
   return <div className="mention-editor relative min-w-0 flex-1 self-center">
     <div ref={mirrorRef} dir={props.dir} aria-hidden="true" className="mention-editor-mirror pointer-events-none absolute inset-0 overflow-hidden">
-      <MentionText text={String(props.value ?? "")} peers={peers} everyone={everyone} />{"\n"}
+      {/* Chrome will not ellipsize a textarea's own placeholder, so the
+          mirror paints it on one line while the field is empty. */}
+      {!props.value && props.placeholder
+        ? <span className="mention-editor-placeholder">{props.placeholder}</span>
+        : <MentionText text={String(props.value ?? "")} peers={peers} everyone={everyone} />}{"\n"}
     </div>
     <textarea {...props} ref={inputRef} onScroll={(event) => { sync(); props.onScroll?.(event); }} />
   </div>;

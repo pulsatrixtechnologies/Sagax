@@ -220,3 +220,24 @@ describe("zero cost while off", () => {
     expect(typeof module.default).toBe("function");
   });
 });
+
+describe("Hibou 98 as a skin once found", () => {
+  it("stays in the skin picker after the retro mode is switched off", async () => {
+    const { visibleSkins } = await import("./skins");
+    const storage = memoryStorage();
+    expect(readRetroUnlocked(storage)).toBe(false);
+    expect(visibleSkins(readRetroUnlocked(storage)).map((skin) => skin.id)).not.toContain("retro98");
+    setRetroEnabled(true, { storage, skin: fakeSkin("dusk"), notify: false });
+    setRetroEnabled(false, { storage, skin: fakeSkin("retro98"), notify: false });
+    expect(readRetroEnabled(storage)).toBe(false);
+    expect(readRetroUnlocked(storage)).toBe(true);
+    expect(visibleSkins(readRetroUnlocked(storage), "dusk").map((skin) => skin.id)).toContain("retro98");
+  });
+
+  it("keeps the power-on effect in a lazy chunk", () => {
+    const host = readFileSync(join(here, "../components/RetroChromeHost.tsx"), "utf8");
+    const staticImports = [...host.matchAll(/^import[^;]*from\s+"([^"]+)"/gm)].map(([, from]) => from);
+    expect(staticImports.some((from) => from.includes("RetroBoot") || from.includes("retro-assistant/"))).toBe(false);
+    expect(host).toContain('import("./retro98/RetroBoot")');
+  });
+});

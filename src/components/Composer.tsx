@@ -1153,7 +1153,7 @@ export function Composer({
                   : t("composer.placeholder.bot", { name: bot?.name ?? "" })
           }
           aria-label={t("composer.placeholder.bot", { name: group ? group.name : (bot?.name ?? "") })}
-            className="block max-h-[7.5rem] min-h-6 w-full resize-none overflow-y-auto bg-transparent px-1 py-1.5 text-[14px] leading-5 placeholder:text-ink-secondary focus:outline-none"
+            className="block max-h-[7.5rem] min-h-6 w-full resize-none overflow-y-auto bg-transparent chat-input-text px-1 py-1.5 placeholder:text-ink-secondary focus:outline-none"
           />
           <div className="flex items-center gap-1">
           {bot && !group && !remoteClient && (

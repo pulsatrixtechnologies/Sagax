@@ -73,6 +73,8 @@ extraResources:
     to: licenses/hpke-common-LICENSE.txt
   - from: third_party/98.css/LICENSE
     to: licenses/98css-LICENSE.txt
+  - from: third_party/geist/OFL.txt
+    to: licenses/Geist-OFL.txt
   - from: dist
     to: ui
   - from: dist-server

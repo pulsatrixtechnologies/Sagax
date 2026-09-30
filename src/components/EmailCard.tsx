@@ -26,7 +26,7 @@ function HeaderRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-w-0 gap-3 py-1">
       <dt className="w-16 shrink-0 text-[12px] text-ink-secondary">{label}</dt>
-      <dd className="min-w-0 break-words text-[13px] text-ink">{value}</dd>
+      <dd className="min-w-0 break-words text-[12.5px] text-ink">{value}</dd>
     </div>
   );
 }
@@ -59,10 +59,10 @@ function EmailCardComponent({ draft, pending = false }: { draft: EmailDraft; pen
         {draft.bcc.length > 0 && <HeaderRow label={t("rich.email.bcc")} value={draft.bcc.join(", ")} />}
         <div className="flex min-w-0 gap-3 py-1">
           <dt className="w-16 shrink-0 text-[12px] text-ink-secondary">{t("rich.email.subject")}</dt>
-          <dd className="min-w-0 break-words text-[13.5px] font-semibold text-ink">{draft.subject || <span className="font-normal text-ink-secondary">{t("rich.email.noSubject")}</span>}</dd>
+          <dd className="min-w-0 break-words text-[13px] font-semibold text-ink">{draft.subject || <span className="font-normal text-ink-secondary">{t("rich.email.noSubject")}</span>}</dd>
         </div>
       </dl>
-      <div ref={bodyRef} className="space-y-2 px-4 py-3 text-[14px] leading-relaxed text-ink [&_p]:whitespace-pre-line [&_a]:text-accent [&_a]:underline [&_li]:ms-5 [&_ol]:list-decimal [&_ul]:list-disc">
+      <div ref={bodyRef} className="space-y-2 px-4 py-3 text-[13px] leading-5 text-ink [&_p]:whitespace-pre-line [&_a]:text-accent [&_a]:underline [&_li]:ms-5 [&_ol]:list-decimal [&_ul]:list-disc">
         <Markdown remarkPlugins={[remarkGfm]} components={{
           a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
           img: ({ alt }) => <span>{alt}</span>,

@@ -323,7 +323,7 @@ const Transcript = memo(function Transcript({
                 )}
                 <div
                   className={cn(
-                    "rounded-[18px] text-[15px] leading-relaxed",
+                    "rounded-[18px] text-[13px] leading-5",
                     !user && m.text && prefersWideBubble(m.text) ? "w-full max-w-[min(94%,780px,calc(100%-82px))]" : "w-fit max-w-[min(80%,560px,calc(100%-82px))]",
                     !user && m.id === emergingId && "turn-answer",
                     // A bot message that is only attachments is just the files: no bubble.

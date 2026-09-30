@@ -399,7 +399,7 @@ export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
       <div className={folded ? "relative max-h-[22rem] overflow-hidden" : undefined}>
       {html ? (
         <div
-          className={`text-[13px] leading-relaxed [&_pre]:!bg-transparent [&_pre]:m-0 [&_pre]:p-3 ${
+          className={`text-[12px] leading-[18px] [&_pre]:!bg-transparent [&_pre]:m-0 [&_pre]:p-3 ${
             wrapLines
               ? "whitespace-pre-wrap break-words overflow-x-hidden [&_pre]:!whitespace-pre-wrap [&_pre]:!break-words [&_code]:!whitespace-pre-wrap [&_code]:!break-words"
               : "overflow-x-auto"
@@ -408,7 +408,7 @@ export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
         />
       ) : (
         <pre
-          className={`p-3 text-[13px] leading-relaxed text-ink ${
+          className={`p-3 text-[12px] leading-[18px] text-ink ${
             wrapLines
               ? "whitespace-pre-wrap break-words overflow-x-hidden"
               : "overflow-x-auto"
@@ -627,7 +627,7 @@ export function MermaidDiagram({ code, streaming }: MermaidDiagramProps) {
         />
       )}
       {(showSource || !svg || error) && (
-        <pre className="overflow-x-auto p-3 text-[13px] leading-relaxed text-ink">{code}</pre>
+        <pre className="overflow-x-auto p-3 text-[12px] leading-[18px] text-ink">{code}</pre>
       )}
     </div>
   );
@@ -735,7 +735,7 @@ function Spoiler({ children }: { children?: ReactNode }) {
     );
   }
   return (
-    <span className="mx-px inline rounded px-1 py-px text-[13px] leading-relaxed text-ink underline decoration-dotted decoration-hairline underline-offset-2">
+    <span className="mx-px inline rounded px-1 py-px text-ink underline decoration-dotted decoration-hairline underline-offset-2">
       {children}
       <button
         type="button"
@@ -887,12 +887,14 @@ function scrollToFragment(fragment: string, prefix: string): boolean {
 }
 
 const HEADING_CLASS: Record<string, string> = {
-  h1: "mt-2 text-[16px] font-semibold",
-  h2: "mt-2 text-[15.5px] font-semibold",
+  // Scaled to the 13 px body (Perspicax v3's body step): the two top levels
+  // step up, h3 to h5 hold the body size in semibold, h6 steps down.
+  h1: "mt-2 text-[15px] leading-[22px] font-semibold",
+  h2: "mt-2 text-[14px] font-semibold",
   h3: "mt-1.5 font-semibold",
   h4: "mt-1.5 font-semibold",
-  h5: "mt-1.5 text-[14px] font-semibold",
-  h6: "mt-1.5 text-[13.5px] font-semibold text-ink-secondary",
+  h5: "mt-1.5 font-semibold",
+  h6: "mt-1.5 text-[12px] font-semibold text-ink-secondary",
 };
 
 const nodeOffset = (node: unknown): number | undefined =>
@@ -1007,7 +1009,7 @@ function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers 
         // but outside it, off the left edge in a right-to-left paragraph,
         // where the line ends.
         return (
-          <code dir="ltr" className="rounded bg-inset px-1 py-px text-[13px] break-words [unicode-bidi:isolate]">{children}</code>
+          <code dir="ltr" className="rounded bg-inset px-1 py-px text-[12px] break-words [unicode-bidi:isolate]">{children}</code>
         );
       },
       // markdown never emits a span itself (no raw HTML); the only
@@ -1064,7 +1066,7 @@ function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers 
         if (!model) {
           return (
             <div className="overflow-x-auto">
-              <table dir={blockDirection(node)} className="w-full border-collapse text-[13.5px]">{children}</table>
+              <table dir={blockDirection(node)} className="w-full border-collapse text-[12.5px]">{children}</table>
             </div>
           );
         }
@@ -1113,7 +1115,7 @@ function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers 
         // GFM footnotes arrive as <section data-footnotes>
         if ((rest as Record<string, unknown>)["data-footnotes"] !== undefined || className?.includes("footnotes")) {
           return (
-            <section aria-label={t("rich.footnotes")} className="mt-3 border-t border-hairline/30 pt-2 text-[12.5px] text-ink-secondary [&_ol]:ps-5 [&_p]:inline">
+            <section aria-label={t("rich.footnotes")} className="mt-3 border-t border-hairline/30 pt-2 text-[12px] text-ink-secondary [&_ol]:ps-5 [&_p]:inline">
               {children}
             </section>
           );
