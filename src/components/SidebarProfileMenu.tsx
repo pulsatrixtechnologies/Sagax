@@ -3,8 +3,14 @@
 // Everything app-level used to sit in that row as unlabelled icons crowding
 // the name: a phone, an update arrow, a gear. Three icons is a guessing game
 // and there was nowhere to put a fourth. They are now a menu that the row
-// opens on click — the shape every desktop app uses for "this is about the
-// app, not about what you are looking at".
+// opens, the shape every desktop app uses for "this is about the app, not
+// about what you are looking at".
+//
+// The footer reads like Perspicax's: an avatar and a full name. The
+// sidebar's places (Team map, Automations, Connected apps, Templates) are
+// always-visible rows just above it (SidebarPlaces), so this menu holds the
+// profile items, led by Archived bots when there are any. It opens on click;
+// the collapsed rail keeps its avatar-only trigger.
 //
 // The update entry is the one item that reports progress in place, so it
 // keeps the menu open and re-labels itself as it works.
@@ -186,11 +192,23 @@ function useUpdateItem(): UpdateEntry | null {
   };
 }
 
-export function SidebarProfileMenu({ avatarOnly = false }: {
-  /** just the avatar, beside the apps pill the way Grok Bot lays out its
-   * footer; the name moves to the tooltip and the menu keeps its width */
+/** The footer menu: account-level places (Archived bots) first, then a
+ * hairline, then the profile items. Without them it is the profile menu
+ * alone. */
+export function footerMenuItems(places: SidebarMenuItem[], profileItems: SidebarMenuItem[]): SidebarMenuItem[] {
+  if (places.length === 0) return profileItems;
+  const [first, ...rest] = profileItems;
+  return first ? [...places, { ...first, separatorBefore: true }, ...rest] : places;
+}
+
+export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
+  /** just the avatar, for the collapsed (icons) rail; the name moves to the
+   * tooltip and the menu keeps its width */
   avatarOnly?: boolean;
-} = {}) {
+  /** Items listed before the profile items (Archived bots). The sidebar's
+   * pages are not here: they are rows above this one (SidebarPlaces). */
+  places?: SidebarMenuItem[];
+}) {
   const { state, dispatch } = useStore();
   const phone = useSidebarPhoneStatus();
   const update = useUpdateItem();
@@ -198,9 +216,19 @@ export function SidebarProfileMenu({ avatarOnly = false }: {
   const triggerRef = useRef<HTMLSpanElement>(null);
 
   const profile = state.config?.profile;
-  const name = profileLabel(profile);
+  const viewer = state.config?.viewer;
+  // the server fills the profile with whoever is looking; an older server
+  // that only names the viewer still gets their name on the row
+  const name = profileLabel({
+    name: profile?.name?.trim() || viewer?.name?.trim(),
+    email: profile?.email?.trim() || viewer?.email?.trim(),
+  });
+  const initials = profileInitials({
+    name: profile?.name?.trim() || viewer?.name?.trim(),
+    email: profile?.email?.trim() || viewer?.email?.trim(),
+  });
 
-  const items: SidebarMenuItem[] = [
+  const profileItems: SidebarMenuItem[] = [
     {
       key: "phone",
       label: phone.pairedCount ? t("sidebar.menu.yourPhone") : t("sidebar.menu.getIos"),
@@ -243,6 +271,22 @@ export function SidebarProfileMenu({ avatarOnly = false }: {
       onSelect: () => void openExternalLink(HELP_CENTER_URL),
     },
   ];
+  const items = footerMenuItems(places, profileItems);
+  const noteworthy = update && updateNoteworthy(update.phase, update.pending) ? update : null;
+  // an item in the menu asking for attention while the menu is folded away
+  const placeAttention = places.some((item) => item.attention);
+
+  const avatar = (size: number) => (
+    // the footer avatar rests tinted and shows its real colours on hover,
+    // focus or while its menu is open (.footer-tint)
+    <span className="footer-tint flex shrink-0 rounded-full">
+      {profile?.avatarUrl ? (
+        <img src={profile.avatarUrl} alt="" style={{ width: size, height: size }} className="rounded-full object-cover" />
+      ) : (
+        <InitialsAvatar initials={initials} size={size} />
+      )}
+    </span>
+  );
 
   return (
     <>
@@ -259,54 +303,47 @@ export function SidebarProfileMenu({ avatarOnly = false }: {
               open ? "ring-2 ring-accent/60" : "hover:brightness-90",
             )}
           >
-            {/* the footer avatar rests tinted like the app marks beside it
-              * and shows its real colours on hover, focus or while open
-              * (.footer-tint); the update dot stays outside the tint */}
-            <span className="footer-tint flex rounded-full">
-              {profile?.avatarUrl ? (
-                <img src={profile.avatarUrl} alt="" className="size-9 rounded-full object-cover" />
-              ) : (
-                <InitialsAvatar initials={profileInitials(profile)} size={36} />
-              )}
-            </span>
-            {update && updateNoteworthy(update.phase, update.pending) && (
+            {avatar(36)}
+            {noteworthy && (
               <span
-                title={update.label}
-                aria-label={update.label}
+                title={noteworthy.label}
+                aria-label={noteworthy.label}
                 className={cn(
                   "absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-sidebar",
-                  update.phase === "error" ? "bg-danger" : "bg-accent",
+                  noteworthy.phase === "error" ? "bg-danger" : "bg-accent",
                 )}
               />
             )}
           </span>
         ) : (
+          // One row, like Perspicax's account footer: the avatar and the full
+          // name, which ellipsizes only when it truly runs out of room.
           <span
             ref={triggerRef}
+            data-sidebar-account
             className={cn(
-              "flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors",
-              open ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
+              "flex h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left transition-colors",
+              open ? "bg-sidebar-hover" : "hover:bg-sidebar-hover",
             )}
           >
-            {profile?.avatarUrl ? (
-              <img src={profile.avatarUrl} alt="" className="size-7 shrink-0 rounded-full object-cover" />
-            ) : (
-              <InitialsAvatar initials={profileInitials(profile)} size={28} />
-            )}
-            <span className="min-w-0 flex-1 truncate text-[14px] text-sidebar-ink">{name}</span>
+            {avatar(28)}
+            <span title={name} className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5 text-sidebar-ink">{name}</span>
             {/* an update is the one thing worth interrupting the name for, so
               * it sits on the row rather than waiting to be found in the menu */}
-            {update && updateNoteworthy(update.phase, update.pending) && (
+            {noteworthy && (
               <span
-                title={update.label}
-                aria-label={update.label}
+                title={noteworthy.label}
+                aria-label={noteworthy.label}
                 className={cn(
                   "flex size-6 shrink-0 items-center justify-center rounded-full",
-                  update.phase === "error" ? "bg-danger/15 text-danger" : "bg-accent/15 text-accent",
+                  noteworthy.phase === "error" ? "bg-danger/15 text-danger" : "bg-accent/15 text-accent",
                 )}
               >
-                <UpdateIcon phase={update.phase} pending={update.pending} size={14} />
+                <UpdateIcon phase={noteworthy.phase} pending={noteworthy.pending} size={14} />
               </span>
+            )}
+            {placeAttention && !open && (
+              <span data-testid="footer-attention" aria-hidden="true" className="size-2 shrink-0 rounded-full bg-danger" />
             )}
           </span>
         )}

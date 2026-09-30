@@ -497,7 +497,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
   const SOURCE = support.nativeSource;
   const decodeConfig = decodeAcpConfig(support.defaultCli);
   const DENY_TIMEOUT_NOTE =
-    "Pulsa Bot: nobody answered this permission request in time. Skip this action and finish what you can without it.";
+    "Sagax: nobody answered this permission request in time. Skip this action and finish what you can without it.";
 
   return {
     driverKind: DRIVER_KIND,
@@ -1856,7 +1856,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             nativeImageInput: support.images === true,
             effortLevels: support.effortLevels,
             modelVariants: support.modelVariants === true,
-            // Pulsa Bot supplies a per-bot approvalMode on every harness
+            // Sagax supplies a per-bot approvalMode on every harness
             // turn, which safely overrides a legacy instance fullAuto value.
             // Direct adapter calls that omit it still fail closed in sendTurn.
             localComputerMcp: true,

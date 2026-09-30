@@ -4,7 +4,7 @@
 // script. The release asset is verified before extraction and the executable
 // is verified again on every reuse.
 // Nothing is installed globally and cloudflared's own updater stays disabled;
-// Pulsa Bot updates this dependency with an ordinary reviewed app release.
+// Sagax updates this dependency with an ordinary reviewed app release.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {

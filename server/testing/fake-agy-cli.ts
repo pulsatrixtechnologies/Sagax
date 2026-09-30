@@ -7,7 +7,7 @@
 // status SUCCESS. Deterministic, no network.
 //
 //   FAKE_AGY_MODE=ask-peer
-//     reads Pulsa Bot's temporary `openmausbot-agents` entry from agy's
+//     reads Sagax's temporary `openmausbot-agents` entry from agy's
 //     global MCP config, calls list_bots then ask_bot, and returns the peer's
 //     real reply. This pins the Antigravity/Gemini comms path end to end.
 //

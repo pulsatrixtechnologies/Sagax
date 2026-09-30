@@ -134,9 +134,19 @@
   background: #c0c0c0 !important;
   padding: 0;
 }
-/* the modern header (search, new, traffic-light spacer) moves to the toolbar */
-[data-skin="retro98"] [data-sidebar] > div:first-child {
+/* the modern header (brand, search, new, collapse, traffic-light spacer)
+   moves to the toolbar */
+[data-skin="retro98"] [data-sidebar] > div:first-child,
+[data-skin="retro98"] [data-sidebar] [data-sidebar-head] {
   display: none !important;
+}
+/* a section's rows hang off the dotted tree line below, not the modern
+   guide line and indent */
+[data-skin="retro98"] [data-sidebar] [data-sidebar-nest] {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  gap: 0 !important;
 }
 [data-skin="retro98"] [data-sidebar] > div.flex-1 {
   margin: 0;
@@ -288,20 +298,59 @@
 [data-skin="retro98"] [data-sidebar] > div:last-of-type {
   padding: 4px 0 2px !important;
 }
-[data-skin="retro98"] [data-sidebar] [data-tour="tools"] > span {
+/* the account row: a flat button with the name, no modern pill */
+[data-skin="retro98"] [data-sidebar] [data-sidebar-account] {
   height: 23px !important;
-  padding: 0 8px !important;
-  justify-content: center;
-  border: 0 !important;
-  background: #c0c0c0 !important;
+  padding: 0 4px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+[data-skin="retro98"] [data-sidebar] [data-sidebar-account] > span:not(:first-child) {
   color: #000 !important;
-  box-shadow: var(--r98-raised) !important;
+  font-weight: normal !important;
 }
-[data-skin="retro98"] [data-sidebar] [data-tour="tools"]:active > span {
-  box-shadow: var(--r98-pressed) !important;
+[data-skin="retro98"] [data-sidebar] [data-sidebar-account] img,
+[data-skin="retro98"] [data-sidebar] [data-sidebar-account] > span:first-child > * {
+  width: 20px !important;
+  height: 20px !important;
 }
-[data-skin="retro98"] [data-sidebar] [data-tour="tools"] > span :is(img, svg:not(.lucide)) {
+/* the places above the account row: plain Explorer rows, a 16px icon and
+   the name, the open page selected the way a bot row is */
+[data-skin="retro98"] [data-sidebar] [data-sidebar-places] {
+  gap: 0 !important;
+  padding: 0 0 2px !important;
+}
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place] {
+  height: 20px !important;
+  min-height: 0 !important;
+  gap: 6px !important;
+  padding: 0 6px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #000 !important;
+  font-weight: normal !important;
+}
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place] > svg.lucide {
+  width: 16px !important;
+  height: 16px !important;
+  color: #000 !important;
+}
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place] > .truncate {
+  flex: 0 1 auto !important;
+  padding: 0 2px 0 3px;
+}
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place][aria-current] > .truncate {
+  background: #000080;
+  color: #fff;
+  outline: 1px dotted #ffff80;
+  outline-offset: -1px;
+}
+/* the Gmail, Slack and GitHub marks are a modern flourish; Explorer lists names */
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place] > span:not(.truncate):not([data-testid]) {
   display: none;
+}
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place] > [data-testid] {
+  margin-left: auto;
 }
 [data-skin="retro98"] [data-sidebar] span[title].size-9,
 [data-skin="retro98"] [data-sidebar] span[title].size-9 > * {

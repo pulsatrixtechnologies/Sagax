@@ -26,7 +26,7 @@ describe("promptHalves", () => {
 describe("volatileContextNote", () => {
   it("labels the current copy, announces a clearing, and stays quiet for never-set halves", () => {
     expect(volatileContextNote("Memory: likes quiet hours.", false))
-      .toBe("Context from Pulsa Bot updated since this conversation started; it replaces any earlier copy:\n\nMemory: likes quiet hours.");
+      .toBe("Context from Sagax updated since this conversation started; it replaces any earlier copy:\n\nMemory: likes quiet hours.");
     expect(volatileContextNote("  ", true)).toContain("have been cleared");
     expect(volatileContextNote("", false)).toBe("");
   });
@@ -79,7 +79,7 @@ describe("splitSessionPrompt", () => {
     const first = splitSessionPrompt("stable rules.", "memory", null, fullSystem, "first");
     const second = splitSessionPrompt("stable rules.", "moved to Toronto", first.receipt, fullSystem, "second");
     expect(second.text).toBe(
-      "Context from Pulsa Bot updated since this conversation started; it replaces any earlier copy:\n\nmoved to Toronto\n\nsecond",
+      "Context from Sagax updated since this conversation started; it replaces any earlier copy:\n\nmoved to Toronto\n\nsecond",
     );
   });
 

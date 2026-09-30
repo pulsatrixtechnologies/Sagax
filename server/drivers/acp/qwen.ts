@@ -1,4 +1,4 @@
-// Qwen Code — Alibaba's `qwen --acp` CLI. Custom-only in Pulsa Bot:
+// Qwen Code — Alibaba's `qwen --acp` CLI. Custom-only in Sagax:
 // the official pane has no Qwen Cloud catalog; live local hosts land in
 // Custom and are written into ~/.qwen/settings.json modelProviders.
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

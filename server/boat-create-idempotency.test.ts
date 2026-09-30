@@ -493,7 +493,7 @@ describe("Boat create idempotency", () => {
         elapsed?: number;
       };
       await expectCleanWorkerExit(worker, "vanishing-lock worker");
-      expect(result.error).toMatch(/locked by another Pulsa Bot process/i);
+      expect(result.error).toMatch(/locked by another Sagax process/i);
       expect(result.elapsed).toBeGreaterThanOrEqual(1_500);
       expect(result.elapsed).toBeLessThan(5_000);
     } finally {
@@ -556,7 +556,7 @@ describe("Boat create idempotency", () => {
         elapsed?: number;
       };
       await expectCleanWorkerExit(worker, "replaced-lock worker");
-      expect(result.error).toMatch(/locked by another Pulsa Bot process/i);
+      expect(result.error).toMatch(/locked by another Sagax process/i);
       expect(result.elapsed).toBeGreaterThanOrEqual(1_500);
       expect(result.elapsed).toBeLessThan(5_000);
     } finally {
@@ -613,8 +613,8 @@ describe("Boat create idempotency", () => {
         expectCleanWorkerExit(second, "second live-reaper contender"),
       ]);
 
-      expect(firstResult.error).toMatch(/locked by another Pulsa Bot process/i);
-      expect(secondResult.error).toMatch(/locked by another Pulsa Bot process/i);
+      expect(firstResult.error).toMatch(/locked by another Sagax process/i);
+      expect(secondResult.error).toMatch(/locked by another Sagax process/i);
       expect(readFileSync(lockPath, "utf8")).toBe(lockContents);
       expect(readFileSync(`${lockPath}.reap-${lockToken}`, "utf8")).toBe(reaperContents);
       expect(() => readFileSync(join(dataDir, "box-create-requests.json"), "utf8")).toThrow();

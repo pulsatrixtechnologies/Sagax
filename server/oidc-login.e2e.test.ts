@@ -3,7 +3,7 @@
 // Perspicax slice 1. The server runs with OMB_IDENTITY=perspicax:
 //
 //   - the environment descriptor advertises the sign-in and no email codes;
-//   - /auth/oidc/start -> provider -> /auth/oidc/callback sets a Pulsa Bot
+//   - /auth/oidc/start -> provider -> /auth/oidc/callback sets a Sagax
 //     session cookie, and /api/auth/session names the principal, the email
 //     and the role;
 //   - scenario A (spec section 10): an admin signed in this way creates a bot
@@ -142,7 +142,7 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
     expect(signedIn.status, log.slice(-2000)).toBe(303);
     expect(signedIn.location).toBe("/");
     expect(signedIn.jar.cookie).toMatch(/^omb_session_/);
-    // the provider saw the Pulsa Bot origin as the login token's resource
+    // the provider saw the Sagax origin as the login token's resource
     expect(idp.lastAuthorize).toMatchObject({ client_id: "pulsa-bot", redirect_uri: `${BASE}/auth/oidc/callback`, resource: BASE, code_challenge_method: "S256" });
     const session = await api("GET", "/api/auth/session", signedIn.jar);
     expect(session.status).toBe(200);

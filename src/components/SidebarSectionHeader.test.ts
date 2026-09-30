@@ -22,7 +22,7 @@ describe("SidebarSectionHeader", () => {
     expect(html).toContain('aria-hidden="true"');
     expect(html).not.toContain('role="button"');
     expect(html).not.toContain("Delete Work section");
-    expect(html.indexOf(">Work</span>")).toBeLessThan(html.indexOf("lucide-chevron-down"));
+    expect(html.indexOf(">Work</span>")).toBeLessThan(html.indexOf("lucide-chevron-right"));
     expect(html).not.toContain("uppercase");
   });
 

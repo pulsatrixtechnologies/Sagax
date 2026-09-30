@@ -135,7 +135,7 @@ export function inviteMailMessage(input: { orgName: string; inviterEmail?: strin
     ? `Open ${input.link} within 7 days to join ${input.orgName}.`
     : "Sign in with this address on this server's sign-in page within 7 days.";
   return {
-    subject: `You are invited to ${input.orgName} on Pulsa Bot`,
+    subject: `You are invited to ${input.orgName} on Sagax`,
     text: `${greeting} to ${input.orgName}. ${link}`,
   };
 }

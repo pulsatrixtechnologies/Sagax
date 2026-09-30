@@ -1,13 +1,12 @@
-// The popover shared by the two rows at the foot of the sidebar: the Tools
-// row and the profile row. Both are a trigger that opens a list of items
-// above itself; only the trigger's shape and the open gesture differ, so the
-// keyboard handling, the outside-click close and the item chrome live here
-// once.
+// The popover at the foot of the sidebar: a trigger that opens a list of
+// items above itself. The keyboard handling, the outside-click close and the
+// item chrome live here once.
 //
-// Tools opens on hover (it is a browsing gesture — you sweep the bottom of
-// the sidebar looking for the page you want). The profile menu opens on click
-// only, because a menu that appears under the cursor when you are aiming at
-// nothing in particular is startling on a row you pass over constantly.
+// The footer's account row opens on hover when it carries the sidebar's
+// places (it is a browsing gesture: you sweep the bottom of the sidebar
+// looking for the page you want); a click pins it. A trigger without
+// places opens on click only, because a menu that appears under the cursor
+// when you are aiming at nothing in particular is startling.
 import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { bindHoverIntent, createHoverIntent } from "./sidebar-hover-intent";

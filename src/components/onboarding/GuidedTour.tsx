@@ -77,9 +77,11 @@ export function GuidedTour() {
           dispatch({ type: "toggleComputer", open: false });
           return;
         case "openTools": {
-          // the menu is a toggle: only press it when it is closed
+          // The places are always-visible rows now, so there is usually
+          // nothing to open; a menu trigger (a toggle) is pressed only while
+          // it is closed.
           const trigger = visible("tools");
-          if (trigger && trigger.getAttribute("aria-expanded") !== "true") trigger.click();
+          if (trigger?.hasAttribute("aria-expanded") && trigger.getAttribute("aria-expanded") !== "true") trigger.click();
           return;
         }
         case "openApps":

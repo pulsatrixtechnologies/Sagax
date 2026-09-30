@@ -65,7 +65,7 @@ function makeDerived(): ReturnType<typeof import("./useBotSettingsDerived").useB
     browserAllowed: true,
     browserEnabled: false,
     browserSelectable: false,
-    browserDisabledReason: "The built-in browser needs the Pulsa Bot desktop app",
+    browserDisabledReason: "The built-in browser needs the Sagax desktop app",
     sectionName: "General",
     currentChief: undefined,
     botRoutines: [],

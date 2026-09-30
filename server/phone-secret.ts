@@ -8,7 +8,7 @@ import {
 } from "@hpke/core";
 
 export const PHONE_SECRET_PROTOCOL_VERSION = 1 as const;
-export const PHONE_SECRET_INFO = "Pulsa Bot phone credential v1";
+export const PHONE_SECRET_INFO = "Sagax phone credential v1";
 export const PHONE_SECRET_MAX_BYTES = 4_096;
 
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
@@ -393,13 +393,13 @@ export class PhoneSecretBridge {
   private async provideWithinLimit(context: PhoneSecretContext): Promise<void> {
     if (!this.identity) {
       throw new PhoneSecretError(
-        "Secure phone entry is not ready on this computer. Reopen Pulsa Bot and try again.",
+        "Secure phone entry is not ready on this computer. Reopen Sagax and try again.",
         503,
       );
     }
     const identity = await this.identity.catch(() => {
       throw new PhoneSecretError(
-        "Secure phone entry is not ready on this computer. Reopen Pulsa Bot and try again.",
+        "Secure phone entry is not ready on this computer. Reopen Sagax and try again.",
         503,
       );
     });

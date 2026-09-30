@@ -585,7 +585,7 @@ describe("OpenID Connect grants on sessions (slice 2)", () => {
   it("carries a pairing's provider account and grant into the session it creates, and reports the exchange", () => {
     const seen: string[] = [];
     registry.onExchanged((session, pairing) => seen.push(`${session.idp?.grantRef}:${pairing.label}`));
-    const { credential } = registry.openPairing({ scopes: ["client"], label: "Pulsa Bot phone", ttlMs: 120_000, principalId: "pr_00000000-0000-4000-8000-000000000001", idp });
+    const { credential } = registry.openPairing({ scopes: ["client"], label: "Sagax phone", ttlMs: 120_000, principalId: "pr_00000000-0000-4000-8000-000000000001", idp });
     const result = registry.exchange({ code: credential, label: "", source: "1.2.3.4" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -593,7 +593,7 @@ describe("OpenID Connect grants on sessions (slice 2)", () => {
     expect(record.idp).toEqual(idp);
     expect(record.principalId).toBe("pr_00000000-0000-4000-8000-000000000001");
     expect(record.scopes).toEqual(["client"]);
-    expect(seen).toEqual(["g-1:Pulsa Bot phone"]);
+    expect(seen).toEqual(["g-1:Sagax phone"]);
     // the 120 s window closes
     const late = registry.openPairing({ scopes: ["client"], ttlMs: 120_000, idp });
     clock += 120_001;

@@ -132,7 +132,7 @@ describe("local computer descriptor", () => {
   it.skipIf(process.platform === "win32")("reports a private unavailable reason without making that descriptor mountable", () => {
     const userData = privateUserData("mac-unavailable");
     const file = join(userData, "cua-connection.json");
-    const reason = "embedded host failed: Screen Recording required; grant access in System Settings and restart Pulsa Bot";
+    const reason = "embedded host failed: Screen Recording required; grant access in System Settings and restart Sagax";
     writeFileSync(file, JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
     expect(readCuaConnection({ platform: "darwin", userData })).toBeNull();
     expect(readCuaUnavailableReason({ platform: "darwin", userData })).toBe(reason);
@@ -168,7 +168,7 @@ describe("local computer descriptor", () => {
     }), { mode: 0o600 });
 
     const exactFile = join(userData, "cua-connection.json");
-    const reason = "Screen Recording required; grant access in System Settings and restart Pulsa Bot";
+    const reason = "Screen Recording required; grant access in System Settings and restart Sagax";
     writeFileSync(exactFile, JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
     expect(readCuaConnection({ platform: "darwin", userData, home })).toBeNull();
     expect(readCuaUnavailableReason({ platform: "darwin", userData, home })).toBe(reason);
@@ -185,7 +185,7 @@ describe("local computer descriptor", () => {
     const stale = join(root, "Library", "Application Support", "OpenGrokBot");
     mkdirSync(first, { recursive: true, mode: 0o700 });
     mkdirSync(stale, { recursive: true, mode: 0o700 });
-    const reason = "Accessibility required; grant access in System Settings and restart Pulsa Bot";
+    const reason = "Accessibility required; grant access in System Settings and restart Sagax";
     writeFileSync(join(first, "cua-connection.json"), JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
     writeFileSync(join(stale, "cua-connection.json"), JSON.stringify({
       mode: "embedded", socketPath: "/fixture/stale.sock", mcpCommand: "/fixture/stale-driver",

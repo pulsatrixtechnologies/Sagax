@@ -83,7 +83,7 @@ function recoveryStateError(detail: string, cause?: unknown): Error & { status: 
   return Object.assign(
     new Error(
       `Cloud computer creation is paused because its recovery state is ${detail}. `
-      + "Check boat.dev for an unnamed Boat before repairing Pulsa Bot's local state.",
+      + "Check boat.dev for an unnamed Boat before repairing Sagax's local state.",
     ),
     { status: 503, cause },
   );
@@ -325,7 +325,7 @@ function acquireJournalLock(): JournalLockOwner {
       // lock can disappear between link(EEXIST) and read, or replace each
       // successfully reaped owner before the next link attempt.
       if (performance.now() >= deadline) {
-        throw recoveryStateError("locked by another Pulsa Bot process");
+        throw recoveryStateError("locked by another Sagax process");
       }
       if (reaped) continue;
       Atomics.wait(lockWait, 0, 0, LOCK_RETRY_MS);

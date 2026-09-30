@@ -90,6 +90,7 @@
   "sidebar.aria": "Bots et navigation",
   "sidebar.search": "Rechercher",
   "sidebar.searchAria": "Rechercher des bots et des messages",
+  "sidebar.searchPlaceholder": "Rechercher…",
   "sidebar.noMatch": "Rien ne correspond à « {query} »",
   "sidebar.preview.waiting": "En attente de vous…",
   "sidebar.preview.working": "En cours…",
@@ -174,7 +175,6 @@
   "sidebar.nav.connectedApps": "Applications connectées",
   "sidebar.appSettings": "Paramètres de l'application",
   "sidebar.tools": "Outils",
-  "sidebar.connectTools": "Connecter apps et outils",
   "botPanel.tabsAria": "Panneau du bot",
   "botPanel.tab.details": "Détails",
   "botPanel.tab.routines": "Routines",
@@ -1658,7 +1658,7 @@
   "pair.pulsatrix.intro": "Votre organisation vous connecte avec Pulsatrix Perspicax : votre mot de passe et votre second facteur restent là-bas.",
   "pair.pulsatrix.useCode": "Vous avez plutôt un code d'appairage ?",
   "pair.pulsatrix.error": "La connexion n'a pas abouti. Réessayez.",
-  "pair.pulsatrix.errorRole": "Ce compte ne peut pas se connecter à Pulsa Bot. Demandez à un administrateur dans Perspicax.",
+  "pair.pulsatrix.errorRole": "Ce compte ne peut pas se connecter à Sagax. Demandez à un administrateur dans Perspicax.",
   "pair.pulsatrix.errorUnavailable": "Pulsatrix est injoignable. Réessayez dans un instant.",
   "pair.pulsatrix.finishing": "Connexion en cours...",
   "pair.pulsatrix.errorClient": "Ce lien de connexion ne vient pas de cette application. Recommencez depuis l'application.",
@@ -1845,5 +1845,6 @@
   "organization.adminApprovals.empty": "Rien n'attend.",
   "organization.adminApprovals.allow": "Autoriser une fois",
   "organization.adminApprovals.deny": "Refuser",
-  "approval.waitingForAdmin": "Cette commande s'exécute sur le serveur: en attente de l'approbation d'un admin."
+  "approval.waitingForAdmin": "Cette commande s'exécute sur le serveur: en attente de l'approbation d'un admin.",
+  "onboarding.tour.tools": "Le bas de la barre latérale : Carte de l’équipe, Automatisations, Applications connectées et Templates, toujours à un clic. Votre nom, juste en dessous, ouvre vos réglages."
 }

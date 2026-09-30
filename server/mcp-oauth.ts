@@ -404,7 +404,7 @@ export class McpOAuthManager {
     this.vault = options.vault;
     this.fetcher = options.fetch ?? fetch;
     this.now = options.now ?? Date.now;
-    this.clientName = options.clientName ?? "Pulsa Bot";
+    this.clientName = options.clientName ?? "Sagax";
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
@@ -616,11 +616,11 @@ export class McpOAuthManager {
         redirect: "error",
       });
     } catch {
-      throw new McpOAuthError("Could not reach the authorization server to register Pulsa Bot.");
+      throw new McpOAuthError("Could not reach the authorization server to register Sagax.");
     }
     const body = await readJsonBody(response);
     if (!response.ok || typeof body?.client_id !== "string" || !body.client_id) {
-      throw new McpOAuthError(`The authorization server refused to register Pulsa Bot${oauthErrorSuffix(body)}.`, "registration_failed");
+      throw new McpOAuthError(`The authorization server refused to register Sagax${oauthErrorSuffix(body)}.`, "registration_failed");
     }
     const secret = typeof body.client_secret === "string" && body.client_secret ? body.client_secret : undefined;
     const declared = body.token_endpoint_auth_method;
@@ -637,7 +637,7 @@ export class McpOAuthManager {
     this.sweep();
     const flow = state ? this.pending.get(state) : undefined;
     if (state) this.pending.delete(state);
-    if (!flow) return { ok: false, error: "This sign-in link has expired or was already used. Start the sign-in again from Pulsa Bot." };
+    if (!flow) return { ok: false, error: "This sign-in link has expired or was already used. Start the sign-in again from Sagax." };
     const record = this.vault.get(flow.name);
     if (!record || record.serverUrl !== flow.serverUrl || !record.client) {
       return { ok: false, name: flow.name, error: "This MCP server changed while signing in. Start the sign-in again." };
@@ -907,7 +907,7 @@ export async function probeServer(
           jsonrpc: "2.0",
           id: 1,
           method: "initialize",
-          params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "Pulsa Bot", version: "1" } },
+          params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "Sagax", version: "1" } },
         }),
         signal,
         redirect: "follow",

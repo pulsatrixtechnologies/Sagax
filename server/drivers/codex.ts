@@ -71,7 +71,7 @@ function missingNativeCodexThread(error: unknown, cursor: string): boolean {
 
 /** Ask the configured executable to update itself. This matters when the user
  * selected a non-PATH Codex: installing a second global copy would leave
- * Pulsa Bot pointing at the old binary. */
+ * Sagax pointing at the old binary. */
 export function codexUpdateCommand(cli: string, platform: NodeJS.Platform = process.platform): string {
   if (cli === "codex") return "codex update";
   const trimmed = cli.trim();
@@ -143,7 +143,7 @@ export function managedCodexArgs(config: NonNullable<CodexConfig["managed"]>): s
 }
 
 const DENY_TIMEOUT_NOTE =
-  "Pulsa Bot: nobody answered this permission request in time. Skip this action and finish what you can without it.";
+  "Sagax: nobody answered this permission request in time. Skip this action and finish what you can without it.";
 
 const skippedSseServers = new Set<string>();
 const renamedMcpServers = new Set<string>();
@@ -834,7 +834,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       const settle = async (ok: boolean, stopReason: string | null) => {
         if (state.settled) return;
         state.settled = true;
-        for (const finish of Array.from(asks.values())) finish("deny", "Pulsa Bot: the turn ended", "system");
+        for (const finish of Array.from(asks.values())) finish("deny", "Sagax: the turn ended", "system");
         for (const p of rpcPending.values()) p.reject(new Error("turn settled"));
         rpcPending.clear();
         const complete = () => {
@@ -1435,7 +1435,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           approvalParams = namedApprovalParams(approvalMode);
         }
         // Codex's `never` means "do not ask to escalate", not "grant every
-        // requested permission". Only the user's explicit Pulsa Bot Full
+        // requested permission". Only the user's explicit Sagax Full
         // mode may synthesize approvals; Custom must preserve the sandbox
         // boundary from config.toml (for example never + read-only).
         autoAcceptPermissions = approvalMode === "full";

@@ -288,7 +288,7 @@ export function buildDiagnosticsReport({
   now = new Date().toISOString(),
 } = {}) {
   const lines = [];
-  lines.push("Pulsa Bot diagnostics");
+  lines.push("Sagax diagnostics");
   lines.push(`Generated: ${now}`);
   lines.push("");
   lines.push("## App");

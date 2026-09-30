@@ -4,10 +4,10 @@
 // built-in MCP"). This extension is that client: loaded into the per-turn
 // `pi --mode rpc --no-session` process via `-e`, it reads a JSON file whose
 // path is handed in through OMB_MCP_CONFIG and mounts every server described
-// there as first-class pi tools (pi.registerTool). Pulsa Bot ships this file
+// there as first-class pi tools (pi.registerTool). Sagax ships this file
 // and the pi driver spawns it — the pi repo itself is never touched.
 //
-// Protocol: the Pulsa Bot proxies speak raw JSON-RPC 2.0 over stdio, one
+// Protocol: the Sagax proxies speak raw JSON-RPC 2.0 over stdio, one
 // frame per line (no MCP SDK, no Content-Length framing) — see
 // server/mcp-bridge.ts and server/drivers/agents-proxy.ts. This client matches
 // that exactly.
@@ -68,7 +68,7 @@ interface PiToolDefinition {
 }
 
 /** Structural slice of Pi 0.84's ExtensionAPI used by this standalone file.
- * Keeping it local avoids bundling Pi into Pulsa Bot; the extension is
+ * Keeping it local avoids bundling Pi into Sagax; the extension is
  * loaded by the user's installed Pi, which supplies the real implementation. */
 interface PiExtensionApi {
   registerTool(definition: PiToolDefinition): void;
@@ -83,7 +83,7 @@ const TOOL_OUTPUT_MAX_BYTES = 50 * 1024;
 const TOOL_OUTPUT_MAX_LINES = 2_000;
 const TOOL_NAME_MAX_LENGTH = 64;
 
-/** A minimal stdio JSON-RPC 2.0 MCP client, matched to Pulsa Bot's
+/** A minimal stdio JSON-RPC 2.0 MCP client, matched to Sagax's
  * newline-delimited house protocol. */
 export class StdioMcp {
   private child: ChildProcessWithoutNullStreams;

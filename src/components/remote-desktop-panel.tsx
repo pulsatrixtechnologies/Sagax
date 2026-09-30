@@ -176,7 +176,7 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
         `${bot.name}'s live desktop`,
         bot.id,
       );
-      if (!opened) throw new Error("Pulsa Bot could not open the live desktop");
+      if (!opened) throw new Error("Sagax could not open the live desktop");
     } catch (cause) {
       if (tookControl) {
         await api(`/api/bots/${bot.id}/computer/control`, {

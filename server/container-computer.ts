@@ -1,6 +1,6 @@
 // Cua-backed Local VM lifecycle and health checks.
 //
-// Pulsa Bot owns only the sandbox boundary: image preparation, container
+// Sagax owns only the sandbox boundary: image preparation, container
 // lifecycle, resource limits, loopback viewer, and target-scoped lease in the
 // harness. Desktop automation itself is Cua Driver. Agents connect directly to
 // `cua-driver mcp` inside the container; this module never reimplements clicks,
@@ -405,7 +405,7 @@ function statusProblem(status: ContainerComputerStatus): string | null {
   }
   if (status.container === "missing") return "Create the Local VM";
   if (!status.imageMatches) return "The existing Local VM uses an older desktop or Cua Driver; recreate it";
-  if (!status.managed) return "The existing container was not created by Pulsa Bot; recreate it";
+  if (!status.managed) return "The existing container was not created by Sagax; recreate it";
   if (status.network === "unsafe") return "The existing Local VM exposes its viewer publicly; recreate it";
   if (status.security === "unsafe") return "The existing Local VM is missing safety limits; recreate it";
   if (status.persistence === "unsafe") return "The existing Local VM is missing its durable folder; recreate it";
@@ -427,7 +427,7 @@ export function imageLabelsMatch(labels: Record<string, string> | undefined): bo
 }
 
 /** Ownership is intentionally independent of the current image/driver
- * versions. An older Pulsa Bot container must stay removable (and eligible
+ * versions. An older Sagax container must stay removable (and eligible
  * for idle cleanup), while imageMatches keeps readiness version-strict. */
 function containerOwnershipLabelsMatch(
   labels: Record<string, string> | undefined,
@@ -528,7 +528,7 @@ export async function containerComputerStatus(
     status.image = imageLabelsMatch(image.labels);
     status.image_id = image.id;
   } catch {
-    // The prepared Pulsa Bot derivative has not been built yet.
+    // The prepared Sagax derivative has not been built yet.
   }
 
   try {
@@ -1028,7 +1028,7 @@ export async function containerComputerAction(
   if (action === "remove" && !before.managed) {
     throw Object.assign(
       new Error(
-        `The existing container named ${target.containerName} was not created by Pulsa Bot; remove it manually in ${runtime}`,
+        `The existing container named ${target.containerName} was not created by Sagax; remove it manually in ${runtime}`,
       ),
       { status: 409 },
     );

@@ -683,7 +683,7 @@ final class DecodingTests: XCTestCase {
         // desktop changes in lockstep; the client passes them through.
         XCTAssertEqual(
             try decode(APIErrorBody.self, "unauthorized").error,
-            "pair this device from Phone settings in Pulsa Bot on your computer"
+            "pair this device from Phone settings in Sagax on your computer"
         )
         XCTAssertFalse(try decode(APIErrorBody.self, "forbidden").error.isEmpty)
         XCTAssertEqual(

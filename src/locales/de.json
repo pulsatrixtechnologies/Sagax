@@ -167,6 +167,7 @@
   "sidebar.aria": "Bots und Navigation",
   "sidebar.search": "Suchen",
   "sidebar.searchAria": "Bots und Nachrichten durchsuchen",
+  "sidebar.searchPlaceholder": "Suchen…",
   "sidebar.noMatch": "Nichts passt zu „{query}“",
   "sidebar.preview.waiting": "Wartet auf dich…",
   "sidebar.preview.waitingOnTeammate": "Wartet auf einen Kollegen…",

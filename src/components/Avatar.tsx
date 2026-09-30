@@ -1,4 +1,4 @@
-// Bot avatar: the Pulsa Bot owl (OwlAvatar.tsx), wrapped in the app's
+// Bot avatar: the Sagax owl (OwlAvatar.tsx), wrapped in the app's
 // historical MausAvatar API so no call site changes. The bot's color is the
 // owl's plumage; the app's MausState vocabulary and one-shot MausMotion beats
 // are translated to the owl's six states by src/lib/owl/owl-state.ts. The

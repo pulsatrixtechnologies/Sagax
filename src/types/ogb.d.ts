@@ -258,7 +258,7 @@ const __BASE_VERSION__: string;
       onOpenAppSettings?(cb: (section?: "organization") => void): () => void;
       /** Updates the native Dock/taskbar unread indicator. */
       setUnreadCount?(count: number): void;
-      /** Opens a live desktop as a sandboxed window owned by Pulsa Bot. */
+      /** Opens a live desktop as a sandboxed window owned by Sagax. */
       desktopViewer?: {
         open(url: string, title: string, contextId: string): Promise<boolean>;
         /** Closes the live-desktop window, but only when it belongs to this bot. */

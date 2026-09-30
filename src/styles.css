@@ -210,9 +210,9 @@
   --color-sidebar: #060f20;              /* = panel: unchanged */
   --color-sidebar-ink: #eef2fb;           /* = ink: unchanged */
   --color-sidebar-ink-secondary: #9aa6c2; /* = ink-secondary: unchanged */
-  --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
-  --color-sidebar-selected: #77777752;    /* = selected: unchanged */
-  --color-sidebar-hairline: #223353;      /* = hairline: unchanged */
+  --color-sidebar-hover: #eef2fb0d;       /* v3 dark chrome's --sidebar-accent, rgb(238 242 251 / 5%) */
+  --color-sidebar-selected: #4f86f729;    /* v3 dark chrome's --sidebar-accent-active, rgb(79 134 247 / 16%) */
+  --color-sidebar-hairline: #223353;      /* = hairline: unchanged (v3's --border) */
   --footer-mark-filter: grayscale(1) sepia(1) hue-rotate(180deg) saturate(1.3) brightness(1.05); /* soft Pulsatrix blue on the navy rail */
 
   --color-ink: #eef2fb;
@@ -909,11 +909,11 @@
   background-attachment: local;
 }
 
-/* Pulsatrix Light's rail borrows v3's own nav-group-header treatment: small
-   capitals rather than sentence case (.px-nav-group-btn, index.css). Every
-   other skin keeps the plain label; this is the one purely typographic
-   detail this skin adds on top of its own tokens. */
-[data-skin="pulsatrix-light"] .sidebar-section-label {
+/* The rail's section labels borrow Perspicax's nav-group-header treatment
+   in every skin: small capitals rather than sentence case
+   (.px-nav-group-btn, console/src/index.css). Hibou 98 sets its own tree
+   labels back to plain text in retro98.css. */
+.sidebar-section-label {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }

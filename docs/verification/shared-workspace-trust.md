@@ -112,7 +112,7 @@ pnpm exec vitest run server/request-auth.test.ts server/decision-log.test.ts \
 
 ## Observed local result — 2026-09-23
 
-On a disposable worktree rebased onto Pulsa Bot main `0bb37982`:
+On a disposable worktree rebased onto Sagax main `0bb37982`:
 `pnpm typecheck`, `pnpm lint`, `pnpm i18n:check`, `pnpm test:packaged-server`,
 and the files above plus `server/index.test.ts`,
 `server/chat-followups-restart.test.ts`, `server/steer-e2e.test.ts`,

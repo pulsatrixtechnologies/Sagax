@@ -1,4 +1,4 @@
-// Pulsa Bot owns computer selection and mounts its scoped MCP servers.
+// Sagax owns computer selection and mounts its scoped MCP servers.
 // Keep the standalone Codex installation untouched: these overrides apply
 // only to the child process, including resumed conversations and retries.
 // The desktop-app browser is not available in Codex CLI. Enabling its tool
@@ -15,6 +15,6 @@ export function codexToolSurfaceArgs(): string[] {
     "-c", 'plugins={ "browser@openai-bundled" = { enabled = false }, "computer-use@openai-bundled" = { enabled = false }, "unified-computer-use@openai-bundled" = { enabled = false } }',
     // Native web search does not require the desktop browser connection.
     // Preserve the user's/provider's search mode instead of disabling it for
-    // every Pulsa Bot process after a failure in one search route.
+    // every Sagax process after a failure in one search route.
   ];
 }

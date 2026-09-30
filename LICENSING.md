@@ -1,6 +1,6 @@
 # Licensing
 
-Pulsa Bot is a modified distribution of the work originally published as
+Sagax is a modified distribution of the work originally published as
 OpenMausBot. Both the original work and this distribution are under the
 [Apache License 2.0](LICENSE).
 
@@ -12,7 +12,7 @@ the work came from, is the use the license allows.
 
 ## What changed in this distribution
 
-- The product name is Pulsa Bot.
+- The product name is Sagax.
 - The `enterprise/` directory was removed. That directory was not Apache
   2.0: its own license forbade redistribution. None of that source is
   included here, and its license check was not rewritten into this tree.

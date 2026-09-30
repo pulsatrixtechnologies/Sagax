@@ -1,4 +1,4 @@
-# Self-hosting the Pulsa Bot server
+# Self-hosting the Sagax server
 
 Run the harness server on an always-on Linux box (a VPS, a home server, a
 Mac mini in a closet) and pair browsers, the desktop app, or phones with it.
@@ -13,7 +13,7 @@ The npm CLI supports a managed public tunnel, Tailscale, or your own proxy.
 > session. If several people use one server, read
 > [Loopback trust](#loopback-trust-owner-or-service) below.
 
-Step by step, for a server you do not have yet: [Deploy Pulsa Bot on a
+Step by step, for a server you do not have yet: [Deploy Sagax on a
 VPS](deploy-vps.md) walks through the three ways in (public address, own
 domain, Tailscale), signing engines in, pairing, keeping it running,
 updating and backups. This page is the reference behind it.
@@ -531,7 +531,7 @@ second user for engines, a separate change.
 A server shared by an organization signs people in with Pulsatrix
 Perspicax, the organization's identity provider, instead of email codes or
 invitation links. Accounts, passwords, second factors and roles live in
-Perspicax; Pulsa Bot is an OpenID Connect client of it (spec:
+Perspicax; Sagax is an OpenID Connect client of it (spec:
 `docs/superpowers/specs/2026-09-29-perspicax-multiuser-design.md`).
 
 ```sh
@@ -596,8 +596,8 @@ What changes:
   sign-in. `GET /api/auth/session` shows `principalId`, `email`, `name`,
   `role` (the Perspicax role) and `orgRole`.
 - The Perspicax role decides the session: `admin` gets the admin and client
-  scopes and is an organization admin in Pulsa Bot; `manager` and
-  `employee` get the client scope and are members. A role Pulsa Bot does not
+  scopes and is an organization admin in Sagax; `manager` and
+  `employee` get the client scope and are members. A role Sagax does not
   know cannot sign in.
 - Email codes (`/api/auth/email/*`) and every invitation route
   (`/api/org/invites*`) answer 403 with `code: "identity_perspicax"`, and
@@ -718,7 +718,7 @@ in `config.json` under `signIn.admins` and `signIn.members` and can be changed
 through the settings API without a restart; the environment variables win
 when set, which is how a container or a service unit is bootstrapped.
 
-The code itself comes from `accounts.openmausbot.com`, the Pulsa Bot
+The code itself comes from `accounts.openmausbot.com`, the Sagax
 account service, so your server needs no email credentials. Your server asks
 it to send the code, checks the answer, and then issues its own session
 cookie: the browser only ever talks to your server, and who is welcome is
@@ -744,7 +744,7 @@ hosted workspace refuses them.
 
 ### Who may answer a card
 
-Approval cards are the provider's own (see the approval modes); Pulsa Bot
+Approval cards are the provider's own (see the approval modes); Sagax
 adds none. On a workspace several people share — portal membership, or an
 email sign-in list that names members — it narrows only whose answer counts,
 and only when the card can be traced to a person:

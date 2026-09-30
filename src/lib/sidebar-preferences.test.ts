@@ -16,6 +16,7 @@ import {
   saveSidebarAttentionPinned,
   saveSidebarDensity,
   toggleCollapsedSection,
+  toggleSidebarCollapsed,
 } from "./sidebar-preferences";
 import { userSectionId } from "./sidebar-layout";
 
@@ -113,5 +114,33 @@ describe("sidebar attention pin preference", () => {
     expect(loadSidebarAttentionPinned({ getItem: () => "true" })).toBe(true);
     expect(loadSidebarAttentionPinned({ getItem: () => "untrusted" })).toBe(false);
     expect(loadSidebarAttentionPinned({ getItem: () => { throw new Error("blocked"); } })).toBe(false);
+  });
+});
+
+describe("sidebar collapse button", () => {
+  function memory(initial: Record<string, string> = {}) {
+    const values = new Map(Object.entries(initial));
+    return {
+      values,
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+    };
+  }
+
+  it("collapses to the icons rail and returns to the density it left", () => {
+    const storage = memory({ [SIDEBAR_DENSITY_KEY]: "compact" });
+    expect(toggleSidebarCollapsed(storage)).toBe("icons");
+    expect(storage.values.get(SIDEBAR_DENSITY_KEY)).toBe("icons");
+    expect(toggleSidebarCollapsed(storage)).toBe("compact");
+    expect(storage.values.get(SIDEBAR_DENSITY_KEY)).toBe("compact");
+  });
+
+  it("expands a rail chosen in Settings to comfortable", () => {
+    const storage = memory({ [SIDEBAR_DENSITY_KEY]: "icons" });
+    expect(toggleSidebarCollapsed(storage)).toBe("comfortable");
+  });
+
+  it("still toggles when storage is unavailable", () => {
+    expect(toggleSidebarCollapsed(null)).toBe("icons");
   });
 });

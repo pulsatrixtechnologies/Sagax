@@ -9,6 +9,14 @@ import { cn } from "@/lib/cn";
 import type { SearchHit } from "@/lib/search-hit";
 import { landOnSearchHit } from "@/lib/focus-message";
 
+/** Dispatched on window to open the palette from a control (the sidebar's
+ * search field) rather than the ⌘K chord. */
+export const OPEN_PALETTE_EVENT = "omb:open-palette";
+
+export function openCommandPalette(): void {
+  window.dispatchEvent(new Event(OPEN_PALETTE_EVENT));
+}
+
 type PaletteEntry =
   | { kind: "bot"; bot: Bot }
   | { kind: "room"; group: Group }
@@ -32,8 +40,14 @@ export function CommandPalette({ onOpenChange }: { onOpenChange?: (open: boolean
         setOpen((o) => !o);
       }
     };
+    // the sidebar's search field asks for the palette without a chord
+    const onRequest = () => setOpen(true);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener(OPEN_PALETTE_EVENT, onRequest);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(OPEN_PALETTE_EVENT, onRequest);
+    };
   }, []);
 
   // fresh palette every open; stale queries from last time would flash

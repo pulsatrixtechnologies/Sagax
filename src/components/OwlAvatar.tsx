@@ -1,4 +1,4 @@
-// The Pulsa Bot owl as a React component. The art and the pose math live in
+// The Sagax owl as a React component. The art and the pose math live in
 // src/lib/owl (pure); the animation runs on ONE shared requestAnimationFrame
 // loop (src/lib/owl/owl-loop.ts) that writes transforms onto this component's
 // SVG groups through refs, so a frame never re-renders React.

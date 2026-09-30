@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { cn } from "@/lib/cn";
@@ -31,7 +31,6 @@ export function SidebarSectionHeader({
   onMove?: (direction: -1 | 1) => void;
   onContextMenu?: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
-  const Chevron = collapsed ? ChevronRight : ChevronDown;
   const attentionLabel = attention ? sidebarAttentionLabel(attention) : "";
   const onHeaderKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!reorderable || !event.altKey) return;
@@ -97,15 +96,17 @@ export function SidebarSectionHeader({
                 ? t("sidebar.section.expand", { name })
                 : t("sidebar.section.collapse", { name })
           }
-          className="group/section flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-2 pb-1.5 pt-2 text-left transition-colors hover:bg-sidebar-hover"
+          // Perspicax's group header: a small-capitals label, the section's
+          // attention marks, and a chevron that turns as the group opens
+          className="group/section flex h-[30px] w-full min-w-0 items-center gap-2 rounded-lg px-3 text-left text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink"
         >
-          <span className="sidebar-section-label truncate text-[12px] leading-4 text-sidebar-ink-secondary">{name}</span>
+          <span className="sidebar-section-label truncate text-[11px] font-medium leading-4">{name}</span>
           {marks}
-          <Chevron size={14} strokeWidth={2} className={cn("ml-auto shrink-0 text-sidebar-ink-secondary transition-opacity", !collapsed && "opacity-0 group-hover/section:opacity-100 group-focus-visible/section:opacity-100")} aria-hidden="true" />
+          <ChevronRight size={16} strokeWidth={2} className={cn("ml-auto shrink-0 transition-transform duration-200 motion-reduce:transition-none", !collapsed && "rotate-90")} aria-hidden="true" />
         </button>
       ) : (
-        <div className="flex h-[30px] min-w-0 items-center gap-2 px-2 pb-1.5 pt-2">
-          <span className="sidebar-section-label truncate text-[12px] leading-4 text-sidebar-ink-secondary">{name}</span>
+        <div className="flex h-[30px] min-w-0 items-center gap-2 px-3">
+          <span className="sidebar-section-label truncate text-[11px] font-medium leading-4 text-sidebar-ink-secondary">{name}</span>
           {marks}
         </div>
       )}

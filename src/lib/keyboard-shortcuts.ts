@@ -24,7 +24,7 @@ export interface ShortcutGroup {
 }
 
 /**
- * Complete catalog of keyboard shortcuts available in Pulsa Bot,
+ * Complete catalog of keyboard shortcuts available in Sagax,
  * organized logically into categories for quick reference.
  */
 export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [

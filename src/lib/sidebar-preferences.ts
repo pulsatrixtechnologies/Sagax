@@ -6,6 +6,9 @@ export const SIDEBAR_DENSITY_KEY = "openmausbot.sidebarDensity";
 export const SIDEBAR_ATTENTION_PINNED_KEY = "openmausbot.sidebarAttentionPinned.v1";
 export const SIDEBAR_COLLAPSED_SECTIONS_KEY = "openmausbot.sidebarCollapsedSections.v1";
 export const SIDEBAR_SECTION_ORDER_KEY = "openmausbot.sidebarSectionOrder.v1";
+/** The density to return to when the collapsed (icons) sidebar is expanded
+ * again from its header button. */
+export const SIDEBAR_EXPANDED_DENSITY_KEY = "openmausbot.sidebarExpandedDensity.v1";
 
 export function parseSidebarDensity(value: string | null): SidebarDensity {
   switch (value) {
@@ -46,6 +49,32 @@ export function saveSidebarDensity(
     // The in-memory React state still makes the control useful this session.
   }
   for (const listener of densityListeners) listener();
+}
+
+/** The sidebar's collapse button: icons density is the collapsed rail, like
+ * Perspicax's narrow sidebar. Collapsing remembers the density it left so
+ * expanding lands back on comfortable or compact, whichever it was. */
+export function toggleSidebarCollapsed(
+  storage?: Pick<Storage, "getItem" | "setItem"> | null,
+): SidebarDensity {
+  let target: Pick<Storage, "getItem" | "setItem"> | null = null;
+  try {
+    target = storage === undefined ? (globalThis.localStorage ?? null) : storage;
+  } catch {
+    target = null;
+  }
+  const current = loadSidebarDensity(target);
+  let next: SidebarDensity = "icons";
+  if (current === "icons") {
+    let stored: string | null = null;
+    try { stored = target?.getItem(SIDEBAR_EXPANDED_DENSITY_KEY) ?? null; } catch { /* default below */ }
+    const previous = parseSidebarDensity(stored);
+    next = previous === "icons" ? "comfortable" : previous;
+  } else {
+    try { target?.setItem(SIDEBAR_EXPANDED_DENSITY_KEY, current); } catch { /* session only */ }
+  }
+  saveSidebarDensity(next, target);
+  return next;
 }
 
 export function parseSidebarAttentionPinned(value: string | null): boolean {
