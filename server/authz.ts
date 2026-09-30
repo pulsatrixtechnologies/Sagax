@@ -241,7 +241,9 @@ export function canAdministerGrant(viewer: Viewer | undefined, change: GrantChan
   if (current !== undefined && levelRank(change.newLevel) <= levelRank(current)) return true;
   if (!managerMayGive(viewer, change.target, change.teamsOf)) return false;
   const anchor = managerAnchor(viewer, change.bot.grants);
-  return anchor !== null && levelRank(change.newLevel) <= levelRank(anchor);
+  // Up to the anchor and never beyond edit: only the owner or an
+  // organization admin gives manage.
+  return anchor !== null && levelRank(change.newLevel) <= Math.min(levelRank(anchor), levelRank("edit"));
 }
 
 /** What the grant editor offers this viewer on a bot. `any`: every target;
@@ -256,7 +258,7 @@ export function grantAdministration(viewer: Viewer | undefined, bot: BotFacts): 
   const teamIds = managedTeamIds(viewer);
   if (!teamIds.length) return null;
   const anchor = managerAnchor(viewer, bot.grants);
-  return { any: false, teamIds, maxLevel: anchor ?? "use", canAdd: anchor !== null };
+  return { any: false, teamIds, maxLevel: anchor ? capLevel(anchor, "edit") : "use", canAdd: anchor !== null };
 }
 
 /** A room's (or a section conversation's) access for a viewer: listed

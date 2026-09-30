@@ -142,6 +142,16 @@ describe("grant administration (D4)", () => {
     expect(canAdministerGrant(viewer(MIA), { bot: anchored, target: "team:U", newLevel: "use", teamsOf })).toBe(false);
   });
 
+  it("a manager anchored at manage still gives at most edit", () => {
+    const both = viewer(MIA, { teams: [{ id: "T", manager: true }, { id: "T2", manager: true }] });
+    const anchored = bot([grant("team:T", "manage")]);
+    expect(canAdministerGrant(both, { bot: anchored, target: "team:T2", newLevel: "manage", teamsOf })).toBe(false);
+    expect(canAdministerGrant(both, { bot: anchored, target: `user:${CAROL}`, newLevel: "manage", teamsOf })).toBe(false);
+    expect(canAdministerGrant(both, { bot: anchored, target: "team:T2", newLevel: "edit", teamsOf })).toBe(true);
+    expect(canAdministerGrant(both, { bot: anchored, target: `user:${CAROL}`, newLevel: "edit", teamsOf })).toBe(true);
+    expect(grantAdministration(both, anchored)).toMatchObject({ any: false, maxLevel: "edit", canAdd: true });
+  });
+
   it("a grant the manager gave herself is not an anchor", () => {
     const own = bot([grant("team:T", "run", MIA)]);
     expect(canAdministerGrant(viewer(MIA), { bot: own, target: `user:${CAROL}`, newLevel: "use", teamsOf })).toBe(false);
