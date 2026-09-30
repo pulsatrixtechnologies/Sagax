@@ -66,6 +66,7 @@ import {
 } from "./desktop-companion-client.mjs";
 import { isKnownSkin, skinChrome } from "./skin-overlay.cjs";
 import { createRetroAssistantWindow, DETACHED_QUERY } from "./retro-assistant-window.mjs";
+import { createFloatingBotWindows, FLOATING_QUERY } from "./floating-bot-window.mjs";
 import { readSecureCredentials } from "./secure-credentials.mjs";
 import { createControlPlaneClient } from "./control-plane-client.mjs";
 import {
@@ -2215,8 +2216,12 @@ function createWindow({ deferNavigation = false } = {}) {
     if (mainWindow === win) mainWindow = null;
     // the detached Hibou 98 assistant is driven by this window's page
     retroAssistantWindow.mainWindowGone();
+    floatingBotWindows.mainWindowGone();
   });
-  win.webContents.on("render-process-gone", () => retroAssistantWindow.mainWindowGone());
+  win.webContents.on("render-process-gone", () => {
+    retroAssistantWindow.mainWindowGone();
+    floatingBotWindows.mainWindowGone();
+  });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     try {
@@ -2570,6 +2575,30 @@ const retroAssistantWindow = createRetroAssistantWindow({
   preload: path.join(__dirname, "retro-assistant-preload.cjs"),
   readPositions: () => JSON.parse(fs.readFileSync(RETRO_ASSISTANT_POSITIONS(), "utf8")),
   writePositions: (positions) => fs.writeFileSync(RETRO_ASSISTANT_POSITIONS(), JSON.stringify(positions), { mode: 0o600 }),
+  log: (line) => slog(line),
+});
+
+// Floating bots: any bot put "on the desktop" from its right-click menu, one
+// always-on-top window per bot. The main page is the brain and does every API
+// call; see electron/floating-bot-window.mjs.
+const FLOATING_BOT_POSITIONS = () => path.join(app.getPath("userData"), "floating-bot-positions.json");
+const floatingBotWindows = createFloatingBotWindows({
+  BrowserWindow,
+  screen,
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  isTrustedMain: (event) => senderIsLocal(event),
+  pageUrl: () => `${rendererOrigin()}/?${FLOATING_QUERY}`,
+  preload: path.join(__dirname, "floating-bot-preload.cjs"),
+  readPositions: () => JSON.parse(fs.readFileSync(FLOATING_BOT_POSITIONS(), "utf8")),
+  writePositions: (positions) => fs.writeFileSync(FLOATING_BOT_POSITIONS(), JSON.stringify(positions), { mode: 0o600 }),
+  focusMain: () => {
+    const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  },
   log: (line) => slog(line),
 });
 
@@ -3332,6 +3361,7 @@ process.once("SIGTERM", requestSignalQuit);
 app.on("before-quit", (e) => {
   desktopShutdownStarted = true;
   retroAssistantWindow.close();
+  floatingBotWindows.closeAll();
   startupScreen?.dispose();
   companyBackupSchedule?.close();
   orgLibrary?.close();

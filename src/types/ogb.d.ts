@@ -114,6 +114,8 @@ const __BASE_VERSION__: string;
   interface Window {
     /** Only in the detached Hibou 98 assistant window (electron/retro-assistant-preload.cjs). */
     retroAssistantWindow?: import("../components/retro-assistant/detached-protocol").AssistantWindowBridge;
+    /** Only in a floating bot's window (electron/floating-bot-preload.cjs). */
+    floatingBotWindow?: import("../components/floating-bots/protocol").FloatingWindowBridge;
     ogb?: {
       platform: NodeJS.Platform;
       /** Desktop only: true once when the main process handed this exact
@@ -241,6 +243,8 @@ const __BASE_VERSION__: string;
         onEvent(cb: (event: import("../components/retro-assistant/detached-protocol").DetachedEvent) => void): () => void;
         onDetachedChanged(cb: (on: boolean) => void): () => void;
       };
+      /** Floating bots: one always-on-top window per bot (local desktop page only). */
+      floatingBots?: import("../components/floating-bots/protocol").FloatingBotsBridge;
       /** The renderer-drawn Windows caption buttons; absent outside the
        * frameless Windows shell (macOS/Linux/browser keep native chrome). */
       windowControls?: {

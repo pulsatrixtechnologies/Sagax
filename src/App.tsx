@@ -28,7 +28,8 @@ import { CloudEngineSignIn } from "@/components/CloudEngineSignIn";
 import { engineReady } from "@/components/EngineLibrary";
 import { CommandPalette } from "@/components/CommandPalette";
 import { RetroAssistantHost } from "@/components/RetroAssistantHost";
-import { RetroChromeSlot } from "@/components/RetroChromeHost";
+import { FloatingBotsHost } from "@/components/FloatingBotsHost";
+import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LocalVmWorkspace } from "@/components/LocalVmWorkspace";
 import { TeamMapPage } from "@/components/TeamMapPage";
@@ -350,6 +351,8 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
           palette on top when one of them is open underneath */}
       <CommandPalette onOpenChange={setPaletteOpen} />
       <RetroAssistantHost />
+      <FloatingBotsHost />
+      <RetroBootSlot />
       </div>
       <RetroChromeSlot slot="status" />
       {/* Renderer-drawn caption buttons for the overlay-less frameless

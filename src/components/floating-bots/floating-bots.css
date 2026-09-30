@@ -1,0 +1,463 @@
+/* Floating bots: a bot standing on the desktop (its own transparent window)
+   or over the app (the browser and phone overlay). Loaded with the lazy
+   floating-bots chunk; every rule is under .fb-root or the floating window's
+   own html marker. Colours come from the active skin's tokens; under the
+   Hibou 98 skin the balloon wears Trombi's retro classes instead
+   (RetroDecor.tsx loads that stylesheet). */
+
+html[data-floating-bot],
+html[data-floating-bot] body,
+html[data-floating-bot] #root {
+  background: transparent !important;
+  overflow: hidden !important;
+  box-shadow: none !important;
+}
+
+.fb-root {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  color: var(--color-ink);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.fb-root *,
+.fb-root *::before,
+.fb-root *::after {
+  box-sizing: border-box;
+}
+.fb-root.fb-below {
+  flex-direction: column-reverse;
+}
+
+/* the desktop window: everything hangs from the bottom-right corner */
+.fb-root.fb-window {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  /* the content decides the size; the window follows it (FloatingBotWindow) */
+  width: max-content;
+  padding: 8px 6px 4px;
+}
+.fb-root.fb-window .fb-balloon {
+  max-width: none;
+}
+
+/* the in-app overlay: only the character, balloon and menu take the pointer */
+.fb-root.fb-overlay {
+  position: fixed;
+  z-index: 45;
+  pointer-events: none;
+}
+.fb-root.fb-overlay > * {
+  pointer-events: auto;
+}
+
+/* ─── the balloon ─────────────────────────────────────────────────────── */
+
+.fb-root .fb-balloon {
+  position: relative;
+  width: 288px;
+  max-width: calc(100vw - 16px);
+  margin-right: 4px;
+  animation: fb-pop 0.16s ease-out both;
+}
+.fb-root .fb-face {
+  position: relative;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-elevated);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.28);
+}
+/* the tail points down at the character */
+.fb-root .fb-tail {
+  position: absolute;
+  right: 36px;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-elevated);
+  transform: rotate(45deg);
+}
+.fb-root.fb-left .fb-balloon {
+  margin-right: 0;
+  margin-left: 4px;
+}
+.fb-root.fb-left .fb-tail,
+.fb-root.fb-left .r98-tail {
+  right: auto;
+  left: 36px;
+}
+.fb-root.fb-below .fb-tail {
+  top: -7px;
+  bottom: auto;
+  transform: rotate(-135deg);
+}
+.fb-root.fb-below .r98-tail {
+  top: -15px;
+  bottom: auto;
+  clip-path: polygon(80% 0, 0 100%, 100% 100%);
+}
+.fb-root .fb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.fb-root .fb-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fb-root .fb-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.fb-root .fb-close:hover {
+  background: var(--color-hover);
+  opacity: 1;
+}
+.fb-root .fb-asked {
+  display: -webkit-box;
+  margin: 0 0 6px;
+  overflow: hidden;
+  color: var(--color-ink-secondary);
+  font-size: 12px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.fb-root .fb-text {
+  max-height: 200px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  overscroll-behavior: contain;
+}
+.fb-root .fb-text:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.fb-root .fb-text[data-streaming]::after {
+  content: "▍";
+  margin-left: 1px;
+  animation: fb-caret 1s steps(2) infinite;
+}
+.fb-root .fb-thinking {
+  color: var(--color-ink-secondary);
+}
+.fb-root .fb-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
+}
+.fb-root .fb-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: fb-dot 1.2s ease-in-out infinite;
+}
+.fb-root .fb-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.fb-root .fb-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.fb-root .fb-open {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent-text, var(--color-accent));
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.fb-root .fb-ask {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.fb-root .fb-input {
+  flex: 1;
+  min-width: 0;
+}
+.fb-root .fb-field {
+  padding: 6px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-inset);
+  color: var(--color-ink);
+  font: inherit;
+  outline: none;
+}
+.fb-root .fb-field:focus {
+  border-color: var(--color-accent);
+}
+.fb-root .fb-btn {
+  flex: none;
+  padding: 6px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fb-root .fb-btn:disabled,
+.fb-root .r98-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Hibou 98: Trombi's yellow balloon; only the inner layout stays ours */
+.fb-root.r98-root .fb-balloon {
+  width: 272px;
+}
+.fb-root.r98-root .fb-name {
+  font-size: 11px;
+  font-weight: bold;
+}
+.fb-root.r98-root .fb-asked {
+  color: #404040;
+  font-size: 11px;
+}
+.fb-root.r98-root .fb-thinking {
+  color: #404040;
+}
+.fb-root.r98-root .fb-open {
+  color: #000080;
+  font-size: 11px;
+}
+.fb-root.r98-root .fb-close:hover {
+  background: #dfdfdf;
+}
+.fb-root.r98-root .fb-text {
+  max-height: 180px;
+  padding-right: 2px;
+}
+
+/* ─── the right-click menu ───────────────────────────────────────────── */
+
+.fb-root .fb-menu {
+  display: flex;
+  flex-direction: column;
+  width: 208px;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-elevated);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+.fb-root.r98-root .fb-menu {
+  position: relative;
+  width: 200px;
+  padding: 3px;
+  border: 0;
+  border-radius: 0;
+  background: #c0c0c0;
+}
+.fb-root.r98-root .fb-menu-item {
+  display: flex;
+  padding: 3px 18px 3px 4px;
+  border-radius: 0;
+}
+.fb-root .fb-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fb-root:not(.r98-root) .fb-menu-item:hover,
+.fb-root:not(.r98-root) .fb-menu-item:focus-visible {
+  background: var(--color-hover);
+  outline: none;
+}
+.fb-root .fb-check {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+}
+
+/* ─── the character ──────────────────────────────────────────────────── */
+
+.fb-root .fb-stage {
+  position: relative;
+  flex: none;
+  width: 96px;
+  height: 96px;
+}
+.fb-root .fb-art {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: none;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.fb-root .fb-art:active {
+  cursor: grabbing;
+}
+.fb-root .fb-art:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.fb-root .fb-body {
+  display: block;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.3));
+}
+.fb-root .fb-picture {
+  display: block;
+  overflow: hidden;
+  background: var(--color-raised, #333);
+}
+.fb-root .fb-picture img {
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* Trombi-like poses: idle breathes, thinking tilts under a thought, talking
+   bobs with the words, a settled reply hops, an alert shakes once */
+.fb-root [data-pose="idle"] .fb-body {
+  animation: fb-breathe 3.2s ease-in-out infinite;
+}
+.fb-root [data-pose="think"] .fb-body {
+  animation: fb-ponder 2.4s ease-in-out infinite;
+}
+.fb-root [data-pose="speak"] .fb-body {
+  animation: fb-talk 0.42s ease-in-out infinite;
+}
+.fb-root [data-pose="celebrate"] .fb-body {
+  animation: fb-hop 0.55s ease-out 2;
+}
+.fb-root [data-pose="alert"] .fb-body {
+  animation: fb-shake 0.45s ease-in-out 1;
+}
+.fb-root .fb-thought {
+  position: absolute;
+  top: -6px;
+  left: 2px;
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.fb-root .fb-thought span {
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-elevated);
+  animation: fb-dot 1.4s ease-in-out infinite;
+}
+.fb-root .fb-thought span:nth-child(1) {
+  width: 6px;
+  height: 6px;
+}
+.fb-root .fb-thought span:nth-child(2) {
+  width: 9px;
+  height: 9px;
+  animation-delay: 0.2s;
+}
+.fb-root .fb-thought span:nth-child(3) {
+  width: 13px;
+  height: 13px;
+  animation-delay: 0.4s;
+}
+.fb-root .fb-sparkle {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.fb-root[data-reduced] *,
+.fb-root[data-reduced] *::before,
+.fb-root[data-reduced] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fb-root *,
+  .fb-root *::before,
+  .fb-root *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@keyframes fb-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fb-caret {
+  50% { opacity: 0; }
+}
+@keyframes fb-dot {
+  0%, 100% { opacity: 0.35; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2px); }
+}
+@keyframes fb-breathe {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50% { transform: translateY(-2px) scale(1.01, 0.99); }
+}
+@keyframes fb-ponder {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-5deg) translateY(-1px); }
+}
+@keyframes fb-talk {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.03, 0.96); }
+}
+@keyframes fb-hop {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-14px) scale(0.98, 1.03); }
+  70% { transform: translateY(0) scale(1.04, 0.95); }
+}
+@keyframes fb-shake {
+  0%, 100% { transform: none; }
+  25% { transform: rotate(-6deg); }
+  75% { transform: rotate(6deg); }
+}

@@ -1,0 +1,67 @@
+/* Hibou 98: the CRT power-on played when the skin is put on (RetroBoot.tsx).
+   Every rule is under .r98-boot; the overlay never takes the pointer. */
+
+.r98-boot {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow: hidden;
+  pointer-events: none;
+  animation: r98-boot-out 1.3s linear forwards;
+}
+/* the tube: black, then a bright line that opens into the picture */
+.r98-boot .r98-boot-screen {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  animation: r98-boot-open 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.r98-boot .r98-boot-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgb(190 255 255 / 0.55) 0%, rgb(0 128 128 / 0.25) 45%, transparent 75%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: r98-boot-glow 1.1s ease-out 0.15s forwards;
+}
+.r98-boot .r98-boot-sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -12%;
+  height: 12%;
+  background: linear-gradient(to bottom, transparent, rgb(255 255 255 / 0.28) 70%, rgb(255 255 255 / 0.5));
+  animation: r98-boot-sweep 0.75s linear 0.35s forwards;
+}
+.r98-boot .r98-boot-lines {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.22) 0 1px, transparent 1px 3px);
+  opacity: 0.8;
+}
+
+@keyframes r98-boot-open {
+  0% { clip-path: inset(0 0 0 0); background: #000; }
+  18% { clip-path: inset(0 0 0 0); background: #000; }
+  30% { background: #e8ffff; clip-path: inset(49.6% 0 49.6% 0); }
+  60% { background: #bfffff; clip-path: inset(0 0 0 0); opacity: 0.85; }
+  100% { background: #008080; clip-path: inset(0 0 0 0); opacity: 0; }
+}
+@keyframes r98-boot-glow {
+  0% { opacity: 0; }
+  30% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes r98-boot-sweep {
+  from { top: -12%; }
+  to { top: 100%; }
+}
+@keyframes r98-boot-out {
+  0%, 80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .r98-boot {
+    display: none;
+  }
+}
