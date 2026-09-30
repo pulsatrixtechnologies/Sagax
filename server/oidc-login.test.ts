@@ -7,8 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { IdpGrantVault, IdpSessionManager } from "./idp-session.ts";
-import { BACKCHANNEL_MAX_BODY_BYTES, createOidcLoginRoutes, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneReturnLink, scopesForRole } from "./oidc-login.ts";
+import { IDP_SWEEP_SLACK_MS, IdpGrantVault, IdpSessionManager } from "./idp-session.ts";
+import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneReturnLink, scopesForRole } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import { PrincipalRegistry } from "./principals.ts";
 import { SessionRegistry } from "./sessions.ts";
@@ -77,6 +77,7 @@ describe("the sign-in routes (in process)", () => {
   let principals: PrincipalRegistry;
   let manager: IdpSessionManager;
   let vaultOk = true;
+  const createdGrants: Array<{ bindBy: number; at: number }> = [];
 
   beforeAll(async () => {
     provider = await startFakeOidcProvider({ user: USER });
@@ -97,7 +98,7 @@ describe("the sign-in routes (in process)", () => {
       issueSession: (input) => sessions.issue(input),
       grants: {
         unavailableReason: () => vaultOk ? null : "no key",
-        createGrant: (input) => manager.createGrant(input),
+        createGrant: (input) => { createdGrants.push({ bindBy: input.bindBy, at: Date.now() }); return manager.createGrant(input); },
         bindSession: (ref, id) => manager.bindSession(ref, id),
         discard: (ref) => manager.discard(ref),
         backchannelLogout: (input) => manager.backchannelLogout(input),
@@ -159,6 +160,19 @@ describe("the sign-in routes (in process)", () => {
     expect(record).toMatchObject({ principalId: person.id, scopes: ["client"], idp: { iss: provider.issuer, sub: USER.sub, role: "employee", grantRef: expect.any(String) } });
     expect(manager.mustRefuse(record)).toBeNull();
     expect(sessions.exchange({ code: match![2]!, label: "again", source: "10.0.0.1" }).ok).toBe(false);
+  });
+
+  it("revokes an unredeemed native grant within three minutes of the flow start, after its credential has expired", async () => {
+    expect(OIDC_NATIVE_PAIRING_TTL_MS + OIDC_NATIVE_BIND_GRACE_MS + IDP_SWEEP_SLACK_MS).toBeLessThanOrEqual(170_000);
+    for (const client of ["desktop", "phone"]) {
+      createdGrants.length = 0;
+      const flowStart = Date.now();
+      await walk(client);
+      expect(createdGrants).toHaveLength(1);
+      const { bindBy, at } = createdGrants[0]!;
+      expect(bindBy).toBeGreaterThanOrEqual(at + OIDC_NATIVE_PAIRING_TTL_MS);
+      expect(bindBy + IDP_SWEEP_SLACK_MS - flowStart).toBeLessThan(180_000);
+    }
   });
 
   it("ends a phone sign-in on the invite link both phone apps already parse", async () => {

@@ -40,8 +40,9 @@ export const OIDC_CALLBACK_PATH = "/auth/oidc/callback";
 export const OIDC_BACKCHANNEL_LOGOUT_PATH = "/api/auth/oidc/backchannel-logout";
 /** A desktop or phone sign-in's pairing credential lives this long. */
 export const OIDC_NATIVE_PAIRING_TTL_MS = 120_000;
-/** Its grant is revoked by the sweep this long after the credential expires. */
-export const OIDC_NATIVE_BIND_GRACE_MS = 60_000;
+/** Its grant is revoked by the sweep this long after the credential expires. TTL + grace + the
+ * sweep slack stays well under three minutes from the start of the flow (unredeemed grant). */
+export const OIDC_NATIVE_BIND_GRACE_MS = 30_000;
 export const BACKCHANNEL_MAX_BODY_BYTES = 16 * 1024;
 const JTI_CACHE_MAX = 10_000;
 const JTI_CACHE_EXTRA_MS = 60_000;
