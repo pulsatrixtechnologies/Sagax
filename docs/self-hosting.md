@@ -684,6 +684,49 @@ OMB_PERSPICAX_LINK_FILE=/link/pulsabot.json    # written by Perspicax (PXC_PULSA
   waiting for an admin**); its owner's answer is refused with `403
   admin_approval_required`.
 
+### Rights, teams, owner keys and sections (slice 4)
+
+- **Teams** come from Perspicax (the `teams` claim at each sign-in and
+  refresh, and the directory); Pulsa Bot never edits a team. A change
+  narrows or widens what a person sees at once.
+- **Sharing** a bot names people or Perspicax teams, each at a level:
+
+  | Level | Gives |
+  |---|---|
+  | Talk (`use`) | see the bot and its conversations, write to it |
+  | Run routines (`run`) | also create, change, delete and run its routines |
+  | Edit (`edit`) | also change its name, look, instructions and model |
+  | Manage sharing (`manage`) | also share it, up to Edit |
+  | Owner | everything, including Manage sharing and deleting it |
+
+  A team grant reaches the team's members. Organization admins administer
+  every bot's sharing (Settings > Organization, **Sharing in the
+  organization**) but open no bot without a grant. A team manager
+  administers the grants of their teams and members on a bot already
+  shared with one of their teams, up to that level, and may always lower
+  or remove them; a manager does not read a bot through that right.
+- **Owner keys live in Perspicax.** A bot owner saves their Anthropic or
+  OpenAI key in the Perspicax console (`/console/pulsabot/keys`); Pulsa Bot
+  reads it through the link for each turn, keeps it in memory 60 s at most
+  and never writes it to disk. A bot on Claude or Codex then answers
+  everyone it is shared with on its owner's key. The order for each turn:
+  engine not installed, the owner's own subscription (the owner speaking),
+  the owner's key (anyone), the server's configuration (an admin owner
+  speaking), the organization's key when allowed, else the no_access card
+  with a link to the keys page.
+- **Personal subscriptions**: in Settings > Organization, **My engines**,
+  a person signs in to Claude or Codex with their own account. The login
+  is kept in `/data/principals/<principal id>/claude` or `/codex` (0700);
+  it answers only that person speaking to their own bots (and their
+  routines), never someone else's turn.
+- **Sections are channels.** Right-click a section header (or Shift+F10)
+  for New section, Rename, Members and sharing, Move up or down,
+  Collapse or expand all, Delete. Members (people or teams, moderator,
+  participant or read only) see the section's bots at its default level
+  (Talk or Run routines) and its conversation. General stays personal.
+  Existing sections become private sections of the owner of most of their
+  bots at the first start of this version.
+
 The organization's compose file (Perspicax, Pulsa Bot and their proxies,
 with the shared link volume) lives in the Perspicax repository,
 `deploy/docker-compose.pulsabot.yml`. The `compose.yaml` here stays the solo

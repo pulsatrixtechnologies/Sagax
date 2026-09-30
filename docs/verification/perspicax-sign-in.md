@@ -222,3 +222,74 @@ nothing), scenario C (removal), scenario F (the cards, the owner's
 within one directory period, unlink and relink, the directory as the
 backstop when the back-channel push cannot arrive, and the engines in
 `GET /api/health`.
+
+## Slice 4: rights, teams, owner keys, personal subscriptions and sections
+
+### Automated (fake provider)
+
+```sh
+pnpm exec vitest run server/authz.test.ts server/bot-grants.test.ts server/engine-credentials.test.ts \
+  server/section-channels.test.ts server/principal-engine-logins.test.ts server/org-teams.test.ts \
+  server/principals.test.ts server/perspicax-link.test.ts server/oidc-rp.test.ts server/idp-session.test.ts \
+  server/engine-access.test.ts server/direct-grants.test.ts server/channel-visibility.test.ts \
+  server/request-auth.test.ts server/drivers/claude.test.ts server/drivers/codex.test.ts \
+  server/org-rights.e2e.test.ts server/org-sharing.e2e.test.ts server/oidc-session.e2e.test.ts \
+  server/oidc-login.e2e.test.ts src/components/bot-settings
+pnpm -s i18n:check
+```
+
+The fake provider now also puts a settable `teams` claim in the id_token
+(`setTeams(sub, teams)`; a refresh reflects the change), lists each
+person's `provider_keys` in the directory, and answers
+`POST /api/v1/pulsabot/provider-keys/resolve` behind the link token
+(`providerKeys`: 200 with the key, 404 `no_key`, 409 `user_inactive` for a
+disabled person).
+
+- `server/authz.test.ts`: the level lattice (use, run, edit, manage, owner),
+  team grants (members only: a team's managers administer, they do not
+  read), a disabled person, an admin with no grant (administers, cannot
+  use), a manage holder (up to edit), the manager anchor (add up to the
+  anchor, lower and remove always, never outside their teams), section
+  default levels capped at run, rooms with `team:` entries, section roles.
+- `server/bot-grants.test.ts`: GET, PUT and DELETE `/api/bots/:id/grants`
+  with every answer code, and the new `CLIENT_ALLOW` rows.
+- `server/engine-credentials.test.ts`: the whole resolution order (engine
+  missing, owner subscription only for the owner, owner key for any
+  speaker, server for an admin owner, org key, no_access), a key that went
+  away falling through, an unreachable Perspicax.
+- `server/drivers/claude.test.ts` and `server/drivers/codex.test.ts`: an
+  owner key reaching the CLI, a subscription's `CLAUDE_CONFIG_DIR` /
+  `CODEX_HOME`, no process reused under another identity, the
+  `pulsa_owner` provider for Codex.
+- `server/section-channels.test.ts`: migration owner, private records,
+  rename and delete kept in step, General refused, sharing with a team,
+  readonly, moving bots in and out, the manager anchor on members.
+- `server/org-rights.e2e.test.ts` (real server): S4-1 teams in the session
+  and the directory, S4-3 a person and a team grant with the owner's key
+  answering another speaker, S4-5 levels, S4-6 the manager, S4-7 an admin
+  without a grant, S4-4 removal through the directory then through a
+  refreshed id_token, S4-9 a personal Codex subscription (fake device
+  login), S4-10 and S4-11 a section shared with a team and a room with a
+  team.
+
+### Against a real Perspicax (manual)
+
+Isolated instances only. Build `pulsatrix-connector` from the slice 4 head,
+ports for example Perspicax 19081 and Pulsa Bot 19082 (webhook 19083), and
+start Pulsa Bot as in slice 3 with `OMB_PORT=19082`,
+`OMB_PERSPICAX_ISSUER=http://localhost:19081`,
+`OMB_ANTHROPIC_API_KEY=sk-ant-test-org-key-000000` and
+`FAKE_CLAUDE_DUMP=$S/claude-dump.json`; `config.json` instances `claude`
+(fake Claude CLI), `codex` (fake Codex, login CLI
+`server/testing/fake-codex-login-cli.ts` with `OMB_DEVICE_AUTH_FIXTURE=1`)
+and `ghost` (`/nonexistent/claude`). Accounts: alice (admin), bob, carol
+(member of team T), dave (team U), mia (manager of T), erin. Then walk
+S4-1 to S4-15 of the slice 4 plan: the teams claim, alice's key saved in
+`/console/pulsabot/keys` and read through the link (the dump shows it for
+bob's turn), scenario B and C with a team, levels, the manager, the admin,
+engine resolution (key deleted, org key on, alice's own turn, erin's key,
+`ghost`), erin's Codex subscription, sections as channels in headless
+Chrome (right-click the empty sidebar, "New section…", "Members and
+sharing…"), a room with `team:U`, the section migration on a slice 3 data
+directory, the Members page, a disabled owner, and the slice 2 and 3
+regressions.
