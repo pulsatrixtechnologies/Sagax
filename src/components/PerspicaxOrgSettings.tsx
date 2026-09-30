@@ -2,6 +2,8 @@
 // the link to Perspicax and its last directory sync, the viewer's role, a
 // link to manage people in the Perspicax console, and, for admins, the
 // organization key switch and the server commands waiting for an admin.
+// Slice 4 adds My engines (for everyone) and Sharing in the organization
+// (the bots whose sharing the viewer administers).
 // People, teams and invitations live in Perspicax, never here.
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
@@ -10,6 +12,8 @@ import { activeLocale, t } from "@/lib/i18n";
 import type { PerspicaxOrg } from "@/lib/perspicax-org";
 import { api } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
+import { MyEngines } from "./settings/MyEngines";
+import { OrgSharing } from "./settings/OrgSharing";
 
 interface PendingAdminApproval {
   botId: string;
@@ -115,6 +119,8 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
           {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
         </div>
       </Card>
+      <MyEngines issuer={org.org.identity.issuer} />
+      <OrgSharing />
       {admin && (
         <Card cardId="organization.adminApprovals" title={t("organization.adminApprovals.title")} summary={approvals?.length ? String(approvals.length) : ""}>
           {!approvals?.length ? (

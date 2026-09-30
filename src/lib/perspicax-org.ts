@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "@/state/store";
+import { t } from "@/lib/i18n";
 
 export interface PerspicaxOrg {
   org: { name: string; identity: { kind: "perspicax"; issuer: string; serverId?: string } };
@@ -58,4 +59,131 @@ export function sharePickerPeople(people: OrgDirectoryPerson[], input: { ownerId
     if (!q) return true;
     return [person.name, person.login, person.email ?? ""].some((field) => field.toLowerCase().includes(q));
   });
+}
+
+// ── slice 4: grants with levels, teams, sections, my engines ─────────────
+
+export type GrantLevel = "use" | "run" | "edit" | "manage";
+export const GRANT_LEVELS: readonly GrantLevel[] = ["use", "run", "edit", "manage"];
+
+export interface WireGrant {
+  target: string;
+  level: GrantLevel;
+  by: string;
+  at: number;
+  label: string;
+  kind: "user" | "team";
+  disabled?: boolean;
+}
+
+export interface GrantAdministration {
+  any: boolean;
+  teamIds: string[];
+  maxLevel: GrantLevel;
+  canAdd?: boolean;
+}
+
+export interface OrgDirectoryTeam {
+  id: string;
+  name: string;
+  managers: string[];
+  members: string[];
+}
+
+export interface OrgDirectory {
+  people: (OrgDirectoryPerson & { teams?: { id: string; manager: boolean }[] })[];
+  teams?: OrgDirectoryTeam[];
+  viewer?: { principalId: string | null; orgRole: "admin" | "member"; perspicaxRole?: string; managedTeamIds: string[] };
+}
+
+/** Whether a level may be given by someone whose ceiling is `max`. */
+export function levelAllowed(level: GrantLevel, max: GrantLevel): boolean {
+  return GRANT_LEVELS.indexOf(level) <= GRANT_LEVELS.indexOf(max);
+}
+
+export interface GrantCandidate {
+  target: string;
+  kind: "user" | "team";
+  label: string;
+  detail: string;
+  count?: number;
+}
+
+/** People and teams a grant (or a section member entry) may add: active
+ * people other than the owner, teams, none already listed; a team manager
+ * who administers only their teams sees those teams and their members. */
+export function grantCandidates(directory: OrgDirectory | null, input: { ownerId?: string; taken: string[]; query: string; administer?: GrantAdministration | null }): GrantCandidate[] {
+  if (!directory) return [];
+  const taken = new Set(input.taken);
+  const owner = input.ownerId?.toLowerCase();
+  const q = input.query.trim().toLowerCase();
+  const limited = input.administer && !input.administer.any ? new Set(input.administer.teamIds) : null;
+  const teams = (directory.teams ?? []).filter((team) => !limited || limited.has(team.id));
+  const inTeams = limited ? new Set(teams.flatMap((team) => [...team.members, ...team.managers])) : null;
+  const out: GrantCandidate[] = [];
+  for (const team of teams) {
+    const target = `team:${team.id}`;
+    if (taken.has(target) || (q && !team.name.toLowerCase().includes(q))) continue;
+    out.push({ target, kind: "team", label: team.name, detail: "", count: team.members.length });
+  }
+  for (const person of directory.people) {
+    const target = `user:${person.principalId}`;
+    if (person.disabled || taken.has(target) || person.principalId.toLowerCase() === owner) continue;
+    if (inTeams && !inTeams.has(person.principalId)) continue;
+    if (q && ![person.name, person.login].some((field) => field.toLowerCase().includes(q))) continue;
+    out.push({ target, kind: "user", label: person.name, detail: person.login });
+  }
+  return out;
+}
+
+export interface MyEngine {
+  instanceId: string;
+  driver: string;
+  displayName: string;
+  installed: boolean;
+  subscription: { supported: boolean; signedIn: boolean };
+  ownerKey: boolean;
+  orgKey: boolean;
+  answersFor: "me" | "everyone" | "nobody";
+}
+
+export interface OrgSection {
+  id: string;
+  name: string;
+  ownerPrincipalId: string;
+  members: { target: string; role: "moderator" | "participant" | "readonly" }[];
+  defaultLevel: "use" | "run";
+  roomId?: string;
+  viewerRole: "owner" | "moderator" | "participant" | "readonly" | null;
+  canModerate: boolean;
+}
+
+/** `<issuer>/console/pulsabot/keys`, where an owner sets their model keys. */
+export function perspicaxKeysUrl(issuer: string): string {
+  return `${issuer.replace(/\/+$/, "")}/console/pulsabot/keys`;
+}
+
+let enginesPending: Promise<MyEngine[] | null> | null = null;
+
+/** GET /api/me/engines once per page load on a Perspicax server; null on
+ * a solo server or while loading. */
+export function useMyEngines(): MyEngine[] | null {
+  const [engines, setEngines] = useState<MyEngine[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    enginesPending ??= loadPerspicaxOrg().then((org) => (org
+      ? api<{ engines: MyEngine[] }>("/api/me/engines").then((body) => body.engines ?? [], () => null)
+      : null));
+    void enginesPending.then((value) => { if (alive) setEngines(value); });
+    return () => { alive = false; };
+  }, []);
+  return engines;
+}
+
+/** The one line saying who a bot on this engine can answer. */
+export function answersForText(engine: Pick<MyEngine, "answersFor" | "installed">): string {
+  if (!engine.installed) return t("myEngines.notInstalled");
+  if (engine.answersFor === "everyone") return t("myEngines.answersFor.everyone");
+  if (engine.answersFor === "me") return t("myEngines.answersFor.me");
+  return t("myEngines.answersFor.nobody");
 }

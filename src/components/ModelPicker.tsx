@@ -20,6 +20,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { approvalModeFor, modelSwitchNeedsAsk } from "../../shared/approval-mode";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { answersForText, useMyEngines } from "@/lib/perspicax-org";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
@@ -409,6 +410,9 @@ export function ModelPicker({
   const railInstance =
     pickerInstances.find((instance) => instance.instanceId === (railId ?? selection.instanceId)) ?? pickerInstances[0];
   const displayedInstanceId = railInstance?.instanceId;
+  // Slice 4, organization server: who a bot on this engine can answer.
+  const myEngines = useMyEngines();
+  const railEngine = myEngines?.find((engine) => engine.instanceId === displayedInstanceId) ?? null;
   const hasOfficialModels = Boolean(railInstance?.models.options.some((option) => !option.custom));
   const customOnly = isCustomOnly(railInstance);
   useEffect(() => {
@@ -721,7 +725,10 @@ export function ModelPicker({
               <>
                 <div className="shrink-0 px-4 pb-2 pt-3.5">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="truncate text-[14px] font-semibold text-ink">{railInstance.driverKind === "claudeAgent" ? "Claude" : railInstance.displayName}</div>
+                    <div className="flex min-w-0 flex-col">
+                      <div className="truncate text-[14px] font-semibold text-ink">{railInstance.driverKind === "claudeAgent" ? "Claude" : railInstance.displayName}</div>
+                      {railEngine && <div data-answers-for={railEngine.answersFor} className="truncate text-[11px] text-ink-secondary">{answersForText(railEngine)}</div>}
+                    </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <button
                         type="button"

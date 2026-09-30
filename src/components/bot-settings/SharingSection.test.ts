@@ -5,7 +5,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Bot } from "@/state/store";
-import { sharePickerPeople, isPerspicaxOrg, type OrgDirectoryPerson } from "@/lib/perspicax-org";
+import { answersForText, grantCandidates, levelAllowed, perspicaxKeysUrl, sharePickerPeople, isPerspicaxOrg, type OrgDirectory, type OrgDirectoryPerson } from "@/lib/perspicax-org";
+import { orgSectionMenuItems } from "../OrgSectionMenu";
+import { grantEditable, levelLabel } from "./GrantEditor";
 import { accessCardLines } from "../AccessCard";
 import { PerspicaxOrgSettings, perspicaxConsoleUrl } from "../PerspicaxOrgSettings";
 
@@ -22,7 +24,7 @@ vi.mock("@/state/store", async (importOriginal) => {
     useStore: () => ({ state: { ...original.initialState, config: { viewer: fixture.viewer } }, dispatch: vi.fn() }),
   };
 });
-const { SharingSection } = await import("./SharingSection");
+const { SharingSection, initialGrantRows } = await import("./SharingSection");
 
 const people: OrgDirectoryPerson[] = [
   { principalId: OWNER, name: "Alice", login: "alice", email: "alice@example.test", role: "admin", disabled: false },
@@ -116,5 +118,58 @@ describe("Settings > Organization on a Perspicax server", () => {
     expect(markup).toContain("You are a member of this organization.");
     expect(markup).not.toContain("Use the organization");
     expect(markup).not.toContain("Commands waiting for an admin");
+  });
+});
+
+describe("slice 4: levels, teams and the section menu", () => {
+  const directory: OrgDirectory = {
+    people: people.map((person) => ({ ...person })),
+    teams: [{ id: "T", name: "Sales", managers: [ERIN], members: [BOB] }, { id: "U", name: "Support", managers: [], members: [DAVE] }],
+  };
+
+  it("names the levels and caps what a caller may give", () => {
+    expect(["use", "run", "edit", "manage"].map((level) => levelLabel(level as never))).toEqual(["Talk", "Run routines", "Edit", "Manage sharing"]);
+    expect(levelAllowed("edit", "edit")).toBe(true);
+    expect(levelAllowed("manage", "edit")).toBe(false);
+    expect(grantEditable({ level: "manage" }, { any: true, teamIds: [], maxLevel: "edit" })).toBe(false);
+    expect(grantEditable({ level: "run" }, { any: true, teamIds: [], maxLevel: "edit" })).toBe(true);
+    expect(grantEditable({ level: "use" }, null)).toBe(false);
+  });
+
+  it("offers people and teams, and only a manager's teams and members to a manager", () => {
+    const all = grantCandidates(directory, { ownerId: OWNER, taken: [`user:${BOB}`], query: "" });
+    expect(all.map((c) => c.target)).toEqual(["team:T", "team:U", `user:${ERIN}`]);
+    expect(all[0]).toMatchObject({ kind: "team", label: "Sales", count: 1 });
+    const manager = grantCandidates(directory, { ownerId: OWNER, taken: [], query: "", administer: { any: false, teamIds: ["T"], maxLevel: "use", canAdd: true } });
+    expect(manager.map((c) => c.target)).toEqual(["team:T", `user:${BOB}`, `user:${ERIN}`]);
+    expect(grantCandidates(directory, { ownerId: OWNER, taken: [], query: "supp" }).map((c) => c.target)).toEqual(["team:U"]);
+  });
+
+  it("shows team grants with their level to the owner", () => {
+    fixture.viewer = { principalId: OWNER, role: "admin" };
+    const bot = makeBot({ grants: [{ target: "team:T", level: "run", by: OWNER, at: 1 }, { target: `user:${BOB}`, level: "use", by: OWNER, at: 1 }] });
+    expect(initialGrantRows(bot, directory).map((row) => [row.kind, row.label, row.level])).toEqual([["team", "Sales", "run"], ["user", "Bob", "use"]]);
+    const markup = renderToStaticMarkup(createElement(SharingSection, { bot }));
+    expect(markup).toContain("Run routines");
+    expect(markup).toContain("Manage sharing");
+    expect(markup).toContain("Remove");
+  });
+
+  it("the section menu hides what the caller may not do; General only creates", () => {
+    const section = { id: "sec_1", name: "Ventes", ownerPrincipalId: OWNER, members: [], defaultLevel: "use" as const, viewerRole: "participant" as const, canModerate: false };
+    expect(orgSectionMenuItems(null, { named: false, canMoveUp: false, canMoveDown: true, anyExpanded: true })).toEqual(["onNew", "onMoveDown", "onCollapseAll"]);
+    expect(orgSectionMenuItems(section, { named: true, canMoveUp: true, canMoveDown: false, anyExpanded: false })).toEqual(["onNew", "onMembers", "onMoveUp", "onExpandAll"]);
+    expect(orgSectionMenuItems({ ...section, canModerate: true }, { named: true, canMoveUp: false, canMoveDown: false, anyExpanded: true })).toEqual(["onNew", "onRename", "onMembers", "onCollapseAll", "onDelete"]);
+  });
+
+  it("says who an engine answers, and links the owner to the keys page", () => {
+    expect(answersForText({ installed: true, answersFor: "me" })).toBe("Answers for you only");
+    expect(answersForText({ installed: true, answersFor: "everyone" })).toBe("Also answers the people you share with");
+    expect(answersForText({ installed: true, answersFor: "nobody" })).toBe("Can't answer yet");
+    expect(answersForText({ installed: false, answersFor: "everyone" })).toBe("Not installed on this server");
+    expect(perspicaxKeysUrl("https://px.example.test/")).toBe("https://px.example.test/console/pulsabot/keys");
+    const card = { reason: "no_access" as const, engine: "Claude", botId: "bot-1", ownerPrincipalId: OWNER, keysUrl: "https://px.example.test/console/pulsabot/keys" };
+    expect(accessCardLines(card, { principalId: OWNER, admin: false })).toEqual({ text: "This bot can't answer: no key for Claude. Its owner has to add one.", hint: "Add your own key in Perspicax.", link: card.keysUrl });
+    expect(accessCardLines(card, { principalId: BOB, admin: false }).link).toBeUndefined();
   });
 });

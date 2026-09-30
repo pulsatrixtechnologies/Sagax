@@ -11,7 +11,7 @@ export type AccessViewer = { principalId: string | null; admin: boolean };
 
 /** The card's lines for this viewer: the reason, then a hint for the
  * owner or an admin. */
-export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): { text: string; hint?: string; detail?: string } {
+export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): { text: string; hint?: string; detail?: string; link?: string } {
   const owner = Boolean(viewer.principalId && viewer.principalId.toLowerCase() === access.ownerPrincipalId.toLowerCase());
   if (access.reason === "engine_missing") {
     return { text: t("access.engineMissing", { engine: access.engine }), ...(owner && !viewer.admin ? { hint: t("access.engineMissing.owner") } : {}) };
@@ -22,6 +22,10 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): {
       ...(viewer.admin ? { hint: t("access.keyRefused.admin") } : {}),
       ...((owner || viewer.admin) && access.detail ? { detail: access.detail } : {}),
     };
+  }
+  // Slice 4: the owner adds their own key in Perspicax (the card links there).
+  if (owner && access.keysUrl) {
+    return { text: t("access.noAccess", { engine: access.engine }), hint: t("access.noAccess.ownerKeys"), link: access.keysUrl };
   }
   return {
     text: t("access.noAccess", { engine: access.engine }),
@@ -36,7 +40,9 @@ export function AccessCard({ access, viewer }: { access: WireAccessCard; viewer:
       <KeyRound size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
       <div className="flex min-w-0 flex-col gap-1">
         <span className="break-words">{lines.text}</span>
-        {lines.hint && <span className="break-words text-[12px] text-ink-secondary">{lines.hint}</span>}
+        {lines.hint && (lines.link
+          ? <a href={lines.link} target="_blank" rel="noreferrer noopener" className="break-words text-[12px] text-accent underline">{lines.hint}</a>
+          : <span className="break-words text-[12px] text-ink-secondary">{lines.hint}</span>)}
         {lines.detail && <code className="break-words text-[11.5px] text-ink-secondary">{lines.detail}</code>}
       </div>
     </div>

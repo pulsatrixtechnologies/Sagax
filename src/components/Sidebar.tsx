@@ -41,6 +41,9 @@ import { stateForBot } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
 import { lastNonReceipt } from "@/lib/receipts";
 import { t } from "@/lib/i18n";
+import { usePerspicaxOrg, type OrgSection } from "@/lib/perspicax-org";
+import { OrgSectionMenuItems, SectionNameInput, orgSectionMenuItems, type OrgSectionMenuActions } from "./OrgSectionMenu";
+import { SectionMembersDialog } from "./SectionMembersDialog";
 import { isRoutineProblemRun } from "@/lib/routines";
 import type { LocaleKey } from "@/locales";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -1699,6 +1702,54 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const [moveToTeam, setMoveToTeam] = useState<string | null>(null);
   const [renameTeam, setRenameTeam] = useState<string | null>(null);
   const [shareTeam, setShareTeam] = useState<string | null>(null);
+  // Slice 4: sections are channels on a server signed in with Perspicax.
+  const perspicaxOrg = usePerspicaxOrg();
+  const orgMode = perspicaxOrg !== null;
+  const [orgSections, setOrgSections] = useState<OrgSection[]>([]);
+  const [orgMenu, setOrgMenu] = useState<{ name: string | null; id: string | null; x: number; y: number } | null>(null);
+  const [sectionEdit, setSectionEdit] = useState<{ mode: "new" } | { mode: "rename"; name: string } | null>(null);
+  const [membersFor, setMembersFor] = useState<OrgSection | null>(null);
+  const loadOrgSections = useCallback(() => {
+    void api<{ sections: OrgSection[] }>("/api/org/sections").then((body) => setOrgSections(body.sections ?? []), () => setOrgSections([]));
+  }, []);
+  useEffect(() => { if (orgMode) loadOrgSections(); }, [orgMode, state.sections, loadOrgSections]);
+  const openOrgMenu = (event: React.MouseEvent<HTMLElement>, name: string | null, id: string | null) => {
+    event.preventDefault();
+    event.stopPropagation();
+    teamMenuReturn.current = event.currentTarget.querySelector<HTMLElement>("button") ?? event.currentTarget;
+    // Shift+F10 and the ContextMenu key arrive with no pointer position.
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX || rect.left + 16;
+    const y = event.clientY || rect.bottom;
+    setOrgMenu({ name, id, x: Math.max(8, Math.min(x, window.innerWidth - 230)), y: Math.max(8, Math.min(y, window.innerHeight - 280)) });
+  };
+  const closeOrgMenu = () => {
+    (teamMenuReturn.current?.isConnected ? teamMenuReturn.current : sidebarRef.current)?.focus();
+    setOrgMenu(null);
+  };
+  const createOrgSection = async (name: string): Promise<string | null> => {
+    try {
+      await api("/api/org/sections", { method: "POST", body: JSON.stringify({ name }) });
+      setSectionEdit(null);
+      loadOrgSections();
+      return null;
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : String(cause);
+    }
+  };
+  const renameOrgSection = async (oldName: string, name: string): Promise<string | null> => {
+    const record = orgSections.find((section) => section.name === oldName);
+    if (!record) return t("sectionMembers.failed");
+    try {
+      await api(`/api/org/sections/${record.id}`, { method: "PATCH", body: JSON.stringify({ name }) });
+      setSectionEdit(null);
+      renamedTeam(oldName, name);
+      loadOrgSections();
+      return null;
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : String(cause);
+    }
+  };
   const [roomMenu, setRoomMenu] = useState<{ groupId: string; x: number; y: number } | null>(null);
   const [roomSectionPicker, setRoomSectionPicker] = useState<{ groupId: string; x: number; y: number } | null>(null);
   const [newFolderBotId, setNewFolderBotId] = useState<string | null>(null);
@@ -2123,7 +2174,11 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       </div>
 
       {/* Bot list. GET /api/org 404 keeps this roster. */}
-      <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto pb-6 pt-1", density === "icons" ? "px-2" : "pl-2 pr-3")}>
+      <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto pb-6 pt-1", density === "icons" ? "px-2" : "pl-2 pr-3")}
+        onContextMenu={orgMode ? (event) => { if (event.target === event.currentTarget || (event.target as HTMLElement).dataset?.sidebarEmpty !== undefined) openOrgMenu(event, null, null); } : undefined}>
+        {orgMode && sectionEdit?.mode === "new" && (
+          <SectionNameInput onSave={createOrgSection} onCancel={() => setSectionEdit(null)} />
+        )}
         {pinnedBots.length > 0 && (
           <div className={cn("mb-2 grid py-1.5", density === "icons" ? "grid-cols-1 gap-1" : "grid-cols-[repeat(auto-fit,minmax(80px,max-content))] justify-center gap-x-2 gap-y-3")}>
             {pinnedBots.map((bot) => {
@@ -2190,10 +2245,12 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                 {dropTarget?.id === id && dropTarget.place === "before" && draggingSectionId !== id && (
                   <div className="mx-2 h-0.5 rounded-full bg-accent" />
                 )}
-                {density !== "icons" && (
+                {density !== "icons" && sectionEdit?.mode === "rename" && team?.key && sectionEdit.name === team.key ? (
+                  <SectionNameInput initial={team.key} onSave={(name) => renameOrgSection(team.key!, name)} onCancel={() => setSectionEdit(null)} />
+                ) : density !== "icons" && (
                   <SidebarSectionHeader
                     name={team?.name ?? sectionLabel(id)}
-                    onContextMenu={!remoteClient && layoutInteractive && sectionName ? (event) => {
+                    onContextMenu={orgMode && layoutInteractive && id !== BOT_CHATS_SECTION_ID ? (event) => openOrgMenu(event, team?.key || null, id) : !remoteClient && layoutInteractive && sectionName ? (event) => {
                       event.preventDefault();
                       teamMenuReturn.current = event.currentTarget.querySelector<HTMLElement>("button") ?? event.currentTarget;
                       setTeamMenu({ name: sectionName, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 230)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - 150)) });
@@ -2343,6 +2400,38 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         }}
       />
       {renameTeam && <TeamDialog section={renameTeam} rename onRenamed={renamedTeam} onClose={() => setRenameTeam(null)} />}
+      {orgMenu && createPortal(<div className="fixed inset-0 z-40" onMouseDown={closeOrgMenu} onContextMenu={(event) => { event.preventDefault(); closeOrgMenu(); }}>
+        <div role="menu" aria-label={orgMenu.name ?? t("teamLibrary.general")} style={{ left: orgMenu.x, top: orgMenu.y }} data-org-section-menu
+          className="absolute w-[220px] min-w-[200px] rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px] text-ink"
+          onMouseDown={event => event.stopPropagation()} onKeyDown={event => {
+            if (event.key === "Escape" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); closeOrgMenu(); return; }
+            navigateThreadMenu(event);
+          }}>
+          {(() => {
+            const record = orgMenu.name ? orgSections.find((section) => section.name === orgMenu.name) ?? null : null;
+            const position = orgMenu.id ? sectionIds.indexOf(orgMenu.id) : -1;
+            const anyExpanded = sectionIds.some((sid) => !collapsedSections.includes(sid));
+            const actions: OrgSectionMenuActions = {
+              onNew: () => { closeOrgMenu(); setSectionEdit({ mode: "new" }); },
+              onRename: () => { closeOrgMenu(); if (orgMenu.name) setSectionEdit({ mode: "rename", name: orgMenu.name }); },
+              onMembers: () => { closeOrgMenu(); if (record) setMembersFor(record); },
+              onMoveUp: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, -1); },
+              onMoveDown: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, 1); },
+              onCollapseAll: () => { closeOrgMenu(); setCollapsedSections([...sectionIds]); saveCollapsedSections([...sectionIds]); },
+              onExpandAll: () => { closeOrgMenu(); setCollapsedSections([]); saveCollapsedSections([]); },
+              onDelete: () => { closeOrgMenu(); if (orgMenu.name) setDeletingTeam(orgMenu.name); },
+            };
+            const items = orgSectionMenuItems(record, {
+              named: Boolean(orgMenu.name),
+              canMoveUp: position > 0 && layoutInteractive,
+              canMoveDown: position >= 0 && position < sectionIds.length - 1 && layoutInteractive,
+              anyExpanded,
+            });
+            return <OrgSectionMenuItems items={items} actions={actions} />;
+          })()}
+        </div>
+      </div>, document.body)}
+      {membersFor && <SectionMembersDialog section={membersFor} onClose={() => setMembersFor(null)} onSaved={() => loadOrgSections()} />}
       {teamMenu && createPortal(<div className="fixed inset-0 z-40" onMouseDown={closeTeamMenu}>
         <div role="menu" aria-label={teamMenu.name} style={{ left: teamMenu.x, top: teamMenu.y }}
           className="absolute w-[220px] min-w-[200px] rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px] text-ink"
@@ -2366,8 +2455,11 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           if (!name || teamDeleteRunning.current) return;
           teamDeleteRunning.current = true;
           setTeamDeletePending(true);
-          void api(`/api/sidebar-sections?section=${encodeURIComponent(name)}`, { method: "DELETE" })
-            .then(({ sections }) => { dispatch({ type: "sectionDeleted", section: name, sections }); setDeletingTeam(null); })
+          const orgRecord = orgMode ? orgSections.find((section) => section.name === name) : undefined;
+          void (orgRecord
+            ? api(`/api/org/sections/${orgRecord.id}`, { method: "DELETE" }).then(() => ({ sections: (state.sections ?? []).filter((section) => section !== name) }))
+            : api<{ sections: string[] }>(`/api/sidebar-sections?section=${encodeURIComponent(name)}`, { method: "DELETE" }))
+            .then(({ sections }) => { dispatch({ type: "sectionDeleted", section: name, sections }); setDeletingTeam(null); loadOrgSections(); })
             .catch(cause => setTeamFeedback({ error: true, text: cause instanceof Error ? cause.message : String(cause) }))
             .finally(() => { teamDeleteRunning.current = false; setTeamDeletePending(false); });
         }} />

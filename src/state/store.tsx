@@ -474,6 +474,8 @@ export interface Bot {
   /** Lowercased user id of the person who created this bot. */
   ownerUserId?: string;
   directGrants?: string[];
+  /** Slice 4: grants with levels (user: or team: targets). */
+  grants?: { target: string; level: "use" | "run" | "edit" | "manage"; by: string; at: number }[];
   /** Where a shared or organization package put this bot (its provenance line). */
   installedPackage?: InstalledPackageMetadata;
   messages: Message[];
