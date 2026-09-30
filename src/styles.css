@@ -54,6 +54,26 @@
   color: transparent;
   caret-color: var(--color-ink);
 }
+/* On a phone the composer's buttons leave the field narrow, and a wrapped
+   hint broke mid-word ("Messag / e Pepper"). While the field is empty the
+   mirror paints the hint on one line ending in an ellipsis (Chrome does not
+   ellipsize a textarea's own placeholder), and the native one keeps to one
+   line, unseen, so the field stays one line tall. Typed text wraps as before. */
+.mention-editor-placeholder {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-ink-secondary);
+}
+.mention-editor > textarea:placeholder-shown {
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mention-editor > textarea:placeholder-shown::placeholder {
+  white-space: nowrap;
+  color: transparent !important;
+}
 .mention-editor textarea::selection {
   color: var(--color-ink);
   background: var(--color-raised-hover);
@@ -61,6 +81,7 @@
 @media (forced-colors: active) {
   .mention-editor-mirror { display: none; }
   .mention-editor textarea { color: CanvasText; caret-color: CanvasText; }
+  .mention-editor > textarea:placeholder-shown::placeholder { color: GrayText !important; }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

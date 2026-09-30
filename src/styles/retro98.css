@@ -781,6 +781,9 @@
 [data-skin="retro98"] textarea::placeholder {
   color: #808080 !important;
 }
+[data-skin="retro98"] .mention-editor-placeholder {
+  color: #808080;
+}
 /* a search box that wraps its input: the wrapper is the field */
 [data-skin="retro98"] :is(div, label):has(> svg.lucide-search + input) {
   padding: 0 4px !important;
