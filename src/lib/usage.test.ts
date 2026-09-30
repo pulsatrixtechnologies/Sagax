@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { botUsage, cachedInput, cachedUsageNote, headlineTokens, tokensColumnLabel, contextChip, contextDetail, contextShare, costCaption, formatTaskTokens, formatTokens, formatUsd, uncachedInput, lastTurnDetail, sumUsage, usageChip, usageDetail } from "./usage";
+import { botUsage, cachedInput, cachedUsageNote, headlineTokens, tokensColumnLabel, contextValue, contextDetail, contextShare, costCaption, formatTaskTokens, formatTokens, formatUsd, uncachedInput, lastTurnDetail, sumUsage, usageChip, usageDetail } from "./usage";
 
 describe("usage formatting", () => {
   it("keeps output independent of the input headline, including a fully cached turn", () => {
@@ -163,8 +163,9 @@ describe("usage formatting", () => {
     expect(contextShare({ ...base, context: { tokens: 142_000, window: 272_000 } })).toMatchObject({ percent: 52, tone: "warning" });
     expect(contextShare({ ...base, context: { tokens: 230_000, window: 272_000 } })).toMatchObject({ percent: 85, tone: "danger" });
     expect(contextShare({ ...base, context: { tokens: 40_000, window: 200_000 } })).toMatchObject({ percent: 20, tone: "quiet" });
-    expect(contextChip({ ...base, context: { tokens: 142_000, window: 272_000 } })).toBe("ctx 52%");
-    expect(contextChip({ ...base, context: { tokens: 142_000 } })).toBe("ctx 142k");
+    expect(contextValue({ ...base, context: { tokens: 142_000, window: 272_000 } })).toBe("52%");
+    expect(contextValue({ ...base, context: { tokens: 142_000 } })).toBe("142k");
+    expect(contextValue(base)).toBe("");
     expect(contextDetail({ ...base, context: { tokens: 142_000, window: 272_000 } })).toBe("Context 142k (52% of 272k)");
     expect(contextDetail({ ...base, context: { tokens: 142_000 } })).toBe("Context 142k");
   });

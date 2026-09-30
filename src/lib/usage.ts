@@ -128,11 +128,12 @@ export function contextShare(u: TaskUsage): { tokens: number; window?: number; p
   return { tokens: ctx.tokens, window, percent, tone };
 }
 
-/** "ctx 142k" or "ctx 52%": the compact form beside the headline. */
-export function contextChip(u: TaskUsage): string {
+/** "52%" or "142k" when the window is unknown: the figure beside the header's
+ * context ring. */
+export function contextValue(u: TaskUsage): string {
   const share = contextShare(u);
   if (!share) return "";
-  return t("chat.usage.contextShort", { value: share.percent === undefined ? formatTokens(share.tokens) : `${share.percent}%` });
+  return share.percent === undefined ? formatTokens(share.tokens) : `${share.percent}%`;
 }
 
 /** "Context 142k (52% of 272k)" or "Context 142k". */

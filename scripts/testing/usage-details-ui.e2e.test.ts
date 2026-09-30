@@ -31,15 +31,19 @@ if (!enabled) console.log("skipping usage details UI: set OMB_UI_E2E=1 to instal
     await ui("type", "--name", "Message Pepper", "--text", "Check the fixture usage");
     await ui("press", "--keys", "Enter");
     const settled = await ui("wait-settle", "--timeout", "60");
+    // the breakdown lives in the pill's hover card, which focus also opens
     const read = () => ui("eval", "--js", `(() => {
       const chip = document.querySelector('[data-testid="usage-chip"]');
-      return { title: chip?.getAttribute('title'), text: chip?.textContent };
+      chip?.focus();
+      const card = document.querySelector('[data-testid="usage-card"]');
+      return { label: chip?.getAttribute('aria-label'), text: chip?.textContent, card: card?.textContent?.replace(/\\s*·\\s*/g, " · ") };
     })()`);
-    await expect.poll(async () => (await read()).result?.title, { timeout: 15_000 }).toContain("Last message: 10 uncached input · 2 cached input · 5 output");
+    await expect.poll(async () => (await read()).result?.card, { timeout: 15_000 }).toContain("10 uncached input · 2 cached input · 5 output");
     const chip = (await read()).result;
     expect(chip.text).toContain("$0.01");
-    expect(chip.title).not.toContain("17 read");
-    expect(chip.title).not.toContain("15 new");
+    expect(chip.card).toContain("Last message");
+    expect(chip.card).not.toContain("17 read");
+    expect(chip.card).not.toContain("15 new");
     const consoleResult = await ui("console");
     expect((consoleResult.messages ?? []).filter((row: { type?: string }) => row.type === "error")).toEqual([]);
     const evidence = handle.logPath + ".usage-details.json";
