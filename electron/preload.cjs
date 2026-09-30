@@ -356,6 +356,26 @@ const bridge = {
       return () => ipcRenderer.removeListener("retro-assistant:detached-changed", handler);
     },
   },
+  /** Floating bots: a bot on its own always-on-top window, one per bot. This
+   * page is the brain; the windows only draw and report clicks
+   * (electron/floating-bot-window.mjs). */
+  floatingBots: {
+    open: (botId, alwaysOnTop) => ipcRenderer.invoke("floating-bots:open", { botId: String(botId), alwaysOnTop: alwaysOnTop !== false }),
+    close: botId => ipcRenderer.invoke("floating-bots:close", { botId: String(botId) }),
+    setAlwaysOnTop: (botId, on) => ipcRenderer.invoke("floating-bots:set-top", { botId: String(botId), on: on === true }),
+    list: () => ipcRenderer.invoke("floating-bots:list"),
+    update: (botId, snapshot) => ipcRenderer.send("floating-bots:update", { botId: String(botId), snapshot }),
+    onEvent: cb => {
+      const handler = (_event, value) => cb(value);
+      ipcRenderer.on("floating-bots:event", handler);
+      return () => ipcRenderer.removeListener("floating-bots:event", handler);
+    },
+    onClosed: cb => {
+      const handler = (_event, value) => cb(value);
+      ipcRenderer.on("floating-bots:closed", handler);
+      return () => ipcRenderer.removeListener("floating-bots:closed", handler);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld(

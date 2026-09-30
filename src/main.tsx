@@ -18,6 +18,10 @@ import "./styles.css";
 // query; it draws only the assistant (electron/retro-assistant-window.mjs).
 const detachedAssistant = new URLSearchParams(location.search).get("omb-retro-assistant") === "1";
 if (detachedAssistant) document.documentElement.dataset.retroDetached = "";
+// A floating bot's desktop window loads it too, on its own query: it draws
+// one bot and its balloon (electron/floating-bot-window.mjs).
+const floatingBot = new URLSearchParams(location.search).get("omb-floating-bot") === "1";
+if (floatingBot) document.documentElement.dataset.floatingBot = "";
 
 applySkin(readSkin());
 applyFont(readFont());
@@ -30,6 +34,10 @@ async function chooseRoot(): Promise<React.ReactNode> {
   if (detachedAssistant) {
     const { DetachedAssistant } = await import("./components/retro-assistant/DetachedAssistant");
     return <DetachedAssistant />;
+  }
+  if (floatingBot) {
+    const { FloatingBotWindow } = await import("./components/floating-bots/FloatingBotWindow");
+    return <FloatingBotWindow />;
   }
   // An invite link works without a session: redeeming it is the sign-in.
   if (location.pathname === "/join") return <JoinPage initialToken={takeInviteTokenFromLocation()} />;
@@ -45,6 +53,7 @@ async function chooseRoot(): Promise<React.ReactNode> {
   return <App />;
 }
 
-void Promise.all([bootstrapBrand(), chooseRoot()]).then(([, root]) => {
+// A floating bot's window makes no request of its own: its texts arrive translated from the main page.
+void Promise.all([floatingBot ? undefined : bootstrapBrand(), chooseRoot()]).then(([, root]) => {
   createRoot(document.getElementById("root")!).render(<StrictMode>{root}</StrictMode>);
 });

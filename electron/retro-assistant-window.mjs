@@ -19,8 +19,11 @@
 
 export const DETACHED_QUERY = "omb-retro-assistant=1";
 
-/** Transparent, frameless, above other apps, out of the taskbar, never stealing focus. */
-export function assistantWindowOptions({ preload, bounds }) {
+/**
+ * Transparent, frameless, above other apps, out of the taskbar, never stealing
+ * focus. Shared with the floating bots (electron/floating-bot-window.mjs).
+ */
+export function assistantWindowOptions({ preload, bounds, title = "Trombi" }) {
   return {
     ...bounds,
     show: false,
@@ -35,7 +38,7 @@ export function assistantWindowOptions({ preload, bounds }) {
     skipTaskbar: true,
     alwaysOnTop: true,
     focusable: false,
-    title: "Trombi",
+    title,
     webPreferences: {
       preload,
       contextIsolation: true,
