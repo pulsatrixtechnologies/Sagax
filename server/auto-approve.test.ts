@@ -130,7 +130,7 @@ describe("tools that ask a person", () => {
 });
 
 describe("delegationInheritsFullAccess", () => {
-  const base = { senderIsChief: true, senderHasFullAccess: true, sameBot: false, recipientDriverKind: "claudeAgent" };
+  const base = { senderIsChief: true, senderHasFullAccess: true, sameBot: false, recipientDriverKind: "claudeAgent", recipientMemberOwned: false };
   it("passes a Full-access Chief's access to the teammate it delegates to", () => {
     expect(delegationInheritsFullAccess(base)).toBe(true);
     for (const recipientDriverKind of ["codex", "claudeAgent", "antigravityAgent", "cursorAgent", "grokAgent", "opencodeGo"]) {
@@ -145,5 +145,10 @@ describe("delegationInheritsFullAccess", () => {
   it("leaves a teammate whose engine has no Full mode on its own level", () => {
     expect(delegationInheritsFullAccess({ ...base, recipientDriverKind: "hermes" })).toBe(false);
     expect(delegationInheritsFullAccess({ ...base, recipientDriverKind: undefined })).toBe(false);
+  });
+  it("never passes Full access to a bot a member owns on an organization server", () => {
+    // JC rule until per-owner containers: an admin's Full Chief handing work
+    // to a member's bot, in a Direct or a room, leaves that bot on Ask.
+    expect(delegationInheritsFullAccess({ ...base, recipientMemberOwned: true })).toBe(false);
   });
 });

@@ -18,6 +18,9 @@
 // Spec: docs/superpowers/specs/2026-09-29-perspicax-multiuser-design.md,
 // section 4 bis ("Où vivent les accès aux engines", "Échecs visibles").
 
+import { realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+
 export type EngineAccessRefusal = "engine_missing" | "no_access";
 
 /** Who a turn speaks for, stated by the path that starts it (the gate
@@ -117,6 +120,51 @@ export function serverCommandApproval(input: { tool?: string; command?: unknown 
   if (input.command) return true;
   const tool = input.tool?.trim() ?? "";
   return /^(bash|shell|sh|exec|execute|exec_command|run_command|run_shell_command|local_shell|terminal)$/i.test(tool) || /(^|[_.:])(bash|shell|exec)([_.:]|$)/i.test(tool);
+}
+
+/** File tools an owner may approve for their own bot when every path stays
+ * in the bot's own task workspace. */
+const WORKSPACE_FILE_TOOLS = new Set(["read", "write", "edit", "multiedit", "notebookedit", "notebookread", "glob", "grep", "ls"]);
+
+/** A path's real location: the deepest existing ancestor resolved through
+ * its symlinks, then the part that does not exist yet. */
+function realLocation(path: string): string {
+  const absolute = resolve(path);
+  let head = absolute;
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(head), ...tail.reverse());
+    } catch {
+      const parent = dirname(head);
+      if (parent === head) return absolute;
+      tail.push(basename(head));
+      head = parent;
+    }
+  }
+}
+
+/** Whether a permission card of a member's bot on an organization server
+ * waits for an organization admin (JC rule until per-owner containers). Every
+ * bot shares one container, one user and one HOME, so a write to the shared
+ * Claude settings or a read of a secret is as good as a server command.
+ * The owner answers only a file tool (Read, Write, Edit, ...) whose every
+ * path is absolute and, symlinks resolved, stays inside the bot's own task
+ * workspace outside any dot folder (.claude, .git, .mcp.json can hold
+ * commands). Everything else, a shell command first, needs an admin. */
+export function memberBotAdminApproval(input: { tool?: string; command?: unknown; paths?: string[]; workspaceRoot: string }): boolean {
+  if (serverCommandApproval(input)) return true;
+  const tool = input.tool?.trim().toLowerCase() ?? "";
+  if (!WORKSPACE_FILE_TOOLS.has(tool)) return true;
+  if (!input.paths?.length) return true;
+  const root = realLocation(input.workspaceRoot);
+  return !input.paths.every((path) => {
+    if (typeof path !== "string" || !isAbsolute(path)) return false;
+    const rel = relative(root, realLocation(path));
+    if (rel === "") return true;
+    if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return false;
+    return !rel.split(sep).some((segment) => segment.startsWith("."));
+  });
 }
 
 /** A setup error from a key-backed engine on an organization server (the

@@ -10,10 +10,14 @@
 //   S3-6  F: no org key or no installed engine gives an access card, no turn
 //   S3-6b F on every path a person reaches: a queued send, an edit, a bot hop
 //   S3-7  a member's bot never gets full access
+//   S3-7b its cards that reach past its own workspace (a shell command, a
+//         write to the shared Claude settings, a read of the config) wait for
+//         an organization admin; a file inside its workspace is the owner's
 //   S3-10 the directory is the backstop: a disabled person's session ends
 //   S3-11 the authenticated health lists the engines and whether installed
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { connect, type Socket } from "node:net";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -173,6 +177,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
         // a turn that never ends on its own: how a bot is held busy
         stuck: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_PROMPTS: prompts }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
         ghost: { driver: "claudeAgent", config: { cli: "/nonexistent/claude", fullAuto: true } },
+        // held open with its permission broker reachable: how cards are raised
+        hold: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: join(home, "hold-dump.json") }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
         grok: { driver: "grokAgent", config: { cli: FAKE_ACP, fullAuto: false } },
       },
     }));
@@ -389,6 +395,72 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect((await api("GET", "/api/org/approvals", alice)).body).toEqual({ approvals: [] });
     expect((await api("GET", "/api/org/approvals", erin)).status).toBe(403);
   });
+
+  it("S3-7b: a member's bot's card outside its workspace needs an admin; the owner's answer is 403", async () => {
+    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: true })).status).toBe(200);
+    const erin = await signIn(ERIN);
+    const wren = await createBot(erin, "Wren", "hold");
+    const holdDump = join(home, "hold-dump.json");
+    expect((await api("POST", `/api/bots/${wren.id}/messages`, erin, { text: "hold for cards" })).status).toBe(202);
+    await waitFor(async () => existsSync(holdDump), 20_000);
+    const socketPath = (JSON.parse(readFileSync(holdDump, "utf8")) as { mcpConfig: any }).mcpConfig.mcpServers.ogb.args.at(-1) as string;
+    const sockets: Socket[] = [];
+    const ask = async (tool: string, input: Record<string, unknown>) => {
+      const socket = connect(socketPath);
+      sockets.push(socket);
+      await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+      const id = `s37b-${tool}-${sockets.length}`;
+      let answer: any;
+      let buffer = "";
+      socket.on("data", (chunk) => { buffer += chunk; if (buffer.includes("\n")) answer = JSON.parse(buffer.split("\n")[0]!); });
+      socket.write(JSON.stringify({ t: "ask", id, kind: "permission", tool, input }) + "\n");
+      const card = await waitFor(async () => {
+        const got = await api("GET", `/api/threads/${wren.threadId}/messages?limit=100`, erin);
+        return (got.body.messages as Array<{ card?: any }> | undefined)?.find((m) => m.card?.requestId === id)?.card ?? null;
+      });
+      return { id, card, answer: () => answer };
+    };
+    const respond = (auth: Auth, requestId: string, extra: Record<string, unknown> = {}) =>
+      api("POST", `/api/threads/${wren.threadId}/respond`, auth, { requestId, behavior: "allow", ...extra });
+    try {
+      const data = realpathSync(join(home, ".openmausbot"));
+      // the shared Claude settings (a hook there runs on every bot's next turn)
+      const settings = await ask("Write", { file_path: join(data, ".claude", "settings.json"), content: "{\"hooks\":{}}" });
+      expect(settings.card.adminApproval).toBe(true);
+      expect(settings.card.allowSession).toBeUndefined();
+      const refused = await respond(erin, settings.id);
+      expect(refused.status, refused.text).toBe(403);
+      expect(refused.body.code).toBe("admin_approval_required");
+      expect(settings.answer()).toBeUndefined();
+      // the workspace keys and the engines' credentials
+      for (const [tool, input] of [
+        ["Read", { file_path: join(data, "config.json") }],
+        ["Edit", { file_path: join(data, ".claude", ".credentials.json"), old_string: "a", new_string: "b" }],
+        ["Bash", { command: "cat /proc/1/environ" }],
+      ] as const) {
+        const card = await ask(tool, input);
+        expect(card.card.adminApproval, tool).toBe(true);
+        expect((await respond(erin, card.id)).body.code).toBe("admin_approval_required");
+      }
+      // an organization admin approves it, once
+      expect((await respond(alice, settings.id, { always: true })).status).toBe(400);
+      const approved = await respond(alice, settings.id);
+      expect(approved.status, approved.text).toBe(200);
+      await waitFor(async () => settings.answer()?.behavior === "allow");
+
+      // a file inside the bot's own workspace is the owner's to approve, once
+      const inside = await ask("Write", { file_path: join(data, "task-workspaces", wren.id, wren.threadId, "notes.md"), content: "hi" });
+      expect(inside.card.adminApproval).toBeUndefined();
+      expect(inside.card.allowSession).toBeUndefined();
+      const owned = await respond(erin, inside.id);
+      expect(owned.status, owned.text).toBe(200);
+      await waitFor(async () => inside.answer()?.behavior === "allow");
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await api("POST", `/api/bots/${wren.id}/interrupt`, erin, {});
+      expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: false })).status).toBe(200);
+    }
+  }, 60_000);
 
   it("S3-10: a person disabled in Perspicax is logged out by the directory, with no back-channel push", async () => {
     const dave = await signIn(DAVE);

@@ -120,6 +120,11 @@ export type RuntimeEvent = RuntimeEventBase &
          * Used for exact-command grants; never reconstructed from a display
          * summary, tool title, or argv. Absent when either value is unknown. */
         command?: { command: string; cwd: string };
+        /** Absolute paths a file tool's permission request touches (Claude's
+         * Read, Write, Edit, ...: file_path, notebook_path, or path, which
+         * defaults to the working folder), resolved against the turn's
+         * working folder. Absent when the tool names no file. */
+        paths?: string[];
         choices?: string[];
         /** A provider's structured ask (Claude's AskUserQuestion): the whole
          * set of questions, each with its own options, so the card can offer

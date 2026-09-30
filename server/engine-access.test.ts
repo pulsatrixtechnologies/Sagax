@@ -1,8 +1,11 @@
 // Engine access on an organization server (slice 3, D13), the whole matrix.
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberOwnedBot, resolveTurnSpeaker, serverCommandApproval, type EngineAccessInput } from "./engine-access.ts";
+import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, serverCommandApproval, type EngineAccessInput } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -127,6 +130,55 @@ describe("the helpers around it", () => {
     expect(serverCommandApproval({ tool: "Edit", command: { command: "ls" } })).toBe(true);
     expect(serverCommandApproval({ tool: "Edit" })).toBe(false);
     expect(serverCommandApproval({ tool: "WebFetch" })).toBe(false);
+  });
+});
+
+describe("the admin gate on a member's bot", () => {
+  let data = "";
+  let root = "";
+  beforeAll(() => {
+    data = realpathSync(mkdtempSync(join(tmpdir(), "omb-admin-gate-")));
+    root = join(data, "task-workspaces", "bot-1");
+    mkdirSync(join(root, "thread-1", "src"), { recursive: true });
+    mkdirSync(join(data, ".claude"), { recursive: true });
+    writeFileSync(join(data, ".claude", "settings.json"), "{}");
+    symlinkSync(join(data, ".claude"), join(root, "thread-1", "escape"));
+  });
+  afterAll(() => rmSync(data, { recursive: true, force: true }));
+  const gate = (tool: string, paths?: string[], command?: unknown) => memberBotAdminApproval({ tool, paths, command, workspaceRoot: root });
+
+  it("lets the owner answer a file tool that stays inside the bot's own workspace", () => {
+    expect(gate("Write", [join(root, "thread-1", "src", "new.ts")])).toBe(false);
+    expect(gate("Edit", [join(root, "thread-1", "README.md")])).toBe(false);
+    expect(gate("Read", [join(root, "thread-1", "src")])).toBe(false);
+    expect(gate("Glob", [join(root, "thread-1")])).toBe(false);
+  });
+  it("needs an admin for a write, edit or read outside that workspace", () => {
+    expect(gate("Write", [join(data, ".claude", "settings.json")])).toBe(true);
+    expect(gate("Edit", [join(data, "config.json")])).toBe(true);
+    expect(gate("MultiEdit", ["/run/secrets/pulsabot_idp_key"])).toBe(true);
+    expect(gate("Read", ["/run/secrets/pulsabot_idp_key"])).toBe(true);
+    expect(gate("Read", [join(data, ".claude", ".credentials.json")])).toBe(true);
+    expect(gate("NotebookEdit", [join(data, "task-workspaces", "bot-2", "t", "n.ipynb")])).toBe(true);
+    expect(gate("Write", [join(root, "thread-1", "..", "..", "bot-2", "x")])).toBe(true);
+  });
+  it("needs an admin through a symlink, into a dot folder, or without a known path", () => {
+    expect(gate("Write", [join(root, "thread-1", "escape", "settings.json")])).toBe(true);
+    // a project's .claude/settings.json can hold hooks that run commands
+    expect(gate("Write", [join(root, "thread-1", ".claude", "settings.json")])).toBe(true);
+    expect(gate("Write", [join(root, "thread-1", ".git", "hooks", "pre-commit")])).toBe(true);
+    expect(gate("Write", [join(root, "thread-1", ".mcp.json")])).toBe(true);
+    expect(gate("Write", [])).toBe(true);
+    expect(gate("Write")).toBe(true);
+    expect(gate("Write", ["relative/path.ts"])).toBe(true);
+    // one path out is enough
+    expect(gate("Edit", [join(root, "thread-1", "a.ts"), "/etc/passwd"])).toBe(true);
+  });
+  it("needs an admin for every other tool and every server command", () => {
+    expect(gate("Bash", [join(root, "thread-1")], { command: "ls", cwd: root })).toBe(true);
+    expect(gate("WebFetch")).toBe(true);
+    expect(gate("mcp__computer__click")).toBe(true);
+    expect(gate("Write", [join(root, "thread-1", "a.ts")], { command: "ls", cwd: root })).toBe(true);
   });
 });
 

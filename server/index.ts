@@ -580,7 +580,7 @@ import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, i
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberOwnedBot, resolveTurnSpeaker, serverCommandApproval, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
+import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -3347,6 +3347,7 @@ function delegatedFullAccess(from: BotRecord, fromThreadId: string, target: BotR
     senderHasFullAccess: fullAccessForSource(from.id, fromThreadId),
     sameBot: from.id === target.id,
     recipientDriverKind: registry.cliTarget(target.modelSelection.instanceId)?.driverKind,
+    recipientMemberOwned: memberOwnedInOrg(target),
   });
 }
 
@@ -3371,6 +3372,9 @@ function roomTurnApprovalMode(bot: BotRecord, orchestration?: GroupTurnOrchestra
   const handoff = orchestration?.roomHandoffId ? roomHandoffs.nodes.get(orchestration.roomHandoffId) : undefined;
   const source = handoff?.parentId ? roomHandoffs.nodes.get(handoff.parentId) : undefined;
   const from = source ? store.bot(source.botId) : undefined;
+  // A member's bot on an organization server never runs Full, not even for
+  // a Full Chief's handoff (JC rule until per-owner containers).
+  if (memberOwnedInOrg(bot)) return "ask";
   if (from && source && delegatedFullAccess(from, source.threadId, bot)) return "full";
   return approvalModeForTurn(bot, Boolean(orchestration?.roomHandoffId));
 }
@@ -5503,6 +5507,13 @@ async function answerRequest(
   always?: boolean,
   rememberCommand?: boolean,
 ): Promise<RequestOutcome> {
+  // A member's bot on an organization server is approved one action at a
+  // time: no session allow and no saved command, whatever the answer asks.
+  const decidingBot = decidedFor ? store.bot(decidedFor.id) : undefined;
+  if (decidingBot && memberOwnedInOrg(decidingBot)) {
+    always = false;
+    rememberCommand = false;
+  }
   // Snapshot the card BEFORE delivering the answer: a delivered answer
   // resolves the request synchronously through the fold, which consumes
   // the askMessageByRequest entry — by the time the await returns, nobody
@@ -7110,7 +7121,15 @@ bus.subscribe((event: RuntimeEvent) => {
       // choosing a local desktop must not disable an exact shell grant.
       // A command on the server asked by a member's bot waits for an
       // organization admin: no saved command, session grant or mode answers it.
-      const adminApproval = Boolean(permission && asker && memberOwnedInOrg(asker) && serverCommandApproval({ tool: event.tool, command: event.command }));
+      // So does every other card of that bot except a file tool that stays in
+      // its own task workspace: all bots share one container, user and HOME,
+      // so a write to the shared settings or a read of a secret is as good as
+      // a command (memberBotAdminApproval).
+      const memberAsker = Boolean(permission && asker && memberOwnedInOrg(asker));
+      const adminApproval = Boolean(memberAsker && asker && memberBotAdminApproval({
+        tool: event.tool, command: event.command, paths: event.paths,
+        workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
+      }));
       const command = permission && asker && event.requestId && !event.requiresExplicitApproval && event.command && !adminApproval
         ? commandAllowlistCandidate({ ...event.command, providerInstanceId: event.providerInstanceId ?? asker.modelSelection.instanceId })
         : null;
@@ -7219,7 +7238,9 @@ bus.subscribe((event: RuntimeEvent) => {
             : undefined,
           commandAllowlist: command ?? undefined,
           // Provider-owned session grants remain separate from exact commands.
-          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !adminApproval ? true : undefined,
+          // a member's bot is approved one action at a time: a session rule
+          // (Claude's own suggestion) could reach past its workspace
+          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !adminApproval && !memberAsker ? true : undefined,
           ...(adminApproval ? { adminApproval: true } : {}),
           // The text stays for cards saved before heldCode existed, and for
           // clients that do not know the key yet.
