@@ -66,6 +66,8 @@ extraResources:
     to: licenses/hpke-core-LICENSE.txt
   - from: third_party/hpke-js/common-LICENSE.txt
     to: licenses/hpke-common-LICENSE.txt
+  - from: third_party/98.css/LICENSE
+    to: licenses/98css-LICENSE.txt
   - from: dist
     to: ui
   - from: dist-server

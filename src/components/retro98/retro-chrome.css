@@ -1,0 +1,284 @@
+/* Hibou 98: the window chrome (title bar, menu bar, toolbar, status bar).
+   Metrics follow 98.css (MIT, Copyright (c) 2020 Jordan Scales; see
+   src/styles/retro98.css and third_party/98.css/LICENSE). Loaded with the lazy
+   chrome chunk; every rule is scoped to the retro98 skin. */
+
+[data-skin="retro98"] .r98w-top {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font: 11px/1.3 var(--r98-font);
+  color: #000;
+  user-select: none;
+}
+
+/* ── title bar ─────────────────────────────────────────────────────────── */
+
+[data-skin="retro98"] .r98w-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 2px 0 3px;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+/* macOS keeps its own traffic lights at the left of this bar */
+[data-skin="retro98"] .r98w-titlebar-mac {
+  height: 28px;
+  padding-left: 74px;
+}
+[data-skin="retro98"] .r98w-titlebar-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+}
+[data-skin="retro98"] .r98w-titlebar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: bold;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+[data-skin="retro98"] .r98w-caption {
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+[data-skin="retro98"] .r98w-caption-btn {
+  width: 16px;
+  min-width: 16px !important;
+  height: 14px;
+  min-height: 14px !important;
+  padding: 0 !important;
+  border: 0;
+  background-color: #c0c0c0 !important;
+  background-repeat: no-repeat;
+  box-shadow: var(--r98-raised) !important;
+  cursor: default;
+}
+[data-skin="retro98"] .r98w-caption-btn:active {
+  box-shadow: var(--r98-pressed) !important;
+}
+[data-skin="retro98"] .r98w-min {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='6' height='2' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='%23000' d='M0 0h6v2H0z'/%3E%3C/svg%3E") !important;
+  background-position: bottom 3px left 4px;
+}
+[data-skin="retro98"] .r98w-max {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='9' height='9' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' d='M9 0H0v9h9V0zM8 2H1v6h7V2z' fill='%23000'/%3E%3C/svg%3E") !important;
+  background-position: top 2px left 3px;
+}
+[data-skin="retro98"] .r98w-close {
+  margin-left: 2px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg width='8' height='7' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' d='M0 0h2v1h1v1h2V1h1V0h2v1H7v1H6v1H5v1h1v1h1v1h1v1H6V6H5V5H3v1H2v1H0V6h1V5h1V4h1V3H2V2H1V1H0V0z' fill='%23000'/%3E%3C/svg%3E") !important;
+  background-position: top 3px left 4px;
+}
+
+/* ── menu bar and drop-downs ───────────────────────────────────────────── */
+
+[data-skin="retro98"] .r98w-menubar {
+  display: flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 2px;
+  margin-top: 1px;
+}
+[data-skin="retro98"] .r98w-menu-slot {
+  position: relative;
+}
+[data-skin="retro98"] .r98w-menubar-item {
+  height: 18px;
+  min-height: 18px !important;
+  min-width: 0 !important;
+  padding: 0 6px !important;
+  border: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #000;
+  font: 11px var(--r98-font);
+  cursor: default;
+}
+[data-skin="retro98"] .r98w-menubar-item:hover {
+  box-shadow: inset -1px -1px #808080, inset 1px 1px #fff !important;
+}
+[data-skin="retro98"] .r98w-menubar-item.r98w-open {
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080 !important;
+}
+[data-skin="retro98"] .r98w-menubar-item:focus-visible {
+  outline: 1px dotted #000;
+  outline-offset: -3px;
+}
+[data-skin="retro98"] .r98w-mnemonic {
+  text-decoration: underline;
+}
+[data-skin="retro98"] .r98w-dropdown {
+  position: absolute;
+  z-index: 70;
+  top: 100%;
+  left: 0;
+  min-width: 190px;
+  padding: 2px;
+  background: #c0c0c0;
+  box-shadow: var(--r98-window-bevel), 2px 2px 0 rgb(0 0 0 / 0.35) !important;
+}
+[data-skin="retro98"] .r98w-dropdown-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  width: 100%;
+  height: 18px;
+  min-height: 18px !important;
+  padding: 0 14px 0 2px !important;
+  border: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #000;
+  font: 11px var(--r98-font);
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+[data-skin="retro98"] .r98w-dropdown-item:is(:hover, :focus):not([aria-disabled="true"]) {
+  outline: none;
+  background: #000080 !important;
+  color: #fff;
+}
+[data-skin="retro98"] .r98w-dropdown-item[aria-disabled="true"] {
+  color: #808080;
+  text-shadow: 1px 1px 0 #fff;
+}
+[data-skin="retro98"] .r98w-check {
+  display: inline-flex;
+  justify-content: center;
+}
+[data-skin="retro98"] .r98w-dropdown-hint {
+  padding-left: 24px;
+}
+[data-skin="retro98"] .r98w-dropdown-sep {
+  height: 2px;
+  margin: 3px 1px;
+  border-top: 1px solid #808080;
+  border-bottom: 1px solid #fff;
+}
+
+/* ── toolbar ───────────────────────────────────────────────────────────── */
+
+[data-skin="retro98"] .r98w-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 28px;
+  margin: 1px 0 2px;
+  padding: 0 4px 0 9px;
+  position: relative;
+  box-shadow: inset 0 1px #fff, inset 0 -1px #808080, 0 1px #fff !important;
+  border-top: 1px solid #808080;
+}
+/* the grip at the toolbar's left edge */
+[data-skin="retro98"] .r98w-toolbar::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  box-shadow: inset -1px -1px #808080, inset 1px 1px #fff;
+}
+[data-skin="retro98"] .r98w-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 23px;
+  min-width: 23px !important;
+  height: 22px;
+  min-height: 22px !important;
+  padding: 0 !important;
+  border: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: default;
+}
+[data-skin="retro98"] .r98w-tool:hover:not(:disabled) {
+  box-shadow: inset -1px -1px #808080, inset 1px 1px #fff !important;
+}
+[data-skin="retro98"] .r98w-tool:is(:active, [aria-pressed="true"]):not(:disabled) {
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080 !important;
+}
+[data-skin="retro98"] .r98w-tool[aria-pressed="true"]:not(:disabled) {
+  background: repeating-conic-gradient(#c0c0c0 0% 25%, #fff 0% 50%) 0 0 / 2px 2px !important;
+}
+[data-skin="retro98"] .r98w-tool:disabled svg {
+  filter: grayscale(1) opacity(0.45);
+}
+[data-skin="retro98"] .r98w-tool-sep {
+  width: 2px;
+  height: 20px;
+  margin: 0 4px;
+  box-shadow: inset 1px 0 #808080, inset -1px 0 #fff;
+}
+
+/* ── status bar ────────────────────────────────────────────────────────── */
+
+[data-skin="retro98"] .r98w-status {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  height: 20px;
+  margin-top: 2px;
+  padding: 0 1px;
+  font: 11px/1 var(--r98-font);
+  color: #000;
+}
+[data-skin="retro98"] .r98w-status-field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 2px 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-shadow: inset -1px -1px #dfdfdf, inset 1px 1px #808080 !important;
+}
+[data-skin="retro98"] .r98w-status-main {
+  flex: 1;
+}
+[data-skin="retro98"] .r98w-status-model {
+  flex: 0 1 180px;
+}
+[data-skin="retro98"] .r98w-status-cost {
+  flex: 0 0 auto;
+  min-width: 72px;
+}
+[data-skin="retro98"] .r98w-led {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  box-shadow: inset -1px -1px #fff, inset 1px 1px #808080 !important;
+}
+[data-skin="retro98"] .r98w-led-on {
+  background: #00c000;
+}
+[data-skin="retro98"] .r98w-led-off {
+  background: #c00000;
+}
+
+/* ── about box ─────────────────────────────────────────────────────────── */
+
+.r98-root .r98w-about {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.r98-root .r98w-about p {
+  margin: 0 0 6px;
+}

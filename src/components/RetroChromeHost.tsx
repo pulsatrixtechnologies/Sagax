@@ -1,0 +1,34 @@
+// Always mounted, nearly free: tells whether the Hibou 98 skin is worn and,
+// only then, fetches the late-90s window chrome (title bar, menu bar,
+// toolbar, status bar). Under every other skin it renders nothing, so the
+// app stays pixel-identical and the chunk is never downloaded.
+import { lazy, Suspense, useEffect, useState } from "react";
+import { RETRO_SKIN } from "@/lib/retro98";
+
+const RetroTop = lazy(() => import("./retro98/RetroChrome").then((module) => ({ default: module.RetroTop })));
+const RetroStatus = lazy(() => import("./retro98/RetroChrome").then((module) => ({ default: module.RetroStatusBar })));
+
+function wearingRetro(): boolean {
+  // Tests stub a bare `document`; only a real element carries the skin.
+  return typeof document !== "undefined" && document.documentElement?.dataset?.skin === RETRO_SKIN;
+}
+
+/** True while the document wears the retro98 skin (the picker or the easter egg). */
+export function useRetroSkin(): boolean {
+  const [on, setOn] = useState(wearingRetro);
+  useEffect(() => {
+    if (typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver(() => setOn(wearingRetro()));
+    if (!document.documentElement) return;
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-skin"] });
+    setOn(wearingRetro());
+    return () => observer.disconnect();
+  }, []);
+  return on;
+}
+
+export function RetroChromeSlot({ slot, onNewBot }: { slot: "top" | "status"; onNewBot?: () => void }) {
+  const on = useRetroSkin();
+  if (!on) return null;
+  return <Suspense fallback={null}>{slot === "top" ? <RetroTop onNewBot={onNewBot} /> : <RetroStatus />}</Suspense>;
+}

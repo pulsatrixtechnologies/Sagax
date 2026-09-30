@@ -376,7 +376,14 @@ function Bubble({
   };
 
   return (
-    <div className={cn("group flex w-full flex-col", user ? "animate-msg-in items-end" : "items-start")}>
+    <div
+      className={cn("group flex w-full flex-col", user ? "animate-msg-in items-end" : "items-start")}
+      // Read only by the Hibou 98 skin, which lays the chat out as a log with
+      // the author and time above each line; invisible everywhere else.
+      data-retro-author={user ? state.config?.profile?.name?.trim() || t("retro.chat.you") : peer?.name ?? bot.name}
+      data-retro-time={formatTime(message.at)}
+      data-retro-role={user ? "user" : "bot"}
+    >
       {peer && <PeerLabel peer={peer} />}
       {user && <OtherAuthorLabel message={message} />}
       <div className={cn("flex w-full items-center gap-1.5", user ? "justify-end" : "justify-start")}>
