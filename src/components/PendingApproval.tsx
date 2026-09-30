@@ -246,6 +246,18 @@ export function PendingApprovalActions({
     });
 
   const base = "rounded-full px-3.5 py-1.5 text-[13.5px] transition-colors";
+  // Organization server: a command on the server asked by a member's bot
+  // waits for an organization admin; its owner can only stop the turn.
+  if (pending.message.card?.adminApproval && ownerOrAdmin !== true) {
+    return (
+      <div className="flex flex-wrap items-center justify-end gap-2 px-2 py-2">
+        <span role="status" className="text-[12.5px] text-ink-secondary">{t("approval.waitingForAdmin")}</span>
+        <button onClick={onCancelTurn} className={cn(base, "text-ink-secondary hover:bg-control hover:text-ink")}>
+          {t("approval.action.cancelTurn")}
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-wrap items-center justify-end gap-2 px-2 py-2">
       {!durableRequest && (

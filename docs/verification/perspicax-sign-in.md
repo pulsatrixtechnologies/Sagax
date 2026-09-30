@@ -154,3 +154,71 @@ admin console session for alice:
 
 The desktop click-through (system browser and return) and the phone apps on
 a device are checked by hand.
+
+## Slice 3: the link, the directory and sharing with a person
+
+### Automated (fake provider)
+
+```sh
+pnpm exec vitest run server/perspicax-link.test.ts server/engine-access.test.ts server/direct-grants.test.ts \
+  server/principals.test.ts server/oidc-rp.test.ts server/oidc-login.test.ts server/idp-session.test.ts \
+  server/request-auth.test.ts server/channel-visibility.test.ts server/org-sharing.e2e.test.ts \
+  server/oidc-session.e2e.test.ts server/oidc-login.e2e.test.ts server/environment.test.ts server/wire.test.ts \
+  src/components/bot-settings
+```
+
+The fake provider now serves `GET /api/v1/pulsabot/directory` behind its
+link token (`linkToken`), with an ETag and 304, settable `directoryPeople`
+and `directoryTeams`, and `setDirectoryStatus(sub, status)`.
+
+- `server/perspicax-link.test.ts`: the link file (0644 refused, 0640 and
+  0600 accepted, another issuer, origin or client, extra keys, a bad token,
+  more than 4 KiB, and the token never in a refusal) and the directory sync
+  (principals created before any sign-in, attributes updated, `disabledAt`
+  never cleared, a disabled or vanished person logged out once, a demotion
+  narrowed, 304, a 401 followed by a rotated file, single flight, a timeout
+  or a 5xx keeping the last data).
+- `server/engine-access.test.ts`: the whole access matrix (solo, an admin
+  owner, someone else with and without the org key and a key-backed
+  engine, a member's own bot and its routines, a missing engine first), the
+  key_refused card and who sees its detail, and who answers a server
+  command of a member's bot.
+- `server/org-sharing.e2e.test.ts` (real server, fake provider, fake Claude
+  CLI with `OMB_ANTHROPIC_API_KEY` and `FAKE_CLAUDE_DUMP`): S3-3 the
+  directory before and after a sign-in, S3-11 the engines in the
+  authenticated health, S3-4 a bot shared with bob answered with the
+  organization key while dave sees nothing (list, thread, search, stream),
+  S3-5 the grant removed ends bob's stream and access at once, S3-6 the
+  no_access and engine_missing cards (and an admin's own login-backed bot
+  still answering), S3-7 a member's bot refused full access, S3-10 a person
+  disabled in the directory logged out with no back-channel push.
+
+### Against a real Perspicax (manual)
+
+Isolated instances only (never the live app or its data). Build
+`pulsatrix-connector` from the slice 3 head and pick free ports, for
+example Perspicax 19071 and Pulsa Bot 19072:
+
+```sh
+S=$(mktemp -d)
+PXC_PULSABOT_ORIGIN=http://localhost:19072 PXC_PULSABOT_LINK_FILE=$S/link/pulsabot.json \
+  pulsatrix-connector --config-dir $PX serve
+env -i PATH="$PATH" HOME=$S/pbhome OMB_PORT=19072 OMB_WEBHOOK_PORT=19073 \
+  OMB_IDENTITY=perspicax OMB_PERSPICAX_ISSUER=http://localhost:19071 \
+  OMB_PUBLIC_URL=http://localhost:19072 OMB_OIDC_REFRESH_AFTER_SECONDS=5 \
+  OMB_PERSPICAX_LINK_FILE=$S/link/pulsabot.json OMB_PERSPICAX_DIRECTORY_SECONDS=5 \
+  OMB_ANTHROPIC_API_KEY=sk-ant-test-org-key FAKE_CLAUDE_DUMP=$S/claude-dump.json node server/index.ts
+```
+
+with `config.json` instances `claude` (claudeAgent, `cli` =
+`server/testing/fake-claude-cli.ts`), `ghost` (claudeAgent, `cli` =
+`/nonexistent/claude`) and `grok` (grokAgent, `server/testing/fake-acp-cli.ts`),
+and accounts alice (admin), bob, dave and erin (employees). Then walk S3-1 to
+S3-11 of the slice 3 plan: the link file (0640, six keys) and the auto link,
+the link token scope, the directory before bob signs in, scenario B (share,
+reply with `ANTHROPIC_API_KEY=sk-ant-test-org-key` in the dump, dave sees
+nothing), scenario C (removal), scenario F (the cards, the owner's
+`turn-failed` notification), the member bot rules, a link rotation picked up
+within one directory period, unlink and relink, the directory as the
+backstop when the back-channel push cannot arrive, and the engines in
+`GET /api/health`.

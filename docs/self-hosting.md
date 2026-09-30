@@ -629,6 +629,66 @@ its turns run on the engines installed on the server (in the Docker image,
 the `ENGINES` build argument; see "Docker" above), with the engine
 connection or provider key an admin set in Settings → Connections.
 
+### Linked to Perspicax: the directory, sharing and engine access
+
+Perspicax links this server to itself and writes a small link file (its
+issuer, the client id, this server's id in Perspicax, this server's public
+origin and a link token that opens only the Perspicax directory). Point the
+server at it:
+
+```sh
+OMB_PERSPICAX_LINK_FILE=/link/pulsabot.json    # written by Perspicax (PXC_PULSABOT_LINK_FILE)
+# OMB_PERSPICAX_INTERNAL_URL=http://perspicax:8787  # where this server reaches Perspicax inside the deployment
+# OMB_PERSPICAX_DIRECTORY_SECONDS=300              # 5 to 3600: how often the directory is read
+# OMB_ORG_NAME=Acme                                # shown in Settings > Organization (default Pulsatrix)
+```
+
+- The link file must match this server (issuer, client id, public origin),
+  hold at most 4 KiB, and give no permission to "other" users (0640 or
+  0600); anything else is refused and Settings > Organization says so. Its
+  token is never logged. When Perspicax rotates the link, the file is
+  rewritten and the next directory call picks the new token up (a 401
+  re-reads the file and retries once).
+- `OMB_PERSPICAX_INTERNAL_URL` (an origin, http or https, any host): the
+  discovery document, the JWKS, the token and revocation endpoints and the
+  directory are reached there; the issuer is still checked against
+  `OMB_PERSPICAX_ISSUER`, and the browser is still sent to the public
+  authorization endpoint.
+- The directory is read at start, every `OMB_PERSPICAX_DIRECTORY_SECONDS`,
+  and after each sign-in. Everyone it lists becomes a person here (so a bot
+  can be shared with someone before their first sign-in), with their name,
+  login, address and role. Someone disabled or deleted in Perspicax is
+  logged out as a back-channel logout would, even if that push never
+  arrived; an admin demoted in Perspicax loses the admin scope at once.
+- Settings > Organization shows the link, the last sync, your role and a
+  link to the Perspicax console; people, teams and accounts are managed
+  there, never here.
+- A bot's owner shares it with people from the directory (the bot's
+  settings, **Shared with**): they see the bot and its conversations and
+  can write to it. Removing someone takes effect at once: their lists and
+  live updates lose the bot and its thread answers 404.
+- Engine access: the engines logged in on the server (subscriptions) and
+  the keys in Settings > Connections serve an admin's own bots. Every other
+  turn (a member's own bot, anyone writing to someone else's bot, a member
+  bot's routines) runs only when an admin turned on **Use the
+  organization's key** in Settings > Organization, and only on a key-backed
+  engine (Claude, Mistral, xAI, OpenAI compatible or OpenCode with a key in
+  Settings > Connections). Otherwise, or when the bot's engine is not
+  installed on the server, the message is kept and the thread shows a card
+  saying why; the owner gets a notification. The authenticated
+  `GET /api/health` lists the engines and whether each is installed.
+- Until each owner gets a container of their own, a bot whose owner is not
+  an organization admin never runs with full access (`409
+  member_bot_full_access`), and a command it wants to run on the server
+  waits for an organization admin (Settings > Organization, **Commands
+  waiting for an admin**); its owner's answer is refused with `403
+  admin_approval_required`.
+
+The organization's compose file (Perspicax, Pulsa Bot and their proxies,
+with the shared link volume) lives in the Perspicax repository,
+`deploy/docker-compose.pulsabot.yml`. The `compose.yaml` here stays the solo
+server.
+
 ## Sign in with your email
 
 A pairing code is fine for the owner's own devices. For a workspace other

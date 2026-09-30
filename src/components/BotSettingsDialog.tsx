@@ -28,6 +28,8 @@ import { VoiceSection } from "./bot-settings/VoiceSection";
 import { HistorySection, type HistoryRow } from "./bot-settings/HistorySection";
 import { UsageSection } from "./bot-settings/UsageSection";
 import { VisibilitySection } from "./bot-settings/VisibilitySection";
+import { SharingSection } from "./bot-settings/SharingSection";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { FilesSection } from "./bot-settings/FilesSection";
 import { isAdvancedSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
 import { ComputerPanel } from "./ComputerPanel";
@@ -99,10 +101,14 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
   // Who can see a bot matters only where several people sign in: a browser
   // on a served workspace, and there only to an admin.
   const ownerOrAdmin = useOwnerOrAdmin();
+  // A server signed in with Perspicax shares a bot person by person
+  // (SharingSection); the audience setting does not apply there.
+  const perspicaxOrg = usePerspicaxOrg();
   const sections = BOT_SECTIONS
     .filter((entry) => isAdvancedSection(entry.id))
     .filter((entry) => entry.id !== "slack" || slackUrl !== null)
-    .filter((entry) => entry.id !== "visibility" || (!window.ogb && ownerOrAdmin === true));
+    .filter((entry) => entry.id !== "visibility" || (!window.ogb && ownerOrAdmin === true && perspicaxOrg === null))
+    .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null);
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
 
   const [overview, setOverview] = useState<BotOverview | null>(null);
@@ -335,6 +341,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
         return <VoiceSection bot={bot} derived={derived} />;
       case "visibility":
         return <VisibilitySection bot={bot} />;
+      case "sharing":
+        return <SharingSection bot={bot} />;
       case "history":
         return historyRows === null && historyError ? (
           <div className="rounded-xl bg-card p-4 text-[13px] text-ink-secondary">Couldn’t load history.</div>

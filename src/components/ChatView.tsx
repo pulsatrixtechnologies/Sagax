@@ -102,6 +102,7 @@ import {
 } from "@/lib/transcript-window";
 import { appendComposerDraft, useReplyDraft } from "@/lib/drafts";
 import { OtherAuthorLabel } from "./MessageAuthor";
+import { AccessCard } from "./AccessCard";
 
 /** Long user messages collapse behind a fade so pasted walls of text don't
  * bury the conversation; bots get full markdown. */
@@ -787,6 +788,13 @@ const MessagesList = memo(function MessagesList({
         const row = (() => {
           if (m.state === "waiting-on-owner") return <OwnerWait ownerName={m.ownerName ?? ""} />;
           switch (m.kind) {
+            case "access":
+              return m.access ? (
+                <AccessCard
+                  access={m.access}
+                  viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
+                />
+              ) : null;
             case "secret":
               return m.secret ? <SecretRequestCard botId={bot.id} threadId={bot.threadId} message={m} /> : null;
             case "connector":

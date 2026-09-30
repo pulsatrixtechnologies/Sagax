@@ -14,6 +14,8 @@ import { notifyOrgColumn } from "./org-column";
 import { ConnectedWorkspacesSettings } from "./ConnectedWorkspacesSettings";
 import { RemoteComputerSection } from "./RemoteComputerSection";
 import { CustomDomainSettings } from "./CustomDomainSettings";
+import { PerspicaxOrgSettings } from "./PerspicaxOrgSettings";
+import { isPerspicaxOrg, type PerspicaxOrg } from "@/lib/perspicax-org";
 
 export { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";
 
@@ -84,6 +86,8 @@ export function OrganizationSettings() {
   const [orgReady, setOrgReady] = useState(false);
   const [directoryError, setDirectoryError] = useState("");
   const [servers, setServers] = useState<{ activeId: string; count: number } | null>(null);
+  // A server signed in with Perspicax: its own organization view.
+  const [perspicaxOrg, setPerspicaxOrg] = useState<PerspicaxOrg | null>(null);
 
   const acceptConnection = (next: ManagedDesktopState) => {
     const changed = status.current !== next.status;
@@ -121,6 +125,12 @@ export function OrganizationSettings() {
     try {
       const body = await api<{ org: { name: string; host?: OrgRecord["host"] }; people?: OrgPersonView[]; pendingInvites?: PendingInviteView[]; viewerRole?: OrgRole | null }>("/api/org");
       if (!alive()) return;
+      if (isPerspicaxOrg(body)) {
+        setPerspicaxOrg(body);
+        setOrgReady(true);
+        setDirectoryError("");
+        return;
+      }
       setOrg({ name: body.org.name, host: body.org.host });
       setPeople(body.people ?? []);
       setPendingInvites(body.pendingInvites ?? []);
@@ -210,6 +220,8 @@ export function OrganizationSettings() {
       setDirectoryError(t("org.createFailed"));
     }
   };
+
+  if (perspicaxOrg) return <PerspicaxOrgSettings org={perspicaxOrg} onChanged={() => loadOrg()} />;
 
   const directory = (
     <>
