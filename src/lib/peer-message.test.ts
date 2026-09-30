@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { peerLine } from "./peer-message";
 
 const NOTE = (opening: string, name: string, rest: string) =>
-  `[${opening} @${name}, another bot in this Pulsa Bot workspace${rest}]`;
+  `[${opening} @${name}, another bot in this Sagax workspace${rest}]`;
 
 describe("peerLine", () => {
   it("is null for the person's own line and for bot lines", () => {

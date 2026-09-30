@@ -1,10 +1,12 @@
-> Pulsa Bot has no token and no affiliation with any cryptocurrency.
+> Sagax has no token and no affiliation with any cryptocurrency.
 > It is a modified distribution of the Apache-2.0 project originally published as OpenMausBot.
 > It is not affiliated with xAI. "Grok" is a trademark of its owner.
 
 <div align="center">
 
-# Pulsa Bot
+# Pulsatrix Sagax
+
+<sub>Formerly Pulsa Bot. Sibling of Pulsatrix Perspicax.</sub>
 
 **Your own team of AI bots, in a chat app your whole organization can share.**
 
@@ -23,15 +25,15 @@ channels, and let everyone work with them. Approvals always stay with the bot's 
 
 <br>
 
-<img src="docs/screenshots/hero.png" alt="Pulsa Bot: a chat app where every contact is a real AI agent" width="900">
+<img src="docs/screenshots/hero.png" alt="Sagax: a chat app where every contact is a real AI agent" width="900">
 
 </div>
 
 ---
 
-## What Pulsa Bot adds
+## What Sagax adds
 
-Pulsa Bot starts from OpenMausBot and turns a single-person desktop into a shared workspace.
+Sagax starts from OpenMausBot and turns a single-person desktop into a shared workspace.
 
 | Area | Change |
 |---|---|
@@ -69,7 +71,7 @@ You still need at least one agent CLI installed and signed in on the machine tha
 |---|---|
 | `version` | The upstream OpenMausBot version this tree is based on. It is not bumped by the fork. |
 | `baseVersion` | The same official base, recorded explicitly (0.1.89). |
-| `forkVersion` | The Pulsa Bot version (0.1.0 and up). Installers, artifact names, and the `pulsa-v*` tag use it. |
+| `forkVersion` | The Sagax version (0.1.0 and up). Installers, artifact names, and the `pulsa-v*` tag use it. |
 
 The **Fork release** workflow (`.github/workflows/fork-release.yml`) is started by hand, builds a chosen branch or commit for macOS and Windows, and publishes a GitHub prerelease. It does not touch the upstream release mirror.
 
@@ -237,7 +239,7 @@ None of those is the product name.
 Run the terminal launcher from the checkout:
 
 ```sh
-pnpm omb            # guided first launch, then opens Pulsa Bot
+pnpm omb            # guided first launch, then opens Sagax
 pnpm omb setup      # reconfigure without resetting bots or conversations
 pnpm omb serve      # background service for a server or always-on computer
 ```
@@ -251,8 +253,8 @@ Build and test:
 pnpm typecheck          # app + server
 pnpm test               # unit, driver, API, and desktop tests
 pnpm build              # typecheck + production build
-pnpm package:fork:mac   # Pulsa Bot trial build for macOS → release/
-pnpm package:fork:win   # Pulsa Bot trial build for Windows → release/
+pnpm package:fork:mac   # Sagax trial build for macOS → release/
+pnpm package:fork:win   # Sagax trial build for Windows → release/
 ```
 
 Optional credentials, pasted once in **App Settings**:
@@ -280,7 +282,7 @@ provider is one file in [`server/drivers/`](server/drivers/) plus a one-line reg
 
 ## License
 
-Pulsa Bot is a modified distribution of the work originally published as
+Sagax is a modified distribution of the work originally published as
 OpenMausBot. The original work and this distribution are under the
 [Apache License 2.0](LICENSE). Copyright 2026 Milind Soni and OpenMausBot
 contributors. Those notices are kept in [NOTICE](NOTICE). Details are in
@@ -288,7 +290,7 @@ contributors. Those notices are kept in [NOTICE](NOTICE). Details are in
 
 What this distribution changes:
 
-- The product name is Pulsa Bot.
+- The product name is Sagax.
 - Organizations, people in channels, bot ownership, owner-only approvals, and workers were added.
 - The interface was restyled.
 - The source-available `enterprise/` directory was removed. It was not
@@ -296,7 +298,7 @@ What this distribution changes:
   included, and its license check was not copied here. With the directory
   gone, the server reports `{"edition":"oss"}`.
 
-If you redistribute Pulsa Bot, Apache 2.0 requires you to:
+If you redistribute Sagax, Apache 2.0 requires you to:
 
 1. Give recipients a copy of the Apache License 2.0 (`LICENSE`).
 2. State that you changed the files. [NOTICE](NOTICE) records the changes
@@ -314,6 +316,6 @@ Packaged Cua Driver components keep their upstream MIT, SIL OFL 1.1, MPL-2.0, an
 The notices, license texts, source locations, and SBOM are in
 [`third_party/cua-driver/`](third_party/cua-driver/) and ship beside the native runtime.
 
-Pulsa Bot is an independent open-source project inspired by Grok Bot. It is
+Sagax is an independent open-source project inspired by Grok Bot. It is
 not affiliated with, endorsed by, or associated with xAI. "Grok" is a trademark
 of its owner.

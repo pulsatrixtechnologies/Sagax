@@ -32,7 +32,7 @@ export interface LocalVmInventoryEntry {
 }
 
 /** Idle cleanup is destructive. An exact derived name alone is not ownership:
- * a pre-existing container must also carry Pulsa Bot's verified labels. */
+ * a pre-existing container must also carry Sagax's verified labels. */
 export function shouldArmLocalVmIdle(
   status: Pick<ContainerComputerStatus, "container" | "managed"> | null,
 ): boolean {

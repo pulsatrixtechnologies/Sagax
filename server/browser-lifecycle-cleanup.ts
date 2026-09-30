@@ -112,7 +112,7 @@ function unavailableJournalError(error: Error): Error & { status: number } {
 export function requireBrowserCleanupAcknowledged(ok: boolean, target: string): void {
   if (ok) return;
   const error = Object.assign(new Error(
-    `${target} was removed, but Pulsa Bot could not confirm its local browser data was erased. `
+    `${target} was removed, but Sagax could not confirm its local browser data was erased. `
     + "Restart the desktop app before reusing it; cleanup will retry automatically.",
   ), { status: 503 });
   throw error;

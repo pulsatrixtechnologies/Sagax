@@ -91,7 +91,7 @@ pnpm exec vitest run server/bot-visibility.test.ts server/bot-visibility.e2e.tes
 
 ## Observed local result — 2026-09-23
 
-On a disposable worktree stacked on #1708 and rebased onto Pulsa Bot main
+On a disposable worktree stacked on #1708 and rebased onto Sagax main
 `0b132aec`: `pnpm typecheck`, `pnpm lint`, `pnpm i18n:check` and the files
 above passed. Before that rebase (main `0bb37982` plus #1708),
 `pnpm test:packaged-server` and `server/index.test.ts`,
@@ -156,7 +156,7 @@ A review of #1717 reproduced eight problems; each is now covered.
   of a frame kept from clients (`memberFrame` returns nothing for a withheld
   frame).
 
-Observed on a disposable worktree on Pulsa Bot main `3eb90469`:
+Observed on a disposable worktree on Sagax main `3eb90469`:
 `pnpm typecheck`, `pnpm lint`, `pnpm i18n:check`, the files above and their
 neighbours (`server/index.test.ts`, card answerers, CLI, recent work, room
 and team suites) passed on macOS. Mutation checks, each restored afterwards,

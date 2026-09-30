@@ -72,7 +72,7 @@ const installed = inContainer(
     prepare,
     command,
     'dpkg-query -W -f="INSTALLED=\\${Version} \\${db:Status-Abbrev}\\n" openmausbot',
-    'test -x /opt/Pulsa Bot/openmausbot && echo "EXECUTABLE=yes"',
+    'test -x /opt/Sagax/openmausbot && echo "EXECUTABLE=yes"',
   ].join("\n"),
 );
 

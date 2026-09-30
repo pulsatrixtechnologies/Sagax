@@ -1,4 +1,4 @@
-# One Pulsa Bot tenant: the harness server plus Caddy for TLS + login.
+# One Sagax tenant: the harness server plus Caddy for TLS + login.
 #
 # Caddy runs in the server's network namespace, so it reaches the server on
 # 127.0.0.1 — the server never binds a public interface. Ports are therefore

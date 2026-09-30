@@ -1,5 +1,6 @@
 // The footer row, the way Perspicax lays out its account footer: the avatar
-// and the full name, one hover menu that also carries the sidebar's places.
+// and the full name, opening the profile menu. The sidebar's places are rows
+// above it (SidebarPlaces.test.ts), so the tour's `tools` anchor is not here.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,24 +23,24 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("sidebar footer row", () => {
-  it("shows the avatar and the full name, tinted until hover, and anchors the tour", () => {
-    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { places: [place("team-map"), place("routines")] }));
+  it("shows the avatar and the full name, tinted until hover, without the places' tour anchor", () => {
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { places: [place("archived")] }));
     expect(html).toContain(">Jean-Christophe Proulx</span>");
-    expect(html).toContain('data-tour="tools"');
+    expect(html).not.toContain('data-tour="tools"');
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).toContain("footer-tint");
     expect(html).toContain(">JP<");
     expect(html).not.toContain('data-testid="footer-attention"');
   });
 
-  it("carries a place's attention dot while the menu is closed", () => {
-    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { places: [place("routines", true)] }));
+  it("carries a menu item's attention dot while the menu is closed", () => {
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { places: [place("archived", true)] }));
     expect(html).toContain('data-testid="footer-attention"');
   });
 
   it("falls back to the viewer's name for a member on a shared server", () => {
     fixture.state = { config: { viewer: { operator: false, principalId: "u1", email: "sam@example.com", name: "Sam Tremblay", role: "member", canCreateBots: false } } as AppState["config"] };
-    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { places: [place("team-map")] }));
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
     expect(html).toContain(">Sam Tremblay</span>");
   });
 

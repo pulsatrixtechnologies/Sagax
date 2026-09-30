@@ -258,7 +258,7 @@ describe("hosted endpoint advertisement", () => {
       "PUT",
       "/hosted-endpoint",
       headers,
-      JSON.stringify({ url: "https://C-Opaque.Pulsa Bot.Test/" }),
+      JSON.stringify({ url: "https://C-Opaque.Sagax.Test/" }),
     );
     expect(published.status).toBe(200);
     expect(published.body.endpoints[0]).toEqual({

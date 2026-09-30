@@ -95,6 +95,8 @@ import { sidebarSectionAttention } from "@/lib/sidebar-attention";
 import { botListItemPointerIntent } from "@/lib/sidebar-selection";
 import { phoneSettingsAction, SidebarPhoneButton } from "./SidebarPhoneButton";
 import { AppMarks } from "./SidebarAppMarks";
+import { SidebarPlaces, type SidebarPlace } from "./SidebarPlaces";
+import { PulsatrixMark } from "./PulsatrixMark";
 import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 
 import { profileInitials, SidebarProfileMenu } from "./SidebarProfileMenu";
@@ -1952,12 +1954,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // same rule and order as the sidebar tree, so the bell can never
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
-  // What the old apps pill folded away, now the head of the footer menu.
-  const places: SidebarMenuItem[] = [
+  // Always in view at the foot of the sidebar, above the account row
+  // (SidebarPlaces); the account menu keeps the profile items.
+  const routineAttention = state.routineRuns.some((run) => isRoutineProblemRun(run) && !run.seenAt);
+  const places: SidebarPlace[] = [
     {
       key: "team-map",
       label: t("sidebar.nav.teamMap"),
-      icon: <Network size={18} />,
+      icon: Network,
       active: state.activeView === "team-map",
       onSelect: () => dispatch({ type: "showTeamMap" }),
     },
@@ -1965,35 +1969,34 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       key: "routines",
       tourId: "nav-automations",
       label: t("sidebar.nav.automations"),
-      icon: <CalendarDays size={18} />,
+      icon: CalendarDays,
       active: state.activeView === "routines",
-      // folded away, this dot would otherwise vanish with the row; the
-      // footer row carries it while the menu is closed
-      attention: state.routineRuns.some((run) => isRoutineProblemRun(run) && !run.seenAt),
+      attention: routineAttention,
       onSelect: () => dispatch({ type: "showRoutines" }),
     },
     {
       key: "plugins",
       tourId: "nav-apps",
       label: t("sidebar.nav.connectedApps"),
-      icon: <Puzzle size={18} />,
-      trailing: <AppMarks />,
+      icon: Puzzle,
+      trailing: <AppMarks ringClassName="ring-sidebar group-hover:ring-sidebar-hover" />,
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
     },
     ...(!remoteClient ? [{
       key: "templates",
       label: t("sidebar.teamLibrary"),
-      icon: <Library size={18} />,
+      icon: Library,
       onSelect: () => setTeamLibraryOpen(true),
     }] : []),
-    ...(!remoteClient && archivedBots.length > 0 ? [{
-      key: "archived",
-      label: t("sidebar.archived.title"),
-      icon: <Archive size={18} />,
-      trailing: <span className="text-[11.5px] text-ink-secondary">{archivedBots.length}</span>,
-      onSelect: () => setArchivedBotsOpen(true),
-    }] : []),
   ];
+  // Archived bots is housekeeping, not a place: it stays in the account menu.
+  const accountPlaces: SidebarMenuItem[] = !remoteClient && archivedBots.length > 0 ? [{
+    key: "archived",
+    label: t("sidebar.archived.title"),
+    icon: <Archive size={18} />,
+    trailing: <span className="text-[11.5px] text-ink-secondary">{archivedBots.length}</span>,
+    onSelect: () => setArchivedBotsOpen(true),
+  }] : [];
   return (
     <aside
       ref={sidebarRef}
@@ -2015,7 +2018,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         open ? "max-md:translate-x-0" : "max-md:-translate-x-full",
       )}
     >
-      {/* The head, like Perspicax's: the brand row (the owl and the name, then
+      {/* The head, like Perspicax's: the brand row (the Pulsatrix mark and the name, then
           New and the collapse button) and a full-width search field that
           opens the command palette. macOS owns inset traffic lights above the
           brand row; the whole head is the window's drag handle there and on
@@ -2069,8 +2072,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         ) : (
           <>
             <div className={cn("flex h-11 items-center justify-between gap-2 pl-4 pr-3", !(macInset || browser) && "mt-2")}>
-              <span className="flex min-w-0 items-center gap-2.5 text-sidebar-ink" data-sidebar-brand>
-                <img src="/pulsa-mark.svg" alt="" width={24} height={24} className="size-6 shrink-0" />
+              <span className="flex min-w-0 items-center gap-2 text-sidebar-ink" data-sidebar-brand>
+                <PulsatrixMark size={22} />
                 <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
               </span>
               <span className="flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
@@ -2276,70 +2279,17 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
 
       {/* Footer */}
       <div data-sidebar-foot className={cn(density === "icons" ? "px-2 pb-3 pt-2" : "pb-3 pl-2 pr-3 pt-1")}>
-        {density === "icons" && (
-          <>
+        <SidebarPlaces places={places} iconOnly={density === "icons"} />
+        {density === "icons" && !remoteClient && archivedBots.length > 0 && (
           <button
-            onClick={() => dispatch({ type: "showTeamMap" })}
-            aria-label={density === "icons" ? t("sidebar.nav.teamMap") : undefined}
-            title={density === "icons" ? t("sidebar.nav.teamMap") : undefined}
-            className={cn(
-              "flex min-h-10 w-full items-center rounded-xl py-2 text-left transition-colors",
-              density === "icons" ? "justify-center px-2" : "gap-3 px-3",
-              state.activeView === "team-map" ? "bg-sidebar-selected text-sidebar-ink" : "text-sidebar-ink hover:bg-sidebar-hover",
-            )}
+            type="button"
+            onClick={() => setArchivedBotsOpen(true)}
+            aria-label={t("sidebar.archived.title")}
+            title={t("sidebar.archived.title")}
+            className="flex min-h-10 w-full items-center justify-center rounded-xl px-2 py-2 text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
           >
-            <Network size={20} className={state.activeView === "team-map" ? "text-accent" : "text-sidebar-ink-secondary"} />
-            <span className={cn("flex-1 text-[14px]", density === "icons" && "hidden")}>{t("sidebar.nav.teamMap")}</span>
+            <Archive size={20} />
           </button>
-          <button
-            data-tour="nav-automations"
-            onClick={() => dispatch({ type: "showRoutines" })}
-            aria-label={density === "icons" ? t("sidebar.nav.automations") : undefined}
-            title={density === "icons" ? t("sidebar.nav.automations") : undefined}
-            className={cn(
-              "flex min-h-10 w-full items-center rounded-xl py-2 text-left transition-colors",
-              density === "icons" ? "justify-center px-2" : "gap-3 px-3",
-              state.activeView === "routines" ? "bg-sidebar-selected text-sidebar-ink" : "text-sidebar-ink hover:bg-sidebar-hover",
-            )}
-          >
-            <CalendarDays size={20} className={state.activeView === "routines" ? "text-accent" : "text-sidebar-ink-secondary"} />
-            <span className={cn("flex-1 text-[14px]", density === "icons" && "hidden")}>{t("sidebar.nav.automations")}</span>
-            {state.routineRuns.some((run) => isRoutineProblemRun(run) && !run.seenAt) && (
-              <span className="size-2 rounded-full bg-danger" />
-            )}
-          </button>
-          <button
-            onClick={() => dispatch({ type: "togglePlugins", open: true })}
-            className={cn("flex min-h-10 w-full items-center rounded-xl py-2 text-left hover:bg-sidebar-hover", density === "icons" ? "justify-center px-2" : "gap-3 px-3")}
-            aria-label={density === "icons" ? t("sidebar.nav.connectedApps") : undefined}
-            title={density === "icons" ? t("sidebar.nav.connectedApps") : undefined}
-          >
-            <Puzzle size={20} className="text-sidebar-ink-secondary" />
-            <span className={cn("text-[14px] text-sidebar-ink", density === "icons" && "hidden")}>{t("sidebar.nav.connectedApps")}</span>
-          </button>
-          {!remoteClient && (
-            <button
-              type="button"
-              onClick={() => setTeamLibraryOpen(true)}
-              aria-label={t("sidebar.teamLibrary")}
-              title={t("sidebar.teamLibrary")}
-              className="flex min-h-10 w-full items-center justify-center rounded-xl px-2 py-2 text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
-            >
-              <Library size={20} />
-            </button>
-          )}
-          {!remoteClient && archivedBots.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setArchivedBotsOpen(true)}
-              aria-label={t("sidebar.archived.title")}
-              title={t("sidebar.archived.title")}
-              className="flex min-h-10 w-full items-center justify-center rounded-xl px-2 py-2 text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
-            >
-              <Archive size={20} />
-            </button>
-          )}
-          </>
         )}
         {density === "icons" && (
           <SidebarPhoneButton
@@ -2360,9 +2310,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           </div>
         ) : (
           // One row, the way Perspicax lays out its account footer: your
-          // avatar and your full name, opening one menu with the sidebar's
-          // places first and the profile items after them.
-          <SidebarProfileMenu places={places} />
+          // avatar and your full name, opening the profile menu.
+          <SidebarProfileMenu places={accountPlaces} />
         )}
       </div>
 

@@ -30,11 +30,11 @@ describe("custom MCP registry", () => {
     for (const key of ["OMB_HARNESS_URL", "OGB_BOX_TOKEN", "ELECTRON_RUN_AS_NODE"]) {
       expect(parseStoredMcpServer("notes", { command: "notes-mcp", env: { [key]: "bad" } })).toEqual({
         ok: false,
-        error: `Environment variable “${key}” is reserved by Pulsa Bot.`,
+        error: `Environment variable “${key}” is reserved by Sagax.`,
       });
       expect(parseMcpServerMutation("notes", { command: "notes-mcp", env: { [key]: "bad" } })).toEqual({
         ok: false,
-        error: `Environment variable “${key}” is reserved by Pulsa Bot.`,
+        error: `Environment variable “${key}” is reserved by Sagax.`,
       });
     }
   });

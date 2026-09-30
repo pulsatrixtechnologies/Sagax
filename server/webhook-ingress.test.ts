@@ -58,7 +58,7 @@ describe("webhook-only ingress", () => {
       await new Promise<void>((resolve) => guarded.server.close(() => resolve()));
     }
   });
-  it("exposes health but nothing from the main Pulsa Bot API", async () => {
+  it("exposes health but nothing from the main Sagax API", async () => {
     const health = await fetch(`${ingress.baseUrl}/health`);
     expect(health.status).toBe(200);
     expect(await health.json()).toEqual({ app: "openmausbot-webhooks", ready: true });

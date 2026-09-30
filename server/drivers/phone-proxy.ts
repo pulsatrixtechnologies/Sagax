@@ -66,7 +66,7 @@ export function resolveAdbPath(env: NodeJS.ProcessEnv = process.env, platform = 
 
 async function runAdb(args: string[], options: { binary?: boolean; timeoutMs?: number } = {}): Promise<Buffer> {
   const adb = resolveAdbPath();
-  if (!adb) throw new Error("Android platform tools are unavailable. Reopen Pulsa Bot or install adb.");
+  if (!adb) throw new Error("Android platform tools are unavailable. Reopen Sagax or install adb.");
   return new Promise((resolve, reject) => {
     const child = spawn(adb, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     const stdout: Buffer[] = [];
@@ -280,9 +280,9 @@ export function createPhoneClaim(
       if (response.status === 401 || response.status === 403) {
         return { ok: false, message: "This turn no longer has phone access. Start a new turn to use the phone." };
       }
-      return { ok: false, message: "Pulsa Bot could not reserve the phone for this call. This call was not performed; try again, or start a new turn if it keeps failing." };
+      return { ok: false, message: "Sagax could not reserve the phone for this call. This call was not performed; try again, or start a new turn if it keeps failing." };
     } catch {
-      return { ok: false, message: "Pulsa Bot could not be reached to reserve the phone. This call was not performed; try again." };
+      return { ok: false, message: "Sagax could not be reached to reserve the phone. This call was not performed; try again." };
     }
   };
 }

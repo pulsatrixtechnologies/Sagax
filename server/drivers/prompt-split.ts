@@ -32,10 +32,10 @@ export function promptHalves(
 }
 
 export const VOLATILE_CONTEXT_NOTE_PREFIX =
-  "Context from Pulsa Bot updated since this conversation started; it replaces any earlier copy:";
+  "Context from Sagax updated since this conversation started; it replaces any earlier copy:";
 
 export const VOLATILE_CONTEXT_CLEARED_NOTE =
-  "The Pulsa Bot context notes from earlier in this conversation (memory, mentions, outstanding teammate work) have been cleared; the standing instructions still apply.";
+  "The Sagax context notes from earlier in this conversation (memory, mentions, outstanding teammate work) have been cleared; the standing instructions still apply.";
 
 /** The labelled block that carries a changed volatile half inside a user
  * turn. A half that is empty and always was needs no note; one that was

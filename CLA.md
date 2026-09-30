@@ -1,6 +1,6 @@
 # Notice for this distribution
 
-This Pulsa Bot tree does not include the `enterprise/` directory. That
+This Sagax tree does not include the `enterprise/` directory. That
 directory was removed so this distribution is Apache License 2.0 only.
 The agreement below applied to contributions to `enterprise/` in the
 original project. It does not apply to files in this tree. Do not copy

@@ -314,20 +314,43 @@
   width: 20px !important;
   height: 20px !important;
 }
-[data-skin="retro98"] [data-sidebar] [data-tour="tools"] > span:not([data-sidebar-account]) {
-  height: 23px !important;
-  padding: 0 8px !important;
-  justify-content: center;
-  border: 0 !important;
-  background: #c0c0c0 !important;
+/* the places above the account row: plain Explorer rows, a 16px icon and
+   the name, the open page selected the way a bot row is */
+[data-skin="retro98"] [data-sidebar] [data-sidebar-places] {
+  gap: 0 !important;
+  padding: 0 0 2px !important;
+}
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place] {
+  height: 20px !important;
+  min-height: 0 !important;
+  gap: 6px !important;
+  padding: 0 6px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
   color: #000 !important;
-  box-shadow: var(--r98-raised) !important;
+  font-weight: normal !important;
 }
-[data-skin="retro98"] [data-sidebar] [data-tour="tools"]:active > span:not([data-sidebar-account]) {
-  box-shadow: var(--r98-pressed) !important;
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place] > svg.lucide {
+  width: 16px !important;
+  height: 16px !important;
+  color: #000 !important;
 }
-[data-skin="retro98"] [data-sidebar] [data-tour="tools"] > span :is(img, svg:not(.lucide)) {
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place] > .truncate {
+  flex: 0 1 auto !important;
+  padding: 0 2px 0 3px;
+}
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place][aria-current] > .truncate {
+  background: #000080;
+  color: #fff;
+  outline: 1px dotted #ffff80;
+  outline-offset: -1px;
+}
+/* the Gmail, Slack and GitHub marks are a modern flourish; Explorer lists names */
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place] > span:not(.truncate):not([data-testid]) {
   display: none;
+}
+[data-skin="retro98"] [data-sidebar] [data-sidebar-place] > [data-testid] {
+  margin-left: auto;
 }
 [data-skin="retro98"] [data-sidebar] span[title].size-9,
 [data-skin="retro98"] [data-sidebar] span[title].size-9 > * {

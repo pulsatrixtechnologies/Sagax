@@ -36,7 +36,7 @@ writeFileSync(
     {
       name: "openmausbot",
       version: app.version,
-      description: "Run the Pulsa Bot server anywhere and pair your devices to it",
+      description: "Run the Sagax server anywhere and pair your devices to it",
       license: "Apache-2.0",
       type: "module",
       bin: { openmausbot: "cli.js" },
@@ -74,14 +74,14 @@ conversations keep their settings.
 One optional step connects your phone, defaulting to Skip for now. Choose
 an explicitly approved managed public HTTPS endpoint protected by pairing,
 existing Tailscale, or an HTTPS reverse proxy you already configured.
-Managed access uses a separate Pulsa Bot account and asks permission for
+Managed access uses a separate Sagax account and asks permission for
 the public endpoint and possible connector download. The pairing page and
 basic server identity are public; chat and settings require pairing.
 Tailscale must already be installed and signed in on both devices.
 
 After the HTTPS connection is checked, scan the QR with your phone. When
 you pair an Android phone the QR is an app link, so scan it inside the
-Pulsa Bot app; the web address is printed beside it if you would rather
+Sagax app; the web address is printed beside it if you would rather
 use a browser. On iPhone or iPad, scan with Camera for Safari, or use the
 app's own scanner. Choose Connect on the phone; scanning alone is not a
 completed pairing. Codes
@@ -89,7 +89,7 @@ are private, single-use, and expire after five minutes. Guided phone
 access permits chat and approvals, not settings or pairing administration.
 Localhost and a bare LAN address cannot connect your phone to this server.
 
-Later launches reuse your saved choices and open Pulsa Bot on this computer.
+Later launches reuse your saved choices and open Sagax on this computer.
 Keep the terminal open: this is a foreground server, not a background
 service. Ctrl-C stops the server without deleting saved work. Automatic
 browser opening uses only the local address; it is skipped for SSH and
@@ -127,7 +127,7 @@ without starting a server. Completed installs and sign-ins remain; run
 
 For a service, use \`serve --tunnel\` after \`login\` for managed HTTPS,
 \`serve --tailscale\` for your tailnet, or your own reverse proxy. The
-\`login\` command signs in to an Pulsa Bot account, not an AI provider;
+\`login\` command signs in to a Sagax account, not an AI provider;
 it does not start the tunnel itself.
 
 [Setup guide](https://github.com/pulsatrixtechnologies/pulsa-bot/blob/main/docs/cli-onboarding.md)

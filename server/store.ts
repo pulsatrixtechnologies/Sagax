@@ -1277,7 +1277,7 @@ export class Store {
       detail: string;
       finishedAt: number;
     } | null,
-    fallbackDetail = "Pulsa Bot restarted before this goal finished.",
+    fallbackDetail = "Sagax restarted before this goal finished.",
     fallbackFinishedAt = Date.now(),
   ): number {
     const ownedThreadIds = new Set<string>();

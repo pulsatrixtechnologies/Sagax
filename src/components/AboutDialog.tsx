@@ -1,10 +1,10 @@
-// "About Pulsa Bot" — the version you are running and where to go next.
+// "About Pulsatrix Sagax": the version you are running and where to go next.
 // Small on purpose: the interesting settings live in the settings panel, and
 // this exists so a bug report can quote a version number.
 import { useEffect, useRef } from "react";
 
 import {
-  APP_NAME,
+  APP_FULL_NAME,
   APP_REPOSITORY,
   DOCS_URL,
   LICENSE_URL,
@@ -48,7 +48,7 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
       >
         <img src="/app-icon.svg" alt="" width={56} height={56} className="mx-auto size-14" />
         <h2 id="about-dialog-title" className="mt-3 text-[17px] font-semibold text-ink">
-          {APP_NAME}
+          {APP_FULL_NAME}
         </h2>
         <p className="mt-1 text-[13px] text-ink-secondary">
           Version {appVersion()}

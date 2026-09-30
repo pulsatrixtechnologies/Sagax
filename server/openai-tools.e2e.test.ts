@@ -35,7 +35,7 @@ type ChatRequest = {
 // prompt, so the provider's cached prefix survives a memory write. Memory is
 // volatile: it rides the newest user message, under this label, on every
 // request (server/drivers/prompt-split.ts, openai-chat.ts).
-const CONTEXT_NOTE = "Context from Pulsa Bot updated since this conversation started; it replaces any earlier copy:";
+const CONTEXT_NOTE = "Context from Sagax updated since this conversation started; it replaces any earlier copy:";
 const MEMORY = "Your memory (MEMORY.md):\n# Memory\n- Fixture prefers concise replies.";
 /** What the model was actually given: the system message and the newest
  * user message, which carries the volatile context note. */

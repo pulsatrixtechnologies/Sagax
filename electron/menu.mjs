@@ -3,7 +3,9 @@
 // and the macOS Preferences… item (Electron has no role for it, so it is
 // built explicitly). Everything else is Electron's standard roles so macOS
 // keeps Edit/Window and Windows/Linux get the same items under a visible bar.
-import { Menu, app } from "electron";
+import { Menu } from "electron";
+
+import { DISPLAY_NAME } from "./app-name.mjs";
 
 /**
  * @param {object} input
@@ -41,7 +43,8 @@ export function buildApplicationMenu({ environments, activeId, onSwitch, onAddFr
     ],
   };
   const template = [
-    ...(isMac ? [{ label: app.name, submenu: [{ role: "about" }, { label: "Preferences…", accelerator: "CmdOrCtrl+,", click: () => onOpenSettings() }, { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" }] }] : []),
+    // app.name is the runtime name (openmausbot), which the roles would print
+    ...(isMac ? [{ label: DISPLAY_NAME, submenu: [{ role: "about", label: `About ${DISPLAY_NAME}` }, { label: "Preferences…", accelerator: "CmdOrCtrl+,", click: () => onOpenSettings() }, { type: "separator" }, { role: "hide", label: `Hide ${DISPLAY_NAME}` }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit", label: `Quit ${DISPLAY_NAME}` }] }] : []),
     { role: "fileMenu" },
     { role: "editMenu" },
     server,

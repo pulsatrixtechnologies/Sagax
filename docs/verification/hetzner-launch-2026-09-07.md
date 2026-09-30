@@ -108,7 +108,7 @@ installation flow, not the new desktop bundle.
 
 ## Cleanup
 
-Codex was signed out on the VPS, and Pulsa Bot logout confirmed the managed
+Codex was signed out on the VPS, and Sagax logout confirmed the managed
 address was released. The exact disposable server, its primary IPv4, firewall,
 and uploaded SSH key were deleted. Fresh lists of all four resource types were
 empty. The private Hetzner API-token file was retained locally as requested;

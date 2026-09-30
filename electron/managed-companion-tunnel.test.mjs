@@ -156,7 +156,7 @@ describe("cloudflared binary resolution", () => {
     const resourcesPath = path.join(
       path.parse(process.cwd()).root,
       "Applications",
-      "Pulsa Bot",
+      "Sagax",
       "Contents",
       "Resources",
     );

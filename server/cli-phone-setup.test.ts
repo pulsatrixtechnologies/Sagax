@@ -76,7 +76,7 @@ describe("optional phone setup", () => {
     const result = await runPhoneSetup(options, ui.io, deps);
     expect(result).toEqual({ options });
     expect(result.options).toBe(options);
-    expect(ui.io.choose).toHaveBeenCalledWith("Use Pulsa Bot on your phone?", expect.any(Array), 0);
+    expect(ui.io.choose).toHaveBeenCalledWith("Use Sagax on your phone?", expect.any(Array), 0);
     expect(deps.accountReady).not.toHaveBeenCalled();
     expect(deps.login).not.toHaveBeenCalled();
     ui.consumed();
@@ -113,7 +113,7 @@ describe("optional phone setup", () => {
     const ui = prompts({ choices: [2, 0], confirms: [true] });
     expect((await runPhoneSetup(options, ui.io, deps)).phone).toBe("android");
     expect(deps.login).not.toHaveBeenCalled();
-    expect(ui.lines.join("\n")).toContain("saved Pulsa Bot account");
+    expect(ui.lines.join("\n")).toContain("saved Sagax account");
     ui.consumed();
   });
 
@@ -240,7 +240,7 @@ describe("phone pairing instructions", () => {
     const text = phonePairingInstructions("android", { origin: "https://maus.example", ready: true }).join("\n");
     // The QR beside these lines is the openmausbot:// invite, so the app's
     // own scanner is now the primary route rather than a dead end.
-    expect(text).toContain("open the Pulsa Bot app and scan the QR with its pairing scanner");
+    expect(text).toContain("open the Sagax app and scan the QR with its pairing scanner");
     // The QR beside these lines is the app-scheme invite, so telling people to
     // scan it with Camera for the browser would send them nowhere.
     expect(text).toContain("Camera will not open it in a browser");

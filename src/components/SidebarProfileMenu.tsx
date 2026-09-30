@@ -6,11 +6,11 @@
 // opens, the shape every desktop app uses for "this is about the app, not
 // about what you are looking at".
 //
-// The row is also the sidebar's one door to its places (Team map,
-// Automations, Connected apps, Templates), listed first in the same menu,
-// so the footer reads like Perspicax's: an avatar and a full name. With
-// places the menu opens on hover (click pins it), the way the old apps pill
-// did; the collapsed rail keeps its avatar-only trigger.
+// The footer reads like Perspicax's: an avatar and a full name. The
+// sidebar's places (Team map, Automations, Connected apps, Templates) are
+// always-visible rows just above it (SidebarPlaces), so this menu holds the
+// profile items, led by Archived bots when there are any. It opens on click;
+// the collapsed rail keeps its avatar-only trigger.
 //
 // The update entry is the one item that reports progress in place, so it
 // keeps the menu open and re-labels itself as it works.
@@ -192,8 +192,9 @@ function useUpdateItem(): UpdateEntry | null {
   };
 }
 
-/** The footer menu: the sidebar's places first, then a hairline, then the
- * profile items. Without places it is the profile menu alone. */
+/** The footer menu: account-level places (Archived bots) first, then a
+ * hairline, then the profile items. Without them it is the profile menu
+ * alone. */
 export function footerMenuItems(places: SidebarMenuItem[], profileItems: SidebarMenuItem[]): SidebarMenuItem[] {
   if (places.length === 0) return profileItems;
   const [first, ...rest] = profileItems;
@@ -204,10 +205,8 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   /** just the avatar, for the collapsed (icons) rail; the name moves to the
    * tooltip and the menu keeps its width */
   avatarOnly?: boolean;
-  /** Team map, Automations, Connected apps and Templates: the places this
-   * menu lists before the profile items, the way Perspicax's account footer
-   * is the one door at the foot of its sidebar. With places the row opens on
-   * hover (click pins it) and carries the tour's `tools` anchor. */
+  /** Items listed before the profile items (Archived bots). The sidebar's
+   * pages are not here: they are rows above this one (SidebarPlaces). */
   places?: SidebarMenuItem[];
 }) {
   const { state, dispatch } = useStore();
@@ -274,8 +273,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   ];
   const items = footerMenuItems(places, profileItems);
   const noteworthy = update && updateNoteworthy(update.phase, update.pending) ? update : null;
-  // the dot that used to ride the apps pill: a place asking for attention
-  // (a failed automation) while the menu is folded away
+  // an item in the menu asking for attention while the menu is folded away
   const placeAttention = places.some((item) => item.attention);
 
   const avatar = (size: number) => (
@@ -295,8 +293,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
       <SidebarPopoverMenu
         items={items}
         ariaLabel={name}
-        tourId={places.length > 0 ? "tools" : undefined}
-        openOnHover={places.length > 0}
         menuClassName={avatarOnly ? "left-0 w-64" : undefined}
         renderTrigger={({ open }) => avatarOnly ? (
           <span

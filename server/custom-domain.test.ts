@@ -272,6 +272,6 @@ describe("HTTPS transport", () => {
   it("rejects HTML and malformed JSON without returning their contents", async () => {
     const verifier = createCustomDomainVerifier({ environmentId, lookup: async () => [publicAddress] });
     responder = () => ({ status: 200, body: "<html>private error page</html>" });
-    await expect(verifier.verify("bots.company.com")).rejects.toThrow("did not return Pulsa Bot data");
+    await expect(verifier.verify("bots.company.com")).rejects.toThrow("did not return Sagax data");
   });
 });

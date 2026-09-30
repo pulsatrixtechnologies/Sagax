@@ -21,7 +21,7 @@ describe("Mac local computer status", () => {
     expect(markup).toContain("Allow control of this computer");
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain("Open Accessibility Settings");
-    expect(markup).not.toContain("Relaunch Pulsa Bot");
+    expect(markup).not.toContain("Relaunch Sagax");
   });
 
   it("does not turn a missing reason into a claimed permission diagnosis", () => {

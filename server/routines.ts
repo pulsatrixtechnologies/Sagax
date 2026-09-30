@@ -875,7 +875,7 @@ export class RoutineManager {
       if (run.status === "running" || run.status === "waiting") {
         run.status = "failed";
         if (run.target === "room-goal") run.goalStatus = "failed";
-        run.error = "Pulsa Bot restarted while this routine was running";
+        run.error = "Sagax restarted while this routine was running";
         run.attention = undefined;
         run.finishedAt = this.now();
         recovered.push(cloneRun(run));

@@ -807,7 +807,7 @@ async function processOne(
   // classic handoff keeps the prefix it has always had.
   const prefixed = item.targetThreadId
     ? item.message
-    : `[Delegated by @${sender.name}, another bot in this Pulsa Bot workspace. Do the work and reply directly.]\n\n${item.message}${reasonLine}`;
+    : `[Delegated by @${sender.name}, another bot in this Sagax workspace. Do the work and reply directly.]\n\n${item.message}${reasonLine}`;
   await runTarget(item.toBotId, prefixed, item.depth + 1, sourceThreadId, channel, item.id, sender.id, item.targetThreadId);
   return "dispatched";
 }

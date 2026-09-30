@@ -5,7 +5,7 @@
 // Dock calls it "Electron" (the bundle folder name) and shows Electron's
 // icon. A runtime app.dock.setIcon() PNG is a flat bitmap that macOS 26
 // cannot restyle (light, dark, clear, tinted). So dev runs use a clone of
-// that bundle named "Pulsa Bot.app" with build/icon.icon compiled into it
+// that bundle named "Sagax.app" with build/icon.icon compiled into it
 // (Assets.car + CFBundleIconName), rendered by the OS like the packaged app.
 // The npm bundle itself is never modified. Without Xcode's actool, or off
 // macOS, this falls back to plain `electron .`.
@@ -20,9 +20,12 @@ const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const iconSource = path.join(root, "build/icon.icon");
 const devDir = path.join(root, "node_modules/.cache/pulsa-dev");
-const devBundle = path.join(devDir, "Pulsa Bot.app");
+const devBundle = path.join(devDir, "Sagax.app");
+// The clone was "Pulsa Bot.app" before the rename; one stale copy is ~0 bytes
+// on APFS but still shows up in Spotlight and "Open With" until removed.
+const legacyDevBundles = [path.join(devDir, "Pulsa Bot.app")];
 const stampFile = path.join(devDir, "stamp.json");
-const APP_NAME = "Pulsa Bot";
+const APP_NAME = "Sagax";
 const ICON_NAME = "PulsaBotIcon";
 
 function run(command, args) {
@@ -45,7 +48,27 @@ function newestMtime(dir) {
   return newest;
 }
 
+/** Remove an old-named dev clone, unless a process still runs from it. */
+function removeLegacyDevBundles() {
+  for (const legacy of legacyDevBundles) {
+    if (!existsSync(legacy)) continue;
+    try {
+      run("pgrep", ["-f", path.join(legacy, "Contents/MacOS/")]);
+      continue; // still running (pgrep found it); try again next launch
+    } catch {
+      // pgrep exits 1 when nothing matches: safe to remove
+    }
+    try {
+      run("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-u", legacy]);
+    } catch {
+      // not registered, or lsregister missing: removing the folder is enough
+    }
+    rmSync(legacy, { recursive: true, force: true });
+  }
+}
+
 function buildDevBundle(electronBundle) {
+  removeLegacyDevBundles();
   const stamp = JSON.stringify({ electron: electronBundle, electronMtime: statSync(electronBundle).mtimeMs, icon: newestMtime(iconSource) });
   if (existsSync(devBundle) && existsSync(stampFile) && readFileSync(stampFile, "utf8") === stamp) return;
 
@@ -113,7 +136,7 @@ function executable() {
     buildDevBundle(electronBundle);
     return path.join(devBundle, "Contents/MacOS", path.basename(electronExecutable));
   } catch (error) {
-    console.warn(`[dev-desktop] could not prepare the Pulsa Bot dev bundle, running plain Electron: ${error.message}`);
+    console.warn(`[dev-desktop] could not prepare the Sagax dev bundle, running plain Electron: ${error.message}`);
     return electronExecutable;
   }
 }

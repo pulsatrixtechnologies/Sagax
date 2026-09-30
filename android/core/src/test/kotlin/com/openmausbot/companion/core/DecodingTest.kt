@@ -314,7 +314,7 @@ class DecodingTest {
         // A "contains pair" assertion would have kept passing when the desktop
         // renamed its Companion area to Phone and the fixtures were re-captured.
         assertEquals(
-            "pair this device from Phone settings in Pulsa Bot on your computer",
+            "pair this device from Phone settings in Sagax on your computer",
             decodeFixture<APIErrorBody>("unauthorized").error,
         )
         assertTrue(decodeFixture<APIErrorBody>("forbidden").error.isNotEmpty())

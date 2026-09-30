@@ -691,7 +691,6 @@
   "onboarding.tour.composer": "這裡是你與機器人對話的地方。輸入任何內容並按 Enter。每一段對話都是在你機器上實際運作的代理。",
   "onboarding.tour.model": "每個機器人都有自己的大腦。這個晶片顯示其模型；點一下即可切換，即使在對話途中也一樣。",
   "onboarding.tour.computer": "機器人有手。這個按鈕會開啟「電腦」面板，讓你觀看機器人工作。我們來打開它。",
-  "onboarding.tour.tools": "側邊欄底部的您的名字。它的選單裡有已連接的應用程式、自動化與團隊地圖，接著是您的設定。我們來打開它。",
   "onboarding.tour.apps": "已連接的應用程式。Gmail、Slack、GitHub、Notion，還有數百個其他服務。我們來看看。",
   "onboarding.tour.apps-panel": "應用程式市集。登入一次，每個機器人就能把它當工具使用。我們會關掉這個，繼續往下。",
   "onboarding.tour.automations": "自動化。依排程執行，或被 webhook 呼叫時啟動的機器人。我們來打開它。",

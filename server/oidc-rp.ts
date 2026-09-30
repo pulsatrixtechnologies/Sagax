@@ -1,10 +1,10 @@
 // OpenID Connect relying party for the organization server (Backend for
-// Frontend). The Pulsa Bot server is the OIDC client: it starts the
+// Frontend). The Sagax server is the OIDC client: it starts the
 // authorization code flow with PKCE S256, a `state` and a `nonce`, exchanges
 // the code at the token endpoint itself, and verifies the ES256 id_token
 // against the issuer's JWKS with node:crypto. No token from the identity
 // provider ever reaches a browser, the desktop app, a phone or an engine:
-// they receive the ordinary Pulsa Bot session (server/sessions.ts).
+// they receive the ordinary Sagax session (server/sessions.ts).
 //
 // Pending flows live in memory only: ten minutes, single use, at most
 // MAX_PENDING_FLOWS (the oldest is dropped). Each flow is also bound to the
@@ -26,7 +26,7 @@ const DISCOVERY_TTL_MS = 60 * 60_000;
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_SUB_LENGTH = 255;
 
-/** The claims Pulsa Bot reads from a verified id_token. Everything else in the
+/** The claims Sagax reads from a verified id_token. Everything else in the
  * token is ignored; `email` is an attribute, never a key (Perspicax does not
  * verify addresses). */
 export interface OidcIdentity {
@@ -68,7 +68,7 @@ export interface OidcRelyingPartyOptions {
    * token (`offline_access`): the session lives as long as the provider
    * keeps refreshing it (server/idp-session.ts). */
   scope?: string;
-  /** RFC 8707 resource for the login access token: the Pulsa Bot public
+  /** RFC 8707 resource for the login access token: the Sagax public
    * origin, so that token is worthless on the identity provider's /mcp. */
   resource?: string;
   fetch?: typeof fetch;
@@ -528,7 +528,7 @@ export class OidcRelyingParty {
     }
   }
 
-  /** Refresh a grant (RFC 6749 section 6) with the Pulsa Bot origin as its
+  /** Refresh a grant (RFC 6749 section 6) with the Sagax origin as its
    * resource. The provider rotates the refresh token; the new one comes back.
    * An id_token on a refresh is optional; when present it must verify with no
    * nonce and name the same subject. Never throws. */

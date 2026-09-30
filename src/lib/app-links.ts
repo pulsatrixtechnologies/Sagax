@@ -1,7 +1,9 @@
 // The handful of outward links the app offers from the profile menu and the
 // About dialog. They are collected here so "where does Help go?" has one
 // answer rather than one per call site.
-export const APP_NAME = "Pulsa Bot";
+export const APP_NAME = "Sagax";
+/** The full brand, sibling of Pulsatrix Perspicax: the About dialog. */
+export const APP_FULL_NAME = "Pulsatrix Sagax";
 export const APP_REPOSITORY = "https://github.com/pulsatrixtechnologies/pulsa-bot";
 /** Help, docs, releases, and the license all open this fork. */
 export const DOCS_URL = `${APP_REPOSITORY}/tree/main/docs`;

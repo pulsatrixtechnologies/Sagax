@@ -28,7 +28,7 @@ describe("retro window chrome", () => {
   it("draws a title bar naming the app and the open bot", () => {
     const markup = withStore(createElement(RetroTop, {}));
     expect(markup).toContain('class="r98w-titlebar"');
-    expect(markup).toContain("Pulsa Bot - Pepper");
+    expect(markup).toContain("Sagax - Pepper");
   });
 
   it("has a menu bar with File, Edit, View, Bots and Help, in the app language", () => {

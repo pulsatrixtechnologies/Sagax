@@ -1,9 +1,14 @@
 appId: com.openmausbot.app
-productName: Pulsa Bot
+# The name people see: Dock, menu bar, installer, bundle folder (Sagax.app).
+# It does NOT decide where data lives. Electron names the app (and so its
+# userData folder and its safeStorage keychain entry) after package.json
+# "name" (openmausbot), which electron-builder copies as is; see
+# electron/user-data-location.mjs.
+productName: Sagax
 artifactName: PulsaBot-${version}-${arch}.${ext}
 
 protocols:
-  - name: Pulsa Bot package install
+  - name: Sagax package install
     schemes: [openmausbot]
 
 # In-app auto-update reads latest-mac.yml + the .zip (macOS) or latest.yml +
@@ -56,7 +61,7 @@ extraResources:
   - from: NOTICE
     to: licenses/PulsaBot-NOTICE.txt
   # cloudflared is distributed under Apache-2.0 as a separate executable.
-  # Pulsa Bot itself uses the same full license text; ship another named
+  # Sagax itself uses the same full license text; ship another named
   # copy so the third-party executable's terms remain unambiguous.
   - from: LICENSE
     to: licenses/cloudflared-LICENSE.txt
@@ -113,10 +118,10 @@ mac:
     - from: dist-native/browser/darwin-${arch}
       to: browser-engine
   extendInfo:
-    NSMicrophoneUsageDescription: Pulsa Bot uses the microphone for voice dictation into the composer.
-    NSSpeechRecognitionUsageDescription: Pulsa Bot transcribes your voice on-device to type messages for you.
-    NSAccessibilityUsageDescription: Pulsa Bot uses Accessibility when you let a bot control this Mac.
-    NSScreenCaptureUsageDescription: Pulsa Bot uses Screen Recording so bots can see this Mac before acting.
+    NSMicrophoneUsageDescription: Sagax uses the microphone for voice dictation into the composer.
+    NSSpeechRecognitionUsageDescription: Sagax transcribes your voice on-device to type messages for you.
+    NSAccessibilityUsageDescription: Sagax uses Accessibility when you let a bot control this Mac.
+    NSScreenCaptureUsageDescription: Sagax uses Screen Recording so bots can see this Mac before acting.
   # Notarization runs manually after the build (notarytool + staple),
   # mirroring the BlueyLite ship_release.sh flow.
   notarize: false
@@ -161,7 +166,9 @@ win:
 nsis:
   oneClick: true
   perMachine: false
-  shortcutName: Pulsa Bot
+  # Start menu and desktop shortcut: the long name fits there.
+  shortcutName: Pulsatrix Sagax
+  uninstallDisplayName: Pulsatrix Sagax ${version}
   # Versioned, like the .dmg. The README's /latest/download/ button needs a
   # Versioned, like the .dmg. A stable download name can be copied beside it
   # as PulsaBot-setup.exe, next to PulsaBot-${version}.dmg.
@@ -181,7 +188,7 @@ linux:
   synopsis: Your own team of AI bots, in a chat app
   description: A local-first chat app for running a team of AI agents.
   maintainer: Milind Soni <46266943+milind-soni@users.noreply.github.com>
-  vendor: Pulsa Bot
+  vendor: Pulsatrix Technologies
   syncDesktopName: true
   # The reviewed x64 CLI runtime is staged before packaging and remains
   # outside ASAR so executable modes and adjacent sidecars are preserved.
@@ -196,7 +203,7 @@ linux:
       to: openmausbot-browser.apparmor
   desktop:
     entry:
-      Name: Pulsa Bot
+      Name: Pulsatrix Sagax
       Comment: Your own team of AI bots, in a chat app
       Keywords: AI;Agents;Chat;Productivity;
 

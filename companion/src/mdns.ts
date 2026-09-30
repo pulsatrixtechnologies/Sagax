@@ -410,7 +410,7 @@ export function answersFor(
 
 /** One DNS label: no dots (they would split it into two labels), no control
  * characters, and inside the 63-byte limit even in UTF-8. */
-export function dnsLabel(text: string, fallback = "Pulsa Bot"): string {
+export function dnsLabel(text: string, fallback = "Sagax"): string {
   let label = text
     // oxlint-disable-next-line no-control-regex -- control characters are not valid in a DNS label
     .replace(/[\u0000-\u001f\u007f]/g, "")

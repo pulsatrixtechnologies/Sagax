@@ -46,7 +46,7 @@ it("boots and reports an interrupted routine back to its source room", async () 
       return fetch(url + "/api/health").then(r => r.ok).catch(() => false);
     }, { timeout: 10_000, interval: 150 }).toBe(true);
     const { runs } = await request("/api/routines", {}, url) as any;
-    expect(runs[0]).toMatchObject({ status: "failed", error: "Pulsa Bot restarted while this routine was running" });
+    expect(runs[0]).toMatchObject({ status: "failed", error: "Sagax restarted while this routine was running" });
     const { messages } = await request(`/api/threads/${channel.activeTaskId}/messages`, {}, url) as any;
     expect(messages.filter((m: any) => m.routineRun?.runId === "interrupted-room-run"))
       .toMatchObject([{ routineRun: { status: "failed" } }]);
