@@ -36,6 +36,7 @@ import { setLocale } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { requestEnterpriseEntry } from "@/lib/enterprise-entry";
+import { takeRoutineDelegationReturn } from "@/lib/routine-delegation";
 
 function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   const { state, dispatch } = useStore();
@@ -63,6 +64,11 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       open();
     }
     return window.ogb.environments.onOpenSettings?.(open);
+  }, [dispatch]);
+  // Slice 6: back from a routine delegation consent at Perspicax: show the
+  // outcome in Settings > Organization.
+  useEffect(() => {
+    if (takeRoutineDelegationReturn()) dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
   }, [dispatch]);
   // Mobile-only drawer state. Above md, none of these properties are emitted
   // at all — Sidebar scopes every mobile class with max-md: rather than

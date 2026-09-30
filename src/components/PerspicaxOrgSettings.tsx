@@ -3,7 +3,8 @@
 // link to manage people in the Perspicax console, and, for admins, the
 // organization key switch and the server commands waiting for an admin.
 // Slice 4 adds My engines (for everyone) and Sharing in the organization
-// (the bots whose sharing the viewer administers).
+// (the bots whose sharing the viewer administers); slice 6 adds Routines in
+// my name (the routine delegation).
 // People, teams and invitations live in Perspicax, never here.
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
@@ -13,6 +14,7 @@ import type { PerspicaxOrg } from "@/lib/perspicax-org";
 import { api } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { MyEngines } from "./settings/MyEngines";
+import { MyRoutineDelegation } from "./settings/MyRoutineDelegation";
 import { OrgSharing } from "./settings/OrgSharing";
 
 interface PendingAdminApproval {
@@ -120,6 +122,7 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
         </div>
       </Card>
       <MyEngines issuer={org.org.identity.issuer} />
+      <MyRoutineDelegation />
       <OrgSharing />
       {admin && (
         <Card cardId="organization.adminApprovals" title={t("organization.adminApprovals.title")} summary={approvals?.length ? String(approvals.length) : ""}>

@@ -411,7 +411,7 @@ import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
 import { RoutineManager, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
-import { RoutineConsents, type RoutineConsentEnd } from "./org-routine-consent.ts";
+import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT } from "./browser-engine.ts";
 import { BrowserRuntime } from "./browser-runtime.ts";
@@ -7935,6 +7935,7 @@ function routineSuspended(routine: Routine, _run: RoutineRun | null, reason: Rou
       access: {
         reason: "routine_delegation", engine: "", botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
         ...(runAs ? { runAsPrincipalId: runAs } : {}),
+        ...(runAs && (principals.byId(runAs)?.name || principals.byId(runAs)?.login) ? { runAsName: (principals.byId(runAs)?.name || principals.byId(runAs)?.login)!.slice(0, 200) } : {}),
         routineId: routine.id, routineName: redactSecretsInText(routine.name).slice(0, 200), suspendReason: reason,
       },
     });
@@ -15979,6 +15980,7 @@ if (oidcRp && idpVault) {
     vault: idpVault,
     rp: oidcRp,
     principals,
+    renewMs: routineRenewMs(process.env.OMB_ROUTINE_RENEW_SECONDS),
     onEnded: routineConsentEnded,
     onActive: (principalId) => { routines?.resumeFor(principalId, (routine) => effectiveRunAs({ botId: routine.botId })); },
   });

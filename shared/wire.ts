@@ -394,6 +394,8 @@ export interface WireAccessCard {
   /** Slice 6, routine_delegation: who the routine runs as, which routine,
    * and why it is paused. */
   runAsPrincipalId?: string;
+  /** The person's display name when the card was written. */
+  runAsName?: string;
   routineId?: string;
   routineName?: string;
   suspendReason?: "delegation_missing" | "delegation_ended" | "delegation_revoked" | "person_out" | "no_right";
