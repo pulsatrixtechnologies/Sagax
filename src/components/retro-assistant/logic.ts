@@ -202,10 +202,59 @@ export function motionPlan(reduced: boolean): MotionPlan {
     : { entrance: "slide-bounce", exit: "puff", flourish: true, travel: true, idleCycle: true };
 }
 
+/* --------------------------------------------------------------- characters */
+
+/** Who stands on the desk: Trombi the paperclip (the default), the app's owl, or the person's own pictures. */
+export type RetroCharacter = "trombi" | "owl" | "custom";
+export const RETRO_CHARACTERS: readonly RetroCharacter[] = ["trombi", "owl", "custom"];
+export const DEFAULT_CHARACTER: RetroCharacter = "trombi";
+
+export function isRetroCharacter(value: unknown): value is RetroCharacter {
+  return typeof value === "string" && (RETRO_CHARACTERS as readonly string[]).includes(value);
+}
+
+/** One pose name the three characters share (Trombi draws all seven). */
+export type AssistantPose = "idle" | "speak" | "think" | "bored" | "sleep" | "celebrate" | "send";
+
+export interface PoseInputs {
+  /** A one-off act is playing (enter, celebrate, envelope...). */
+  act?: string | null;
+  /** A letter is flying off after a send. */
+  sending?: boolean;
+  /** A bot is working on a reply. */
+  busy?: boolean;
+  /** The idle cycle's current step. */
+  mood?: IdlePhase;
+  /** A balloon is open, so the assistant is talking. */
+  talking?: boolean;
+}
+
+/** What the assistant is doing right now, most specific first. */
+export function assistantPose({ act, sending, busy, mood, talking }: PoseInputs): AssistantPose {
+  if (act === "celebrate") return "celebrate";
+  if (sending || act === "envelope") return "send";
+  if (talking) return "speak";
+  if (busy) return "think";
+  if (mood === "doze") return "sleep";
+  if (mood === "bored" || mood === "yawn") return "bored";
+  return "idle";
+}
+
+/** The drawn size of each character, in CSS px (width, height). */
+export function characterBox(character: RetroCharacter): { width: number; height: number } {
+  if (character === "owl") return { width: 96, height: 96 };
+  if (character === "custom") return { width: 110, height: 110 };
+  return { width: 110, height: 135 };
+}
+
 /* -------------------------------------------------------------------- prefs */
 
 export interface RetroPrefs {
   options: RetroOptions;
+  /** Which assistant: Trombi by default. */
+  character: RetroCharacter;
+  /** Show the assistant in its own always-on-top window (desktop app only). */
+  detached: boolean;
   look: RetroLookId;
   /** Offsets from the viewport's bottom-right corner, or null to sit above the composer. */
   position: { right: number; bottom: number } | null;
@@ -213,7 +262,7 @@ export interface RetroPrefs {
   dismissed: string[];
 }
 
-export const DEFAULT_PREFS: RetroPrefs = { options: DEFAULT_OPTIONS, look: "normal", position: null, dismissed: [] };
+export const DEFAULT_PREFS: RetroPrefs = { options: DEFAULT_OPTIONS, character: DEFAULT_CHARACTER, detached: false, look: "normal", position: null, dismissed: [] };
 
 const PREFS_KEY = "omb.retro98.prefs";
 
@@ -235,7 +284,7 @@ export function readPrefs(store: PrefsStorage | undefined = storage()): RetroPre
   } catch {
     raw = null;
   }
-  if (!raw || typeof raw !== "object") return { ...DEFAULT_PREFS, options: { ...DEFAULT_OPTIONS } };
+  if (!raw || typeof raw !== "object") return { ...DEFAULT_PREFS, options: { ...DEFAULT_OPTIONS }, dismissed: [] };
   const value = raw as Partial<Record<keyof RetroPrefs, unknown>>;
   const options = { ...DEFAULT_OPTIONS };
   if (value.options && typeof value.options === "object") {
@@ -251,6 +300,8 @@ export function readPrefs(store: PrefsStorage | undefined = storage()): RetroPre
       : null;
   return {
     options,
+    character: isRetroCharacter(value.character) ? value.character : DEFAULT_CHARACTER,
+    detached: value.detached === true,
     look: lookById(typeof value.look === "string" ? value.look : undefined).id,
     position,
     dismissed: Array.isArray(value.dismissed) ? value.dismissed.filter((entry): entry is string => typeof entry === "string") : [],

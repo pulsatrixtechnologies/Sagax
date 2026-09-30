@@ -14,6 +14,11 @@ import "./styles.css";
 // render would show one frame of the default palette first. The brand (window
 // title, accent) is fetched the same way so a white-labelled deployment never
 // flashes the default name; it waits at most a moment and falls back silently.
+// The detached Hibou 98 assistant window loads this bundle too, on its own
+// query; it draws only the assistant (electron/retro-assistant-window.mjs).
+const detachedAssistant = new URLSearchParams(location.search).get("omb-retro-assistant") === "1";
+if (detachedAssistant) document.documentElement.dataset.retroDetached = "";
+
 applySkin(readSkin());
 applyFont(readFont());
 
@@ -22,6 +27,10 @@ applyFont(readFont());
  * device"; on the owner's own machine the server trusts loopback and this
  * check is a single fast request. */
 async function chooseRoot(): Promise<React.ReactNode> {
+  if (detachedAssistant) {
+    const { DetachedAssistant } = await import("./components/retro-assistant/DetachedAssistant");
+    return <DetachedAssistant />;
+  }
   // An invite link works without a session: redeeming it is the sign-in.
   if (location.pathname === "/join") return <JoinPage initialToken={takeInviteTokenFromLocation()} />;
   if (location.pathname === "/pair") return <PairPage initialCode={takePairingCodeFromLocation()} initialEmail={takeInvitedEmailFromLocation()} />;

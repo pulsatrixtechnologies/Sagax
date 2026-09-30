@@ -1,9 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import fr from "@/locales/fr.json";
 
 import { BotEditorStore, type useStore } from "@/state/store";
-import RetroAssistant from "./RetroAssistant";
+import RetroAssistant, { GALLERY, assistantMenu } from "./RetroAssistant";
 import { createRetroSounds, RETRO_SCORES } from "./sounds";
 
 type StoreValue = ReturnType<typeof useStore>;
@@ -16,17 +17,34 @@ function render(props: Parameters<typeof RetroAssistant>[0]) {
 }
 
 describe("RetroAssistant", () => {
-  it("renders the app's own owl, as a labelled, draggable button", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("stands Trombi on the desk by default, as a labelled, draggable button", () => {
     const markup = render({});
     expect(markup).toContain('data-retro-owl=""');
-    expect(markup).toContain("data-owl=");
-    expect(markup).toContain('aria-label="Hibou 98, the retro assistant.');
+    expect(markup).toContain('data-character="trombi"');
+    expect(markup).toContain('class="r98-trombi r98t-pose-idle"');
+    expect(markup).toContain('aria-label="Trombi, the retro assistant.');
     expect(markup).toContain('aria-haspopup="menu"');
+    expect(markup).not.toContain("data-owl=");
   });
 
-  it("marks reduced motion so every animation is switched off", () => {
-    expect(render({ reducedMotion: true })).toContain("data-reduced");
-    expect(render({ reducedMotion: false })).not.toContain("data-reduced");
+  it("still offers the app's own owl when it was chosen", () => {
+    const saved = JSON.stringify({ character: "owl", look: "gold" });
+    vi.stubGlobal("localStorage", { getItem: () => saved, setItem: () => undefined, removeItem: () => undefined });
+    const markup = render({});
+    expect(markup).toContain('data-character="owl"');
+    expect(markup).toContain("data-owl=");
+    expect(markup).toContain('aria-label="Hibou 98, the retro assistant.');
+  });
+
+  it("marks reduced motion so every animation is switched off, Trombi included", () => {
+    const still = render({ reducedMotion: true });
+    expect(still).toContain("data-reduced");
+    expect(still).toContain("r98t-still");
+    const moving = render({ reducedMotion: false });
+    expect(moving).not.toContain("data-reduced");
+    expect(moving).not.toContain("r98t-still");
   });
 
   it("opens with nothing in the way: no balloon, menu or dialog before any interaction", () => {
@@ -34,6 +52,37 @@ describe("RetroAssistant", () => {
     expect(markup).not.toContain("r98-balloon");
     expect(markup).not.toContain('role="menu"');
     expect(markup).not.toContain("r98-window");
+  });
+
+  it("follows the app language it is given", () => {
+    expect(render({ locale: "fr" })).toContain('lang="fr"');
+  });
+});
+
+describe("assistant menu", () => {
+  it("offers to detach only where the desktop app can host the window", () => {
+    expect(assistantMenu(false, false).map((item) => item.id)).toEqual(["hide", "options", "gallery", "animate"]);
+    expect(assistantMenu(true, false).map((item) => item.id)).toEqual(["hide", "options", "gallery", "animate", "detach"]);
+  });
+
+  it("offers to put it back once detached", () => {
+    const ids = assistantMenu(true, true).map((item) => item.id);
+    expect(ids).toContain("attach");
+    expect(ids).not.toContain("detach");
+  });
+
+  it("has a French label for every entry", () => {
+    for (const item of assistantMenu(true, false).concat(assistantMenu(true, true))) {
+      expect(fr[item.label as keyof typeof fr], item.label).toBeTruthy();
+    }
+  });
+});
+
+describe("assistant gallery", () => {
+  it("lists Trombi first, the owl looks, then the custom assistant", () => {
+    expect(GALLERY[0]).toEqual({ kind: "trombi" });
+    expect(GALLERY.at(-1)).toEqual({ kind: "custom" });
+    expect(GALLERY.filter((entry) => entry.kind === "owl")).toHaveLength(8);
   });
 });
 

@@ -4,6 +4,9 @@ import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
 import { MASCOT_SKIN_IDS } from "../../../shared/mascot-skins";
 import {
+  DEFAULT_PREFS,
+  assistantPose,
+  characterBox,
   DEFAULT_OPTIONS,
   GUESS_GAP_MS,
   GUESS_REPEAT_MS,
@@ -123,11 +126,11 @@ describe("assistant gallery", () => {
 describe("preferences", () => {
   it("round-trips and falls back field by field on junk", () => {
     const store = memory();
-    expect(readPrefs(store)).toEqual({ options: DEFAULT_OPTIONS, look: "normal", position: null, dismissed: [] });
-    writePrefs({ options: { ...DEFAULT_OPTIONS, sounds: false }, look: "gold", position: { right: 40, bottom: 90 }, dismissed: ["escape"] }, store);
-    expect(readPrefs(store)).toEqual({ options: { ...DEFAULT_OPTIONS, sounds: false }, look: "gold", position: { right: 40, bottom: 90 }, dismissed: ["escape"] });
-    store.setItem("omb.retro98.prefs", JSON.stringify({ options: { sounds: "yes" }, look: "paperclip", position: { right: "x" }, dismissed: [1, "a"] }));
-    expect(readPrefs(store)).toEqual({ options: DEFAULT_OPTIONS, look: "normal", position: null, dismissed: ["a"] });
+    expect(readPrefs(store)).toEqual({ options: DEFAULT_OPTIONS, character: "trombi", detached: false, look: "normal", position: null, dismissed: [] });
+    writePrefs({ options: { ...DEFAULT_OPTIONS, sounds: false }, character: "owl", detached: true, look: "gold", position: { right: 40, bottom: 90 }, dismissed: ["escape"] }, store);
+    expect(readPrefs(store)).toEqual({ options: { ...DEFAULT_OPTIONS, sounds: false }, character: "owl", detached: true, look: "gold", position: { right: 40, bottom: 90 }, dismissed: ["escape"] });
+    store.setItem("omb.retro98.prefs", JSON.stringify({ options: { sounds: "yes" }, character: "clippy", detached: "yes", look: "paperclip", position: { right: "x" }, dismissed: [1, "a"] }));
+    expect(readPrefs(store)).toEqual({ options: DEFAULT_OPTIONS, character: "trombi", detached: false, look: "normal", position: null, dismissed: ["a"] });
     store.setItem("omb.retro98.prefs", "{not json");
     expect(readPrefs(store).look).toBe("normal");
   });
@@ -150,5 +153,35 @@ describe("preferences", () => {
     expect(clampPosition({ right: -50, bottom: -10 }, viewport, 96)).toEqual({ right: 8, bottom: 8 });
     expect(clampPosition({ right: 5000, bottom: 5000 }, viewport, 96)).toEqual({ right: 696, bottom: 496 });
     expect(clampPosition({ right: 100, bottom: 200 }, viewport, 96)).toEqual({ right: 100, bottom: 200 });
+  });
+});
+
+describe("characters and poses", () => {
+  it("makes Trombi the default and keeps a saved owl or custom choice", () => {
+    expect(DEFAULT_PREFS.character).toBe("trombi");
+    const store = memory();
+    store.setItem("omb.retro98.prefs", JSON.stringify({ character: "custom" }));
+    expect(readPrefs(store).character).toBe("custom");
+    store.setItem("omb.retro98.prefs", JSON.stringify({ look: "gold" }));
+    expect(readPrefs(store)).toMatchObject({ character: "trombi", look: "gold", detached: false });
+  });
+
+  it("picks the most specific pose first", () => {
+    expect(assistantPose({})).toBe("idle");
+    expect(assistantPose({ busy: true })).toBe("think");
+    expect(assistantPose({ busy: true, talking: true })).toBe("speak");
+    expect(assistantPose({ talking: true, sending: true })).toBe("send");
+    expect(assistantPose({ act: "envelope" })).toBe("send");
+    expect(assistantPose({ act: "celebrate", sending: true, busy: true })).toBe("celebrate");
+    expect(assistantPose({ mood: "doze" })).toBe("sleep");
+    expect(assistantPose({ mood: "bored" })).toBe("bored");
+    expect(assistantPose({ mood: "yawn" })).toBe("bored");
+    expect(assistantPose({ mood: "look" })).toBe("idle");
+  });
+
+  it("sizes each character for the desk", () => {
+    expect(characterBox("trombi")).toEqual({ width: 110, height: 135 });
+    expect(characterBox("owl")).toEqual({ width: 96, height: 96 });
+    expect(characterBox("custom").width).toBe(110);
   });
 });

@@ -2,6 +2,7 @@
 // retro owl assistant (fetched on first use) while the Hibou 98 easter egg is
 // on. With the egg off it renders nothing and holds one keydown listener.
 import { lazy, Suspense, useEffect, useState } from "react";
+import { activeLocale } from "@/lib/i18n";
 import { createKonamiDetector, KONAMI_SEQUENCE, loadRetroAssistant, onRetroToggle, readRetroEnabled, toggleRetro } from "@/lib/retro98";
 
 const RetroAssistant = lazy(loadRetroAssistant);
@@ -44,6 +45,7 @@ export function RetroAssistantHost() {
     <Suspense fallback={null}>
       <RetroAssistant
         key={generation}
+        locale={activeLocale()}
         leaving={phase === "leaving"}
         fresh={fresh}
         onGone={() => setPhase((current) => (current === "leaving" ? "off" : current))}

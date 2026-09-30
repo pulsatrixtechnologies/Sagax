@@ -25,7 +25,7 @@ import { pollServerIdentity } from "./server-boot-probe.mjs";
 import { createServerSupervisor } from "./server-supervisor.mjs";
 import { packageUrlFromCommandLine, packageUrlFromDeepLink } from "./package-link.mjs";
 import { createOrganizationEntry, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
-import { windowChromeOptions } from "./window-chrome.mjs";
+import { trafficLightsForSkin, windowChromeOptions } from "./window-chrome.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
 import { createSystemTray } from "./system-tray.mjs";
 let startupScreen = null;
@@ -65,6 +65,7 @@ import {
   withoutDesktopCompanionAccess,
 } from "./desktop-companion-client.mjs";
 import { isKnownSkin, skinChrome } from "./skin-overlay.cjs";
+import { createRetroAssistantWindow, DETACHED_QUERY } from "./retro-assistant-window.mjs";
 import { readSecureCredentials } from "./secure-credentials.mjs";
 import { createControlPlaneClient } from "./control-plane-client.mjs";
 import {
@@ -2130,7 +2131,10 @@ function createWindow({ deferNavigation = false } = {}) {
   if (restored.maximized && !startupScreen) win.maximize();
   win.once("closed", () => {
     if (mainWindow === win) mainWindow = null;
+    // the detached Hibou 98 assistant is driven by this window's page
+    retroAssistantWindow.mainWindowGone();
   });
+  win.webContents.on("render-process-gone", () => retroAssistantWindow.mainWindowGone());
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     try {
@@ -2451,9 +2455,30 @@ ipcMain.handle("desktop:skin", (event, skin) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
     if (win && !win.isDestroyed()) {
       try { win.setBackgroundColor(color); } catch {}
+      // Hibou 98 draws its own title bar; keep the lights inside it.
+      const lights = trafficLightsForSkin(process.platform, skin);
+      if (lights) {
+        try { win.setWindowButtonPosition?.(lights); } catch {}
+      }
     }
   } catch {}
   return true;
+});
+
+// Hibou 98: the assistant detached from the window, on its own always-on-top
+// window. The main page drives it; see electron/retro-assistant-window.mjs.
+const RETRO_ASSISTANT_POSITIONS = () => path.join(app.getPath("userData"), "retro-assistant-position.json");
+const retroAssistantWindow = createRetroAssistantWindow({
+  BrowserWindow,
+  screen,
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  isTrustedMain: (event) => senderIsLocal(event),
+  pageUrl: () => `${rendererOrigin()}/?${DETACHED_QUERY}`,
+  preload: path.join(__dirname, "retro-assistant-preload.cjs"),
+  readPositions: () => JSON.parse(fs.readFileSync(RETRO_ASSISTANT_POSITIONS(), "utf8")),
+  writePositions: (positions) => fs.writeFileSync(RETRO_ASSISTANT_POSITIONS(), JSON.stringify(positions), { mode: 0o600 }),
+  log: (line) => slog(line),
 });
 
 // Caption controls for the overlay-less frameless window. The renderer's
@@ -3214,6 +3239,7 @@ process.once("SIGTERM", requestSignalQuit);
 
 app.on("before-quit", (e) => {
   desktopShutdownStarted = true;
+  retroAssistantWindow.close();
   startupScreen?.dispose();
   companyBackupSchedule?.close();
   orgLibrary?.close();

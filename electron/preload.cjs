@@ -336,6 +336,22 @@ const bridge = {
     revoke: id => ipcRenderer.invoke("sharing:revoke", id),
   },
   confirm: message => ipcRenderer.invoke("dialog:confirm", message),
+  /** Hibou 98: show the assistant in its own always-on-top window, and trade
+   * plain snapshots and clicks with it (electron/retro-assistant-window.mjs). */
+  retroAssistant: {
+    setDetached: on => ipcRenderer.invoke("retro-assistant:set-detached", on === true),
+    update: snapshot => ipcRenderer.send("retro-assistant:update", snapshot),
+    onEvent: cb => {
+      const handler = (_event, value) => cb(value);
+      ipcRenderer.on("retro-assistant:event", handler);
+      return () => ipcRenderer.removeListener("retro-assistant:event", handler);
+    },
+    onDetachedChanged: cb => {
+      const handler = (_event, on) => cb(on === true);
+      ipcRenderer.on("retro-assistant:detached-changed", handler);
+      return () => ipcRenderer.removeListener("retro-assistant:detached-changed", handler);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld(
