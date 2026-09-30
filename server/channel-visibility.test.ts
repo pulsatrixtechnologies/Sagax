@@ -58,6 +58,13 @@ describe("channel visibility", () => {
       inChannels: [{ humanIds: ["jc"] }],
     })).toBe(false);
   });
+  it("in an organization a room opens the room, never its bots", () => {
+    const viewer = { principalId: "pr_zach", orgAdmin: false, teams: [], disabled: false };
+    const room = { humanIds: ["jc", "pr_zach"] };
+    expect(seesBotForViewer({ viewerId: "pr_zach", ownerUserId: "jc", directGrants: [], inChannels: [room], viewer, grants: [] })).toBe(true);
+    expect(seesBotForViewer({ viewerId: "pr_zach", ownerUserId: "jc", directGrants: [], inChannels: [room], viewer, grants: [], channelsOpenBot: false })).toBe(false);
+    expect(seesBotForViewer({ viewerId: "pr_zach", ownerUserId: "jc", directGrants: [], inChannels: [room], viewer, grants: [{ target: "user:pr_zach", level: "use", by: "jc", at: 0 }], channelsOpenBot: false })).toBe(true);
+  });
   it("hides a bot with no owner from a signed-in viewer who was not given it", () => {
     expect(seesBotForViewer({
       viewerId: "zachary@example.test",

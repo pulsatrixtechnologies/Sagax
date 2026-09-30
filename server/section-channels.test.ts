@@ -160,6 +160,24 @@ describe("section access follows the bot owner's consent", () => {
   });
 });
 
+describe("section access follows consent for rooms", () => {
+  it("opens the section's own room and placed rooms, never a legacy room carrying its name", async () => {
+    const h = harness();
+    const record = h.channels.byName("Support")!;
+    await h.call(ALICE, "PUT", `/api/org/sections/${record.id}/members`, { members: [{ target: "team:U", role: "readonly" }] });
+    expect(h.channels.accessForRoom("Support", "room-Support")).not.toBeNull();
+    expect(h.channels.accessForRoom("Support", "legacy")).toBeNull();
+    h.channels.recordRoomPlacement("Support", "later");
+    expect(h.channels.accessForRoom("Support", "later")).not.toBeNull();
+    h.channels.forgetRoomPlacement("Support", "later");
+    expect(h.channels.accessForRoom("Support", "later")).toBeNull();
+    // a private section opens no room at all
+    h.channels.recordRoomPlacement("Support", "later");
+    await h.call(ALICE, "PUT", `/api/org/sections/${record.id}/members`, { members: [] });
+    expect(h.channels.accessForRoom("Support", "later")).toBeNull();
+  });
+});
+
 describe("section routes", () => {
   it("creates a section owned by the caller, refuses General and duplicates", async () => {
     const h = harness();

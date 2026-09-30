@@ -20,6 +20,12 @@
 // who manages them (the owner, or a manage holder the owner chose), recorded
 // with the owner at that time. A bot that sat in a section before this slice
 // and belongs to someone else stays closed until its owner places it again.
+// Rooms follow the same rule: a shared section opens its own conversation
+// (roomId) and the rooms placed in it with consent (placedRooms: created in
+// the section by one of its members, or moved there by an organization
+// admin or by a moderator who is the room's only person). A room that
+// carried the section's name before (a legacy room, a bot-to-bot channel)
+// stays with its own people.
 // "General" (no section) is personal: never shared, renamed or deleted.
 //
 // File: section-channels.json, { version: 1, sections: [record] }, atomic,
@@ -59,6 +65,8 @@ const recordSchema = z.object({
   roomId: z.string().max(80).optional(),
   /** Bots placed with their owner's consent (see the header). */
   placedBots: z.array(z.object({ botId: z.string().min(1).max(80), ownerPrincipalId: z.string().min(1).max(64) })).max(2000).optional(),
+  /** Rooms placed with consent (see the header). */
+  placedRooms: z.array(z.string().min(1).max(80)).max(2000).optional(),
   createdAt: z.number(),
 });
 const fileSchema = z.object({ version: z.literal(1), sections: z.array(z.unknown()) });
@@ -147,6 +155,32 @@ export class SectionChannels {
     const consented = found.ownerPrincipalId.trim().toLowerCase() === owner ||
       (found.placedBots ?? []).some((entry) => entry.botId === bot.id && entry.ownerPrincipalId.trim().toLowerCase() === owner);
     return consented ? this.accessFor(name) : null;
+  }
+
+  /** The access facts of a section for one room: null when the section is
+   * private, or when the room is neither its own conversation nor placed
+   * in it with consent (see the header). */
+  accessForRoom(name: string, roomId: string): SectionAccess | null {
+    const found = this.records.find((record) => record.name === name.trim());
+    if (!found || !found.members.length) return null;
+    const placed = found.roomId === roomId || (found.placedRooms ?? []).includes(roomId);
+    return placed ? this.accessFor(name) : null;
+  }
+
+  /** A room placed in a section with consent. */
+  recordRoomPlacement(name: string, roomId: string): void {
+    const found = this.records.find((record) => record.name === name.trim());
+    if (!found || (found.placedRooms ?? []).includes(roomId)) return;
+    found.placedRooms = [...(found.placedRooms ?? []), roomId];
+    this.save();
+  }
+
+  /** Forget a room's placement in a section (moved out). */
+  forgetRoomPlacement(name: string, roomId: string): void {
+    const found = this.records.find((record) => record.name === name.trim());
+    if (!found?.placedRooms?.includes(roomId)) return;
+    found.placedRooms = found.placedRooms.filter((id) => id !== roomId);
+    this.save();
   }
 
   /** A bot placed in a section by someone who manages it, for its owner. */

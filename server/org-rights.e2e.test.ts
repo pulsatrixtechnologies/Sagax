@@ -13,6 +13,8 @@
 //         refreshed id_token, narrows at once
 //   S4-9  a person's own Codex subscription, only for them
 //   S4-10 a section shared with a team; a room with a team
+//   S4-12 a shared section opens only what its owners consented to; a
+//         read-only member changes nothing; moving rooms needs moderators
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -394,4 +396,70 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect(await groups(carol)).not.toContain(room.body.group.id);
     expect((await api("POST", "/api/groups", alice, { name: "Bad", memberIds: [u.id], humanIds: ["team:NOPE"] })).status).toBe(400);
   }, 60_000);
+
+  it("S4-12: sharing a section opens only what its owners consented to; read-only changes nothing; moves need moderators", async () => {
+    alice = await signIn(ALICE);
+    const bob = await signIn(BOB);
+    const setup = { bulletin: "", defaultResponder: { kind: "everyone" } };
+    const created = await api("POST", "/api/org/sections", alice, { name: "Ops" });
+    expect(created.status, created.text).toBe(201);
+    const opsId = created.body.section.id as string;
+    const a1 = await createBot(alice, "Ada", "claude");
+    expect((await api("PUT", `/api/org/sections/${opsId}/bots`, alice, { add: [a1.id] })).status).toBe(200);
+    // bob's bot sits in Ops without bob placing it there (as before slice 4)
+    const bx = await createBot(bob, "Bex", "claude");
+    const moved = await api("POST", "/api/sidebar-sections", alice, { name: "Ops", botIds: [bx.id] });
+    expect(moved.status, moved.text).toBe(200);
+    // a legacy room carrying the section's name, made by someone outside it
+    const legacy = await api("POST", "/api/groups", bob, { name: "Bob ops", memberIds: [bx.id], section: "Ops", setup });
+    expect(legacy.status, legacy.text).toBe(201);
+    await api("POST", `/api/groups/${legacy.body.group.id}/messages`, bob, { text: "legacy secret" });
+    const shared = await api("PUT", `/api/org/sections/${opsId}/members`, alice, { members: [{ target: `team:${TEAM_U}`, role: "readonly" }], defaultLevel: "use" });
+    expect(shared.status, shared.text).toBe(200);
+    const roomId = shared.body.section.roomId as string;
+    const dave = await signIn(DAVE);
+    const listed = (await api("GET", "/api/bots", dave)).body as { bots: Array<{ id: string }>; groups: Array<{ id: string; threadId: string; memberIds: string[] }> };
+    expect(listed.bots.map((b) => b.id)).toContain(a1.id);
+    expect(listed.bots.map((b) => b.id)).not.toContain(bx.id);
+    expect(listed.groups.find((g) => g.id === roomId)?.memberIds).toEqual([a1.id]);
+    expect(listed.groups.map((g) => g.id)).not.toContain(legacy.body.group.id);
+    expect((await api("GET", `/api/threads/${bx.threadId}/messages`, dave)).status).toBe(404);
+    expect((await api("POST", `/api/bots/${bx.id}/messages`, dave, { text: "on bob's key?" })).status).toBe(404);
+    expect((await api("GET", `/api/threads/${legacy.body.group.threadId}/messages`, dave)).status).toBe(404);
+    expect((await api("GET", `/api/search?q=${encodeURIComponent("legacy secret")}`, dave)).text).not.toContain(legacy.body.group.id);
+
+    // read-only: reads the room, changes nothing in it
+    const roomThread = listed.groups.find((g) => g.id === roomId)?.threadId;
+    expect((await api("GET", `/api/threads/${roomThread}/messages`, dave)).status).toBe(200);
+    for (const [method, path, body] of [
+      ["PATCH", `/api/groups/${roomId}`, { name: "Mine now" }],
+      ["PATCH", `/api/groups/${roomId}`, { section: "" }],
+      ["POST", `/api/groups/${roomId}/tasks`, { title: "side task" }],
+      ["POST", `/api/groups/${roomId}/interrupt`, {}],
+    ] as const) {
+      const answer = await api(method, path, dave, body);
+      expect(answer.status, `${method} ${path} ${answer.text}`).toBe(403);
+    }
+
+    // a room in someone else's conversation never moves into a section
+    // its mover shares, and a participant does not move a section's room
+    await api("PUT", `/api/org/sections/${opsId}/members`, alice, { members: [{ target: `team:${TEAM_U}`, role: "participant" }] });
+    const mine = await api("POST", "/api/org/sections", dave, { name: "Dave sec" });
+    expect(mine.status, mine.text).toBe(201);
+    expect((await api("PUT", `/api/org/sections/${mine.body.section.id}/members`, dave, { members: [{ target: `user:${ids.erin}`, role: "participant" }] })).status).toBe(200);
+    expect((await api("PATCH", `/api/groups/${roomId}`, dave, { section: "Dave sec" })).status).toBe(403);
+    const withBob = await api("POST", "/api/groups", alice, { name: "Dave and Bob", memberIds: [a1.id], humanIds: [ids.dave, ids.bob], setup });
+    expect(withBob.status, withBob.text).toBe(201);
+    expect((await api("PATCH", `/api/groups/${withBob.body.group.id}`, dave, { section: "Dave sec" })).status).toBe(403);
+    const erin = await signIn(ERIN);
+    expect(((await api("GET", "/api/bots", erin)).body.groups as Array<{ id: string }>).map((g) => g.id)).not.toContain(withBob.body.group.id);
+    // bob, a person of that room, still opens none of alice's bot in Direct
+    expect((await api("GET", `/api/threads/${a1.threadId}/messages`, bob)).status).toBe(404);
+    // his own room: dave moves it into his section, and erin reads it
+    const solo = await api("POST", "/api/groups", alice, { name: "Dave alone", memberIds: [a1.id], humanIds: [ids.dave], setup });
+    expect(solo.status, solo.text).toBe(201);
+    const soloMove = await api("PATCH", `/api/groups/${solo.body.group.id}`, dave, { section: "Dave sec" });
+    expect(soloMove.status, soloMove.text).toBe(200);
+    expect(((await api("GET", "/api/bots", erin)).body.groups as Array<{ id: string }>).map((g) => g.id)).toContain(solo.body.group.id);
+  }, 90_000);
 });

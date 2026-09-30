@@ -88,11 +88,16 @@ export function seesBotForViewer(input: {
   viewer?: Viewer;
   grants?: readonly BotGrant[];
   sections?: readonly SectionAccess[];
+  /** Whether a channel that contains the bot opens the bot itself (its
+   * Direct and its routes). Default true; an organization passes false:
+   * there only bot.use does, and a room opens the room. */
+  channelsOpenBot?: boolean;
 }): boolean {
   if (!input.viewerId) return true;
   if (input.viewer && input.ownerUserId) {
     const grants = input.grants ?? input.directGrants.map((id) => ({ target: `user:${id}`, level: "use" as const, by: input.ownerUserId!, at: 0 }));
     if (canOnBot(input.viewer, "bot.use", { ownerPrincipalId: input.ownerUserId, grants, sections: input.sections ?? [] })) return true;
+    if (input.channelsOpenBot === false) return false;
     return input.inChannels.some((group) => canInChannel(input.viewer, "channel.read", { humanIds: group.humanIds ?? [], section: group.section ?? null }));
   }
   if (input.ownerUserId && canSeeDirectBot({ ownerUserId: input.ownerUserId, viewerId: input.viewerId, directGrants: input.directGrants })) return true;

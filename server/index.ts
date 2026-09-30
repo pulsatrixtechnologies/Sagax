@@ -513,7 +513,7 @@ import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.t
 import { OrgTeams } from "./org-teams.ts";
 import { materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, type EngineCredentialInput, type TurnAccess } from "./engine-credentials.ts";
 import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
-import { createSectionChannelRoutes, migrationOwner, SectionChannels } from "./section-channels.ts";
+import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { applyIdentityMigration, principalIdFor } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
@@ -568,7 +568,7 @@ import {
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
-import { atLeast, botLevel, canEditRoomHumans, canInChannel, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
+import { atLeast, botLevel, canEditRoomHumans, canInChannel, canModerateSection, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { roleOf, signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
@@ -14841,10 +14841,11 @@ function botGrants(bot: { grants?: unknown; directGrants?: unknown; ownerUserId?
   if (Array.isArray(bot.grants)) return cleanBotGrants(bot.grants);
   return grantsFromDirect(botDirectGrants(bot), recordedBotOwner(bot), typeof bot.createdAt === "number" ? bot.createdAt : 0);
 }
-/** The shared section a bot or room sits in (slice 4, section-channels.ts). */
-function sectionAccessFor(name: unknown): SectionAccess | null {
-  if (IDENTITY.kind !== "perspicax" || typeof name !== "string" || !name) return null;
-  return sectionChannels?.accessFor(name) ?? null;
+/** The shared section a room sits in (slice 4, section-channels.ts): only
+ * its own conversation and rooms placed there with consent. */
+function roomSectionAccess(group: { id?: unknown; section?: unknown }): SectionAccess | null {
+  if (IDENTITY.kind !== "perspicax" || typeof group.section !== "string" || !group.section || typeof group.id !== "string") return null;
+  return sectionChannels?.accessForRoom(group.section, group.id) ?? null;
 }
 /** Owner, grants and shared section of a bot, for server/authz.ts. */
 function botFacts(bot: { id?: unknown; ownerUserId?: unknown; grants?: unknown; directGrants?: unknown; section?: unknown; createdAt?: unknown }): BotFacts {
@@ -14879,14 +14880,66 @@ function authzViewerFor(auth: RequestAuth): AuthzViewer | undefined {
 }
 /** channel.read on a room: listed people (by id or `team:`), and the members
  * of its shared section. */
-function groupVisible(group: { humanIds?: string[]; section?: unknown }, viewerId: string | undefined): boolean {
+function groupVisible(group: { id?: unknown; humanIds?: string[]; section?: unknown }, viewerId: string | undefined): boolean {
   if (!viewerId) return true;
-  return seesChannel(group, viewerId, authzViewerFromId(viewerId), sectionAccessFor(group.section));
+  return seesChannel(group, viewerId, authzViewerFromId(viewerId), roomSectionAccess(group));
 }
 /** channel.post on a room (a read-only section member reads only). */
-function groupPostAllowed(group: { humanIds?: string[]; section?: unknown }, viewerId: string | undefined): boolean {
+function groupPostAllowed(group: { id?: unknown; humanIds?: string[]; section?: unknown }, viewerId: string | undefined): boolean {
   if (!viewerId) return true;
-  return canInChannel(authzViewerFromId(viewerId), "channel.post", { humanIds: group.humanIds ?? [], section: sectionAccessFor(group.section) });
+  return canInChannel(authzViewerFromId(viewerId), "channel.post", { humanIds: group.humanIds ?? [], section: roomSectionAccess(group) });
+}
+/** The room a request path acts on: a room, or one of its conversations. */
+function roomOfSubject(subject: PathSubject | null): GroupRecord | null {
+  if (subject?.kind === "group") return store.group(subject.id) ?? null;
+  if (subject?.kind === "thread") return store.groupByThread(subject.id) ?? null;
+  return null;
+}
+/** Whether a room created in this section by this caller counts as placed
+ * there with consent: a member who may post in the section (participant,
+ * moderator, owner), an organization admin, or the operator. */
+function mayPlaceRoomIn(auth: RequestAuth, sectionName: string): boolean {
+  if (IDENTITY.kind !== "perspicax" || !sectionChannels) return false;
+  orgSectionNames();
+  const record = sectionChannels.byName(sectionName);
+  if (!record) return false;
+  const viewer = authzViewerFor(auth);
+  if (!viewer || viewer.orgAdmin) return true;
+  if (viewer.disabled) return false;
+  return roleRank(sectionRole(viewer, recordAccess(record))) >= roleRank("participant");
+}
+/** Moving a room between sections decides who reads it. On an organization
+ * server a member moves a room only when they moderate the section it
+ * leaves and the one it enters, and only into a section when they are the
+ * room's only person (nobody else's conversation is opened). Admins and
+ * the operator move any room. Null: allowed. */
+function roomSectionMoveRefusal(auth: RequestAuth, group: GroupRecord, next: unknown): string | null {
+  if (IDENTITY.kind !== "perspicax" || !sectionChannels) return null;
+  const viewer = authzViewerFor(auth);
+  if (!viewer || viewer.orgAdmin) return null;
+  const from = sectionKey(group.section);
+  const to = typeof next === "string" ? next.trim() : "";
+  if (from === to) return null;
+  orgSectionNames();
+  for (const name of [from, to]) {
+    if (!name) continue;
+    const record = sectionChannels.byName(name);
+    if (record && !canModerateSection(viewer, recordAccess(record))) return "only a moderator of both sections may move this room";
+  }
+  const me = viewer.principalId.trim().toLowerCase();
+  const someoneElse = (group.humanIds ?? []).some((entry) => {
+    if (entry.startsWith("team:")) return true;
+    return (entry.startsWith("user:") ? entry.slice(5) : entry).trim().toLowerCase() !== me;
+  });
+  if (to && someoneElse) return "only a room whose only person is you can be moved into a section";
+  return null;
+}
+/** After an allowed move (roomSectionMoveRefusal): the consent follows the
+ * room, out of the section it left and into the one it entered. */
+function recordRoomMove(groupId: string, from: string, to: string): void {
+  if (IDENTITY.kind !== "perspicax" || !sectionChannels || from === to) return;
+  if (from) sectionChannels.forgetRoomPlacement(from, groupId);
+  if (to) sectionChannels.recordRoomPlacement(to, groupId);
 }
 function listedBotVisible(bot: { id: string; ownerUserId?: unknown; directGrants?: unknown; grants?: unknown; section?: unknown }, viewerId: string | undefined): boolean {
   const facts = botFacts(bot);
@@ -14894,7 +14947,10 @@ function listedBotVisible(bot: { id: string; ownerUserId?: unknown; directGrants
     viewerId,
     ownerUserId: facts.ownerPrincipalId,
     directGrants: botDirectGrants(bot),
-    inChannels: store.groups.filter((group) => group.memberIds.includes(bot.id)).map((group) => ({ humanIds: group.humanIds ?? [], section: sectionAccessFor(group.section) })),
+    inChannels: store.groups.filter((group) => group.memberIds.includes(bot.id)).map((group) => ({ humanIds: group.humanIds ?? [], section: roomSectionAccess(group) })),
+    // Organization: a room opens itself, never its bots' Directs or their
+    // own routes (bot.use decides those; room turns go through the room).
+    channelsOpenBot: IDENTITY.kind !== "perspicax",
     viewer: authzViewerFromId(viewerId),
     grants: facts.grants,
     sections: facts.sections,
@@ -15335,7 +15391,10 @@ if (sectionChannels) {
     },
     createRoom: (name) => {
       try {
-        const botIds = store.bots.filter((bot) => sectionKey(bot.section) === name && !bot.hidden).map((bot) => bot.id);
+        // Only the bots the section opens: their owner consented.
+        const botIds = store.bots
+          .filter((bot) => sectionKey(bot.section) === name && !bot.hidden && channels.accessForBot(name, { id: bot.id, ownerPrincipalId: effectiveBotOwner(bot) }))
+          .map((bot) => bot.id);
         return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" }, completed: true }, []).id;
       } catch (error) {
         console.error(`sections: the conversation of a shared section could not be created: ${error instanceof Error ? error.message : String(error)}`);
@@ -15952,6 +16011,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (viewerId && !grantRoute && !adminAnswersPendingApproval(method, path, auth)) {
       const subject = pathSubject(path);
       if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
+      // Slice 4: a read-only member of a shared section reads its rooms and
+      // changes nothing in them (settings, tasks, queue, interrupt, cards).
+      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/groups\/[\w-]+\/read$/.test(path) ? roomOfSubject(subject) : null;
+      if (room && !groupPostAllowed(room, viewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
     beginAdminAudit(req, res, method, path, auth);
 
@@ -19365,6 +19428,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
       if (hiddenMember) return json(res, 400, { error: `unknown channel member: ${String(hiddenMember)}` });
       const group = createChannel(body);
+      // Created in a section by one of its members: the section opens it.
+      if (group.section && mayPlaceRoomIn(auth, group.section)) sectionChannels?.recordRoomPlacement(group.section, group.id);
       return json(res, 201, { group: { ...publicGroupState(group), messages: [] } });
     }
     if (method === "POST" && path === "/api/teams/export") {
@@ -19931,7 +19996,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const field = clientGroupPatchViolation(body);
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
       }
+      const movesSection = existingGroup && body && typeof body === "object" && !Array.isArray(body) && "section" in body;
+      if (movesSection) {
+        const refusal = roomSectionMoveRefusal(auth, existingGroup, (body as { section?: unknown }).section);
+        if (refusal) return json(res, 403, { error: refusal, code: "not_allowed" });
+      }
+      const fromSection = sectionKey(existingGroup?.section);
       const group = updateChannel(m[1], body);
+      if (movesSection) recordRoomMove(group.id, fromSection, sectionKey(group.section));
       return json(res, 200, { group: publicGroupState(group) });
     }
     m = path.match(/^\/api\/groups\/([\w-]+)\/read$/);
