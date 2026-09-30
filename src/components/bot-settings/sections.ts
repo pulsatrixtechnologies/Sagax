@@ -3,7 +3,9 @@
 // plus keywords, the same convention as the app SettingsModal's SECTIONS.
 // "slack" is listed here but shown only when the server offers a link to the
 // organisation's Admin (BotSettingsDialog filters it out otherwise), and
-// "visibility" only to an admin in a browser (never in the desktop app).
+// "visibility" only to an admin in a browser (never in the desktop app), and
+// "sharing" only on a server signed in with Perspicax, where it replaces
+// "visibility".
 import {
   BookOpen,
   Brain,
@@ -20,6 +22,7 @@ import {
   Slack,
   Sparkles,
   User,
+  Users,
 } from "lucide-react";
 
 import type { BotSettingsSection } from "@/state/store";
@@ -46,6 +49,7 @@ export const BOT_SECTIONS: Array<{
   { id: "permissions", label: "Permissions", icon: ShieldCheck, keywords: ["auto mode", "approve", "auto approve", "review", "routine approvals", "peers", "contact", "coordination", "chief of staff", "section"] },
   { id: "voice", label: "Voice & alerts", icon: Mic, keywords: ["voice", "alerts", "notifications", "speak"] },
   { id: "visibility", label: "Who can see it", labelKey: "botSettings.visibility.title", icon: Eye, keywords: ["visibility", "who can see", "private", "people", "admins", "members", "access", "hide"] },
+  { id: "sharing", label: "Shared with", labelKey: "botSettings.sharing.title", icon: Users, keywords: ["share", "sharing", "people", "grant", "who can use", "members", "directory"] },
   { id: "history", label: "History", icon: History, keywords: ["history", "changes", "undo", "rollback", "log"] },
   { id: "usage", label: "Usage", icon: Coins, keywords: ["tokens", "cost", "billing"] },
 ];

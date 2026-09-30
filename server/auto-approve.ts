@@ -54,8 +54,12 @@ export function delegationInheritsFullAccess(input: {
   senderHasFullAccess: boolean;
   sameBot: boolean;
   recipientDriverKind: string | undefined;
+  /** The recipient is a bot a member owns on an organization server: it never
+   * runs with Full access (JC rule until per-owner containers), whoever
+   * delegates to it. */
+  recipientMemberOwned: boolean;
 }): boolean {
-  return input.senderIsChief && input.senderHasFullAccess && !input.sameBot
+  return input.senderIsChief && input.senderHasFullAccess && !input.sameBot && !input.recipientMemberOwned
     && supportsApprovalMode(input.recipientDriverKind, "full");
 }
 

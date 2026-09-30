@@ -70,6 +70,9 @@ export interface OptionCardData {
   title: string;
   subtitle: string;
   options: string[];
+  /** Organization server: only an organization admin can answer this card
+   * (a server command asked by a member's bot). */
+  adminApproval?: boolean;
   /** what each option means, keyed by its label — a question that came with
    * explanations (AskUserQuestion) shows them under the buttons. Kept beside
    * `options` rather than inside it so every existing reader of the plain
@@ -148,8 +151,10 @@ export interface SecretRequestCardData {
 export interface Message {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction";
+  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access";
   text?: string;
+  /** access messages: a turn that could not run on this organization server. */
+  access?: import("../../shared/wire").WireAccessCard;
   /** digest messages: what the turn did, rendered in `text` and structured here. */
   digest?: TurnDigest;
   compaction?: import("../../shared/wire").WireMessage["compaction"];
@@ -872,6 +877,7 @@ export type BotSettingsSection =
   | "permissions"
   | "voice"
   | "visibility"
+  | "sharing"
   | "history"
   | "usage";
 

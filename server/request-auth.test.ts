@@ -579,3 +579,22 @@ describe("organization pairing (OMB_IDENTITY=perspicax, slice 2)", () => {
     expect(requiredScope("POST", "/api/auth/pairings", { orgPairing: true })).toBe("admin");
   });
 });
+
+describe("organization sharing routes (OMB_IDENTITY=perspicax, slice 3)", () => {
+  it("opens the directory to members only on an organization server", () => {
+    expect(requiredScope("GET", "/api/org/directory")).toBe("admin");
+    expect(requiredScope("GET", "/api/org/directory", { orgDirectory: true })).toBe("client");
+    expect(requiredScope("POST", "/api/org/directory", { orgDirectory: true })).toBe("admin");
+  });
+
+  it("keeps the organization settings and the admin approvals admin-only", () => {
+    expect(requiredScope("PATCH", "/api/org/settings", { orgDirectory: true, orgPairing: true })).toBe("admin");
+    expect(requiredScope("GET", "/api/org/approvals", { orgDirectory: true, orgPairing: true })).toBe("admin");
+  });
+
+  it("lets the owner remove a grant by principal id at client scope", () => {
+    expect(requiredScope("DELETE", "/api/bots/aurora/direct-grants/pr_00000000-0000-4000-8000-000000000001")).toBe("client");
+    expect(requiredScope("DELETE", "/api/bots/aurora/direct-grants/someone")).toBe("admin");
+    expect(requiredScope("POST", "/api/bots/aurora/direct-grants")).toBe("client");
+  });
+});

@@ -39,6 +39,7 @@ import { ConnectorCard } from "./ConnectorCard";
 import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { GoalRunCard } from "./GoalRunCard";
+import { AccessCard } from "./AccessCard";
 import { AttachmentGallery, MessageAttachmentGallery } from "./AttachmentGallery";
 import { ConversationGalleryProvider } from "./ConversationGallery";
 import { prefersWideBubble } from "@/lib/rich-blocks";
@@ -273,6 +274,13 @@ const Transcript = memo(function Transcript({
             // there until its 15-minute timeout answered for you
             <div className="flex justify-start">
               <OptionCard botId={m.from.botId} threadId={group.threadId} groupId={group.id} message={m} />
+            </div>
+          ) : m.kind === "access" && m.access ? (
+            <div className="flex justify-start">
+              <AccessCard
+                access={m.access}
+                viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
+              />
             </div>
           ) : m.kind === "goal.run" ? (
             <div className="flex justify-start">

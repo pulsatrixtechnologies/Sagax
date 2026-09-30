@@ -25,12 +25,16 @@
 //   OMB_PUBLIC_URL         this server's public origin; the redirect URI is
 //                          <OMB_PUBLIC_URL>/auth/oidc/callback and the login
 //                          access token's resource is this origin.
+//   OMB_PERSPICAX_INTERNAL_URL  optional origin (http or https, any host)
+//                          where this server reaches Perspicax from inside
+//                          the deployment: discovery, JWKS, token, revoke and
+//                          directory calls go there (slice 3).
 //
 // Spec: docs/superpowers/specs/2026-09-29-perspicax-multiuser-design.md,
 // sections 2, 3 and 10 (slice 1).
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { OidcRelyingParty, validIssuer, type OidcClientKind, type OidcIdentity } from "./oidc-rp.ts";
+import { OidcRelyingParty, validInternalBase, validIssuer, type OidcClientKind, type OidcIdentity } from "./oidc-rp.ts";
 import type { Principal } from "./principals.ts";
 import { cookieMaxAgeSeconds, type PublicSession, type Scope, type SessionRecord } from "./sessions.ts";
 import { labelFromUserAgent, parseCookies, serializeSessionCookie } from "./request-auth.ts";
@@ -50,7 +54,7 @@ export const DEFAULT_OIDC_CLIENT_ID = "pulsa-bot";
 
 export type IdentityConfig =
   | { kind: "solo" }
-  | { kind: "perspicax"; issuer: string; clientId: string; publicOrigin: string; redirectUri: string };
+  | { kind: "perspicax"; issuer: string; clientId: string; publicOrigin: string; redirectUri: string; internalBase?: string };
 
 /** What /.well-known/openmausbot/environment says about sign-in. */
 export interface IdentityDescriptor {
@@ -84,7 +88,12 @@ export function identityConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Ide
     throw new Error("OMB_IDENTITY=perspicax needs OMB_PUBLIC_URL: this server's public https origin (http only on this machine), with no path.");
   }
   const clientId = env.OMB_OIDC_CLIENT_ID?.trim() || DEFAULT_OIDC_CLIENT_ID;
-  return { kind: "perspicax", issuer, clientId, publicOrigin, redirectUri: `${publicOrigin}${OIDC_CALLBACK_PATH}` };
+  let internalBase: string | undefined;
+  if (env.OMB_PERSPICAX_INTERNAL_URL?.trim()) {
+    internalBase = validInternalBase(env.OMB_PERSPICAX_INTERNAL_URL) ?? undefined;
+    if (!internalBase) throw new Error("OMB_PERSPICAX_INTERNAL_URL must be an http or https origin with no path, e.g. http://perspicax:8787.");
+  }
+  return { kind: "perspicax", issuer, clientId, publicOrigin, redirectUri: `${publicOrigin}${OIDC_CALLBACK_PATH}`, ...(internalBase ? { internalBase } : {}) };
 }
 
 export function identityDescriptor(config: IdentityConfig): IdentityDescriptor | undefined {
@@ -224,6 +233,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     clientId: deps.config.clientId,
     redirectUri: deps.config.redirectUri,
     resource: deps.config.publicOrigin,
+    ...(deps.config.internalBase ? { internalBase: deps.config.internalBase } : {}),
   });
   const secure = deps.config.redirectUri.startsWith("https://");
   const bindingCookie = `${deps.sessionCookie}_oidc`;

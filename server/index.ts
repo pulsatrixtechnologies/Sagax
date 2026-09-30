@@ -179,6 +179,7 @@ import {
   customMcpServers,
   roomHandoffLimits,
   onConfigSaved,
+  driverKeyBacked,
 } from "./config.ts";
 import { sweepThreadEventLogs, type ThreadLogRetentionCandidate } from "./thread-retention.ts";
 import { ComputerControl } from "./computer-control.ts";
@@ -577,6 +578,9 @@ import { OidcRelyingParty } from "./oidc-rp.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
 import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
+import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
+import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
+import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -812,6 +816,11 @@ registerEnginesBinDir();
 // ask they continue; routine and peer turns are told apart before this is
 // consulted.
 const turnTriggers = new Map<string, UsageTrigger>();
+/** Who the turn last admitted on a thread speaks for (slice 3 engine
+ * access), and that speaker's principal ("" for an unknown person): what a
+ * continuation of that turn, or a bot hop it starts, speaks for too. */
+const turnSpeakers = new Map<string, TurnSpeaker>();
+const turnSpeakerPrincipals = new Map<string, string>();
 /** Who a user message is from, when that is someone other than the desktop
  * owner. Loopback is the owner by design, so it stays unstamped and reads as
  * the profile name; a paired or signed-in session names the person, by
@@ -819,8 +828,23 @@ const turnTriggers = new Map<string, UsageTrigger>();
  * chose while pairing. */
 function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   if (auth.kind !== "session") return undefined;
+  // Organization mode shows no email: the person reads as their provider
+  // display name, then their login.
+  if (IDENTITY.kind === "perspicax") {
+    const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
+    const orgName = (person?.name?.trim() || person?.login?.trim() || auth.session.label?.trim() || "");
+    return orgName ? { name: orgName, id: personKey(auth.session) } : undefined;
+  }
   const name = (auth.session.email ?? auth.session.label ?? "").trim();
   return name ? { name, id: personKey(auth.session) } : undefined;
+}
+
+/** Who a request's turn speaks for (slice 3 engine access): the signed-in
+ * person, or the operator at this computer. A reduced-trust loopback caller
+ * (a bot's own shell on a hosted server) is nobody in particular. */
+function speakerFor(auth: RequestAuth): TurnSpeaker {
+  if (auth.kind === "session") return { origin: "person", principalId: personKey(auth.session) };
+  return auth.trust === "service" ? { origin: "person" } : { origin: "operator" };
 }
 
 /** A stable key for the person behind a session: their principal id
@@ -2712,6 +2736,7 @@ function askBotAndWait(targetBotId: string, message: string, depth: number, from
           ? { botId: asker.id, name: asker.name, unattended: true }
           : { botId: asker.id, name: asker.name }
         : undefined,
+      ...(asker ? { speaker: peerSpeaker(asker.id, fromThreadId) } : {}),
       onDispatchError: (reason) => finish({ status: "error", text: `(couldn't start that bot: ${reason})` }),
     }).catch((err) =>
       finish({ status: "error", text: `(couldn't start that bot: ${err instanceof Error ? err.message : String(err)})` }),
@@ -3290,6 +3315,9 @@ async function botOverview(bot: BotRecord): Promise<BotOverview> {
  * threads it delegates Full too (delegatedFullAccess), so the grant the
  * person gave the Chief covers the work the Chief hands out. */
 const approvalModeForTurn = (bot: BotRecord, peerInitiated = false): ApprovalMode => {
+  // A member's bot on an organization server never runs unasked (JC rule
+  // until per-owner containers): its tasks' Custom or Full are Ask here.
+  if (memberOwnedInOrg(bot)) return "ask";
   const mode = approvalModeForOrigin(approvalModeFor(bot), { peerInitiated });
   if (!supportsApprovalMode(bot.modelSelection, mode)) {
     return "ask";
@@ -3326,6 +3354,7 @@ function delegatedFullAccess(from: BotRecord, fromThreadId: string, target: BotR
     senderHasFullAccess: fullAccessForSource(from.id, fromThreadId),
     sameBot: from.id === target.id,
     recipientDriverKind: registry.cliTarget(target.modelSelection.instanceId)?.driverKind,
+    recipientMemberOwned: memberOwnedInOrg(target),
   });
 }
 
@@ -3350,6 +3379,9 @@ function roomTurnApprovalMode(bot: BotRecord, orchestration?: GroupTurnOrchestra
   const handoff = orchestration?.roomHandoffId ? roomHandoffs.nodes.get(orchestration.roomHandoffId) : undefined;
   const source = handoff?.parentId ? roomHandoffs.nodes.get(handoff.parentId) : undefined;
   const from = source ? store.bot(source.botId) : undefined;
+  // A member's bot on an organization server never runs Full, not even for
+  // a Full Chief's handoff (JC rule until per-owner containers).
+  if (memberOwnedInOrg(bot)) return "ask";
   if (from && source && delegatedFullAccess(from, source.threadId, bot)) return "full";
   return approvalModeForTurn(bot, Boolean(orchestration?.roomHandoffId));
 }
@@ -3582,6 +3614,10 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
   const existing = store.bot(botId);
   if (!existing) {
     respond({ ok: false, error: "No such bot" });
+    return true;
+  }
+  if ((mode === "full" || mode === "custom") && memberOwnedInOrg(existing)) {
+    respond({ ok: false, error: MEMBER_BOT_FULL_ACCESS.error });
     return true;
   }
   const currentMode = approvalModeFor(existing);
@@ -5226,6 +5262,51 @@ function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: s
   return null;
 }
 
+/** Organization server (slice 3, D15): a card flagged adminApproval (a
+ * server command asked by a member's bot) is answered by an organization
+ * admin only. "admin" lets the caller through without the owner check;
+ * "refused" is the owner or anyone else; null is any other card. */
+function adminApprovalCheck(auth: RequestAuth, threadId: string, requestId: string): "admin" | "refused" | null {
+  if (IDENTITY.kind !== "perspicax") return null;
+  const card = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId)?.card;
+  return adminApprovalDecision({ identity: IDENTITY.kind, card, callerIsOrgAdmin: orgAdminCaller(auth) });
+}
+const MEMBER_BOT_FULL_ACCESS = {
+  error: "A bot whose owner is not an organization admin cannot run with full access on this server.",
+  code: "member_bot_full_access",
+} as const;
+const ADMIN_APPROVAL_REQUIRED = {
+  error: "This command would run on the server: an organization admin has to approve it.",
+  code: "admin_approval_required",
+} as const;
+
+/** The server-command approvals waiting for an organization admin. */
+function pendingAdminApprovals(): PendingAdminApproval[] {
+  const pending: PendingAdminApproval[] = [];
+  for (const bot of store.bots) {
+    for (const task of store.tasks(bot.id)) {
+      for (const message of store.messagesFor(task.threadId)) {
+        const card = message.card;
+        if (!card?.adminApproval || !card.requestId || card.answered || card.dismissed || card.expired) continue;
+        pending.push({
+          botId: bot.id, botName: bot.name, threadId: task.threadId, requestId: card.requestId,
+          ownerPrincipalId: effectiveBotOwner(bot), tool: card.tool, summary: card.subtitle?.slice(0, 500), at: message.at,
+        });
+      }
+    }
+  }
+  return pending.sort((a, b) => a.at - b.at).slice(0, 200);
+}
+
+/** An organization admin answering a pending admin approval by thread may
+ * reach that thread even though the bot is not shared with them. */
+function adminAnswersPendingApproval(method: string, path: string, auth: RequestAuth): boolean {
+  if (IDENTITY.kind !== "perspicax" || method !== "POST" || !orgAdminCaller(auth)) return false;
+  const match = /^\/api\/threads\/([\w-]+)\/respond$/.exec(path);
+  if (!match) return false;
+  return store.messagesFor(match[1]!).some((row) => row.card?.adminApproval && row.card.requestId && !row.card.answered && !row.card.dismissed && !row.card.expired);
+}
+
 function botForApproval(threadId: string, message: { from?: { botId?: string } }): BotRecord | undefined {
   const id = message.from?.botId
     || groupSpeakers.get(threadId)?.botId
@@ -5241,7 +5322,12 @@ function botForApproval(threadId: string, message: { from?: { botId?: string } }
  * are unchanged. */
 function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalViewer): T {
   if (!message || typeof message !== "object") return message;
-  const row = message as { kind?: unknown; card?: unknown; from?: { botId?: string } };
+  const row = message as { kind?: unknown; card?: unknown; from?: { botId?: string }; access?: { ownerPrincipalId: string; detail?: string } };
+  // An access card's provider words go to the owner and admins only.
+  if (row.kind === "access" && row.access?.detail && viewer.userId) {
+    const person = principals.byId(viewer.userId);
+    return accessCardForViewer(row, { principalId: viewer.userId, admin: person?.local === true || person?.orgRole === "admin" }) as T;
+  }
   if (!isApprovalCardMessage(row)) return message;
   const bot = botForApproval(threadId, row);
   const audience = bot
@@ -5428,6 +5514,13 @@ async function answerRequest(
   always?: boolean,
   rememberCommand?: boolean,
 ): Promise<RequestOutcome> {
+  // A member's bot on an organization server is approved one action at a
+  // time: no session allow and no saved command, whatever the answer asks.
+  const decidingBot = decidedFor ? store.bot(decidedFor.id) : undefined;
+  if (decidingBot && memberOwnedInOrg(decidingBot)) {
+    always = false;
+    rememberCommand = false;
+  }
   // Snapshot the card BEFORE delivering the answer: a delivered answer
   // resolves the request synchronously through the fold, which consumes
   // the askMessageByRequest entry — by the time the await returns, nobody
@@ -6585,7 +6678,7 @@ function continueComputerSelection(threadId: string, generation: string | undefi
     // machine's record, so a later Works on change may sweep it.
     store.patchTask(bot.id, threadId, { surface, surfaceSource: "auto" });
     const text = `The computer selection is now ${surfaceLabel(surface)}. Continue the user's original request using the tools mounted for this turn; verify the result before claiming success.\n\n${selection.text}`;
-    void startTurn(bot.id, text, { threadId, userMessage: selection.source, computerSelectionContinuation: true }).catch(error => {
+    void startTurn(bot.id, text, { threadId, userMessage: selection.source, computerSelectionContinuation: true, speaker: turnSpeakers.get(threadId) }).catch(error => {
       if (store.taskByThread(bot.id, threadId)) store.appendMessage(threadId, { role: "bot", kind: "activity",
         tool: { name: `Could not continue on ${surfaceLabel(surface)}: ${error instanceof Error ? error.message : String(error)}`, ok: false } });
     });
@@ -7033,11 +7126,22 @@ bus.subscribe((event: RuntimeEvent) => {
       const effectiveApprovalMode = asker ? approvalModeForTurn(asker, isInternalTurn(event.threadId)) : "ask";
       // Native shell descriptors are distinct from computer/MCP permissions;
       // choosing a local desktop must not disable an exact shell grant.
-      const command = permission && asker && event.requestId && !event.requiresExplicitApproval && event.command
+      // A command on the server asked by a member's bot waits for an
+      // organization admin: no saved command, session grant or mode answers it.
+      // So does every other card of that bot except a file tool that stays in
+      // its own task workspace: all bots share one container, user and HOME,
+      // so a write to the shared settings or a read of a secret is as good as
+      // a command (memberBotAdminApproval).
+      const memberAsker = Boolean(permission && asker && memberOwnedInOrg(asker));
+      const adminApproval = Boolean(memberAsker && asker && memberBotAdminApproval({
+        tool: event.tool, command: event.command, paths: event.paths,
+        workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
+      }));
+      const command = permission && asker && event.requestId && !event.requiresExplicitApproval && event.command && !adminApproval
         ? commandAllowlistCandidate({ ...event.command, providerInstanceId: event.providerInstanceId ?? asker.modelSelection.instanceId })
         : null;
       const verdict = permission && asker && event.requestId
-        ? autoVerdict(effectiveApprovalMode, event.tool, {
+        ? autoVerdict(adminApproval ? "ask" : effectiveApprovalMode, event.tool, {
           requiresExplicitApproval: event.requiresExplicitApproval,
           commandAllowed: Boolean(command && commandAllowlist.matches(asker.id, command)),
         })
@@ -7141,7 +7245,10 @@ bus.subscribe((event: RuntimeEvent) => {
             : undefined,
           commandAllowlist: command ?? undefined,
           // Provider-owned session grants remain separate from exact commands.
-          allowSession: permission && event.allowSession && !event.requiresExplicitApproval ? true : undefined,
+          // a member's bot is approved one action at a time: a session rule
+          // (Claude's own suggestion) could reach past its workspace
+          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !adminApproval && !memberAsker ? true : undefined,
+          ...(adminApproval ? { adminApproval: true } : {}),
           // The text stays for cards saved before heldCode existed, and for
           // clients that do not know the key yet.
           held: approvalHeldReason(heldContext),
@@ -7216,8 +7323,20 @@ bus.subscribe((event: RuntimeEvent) => {
         tool: { name: `retrying — attempt ${event.attempt + 1}/${RETRY_MAX_ATTEMPTS} in ${Math.round(event.delayMs / 1000)}s — ${event.reason}`, ok: true },
       });
       break;
-    case "runtime.error":
-      pushMessage({
+    case "runtime.error": {
+      // Organization server: a key-backed engine whose provider refused the
+      // key gets the key_refused card, not the generic error row.
+      const refusedInstance = bot ? registry.get(event.providerInstanceId ?? bot.modelSelection.instanceId) : null;
+      const keyRefused = bot && refusedInstance ? keyRefusedCard({
+        identity: IDENTITY.kind, setup: event.setup, claudeUpdate: event.claudeUpdate,
+        keyBacked: driverKeyBacked(cfg, refusedInstance.driverKind),
+        message: event.message, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
+        engine: refusedInstance.displayName || refusedInstance.driverKind, redact: redactSecretsInText,
+      }) : null;
+      if (keyRefused && bot) {
+        pushMessage({ role: "bot", kind: "access", access: keyRefused });
+        notify(buildNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }));
+      } else pushMessage({
         role: "bot",
         kind: "activity",
         tool: {
@@ -7234,6 +7353,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // failure) is told to leave "dead" alone.
       if (event.setup && bot) store.setTaskActivity(bot.id, event.threadId, "dead");
       break;
+    }
     case "thread.token-usage.updated":
       // running totals for the turn in flight; folded into the task's
       // tally at turn.completed (below) so retries never double-count
@@ -8093,6 +8213,7 @@ const runDelegatedTurn: Parameters<typeof drainDelegations>[3] = (toBotId, rawTe
       commsDepth,
       unattended,
       peerAsk,
+      ...(opener ? { speaker: peerSpeaker(opener.id, sourceThreadId) } : {}),
       // startTurn schedules provider/integration setup after marking the bot
       // busy. Those asynchronous setup failures do not emit turn.completed,
       // so clear the watch and report them through this callback too.
@@ -8193,6 +8314,9 @@ function drainQueuedSends() {
       void startTurn(botId, prompt, {
         threadId, userMessage, excludeMessageIds: excludeIds, unattended, onTurnSettled: resolve,
         trigger: queuedTurnTrigger(head),
+        // the first waiting line's speaker, as it was when queued; rows
+        // queued before speakers were kept read from their provenance
+        speaker: head.speaker ?? resolveTurnSpeaker({ sender: head.sender, peerAsk: head.peerAsk, trigger: head.trigger }),
       }).catch((err) => {
         store.appendMessage(threadId, {
           role: "bot", kind: "activity",
@@ -8252,6 +8376,8 @@ function drainAsideLane() {
             name: head.aside.fromBotName,
             ...(head.aside.unattended ? { unattended: true } : {}),
           },
+          speaker: { origin: "peer", fromBotId: head.aside.fromBotId,
+            ...(head.aside.speakerPrincipalId !== undefined ? { principalId: head.aside.speakerPrincipalId } : {}) },
           onTurnSettled: resolve,
         }).catch((err) => {
           store.appendMessage(threadId, {
@@ -8271,7 +8397,7 @@ function drainAsideLane() {
 
 /** Keep a person's words off the transcript until a direct-thread slot is
  * available. Reuse the existing cancellable, idempotent composer queue. */
-async function startOrQueueDirectMessage(botId: string, threadId: string, text: string, replyTo?: Message, sendId?: string, sender?: ResolvedSender, trigger?: UsageTrigger) {
+async function startOrQueueDirectMessage(botId: string, threadId: string, text: string, replyTo?: Message, sendId?: string, sender?: ResolvedSender, trigger?: UsageTrigger, speaker?: TurnSpeaker) {
   const decision = admit("direct", {}, {
     // A room turn holds the bot exactly like the sibling opened-thread queue
     // below: the drain's own block check waits it out, so the words queue
@@ -8289,10 +8415,11 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
       prompt: promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"),
       sender,
       trigger,
+      speaker,
     });
     return { ok: true as const, queued: true as const, queueId: queued.id, threadId, reason: decision.reason };
   }
-  const message = await startTurn(botId, text, { threadId, replyTo, sendId, sender, trigger });
+  const message = await startTurn(botId, text, { threadId, replyTo, sendId, sender, trigger, speaker });
   return { ok: true as const, threadId, message };
 }
 
@@ -8310,8 +8437,10 @@ async function startOrQueueOpenedThread(
   threadId: string,
   text: string,
   unattended: boolean,
+  sourceThreadId?: string,
 ): Promise<{ state: "running" } | { state: "queued"; position: number } | { state: "failed"; error: string }> {
   const peerAsk = { botId, name: store.bot(botId)!.name, unattended: unattended || undefined };
+  const speaker = peerSpeaker(botId, sourceThreadId);
   const decision = admit("opened-thread", {}, {
     // A room turn holds the bot too (startTurn refuses a direct turn during
     // one); the drain's own block check already waits for it, so the words
@@ -8324,11 +8453,12 @@ async function startOrQueueOpenedThread(
       reason: decision.reason,
       unattended,
       peerAsk,
+      speaker,
     });
     return { state: "queued", position: queuedThreadPosition(botId, threadId) ?? 1 };
   }
   try {
-    await startTurn(botId, text, { threadId, unattended, peerAsk });
+    await startTurn(botId, text, { threadId, unattended, peerAsk, speaker });
     return { state: "running" };
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
@@ -8536,6 +8666,11 @@ async function startTurn(
     editedMessageId?: string;
     /** The person who sent this, when not the desktop owner. */
     sender?: ResolvedSender;
+    /** Who this turn speaks for, for the organization engine gate. Paths
+     * that know it state it; otherwise it is read from the sender, the
+     * peer provenance or the trigger, and nothing known is an unknown
+     * person (never the owner). */
+    speaker?: TurnSpeaker;
     /** Who the usage ledger books this turn to: the sender of the message
      * that starts it, captured when that message was accepted. Absent on
      * continuations, which stay with the ask they continue. */
@@ -8735,12 +8870,46 @@ async function startTurn(
           sender: opts?.sender,
         });
   }
+  // Organization server (slice 3, D13): no turn without engine access. The
+  // person's message stays; the thread gets the card saying why, the owner
+  // a notification, and the sender an ordinary accepted send.
+  const speaker = resolveTurnSpeaker({
+    speaker: opts?.speaker,
+    sender: opts?.sender ?? (opts?.editedMessageId ? undefined : userMessage.sender),
+    peerAsk: opts?.peerAsk ?? (opts?.editedMessageId ? undefined : userMessage.peerAsk),
+    trigger: opts?.trigger,
+    automationSource: opts?.automationSource,
+  });
+  // an automatic recovery re-enters with these options: same speaker
+  opts = { ...opts, speaker };
+  // A compaction summarizes with the bot's engine too, so it is gated like
+  // a turn; other card continuations resume a turn already admitted.
+  const accessRefusal = opts.cardContinuation && !opts.compactOnly ? null : orgEngineRefusal(bot, instance, speaker);
+  if (accessRefusal) {
+    const engine = engineDisplayName(instance);
+    store.appendMessage(threadId, {
+      role: "bot",
+      kind: "access",
+      access: { reason: accessRefusal, engine, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot) },
+    });
+    const notice = engineAccessNotice(accessRefusal, engine);
+    notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
+    console.error(`[omb-turn] bot=${botId} refused: ${accessRefusal} (${instance.instanceId})`);
+    opts?.coordination?.settle({ ok: false, text: notice });
+    opts?.onDispatchError?.(notice);
+    opts?.onTurnSettled?.();
+    return userMessage;
+  }
   const recoveryUserMessageId = opts?.coordination
     ? store.activePath(threadId).findLast(m => m.role === "user" && m.kind === "text")?.id
     : userMessage.id;
   // Admitted: every refusal above has passed and no other turn runs on this
   // thread, so this is the one moment the ledger's "who asked" may change.
   if (opts?.trigger) turnTriggers.set(threadId, opts.trigger);
+  if (!opts.cardContinuation) {
+    turnSpeakers.set(threadId, speaker);
+    turnSpeakerPrincipals.set(threadId, orgSpeakerPrincipal(bot, speaker));
+  }
   // A card continuation neither starts nor ends the person's ask: it
   // resumes the turn their last message began, so that record stands.
   if (!opts?.cardContinuation) {
@@ -11211,6 +11380,28 @@ async function runGroupMemberTurn(
       tool: { name: `error: ${message}`, ok: false },
     });
     onDispatchError?.(message);
+    return true;
+  }
+  // Organization server (slice 3, D13): a room turn needs engine access for
+  // the person whose message it answers, as a Direct turn does.
+  const roomSpeakerId = store.activePath(threadId).findLast((message) => message.role === "user" && message.sender?.id)?.sender?.id;
+  const roomAccessRefusal = cardContinuation ? null
+    : orgEngineRefusal(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "operator" });
+  if (roomAccessRefusal) {
+    const engine = engineDisplayName(instance);
+    store.appendMessage(threadId, {
+      role: "bot",
+      kind: "access",
+      from: { botId: bot.id, name: bot.name, color: bot.color },
+      access: { reason: roomAccessRefusal, engine, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot) },
+    });
+    const notice = engineAccessNotice(roomAccessRefusal, engine);
+    notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
+    if (orchestration) {
+      orchestration.result.outcome = "dispatch_failed";
+      orchestration.result.replyText = "";
+    }
+    onDispatchError?.(notice);
     return true;
   }
   // One turn per bot at a time, across BOTH engines. Without this a bot
@@ -14068,6 +14259,94 @@ function persistMcpServers(next: Record<string, unknown>): void {
   cfg.mcpServers = next;
 }
 
+// ── engines installed on this server (slice 3, D16) ──────────────────────
+// The existing CLI probes (each instance's snapshot), cached for a minute so
+// a turn never waits on one: an organization turn on an engine whose CLI is
+// missing gets the engine_missing card, and GET /api/health lists them.
+interface EngineProbe { instanceId: string; driver: string; installed: boolean; version?: string; at: number }
+let engineProbes = new Map<string, EngineProbe>();
+let engineProbeFlight: Promise<void> | null = null;
+const ENGINE_PROBE_TTL_MS = 60_000;
+const ENGINE_PROBE_TIMEOUT_MS = 10_000;
+const CLI_MISSING = /not found|not installed|ENOENT|no such file|command not found|cannot find/i;
+function probeEngines(): Promise<void> {
+  engineProbeFlight ??= (async () => {
+    const next = new Map<string, EngineProbe>();
+    await Promise.all(registry.entries().map(async (entry) => {
+      const at = Date.now();
+      if (!entry.live) {
+        next.set(entry.instanceId, { instanceId: entry.instanceId, driver: entry.shadow.driverKind, installed: false, at });
+        return;
+      }
+      const live = entry.live;
+      let snapshot: { state: string; reason?: string; version?: string | null };
+      try {
+        snapshot = await Promise.race([
+          live.snapshot(),
+          new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("probe timed out")), ENGINE_PROBE_TIMEOUT_MS).unref()),
+        ]);
+      } catch (error) {
+        snapshot = { state: "unknown", reason: error instanceof Error ? error.message : String(error) };
+      }
+      const installed = snapshot.state === "available" || !CLI_MISSING.test(snapshot.reason ?? "");
+      next.set(live.instanceId, { instanceId: live.instanceId, driver: live.driverKind, installed, ...(snapshot.version ? { version: snapshot.version } : {}), at });
+    }));
+    engineProbes = next;
+  })().finally(() => { engineProbeFlight = null; });
+  return engineProbeFlight;
+}
+/** Whether an instance's CLI is installed, from the cache; an instance not
+ * probed yet counts as installed (and is probed in the background). */
+function engineInstalled(instanceId: string): boolean {
+  const probe = engineProbes.get(instanceId);
+  if (!probe || Date.now() - probe.at > ENGINE_PROBE_TTL_MS) void probeEngines().catch(() => {});
+  return probe?.installed ?? true;
+}
+function engineDisplayName(instance: { displayName?: string; driverKind: string }): string {
+  return instance.displayName || BUILT_IN_DRIVERS.find((driver) => driver.driverKind === instance.driverKind)?.metadata.displayName || instance.driverKind;
+}
+/** The owner of the bot a peer hop comes from, when that bot still exists. */
+function peerOwnerPrincipal(speaker: TurnSpeaker): string | undefined {
+  if (speaker.origin !== "peer" || !speaker.fromBotId) return undefined;
+  const from = store.bot(speaker.fromBotId);
+  return from ? effectiveBotOwner(from) : undefined;
+}
+/** The principal a turn on `bot` speaks for ("" for an unknown person). */
+function orgSpeakerPrincipal(bot: { ownerUserId?: unknown }, speaker: TurnSpeaker): string {
+  return speakerPrincipal(speaker, effectiveBotOwner(bot), peerOwnerPrincipal(speaker)).trim().toLowerCase();
+}
+/** A bot hop from `fromBotId`: it speaks for whoever the source turn spoke
+ * for, when that turn is known. */
+function peerSpeaker(fromBotId: string, fromThreadId?: string): TurnSpeaker {
+  const principalId = fromThreadId ? turnSpeakerPrincipals.get(fromThreadId) : undefined;
+  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}) };
+}
+/** On an organization server, words may join a running turn only when they
+ * speak for the same principal as that turn: anyone else's words wait for a
+ * turn of their own, which the engine gate then judges. */
+function orgJoinsRunningTurn(bot: { ownerUserId?: unknown }, threadId: string, speaker: TurnSpeaker): boolean {
+  if (IDENTITY.kind !== "perspicax") return true;
+  const running = turnSpeakerPrincipals.get(threadId);
+  const joining = orgSpeakerPrincipal(bot, speaker);
+  return Boolean(running) && running === joining;
+}
+/** Slice 3 (D13): the organization refusal for a turn, or null. */
+function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): EngineAccessRefusal | null {
+  if (IDENTITY.kind !== "perspicax") return null;
+  const access = engineAccessFor({
+    identity: IDENTITY.kind,
+    speaker,
+    peerOwnerPrincipalId: peerOwnerPrincipal(speaker),
+    ownerPrincipalId: effectiveBotOwner(bot),
+    ownerOrgRole: botOwnerOrgRole(bot),
+    memberBotsUseOrgKey: orgSettings().memberBotsUseOrgKey,
+    driver: instance.driverKind,
+    keyBacked: driverKeyBacked(cfg, instance.driverKind),
+    installed: engineInstalled(instance.instanceId),
+  });
+  return access.ok ? null : access.reason;
+}
+
 async function describeInstances() {
   const configs = providerConfigs();
   return (await registry.describe()).map((instance) => {
@@ -14413,6 +14692,31 @@ function effectiveBotOwner(bot: { ownerUserId?: unknown }): string {
     localOperatorId: localPrincipalId(),
   });
 }
+/** A bot owner's organization role on a server signed in with Perspicax.
+ * The operator at this computer (the local principal) counts as an admin. */
+function botOwnerOrgRole(bot: { ownerUserId?: unknown }): "admin" | "member" | undefined {
+  const owner = principals.byId(effectiveBotOwner(bot));
+  if (!owner) return undefined;
+  return owner.local ? "admin" : owner.orgRole;
+}
+/** Slice 3 (D15, JC rule until per-owner containers): a bot whose owner is
+ * not an organization admin never runs with full access, and its server
+ * commands need an admin's approval. */
+function memberOwnedInOrg(bot: { ownerUserId?: unknown }): boolean {
+  return memberOwnedBot({ identity: IDENTITY.kind, ownerOrgRole: botOwnerOrgRole(bot) });
+}
+/** An organization admin: the operator at this computer, or a person
+ * signed in with Perspicax whose role is admin (their session holds admin). */
+function orgAdminCaller(auth: RequestAuth): boolean {
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  if (!auth.scopes.includes("admin")) return false;
+  const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
+  return person?.local === true || person?.orgRole === "admin";
+}
+function orgSettings(): { memberBotsUseOrgKey: boolean } {
+  return { memberBotsUseOrgKey: cfg.organization?.memberBotsUseOrgKey === true };
+}
+
 function botDirectGrants(bot: { directGrants?: unknown }): string[] {
   return Array.isArray(bot.directGrants)
     ? bot.directGrants.filter((id): id is string => typeof id === "string")
@@ -14451,7 +14755,11 @@ function subjectSeesChannel(subject: PathSubject, viewerId: string): boolean {
   }
   if (subject.kind === "thread") {
     const group = store.groupByThread(subject.id);
-    return !group || seesChannel(group, viewerId);
+    if (group) return seesChannel(group, viewerId);
+    // A bot's conversation by its thread id: the same rule as the bot
+    // itself, so a direct URL never opens a Direct nobody shared (slice 3).
+    const bot = store.botByThread(subject.id);
+    return !bot || listedBotVisible(bot, viewerId);
   }
   if (subject.kind === "bot") {
     const bot = store.bot(subject.id);
@@ -14476,12 +14784,23 @@ function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): bo
       });
     }
   }
-  if (typeof payload.threadId === "string") {
-    const group = store.groupByThread(payload.threadId);
+  // A frame names its thread at the top (message, message.patch), inside a
+  // runtime event, or inside a notification; and its bot the same ways.
+  const nested = (key: "event" | "notification", field: "threadId" | "botId"): string | undefined => {
+    const holder = payload[key];
+    const value = holder && typeof holder === "object" ? (holder as Record<string, unknown>)[field] : undefined;
+    return typeof value === "string" ? value : undefined;
+  };
+  const threadId = typeof payload.threadId === "string" ? payload.threadId : nested("event", "threadId") ?? nested("notification", "threadId");
+  if (typeof threadId === "string") {
+    const group = store.groupByThread(threadId);
     if (group) return seesChannel(group, viewerId);
+    // A bot's own conversation: the viewer sees it only when they see the bot.
+    const owner = store.botByThread(threadId);
+    if (owner && !listedBotVisible(owner, viewerId)) return false;
   }
   const botField = payload.bot && typeof payload.bot === "object" ? (payload.bot as { id?: unknown }).id : undefined;
-  const botId = typeof payload.botId === "string" ? payload.botId : typeof botField === "string" ? botField : undefined;
+  const botId = typeof payload.botId === "string" ? payload.botId : typeof botField === "string" ? botField : nested("notification", "botId") ?? nested("event", "botId");
   if (typeof botId === "string") {
     const bot = store.bot(botId);
     if (bot && !listedBotVisible(bot, viewerId)) return false;
@@ -14600,6 +14919,20 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown): string | null {
   return "forbidden: only an owner or an admin can change channel people";
 }
 
+/** Organization server (slice 3): the person a grant may name, by
+ * principal id only: someone the Perspicax directory lists as active, or,
+ * before any directory answered, a known provider subject not signalled out. */
+function resolveOrgGrantee(ref: string): { ok: true; id: string } | { ok: false; code: "unknown_person" } {
+  const id = ref.trim().toLowerCase();
+  const principal = isPrincipalId(id) ? principals.byId(id) : null;
+  if (!principal?.subject || IDENTITY.kind !== "perspicax" || principal.subject.iss !== IDENTITY.issuer) return { ok: false, code: "unknown_person" };
+  const listed = perspicaxDirectory?.directory();
+  if (listed) {
+    const person = listed.people.find((entry) => entry.sub === principal.subject!.sub);
+    return person && person.status === "active" ? { ok: true, id: principal.id } : { ok: false, code: "unknown_person" };
+  }
+  return principal.disabledAt === undefined ? { ok: true, id: principal.id } : { ok: false, code: "unknown_person" };
+}
 ROUTES.push(createDirectGrantRoutes({
   bot: (id) => store.bot(id) ?? undefined,
   patchBot: (id, patch) => store.patchBot(id, patch),
@@ -14611,7 +14944,42 @@ ROUTES.push(createDirectGrantRoutes({
     const id = principalIdFor(ref, principals);
     return isPrincipalId(id) ? id : null;
   },
+  ...(IDENTITY.kind === "perspicax" ? { resolveOrgPerson: resolveOrgGrantee } : {}),
+  // A grant added or removed: every member stream reconnects to a fresh
+  // snapshot of what that person may see (the per-frame filter already
+  // stops the bot's frames), and the owner's list gets the bot's new grants.
+  onChanged: (botId) => {
+    const bot = store.bot(botId);
+    if (bot) broadcast({ kind: "bot", bot: wireBot(bot) });
+    audienceChanged();
+  },
 }));
+// The organization of a server signed in with Perspicax (slice 3). Tried
+// before the interim organization routes, which serve solo mode only.
+let perspicaxDirectory: PerspicaxDirectory | null = null;
+if (IDENTITY.kind === "perspicax") {
+  const issuer = IDENTITY.issuer;
+  ROUTES.push(createPerspicaxOrgRoutes({
+    issuer,
+    orgName: process.env.OMB_ORG_NAME?.trim().slice(0, 120) || "Pulsatrix",
+    directory: () => perspicaxDirectory,
+    bySubject: (iss, sub) => principals.bySubject(iss, sub),
+    viewerRole: (auth) => (orgAdminCaller(auth) ? "admin" : "member"),
+    settings: orgSettings,
+    saveSettings: (next, auth) => {
+      const before = orgSettings();
+      saveConfig({ organization: { memberBotsUseOrgKey: next.memberBotsUseOrgKey } });
+      cfg.organization = { ...cfg.organization, memberBotsUseOrgKey: next.memberBotsUseOrgKey };
+      appendAdminAction(DATA_DIR, {
+        category: "config", action: "organization.update", changed: ["organization.memberBotsUseOrgKey"],
+        before: { "organization.memberBotsUseOrgKey": before.memberBotsUseOrgKey },
+        after: { "organization.memberBotsUseOrgKey": next.memberBotsUseOrgKey },
+        actor: decisionActorFor(auth),
+      });
+    },
+    pendingAdminApprovals,
+  }));
+}
 ROUTES.push(createWorkerRoutes({
   workers: () => registeredWorkers,
   replace: (workers) => { registeredWorkers = workers; },
@@ -14731,7 +15099,7 @@ const publicInvites = createPublicInviteRoutes({
 // and the back-channel logout; the grants live in a sealed vault
 // (server/idp-session.ts).
 const oidcRp = IDENTITY.kind === "perspicax"
-  ? new OidcRelyingParty({ issuer: IDENTITY.issuer, clientId: IDENTITY.clientId, redirectUri: IDENTITY.redirectUri, resource: IDENTITY.publicOrigin })
+  ? new OidcRelyingParty({ issuer: IDENTITY.issuer, clientId: IDENTITY.clientId, redirectUri: IDENTITY.redirectUri, resource: IDENTITY.publicOrigin, ...(IDENTITY.internalBase ? { internalBase: IDENTITY.internalBase } : {}) })
   : null;
 let idpVaultKey: ReturnType<typeof resolveIdpVaultKey> | null = null;
 const idpSessions = oidcRp
@@ -14764,12 +15132,50 @@ if (idpSessions) {
     try { idpSessions.sweep(); } catch { /* retried on the next tick */ }
   }, IDP_SWEEP_INTERVAL_MS).unref();
 }
+// The Perspicax directory (slice 3): read with the link token Perspicax
+// writes to OMB_PERSPICAX_LINK_FILE. Keeps the principals current and logs
+// out people Perspicax disabled or deleted, even when no back-channel push
+// arrived. Without the file, sign-in works and the share picker is empty.
+if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PERSPICAX_LINK_FILE?.trim()) {
+  const intervalMs = directoryIntervalMs(process.env.OMB_PERSPICAX_DIRECTORY_SECONDS);
+  let version = "0.0.0";
+  try {
+    version = String((JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown }).version ?? version);
+  } catch {
+    /* the header then says 0.0.0 */
+  }
+  const manager = idpSessions;
+  perspicaxDirectory = new PerspicaxDirectory({
+    issuer: IDENTITY.issuer,
+    serverBase: oidcRp.serverOrigin(),
+    linkFile: process.env.OMB_PERSPICAX_LINK_FILE.trim(),
+    expect: { issuer: IDENTITY.issuer, publicOrigin: IDENTITY.publicOrigin, clientId: IDENTITY.clientId },
+    principals,
+    onPersonOut: (iss, sub) => {
+      const done = manager.backchannelLogout({ iss, sub });
+      console.log(`perspicax directory: a person is out; ${done.sessions} session(s) ended, ${done.pairings} pairing code(s) cancelled`);
+    },
+    onRoleNarrowed: (principalId) => {
+      const narrowed = manager.narrowToOrgRole(principalId, "member");
+      if (narrowed) console.log(`perspicax directory: a demotion narrowed ${narrowed} session(s)`);
+    },
+    version,
+  });
+  perspicaxDirectory.start(intervalMs);
+}
+
 const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
   ? createOidcLoginRoutes({
     config: IDENTITY,
     rp: oidcRp,
     sessionCookie: SESSION_COOKIE,
-    forSubject: (input) => principals.forSubject(input),
+    // A successful sign-in also refreshes the directory (fire and forget):
+    // a person added in Perspicax a minute ago becomes pickable at once.
+    forSubject: (input) => {
+      const principal = principals.forSubject(input);
+      void perspicaxDirectory?.refresh("sign-in");
+      return principal;
+    },
     issueSession: (input) => sessions.issue(input),
     grants: idpSessions,
     openPairing: (input) => sessions.openPairing(input),
@@ -14991,7 +15397,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       url,
       loopbackMutationToken: desktopMutationToken,
       companionMutationToken,
-      features: { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax" },
+      features: { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax" },
       loopbackTrust: LOOPBACK.trust,
       cliOwnerToken,
     });
@@ -15063,7 +15469,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       auth.scopes = scopes;
       if (current.idp) auth.session.idp = current.idp;
       if (narrowed) {
-        const needed = requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax" });
+        const needed = requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax" });
         if (!scopes.includes(needed)) return json(res, 403, { error: `forbidden: this session lacks the ${needed} scope` });
       }
     }
@@ -15098,7 +15504,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the teammates they cannot see, whichever route answers.
       onJsonBody(res, (body) => memberBody(body, visible));
     }
-    if (viewerId) {
+    if (viewerId && !adminAnswersPendingApproval(method, path, auth)) {
       const subject = pathSubject(path);
       if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
     }
@@ -16301,12 +16707,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (!threadBusy(toBotId, target.threadId)) return null;
           const instance = runningTurnInstance(target, target.threadId);
           if (!instance?.adapter.capabilities.queueing || !instance.adapter.steer) return null;
+          // an organization server folds a peer's words into the running
+          // turn only when both speak for the same person
+          const asideSpeaker = peerSpeaker(from.id, fromThreadId);
+          if (!orgJoinsRunningTurn(target, target.threadId, asideSpeaker)) return null;
           const steer = instance.adapter.steer;
           queueAsideMessage(toBotId, target.threadId, message, {
             fromBotId: from.id,
             fromBotName: from.name,
             unattended: isUnattended(from.id, fromThreadId),
             commsDepth: depth,
+            ...(asideSpeaker.origin === "peer" && asideSpeaker.principalId !== undefined ? { speakerPrincipalId: asideSpeaker.principalId } : {}),
           });
           const attempt = await attemptAsideInjection(store, toBotId, target.threadId, (_botId, threadId, prompt) =>
             steer(threadId, prompt).catch((): SteerOutcome => "indeterminate"));
@@ -16574,7 +16985,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const unattended = isUnattended(from.id, fromThreadId);
         const text = `[Retry requested by ${from.name}, your Chief of Staff, after this thread's last run stopped.${note ? ` Note from ${from.name}: ${note}` : ""} Continue the request above from where it stopped and finish it. If the same problem comes back, say exactly what is blocking and stop.]`;
         try {
-          await startTurn(target.id, text, { threadId, unattended, peerAsk: { botId: from.id, name: from.name, ...(unattended ? { unattended: true } : {}) } });
+          await startTurn(target.id, text, { threadId, unattended, peerAsk: { botId: from.id, name: from.name, ...(unattended ? { unattended: true } : {}) }, speaker: peerSpeaker(from.id, fromThreadId) });
         } catch (error) {
           return json(res, 409, { error: error instanceof Error ? error.message : String(error) });
         }
@@ -17090,7 +17501,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // reads it, so a later turn in that thread never mistakes the
           // request for the person's.
           const opening = `[Thread you opened yourself${sourceTitle ? ` from #${sourceTitle}` : ""}. The request below is your own words, not the person's: do the work here and end with a clear result they can read.]\n\n${message}`;
-          const outcome = await startOrQueueOpenedThread(from.id, task.threadId, opening, isUnattended(from.id, fromThreadId));
+          const outcome = await startOrQueueOpenedThread(from.id, task.threadId, opening, isUnattended(from.id, fromThreadId), fromThreadId);
           return json(res, 201, {
             threadId: task.threadId,
             title: task.title,
@@ -18408,7 +18819,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const current = resolveRequestAuth(req, {
         sessions, cookieName: SESSION_COOKIE, streamPath: "/api/events", url,
         loopbackMutationToken: desktopMutationToken, companionMutationToken,
-        features: { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
+        features: { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
       });
       if (!current.auth) return json(res, current.status, { error: current.error });
       const currentVisible = visibleTo(viewerFor(current.auth));
@@ -19857,6 +20268,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!pending) {
         return json(res, 409, { error: "that grant is not on a pending approval for this bot" });
       }
+      // A server command of a member's bot is approved once, by an admin.
+      if (pending.card?.adminApproval || memberOwnedInOrg(bot)) return json(res, 403, ADMIN_APPROVAL_REQUIRED);
       // A standing grant is an approval: the same people who may approve
       // the card it came from may remember it.
       const refusal = cardAnswerRefusal(auth, bot.threadId, pending.card!.requestId!, "allow");
@@ -19880,6 +20293,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
         const target = store.bot(m[1]);
         const own = Boolean(target && memberOwnsBot(auth, target));
+        // A member asking Full or Custom for their own bot hits the org rule
+        // first (S3-7): the answer is the same 409 an admin gets.
+        if (
+          own && target && memberOwnedInOrg(target) &&
+          (body.approvalMode === "full" || body.approvalMode === "custom")
+        ) {
+          return json(res, 409, MEMBER_BOT_FULL_ACCESS);
+        }
         const field = own ? memberBotFieldViolation(body) : clientBotPatchViolation(body);
         if (field) {
           return json(res, 403, {
@@ -20124,6 +20545,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const currentApprovalMode = approvalModeFor(existingBot ?? {});
       const approvalChangeRequested = body.approvalMode !== undefined || body.autoApprove !== undefined;
+      if (approvalChangeRequested && (requestedApprovalMode === "full" || requestedApprovalMode === "custom") && existingBot && memberOwnedInOrg(existingBot)) {
+        return json(res, 409, MEMBER_BOT_FULL_ACCESS);
+      }
       if (existingBot?.busy && approvalChangeRequested && requestedApprovalMode !== currentApprovalMode) {
         return json(res, 409, {
           error: "stop this bot's turn before changing its approval level",
@@ -20886,7 +21310,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             if (guardedAdmission.action === "refuse") {
               throw Object.assign(new Error("wait for a free thread slot before retrying this message"), { status: 409, code: "guarded_busy" });
             }
-            const message = await startTurn(bot.id, text, { threadId, replyTo, sendId, sender: messageSender(auth), trigger });
+            const message = await startTurn(bot.id, text, { threadId, replyTo, sendId, sender: messageSender(auth), trigger, speaker: speakerFor(auth) });
             return { ok: true as const, threadId, message };
           }
 
@@ -20904,7 +21328,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const busyAdmission = admit("direct-busy", {
               carriesImages,
               pendingComputerSelection: Boolean(computerSelectionTurns.get(threadId)?.selected),
-              engineCanSteer: Boolean(instance?.adapter.capabilities.queueing && instance.adapter.steer),
+              engineCanSteer: Boolean(instance?.adapter.capabilities.queueing && instance.adapter.steer)
+                // someone else's words never join a running turn on an
+                // organization server: they wait and get the gate
+                && orgJoinsRunningTurn(currentAtStart, threadId, speakerFor(auth)),
             });
             // steer was offered only when a live instance could take it;
             // the second check carries that fact to the type system.
@@ -20959,7 +21386,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               return { ok: true as const, steered: true as const, threadId, message };
             }
             if (!current.busy) {
-              return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger);
+              return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth));
             }
             const queued = queueSteeredMessage(current.id, threadId, text, {
               replyToId: replyTo?.id,
@@ -20967,10 +21394,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               prompt: promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"),
               sender: messageSender(auth),
               trigger,
+              speaker: speakerFor(auth),
             });
             return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
           }
-          return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger);
+          return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth));
         },
       );
       return json(res, 202, receipt);
@@ -21073,7 +21501,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       requirePinnedClientThread(m[1], body?.threadId);
       const bot = requestedTaskBot(m[1], body?.threadId);
       await startTurn(bot.id, "Summarize conversation context", {
-        threadId: bot.threadId, compactOnly: true, cardContinuation: true, trigger: usageTriggerFor(auth),
+        threadId: bot.threadId, compactOnly: true, cardContinuation: true, trigger: usageTriggerFor(auth), speaker: speakerFor(auth),
       });
       return json(res, 202, { ok: true, threadId: bot.threadId });
     }
@@ -21124,7 +21552,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // startTurn admits the rerun before branching. A shared-resource or
       // concurrency-limit refusal must leave the original transcript intact.
       const replyTo = source.replyToId ? resolveReplyTarget(bot.threadId, source.replyToId) : undefined;
-      const message = await startTurn(bot.id, text, { threadId: bot.threadId, editedMessageId: messageId, replyTo, sendId, trigger: usageTriggerFor(auth) });
+      const message = await startTurn(bot.id, text, { threadId: bot.threadId, editedMessageId: messageId, replyTo, sendId, trigger: usageTriggerFor(auth), speaker: speakerFor(auth) });
       return json(res, 202, { ok: true, message });
     }
 
@@ -21152,7 +21580,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const behavior = requestBehavior(body.behavior);
       const reviewedSha256 = typeof body.reviewedSha256 === "string" ? body.reviewedSha256 : undefined;
       if (!behavior) return json(res, 400, { error: "behavior must be allow, deny, or answer" });
-      const ownerRefusal = approvalAnswerRefusal(auth, bot.threadId, String(body.requestId));
+      const adminCheck = adminApprovalCheck(auth, bot.threadId, String(body.requestId));
+      if (adminCheck === "refused") return json(res, 403, ADMIN_APPROVAL_REQUIRED);
+      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "a server command of a member's bot is approved once, never remembered" });
+      const ownerRefusal = adminCheck ? null : approvalAnswerRefusal(auth, bot.threadId, String(body.requestId));
       if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, bot.threadId, String(body.requestId), behavior);
       if (refusal) return json(res, 403, { error: refusal });
@@ -21222,7 +21653,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const reviewedSha256 = typeof body.reviewedSha256 === "string" ? body.reviewedSha256 : undefined;
       if (!behavior) return json(res, 400, { error: "behavior must be allow, deny, or answer" });
       const requestId = String(body.requestId);
-      const ownerRefusal = approvalAnswerRefusal(auth, threadId, requestId);
+      const adminCheck = adminApprovalCheck(auth, threadId, requestId);
+      if (adminCheck === "refused") return json(res, 403, ADMIN_APPROVAL_REQUIRED);
+      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "a server command of a member's bot is approved once, never remembered" });
+      const ownerRefusal = adminCheck ? null : approvalAnswerRefusal(auth, threadId, requestId);
       if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);
       if (refusal) return json(res, 403, { error: refusal });
@@ -21473,6 +21907,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "new task approvalMode must be ask or full" });
       }
       if (body.approvalMode === "full") {
+        if (memberOwnedInOrg(bot)) return json(res, 409, MEMBER_BOT_FULL_ACCESS);
         if (auth.kind !== "loopback" || !sharedWorkspaceFullAccessEnabled()) {
           return json(res, 403, { error: "New Full tasks require the operator's dedicated shared-workspace policy" });
         }
@@ -21590,6 +22025,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.approvalMode !== undefined || body.autoApprove !== undefined) {
         if (body.autoApprove !== undefined && typeof body.autoApprove !== "boolean") return json(res, 400, { error: "autoApprove must be a boolean" });
         const mode = body.approvalMode ?? (body.autoApprove ? "auto" : "ask");
+        if ((mode === "full" || mode === "custom") && memberOwnedInOrg(current)) return json(res, 409, MEMBER_BOT_FULL_ACCESS);
         // Elevated modes still require the trusted desktop transition. A
         // thread settings PATCH cannot manufacture that grant.
         if (mode !== "ask" && mode !== "auto" && mode !== "edits") return json(res, 403, { error: "Full and Custom access require trusted desktop confirmation" });
@@ -21967,10 +22403,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // child proves it is OURS by echoing its pid (a stray dev server has
     // the same API shape but a different pid)
     if (method === "GET" && path === "/api/health") {
+      // The engines installed on this server (slice 3, D16), from the CLI
+      // probes: refreshed here when stale, within a bounded wait.
+      const stale = !engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS)
+        || registry.entries().some((entry) => !engineProbes.has(entry.instanceId));
+      // Solo servers (the desktop's boot probe polls this route) never wait
+      // and never probe from here: they list what an earlier probe found.
+      if (stale && IDENTITY.kind === "perspicax") await settledWithin(probeEngines(), ENGINE_PROBE_TIMEOUT_MS + 1_000);
+      const engines = [...engineProbes.values()]
+        .map(({ instanceId, driver, installed, version }) => ({ instanceId, driver, installed, ...(version ? { version } : {}) }))
+        .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
       return json(res, 200, { app: "openmausbot", pid: process.pid, static: Boolean(STATIC_DIR), capabilities: {
         guardedMessages: 1, guardedRequests: 1, guardedFullAccess: 1, guardedOnBehalfOf: 1,
         ...(sharedWorkspaceFullAccessEnabled() ? { sharedWorkspaceFullAccess: 1 } : {}),
-      } });
+      }, engines });
     }
     // The bots' browser engine: install it on this machine (agent-browser +
     // a Chrome for Testing, a one-time download), or ask how that is going.

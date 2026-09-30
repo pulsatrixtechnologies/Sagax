@@ -460,3 +460,18 @@ describe("release, sweep and back-channel logout", () => {
     expect(principals.byId(bob.principal.id)?.disabledAt).toBeUndefined();
   });
 });
+
+describe("a demotion the Perspicax directory reports (slice 3)", () => {
+  it("narrows every session of the person at once and ends one left with nothing", () => {
+    const { manager, sessions, signIn } = setup();
+    const carol = signIn("C1", "admin");
+    const adminOnly = sessions.issue({ label: "admin device", scopes: ["admin"], principalId: carol.principal.id, idp: { iss: ISS, sub: "C1", role: "admin" } });
+    expect(manager.narrowToOrgRole(carol.principal.id, "member")).toBe(2);
+    expect(carol.record()?.scopes).toEqual(["client"]);
+    expect(sessions.byId(adminOnly.session.id)).toBeNull();
+    // nothing left to narrow; an admin role never widens here
+    expect(manager.narrowToOrgRole(carol.principal.id, "member")).toBe(0);
+    expect(manager.narrowToOrgRole(carol.principal.id, "admin")).toBe(0);
+    expect(carol.record()?.scopes).toEqual(["client"]);
+  });
+});

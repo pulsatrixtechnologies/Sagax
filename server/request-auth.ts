@@ -276,7 +276,7 @@ export function clearSessionCookie(name: string): string {
  * deliberately listed here. Two client-allowed PATCH routes carry a body
  * filter in the handler (bot and room edits: display fields only). Loopback
  * holds both scopes. */
-export type ClientFeature = "sharedComputers" | "orgPairing";
+export type ClientFeature = "sharedComputers" | "orgPairing" | "orgDirectory";
 export type ClientFeatures = Partial<Record<ClientFeature, boolean>>;
 
 export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: RegExp; feature?: ClientFeature }> = [
@@ -329,6 +329,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots$/ },
   { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/direct-grants$/ },
+  // the owner removes a person's grant (server/direct-grants.ts checks ownership)
+  { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/direct-grants\/pr_[0-9a-f-]{36}$/ },
   // approvals and cards
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/respond$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/respond$/ },
@@ -370,6 +372,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // Creating the org and issuing invites stay admin (owner/admin in the handler).
   { methods: ["POST"], path: /^\/api\/org\/invites\/[^/]+\/accept$/ },
   { methods: ["GET"], path: /^\/api\/org$/ },
+  // Organization server (OMB_IDENTITY=perspicax): the people a bot owner may
+  // share with, from the Perspicax directory. Names, logins and addresses
+  // only. PATCH /api/org/settings stays admin.
+  { methods: ["GET"], path: /^\/api\/org\/directory$/, feature: "orgDirectory" },
   // A member's machine checks in as a worker. The handler binds it to the session user.
   // Pull and cancel stay on that session: registering does not run the queued turns.
   { methods: ["POST"], path: /^\/api\/workers$/ },

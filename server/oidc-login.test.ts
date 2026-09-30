@@ -37,6 +37,14 @@ describe("OMB_IDENTITY", () => {
     expect(() => identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://px.example.test", OMB_PUBLIC_URL: "http://bot.example.test" })).toThrow(/OMB_PUBLIC_URL/);
     expect(() => identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://px.example.test", OMB_PUBLIC_URL: "https://bot.example.test/app" })).toThrow(/OMB_PUBLIC_URL/);
   });
+
+  it("takes an optional internal origin for server-to-server calls (http allowed, no path)", () => {
+    const base = { OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://px.example.test", OMB_PUBLIC_URL: "https://bot.example.test" };
+    expect(identityConfigFromEnv({ ...base, OMB_PERSPICAX_INTERNAL_URL: "http://perspicax:8787/" })).toMatchObject({ internalBase: "http://perspicax:8787" });
+    expect(identityConfigFromEnv(base)).not.toHaveProperty("internalBase");
+    expect(() => identityConfigFromEnv({ ...base, OMB_PERSPICAX_INTERNAL_URL: "http://perspicax:8787/api" })).toThrow(/OMB_PERSPICAX_INTERNAL_URL/);
+    expect(() => identityConfigFromEnv({ ...base, OMB_PERSPICAX_INTERNAL_URL: "ftp://perspicax" })).toThrow(/OMB_PERSPICAX_INTERNAL_URL/);
+  });
 });
 
 describe("the role claim", () => {

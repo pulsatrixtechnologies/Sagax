@@ -71,8 +71,29 @@ export interface OidcRelyingPartyOptions {
   /** RFC 8707 resource for the login access token: the Sagax public
    * origin, so that token is worthless on the identity provider's /mcp. */
   resource?: string;
+  /** OMB_PERSPICAX_INTERNAL_URL (slice 3, D17): an origin this server
+   * reaches the provider at from inside the deployment (a compose service
+   * name, http allowed). Discovery, JWKS, token and revocation calls go
+   * there; the issuer check is unchanged and the authorization endpoint
+   * stays the public one, since the browser follows it. */
+  internalBase?: string;
   fetch?: typeof fetch;
   now?: () => number;
+}
+
+/** A configured server-to-server origin: http or https, any host, no path,
+ * query, fragment or credentials. Null otherwise. */
+export function validInternalBase(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.username || url.password || url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
 }
 
 /** Who started a sign-in: the browser itself, the desktop app through the
@@ -287,6 +308,7 @@ export class OidcRelyingParty {
   readonly redirectUri: string;
   private readonly scope: string;
   private readonly resource: string | undefined;
+  private readonly internalBase: string | null;
   private readonly fetcher: typeof fetch;
   private readonly now: () => number;
   private readonly pending = new Map<string, PendingFlow>();
@@ -307,8 +329,16 @@ export class OidcRelyingParty {
     this.redirectUri = options.redirectUri.trim();
     this.scope = options.scope?.trim() || "openid profile email offline_access";
     this.resource = options.resource;
+    this.internalBase = options.internalBase === undefined ? null : validInternalBase(options.internalBase);
+    if (options.internalBase !== undefined && !this.internalBase) throw new OidcError("config", "The internal provider URL must be an http or https origin with no path.");
     this.fetcher = options.fetch ?? fetch;
     this.now = options.now ?? Date.now;
+  }
+
+  /** Where server-to-server calls reach the provider: the internal base
+   * when configured, else the issuer's origin. */
+  serverOrigin(): string {
+    return this.internalBase ?? new URL(this.issuer).origin;
   }
 
   /** Pending flows, for tests and diagnostics (never the secrets). */
@@ -348,7 +378,7 @@ export class OidcRelyingParty {
       try {
         let lastError = "no discovery document";
         // OpenID Connect Discovery first: this is an OIDC client.
-        const urls = authorizationServerMetadataUrls(this.issuer);
+        const urls = authorizationServerMetadataUrls(this.issuer).map((u) => this.internalUrl(u));
         const ordered = [...urls.filter((u) => u.includes("openid-configuration")), ...urls.filter((u) => !u.includes("openid-configuration"))];
         for (const url of ordered) {
           let got: { status: number; body: Record<string, unknown> | null };
@@ -364,9 +394,10 @@ export class OidcRelyingParty {
           }
           const doc = got.body;
           if (doc.issuer !== this.issuer) throw new OidcError("discovery", "The identity provider's metadata names another issuer.");
+          // The browser follows the authorization endpoint: never rewritten.
           const authorizationEndpoint = safeEndpoint(doc.authorization_endpoint);
-          const tokenEndpoint = safeEndpoint(doc.token_endpoint);
-          const jwksUri = safeEndpoint(doc.jwks_uri);
+          const tokenEndpoint = this.serverEndpoint(doc.token_endpoint);
+          const jwksUri = this.serverEndpoint(doc.jwks_uri);
           if (!authorizationEndpoint || !tokenEndpoint || !jwksUri) {
             throw new OidcError("discovery", "The identity provider's metadata lacks an https authorization, token or JWKS endpoint.");
           }
@@ -378,7 +409,7 @@ export class OidcRelyingParty {
             tokenEndpoint,
             jwksUri,
             issParameterSupported: doc.authorization_response_iss_parameter_supported === true,
-            ...(safeEndpoint(doc.revocation_endpoint) ? { revocationEndpoint: safeEndpoint(doc.revocation_endpoint) } : {}),
+            ...(this.serverEndpoint(doc.revocation_endpoint) ? { revocationEndpoint: this.serverEndpoint(doc.revocation_endpoint) } : {}),
           };
           if (this.discovery?.value.jwksUri !== value.jwksUri) {
             this.keys = new Map();
@@ -393,6 +424,35 @@ export class OidcRelyingParty {
       }
     })();
     return this.discovering;
+  }
+
+  /** A URL on the issuer's origin, moved to the internal origin when one is
+   * configured. Anything else is returned unchanged. */
+  private internalUrl(value: string): string {
+    if (!this.internalBase) return value;
+    try {
+      const url = new URL(value);
+      if (url.origin !== new URL(this.issuer).origin) return value;
+      return `${this.internalBase}${url.pathname}${url.search}`;
+    } catch {
+      return value;
+    }
+  }
+
+  /** A server-to-server endpoint from the metadata: on the issuer's origin
+   * with an internal base configured, it moves there (http allowed, since
+   * that origin comes from configuration); otherwise https (or loopback
+   * http) as before. */
+  private serverEndpoint(value: unknown): string | undefined {
+    if (this.internalBase && typeof value === "string" && value) {
+      try {
+        const url = new URL(value);
+        if (!url.username && !url.password && !url.hash && url.origin === new URL(this.issuer).origin) return this.internalUrl(url.toString());
+      } catch {
+        return undefined;
+      }
+    }
+    return safeEndpoint(value);
   }
 
   private async fetchKeys(): Promise<void> {

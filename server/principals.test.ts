@@ -181,3 +181,32 @@ describe("a person the identity provider signalled out", () => {
     expect(JSON.parse(readFileSync(path, "utf8")).principals[0].disabledAt).toBeUndefined();
   });
 });
+
+describe("principals from the Perspicax directory (upsertFromDirectory)", () => {
+  const ISS = "https://px.example.test";
+  it("creates a person who never signed in, and their sign-in lands on the same principal", () => {
+    const { reg } = registry();
+    const listed = reg.upsertFromDirectory({ iss: ISS, sub: "01JBOB", name: "Bob", login: "bob", email: "Bob@Example.test", orgRole: "member" });
+    expect(listed).toMatchObject({ kind: "human", subject: { iss: ISS, sub: "01JBOB" }, name: "Bob", login: "bob", email: "bob@example.test", orgRole: "member" });
+    const signedIn = reg.forSubject({ iss: ISS, sub: "01JBOB", claims: { email: "bob@example.test", name: "Bob" }, orgRole: "member" });
+    expect(signedIn.id).toBe(listed.id);
+  });
+
+  it("updates attributes and role, and never clears disabledAt", () => {
+    const { reg } = registry();
+    const p = reg.forSubject({ iss: ISS, sub: "S2", claims: { name: "Old" }, orgRole: "admin" });
+    reg.markDisabled(ISS, "S2", 7);
+    const next = reg.upsertFromDirectory({ iss: ISS, sub: "S2", name: "New", login: "s2", email: null, orgRole: "member" });
+    expect(next).toMatchObject({ id: p.id, name: "New", login: "s2", orgRole: "member", disabledAt: 7 });
+    expect(next.email).toBeUndefined();
+  });
+
+  it("lists the people of one issuer only", () => {
+    const { reg } = registry();
+    reg.upsertFromDirectory({ iss: ISS, sub: "A", orgRole: "member" });
+    reg.upsertFromDirectory({ iss: "https://other.example.test", sub: "B", orgRole: "member" });
+    reg.localOperator();
+    expect(reg.listBySubjectIssuer(ISS).map((p) => p.subject?.sub)).toEqual(["A"]);
+    expect(() => reg.upsertFromDirectory({ iss: ISS, sub: " ", orgRole: "member" })).toThrow();
+  });
+});

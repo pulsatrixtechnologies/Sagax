@@ -48,7 +48,7 @@ import {
   resolveInjectId,
 } from "./local-inject.ts";
 import { appendNative } from "./native.ts";
-import { permissionCommand, permissionLaunchCwd } from "./permission-command.ts";
+import { permissionCommand, permissionLaunchCwd, permissionPaths } from "./permission-command.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
 import {
@@ -1583,6 +1583,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                 summary: askSummary(ask),
                 command: ask.kind === "permission" && ask.tool === "Bash"
                   ? permissionCommand(ask.input.command, commandCwd) : undefined,
+                paths: ask.kind === "permission" ? permissionPaths(ask.tool, ask.input, cwd) : undefined,
                 requiresExplicitApproval: ask.kind === "permission" && ask.tool === "Bash" && ask.input.dangerouslyDisableSandbox === true || undefined,
                 nativeReview,
                 // the proxy hands Claude its own suggested rules on `always`;

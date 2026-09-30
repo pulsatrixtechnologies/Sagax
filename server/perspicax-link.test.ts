@@ -1,0 +1,239 @@
+// The link file Perspicax writes, and the directory it opens (slice 3, PB1).
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+import { directoryIntervalMs, PerspicaxDirectory, readLinkFile, type Directory } from "./perspicax-link.ts";
+import { PrincipalRegistry } from "./principals.ts";
+
+const ISSUER = "https://px.example.test";
+const ORIGIN = "https://bot.example.test";
+const EXPECT = { issuer: ISSUER, publicOrigin: ORIGIN, clientId: "pulsa-bot" };
+const SERVER_ID = "01j9s3server0000000000000a";
+const TOKEN_A = `pxat1.${"a".repeat(43)}`;
+const TOKEN_B = `pxat1.${"b".repeat(43)}`;
+
+function linkDoc(patch: Record<string, unknown> = {}) {
+  return { version: 1, issuer: ISSUER, client_id: "pulsa-bot", server_id: SERVER_ID, origin: ORIGIN, link_token: TOKEN_A, ...patch };
+}
+
+function writeLink(path: string, doc: unknown, mode = 0o640) {
+  writeFileSync(path, typeof doc === "string" ? doc : JSON.stringify(doc));
+  chmodSync(path, mode);
+}
+
+function tempDir() {
+  return mkdtempSync(join(tmpdir(), "px-link-"));
+}
+
+describe("readLinkFile", () => {
+  it("accepts 0640 and 0600 files that match this server", () => {
+    const dir = tempDir();
+    const path = join(dir, "pulsabot.json");
+    writeLink(path, linkDoc(), 0o640);
+    expect(readLinkFile(path, EXPECT)).toMatchObject({ ok: true, link: { serverId: SERVER_ID, linkToken: TOKEN_A, clientId: "pulsa-bot" } });
+    chmodSync(path, 0o600);
+    expect(readLinkFile(path, EXPECT).ok).toBe(true);
+    // a trailing slash on the configured issuer is the same issuer
+    expect(readLinkFile(path, { ...EXPECT, issuer: `${ISSUER}/` }).ok).toBe(true);
+  });
+
+  it("refuses a file other users can read, a missing file, an oversized file", () => {
+    const dir = tempDir();
+    const path = join(dir, "pulsabot.json");
+    expect(readLinkFile(path, EXPECT)).toMatchObject({ ok: false, code: "missing" });
+    writeLink(path, linkDoc(), 0o644);
+    expect(readLinkFile(path, EXPECT)).toMatchObject({ ok: false, code: "mode" });
+    writeLink(path, JSON.stringify({ ...linkDoc(), pad: "x".repeat(5000) }), 0o600);
+    expect(readLinkFile(path, EXPECT)).toMatchObject({ ok: false, code: "size" });
+  });
+
+  it("refuses mismatched fields, extra keys and a bad token, and never echoes the token", () => {
+    const dir = tempDir();
+    const path = join(dir, "pulsabot.json");
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ issuer: "https://other.example.test" }, "mismatch"],
+      [{ origin: "https://elsewhere.example.test" }, "mismatch"],
+      [{ client_id: "other" }, "mismatch"],
+      [{ version: 2 }, "fields"],
+      [{ link_token: "pxat1.short" }, "fields"],
+      [{ link_token: "pxlo1.aaaaaaaaaaaaaaaaaaaaaaaaaaaa" }, "fields"],
+      [{ server_id: "NOT A ULID" }, "fields"],
+      [{ extra: true }, "fields"],
+    ];
+    for (const [patch, code] of cases) {
+      writeLink(path, linkDoc(patch), 0o600);
+      const read = readLinkFile(path, EXPECT);
+      expect(read, JSON.stringify(patch)).toMatchObject({ ok: false, code });
+      expect(JSON.stringify(read)).not.toContain(TOKEN_A);
+    }
+    writeLink(path, "not json", 0o600);
+    expect(readLinkFile(path, EXPECT)).toMatchObject({ ok: false, code: "json" });
+  });
+});
+
+describe("OMB_PERSPICAX_DIRECTORY_SECONDS", () => {
+  it("defaults to 300 s and takes 5 to 3600", () => {
+    expect(directoryIntervalMs(undefined)).toBe(300_000);
+    expect(directoryIntervalMs("5")).toBe(5_000);
+    expect(directoryIntervalMs("3600")).toBe(3_600_000);
+    expect(() => directoryIntervalMs("4")).toThrow();
+    expect(() => directoryIntervalMs("1.5")).toThrow();
+    expect(() => directoryIntervalMs("3601")).toThrow();
+  });
+});
+
+type Reply = { status: number; body?: unknown; etag?: string } | "hang" | "throw";
+
+function harness(initial: Directory) {
+  const dir = tempDir();
+  const linkFile = join(dir, "pulsabot.json");
+  writeLink(linkFile, linkDoc());
+  let n = 0;
+  const principals = new PrincipalRegistry({ path: join(dir, "principals.json"), newId: () => `pr_00000000-0000-4000-8000-${String(n++).padStart(12, "0")}` });
+  const out: string[] = [];
+  const narrowed: string[] = [];
+  const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+  let directory = initial;
+  let validToken = TOKEN_A;
+  const queue: Reply[] = [];
+  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+    const headers = Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>));
+    requests.push({ url: String(input), headers });
+    const next = queue.shift();
+    if (next === "throw") throw new Error("connect ECONNREFUSED");
+    if (next === "hang") {
+      return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("timed out"))));
+    }
+    if (next) return new Response(next.body === undefined ? null : JSON.stringify(next.body), { status: next.status, headers: next.etag ? { etag: next.etag } : {} });
+    if (headers.authorization !== `Bearer ${validToken}`) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+    const etag = `"${JSON.stringify(directory).length.toString(16).padStart(32, "0")}"`;
+    if (headers["if-none-match"] === etag) return new Response(null, { status: 304, headers: { etag } });
+    return new Response(JSON.stringify(directory), { status: 200, headers: { etag, "cache-control": "no-store" } });
+  }) as typeof fetch;
+  const sync = new PerspicaxDirectory({
+    issuer: ISSUER,
+    serverBase: "http://perspicax:8787",
+    linkFile,
+    expect: EXPECT,
+    principals,
+    onPersonOut: (iss, sub) => { out.push(sub); principals.markDisabled(iss, sub); },
+    onRoleNarrowed: (id) => narrowed.push(id),
+    version: "0.1.89",
+    fetch: fetcher,
+    log: () => {},
+    timeoutMs: 200,
+  });
+  return {
+    sync, principals, out, narrowed, requests, queue, linkFile,
+    setDirectory: (next: Directory) => { directory = next; },
+    rotate: (token: string) => { validToken = token; },
+  };
+}
+
+const person = (sub: string, patch: Partial<Directory["people"][number]> = {}): Directory["people"][number] => ({
+  sub, login: sub.toLowerCase(), name: sub, email: `${sub.toLowerCase()}@example.test`, role: "employee", status: "active", locale: null, ...patch,
+});
+const directoryOf = (people: Directory["people"]): Directory => ({ server_id: SERVER_ID, people, teams: [] });
+
+describe("PerspicaxDirectory", () => {
+  it("creates principals for people who never signed in and sends the link token, version and accept", async () => {
+    const h = harness(directoryOf([person("BOB"), person("ALICE", { role: "admin" })]));
+    expect(h.sync.state()).toMatchObject({ state: "missing" });
+    expect(await h.sync.refresh()).toMatchObject({ state: "ok", syncedAt: expect.any(Number) });
+    expect(h.requests[0]).toMatchObject({
+      url: "http://perspicax:8787/api/v1/pulsabot/directory",
+      headers: { authorization: `Bearer ${TOKEN_A}`, "x-pulsabot-version": "0.1.89", accept: "application/json" },
+    });
+    expect(h.principals.bySubject(ISSUER, "BOB")).toMatchObject({ name: "BOB", login: "bob", email: "bob@example.test", orgRole: "member" });
+    expect(h.principals.bySubject(ISSUER, "ALICE")?.orgRole).toBe("admin");
+    expect(h.sync.people().map((p) => p.sub)).toEqual(["BOB", "ALICE"]);
+    expect(h.sync.serverId()).toBe(SERVER_ID);
+  });
+
+  it("updates attributes, never clears disabledAt, and a 304 changes nothing", async () => {
+    const h = harness(directoryOf([person("BOB")]));
+    await h.sync.refresh();
+    h.principals.markDisabled(ISSUER, "BOB", 42);
+    h.setDirectory(directoryOf([person("BOB", { name: "Robert" })]));
+    await h.sync.refresh();
+    expect(h.principals.bySubject(ISSUER, "BOB")).toMatchObject({ name: "Robert", disabledAt: 42 });
+    const before = h.requests.length;
+    await h.sync.refresh();
+    expect(h.requests[before]?.headers["if-none-match"]).toMatch(/^"/);
+    expect(h.sync.state().state).toBe("ok");
+  });
+
+  it("logs out a disabled person and a known subject gone from the directory", async () => {
+    const h = harness(directoryOf([person("BOB"), person("DAVE"), person("ERIN")]));
+    await h.sync.refresh();
+    expect(h.out).toEqual([]);
+    h.setDirectory(directoryOf([person("BOB"), person("DAVE", { status: "disabled" })]));
+    await h.sync.refresh();
+    expect(h.out.sort()).toEqual(["DAVE", "ERIN"]);
+    // already out: not signalled again on the next poll
+    h.setDirectory(directoryOf([person("BOB"), person("DAVE", { status: "disabled", name: "D" })]));
+    await h.sync.refresh();
+    expect(h.out.sort()).toEqual(["DAVE", "ERIN"]);
+  });
+
+  it("narrows a person demoted from admin at once", async () => {
+    const h = harness(directoryOf([person("CAROL", { role: "admin" })]));
+    await h.sync.refresh();
+    h.setDirectory(directoryOf([person("CAROL", { role: "manager" })]));
+    await h.sync.refresh();
+    const carol = h.principals.bySubject(ISSUER, "CAROL")!;
+    expect(carol.orgRole).toBe("member");
+    expect(h.narrowed).toEqual([carol.id]);
+  });
+
+  it("on 401 re-reads the rotated link file and retries once", async () => {
+    const h = harness(directoryOf([person("BOB")]));
+    await h.sync.refresh();
+    h.rotate(TOKEN_B);
+    writeLink(h.linkFile, linkDoc({ link_token: TOKEN_B }));
+    expect(await h.sync.refresh()).toMatchObject({ state: "ok" });
+    const last = h.requests.at(-1)!;
+    expect(last.headers.authorization).toBe(`Bearer ${TOKEN_B}`);
+    // a token nobody rewrote stays refused
+    h.rotate(`pxat1.${"c".repeat(43)}`);
+    expect(await h.sync.refresh()).toMatchObject({ state: "error", error: "link_refused" });
+  });
+
+  it("runs one refresh at a time", async () => {
+    const h = harness(directoryOf([person("BOB")]));
+    const [a, b] = await Promise.all([h.sync.refresh(), h.sync.refresh()]);
+    expect(a).toEqual(b);
+    expect(h.requests).toHaveLength(1);
+  });
+
+  it("keeps the last good data through a timeout, a network error and a 5xx", async () => {
+    const h = harness(directoryOf([person("BOB")]));
+    await h.sync.refresh();
+    h.queue.push("hang");
+    expect(await h.sync.refresh()).toMatchObject({ state: "error", error: "unreachable", syncedAt: expect.any(Number) });
+    h.queue.push("throw");
+    expect((await h.sync.refresh()).error).toBe("unreachable");
+    h.queue.push({ status: 502, body: {} });
+    expect((await h.sync.refresh()).error).toBe("http_502");
+    expect(h.sync.people().map((p) => p.sub)).toEqual(["BOB"]);
+    expect(h.out).toEqual([]);
+  });
+
+  it("refuses a directory for another server id and a malformed body", async () => {
+    const h = harness(directoryOf([person("BOB")]));
+    h.queue.push({ status: 200, body: { ...directoryOf([]), server_id: "other" } });
+    expect((await h.sync.refresh()).error).toBe("server_mismatch");
+    h.queue.push({ status: 200, body: { people: "nope" } });
+    expect((await h.sync.refresh()).error).toBe("malformed");
+    expect(h.principals.listBySubjectIssuer(ISSUER)).toEqual([]);
+  });
+
+  it("reports a bad link file as an error and a missing one as missing", async () => {
+    const h = harness(directoryOf([]));
+    chmodSync(h.linkFile, 0o644);
+    expect(await h.sync.refresh()).toMatchObject({ state: "error", error: "link_invalid" });
+    expect(h.requests).toHaveLength(0);
+  });
+});

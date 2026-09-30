@@ -231,6 +231,41 @@ export class PrincipalRegistry {
     return { ...found };
   }
 
+  /** The person the Perspicax directory lists (slice 3): created when this
+   * subject never signed in (so they can be chosen before their first
+   * sign-in), else their name, login, address and organization role are
+   * refreshed. `disabledAt` is left alone: only a sign-in or a refresh says
+   * a person is back in. An absent attribute is dropped, as on a sign-in. */
+  upsertFromDirectory(input: { iss: string; sub: string; name?: string | null; login?: string | null; email?: string | null; orgRole: "admin" | "member" }): Principal {
+    const iss = input.iss.trim();
+    const sub = input.sub.trim();
+    if (!iss || iss.length > 2048 || !sub || sub.length > 255) throw new Error("an issuer and a subject are required");
+    const email = input.email && isAccountEmail(input.email) ? emailKey(input.email) : undefined;
+    const name = input.name?.trim().slice(0, 200) || undefined;
+    const login = input.login?.trim().slice(0, 200) || undefined;
+    let found = this.principals.find((p) => p.subject?.iss === iss && p.subject.sub === sub);
+    const created = !found;
+    if (!found) {
+      found = { id: this.newId(), kind: "human", subject: { iss, sub }, createdAt: this.now() };
+      this.principals.push(found);
+    }
+    const before = JSON.stringify(found);
+    if (email) found.email = email;
+    else delete found.email;
+    if (name) found.name = name;
+    else delete found.name;
+    if (login) found.login = login;
+    else delete found.login;
+    found.orgRole = input.orgRole;
+    if (created || JSON.stringify(found) !== before) this.persist();
+    return { ...found };
+  }
+
+  /** Every person known by a subject of this issuer. */
+  listBySubjectIssuer(iss: string): Principal[] {
+    return this.principals.filter((p) => p.subject?.iss === iss).map((p) => ({ ...p }));
+  }
+
   /** Mark the person behind this provider account as out (back-channel
    * logout). Returns the principal, or null for an unknown subject. */
   markDisabled(iss: string, sub: string, at: number = this.now()): Principal | null {

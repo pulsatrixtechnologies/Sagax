@@ -573,6 +573,26 @@ export class IdpSessionManager {
     return swept;
   }
 
+  /** Slice 3 (D10): the Perspicax directory says this person is no longer an
+   * admin. Every session of theirs keeps only what the role allows now,
+   * without waiting for a refresh; a session left with nothing ends.
+   * Widening waits for the next refresh. Returns the sessions narrowed. */
+  narrowToOrgRole(principalId: string, orgRole: "admin" | "member"): number {
+    const allowed = scopesForRole(orgRole === "admin" ? "admin" : undefined) ?? [];
+    const emptied: string[] = [];
+    let narrowed = 0;
+    for (const session of this.sessions.forPrincipal(principalId)) {
+      if (!session.idp) continue;
+      const kept = session.scopes.filter((scope) => allowed.includes(scope));
+      if (kept.length === session.scopes.length) continue;
+      narrowed += 1;
+      if (!kept.length) emptied.push(session.id);
+      else this.sessions.setScopes(session.id, kept);
+    }
+    if (emptied.length) this.sessions.revokeWhere((session) => emptied.includes(session.id));
+    return narrowed;
+  }
+
   /** D6: the provider says this person is out. */
   backchannelLogout(input: { iss: string; sub: string }): { sessions: number; pairings: number } {
     // Grants first, so the session listeners find nothing to revoke at the

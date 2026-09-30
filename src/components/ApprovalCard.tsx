@@ -184,7 +184,9 @@ export function ApprovalCard({
             <ShieldCheck size={14} className="text-accent" />
             {isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup
               ? t("approval.status.waitingConfirmation")
-              : t("approval.status.waitingAnswer")}
+              : card.adminApproval
+                ? t("approval.waitingForAdmin")
+                : t("approval.status.waitingAnswer")}
           </>
         )}
       </div>
