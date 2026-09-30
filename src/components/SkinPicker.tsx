@@ -6,7 +6,9 @@
 // drift from what picking it actually does.
 import { useState } from "react";
 import { Check } from "lucide-react";
-import { SKINS, applySkin, readSkin, type SkinId } from "@/lib/skins";
+import { applySkin, readSkin, visibleSkins, type SkinId } from "@/lib/skins";
+import { readRetroUnlocked } from "@/lib/retro98";
+import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 /**
@@ -72,13 +74,15 @@ export function SkinPicker() {
   const [active, setActive] = useState<SkinId>(
     () => (document.documentElement.dataset.skin as SkinId) || readSkin(),
   );
+  // Secret skins stay out of the list until this device has found them.
+  const [skins] = useState(() => visibleSkins(readRetroUnlocked(), active));
 
   return (
     // Cards at least 190px wide: three across at the modal's normal width,
     // so each miniature is large enough to judge and every tagline reads in
     // full. Settings scrolls on short windows.
     <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3">
-      {SKINS.map((skin) => {
+      {skins.map((skin) => {
         const selected = skin.id === active;
         return (
           <button
@@ -99,7 +103,14 @@ export function SkinPicker() {
             <Miniature skin={skin.id} />
             <div className="flex items-start gap-1.5 px-0.5 pb-0.5">
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-ink">{skin.name}</div>
+                <div className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+                  {skin.name}
+                  {skin.secret && (
+                    <span className="rounded-sm bg-accent px-1 py-px text-[10px] font-semibold uppercase tracking-wide text-accent-ink">
+                      {t("retro.skin.unlocked")}
+                    </span>
+                  )}
+                </div>
                 <div className="mt-0.5 text-[12px] leading-snug text-ink-secondary">
                   {skin.tagline}
                 </div>

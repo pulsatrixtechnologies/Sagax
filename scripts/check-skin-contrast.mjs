@@ -40,7 +40,7 @@ function parseBase(source) {
 function parseSkins(source) {
   const base = parseBase(source);
   const skins = new Map();
-  for (const [, id, body] of source.matchAll(/\[data-skin="([a-z-]+)"\]\s*\{([^}]*)\}/g)) {
+  for (const [, id, body] of source.matchAll(/\[data-skin="([a-z0-9-]+)"\]\s*\{([^}]*)\}/g)) {
     skins.set(id, { ...base, ...declarations(body) });
   }
   return skins;

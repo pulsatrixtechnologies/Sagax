@@ -1,0 +1,417 @@
+/* Hibou 98: the structural layer of the secret retro98 skin.
+
+   The palette lives in src/styles.css like every other skin. This file holds
+   what tokens cannot express: 2px bevels on buttons, fields, cards, menus and
+   dialogs; square corners; navy title bars; a teal desktop behind the
+   windows; bevelled scrollbars on a checkered track; dotted focus; pale
+   yellow tooltips. It is imported only when the skin is applied (applySkin),
+   and every selector starts with [data-skin="retro98"] so it is inert under
+   any other skin. Late-90s UI language only: no logos, no brand art, no
+   vendor fonts (a generic sans stack at 11-12px stands in for bitmap type).
+*/
+
+/* ── the desktop ───────────────────────────────────────────────────────── */
+
+[data-skin="retro98"] body {
+  background: #008080;
+  -webkit-font-smoothing: none;
+  font-size: 12px;
+}
+
+[data-skin="retro98"] [data-app-shell] > .relative {
+  gap: 6px;
+  padding: 6px;
+  background: #008080;
+}
+
+/* every corner square, except the owl and the assistant's own balloon */
+[data-skin="retro98"] :where(*:not(svg, svg *, .r98-root, .r98-root *, [data-skin]:not([data-skin="retro98"]) *)) {
+  border-radius: 0 !important;
+}
+
+[data-skin="retro98"] *:focus-visible {
+  outline: 1px dotted #000 !important;
+  outline-offset: 1px;
+}
+
+[data-skin="retro98"] ::selection {
+  background: #000080;
+  color: #fff;
+}
+
+/* ── windows: the sidebar pane and the conversation ────────────────────── */
+
+[data-skin="retro98"] [data-app-shell] aside {
+  border: 0;
+  background: #c0c0c0;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #dfdfdf,
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #fff;
+  padding: 3px;
+}
+
+/* the sidebar's top strip becomes a title bar */
+[data-skin="retro98"] [data-app-shell] aside > div:first-child {
+  min-height: 40px;
+  padding: 4px 6px;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+}
+[data-skin="retro98"] [data-app-shell] aside > div:first-child > div:first-child::after {
+  content: "Pulsa Bot";
+  margin-left: 4px;
+  color: #fff;
+  font-weight: bold;
+  white-space: nowrap;
+}
+/* window dots become small square bevelled boxes */
+[data-skin="retro98"] [data-app-shell] aside > div:first-child .size-3 {
+  width: 14px;
+  height: 12px;
+  background: #c0c0c0 !important;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #fff,
+    inset -2px -2px 0 #808080;
+}
+
+/* Explorer-style tree pane: a sunken white field holding the list */
+[data-skin="retro98"] [data-app-shell] aside > div.flex-1 {
+  margin: 4px 3px;
+  padding: 3px 2px;
+  background: #fff;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #fff,
+    inset 2px 2px 0 #000,
+    inset -2px -2px 0 #dfdfdf;
+}
+[data-skin="retro98"] [data-sidebar-bot-row] {
+  min-height: 40px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  border: 1px dotted transparent;
+}
+[data-skin="retro98"] [data-sidebar-bot-row]:hover {
+  background: transparent;
+  border-color: #808080;
+}
+[data-skin="retro98"] [data-sidebar-bot-row][aria-current] {
+  background: #000080 !important;
+  border-color: #000;
+}
+[data-skin="retro98"] [data-sidebar-bot-row][aria-current] :is(.text-ink, .text-ink-secondary, .text-ink-tertiary, span) {
+  color: #fff !important;
+}
+[data-skin="retro98"] [data-sidebar-bot-row] [data-owl] {
+  width: 28px !important;
+  height: 28px !important;
+}
+[data-skin="retro98"] [data-sidebar-bot-row] [data-owl] > svg {
+  width: 28px;
+  height: 28px;
+}
+
+[data-skin="retro98"] [data-app-shell] main {
+  background: #c0c0c0;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #dfdfdf,
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #fff;
+  padding: 3px;
+}
+/* the conversation's header strip: a navy title bar with white bold text */
+[data-skin="retro98"] [data-app-shell] main > div:first-child {
+  inset-inline: 3px;
+  top: 3px;
+  min-height: 40px;
+  padding-block: 4px;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+}
+[data-skin="retro98"] [data-app-shell] main > div:first-child > div:first-child > button.bg-elevated {
+  border: 0 !important;
+  background: transparent;
+  color: #fff;
+  font-weight: bold;
+  box-shadow: none !important;
+}
+[data-skin="retro98"] [data-app-shell] main > div:first-child > div:first-child > button * {
+  color: #fff;
+}
+[data-skin="retro98"] [data-app-shell] main > div:first-child button.size-9 {
+  width: 26px;
+  height: 24px;
+}
+/* the transcript: the window's white client area, sunken */
+[data-skin="retro98"] [data-app-shell] main > div.relative.flex-1 {
+  margin: 44px 0 0;
+  background: #fff;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #fff,
+    inset 2px 2px 0 #000,
+    inset -2px -2px 0 #dfdfdf;
+}
+[data-skin="retro98"] [data-app-shell] main > div.relative.flex-1 > div:first-child > div:first-child {
+  padding-top: 16px;
+}
+/* the composer dock sits on the silver window, not on the page colour */
+[data-skin="retro98"] [data-composer-backdrop] {
+  background: #c0c0c0;
+}
+
+/* ── controls ──────────────────────────────────────────────────────────── */
+
+/* raised: every filled button */
+[data-skin="retro98"] :is(button, [role="button"], a):is(.bg-elevated, .bg-raised, .bg-control, .bg-accent, .bg-card, .bg-danger, .border):not([data-skin]:not([data-skin="retro98"]) *) {
+  border: 0 !important;
+  background-color: #c0c0c0;
+  color: #000;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #fff,
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #dfdfdf !important;
+}
+[data-skin="retro98"] :is(button, [role="button"], a):is(.bg-elevated, .bg-raised, .bg-control, .bg-accent, .bg-card, .bg-danger, .border):not([data-skin]:not([data-skin="retro98"]) *):hover {
+  background-color: #c8c8c8;
+}
+/* pressed: the bevel inverts */
+[data-skin="retro98"] :is(button, [role="button"], a):is(.bg-elevated, .bg-raised, .bg-control, .bg-accent, .bg-card, .bg-danger, .border):not([data-skin]:not([data-skin="retro98"]) *):active,
+[data-skin="retro98"] button[aria-pressed="true"] {
+  box-shadow:
+    inset -1px -1px 0 #fff,
+    inset 1px 1px 0 #000,
+    inset -2px -2px 0 #dfdfdf,
+    inset 2px 2px 0 #808080 !important;
+}
+[data-skin="retro98"] :is(button, [role="button"]).bg-accent {
+  color: #000 !important;
+  outline: 1px solid #000;
+  outline-offset: -1px;
+}
+[data-skin="retro98"] :is(button, [role="button"]).bg-accent * {
+  color: #000;
+}
+
+/* sunken: text fields */
+[data-skin="retro98"] :is(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea, select):not(.r98-root *) {
+  border: 0 !important;
+  background-color: #fff;
+  color: #000;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #fff,
+    inset 2px 2px 0 #000,
+    inset -2px -2px 0 #dfdfdf !important;
+}
+/* the composer: a silver toolbar holding one sunken edit field, the send
+   button bevelled beside it */
+[data-skin="retro98"] [data-tour="composer"] {
+  border: 0 !important;
+  background: #c0c0c0;
+  box-shadow:
+    inset -1px -1px 0 #808080,
+    inset 1px 1px 0 #fff !important;
+}
+[data-skin="retro98"] [data-tour="composer"] .mention-editor {
+  background: #fff;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #fff,
+    inset 2px 2px 0 #000,
+    inset -2px -2px 0 #dfdfdf;
+}
+/* the mention mirror paints under the field, so the field stays clear */
+[data-skin="retro98"] [data-tour="composer"] .mention-editor textarea:not(.r98-root *) {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+[data-skin="retro98"] [data-tour="composer"] button:is([type="submit"], [aria-label^="Send"], [aria-label^="Envoyer"]) {
+  background: #c0c0c0 !important;
+  color: #000 !important;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #fff,
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #dfdfdf !important;
+}
+
+[data-skin="retro98"] input[type="checkbox"],
+[data-skin="retro98"] input[type="radio"] {
+  accent-color: #000080;
+}
+
+/* ── chat bubbles: bevelled panels ─────────────────────────────────────── */
+
+[data-skin="retro98"] .bg-card:not(button, [role="button"], a):not([data-skin]:not([data-skin="retro98"]) *) {
+  box-shadow:
+    inset -1px -1px 0 #808080,
+    inset 1px 1px 0 #fff,
+    1px 1px 0 #000;
+}
+[data-skin="retro98"] .bg-bubble-user:not([data-skin]:not([data-skin="retro98"]) *) {
+  box-shadow:
+    inset -1px -1px 0 #000030,
+    inset 1px 1px 0 #3a3ab8,
+    1px 1px 0 #000;
+}
+
+/* ── menus, popovers, dialogs ──────────────────────────────────────────── */
+
+[data-skin="retro98"] :is([role="menu"], [role="listbox"], .bg-menu):not(.r98-root *) {
+  border: 0 !important;
+  background: #c0c0c0 !important;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #dfdfdf,
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #fff,
+    2px 2px 0 #00000059 !important;
+}
+[data-skin="retro98"] :is([role="menuitem"], [role="option"], [role="menuitemcheckbox"], [role="menuitemradio"]):not(.r98-root *):is(:hover, :focus, [aria-selected="true"], [data-highlighted]) {
+  background: #000080 !important;
+  color: #fff !important;
+}
+[data-skin="retro98"] :is([role="menuitem"], [role="option"], [role="menuitemcheckbox"], [role="menuitemradio"]):not(.r98-root *):is(:hover, :focus, [aria-selected="true"], [data-highlighted]) * {
+  color: #fff !important;
+}
+
+[data-skin="retro98"] :is([role="dialog"], dialog):not(.r98-root *) {
+  border: 0 !important;
+  background-color: #c0c0c0;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #dfdfdf,
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #fff,
+    6px 6px 0 #00000040 !important;
+}
+/* a dialog's own heading reads as its title bar: the header row that holds
+   the heading when there is one, else the heading itself */
+[data-skin="retro98"] :is([role="dialog"], dialog):not(.r98-root *) :is(h1, h2):first-of-type {
+  margin: 3px 3px 8px;
+  padding: 3px 6px;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff !important;
+  font-size: 12px;
+  font-weight: bold;
+}
+[data-skin="retro98"] :is([role="dialog"], dialog):not(.r98-root *) > * > :first-child:has(:is(h1, h2)) {
+  margin: 3px 3px 0;
+  padding-block: 6px;
+  border: 0;
+  background: linear-gradient(90deg, #000080, #1084d0);
+}
+[data-skin="retro98"] :is([role="dialog"], dialog):not(.r98-root *) > * > :first-child:has(:is(h1, h2)) :is(h1, h2, p, span, div, button, svg) {
+  margin: 0;
+  padding-block: 0;
+  background: none;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+[data-skin="retro98"] :is([role="dialog"], dialog):not(.r98-root *) > * > :first-child:has(:is(h1, h2)) :is(h1, h2) {
+  font-size: 13px;
+}
+[data-skin="retro98"] dialog::backdrop {
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+[data-skin="retro98"] :where(*:not(.r98-root *)) {
+  backdrop-filter: none !important;
+}
+[data-skin="retro98"] [aria-modal="true"]:not(.r98-root *) {
+  border: 0 !important;
+}
+
+/* native and custom tooltips */
+[data-skin="retro98"] [role="tooltip"]:not(.r98-root *) {
+  border: 1px solid #000 !important;
+  background: #ffffe1 !important;
+  color: #000 !important;
+  box-shadow: none !important;
+  font-size: 11px;
+}
+
+/* hairlines become the era's grooves */
+[data-skin="retro98"] hr {
+  border: 0;
+  border-top: 1px solid #808080;
+  border-bottom: 1px solid #fff;
+}
+
+/* ── scrollbars: bevelled arrows on a checkered track ──────────────────── */
+
+[data-skin="retro98"] * {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+[data-skin="retro98"] ::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+[data-skin="retro98"] ::-webkit-scrollbar-track {
+  background: repeating-conic-gradient(#c0c0c0 0% 25%, #ffffff 0% 50%) 0 0 / 2px 2px;
+}
+[data-skin="retro98"] ::-webkit-scrollbar-thumb,
+[data-skin="retro98"] ::-webkit-scrollbar-button {
+  border-radius: 0;
+  background-color: #c0c0c0;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #dfdfdf,
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #fff;
+}
+[data-skin="retro98"] ::-webkit-scrollbar-thumb:hover {
+  background-color: #c0c0c0;
+}
+[data-skin="retro98"] ::-webkit-scrollbar-button:single-button {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+[data-skin="retro98"] ::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4' shape-rendering='crispEdges'%3E%3Cpath d='M3 0h1v1h1v1h1v1h1v1H0V3h1V2h1V1h1z'/%3E%3C/svg%3E");
+}
+[data-skin="retro98"] ::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h7v1H6v1H5v1H4v1H3V3H2V2H1V1H0z'/%3E%3C/svg%3E");
+}
+[data-skin="retro98"] ::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='7' shape-rendering='crispEdges'%3E%3Cpath d='M3 0h1v7H3V6H2V5H1V4H0V3h1V2h1V1h1z'/%3E%3C/svg%3E");
+}
+[data-skin="retro98"] ::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='7' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h1v1h1v1h1v1h1v1H3v1H2v1H1v1H0z'/%3E%3C/svg%3E");
+}
+[data-skin="retro98"] ::-webkit-scrollbar-button:single-button:active {
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #808080;
+}
+[data-skin="retro98"] ::-webkit-scrollbar-corner {
+  background: #c0c0c0;
+}
+
+/* The layer adds no motion of its own; the skin's surfaces stay still for
+   anyone who asks the OS for less. */
+@media (prefers-reduced-motion: reduce) {
+  [data-skin="retro98"] :where(*:not(.r98-root *)) {
+    transition-duration: 0s !important;
+  }
+}
+
+/* Inside your own navy bubble (and an edit opened in it) the ink turns white,
+   the way the era painted text on a selection. */
+[data-skin="retro98"] .bg-bubble-user {
+  --color-ink: #ffffff;
+  --color-ink-secondary: #d8d8ff;
+  --color-accent-text: #ffffff;
+  --color-hairline: #8080c0;
+  --color-focus: #ffffff;
+}

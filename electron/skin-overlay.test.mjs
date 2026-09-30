@@ -22,7 +22,7 @@ describe("skin overlay chrome", () => {
     // SKIN_IDS is the source of truth (src/lib/skins.ts); a skin added there
     // without a chrome entry here would leave that skin's caption buttons on
     // the previous colour — the issue #454 failure, but for a new skin.
-    const registered = [...skinIds.matchAll(/"([a-z-]+)"/g)]
+    const registered = [...skinIds.matchAll(/"([a-z0-9-]+)"/g)]
       .map(([, id]) => id)
       .filter((id) => css.includes(`[data-skin="${id}"]`));
     expect(new Set(registered)).toEqual(new Set(Object.keys(SKIN_CHROME)));
