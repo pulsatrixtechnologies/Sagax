@@ -1,0 +1,207 @@
+// Routine delegations (slice 6): the per-person grant that lets routines act
+// in their person's name while they are away. The provider is a scripted
+// stand-in; the vault and the principal store are the real ones.
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { IDP_VAULT_FILE, IdpGrantVault, isSessionGrant, type IdpRelyingParty } from "./idp-session.ts";
+import type { OidcIdentity, RefreshOutcome } from "./oidc-rp.ts";
+import { ROUTINE_CONSENT_LIFE_MS, ROUTINE_CONSENT_RENEW_MS, RoutineConsents, type RoutineConsentEnd } from "./org-routine-consent.ts";
+import { PrincipalRegistry } from "./principals.ts";
+
+const ISS = "https://px.example.test";
+const KEY = "c".repeat(64);
+let dir: string;
+let clock: number;
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "omb-rc-"));
+  clock = 1_800_000_000_000;
+});
+afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+function setup() {
+  const script: Array<RefreshOutcome | Promise<RefreshOutcome>> = [];
+  const calls: string[] = [];
+  const revoked: string[] = [];
+  let n = 0;
+  const rp: IdpRelyingParty = {
+    refresh: async (token) => {
+      calls.push(token);
+      const next = script.shift();
+      return next ?? { ok: true, refreshToken: `pxlr1.rot${++n}`, accessToken: `pxlo1.acc${n}`, expiresIn: 3600 };
+    },
+    revokeToken: async (token) => { revoked.push(token); return true; },
+  };
+  let id = 0;
+  const principals = new PrincipalRegistry({ path: join(dir, "principals.json"), now: () => clock, newId: () => `pr_00000000-0000-4000-8000-${String(++id).padStart(12, "0")}` });
+  const vault = new IdpGrantVault(dir, () => ({ kind: "key", key: Buffer.from(KEY, "hex") }));
+  const ended: Array<[string, RoutineConsentEnd]> = [];
+  const active: string[] = [];
+  const logs: string[] = [];
+  const consents = new RoutineConsents({
+    vault, rp, principals, now: () => clock, log: (line) => logs.push(line),
+    onEnded: (pid, reason) => ended.push([pid, reason]),
+    onActive: (pid) => active.push(pid),
+  });
+  const alice = principals.forSubject({ iss: ISS, sub: "A1", claims: { name: "Alice" }, orgRole: "member" });
+  const consent = (principalId = alice.id, sub = "A1", token = "pxlr1.first") =>
+    consents.create({ principalId, iss: ISS, sub, refreshToken: token, accessToken: "pxlo1.first", accessExpiresAt: clock + 3_600_000 });
+  return { consents, vault, rp, script, calls, revoked, principals, ended, active, logs, alice, consent };
+}
+
+const identity = (overrides: Partial<OidcIdentity> = {}): OidcIdentity => ({ iss: ISS, sub: "A1", name: "Alice Renamed", email: "alice@example.test", role: "employee", ...overrides } as OidcIdentity);
+
+describe("routine delegations (slice 6)", () => {
+  it("keeps one routines grant per person; a new consent replaces and revokes the previous one", async () => {
+    const { consents, vault, revoked, active, alice, consent } = setup();
+    expect(consents.status(alice.id)).toEqual({ state: "none" });
+    consent();
+    const first = vault.list();
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({ kind: "routines", principalId: alice.id, sub: "A1" });
+    expect(first[0]!.sessionId).toBeUndefined();
+    expect(isSessionGrant(first[0]!)).toBe(false);
+    clock += 1000;
+    consent(alice.id, "A1", "pxlr1.second");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(vault.list()).toHaveLength(1);
+    expect(vault.list()[0]!.refreshToken).toBe("pxlr1.second");
+    expect(revoked).toEqual(["pxlr1.first"]);
+    expect(active).toEqual([alice.id, alice.id]);
+    expect(consents.status(alice.id)).toEqual({ state: "active", consentedAt: clock, renewedAt: clock, expiresAt: clock + ROUTINE_CONSENT_LIFE_MS });
+  });
+
+  it("reuses a fresh renewal and its access token for 10 minutes, then refreshes", async () => {
+    const { consents, calls, alice, consent } = setup();
+    expect(await consents.prepare(alice.id)).toEqual({ ok: false, error: "missing" });
+    consent();
+    expect(await consents.prepare(alice.id)).toEqual({ ok: true });
+    clock += ROUTINE_CONSENT_RENEW_MS - 1;
+    expect(await consents.prepare(alice.id)).toEqual({ ok: true });
+    expect(calls).toEqual([]);
+    clock += 1;
+    expect(await consents.prepare(alice.id)).toEqual({ ok: true });
+    expect(calls).toEqual(["pxlr1.first"]);
+    expect(consents.status(alice.id)).toMatchObject({ state: "active", renewedAt: clock });
+    // the rotated token went to the vault first
+    expect(await consents.prepare(alice.id)).toEqual({ ok: true });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("refreshes once for concurrent runs of one person", async () => {
+    const { consents, calls, script, alice, consent } = setup();
+    consent();
+    clock += ROUTINE_CONSENT_RENEW_MS;
+    let release!: (value: RefreshOutcome) => void;
+    script.push(new Promise<RefreshOutcome>((resolve) => { release = resolve; }));
+    const a = consents.prepare(alice.id);
+    const b = consents.prepare(alice.id);
+    await new Promise((resolve) => setImmediate(resolve));
+    release({ ok: true, refreshToken: "pxlr1.once", accessToken: "pxlo1.once", expiresIn: 3600 });
+    expect(await Promise.all([a, b])).toEqual([{ ok: true }, { ok: true }]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("ends the delegation on a refusal and tells the routines once", async () => {
+    const { consents, vault, script, ended, alice, consent } = setup();
+    consent();
+    clock += ROUTINE_CONSENT_RENEW_MS;
+    script.push({ ok: false, kind: "rejected", error: "invalid_grant" });
+    expect(await consents.prepare(alice.id)).toEqual({ ok: false, error: "ended" });
+    expect(vault.list()).toEqual([]);
+    expect(ended).toEqual([[alice.id, "delegation_ended"]]);
+    expect(await consents.prepare(alice.id)).toEqual({ ok: false, error: "missing" });
+    expect(ended).toHaveLength(1);
+  });
+
+  it("keeps the delegation through a transient failure: the run is skipped", async () => {
+    const { consents, vault, script, ended, alice, consent, logs } = setup();
+    consent();
+    clock += ROUTINE_CONSENT_RENEW_MS;
+    script.push({ ok: false, kind: "transient", error: "HTTP 503" });
+    expect(await consents.prepare(alice.id)).toEqual({ ok: false, error: "unreachable" });
+    expect(vault.list()).toHaveLength(1);
+    expect(ended).toEqual([]);
+    expect(await consents.prepare(alice.id)).toEqual({ ok: true });
+    expect(logs.join("\n")).not.toMatch(/pxl[ro]1\./);
+  });
+
+  it("applies the refreshed claims, and ends when the role no longer signs in", async () => {
+    const { consents, script, principals, ended, alice, consent, revoked } = setup();
+    consent();
+    clock += ROUTINE_CONSENT_RENEW_MS;
+    script.push({ ok: true, refreshToken: "pxlr1.r1", accessToken: "pxlo1.a1", expiresIn: 3600, identity: identity() });
+    expect(await consents.prepare(alice.id)).toEqual({ ok: true });
+    expect(principals.byId(alice.id)?.name).toBe("Alice Renamed");
+    clock += ROUTINE_CONSENT_RENEW_MS;
+    script.push({ ok: true, refreshToken: "pxlr1.r2", accessToken: "pxlo1.a2", expiresIn: 3600, identity: identity({ role: "guest" }) });
+    expect(await consents.prepare(alice.id)).toEqual({ ok: false, error: "ended" });
+    expect(ended).toEqual([[alice.id, "delegation_ended"]]);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(revoked).toContain("pxlr1.r2");
+  });
+
+  it("reconciles with the directory: only false on a grant older than the fetch ends it", () => {
+    const { consents, vault, ended, alice, principals, consent } = setup();
+    const bob = principals.forSubject({ iss: ISS, sub: "B1", orgRole: "member" });
+    consent();
+    clock += 10_000;
+    consent(bob.id, "B1", "pxlr1.bob");
+    // bob consented 1 s after the fetch started: kept; unknown never ends
+    expect(consents.reconcile((sub) => (sub === "A1" ? undefined : false), clock - 1000)).toBe(0);
+    expect(vault.list()).toHaveLength(2);
+    expect(consents.reconcile((sub) => (sub === "A1" ? false : true), clock)).toBe(1);
+    expect(ended).toEqual([[alice.id, "delegation_ended"]]);
+    expect(consents.status(bob.id).state).toBe("active");
+  });
+
+  it("serves the delegation's access token as a token exchange subject, and refreshes after dropCache", async () => {
+    const { consents, calls, alice, consent } = setup();
+    expect(await consents.subjectToken(alice.id)).toEqual({ ok: false, error: "no_session" });
+    consent();
+    expect(await consents.subjectToken(alice.id)).toEqual({ ok: true, token: "pxlo1.first", expiresAt: clock + 3_600_000 });
+    consents.dropCache(alice.id);
+    const renewed = await consents.subjectToken(alice.id);
+    expect(renewed).toMatchObject({ ok: true, token: "pxlo1.acc1" });
+    expect(calls).toHaveLength(1);
+    // the next run still reuses the renewal
+    expect(await consents.prepare(alice.id)).toEqual({ ok: true });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("refreshes the subject when the cached token has under 10 minutes left", async () => {
+    const { consents, calls, alice } = setup();
+    consents.create({ principalId: alice.id, iss: ISS, sub: "A1", refreshToken: "pxlr1.x", accessToken: "pxlo1.short", accessExpiresAt: clock + 60_000 });
+    expect(await consents.subjectToken(alice.id)).toMatchObject({ ok: true, token: "pxlo1.acc1" });
+    expect(calls).toEqual(["pxlr1.x"]);
+  });
+
+  it("revokes from Sagax, and ends on a person out without a provider call", async () => {
+    const { consents, revoked, ended, alice, principals, consent } = setup();
+    const bob = principals.forSubject({ iss: ISS, sub: "B1", orgRole: "member" });
+    expect(consents.revoke(alice.id)).toBe(false);
+    consent();
+    consent(bob.id, "B1", "pxlr1.bob");
+    expect(consents.revoke(alice.id)).toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(revoked).toEqual(["pxlr1.first"]);
+    expect(consents.endForSubject(ISS, "B1")).toBe(1);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(revoked).toEqual(["pxlr1.first"]);
+    expect(ended).toEqual([[alice.id, "delegation_revoked"], [bob.id, "person_out"]]);
+    expect(consents.principalsWithConsent()).toEqual([]);
+  });
+
+  it("never writes a token in plain text", async () => {
+    const { consents, alice, consent } = setup();
+    consent();
+    clock += ROUTINE_CONSENT_RENEW_MS;
+    await consents.prepare(alice.id);
+    const raw = readFileSync(join(dir, IDP_VAULT_FILE), "utf8");
+    expect(raw).not.toMatch(/pxl[ro]1\./);
+    expect(JSON.stringify(consents.status(alice.id))).not.toMatch(/pxl/);
+  });
+});
