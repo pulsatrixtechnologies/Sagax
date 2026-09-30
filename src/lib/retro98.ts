@@ -173,7 +173,8 @@ export function onRetroToggle(listener: (on: boolean) => void): () => void {
   return () => window.removeEventListener(TOGGLE_EVENT, handler);
 }
 
-export type RetroSignal = "send";
+/** "send" comes from the composer; the rest from the retro menu bar. */
+export type RetroSignal = "send" | "tip" | "gallery" | "options";
 
 /** Tells the assistant something happened. Free when the mode is off. */
 export function retroSignal(kind: RetroSignal): void {

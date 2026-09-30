@@ -67,6 +67,7 @@ import {
   doubleEnterSteersQueue,
 } from "./ComposerQueuedMessages";
 import { skillAuthoringEnabled } from "@/lib/feature-flags";
+import { useRetroSkin } from "./RetroChromeHost";
 import { mentionChoicesForQuery } from "@/lib/mentions";
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
 import {
@@ -565,6 +566,7 @@ export function Composer({
   };
 
   const hasContent = Boolean(effectiveText.trim()) || attachments.length > 0;
+  const retroSkin = useRetroSkin();
   const retryFailedSend = (failed: FailedComposerSend) => {
     const failedMode = failed.channelMode ?? "chat";
     if (failed.requestText.includes("<attached-image ") && !imageTargetsSupport(failed.requestText, failedMode)) {
@@ -1186,10 +1188,11 @@ export function Composer({
         )}
         {bot && !group && <CallButton bot={bot} />}
         {group && <GroupCallButton group={group} members={members ?? []} />}
-        {hasContent && !locked && (
+        {(hasContent || retroSkin) && !locked && (
           <button
             onClick={send}
-            disabled={attachmentPending}
+            disabled={attachmentPending || !hasContent}
+            data-r98-send={retroSkin ? "" : undefined}
             aria-label={
               busy && canSteer
                   ? t("composer.send.steer")
@@ -1212,6 +1215,8 @@ export function Composer({
             )}
           >
             {busy && !canSteer ? <Clock size={15} /> : <ArrowUp size={17} />}
+            {/* Hibou 98 draws Send as a labelled push button */}
+            {retroSkin && <span className="r98-send-label">{t("chat.send")}</span>}
           </button>
           )}
           </div>

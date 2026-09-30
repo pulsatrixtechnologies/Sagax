@@ -1,28 +1,37 @@
-// Hibou 98: the owl as a late-90s desktop assistant. Loaded lazily the first
-// time the easter egg is switched on (see src/lib/retro98.ts), so none of this
-// costs anything on a device that never finds it.
+// Hibou 98: a late-90s desktop assistant. Loaded lazily the first time the
+// easter egg is switched on (see src/lib/retro98.ts), so none of this costs
+// anything on a device that never finds it.
 //
 // It recreates the era's behaviour with our own assets: an eager helper that
 // perks up and taps the glass when you write a long message, paste, switch
 // conversations or come back from a break; a balloon with a question, round
 // bullet choices and a "What would you like to do?" search; a light bulb when
 // a tip is waiting; an idle cycle that ends in a doze; a context menu, an
-// assistant gallery and an options dialog. The owl is the app's own
-// (OwlAvatar, unchanged); every word, icon and sound here is original.
+// assistant gallery and an options dialog. Trombi the paperclip is the
+// default; the app's owl and the person's own pictures can stand in instead.
+// Every word, icon and sound here is original.
+//
+// On the desktop app the assistant can also leave the window ("Detach from
+// the window"): this component stays the brain and sends a plain snapshot of
+// what to draw to a small always-on-top window (DetachedAssistant.tsx), which
+// reports clicks back.
 import "./retro-assistant.css";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { OwlAvatar, type OwlAvatarHandle } from "@/components/OwlAvatar";
-import type { OwlGaze, OwlState } from "@/lib/owl/owl-art";
-import { t } from "@/lib/i18n";
+import type { OwlGaze } from "@/lib/owl/owl-art";
+import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { onRetroSignal, setRetroEnabled } from "@/lib/retro98";
 import { useStore } from "@/state/store";
+import type { LocaleKey } from "@/locales";
 import {
   BIG_PASTE_CHARS,
   LONG_MESSAGE_CHARS,
   RANDOM_ANIMATIONS,
   RETRO_GUESSES,
   RETRO_LOOKS,
+  assistantPose,
+  characterBox,
   clampPosition,
   idlePhase,
   lookById,
@@ -36,7 +45,9 @@ import {
   type GuessKind,
   type IdlePhase,
   type RetroAnimation,
+  type RetroCharacter,
   type RetroGuess,
+  type RetroLookId,
   type RetroOptions,
   type RetroPrefs,
   type RetroTip,
@@ -45,8 +56,11 @@ import {
 import { createRetroSounds } from "./sounds";
 import { BulbIcon, Envelope, Notebook, OwlFaceIcon, Puff, TapMarks, Zzz } from "./RetroArt";
 import { Win98Button, Win98Check, Win98Window } from "./Win98";
+import { AssistantArt, useCustomArtUrls, type CustomArtUrls } from "./AssistantArt";
+import { Trombi } from "./Trombi";
+import { CUSTOM_STATES, clearCustomArt, customArtReady, loadCustomArt, saveCustomArt, type CustomArtProblem, type CustomState } from "./custom-art";
+import type { DetachedEvent, DetachedSnapshot } from "./detached-protocol";
 
-const OWL_SIZE = 96;
 const TIP_EVERY_MS = 45_000;
 const COMPOSER = '[data-tour="composer"]';
 
@@ -58,6 +72,34 @@ type Balloon =
 
 type Act = { name: RetroAnimation | "enter" | "leave" | "celebrate"; n: number };
 
+export type MenuItem = "hide" | "options" | "gallery" | "animate" | "detach" | "attach";
+
+/**
+ * The right-click menu. "Detach from the window" appears only where the
+ * desktop app can host the assistant in its own window; once detached, the
+ * same slot offers to put it back.
+ */
+export function assistantMenu(canDetach: boolean, detached: boolean): Array<{ id: MenuItem; label: LocaleKey; separator?: boolean }> {
+  const items: Array<{ id: MenuItem; label: LocaleKey; separator?: boolean }> = [
+    { id: "hide", label: "retro.menu.hide" },
+    { id: "options", label: "retro.menu.options", separator: true },
+    { id: "gallery", label: "retro.menu.choose" },
+    { id: "animate", label: "retro.menu.animate", separator: true },
+  ];
+  if (canDetach) items.push(detached ? { id: "attach", label: "retro.menu.attach", separator: true } : { id: "detach", label: "retro.menu.detach", separator: true });
+  return items;
+}
+
+/** A balloon described as data, so the page and the detached window draw the same one. */
+export interface BalloonModel {
+  tipHead?: boolean;
+  text?: string;
+  question?: string;
+  bullets: Array<{ id: string; label: string; run: () => void }>;
+  buttons: Array<{ id: string; label: string; primary?: boolean; run: () => void }>;
+  ask?: boolean;
+}
+
 export interface RetroAssistantProps {
   /** True once the mode was switched off: play the exit, then call onGone. */
   leaving?: boolean;
@@ -66,6 +108,8 @@ export interface RetroAssistantProps {
   onGone?: () => void;
   /** Tests and previews pin reduced motion; undefined follows the OS. */
   reducedMotion?: boolean;
+  /** The app language; a change re-renders every balloon string. */
+  locale?: string;
 }
 
 function useReducedMotion(forced?: boolean): boolean {
@@ -86,21 +130,32 @@ function inComposer(target: EventTarget | null): target is HTMLElement {
   return target instanceof HTMLElement && Boolean(target.closest(COMPOSER));
 }
 
-/** Where the owl perches by default: just above the composer's right end. */
+/**
+ * Where the assistant stands by default: bottom right of the conversation,
+ * just above the composer, so it never sits on a field or on the Send button.
+ */
 function perchAboveComposer(): { right: number; bottom: number } {
   const composer = typeof document === "undefined" ? null : document.querySelector(COMPOSER);
   if (!composer) return { right: 24, bottom: 120 };
   const rect = composer.getBoundingClientRect();
   return {
-    right: Math.max(8, window.innerWidth - rect.right + 6),
-    bottom: Math.max(8, window.innerHeight - rect.top + 10),
+    right: Math.max(8, window.innerWidth - rect.right + 22),
+    bottom: Math.max(8, window.innerHeight - rect.top + 6),
   };
 }
 
-export default function RetroAssistant({ leaving = false, fresh = false, onGone, reducedMotion }: RetroAssistantProps) {
+/** The assistant's accessible name and greeting follow the character. */
+function characterStrings(character: RetroCharacter): { aria: LocaleKey; welcome: LocaleKey } {
+  if (character === "owl") return { aria: "retro.aria.owl", welcome: "retro.welcome" };
+  if (character === "custom") return { aria: "retro.aria.custom", welcome: "retro.welcome.custom" };
+  return { aria: "retro.aria.trombi", welcome: "retro.welcome.trombi" };
+}
+
+export default function RetroAssistant({ leaving = false, fresh = false, onGone, reducedMotion, locale }: RetroAssistantProps) {
   const { state, dispatch } = useStore();
   const reduced = useReducedMotion(reducedMotion);
   const plan = motionPlan(reduced);
+  const language = locale ?? activeLocale();
 
   const [prefs, setPrefsState] = useState<RetroPrefs>(() => readPrefs());
   const prefsRef = useRef(prefs);
@@ -116,13 +171,14 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
   const [balloon, setBalloon] = useState<Balloon | null>(null);
   const [bulb, setBulb] = useState<RetroTip | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [dialog, setDialog] = useState<"options" | "gallery" | null>(null);
+  const [dialog, setDialog] = useState<"options" | "gallery" | "custom" | null>(null);
   const [mood, setMood] = useState<IdlePhase>("awake");
   const [act, setAct] = useState<Act | null>(null);
   const [envelopes, setEnvelopes] = useState<number[]>([]);
   const [gaze, setGaze] = useState<OwlGaze | undefined>(undefined);
   const [perch, setPerch] = useState(() => perchAboveComposer());
   const [query, setQuery] = useState("");
+  const [artVersion, setArtVersion] = useState(0);
 
   const owl = useRef<OwlAvatarHandle>(null);
   const lastActivity = useRef(Date.now());
@@ -153,8 +209,17 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
   const sounds = useMemo(() => createRetroSounds(() => prefsRef.current.options.sounds), []);
   useEffect(() => () => sounds.close(), [sounds]);
 
+  const character = prefs.character;
   const look = lookById(prefs.look);
+  const box = characterBox(character);
+  const size = Math.max(box.width, box.height);
   const position = prefs.position ?? perch;
+  const custom = useCustomArtUrls(character === "custom" || dialog === "gallery" || dialog === "custom", artVersion);
+  const names = characterStrings(character);
+
+  // The desktop app can show the assistant in its own window.
+  const bridge = typeof window === "undefined" ? undefined : window.ogb?.retroAssistant;
+  const detached = Boolean(bridge) && prefs.detached && !leaving;
 
   /* ------------------------------------------------------------ animations */
 
@@ -166,11 +231,10 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
   }, [later]);
 
   const sendEnvelope = useCallback(() => {
-    if (!plan.travel) return;
     counter.current += 1;
     const n = counter.current;
     setEnvelopes((list) => [...list, n]);
-    later(1400, () => setEnvelopes((list) => list.filter((value) => value !== n)));
+    later(plan.travel ? 3600 : 1800, () => setEnvelopes((list) => list.filter((value) => value !== n)));
   }, [later, plan.travel]);
 
   const lookAround = useCallback(() => {
@@ -192,6 +256,7 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
       case "shake":
       case "takeoff":
         owl.current?.flourish(name);
+        if (prefsRef.current.character !== "owl") play("celebrate", 1300);
         sounds.play(name === "hoot" ? "chime" : "pop");
         break;
       case "tap":
@@ -276,11 +341,15 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
     setPrefs((current) => (current.dismissed.includes(entry) ? current : { ...current, dismissed: [...current.dismissed, entry] }));
   }, [setPrefs]);
 
+  const runSearch = useCallback((text: string) => {
+    const found = searchTips(text, (tip) => t(tip.text));
+    sounds.play("click");
+    openBalloon({ kind: "results", query: text, tips: found }, null);
+  }, [openBalloon, sounds]);
+
   const search = (event: FormEvent) => {
     event.preventDefault();
-    const found = searchTips(query, (tip) => t(tip.text));
-    sounds.play("click");
-    openBalloon({ kind: "results", query, tips: found }, null);
+    runSearch(query);
   };
 
   /* -------------------------------------------------------- entrance, exit */
@@ -379,12 +448,18 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
   useEffect(
     () =>
       onRetroSignal((kind) => {
-        if (kind !== "send") return;
-        longArmed.current = true;
-        setBalloon((current) => (current?.kind === "guess" && current.guess.kind === "longMessage" ? null : current));
-        runAnimation("envelope");
+        if (kind === "send") {
+          longArmed.current = true;
+          setBalloon((current) => (current?.kind === "guess" && current.guess.kind === "longMessage" ? null : current));
+          runAnimation("envelope");
+        } else if (kind === "tip") {
+          openTip(pickTip());
+        } else if (kind === "gallery" || kind === "options") {
+          setBalloon(null);
+          setDialog(kind);
+        }
       }),
-    [runAnimation],
+    [openTip, pickTip, runAnimation],
   );
 
   // Idle cycle, the waiting tip and the perch, on one slow clock.
@@ -425,7 +500,7 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
     return () => clearInterval(again);
   }, [lookAround, mood, play, plan.travel, runAnimation]);
 
-  // Scribble while any bot works; celebrate when one finishes a reply.
+  // Think while any bot works; celebrate when one finishes a reply.
   const busyIds = state.bots.filter((bot) => bot.busy).map((bot) => bot.id).join(",");
   const previousBusy = useRef(busyIds);
   useEffect(() => {
@@ -435,7 +510,7 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
     if (before.some((id) => !now.includes(id))) {
       owl.current?.flourish("spread");
       owl.current?.play("success");
-      if (plan.travel) play("celebrate", 1200);
+      play("celebrate", plan.travel ? 2600 : 1600);
       sounds.play("chime");
     }
   }, [busyIds, play, plan.travel, sounds]);
@@ -453,18 +528,25 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
     const onResize = () => {
       setPerch(perchAboveComposer());
       if (prefsRef.current.position) {
-        const clamped = clampPosition(prefsRef.current.position, { width: window.innerWidth, height: window.innerHeight }, OWL_SIZE);
+        const clamped = clampPosition(prefsRef.current.position, { width: window.innerWidth, height: window.innerHeight }, size);
         setPrefsState((current) => ({ ...current, position: clamped }));
       }
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, []);
+  }, [size]);
 
   /* ------------------------------------------------------------------ drag */
 
   const drag = useRef<{ x: number; y: number; right: number; bottom: number; moved: boolean; id: number } | null>(null);
   const [dragPos, setDragPos] = useState<{ right: number; bottom: number } | null>(null);
+
+  const clickCharacter = useCallback(() => {
+    sounds.play("click");
+    if (balloon) setBalloon(null);
+    else if (bulb) openTip(bulb);
+    else openBalloon({ kind: "welcome" });
+  }, [balloon, bulb, openBalloon, openTip, sounds]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
@@ -478,7 +560,7 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
     const dy = event.clientY - start.y;
     if (!start.moved && Math.hypot(dx, dy) < 5) return;
     start.moved = true;
-    setDragPos(clampPosition({ right: start.right - dx, bottom: start.bottom - dy }, { width: window.innerWidth, height: window.innerHeight }, OWL_SIZE));
+    setDragPos(clampPosition({ right: start.right - dx, bottom: start.bottom - dy }, { width: window.innerWidth, height: window.innerHeight }, size));
   };
   const onPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const start = drag.current;
@@ -491,10 +573,7 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
       return;
     }
     setDragPos(null);
-    sounds.play("click");
-    if (balloon) setBalloon(null);
-    else if (bulb) openTip(bulb);
-    else openBalloon({ kind: "welcome" });
+    clickCharacter();
   };
   const onContextMenu = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -502,38 +581,159 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
     setBalloon(null);
     setMenu({ x: event.clientX, y: event.clientY });
   };
-  const onOwlKey = (event: ReactKeyboardEvent) => {
+  const onCharacterKey = (event: ReactKeyboardEvent) => {
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
       event.preventDefault();
-      const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
-      setMenu({ x: box.left, y: box.top });
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      setMenu({ x: rect.left, y: rect.top });
     }
   };
 
   const at = dragPos ?? position;
-  const owlTop = typeof window === "undefined" ? 600 : window.innerHeight - at.bottom - OWL_SIZE;
-  const balloonBelow = owlTop < 300;
+  const stageTop = typeof window === "undefined" ? 600 : window.innerHeight - at.bottom - box.height;
+  const balloonBelow = stageTop < 300;
 
   /* ---------------------------------------------------------------- render */
 
-  const owlState: OwlState = state.bots.some((bot) => bot.busy)
-    ? "working"
-    : mood === "doze"
-      ? "sleepy"
-      : "idle";
+  const busy = state.bots.some((bot) => bot.busy);
+  const pose = assistantPose({
+    act: act?.name,
+    sending: envelopes.length > 0,
+    busy,
+    mood,
+    talking: Boolean(balloon),
+  });
 
-  const bullets = (items: Array<{ key: string; label: string; onClick: () => void }>) => (
-    <ul className="r98-bullets">
-      {items.map((item) => (
-        <li key={item.key}>
-          <button type="button" onClick={() => { sounds.play("click"); item.onClick(); }}>
-            <span className="r98-dot" aria-hidden="true" />
-            <span>{item.label}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
+  const menuItems = useMemo(() => {
+    return assistantMenu(Boolean(bridge), prefs.detached).map((item) => ({ ...item, label: t(item.label) }));
+    // language changes the labels
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridge, prefs.detached, language]);
+
+  const pickMenu = useCallback((item: MenuItem) => {
+    setMenu(null);
+    sounds.play("click");
+    if (item === "hide") setRetroEnabled(false);
+    else if (item === "options") setDialog("options");
+    else if (item === "gallery") setDialog("gallery");
+    else if (item === "detach") setPrefs((current) => ({ ...current, detached: true }));
+    else if (item === "attach") setPrefs((current) => ({ ...current, detached: false }));
+    else runAnimation(RANDOM_ANIMATIONS[Math.floor(Math.random() * RANDOM_ANIMATIONS.length)]);
+  }, [runAnimation, setPrefs, sounds]);
+
+  const model: BalloonModel | null = useMemo(() => {
+    if (!balloon) return null;
+    if (balloon.kind === "welcome") {
+      return {
+        question: t(names.welcome),
+        bullets: [
+          { id: "tip", label: t("retro.welcome.tip"), run: () => openTip(pickTip()) },
+          { id: "look", label: t("retro.welcome.look"), run: () => { setBalloon(null); setDialog("gallery"); } },
+          { id: "none", label: t("retro.welcome.nothing"), run: () => setBalloon(null) },
+        ],
+        buttons: [],
+        ask: true,
+      };
+    }
+    if (balloon.kind === "tip") {
+      const tip = balloon.tip;
+      return {
+        tipHead: true,
+        text: t(tip.text),
+        question: tip.action ? t("retro.tip.showMe") : t("retro.tip.another"),
+        bullets: [],
+        buttons: [
+          { id: "yes", label: t("retro.button.yes"), primary: true, run: () => (tip.action ? runAction(tip.action) : openTip(pickTip())) },
+          { id: "no", label: t("retro.button.noThanks"), run: () => setBalloon(null) },
+          { id: "never", label: t("retro.button.never"), run: () => { dismiss(tip.id); setBalloon(null); } },
+        ],
+      };
+    }
+    if (balloon.kind === "guess") {
+      const guess = balloon.guess;
+      return {
+        question: t(guess.question),
+        bullets: [
+          { id: "help", label: t(guess.help), run: () => openTip(guess.kind === "idle" ? pickTip() : tipById(guess.tip) ?? null) },
+          { id: "skip", label: t(guess.skip), run: () => setBalloon(null) },
+          { id: "never", label: t("retro.guess.never"), run: () => { dismiss(`guess:${guess.kind}`); setBalloon(null); } },
+        ],
+        buttons: [],
+        ask: true,
+      };
+    }
+    return {
+      question: balloon.tips.length ? t("retro.results.found") : t("retro.results.none"),
+      bullets: balloon.tips.slice(0, 5).map((tip) => ({ id: `r:${tip.id}`, label: t(tip.text), run: () => openTip(tip) })),
+      buttons: [],
+      ask: true,
+    };
+    // language changes every label
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [balloon, dismiss, names.welcome, openTip, pickTip, runAction, language]);
+
+  /* ------------------------------------------------------ detached window */
+
+  const handlers = useRef({ model, click: clickCharacter, menu: pickMenu, search: runSearch, bulb: () => { if (bulb) openTip(bulb); } });
+  handlers.current = { model, click: clickCharacter, menu: pickMenu, search: runSearch, bulb: () => { if (bulb) openTip(bulb); } };
+
+  useEffect(() => {
+    if (!bridge) return;
+    void bridge.setDetached(detached).catch(() => undefined);
+  }, [bridge, detached]);
+  useEffect(() => () => void bridge?.setDetached(false).catch(() => undefined), [bridge]);
+
+  useEffect(() => {
+    if (!bridge) return;
+    const offChanged = bridge.onDetachedChanged((on) => {
+      if (!on && prefsRef.current.detached) setPrefs((current) => ({ ...current, detached: false }));
+    });
+    const offEvent = bridge.onEvent((event: DetachedEvent) => {
+      const current = handlers.current;
+      if (event.type === "click") current.click();
+      else if (event.type === "bulb") current.bulb();
+      else if (event.type === "dismiss") setBalloon(null);
+      else if (event.type === "options") { setBalloon(null); setDialog("options"); }
+      else if (event.type === "search") current.search(event.query);
+      else if (event.type === "menu") { if (MENU_IDS.has(event.id)) current.menu(event.id as MenuItem); }
+      else if (event.type === "bullet") current.model?.bullets.find((item) => item.id === event.id)?.run();
+      else if (event.type === "button") current.model?.buttons.find((item) => item.id === event.id)?.run();
+    });
+    return () => {
+      offChanged();
+      offEvent();
+    };
+  }, [bridge, setPrefs]);
+
+  const snapshot: DetachedSnapshot | null = detached
+    ? {
+        v: 1,
+        character,
+        pose,
+        reduced,
+        locale: language,
+        label: t(names.aria),
+        bulb: bulb && !balloon ? t("retro.bulb") : null,
+        look: character === "owl" ? { color: look.color, skin: look.skin } : null,
+        menu: menuItems.map((item) => ({ id: item.id, label: item.label })),
+        balloon: model
+          ? {
+              title: model.tipHead ? t("retro.tip.title") : undefined,
+              text: model.text,
+              question: model.question,
+              bullets: model.bullets.map(({ id, label }) => ({ id, label })),
+              buttons: model.buttons.map(({ id, label, primary }) => ({ id, label, ...(primary ? { default: true } : {}) })),
+              ask: model.ask ? { label: t("retro.ask.label"), placeholder: t("retro.ask.placeholder"), search: t("retro.ask.search"), options: t("retro.ask.options") } : undefined,
+            }
+          : null,
+      }
+    : null;
+  const snapshotKey = snapshot ? JSON.stringify(snapshot) : "";
+  useEffect(() => {
+    if (bridge && snapshotKey) bridge.update(JSON.parse(snapshotKey) as DetachedSnapshot);
+  }, [bridge, snapshotKey]);
+
+  /* -------------------------------------------------------- in-page view */
 
   const askBox = (autoFocus: boolean) => (
     <form className="r98-ask" onSubmit={search}>
@@ -554,111 +754,93 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
     </form>
   );
 
-  let body: React.ReactNode = null;
-  if (balloon?.kind === "welcome") {
-    body = (
-      <>
-        <p className="r98-question">{t("retro.welcome")}</p>
-        {bullets([
-          { key: "tip", label: t("retro.welcome.tip"), onClick: () => openTip(pickTip()) },
-          { key: "look", label: t("retro.welcome.look"), onClick: () => { setBalloon(null); setDialog("gallery"); } },
-          { key: "none", label: t("retro.welcome.nothing"), onClick: () => setBalloon(null) },
-        ])}
-        {askBox(true)}
-      </>
-    );
-  } else if (balloon?.kind === "tip") {
-    const tip = balloon.tip;
-    body = (
-      <>
+  const body: ReactNode = model ? (
+    <>
+      {model.tipHead && (
         <div className="r98-tip-head">
           <BulbIcon size={18} />
           <strong>{t("retro.tip.title")}</strong>
         </div>
-        <p>{t(tip.text)}</p>
-        <p className="r98-question">{tip.action ? t("retro.tip.showMe") : t("retro.tip.another")}</p>
+      )}
+      {model.text && <p>{model.text}</p>}
+      {model.question && <p className="r98-question">{model.question}</p>}
+      {model.bullets.length > 0 && (
+        <ul className="r98-bullets">
+          {model.bullets.map((item) => (
+            <li key={item.id}>
+              <button type="button" onClick={() => { sounds.play("click"); item.run(); }}>
+                <span className="r98-dot" aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {model.buttons.length > 0 && (
         <div className="r98-row r98-row-3">
-          <Win98Button className="r98-default" onClick={() => (tip.action ? runAction(tip.action) : openTip(pickTip()))}>{t("retro.button.yes")}</Win98Button>
-          <Win98Button onClick={() => setBalloon(null)}>{t("retro.button.noThanks")}</Win98Button>
-          <Win98Button onClick={() => { dismiss(tip.id); setBalloon(null); }}>{t("retro.button.never")}</Win98Button>
+          {model.buttons.map((item) => (
+            <Win98Button key={item.id} className={item.primary ? "r98-default" : undefined} onClick={item.run}>{item.label}</Win98Button>
+          ))}
         </div>
-      </>
-    );
-  } else if (balloon?.kind === "guess") {
-    const guess = balloon.guess;
-    body = (
-      <>
-        <p className="r98-question">{t(guess.question)}</p>
-        {bullets([
-          { key: "help", label: t(guess.help), onClick: () => openTip(guess.kind === "idle" ? pickTip() : tipById(guess.tip) ?? null) },
-          { key: "skip", label: t(guess.skip), onClick: () => setBalloon(null) },
-          { key: "never", label: t("retro.guess.never"), onClick: () => { dismiss(`guess:${guess.kind}`); setBalloon(null); } },
-        ])}
-        {askBox(false)}
-      </>
-    );
-  } else if (balloon?.kind === "results") {
-    body = (
-      <>
-        <p className="r98-question">{balloon.tips.length ? t("retro.results.found") : t("retro.results.none")}</p>
-        {balloon.tips.length > 0 &&
-          bullets(balloon.tips.slice(0, 5).map((tip) => ({ key: tip.id, label: t(tip.text), onClick: () => openTip(tip) })))}
-        {askBox(true)}
-      </>
-    );
-  }
+      )}
+      {model.ask && askBox(balloon?.kind !== "guess")}
+    </>
+  ) : null;
 
   return (
-    <div className="r98-root" data-reduced={reduced ? "" : undefined}>
-      <div
-        className={cn("r98-stage", act && `r98-act-${act.name}`, `r98-mood-${mood}`)}
-        style={{ right: at.right, bottom: at.bottom, width: OWL_SIZE, height: OWL_SIZE }}
-        data-retro-owl=""
-        data-mood={mood}
-      >
-        <span className="r98-floor" aria-hidden="true" />
-        {bulb && !balloon && !leaving && (
-          <button type="button" className="r98-bulb" title={t("retro.bulb")} aria-label={t("retro.bulb")} onClick={() => openTip(bulb)}>
-            <BulbIcon />
-          </button>
-        )}
-        <div className="r98-body">
-          <button
-            type="button"
-            className="r98-owl"
-            aria-label={t("retro.aria.owl")}
-            aria-haspopup="menu"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={() => { drag.current = null; setDragPos(null); }}
-            onContextMenu={onContextMenu}
-            onKeyDown={onOwlKey}
-          >
-            <OwlAvatar
-              ref={owl}
-              color={look.color}
-              skin={look.skin}
-              size={OWL_SIZE}
-              state={owlState}
-              gaze={gaze}
-              reducedMotion={reducedMotion}
-              label={null}
-            />
-          </button>
-          {owlState === "working" && <Notebook />}
-          {mood === "doze" && plan.travel && <Zzz />}
-          {act?.name === "tap" && <TapMarks />}
+    <div className="r98-root" data-reduced={reduced ? "" : undefined} lang={language}>
+      {!detached && (
+        <div
+          className={cn("r98-stage", act && `r98-act-${act.name}`, `r98-mood-${mood}`, `r98-char-${character}`)}
+          style={{ right: at.right, bottom: at.bottom, width: box.width, height: box.height }}
+          data-retro-owl=""
+          data-character={character}
+          data-pose={pose}
+          data-mood={mood}
+        >
+          <span className="r98-floor" aria-hidden="true" />
+          {bulb && !balloon && !leaving && (
+            <button type="button" className="r98-bulb" title={t("retro.bulb")} aria-label={t("retro.bulb")} onClick={() => openTip(bulb)}>
+              <BulbIcon />
+            </button>
+          )}
+          <div className="r98-body">
+            <button
+              type="button"
+              className="r98-owl"
+              aria-label={t(names.aria)}
+              aria-haspopup="menu"
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={() => { drag.current = null; setDragPos(null); }}
+              onContextMenu={onContextMenu}
+              onKeyDown={onCharacterKey}
+            >
+              <AssistantArt
+                ref={owl}
+                character={character}
+                pose={pose}
+                reduced={reduced}
+                look={{ color: look.color, skin: look.skin }}
+                gaze={gaze}
+                custom={custom}
+              />
+            </button>
+            {character === "owl" && busy && <Notebook />}
+            {character === "owl" && mood === "doze" && plan.travel && <Zzz />}
+            {act?.name === "tap" && <TapMarks />}
+          </div>
+          {character === "owl" && envelopes.map((id) => (
+            <span key={id} className="r98-envelope">
+              <Envelope />
+            </span>
+          ))}
+          {leaving && plan.exit === "puff" && <Puff />}
         </div>
-        {envelopes.map((id) => (
-          <span key={id} className="r98-envelope">
-            <Envelope />
-          </span>
-        ))}
-        {leaving && plan.exit === "puff" && <Puff />}
-      </div>
+      )}
 
-      {balloon && body && (
+      {!detached && balloon && body && (
         <div
           role="dialog"
           aria-label={t("retro.aria.balloon")}
@@ -666,7 +848,7 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
           style={
             balloonBelow
               ? { right: Math.max(8, at.right - 6), top: window.innerHeight - at.bottom + 12 }
-              : { right: Math.max(8, at.right - 6), bottom: at.bottom + OWL_SIZE + 12 }
+              : { right: Math.max(8, at.right - 6), bottom: at.bottom + box.height + 8 }
           }
         >
           <span className="r98-balloon-shade" aria-hidden="true" />
@@ -677,14 +859,7 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
         </div>
       )}
 
-      {menu && <OwlMenu at={menu} onClose={() => setMenu(null)} onPick={(item) => {
-        setMenu(null);
-        sounds.play("click");
-        if (item === "hide") setRetroEnabled(false);
-        else if (item === "options") setDialog("options");
-        else if (item === "gallery") setDialog("gallery");
-        else runAnimation(RANDOM_ANIMATIONS[Math.floor(Math.random() * RANDOM_ANIMATIONS.length)]);
-      }} />}
+      {menu && <OwlMenu at={menu} items={menuItems} onClose={() => setMenu(null)} onPick={pickMenu} />}
 
       {dialog === "options" && (
         <OptionsDialog
@@ -699,13 +874,27 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
       )}
       {dialog === "gallery" && (
         <GalleryDialog
-          current={prefs.look}
+          character={prefs.character}
+          look={prefs.look}
+          custom={custom}
           onClose={() => setDialog(null)}
-          onPick={(id) => {
-            setPrefs((current) => ({ ...current, look: id }));
+          onCustomize={() => setDialog("custom")}
+          onPick={(choice) => {
+            setPrefs((current) => ({ ...current, character: choice.character, look: choice.look ?? current.look }));
             setDialog(null);
             later(50, () => owl.current?.flourish("spread"));
             sounds.play("chime");
+          }}
+        />
+      )}
+      {dialog === "custom" && (
+        <CustomAssistantDialog
+          custom={custom}
+          onChanged={() => setArtVersion((value) => value + 1)}
+          onClose={() => setDialog("gallery")}
+          onUse={() => {
+            setPrefs((current) => ({ ...current, character: "custom" }));
+            setDialog(null);
           }}
         />
       )}
@@ -713,16 +902,10 @@ export default function RetroAssistant({ leaving = false, fresh = false, onGone,
   );
 }
 
-type MenuItem = "hide" | "options" | "gallery" | "animate";
+const MENU_IDS = new Set<string>(["hide", "options", "gallery", "animate", "detach", "attach"]);
 
-function OwlMenu({ at, onClose, onPick }: { at: { x: number; y: number }; onClose: () => void; onPick: (item: MenuItem) => void }) {
+function OwlMenu({ at, items, onClose, onPick }: { at: { x: number; y: number }; items: Array<{ id: MenuItem; label: string; separator?: boolean }>; onClose: () => void; onPick: (item: MenuItem) => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const items: Array<{ id: MenuItem; label: string; separator?: boolean }> = [
-    { id: "hide", label: t("retro.menu.hide") },
-    { id: "options", label: t("retro.menu.options"), separator: true },
-    { id: "gallery", label: t("retro.menu.choose") },
-    { id: "animate", label: t("retro.menu.animate"), separator: true },
-  ];
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
     const outside = (event: PointerEvent) => {
@@ -731,9 +914,9 @@ function OwlMenu({ at, onClose, onPick }: { at: { x: number; y: number }; onClos
     window.addEventListener("pointerdown", outside, true);
     return () => window.removeEventListener("pointerdown", outside, true);
   }, [onClose]);
-  const width = 176;
+  const width = 196;
   const left = Math.min(at.x, window.innerWidth - width - 4);
-  const top = Math.min(at.y, window.innerHeight - 110);
+  const top = Math.min(at.y, window.innerHeight - 24 * items.length - 20);
   const onKeyDown = (event: ReactKeyboardEvent) => {
     const list = [...(ref.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
     const index = list.indexOf(document.activeElement as HTMLElement);
@@ -747,7 +930,7 @@ function OwlMenu({ at, onClose, onPick }: { at: { x: number; y: number }; onClos
       {items.map((item) => (
         <div key={item.id}>
           {item.separator && <div className="r98-menu-sep" role="separator" />}
-          <button type="button" role="menuitem" className="r98-menu-item" onClick={() => onPick(item.id)}>
+          <button type="button" role="menuitem" className="r98-menu-item" data-menu-item={item.id} onClick={() => onPick(item.id)}>
             {item.label}
           </button>
         </div>
@@ -795,25 +978,67 @@ function OptionsDialog({
   );
 }
 
-function GalleryDialog({ current, onPick, onClose }: { current: string; onPick: (id: RetroPrefs["look"]) => void; onClose: () => void }) {
-  const [index, setIndex] = useState(() => Math.max(0, RETRO_LOOKS.findIndex((look) => look.id === current)));
+type GalleryEntry =
+  | { kind: "trombi" }
+  | { kind: "owl"; look: RetroLookId }
+  | { kind: "custom" };
+
+/** Trombi first, then the owl in each of its looks, then the person's own pictures. */
+export const GALLERY: readonly GalleryEntry[] = [
+  { kind: "trombi" },
+  ...RETRO_LOOKS.map((look) => ({ kind: "owl" as const, look: look.id })),
+  { kind: "custom" },
+];
+
+function galleryIndex(character: RetroCharacter, look: RetroLookId): number {
+  const index = GALLERY.findIndex((entry) => entry.kind === character && (entry.kind !== "owl" || entry.look === look));
+  return Math.max(0, index);
+}
+
+function GalleryDialog({
+  character,
+  look,
+  custom,
+  onPick,
+  onClose,
+  onCustomize,
+}: {
+  character: RetroCharacter;
+  look: RetroLookId;
+  custom: CustomArtUrls;
+  onPick: (choice: { character: RetroCharacter; look?: RetroLookId }) => void;
+  onClose: () => void;
+  onCustomize: () => void;
+}) {
+  const [index, setIndex] = useState(() => galleryIndex(character, look));
   const preview = useRef<OwlAvatarHandle>(null);
-  const look = RETRO_LOOKS[index];
+  const entry = GALLERY[index];
   const step = (delta: number) => {
-    setIndex((value) => (value + delta + RETRO_LOOKS.length) % RETRO_LOOKS.length);
+    setIndex((value) => (value + delta + GALLERY.length) % GALLERY.length);
     setTimeout(() => preview.current?.flourish("hoot"), 30);
   };
+  const owlLook = entry.kind === "owl" ? lookById(entry.look) : null;
+  const name = entry.kind === "trombi" ? t("retro.character.trombi.name") : entry.kind === "custom" ? t("retro.character.custom.name") : t(owlLook!.name);
+  const bio = entry.kind === "trombi" ? t("retro.character.trombi.bio") : entry.kind === "custom" ? t("retro.character.custom.bio") : t(owlLook!.bio);
+  const customMissing = entry.kind === "custom" && !custom.idle;
   return (
-    <Win98Window title={t("retro.gallery.title")} onClose={onClose} icon={<OwlFaceIcon />} width={380}>
+    <Win98Window title={t("retro.gallery.title")} onClose={onClose} icon={<OwlFaceIcon />} width={390}>
       <p className="r98-hint">{t("retro.gallery.intro")}</p>
       <div className="r98-gallery">
         <div className="r98-sunken r98-gallery-stage">
-          <OwlAvatar ref={preview} key={look.id} color={look.color} skin={look.skin} size={112} skinAnimated label={t(look.name)} />
+          {entry.kind === "trombi" && <Trombi pose="idle" size={92} label={name} />}
+          {owlLook && <OwlAvatar ref={preview} key={owlLook.id} color={owlLook.color} skin={owlLook.skin} size={112} skinAnimated label={name} />}
+          {entry.kind === "custom" && (custom.idle ? <img className="r98-custom-art" src={custom.idle} alt={name} width={110} height={110} /> : <span className="r98-gallery-empty">{t("retro.custom.none")}</span>)}
         </div>
         <div className="r98-gallery-text">
-          <strong className="r98-gallery-name">{t(look.name)}</strong>
-          <p>{t(look.bio)}</p>
-          <span className="r98-hint">{t("retro.gallery.count", { index: index + 1, total: RETRO_LOOKS.length })}</span>
+          <strong className="r98-gallery-name">{name}</strong>
+          <p>{bio}</p>
+          {entry.kind === "custom" && (
+            <div className="r98-row r98-row-start">
+              <Win98Button onClick={onCustomize}>{t("retro.custom.configure")}</Win98Button>
+            </div>
+          )}
+          <span className="r98-hint">{t("retro.gallery.count", { index: index + 1, total: GALLERY.length })}</span>
         </div>
       </div>
       <div className="r98-row r98-row-split">
@@ -822,9 +1047,77 @@ function GalleryDialog({ current, onPick, onClose }: { current: string; onPick: 
           <Win98Button onClick={() => step(1)}>{t("retro.button.next")}</Win98Button>
         </div>
         <div className="r98-row">
-          <Win98Button className="r98-default" onClick={() => onPick(look.id)}>{t("retro.button.ok")}</Win98Button>
+          <Win98Button
+            className="r98-default"
+            disabled={customMissing}
+            onClick={() => onPick(entry.kind === "owl" ? { character: "owl", look: entry.look } : { character: entry.kind })}
+          >
+            {t("retro.button.ok")}
+          </Win98Button>
           <Win98Button onClick={onClose}>{t("retro.button.cancel")}</Win98Button>
         </div>
+      </div>
+    </Win98Window>
+  );
+}
+
+const STATE_LABELS: Record<CustomState, LocaleKey> = {
+  idle: "retro.custom.state.idle",
+  speak: "retro.custom.state.speak",
+  think: "retro.custom.state.think",
+  sleep: "retro.custom.state.sleep",
+  celebrate: "retro.custom.state.celebrate",
+  send: "retro.custom.state.send",
+};
+
+const PROBLEMS: Record<CustomArtProblem, LocaleKey> = {
+  type: "retro.custom.problem.type",
+  size: "retro.custom.problem.size",
+  storage: "retro.custom.problem.storage",
+};
+
+/** "Custom assistant": one picture per moment, stored on this computer only. */
+function CustomAssistantDialog({ custom, onChanged, onClose, onUse }: { custom: CustomArtUrls; onChanged: () => void; onClose: () => void; onUse: () => void }) {
+  const [problem, setProblem] = useState<CustomArtProblem | null>(null);
+  const [ready, setReady] = useState(Boolean(custom.idle));
+  useEffect(() => {
+    void loadCustomArt().then((art) => setReady(customArtReady(art)));
+  }, [custom]);
+  const pick = async (state: CustomState, event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const result = await saveCustomArt(state, file);
+    setProblem(result);
+    if (!result) onChanged();
+  };
+  return (
+    <Win98Window title={t("retro.custom.title")} onClose={onClose} icon={<OwlFaceIcon />} width={400}>
+      <p className="r98-hint">{t("retro.custom.intro")}</p>
+      <fieldset className="r98-group">
+        <legend>{t("retro.custom.group")}</legend>
+        <div className="r98-custom-grid">
+          {CUSTOM_STATES.map((state) => {
+            const inputId = `r98-custom-${state}`;
+            const src = custom[state];
+            return (
+              <div key={state} className="r98-custom-row" data-custom-state={state}>
+                <span className="r98-sunken r98-custom-thumb">{src ? <img src={src} alt="" width={28} height={28} /> : null}</span>
+                <span className="r98-custom-label">{t(STATE_LABELS[state])}</span>
+                <label className="r98-btn r98-file" htmlFor={inputId}>
+                  {t("retro.custom.browse")}
+                  <input id={inputId} type="file" accept="image/png,image/gif" onChange={(event) => void pick(state, event)} />
+                </label>
+                <Win98Button disabled={!src} onClick={() => void clearCustomArt(state).then(onChanged)}>{t("retro.custom.clear")}</Win98Button>
+              </div>
+            );
+          })}
+        </div>
+      </fieldset>
+      {problem && <p className="r98-hint r98-problem" role="alert">{t(PROBLEMS[problem])}</p>}
+      <div className="r98-row">
+        <Win98Button className="r98-default" disabled={!ready} onClick={onUse}>{t("retro.custom.use")}</Win98Button>
+        <Win98Button onClick={onClose}>{t("retro.button.cancel")}</Win98Button>
       </div>
     </Win98Window>
   );

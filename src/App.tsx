@@ -28,6 +28,7 @@ import { CloudEngineSignIn } from "@/components/CloudEngineSignIn";
 import { engineReady } from "@/components/EngineLibrary";
 import { CommandPalette } from "@/components/CommandPalette";
 import { RetroAssistantHost } from "@/components/RetroAssistantHost";
+import { RetroChromeSlot } from "@/components/RetroChromeHost";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LocalVmWorkspace } from "@/components/LocalVmWorkspace";
 import { TeamMapPage } from "@/components/TeamMapPage";
@@ -253,6 +254,8 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     <div className="flex h-full flex-col" data-app-shell="">
       {/* fixed-position popup, bottom-left — outside the layout flow */}
       <UpdateBanner />
+      {/* Hibou 98 only: title bar, menus and toolbar (renders nothing otherwise) */}
+      <RetroChromeSlot slot="top" onNewBot={() => setComposeOpen((open) => !open)} />
       <div className="app-shell-row relative flex min-h-0 flex-1">
       <button
         type="button"
@@ -348,6 +351,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       <CommandPalette onOpenChange={setPaletteOpen} />
       <RetroAssistantHost />
       </div>
+      <RetroChromeSlot slot="status" />
       {/* Renderer-drawn caption buttons for the overlay-less frameless
           Windows window. Deliberately the LAST child of the shell: Blink
           resolves -webkit-app-region in DOM-walk order, so these no-drag

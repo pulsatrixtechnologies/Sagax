@@ -20,3 +20,13 @@ describe("window chrome", () => {
     expect(windowChromeOptions("linux")).toEqual({});
   });
 });
+
+describe("traffic lights per skin", () => {
+  it("moves the macOS lights into the Hibou 98 title bar and back", async () => {
+    const { trafficLightsForSkin, TRAFFIC_LIGHTS } = await import("./window-chrome.mjs");
+    expect(trafficLightsForSkin("darwin", "retro98")).toEqual({ x: 10, y: 7 });
+    expect(trafficLightsForSkin("darwin", "pulsatrix")).toEqual({ ...TRAFFIC_LIGHTS });
+    expect(trafficLightsForSkin("win32", "retro98")).toBeNull();
+    expect(trafficLightsForSkin("linux", "retro98")).toBeNull();
+  });
+});

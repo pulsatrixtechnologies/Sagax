@@ -810,7 +810,7 @@
   --color-raised-hover: #b4b4b4;
   --color-composer: #ffffff;      /* a sunken edit field */
   --color-composer-ring: #808080;
-  --color-card: #e4e4e4;          /* a bot's reply, a bevelled panel */
+  --color-card: #c0c0c0;          /* a group box on the silver chrome */
   --color-menu: #c0c0c0;
   --color-inset: #ffffff;
   --color-control: #d4d0c8;
@@ -824,19 +824,19 @@
   --color-accent-text: #000080;
   --color-focus: #000000;
   --color-accent-ink: #ffffff;
-  --color-bubble-user: #000080;
-  --color-bubble-user-ink: #ffffff;
+  --color-bubble-user: #ffffff;    /* the log has no bubbles: plain rows */
+  --color-bubble-user-ink: #000000;
 
-  --color-success: #006400;
+  --color-success: #005000;
   --color-danger: #a00000;
   --color-danger-ink: #ffffff;
   --color-success-ink: #ffffff;
-  --color-warning: #705000;
+  --color-warning: #5a4000;
   --color-scrollbar: #808080;
   --color-maus-line: #3c3c3c;
   --app-glow: none;
 
-  --font-sans: Geneva, "Liberation Sans", "Nimbus Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-sans: Tahoma, Verdana, Geneva, sans-serif;
   --radius-lg: 0px;
   --radius-xl: 0px;
   color-scheme: light;

@@ -2,6 +2,7 @@
 // Per-bot settings (persona, model, computer) live in BotSettingsDialog — this
 // is the stuff shared by every bot: who you are, your keys, and the
 // machine your bots can borrow.
+import { useRetroSkin } from "./RetroChromeHost";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Archive, Coins, FlaskConical, KeyRound, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
@@ -754,6 +755,7 @@ function DiagnosticsRow() {
 
 export function SettingsModal() {
   const { state, dispatch } = useStore();
+  const retroSkin = useRetroSkin();
   const remoteActive = window.ogb?.remoteClient?.active === true;
   const section: AppSettingsSection =
     (remoteActive && !["appearance", "organization"].includes(state.appSettingsSection)) || state.appSettingsSection === "remote"
@@ -1088,6 +1090,15 @@ export function SettingsModal() {
             {section === "workspaces" && <WorkspacesSection />}
             </div>
           </div>
+          {/* Hibou 98 only: the era's dialog footer. Settings save as you go,
+              so OK simply closes, like the other skins' close box. */}
+          {retroSkin && (
+            <div className="r98-dialog-footer">
+              <button type="button" className="r98-dialog-ok" onClick={() => dispatch({ type: "toggleAppSettings", open: false })}>
+                {t("retro.button.ok")}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -112,6 +112,8 @@ const __BASE_VERSION__: string;
   }
 
   interface Window {
+    /** Only in the detached Hibou 98 assistant window (electron/retro-assistant-preload.cjs). */
+    retroAssistantWindow?: import("../components/retro-assistant/detached-protocol").AssistantWindowBridge;
     ogb?: {
       platform: NodeJS.Platform;
       /** Desktop only: true once when the main process handed this exact
@@ -232,6 +234,13 @@ const __BASE_VERSION__: string;
       openExternal?(url: string): Promise<boolean>;
       /** Recolor the native window chrome for a skin; absent on older builds. */
       applySkin?(skin: string): Promise<boolean>;
+      /** Hibou 98: the assistant in its own always-on-top window (local desktop page only). */
+      retroAssistant?: {
+        setDetached(on: boolean): Promise<boolean>;
+        update(snapshot: import("../components/retro-assistant/detached-protocol").DetachedSnapshot): void;
+        onEvent(cb: (event: import("../components/retro-assistant/detached-protocol").DetachedEvent) => void): () => void;
+        onDetachedChanged(cb: (on: boolean) => void): () => void;
+      };
       /** The renderer-drawn Windows caption buttons; absent outside the
        * frameless Windows shell (macOS/Linux/browser keep native chrome). */
       windowControls?: {

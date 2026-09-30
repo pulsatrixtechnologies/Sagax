@@ -1,0 +1,105 @@
+/* Trombi's motion, one set of keyframes per pose. Scoped to .r98-trombi and
+   loaded with the lazy assistant chunk. Every pose also has a still frame
+   (.r98t-still, or the OS reduced-motion setting) that reads on its own. */
+
+.r98-trombi {
+  display: block;
+  overflow: visible;
+}
+.r98-trombi :is(.r98t-body, .r98t-eye, .r98t-brow, .r98t-brows, .r98t-pupil, .r98t-spark, .r98t-dot, .r98t-z, .r98t-sheet, .r98t-envelope) {
+  transform-box: fill-box;
+}
+.r98-trombi .r98t-body {
+  transform-origin: 50% 100%;
+}
+.r98-trombi .r98t-eye {
+  transform-origin: 50% 50%;
+}
+.r98-trombi :is(.r98t-brow, .r98t-brows) {
+  transform-origin: 50% 100%;
+}
+
+@keyframes r98t-sway { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2.2deg); } }
+@keyframes r98t-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.08); } }
+@keyframes r98t-brow-pop { 0%, 70%, 100% { transform: translateY(0); } 78% { transform: translateY(-5px); } 86% { transform: translateY(0); } }
+@keyframes r98t-look-up { 0%, 100% { transform: translate(5px, -8px); } 50% { transform: translate(1px, -9px); } }
+@keyframes r98t-dots { 0%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+@keyframes r98t-scan { 0%, 18% { transform: translate(-6px, 3px); } 30%, 55% { transform: translate(6px, 3px); } 68%, 82% { transform: translate(0, -2px); } 100% { transform: translate(-6px, 3px); } }
+@keyframes r98t-lean { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes r98t-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.015, 0.985); } }
+@keyframes r98t-zz { 0% { transform: translate(0, 8px); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(10px, -14px); opacity: 0; } }
+@keyframes r98t-bounce {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  10% { transform: translateY(0) scale(1.06, 0.92); }
+  35% { transform: translateY(-34px) scale(0.97, 1.04) rotate(-3deg); }
+  55% { transform: translateY(-34px) scale(0.97, 1.04) rotate(3deg); }
+  80% { transform: translateY(0) scale(1.05, 0.94); }
+  90% { transform: translateY(0) scale(1, 1); }
+}
+@keyframes r98t-spark { 0%, 100% { transform: scale(0.3) rotate(0); opacity: 0; } 30% { opacity: 1; } 50% { transform: scale(1.15) rotate(45deg); opacity: 1; } 80% { opacity: 0; } }
+@keyframes r98t-brow-up { 0%, 100% { transform: translateY(0); } 35%, 55% { transform: translateY(-6px); } }
+@keyframes r98t-throw { 0%, 30% { transform: rotate(0); } 42% { transform: rotate(-7deg); } 52% { transform: rotate(6deg); } 64%, 100% { transform: rotate(0); } }
+@keyframes r98t-fold { 0% { transform: scale(1, 1); opacity: 1; } 25% { transform: scale(1, 0.25); opacity: 1; } 28%, 100% { transform: scale(1, 0.25); opacity: 0; } }
+@keyframes r98t-fly {
+  0%, 24% { transform: translate(0, 0) rotate(0) scale(0.6); opacity: 0; }
+  30% { transform: translate(0, 0) rotate(0) scale(1); opacity: 1; }
+  46% { transform: translate(-4px, 2px) rotate(-6deg) scale(1); opacity: 1; }
+  80% { transform: translate(160px, -240px) rotate(28deg) scale(0.45); opacity: 1; }
+  86%, 100% { transform: translate(170px, -260px) rotate(30deg) scale(0.4); opacity: 0; }
+}
+@keyframes r98t-speed { 0%, 46% { opacity: 0; } 52%, 70% { opacity: 1; } 76%, 100% { opacity: 0; } }
+@keyframes r98t-follow { 0%, 40% { transform: translate(7px, 4px); } 60%, 100% { transform: translate(9px, -9px); } }
+
+.r98t-pose-idle .r98t-body { animation: r98t-sway 4.5s ease-in-out infinite; }
+.r98t-pose-idle .r98t-eye { animation: r98t-blink 4s infinite; }
+.r98t-pose-speak .r98t-body { animation: r98t-sway 5s ease-in-out infinite; }
+.r98t-pose-speak .r98t-eye { animation: r98t-blink 3.4s infinite; }
+.r98t-pose-speak .r98t-brows { animation: r98t-brow-pop 2.2s ease-in-out infinite; }
+.r98t-pose-think .r98t-pupil { animation: r98t-look-up 3s ease-in-out infinite; }
+.r98t-pose-think .r98t-eye { animation: r98t-blink 5s 1s infinite; }
+.r98t-pose-think .r98t-dot { animation: r98t-dots 1.5s infinite; }
+.r98t-pose-think .r98t-d2 { animation-delay: 0.25s; }
+.r98t-pose-think .r98t-d3 { animation-delay: 0.5s; }
+.r98t-pose-bored .r98t-pupil { animation: r98t-scan 5s ease-in-out infinite; }
+.r98t-pose-bored .r98t-body { animation: r98t-lean 5s ease-in-out infinite; }
+.r98t-pose-sleep .r98t-body { animation: r98t-breathe 3.2s ease-in-out infinite; }
+.r98t-pose-sleep .r98t-z { animation: r98t-zz 3s linear infinite; }
+.r98t-pose-sleep .r98t-z2 { animation-delay: 1s; }
+.r98t-pose-sleep .r98t-z3 { animation-delay: 2s; }
+.r98t-pose-celebrate .r98t-body { animation: r98t-bounce 1.3s cubic-bezier(0.3, 0.7, 0.4, 1) infinite; }
+.r98t-pose-celebrate .r98t-brows { animation: r98t-brow-up 1.3s ease-in-out infinite; }
+.r98t-pose-celebrate .r98t-spark { transform-origin: 50% 50%; animation: r98t-spark 1.3s ease-out infinite; }
+.r98t-pose-celebrate .r98t-s2 { animation-delay: 0.3s; }
+.r98t-pose-celebrate .r98t-s3 { animation-delay: 0.6s; }
+.r98t-pose-celebrate .r98t-s4 { animation-delay: 0.9s; }
+.r98t-pose-celebrate .r98t-s5 { animation-delay: 0.15s; }
+.r98t-pose-send .r98t-body { animation: r98t-throw 3.6s ease-in-out infinite; }
+.r98t-pose-send .r98t-sheet { transform-origin: 50% 100%; animation: r98t-fold 3.6s ease-in infinite; }
+.r98t-pose-send .r98t-envelope { transform-origin: 50% 50%; animation: r98t-fly 3.6s cubic-bezier(0.5, 0, 0.7, 1) infinite; }
+.r98t-pose-send .r98t-speed { animation: r98t-speed 3.6s infinite; }
+.r98t-pose-send .r98t-pupil { animation: r98t-follow 3.6s ease-in-out infinite; }
+
+/* Still frames: every pose still reads without motion. */
+.r98-trombi.r98t-still,
+.r98-trombi.r98t-still * {
+  animation: none !important;
+}
+.r98-trombi.r98t-still.r98t-pose-celebrate .r98t-body {
+  transform: translateY(-10px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .r98-trombi,
+  .r98-trombi * {
+    animation: none !important;
+  }
+  .r98-trombi.r98t-pose-celebrate .r98t-body {
+    transform: translateY(-10px);
+  }
+}
+
+/* The custom assistant: the person's own pictures, one per state. */
+.r98-custom-art {
+  display: block;
+  object-fit: contain;
+  image-rendering: auto;
+}
