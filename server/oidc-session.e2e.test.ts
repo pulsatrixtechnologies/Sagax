@@ -10,12 +10,14 @@
 //   S2-7  the desktop return link redeems once into a person-bound cookie session
 //   S2-8  the phone return link redeems into a bearer that a back-channel
 //         logout ends by principal
-//   plus: a provider refusing the refresh ends the session; a member pairs
-//   their own device, never wider than themselves.
+//   plus: a provider refusing the refresh ends the session and, with no
+//   back-channel push at all, every device the person paired (T8); a member
+//   pairs their own device, never wider than themselves (D13).
 //
 // OMB_OIDC_REFRESH_AFTER_SECONDS=1 makes every grant due after a second.
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -40,6 +42,15 @@ let child: ChildProcess;
 let home: string;
 let log = "";
 let idp: FakeOidcProvider;
+/** The per-launch secret `openmausbot serve` hands its server on stdin. */
+const CLI_OWNER = "cli-owner-token-0123456789abcdefghijklmnopq";
+/** A device paired before this server joined the organization: a session with no person. */
+const LEGACY_BEARER = "omb_sess_legacy-device-paired-before-the-organization-0001";
+/** A session as the server keeps it (sessions.json): the person behind it. */
+const storedSession = (id: string): { principalId?: string; scopes: string[] } | undefined => {
+  const doc = JSON.parse(readFileSync(join(home, ".openmausbot", "sessions.json"), "utf8")) as { sessions?: Array<{ id: string; principalId?: string; scopes: string[] }> };
+  return doc.sessions?.find((s) => s.id === id);
+};
 
 type Auth = { cookie?: string; bearer?: string };
 const api = async (method: string, path: string, auth?: Auth, body?: unknown): Promise<{ status: number; body: any; headers: Headers }> => {
@@ -116,9 +127,11 @@ async function start() {
       OMB_PERSPICAX_ISSUER: idp.issuer,
       OMB_PUBLIC_URL: BASE,
       OMB_OIDC_REFRESH_AFTER_SECONDS: "1",
+      OMB_CLI_OWNER_STDIN: "1",
     },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
+  child.stdin!.write(`${CLI_OWNER}\n`);
   child.stdout!.on("data", (c) => (log += c));
   child.stderr!.on("data", (c) => (log += c));
   const deadline = Date.now() + 20_000;
@@ -142,6 +155,12 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
     home = mkdtempSync(join(tmpdir(), "omb-oidc-session-"));
     const data = join(home, ".openmausbot");
     mkdirSync(data, { recursive: true });
+    const now = Date.now();
+    writeFileSync(join(data, "sessions.json"), JSON.stringify({ version: 1, sessions: [{
+      id: "sess_legacy_device", tokenHash: createHash("sha256").update(LEGACY_BEARER).digest("hex"), label: "Old phone",
+      // a chat-only code: the boot migration binds only admin devices to the local operator
+      scopes: ["client"], createdAt: now, lastSeenAt: now, expiresAt: now + 24 * 60 * 60_000,
+    }] }), { mode: 0o600 });
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: { grok: { driver: "grokAgent", config: { cli: FAKE_CLI, fullAuto: false } } },
     }));
@@ -233,6 +252,79 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
       expect(refused).toBe(true);
     } finally {
       idp.enable(BOB.sub);
+    }
+  });
+
+  it("T8 fallback: a refused refresh ends the devices a member paired, even when the back-channel push never arrived", async () => {
+    const bob = await signIn(BOB);
+    const code = await api("POST", "/api/auth/pairing", bob, { label: "Bob's phone" });
+    expect(code.status, JSON.stringify(code.body)).toBe(200);
+    const phone = await api("POST", "/api/pair", undefined, { credential: code.body.credential, deviceName: "Bob's phone", pairRequestId: "pair-request-t8-1" });
+    expect(phone.status).toBe(200);
+    const bearer = phone.body.token as string;
+    // and a device that phone paired in turn
+    const code2 = await api("POST", "/api/auth/pairing", { bearer }, { label: "Bob's tablet" });
+    const tablet = await api("POST", "/api/pair", undefined, { credential: code2.body.credential, deviceName: "Bob's tablet", pairRequestId: "pair-request-t8-2" });
+    expect(tablet.status).toBe(200);
+    const pending = await api("POST", "/api/auth/pairing", bob, { label: "later" });
+    expect(pending.status).toBe(200);
+    // Perspicax disables Bob, but the push is lost (Pulsa Bot was restarting)
+    idp.disable(BOB.sub);
+    try {
+      await sleep(1_100);
+      await api("GET", "/api/auth/session", bob);
+      expect(await waitFor(async () => (await api("GET", "/api/auth/session", bob)).status === 401)).toBe(true);
+      expect((await api("GET", "/api/auth/session", { bearer })).status).toBe(401);
+      expect((await api("GET", "/api/auth/session", { bearer: tablet.body.token })).status).toBe(401);
+      expect((await api("POST", "/api/pair", undefined, { credential: pending.body.credential, deviceName: "late" })).status).not.toBe(200);
+    } finally {
+      idp.enable(BOB.sub);
+    }
+  });
+
+  it("D13: a member pairs only their own devices, never wider than themselves", async () => {
+    const dave = await signIn(DAVE);
+    const me = (await api("GET", "/api/auth/session", dave)).body;
+    expect(me).toMatchObject({ scopes: ["client"] });
+    // asking for admin alone is refused, never an admin code
+    const admin = await api("POST", "/api/auth/pairing", dave, { scopes: ["admin"], label: "x" });
+    expect(admin.status).toBe(403);
+    expect(admin.body).toMatchObject({ code: "scope_exceeds_session" });
+    expect(admin.body.credential).toBeUndefined();
+    // no scopes in the body: a client code bound to Dave
+    const plain = await api("POST", "/api/auth/pairing", dave, { label: "Dave's phone" });
+    expect(plain.status, JSON.stringify(plain.body)).toBe(200);
+    const phone = await api("POST", "/api/pair", undefined, { credential: plain.body.credential, deviceName: "Dave's phone", pairRequestId: "pair-request-d13-1" });
+    expect(phone.status).toBe(200);
+    const phoneSession = (await api("GET", "/api/auth/session", { bearer: phone.body.token })).body;
+    expect(phoneSession.scopes).toEqual(["client"]);
+    expect(storedSession(phoneSession.id)).toMatchObject({ principalId: me.principalId, scopes: ["client"] });
+    // a wider request is clamped to what Dave holds
+    const wide = await api("POST", "/api/auth/pairing", dave, { scopes: ["admin", "client"] });
+    expect(wide.status).toBe(200);
+    const tablet = await api("POST", "/api/pair", undefined, { credential: wide.body.credential, deviceName: "Dave's tablet", pairRequestId: "pair-request-d13-2" });
+    const tabletSession = (await api("GET", "/api/auth/session", { bearer: tablet.body.token })).body;
+    expect(tabletSession.scopes).toEqual(["client"]);
+    expect(storedSession(tabletSession.id)).toMatchObject({ principalId: me.principalId, scopes: ["client"] });
+    // an admin gets an admin code bound to her
+    const alice = await signIn(ALICE);
+    const aliceMe = (await api("GET", "/api/auth/session", alice)).body;
+    const adminCode = await api("POST", "/api/auth/pairing", alice, { scopes: ["admin", "client"] });
+    expect(adminCode.status).toBe(200);
+    const aliceDevice = await api("POST", "/api/pair", undefined, { credential: adminCode.body.credential, deviceName: "Alice's phone", pairRequestId: "pair-request-d13-3" });
+    const aliceDeviceSession = (await api("GET", "/api/auth/session", { bearer: aliceDevice.body.token })).body;
+    expect(aliceDeviceSession.scopes).toEqual(["admin", "client"]);
+    expect(storedSession(aliceDeviceSession.id)).toMatchObject({ principalId: aliceMe.principalId });
+  });
+
+  it("D13: a session without a person cannot pair a device on an organization server", async () => {
+    // a device paired before the server joined the organization: no person behind it
+    expect(storedSession("sess_legacy_device")?.principalId).toBeUndefined();
+    for (const scopes of [["client"], ["admin", "client"], undefined]) {
+      const refused = await api("POST", "/api/auth/pairing", { bearer: LEGACY_BEARER }, scopes ? { scopes } : {});
+      expect(refused.status).toBe(403);
+      expect(refused.body).toMatchObject({ code: "principal_required" });
+      expect(refused.body.credential).toBeUndefined();
     }
   });
 

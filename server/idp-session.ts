@@ -8,8 +8,10 @@
 //     (idp-grants.enc, key from OMB_IDP_VAULT_KEY, OMB_IDP_VAULT_KEY_FILE or
 //     a 0600 idp-grants.key), never in sessions.json, never logged;
 //   - on use, at most every OMB_OIDC_REFRESH_AFTER_SECONDS, the grant is
-//     refreshed in the background (one flight per grant): a refusal revokes
-//     the session, a transient failure keeps it and retries a minute later,
+//     refreshed in the background (one flight per grant): a refusal puts the
+//     person out like a back-channel logout that never arrived (every session
+//     and paired device of theirs ends), a transient failure keeps the
+//     session and retries a minute later,
 //     and a provider unreachable for 24 hours ends it;
 //   - a refresh carries the current role: the session's scopes follow it,
 //     and the person's other sessions can only narrow;
@@ -368,7 +370,7 @@ export class IdpSessionManager {
     }
     if (!current) return;
     if (outcome.kind === "rejected") {
-      this.endGrant(ref, outcome.error);
+      this.endGrant(ref, outcome.error, { personOut: true });
       return;
     }
     const now = this.now();
@@ -385,7 +387,7 @@ export class IdpSessionManager {
     const scopes = scopesForRole(identity.role);
     const orgRole = orgRoleForRole(identity.role);
     if (!scopes || !orgRole) {
-      this.endGrant(grant.grantRef, "the role no longer signs in");
+      this.endGrant(grant.grantRef, "the role no longer signs in", { personOut: true });
       return;
     }
     const principal = this.principals.forSubject({
@@ -410,12 +412,52 @@ export class IdpSessionManager {
     // A grant not yet bound to a session: its pairing sessions follow on exchange.
   }
 
-  /** The provider refused the grant: drop it (no revoke call: it is dead)
-   * and revoke every session standing on it. */
-  private endGrant(ref: string, why: string): void {
+  /** Drop a grant (no revoke call: it is dead or unkept) and revoke every
+   * session standing on it. With `personOut` (the provider refused it), the
+   * person is out, as after a back-channel logout that never arrived (T8):
+   * every session of the subject or its principal ends, including devices
+   * paired from a session, which have no grant of their own; open pairing
+   * codes are cancelled; the person is marked out until the next successful
+   * sign-in or refresh. The other grants go with their sessions and are
+   * revoked at the provider, which may still hold them. */
+  private endGrant(ref: string, why: string, options: { personOut?: boolean } = {}): void {
+    let grant: IdpGrant | undefined;
+    try {
+      grant = this.vault.get(ref);
+    } catch {
+      grant = undefined;
+    }
     this.safeDelete(ref);
-    const revoked = this.sessions.revokeWhere((session) => session.idp?.grantRef === ref);
-    this.log(`idp: a grant ended (${why}); ${revoked.length} session(s) revoked`);
+    const principal = options.personOut && grant ? this.principals.bySubject(grant.iss, grant.sub) : null;
+    const subject = options.personOut && grant ? { iss: grant.iss, sub: grant.sub } : null;
+    const revoked = this.sessions.revokeWhere((session) =>
+      session.idp?.grantRef === ref ||
+      (subject !== null && session.idp?.iss === subject.iss && session.idp.sub === subject.sub) ||
+      (principal !== null && session.principalId === principal.id));
+    let pairings = 0;
+    if (subject) {
+      for (const other of this.safeList()) {
+        // An unbound grant (a native sign-in waiting for its exchange) has no
+        // session to release it: revoke it here.
+        if (other.iss === subject.iss && other.sub === subject.sub && !other.sessionId) {
+          this.safeDelete(other.grantRef);
+          this.revokeAtProvider(other, "person out");
+        }
+      }
+      if (principal) {
+        pairings = this.sessions.cancelPairingsFor(principal.id);
+        this.principals.markDisabled(subject.iss, subject.sub, this.now());
+      }
+    }
+    this.log(`idp: a grant ended (${why}); ${revoked.length} session(s) revoked${subject ? `, ${pairings} pairing code(s) cancelled, person marked out` : ""}`);
+  }
+
+  private safeList(): IdpGrant[] {
+    try {
+      return this.vault.list();
+    } catch {
+      return [];
+    }
   }
 
   /** D5: a session ended; its grant goes with it. */

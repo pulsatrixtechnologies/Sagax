@@ -569,7 +569,10 @@ What changes:
   session is used and its grant was last refreshed more than
   `OMB_OIDC_REFRESH_AFTER_SECONDS` ago (default 3000, at most 3000), the
   server refreshes it in the background. Perspicax refusing the refresh (the
-  person was disabled or deleted, the grant revoked) ends the session. A
+  person was disabled or deleted, the grant revoked) puts the person out as a
+  back-channel logout would, in case that push was lost: every session of
+  theirs ends, including the devices they paired with a code, their pairing
+  codes are cancelled, and they must sign in again. A
   Perspicax that cannot be reached keeps the session and retries a minute
   later; after 24 hours without a successful refresh the session ends with
   `401 {code: "idp_unreachable"}`. A refresh carries the current role: a
@@ -608,7 +611,9 @@ What changes:
   `openmausbot://` links (`/auth/oidc/start?client=desktop` ends on
   `openmausbot://auth?origin=...#code=...`, a two-minute, single-use pairing
   credential bound to the person), else in a small window of its own (no
-  preload, same cookie jar). The phone apps offer **Sign in with Pulsatrix**
+  preload, same cookie jar). Only the app redeems that credential without a
+  click: `/pair#code=...&auto=1` opened in an ordinary browser shows the code
+  form. The phone apps offer **Sign in with Pulsatrix**
   for such a server: `?client=phone` ends on the same
   `openmausbot://pair?address=...&token=...` link a pairing QR code carries.
   A signed-in member may also open a pairing code for their own device; the

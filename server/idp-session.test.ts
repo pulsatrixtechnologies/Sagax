@@ -161,6 +161,47 @@ describe("refresh on use", () => {
     expect(sessions.byId(b.sessionId)).not.toBeNull();
   });
 
+  it("a rejected refresh puts the person out: their paired devices, other sign-ins and open codes end, even without a back-channel push", async () => {
+    const { manager, provider, vault, signIn, sessions, principals } = setup({ refreshAfterMs: 1000 });
+    const bob = signIn("B1");
+    clock += 1;
+    const bobWeb2 = signIn("B1");
+    const otherToken = vault.get(bobWeb2.grantRef)!.refreshToken;
+    // a phone Bob paired himself from the web: principal-bound, no grant of its own
+    const phone = sessions.issue({ label: "phone", scopes: ["client"], principalId: bob.principal.id });
+    sessions.openPairing({ principalId: bob.principal.id, scopes: ["client"] });
+    const alice = signIn("A1", "admin");
+    clock += 1000;
+    provider.script.push({ ok: false, kind: "rejected", error: "invalid_grant" });
+    manager.touch(bob.record()!);
+    await manager.settled();
+    for (const id of [bob.sessionId, bobWeb2.sessionId, phone.session.id]) expect(sessions.byId(id)).toBeNull();
+    expect(vault.get(bob.grantRef)).toBeUndefined();
+    expect(vault.get(bobWeb2.grantRef)).toBeUndefined();
+    expect(sessions.openPairings()).toHaveLength(0);
+    expect(principals.byId(bob.principal.id)?.disabledAt).toBe(clock);
+    await new Promise((resolve) => setImmediate(resolve));
+    // the rejected grant is dead; the other one may still be live at the provider
+    expect(provider.revoked).toEqual([otherToken]);
+    expect(sessions.byId(alice.sessionId)).not.toBeNull();
+    expect(principals.byId(alice.principal.id)?.disabledAt).toBeUndefined();
+  });
+
+  it("a rotated grant that cannot be kept ends only its own session, not the person", async () => {
+    const { manager, vault, signIn, sessions, principals } = setup({ refreshAfterMs: 1000 });
+    const bob = signIn("B1");
+    const phone = sessions.issue({ label: "phone", scopes: ["client"], principalId: bob.principal.id });
+    clock += 1000;
+    const set = vault.set.bind(vault);
+    vault.set = () => { throw new Error("disk full"); };
+    manager.touch(bob.record()!);
+    await manager.settled();
+    vault.set = set;
+    expect(sessions.byId(bob.sessionId)).toBeNull();
+    expect(sessions.byId(phone.session.id)).not.toBeNull();
+    expect(principals.byId(bob.principal.id)?.disabledAt).toBeUndefined();
+  });
+
   it("keeps the session on a transient failure, waits a minute, and ends it after 24 hours without success", async () => {
     const { manager, provider, vault, signIn, sessions } = setup({ refreshAfterMs: 1000 });
     const a = signIn("S1");
