@@ -8,6 +8,8 @@
 "use strict";
 
 const SKIN_CHROME = Object.freeze({
+  pulsatrix: Object.freeze({ color: "#030b17", symbolColor: "#9aa6c2" }),
+  "pulsatrix-light": Object.freeze({ color: "#eef2f8", symbolColor: "#545e6e" }),
   midnight: Object.freeze({ color: "#070707", symbolColor: "#b5b5b5" }),
   atelier: Object.freeze({ color: "#f5f1eb", symbolColor: "#6b6559" }),
   foundry: Object.freeze({ color: "#100e0b", symbolColor: "#b0a696" }),
@@ -16,6 +18,7 @@ const SKIN_CHROME = Object.freeze({
   linen: Object.freeze({ color: "#eceff3", symbolColor: "#59616c" }),
   dusk: Object.freeze({ color: "#121014", symbolColor: "#b9afbd" }),
   daylight: Object.freeze({ color: "#fcfcfc", symbolColor: "#575757" }),
+  retro98: Object.freeze({ color: "#ffffff", symbolColor: "#3c3c3c" }),
 });
 
 const DEFAULT_SKIN = "midnight";

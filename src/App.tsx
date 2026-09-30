@@ -27,6 +27,7 @@ import { NoEngines } from "@/components/NoEngines";
 import { CloudEngineSignIn } from "@/components/CloudEngineSignIn";
 import { engineReady } from "@/components/EngineLibrary";
 import { CommandPalette } from "@/components/CommandPalette";
+import { RetroAssistantHost } from "@/components/RetroAssistantHost";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LocalVmWorkspace } from "@/components/LocalVmWorkspace";
 import { TeamMapPage } from "@/components/TeamMapPage";
@@ -249,7 +250,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   }, [dispatch]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" data-app-shell="">
       {/* fixed-position popup, bottom-left — outside the layout flow */}
       <UpdateBanner />
       <div className="app-shell-row relative flex min-h-0 flex-1">
@@ -345,6 +346,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       {/* mounted after the modals: same z-50 tier, so DOM order keeps the
           palette on top when one of them is open underneath */}
       <CommandPalette onOpenChange={setPaletteOpen} />
+      <RetroAssistantHost />
       </div>
       {/* Renderer-drawn caption buttons for the overlay-less frameless
           Windows window. Deliberately the LAST child of the shell: Blink

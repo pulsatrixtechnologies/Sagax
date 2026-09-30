@@ -4,6 +4,7 @@ import { ArrowUp, BookOpen, Clock, Mic, Paperclip, Square, Target, Users, X } fr
 import { useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { activeLocale, t } from "@/lib/i18n";
+import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import {
   draftRevision,
@@ -594,6 +595,12 @@ export function Composer({
     }
   };
   const send = () => {
+    // The Hibou 98 easter egg: the secret command toggles the retro owl and
+    // is never sent to anyone.
+    if (consumeRetroCommand(text, attachments.length)) {
+      setText("");
+      return;
+    }
     if (locked || attachmentPending) return;
     if (
       attachments.some((attachment) => attachment.kind === "image") &&
@@ -643,6 +650,7 @@ export function Composer({
       });
       track("message_sent", { driver: bot.modelSelection?.instanceId, queued: busy && !canSteer });
     }
+    retroSignal("send");
     setText("");
     setAttachments([]);
     onConsumeReply?.();
