@@ -9,6 +9,7 @@ import {
   clientBotPatchViolation,
   memberBotFieldViolation,
   clientGroupPatchViolation,
+  healthDetail,
   ipcPeer,
   isAllowedOrigin,
   isLoopbackHost,
@@ -25,6 +26,7 @@ import {
   sessionCookieName,
 } from "./request-auth.ts";
 import { SESSION_TTL_MS, SessionRegistry } from "./sessions.ts";
+import type { SessionRecord } from "./sessions.ts";
 
 function request(headers: Record<string, string>, method = "GET"): IncomingMessage {
   // SAFETY: the resolver reads only headers and method; a bare object is the whole contract here
@@ -566,6 +568,35 @@ describe("loopback trust: owner on one person's machine, service on a shared wor
     expect(as("POST", "/api/auth/pairing", "d".repeat(43)).auth).toBeNull();
     expect(as("POST", "/api/auth/pairing", "", null).auth).toBeNull();
     expect(as("POST", "/api/auth/pairing", secret, null).auth).toBeNull();
+    // the serving CLI waits on the pid it started: its secret opens the full health answer
+    const health = as("GET", "/api/health", secret).auth;
+    expect(health).toEqual({ kind: "loopback", scopes: ["admin", "client"] });
+    expect(healthDetail(health, { organization: true })).toBe("full");
+    expect(as("POST", "/api/health", secret).auth).toBeNull();
+    const plain = as("GET", "/api/health").auth;
+    expect(plain).toEqual({ kind: "loopback", scopes: ["client"], trust: "service" });
+    expect(healthDetail(plain, { organization: true })).toBe("app");
+  });
+});
+
+describe("what GET /api/health tells a caller (spec section 4 bis)", () => {
+  const session = (scopes: Array<"admin" | "client">) => ({ kind: "session" as const, via: "cookie" as const, scopes,
+    // SAFETY: healthDetail reads only the kind and trust; the record is inert here
+    session: { id: "s", scopes } as unknown as SessionRecord });
+  it("lists the engines to anyone signed in and to the owner's loopback", () => {
+    for (const organization of [true, false]) {
+      expect(healthDetail(session(["admin", "client"]), { organization })).toBe("full");
+      expect(healthDetail(session(["client"]), { organization })).toBe("full");
+      expect(healthDetail({ kind: "loopback", scopes: ["admin", "client"] }, { organization })).toBe("full");
+    }
+  });
+  it("tells a session-less bot shell on an organization server the app name only", () => {
+    expect(healthDetail({ kind: "loopback", scopes: ["client"], trust: "service" }, { organization: true })).toBe("app");
+    expect(healthDetail(null, { organization: true })).toBe("app");
+    expect(healthDetail(null, { organization: false })).toBe("app");
+  });
+  it("keeps the guarded send contract for the Slack worker on a hosted workspace, without pid or engines", () => {
+    expect(healthDetail({ kind: "loopback", scopes: ["client"], trust: "service" }, { organization: false })).toBe("capabilities");
   });
 });
 

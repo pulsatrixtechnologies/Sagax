@@ -500,6 +500,7 @@ import {
   clientGroupPatchViolation,
   isLoopbackHost,
   isProxied,
+  healthDetail,
   labelFromUserAgent,
   requestOrigin,
   requestSource,
@@ -23392,6 +23393,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // child proves it is OURS by echoing its pid (a stray dev server has
     // the same API shape but a different pid)
     if (method === "GET" && path === "/api/health") {
+      // What this caller may learn (request-auth.ts healthDetail): a
+      // session-less bot shell on an organization server learns the app name
+      // only, as a stranger does.
+      const detail = healthDetail(auth, { organization: IDENTITY.kind === "perspicax" });
+      const capabilities = {
+        guardedMessages: 1, guardedRequests: 1, guardedFullAccess: 1, guardedOnBehalfOf: 1,
+        ...(sharedWorkspaceFullAccessEnabled() ? { sharedWorkspaceFullAccess: 1 } : {}),
+      };
+      if (detail === "app") return json(res, 200, { app: "openmausbot" });
+      if (detail === "capabilities") return json(res, 200, { app: "openmausbot", capabilities });
       // The engines installed on this server (slice 3, D16), from the CLI
       // probes: refreshed here when stale, within a bounded wait.
       const stale = !engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS)
@@ -23402,10 +23413,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const engines = [...engineProbes.values()]
         .map(({ instanceId, driver, installed, version }) => ({ instanceId, driver, installed, ...(version ? { version } : {}) }))
         .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
-      return json(res, 200, { app: "openmausbot", pid: process.pid, static: Boolean(STATIC_DIR), capabilities: {
-        guardedMessages: 1, guardedRequests: 1, guardedFullAccess: 1, guardedOnBehalfOf: 1,
-        ...(sharedWorkspaceFullAccessEnabled() ? { sharedWorkspaceFullAccess: 1 } : {}),
-      }, engines });
+      return json(res, 200, { app: "openmausbot", pid: process.pid, static: Boolean(STATIC_DIR), capabilities, engines });
     }
     // The bots' browser engine: install it on this machine (agent-browser +
     // a Chrome for Testing, a one-time download), or ask how that is going.

@@ -473,7 +473,8 @@ export interface ResolveOptions {
 }
 
 const CLI_OWNER_HEADER = "x-openmausbot-cli-owner";
-/** The only routes the serving CLI's secret opens: its pairing code. */
+/** The only routes the serving CLI's secret opens: its pairing code (and the
+ * full health answer, whose pid tells it the server it started is up). */
 const CLI_OWNER_ROUTE = /^\/api\/auth\/pairing$/;
 
 const DESKTOP_OWNER_HEADER = "x-openmausbot-desktop-owner";
@@ -572,7 +573,8 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
     if (options.loopbackMutationToken === undefined && options.loopbackTrust === "service") {
       // The CLI that started this server may still print a pairing code.
       if (
-        options.cliOwnerToken && CLI_OWNER_ROUTE.test(path) && ["GET", "POST"].includes(method.toUpperCase()) &&
+        options.cliOwnerToken &&
+        ((CLI_OWNER_ROUTE.test(path) && ["GET", "POST"].includes(method.toUpperCase())) || (path === "/api/health" && method.toUpperCase() === "GET")) &&
         secureTokenMatch(headerValue(req.headers[CLI_OWNER_HEADER]), options.cliOwnerToken)
       ) {
         return { auth: { kind: "loopback", scopes: LOOPBACK_SCOPES }, status: 401, error: "" };
@@ -594,4 +596,25 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
     return deny(403, "forbidden: loopback host required (pair this device to use the server remotely)");
   }
   return deny(403, "forbidden: cross-origin request");
+}
+
+/** How much GET /api/health tells this caller.
+ *
+ * - `full`: the app, pid, static flag, capabilities and the engines installed
+ *   on the server with their versions (spec section 4 bis). For a session
+ *   (any person signed in) and for a loopback caller trusted as the owner
+ *   (the desktop's boot probe keys on the pid; the serving CLI proves itself
+ *   with its secret and is let in as the owner for this route).
+ * - `capabilities`: a session-less `service`-trust caller on a hosted
+ *   workspace. The cloud Slack worker reads the guarded send contract there;
+ *   pid, static and engines stay behind a session.
+ * - `app`: everyone else, and a session-less loopback caller on an
+ *   organization server, where loopback is any bot's shell. */
+export type HealthDetail = "full" | "capabilities" | "app";
+
+export function healthDetail(auth: RequestAuth | null, options: { organization: boolean }): HealthDetail {
+  if (!auth) return "app";
+  if (auth.kind === "session") return "full";
+  if (auth.trust !== "service") return "full";
+  return options.organization ? "app" : "capabilities";
 }
