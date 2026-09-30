@@ -1239,6 +1239,8 @@ export class RoutineRequestService {
     threadId: string;
     requestId: string;
     behavior: string | undefined;
+    /** Slice 6: the principal who answered the card (runAs of what it writes). */
+    actorPrincipalId?: string;
   }): ResolveRoutineRequestResult {
     const message = this.store
       .messagesFor(args.threadId)
@@ -1341,7 +1343,7 @@ export class RoutineRequestService {
         const refusal = this.validateTarget(payload.botId, payload.operation.forBot);
         if (refusal) throw new RoutineRequestError(refusal, 404, { terminal: true });
       }
-      const resultId = this.apply(payload, message.id, fingerprint);
+      const resultId = this.apply(payload, message.id, fingerprint, args.actorPrincipalId);
       return this.settleApplied(args.threadId, message.id, card, payload, resultId);
     } catch (error) {
       const status = error instanceof RoutineRequestError ? error.status : 400;
@@ -1432,7 +1434,8 @@ export class RoutineRequestService {
     }
   }
 
-  private apply(payload: RoutineRequestCardData, messageId: string, fingerprint: string): string {
+  private apply(payload: RoutineRequestCardData, messageId: string, fingerprint: string, actorPrincipalId?: string): string {
+    const meta = actorPrincipalId ? { actorPrincipalId } : undefined;
     const operation = payload.operation;
     const confirmationAt = this.now();
     switch (operation.action) {
@@ -1449,7 +1452,7 @@ export class RoutineRequestService {
           action: "create",
           fingerprintVersion: ROUTINE_REQUEST_FINGERPRINT_VERSION,
           fingerprint,
-        }).id;
+        }, meta).id;
       case "update": {
         const current = verifyManageSnapshot(operation, this.routines, operation.forBot?.botId ?? payload.botId);
         const updated = this.routines.update(
@@ -1464,6 +1467,7 @@ export class RoutineRequestService {
             fingerprintVersion: ROUTINE_REQUEST_FINGERPRINT_VERSION,
             fingerprint,
           },
+          meta,
         );
         if (!updated) throw new RoutineRequestError("That routine no longer exists", 404);
         return updated.id;

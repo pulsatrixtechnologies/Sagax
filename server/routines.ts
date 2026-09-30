@@ -112,10 +112,37 @@ export interface Routine {
   /** Server-private: added from the organization's library. Never on the
    * wire (routineWithHealth drops it); packageStamps() reads it. */
   installedPackage?: RoutinePackageStamp;
+  /** Slice 6: the principal this routine runs as (who wrote its work).
+   * Absent: the target bot's owner (the coordinator for a room goal). */
+  runAs?: string;
+  /** Slice 6: why the routine creates no runs until its person acts. */
+  suspended?: RoutineSuspension;
   nextRunAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
+
+/** Slice 6 (D9): why an organization routine is paused by the server. */
+export type RoutineSuspendReason = "delegation_missing" | "delegation_ended" | "delegation_revoked" | "person_out" | "no_right";
+export const ROUTINE_SUSPEND_REASONS: readonly RoutineSuspendReason[] = ["delegation_missing", "delegation_ended", "delegation_revoked", "person_out", "no_right"];
+export interface RoutineSuspension { reason: RoutineSuspendReason; at: number }
+/** The reasons a fresh consent of the person clears. */
+const CONSENT_REASONS: ReadonlySet<RoutineSuspendReason> = new Set(["delegation_missing", "delegation_ended", "delegation_revoked", "person_out"]);
+
+function loadRunAs(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 && value.length <= 64 ? value : undefined;
+}
+
+function loadSuspension(value: unknown): RoutineSuspension | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { reason, at } = value as { reason?: unknown; at?: unknown };
+  if (!ROUTINE_SUSPEND_REASONS.includes(reason as RoutineSuspendReason)) return undefined;
+  if (typeof at !== "number" || !Number.isFinite(at) || at < 0) return undefined;
+  return { reason: reason as RoutineSuspendReason, at };
+}
+
+/** What admission answers for a run (slice 6). */
+export type RoutineAdmission = { ok: true } | { ok: false; error: string; suspend?: RoutineSuspendReason };
 
 /** Which organization install a routine came from, its key in the package,
  * and each part's release and written hashes (server/package-parts.ts). */
@@ -151,6 +178,8 @@ export interface RoutineRun {
   timeoutMinutes?: number;
   attachments?: RoutineContextAttachment[];
   target: RoutineTarget;
+  /** Slice 6: the routine's runAs when this run was created. */
+  runAs?: string;
   /** Exact terminal room outcome. `status` remains the scheduler lifecycle
    * while this preserves blocked/needs-input/limit semantics and closes the
    * cross-file crash-recovery gap with the room's goal card. */
@@ -298,6 +327,8 @@ export interface RoutineManagerOptions {
     runOn: RoutineRunOn,
     triggerSource: RoutineRunTrigger,
     onDispatchError: (message: string) => void,
+    /** Slice 6: the run being dispatched (its runAs snapshot). */
+    run?: RoutineRun,
   ) => Promise<void>;
   startGoal?: (
     groupId: string,
@@ -306,6 +337,8 @@ export interface RoutineManagerOptions {
     coordinatorBotId: string,
     runId: string,
     onDispatchError: (message: string) => void,
+    /** Slice 6: the run being dispatched (its runAs snapshot). */
+    run?: RoutineRun,
   ) => Promise<void>;
   interruptTurn?: (botId: string, threadId: string, runOn: RoutineRunOn) => Promise<void>;
   interruptGoal?: (
@@ -321,7 +354,17 @@ export interface RoutineManagerOptions {
   /** A successful provider turn is intermediate while its peer work or
    * queued continuation still belongs to this detached execution. */
   hasPendingDelegations?: (threadId: string) => boolean;
+  /** Slice 6: awaited right before a queued run gets its task (organization
+   * mode). A refusal fails the run; with `suspend` the routine is paused. */
+  admit?: (run: RoutineRun, routine: Routine | undefined) => Promise<RoutineAdmission>;
+  /** Slice 6: raised once when a routine becomes suspended. */
+  onSuspended?: (routine: Routine, run: RoutineRun | null, reason: RoutineSuspendReason) => void;
+  /** Slice 6: raised when a suspension is cleared. */
+  onResumed?: (routine: Routine) => void;
 }
+
+/** Slice 6: routine fields whose edit moves runAs to the editor. */
+const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments"] as const;
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const CATCH_UP_MS = 12 * 60 * 60_000;
@@ -456,6 +499,7 @@ function cloneRoutine(routine: Routine): Routine {
     ...routine,
     schedule: cloneSchedule(routine.schedule),
     attachments: cloneAttachments(routine.attachments),
+    ...(routine.suspended ? { suspended: { ...routine.suspended } } : {}),
   };
 }
 
@@ -810,9 +854,13 @@ export class RoutineManager {
               skippedRuns: Number.isSafeInteger(routine.skippedRuns) && routine.skippedRuns! > 0 ? routine.skippedRuns : undefined,
               lastSkippedAt: Number.isSafeInteger(routine.lastSkippedAt) && routine.lastSkippedAt! >= 0 && routine.lastSkippedAt! <= MAX_DATE_MS ? routine.lastSkippedAt : undefined,
               installedPackage: loadInstalledPackage(routine.installedPackage),
+              runAs: loadRunAs(routine.runAs),
+              suspended: loadSuspension(routine.suspended),
             };
             if (loaded.timeoutMinutes === undefined) delete loaded.timeoutMinutes;
             if (loaded.installedPackage === undefined) delete loaded.installedPackage;
+            if (loaded.runAs === undefined) delete loaded.runAs;
+            if (loaded.suspended === undefined) delete loaded.suspended;
             delete loaded.failureStreak;
             return [loaded];
           })
@@ -830,8 +878,10 @@ export class RoutineManager {
               attachments: loadAttachments(run.attachments),
               sourceThreadId: persistedSourceThreadId.parse(run.sourceThreadId),
               resultsThreadId: persistedSourceThreadId.parse(run.resultsThreadId),
+              runAs: loadRunAs(run.runAs),
             };
             if (loaded.timeoutMinutes === undefined) delete loaded.timeoutMinutes;
+            if (loaded.runAs === undefined) delete loaded.runAs;
             return loaded;
           })
         : [];
@@ -933,7 +983,7 @@ export class RoutineManager {
     const now = this.now();
     if (this.runs.some((run) => ["queued", "running", "waiting"].includes(run.status))) return { hold: true, reason: "running" };
     const due = this.routines
-      .filter((routine) => routine.enabled && routine.nextRunAt != null && routine.nextRunAt <= now + horizonMs)
+      .filter((routine) => routine.enabled && !routine.suspended && routine.nextRunAt != null && routine.nextRunAt <= now + horizonMs)
       .map((routine) => routine.nextRunAt!)
       .sort((a, b) => a - b)[0];
     return due === undefined ? { hold: false } : { hold: true, reason: "due", at: due };
@@ -1029,7 +1079,7 @@ export class RoutineManager {
     return run ? cloneRun(run) : null;
   }
 
-  create(input: RoutineInput, request?: RoutineRequestCommitFor<"create">): Routine {
+  create(input: RoutineInput, request?: RoutineRequestCommitFor<"create">, meta?: { actorPrincipalId?: string }): Routine {
     if (request) {
       const receipt = this.matchingRoutineRequestReceipt(request);
       if (receipt) {
@@ -1051,6 +1101,7 @@ export class RoutineManager {
       // Only a confirmed chat card supplies `request`; the public calendar
       // API cannot choose an arbitrary transcript as a reporting target.
       sourceThreadId: request?.threadId,
+      ...(meta?.actorPrincipalId ? { runAs: meta.actorPrincipalId } : {}),
       nextRunAt,
       createdAt: at,
       updatedAt: at,
@@ -1068,6 +1119,7 @@ export class RoutineManager {
     id: string,
     patch: Partial<RoutineInput>,
     request?: RoutineRequestCommitFor<"update" | "pause" | "resume">,
+    meta?: { actorPrincipalId?: string },
   ): Routine | null {
     if (request) {
       const receipt = this.matchingRoutineRequestReceipt(request);
@@ -1106,6 +1158,10 @@ export class RoutineManager {
     }
     const destination = { ...routine, ...clean };
     if (destination.botId !== routine.botId) delete destination.resultsThreadId;
+    // Slice 6 (D5): whoever rewrites the work is the person it runs as.
+    const workChanged = WORK_FIELDS.some((field) =>
+      JSON.stringify((clean as Record<string, unknown>)[field] ?? null) !== JSON.stringify((routine as unknown as Record<string, unknown>)[field] ?? null));
+    const actor = workChanged ? meta?.actorPrincipalId : undefined;
     const discardResults = this.applyResultsInput(destination, patch.resultsThreadId);
     const cancelledRuns: RoutineRun[] = [];
     this.commitMutation(() => {
@@ -1122,6 +1178,10 @@ export class RoutineManager {
       if (clean.overlap !== "queue") delete routine.overlap;
       if (Object.hasOwn(patch, "timeoutMinutes") && patch.timeoutMinutes == null) {
         delete routine.timeoutMinutes;
+      }
+      if (actor) {
+        routine.runAs = actor;
+        if (routine.suspended?.reason === "no_right") delete routine.suspended;
       }
       if (patch.enabled === false) {
         for (const run of this.runs) {
@@ -1461,7 +1521,7 @@ export class RoutineManager {
         }
       }
       const dueRoutines = this.routines.filter(
-        (routine) => routine.enabled && routine.nextRunAt != null && routine.nextRunAt <= now,
+        (routine) => routine.enabled && !routine.suspended && routine.nextRunAt != null && routine.nextRunAt <= now,
       );
       const scheduledRuns: RoutineRun[] = [];
       const allocations: ResultsThreadAllocation[] = [];
@@ -1577,6 +1637,23 @@ export class RoutineManager {
           this.failRun(run, this.missingTargetMessage(run.target));
           continue;
         }
+        if (this.options.admit) {
+          const routine = this.routines.find((candidate) => candidate.id === run.routineId);
+          let admission: RoutineAdmission;
+          try {
+            admission = await this.options.admit(cloneRun(run), routine ? cloneRoutine(routine) : undefined);
+          } catch (error) {
+            admission = { ok: false, error: error instanceof Error ? error.message : String(error) };
+          }
+          // The run may have been cancelled while admission was out.
+          if (run.status !== "queued") continue;
+          if (!admission.ok) {
+            this.failRun(run, admission.error);
+            const current = this.runs.find((candidate) => candidate.id === run.id) ?? run;
+            if (admission.suspend) this.suspendRoutine(run.routineId, admission.suspend, current);
+            continue;
+          }
+        }
         // A webhook is an incoming message, so make its task the bot's live
         // chat immediately. Scheduled work stays in its own task unless the
         // workspace has asked for runs to join the conversation they report to.
@@ -1618,6 +1695,7 @@ export class RoutineManager {
               run.botId,
               run.id,
               (message) => this.failThread(task.threadId, message),
+              cloneRun(run),
             );
           } else {
             await this.options.startTurn(
@@ -1627,6 +1705,7 @@ export class RoutineManager {
               run.runOn ?? "maus",
               triggerSource,
               (message) => this.failThread(task.threadId, message),
+              cloneRun(run),
             );
           }
         } catch (error) {
@@ -1740,6 +1819,80 @@ export class RoutineManager {
     return cloneRun(run);
   }
 
+  /** Slice 6: pause one routine (once) and tell the wiring. */
+  private suspendRoutine(routineId: string, reason: RoutineSuspendReason, run: RoutineRun | null): boolean {
+    const routine = this.routines.find((candidate) => candidate.id === routineId);
+    if (!routine || routine.suspended) return false;
+    routine.suspended = { reason, at: this.now() };
+    this.save();
+    this.emitRoutine(routine);
+    this.options.onSuspended?.(cloneRoutine(routine), run ? cloneRun(run) : null, reason);
+    return true;
+  }
+
+  /** Slice 6: pause every enabled routine that runs as this person, cancel
+   * their active runs, and raise onSuspended once per routine newly paused.
+   * `ownerOf` names the principal a routine without runAs runs as. */
+  suspendFor(principalId: string, reason: RoutineSuspendReason, ownerOf: (routine: Routine) => string | undefined): Routine[] {
+    const touched: Routine[] = [];
+    const message = reason === "person_out"
+      ? "The person this routine runs as was signed out by Perspicax"
+      : "This routine can no longer act in its person's name";
+    for (const routine of this.routines) {
+      if (!routine.enabled || (routine.runAs ?? ownerOf(cloneRoutine(routine))) !== principalId) continue;
+      if (this.suspendRoutine(routine.id, reason, null)) touched.push(cloneRoutine(routine));
+    }
+    // Active runs of that person stop now, whatever their routine's state.
+    for (const run of this.runs) {
+      if (!["queued", "running", "waiting"].includes(run.status)) continue;
+      const routine = this.routines.find((candidate) => candidate.id === run.routineId);
+      const runAs = run.runAs ?? (routine ? ownerOf(cloneRoutine(routine)) : undefined);
+      if (!routine || runAs !== principalId) continue;
+      run.status = "cancelled";
+      if (run.target === "room-goal") run.goalStatus = "stopped";
+      run.attention = undefined;
+      run.finishedAt = this.now();
+      run.error = message;
+      this.save();
+      this.emitRun(run);
+      if (run.threadId) {
+        if (run.target === "room-goal" && run.groupId) {
+          void this.options.interruptGoal?.(run.groupId, run.threadId).catch(() => {});
+        } else {
+          void this.options.interruptTurn?.(run.botId, run.threadId, run.runOn ?? "maus").catch(() => {});
+        }
+      }
+    }
+    return touched;
+  }
+
+  /** Slice 6: the person consented again. Their delegation and person-out
+   * suspensions clear, and recurring routines resume from now. */
+  resumeFor(principalId: string, ownerOf: (routine: Routine) => string | undefined): Routine[] {
+    const now = this.now();
+    const resumed: Routine[] = [];
+    for (const routine of this.routines) {
+      if (!routine.suspended || !CONSENT_REASONS.has(routine.suspended.reason)) continue;
+      if ((routine.runAs ?? ownerOf(cloneRoutine(routine))) !== principalId) continue;
+      delete routine.suspended;
+      if (routine.enabled && routine.schedule.type !== "once") routine.nextRunAt = this.initialOccurrence(routine.schedule, now);
+      resumed.push(routine);
+    }
+    if (!resumed.length) return [];
+    this.save();
+    for (const routine of resumed) {
+      this.emitRoutine(routine);
+      this.options.onResumed?.(cloneRoutine(routine));
+    }
+    return resumed.map(cloneRoutine);
+  }
+
+  /** Slice 6: the routine's definition, for the wiring. */
+  getRoutine(id: string): Routine | null {
+    const routine = this.routines.find((candidate) => candidate.id === id);
+    return routine ? cloneRoutine(routine) : null;
+  }
+
   private failRun(run: RoutineRun, message: string) {
     run.status = "failed";
     run.attention = undefined;
@@ -1811,6 +1964,7 @@ export class RoutineManager {
       target: routine.target,
       groupId: routine.groupId,
       botId: routine.botId,
+      ...(routine.runAs ? { runAs: routine.runAs } : {}),
       runOn: routine.runOn ?? "maus",
       scheduledFor,
       status: "queued",

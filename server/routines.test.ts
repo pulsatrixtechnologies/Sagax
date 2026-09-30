@@ -2989,3 +2989,131 @@ describe("routine runs × turn-held BoatAgent asks", () => {
     }
   });
 });
+
+describe("slice 6: routines in their person's name", () => {
+  const start = Date.parse("2026-09-13T08:00:00Z");
+  const everyMinute = { type: "cron" as const, expression: "* * * * *", timeZone: "UTC" };
+  const input = { name: "Hourly report", prompt: "Write the report", botId: "maus-1", schedule: everyMinute };
+
+  function withAdmission(answer: (run: RoutineRun) => Awaited<ReturnType<NonNullable<RoutineManagerOptions["admit"]>>>) {
+    const h = harness(start);
+    const suspended: Array<{ routineId: string; runId: string | null; reason: string }> = [];
+    const resumed: string[] = [];
+    const admitted: RoutineRun[] = [];
+    const manager = new RoutineManager({
+      ...h.options,
+      file: tempFile(),
+      admit: async (run) => { admitted.push(run); return answer(run); },
+      onSuspended: (routine, run, reason) => suspended.push({ routineId: routine.id, runId: run?.id ?? null, reason }),
+      onResumed: (routine) => resumed.push(routine.id),
+    });
+    return { ...h, manager, suspended, resumed, admitted };
+  }
+
+  it("sets runAs from the creator and moves it on a work-field edit only", () => {
+    const h = harness(start);
+    const routine = h.manager.create(input, undefined, { actorPrincipalId: "pr_alice" });
+    expect(routine.runAs).toBe("pr_alice");
+    expect(h.manager.update(routine.id, { name: "Renamed", schedule: { ...everyMinute, expression: "*/5 * * * *" } }, undefined, { actorPrincipalId: "pr_bob" })?.runAs).toBe("pr_alice");
+    expect(h.manager.update(routine.id, { prompt: "Another report" }, undefined, { actorPrincipalId: "pr_bob" })?.runAs).toBe("pr_bob");
+    // no actor (loopback, packages): unchanged
+    expect(h.manager.update(routine.id, { prompt: "Third" })?.runAs).toBe("pr_bob");
+    const plain = h.manager.create(input);
+    expect(plain.runAs).toBeUndefined();
+    // survives a reload
+    expect(new RoutineManager(h.options).listRoutines().find((r) => r.id === routine.id)?.runAs).toBe("pr_bob");
+  });
+
+  it("snapshots runAs on the run and drops malformed values on load", () => {
+    const h = harness(start);
+    const routine = h.manager.create(input, undefined, { actorPrincipalId: "pr_alice" });
+    const run = h.manager.runNow(routine.id)!;
+    expect(run.runAs).toBe("pr_alice");
+    const file = h.options.file!;
+    const disk = JSON.parse(readFileSync(file, "utf8"));
+    disk.routines[0].runAs = 42;
+    disk.routines[0].suspended = { reason: "nope", at: 1 };
+    writeFileSync(file, JSON.stringify(disk));
+    const reloaded = new RoutineManager(h.options).listRoutines()[0];
+    expect(reloaded.runAs).toBeUndefined();
+    expect(reloaded.suspended).toBeUndefined();
+    disk.routines[0].suspended = { reason: "person_out", at: 5 };
+    writeFileSync(file, JSON.stringify(disk));
+    expect(new RoutineManager(h.options).listRoutines()[0].suspended).toEqual({ reason: "person_out", at: 5 });
+  });
+
+  it("fails a refused run and suspends its routine once; no runs while suspended", async () => {
+    const h = withAdmission(() => ({ ok: false, error: "This routine cannot act in Alice's name", suspend: "delegation_missing" }));
+    const routine = h.manager.create(input, undefined, { actorPrincipalId: "pr_alice" });
+    h.setNow(routine.nextRunAt!);
+    await h.manager.tick();
+    expect(h.started).toHaveLength(0);
+    expect(h.manager.listRuns()[0]).toMatchObject({ status: "failed", error: "This routine cannot act in Alice's name", runAs: "pr_alice" });
+    expect(h.suspended).toEqual([{ routineId: routine.id, runId: h.manager.listRuns()[0].id, reason: "delegation_missing" }]);
+    expect(h.manager.listRoutines()[0].suspended).toEqual({ reason: "delegation_missing", at: routine.nextRunAt });
+    for (let i = 1; i <= 5; i += 1) {
+      h.setNow(routine.nextRunAt! + i * 60_000);
+      await h.manager.tick();
+    }
+    expect(h.admitted).toHaveLength(1);
+    expect(h.manager.listRuns()).toHaveLength(1);
+    expect(h.manager.wakeHold()).toEqual({ hold: false });
+    // a manual run is refused again, without a second suspension
+    h.manager.runNow(routine.id);
+    await h.manager.tick();
+    expect(h.admitted).toHaveLength(2);
+    expect(h.suspended).toHaveLength(1);
+  });
+
+  it("fails without suspending on a transient refusal, and runs when admitted", async () => {
+    let answer: { ok: true } | { ok: false; error: string } = { ok: false, error: "Perspicax is unreachable; this run is skipped" };
+    const h = withAdmission(() => answer);
+    const routine = h.manager.create(input, undefined, { actorPrincipalId: "pr_alice" });
+    h.setNow(routine.nextRunAt!);
+    await h.manager.tick();
+    expect(h.manager.listRuns()[0]).toMatchObject({ status: "failed", error: "Perspicax is unreachable; this run is skipped" });
+    expect(h.manager.listRoutines()[0].suspended).toBeUndefined();
+    answer = { ok: true };
+    h.setNow(routine.nextRunAt! + 60_000);
+    await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+  });
+
+  it("resumes on consent from now, and suspendFor cancels the person's active runs", async () => {
+    const h = withAdmission(() => ({ ok: true }));
+    const ownerOf = () => "pr_owner";
+    const mine = h.manager.create(input, undefined, { actorPrincipalId: "pr_alice" });
+    const owners = h.manager.create({ ...input, name: "Owner's" });
+    h.setNow(mine.nextRunAt!);
+    await h.manager.tick();
+    expect(h.started).toHaveLength(2);
+    const touched = h.manager.suspendFor("pr_alice", "person_out", ownerOf);
+    expect(touched.map((r) => r.id)).toEqual([mine.id]);
+    const runs = h.manager.listRuns();
+    expect(runs.find((r) => r.routineId === mine.id)).toMatchObject({ status: "cancelled", error: "The person this routine runs as was signed out by Perspicax" });
+    expect(runs.find((r) => r.routineId === owners.id)?.status).toBe("running");
+    expect(h.interruptedTurns).toHaveLength(1);
+    expect(h.suspended).toEqual([{ routineId: mine.id, runId: null, reason: "person_out" }]);
+    // the owner's routine follows the owner
+    expect(h.manager.suspendFor("pr_owner", "delegation_revoked", ownerOf).map((r) => r.id)).toEqual([owners.id]);
+    expect(h.manager.listRuns().find((r) => r.routineId === owners.id)).toMatchObject({ status: "cancelled", error: "This routine can no longer act in its person's name" });
+    h.setNow(mine.nextRunAt! + 10 * 60_000 + 30_000);
+    const resumed = h.manager.resumeFor("pr_alice", ownerOf);
+    expect(resumed.map((r) => r.id)).toEqual([mine.id]);
+    expect(h.resumed).toEqual([mine.id]);
+    const after = h.manager.listRoutines().find((r) => r.id === mine.id)!;
+    expect(after.suspended).toBeUndefined();
+    expect(after.nextRunAt).toBe(mine.nextRunAt! + 11 * 60_000);
+  });
+
+  it("keeps no_right through a consent; a work-field edit clears it", () => {
+    const h = withAdmission(() => ({ ok: true }));
+    const routine = h.manager.create(input, undefined, { actorPrincipalId: "pr_bob" });
+    h.manager.suspendFor("pr_bob", "no_right", () => undefined);
+    expect(h.manager.resumeFor("pr_bob", () => undefined)).toEqual([]);
+    expect(h.manager.update(routine.id, { name: "Only a name" }, undefined, { actorPrincipalId: "pr_alice" })?.suspended?.reason).toBe("no_right");
+    const edited = h.manager.update(routine.id, { prompt: "Alice's prompt" }, undefined, { actorPrincipalId: "pr_alice" });
+    expect(edited?.runAs).toBe("pr_alice");
+    expect(edited?.suspended).toBeUndefined();
+  });
+});
