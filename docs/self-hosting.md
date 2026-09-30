@@ -718,13 +718,64 @@ in `config.json` under `signIn.admins` and `signIn.members` and can be changed
 through the settings API without a restart; the environment variables win
 when set, which is how a container or a service unit is bootstrapped.
 
-The code itself comes from `accounts.openmausbot.com`, the Sagax
-account service, so your server needs no email credentials. Your server asks
-it to send the code, checks the answer, and then issues its own session
+Your server mints the code, emails it through the mail provider you
+configure (below), checks the answer, and then issues its own session
 cookie: the browser only ever talks to your server, and who is welcome is
-decided only by your allow-list. Wrong codes count against the same lockout
-as pairing codes. Sessions from a sign-in show the email in
+decided only by your allow-list. Until a mail provider is ready, `/pair`
+offers pairing codes only. Wrong codes count against the same lockout as
+pairing codes. Sessions from a sign-in show the email in
 `openmausbot sessions` and can be revoked the same way.
+
+### Sending mail from your server
+
+Sign-in codes and invitations leave through one of three providers: `smtp`,
+`sendgrid` or `twilio` (the Twilio Email API). Set it in the environment, or
+save it in `config.json` under `mail`. An environment variable always wins
+over the saved value for the same field.
+
+```sh
+OMB_MAIL_PROVIDER=twilio                 # smtp | sendgrid | twilio
+OMB_MAIL_FROM="Sagax <bot@yourcompany.com>"
+
+# smtp
+OMB_SMTP_HOST=smtp.yourcompany.com
+OMB_SMTP_PORT=587                        # default 465 with tls, 587 otherwise
+OMB_SMTP_SECURE=starttls                 # tls | starttls | none
+OMB_SMTP_USER=bot@yourcompany.com
+OMB_SMTP_PASSWORD=...                    # or OMB_SMTP_PASSWORD_FILE=/run/secrets/smtp
+
+# sendgrid
+OMB_SENDGRID_API_KEY=...                 # or OMB_SENDGRID_API_KEY_FILE=/run/secrets/sendgrid
+
+# twilio
+OMB_TWILIO_API_KEY_SID=SK...
+OMB_TWILIO_API_KEY_SECRET=...            # or OMB_TWILIO_API_KEY_SECRET_FILE=/run/secrets/twilio
+```
+
+Each secret also reads from a `_FILE` path (a Docker secret); when both are
+set, the direct value wins. Mail is ready once the provider, `from` and that
+provider's fields are set: SMTP needs a host, SendGrid an API key, Twilio a
+key SID and its secret. The Twilio provider posts to
+`https://comms.twilio.com/v1/Emails` with the key SID and secret as HTTP
+Basic credentials; create an API key in the Twilio Console and verify the
+sender domain there first.
+
+The same settings in `config.json`, for a server run without Docker:
+
+```json
+"mail": {
+  "provider": "twilio",
+  "from": "Sagax <bot@yourcompany.com>",
+  "twilio": { "apiKeySid": "SK...", "apiKeySecret": "..." }
+}
+```
+
+`smtp` takes `host`, `port`, `secure`, `user` and `password`; `sendgrid`
+takes `apiKey`. A password, API key or key secret is never shown back: a
+mail status reports only whether one is configured, and a refused message
+is logged with the provider's status code (and, for Twilio, its reason,
+such as "The from.address domain ... is not valid or authorized."), never
+the credential.
 
 ### Inviting people
 
