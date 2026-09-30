@@ -580,7 +580,7 @@ import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, i
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberOwnedBot, serverCommandApproval, type EngineAccessRefusal } from "./engine-access.ts";
+import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberOwnedBot, resolveTurnSpeaker, serverCommandApproval, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -816,6 +816,11 @@ registerEnginesBinDir();
 // ask they continue; routine and peer turns are told apart before this is
 // consulted.
 const turnTriggers = new Map<string, UsageTrigger>();
+/** Who the turn last admitted on a thread speaks for (slice 3 engine
+ * access), and that speaker's principal ("" for an unknown person): what a
+ * continuation of that turn, or a bot hop it starts, speaks for too. */
+const turnSpeakers = new Map<string, TurnSpeaker>();
+const turnSpeakerPrincipals = new Map<string, string>();
 /** Who a user message is from, when that is someone other than the desktop
  * owner. Loopback is the owner by design, so it stays unstamped and reads as
  * the profile name; a paired or signed-in session names the person, by
@@ -825,6 +830,14 @@ function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   if (auth.kind !== "session") return undefined;
   const name = (auth.session.email ?? auth.session.label ?? "").trim();
   return name ? { name, id: personKey(auth.session) } : undefined;
+}
+
+/** Who a request's turn speaks for (slice 3 engine access): the signed-in
+ * person, or the operator at this computer. A reduced-trust loopback caller
+ * (a bot's own shell on a hosted server) is nobody in particular. */
+function speakerFor(auth: RequestAuth): TurnSpeaker {
+  if (auth.kind === "session") return { origin: "person", principalId: personKey(auth.session) };
+  return auth.trust === "service" ? { origin: "person" } : { origin: "operator" };
 }
 
 /** A stable key for the person behind a session: their principal id
@@ -2716,6 +2729,7 @@ function askBotAndWait(targetBotId: string, message: string, depth: number, from
           ? { botId: asker.id, name: asker.name, unattended: true }
           : { botId: asker.id, name: asker.name }
         : undefined,
+      ...(asker ? { speaker: peerSpeaker(asker.id, fromThreadId) } : {}),
       onDispatchError: (reason) => finish({ status: "error", text: `(couldn't start that bot: ${reason})` }),
     }).catch((err) =>
       finish({ status: "error", text: `(couldn't start that bot: ${err instanceof Error ? err.message : String(err)})` }),
@@ -6646,7 +6660,7 @@ function continueComputerSelection(threadId: string, generation: string | undefi
     // machine's record, so a later Works on change may sweep it.
     store.patchTask(bot.id, threadId, { surface, surfaceSource: "auto" });
     const text = `The computer selection is now ${surfaceLabel(surface)}. Continue the user's original request using the tools mounted for this turn; verify the result before claiming success.\n\n${selection.text}`;
-    void startTurn(bot.id, text, { threadId, userMessage: selection.source, computerSelectionContinuation: true }).catch(error => {
+    void startTurn(bot.id, text, { threadId, userMessage: selection.source, computerSelectionContinuation: true, speaker: turnSpeakers.get(threadId) }).catch(error => {
       if (store.taskByThread(bot.id, threadId)) store.appendMessage(threadId, { role: "bot", kind: "activity",
         tool: { name: `Could not continue on ${surfaceLabel(surface)}: ${error instanceof Error ? error.message : String(error)}`, ok: false } });
     });
@@ -8171,6 +8185,7 @@ const runDelegatedTurn: Parameters<typeof drainDelegations>[3] = (toBotId, rawTe
       commsDepth,
       unattended,
       peerAsk,
+      ...(opener ? { speaker: peerSpeaker(opener.id, sourceThreadId) } : {}),
       // startTurn schedules provider/integration setup after marking the bot
       // busy. Those asynchronous setup failures do not emit turn.completed,
       // so clear the watch and report them through this callback too.
@@ -8271,6 +8286,9 @@ function drainQueuedSends() {
       void startTurn(botId, prompt, {
         threadId, userMessage, excludeMessageIds: excludeIds, unattended, onTurnSettled: resolve,
         trigger: queuedTurnTrigger(head),
+        // the first waiting line's speaker, as it was when queued; rows
+        // queued before speakers were kept read from their provenance
+        speaker: head.speaker ?? resolveTurnSpeaker({ sender: head.sender, peerAsk: head.peerAsk, trigger: head.trigger }),
       }).catch((err) => {
         store.appendMessage(threadId, {
           role: "bot", kind: "activity",
@@ -8330,6 +8348,8 @@ function drainAsideLane() {
             name: head.aside.fromBotName,
             ...(head.aside.unattended ? { unattended: true } : {}),
           },
+          speaker: { origin: "peer", fromBotId: head.aside.fromBotId,
+            ...(head.aside.speakerPrincipalId !== undefined ? { principalId: head.aside.speakerPrincipalId } : {}) },
           onTurnSettled: resolve,
         }).catch((err) => {
           store.appendMessage(threadId, {
@@ -8349,7 +8369,7 @@ function drainAsideLane() {
 
 /** Keep a person's words off the transcript until a direct-thread slot is
  * available. Reuse the existing cancellable, idempotent composer queue. */
-async function startOrQueueDirectMessage(botId: string, threadId: string, text: string, replyTo?: Message, sendId?: string, sender?: ResolvedSender, trigger?: UsageTrigger) {
+async function startOrQueueDirectMessage(botId: string, threadId: string, text: string, replyTo?: Message, sendId?: string, sender?: ResolvedSender, trigger?: UsageTrigger, speaker?: TurnSpeaker) {
   const decision = admit("direct", {}, {
     // A room turn holds the bot exactly like the sibling opened-thread queue
     // below: the drain's own block check waits it out, so the words queue
@@ -8367,10 +8387,11 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
       prompt: promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"),
       sender,
       trigger,
+      speaker,
     });
     return { ok: true as const, queued: true as const, queueId: queued.id, threadId, reason: decision.reason };
   }
-  const message = await startTurn(botId, text, { threadId, replyTo, sendId, sender, trigger });
+  const message = await startTurn(botId, text, { threadId, replyTo, sendId, sender, trigger, speaker });
   return { ok: true as const, threadId, message };
 }
 
@@ -8388,8 +8409,10 @@ async function startOrQueueOpenedThread(
   threadId: string,
   text: string,
   unattended: boolean,
+  sourceThreadId?: string,
 ): Promise<{ state: "running" } | { state: "queued"; position: number } | { state: "failed"; error: string }> {
   const peerAsk = { botId, name: store.bot(botId)!.name, unattended: unattended || undefined };
+  const speaker = peerSpeaker(botId, sourceThreadId);
   const decision = admit("opened-thread", {}, {
     // A room turn holds the bot too (startTurn refuses a direct turn during
     // one); the drain's own block check already waits for it, so the words
@@ -8402,11 +8425,12 @@ async function startOrQueueOpenedThread(
       reason: decision.reason,
       unattended,
       peerAsk,
+      speaker,
     });
     return { state: "queued", position: queuedThreadPosition(botId, threadId) ?? 1 };
   }
   try {
-    await startTurn(botId, text, { threadId, unattended, peerAsk });
+    await startTurn(botId, text, { threadId, unattended, peerAsk, speaker });
     return { state: "running" };
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
@@ -8614,6 +8638,11 @@ async function startTurn(
     editedMessageId?: string;
     /** The person who sent this, when not the desktop owner. */
     sender?: ResolvedSender;
+    /** Who this turn speaks for, for the organization engine gate. Paths
+     * that know it state it; otherwise it is read from the sender, the
+     * peer provenance or the trigger, and nothing known is an unknown
+     * person (never the owner). */
+    speaker?: TurnSpeaker;
     /** Who the usage ledger books this turn to: the sender of the message
      * that starts it, captured when that message was accepted. Absent on
      * continuations, which stay with the ask they continue. */
@@ -8816,7 +8845,18 @@ async function startTurn(
   // Organization server (slice 3, D13): no turn without engine access. The
   // person's message stays; the thread gets the card saying why, the owner
   // a notification, and the sender an ordinary accepted send.
-  const accessRefusal = opts?.cardContinuation ? null : orgEngineRefusal(bot, instance, opts?.sender?.id);
+  const speaker = resolveTurnSpeaker({
+    speaker: opts?.speaker,
+    sender: opts?.sender ?? (opts?.editedMessageId ? undefined : userMessage.sender),
+    peerAsk: opts?.peerAsk ?? (opts?.editedMessageId ? undefined : userMessage.peerAsk),
+    trigger: opts?.trigger,
+    automationSource: opts?.automationSource,
+  });
+  // an automatic recovery re-enters with these options: same speaker
+  opts = { ...opts, speaker };
+  // A compaction summarizes with the bot's engine too, so it is gated like
+  // a turn; other card continuations resume a turn already admitted.
+  const accessRefusal = opts.cardContinuation && !opts.compactOnly ? null : orgEngineRefusal(bot, instance, speaker);
   if (accessRefusal) {
     const engine = engineDisplayName(instance);
     store.appendMessage(threadId, {
@@ -8838,6 +8878,10 @@ async function startTurn(
   // Admitted: every refusal above has passed and no other turn runs on this
   // thread, so this is the one moment the ledger's "who asked" may change.
   if (opts?.trigger) turnTriggers.set(threadId, opts.trigger);
+  if (!opts.cardContinuation) {
+    turnSpeakers.set(threadId, speaker);
+    turnSpeakerPrincipals.set(threadId, orgSpeakerPrincipal(bot, speaker));
+  }
   // A card continuation neither starts nor ends the person's ask: it
   // resumes the turn their last message began, so that record stands.
   if (!opts?.cardContinuation) {
@@ -11313,7 +11357,8 @@ async function runGroupMemberTurn(
   // Organization server (slice 3, D13): a room turn needs engine access for
   // the person whose message it answers, as a Direct turn does.
   const roomSpeakerId = store.activePath(threadId).findLast((message) => message.role === "user" && message.sender?.id)?.sender?.id;
-  const roomAccessRefusal = cardContinuation ? null : orgEngineRefusal(bot, instance, roomSpeakerId);
+  const roomAccessRefusal = cardContinuation ? null
+    : orgEngineRefusal(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "operator" });
   if (roomAccessRefusal) {
     const engine = engineDisplayName(instance);
     store.appendMessage(threadId, {
@@ -14232,12 +14277,38 @@ function engineInstalled(instanceId: string): boolean {
 function engineDisplayName(instance: { displayName?: string; driverKind: string }): string {
   return instance.displayName || BUILT_IN_DRIVERS.find((driver) => driver.driverKind === instance.driverKind)?.metadata.displayName || instance.driverKind;
 }
+/** The owner of the bot a peer hop comes from, when that bot still exists. */
+function peerOwnerPrincipal(speaker: TurnSpeaker): string | undefined {
+  if (speaker.origin !== "peer" || !speaker.fromBotId) return undefined;
+  const from = store.bot(speaker.fromBotId);
+  return from ? effectiveBotOwner(from) : undefined;
+}
+/** The principal a turn on `bot` speaks for ("" for an unknown person). */
+function orgSpeakerPrincipal(bot: { ownerUserId?: unknown }, speaker: TurnSpeaker): string {
+  return speakerPrincipal(speaker, effectiveBotOwner(bot), peerOwnerPrincipal(speaker)).trim().toLowerCase();
+}
+/** A bot hop from `fromBotId`: it speaks for whoever the source turn spoke
+ * for, when that turn is known. */
+function peerSpeaker(fromBotId: string, fromThreadId?: string): TurnSpeaker {
+  const principalId = fromThreadId ? turnSpeakerPrincipals.get(fromThreadId) : undefined;
+  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}) };
+}
+/** On an organization server, words may join a running turn only when they
+ * speak for the same principal as that turn: anyone else's words wait for a
+ * turn of their own, which the engine gate then judges. */
+function orgJoinsRunningTurn(bot: { ownerUserId?: unknown }, threadId: string, speaker: TurnSpeaker): boolean {
+  if (IDENTITY.kind !== "perspicax") return true;
+  const running = turnSpeakerPrincipals.get(threadId);
+  const joining = orgSpeakerPrincipal(bot, speaker);
+  return Boolean(running) && running === joining;
+}
 /** Slice 3 (D13): the organization refusal for a turn, or null. */
-function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speakerPrincipalId: string | undefined): EngineAccessRefusal | null {
+function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): EngineAccessRefusal | null {
   if (IDENTITY.kind !== "perspicax") return null;
   const access = engineAccessFor({
     identity: IDENTITY.kind,
-    speakerPrincipalId,
+    speaker,
+    peerOwnerPrincipalId: peerOwnerPrincipal(speaker),
     ownerPrincipalId: effectiveBotOwner(bot),
     ownerOrgRole: botOwnerOrgRole(bot),
     memberBotsUseOrgKey: orgSettings().memberBotsUseOrgKey,
@@ -16608,12 +16679,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (!threadBusy(toBotId, target.threadId)) return null;
           const instance = runningTurnInstance(target, target.threadId);
           if (!instance?.adapter.capabilities.queueing || !instance.adapter.steer) return null;
+          // an organization server folds a peer's words into the running
+          // turn only when both speak for the same person
+          const asideSpeaker = peerSpeaker(from.id, fromThreadId);
+          if (!orgJoinsRunningTurn(target, target.threadId, asideSpeaker)) return null;
           const steer = instance.adapter.steer;
           queueAsideMessage(toBotId, target.threadId, message, {
             fromBotId: from.id,
             fromBotName: from.name,
             unattended: isUnattended(from.id, fromThreadId),
             commsDepth: depth,
+            ...(asideSpeaker.origin === "peer" && asideSpeaker.principalId !== undefined ? { speakerPrincipalId: asideSpeaker.principalId } : {}),
           });
           const attempt = await attemptAsideInjection(store, toBotId, target.threadId, (_botId, threadId, prompt) =>
             steer(threadId, prompt).catch((): SteerOutcome => "indeterminate"));
@@ -16881,7 +16957,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const unattended = isUnattended(from.id, fromThreadId);
         const text = `[Retry requested by ${from.name}, your Chief of Staff, after this thread's last run stopped.${note ? ` Note from ${from.name}: ${note}` : ""} Continue the request above from where it stopped and finish it. If the same problem comes back, say exactly what is blocking and stop.]`;
         try {
-          await startTurn(target.id, text, { threadId, unattended, peerAsk: { botId: from.id, name: from.name, ...(unattended ? { unattended: true } : {}) } });
+          await startTurn(target.id, text, { threadId, unattended, peerAsk: { botId: from.id, name: from.name, ...(unattended ? { unattended: true } : {}) }, speaker: peerSpeaker(from.id, fromThreadId) });
         } catch (error) {
           return json(res, 409, { error: error instanceof Error ? error.message : String(error) });
         }
@@ -17397,7 +17473,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // reads it, so a later turn in that thread never mistakes the
           // request for the person's.
           const opening = `[Thread you opened yourself${sourceTitle ? ` from #${sourceTitle}` : ""}. The request below is your own words, not the person's: do the work here and end with a clear result they can read.]\n\n${message}`;
-          const outcome = await startOrQueueOpenedThread(from.id, task.threadId, opening, isUnattended(from.id, fromThreadId));
+          const outcome = await startOrQueueOpenedThread(from.id, task.threadId, opening, isUnattended(from.id, fromThreadId), fromThreadId);
           return json(res, 201, {
             threadId: task.threadId,
             title: task.title,
@@ -21198,7 +21274,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             if (guardedAdmission.action === "refuse") {
               throw Object.assign(new Error("wait for a free thread slot before retrying this message"), { status: 409, code: "guarded_busy" });
             }
-            const message = await startTurn(bot.id, text, { threadId, replyTo, sendId, sender: messageSender(auth), trigger });
+            const message = await startTurn(bot.id, text, { threadId, replyTo, sendId, sender: messageSender(auth), trigger, speaker: speakerFor(auth) });
             return { ok: true as const, threadId, message };
           }
 
@@ -21216,7 +21292,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const busyAdmission = admit("direct-busy", {
               carriesImages,
               pendingComputerSelection: Boolean(computerSelectionTurns.get(threadId)?.selected),
-              engineCanSteer: Boolean(instance?.adapter.capabilities.queueing && instance.adapter.steer),
+              engineCanSteer: Boolean(instance?.adapter.capabilities.queueing && instance.adapter.steer)
+                // someone else's words never join a running turn on an
+                // organization server: they wait and get the gate
+                && orgJoinsRunningTurn(currentAtStart, threadId, speakerFor(auth)),
             });
             // steer was offered only when a live instance could take it;
             // the second check carries that fact to the type system.
@@ -21271,7 +21350,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               return { ok: true as const, steered: true as const, threadId, message };
             }
             if (!current.busy) {
-              return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger);
+              return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth));
             }
             const queued = queueSteeredMessage(current.id, threadId, text, {
               replyToId: replyTo?.id,
@@ -21279,10 +21358,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               prompt: promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"),
               sender: messageSender(auth),
               trigger,
+              speaker: speakerFor(auth),
             });
             return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
           }
-          return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger);
+          return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth));
         },
       );
       return json(res, 202, receipt);
@@ -21385,7 +21465,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       requirePinnedClientThread(m[1], body?.threadId);
       const bot = requestedTaskBot(m[1], body?.threadId);
       await startTurn(bot.id, "Summarize conversation context", {
-        threadId: bot.threadId, compactOnly: true, cardContinuation: true, trigger: usageTriggerFor(auth),
+        threadId: bot.threadId, compactOnly: true, cardContinuation: true, trigger: usageTriggerFor(auth), speaker: speakerFor(auth),
       });
       return json(res, 202, { ok: true, threadId: bot.threadId });
     }
@@ -21436,7 +21516,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // startTurn admits the rerun before branching. A shared-resource or
       // concurrency-limit refusal must leave the original transcript intact.
       const replyTo = source.replyToId ? resolveReplyTarget(bot.threadId, source.replyToId) : undefined;
-      const message = await startTurn(bot.id, text, { threadId: bot.threadId, editedMessageId: messageId, replyTo, sendId, trigger: usageTriggerFor(auth) });
+      const message = await startTurn(bot.id, text, { threadId: bot.threadId, editedMessageId: messageId, replyTo, sendId, trigger: usageTriggerFor(auth), speaker: speakerFor(auth) });
       return json(res, 202, { ok: true, message });
     }
 

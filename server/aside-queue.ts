@@ -47,6 +47,9 @@ export interface AsideItem {
     fromBotName: string;
     unattended?: boolean;
     commsDepth: number;
+    /** Whoever the asking bot's turn spoke for ("" for an unknown person),
+     * so a degraded follow-up turn is judged for them. */
+    speakerPrincipalId?: string;
   };
   /** Who the usage ledger books a degraded follow-up turn to. */
   trigger?: UsageTrigger;
@@ -124,6 +127,7 @@ export function queueAsideMessage(
     unattended?: boolean;
     commsDepth: number;
     trigger?: UsageTrigger;
+    speakerPrincipalId?: string;
   },
 ): QueuedAside {
   const id = newId();
@@ -136,6 +140,7 @@ export function queueAsideMessage(
       fromBotName: options.fromBotName,
       ...(options.unattended ? { unattended: true } : {}),
       commsDepth: options.commsDepth,
+      ...(options.speakerPrincipalId !== undefined ? { speakerPrincipalId: options.speakerPrincipalId } : {}),
     },
     trigger: options.trigger,
   };

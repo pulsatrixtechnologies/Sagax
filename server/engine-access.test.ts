@@ -2,14 +2,14 @@
 import { describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberOwnedBot, serverCommandApproval, type EngineAccessInput } from "./engine-access.ts";
+import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberOwnedBot, resolveTurnSpeaker, serverCommandApproval, type EngineAccessInput } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
 
 const base: EngineAccessInput = {
   identity: "perspicax",
-  speakerPrincipalId: ALICE,
+  speaker: { origin: "person", principalId: ALICE },
   ownerPrincipalId: ALICE,
   ownerOrgRole: "admin",
   memberBotsUseOrgKey: false,
@@ -20,18 +20,19 @@ const base: EngineAccessInput = {
 
 describe("engineAccessFor", () => {
   it("solo mode is unchanged, whatever the rest says", () => {
-    expect(engineAccessFor({ ...base, identity: "solo", installed: false, speakerPrincipalId: BOB, ownerOrgRole: "member" })).toEqual({ ok: true, via: "server" });
+    expect(engineAccessFor({ ...base, identity: "solo", installed: false, speaker: { origin: "person", principalId: BOB }, ownerOrgRole: "member" })).toEqual({ ok: true, via: "server" });
   });
 
   it("an admin owner speaking to their own bot uses the server's access, key or login", () => {
     expect(engineAccessFor(base)).toEqual({ ok: true, via: "server" });
     expect(engineAccessFor({ ...base, driver: "codex" })).toEqual({ ok: true, via: "server" });
-    // no named speaker (a routine, a peer hop): the owner's own turn
-    expect(engineAccessFor({ ...base, speakerPrincipalId: undefined, driver: "grokAgent" })).toEqual({ ok: true, via: "server" });
+    // the owner's routine, the operator at this computer: the owner's own turn
+    expect(engineAccessFor({ ...base, speaker: { origin: "owner-routine" }, driver: "grokAgent" })).toEqual({ ok: true, via: "server" });
+    expect(engineAccessFor({ ...base, speaker: { origin: "operator" } })).toEqual({ ok: true, via: "server" });
   });
 
   it("someone else on an admin's bot needs the org key toggle AND a key-backed instance", () => {
-    const bob = { ...base, speakerPrincipalId: BOB };
+    const bob = { ...base, speaker: { origin: "person" as const, principalId: BOB } };
     expect(engineAccessFor(bob)).toEqual({ ok: false, reason: "no_access" });
     expect(engineAccessFor({ ...bob, keyBacked: true })).toEqual({ ok: false, reason: "no_access" });
     expect(engineAccessFor({ ...bob, memberBotsUseOrgKey: true })).toEqual({ ok: false, reason: "no_access" });
@@ -41,21 +42,57 @@ describe("engineAccessFor", () => {
   });
 
   it("a member's own bot, and its routines, need the org key too", () => {
-    const member = { ...base, speakerPrincipalId: BOB, ownerPrincipalId: BOB, ownerOrgRole: "member" as const };
+    const member = { ...base, speaker: { origin: "person" as const, principalId: BOB }, ownerPrincipalId: BOB, ownerOrgRole: "member" as const };
     expect(engineAccessFor(member)).toEqual({ ok: false, reason: "no_access" });
-    expect(engineAccessFor({ ...member, speakerPrincipalId: undefined })).toEqual({ ok: false, reason: "no_access" });
+    expect(engineAccessFor({ ...member, speaker: { origin: "owner-routine" } })).toEqual({ ok: false, reason: "no_access" });
     expect(engineAccessFor({ ...member, memberBotsUseOrgKey: true, keyBacked: true })).toEqual({ ok: true, via: "org-key" });
     // an admin speaking to a member's bot is not its owner either
-    expect(engineAccessFor({ ...member, speakerPrincipalId: ALICE })).toEqual({ ok: false, reason: "no_access" });
+    expect(engineAccessFor({ ...member, speaker: { origin: "person", principalId: ALICE } })).toEqual({ ok: false, reason: "no_access" });
   });
 
   it("an engine that is not installed wins over everything", () => {
     expect(engineAccessFor({ ...base, installed: false })).toEqual({ ok: false, reason: "engine_missing" });
-    expect(engineAccessFor({ ...base, installed: false, speakerPrincipalId: BOB, memberBotsUseOrgKey: true, keyBacked: true })).toEqual({ ok: false, reason: "engine_missing" });
+    expect(engineAccessFor({ ...base, installed: false, speaker: { origin: "person", principalId: BOB }, memberBotsUseOrgKey: true, keyBacked: true })).toEqual({ ok: false, reason: "engine_missing" });
+  });
+
+  it("fails closed: a person nobody named is never the owner", () => {
+    expect(engineAccessFor({ ...base, speaker: { origin: "person" } })).toEqual({ ok: false, reason: "no_access" });
+    expect(engineAccessFor({ ...base, speaker: { origin: "person", principalId: "" } })).toEqual({ ok: false, reason: "no_access" });
+    expect(engineAccessFor({ ...base, speaker: { origin: "person" }, memberBotsUseOrgKey: true, keyBacked: true })).toEqual({ ok: true, via: "org-key" });
+  });
+
+  it("a bot hop speaks for the source turn's person, else the asking bot's owner", () => {
+    // bob spoke to a bot that asked alice's bot: bob speaks
+    expect(engineAccessFor({ ...base, speaker: { origin: "peer", principalId: BOB }, peerOwnerPrincipalId: ALICE })).toEqual({ ok: false, reason: "no_access" });
+    // an unknown person behind the source turn: nobody is the owner
+    expect(engineAccessFor({ ...base, speaker: { origin: "peer", principalId: "" }, peerOwnerPrincipalId: ALICE })).toEqual({ ok: false, reason: "no_access" });
+    // no source turn known: the asking bot's owner, here a member
+    expect(engineAccessFor({ ...base, speaker: { origin: "peer" }, peerOwnerPrincipalId: BOB })).toEqual({ ok: false, reason: "no_access" });
+    expect(engineAccessFor({ ...base, speaker: { origin: "peer" } })).toEqual({ ok: false, reason: "no_access" });
+    // alice's own bots between themselves keep the server's access
+    expect(engineAccessFor({ ...base, speaker: { origin: "peer" }, peerOwnerPrincipalId: ALICE })).toEqual({ ok: true, via: "server" });
+    expect(engineAccessFor({ ...base, speaker: { origin: "peer", principalId: ALICE }, peerOwnerPrincipalId: BOB })).toEqual({ ok: true, via: "server" });
   });
 
   it("compares principal ids without case", () => {
-    expect(engineAccessFor({ ...base, speakerPrincipalId: ALICE.toUpperCase() })).toEqual({ ok: true, via: "server" });
+    expect(engineAccessFor({ ...base, speaker: { origin: "person", principalId: ALICE.toUpperCase() } })).toEqual({ ok: true, via: "server" });
+  });
+});
+
+describe("resolveTurnSpeaker", () => {
+  it("keeps a stated speaker", () => {
+    expect(resolveTurnSpeaker({ speaker: { origin: "operator" }, sender: { id: BOB } })).toEqual({ origin: "operator" });
+  });
+  it("reads the peer, the sender, a routine, the operator, in that order", () => {
+    expect(resolveTurnSpeaker({ peerAsk: { botId: "b1" }, sender: { id: BOB } })).toEqual({ origin: "peer", fromBotId: "b1" });
+    expect(resolveTurnSpeaker({ sender: { id: BOB }, trigger: { kind: "owner" } })).toEqual({ origin: "person", principalId: BOB });
+    expect(resolveTurnSpeaker({ automationSource: "schedule" })).toEqual({ origin: "owner-routine" });
+    expect(resolveTurnSpeaker({ trigger: { kind: "routine" } })).toEqual({ origin: "owner-routine" });
+    expect(resolveTurnSpeaker({ trigger: { kind: "owner" } })).toEqual({ origin: "operator" });
+  });
+  it("fails closed when nothing names the speaker", () => {
+    expect(resolveTurnSpeaker({})).toEqual({ origin: "person" });
+    expect(resolveTurnSpeaker({ trigger: { kind: "user" } })).toEqual({ origin: "person" });
   });
 });
 

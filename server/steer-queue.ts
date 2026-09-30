@@ -22,6 +22,7 @@ import { chatFollowups, saveChatFollowup, settleChatFollowups } from "./message-
 import { drainCoalesceHead } from "./admission.ts";
 import type { ResolvedSender, SteerQueueReason } from "../shared/wire.ts";
 import type { BotRecord, Message } from "./store.ts";
+import type { TurnSpeaker } from "./engine-access.ts";
 import type { UsageTrigger } from "./usage-ledger.ts";
 
 /** The slice of Store this module needs — narrow so tests can fake it. */
@@ -53,6 +54,9 @@ interface QueueEntry {
     /** Who the usage ledger books the turn these words start to, captured
      * when they were sent. Absent on rows queued before this existed. */
     trigger?: UsageTrigger;
+    /** Who the turn these words start speaks for (organization engine
+     * gate), captured when they were sent. */
+    speaker?: TurnSpeaker;
     /** When the words were queued (epoch ms): drain-time coalescing splits
      * one sender's items when the gap between them outgrows the window. */
     queuedAt: number;
@@ -60,7 +64,7 @@ interface QueueEntry {
 }
 
 /** The first waiting line of a drained batch: the one that starts the turn. */
-export type SteerQueueHead = Pick<QueueEntry["items"][number], "trigger" | "sender" | "peerAsk">;
+export type SteerQueueHead = Pick<QueueEntry["items"][number], "trigger" | "sender" | "peerAsk" | "speaker">;
 
 const queues = new Map<string, QueueEntry>(); // threadId → waiting sends
 
@@ -121,7 +125,7 @@ export function queueSteeredMessage(
   botId: string,
   threadId: string,
   text: string,
-  options: { prompt?: string; replyToId?: string; sendId?: string; reason?: SteerQueueReason; unattended?: boolean; peerAsk?: Message["peerAsk"]; sender?: ResolvedSender; trigger?: UsageTrigger } = {},
+  options: { prompt?: string; replyToId?: string; sendId?: string; reason?: SteerQueueReason; unattended?: boolean; peerAsk?: Message["peerAsk"]; sender?: ResolvedSender; trigger?: UsageTrigger; speaker?: TurnSpeaker } = {},
 ): QueuedSteer {
   const id = newId();
   const entry = queues.get(threadId) ?? { botId, items: [] };
@@ -139,6 +143,7 @@ export function queueSteeredMessage(
     peerAsk: options.peerAsk,
     sender: options.sender,
     trigger: options.trigger,
+    ...(options.speaker ? { speaker: options.speaker } : {}),
     queuedAt: Date.now(),
   };
   saveChatFollowup({ id, kind: "bot", ownerId: botId, threadId, payload: item });
@@ -249,7 +254,7 @@ export function drainSteeredMessages(
       // person's words in the same group cannot re-attend a bot's own
       group.some((item) => item.unattended === true),
       // the first waiting line is the one that starts this turn
-      { trigger: group[0].trigger, sender: group[0].sender, peerAsk: group[0].peerAsk },
+      { trigger: group[0].trigger, sender: group[0].sender, peerAsk: group[0].peerAsk, speaker: group[0].speaker },
     );
     void Promise.resolve(running).then(
       () => settleChatFollowups(ids, null),
@@ -267,7 +272,8 @@ function coalesceIdentity(item: QueueEntry["items"][number]): string {
   if (item.peerAsk) return `peer:${item.peerAsk.botId}:${item.unattended === true ? "unattended" : "attended"}`;
   if (item.unattended === true) return "unattended";
   if (item.sender) return `person:${item.sender.id ?? item.sender.name}`;
-  return "person:local";
+  // an unnamed person is never merged into the operator's own words
+  return item.speaker?.origin === "person" ? "person:unknown" : "person:local";
 }
 
 /** Find the receipt for a retry whose message is still waiting to drain. */

@@ -8,6 +8,7 @@
 //         produced with the organization key; dave sees nothing of it
 //   S3-5  C: the grant removed, bob's stream ends and the bot is gone at once
 //   S3-6  F: no org key or no installed engine gives an access card, no turn
+//   S3-6b F on every path a person reaches: a queued send, an edit, a bot hop
 //   S3-7  a member's bot never gets full access
 //   S3-10 the directory is the backstop: a disabled person's session ends
 //   S3-11 the authenticated health lists the engines and whether installed
@@ -41,6 +42,8 @@ let home: string;
 let dump = "";
 let log = "";
 let idp: FakeOidcProvider;
+let prompts = "";
+const TEST_CAPABILITY_KEY = "org-sharing-fixture-capability";
 
 type Auth = { cookie?: string };
 const api = async (method: string, path: string, auth?: Auth, body?: unknown): Promise<{ status: number; body: any; text: string }> => {
@@ -123,6 +126,7 @@ async function start() {
       OMB_PERSPICAX_DIRECTORY_SECONDS: "5",
       OMB_ANTHROPIC_API_KEY: ORG_KEY,
       OMB_ORG_NAME: "Acme",
+      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -161,9 +165,13 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
     }), { mode: 0o640 });
     dump = join(home, "claude-dump.json");
+    // every prompt any fake Claude process receives: the proof a turn never ran
+    prompts = join(home, "claude-prompts.jsonl");
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: {
-        claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: dump }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
+        claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_PROMPTS: prompts }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
+        // a turn that never ends on its own: how a bot is held busy
+        stuck: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_PROMPTS: prompts }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
         ghost: { driver: "claudeAgent", config: { cli: "/nonexistent/claude", fullAuto: true } },
         grok: { driver: "grokAgent", config: { cli: FAKE_ACP, fullAuto: false } },
       },
@@ -303,6 +311,63 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect((await api("POST", `/api/bots/${own.id}/messages`, alice, { text: "ping" })).status).toBe(202);
     await waitFor(async () => (await botsOf(alice)).find((b) => b.id === own.id)?.messages.some((m) => m.role === "bot" && m.kind === "text" && m.text), 30_000);
     expect((await botsOf(alice)).find((b) => b.id === own.id)?.messages.some((m) => m.kind === "access")).toBe(false);
+  }, 60_000);
+
+  it("S3-6b (F): bob's queued send, his edit and his bot's ask_bot on alice's bot get the card, never a turn", async () => {
+    // the organization key is still off (S3-6); bob still holds his grant on Xavier
+    const bob = await signIn(BOB);
+    const promptsNow = () => (existsSync(prompts) ? readFileSync(prompts, "utf8") : "");
+    const accessCards = async (auth: Auth, botId: string) =>
+      ((await botsOf(auth)).find((b) => b.id === botId)?.messages ?? []).filter((m) => m.kind === "access");
+
+    // 1. queued: alice's turn holds the bot, bob's words wait for it
+    const held = await createBot(alice, "Holder", "stuck");
+    expect((await api("POST", `/api/bots/${held.id}/direct-grants`, alice, { userId: bobId })).status).toBe(200);
+    expect((await api("POST", `/api/bots/${held.id}/messages`, alice, { text: "hold on, alice" })).status).toBe(202);
+    await waitFor(async () => promptsNow().includes("hold on, alice"));
+    const queued = await api("POST", `/api/bots/${held.id}/messages`, bob, { text: "queued from bob" });
+    expect(queued.status, queued.text).toBe(202);
+    // never folded into alice's running turn
+    expect(queued.body.steered).toBeUndefined();
+    expect(queued.body.queued).toBe(true);
+    const stopped = await api("POST", `/api/bots/${held.id}/interrupt`, alice, {});
+    expect(stopped.status, stopped.text).toBeLessThan(300);
+    const heldCard = await waitFor(async () => (await accessCards(bob, held.id))[0] ?? null);
+    expect(heldCard.access).toMatchObject({ reason: "no_access", botId: held.id });
+    await waitFor(async () => log.includes(`bot=${held.id} refused: no_access`));
+    expect(promptsNow()).not.toContain("queued from bob");
+
+    // 2. edit: bob reruns his own message on Xavier
+    const xavier = (await botsOf(bob)).find((b) => b.id === shared.id)!;
+    const mine = xavier.messages.find((m) => m.role === "user" && m.kind === "text" && m.text === "no key now") as { id?: string } | undefined;
+    expect(mine?.id).toBeTruthy();
+    const cardsBefore = (await accessCards(bob, shared.id)).length;
+    const edited = await api("POST", `/api/bots/${shared.id}/messages/${mine!.id}/edit`, bob, { text: "edited by bob" });
+    expect(edited.status, edited.text).toBe(202);
+    await waitFor(async () => (await accessCards(bob, shared.id)).length > cardsBefore);
+    await sleep(300);
+    expect(promptsNow()).not.toContain("edited by bob");
+
+    // 3. a bot hop: bob's own bot asks alice's Xavier
+    const bee = await createBot(bob, "Bee", "claude");
+    const minted = await fetch(`${BASE}/api/testing/internal-capability`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-openmausbot-test-capability": TEST_CAPABILITY_KEY },
+      body: JSON.stringify({ botId: bee.id, threadId: bee.threadId, kind: "agents" }),
+    });
+    expect(minted.status).toBe(201);
+    const token = ((await minted.json()) as { token: string }).token;
+    const aliceCards = (await accessCards(alice, shared.id)).length;
+    const hop = await fetch(`${BASE}/api/internal/ask-bot`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ toBotId: shared.id, message: "hop from bee" }),
+    });
+    const hopText = await hop.text();
+    expect(hop.status, hopText).toBe(200);
+    await waitFor(async () => (await accessCards(alice, shared.id)).length > aliceCards);
+    await sleep(300);
+    expect(promptsNow()).not.toContain("hop from bee");
   }, 60_000);
 
   it("S3-7: a member's bot never gets full access, even from an admin", async () => {

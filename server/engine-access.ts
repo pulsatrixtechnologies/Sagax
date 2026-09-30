@@ -20,12 +20,56 @@
 
 export type EngineAccessRefusal = "engine_missing" | "no_access";
 
+/** Who a turn speaks for, stated by the path that starts it (the gate
+ * never guesses the owner from a missing speaker):
+ *   - person: a person's message; with no principal id the person is
+ *     unknown and never counts as the owner;
+ *   - operator: the operator at this computer (a loopback request);
+ *   - owner-routine: the owner's routine, webhook or other automation;
+ *   - peer: another bot's hop (ask_bot, delegation, an opened thread, an
+ *     aside, a Chief's retry). `principalId` is whoever the source turn spoke
+ *     for ("" when that was an unknown person); absent, the requesting bot's
+ *     owner speaks. */
+export type TurnSpeaker =
+  | { origin: "person"; principalId?: string }
+  | { origin: "operator" }
+  | { origin: "owner-routine" }
+  | { origin: "peer"; fromBotId?: string; principalId?: string };
+
+/** The speaker a turn start implies when its path did not state one. Fails
+ * closed: nothing known about the speaker is an unknown person. */
+export function resolveTurnSpeaker(input: {
+  speaker?: TurnSpeaker;
+  sender?: { id?: string };
+  peerAsk?: { botId: string };
+  trigger?: { kind: string };
+  automationSource?: string;
+}): TurnSpeaker {
+  if (input.speaker) return input.speaker;
+  if (input.peerAsk) return { origin: "peer", fromBotId: input.peerAsk.botId };
+  if (input.sender?.id) return { origin: "person", principalId: input.sender.id };
+  if (input.automationSource || input.trigger?.kind === "routine") return { origin: "owner-routine" };
+  if (input.trigger?.kind === "owner") return { origin: "operator" };
+  return { origin: "person" };
+}
+
+/** The principal a turn speaks for: "" when unknown (never the owner). A
+ * peer hop with no known source speaks for the requesting bot's owner. */
+export function speakerPrincipal(speaker: TurnSpeaker, ownerPrincipalId: string, peerOwnerPrincipalId?: string): string {
+  switch (speaker.origin) {
+    case "person": return speaker.principalId ?? "";
+    case "operator":
+    case "owner-routine": return ownerPrincipalId;
+    case "peer": return speaker.principalId ?? peerOwnerPrincipalId ?? "";
+  }
+}
+
 export interface EngineAccessInput {
   identity: "solo" | "perspicax";
-  /** The person whose message started the turn; absent when no person
-   * other than the owner is known (a routine, a bot-to-bot hop, the
-   * operator at this computer). */
-  speakerPrincipalId?: string;
+  /** Who the turn speaks for (see TurnSpeaker). */
+  speaker: TurnSpeaker;
+  /** For a peer hop: the owner of the bot that asked. */
+  peerOwnerPrincipalId?: string;
   ownerPrincipalId: string;
   /** The owner's organization role; the operator at this computer counts
    * as an admin. */
@@ -46,7 +90,7 @@ const key = (id: string | undefined) => id?.trim().toLowerCase() ?? "";
 export function engineAccessFor(input: EngineAccessInput): EngineAccess {
   if (input.identity !== "perspicax") return { ok: true, via: "server" };
   if (!input.installed) return { ok: false, reason: "engine_missing" };
-  const speaker = input.speakerPrincipalId ? key(input.speakerPrincipalId) : key(input.ownerPrincipalId);
+  const speaker = key(speakerPrincipal(input.speaker, input.ownerPrincipalId, input.peerOwnerPrincipalId));
   const ownerSpeaks = speaker !== "" && speaker === key(input.ownerPrincipalId);
   if (ownerSpeaks && input.ownerOrgRole === "admin") return { ok: true, via: "server" };
   if (input.memberBotsUseOrgKey && input.keyBacked) return { ok: true, via: "org-key" };
