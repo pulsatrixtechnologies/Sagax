@@ -87,6 +87,8 @@
 //                      and env, then initialize, notifications/initialized,
 //                      tools/list and tools/call. The reply then carries
 //                      mcp:<tool>:ok, mcp:<tool>:error or mcp:absent.
+//                      A call with `when` runs only on a turn whose prompt
+//                      contains that text.
 //   FAKE_CLAUDE_MCP_PAUSE_MS a pause between two calls (a test can change
 //                      the world in between).
 //   FAKE_CLAUDE_MCP_DUMP path to write {servers, calls:[{server, tool, listed,
@@ -511,7 +513,8 @@ const playTurn = (prompt: JsonValue) => {
   }
 
   if (fakeMcpCalls) {
-    void runFakeMcpCalls(fakeMcpCalls, argAfter("--mcp-config")).then(
+    const promptText = JSON.stringify(prompt);
+    void runFakeMcpCalls(fakeMcpCalls.filter((call) => !call.when || promptText.includes(call.when)), argAfter("--mcp-config")).then(
       (note) => playReply(prompt, note),
       (error: unknown) => playReply(prompt, `mcp:error:${error instanceof Error ? error.message : String(error)}`),
     );
@@ -520,7 +523,7 @@ const playTurn = (prompt: JsonValue) => {
   playReply(prompt, "");
 };
 
-type FakeMcpCall = { server: string; tool: string; arguments: Record<string, unknown> };
+type FakeMcpCall = { server: string; tool: string; arguments: Record<string, unknown>; when?: string };
 const fakeMcpCalls: FakeMcpCall[] | null = (() => {
   const raw = process.env.FAKE_CLAUDE_MCP_CALLS;
   if (!raw) return null;
@@ -528,8 +531,13 @@ const fakeMcpCalls: FakeMcpCall[] | null = (() => {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
     return parsed
-      .filter((call): call is { server: string; tool: string; arguments?: unknown } => typeof call?.server === "string" && typeof call?.tool === "string")
-      .map((call) => ({ server: call.server, tool: call.tool, arguments: call.arguments && typeof call.arguments === "object" && !Array.isArray(call.arguments) ? call.arguments as Record<string, unknown> : {} }));
+      .filter((call): call is { server: string; tool: string; arguments?: unknown; when?: unknown } => typeof call?.server === "string" && typeof call?.tool === "string")
+      .map((call) => ({
+        server: call.server,
+        tool: call.tool,
+        arguments: call.arguments && typeof call.arguments === "object" && !Array.isArray(call.arguments) ? call.arguments as Record<string, unknown> : {},
+        ...(typeof call.when === "string" && call.when ? { when: call.when } : {}),
+      }));
   } catch {
     return null;
   }

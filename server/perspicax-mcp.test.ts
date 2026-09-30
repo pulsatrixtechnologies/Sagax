@@ -107,6 +107,16 @@ describe("PerspicaxMcp", () => {
     expect(await solo.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" })).toEqual({ mounted: [], unavailable: [] });
   });
 
+  it("a turn in a routine's lineage mounts nothing, even for a peer hop that names a live person", async () => {
+    const h = harness();
+    expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: ALICE, speakerOrigin: "peer", routine: true })).toEqual({
+      mounted: [], unavailable: [{ profileId: "P1", name: "Dispatch", reason: "routine" }],
+    });
+    expect(await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person", routine: true })).toMatchObject({ mounted: [], unavailable: [{ reason: "routine" }] });
+    expect(h.subjectCalls).toEqual([]);
+    expect(h.exchanges).toEqual([]);
+  });
+
   it("a profile the speaker does not hold is unavailable; no sign-in is no_session", async () => {
     const h = harness();
     expect(await h.mcp.prepareTurn({ ...turn, bot: { id: "x", perspicax: { profiles: ["P1", "P2"] } }, speakerPrincipalId: BOB, speakerOrigin: "person" })).toEqual({

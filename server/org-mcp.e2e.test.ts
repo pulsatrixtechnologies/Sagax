@@ -9,7 +9,9 @@
 //               bob's exchanged token and clientInfo "Pulsa Bot (<bot id>)"
 //   E negative  carol does not hold the profile: no server is mounted, the
 //               system prompt says why, and the thread shows an activity row
-//   routine     a routine run mounts nothing (slice 6 brings delegation)
+//   routine     a routine run mounts nothing (slice 6 brings delegation),
+//               nor does anything a routine starts: a room goal routine, a
+//               bot a routine asks, a thread a routine opens on itself
 //   revocation  every exchanged token is revoked when its turn ends
 //   T1          no Perspicax or sign-in token reaches the engine: not in its
 //               argv, its environment or its MCP configuration
@@ -130,6 +132,43 @@ async function turn(auth: Auth, bot: { id: string; threadId: string }, text: str
   return reply.text ?? "";
 }
 
+/** Every Perspicax activity row alice can see (bot threads, and the room
+ * threads of goal routine runs), keyed by thread and message. */
+async function perspicaxRows(auth: Auth): Promise<Map<string, string>> {
+  const state = (await api("GET", "/api/bots?messages=0", auth)).body as {
+    bots: Array<{ threadId: string; tasks?: Array<{ threadId: string }> }>;
+    groups?: Array<{ threadId: string; tasks?: Array<{ threadId: string }> }>;
+  };
+  const threads = new Set<string>();
+  for (const owner of [...state.bots, ...(state.groups ?? [])]) {
+    threads.add(owner.threadId);
+    for (const task of owner.tasks ?? []) threads.add(task.threadId);
+  }
+  const rows = new Map<string, string>();
+  const keep = (threadId: string, messages: Message[]) => {
+    for (const message of messages) {
+      if (message.kind === "activity" && message.tool?.name.startsWith("Perspicax:")) rows.set(`${threadId}/${message.id}`, message.tool.name);
+    }
+  };
+  for (const threadId of threads) keep(threadId, await threadMessages(auth, threadId));
+  // a room goal routine runs in a room task thread, read by switching the
+  // room to it (refused while the room works: read on the next poll)
+  const runs = ((await api("GET", "/api/routines", auth)).body.runs ?? []) as Array<{ threadId?: string; groupId?: string }>;
+  for (const run of runs) {
+    if (!run.groupId || !run.threadId) continue;
+    const switched = await api("POST", `/api/groups/${run.groupId}/tasks/${run.threadId}`, auth);
+    if (switched.status === 200) keep(run.threadId, (switched.body.group?.messages ?? []) as Message[]);
+  }
+  return rows;
+}
+
+async function allIdle(auth: Auth): Promise<void> {
+  await waitFor(async () => {
+    const state = (await api("GET", "/api/bots?messages=0", auth)).body as { bots: Array<{ busy?: boolean }>; groups?: Array<{ working?: boolean }> };
+    return state.bots.every((bot) => !bot.busy) && (state.groups ?? []).every((group) => !group.working);
+  }, 60_000);
+}
+
 posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () => {
   let alice: Auth;
   const ids: Record<string, string> = {};
@@ -160,7 +199,11 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
           driver: "claudeAgent",
           environment: {
             FAKE_CLAUDE_DUMP: dump,
-            FAKE_CLAUDE_MCP_CALLS: JSON.stringify([{ server: "perspicax_*", tool: "api_list", arguments: {} }]),
+            FAKE_CLAUDE_MCP_CALLS: JSON.stringify([
+              { server: "agents", tool: "ask_bot", arguments: { bot_id: "Xavier", message: "ping from Rita" }, when: "ASK-XAVIER" },
+              { server: "agents", tool: "start_thread", arguments: { title: "Own job", message: "ping own job" }, when: "OPEN-OWN" },
+              { server: "perspicax_*", tool: "api_list", arguments: {} },
+            ]),
             FAKE_CLAUDE_MCP_DUMP: mcpDump,
           },
           config: { cli: FAKE_CLAUDE, fullAuto: true },
@@ -272,4 +315,60 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect(engine.systemPrompt).toContain("Perspicax tools reach routines once routine delegation is on");
     expect(idp.exchanges.length).toBe(exchangesBefore);
   }, 90_000);
+
+  /** Run a routine and wait until `rows` new "a routine" rows appear or an
+   * exchange happens (the bug), then check that nothing was exchanged. */
+  async function routineLineageMountsNothing(routineId: string, rows: number): Promise<string[]> {
+    const before = await perspicaxRows(alice);
+    const exchangesBefore = idp.exchanges.length;
+    const callsBefore = idp.mcpRequests.length;
+    const run = await api("POST", `/api/routines/${routineId}/run`, alice, {});
+    expect(run.status, run.text).toBeLessThan(300);
+    const fresh = async () => [...(await perspicaxRows(alice)).entries()].filter(([at]) => !before.has(at)).map(([, name]) => name);
+    await waitFor(async () => idp.exchanges.length > exchangesBefore || (await fresh()).length >= rows, 60_000);
+    await allIdle(alice);
+    expect(idp.exchanges.slice(exchangesBefore)).toEqual([]);
+    expect(idp.mcpRequests.slice(callsBefore)).toEqual([]);
+    const added = await fresh();
+    expect(added.length).toBeGreaterThanOrEqual(rows);
+    expect(added.every((name) => name === "Perspicax: Dispatch unavailable for a routine (routine)"), added.join("\n")).toBe(true);
+    return added;
+  }
+
+  it("a room goal routine mounts nothing for the coordinator, never under the owner's sign-in", async () => {
+    await allIdle(alice);
+    const room = await api("POST", "/api/groups", alice, {
+      name: "Dispatch room",
+      memberIds: [x.id],
+      humanIds: [ids.alice],
+      setup: { bulletin: "", defaultResponder: { kind: "member", botId: x.id } },
+    });
+    expect(room.status, room.text).toBeLessThan(300);
+    const routine = await api("POST", "/api/routines", alice, { name: "Room goal", botId: x.id, prompt: "Check the board as a team.", target: "room-goal",
+      groupId: room.body.group.id, enabled: false, schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
+    expect(routine.status, routine.text).toBe(201);
+    await routineLineageMountsNothing(routine.body.routine.id, 1);
+  }, 120_000);
+
+  it("a bot a routine asks mounts nothing, never under the routine owner's sign-in", async () => {
+    await allIdle(alice);
+    const created = await api("POST", "/api/bots", alice, { name: "Rita" });
+    expect(created.status, created.text).toBe(201);
+    const rita = created.body.bot as { id: string };
+    expect((await api("PATCH", `/api/bots/${rita.id}`, alice, { modelSelection: { instanceId: "claude", model: "fake-model" } })).status).toBe(200);
+    const routine = await api("POST", "/api/routines", alice, { name: "Ask Xavier", botId: rita.id, prompt: "ASK-XAVIER about the board.", enabled: false,
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
+    expect(routine.status, routine.text).toBe(201);
+    // Rita lists no profile: the one row is Xavier's, for the hop
+    await routineLineageMountsNothing(routine.body.routine.id, 1);
+  }, 120_000);
+
+  it("a thread a routine opens on its own bot mounts nothing, never under the owner's sign-in", async () => {
+    await allIdle(alice);
+    const routine = await api("POST", "/api/routines", alice, { name: "Open own", botId: x.id, prompt: "OPEN-OWN for the board.", enabled: false,
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
+    expect(routine.status, routine.text).toBe(201);
+    // one row for the routine run, one for the thread it opened
+    await routineLineageMountsNothing(routine.body.routine.id, 2);
+  }, 120_000);
 });

@@ -34,12 +34,19 @@ export type EngineAccessRefusal = "engine_missing" | "no_access";
  *   - peer: another bot's hop (ask_bot, delegation, an opened thread, an
  *     aside, a Chief's retry). `principalId` is whoever the source turn spoke
  *     for ("" when that was an unknown person); absent, the requesting bot's
- *     owner speaks. */
+ *     owner speaks. `routine` marks a hop a routine or other automation
+ *     started, directly or through other hops: it never reaches anyone's
+ *     Perspicax access (slice 5, D5), whoever it speaks for. */
 export type TurnSpeaker =
   | { origin: "person"; principalId?: string }
   | { origin: "operator" }
   | { origin: "owner-routine" }
-  | { origin: "peer"; fromBotId?: string; principalId?: string };
+  | { origin: "peer"; fromBotId?: string; principalId?: string; routine?: true };
+
+/** A turn a routine or other automation started, directly or through hops. */
+export function routineLineage(speaker: TurnSpeaker): boolean {
+  return speaker.origin === "owner-routine" || (speaker.origin === "peer" && speaker.routine === true);
+}
 
 /** The speaker a turn start implies when its path did not state one. Fails
  * closed: nothing known about the speaker is an unknown person. */

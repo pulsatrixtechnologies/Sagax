@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, serverCommandApproval, type EngineAccessInput } from "./engine-access.ts";
+import { accessCardForViewer, adminApprovalDecision, engineAccessFor, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, serverCommandApproval, type EngineAccessInput } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -100,6 +100,14 @@ describe("resolveTurnSpeaker", () => {
 });
 
 describe("the helpers around it", () => {
+  it("tells a routine's lineage apart: the routine itself and any hop marked from it", () => {
+    expect(routineLineage({ origin: "owner-routine" })).toBe(true);
+    expect(routineLineage({ origin: "peer", fromBotId: "b", principalId: "pr_alice", routine: true })).toBe(true);
+    expect(routineLineage({ origin: "peer", fromBotId: "b", principalId: "pr_alice" })).toBe(false);
+    expect(routineLineage({ origin: "person", principalId: "pr_alice" })).toBe(false);
+    expect(routineLineage({ origin: "operator" })).toBe(false);
+  });
+
   it("says why in plain words, never with provider text", () => {
     expect(engineAccessNotice("no_access", "Claude")).toBe("This bot can't answer: no key for Claude. Its owner has to add one.");
     expect(engineAccessNotice("engine_missing", "Codex")).toBe("This bot uses Codex, which is not installed on this server.");

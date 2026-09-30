@@ -12,7 +12,11 @@
 //
 //   - a person speaking uses their own access, never the owner's (T2); a
 //     peer hop speaks for its root human; `operator` is the owner;
-//   - a routine gets nothing until routine delegation (slice 6);
+//   - a routine gets nothing until routine delegation (slice 6), and neither
+//     does anything it starts: a bot it asks, a thread it opens, a room goal
+//     it runs (routine lineage);
+//   - a peer hop whose source speaker is not known is an unknown speaker,
+//     never the asking bot's owner;
 //   - a profile the speaker does not hold is not mounted: the turn gets a
 //     note and an activity row instead (decided before the engine lists its
 //     tools);
@@ -165,6 +169,9 @@ export class PerspicaxMcp {
     bot: { id: string; perspicax?: { profiles: readonly string[] } };
     speakerPrincipalId: string;
     speakerOrigin: "person" | "operator" | "owner-routine" | "peer";
+    /** The turn descends from a routine or other automation (a hop it
+     * asked, a thread it opened, a room goal it runs). */
+    routine?: boolean;
   }): Promise<PerspicaxTurnPlan> {
     const plan: PerspicaxTurnPlan = { mounted: [], unavailable: [] };
     const link = this.options.link();
@@ -178,7 +185,7 @@ export class PerspicaxMcp {
     const known = profiles.filter((id) => catalog.has(id));
     refuse(profiles.filter((id) => !catalog.has(id)), "unknown_profile");
     if (!known.length) return plan;
-    if (input.speakerOrigin === "owner-routine") {
+    if (input.speakerOrigin === "owner-routine" || input.routine === true) {
       refuse(known, "routine");
       return plan;
     }

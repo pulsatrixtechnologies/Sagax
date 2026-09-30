@@ -591,7 +591,7 @@ import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { PerspicaxMcp, type PerspicaxTurnPlan } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
+import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -832,6 +832,10 @@ const turnTriggers = new Map<string, UsageTrigger>();
  * continuation of that turn, or a bot hop it starts, speaks for too. */
 const turnSpeakers = new Map<string, TurnSpeaker>();
 const turnSpeakerPrincipals = new Map<string, string>();
+/** Threads whose last admitted turn (Direct or room) descends from a routine
+ * or other automation: a bot hop it starts carries the mark, so no turn a
+ * routine started ever reaches someone's Perspicax access (slice 5, D5). */
+const turnRoutineLineage = new Set<string>();
 /** Who a user message is from, when that is someone other than the desktop
  * owner. Loopback is the owner by design, so it stays unstamped and reads as
  * the profile name; a paired or signed-in session names the person, by
@@ -2672,13 +2676,20 @@ async function perspicaxTurnIntegration(input: {
   if (IDENTITY.kind !== "perspicax" || !perspicaxMcp) return none;
   const live = store.bot(input.bot.id) ?? input.bot;
   if (!live.perspicax?.profiles.length) return none;
-  const speakerPrincipalId = input.speaker.origin === "owner-routine" ? "" : orgSpeakerPrincipal(live, input.speaker);
+  const routine = routineLineage(input.speaker);
+  // MCP speaks only for a known person: a routine's lineage speaks for no
+  // one, and a peer hop whose source speaker is not known is an unknown
+  // person, never the asking bot's owner.
+  const speakerPrincipalId = routine || (input.speaker.origin === "peer" && input.speaker.principalId === undefined)
+    ? ""
+    : orgSpeakerPrincipal(live, input.speaker);
   const plan = await perspicaxMcp.prepareTurn({
     threadId: input.threadId,
     generation: input.generation,
     bot: { id: live.id, perspicax: live.perspicax },
     speakerPrincipalId,
     speakerOrigin: input.speaker.origin,
+    ...(routine ? { routine: true } : {}),
   });
   const custom: Record<string, McpServerSpec> = {};
   const taken = new Set(input.taken);
@@ -2720,7 +2731,7 @@ async function perspicaxTurnIntegration(input: {
   const lines = plan.unavailable.map((entry) => entry.reason === "routine"
     ? `Perspicax tools of profile "${entry.name}" are not available in this routine run: ${PERSPICAX_UNAVAILABLE_WHY.routine}.`
     : `Perspicax tools of profile "${entry.name}" are not available in this turn: ${PERSPICAX_UNAVAILABLE_WHY[entry.reason]}. Tell them so if they ask for these tools.`);
-  const speakerName = input.speaker.origin === "owner-routine"
+  const speakerName = routine
     ? "a routine"
     : (speakerPrincipalId && principals.byId(speakerPrincipalId)?.name) || "an unknown person";
   const byReason = new Map<string, string[]>();
@@ -9073,6 +9084,8 @@ async function startTurn(
   if (!opts.cardContinuation) {
     turnSpeakers.set(threadId, speaker);
     turnSpeakerPrincipals.set(threadId, orgSpeakerPrincipal(bot, speaker));
+    if (routineLineage(speaker)) turnRoutineLineage.add(threadId);
+    else turnRoutineLineage.delete(threadId);
   }
   // A card continuation neither starts nor ends the person's ask: it
   // resumes the turn their last message began, so that record stands.
@@ -11569,6 +11582,12 @@ async function runGroupMemberTurn(
   // Organization server (slice 3, D13): a room turn needs engine access for
   // the person whose message it answers, as a Direct turn does.
   const roomSpeakerId = store.activePath(threadId).findLast((message) => message.role === "user" && message.sender?.id)?.sender?.id;
+  // A room turn no person asked for (a goal routine, other automation)
+  // marks its thread, so a bot hop it starts carries the routine lineage.
+  if (!cardContinuation) {
+    if (roomSpeakerId) turnRoutineLineage.delete(threadId);
+    else turnRoutineLineage.add(threadId);
+  }
   const roomAccessRefusal = cardContinuation ? null
     : orgEngineRefusal(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "operator" });
   if (roomAccessRefusal) {
@@ -11736,11 +11755,13 @@ async function runGroupMemberTurn(
   // Slice 5: the bot's Perspicax profiles, as the person who speaks in the room.
   let roomPerspicaxPrompt = "";
   if (IDENTITY.kind === "perspicax" && instance.adapter.capabilities.customMcp === true && (store.bot(bot.id) ?? bot).perspicax?.profiles.length) {
+    // A room turn with no person behind it (a goal routine, any other
+    // automation) is never the owner speaking for MCP.
     const perspicax = await perspicaxTurnIntegration({
       bot,
       threadId,
       generation: internalGeneration,
-      speaker: roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "operator" },
+      speaker: roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : { origin: "owner-routine" },
       taken: Object.keys(integrations.custom ?? {}),
       from: { botId: bot.id, name: bot.name, color: bot.color },
     });
@@ -14526,7 +14547,8 @@ function orgSpeakerPrincipal(bot: { ownerUserId?: unknown }, speaker: TurnSpeake
  * for, when that turn is known. */
 function peerSpeaker(fromBotId: string, fromThreadId?: string): TurnSpeaker {
   const principalId = fromThreadId ? turnSpeakerPrincipals.get(fromThreadId) : undefined;
-  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}) };
+  const routine = fromThreadId ? turnRoutineLineage.has(fromThreadId) : false;
+  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}) };
 }
 /** On an organization server, words may join a running turn only when they
  * speak for the same principal as that turn: anyone else's words wait for a
@@ -14535,6 +14557,9 @@ function orgJoinsRunningTurn(bot: { ownerUserId?: unknown }, threadId: string, s
   if (IDENTITY.kind !== "perspicax") return true;
   const running = turnSpeakerPrincipals.get(threadId);
   const joining = orgSpeakerPrincipal(bot, speaker);
+  // a routine's words never fold into a person's turn, nor theirs into a
+  // routine's: each keeps the Perspicax access it was admitted with
+  if (routineLineage(speaker) !== turnRoutineLineage.has(threadId)) return false;
   return Boolean(running) && running === joining;
 }
 /** Slice 4 (D8): the facts engine-credentials.ts decides a turn's access from. */
