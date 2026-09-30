@@ -249,6 +249,13 @@ export class PerspicaxDirectory {
     this.keyCache.delete(`${sub}\u0000${provider}`);
   }
 
+  /** Drop every cached owner key of a subject (a back-channel logout, a
+   * disabled or vanished person). */
+  forgetSubject(sub: string): void {
+    const prefix = `${sub}\u0000`;
+    for (const cacheKey of this.keyCache.keys()) if (cacheKey.startsWith(prefix)) this.keyCache.delete(cacheKey);
+  }
+
   /** An owner's model key, read through the link (slice 4, contract 3):
    * cached in memory for 60 s at most, never logged, never written. */
   async resolveProviderKey(sub: string, provider: ModelProvider): Promise<ProviderKeyResult> {
@@ -469,16 +476,16 @@ export class PerspicaxDirectory {
     this.options.teamNames?.replaceFromDirectory(directory.teams.map((team) => ({ id: team.id, name: team.name })));
     const keys = new Map<string, string[]>();
     for (const person of directory.people) {
-      const names: string[] = [...new Set((person.provider_keys ?? []).filter((name) => name === "anthropic" || name === "openai"))].sort();
+      // A disabled person's keys serve nobody (S4-14): resolve would answer
+      // 409, and the cache must not outlive the disable.
+      const names: string[] = person.status === "disabled" ? [] : [...new Set((person.provider_keys ?? []).filter((name) => name === "anthropic" || name === "openai"))].sort();
       keys.set(person.sub, names);
+      if (person.status === "disabled") this.forgetSubject(person.sub);
       // A provider the directory no longer lists for this person: drop its key.
       for (const name of ["anthropic", "openai"]) if (!names.includes(name)) this.invalidate(person.sub, name);
     }
     for (const sub of this.keysBySub.keys()) {
-      if (!keys.has(sub)) {
-        this.invalidate(sub, "anthropic");
-        this.invalidate(sub, "openai");
-      }
+      if (!keys.has(sub)) this.forgetSubject(sub);
     }
     this.keysBySub = keys;
     for (const person of directory.people) {

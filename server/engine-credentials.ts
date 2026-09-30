@@ -64,7 +64,7 @@ export interface EngineCredentialInput {
   identity: "solo" | "perspicax";
   speaker: TurnSpeaker;
   peerOwnerPrincipalId?: string;
-  owner: { principalId: string; sub?: string; orgRole: "admin" | "member" | undefined };
+  owner: { principalId: string; sub?: string; orgRole: "admin" | "member" | undefined; disabled?: boolean };
   instance: { instanceId: string; driver: string; installed: boolean };
   /** The owner signed in to this driver with their own subscription (D10). */
   subscriptionSignedIn: (principalId: string, driver: string) => boolean;
@@ -91,7 +91,9 @@ export function resolveEngineAccess(input: EngineCredentialInput, skip: { ownerK
     return { ok: true, via: "subscription" };
   }
   const provider = providerOfDriver(driver);
-  if (!skip.ownerKey && provider && input.owner.sub && input.ownerHasKey(input.owner.sub, provider)) {
+  // A disabled owner's key serves nobody (S4-14): the back-channel logout or
+  // the directory marked them out, whatever the key cache still holds.
+  if (!skip.ownerKey && !input.owner.disabled && provider && input.owner.sub && input.ownerHasKey(input.owner.sub, provider)) {
     return { ok: true, via: "owner-key", provider };
   }
   if (ownerSpeaks && input.owner.orgRole === "admin") return { ok: true, via: "server" };
@@ -123,6 +125,10 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
     return { ok: true, access: { via: "subscription", identity: `subscription:${owner}`, ...(driver === "claudeAgent" ? { claudeConfigDir: dir } : { codexHome: dir }) } };
   }
   if (plan.via === "owner-key" && plan.provider && input.owner.sub) {
+    if (input.owner.disabled) {
+      deps.invalidate(input.owner.sub, plan.provider);
+      return materializeEngineAccess(input, resolveEngineAccess(input, { ownerKey: true }), deps);
+    }
     const result = await deps.resolveKey(input.owner.sub, plan.provider);
     if (result.ok) {
       const identity = `owner-key:${owner}:${result.fingerprint || "key"}`;

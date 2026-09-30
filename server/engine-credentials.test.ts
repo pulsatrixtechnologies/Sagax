@@ -49,6 +49,12 @@ describe("resolveEngineAccess", () => {
     expect(providerOfDriver("grokAgent")).toBeNull();
   });
 
+  it("S4-14: a disabled owner's key serves nobody, whatever the directory still lists", () => {
+    const erin = { principalId: OWNER, sub: "SUB-OWNER", orgRole: "member" as const, disabled: true };
+    expect(resolveEngineAccess(input({ hasKey: true, owner: erin, speaker: { origin: "person", principalId: BOB } }))).toEqual({ ok: false, reason: "no_access" });
+    expect(resolveEngineAccess(input({ hasKey: true, owner: erin, speaker: { origin: "person", principalId: BOB }, memberBotsUseOrgKey: true }))).toEqual({ ok: true, via: "org-key" });
+  });
+
   it("an admin owner speaking falls back to the server; anyone else to the org key when allowed", () => {
     const admin = { principalId: OWNER, sub: "SUB-OWNER", orgRole: "admin" as const };
     expect(resolveEngineAccess(input({ owner: admin }))).toEqual({ ok: true, via: "server" });
@@ -88,6 +94,15 @@ describe("materializeEngineAccess", () => {
     expect(await materializeEngineAccess(claude, resolveEngineAccess(claude), deps({ ok: false, error: "no_key" }))).toEqual({ ok: true, access: { via: "subscription", identity: `subscription:${OWNER}`, claudeConfigDir: `/data/principals/${OWNER}/claude` } });
     const codex = input({ signedIn: true, instance: { instanceId: "codex", driver: "codex", installed: true } });
     expect(await materializeEngineAccess(codex, resolveEngineAccess(codex), deps({ ok: false, error: "no_key" }))).toEqual({ ok: true, access: { via: "subscription", identity: `subscription:${OWNER}`, codexHome: `/data/principals/${OWNER}/codex` } });
+  });
+
+  it("S4-14: an owner-key plan for an owner disabled since never reads the (cached) key", async () => {
+    const live = input({ hasKey: true, speaker: { origin: "person", principalId: BOB } });
+    const plan = resolveEngineAccess(live);
+    const erin = { ...live, owner: { ...live.owner, disabled: true } };
+    const cached = deps({ ok: true, key: "sk-ant-test-erin-key-00001", fingerprint: "fp" });
+    expect(await materializeEngineAccess(erin, plan, cached)).toEqual({ ok: false, reason: "no_access" });
+    expect(cached.invalidated).toEqual(["SUB-OWNER/anthropic"]);
   });
 
   it("a key Perspicax no longer gives falls through (and is dropped); an unreachable Perspicax is no_access", async () => {

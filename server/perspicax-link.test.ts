@@ -309,6 +309,31 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
     expect(h.resolveCalls).toHaveLength(4);
   });
 
+  it("S4-14: a disabled owner's cached key is dropped at once, by the directory or a back-channel logout", async () => {
+    const h = harness(withTeams([person("ERIN", { provider_keys: ["anthropic", "openai"] }), person("BOB")], []));
+    await h.sync.refresh();
+    h.keys.set("ERIN/anthropic", { key: "sk-ant-test-erin-key-00001" });
+    h.keys.set("ERIN/openai", { key: "sk-test-openai-erin-000001" });
+    await h.sync.resolveProviderKey("ERIN", "anthropic");
+    await h.sync.resolveProviderKey("ERIN", "openai");
+    expect(h.resolveCalls).toHaveLength(2);
+    // back-channel logout: every cached key of that subject goes
+    h.sync.forgetSubject("ERIN");
+    h.keys.set("ERIN/anthropic", { status: 409 });
+    expect(await h.sync.resolveProviderKey("ERIN", "anthropic")).toEqual({ ok: false, error: "user_inactive" });
+    h.keys.set("ERIN/openai", { key: "sk-test-openai-erin-000001" });
+    await h.sync.resolveProviderKey("ERIN", "openai");
+    expect(h.resolveCalls).toHaveLength(4);
+    // the directory says disabled while still listing provider_keys: no key
+    // is served from cache and none is advertised
+    h.setDirectory(withTeams([person("ERIN", { status: "disabled", provider_keys: ["anthropic", "openai"] }), person("BOB")], []));
+    await h.sync.refresh();
+    expect(h.sync.providerKeys("ERIN")).toEqual([]);
+    h.keys.set("ERIN/openai", { status: 409 });
+    expect(await h.sync.resolveProviderKey("ERIN", "openai")).toEqual({ ok: false, error: "user_inactive" });
+    expect(h.resolveCalls).toHaveLength(5);
+  });
+
   it("answers no_key, user_inactive, link and unreachable", async () => {
     const h = harness(withTeams([person("ALICE")], []));
     await h.sync.refresh();

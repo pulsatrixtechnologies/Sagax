@@ -14406,7 +14406,7 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
     identity: IDENTITY.kind,
     speaker,
     peerOwnerPrincipalId: peerOwnerPrincipal(speaker),
-    owner: { principalId: ownerId, ...(sub ? { sub } : {}), orgRole: botOwnerOrgRole(bot) },
+    owner: { principalId: ownerId, ...(sub ? { sub } : {}), orgRole: botOwnerOrgRole(bot), ...(owner?.disabledAt !== undefined ? { disabled: true } : {}) },
     instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId) },
     subscriptionSignedIn: (principalId, driver) => engineLogins?.signedIn(principalId, driver) ?? false,
     ownerHasKey: (ownerSub, provider) => perspicaxDirectory?.providerKeys(ownerSub).includes(provider) ?? false,
@@ -15678,7 +15678,17 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
       return principal;
     },
     issueSession: (input) => sessions.issue(input),
-    grants: idpSessions,
+    // A back-channel logout also drops the person's cached owner keys (S4-14).
+    grants: {
+      unavailableReason: () => idpSessions.unavailableReason(),
+      createGrant: (input) => idpSessions.createGrant(input),
+      bindSession: (grantRef, sessionId) => idpSessions.bindSession(grantRef, sessionId),
+      discard: (grantRef) => idpSessions.discard(grantRef),
+      backchannelLogout: (input) => {
+        perspicaxDirectory?.forgetSubject(input.sub);
+        return idpSessions.backchannelLogout(input);
+      },
+    },
     openPairing: (input) => sessions.openPairing(input),
     serverName: () => environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED }).label,
   })
