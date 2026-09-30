@@ -1465,6 +1465,67 @@ public struct ServerEnvironment: Codable, Hashable, Sendable {
     public var label: String
     public var platform: String?
     public var version: String?
+    /// Present on an organization server that signs people in with Pulsatrix.
+    public var identity: ServerIdentity? = nil
+
+    /// The server signs people in with Pulsatrix and returns to native apps
+    /// (`/auth/oidc/start?client=phone` ends on an `openmausbot://pair` link).
+    public var offersPulsatrixSignIn: Bool {
+        identity?.kind == "perspicax" && identity?.nativeReturn == true
+    }
+}
+
+/// How an organization server signs people in (the descriptor's `identity`).
+public struct ServerIdentity: Codable, Hashable, Sendable {
+    public var kind: String
+    public var `protocol`: String?
+    public var issuer: String?
+    public var loginPath: String?
+    /// The server ends a native sign-in on an `openmausbot://` link.
+    public var nativeReturn: Bool?
+}
+
+/// "Sign in with Pulsatrix" from the phone: the authentication sheet opens
+/// this address on the server, and the server's answer is the pairing
+/// invite link the app already accepts from a QR code
+/// (`openmausbot://pair?address=...&token=omb_pair_...&name=...`).
+public enum PulsatrixSignIn {
+    public static let callbackScheme = "openmausbot"
+
+    /// `<server origin>/auth/oidc/start?client=phone`, or nil for an address
+    /// that is not http(s).
+    public static func startURL(base: URL) -> URL? {
+        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false),
+              let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              components.host != nil
+        else { return nil }
+        components.path = "/auth/oidc/start"
+        components.query = nil
+        components.fragment = nil
+        components.queryItems = [URLQueryItem(name: "client", value: "phone")]
+        return components.url
+    }
+
+    /// The invite the sign-in came back with, or nil (a cancelled sheet, a
+    /// link for another server, anything that is not an invite).
+    public static func invite(from callback: URL, expectedOrigin: URL) -> PairingInvite? {
+        guard let invite = PairingInvite.parse(callback),
+              invite.credential.hasPrefix("omb_pair_"),
+              let address = invite.connection.baseURL,
+              sameOrigin(address, expectedOrigin)
+        else { return nil }
+        return invite
+    }
+
+    static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
+        func key(_ url: URL) -> String? {
+            guard let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else { return nil }
+            let port = url.port ?? (scheme == "https" ? 443 : 80)
+            return "\(scheme)://\(host):\(port)"
+        }
+        guard let left = key(a), let right = key(b) else { return false }
+        return left == right
+    }
 }
 
 /// Keep future attachment kinds decodable; image entries display inline and

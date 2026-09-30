@@ -11,4 +11,7 @@
     <string name="notification_channel_always_on_desc">Shown while OpenMausBot stays connected in the background</string>
     <string name="always_on_notification_title">MausBot is staying connected</string>
     <string name="always_on_notification_text">Notifications will reach you even with the app closed</string>
+    <string name="pulsatrix_sign_in">Sign in with Pulsatrix</string>
+    <string name="pulsatrix_sign_in_hint">Your organization signs you in with Pulsatrix. You can also enter a pairing code.</string>
+    <string name="pulsatrix_sign_in_unavailable">This phone has no browser available to sign in with Pulsatrix.</string>
 </resources>

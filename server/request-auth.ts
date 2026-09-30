@@ -276,7 +276,10 @@ export function clearSessionCookie(name: string): string {
  * deliberately listed here. Two client-allowed PATCH routes carry a body
  * filter in the handler (bot and room edits: display fields only). Loopback
  * holds both scopes. */
-export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: RegExp; feature?: "sharedComputers" }> = [
+export type ClientFeature = "sharedComputers" | "orgPairing";
+export type ClientFeatures = Partial<Record<ClientFeature, boolean>>;
+
+export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: RegExp; feature?: ClientFeature }> = [
   // own session
   { methods: ["GET"], path: /^\/api\/auth\/session$/ },
   { methods: ["POST"], path: /^\/api\/auth\/stream-ticket$/ },
@@ -286,6 +289,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // with the feature off these paths are as unlisted as any other, so a
   // client session is refused exactly the way an unknown route refuses it.
   { methods: ["POST"], path: /^\/api\/shared-computers\/(?:connect|[\w-]+\/(?:poll|lease|result|disconnect))$/, feature: "sharedComputers" },
+  // Organization server (OMB_IDENTITY=perspicax): a member pairs their own
+  // phone or computer. The handler binds the code to the member's person and
+  // clamps its scopes to the session's own.
+  { methods: ["POST"], path: /^\/api\/auth\/pairing$/, feature: "orgPairing" },
   // liveness, identity, the stream
   { methods: ["GET"], path: /^\/api\/health$/ },
   { methods: ["GET"], path: /^\/api\/edition$/ },
@@ -371,7 +378,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/workers\/queue\/[\w-]+\/cancel$/ },
 ];
 
-export function requiredScope(method: string, path: string, features: { sharedComputers?: boolean } = {}): Scope {
+export function requiredScope(method: string, path: string, features: ClientFeatures = {}): Scope {
   const upper = method.toUpperCase();
   for (const rule of CLIENT_ALLOW) {
     if (rule.feature && features[rule.feature] !== true) continue;
@@ -427,7 +434,7 @@ export interface ResolveOptions {
   companionMutationToken?: string;
   /** Feature gates that decide whether a client-scoped route exists at all.
    * Absent means off, so an ungated build refuses like one without it. */
-  features?: { sharedComputers?: boolean };
+  features?: ClientFeatures;
   /** See LoopbackTrust. Absent is `owner`, the historical behaviour. Ignored
    * while a desktop capability is in force (loopbackMutationToken). */
   loopbackTrust?: LoopbackTrust;

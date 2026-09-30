@@ -82,10 +82,36 @@ export function isOwnerOrAdmin(state: SessionState | null): boolean {
 
 /** Pull `#code=…` off the URL and out of history, the way a pairing link is meant to be consumed. */
 export function takePairingCodeFromLocation(): string | null {
-  const m = /[#&]code=([^&]+)/.exec(location.hash);
-  if (!m) return null;
-  history.replaceState(null, "", location.pathname + location.search);
-  return decodeURIComponent(m[1]);
+  return takePairingFromLocation().code;
+}
+
+/** A pairing credential the desktop app received from "Sign in with
+ * Pulsatrix" in the system browser: exactly `omb_pair_` and 43 base64url
+ * characters. */
+const SIGN_IN_CREDENTIAL = /^omb_pair_[A-Za-z0-9_-]{43}$/;
+
+/** Read `#code=<c>` and, for a sign-in credential only, `&auto=1` (the
+ * desktop app opens /pair#code=<c>&auto=1 after the system browser handed
+ * the credential back). The code is kept verbatim: a credential must never
+ * be normalized. */
+export function parsePairingHash(hash: string): { code: string | null; auto: boolean } {
+  const m = /[#&]code=([^&]+)/.exec(hash);
+  if (!m) return { code: null, auto: false };
+  let code: string;
+  try {
+    code = decodeURIComponent(m[1]!);
+  } catch {
+    return { code: null, auto: false };
+  }
+  const auto = /[#&]auto=1(?:&|$)/.test(hash) && SIGN_IN_CREDENTIAL.test(code);
+  return { code, auto };
+}
+
+/** The pairing code in the address bar, dropped from it once read. */
+export function takePairingFromLocation(loc: Pick<Location, "hash" | "pathname" | "search"> = location, historyApi: Pick<History, "replaceState"> | null = globalThis.history ?? null): { code: string | null; auto: boolean } {
+  const parsed = parsePairingHash(loc.hash);
+  if (parsed.code !== null || /[#&]code=/.test(loc.hash)) historyApi?.replaceState(null, "", loc.pathname + loc.search);
+  return parsed;
 }
 
 /** The invited address carried on a pair link (`/pair?email=…`): prefilled

@@ -8,8 +8,19 @@
 // same jar. When that window comes back to the workspace outside
 // /auth/oidc/, the main window loads that address and the sign-in window
 // closes. No provider token is ever seen here: the server is the OIDC client
-// (server/oidc-login.ts). Slice 2 moves this to the system browser (RFC 8252).
+// (server/oidc-login.ts).
+//
+// Slice 2: when this app is the system's openmausbot handler and the server
+// says it returns to native apps (descriptor identity.nativeReturn), the
+// sign-in runs in the person's own browser instead (RFC 8252), where their
+// password manager and passkeys live. The server ends that flow on
+// openmausbot://auth?origin=<o>#code=<credential>; the app then opens
+// <o>/pair#code=<credential>&auto=1 in the main window, which redeems it
+// without asking only after the main process confirms the handoff
+// (createSignInHandoff). Only a return this app is waiting for (same origin,
+// under ten minutes, one at a time) is honoured.
 const OIDC_START_PATH = "/auth/oidc/start";
+const SYSTEM_SIGN_IN_TTL_MS = 10 * 60_000;
 
 function activeOrigin(state) {
   const active = state?.environments?.find((entry) => entry.id === state.activeId);
@@ -27,6 +38,66 @@ function oidcLoginStartUrl(url, state) {
   } catch {
     return null;
   }
+}
+
+/** The same sign-in, started in the system browser for the desktop return. */
+function systemBrowserStartUrl(url, state) {
+  const start = oidcLoginStartUrl(url, state);
+  return start ? `${new URL(start).origin}${OIDC_START_PATH}?client=desktop` : null;
+}
+
+/** The one system-browser sign-in this app is waiting for. */
+function createPendingSystemSignIn({ now = Date.now } = {}) {
+  let pending = null;
+  return {
+    begin(origin) {
+      pending = { origin, startedAt: now() };
+    },
+    /** True once, for a fresh return from the origin that was started. */
+    take(origin) {
+      const current = pending;
+      if (!current || now() - current.startedAt >= SYSTEM_SIGN_IN_TTL_MS) {
+        pending = null;
+        return false;
+      }
+      if (current.origin !== origin) return false;
+      pending = null;
+      return true;
+    },
+  };
+}
+
+/** How long /pair has to claim a credential the app just handed it. */
+const SIGN_IN_HANDOFF_TTL_MS = 60_000;
+
+/** The credential this app just loaded into /pair from an honoured return
+ * link. /pair redeems a credential without asking only when this confirms
+ * it (preload takeSignInReturn): the same origin, that exact credential,
+ * once, within a minute. A /pair#code=...&auto=1 link opened any other way
+ * gets the ordinary code form. */
+function createSignInHandoff({ now = Date.now } = {}) {
+  let handed = null;
+  return {
+    accept(parsed) {
+      handed = parsed && typeof parsed.code === "string" ? { origin: parsed.origin, code: parsed.code, at: now() } : null;
+    },
+    redeem(origin, code) {
+      const current = handed;
+      if (!current || typeof code !== "string") return false;
+      if (now() - current.at >= SIGN_IN_HANDOFF_TTL_MS) {
+        handed = null;
+        return false;
+      }
+      if (current.origin !== origin || current.code !== code) return false;
+      handed = null;
+      return true;
+    },
+  };
+}
+
+/** Where the main window goes for a parsed return link. */
+function authReturnTarget(parsed) {
+  return "code" in parsed ? `${parsed.origin}/pair#code=${parsed.code}&auto=1` : `${parsed.origin}/pair#signin_error=${parsed.error}`;
 }
 
 /** Where the main window goes once the sign-in window is back on the
@@ -79,4 +150,4 @@ function openOidcLoginWindow({ BrowserWindow, parent, url, onDone, log = () => {
   return login;
 }
 
-module.exports = { OIDC_START_PATH, oidcLoginStartUrl, oidcLoginReturnUrl, openOidcLoginWindow };
+module.exports = { OIDC_START_PATH, SIGN_IN_HANDOFF_TTL_MS, SYSTEM_SIGN_IN_TTL_MS, authReturnTarget, createPendingSystemSignIn, createSignInHandoff, oidcLoginStartUrl, oidcLoginReturnUrl, openOidcLoginWindow, systemBrowserStartUrl };

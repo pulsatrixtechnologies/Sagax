@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import { readSessionState, SERVICE_TRUST_REASON, takePairingCodeFromLocation, takeInvitedEmailFromLocation } from "./lib/session";
+import { readSessionState, SERVICE_TRUST_REASON, takePairingFromLocation, takeInvitedEmailFromLocation } from "./lib/session";
 import { bootstrapBrand } from "./lib/brand";
 import { applySkin, readSkin } from "./lib/skins";
 import { applyFont, readFont } from "./lib/fonts";
@@ -24,7 +24,10 @@ applyFont(readFont());
 async function chooseRoot(): Promise<React.ReactNode> {
   // An invite link works without a session: redeeming it is the sign-in.
   if (location.pathname === "/join") return <JoinPage initialToken={takeInviteTokenFromLocation()} />;
-  if (location.pathname === "/pair") return <PairPage initialCode={takePairingCodeFromLocation()} initialEmail={takeInvitedEmailFromLocation()} />;
+  if (location.pathname === "/pair") {
+    const pairing = takePairingFromLocation();
+    return <PairPage initialCode={pairing.code} autoSubmit={pairing.auto} initialEmail={takeInvitedEmailFromLocation()} />;
+  }
   const session = await readSessionState();
   if (session.kind === "unauthenticated") return <PairPage initialCode={null} reason={session.error} />;
   // A service-trust server answers this machine's requests without a session

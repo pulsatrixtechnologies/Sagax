@@ -42,15 +42,24 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.openmausbot.companion.R
+import com.openmausbot.companion.core.CompanionClient
 import com.openmausbot.companion.core.Connection
 import com.openmausbot.companion.core.PairingInvite
+import com.openmausbot.companion.core.PulsatrixSignIn
 import com.openmausbot.companion.core.PairingRouteError
 import com.openmausbot.companion.core.ServerPairingRetryError
 import com.openmausbot.companion.discovery.DiscoveredService
 import com.openmausbot.companion.discovery.DiscoveryState
 import com.openmausbot.companion.discovery.toConnection
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Pairing: scan the computer's QR, confirm its identity, and connect — the port
@@ -283,6 +292,16 @@ fun PairingScreen(onCancel: () -> Unit) {
 
         val selected = pending
         if (selected != null) {
+            // An organization server that signs people in with Pulsatrix: the
+            // sign-in runs in a Custom Tab and comes back as the same invite a
+            // QR code carries, through the openmausbot://pair intent filter.
+            if (!selected.fromScan) {
+                PulsatrixSignInSection(
+                    connection = selected.connection,
+                    enabled = !pairing,
+                    onUnavailable = { failure = it },
+                )
+            }
             CodeSection(
                 confirmation = PairingConfirmation.of(selected, secrets),
                 code = code,
@@ -364,6 +383,49 @@ fun PairingScreen(onCancel: () -> Unit) {
         failure?.let {
             Text(text = it, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
         }
+    }
+}
+
+/**
+ * "Sign in with Pulsatrix", shown only when the chosen server's descriptor says
+ * it signs people in with Pulsatrix and returns to native apps. The Custom Tab
+ * shares the browser's cookies, so a person already signed in to Perspicax is
+ * not asked again. No Perspicax token reaches the phone.
+ */
+@Composable
+private fun PulsatrixSignInSection(connection: Connection, enabled: Boolean, onUnavailable: (String) -> Unit) {
+    val context = LocalContext.current
+    val base = connection.baseUrl
+    val offers by produceState(false, connection) {
+        value = base != null && withContext(Dispatchers.IO) {
+            runCatching { CompanionClient(connection, null).environment().offersPulsatrixSignIn }.getOrDefault(false)
+        }
+    }
+    val start = base?.let(PulsatrixSignIn::startUrl)
+    if (!offers || start == null) return
+    val unavailable = stringResource(R.string.pulsatrix_sign_in_unavailable)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = {
+                try {
+                    CustomTabsIntent.Builder()
+                        .setShowTitle(true)
+                        .build()
+                        .launchUrl(context, Uri.parse(start.toASCIIString()))
+                } catch (error: Exception) {
+                    onUnavailable(unavailable)
+                }
+            },
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.pulsatrix_sign_in))
+        }
+        Text(
+            text = stringResource(R.string.pulsatrix_sign_in_hint),
+            fontSize = 13.sp,
+            color = secondaryTint,
+        )
     }
 }
 

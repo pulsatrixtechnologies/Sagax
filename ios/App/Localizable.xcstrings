@@ -4684,6 +4684,26 @@
           }
         }
       }
+    },
+    "Sign in with Pulsatrix": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter avec Pulsatrix"
+          }
+        }
+      }
+    },
+    "Your organization signs you in with Pulsatrix. You can also enter a pairing code.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre organisation vous connecte avec Pulsatrix. Vous pouvez aussi entrer un code d'appairage."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

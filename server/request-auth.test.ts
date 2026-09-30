@@ -568,3 +568,14 @@ describe("loopback trust: owner on one person's machine, service on a shared wor
     expect(as("POST", "/api/auth/pairing", secret, null).auth).toBeNull();
   });
 });
+
+describe("organization pairing (OMB_IDENTITY=perspicax, slice 2)", () => {
+  it("lets a member open a pairing code only on an organization server", () => {
+    expect(requiredScope("POST", "/api/auth/pairing")).toBe("admin");
+    expect(requiredScope("POST", "/api/auth/pairing", { orgPairing: false })).toBe("admin");
+    expect(requiredScope("POST", "/api/auth/pairing", { orgPairing: true })).toBe("client");
+    // listing the open codes stays admin
+    expect(requiredScope("GET", "/api/auth/pairing", { orgPairing: true })).toBe("admin");
+    expect(requiredScope("POST", "/api/auth/pairings", { orgPairing: true })).toBe("admin");
+  });
+});

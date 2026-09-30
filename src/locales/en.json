@@ -3029,6 +3029,8 @@
   "pair.pulsatrix.error": "Sign-in did not finish. Try again.",
   "pair.pulsatrix.errorRole": "This account cannot sign in to Pulsa Bot. Ask an admin in Perspicax.",
   "pair.pulsatrix.errorUnavailable": "Pulsatrix could not be reached. Try again in a moment.",
+  "pair.pulsatrix.finishing": "Finishing sign-in...",
+  "pair.pulsatrix.errorClient": "This sign-in link was not made for this app. Start again from the app.",
   "org.managedInPerspicax": "People, roles and new accounts are managed in Perspicax.",
   "retro.aria.owl": "Hibou 98, the retro assistant. Click for help, right-click for options, drag to move.",
   "retro.aria.balloon": "Assistant balloon",

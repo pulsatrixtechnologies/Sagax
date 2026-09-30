@@ -257,12 +257,86 @@ function queuePackageInstall(rawLink) {
   return true;
 }
 
+// "Sign in with Pulsatrix" in the system browser (electron/oidc-login-window.cjs):
+// the one sign-in this app is waiting for, and its return link.
+const pendingSystemSignIn = oidcLoginWindowModule.createPendingSystemSignIn();
+// The credential just loaded into the main window's /pair from that return:
+// /pair redeems it without asking only when this confirms it.
+const signInHandoff = oidcLoginWindowModule.createSignInHandoff();
+
+/** Does this saved server end a desktop sign-in on openmausbot://auth? */
+async function serverReturnsToNativeApps(origin) {
+  try {
+    const res = await fetch(`${origin}/.well-known/openmausbot/environment`, { signal: AbortSignal.timeout(3_000), redirect: "error" });
+    if (!res.ok) return false;
+    const body = await res.json();
+    return body?.identity?.kind === "perspicax" && body.identity.nativeReturn === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Start "Sign in with Pulsatrix" for the selected saved server: the system
+ * browser when this app receives openmausbot:// links and the server returns
+ * to native apps, else the in-app sign-in window (slice 1). */
+async function startPulsatrixSignIn(win, loginStart) {
+  const external = oidcLoginWindowModule.systemBrowserStartUrl(loginStart, environmentsState);
+  if (external && app.isDefaultProtocolClient("openmausbot") && await serverReturnsToNativeApps(new URL(external).origin)) {
+    pendingSystemSignIn.begin(new URL(external).origin);
+    try {
+      await shell.openExternal(external);
+      return;
+    } catch {
+      slog("the system browser could not open the sign-in; using the sign-in window");
+    }
+  }
+  if (win.isDestroyed()) return;
+  oidcLoginWindowModule.openOidcLoginWindow({
+    BrowserWindow, parent: win, url: loginStart, log: slog,
+    onDone: (target) => {
+      if (!win.isDestroyed() && workspaceNavigationAllowed(target, environmentsState, rendererOrigin())) void win.loadURL(target);
+    },
+  });
+}
+
+/** Handle an openmausbot://auth link. Returns whether it was one. The
+ * credential is never logged. */
+function takeAuthReturnLink(rawUrl) {
+  if (typeof rawUrl !== "string" || !/^openmausbot:\/\/auth(?:[/?#]|$)/i.test(rawUrl)) return false;
+  const parsed = environmentsModule.parseAuthReturnLink(rawUrl, environmentsState);
+  if (!parsed) {
+    slog("ignored a sign-in return link that does not name a saved server");
+    return true;
+  }
+  if (!pendingSystemSignIn.take(parsed.origin)) {
+    slog(`ignored a sign-in return from ${parsed.origin} that this app did not start or that expired`);
+    return true;
+  }
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win || activeEnvironment(environmentsState)?.origin !== parsed.origin) {
+    slog(`ignored a sign-in return from ${parsed.origin}: that server is no longer the selected one`);
+    return true;
+  }
+  signInHandoff.accept(parsed);
+  void win.loadURL(oidcLoginWindowModule.authReturnTarget(parsed));
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  return true;
+}
+
 app.on("open-url", (event, url) => {
+  if (takeAuthReturnLink(url)) {
+    event.preventDefault();
+    return;
+  }
   if (!queueOrganizationEntry(url) && !queuePackageInstall(url)) return;
   event.preventDefault();
 });
 
 app.on("second-instance", (_event, commandLine) => {
+  const authReturn = Array.isArray(commandLine) ? commandLine.find((arg) => typeof arg === "string" && /^openmausbot:\/\/auth(?:[/?#]|$)/i.test(arg)) : undefined;
+  if (authReturn && takeAuthReturnLink(authReturn)) return;
   if (takeOrganizationDeepLink(commandLine)) {
     queueOrganizationEntry("openmausbot://organization");
     return;
@@ -2151,12 +2225,7 @@ function createWindow({ deferNavigation = false } = {}) {
     const loginStart = oidcLoginWindowModule.oidcLoginStartUrl(url, environmentsState);
     if (loginStart) {
       event.preventDefault();
-      oidcLoginWindowModule.openOidcLoginWindow({
-        BrowserWindow, parent: win, url: loginStart, log: slog,
-        onDone: (target) => {
-          if (!win.isDestroyed() && workspaceNavigationAllowed(target, environmentsState, rendererOrigin())) void win.loadURL(target);
-        },
-      });
+      void startPulsatrixSignIn(win, loginStart);
       return;
     }
     let origin = null;
@@ -2338,6 +2407,21 @@ function createWindow({ deferNavigation = false } = {}) {
 
 // Local-control screen preview — served from the main process so the Screen
 // Recording permission prompt attributes to the app, never the server
+// /pair in the main window asks whether the credential in its address is the
+// one this app just handed it from a sign-in return (PairPage). Only the main
+// window's top frame, on the origin of that return, can claim it, once.
+ipcMain.handle("auth-return:take", (event, code) => {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) return false;
+  let origin;
+  try {
+    origin = new URL(event.senderFrame.url).origin;
+  } catch {
+    return false;
+  }
+  return signInHandoff.redeem(origin, code);
+});
+
 ipcMain.handle("screen:frame", localOnly("screen:frame", async () => {
   if (process.platform !== "darwin") return null;
   const sources = await desktopCapturer.getSources({
