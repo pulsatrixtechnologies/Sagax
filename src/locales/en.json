@@ -2139,6 +2139,7 @@
   "room.setup.instructionsPlaceholder": "Goals, tone, ownership, constraints…",
   "room.setup.skip": "Skip for now",
   "room.setup.save": "Save & continue",
+  "room.setup.open": "Set up group",
   "room.behavior.lead": "Specific lead",
   "room.behavior.chooseLead": "Choose a lead",
   "room.behavior.chooseLeadDetail": "Plain messages go to this teammate.",

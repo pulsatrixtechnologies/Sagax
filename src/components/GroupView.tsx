@@ -2,9 +2,10 @@
 // carry the personality; avatars inside the room stay still so a busy group
 // does not become a wall of competing motion. Plain messages go to the room's
 // default responder; @mentions override that routing.
+import { createPortal } from "react-dom";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { activeLocale, t } from "@/lib/i18n";
-import { ArrowDown, Bot as BotIcon, Check, ChevronDown, ChevronRight, FolderOpen, Loader2, MessageSquareReply, Pin, PinOff, Search, Users, X, type LucideIcon } from "lucide-react";
+import { ArrowDown, Bot as BotIcon, Check, ChevronDown, ChevronRight, FolderOpen, Loader2, MessageSquareReply, Pin, PinOff, Search, Settings2, Users, X, type LucideIcon } from "lucide-react";
 import {
   api,
   useStore,
@@ -585,8 +586,22 @@ function roomNeedsSetup(group: Group): boolean {
   return true;
 }
 
-function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
+/** Group setup as a modal dialog. `first` is the pending setup of a new
+ * group: Skip and Escape record a skip so the group is usable right away.
+ * `edit` reopens the same fields later: Escape and Cancel only close. */
+export function RoomSetupDialog({
+  group,
+  members,
+  mode,
+  onClose,
+}: {
+  group: Group;
+  members: Bot[];
+  mode: "first" | "edit";
+  onClose: () => void;
+}) {
   const { dispatch } = useStore();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [folder, setFolder] = useState(group.cwd ?? "");
   const [behavior, setBehavior] = useState<RoomResponderMode>(setupResponderMode(group.defaultResponder));
   const [leadId, setLeadId] = useState(
@@ -625,6 +640,10 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
 
   const finish = async (action: "complete" | "skip") => {
     setLeadPickerOpen(false);
+    if (mode === "edit") {
+      if (action === "skip") return onClose();
+      return saveEdits();
+    }
     setSaving(true);
     setError(null);
     try {
@@ -649,6 +668,7 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
         ...(action === "skip" ? { setupSkippedAt: now } : { setupCompletedAt: now }),
       };
       dispatch({ type: "groupPatched", group: nextGroup });
+      onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -656,30 +676,122 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
     }
   };
 
+  // Reopened after setup: send only what changed through the ordinary group
+  // patch (the setup endpoint is one-shot and ignores a second call).
+  const saveEdits = async () => {
+    const patch: Record<string, unknown> = {};
+    const cwd = folder.trim() || null;
+    if (cwd !== (group.cwd ?? null)) patch.cwd = cwd;
+    const nextResponder = responder();
+    if (JSON.stringify(nextResponder) !== JSON.stringify(group.defaultResponder)) patch.defaultResponder = nextResponder;
+    if (instructions !== group.bulletin) patch.bulletin = instructions;
+    if (Object.keys(patch).length === 0) return onClose();
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await api(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      dispatch({ type: "groupPatched", group: { ...(result.group ?? { ...group, ...patch }), id: group.id } });
+      onClose();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const dismiss = () => {
+    if (saving) return;
+    void finish("skip");
+  };
+  const dismissRef = useRef(dismiss);
+  dismissRef.current = dismiss;
+  const leadPickerOpenRef = useRef(leadPickerOpen);
+  leadPickerOpenRef.current = leadPickerOpen;
+
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const first = dialogRef.current?.querySelector<HTMLElement>("form input, form textarea");
+    (first ?? dialogRef.current)?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        // The lead picker owns the first Escape.
+        if (leadPickerOpenRef.current) return;
+        event.preventDefault();
+        dismissRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ) ?? [])];
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+      const head = focusable[0];
+      const tail = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === head || !dialogRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        tail.focus();
+      } else if (!event.shiftKey && (document.activeElement === tail || !dialogRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        head.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, []);
+
   const pickFolder = async () => {
     const chosen = await window.ogb?.pickFolder?.(folder || group.cwd);
     if (chosen) setFolder(chosen);
   };
 
-  return (
-    <section
+  const content = (
+    <div
+      data-testid="room-setup-overlay"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-6"
+      onMouseDown={(event) => {
+        // A stray click must not skip a pending setup; only reopened edits close.
+        if (event.target === event.currentTarget && mode === "edit") dismiss();
+      }}
+    >
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
       data-testid="room-setup"
       aria-labelledby="room-setup-title"
-      className="relative z-20 w-full overflow-visible rounded-3xl border border-hairline/50 bg-card shadow-xl shadow-black/10"
+      aria-describedby="room-setup-detail"
+      tabIndex={-1}
+      className="animate-pop-in flex max-h-[calc(100dvh-1rem)] w-full flex-col overflow-hidden rounded-t-[20px] border border-border bg-elevated outline-none sm:max-h-[min(820px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-[14px]"
     >
-      <div className="rounded-t-3xl border-b border-hairline/40 bg-panel/70 px-5 py-5 sm:px-7">
-        <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-sm font-bold text-accent-ink">1</span>
-          <div>
-            <h1 id="room-setup-title" className="text-xl font-semibold tracking-tight text-ink">{t("room.setup.title", { name: group.name })}</h1>
-            <p className="mt-1 max-w-[560px] text-[13.5px] leading-relaxed text-ink-secondary">
+      <header className="flex items-start justify-between gap-3 border-b border-hairline/40 px-5 pb-4 pt-5 sm:px-7 sm:pt-6">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink" aria-hidden="true"><Settings2 size={17} /></span>
+          <div className="min-w-0">
+            <h2 id="room-setup-title" className="truncate text-[17px] font-semibold tracking-tight text-ink">{t("room.setup.title", { name: group.name })}</h2>
+            <p id="room-setup-detail" className="mt-1 max-w-[560px] text-[13px] leading-relaxed text-ink-secondary">
               {t("room.setup.detail")}
             </p>
           </div>
         </div>
-      </div>
+        <button
+          type="button"
+          onClick={dismiss}
+          disabled={saving}
+          aria-label={t("common.close")}
+          className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary disabled:opacity-50"
+        >
+          <X size={18} />
+        </button>
+      </header>
       <form
-        className="space-y-5 px-5 py-5 sm:px-7 sm:py-6"
+        className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"
         onSubmit={(event) => {
           event.preventDefault();
           void finish("complete");
@@ -882,7 +994,7 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
             disabled={saving}
             className="rounded-xl px-3 py-2 text-left text-[13px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
           >
-            {t("room.setup.skip")}
+            {mode === "first" ? t("room.setup.skip") : t("common.cancel")}
           </button>
           <button
             type="submit"
@@ -890,12 +1002,14 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
             className="flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
-            {t("room.setup.save")}
+            {mode === "first" ? t("room.setup.save") : t("common.save")}
           </button>
         </div>
       </form>
-    </section>
+    </div>
+    </div>
   );
+  return createPortal(content, document.body);
 }
 function ChannelAccordion({
   id,
@@ -1018,6 +1132,10 @@ export function GroupView({ group }: { group: Group }) {
   });
   const speaker = members.find((b) => b.id === group.busyBotId);
   const setupPending = !remoteClient && roomNeedsSetup(group);
+  // Reopened from the header after the first setup; a pending setup is
+  // always shown and closes by saving or skipping.
+  const [setupOpen, setSetupOpen] = useState(false);
+  useEffect(() => setSetupOpen(false), [group.id]);
 
   // Mascot stays while a member works; the finished reply pops in above it.
   const lastGroupMessage = group.messages.at(-1);
@@ -1218,6 +1336,15 @@ export function GroupView({ group }: { group: Group }) {
     <main className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
       <div className="flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
+      {(setupPending || setupOpen) && (
+        <RoomSetupDialog
+          key={group.id}
+          group={group}
+          members={members}
+          mode={setupPending ? "first" : "edit"}
+          onClose={() => setSetupOpen(false)}
+        />
+      )}
       {membersOpen && !remoteClient && !group.dm && (
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
       )}
@@ -1255,6 +1382,18 @@ export function GroupView({ group }: { group: Group }) {
           >
             <Search size={18} />
           </button>
+          {!remoteClient && !group.dm && (
+            <button
+              type="button"
+              onClick={() => setSetupOpen(true)}
+              aria-label={t("room.setup.open")}
+              title={t("room.setup.open")}
+              aria-haspopup="dialog"
+              className="rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink"
+            >
+              <Settings2 size={18} />
+            </button>
+          )}
           <ExportTranscriptMenu
             title={group.name}
             messages={group.messages}
@@ -1364,11 +1503,6 @@ export function GroupView({ group }: { group: Group }) {
           if (resume) setBottomFollow(true);
         }}
       >
-        {setupPending ? (
-          <div className="flex min-h-full w-full items-center py-8">
-            <RoomSetup group={group} members={members} />
-          </div>
-        ) : (
         <div
           ref={transcriptRef}
           className="flex w-full flex-col gap-3"
@@ -1459,7 +1593,6 @@ export function GroupView({ group }: { group: Group }) {
           )}
           </ConversationGalleryProvider>
         </div>
-        )}
       </div>
 
       {!follow && (
