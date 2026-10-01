@@ -1,7 +1,11 @@
-// Org identity through the real server: the organization needs a server
-// address, its owner is the local operator's principal id (never an email or
-// "local-owner"), a phone paired from this computer is that same person, and
-// a restart keeps one local operator and the same owner.
+// Identity on a solo server through the real server: the local operator is
+// one principal (never an email or "local-owner"), a phone paired from this
+// computer is that same person, a person named by address in a room or a
+// grant is a principal, and a restart keeps one local operator. Slice 8: the
+// interim organization, email codes and invitations are gone (410), a
+// legacy email session ends at its first request while a pairing session in
+// the same file keeps working, and an old config.json with the removed keys
+// boots.
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,6 +26,7 @@ let home: string;
 let data: string;
 let log = "";
 const ZARA = "zara@example.test";
+const ZARA_ID = "pr_2a2a2a2a-2a2a-4a2a-8a2a-2a2a2a2a2a2a";
 let zaraToken = "";
 
 const api = async (method: string, path: string, body?: unknown, token?: string): Promise<{ status: number; body: any }> => {
@@ -113,11 +118,12 @@ posixOnly("org identity", () => {
     home = mkdtempSync(join(tmpdir(), "omb-org-identity-"));
     data = join(home, ".openmausbot");
     mkdirSync(data, { recursive: true });
-    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" }, signIn: { admins: [], members: [ZARA] } }));
-    // Zara signed in with her email (as a portal or an older build would
-    // issue it): the server gives her session her principal.
-    const registry = new SessionRegistry({ file: join(data, "sessions.json"), emailScopes: () => ["client"] });
-    zaraToken = registry.issue({ label: "Zara's laptop", email: ZARA, scopes: ["client"] }).token;
+    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" } }));
+    // Zara is a person this server knows by address, with a device bound to
+    // her principal (a pairing session, not an email sign-in).
+    writeFileSync(join(data, "principals.json"), JSON.stringify({ version: 1, principals: [{ id: ZARA_ID, kind: "human", email: ZARA, createdAt: 1 }] }));
+    const registry = new SessionRegistry({ file: join(data, "sessions.json") });
+    zaraToken = registry.issue({ label: "Zara's laptop", principalId: ZARA_ID, scopes: ["client"] }).token;
     registry.close();
     await start();
   }, 40_000);
@@ -155,52 +161,16 @@ posixOnly("org identity", () => {
     expect(kioskStream.state.closed).toBe(false);
   });
 
-  it("refuses an organization without a server address", async () => {
-    const res = await api("POST", "/api/org", { name: "GOX", host: { kind: "this-computer" } });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/server address/);
-  });
-
-  it("makes the local operator's principal the owner", async () => {
-    const res = await api("POST", "/api/org", { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } });
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    ownerId = res.body.org.ownerUserId;
+  it("has no organization: GET 404, create and change 410", async () => {
+    expect(await api("GET", "/api/org")).toMatchObject({ status: 404, body: { code: "no_organization" } });
+    expect(await api("POST", "/api/org", { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } })).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
+    expect(await api("PATCH", "/api/org", { host: { kind: "server", url: "https://pulsa.gox.ca" } })).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
+    const config = await api("GET", "/api/config");
+    ownerId = config.body.viewer.principalId;
     expect(ownerId).toMatch(/^pr_/);
     const local = principalsFile().principals.filter((p) => p.local);
     expect(local).toEqual([expect.objectContaining({ id: ownerId, email: "jc@gox.ca" })]);
-  });
-
-  it("ends the principal-less stream opened before the organization, so it reconnects filtered", async () => {
-    expect(await until(() => kioskStream!.state.closed)).toBe(true);
-    const bot = await api("POST", "/api/bots", { name: "Hidden" });
-    const room = await api("POST", "/api/groups", { name: "After org", memberIds: [bot.body.bot.id], humanIds: [ZARA] });
-    expect(room.status, JSON.stringify(room.body)).toBeLessThan(300);
-    await new Promise((r) => setTimeout(r, 300));
-    expect(kioskStream!.state.text).not.toContain(room.body.group.id);
-    // A new stream from the same device is filtered: the channel frame never reaches it.
-    const again = openStream(kioskToken);
-    expect(await until(() => again.state.text.includes('"kind":"hello"'))).toBe(true);
-    await api("PATCH", `/api/groups/${room.body.group.id}`, { name: "After org, renamed" });
-    await new Promise((r) => setTimeout(r, 300));
-    expect(again.state.text).not.toContain(room.body.group.id);
-    again.abort();
-  });
-
-  it("refuses a chat-only device's direct grant before it creates any principal", async () => {
-    const before = principalsFile().principals;
-    const bot = await api("POST", "/api/bots", { name: "Owned" });
-    expect(bot.status).toBe(201);
-    const huge = `${"a".repeat(400)}@example.test`;
-    const refused = await api("POST", `/api/bots/${bot.body.bot.id}/direct-grants`, { userId: huge }, kioskToken);
-    // Once an organization exists the bot is out of its sight altogether.
-    expect([403, 404]).toContain(refused.status);
-    const other = await api("POST", `/api/bots/${bot.body.bot.id}/direct-grants`, { userId: "new-person@example.test" }, kioskToken);
-    expect([403, 404]).toContain(other.status);
-    expect(principalsFile().principals).toEqual(before);
-    // Even the owner cannot grant a ref that is not an account email.
-    const bad = await api("POST", `/api/bots/${bot.body.bot.id}/direct-grants`, { userId: huge });
-    expect(bad.status).toBe(400);
-    expect(principalsFile().principals).toEqual(before);
+    kioskStream?.abort();
   });
 
   it("pairs a phone from this computer as the same person", async () => {
@@ -209,9 +179,6 @@ posixOnly("org identity", () => {
     const paired = await api("POST", "/api/auth/pair", { code: pairing.body.code });
     expect(paired.status, JSON.stringify(paired.body)).toBe(200);
     const token = paired.body.token as string;
-    const org = await api("GET", "/api/org", undefined, token);
-    expect(org.status).toBe(200);
-    expect(org.body.people).toEqual([{ id: ownerId, role: "owner", email: "jc@gox.ca" }, { id: ZARA, role: "member", email: ZARA }]);
     const listed = await api("GET", "/api/auth/sessions", undefined, token);
     expect(listed.status).toBe(200);
     const mine = listed.body.sessions.find((session: any) => session.id === listed.body.current);
@@ -228,9 +195,7 @@ posixOnly("org identity", () => {
     const created = await api("POST", "/api/groups", { name: "Ops room", memberIds: [botId], humanIds: ["Zara@Example.test"] });
     expect(created.status, JSON.stringify(created.body)).toBeLessThan(300);
     channelId = created.body.group.id;
-    const zara = principalsFile().principals.find((p) => p.email === ZARA)!;
-    expect(zara.id).toMatch(/^pr_/);
-    expect(created.body.group.humanIds).toEqual([zara.id]);
+    expect(created.body.group.humanIds).toEqual([ZARA_ID]);
     const seen = await api("GET", "/api/bots", undefined, zaraToken);
     expect(seen.status).toBe(200);
     expect(seen.body.groups.map((g: any) => g.id)).toContain(channelId);
@@ -243,8 +208,7 @@ posixOnly("org identity", () => {
     expect((await api("GET", "/api/bots", undefined, zaraToken)).body.bots.map((b: any) => b.id)).not.toContain(soloId);
     const granted = await api("POST", `/api/bots/${soloId}/direct-grants`, { userId: ZARA.toUpperCase() });
     expect(granted.status, JSON.stringify(granted.body)).toBe(200);
-    const zara = principalsFile().principals.find((p) => p.email === ZARA)!;
-    expect(granted.body.directGrants).toEqual([zara.id]);
+    expect(granted.body.directGrants).toEqual([ZARA_ID]);
     expect((await api("GET", "/api/bots", undefined, zaraToken)).body.bots.map((b: any) => b.id)).toContain(soloId);
   });
 
@@ -255,20 +219,6 @@ posixOnly("org identity", () => {
     expect(paired.status).toBe(200);
     return paired.body.token as string;
   };
-
-  it("pairs a chat-only code from this computer as nobody: no org channel, no owner approvals", async () => {
-    const token = await pairAs(["client"]);
-    const listed = await api("GET", "/api/auth/sessions", undefined, await pairAs(["admin", "client"]));
-    const kiosk = listed.body.sessions.find((session: any) => session.label === "Device" && !session.principalId);
-    expect(kiosk).toBeTruthy();
-    const seen = await api("GET", "/api/bots", undefined, token);
-    expect(seen.status).toBe(200);
-    expect(seen.body.groups.map((g: any) => g.id)).not.toContain(channelId);
-    expect(seen.body.bots.map((b: any) => b.id)).not.toContain(botId);
-    // The owner's bot is out of its reach, approvals included.
-    const answer = await api("POST", `/api/bots/${botId}/respond`, { requestId: "r1", behavior: "allow" }, token);
-    expect([403, 404]).toContain(answer.status);
-  });
 
   it("pairs an admin code from this computer as the operator, who sees every channel", async () => {
     const token = await pairAs(["admin", "client"]);
@@ -288,28 +238,31 @@ posixOnly("org identity", () => {
     const local = principalsFile().principals.filter((p) => p.local);
     expect(local).toHaveLength(1);
     expect(local[0]!.id).toBe(ownerId);
-    const org = await api("GET", "/api/org");
-    expect(org.status).toBe(200);
-    expect(org.body.org.ownerUserId).toBe(ownerId);
-    const config = JSON.parse(readFileSync(join(data, "config.json"), "utf8"));
-    expect(config.org.ownerUserId).toBe(ownerId);
-    expect(typeof config.identityMigratedAt).toBe("number");
+    expect((await api("GET", "/api/config")).body.viewer.principalId).toBe(ownerId);
   }, 40_000);
 });
 
-// A separate boot: this server mails its own sign-in codes (server/mailer.ts,
-// server/mail-config.ts) rather than going through the control plane. This
-// harness spawns the server as a child process, so fetch cannot be stubbed;
-// OMB_MAIL_CAPTURE_FILE (server/index.ts, where `mailer()` is built) is the
-// test seam instead: the mailer appends each message as a JSON line to a
-// file rather than sending it.
-posixOnly("server-issued email sign-in", () => {
-  it("mails a code with the capture-file seam, verifies it, and signs in as the local operator", async () => {
-    const home2 = mkdtempSync(join(tmpdir(), "omb-email-signin-"));
+// A separate boot (slice 8): what is left of the interim sign-in on a solo
+// server. The data directory is one an older build left: config.json with
+// the removed keys, an email session and a pairing session.
+posixOnly("slice 8: interim sign-in removed on a solo server", () => {
+  it("answers the retired routes, ends the email session, keeps the pairing session and boots the old config", async () => {
+    const home2 = mkdtempSync(join(tmpdir(), "omb-interim-removed-"));
     const data2 = join(home2, ".openmausbot");
     mkdirSync(data2, { recursive: true });
-    writeFileSync(join(data2, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" } }));
-    const captureFile = join(home2, "mail-capture.jsonl");
+    writeFileSync(join(data2, "config.json"), JSON.stringify({
+      profile: { name: "JC", email: "jc@gox.ca" },
+      signIn: { admins: ["jc@gox.ca"], members: ["dana@example.test"] },
+      invites: [{ token: "t0k3n", email: "eve@example.test", createdAt: 1, expiresAt: 2 }],
+      org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" }, ownerUserId: "jc@gox.ca" },
+      mail: { provider: "smtp", from: "bot@gox.ca", smtp: { host: "smtp.gox.ca" } },
+    }));
+    const seeded = new SessionRegistry({ file: join(data2, "sessions.json") });
+    const emailToken = seeded.issue({ label: "Dana's laptop", email: "dana@example.test", scopes: ["client"] }).token;
+    const pairing = seeded.openPairing({ scopes: ["admin", "client"], label: "JC's phone" });
+    const paired = seeded.exchange({ code: pairing.code, label: "JC's phone", source: "test" });
+    if (!paired.ok) throw new Error(paired.error);
+    seeded.close();
     const port = 28800 + Math.floor(Math.random() * 10_000);
     const base = `http://127.0.0.1:${port}`;
     let log2 = "";
@@ -319,13 +272,22 @@ posixOnly("server-issued email sign-in", () => {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: home2, USERPROFILE: home2, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
-        OMB_MAIL_PROVIDER: "sendgrid", OMB_MAIL_FROM: "bot@gox.ca", OMB_SENDGRID_API_KEY: "test-key",
-        OMB_SIGNIN_EMAILS: "jc@gox.ca", OMB_MAIL_CAPTURE_FILE: captureFile, OMB_TEST_SEAMS: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
     child2.stdout!.on("data", (c) => (log2 += c));
     child2.stderr!.on("data", (c) => (log2 += c));
+    const call = async (method: string, path: string, init: { body?: unknown; token?: string } = {}) => {
+      const res = await fetch(`${base}${path}`, {
+        method, redirect: "manual",
+        headers: { ...(init.body !== undefined ? { "content-type": "application/json" } : {}), ...(init.token ? { authorization: `Bearer ${init.token}` } : {}) },
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      });
+      const text = await res.text();
+      let body: any = {};
+      try { body = JSON.parse(text); } catch { /* not JSON */ }
+      return { status: res.status, body, location: res.headers.get("location") };
+    };
     try {
       const deadline = Date.now() + 20_000;
       for (;;) {
@@ -337,38 +299,24 @@ posixOnly("server-issued email sign-in", () => {
         if (Date.now() > deadline) throw new Error(`server never came up:\n${log2}`);
         await new Promise((r) => setTimeout(r, 150));
       }
-      const started = await fetch(`${base}/api/auth/email/start`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: "jc@gox.ca" }),
-      });
-      expect(started.status).toBe(200);
-      const captured = await until(() => {
-        try {
-          return readFileSync(captureFile, "utf8").trim().length > 0;
-        } catch {
-          return false;
-        }
-      });
-      expect(captured).toBe(true);
-      const lines = readFileSync(captureFile, "utf8").trim().split("\n");
-      const message = JSON.parse(lines[lines.length - 1]!) as { to: string; subject: string; text: string };
-      expect(message.to).toBe("jc@gox.ca");
-      const match = /Your code is (\d{8})/.exec(message.text);
-      expect(match).toBeTruthy();
-      const verified = await fetch(`${base}/api/auth/email/verify`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: "jc@gox.ca", code: match![1] }),
-      });
-      const verifiedBody = (await verified.json()) as { session: { principalId?: string } };
-      expect(verified.status, JSON.stringify(verifiedBody)).toBe(200);
-      const principals2 = JSON.parse(readFileSync(join(data2, "principals.json"), "utf8")) as {
-        principals: { id: string; local?: boolean; email?: string }[];
-      };
-      const local = principals2.principals.find((p) => p.local);
-      expect(local).toBeTruthy();
-      expect(verifiedBody.session.principalId).toBe(local!.id);
+      expect(log2).not.toMatch(/ignoring .*config\.json/);
+      // The old profile still applies: the config file loaded.
+      expect((await call("GET", "/api/config")).body.profile.name).toBe("JC");
+      for (const path of ["/api/auth/email/start", "/api/auth/email/verify"]) {
+        expect(await call("POST", path, { body: { email: "jc@gox.ca" } })).toMatchObject({ status: 410, body: { code: "interim_signin_removed" } });
+      }
+      expect(await call("POST", "/api/org/invites", { body: { email: "x@example.test" } })).toMatchObject({ status: 410, body: { code: "interim_signin_removed" } });
+      expect(await call("POST", "/api/org/invites/t0k3n/join", { body: {} })).toMatchObject({ status: 410, body: { code: "interim_signin_removed" } });
+      expect(await call("GET", "/api/org/invites/t0k3n/preview")).toMatchObject({ status: 410 });
+      expect(await call("POST", "/api/org", { body: { name: "X", host: { kind: "server", url: "https://x.test" } } })).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
+      expect(await call("GET", "/api/org")).toMatchObject({ status: 404, body: { code: "no_organization" } });
+      expect(await call("GET", "/join")).toMatchObject({ status: 302, location: "/pair" });
+      expect((await call("GET", "/.well-known/openmausbot/environment")).body.capabilities.emailSignIn).toBe(false);
+      // The email session ends at its first request; the pairing session works.
+      expect((await call("GET", "/api/bots", { token: emailToken })).status).toBe(401);
+      expect((await call("GET", "/api/bots", { token: paired.token })).status).toBe(200);
+      const sessions2 = JSON.parse(readFileSync(join(data2, "sessions.json"), "utf8")) as { sessions: { label: string }[] };
+      expect(sessions2.sessions.map((session) => session.label)).toEqual(["JC's phone"]);
     } finally {
       await waitForExit(child2, { signal: "SIGTERM" });
       await removeTempDir(home2);

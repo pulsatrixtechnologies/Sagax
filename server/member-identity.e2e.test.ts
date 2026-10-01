@@ -5,7 +5,7 @@
 // edits and deletes only her own bots, and still cannot reach server admin
 // routes. A guest (a person with no organization role) creates nothing.
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
