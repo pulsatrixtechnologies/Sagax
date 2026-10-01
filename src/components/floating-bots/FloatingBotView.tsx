@@ -21,10 +21,11 @@ import {
   type MascotInput,
   type MascotState,
 } from "./behavior";
-import { newStroke, strokeLeave, strokeStep } from "./gestures";
+import { clickGesture, eventsForClick, newStroke, strokeLeave, strokeStep } from "./gestures";
 import { GAUGE_SEGMENTS, gaugeFor, type FloatingContext } from "./gauge";
 import type { FloatingPilot } from "./pilot";
-import { DEFAULT_MASCOT, mascotFor } from "./mascots";
+import { mascotFor } from "./mascots";
+import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
 import { mascotFields, type FloatingEvent, type FloatingPose, type FloatingSnapshot } from "./protocol";
 
@@ -37,7 +38,6 @@ const DRAG_SLOP = 4;
 /** A press held this long opens the menu where there is no right click (touch). */
 const LONG_PRESS_MS = 550;
 /** A second click within this long is a double click (the balloon), not a game. */
-const DOUBLE_CLICK_MS = 260;
 const TICK_MS = 250;
 /** The window follows what is drawn a moment later (FloatingBotWindow resizes it); flights wait for that. */
 const RESIZE_SETTLE_MS = 220;
@@ -127,7 +127,7 @@ function Character({ snapshot, activity, mascot }: CharacterProps) {
         key={entry.id}
         color={snapshot.color}
         skin={snapshot.skin}
-        choice={snapshot.mascot ?? DEFAULT_MASCOT}
+        look={completeMascotLook(snapshot.mascot)}
         size={OWL_SIZE}
         activity={activity}
         pose={snapshot.pose}
@@ -256,7 +256,8 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const textRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const reduced = snapshot.reduced;
-  const retro = snapshot.retro;
+  // Trombi talks in the Hibou 98 look, whatever the skin
+  const retro = snapshot.retro || snapshot.mascot?.character === "trombi";
 
   /* -------------------------------------------------- the mascot's life */
 
@@ -269,7 +270,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const hitTest = useRef<((x: number, y: number) => boolean) | null>(null);
   const gaze = useRef<{ x: number; y: number } | null>(null);
   const pet = useRef(newStroke());
-  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastClick = useRef<number | null>(null);
   const mascotOptions = () => ({
     reduced,
     flyAway: snapshot.flyAway,
@@ -278,7 +279,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     liveliness: snapshot.liveliness ?? "normal",
     mood: snapshot.mood,
     // only the 3D owl has real depth: spins, flips and turns in place are its alone
-    depth: (snapshot.mascot?.kind ?? "owl") === "owl" && snapshot.mascot?.style === "3d",
+    depth: (snapshot.mascot?.character ?? "owl") === "owl" && snapshot.mascot?.style === "3d",
   });
   const options = useRef(mascotOptions());
   options.current = mascotOptions();
@@ -356,9 +357,6 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     return () => clearTimeout(done);
   }, [burst]);
 
-  useEffect(() => () => {
-    if (clickTimer.current) clearTimeout(clickTimer.current);
-  }, []);
 
   // the head follows the pointer: on the desktop it is asked of main (the
   // pointer is mostly outside this small window); over the app it is the page's own
@@ -428,10 +426,18 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     return () => window.removeEventListener("keydown", onKey);
   }, [menuOpen, balloon, onEvent]);
 
-  // With no balloon to type in, give the keyboard back to whatever had it.
+  // With no balloon to type in, give the keyboard back to whatever had it;
+  // when the balloon opens, it is ready to type in.
   const hasInput = Boolean(balloon?.input);
+  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (!hasInput) wantsKeyboard?.(false);
+    if (!hasInput) {
+      wantsKeyboard?.(false);
+      return;
+    }
+    wantsKeyboard?.(true);
+    const later = setTimeout(() => inputRef.current?.focus(), 60);
+    return () => clearTimeout(later);
   }, [hasInput, wantsKeyboard]);
 
   const hover = (on: boolean) => {
@@ -505,18 +511,10 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       dispatch({ type: "drag", now: now(), on: false });
     } else if (!start.menu) {
       setMenuOpen(false);
-      if (clickTimer.current) {
-        // a double click: the balloon, as a single click used to
-        clearTimeout(clickTimer.current);
-        clickTimer.current = null;
-        onEvent({ type: "click" });
-      } else {
-        clickTimer.current = setTimeout(() => {
-          clickTimer.current = null;
-          dispatch({ type: "play", now: now() });
-          onEvent({ type: "play" });
-        }, DOUBLE_CLICK_MS);
-      }
+      // a click opens the chat at once; a second click soon after opens the app instead
+      const gesture = clickGesture(lastClick.current, now());
+      lastClick.current = gesture === "double" ? null : now();
+      for (const event of eventsForClick(gesture)) onEvent(event);
     }
     if (!hovering.current) interactive?.(false);
   };
@@ -586,6 +584,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
             {balloon.input && (
               <form className="fb-ask" onSubmit={onSubmit}>
                 <input
+                  ref={inputRef}
                   className={retro ? "r98-field fb-input" : "fb-field fb-input"}
                   value={draft}
                   aria-label={balloon.input.label}
@@ -656,6 +655,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           type="button"
           className="fb-art"
           aria-label={snapshot.label}
+          title={snapshot.label}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onPointerEnter={(event) => owlHovered(overOwl(event))}

@@ -471,17 +471,15 @@ describe("floating bots: payload validation", () => {
     expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, task: "rm -rf", mood: Number.NaN })).toMatchObject({ task: "idle", mood: 0.6 });
   });
 
-  it("keeps the character a bot wears and the Mascot tab's texts, bounded", () => {
-    expect(sanitizeFloatingSnapshot(SNAPSHOT)).toMatchObject({ mascot: { kind: "owl", style: "2d" }, picker: null });
+  it("keeps the character a bot wears and its look, known values only", () => {
+    expect(sanitizeFloatingSnapshot(SNAPSHOT)).toMatchObject({ mascot: { character: "owl" } });
     const clean = sanitizeFloatingSnapshot({
       ...SNAPSHOT,
-      mascot: { kind: "trombi", style: "3d" },
-      picker: { tabs: "Tabs", chat: "Chat", mascot: "Mascot", kinds: { owl: "Owl", body: "Shapes" }, bodies: { star: "Star", "../x": "no" }, html: "<b>" },
+      mascot: { character: "shape", shape: "cloud", style: "3d", skins: { shape: "neon", trombi: "gold", html: "<b>" }, extra: 1 },
     });
-    expect(clean.mascot).toEqual({ kind: "trombi", style: "3d" });
-    expect(clean.picker.kinds).toEqual({ owl: "Owl", body: "Shapes", trombi: "trombi" });
-    expect(clean.picker.bodies).toEqual({ star: "Star" });
-    expect(clean.picker).not.toHaveProperty("html");
+    expect(clean.mascot).toEqual({ character: "shape", shape: "cloud", style: "3d", skins: { shape: "neon", trombi: "gold" } });
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "dragon" } }).mascot).toEqual({ character: "owl" });
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "shape", shape: "star" } }).mascot).toEqual({ character: "shape" });
   });
 
   it("keeps the activity level, the hoot and the context figures for the energy bar, bounded", () => {
@@ -510,9 +508,7 @@ describe("floating bots: payload validation", () => {
     expect(sanitizeFloatingEvent({ type: "click" })).toEqual({ type: "click" });
     expect(sanitizeFloatingEvent({ type: "play", extra: 1 })).toEqual({ type: "play" });
     expect(sanitizeFloatingEvent({ type: "pet" })).toEqual({ type: "pet" });
-    expect(sanitizeFloatingEvent({ type: "mascot", choice: { kind: "body", body: "star", extra: 1 } })).toEqual({ type: "mascot", choice: { kind: "body", body: "star" } });
-    expect(sanitizeFloatingEvent({ type: "mascot", choice: { kind: "dragon" } })).toBeNull();
-    expect(sanitizeFloatingEvent({ type: "mascot", choice: { kind: "body", body: "../x" } })).toEqual({ type: "mascot", choice: { kind: "body" } });
+    expect(sanitizeFloatingEvent({ type: "mascot", choice: { character: "trombi" } })).toBeNull();
     expect(sanitizeFloatingEvent({ type: "menu", id: "dock" })).toEqual({ type: "menu", id: "dock" });
     expect(sanitizeFloatingEvent({ type: "menu", id: "../x" })).toBeNull();
     expect(sanitizeFloatingEvent({ type: "send", text: "q".repeat(5000) }).text.length).toBe(4000);

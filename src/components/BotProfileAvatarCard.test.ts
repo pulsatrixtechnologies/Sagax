@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { StoreProvider, type Bot } from "@/state/store";
 import { MAUS_COLOR_NAMES } from "@/lib/mascot";
 import { BotProfileAvatarCard } from "./BotProfileAvatarCard";
+import MascotLookEditor from "./floating-bots/MascotLookEditor";
 
 function makeBot(overrides: Partial<Bot> = {}): Bot {
   return {
@@ -37,6 +38,11 @@ function renderCard(bot: Bot) {
   );
 }
 
+/** The Bot tab's content (loaded lazily in the popover). */
+function renderEditor(bot: Bot) {
+  return renderToStaticMarkup(createElement(MascotLookEditor, { bot, onPatch: vi.fn() }));
+}
+
 describe("BotProfileAvatarCard", () => {
   it("no longer offers a body picker: every bot is the owl", () => {
     for (const bot of [makeBot(), makeBot({ mascotBody: "star" })]) {
@@ -48,11 +54,11 @@ describe("BotProfileAvatarCard", () => {
   });
 
   it("still offers every bot color for the mascot", () => {
-    const markup = renderCard(makeBot());
+    const markup = renderEditor(makeBot());
     for (const color of MAUS_COLOR_NAMES) {
       expect(markup).toContain(`aria-label="Use ${color} mascot color"`);
     }
-    expect(markup).toMatch(/aria-pressed="true"[^>]*aria-label="Use green mascot color"/);
+    expect(markup).toMatch(/aria-checked="true"[^>]*aria-label="Use green mascot color"/);
   });
 
   it("offers zoom and drag framing for a custom image", () => {
@@ -84,7 +90,7 @@ describe("BotProfileAvatarCard", () => {
 
 describe("BotProfileAvatarCard skins and moves", () => {
   it("offers every skin with a live preview, none chosen by default", () => {
-    const markup = renderCard(makeBot());
+    const markup = renderEditor(makeBot());
     expect(markup).toContain(">Skin<");
     for (const skin of ["none", "lightning", "gold", "neon", "inferno", "frost", "carbon"]) {
       expect(markup).toContain(`data-mascot-skin-option="${skin}"`);
@@ -97,15 +103,15 @@ describe("BotProfileAvatarCard skins and moves", () => {
   });
 
   it("reflects a stored skin, and reads an unknown one as none", () => {
-    expect(renderCard(makeBot({ mascotSkin: "gold" }))).toContain('aria-checked="true" aria-label="Use the Gold skin"');
+    expect(renderEditor(makeBot({ mascotSkin: "gold" }))).toContain('aria-checked="true" aria-label="Use the Gold skin"');
     // SAFETY: a skin this build does not know can arrive from a newer client.
-    expect(renderCard(makeBot({ mascotSkin: "plasma" as Bot["mascotSkin"] }))).toContain(
+    expect(renderEditor(makeBot({ mascotSkin: "plasma" as Bot["mascotSkin"] }))).toContain(
       'aria-checked="true" aria-label="Use the None skin"',
     );
   });
 
   it("offers every wing move as a button with a readable label", () => {
-    const markup = renderCard(makeBot());
+    const markup = renderEditor(makeBot());
     expect(markup).toContain(">Moves<");
     for (const [move, label] of [
       ["spread-wings", "Spread wings"],
@@ -114,13 +120,13 @@ describe("BotProfileAvatarCard skins and moves", () => {
       ["shake", "Ruffle"],
       ["hoot", "Hoot"],
     ]) {
-      expect(markup).toContain(`data-mascot-move="${move}"`);
+      expect(markup).toContain(`data-character-move="${move}"`);
       expect(markup).toContain(`aria-label="Play the ${label} move"`);
     }
   });
 
   it("offers black among the colors, outlined so it reads on a dark card", () => {
-    const markup = renderCard(makeBot());
+    const markup = renderEditor(makeBot());
     expect(markup).toMatch(/aria-label="Use black mascot color"/);
     expect(markup).toContain("inset 0 0 0 1.5px");
   });

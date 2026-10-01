@@ -86,40 +86,27 @@ const BALLOON_KINDS = new Set(["chat", "thinking", "approval", "error"]);
 const TASKS = new Set(["idle", "working", "waiting", "error"]);
 const LIVELINESS = new Set(["calm", "normal", "lively"]);
 const MAX_TOKENS = 1e9;
-const MASCOT_KINDS = new Set(["owl", "body", "trombi"]);
-const BODY_RE = /^[a-z]{1,24}$/;
+const CHARACTERS = new Set(["owl", "shape", "trombi"]);
+const SHAPES = new Set(["circle", "blob", "squircle", "pill", "triangle", "hexagon", "cloud", "drop"]);
+const SHAPE_SKINS = new Set(["plain", "glossy", "outline", "neon", "pastel", "night"]);
+const TROMBI_SKINS = new Set(["classic", "gold", "neon", "retro98"]);
 
-/** Which character a bot wears: a known kind, a body shape id, a style. */
-export function mascotChoice(value) {
-  if (!value || typeof value !== "object" || !MASCOT_KINDS.has(value.kind)) return null;
+/** The bot's character and its look (shared/mascot-look.ts): known values only. */
+export function mascotLook(value) {
+  if (!value || typeof value !== "object" || !CHARACTERS.has(value.character)) return null;
+  const skins = value.skins && typeof value.skins === "object" ? value.skins : {};
+  const cleanSkins = {
+    ...(SHAPE_SKINS.has(skins.shape) ? { shape: skins.shape } : {}),
+    ...(TROMBI_SKINS.has(skins.trombi) ? { trombi: skins.trombi } : {}),
+  };
   return {
-    kind: value.kind,
-    ...(typeof value.body === "string" && BODY_RE.test(value.body) ? { body: value.body } : {}),
+    character: value.character,
     ...(value.style === "2d" || value.style === "3d" ? { style: value.style } : {}),
+    ...(SHAPES.has(value.shape) ? { shape: value.shape } : {}),
+    ...(Object.keys(cleanSkins).length ? { skins: cleanSkins } : {}),
   };
 }
 
-/** The balloon's tabs and the Mascot tab's texts: short strings only. */
-function picker(value) {
-  if (!value || typeof value !== "object") return null;
-  const kinds = {};
-  for (const kind of MASCOT_KINDS) kinds[kind] = text(value.kinds?.[kind], 40) ?? kind;
-  const bodies = {};
-  if (value.bodies && typeof value.bodies === "object") {
-    for (const [id, name] of Object.entries(value.bodies).slice(0, 24)) if (BODY_RE.test(id) && typeof name === "string") bodies[id] = name.slice(0, 40);
-  }
-  return {
-    tabs: text(value.tabs, 60) ?? "",
-    chat: text(value.chat, 40) ?? "",
-    mascot: text(value.mascot, 40) ?? "",
-    kinds,
-    shape: text(value.shape, 40) ?? "",
-    style: text(value.style, 40) ?? "",
-    flat: text(value.flat, 40) ?? "",
-    threeD: text(value.threeD, 40) ?? "",
-    bodies,
-  };
-}
 
 /** The followed thread's context use, for the mascot's energy bar: numbers and two short texts. */
 function context(value) {
@@ -199,8 +186,7 @@ export function sanitizeFloatingSnapshot(value) {
     },
     liveliness: LIVELINESS.has(value.liveliness) ? value.liveliness : "normal",
     context: context(value.context),
-    mascot: mascotChoice(value.mascot) ?? { kind: "owl", style: "2d" },
-    picker: picker(value.picker),
+    mascot: mascotLook(value.mascot) ?? { character: "owl" },
   };
   const balloon = value.balloon;
   if (balloon && typeof balloon === "object" && BALLOON_KINDS.has(balloon.kind)) {
@@ -225,17 +211,13 @@ export function sanitizeFloatingSnapshot(value) {
   return snapshot;
 }
 
-const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send", "play", "pet", "mascot"]);
+const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send", "play", "pet"]);
 export const SEND_MAX = 4000;
 
 /** What a floating window may report back: a click, a menu choice, or typed text. */
 export function sanitizeFloatingEvent(value) {
   if (!value || typeof value !== "object" || !EVENT_TYPES.has(value.type)) return null;
   if (value.type === "menu") return ID_RE.test(value.id ?? "") ? { type: "menu", id: value.id } : null;
-  if (value.type === "mascot") {
-    const choice = mascotChoice(value.choice);
-    return choice ? { type: "mascot", choice } : null;
-  }
   if (value.type === "send") {
     if (typeof value.text !== "string") return null;
     const typed = value.text.slice(0, SEND_MAX);

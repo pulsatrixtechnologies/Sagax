@@ -52,3 +52,23 @@ export function strokeStep(state: StrokeState, x: number, y: number, now: number
 
 /** The pointer left the owl: the stroke is over, the cooldown stays. */
 export const strokeLeave = (state: StrokeState): StrokeState => ({ ...newStroke(), last: state.last });
+
+/* ------------------------------------------------------------- clicks */
+
+/** A second click this soon after the first is a double click. */
+export const DOUBLE_CLICK_MS = 250;
+
+/** A click on the mascot: single, or the second of a double click. */
+export function clickGesture(lastClickAt: number | null, now: number): "single" | "double" {
+  return lastClickAt !== null && now - lastClickAt <= DOUBLE_CLICK_MS ? "double" : "single";
+}
+
+/**
+ * What a click does, without waiting to know whether a second one comes: a
+ * click opens (or closes) the chat balloon at once; the second click of a
+ * double click puts the balloon away and opens the app on the bot's thread.
+ */
+export function eventsForClick(gesture: "single" | "double"): ({ type: "click" } | { type: "dismiss" } | { type: "open" })[] {
+  return gesture === "single" ? [{ type: "click" }] : [{ type: "dismiss" }, { type: "open" }];
+}
+

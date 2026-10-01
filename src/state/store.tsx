@@ -397,6 +397,8 @@ export interface Bot {
   mascotBody?: MascotBodyId | null;
   /** Special-edition skin. Unknown/absent values wear none. */
   mascotSkin?: MascotSkinId | null;
+  /** The bot's character and its look (shared/mascot-look.ts); absent means the owl. */
+  mascotLook?: import("../../shared/mascot-look").MascotLook | null;
   /** App-owned image attachment used for this bot's profile. */
   avatarUrl?: string | null;
   /** Mascot, or the crop applied to avatarUrl. */

@@ -1,20 +1,11 @@
-import { lazy, Suspense, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
-import { botMascots, MASCOT_KIND_PAINT, subscribeFloatingBots } from "@/lib/floating-bots";
+import { lazy, Suspense, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./bot-settings/BotEditorContext";
 import { imageAttachmentFromFile } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
-import { t } from "@/lib/i18n";
-import type { LocaleKey } from "@/locales";
-import {
-  MAUS_COLOR_NAMES,
-  MAUS_WING_MOTIONS,
-  swatchStyle,
-  type MausMotion,
-  type MausState,
-} from "@/lib/mascot";
+import { type MausMotion, type MausState } from "@/lib/mascot";
 import {
   AVATAR_FOCUS_CENTER,
   AVATAR_ZOOM_MAX,
@@ -23,36 +14,18 @@ import {
   clampAvatarFocus,
   clampAvatarZoom,
 } from "../../shared/bot-avatar";
-import { MASCOT_SKIN_IDS, botMascotSkin, type MascotSkinId } from "../../shared/mascot-skins";
-import { BotAvatar, MausAvatar } from "./Avatar";
+import { BotAvatar } from "./Avatar";
 import { AvatarImageGenerator } from "./AvatarImageGenerator";
 
 type AvatarPatch = Partial<
-  Pick<Bot, "avatarCrop" | "avatarUrl" | "avatarZoom" | "avatarFocusX" | "avatarFocusY" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin">
+  Pick<Bot, "avatarCrop" | "avatarUrl" | "avatarZoom" | "avatarFocusX" | "avatarFocusY" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin" | "mascotLook">
 >;
 
 const FRAME_SIZE = 168;
 
-// The Character picker (the mascot registry and its thumbnails): fetched only when the popover opens.
-const CharacterSection = lazy(() => import("./floating-bots/CharacterSection"));
+// The character and its look (the mascot registry, its thumbnails and a live preview): fetched only when the popover opens.
+const MascotLookEditor = lazy(() => import("./floating-bots/MascotLookEditor"));
 
-const SKIN_LABEL = {
-  none: "mascot.skin.none",
-  lightning: "mascot.skin.lightning",
-  gold: "mascot.skin.gold",
-  neon: "mascot.skin.neon",
-  inferno: "mascot.skin.inferno",
-  frost: "mascot.skin.frost",
-  carbon: "mascot.skin.carbon",
-} satisfies Record<MascotSkinId, LocaleKey>;
-
-const MOVE_LABEL = {
-  "spread-wings": "mascot.motion.spreadWings",
-  flap: "mascot.motion.flap",
-  "take-off": "mascot.motion.takeOff",
-  shake: "mascot.motion.shake",
-  hoot: "mascot.motion.hoot",
-} satisfies Record<(typeof MAUS_WING_MOTIONS)[number], LocaleKey>;
 
 function AvatarFraming({
   bot,
@@ -175,10 +148,6 @@ export function BotProfileAvatarCard({
     setTriedMove((last) => ({ kind, nonce: (last?.nonce ?? 0) + 1 }));
     dispatch({ type: "playMascotMotion", botId: bot.id, kind });
   };
-  const skin = botMascotSkin(bot.mascotSkin);
-  // the character this bot wears (same choice as its desktop mascot): it decides what is offered below
-  const characters = useSyncExternalStore(subscribeFloatingBots, botMascots, botMascots);
-  const paint = MASCOT_KIND_PAINT[characters[bot.id]?.kind ?? "owl"];
 
   const upload = async (file: File | undefined) => {
     if (!file || busy) return;
@@ -249,7 +218,7 @@ export function BotProfileAvatarCard({
   };
 
   const resetMascot = () =>
-    onPatch({ avatarCrop: "mascot", color: "green", mascotExpression: null, mascotBody: "cursor", mascotSkin: "none" });
+    onPatch({ avatarCrop: "mascot", color: "green", mascotExpression: null, mascotBody: "cursor", mascotSkin: "none", mascotLook: { character: "owl" } });
 
   return (
     <div className="relative">
@@ -270,7 +239,12 @@ export function BotProfileAvatarCard({
           />
         </button>
       </div>
-      <div hidden={!editorOpen} className="absolute left-1/2 top-full z-30 mt-2 w-[280px] -translate-x-1/2 rounded-2xl border border-hairline/50 bg-card p-3 shadow-2xl shadow-black/50">
+      {/* wide enough for the character cards; on a small window it becomes a centered sheet */}
+      <div
+        hidden={!editorOpen}
+        data-avatar-popover=""
+        className="fixed inset-x-3 top-[8vh] z-30 max-h-[84vh] overflow-y-auto rounded-2xl border border-hairline/50 bg-card p-4 shadow-2xl shadow-black/50 sm:absolute sm:inset-x-auto sm:left-1/2 sm:top-full sm:mt-2 sm:max-h-[min(680px,78vh)] sm:w-[456px] sm:-translate-x-1/2"
+      >
         <div className="mb-3 flex items-center gap-1 text-[12px]">
           {(["bot", "generate", "upload"] as const).map((tab) => (
             <button
@@ -322,93 +296,10 @@ export function BotProfileAvatarCard({
           </div>
         )}
 
-        {editorTab === "bot" && crop === "mascot" && (
-          <>
-            {editorOpen && (
-              <Suspense fallback={<div className="h-[86px]" />}>
-                <CharacterSection botId={bot.id} color={bot.color} skin={skin} disabled={busy} />
-              </Suspense>
-            )}
-            {paint.colors && (
-            <div className="mt-3 flex flex-wrap justify-center gap-2">
-              {MAUS_COLOR_NAMES.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  disabled={busy}
-                  aria-pressed={bot.color === color}
-                  onClick={() => onPatch({ color })}
-                  className={cn("size-6 rounded-full disabled:opacity-50", bot.color === color && "ring-2 ring-white/80 ring-offset-2 ring-offset-card")}
-                  style={swatchStyle(color)}
-                  title={color}
-                  aria-label={`Use ${color} mascot color`}
-                />
-              ))}
-            </div>
-            )}
-
-            {paint.skins && (
-            <>
-            <div className="mb-1.5 mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">
-              {t("mascot.skin.title")}
-            </div>
-            <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label={t("mascot.skin.title")}>
-              {MASCOT_SKIN_IDS.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  disabled={busy}
-                  aria-checked={skin === id}
-                  aria-label={t("mascot.skin.use", { skin: t(SKIN_LABEL[id]) })}
-                  data-mascot-skin-option={id}
-                  onClick={() => onPatch({ mascotSkin: id })}
-                  className={cn(
-                    "flex flex-col items-center gap-0.5 rounded-lg bg-inset px-0.5 pb-1 pt-1.5 transition-colors hover:bg-control disabled:opacity-50",
-                    skin === id && "ring-2 ring-accent-border",
-                  )}
-                >
-                  {/* The owl stays still; only the skin's own effects play, so
-                      the previews cost no frame loop. */}
-                  <MausAvatar
-                    color={bot.color}
-                    skin={id}
-                    state="idle"
-                    size={44}
-                    animated={false}
-                    skinAnimated
-                    trackPointer={false}
-                  />
-                  <span className="text-[11px] leading-4 text-ink-secondary">{t(SKIN_LABEL[id])}</span>
-                </button>
-              ))}
-            </div>
-            </>
-            )}
-
-            {paint.wingMoves && (
-            <>
-            <div className="mb-1.5 mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">
-              {t("mascot.moves.title")}
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {MAUS_WING_MOTIONS.map((move) => (
-                <button
-                  key={move}
-                  type="button"
-                  disabled={busy}
-                  data-mascot-move={move}
-                  aria-label={t("mascot.moves.play", { move: t(MOVE_LABEL[move]) })}
-                  onClick={() => playMove(move)}
-                  className="rounded-md bg-control px-2 py-1 text-[12px] text-ink hover:bg-raised-hover disabled:opacity-50"
-                >
-                  {t(MOVE_LABEL[move])}
-                </button>
-              ))}
-            </div>
-            </>
-            )}
-          </>
+        {editorTab === "bot" && crop === "mascot" && editorOpen && (
+          <Suspense fallback={<div className="h-[320px]" />}>
+            <MascotLookEditor bot={bot} disabled={busy} onPatch={onPatch} onOwlMove={playMove} />
+          </Suspense>
         )}
         {editorTab === "bot" && crop !== "mascot" && (
           <button type="button" onClick={() => onPatch({ avatarCrop: "mascot" })} className="text-[13px] text-ink-secondary hover:text-ink">Use the mascot</button>

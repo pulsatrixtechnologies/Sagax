@@ -3,22 +3,23 @@
 // the desktop and as a thumbnail). Adding a character is adding an entry.
 // The same behavior state machine (behavior.ts) drives them all; each
 // renderer maps the clips it can show and degrades gracefully: the original
-// bodies and Trombi have no wings, so a flight is a bouncing hop across.
+// shapes and Trombi have no wings, so a flight is a bouncing hop across.
+// The character and its look come from the bot (bot.mascotLook).
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
-import { MAUS_COLORS } from "@/lib/mascot";
 import { OwlAvatar } from "@/components/OwlAvatar";
-import { CursorAvatar, type CursorState } from "@/components/CursorAvatar";
+import { ShapeMascot, type ShapeMood } from "@/components/ShapeMascot";
 import { Trombi, type TrombiPose } from "@/components/retro-assistant/Trombi";
-import type { FloatingMascotChoice, FloatingMascotKind } from "@/lib/floating-bots";
-import { MASCOT_BODIES, MASCOT_BODY_IDS, botMascotBody, type MascotBodyId } from "../../../shared/mascot-bodies";
+import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
 import { createFrameSmoother, type MascotActivity, type MascotFrame } from "./behavior";
 import Owl25D, { flatTilt, flatTurn } from "./Owl25D";
 import type { FloatingPose } from "./protocol";
 
 export interface MascotRenderProps {
   color: string;
+  /** The owl's skin (bot.mascotSkin). */
   skin: string;
-  choice: FloatingMascotChoice;
+  /** The bot's character and its look, every choice filled in. */
+  look: CompleteLook;
   /** The character's box, px. */
   size: number;
   activity: MascotActivity;
@@ -33,9 +34,11 @@ export interface MascotRenderProps {
 export interface MascotThumbProps {
   color: string;
   skin: string;
-  choice: FloatingMascotChoice;
+  look: CompleteLook;
   size: number;
 }
+
+export type CompleteLook = ReturnType<typeof completeMascotLook>;
 
 export interface MascotCapabilities {
   walk: boolean;
@@ -47,7 +50,7 @@ export interface MascotCapabilities {
 }
 
 export interface MascotDefinition {
-  id: FloatingMascotKind;
+  id: MascotCharacter;
   capabilities: MascotCapabilities;
   /** What the avatar popover offers for it: the bot colors, the owl skins. */
   paint: { colors: boolean; skins: boolean };
@@ -57,7 +60,6 @@ export interface MascotDefinition {
   Thumb: ComponentType<MascotThumbProps>;
 }
 
-const hexOf = (color: string) => (MAUS_COLORS as Record<string, string>)[color] ?? color;
 const DEG = 180 / Math.PI;
 
 /**
@@ -118,10 +120,10 @@ function Motion25D({ size, frame, fps, onHitTest, children }: Pick<MascotRenderP
 // the 3D owl and three.js: their own chunk, fetched only when a bot's owl is set to 3D
 const Owl3D = lazy(() => import("./owl3d/Owl3D"));
 
-function OwlRender({ color, skin, size, frame, fps, onHitTest, choice, activity, stage }: MascotRenderProps) {
+function OwlRender({ color, skin, size, frame, fps, onHitTest, look, activity, stage }: MascotRenderProps) {
   const [flat, setFlat] = useState(false);
   const owl2d = <Owl25D color={color} skin={skin} size={size} frame={frame} fps={fps} onHitTest={onHitTest} />;
-  if (choice.style !== "3d" || !stage || flat) return owl2d;
+  if (look.style !== "3d" || !stage || flat) return owl2d;
   return (
     <Suspense fallback={owl2d}>
       <Owl3D color={color} skin={skin} activity={activity} stage={stage} owlSize={size} frame={frame} fps={fps} onHitTest={onHitTest} onFail={() => setFlat(true)} />
@@ -133,68 +135,27 @@ function OwlThumb({ color, skin, size }: MascotThumbProps) {
   return <OwlAvatar color={color} skin={skin} size={size} animated={false} trackPointer={false} label={null} />;
 }
 
-/* --------------------------------------------- the original mascot bodies */
+/* ------------------------------------------------- the original shapes */
 
-/** The original mascot's face for a clip. */
-export function cursorStateFor(activity: MascotActivity, pose: FloatingPose): CursorState {
-  const byActivity: Partial<Record<MascotActivity, CursorState>> = {
-    sleep: "sleeping",
-    yawn: "drowsy",
-    wake: "waking",
-    petted: "happy",
-    love: "happy",
-    spin: "excited",
-    backflip: "excited",
-    dance: "playful",
-    jump: "excited",
-    celebrate: "celebrate",
-    angry: "angry",
-    confused: "confused",
-    shy: "shy",
-    sad: "sad",
-    startled: "surprised",
-    surprised: "surprised",
-    think: "thinking",
-    working: "working",
-    drag: "dragging",
-    look: "curious",
-    lookBack: "curious",
-    tilt: "curious",
-    hoot: "humming",
-    wave: "playful",
-    flyOut: "sending",
-    return: "receiving",
-    fly: "bouncing",
-  };
-  const mapped = byActivity[activity];
-  if (mapped) return mapped;
-  if (pose === "think") return "thinking";
-  if (pose === "speak") return "listening";
-  if (pose === "alert") return "alerting";
+/** A shape's face for a clip. */
+export function shapeMoodForClip(activity: MascotActivity, pose: FloatingPose): ShapeMood {
+  if (activity === "sleep" || activity === "yawn") return "sleeping";
+  if (["petted", "love", "celebrate", "dance", "jump", "wave", "spin", "backflip"].includes(activity)) return "happy";
+  if (activity === "working" || activity === "flyOut" || activity === "return") return "working";
+  if (activity === "think" || activity === "confused" || pose === "think") return "thinking";
   return "idle";
 }
 
-function BodyRender({ color, choice, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
-  const hex = hexOf(color);
+function ShapeRender({ color, look, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
   return (
     <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest}>
-      <CursorAvatar
-        state={cursorStateFor(activity, pose)}
-        size={size * 0.86}
-        silhouette={MASCOT_BODIES[botMascotBody(choice.body)]}
-        gradient={[hex, hex, hex]}
-        motion={0}
-        effects={false}
-        glyphs={false}
-        title={null}
-      />
+      <ShapeMascot shape={look.shape} skin={look.skins.shape} color={color} size={size * 0.8} mood={shapeMoodForClip(activity, pose)} label={null} />
     </Motion25D>
   );
 }
 
-function BodyThumb({ color, choice, size }: MascotThumbProps) {
-  const hex = hexOf(color);
-  return <CursorAvatar state="idle" size={size} silhouette={MASCOT_BODIES[botMascotBody(choice.body)]} gradient={[hex, hex, hex]} motion={0} effects={false} glyphs={false} paused title={null} />;
+function ShapeThumb({ color, look, size }: MascotThumbProps) {
+  return <ShapeMascot shape={look.shape} skin={look.skins.shape} color={color} size={size} animated={false} label={null} />;
 }
 
 /* ------------------------------------------------------------- Trombi */
@@ -212,38 +173,38 @@ export function trombiPoseFor(activity: MascotActivity, pose: FloatingPose): Tro
   return "idle";
 }
 
-function TrombiRender({ size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
+/** Trombi on the desktop is drawn this much bigger than his box's share (he is thin). */
+export const TROMBI_SCALE = 0.72 * 1.15;
+
+function TrombiRender({ size, look, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
   return (
     <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest}>
-      <Trombi pose={trombiPoseFor(activity, pose)} size={size * 0.72} label={null} />
+      <span className={`trombi-skin-${look.skins.trombi}`} style={{ display: "contents" }}>
+        <Trombi pose={trombiPoseFor(activity, pose)} size={size * TROMBI_SCALE} label={null} />
+      </span>
     </Motion25D>
   );
 }
 
-function TrombiThumb({ size }: MascotThumbProps) {
-  return <Trombi pose="idle" size={size * 0.8} still label={null} />;
+function TrombiThumb({ size, look }: MascotThumbProps) {
+  return (
+    <span className={`trombi-skin-${look.skins.trombi}`} style={{ display: "contents" }}>
+      <Trombi pose="idle" size={size * 0.8} still label={null} />
+    </span>
+  );
 }
 
 /* ----------------------------------------------------------- registry */
 
 export const MASCOTS: readonly MascotDefinition[] = [
   { id: "owl", capabilities: { walk: true, fly: true, wings: true, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: [], Render: OwlRender, Thumb: OwlThumb },
-  { id: "body", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, paint: { colors: true, skins: false }, moves: ["wave", "dance", "jump", "hop", "love"], Render: BodyRender, Thumb: BodyThumb },
-  { id: "trombi", capabilities: { walk: true, fly: false, wings: false, blink: false, turn: true, flip: true }, paint: { colors: false, skins: false }, moves: ["hop", "jump", "dance", "hoot"], Render: TrombiRender, Thumb: TrombiThumb },
+  { id: "shape", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: ["wave", "dance", "jump", "hop", "love"], Render: ShapeRender, Thumb: ShapeThumb },
+  { id: "trombi", capabilities: { walk: true, fly: false, wings: false, blink: false, turn: true, flip: true }, paint: { colors: false, skins: true }, moves: ["hop", "jump", "dance", "hoot"], Render: TrombiRender, Thumb: TrombiThumb },
 ];
 
-export const DEFAULT_MASCOT: FloatingMascotChoice = { kind: "owl", style: "2d" };
-
-export function mascotFor(choice: FloatingMascotChoice | undefined): MascotDefinition {
-  return MASCOTS.find((entry) => entry.id === choice?.kind) ?? MASCOTS[0];
+export function mascotFor(look: Pick<MascotLook, "character"> | undefined): MascotDefinition {
+  return MASCOTS.find((entry) => entry.id === look?.character) ?? MASCOTS[0];
 }
 
-/** The original body shapes, in the picker's order. */
-export const BODY_CHOICES: readonly MascotBodyId[] = MASCOT_BODY_IDS;
-
-/** The next character, for the right-click menu item that cycles them. */
-export function nextMascot(choice: FloatingMascotChoice | undefined): FloatingMascotChoice {
-  const at = MASCOTS.findIndex((entry) => entry.id === (choice?.kind ?? "owl"));
-  const kind = MASCOTS[(at + 1) % MASCOTS.length].id;
-  return { ...choice, kind };
-}
+/** The original shapes, in the picker's order. */
+export const SHAPE_CHOICES: readonly MascotShape[] = MASCOT_SHAPES;

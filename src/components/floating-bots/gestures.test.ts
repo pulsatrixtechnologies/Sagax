@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newStroke, PET_EVERY_MS, strokeLeave, strokeStep, type StrokeState } from "./gestures";
+import { clickGesture, DOUBLE_CLICK_MS, eventsForClick, newStroke, PET_EVERY_MS, strokeLeave, strokeStep, type StrokeState } from "./gestures";
 
 /** Feeds pointer moves as the window receives them (forwarded or not, the page sees plain moves). */
 function moves(points: [number, number, number][], state: StrokeState = newStroke()) {
@@ -34,5 +34,15 @@ describe("petting: a stroke over the owl", () => {
     const left = strokeLeave(first.state);
     expect(moves(rub(800), left).pets).toBe(0);
     expect(moves(rub(PET_EVERY_MS + 400), left).pets).toBe(1);
+  });
+});
+
+describe("clicks on the mascot", () => {
+  it("opens the chat on a click at once, and the app on a double click", () => {
+    expect(clickGesture(null, 1000)).toBe("single");
+    expect(eventsForClick("single")).toEqual([{ type: "click" }]);
+    expect(clickGesture(1000, 1000 + DOUBLE_CLICK_MS)).toBe("double");
+    expect(eventsForClick("double")).toEqual([{ type: "dismiss" }, { type: "open" }]);
+    expect(clickGesture(1000, 1000 + DOUBLE_CLICK_MS + 1)).toBe("single");
   });
 });

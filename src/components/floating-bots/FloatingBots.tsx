@@ -13,13 +13,11 @@ import { brand } from "@/lib/brand";
 import { useRetroSkin } from "@/components/RetroChromeHost";
 import { botAvatarProfile } from "../../../shared/bot-avatar";
 import {
-  botMascots,
   floatingBotPrefs,
   floatingBots,
   nextLiveliness,
   setFloatingBotOnTop,
   setFloatingFlyAway,
-  setFloatingBotMascot,
   setFloatingLiveliness,
   type FloatingLiveliness,
   setFloatingBotPosition,
@@ -142,7 +140,6 @@ export function FloatingBots() {
   const { streaming } = useStreaming();
   const entries = useSyncExternalStore(subscribeFloatingBots, floatingBots, floatingBots);
   const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
-  const characters = useSyncExternalStore(subscribeFloatingBots, botMascots, botMascots);
   // each mascot's mood, kept on this device (mood.ts); refreshed now and then so it drifts down
   const [moods, setMoods] = useState<Record<string, MoodRecord>>(() => readMoods());
   const [clock, setClock] = useState(() => Date.now());
@@ -240,9 +237,6 @@ export function FloatingBots() {
       case "play":
         cheer(botId, "play");
         break;
-      case "mascot":
-        setFloatingBotMascot(botId, event.choice);
-        break;
       case "pet":
         cheer(botId, "pet");
         break;
@@ -300,7 +294,7 @@ export function FloatingBots() {
         mood: moodNow(moods[bot.id], clock),
         flyAway: prefs.flyAway,
         liveliness: prefs.liveliness,
-        mascot: characters[bot.id],
+        mascot: bot.mascotLook ?? undefined,
         context: floatingContext(bot.tasks?.find((task) => task.threadId === (session.threadId ?? bot.threadId))?.usage),
       }),
     };

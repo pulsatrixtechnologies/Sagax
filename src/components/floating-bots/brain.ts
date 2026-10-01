@@ -7,7 +7,7 @@ import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPose, F
 import { moodLevel } from "./mood";
 import type { Liveliness } from "./behavior";
 import type { FloatingContext } from "./gauge";
-import type { FloatingMascotChoice } from "@/lib/floating-bots";
+import type { MascotLook } from "../../../shared/mascot-look";
 
 /** What the balloon keeps of a long reply; the rest is one click away in the app. */
 export const BALLOON_REPLY_CHARS = 3000;
@@ -179,7 +179,7 @@ export interface FloatingInput {
   /** The followed thread's context use (context.ts), for the energy bar. */
   context?: FloatingContext | null;
   /** The character the bot wears on the desktop. */
-  mascot?: FloatingMascotChoice;
+  mascot?: MascotLook;
 }
 
 /** The pose and balloon for this moment, as one snapshot. */
@@ -243,7 +243,7 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
     },
     liveliness: input.liveliness ?? "normal",
     context: input.context ?? null,
-    mascot: input.mascot ?? { kind: "owl", style: "2d" },
+    mascot: input.mascot ?? { character: "owl" },
   };
 }
 

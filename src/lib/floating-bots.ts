@@ -4,32 +4,6 @@
 // character, its balloon, the desktop windows' brain) lives behind a dynamic
 // import in src/components/floating-bots, fetched only once a bot floats.
 
-/** Which character stands for a bot on the desktop (src/components/floating-bots/mascots.tsx). */
-export type FloatingMascotKind = "owl" | "body" | "trombi";
-export const FLOATING_MASCOT_KINDS: readonly FloatingMascotKind[] = ["owl", "body", "trombi"];
-
-export interface FloatingMascotChoice {
-  kind: FloatingMascotKind;
-  /** The original body shape (shared/mascot-bodies.ts), for kind "body". */
-  body?: string;
-  /** The owl drawn flat (2D, the default) or in 3D (preview). */
-  style?: "2d" | "3d";
-}
-
-const BODY_ID = /^[a-z]{1,24}$/;
-
-/** A saved or reported choice, kept only when well-formed. */
-export function cleanMascotChoice(value: unknown): FloatingMascotChoice | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const choice = value as { kind?: unknown; body?: unknown; style?: unknown };
-  if (!FLOATING_MASCOT_KINDS.includes(choice.kind as FloatingMascotKind)) return undefined;
-  return {
-    kind: choice.kind as FloatingMascotKind,
-    ...(typeof choice.body === "string" && BODY_ID.test(choice.body) ? { body: choice.body } : {}),
-    ...(choice.style === "3d" || choice.style === "2d" ? { style: choice.style } : {}),
-  };
-}
-
 export interface FloatingBotEntry {
   id: string;
   /** Desktop: keep the bot's window above other apps. On unless switched off. */
@@ -211,69 +185,42 @@ function savePrefs(next: FloatingBotPrefs, storage: FloatingStorage | undefined)
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
 
-/* ------------------------------------------------- each bot's character */
-// One place for the character a bot wears, floated or not: the desktop
-// mascot's Mascot tab and right-click menu, and the bot's avatar popover
-// (Character), all read and write it here.
+/* ------------------------------------------- the old per-device character */
+// The character used to be kept per device (omb.botMascots.v1). It now lives
+// with the bot (bot.mascotLook, shared/mascot-look.ts); this reads the old
+// record once so the app can move it onto the bots, then forgets it.
 
-const MASCOTS_KEY = "omb.botMascots.v1";
-const NO_MASCOTS: Readonly<Record<string, FloatingMascotChoice>> = Object.freeze({});
-let mascots: Readonly<Record<string, FloatingMascotChoice>> | null = null;
+const LEGACY_MASCOTS_KEY = "omb.botMascots.v1";
+const LEGACY_SHAPES: Record<string, string> = { circle: "circle", blob: "blob", squircle: "squircle", capsule: "pill", hexagon: "hexagon", drop: "drop" };
 
-export function readBotMascots(storage: FloatingStorage | undefined = defaultStorage()): Record<string, FloatingMascotChoice> {
+/** The old per-device choices, as bot looks: { botId: { character, style, shape } }. */
+export function readLegacyBotLooks(storage: FloatingStorage | undefined = defaultStorage()): Record<string, { character: "owl" | "shape" | "trombi"; style?: "2d" | "3d"; shape?: string }> {
   let raw: unknown = null;
   try {
-    raw = JSON.parse(storage?.getItem(MASCOTS_KEY) ?? "null");
+    raw = JSON.parse(storage?.getItem(LEGACY_MASCOTS_KEY) ?? "null");
   } catch {
     raw = null;
   }
-  const out: Record<string, FloatingMascotChoice> = {};
+  const out: Record<string, { character: "owl" | "shape" | "trombi"; style?: "2d" | "3d"; shape?: string }> = {};
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
   for (const [botId, value] of Object.entries(raw).slice(0, 256)) {
-    const choice = cleanMascotChoice(value);
-    if (BOT_ID.test(botId) && choice) out[botId] = choice;
+    const old = value as { kind?: unknown; body?: unknown; style?: unknown } | null;
+    if (!BOT_ID.test(botId) || !old || typeof old !== "object") continue;
+    const style = old.style === "3d" || old.style === "2d" ? old.style : undefined;
+    if (old.kind === "owl") out[botId] = { character: "owl", ...(style ? { style } : {}) };
+    else if (old.kind === "trombi") out[botId] = { character: "trombi" };
+    else if (old.kind === "body") out[botId] = { character: "shape", shape: LEGACY_SHAPES[String(old.body)] ?? "circle" };
   }
   return out;
 }
 
-/** Every bot's character (a stable object until one changes). */
-export function botMascots(): Readonly<Record<string, FloatingMascotChoice>> {
-  if (!mascots) mascots = readBotMascots();
-  return mascots ?? NO_MASCOTS;
-}
-
-/** The character a bot wears; the owl when it never chose. */
-export function botMascot(botId: string): FloatingMascotChoice | undefined {
-  return botMascots()[botId];
-}
-
-/** Wear another character: from the Mascot tab, the menu, or the avatar popover. */
-export function setBotMascot(botId: string, choice: FloatingMascotChoice, storage: FloatingStorage | undefined = defaultStorage()): void {
-  const clean = cleanMascotChoice(choice);
-  if (!clean || !BOT_ID.test(botId)) return;
-  mascots = { ...botMascots(), [botId]: clean };
+export function forgetLegacyBotLooks(storage: FloatingStorage | undefined = defaultStorage()): void {
   try {
-    storage?.setItem(MASCOTS_KEY, JSON.stringify(mascots));
+    (storage as Storage | undefined)?.removeItem?.(LEGACY_MASCOTS_KEY);
   } catch {
-    /* private mode or quota: the choice holds for this session */
+    /* nothing to forget */
   }
-  for (const listener of listeners) listener();
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
-
-/**
- * What the avatar popover offers each character: the bot colors, the owl's
- * skins and its wing moves. Mirrors the registry (mascots.tsx, tested equal)
- * so the popover can decide without loading the characters.
- */
-export const MASCOT_KIND_PAINT: Readonly<Record<FloatingMascotKind, { colors: boolean; skins: boolean; wingMoves: boolean }>> = {
-  owl: { colors: true, skins: true, wingMoves: true },
-  body: { colors: true, skins: false, wingMoves: false },
-  trombi: { colors: false, skins: false, wingMoves: false },
-};
-
-/** Kept for the desktop mascot's callers. */
-export const setFloatingBotMascot = setBotMascot;
 
 export function subscribeFloatingBots(listener: () => void): () => void {
   listeners.add(listener);
@@ -284,7 +231,6 @@ export function subscribeFloatingBots(listener: () => void): () => void {
 export function resetFloatingBotsForTests(): void {
   current = null;
   prefs = null;
-  mascots = null;
   listeners.clear();
 }
 
