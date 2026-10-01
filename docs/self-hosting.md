@@ -311,6 +311,20 @@ that makes one read-only request to the provider from the server.
   always uses a personal ChatGPT login.
 - **xAI API key**: the Grok API engine and xAI image generation.
 
+A saved key goes only to its own engine and only to the workspace's endpoint:
+an engine instance in `config.json` with its own base URL or its own key (a
+router or proxy) never receives it.
+
+**OpenCode is the exception to "the server's own environment is ignored".**
+Like `opencode` in a terminal, it reads provider keys from its environment
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`,
+`KIMI_API_KEY`, `MOONSHOT_API_KEY`, `MINIMAX_API_KEY`) and offers those
+providers' models, billed to that key. It does so only where the server's
+environment is one person's own: never on an OMB Cloud home, a hosted team
+workspace, an organisation-managed desktop, or a server whose sign-in list
+lets other people in (members, more than one admin, or a whole domain).
+Providers added with `opencode auth login` work everywhere.
+
 ## Many client workspaces on one server
 
 `openmausbot fleet` runs one workspace per client on a single Linux server,
@@ -424,6 +438,12 @@ Folder transfers are limited to 256 KiB per file and do not follow links or
 delete files. Local screen control also needs OS permissions and a supported
 desktop driver. Microphone access is not included.
 
+Only conversations you start yourself on that server can use what you share;
+other people's bots, routines and webhooks there cannot. Keys and sign-in
+stores (`~/.ssh`, cloud CLIs, browser profiles, keychains) and `.git`
+internals stay out of reach of any shared folder, and the desktop keeps a log
+of every request under **Computer access**.
+
 Sharing works while this desktop is awake and running, including when viewing
 another workspace. **Stop sharing** revokes access; closing the app stops the
 connector. An action already sent to a local app may still finish. **Forget**
@@ -494,7 +514,8 @@ Set `OMB_LOOPBACK_TRUST=service` on a self-hosted server people share (with
 an email sign-in list, say), or `OMB_LOOPBACK_TRUST=owner` to opt a hosted
 workspace back into the old behaviour (the log then warns). Any other value
 means `service`. The desktop app ignores the setting: its local changes
-already need the app's own per-launch capability.
+already need the app's own per-launch capability. An OMB Cloud home ignores
+it too and is always `service` (docs/cloud-pro.md).
 
 With `service` on a self-hosted server:
 
@@ -1165,6 +1186,37 @@ Plus one convenience: set `OMB_PUBLIC_URL=https://your.domain` so pairing
 links, and `OMB_WEBHOOK_PUBLIC_URL=https://your.domain` so hook URLs, are
 printed with the public address. [`deploy/Caddyfile`](../deploy/Caddyfile)
 is the reference implementation.
+
+## Opening a desktop from another device
+
+In a paired admin browser, **Open live desktop** uses the same address as
+OpenMausBot for Local VMs and your own VPS. Shared, per-bot and pool Local VMs
+connect through their managed container's loopback port. VPS desktops connect
+through an SSH tunnel opened by the server. Neither needs an additional public
+port or viewer origin setting. Keep Local VM VNC ports bound to loopback and
+VPS VNC ports private.
+
+Your app reverse proxy must support WebSocket upgrades, preserve `Host`, and
+set `X-Forwarded-Proto` to the browser-facing scheme. This also applies when
+using Tailscale Serve. Viewer requests require an admin session. Logging out
+or revoking that session closes open viewers. Client-only pairing does not
+grant desktop control.
+
+An open Local VM viewer keeps that VM's idle timer active. Remote VPS viewers
+share a tunnel; it closes 30 seconds after the last viewer leaves, allowing
+reconnects during that interval. A native desktop viewer keeps its existing
+explicit-close behavior and maximum tunnel lifetime.
+
+Use **Keyboard** to send text from a phone and **Clipboard** to exchange text
+with the desktop; clipboard edits sync automatically. The desktop fits the
+window, with fullscreen available when the browser supports it. Hosted Cloud
+keeps its provider-issued viewer. Local owner connections keep their direct
+viewer URLs and the packaged desktop's isolated viewer windows.
+
+These controls are in the web app. The native phone apps have their own
+computer viewers; use a paired browser for interactive Local VM or VPS access.
+For the proxy boundary and offline regression checks, see the
+[viewer verification recipe](verification/desktop-viewer.md).
 
 ## Using it from your phone
 

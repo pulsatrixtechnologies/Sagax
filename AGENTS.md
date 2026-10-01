@@ -109,8 +109,8 @@ server's own machine: `ManagedDesktopPolicy` refuses `thisComputer` and
 `hostComputerRefusal()`. A bot reaches the computer of the person who asks
 through `server/user-computers.ts`: `speakingPerson` (a person's message or a
 hop carrying it; never a routine), then a provider per target
-(`user-desktop`: that person's desktop app via `SharedComputers.listFor` /
-`ownedBy`; `user-sandbox`: plugs in as a second provider). Not connected, not
+(`user-desktop`: that person's desktop app via the owner-scoped `SharedComputers`
+`list(person)` and `request`, for the person `sharedComputerPrincipal` proves; `user-sandbox`: plugs in as a second provider). Not connected, not
 theirs, or no person: the tool answers why. `shared_computer` is never
 pre-allowed for Claude (`agentsAllowedTools`), so the bot's approval mode
 applies. Tests: `server/user-computers.test.ts`,
@@ -193,3 +193,22 @@ fragment-only change of the `/pair` the window already shows, which would
 not reload the page. `scripts/verify-desktop-sign-in.ts` proves it in a real
 Electron window. A change to that server code needs the server image
 redeployed.
+## Upstream sync
+
+Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
+`4ed952aa` (0.1.92) merged into Sagax; `baseVersion` follows it. To repeat:
+
+- Keep the `upstream` remote fetch-only (`git remote set-url --push
+  upstream no_push`). Never push, open a pull request or file an issue
+  upstream.
+- `git fetch upstream`, branch from `origin/main`, then `git merge
+  upstream/main` (a real merge, never a rebase) so history stays traceable.
+- On conflict our behavior wins and upstream improvements are layered in.
+  Merge `src/locales/*.json` and `source-hashes.json` as a union of keys and
+  run `pnpm i18n:check`.
+- Run `pnpm install --frozen-lockfile`, typecheck, lint, the unit suites and
+  `pnpm build`; compare failures with `origin/main` before pushing to
+  `origin` only.
+- MCP sign-in is ours (`server/mcp-oauth.ts`, vault `mcp-oauth.enc` and
+  `mcp-oauth.key`, both left out of workspace backups). Upstream's own
+  MCP sign-in manager and routes were not taken.

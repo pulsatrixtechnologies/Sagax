@@ -293,9 +293,9 @@ function BotPicker({
   return (
     <div className="rounded-xl border border-hairline/50 bg-inset/60 p-2">
       {!locked && bots.length > 5 && (
-        <label className="mb-2 flex items-center gap-2 rounded-lg bg-panel px-2.5 py-2 text-ink-secondary">
+        <label className="mb-2 flex items-center gap-2 rounded-lg border border-transparent bg-panel px-2.5 py-2 text-ink-secondary focus-within:border-focus">
           <Search size={14} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a bot" className="min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-ink-secondary/60" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a bot" className="min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-ink-tertiary" />
         </label>
       )}
       <div className="grid max-h-48 grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
@@ -321,7 +321,7 @@ function BotPicker({
 }
 
 function toContextAttachments(attachments: Attachment[]): Array<RoutineContextAttachment | CalendarCallAttachment> {
-  return attachments.flatMap((attachment) => attachment.kind === "paste" ? [] : [{
+  return attachments.flatMap((attachment) => attachment.kind === "paste" || attachment.kind === "citation" ? [] : [{
     id: attachment.id,
     kind: attachment.kind,
     name: attachment.name,
@@ -1335,7 +1335,7 @@ function CalendarGrid({
       </div>
       <div role="grid" aria-label="Routine and call calendar" onDragEnd={() => setDragPreview(null)} className="relative grid" style={{ height: HOUR_HEIGHT * 24, gridTemplateColumns, minWidth }}>
         <div className="relative border-r border-hairline/40">
-          {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="absolute right-2 -translate-y-1/2 text-[9.5px] tabular-nums text-ink-secondary/70" style={{ top: hour * HOUR_HEIGHT }}>{hour === 0 ? "" : new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" })}</div>)}
+          {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="absolute right-2 -translate-y-1/2 text-[9.5px] tabular-nums text-ink-tertiary" style={{ top: hour * HOUR_HEIGHT }}>{hour === 0 ? "" : new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" })}</div>)}
         </div>
         {starts.map((start) => {
           const now = new Date();

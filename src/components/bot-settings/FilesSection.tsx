@@ -438,7 +438,7 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
             )}
           >
             {t(`botPanel.files.filter.${id}`)}
-            <span className={cn("tabular-nums", filter === id ? "text-app/70" : "text-ink-secondary/80")}>{counts[id]}</span>
+            <span className={cn("tabular-nums", filter === id ? "text-app/70" : "text-ink-tertiary")}>{counts[id]}</span>
           </button>
         ))}
       </div>
@@ -497,7 +497,7 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
                     {file.available ? (file.size === null ? t(`botPanel.files.source.${file.source}`) : formatSize(file.size)) : t("botPanel.files.unavailable")}
                   </div>
                 </div>
-                {actions(file, "absolute right-1 top-1 rounded-lg bg-panel/90 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 motion-reduce:transition-none")}
+                {actions(file, "absolute right-1 top-1 rounded-lg bg-panel/90 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100 motion-reduce:transition-none")}
               </li>
             );
           })}

@@ -91,6 +91,10 @@ const sessionSchema = z.object({
      * (server/idp-session.ts): refreshed on use, revoked with the session. */
     grantRef: z.string().max(64).optional(),
   }).optional(),
+  /** A browser sign-in (PairingCode `browser`): accepted only as its browser's cookie, never as a bearer token. */
+  cookieOnly: z.literal(true).optional(),
+  /** Whose OMB Cloud a browser sign-in signed in to (its PairingCode `owner`). */
+  owner: z.string().max(254).optional(),
 });
 
 const fileSchema = z.object({ version: z.literal(1), sessions: z.array(sessionSchema) });
@@ -109,6 +113,8 @@ export interface PublicSession {
   email?: string;
   /** The person this session acts as (server/principals.ts). */
   principalId?: string;
+  /** Whose OMB Cloud a browser sign-in signed in to. */
+  owner?: string;
 }
 
 export interface PairingCode {
@@ -126,6 +132,13 @@ export interface PairingCode {
   /** A code minted by "Sign in with Pulsatrix" for the desktop or a phone:
    * the session it creates carries this provider account and grant. */
   idp?: SessionRecord["idp"];
+  /** A browser sign-in (an OMB Cloud page's "Use in your browser"): only a
+   * browser sign-in redeems it, only by its credential, and a browser sign-in
+   * redeems no other window. */
+  browser?: true;
+  /** A browser sign-in's owner, the OMB Cloud account's email, which the
+   * sign-in page shows before anything is redeemed. */
+  owner?: string;
 }
 
 export interface PublicPairing {
@@ -138,9 +151,15 @@ export interface PublicPairing {
 
 export type ExchangeResult =
   | { ok: true; token: string; session: PublicSession }
-  | { ok: false; status: 401 | 429; error: string };
+  | { ok: false; status: 401 | 403 | 429; error: string };
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+
+/** A device's name as the sessions list shows it: what a client sent, less
+ * control and bidirectional-formatting characters. */
+function deviceLabel(value: string | undefined): string {
+  return (value ?? "").replace(/[\p{Cc}\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, "").trim();
+}
 
 function sameDigest(a: string, b: string): boolean {
   const left = Buffer.from(a, "hex");
@@ -202,6 +221,7 @@ function publicSession(record: SessionRecord): PublicSession {
   };
   if (record.email) view.email = record.email;
   if (record.principalId) view.principalId = record.principalId;
+  if (record.owner) view.owner = record.owner;
   return view;
 }
 
@@ -220,7 +240,7 @@ export class SessionRegistry {
   private pairings: PairingCode[] = [];
   private tickets = new Map<string, { sessionId: string; expiresAt: number }>();
   private failures = new Map<string, { count: number; windowStart: number; lockedUntil: number }>();
-  private replays: Array<{ codeHash: string; attemptId: string; result: ExchangeResult; expiresAt: number }> = [];
+  private replays: Array<{ codeHash: string; attemptId: string; browser: boolean; result: ExchangeResult; expiresAt: number }> = [];
   private readonly onRevoked = new Set<(sessionId: string) => void>();
   private exchanged: ((session: Readonly<SessionRecord>, pairing: Readonly<PairingCode>) => void) | undefined;
   private lastSeenWrites = new Map<string, number>();
@@ -228,6 +248,8 @@ export class SessionRegistry {
   private readonly options: SessionStoreOptions;
   private readonly openMarker: string;
   private closed = false;
+  /** Set on an OMB Cloud home (requireAdmin): only admin scope, anywhere. */
+  private adminOnly: string | null = null;
 
   // No parameter properties: the server runs this file under Node's
   // strip-only TypeScript mode, which only erases types.
@@ -325,14 +347,31 @@ export class SessionRegistry {
     for (const listener of this.onRevoked) listener(sessionId);
   }
 
+  /** From now on no pairing window, sign-in or session without admin scope
+   * is opened, redeemed, issued or accepted; `refusal` says why (an OMB
+   * Cloud home is personal: server/cloud-owner.ts). Sessions stored without
+   * it stop authenticating; the caller revokes them. */
+  requireAdmin(refusal: string): void {
+    this.adminOnly = refusal;
+  }
+
+  private personal(scopes: readonly Scope[]): boolean {
+    return this.adminOnly !== null && !scopes.includes("admin");
+  }
+
+  private refusePersonal(scopes: readonly Scope[]): void {
+    if (this.personal(scopes)) throw Object.assign(new Error(this.adminOnly!), { status: 403, code: "cloud_personal" });
+  }
+
   // ── pairing ────────────────────────────────────────────────────────────
 
-  openPairing(input: { scopes?: Scope[]; label?: string; ttlMs?: number; principalId?: string; idp?: SessionRecord["idp"] } = {}): { id: string; code: string; credential: string; expiresAt: number } {
+  openPairing(input: { scopes?: Scope[]; label?: string; ttlMs?: number; principalId?: string; idp?: SessionRecord["idp"]; browser?: boolean; owner?: string } = {}): { id: string; code: string; credential: string; expiresAt: number } {
     this.prune();
     const now = this.now();
     const code = generatePairingCode();
     const credential = generatePairingCredential();
     const scopes = input.scopes?.length ? [...new Set(input.scopes)] : [...SCOPES];
+    this.refusePersonal(scopes);
     const pairing: PairingCode = {
       id: randomUUID(),
       codeHash: sha256(code),
@@ -343,6 +382,7 @@ export class SessionRegistry {
       expiresAt: now + (input.ttlMs ?? PAIRING_CODE_TTL_MS),
       ...(input.principalId ? { principalId: input.principalId } : {}),
       ...(input.idp ? { idp: { ...input.idp } } : {}),
+      ...(input.browser ? { browser: true as const, ...(input.owner ? { owner: input.owner } : {}) } : {}),
     };
     this.pairings.push(pairing);
     return { id: pairing.id, code, credential, expiresAt: pairing.expiresAt };
@@ -351,6 +391,17 @@ export class SessionRegistry {
   openPairings(): PublicPairing[] {
     this.prune();
     return this.pairings.map((p) => ({ id: p.id, label: p.label, scopes: [...p.scopes], createdAt: p.createdAt, expiresAt: p.expiresAt }));
+  }
+
+  /** What a browser sign-in's page shows before anything is redeemed: whose
+   * Cloud it signs in to. Only a browser sign-in's 256-bit credential can
+   * match, so this consumes nothing and counts toward no lockout. */
+  previewBrowserSignIn(credential: string): { owner: string | null; expiresAt: number } | null {
+    this.prune();
+    if (!isPairingCredential(credential)) return null;
+    const presented = sha256(credential);
+    const pairing = this.pairings.find((p) => p.browser === true && sameDigest(p.credentialHash, presented));
+    return pairing ? { owner: pairing.owner ?? null, expiresAt: pairing.expiresAt } : null;
   }
 
   cancelPairing(id: string): boolean {
@@ -401,8 +452,9 @@ export class SessionRegistry {
    * the lockout (an IP); `label` names the device in the sessions list. */
   /** `label` is what the client asked to be called; the code's own label
    * (set by whoever minted it) comes next; `fallbackLabel` (derived from the
-   * user agent) last. */
-  exchange(input: { code: string; label: string; source: string; fallbackLabel?: string; attemptId?: string }): ExchangeResult {
+   * user agent) last. `browser`: this is a browser sign-in (PairingCode
+   * `browser`), which redeems only a window opened for one. */
+  exchange(input: { code: string; label: string; source: string; fallbackLabel?: string; attemptId?: string; browser?: boolean }): ExchangeResult {
     this.prune();
     const now = this.now();
     // A credential is hashed as presented. Normalizing it would be actively
@@ -411,27 +463,29 @@ export class SessionRegistry {
     const presented = isPairingCredential(input.code)
       ? sha256(input.code)
       : sha256(normalizePairingCode(input.code));
+    const browser = input.browser === true;
     const attemptId = typeof input.attemptId === "string" && /^[\w-]{8,64}$/.test(input.attemptId) ? input.attemptId : null;
-    const replay = attemptId ? this.replays.find((r) => r.attemptId === attemptId && sameDigest(r.codeHash, presented)) : undefined;
+    const replay = attemptId ? this.replays.find((r) => r.attemptId === attemptId && r.browser === browser && sameDigest(r.codeHash, presented)) : undefined;
     if (replay) return replay.result;
     const lock = this.lockState(input.source);
     if (lock.locked) {
       const seconds = Math.ceil(lock.retryAfterMs / 1000);
       return { ok: false, status: 429, error: `too many failed pairing attempts from your address; try again in ${seconds}s` };
     }
-    const index = this.pairings.findIndex((p) =>
-      sameDigest(p.codeHash, presented) || sameDigest(p.credentialHash, presented));
+    const index = this.pairings.findIndex((p) => (p.browser === true) === browser &&
+      (sameDigest(p.credentialHash, presented) || (!p.browser && sameDigest(p.codeHash, presented))));
     if (index < 0) {
       this.recordFailure(input.source);
       return { ok: false, status: 401, error: "pairing code is wrong or has expired; create a new one on the server" };
     }
     const [pairing] = this.pairings.splice(index, 1); // single use
     this.failures.delete(input.source);
+    if (this.personal(pairing.scopes)) return { ok: false, status: 403, error: this.adminOnly! };
     const token = `omb_sess_${randomBytes(32).toString("base64url")}`;
     const record: SessionRecord = {
       id: randomUUID(),
       tokenHash: sha256(token),
-      label: (input.label.trim() || pairing.label || input.fallbackLabel?.trim() || "Unnamed device").slice(0, 80),
+      label: (deviceLabel(input.label) || deviceLabel(pairing.label) || deviceLabel(input.fallbackLabel) || "Unnamed device").slice(0, 80),
       scopes: [...pairing.scopes],
       createdAt: now,
       lastSeenAt: now,
@@ -440,13 +494,14 @@ export class SessionRegistry {
       expiresAt: now + Math.min(SESSION_TTL_MS, SESSION_MAX_AGE_MS),
       ...(pairing.principalId ? { principalId: pairing.principalId } : {}),
       ...(pairing.idp ? { idp: { ...pairing.idp } } : {}),
+      ...(pairing.browser ? { cookieOnly: true as const, ...(pairing.owner ? { owner: pairing.owner } : {}) } : {}),
     };
     this.sessions.push(record);
     this.lastSeenWrites.set(record.id, now); // the exchange itself was the first sighting
     this.exchanged?.(record, pairing);
     this.persist();
     const result: ExchangeResult = { ok: true, token, session: publicSession(record) };
-    if (attemptId) this.replays.push({ codeHash: presented, attemptId, result, expiresAt: now + EXCHANGE_REPLAY_MS });
+    if (attemptId) this.replays.push({ codeHash: presented, attemptId, browser, result, expiresAt: now + EXCHANGE_REPLAY_MS });
     return result;
   }
 
@@ -464,13 +519,14 @@ export class SessionRegistry {
   }
 
   private issueAccount(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string; idp?: SessionRecord["idp"] }, membershipAuthority?: "portal"): { token: string; session: PublicSession } {
+    this.refusePersonal(input.scopes);
     this.prune();
     const now = this.now();
     const token = `omb_sess_${randomBytes(32).toString("base64url")}`;
     const record: SessionRecord = {
       id: randomUUID(),
       tokenHash: sha256(token),
-      label: (input.label.trim() || "Unnamed device").slice(0, 80),
+      label: (deviceLabel(input.label) || "Unnamed device").slice(0, 80),
       scopes: [...new Set(input.scopes)],
       createdAt: now,
       lastSeenAt: now,
@@ -547,7 +603,7 @@ export class SessionRegistry {
     const hash = sha256(token);
     const now = this.now();
     const record = this.sessions.find((s) => sameDigest(s.tokenHash, hash));
-    if (!record || record.expiresAt <= now) return null;
+    if (!record || record.expiresAt <= now || this.personal(record.scopes)) return null;
     const lastWrite = this.lastSeenWrites.get(record.id) ?? 0;
     if (now - lastWrite >= LAST_SEEN_WRITE_INTERVAL_MS) {
       record.lastSeenAt = now;
@@ -581,7 +637,7 @@ export class SessionRegistry {
   /** Still valid right now (prunes expiry first). */
   isLive(sessionId: string): boolean {
     this.prune();
-    return this.sessions.some((s) => s.id === sessionId);
+    return this.sessions.some((s) => s.id === sessionId && !this.personal(s.scopes));
   }
 
   list(): PublicSession[] {
@@ -691,6 +747,6 @@ export class SessionRegistry {
     this.tickets.delete(hash);
     const now = this.now();
     const record = this.sessions.find((s) => s.id === entry.sessionId);
-    return record && record.expiresAt > now ? record : null;
+    return record && record.expiresAt > now && !this.personal(record.scopes) ? record : null;
   }
 }

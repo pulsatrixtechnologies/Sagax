@@ -19,13 +19,14 @@ function desktops(live = new Set(["ada-session", "bob-session"])) {
   const broker = new SharedComputers((id) => live.has(id));
   const adaDesktop = registration("Ada's Mac");
   const bobDesktop = registration("Bob's PC");
-  broker.register(adaDesktop, "ada-session", secret, ADA.toUpperCase());
-  broker.register(bobDesktop, "bob-session", secret, BOB);
+  broker.register(adaDesktop, { session: "ada-session", person: ADA }, secret);
+  broker.register(bobDesktop, { session: "bob-session", person: BOB }, secret);
+  // as server/index.ts builds it over the owner-scoped broker
   const provider: UserComputerProvider<unknown, never> = {
     target: "user-desktop",
-    list: (person) => broker.listFor(person),
-    owns: (person, id) => broker.ownedBy(id, person),
-    request: (_person, operation, active) => broker.request(operation, active),
+    list: (person) => broker.list(person),
+    owns: (person, id) => broker.list(person).some((computer) => computer.id === id),
+    request: (person, operation, active) => broker.request(operation, person, active),
   };
   return { broker, adaDesktop, bobDesktop, provider, live };
 }
@@ -46,7 +47,7 @@ describe("whose computer a bot may use", () => {
     const { broker, adaDesktop, provider } = desktops();
     const router = createUserComputerRouter([provider]);
     expect(router.list(ada)).toEqual([{ target: "user-desktop", computer: adaDesktop }]);
-    expect(broker.list()).toHaveLength(2);
+    expect(broker.list(BOB)).toHaveLength(1);
     broker.close();
   });
 
@@ -55,9 +56,9 @@ describe("whose computer a bot may use", () => {
     const router = createUserComputerRouter([provider]);
     await expect(router.request(ada, { computer_id: bobDesktop.id, action: "run_command", command: "id" } as never, () => true))
       .rejects.toMatchObject({ status: 403, code: "not_theirs", message: USER_COMPUTER_MESSAGES.notTheirs });
-    const pending = router.request(ada, { computer_id: adaDesktop.id, action: "list_files" } as never, () => true);
+    const pending = router.request(ada, { computer_id: adaDesktop.id, action: "run_command", command: "pwd" } as never, () => true);
     const job = await broker.poll(adaDesktop.id, "ada-session", secret);
-    expect(job?.operation).toMatchObject({ computer_id: adaDesktop.id, action: "list_files" });
+    expect(job?.operation).toMatchObject({ computer_id: adaDesktop.id, action: "run_command" });
     // Bob's desktop was never handed the job
     expect(broker.liveJob(bobDesktop.id, "bob-session", secret, job!.id)).toBe(false);
     broker.complete(adaDesktop.id, "ada-session", secret, job!.id, { ok: true });
@@ -126,14 +127,15 @@ describe("the server's own machine on an organization server", () => {
     const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
     expect(source).toMatch(/hostComputersAllowed: \(\) => IDENTITY\.kind !== "perspicax"/);
     // every computer claim (host screen, local VMs) passes the policy
-    expect(source).toMatch(/async function bindTurnComputer\([^)]*\)[^{]*\{[\s\S]{0,300}managedPolicy\.computerRefusal\(kind\)/);
+    expect(source).toMatch(/async function bindTurnComputer\([^)]*\)[^{]*\{[\s\S]{0,300}computerPlaceRefusal\(kind\)/);
+    expect(source).toMatch(/function computerPlaceRefusal\([\s\S]{0,400}managedPolicy\.computerRefusal\(kind\)/);
     // creating or starting a desktop on the server itself is refused
     expect(source).toMatch(/const hostVmRefusal = action === "stop" \|\| action === "remove" \? undefined : hostComputerRefusal\(\);/);
     expect(source).toMatch(/const botVmRefusal = action === "run" \? hostComputerRefusal\(\) : undefined;/);
-    // the internal route answers the speaker's computers on an organization server
-    expect(source).toMatch(/userComputers\.list\(computerSpeakers\.get\(internalCapability\.threadId\)\)/);
-    expect(source).toMatch(/userComputers\.request\(computerSpeakers\.get\(internalCapability\.threadId\), parsed\.data, active\)/);
-    // a computer is registered for the person of the session that connects it
-    expect(source).toMatch(/sharedComputers\.register\(registration, auth\.session\.id, secret, auth\.session\.principalId \?\? ""\)/);
+    // the internal route answers the proven requester's computers on an organization server
+    expect(source).toMatch(/userComputers\.list\(personSpeaker\(principal\)\)/);
+    expect(source).toMatch(/userComputers\.request\(personSpeaker\(principal\), parsed\.data, active\)/);
+    // only a person may lend a computer to an organization server
+    expect(source).toMatch(/IDENTITY\.kind === "perspicax" && !auth\.session\.principalId\) return json\(res, 403/);
   });
 });

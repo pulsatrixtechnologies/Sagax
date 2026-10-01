@@ -2,13 +2,17 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { StoreProvider, type Message } from "@/state/store";
+import { StoreProvider, type Group, type Message } from "@/state/store";
 
+// Replaced whole: its context default reads window.ogb at import time. An
+// empty caption chrome is the non-Windows layout.
 vi.mock("./DesktopCapabilities", () => ({
-  useDesktopCapabilities: () => ({}),
+  useDesktopCapabilities: () => ({ capabilities: { dictation: { available: false } } }),
+  useCaptionChrome: () => ({}),
+  useMacInsetChrome: () => ({}),
 }));
 
-import { RoomToolChip } from "./GroupView";
+import { GroupView, RoomToolChip } from "./GroupView";
 
 const chip = (patch: Partial<Message> = {}): Message => ({
   id: "chip",
@@ -58,5 +62,27 @@ describe("RoomToolChip", () => {
     expect(markup).toContain("Sent to Eli");
     expect(markup).toContain('aria-label="Eli"');
     expect(markup).not.toContain("<button");
+  });
+});
+
+describe("room header", () => {
+  const room: Group = {
+    id: "room", threadId: "room-thread", name: "Launch planning", memberIds: [],
+    defaultResponder: { kind: "member", botId: "atlas" }, bulletin: "", unread: false,
+    createdAt: 1, setupCompletedAt: 1, messages: [],
+  };
+
+  it("names the room in the centred header pill", () => {
+    // Sagax keeps its centred room header (the bot panel shell); upstream's
+    // wrapping two-line header is not used.
+    vi.stubGlobal("window", { ogb: undefined });
+    let markup: string;
+    try {
+      markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GroupView, { group: room })));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(markup).toContain("@container/chathead");
+    expect(markup).toMatch(/<span class="truncate[^"]*">Launch planning<\/span>/);
   });
 });

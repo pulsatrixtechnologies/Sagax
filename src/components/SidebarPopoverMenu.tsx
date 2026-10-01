@@ -10,6 +10,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { bindHoverIntent, createHoverIntent } from "./sidebar-hover-intent";
+import { useMenuMotion } from "./MenuMotion";
 
 export interface SidebarMenuItem {
   key: string;
@@ -77,6 +78,7 @@ export function SidebarPopoverMenu({
   };
   const rootRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  const motion = useMenuMotion(open);
 
   const [hover] = useState(() =>
     createHoverIntent({
@@ -156,12 +158,13 @@ export function SidebarPopoverMenu({
         {renderTrigger({ open, attention, attentionTone })}
       </button>
 
-      {open && (
+      {motion.shown && (
         <div
           id={menuId}
           role="menu"
           aria-label={ariaLabel}
-          className={cn("animate-pop-in absolute bottom-full z-40 mb-1 flex min-w-[200px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]", menuClassName)}
+          {...motion.exitProps}
+          className={cn("absolute bottom-full z-40 mb-1 flex min-w-[200px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]", motion.className, menuClassName)}
         >
           {items.map((item) => (
             <div key={item.key}>

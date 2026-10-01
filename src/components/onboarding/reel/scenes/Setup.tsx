@@ -93,7 +93,7 @@ function Reveal({ shown, children, bar = "w-20" }: { shown: boolean; children: R
 function Row({ icon: Icon, label, done, children, bar }: { icon: typeof Folder; label: string; done: boolean; children: React.ReactNode; bar?: string }) {
   return (
     <div className="flex items-center gap-2.5 py-2">
-      <Icon size={14} className={cn("shrink-0 transition-colors duration-300", done ? "text-ink" : "text-ink-secondary/60")} />
+      <Icon size={14} className={cn("shrink-0 transition-colors duration-300", done ? "text-ink" : "text-ink-tertiary")} />
       <span className="w-11 shrink-0 text-[11px] text-ink-secondary">{label}</span>
       <span className="min-w-0 flex-1 whitespace-nowrap pr-2 text-[12px] font-medium text-ink">
         <Reveal shown={done} bar={bar}>
