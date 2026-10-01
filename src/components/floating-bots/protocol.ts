@@ -3,6 +3,7 @@
 // electron/floating-bot-window.mjs, which checks every payload in main.
 
 import type { Liveliness, MascotTask } from "./behavior";
+import type { FloatingContext } from "./gauge";
 
 export type FloatingPose = "idle" | "think" | "speak" | "celebrate" | "alert" | "sleep";
 export type { MascotTask };
@@ -65,6 +66,8 @@ export interface FloatingSnapshot {
   hints: { mood: string; working: string; hoot?: string };
   /** The "Activity level" setting; normal when absent. */
   liveliness?: Liveliness;
+  /** The followed thread's context use, for the energy bar; null before its first turn. */
+  context?: FloatingContext | null;
 }
 
 /**

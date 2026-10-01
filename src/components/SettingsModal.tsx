@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { floatingBotPrefs, setFloatingFlyAway, subscribeFloatingBots } from "@/lib/floating-bots";
+import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
@@ -489,6 +489,25 @@ function FloatingFlyAwayRow() {
         aria-label={t("settings.floatingBots.flyAway.title")}
         onClick={() => setFloatingFlyAway(!prefs.flyAway)}
       />
+    </SettingRow>
+  );
+}
+
+/** Desktop mascots: how often they move and play on their own. */
+function FloatingLivelinessRow() {
+  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
+  return (
+    <SettingRow title={t("settings.floatingBots.liveliness.title")} subtitle={t("settings.floatingBots.liveliness.subtitle")}>
+      <select
+        value={prefs.liveliness}
+        aria-label={t("settings.floatingBots.liveliness.title")}
+        onChange={(event) => setFloatingLiveliness(event.target.value as FloatingLiveliness)}
+        className="w-full max-w-[240px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
+      >
+        {FLOATING_LIVELINESS.map((level) => (
+          <option key={level} value={level}>{t(`settings.floatingBots.liveliness.${level}`)}</option>
+        ))}
+      </select>
     </SettingRow>
   );
 }
@@ -1049,6 +1068,7 @@ export function SettingsModal() {
                   <ShowThreadsRow />
                   <NotificationSoundsRow />
                   <FloatingFlyAwayRow />
+                  <FloatingLivelinessRow />
                   {!remoteActive && <ToolCallsRow />}
                 </div>
               </>

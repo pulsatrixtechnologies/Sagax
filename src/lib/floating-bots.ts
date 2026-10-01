@@ -126,9 +126,14 @@ export function setFloatingBotPosition(botId: string, pos: { right: number; bott
 
 /* ------------------------------------------------------------- settings */
 
+export type FloatingLiveliness = "calm" | "normal" | "lively";
+export const FLOATING_LIVELINESS: readonly FloatingLiveliness[] = ["calm", "normal", "lively"];
+
 export interface FloatingBotPrefs {
   /** The mascot flies off to the screen edge while its bot works, and comes back when done. */
   flyAway: boolean;
+  /** How often the mascot does something on its own. */
+  liveliness: FloatingLiveliness;
 }
 
 const PREFS_KEY = "omb.floatingBots.prefs.v1";
@@ -140,8 +145,9 @@ export function readFloatingBotPrefs(storage: FloatingStorage | undefined = defa
   } catch {
     raw = null;
   }
-  const value = raw && typeof raw === "object" ? (raw as { flyAway?: unknown }) : {};
-  return { flyAway: value.flyAway !== false };
+  const value = raw && typeof raw === "object" ? (raw as { flyAway?: unknown; liveliness?: unknown }) : {};
+  const liveliness = FLOATING_LIVELINESS.includes(value.liveliness as FloatingLiveliness) ? (value.liveliness as FloatingLiveliness) : "normal";
+  return { flyAway: value.flyAway !== false, liveliness };
 }
 
 let prefs: FloatingBotPrefs | null = null;
@@ -154,7 +160,21 @@ export function floatingBotPrefs(): FloatingBotPrefs {
 /** Settings > Appearance and the mascot's own menu: "Fly away during tasks". */
 export function setFloatingFlyAway(on: boolean, storage: FloatingStorage | undefined = defaultStorage()): void {
   if (floatingBotPrefs().flyAway === on) return;
-  prefs = { ...floatingBotPrefs(), flyAway: on };
+  savePrefs({ ...floatingBotPrefs(), flyAway: on }, storage);
+}
+
+/** Settings > Appearance and the mascot's own menu: "Activity level". */
+export function setFloatingLiveliness(level: FloatingLiveliness, storage: FloatingStorage | undefined = defaultStorage()): void {
+  if (!FLOATING_LIVELINESS.includes(level) || floatingBotPrefs().liveliness === level) return;
+  savePrefs({ ...floatingBotPrefs(), liveliness: level }, storage);
+}
+
+/** The next activity level, for the menu item that cycles through them. */
+export const nextLiveliness = (level: FloatingLiveliness): FloatingLiveliness =>
+  FLOATING_LIVELINESS[(FLOATING_LIVELINESS.indexOf(level) + 1) % FLOATING_LIVELINESS.length];
+
+function savePrefs(next: FloatingBotPrefs, storage: FloatingStorage | undefined): void {
+  prefs = next;
   try {
     storage?.setItem(PREFS_KEY, JSON.stringify(prefs));
   } catch {

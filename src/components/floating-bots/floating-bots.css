@@ -567,43 +567,80 @@ html[data-floating-bot] #root {
   opacity: 0.8;
 }
 
-/* the mood meter: a heart and a small bar, shown while the pointer is over the owl */
-.fb-root .fb-mood {
+/* the context energy bar: a bolt and a segmented bar that drains as the
+   thread fills the model's window; green, then amber, then red */
+.fb-root .fb-energy {
+  --fb-energy: var(--color-success, #38d591);
   position: absolute;
-  bottom: -2px;
+  top: var(--fb-feet, auto);
   left: 50%;
   z-index: 3;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
+  gap: 3px;
+  padding: 2px 5px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
   background: var(--color-elevated);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
-  transform: translateX(-50%);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.22);
+  opacity: 0.85;
+  transform: translateX(-50%) scale(0.8);
+  transform-origin: 50% 0%;
   pointer-events: none;
-  animation: fb-pop 0.16s ease-out both;
+  transition: transform 0.2s ease, opacity 0.2s ease;
 }
-.fb-root .fb-mood-heart {
-  color: #ff5c8a;
-  font-size: 11px;
-  line-height: 1;
+.fb-root .fb-energy[data-big] {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
 }
-.fb-root .fb-mood-bar {
+.fb-root .fb-energy[data-level="warn"] { --fb-energy: var(--color-warning, #ff9800); }
+.fb-root .fb-energy[data-level="danger"] { --fb-energy: var(--color-danger, #ff5667); }
+.fb-root .fb-energy[data-level="unknown"] { --fb-energy: var(--color-ink-secondary, #8b93a3); }
+.fb-root .fb-energy[data-pulse] {
+  animation: fb-energy-pulse 1.4s ease-in-out infinite;
+}
+.fb-root .fb-energy-bolt {
+  width: 8px;
+  height: 11px;
+  color: var(--fb-energy);
+}
+.fb-root .fb-energy-bar {
+  position: relative;
   display: block;
-  width: 44px;
-  height: 5px;
+  width: 46px;
+  height: 6px;
   overflow: hidden;
-  border-radius: 999px;
-  background: var(--color-ink, #000);
+  border-radius: 2px;
   background: color-mix(in srgb, var(--color-ink, #000) 14%, transparent);
 }
-.fb-root .fb-mood-bar span {
+.fb-root .fb-energy-fill {
   display: block;
   height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #ff8fb1, #ff5c8a);
+  background: var(--fb-energy);
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.4s ease;
+}
+.fb-root .fb-energy-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-elevated);
+  opacity: 0.8;
+}
+.fb-root .fb-energy-label {
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fb-root .fb-energy[data-mini] {
+  top: auto;
+  bottom: -6px;
+  padding: 1px 3px;
+  transform: translateX(-50%) scale(0.6);
+}
+.fb-root .fb-energy[data-mini] .fb-energy-bar {
+  width: 28px;
 }
 
 /* parked at the screen edge while the bot works: a small owl and a turning ring */
@@ -715,4 +752,8 @@ html[data-floating-bot] #root {
   0% { opacity: 0; transform: translateY(0) rotate(0deg); }
   15% { opacity: 1; transform: translateY(-22px) rotate(90deg); }
   100% { opacity: 0; transform: translateY(40px) rotate(320deg); }
+}
+@keyframes fb-energy-pulse {
+  0%, 100% { box-shadow: 0 2px 6px rgb(0 0 0 / 0.22); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--fb-energy) 35%, transparent); }
 }

@@ -22,6 +22,7 @@ import {
   type MascotState,
 } from "./behavior";
 import { newStroke, strokeLeave, strokeStep } from "./gestures";
+import { GAUGE_SEGMENTS, gaugeFor, type FloatingContext } from "./gauge";
 import type { FloatingPilot } from "./pilot";
 import Owl25D from "./Owl25D";
 import { mascotStage } from "./fit";
@@ -157,6 +158,35 @@ function Emote({ activity, hoot }: { activity: MascotActivity; hoot?: string }) 
   );
 }
 
+/** The bot's context left, as a game energy bar (gauge.ts): small at rest, bigger on hover. */
+function EnergyBar({ context, big, mini }: { context?: FloatingContext | null; big?: boolean; mini?: boolean }) {
+  const gauge = gaugeFor(context);
+  if (!context || !gauge) return null;
+  return (
+    <span
+      className="fb-energy"
+      data-level={gauge.level}
+      data-pulse={gauge.pulse ? "" : undefined}
+      data-big={big ? "" : undefined}
+      data-mini={mini ? "" : undefined}
+      role="meter"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={gauge.remaining}
+      aria-valuetext={context.detail || context.label}
+      aria-label={context.label}
+      title={context.detail || context.label}
+    >
+      <svg className="fb-energy-bolt" viewBox="0 0 12 16" aria-hidden="true"><path d="M7 0 L1 9 H5.5 L4.5 16 L11 6.5 H6.5 Z" fill="currentColor" /></svg>
+      <span className="fb-energy-bar" aria-hidden="true">
+        <span className="fb-energy-fill" style={{ width: `${gauge.remaining}%` }} />
+        {Array.from({ length: GAUGE_SEGMENTS - 1 }, (_, index) => <span key={index} className="fb-energy-tick" style={{ left: `${((index + 1) * 100) / GAUGE_SEGMENTS}%` }} />)}
+      </span>
+      {big && <span className="fb-energy-label" aria-hidden="true">{context.label}</span>}
+    </span>
+  );
+}
+
 /** Hearts after a game or a stroke, sparkles after a finished task. */
 function Burst({ kind, reduced }: { kind: "hearts" | "sparkles"; reduced: boolean }) {
   const glyph = kind === "hearts" ? "\u2665" : "\u2726";
@@ -189,6 +219,7 @@ function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnap
       }}
     >
       <span className="fb-away-ring" aria-hidden="true" />
+      <EnergyBar context={snapshot.context} mini />
       <svg className="fb-away-owl" viewBox="0 0 32 32" aria-hidden="true" style={{ color: `var(--fb-owl, currentColor)` }}>
         <path d="M8 6 L11 11 L21 11 L24 6 L25 14 C26 22 22 28 16 28 C10 28 6 22 7 14 Z" fill="currentColor" />
         <circle cx="12.5" cy="15" r="3" fill="#F8CA48" />
@@ -583,7 +614,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
         data-activity={activity}
         data-3d=""
         data-away={away ? "" : undefined}
-        style={{ "--fb-owl": owlHex(snapshot.color), ...(away ? {} : { width: STAGE.width, height: STAGE.height }) } as React.CSSProperties}
+        style={{ "--fb-owl": owlHex(snapshot.color), ...(away ? {} : { width: STAGE.width, height: STAGE.height, "--fb-feet": `${STAGE.top + OWL_SIZE - 2}px` }) } as React.CSSProperties}
       >
         {retro && !away && (
           <Suspense fallback={null}>
@@ -640,12 +671,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
             <Character snapshot={snapshot} activity={activity} mascot={mascot} />
           </span>
         </button>
-        {owlHover && activity !== "drag" && (
-          <span className="fb-mood" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(snapshot.mood * 100)} aria-label={snapshot.hints.mood} title={snapshot.hints.mood}>
-            <span className="fb-mood-heart" aria-hidden="true">{"\u2665"}</span>
-            <span className="fb-mood-bar" aria-hidden="true"><span style={{ width: `${Math.round(snapshot.mood * 100)}%` }} /></span>
-          </span>
-        )}
+        {!["flyOut", "return", "fly", "drag"].includes(activity) && <EnergyBar context={snapshot.context} big={owlHover} />}
         </>
         )}
       </div>

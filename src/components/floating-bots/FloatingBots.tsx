@@ -15,8 +15,11 @@ import { botAvatarProfile } from "../../../shared/bot-avatar";
 import {
   floatingBotPrefs,
   floatingBots,
+  nextLiveliness,
   setFloatingBotOnTop,
   setFloatingFlyAway,
+  setFloatingLiveliness,
+  type FloatingLiveliness,
   setFloatingBotPosition,
   subscribeFloatingBots,
   unfloatBot,
@@ -33,6 +36,7 @@ import {
   type FloatingSession,
 } from "./brain";
 import { FloatingBotView, MASCOT_SIZE, type FloatingMover } from "./FloatingBotView";
+import { floatingContext } from "./context";
 import { moodNow, raiseMood, readMoods, writeMoods, type MoodGain, type MoodRecord } from "./mood";
 import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type FloatingEvent, type FloatingSnapshot } from "./protocol";
 
@@ -40,7 +44,7 @@ import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type Flo
 const AVATAR_BYTES_MAX = 280_000;
 const CELEBRATE_MS = 1400;
 
-function labelsFor(bot: Pick<Bot, "name">): FloatingLabels {
+function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "normal"): FloatingLabels {
   const name = bot.name;
   return {
     character: t("floatingBots.aria", { name }),
@@ -65,6 +69,8 @@ function labelsFor(bot: Pick<Bot, "name">): FloatingLabels {
     moodOk: t("floatingBots.mood.ok", { name }),
     moodHappy: t("floatingBots.mood.happy", { name }),
     working: t("floatingBots.working", { name }),
+    hoot: t("floatingBots.hoot"),
+    menuLively: t("floatingBots.menu.lively", { level: t(`floatingBots.lively.${liveliness}`) }),
   };
 }
 
@@ -248,6 +254,7 @@ export function FloatingBots() {
         else if (event.id === "balloon") patch(botId, { open: !session.open });
         else if (event.id === "dock") unfloatBot(botId);
         else if (event.id === "fly") setFloatingFlyAway(!floatingBotPrefs().flyAway);
+        else if (event.id === "lively") setFloatingLiveliness(nextLiveliness(floatingBotPrefs().liveliness));
         else if (event.id === "top") {
           const entry = floatingBots().find((candidate) => candidate.id === botId);
           const top = !(entry?.top ?? true);
@@ -278,7 +285,7 @@ export function FloatingBots() {
         bot,
         session,
         status,
-        labels: labelsFor(bot),
+        labels: labelsFor(bot, prefs.liveliness),
         avatar,
         retro,
         reduced,
@@ -286,6 +293,8 @@ export function FloatingBots() {
         alwaysOnTop: bridge ? (entry?.top ?? true) : null,
         mood: moodNow(moods[bot.id], clock),
         flyAway: prefs.flyAway,
+        liveliness: prefs.liveliness,
+        context: floatingContext(bot.tasks?.find((task) => task.threadId === (session.threadId ?? bot.threadId))?.usage),
       }),
     };
   });

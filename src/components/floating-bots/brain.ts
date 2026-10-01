@@ -5,6 +5,8 @@
 import type { Bot, Message, Task } from "@/state/store";
 import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPose, FloatingSnapshot, MascotTask } from "./protocol";
 import { moodLevel } from "./mood";
+import type { Liveliness } from "./behavior";
+import type { FloatingContext } from "./gauge";
 
 /** What the balloon keeps of a long reply; the rest is one click away in the app. */
 export const BALLOON_REPLY_CHARS = 3000;
@@ -60,6 +62,10 @@ export interface FloatingLabels {
   moodHappy: string;
   /** The parked badge's label while the bot works away from its spot. */
   working: string;
+  /** The owl's hoot bubble. */
+  hoot?: string;
+  /** "Activity: normal", the menu item that cycles the activity level. */
+  menuLively?: string;
 }
 
 export type FloatingBot = Pick<Bot, "id" | "name" | "color" | "mascotSkin" | "threadId" | "messages" | "busy" | "activity"> & {
@@ -135,6 +141,7 @@ export function floatingMenu(labels: FloatingLabels, session: FloatingSession, a
     { id: "balloon", label: session.open ? labels.menuHide : labels.menuShow },
     ...(alwaysOnTop === null ? [] : [{ id: "top", label: labels.menuTop, checked: alwaysOnTop }]),
     { id: "fly", label: labels.menuFly, checked: flyAway },
+    ...(labels.menuLively ? [{ id: "lively", label: labels.menuLively }] : []),
     { id: "dock", label: labels.menuDock },
   ];
 }
@@ -166,6 +173,10 @@ export interface FloatingInput {
   mood?: number;
   /** The "Fly away during tasks" setting; on when absent. */
   flyAway?: boolean;
+  /** The "Activity level" setting. */
+  liveliness?: Liveliness;
+  /** The followed thread's context use (context.ts), for the energy bar. */
+  context?: FloatingContext | null;
 }
 
 /** The pose and balloon for this moment, as one snapshot. */
@@ -225,7 +236,10 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
     hints: {
       mood: level === "low" ? labels.moodLow : level === "happy" ? labels.moodHappy : labels.moodOk,
       working: labels.working,
+      ...(labels.hoot ? { hoot: labels.hoot } : {}),
     },
+    liveliness: input.liveliness ?? "normal",
+    context: input.context ?? null,
   };
 }
 

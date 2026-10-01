@@ -321,7 +321,7 @@ describe("floating bots: payload validation", () => {
       balloon: { ...SNAPSHOT.balloon, kind: "chat", text: "y".repeat(9000), asked: "z".repeat(900) },
     });
     expect(clean).toMatchObject({ locale: "en", color: "blue", skin: "none", sparkle: 0 });
-    expect(clean.menu).toHaveLength(6);
+    expect(clean.menu).toHaveLength(8);
     expect(clean.menu[0].label.length).toBe(80);
     expect(clean.balloon.text.length).toBe(4000);
     expect(clean.balloon.asked.length).toBe(300);
@@ -336,6 +336,20 @@ describe("floating bots: payload validation", () => {
     expect(clean.hints.working.length).toBe(200);
     expect(clean.hints).not.toHaveProperty("html");
     expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, task: "rm -rf", mood: Number.NaN })).toMatchObject({ task: "idle", mood: 0.6 });
+  });
+
+  it("keeps the activity level, the hoot and the context figures for the energy bar, bounded", () => {
+    expect(sanitizeFloatingSnapshot(SNAPSHOT)).toMatchObject({ liveliness: "normal", context: null });
+    const clean = sanitizeFloatingSnapshot({
+      ...SNAPSHOT,
+      liveliness: "lively",
+      hints: { hoot: "h".repeat(90) },
+      context: { percent: 24.4, tokens: 48_000, window: 200_000, detail: "d".repeat(400), label: "Context 24%", html: "<b>" },
+    });
+    expect(clean.liveliness).toBe("lively");
+    expect(clean.hints.hoot.length).toBe(40);
+    expect(clean.context).toEqual({ percent: 24, tokens: 48_000, window: 200_000, detail: "d".repeat(120), label: "Context 24%" });
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, liveliness: "wild", context: { tokens: "x" } })).toMatchObject({ liveliness: "normal", context: null });
   });
 
   it("takes a picture only as a bounded inline image, never a URL", () => {

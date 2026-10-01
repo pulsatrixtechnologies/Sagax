@@ -65,6 +65,20 @@ const ID_RE = /^[a-zA-Z0-9:_-]{1,64}$/;
 const POSES = new Set(["idle", "think", "speak", "celebrate", "alert", "sleep"]);
 const BALLOON_KINDS = new Set(["chat", "thinking", "approval", "error"]);
 const TASKS = new Set(["idle", "working", "waiting", "error"]);
+const LIVELINESS = new Set(["calm", "normal", "lively"]);
+const MAX_TOKENS = 1e9;
+
+/** The followed thread's context use, for the mascot's energy bar: numbers and two short texts. */
+function context(value) {
+  if (!value || typeof value !== "object" || !isFiniteNumber(value.tokens) || value.tokens < 0) return null;
+  return {
+    ...(isFiniteNumber(value.percent) ? { percent: clampNumber(Math.round(value.percent), 0, 999) } : {}),
+    tokens: clampNumber(Math.round(value.tokens), 0, MAX_TOKENS),
+    ...(isFiniteNumber(value.window) && value.window > 0 ? { window: clampNumber(Math.round(value.window), 1, MAX_TOKENS) } : {}),
+    detail: text(value.detail, 120) ?? "",
+    label: text(value.label, 60) ?? "",
+  };
+}
 const CROPS = new Set(["circle", "rounded", "square"]);
 const COLOR_RE = /^#?[a-zA-Z0-9-]{1,24}$/;
 const SKIN_RE = /^[a-z0-9-]{1,32}$/;
@@ -78,7 +92,7 @@ const flag = (value) => value === true;
 function menuItems(value) {
   if (!Array.isArray(value)) return [];
   return value
-    .slice(0, 6)
+    .slice(0, 8)
     .filter((item) => item && typeof item === "object" && ID_RE.test(item.id) && typeof item.label === "string")
     .map((item) => ({
       id: item.id,
@@ -128,7 +142,10 @@ export function sanitizeFloatingSnapshot(value) {
     hints: {
       mood: text(value.hints?.mood, 80) ?? "",
       working: text(value.hints?.working, 200) ?? "",
+      ...(typeof value.hints?.hoot === "string" ? { hoot: value.hints.hoot.slice(0, 40) } : {}),
     },
+    liveliness: LIVELINESS.has(value.liveliness) ? value.liveliness : "normal",
+    context: context(value.context),
   };
   const balloon = value.balloon;
   if (balloon && typeof balloon === "object" && BALLOON_KINDS.has(balloon.kind)) {
