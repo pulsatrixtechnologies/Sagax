@@ -596,7 +596,7 @@ import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
-import { createOrgExportRoute } from "./org-export.ts";
+import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
@@ -16060,6 +16060,10 @@ if (IDENTITY.kind === "perspicax") {
       const person = principals.byId(principalId);
       return person?.name?.trim() || person?.email || undefined;
     },
+  }));
+  ROUTES.push(createLinkedSubjectsRoute({
+    list: () => principals.local()?.linkedSubjects ?? [],
+    link: (input) => principals.linkSubject(input).linkedSubjects ?? [],
   }));
   // Slice 6: routine delegation exists only on an organization server.
   ROUTES.push(async ({ res, path, json }) => path === "/api/org/routine-delegation"

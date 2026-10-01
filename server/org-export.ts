@@ -207,3 +207,36 @@ export function createOrgExportRoute(deps: OrgExportRouteDeps): RouteHandler {
     return json(res, 200, { document: result.document, filename: result.filename, summary: result.summary });
   };
 }
+
+export interface LinkedSubject { iss: string; sub: string; serverOrigin: string; linkedAt: number }
+
+/** An http(s) origin, as the desktop records the organization server. */
+function originOf(value: unknown): string | null {
+  if (typeof value !== "string" || value.length > 2048) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+/** `GET`/`POST /api/identity/linked-subjects` (solo): the organization
+ * accounts the operator copied bots into. Loopback with operator trust only
+ * (the desktop's main process); every session is refused. */
+export function createLinkedSubjectsRoute(deps: { list(): LinkedSubject[]; link(input: { iss: string; sub: string; serverOrigin: string }): LinkedSubject[] }): RouteHandler {
+  return async ({ req, res, path, method, auth, json, readBody }) => {
+    if (path !== "/api/identity/linked-subjects") return PASS;
+    res.setHeader("cache-control", "no-store");
+    if (auth.kind !== "loopback" || auth.trust === "service") return json(res, 403, { error: "Only this computer can record where its bots were copied.", code: "operator_only" });
+    if (method === "GET") return json(res, 200, { linkedSubjects: deps.list() });
+    if (method !== "POST") return json(res, 405, { error: "method not allowed" });
+    const body = await readBody(req) as Record<string, unknown> | null;
+    const serverOrigin = originOf(body?.serverOrigin);
+    const iss = typeof body?.iss === "string" ? body.iss.trim() : "";
+    const sub = typeof body?.sub === "string" ? body.sub.trim() : "";
+    if (!serverOrigin || !originOf(iss) || !sub || sub.length > 255) return json(res, 400, { error: "send { iss, sub, serverOrigin }", code: "bad_request" });
+    return json(res, 200, { linkedSubjects: deps.link({ iss, sub, serverOrigin }) });
+  };
+}

@@ -39,6 +39,14 @@ const principalSchema = z.object({
    * the next successful sign-in or refresh. While set, no session of theirs
    * is served. */
   disabledAt: z.number().optional(),
+  /** Slice 8, solo: the organization accounts this person copied bots
+   * into ("Copied to <origin>"), at most 20. */
+  linkedSubjects: z.array(z.object({
+    iss: z.string().min(1).max(2048),
+    sub: z.string().min(1).max(255),
+    serverOrigin: z.string().min(1).max(2048),
+    linkedAt: z.number(),
+  })).max(20).optional(),
   createdAt: z.number(),
 });
 const fileSchema = z.object({ version: z.literal(1), principals: z.array(z.unknown()) });
@@ -411,6 +419,20 @@ export class PrincipalRegistry {
       local.email = emailKey(email);
       this.persist();
     }
+    return { ...local };
+  }
+
+  /** Slice 8: remember an organization account the local person copied
+   * bots into. One entry per issuer, subject and server; the newest 20. */
+  linkSubject(input: { iss: string; sub: string; serverOrigin: string }): Principal {
+    const local = this.principals.find((p) => p.local) ?? (this.localOperator(), this.principals.find((p) => p.local)!);
+    const entry = { iss: input.iss.trim(), sub: input.sub.trim(), serverOrigin: input.serverOrigin.trim(), linkedAt: this.now() };
+    if (!entry.iss || entry.iss.length > 2048 || !entry.sub || entry.sub.length > 255 || !entry.serverOrigin || entry.serverOrigin.length > 2048) {
+      throw new Error("an issuer, a subject and a server address are required");
+    }
+    const kept = (local.linkedSubjects ?? []).filter((item) => !(item.iss === entry.iss && item.sub === entry.sub && item.serverOrigin === entry.serverOrigin));
+    local.linkedSubjects = [...kept, entry].slice(-20);
+    this.persist();
     return { ...local };
   }
 

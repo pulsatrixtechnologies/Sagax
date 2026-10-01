@@ -1,9 +1,14 @@
-import { rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { parseOrgImportDocument } from "../shared/org-import.ts";
 import { DATA_DIR } from "./config.ts";
-import { createOrgImportDocument, parseOrgExportChoices } from "./org-export.ts";
+import { createLinkedSubjectsRoute, createOrgImportDocument, parseOrgExportChoices } from "./org-export.ts";
+import { PrincipalRegistry } from "./principals.ts";
+import type { RequestAuth } from "./request-auth.ts";
+import type { RouteContext } from "./routes/table.ts";
 import { RoutineManager } from "./routines.ts";
 import { Store } from "./store.ts";
 import { appendMemoryLog, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
@@ -106,5 +111,44 @@ describe("createOrgImportDocument", () => {
     expect(parseOrgExportChoices({ bots: [{ id: "a", threads: true }] })).toMatch(/threads, memory/);
     expect(parseOrgExportChoices({ bots: [{ id: "a", threads: true, memory: false }, { id: "a", threads: true, memory: false }] })).toMatch(/twice/);
     expect(parseOrgExportChoices({ bots: [{ id: "a", threads: true, memory: false }] })).toEqual([{ id: "a", threads: true, memory: false }]);
+  });
+});
+
+describe("linked subjects", () => {
+  it("keeps one entry per issuer, subject and server on the local person, at most 20", () => {
+    const registry = new PrincipalRegistry({ path: join(mkdtempSync(join(tmpdir(), "linked-")), "principals.json") });
+    registry.localOperator();
+    registry.linkSubject({ iss: "http://px.test", sub: "B1", serverOrigin: "http://org.test" });
+    const again = registry.linkSubject({ iss: "http://px.test", sub: "B1", serverOrigin: "http://org.test" });
+    expect(again.linkedSubjects).toHaveLength(1);
+    for (let i = 0; i < 25; i += 1) registry.linkSubject({ iss: "http://px.test", sub: `S${i}`, serverOrigin: "http://org.test" });
+    const local = registry.local()!;
+    expect(local.linkedSubjects).toHaveLength(20);
+    expect(local.linkedSubjects!.at(-1)!.sub).toBe("S24");
+    // Survives a reload.
+    expect(new PrincipalRegistry({ path: (registry as unknown as { path: string }).path }).local()!.linkedSubjects).toHaveLength(20);
+  });
+
+  it("answers the operator on loopback only", async () => {
+    const saved: unknown[] = [];
+    const route = createLinkedSubjectsRoute({ list: () => [], link: (input) => { saved.push(input); return [{ ...input, linkedAt: 1 }]; } });
+    const call = async (auth: RequestAuth, method: string, body: unknown = {}) => {
+      const out: { status?: number; body?: unknown } = {};
+      await route({
+        req: {}, res: { setHeader: () => {} }, path: "/api/identity/linked-subjects", method, auth,
+        json: (_res: unknown, status: number, value: unknown) => { out.status = status; out.body = value; },
+        readBody: async () => body,
+      } as unknown as RouteContext);
+      return out;
+    };
+    const loopback: RequestAuth = { kind: "loopback", scopes: ["admin", "client"] };
+    const session = { kind: "session", via: "cookie", scopes: ["admin", "client"], session: { id: "s" } } as unknown as RequestAuth;
+    expect(await call(session, "GET")).toMatchObject({ status: 403 });
+    expect(await call(session, "POST", { iss: "http://px.test", sub: "B1", serverOrigin: "http://org.test" })).toMatchObject({ status: 403 });
+    expect(await call({ kind: "loopback", scopes: ["client"], trust: "service" }, "GET")).toMatchObject({ status: 403 });
+    expect(await call(loopback, "GET")).toMatchObject({ status: 200, body: { linkedSubjects: [] } });
+    expect(await call(loopback, "POST", { iss: "nope", sub: "B1", serverOrigin: "http://org.test" })).toMatchObject({ status: 400 });
+    expect(await call(loopback, "POST", { iss: "http://px.test", sub: "B1", serverOrigin: "http://org.test/x" })).toMatchObject({ status: 200 });
+    expect(saved).toEqual([{ iss: "http://px.test", sub: "B1", serverOrigin: "http://org.test" }]);
   });
 });
