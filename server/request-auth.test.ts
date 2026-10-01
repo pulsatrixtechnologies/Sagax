@@ -130,6 +130,7 @@ describe("scopes", () => {
       ["PUT", "/api/config"], ["POST", "/api/auth/pairing"], ["GET", "/api/auth/sessions"], ["DELETE", "/api/auth/sessions/abc"],
       ["POST", "/api/auth/pair"], // handled before the gate; the gate itself never grants it
       ["POST", "/api/org"], ["POST", "/api/org/invites"], ["GET", "/api/org/invites"],
+      ["GET", "/api/mail/settings"], ["PUT", "/api/mail/settings"], ["POST", "/api/mail/test"], // mail transport: admin only
       ["GET", "/api/something-new"], // anything unlisted is admin until listed
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
   });
@@ -616,6 +617,12 @@ describe("organization sharing routes (OMB_IDENTITY=perspicax, slice 3)", () => 
     expect(requiredScope("GET", "/api/org/directory")).toBe("admin");
     expect(requiredScope("GET", "/api/org/directory", { orgDirectory: true })).toBe("client");
     expect(requiredScope("POST", "/api/org/directory", { orgDirectory: true })).toBe("admin");
+  });
+
+  it("keeps the mail settings admin-only whatever the features", () => {
+    for (const [method, path] of [["GET", "/api/mail/settings"], ["PUT", "/api/mail/settings"], ["POST", "/api/mail/test"]] as const) {
+      expect(requiredScope(method, path, { orgDirectory: true, orgPairing: true, sharedComputers: true })).toBe("admin");
+    }
   });
 
   it("keeps the organization settings and the admin approvals admin-only", () => {

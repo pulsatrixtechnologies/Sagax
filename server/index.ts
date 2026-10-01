@@ -493,6 +493,7 @@ import { allowedScopes, createServerEmailSignIn, parseAllowList } from "./accoun
 import { EmailOtpStore } from "./email-otp.ts";
 import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
+import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
@@ -16272,6 +16273,22 @@ if (IDENTITY.kind !== "perspicax") ROUTES.push(createSoloOrgRoutes({
       return false;
     }
   },
+}));
+
+// Settings > Email (server/mail-routes.ts): the mail transport of a solo
+// server, admin only. Saved fields go to config.json's `mail` block and win
+// over the OMB_MAIL_* environment; an organization server answers 403
+// identity_perspicax (Perspicax sends its mail).
+ROUTES.push(createMailSettingsRoutes({
+  organization: IDENTITY.kind === "perspicax",
+  saved: () => cfg.mail,
+  save: (next) => {
+    saveConfig({ mail: next });
+    cfg.mail = next;
+  },
+  env: () => process.env,
+  mailer,
+  callerEmail: actorEmail,
 }));
 
 // Invite links (/join#token=...): public like /api/auth/email/start, and

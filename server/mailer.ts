@@ -6,7 +6,7 @@
 import { appendFileSync } from "node:fs";
 import nodemailer from "nodemailer";
 
-import { mailReady, type MailSettings } from "./mail-config.ts";
+import { DEFAULT_MAIL_FROM_NAME, mailReady, type MailSettings } from "./mail-config.ts";
 
 export interface Mailer {
   send(message: { to: string; subject: string; text: string }): Promise<void>;
@@ -25,7 +25,7 @@ const SENDGRID_URL = "https://api.sendgrid.com/v3/mail/send";
 
 function createSendGridMailer(settings: MailSettings, fetchImpl: typeof fetch): Mailer {
   const apiKey = settings.sendgrid!.apiKey!;
-  const from = settings.from!;
+  const sender = senderOf(settings);
   return {
     async send(message) {
       const response = await fetchImpl(SENDGRID_URL, {
@@ -36,7 +36,7 @@ function createSendGridMailer(settings: MailSettings, fetchImpl: typeof fetch): 
         },
         body: JSON.stringify({
           personalizations: [{ to: [{ email: message.to }] }],
-          from: { email: from },
+          from: { email: sender.address, name: sender.name },
           subject: message.subject,
           content: [{ type: "text/plain", value: message.text }],
         }),
@@ -49,7 +49,6 @@ function createSendGridMailer(settings: MailSettings, fetchImpl: typeof fetch): 
 }
 
 const TWILIO_EMAIL_URL = "https://comms.twilio.com/v1/Emails";
-const TWILIO_DEFAULT_SENDER_NAME = "Sagax";
 
 /** `from` may be a bare address or `Name <address>`. */
 function parseFromAddress(from: string): { address: string; name?: string } {
@@ -57,6 +56,15 @@ function parseFromAddress(from: string): { address: string; name?: string } {
   if (!match) return { address: from.trim() };
   const name = match[1]!.replace(/^"(.*)"$/, "$1").trim();
   return name ? { address: match[2]!, name } : { address: match[2]! };
+}
+
+/** The sender every provider uses: the configured name first, then a name
+ * written into `from`, then the product's name. Twilio's Email API refuses
+ * a sender without a display name (400 "Invalid value provided for field
+ * 'from'"), so a sender always has one. */
+function senderOf(settings: MailSettings): { address: string; name: string } {
+  const parsed = parseFromAddress(settings.from!);
+  return { address: parsed.address, name: settings.fromName?.trim() || parsed.name || DEFAULT_MAIL_FROM_NAME };
 }
 
 function escapeHtml(text: string): string {
@@ -94,11 +102,7 @@ async function twilioErrorDetail(response: Response, secrets: string[]): Promise
 function createTwilioMailer(settings: MailSettings, fetchImpl: typeof fetch): Mailer {
   const { apiKeySid, apiKeySecret } = settings.twilio!;
   const authorization = `Basic ${Buffer.from(`${apiKeySid!}:${apiKeySecret!}`).toString("base64")}`;
-  // Twilio's Email API refuses a sender without a display name (400
-  // "Invalid value provided for field 'from'"), so a bare address gets the
-  // product's name.
-  const parsed = parseFromAddress(settings.from!);
-  const from = { address: parsed.address, name: parsed.name ?? TWILIO_DEFAULT_SENDER_NAME };
+  const from = senderOf(settings);
   return {
     async send(message) {
       const response = await fetchImpl(TWILIO_EMAIL_URL, {
@@ -132,7 +136,8 @@ function createTwilioMailer(settings: MailSettings, fetchImpl: typeof fetch): Ma
 
 function createSmtpMailer(settings: MailSettings, smtpTransport: (options: object) => SmtpTransport): Mailer {
   const smtp = settings.smtp!;
-  const from = settings.from!;
+  // nodemailer encodes the name itself, so it cannot break the header.
+  const from = senderOf(settings);
   const port = smtp.port ?? (smtp.secure === "tls" ? 465 : 587);
   const transport = smtpTransport({
     host: smtp.host,

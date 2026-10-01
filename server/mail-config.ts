@@ -1,17 +1,35 @@
-// Mail settings: the saved file (~/.openmausbot/config.json's `mail` block)
-// merged with the Docker environment, which always wins. A web-managed
-// server is configured by whoever runs the container, not by editing a
-// file inside it, so OMB_MAIL_* (and its *_FILE secret variants) override
-// anything saved. `publicMailStatus` is what a settings UI or a status
-// route may show; it never contains a secret value, only whether one is
-// configured.
+// Mail settings: the values saved in Settings > Email (config.json's
+// `mail` block, ~/.openmausbot/config.json, owner-only like every other
+// config secret) merged over the server's environment. A saved field wins;
+// OMB_MAIL_* (and the *_FILE secret variants) give each field its default,
+// so a Docker or headless server can be bootstrapped before anyone reaches
+// Settings and an admin can still override it there, or revert a field to
+// the server's value. `publicMailStatus` and `mailSettingsView` are what a
+// settings UI or a status route may show; neither contains a secret value,
+// only whether one is configured.
 import { readFileSync } from "node:fs";
+import { z } from "zod";
 
-export type MailProvider = "smtp" | "sendgrid" | "twilio";
+import {
+  DEFAULT_MAIL_FROM_NAME,
+  MAIL_FIELDS,
+  MAIL_SECRET_FIELDS,
+  type MailField,
+  type MailFieldSource,
+  type MailFieldView,
+  type MailProvider,
+  type MailSettingsView,
+} from "../shared/mail-settings.ts";
+
+export { DEFAULT_MAIL_FROM_NAME, MAIL_FIELDS, MAIL_SECRET_FIELDS };
+export type { MailField, MailFieldSource, MailFieldView, MailProvider, MailSettingsView };
 
 export interface MailSettings {
   provider?: MailProvider;
+  /** A bare address, or `Name <address>` (an older or env-provided value). */
   from?: string;
+  /** The sender's display name; DEFAULT_MAIL_FROM_NAME when none is set. */
+  fromName?: string;
   smtp?: {
     host?: string;
     port?: number;
@@ -29,10 +47,41 @@ export interface MailSettings {
 }
 
 export interface ResolvedMailSettings {
+  /** What the mailer uses: saved values over the environment's. */
   settings: MailSettings;
-  /** Dotted field names ("provider", "smtp.password", …) the environment set. */
-  envManaged: string[];
+  /** Fields the environment gives a value (the server's defaults). */
+  envManaged: MailField[];
+  /** Fields saved in Settings, which win over the environment. */
+  saved: MailField[];
+  /** The environment's values alone. */
+  server: MailSettings;
 }
+
+type MailFieldValue = string | number | undefined;
+
+function getMailField(settings: MailSettings, field: MailField): MailFieldValue {
+  const [section, key] = field.split(".") as [string, string | undefined];
+  if (key === undefined) return (settings as Record<string, MailFieldValue>)[section];
+  const block = (settings as Record<string, Record<string, MailFieldValue> | undefined>)[section];
+  return block?.[key];
+}
+
+function setMailField(settings: MailSettings, field: MailField, value: MailFieldValue): void {
+  const [section, key] = field.split(".") as [string, string | undefined];
+  const target = settings as Record<string, unknown>;
+  if (key === undefined) {
+    if (value === undefined) delete target[section];
+    else target[section] = value;
+    return;
+  }
+  const block = { ...(target[section] as Record<string, unknown> | undefined) };
+  if (value === undefined) delete block[key];
+  else block[key] = value;
+  if (Object.keys(block).length) target[section] = block;
+  else delete target[section];
+}
+
+const present = (value: MailFieldValue): boolean => value !== undefined && value !== "";
 
 export interface PublicMailStatus {
   provider?: MailProvider;
@@ -51,7 +100,7 @@ export interface PublicMailStatus {
     apiKeySid?: string;
     apiKeySecretConfigured: boolean;
   };
-  envManaged: string[];
+  envManaged: MailField[];
   ready: boolean;
 }
 
@@ -86,8 +135,8 @@ export function resolveMailSettings(input: {
 }): ResolvedMailSettings {
   const readFile = input.readFile ?? defaultReadFile;
   const env = input.env;
-  const settings: MailSettings = structuredClone(input.file ?? {});
-  const envManaged: string[] = [];
+  const settings: MailSettings = {};
+  const envManaged: MailField[] = [];
 
   const setProvider = env.OMB_MAIL_PROVIDER;
   if (setProvider !== undefined && setProvider !== "" && MAIL_PROVIDERS.has(setProvider as MailProvider)) {
@@ -99,6 +148,12 @@ export function resolveMailSettings(input: {
   if (from !== undefined && from !== "") {
     settings.from = from;
     envManaged.push("from");
+  }
+
+  const fromName = env.OMB_MAIL_FROM_NAME;
+  if (fromName !== undefined && fromName.trim() !== "") {
+    settings.fromName = fromName.trim();
+    envManaged.push("fromName");
   }
 
   const smtpHost = env.OMB_SMTP_HOST;
@@ -154,15 +209,34 @@ export function resolveMailSettings(input: {
     envManaged.push("twilio.apiKeySecret");
   }
 
-  return { settings, envManaged };
+  const server = structuredClone(settings);
+  const saved: MailField[] = [];
+  const file = input.file ?? {};
+  for (const field of MAIL_FIELDS) {
+    const value = getMailField(file, field);
+    if (!present(value)) continue;
+    setMailField(settings, field, value);
+    saved.push(field);
+  }
+  return { settings, envManaged, saved, server };
+}
+
+/** The fields still needed before mail can be sent, in display order. */
+export function missingMailFields(settings: MailSettings): MailField[] {
+  const missing: MailField[] = [];
+  if (!settings.provider) missing.push("provider");
+  if (!settings.from) missing.push("from");
+  if (settings.provider === "smtp" && !settings.smtp?.host) missing.push("smtp.host");
+  if (settings.provider === "sendgrid" && !settings.sendgrid?.apiKey) missing.push("sendgrid.apiKey");
+  if (settings.provider === "twilio") {
+    if (!settings.twilio?.apiKeySid) missing.push("twilio.apiKeySid");
+    if (!settings.twilio?.apiKeySecret) missing.push("twilio.apiKeySecret");
+  }
+  return missing;
 }
 
 export function mailReady(settings: MailSettings): boolean {
-  if (!settings.provider || !settings.from) return false;
-  if (settings.provider === "smtp") return !!settings.smtp?.host;
-  if (settings.provider === "sendgrid") return !!settings.sendgrid?.apiKey;
-  if (settings.provider === "twilio") return !!settings.twilio?.apiKeySid && !!settings.twilio?.apiKeySecret;
-  return false;
+  return !!settings.provider && missingMailFields(settings).length === 0;
 }
 
 export function publicMailStatus(resolved: ResolvedMailSettings): PublicMailStatus {
@@ -187,4 +261,66 @@ export function publicMailStatus(resolved: ResolvedMailSettings): PublicMailStat
     envManaged,
     ready: mailReady(settings),
   };
+}
+
+// ── Settings > Email ──────────────────────────────────────────────────────
+
+export function mailSettingsView(resolved: ResolvedMailSettings): MailSettingsView {
+  const fields = {} as Record<MailField, MailFieldView>;
+  for (const field of MAIL_FIELDS) {
+    const value = getMailField(resolved.settings, field);
+    const serverValue = getMailField(resolved.server, field);
+    const source: MailFieldSource = resolved.saved.includes(field) ? "saved" : present(serverValue) ? "server" : "unset";
+    const view: MailFieldView = { source, serverDefault: present(serverValue) };
+    if (MAIL_SECRET_FIELDS.has(field)) {
+      view.configured = present(value);
+    } else {
+      if (present(value)) view.value = value;
+      if (present(serverValue)) view.serverValue = serverValue;
+    }
+    fields[field] = view;
+  }
+  return {
+    fields,
+    ready: mailReady(resolved.settings),
+    missing: missingMailFields(resolved.settings),
+    defaultFromName: DEFAULT_MAIL_FROM_NAME,
+  };
+}
+
+// No control characters anywhere: a CR or LF in a sender name or a
+// credential is a header injection, never a real value.
+// eslint-disable-next-line no-control-regex
+const NO_CONTROL = /^[^\u0000-\u001f\u007f]*$/;
+const text = (max: number) => z.string().trim().min(1).max(max).regex(NO_CONTROL);
+
+/** PUT /api/mail/settings: one key per field. A value sets it, null
+ * removes the saved value (back to the server's), and an absent key keeps
+ * what is saved, which is how a secret stays write-only. */
+export const mailSettingsPatchSchema = z.object({
+  provider: z.enum(["smtp", "sendgrid", "twilio"]).nullable().optional(),
+  // A bare address: the name has its own field.
+  from: z.string().trim().max(254).pipe(z.email()).nullable().optional(),
+  fromName: text(100).regex(/^[^<>"]*$/).nullable().optional(),
+  "smtp.host": z.string().trim().min(1).max(253).regex(/^[A-Za-z0-9.:[\]-]+$/).nullable().optional(),
+  "smtp.port": z.number().int().min(1).max(65535).nullable().optional(),
+  "smtp.secure": z.enum(["tls", "starttls", "none"]).nullable().optional(),
+  "smtp.user": text(320).nullable().optional(),
+  "smtp.password": text(4096).nullable().optional(),
+  "sendgrid.apiKey": text(4096).nullable().optional(),
+  "twilio.apiKeySid": z.string().trim().regex(/^[A-Za-z0-9]{2,64}$/).nullable().optional(),
+  "twilio.apiKeySecret": text(4096).nullable().optional(),
+}).strict();
+export type MailSettingsPatch = z.output<typeof mailSettingsPatchSchema>;
+
+/** The saved settings after `patch`; `saved` itself is not changed. */
+export function applyMailSettingsPatch(saved: MailSettings | undefined, patch: MailSettingsPatch): MailSettings {
+  const next: MailSettings = structuredClone(saved ?? {});
+  for (const field of MAIL_FIELDS) {
+    if (!Object.hasOwn(patch, field)) continue;
+    const value = patch[field];
+    if (value === undefined) continue;
+    setMailField(next, field, value === null ? undefined : value);
+  }
+  return next;
 }
