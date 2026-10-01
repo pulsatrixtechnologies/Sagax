@@ -94,7 +94,9 @@ describe("hover-only actions on touch screens", () => {
       loadStylesheet: async (id, base) => {
         const path = id === "tailwindcss" ? join(tailwindRoot, "index.css") : id.startsWith("tailwindcss/")
           ? join(tailwindRoot, id.slice("tailwindcss/".length))
-          : join(base, id);
+          : id.startsWith(".") || id.startsWith("/") ? join(base, id)
+            // a package stylesheet (a bundled font) resolves from node_modules
+            : fileURLToPath(import.meta.resolve(id));
         return { path, base: dirname(path), content: readFileSync(path, "utf8") };
       },
     });

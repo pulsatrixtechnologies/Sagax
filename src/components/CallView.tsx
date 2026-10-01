@@ -157,7 +157,7 @@ export function CallTargetButton({
           active
             ? "bg-danger text-white hover:brightness-110"
             : unavailable
-              ? "bg-raised text-ink-secondary/50"
+              ? "bg-raised text-ink-tertiary"
               : "bg-ink text-app hover:brightness-110",
         )}
       >

@@ -150,7 +150,7 @@ export function GrantEditor({ botId, ownerId, initialGrants, initialAdminister, 
             autoCorrect="off"
             spellCheck={false}
             maxLength={200}
-            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
+            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none"
           />
           {query.trim() && candidates.length === 0 && <p className="text-[12px] text-ink-secondary">{t("botSettings.sharing.noMatch")}</p>}
           {candidates.length > 0 && (

@@ -11,7 +11,9 @@ import { describe, expect, it } from "vitest";
 const src = join(dirname(fileURLToPath(import.meta.url)), "..");
 const css = readFileSync(join(src, "styles.css"), "utf8");
 
-const theme = css.match(/@theme\s*\{([^}]*)\}/)?.[1] ?? "";
+// Every `@theme` block counts, `@theme inline` included: its tokens get
+// utilities too.
+const theme = [...css.matchAll(/@theme(?:\s+inline)?\s*\{([^}]*)\}/g)].map(([, body]) => body).join("\n");
 const defined = new Set([...theme.matchAll(/--color-([\w-]+)\s*:/g)].map(([, name]) => name));
 
 // Only names that read like the app's own tokens are checked, so Tailwind's
