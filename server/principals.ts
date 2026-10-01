@@ -127,6 +127,7 @@ export class PrincipalRegistry {
   private principals: Principal[] = [];
   private writable = true;
   private readonly accessListeners: Array<(principalId: string) => void> = [];
+  private readonly disabledListeners: Array<(principal: Principal, disabled: boolean) => void> = [];
 
   constructor(options: { path: string; now?: () => number; newId?: () => string }) {
     this.path = options.path;
@@ -184,6 +185,22 @@ export class PrincipalRegistry {
 
   list(): Principal[] {
     return this.principals.map((p) => ({ ...p }));
+  }
+
+  /** Slice 7: called when a person is marked out (`disabledAt` set) or back
+   * in (cleared by a sign-in or refresh), for the organization audit. */
+  onDisabledChanged(listener: (principal: Principal, disabled: boolean) => void): void {
+    this.disabledListeners.push(listener);
+  }
+
+  private disabledChanged(principal: Principal, disabled: boolean): void {
+    for (const listener of this.disabledListeners) {
+      try {
+        listener({ ...principal }, disabled);
+      } catch (error) {
+        console.error(`principals: a disabled listener failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
 
   /** Called after a person's teams changed (slice 4): whatever reaches them
@@ -297,8 +314,10 @@ export class PrincipalRegistry {
     // An absent claim leaves the teams as they are (never "no teams").
     const teamsChanged = this.applyTeams(found, input.teams);
     // A verified sign-in or refresh is the provider saying this person is in.
+    const wasDisabled = found.disabledAt !== undefined;
     delete found.disabledAt;
     if (created || JSON.stringify(found) !== before) this.persist();
+    if (wasDisabled) this.disabledChanged(found, false);
     if (teamsChanged && !created) this.accessChanged(found.id);
     return { ...found };
   }
@@ -346,8 +365,10 @@ export class PrincipalRegistry {
   markDisabled(iss: string, sub: string, at: number = this.now()): Principal | null {
     const found = this.principals.find((p) => p.subject?.iss === iss && p.subject.sub === sub);
     if (!found) return null;
+    const wasDisabled = found.disabledAt !== undefined;
     found.disabledAt = at;
     this.persist();
+    if (!wasDisabled) this.disabledChanged(found, true);
     return { ...found };
   }
 

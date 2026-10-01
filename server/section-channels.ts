@@ -303,6 +303,16 @@ export interface SectionRouteDeps {
   roomExists(roomId: string): boolean;
   /** Something about who sees what changed. */
   onChanged(): void;
+  /** Slice 7: one audit row per saved change (category section). */
+  audit?(auth: RequestAuth, row: SectionAuditRow): void;
+}
+
+/** A section change for the admin activity log (slice 7). */
+export interface SectionAuditRow {
+  action: "section.create" | "section.rename" | "section.delete" | "section.member.set" | "section.member.remove" | "section.default_level" | "section.bot.place" | "section.bot.remove";
+  section: { id: string; name: string };
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
 }
 
 type WireSection = SectionRecord & { viewerRole: SectionRole | "owner" | null; canModerate: boolean };
@@ -351,6 +361,7 @@ export function createSectionChannelRoutes(deps: SectionRouteDeps): RouteHandler
       if (error) return json(res, 409, { error });
       const record = deps.channels.ensure(name.trim(), deps.principalId(auth));
       deps.onChanged();
+      deps.audit?.(auth, { action: "section.create", section: { id: record.id, name: record.name } });
       return json(res, 201, { section: sectionForViewer(viewer, record, deps.teamsOf) ?? { ...record, viewerRole: "owner", canModerate: true } });
     }
 
@@ -374,6 +385,7 @@ export function createSectionChannelRoutes(deps: SectionRouteDeps): RouteHandler
         if (error) return json(res, 409, { error });
         deps.channels.rename(record.name, next);
         deps.onChanged();
+        deps.audit?.(auth, { action: "section.rename", section: { id: record.id, name: next }, before: { name: record.name }, after: { name: next } });
       }
       const current = deps.channels.byId(record.id)!;
       return json(res, 200, { section: sectionForViewer(viewer, current, deps.teamsOf) ?? { ...current, viewerRole: null, canModerate: true } });
@@ -384,6 +396,7 @@ export function createSectionChannelRoutes(deps: SectionRouteDeps): RouteHandler
       if (error) return json(res, 409, { error });
       deps.channels.removeByName(record.name);
       deps.onChanged();
+      deps.audit?.(auth, { action: "section.delete", section: { id: record.id, name: record.name } });
       return json(res, 200, { ok: true });
     }
     if (sub === "members" && method === "PUT") {
@@ -433,6 +446,14 @@ export function createSectionChannelRoutes(deps: SectionRouteDeps): RouteHandler
         if (roomId) deps.channels.setRoom(saved.id, roomId);
       }
       deps.onChanged();
+      if (saved && deps.audit) {
+        const ref = { id: record.id, name: record.name };
+        for (const change of changes) {
+          if (change.role) deps.audit(auth, { action: "section.member.set", section: ref, before: before.has(change.target) ? { target: change.target, role: before.get(change.target) } : {}, after: { target: change.target, role: change.role } });
+          else deps.audit(auth, { action: "section.member.remove", section: ref, before: { target: change.target, role: before.get(change.target) }, after: {} });
+        }
+        if (defaultLevel !== record.defaultLevel) deps.audit(auth, { action: "section.default_level", section: ref, before: { defaultLevel: record.defaultLevel }, after: { defaultLevel } });
+      }
       const current = deps.channels.byId(record.id)!;
       return json(res, 200, { section: sectionForViewer(viewer, current, deps.teamsOf) ?? { ...current, viewerRole: null, canModerate: false } });
     }
@@ -463,6 +484,9 @@ export function createSectionChannelRoutes(deps: SectionRouteDeps): RouteHandler
         deps.channels.recordPlacement(record.name, id, deps.botOwner(id));
       }
       deps.onChanged();
+      const ref = { id: record.id, name: record.name };
+      for (const id of add) deps.audit?.(auth, { action: "section.bot.place", section: ref, after: { botId: id, ...(previous.get(id) ? { from: previous.get(id) } : {}) } });
+      for (const id of remove) deps.audit?.(auth, { action: "section.bot.remove", section: ref, before: { botId: id } });
       return json(res, 200, { section: sectionForViewer(viewer, deps.channels.byId(record.id)!, deps.teamsOf) });
     }
     return json(res, 405, { error: "method not allowed" });

@@ -56,6 +56,8 @@ export interface DirectGrantRouteDeps {
   /** After a grant was added or removed and saved: narrow or widen what the
    * people concerned see, at once. */
   onChanged?(botId: string): void;
+  /** Slice 7: one audit row per saved change (category rights). */
+  audit?(auth: RequestAuth, row: { action: "direct_grant.add" | "direct_grant.remove"; botId: string; userId: string }): void;
 }
 
 /** Longest person ref accepted: an account email is at most 320 characters. */
@@ -92,6 +94,7 @@ export function createDirectGrantRoutes(deps: DirectGrantRouteDeps): RouteHandle
       if (result.status !== 200) return json(res, result.status, { error: result.error });
       deps.patchBot(bot!.id, { directGrants: result.directGrants });
       deps.onChanged?.(bot!.id);
+      deps.audit?.(auth, { action: "direct_grant.remove", botId: bot!.id, userId: userId.trim().toLowerCase() });
       return json(res, 200, { directGrants: result.directGrants });
     }
     const m = path.match(/^\/api\/bots\/([\w-]+)\/direct-grants$/);
@@ -121,8 +124,10 @@ export function createDirectGrantRoutes(deps: DirectGrantRouteDeps): RouteHandle
     if (!userId) return json(res, 400, { error: "userId must be a principal id or an account email" });
     const result = grantDirectRoute({ actorId, bot, userId });
     if (result.status !== 200) return json(res, 403, { error: "not-owner" });
+    const added = !(bot.directGrants ?? []).includes(userId);
     deps.patchBot(bot.id, { directGrants: result.directGrants });
     deps.onChanged?.(bot.id);
+    if (added) deps.audit?.(auth, { action: "direct_grant.add", botId: bot.id, userId });
     return json(res, 200, { directGrants: result.directGrants });
   };
 }

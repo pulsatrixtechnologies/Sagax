@@ -56,7 +56,17 @@ export interface BotGrantRouteDeps {
   setGrants(botId: string, grants: BotGrant[]): void;
   /** After a change was saved: widen or narrow at once (member refresh). */
   onChanged(botId: string): void;
+  /** Slice 7: one audit row per change that was saved (category rights). */
+  audit?(auth: RequestAuth, row: GrantAuditRow): void;
   now?: () => number;
+}
+
+/** A rights change for the admin activity log (slice 7). */
+export interface GrantAuditRow {
+  action: "grant.set" | "grant.remove" | "direct_grant.add" | "direct_grant.remove";
+  botId: string;
+  before?: { target: string; level: Level } | null;
+  after?: { target: string; level: Level } | null;
 }
 
 /** The grants as the wire carries them, with labels. */
@@ -150,6 +160,7 @@ export function createBotGrantRoutes(deps: BotGrantRouteDeps): RouteHandler {
         deps.setGrants(botId, next);
         console.log(`[grants] bot ${botId}: ${parsed.kind} grant set to ${level}`);
         deps.onChanged(botId);
+        deps.audit?.(auth, { action: "grant.set", botId, before: current ? { target: finalTarget, level: current.level } : null, after: { target: finalTarget, level } });
       }
       return answer(deps.bot(botId)?.grants ?? next);
     }
@@ -177,6 +188,8 @@ export function createBotGrantRoutes(deps: BotGrantRouteDeps): RouteHandler {
       deps.setGrants(botId, next);
       console.log(`[grants] bot ${botId}: ${target.startsWith("team:") ? "team" : "user"} grant removed`);
       deps.onChanged(botId);
+      const removed = bot.grants.find((grant) => grant.target === target);
+      deps.audit?.(auth, { action: "grant.remove", botId, before: removed ? { target, level: removed.level } : null, after: null });
       return answer(deps.bot(botId)?.grants ?? next);
     }
 

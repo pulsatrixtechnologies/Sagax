@@ -10,6 +10,7 @@
 import { readFileSync } from "node:fs";
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { AccessVia } from "./engine-credentials.ts";
 import type { CostSource } from "./model-prices.ts";
 import { billableFor, type PriceList } from "./prices.ts";
 
@@ -17,9 +18,12 @@ import { billableFor, type PriceList } from "./prices.ts";
  * with when the server knows it (email sign-in), else by their device
  * label; `owner` is the machine itself (loopback, the desktop app). */
 export type UsageTrigger =
-  | { kind: "user"; email?: string; label?: string }
+  /** Slice 7: `principalId` names the person on an organization server
+   * (no email there). */
+  | { kind: "user"; email?: string; label?: string; principalId?: string }
   | { kind: "owner" }
-  | { kind: "routine"; routineId?: string; label?: string }
+  /** Slice 7: `runAsPrincipalId` is the person the run acted as. */
+  | { kind: "routine"; routineId?: string; label?: string; runAsPrincipalId?: string }
   | { kind: "bot"; botId?: string };
 
 export interface UsageRow {
@@ -47,6 +51,10 @@ export interface UsageRow {
    * existed, which read as reported when they carry a cost. */
   costSource?: CostSource;
   trigger: UsageTrigger;
+  /** Slice 7: the bot owner when the turn settled (organization server). */
+  ownerPrincipalId?: string;
+  /** Slice 7: the credentials the turn ran with (organization server). */
+  access?: AccessVia;
 }
 
 export type UsageGroupBy = "bot" | "model" | "user" | "day" | "engine" | "routine";
@@ -225,6 +233,7 @@ export function parseUsageRange(from: string | null | undefined, to: string | nu
 export function triggerKey(trigger: UsageTrigger): string {
   switch (trigger.kind) {
     case "user":
+      if (trigger.principalId) return `principal:${trigger.principalId}`;
       return `user:${(trigger.email ?? trigger.label ?? "").toLowerCase() || "unknown"}`;
     case "owner":
       return "owner";
@@ -350,4 +359,118 @@ export function usageCsv(rows: UsageRow[], prices: PriceList | null = null): str
     ].map(csvCell).join(","));
   }
   return lines.join("\n") + "\n";
+}
+
+// ── slice 7: the organization admin usage (server/org-admin-routes.ts) ──
+
+/** The longest range the organization admin usage answers, in days. */
+export const ORG_USAGE_MAX_DAYS = 92;
+export const ORG_USAGE_DEFAULT_DAYS = 30;
+export const ORG_USAGE_MAX_ROWS = 20_000;
+
+/** `from` and `to` as `YYYY-MM-DD` (UTC, `to` inclusive). Defaults to the
+ * last 30 days ending today; null when malformed, reversed or longer than 92
+ * days. */
+export function parseOrgUsageRange(from: string | null | undefined, to: string | null | undefined, now = new Date()): { from: Date; to: Date; fromDay: string; toDay: string } | null {
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const day = (date: Date) => date.toISOString().slice(0, 10);
+  const toDay = to ?? day(today);
+  const fromDay = from ?? day(new Date(Date.parse(`${toDay}T00:00:00.000Z`) - (ORG_USAGE_DEFAULT_DAYS - 1) * DAY_MS));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDay) || !/^\d{4}-\d{2}-\d{2}$/.test(toDay)) return null;
+  const parsed = parseUsageRange(fromDay, toDay, now);
+  if (!parsed) return null;
+  const days = Math.round((Date.parse(`${toDay}T00:00:00.000Z`) - Date.parse(`${fromDay}T00:00:00.000Z`)) / DAY_MS) + 1;
+  if (days > ORG_USAGE_MAX_DAYS) return null;
+  return { ...parsed, fromDay, toDay };
+}
+
+export type OrgUsageSpeaker =
+  | { kind: "person"; principalId: string }
+  | { kind: "routine"; routineId: string; runAsPrincipalId: string | null }
+  | { kind: "bot"; botId: string }
+  | { kind: "unattributed" };
+
+export type OrgUsageAccessSplit = Record<AccessVia | "unknown", number>;
+
+export interface OrgUsageAggregate {
+  day: string;
+  botId: string;
+  botName: string;
+  ownerPrincipalId: string | null;
+  speaker: OrgUsageSpeaker;
+  turns: number;
+  input: number;
+  output: number;
+  cachedInput: number;
+  costUsd: number | null;
+  estimatedUsd: number | null;
+  access: OrgUsageAccessSplit;
+}
+
+/** Who spoke for one row: a person by principal id, a routine with its
+ * runAs, another bot, or nobody known (a row from before principals, the
+ * machine itself). */
+export function orgUsageSpeaker(row: Pick<UsageRow, "trigger">): OrgUsageSpeaker {
+  const trigger = row.trigger;
+  if (trigger.kind === "user" && trigger.principalId) return { kind: "person", principalId: trigger.principalId };
+  if (trigger.kind === "routine" && trigger.routineId) return { kind: "routine", routineId: trigger.routineId, runAsPrincipalId: trigger.runAsPrincipalId ?? null };
+  if (trigger.kind === "bot" && trigger.botId) return { kind: "bot", botId: trigger.botId };
+  return { kind: "unattributed" };
+}
+
+function speakerKey(speaker: OrgUsageSpeaker): string {
+  switch (speaker.kind) {
+    case "person": return `p:${speaker.principalId}`;
+    case "routine": return `r:${speaker.routineId}:${speaker.runAsPrincipalId ?? ""}`;
+    case "bot": return `b:${speaker.botId}`;
+    default: return "u";
+  }
+}
+
+const ACCESS_KINDS = new Set<string>(["subscription", "owner-key", "org-key", "server"]);
+
+/** Rows grouped by (UTC day, bot, speaker), filtered by `visible` (the
+ * caller's reach), oldest day first, at most `max` groups. */
+export function aggregateOrgUsage(
+  rows: readonly UsageRow[],
+  visible: (input: { speaker: OrgUsageSpeaker; ownerPrincipalId: string | null }) => boolean,
+  max = ORG_USAGE_MAX_ROWS,
+): { rows: OrgUsageAggregate[]; truncated: boolean } {
+  const groups = new Map<string, OrgUsageAggregate>();
+  let truncated = false;
+  for (const row of rows) {
+    const speaker = orgUsageSpeaker(row);
+    const ownerPrincipalId = typeof row.ownerPrincipalId === "string" && row.ownerPrincipalId ? row.ownerPrincipalId : null;
+    if (!visible({ speaker, ownerPrincipalId })) continue;
+    const day = row.at.slice(0, 10);
+    const key = `${day}|${row.botId}|${speakerKey(speaker)}`;
+    let group = groups.get(key);
+    if (!group) {
+      if (groups.size >= max) {
+        truncated = true;
+        continue;
+      }
+      group = {
+        day, botId: row.botId, botName: row.botName || row.botId, ownerPrincipalId, speaker,
+        turns: 0, input: 0, output: 0, cachedInput: 0, costUsd: null, estimatedUsd: null,
+        access: { subscription: 0, "owner-key": 0, "org-key": 0, server: 0, unknown: 0 },
+      };
+      groups.set(key, group);
+    }
+    if (!group.ownerPrincipalId && ownerPrincipalId) group.ownerPrincipalId = ownerPrincipalId;
+    if (row.botName) group.botName = row.botName;
+    group.turns += 1;
+    group.input += clean(row.input);
+    group.output += clean(row.output);
+    group.cachedInput += clean(row.cachedInput);
+    const cost = finiteOrNull(row.costUsd);
+    if (cost !== null) {
+      group.costUsd = (group.costUsd ?? 0) + cost;
+      if (costSourceOf(row) === "estimated") group.estimatedUsd = (group.estimatedUsd ?? 0) + cost;
+    }
+    const via = typeof row.access === "string" && ACCESS_KINDS.has(row.access) ? row.access : "unknown";
+    group.access[via] += 1;
+  }
+  const ordered = [...groups.values()].sort((a, b) => a.day.localeCompare(b.day) || a.botName.localeCompare(b.botName) || a.botId.localeCompare(b.botId));
+  return { rows: ordered, truncated };
 }

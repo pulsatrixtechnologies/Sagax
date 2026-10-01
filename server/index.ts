@@ -532,6 +532,7 @@ import {
   flushAdminActivity,
   pruneAdminActivity,
   readAdminActivityRange,
+  readOrgAuditPage,
   sharedSignIn,
   signInListsOf,
   type AdminActionRow,
@@ -587,6 +588,7 @@ import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, oidcBindingCookie, oidcSessionFields } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
+import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
 import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
@@ -835,6 +837,8 @@ const turnTriggers = new Map<string, UsageTrigger>();
  * continuation of that turn, or a bot hop it starts, speaks for too. */
 const turnSpeakers = new Map<string, TurnSpeaker>();
 const turnSpeakerPrincipals = new Map<string, string>();
+/** Who ran each thread's current turn, for a key the provider refuses. */
+const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; ownerSub?: string; provider?: "anthropic" | "openai" }>();
 /** Threads whose last admitted turn (Direct or room) descends from a routine
  * or other automation: a bot hop it starts carries the mark, so no turn a
  * routine started ever reaches someone's Perspicax access (slice 5, D5). */
@@ -1226,6 +1230,8 @@ function memberFrameContext(visible: VisibleSet, viewer: ApprovalViewer): FrameC
  * domain), or a device paired with chat-only access. The desktop app and a
  * one-person server keep no admin activity log, exactly as before. */
 function adminActivityRecording(): boolean {
+  // Slice 7: always on for an organization server (the console's Audit page).
+  if (IDENTITY.kind === "perspicax") return true;
   if (DESKTOP_MANAGED) return false;
   if (HOSTED_WORKSPACE) return true;
   const chatOnly = (scopes: readonly string[]) => !scopes.includes("admin");
@@ -1429,8 +1435,11 @@ const guardedSendSchema = z.object({
 /** Who a request is, for the usage ledger: a paired or signed-in person, or
  * this machine. Captured when the message is accepted and carried with it. */
 function usageTriggerFor(auth: RequestAuth): UsageTrigger {
+  // Slice 7: an organization session names its person by principal id (it
+  // carries no email), so the admin usage can attribute the turn.
+  const principalId = auth.kind === "session" && IDENTITY.kind === "perspicax" ? auth.session.principalId?.trim() : undefined;
   return auth.kind === "session"
-    ? { kind: "user", ...(auth.session.email ? { email: auth.session.email } : {}), label: auth.session.label }
+    ? { kind: "user", ...(auth.session.email ? { email: auth.session.email } : {}), label: auth.session.label, ...(principalId ? { principalId } : {}) }
     : { kind: "owner" };
 }
 
@@ -1446,7 +1455,7 @@ function operatorPrices(): PriceList | null {
 function bookTurnUsage(row: Omit<UsageRow, "at" | "costSource">, tokensReported = true, notificationThreadId = row.threadId): void {
   // Missing helper usage is unpriced, not an estimated zero-dollar call.
   const cost = tokensReported || row.costUsd !== null ? ledgerCost(row, operatorPrices()) : { costUsd: null };
-  const booked = { ...row, ...cost, at: new Date().toISOString() };
+  const booked = { ...row, ...orgUsageFacts(row), ...cost, at: new Date().toISOString() };
   // The append lands asynchronously; the cap counts the row from memory
   // until it does, so the check below (and the next turn start) sees it.
   noteSpend(DATA_DIR, booked, appendUsage(DATA_DIR, booked));
@@ -1455,6 +1464,25 @@ function bookTurnUsage(row: Omit<UsageRow, "at" | "costSource">, tokensReported 
   if (alert && state) {
     broadcast({ kind: "notify", notification: buildSpendNotification({ id: row.botId, name: row.botName }, notificationThreadId, spendAlertText(alert, state)) }, { adminOnly: true });
   }
+}
+
+/** Slice 7: on an organization server a usage row names the bot owner and
+ * the credentials the turn ran with, and a person's row its principal (the
+ * turn's speaker when the trigger did not say). Solo rows are unchanged. */
+function orgUsageFacts(row: Omit<UsageRow, "at" | "costSource">): Partial<UsageRow> {
+  if (IDENTITY.kind !== "perspicax") return {};
+  const bot = store.bot(row.botId);
+  const access = row.access ?? turnAccessByThread.get(row.threadId)?.via;
+  let trigger = row.trigger;
+  if (trigger.kind === "user" && !trigger.principalId) {
+    const speaker = turnSpeakerPrincipals.get(row.threadId);
+    if (speaker) trigger = { ...trigger, principalId: speaker };
+  }
+  return {
+    trigger,
+    ...(row.ownerPrincipalId ? {} : bot ? { ownerPrincipalId: effectiveBotOwner(bot) } : {}),
+    ...(access ? { access } : {}),
+  };
 }
 
 /** A queued line from before triggers were stored with it: its sender, else
@@ -3243,6 +3271,12 @@ if (browserCleanupReferencesReconciled) browserCleanup.startPending();
 // restored workspace or an imported team is mapped as well.
 // `identityMigratedAt` only records when that first happened.
 const principals = new PrincipalRegistry({ path: join(DATA_DIR, "principals.json") });
+// Slice 7: a person marked out or back in is an organization audit row.
+principals.onDisabledChanged((person, disabled) => orgAudit({
+  category: "people", action: disabled ? "person.disabled" : "person.enabled",
+  target: { kind: "person", id: person.id, ...(person.name ? { name: person.name } : {}) },
+  actor: { kind: "worker" },
+}));
 principals.localOperator(cfg.profile?.email);
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
 const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
@@ -5454,21 +5488,127 @@ const ADMIN_APPROVAL_REQUIRED = {
 } as const;
 
 /** The server-command approvals waiting for an organization admin. */
-function pendingAdminApprovals(): PendingAdminApproval[] {
-  const pending: PendingAdminApproval[] = [];
-  for (const bot of store.bots) {
-    for (const task of store.tasks(bot.id)) {
-      for (const message of store.messagesFor(task.threadId)) {
-        const card = message.card;
-        if (!card?.adminApproval || !card.requestId || card.answered || card.dismissed || card.expired) continue;
-        pending.push({
-          botId: bot.id, botName: bot.name, threadId: task.threadId, requestId: card.requestId,
-          ownerPrincipalId: effectiveBotOwner(bot), tool: card.tool, summary: card.subtitle?.slice(0, 500), at: message.at,
-        });
-      }
+/** Slice 7: every pending approval card (not answered, dismissed or
+ * expired; never a question), with the bot it belongs to. */
+function pendingApprovalCards(): Array<{ bot: BotRecord; threadId: string; message: Message; card: NonNullable<Message["card"]> }> {
+  const out: Array<{ bot: BotRecord; threadId: string; message: Message; card: NonNullable<Message["card"]> }> = [];
+  const threads = new Set<string>();
+  for (const bot of store.bots) for (const task of store.tasks(bot.id)) threads.add(task.threadId);
+  for (const group of store.groups) {
+    threads.add(group.threadId);
+    for (const task of store.groupTasks(group.id)) threads.add(task.threadId);
+  }
+  for (const threadId of threads) {
+    for (const message of store.messagesFor(threadId)) {
+      const card = message.card;
+      if (!card?.requestId || card.answered || card.dismissed || card.expired || !isApprovalCardMessage(message)) continue;
+      const bot = botForApproval(threadId, message);
+      if (bot) out.push({ bot, threadId, message, card });
     }
   }
-  return pending.sort((a, b) => a.at - b.at).slice(0, 200);
+  return out;
+}
+
+/** The server-command approvals waiting for an organization admin (slice 3). */
+function pendingAdminApprovals(): PendingAdminApproval[] {
+  return pendingApprovalCards()
+    .filter((entry) => entry.card.adminApproval)
+    .map(({ bot, threadId, message, card }) => ({
+      botId: bot.id, botName: bot.name, threadId, requestId: card.requestId!,
+      ownerPrincipalId: effectiveBotOwner(bot), tool: card.tool, summary: card.subtitle?.slice(0, 500), at: message.at,
+    }))
+    .sort((a, b) => a.at - b.at).slice(0, 200);
+}
+
+/** Slice 7: what kind of decision a card asks for. */
+function approvalTypeOf(card: NonNullable<Message["card"]>): ApprovalType {
+  if (card.skillRequest) return "skill";
+  if (card.routineRequest) return "routine";
+  if (card.profileRequest) return "profile";
+  if (card.modelRequest) return "model";
+  if (card.teamSetupRequest) return "team_setup";
+  if (card.tighteningRequest) return "tightening";
+  if (card.allowKey) return "peer";
+  if (card.tool || card.commandAllowlist || card.approvalScope) return "tool";
+  return "other";
+}
+
+/** Slice 7: a person as the console reads one (never an email). */
+function adminPerson(principalId: string): AdminPerson {
+  const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;
+  const sub = person?.subject && IDENTITY.kind === "perspicax" && person.subject.iss === IDENTITY.issuer ? person.subject.sub : null;
+  const name = person?.name || person?.login || (person?.local ? cfg.profile?.name?.trim() || "This computer" : "") || principalId;
+  return { principalId, sub, name };
+}
+
+/** Slice 7: the pending cards a console person may see: owner cards of the
+ * bots they own (approvalOwnerId), and for an organization admin every
+ * admin card. Never an owner card to an admin who does not own the bot. */
+function pendingApprovalsFor(viewer: { principalId: string; orgAdmin: boolean }): AdminApproval[] {
+  const origin = IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin.replace(/\/+$/, "") : "";
+  const out: AdminApproval[] = [];
+  for (const { bot, threadId, message, card } of pendingApprovalCards()) {
+    const kind = card.adminApproval ? "admin" as const : "owner" as const;
+    const ownerId = approvalOwnerId(bot);
+    if (kind === "admin" ? !viewer.orgAdmin : ownerId !== viewer.principalId) continue;
+    const type = approvalTypeOf(card);
+    const requester = cardRequesterKey(threadId, card.requestId!);
+    const summary = typeof card.subtitle === "string" && card.subtitle ? redactSecretsInText(card.subtitle).slice(0, 500) : undefined;
+    out.push({
+      botId: bot.id,
+      botName: bot.name,
+      threadId,
+      requestId: card.requestId!,
+      kind,
+      type,
+      ...(card.tool ? { tool: String(card.tool).slice(0, 200) } : {}),
+      ...(summary ? { summary } : {}),
+      ...(requester && isPrincipalId(requester) && principals.byId(requester) ? { requestedBy: adminPerson(requester) } : {}),
+      owner: adminPerson(ownerId),
+      at: message.at,
+      decidable: type === "tool" && approvalHostOf(bot).kind === "fleet",
+      link: `${origin}/#thread=${encodeURIComponent(threadId)}&bot=${encodeURIComponent(bot.id)}`,
+    });
+  }
+  return out.sort((a, b) => a.at - b.at).slice(0, 200);
+}
+
+/** Slice 7: answer a plain tool card from the Perspicax console, once,
+ * allow or deny (never always, never a remembered command), with the same
+ * refusals as Sagax: the owner for an owner card, an organization admin for
+ * an admin card, and only on the fleet host. */
+async function answerCardFromConsole(viewer: OrgAdminViewer, threadId: string, requestId: string, decision: "allow" | "deny"): Promise<ApprovalAnswer> {
+  const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+  const card = message?.card;
+  if (!message || !card || !isApprovalCardMessage(message)) return { ok: false, status: 404, code: "not_found", message: "No such approval." };
+  const bot = botForApproval(threadId, message);
+  if (!bot) return { ok: false, status: 404, code: "not_found", message: "No such approval." };
+  if (card.answered || card.dismissed || card.expired) return { ok: false, status: 409, code: "card_not_pending", message: "This approval was already answered or has expired." };
+  const kind = card.adminApproval ? "admin" : "owner";
+  if (kind === "admin" ? !viewer.orgAdmin : approvalOwnerId(bot) !== viewer.principalId) {
+    return { ok: false, status: 403, code: "forbidden", message: kind === "admin" ? "Only an organization admin can answer this approval." : "Only the bot owner can answer this approval." };
+  }
+  if (approvalTypeOf(card) !== "tool" || approvalHostOf(bot).kind !== "fleet") {
+    return { ok: false, status: 403, code: "not_decidable", message: "Open this approval in Sagax to answer it." };
+  }
+  const answerer = `${viewer.name} (console)`;
+  const actor: DecisionActor = { kind: "session", sessionId: "console", label: answerer, userId: viewer.principalId };
+  const group = store.groupByThread(threadId);
+  const owner = group
+    ? (group.busyBotId ? store.bot(group.busyBotId) : undefined) ?? (message.from ? store.bot(message.from.botId) : undefined)
+    : store.botByThread(threadId);
+  const requestOwner = owner ? botForThread(owner.id, threadId) : null;
+  await withDecisionActor(actor, () => answerRequest(threadId, requestOwner?.modelSelection.instanceId ?? "", requestId, decision, undefined, owner ? { id: owner.id, name: owner.name } : undefined, false, false));
+  const settled = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+  if (settled?.card && !settled.card.answeredBy && settled.card.answered !== "unavailable" && (settled.card.answered || settled.card.dismissed)) {
+    store.patchMessage(threadId, settled.id, { card: { ...settled.card, answeredBy: { kind: "session", name: answerer } } });
+  }
+  orgAudit({
+    category: "approval", action: "approval.answer", target: auditBotTarget(bot.id),
+    after: { decision, threadId, requestId, kind },
+    actor: { kind: "person", principalId: viewer.principalId, via: "console" },
+  });
+  return { ok: true };
 }
 
 /** An organization admin answering a pending admin approval by thread may
@@ -7708,7 +7848,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(promptBytes ? { promptBytes } : {}),
           costUsd: event.cost ?? null,
           trigger: routineRun
-            ? { kind: "routine", routineId: routineRun.routineId, label: routineRun.routineName }
+            ? { kind: "routine", routineId: routineRun.routineId, label: routineRun.routineName, ...(routineRun.runAs ? { runAsPrincipalId: routineRun.runAs } : {}) }
             : internal
               ? { kind: "bot", ...(settledTask?.openedBy?.botId ? { botId: settledTask.openedBy.botId } : {}) }
               : turnTriggers.get(event.threadId) ?? { kind: "owner" },
@@ -7792,7 +7932,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(promptBytes ? { promptBytes } : {}),
           costUsd: event.cost ?? null,
           trigger: routineRun
-            ? { kind: "routine", routineId: routineRun.routineId, label: routineRun.routineName }
+            ? { kind: "routine", routineId: routineRun.routineId, label: routineRun.routineName, ...(routineRun.runAs ? { runAsPrincipalId: routineRun.runAs } : {}) }
             : turnTriggers.get(event.threadId) ?? { kind: "owner" },
         });
         // Appends are asynchronous. Refresh after persistence so the settled
@@ -7955,6 +8095,20 @@ function routineAudit(action: string, principalId: string | undefined, extra: { 
     actor: extra.auth ? decisionActorFor(extra.auth) : { kind: "worker" },
   });
 }
+/** Slice 7: who made an organization change: the person of a session by
+ * principal id (Sagax), else as the decision log names callers. */
+function orgAuditActor(auth: RequestAuth): AdminActor {
+  const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : undefined;
+  if (principalId) return { kind: "person", principalId, via: "sagax" };
+  return decisionActorFor(auth);
+}
+/** Slice 7: one organization audit row (rights, section, org, approval,
+ * people). Written only on success, by the caller. */
+function orgAudit(row: Omit<AdminActionRow, "at">): void {
+  if (IDENTITY.kind !== "perspicax") return;
+  appendAdminAction(DATA_DIR, row);
+}
+const auditBotTarget = (botId: string) => ({ kind: "bot", id: botId, ...(store.bot(botId)?.name ? { name: store.bot(botId)!.name } : {}) });
 /** Slice 6: a person's routine delegation ended or was revoked. */
 function routineConsentEnded(principalId: string, reason: RoutineConsentEnd): void {
   perspicaxMcp?.forgetPrincipal(principalId);
@@ -14739,8 +14893,6 @@ class EngineAccessLost extends Error {
     if (detail) this.detail = detail;
   }
 }
-/** Who ran each thread's current turn, for a key the provider refuses. */
-const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; ownerSub?: string; provider?: "anthropic" | "openai" }>();
 /** Slice 4: the credentials of one turn on an organization server, fetched
  * at dispatch; undefined in solo mode. Throws EngineAccessLost. */
 async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): Promise<TurnAccess | undefined> {
@@ -15534,6 +15686,12 @@ if (IDENTITY.kind === "perspicax") {
     describe: describeGrantTarget,
     setGrants: (id, grants) => { store.setBotGrants(id, grants); },
     onChanged: botAccessChanged,
+    audit: (auth, row) => orgAudit({
+      category: "rights", action: row.action, target: auditBotTarget(row.botId),
+      ...(row.before ? { before: { ...row.before } } : {}),
+      ...(row.after ? { after: { ...row.after } } : {}),
+      actor: orgAuditActor(auth),
+    }),
   }));
   // Slice 5: the Perspicax MCP profiles a bot mounts (server/bot-perspicax.ts);
   // only once the server is linked to Perspicax.
@@ -15744,6 +15902,12 @@ if (sectionChannels) {
       broadcast({ kind: "sections", sections: store.sections });
       audienceChanged();
     },
+    audit: (auth, row) => orgAudit({
+      category: "section", action: row.action, target: { kind: "section", id: row.section.id, name: row.section.name },
+      ...(row.before ? { before: row.before } : {}),
+      ...(row.after ? { after: row.after } : {}),
+      actor: orgAuditActor(auth),
+    }),
   }));
 }
 ROUTES.push(createDirectGrantRoutes({
@@ -15770,6 +15934,11 @@ ROUTES.push(createDirectGrantRoutes({
     return isPrincipalId(id) ? id : null;
   },
   ...(IDENTITY.kind === "perspicax" ? { resolveOrgPerson: resolveOrgGrantee } : {}),
+  audit: (auth, row) => orgAudit({
+    category: "rights", action: row.action, target: auditBotTarget(row.botId),
+    ...(row.action === "direct_grant.add" ? { after: { target: `user:${row.userId}`, level: "use" } } : { before: { target: `user:${row.userId}`, level: "use" } }),
+    actor: orgAuditActor(auth),
+  }),
   // A grant added or removed: every member stream reconnects to a fresh
   // snapshot of what that person may see (the per-frame filter already
   // stops the bot's frames), and the owner's list gets the bot's new grants.
@@ -15795,11 +15964,11 @@ if (IDENTITY.kind === "perspicax") {
       const before = orgSettings();
       saveConfig({ organization: { memberBotsUseOrgKey: next.memberBotsUseOrgKey } });
       cfg.organization = { ...cfg.organization, memberBotsUseOrgKey: next.memberBotsUseOrgKey };
-      appendAdminAction(DATA_DIR, {
-        category: "config", action: "organization.update", changed: ["organization.memberBotsUseOrgKey"],
-        before: { "organization.memberBotsUseOrgKey": before.memberBotsUseOrgKey },
-        after: { "organization.memberBotsUseOrgKey": next.memberBotsUseOrgKey },
-        actor: decisionActorFor(auth),
+      orgAudit({
+        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["memberBotsUseOrgKey"],
+        before: { memberBotsUseOrgKey: before.memberBotsUseOrgKey },
+        after: { memberBotsUseOrgKey: next.memberBotsUseOrgKey },
+        actor: orgAuditActor(auth),
       });
     },
     pendingAdminApprovals,
@@ -16060,6 +16229,13 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PE
       const narrowed = manager.narrowToOrgRole(principalId, "member");
       if (narrowed) console.log(`perspicax directory: a demotion narrowed ${narrowed} session(s)`);
     },
+    // Slice 7: the organization audit names the link it reads.
+    onLinkChanged: (previous, next) => orgAudit({
+      category: "org", action: next ? "org.link" : "org.unlink", target: { kind: "link", ...(next ?? previous ? { id: (next ?? previous)!.serverId } : {}) },
+      ...(previous ? { before: { serverId: previous.serverId } } : {}),
+      ...(next ? { after: { serverId: next.serverId, issuer: IDENTITY.issuer } } : {}),
+      actor: { kind: "worker" },
+    }),
     // Slice 6: a delegation revoked in the console ends here at the next poll.
     onDelegations: (present, fetchStartedAt) => {
       const ended = routineConsents?.reconcile(present, fetchStartedAt) ?? 0;
@@ -16127,6 +16303,82 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
   })
   : null;
 
+/** Slice 7: the bots as the console's Bots page reads them, with what a
+ * manager's reach is checked against. Metadata only. */
+function orgAdminBots(): Array<{ bot: AdminBot; reach: AdminBotReach }> {
+  const profileNames = new Map((perspicaxDirectory?.profileCatalog() ?? []).map((profile) => [profile.id, profile.name] as const));
+  const routineCounts = new Map<string, number>();
+  for (const routine of routines?.listRoutines() ?? []) routineCounts.set(routine.botId, (routineCounts.get(routine.botId) ?? 0) + 1);
+  return store.bots.map((bot) => {
+    const facts = botFacts(bot);
+    const engine = engineOfBot(bot);
+    const plan = IDENTITY.kind === "perspicax"
+      // A turn by someone other than the owner: what it would resolve to now.
+      ? resolveEngineAccess(orgEngineInput(bot, { instanceId: engine.instanceId, driverKind: engine.driver }, { origin: "person", principalId: "" }))
+      : { ok: true as const, via: "server" as const };
+    const access: AccessKind = plan.ok ? plan.via : "none";
+    const sectionName = sectionKey(bot.section);
+    const record = sectionName && sectionChannels ? sectionChannels.byName(sectionName) : undefined;
+    const shared = record && facts.sections?.length ? record : undefined;
+    const lastActivity = store.tasks(bot.id).reduce<number | null>((latest, task) => {
+      const at = typeof task.updatedAt === "number" ? task.updatedAt : null;
+      return at !== null && (latest === null || at > latest) ? at : latest;
+    }, null);
+    const ownerRole = botOwnerOrgRole(bot) ?? "member";
+    return {
+      bot: {
+        id: bot.id,
+        name: bot.name,
+        owner: adminPerson(facts.ownerPrincipalId),
+        ownerRole,
+        engine: { instanceId: engine.instanceId, driverKind: engine.driver, installed: engineInstalled(engine.instanceId) },
+        model: bot.modelSelection?.model || null,
+        access,
+        mcpProfiles: (bot.perspicax?.profiles ?? []).map((id) => ({ id, name: profileNames.get(id) ?? id })),
+        grants: wireGrants(facts.grants, describeGrantTarget).map((grant) => ({
+          target: grant.target, kind: grant.kind, label: grant.label, level: grant.level, ...(grant.disabled ? { disabled: true as const } : {}),
+        })),
+        sections: shared ? [{ id: shared.id, name: shared.name, defaultLevel: shared.defaultLevel, members: shared.members.length }] : [],
+        routines: routineCounts.get(bot.id) ?? 0,
+        createdAt: typeof bot.createdAt === "number" ? bot.createdAt : null,
+        lastActivityAt: lastActivity,
+      },
+      reach: {
+        ownerPrincipalId: facts.ownerPrincipalId,
+        grantTargets: facts.grants.map((grant) => grant.target),
+        sectionMemberTargets: shared ? shared.members.map((member) => member.target) : [],
+      },
+    };
+  });
+}
+
+/** Slice 7: the console's admin API (server/org-admin-routes.ts), answered
+ * before the auth gate with a console assertion only. */
+const orgAdmin = createOrgAdminRoutes({
+  identity: IDENTITY.kind,
+  issuer: IDENTITY.kind === "perspicax" ? IDENTITY.issuer : "",
+  publicOrigin: () => (IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin.replace(/\/+$/, "") : null),
+  linkServerId: () => perspicaxDirectory?.serverId() ?? null,
+  verify: (token, audience, serverId) => {
+    if (!oidcRp) throw new Error("This server has no identity provider configured.");
+    return oidcRp.verifyConsoleAssertion(token, audience, serverId);
+  },
+  principalFor: (iss, sub) => {
+    const person = principals.bySubject(iss, sub);
+    return person ? { id: person.id, name: adminPerson(person.id).name, disabled: person.disabledAt !== undefined } : null;
+  },
+  person: adminPerson,
+  teamPeople: (teamIds) => {
+    const wanted = new Set(teamIds);
+    return principals.list().filter((person) => (person.teams ?? []).some((team) => wanted.has(team.id))).map((person) => person.id);
+  },
+  bots: orgAdminBots,
+  usageRows: (range) => readUsage(DATA_DIR, range),
+  approvalsFor: (viewer) => pendingApprovalsFor(viewer),
+  answer: answerCardFromConsole,
+  audit: (input) => readOrgAuditPage(DATA_DIR, input),
+});
+
 const toolResults = new ToolResults();
 const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   let url: URL;
@@ -16153,6 +16405,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (hostedModels) res.setHeader(HOSTED_MODEL_POLICY_HEADER, "1");
       return json(res, 200, { ok: true, service: "openmausbot", membershipAuthority: "portal", workspace: hosted.workspace, ...HOSTED_CONTRACT_METADATA });
     }
+    // Slice 7: the console's admin API, before every other credential: a
+    // console assertion only, never a session cookie or loopback trust.
+    if (await orgAdmin(req, res, url)) return;
     // An organization server signs people in with Pulsatrix only: the
     // interim email codes and invitation links are refused outright.
     if (IDENTITY.kind === "perspicax") {
@@ -23412,6 +23667,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const capabilities = {
         guardedMessages: 1, guardedRequests: 1, guardedFullAccess: 1, guardedOnBehalfOf: 1,
         ...(sharedWorkspaceFullAccessEnabled() ? { sharedWorkspaceFullAccess: 1 } : {}),
+        // Slice 7: /api/org/admin/* answers the Perspicax console.
+        ...(IDENTITY.kind === "perspicax" ? { orgAdminApi: 1 } : {}),
       };
       if (detail === "app") return json(res, 200, { app: "openmausbot" });
       if (detail === "capabilities") return json(res, 200, { app: "openmausbot", capabilities });

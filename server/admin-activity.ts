@@ -23,11 +23,13 @@ import { actorLabel, boundRetentionDays, pruneMonthFiles, type DecisionActor, ty
 import { redactSecrets } from "./redact.ts";
 import { csvCell } from "./usage-ledger.ts";
 
-export const ADMIN_ACTIVITY_CATEGORIES = ["config", "people", "session", "webhook", "mcp", "engine", "bot", "budget", "visibility"] as const;
+export const ADMIN_ACTIVITY_CATEGORIES = ["config", "people", "session", "webhook", "mcp", "engine", "bot", "budget", "visibility", "rights", "section", "org", "approval"] as const;
 export type AdminActivityCategory = typeof ADMIN_ACTIVITY_CATEGORIES[number];
 
-/** Who acted: as on a decision row, plus the command line. */
-export type AdminActor = DecisionActor | { kind: "cli" };
+/** Who acted: as on a decision row, plus the command line, plus (slice 7) a
+ * person of the organization by principal id, in Sagax or from the Perspicax
+ * console. */
+export type AdminActor = DecisionActor | { kind: "cli" } | { kind: "person"; principalId: string; via: "sagax" | "console" };
 
 export interface AdminActionRow {
   at: string;
@@ -374,8 +376,12 @@ export function readAdminActivityRange(dataDir: string, range: { from: Date; to:
 
 // ── the Activity view: admin actions and approvals together ─────────────
 
-export function adminActorLabel(actor: AdminActor | undefined): string {
+export function adminActorLabel(actor: AdminActor | undefined, nameOf?: (principalId: string) => string | undefined): string {
   if (actor?.kind === "cli") return "Command line";
+  if (actor?.kind === "person") {
+    const name = nameOf?.(actor.principalId) ?? actor.principalId;
+    return actor.via === "console" ? `${name} (console)` : name;
+  }
   return actorLabel(actor as DecisionActor | undefined);
 }
 
@@ -481,4 +487,74 @@ export function activityCsv(entries: readonly ActivityEntry[]): string {
     lines.push(cells.map(csvCell).join(","));
   }
   return lines.join("\n") + "\n";
+}
+
+// ── slice 7: the organization audit read by the Perspicax console ───────
+
+/** The categories the console's Audit page reads. */
+export const ORG_AUDIT_CATEGORIES = ["rights", "section", "bot", "people", "org", "approval"] as const;
+export const ORG_AUDIT_MAX_LIMIT = 500;
+export const ORG_AUDIT_DEFAULT_LIMIT = 200;
+
+export interface IdentifiedAdminAction extends AdminActionRow {
+  /** `<YYYY-MM>-<line number>`: stable as long as the month file is kept. */
+  id: string;
+}
+
+const AUDIT_ID = /^(\d{4}-\d{2})-(\d{1,9})$/;
+
+/** Rows of the given categories, newest first, older than `before` (an id)
+ * when given, inside [from, to] (ms), at most `limit`; `next` is the id to
+ * pass as `before` for the following page, or null. */
+export function readOrgAuditPage(dataDir: string, input: {
+  from?: number;
+  to?: number;
+  limit: number;
+  before?: string | null;
+  categories?: readonly string[];
+}): { rows: IdentifiedAdminAction[]; next: string | null } {
+  let months: string[] = [];
+  try {
+    months = readdirSync(join(dataDir, DIR)).filter((name) => MONTH_FILE.test(name)).map((name) => basename(name, ".ndjson")).sort().reverse();
+  } catch {
+    return { rows: [], next: null };
+  }
+  const categories = new Set(input.categories ?? ORG_AUDIT_CATEGORIES);
+  const cursor = input.before ? AUDIT_ID.exec(input.before) : null;
+  const beforeMonth = cursor?.[1];
+  const beforeLine = cursor ? Number(cursor[2]) : Number.POSITIVE_INFINITY;
+  const from = input.from ?? Number.NEGATIVE_INFINITY;
+  const to = input.to ?? Number.POSITIVE_INFINITY;
+  const fromMonth = Number.isFinite(from) ? monthKey(new Date(from)) : "";
+  const toMonth = Number.isFinite(to) ? monthKey(new Date(to)) : "9999-99";
+  const rows: IdentifiedAdminAction[] = [];
+  for (const month of months) {
+    if (month > toMonth || month < fromMonth) continue;
+    if (beforeMonth && month > beforeMonth) continue;
+    let text: string;
+    try {
+      text = readFileSync(join(dataDir, DIR, `${month}.ndjson`), "utf8");
+    } catch {
+      continue;
+    }
+    const lines = text.split("\n");
+    for (let index = lines.length - 1; index >= 0; index--) {
+      const lineNumber = index + 1;
+      if (beforeMonth === month && lineNumber >= beforeLine) continue;
+      const line = lines[index];
+      if (!line) continue;
+      let value: unknown;
+      try {
+        value = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!isRow(value) || !categories.has(value.category)) continue;
+      const at = Date.parse(value.at);
+      if (!(at >= from && at <= to)) continue;
+      if (rows.length === input.limit) return { rows, next: rows.at(-1)!.id };
+      rows.push({ ...value, id: `${month}-${lineNumber}` });
+    }
+  }
+  return { rows, next: null };
 }

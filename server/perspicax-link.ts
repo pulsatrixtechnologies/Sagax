@@ -205,6 +205,9 @@ export interface PerspicaxDirectoryOptions {
   onDelegations?: (present: (sub: string) => boolean | undefined, fetchStartedAt: number) => void;
   /** Pulsa Bot's version, sent as X-Pulsabot-Version. */
   version: string;
+  /** Slice 7: the link file was loaded, changed to another server id, or
+   * went away (null), for the organization audit. */
+  onLinkChanged?: (previous: { serverId: string } | null, next: { serverId: string } | null) => void;
   /** Slice 4: team names (org-teams.ts), replaced from each directory. */
   teamNames?: DirectoryTeamNames;
   fetch?: typeof fetch;
@@ -504,15 +507,27 @@ export class PerspicaxDirectory {
       } else {
         this.fail("link_invalid", read.reason);
       }
+      const previous = this.link;
       this.link = null;
+      if (previous) this.linkChanged(previous, null);
       return null;
     }
+    const previous = this.link;
     if (this.link && this.link.serverId !== read.link.serverId) {
       // Relinked to a new server id: start over with no cached answer.
       this.etag = null;
     }
     this.link = read.link;
+    if (!previous || previous.serverId !== read.link.serverId) this.linkChanged(previous, read.link);
     return read.link;
+  }
+
+  private linkChanged(previous: PerspicaxLink | null, next: PerspicaxLink | null): void {
+    try {
+      this.options.onLinkChanged?.(previous ? { serverId: previous.serverId } : null, next ? { serverId: next.serverId } : null);
+    } catch {
+      /* an audit listener never breaks the directory */
+    }
   }
 
   private fail(code: string, detail: string): void {
