@@ -2196,10 +2196,21 @@ export class Store {
   }
 
   private refreshBotActivity(bot: BotRecord) {
-    const activities = [this.legacyActivities.get(bot.id), ...(bot.tasks ?? []).map((task) => task.activity)];
-    bot.activity = (["waiting-on-you", "no-signal", "working", "dead"] as const)
-      .find((activity) => activities.includes(activity)) ?? "idle";
-    bot.busy = ACTIVITY_BUSY.has(bot.activity);
+    const { activity, busy } = this.activityOf(bot.id, () => true);
+    bot.activity = activity;
+    bot.busy = busy;
+  }
+
+  /** The bot-wide activity (the same fold as `bot.activity`/`bot.busy`)
+   * over the threads `include` keeps, plus the bot's room activity. An
+   * organization viewer gets it over their own threads only
+   * (server/thread-privacy.ts), never over someone else's. */
+  activityOf(botId: string, include: (task: TaskRecord) => boolean): { activity: BotActivity; busy: boolean } {
+    const bot = this.bot(botId);
+    const activities = [this.legacyActivities.get(botId), ...(bot?.tasks ?? []).filter(include).map((task) => task.activity)];
+    const activity = (["waiting-on-you", "no-signal", "working", "dead"] as const)
+      .find((candidate) => activities.includes(candidate)) ?? "idle";
+    return { activity, busy: ACTIVITY_BUSY.has(activity) };
   }
 
   /** Elect one Chief of Staff in its section (or clear one section) as one persisted change.
