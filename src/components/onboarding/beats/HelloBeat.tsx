@@ -5,13 +5,19 @@
 // A hosted team workspace asks for neither: its profile is shared by
 // everyone who signs in there, and the email field is a mailing-list offer
 // for people installing the app. It only says what the workspace is.
+//
+// An organization server (Perspicax sign-in) asks for neither either: the
+// person's name and email are Perspicax's, so the greeting shows them
+// read-only with the note and the link to change them there.
 import { useRef, useState } from "react";
 import { identifyEmail, track } from "@/lib/analytics";
 import { t } from "@/lib/i18n";
+import type { ManagedProfile } from "@/lib/profile-management";
 import { api, useStore } from "@/state/store";
+import { ManagedProfileIdentity } from "../../ManagedProfileIdentity";
 import { inputClass, PrimaryButton, QuietButton, staggerIndex, type BeatProps } from "./shared";
 
-export function HelloBeat({ onNext, onSkip, hosted = false }: BeatProps & { hosted?: boolean }) {
+export function HelloBeat({ onNext, onSkip, hosted = false, profileManaged }: BeatProps & { hosted?: boolean; profileManaged?: ManagedProfile }) {
   const { dispatch } = useStore();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -44,6 +50,20 @@ export function HelloBeat({ onNext, onSkip, hosted = false }: BeatProps & { host
       setSaving(false);
     }
   };
+
+  if (profileManaged) {
+    return (
+      <div className="stagger flex flex-col items-center">
+        <p className="animate-rise mt-1.5 text-center text-[14px] leading-relaxed text-ink-secondary" style={staggerIndex(0)}>
+          {t("onboarding.managed.intro")}
+        </p>
+        <ManagedProfileIdentity profile={profileManaged} className="mt-5 w-full" />
+        <PrimaryButton onClick={onNext} className="animate-rise mt-5" style={staggerIndex(2)}>
+          {t("onboarding.continue")}
+        </PrimaryButton>
+      </div>
+    );
+  }
 
   if (hosted) {
     return (

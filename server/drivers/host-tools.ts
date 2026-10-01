@@ -9,7 +9,7 @@
  * Passed to --disallowedTools: deny rules, so they hold for subagents too.
  * Names an older or newer CLI lacks are ignored by the CLI. */
 export const CLAUDE_HOST_TOOLS: readonly string[] = [
-  "Bash", "BashOutput", "KillShell", "KillBash", "Monitor",
+  "Bash", "BashOutput", "KillShell", "KillBash", "PowerShell", "Monitor",
   "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "NotebookRead",
   "Glob", "Grep", "LS", "WebFetch",
   // git worktrees and local scripted workflows also act on this machine

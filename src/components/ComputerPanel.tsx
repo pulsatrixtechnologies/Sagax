@@ -23,7 +23,7 @@ import {
   PanelRight,
 } from "lucide-react";
 import { api, ApiError, currentTaskBot, useStore, type Bot } from "@/state/store";
-import { effectivePlace } from "@/lib/place";
+import { effectivePlace, placeOffered } from "@/lib/place";
 import type { CloudBackend } from "../../shared/wire";
 import { ApiKeyRow } from "./ApiKeys";
 import { cn } from "@/lib/cn";
@@ -236,7 +236,8 @@ export function ComputerPanel({
   const localAvailable = capabilities.localComputer.available;
   const isLinux = capabilities.host.platform === "linux";
   const providerSupportsLocal = instanceSupportsLocalComputer(state.instances, bot);
-  const localSelectable = localComputerSelectable({ capabilities, providerSupportsLocal });
+  // An OMB Cloud home never offers this computer (shared/cloud-home.ts).
+  const localSelectable = placeOffered("local", state.config) && localComputerSelectable({ capabilities, providerSupportsLocal });
   const [localAutoWarningTarget, setLocalAutoWarningTarget] = useState<string | null>(null);
   const localDisabledReason = localComputerDisabledReason({ capabilities, providerSupportsLocal });
   const [phase, setPhase] = useState<Phase>("checking");
@@ -469,7 +470,9 @@ export function ComputerPanel({
           setVmStatus(status);
           // parse at the boundary: our own status endpoint sends a string or nothing
           const viewerUrl = String(status.viewer_url ?? "");
-          if (viewerUrl.startsWith("http")) setVmViewerUrl(viewerUrl);
+          if (viewerUrl.startsWith("http") || viewerUrl.startsWith("/desktop-viewer#")) {
+            setVmViewerUrl(new URL(viewerUrl, window.location.href).href);
+          }
           if (status.ready) {
             vmReadinessAttempts.current = 0;
             setPhase("vm");
@@ -1514,7 +1517,13 @@ export function ComputerPanel({
   return (
     <>
     {embedded ? null : <aside
-      className="animate-panel-in relative flex h-full shrink-0 flex-col border-l-[0.5px] border-hairline-weak bg-panel"
+      className={cn(
+        "animate-panel-in relative flex h-full shrink-0 flex-col border-l-[0.5px] border-hairline-weak bg-panel",
+        // Below md (a phone on remote access) the stored width would push the
+        // chat to zero and run off the edge, so cover the window like the
+        // settings and inspector panels. `!` beats the inline width.
+        "max-md:absolute max-md:inset-0 max-md:z-40 max-md:w-full!",
+      )}
       style={{ width: panelWidth }}
     >
       <div
@@ -1531,7 +1540,7 @@ export function ComputerPanel({
         onPointerMove={onResizeMove}
         onPointerUp={onResizeEnd}
         onPointerCancel={onResizeEnd}
-        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize hover:bg-accent/40 focus-visible:bg-accent/60"
+        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize hover:bg-accent/40 focus-visible:bg-accent/60 max-md:hidden"
       />
       {/* Header */}
       <div className={cn("relative flex h-11 shrink-0 items-center justify-center px-12", padClass)}>

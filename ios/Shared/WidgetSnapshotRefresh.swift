@@ -28,13 +28,34 @@ extension WidgetSnapshotStore {
 ///
 /// The loop is serial on purpose. An answer is a write, and spraying one
 /// at every route in parallel could submit the same response twice. The
-/// failover rule is the app's: only a transport failure or a gateway
-/// error belongs to the route — anything the harness itself said (a
-/// rejected token, a request already gone) is authoritative and final.
+/// failover rule depends on the request: a read moves on for any
+/// route-level failure, while a write the server consumes on first
+/// delivery moves on only when the failure proves the request never
+/// reached the computer — a replay after a lost response would come back
+/// "unavailable" and paint a landed answer as one that never ran.
 enum WidgetRouteRequest {
+    /// When a failed attempt may move to the next route.
+    enum Replay {
+        /// Reads: any route-level failure is worth another address.
+        case freely
+        /// Writes the server consumes on first delivery (an answer): only
+        /// a failure proving the request never left the phone replays.
+        case onlyWhenUndelivered
+
+        func allowsRouteChange(after error: Error) -> Bool {
+            switch self {
+            case .freely:
+                return ConnectionAdvice.shouldTryAnotherRoute(after: error)
+            case .onlyWhenUndelivered:
+                return ConnectionAdvice.provablyUndeliveredRequest(error)
+            }
+        }
+    }
+
     static func perform<T: Sendable>(
         connection: Connection,
         token: String,
+        replay: Replay = .freely,
         operation: @escaping @Sendable (CompanionClient) async throws -> T
     ) async throws -> T {
         var lastError: Error?
@@ -50,7 +71,7 @@ enum WidgetRouteRequest {
             } catch {
                 if Task.isCancelled { throw CancellationError() }
                 lastError = error
-                guard ConnectionAdvice.shouldTryAnotherRoute(after: error) else { throw error }
+                guard replay.allowsRouteChange(after: error) else { throw error }
             }
         }
         throw lastError ?? APIError.transport("This computer is offline.")

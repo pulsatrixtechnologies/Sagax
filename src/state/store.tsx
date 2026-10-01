@@ -34,6 +34,7 @@ import {
 } from "../../shared/skill-request";
 import type { Routine, RoutineInput, RoutineRun, RoutineRunStatusFilter } from "@/lib/routines";
 import type { WebhookAttempt, WebhookIngressStatus, WebhookTrigger } from "@/lib/webhooks";
+import { botShowsUnread } from "@/lib/bot-unread";
 import { answerResponse, dismissResponse } from "@/lib/card-answer";
 import { currentCall } from "@/lib/call";
 import { showNotification, type NotificationTarget } from "@/lib/notify";
@@ -223,12 +224,11 @@ export interface Message {
   ownerName?: string;
   /** A dropped worker, or a person or bot removed during the turn. */
   status?: "failed";
+  /** Auto rooms: the decision model picked this reply's speaker. */
+  routedBy?: import("../../shared/wire").WireMessage["routedBy"];
 }
 
-export type GroupDefaultResponder =
-  | { kind: "member"; botId: string }
-  | { kind: "everyone" }
-  | { kind: "mentions" };
+export type GroupDefaultResponder = import("../../shared/wire").GroupDefaultResponder;
 
 /** A room: several bots + you in one shared thread. */
 export interface Group {
@@ -438,6 +438,8 @@ export interface Bot {
   voice?: string;
   /** whether this bot may send voice notes (on unless switched off) */
   voiceNotes?: boolean;
+  /** whether this bot uses native memory (on unless switched off) */
+  memoryEnabled?: boolean;
   pinned?: boolean;
   hidden?: boolean;
   /** Sidebar section this bot renders under; absent = unsectioned. */
@@ -621,7 +623,10 @@ export function messageVersions(bot: Bot, message: Message): Message[] {
 export interface ConfigStatus {
   xai?: { configured: boolean };
   mistral?: { configured: boolean };
-  anthropic?: { configured: boolean };
+  /** `everyClaudeBot`: the key runs every Claude bot, not only "Claude (API key)". */
+  anthropic?: { configured: boolean; everyClaudeBot?: boolean };
+  openai?: { configured: boolean };
+  openrouter?: { configured: boolean };
   openaiCompat?: { configured: boolean; url?: string };
   /** what this server is entitled to; Settings shows only what works here.
    * `license` reaches admins only, and only while the key is inside its
@@ -636,14 +641,15 @@ export interface ConfigStatus {
   budgets?: { monthlyUsd?: number; warnAtPercent?: number };
   billing?: { currency?: string; prices?: Record<string, { inputPerMillion: number; outputPerMillion: number; cachedInputPerMillion?: number }> };
   composio: { configured: boolean; mode?: "managed" | "self-hosted" | "unavailable" };
-  box: { configured: boolean };
+  /** `included`: cloud computers come with Cloud Pro, no key is saved. */
+  box: { configured: boolean; included?: boolean };
   vps: { configured: boolean; sshAlias: string };
   rooms: { turnTimeoutMinutes: number };
   /** Workspace defaults for new bots; absent effort = no level is sent. */
   newBots?: { effort?: EffortLevel };
   threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
-  localVm: { mode: "shared" | "per-bot" | "pool"; maxInstances: number };
+  localVm: { mode: "shared" | "per-bot" | "pool"; maxInstances: number; idleTimeoutMinutes?: number };
   opencodeGo?: { configured: boolean };
   /** Voice. `configured` = the engine has what it needs (an ElevenLabs or
    * Fish Audio key, or a Chatterbox server address); `ready` = that AND a voice, which is
@@ -656,6 +662,21 @@ export interface ConfigStatus {
     provider?: "elevenlabs" | "fish" | "system" | "chatterbox" | "xai";
     baseUrl?: string;
     model?: string;
+    /** Fish Audio speech model; present only while Fish is the provider. */
+    fishModel?: "s2.1-pro" | "s2.1-pro-free";
+    /** ElevenLabs voice comes with Cloud Pro; no key is saved. */
+    included?: boolean;
+  };
+  /** The decision model: switches and whether a key is on file. The key
+   * itself never comes back. `enabled` is the switch as it takes effect
+   * (off while no key is saved). `included`: Cloud Pro's decisions, no key
+   * saved. */
+  decider?: {
+    provider: "jev";
+    configured: boolean;
+    included?: boolean;
+    enabled: boolean;
+    jobs: { roomRouting: boolean };
   };
   /** Shared write-only credential for on-demand GPT Image avatars. */
   imageGen?: {
@@ -677,7 +698,7 @@ export interface ConfigStatus {
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
-  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean };
+  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean };
   /** First-run progress: whether the welcome tour was finished and which
    * one-time hints were dismissed. Server-owned so it follows the workspace. */
   onboarding?: OnboardingStatus;
@@ -689,6 +710,9 @@ export interface ConfigStatus {
   /** The enrolled organisation's read-only desktop policy; null when this
    * desktop is not enrolled or its Admin sends no policy. */
   managedPolicy?: ManagedPolicySummary | null;
+  /** This server is an OMB Cloud home: it offers no "this computer" and no
+   * Local VM (server/cloud-home.ts). Absent everywhere else. */
+  cloudHome?: boolean;
 }
 
 /** Mirrors ViewerIdentity in server/viewer-identity.ts. */
@@ -703,6 +727,12 @@ export interface ConfigViewer {
   canCreateBots: boolean;
   /** The operator's name, for their lines that carry no sender. */
   operatorName?: string;
+  /** Organization server: Perspicax owns this person's name and email
+   * (read-only here; src/lib/profile-management.ts). */
+  profileManagedBy?: "perspicax";
+  profileManageUrl?: string;
+  /** Their Perspicax avatar as this server serves it. */
+  avatarUrl?: string;
 }
 
 export interface ManagedPolicySummary {
@@ -738,7 +768,7 @@ export interface BrowserProfile {
 // Settings shows (a saved key's Test button used to vanish that way).
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "mistral" | "anthropic" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "imageGen" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer"
+  "xai" | "mistral" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer" | "cloudHome"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -746,6 +776,8 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     xai: frame.xai,
     mistral: frame.mistral,
     anthropic: frame.anthropic,
+    openai: frame.openai,
+    openrouter: frame.openrouter,
     openaiCompat: frame.openaiCompat,
     fleet: frame.fleet,
     composio: frame.composio,
@@ -757,6 +789,7 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     localVm: frame.localVm,
     opencodeGo: frame.opencodeGo,
     tts: frame.tts,
+    decider: frame.decider,
     imageGen: frame.imageGen,
     profile: frame.profile,
     language: frame.language,
@@ -769,6 +802,7 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     billing: frame.billing,
     managedPolicy: frame.managedPolicy,
     viewer: frame.viewer,
+    ...(frame.cloudHome ? { cloudHome: true } : {}),
   };
 }
 
@@ -783,6 +817,8 @@ export interface EngineInstall {
   managed?: { label: string; downloadBytes: number };
   /** the server can install or update this engine itself, no terminal */
   server?: { package: string };
+  /** configured with a key in Settings → API keys, not in a terminal */
+  settings?: "connections";
 }
 
 /** One row of GET /api/instances — the model picker's data. */
@@ -803,6 +839,8 @@ export interface InstanceInfo {
     state: "available" | "unavailable";
     reason?: string;
     authenticated?: boolean;
+    chatgptPlan?: boolean;
+    authenticationUnavailableReason?: string;
     account?: { email?: string; organization?: string; method?: "login" | "api-key" };
     version?: string | null;
     /** A newer provider version unlocks capabilities, but this installed
@@ -840,7 +878,7 @@ export interface InstanceInfo {
   /** `custom` agents sit below the rail divider — no subscription catalog. */
   access?: "subscription" | "custom" | "api";
   /** `signOut`: the browser may remove the stored sign-in to switch accounts. */
-  authentication?: { method: "device-code" | "paste-code" | "browser"; signOut?: boolean };
+  authentication?: { method: "device-code" | "paste-code" | "browser" | "browser-pkce"; signOut?: boolean };
   install?: EngineInstall;
   /** Configured CLI path override — set ONLY when the user overrode it;
    * absent means the driver default is in effect. */
@@ -851,6 +889,9 @@ export interface InstanceInfo {
   cliCandidates?: string[];
   /** Server-owned Claude profile; a saved directory does not prove sign-in. */
   claudeAccount?: { configDir: string; signInCommand: string; signInShell: "powershell" | "sh"; isDefault: boolean };
+  /** This engine can leave large temporary files behind on this server
+   * (Antigravity on Windows); Settings offers to clear them. */
+  freeUpSpace?: boolean;
 }
 
 export type AppSettingsSection =
@@ -860,6 +901,7 @@ export type AppSettingsSection =
   | "appearance"
   | "experimental"
   | "connections"
+  | "decisionModel"
   | "engines"
   | "companion"
   | "remote"
@@ -931,6 +973,10 @@ export interface AppState {
   inspectorOpen: boolean;
   appSettingsOpen: boolean;
   appSettingsSection: AppSettingsSection;
+  /** Non-zero while Settings → OMB Cloud is open because of the Cloud page's
+   * openmausbot://cloud link; each link counts up. Any other
+   * toggleAppSettings (another section, the same one by hand, closing) sets 0. */
+  appSettingsCloudLink: number;
   shortcutsOpen: boolean;
   /** the first-run welcome tour, also replayable from Settings → General */
   welcomeOpen: boolean;
@@ -1174,6 +1220,8 @@ export type Action =
   | { type: "switchTask"; botId: string; threadId: string }
   | { type: "taskSwitched"; bot: Bot }
   | { type: "renameTask"; botId: string; threadId: string; title: string }
+  /** Name the thread again from its conversation; the new title arrives with the bot event. */
+  | { type: "regenerateTaskTitle"; botId: string; threadId: string; onSettled?: (ok: boolean) => void }
   | { type: "deleteTask"; botId: string; threadId: string }
   | { type: "newBot"; role?: BotRole; visibility?: BotVisibility; section?: string; preserveSelection?: boolean; onCreated?: (bot: Bot) => void; onError?: (message: string) => void }
   | { type: "botCreationPending"; on: boolean }
@@ -1212,7 +1260,7 @@ export type Action =
   | { type: "toggleInspector"; open?: boolean }
   | { type: "focusMessage"; threadId: string; messageId: string }
   | { type: "focusMessageConsumed"; nonce: number }
-  | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection }
+  | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; cloudLink?: boolean }
   | { type: "toggleShortcuts"; open?: boolean }
   | { type: "toggleWelcome"; open?: boolean }
   | { type: "toggleLaunch"; open?: boolean; mode?: "solo" | "server" }
@@ -1417,6 +1465,10 @@ function optimisticUserMessage(
     channelMode,
   };
 }
+
+/** Settings → OMB Cloud as opened by openmausbot://cloud (the Cloud page's
+ * "Open in the app"); that view then signs in or connects by itself. */
+export const CLOUD_LINK_SETTINGS = { type: "toggleAppSettings", open: true, section: "cloudAccount", cloudLink: true } as const satisfies Action;
 
 export function reducer(state: AppState, action: Action): AppState {
   if (action.type === "messageAdded" || action.type === "messagePatched" || action.type === "threadActive" || action.type === "optimisticMessageRemoved") {
@@ -2045,6 +2097,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         appSettingsOpen: open,
         appSettingsSection: action.section ?? state.appSettingsSection,
+        appSettingsCloudLink: action.cloudLink && open ? state.appSettingsCloudLink + 1 : 0,
         settingsOpen: open ? false : state.settingsOpen,
         computerOpen: open ? false : state.computerOpen,
         inspectorOpen: open ? false : state.inspectorOpen,
@@ -2259,6 +2312,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "newGroupTask":
     case "switchGroupTask":
     case "deleteGroupTask":
+    case "regenerateTaskTitle":
       return state;
     case "newTask":
       return { ...state, selectedId: action.botId, activeView: "chat" };
@@ -2392,6 +2446,7 @@ export const initialState: AppState = {
   inspectorOpen: false,
   appSettingsOpen: false,
   appSettingsSection: "general",
+  appSettingsCloudLink: 0,
   shortcutsOpen: false,
   welcomeOpen: false,
   launchOpen: false,
@@ -2845,12 +2900,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const expectedSelection = expected.modelSelection;
         if (
           approvalModeFor(persisted) !== approvalModeFor(expected) ||
+          (persisted.memoryEnabled !== false) !== (expected.memoryEnabled !== false) ||
           persisted.modelSelection.instanceId !== expectedSelection.instanceId ||
           persisted.modelSelection.model !== expectedSelection.model ||
           persisted.modelSelection.effort !== expectedSelection.effort ||
           persisted.modelSelection.variant !== expectedSelection.variant
         ) {
-          throw new Error("The approval level or model could not be saved, so this work was not started");
+          throw new Error("The approval level, memory setting, or model could not be saved, so this work was not started");
         }
       })]);
       if (threadId) await taskWrites.get(threadId)?.execution;
@@ -3528,6 +3584,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             body: JSON.stringify({ title: action.title }),
           }).catch(showError);
           break;
+        case "regenerateTaskTitle":
+          api(`/api/bots/${action.botId}/tasks/${action.threadId}/title`, { method: "POST" })
+            .then(() => action.onSettled?.(true))
+            .catch((error) => { showError(error); action.onSettled?.(false); });
+          break;
         case "deleteTask":
           api<{ bot?: BotAnnouncement }>(`/api/bots/${action.botId}/tasks/${action.threadId}`, { method: "DELETE" })
             .then((r) => r?.bot && dispatch({ type: "botPatched", bot: r.bot }))
@@ -3813,7 +3874,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (bot.id === stateRef.current.selectedId && stateRef.current.activeView === "chat" &&
               (selectedTask?.unread || (!bot.tasks && bot.unread))) {
             if (selectedTask) selectedTask.unread = false;
-            bot.unread = Boolean(bot.tasks?.some((task) => task.unread));
+            // Hidden routine runs must not put the dot back on the next frame.
+            // No task list: the bot flag is the unread signal.
+            bot.unread = botShowsUnread(bot);
             fetch(`/api/bots/${bot.id}/read`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ threadId: selected?.threadId }) }).catch(() => {});
           }
           rawDispatch({

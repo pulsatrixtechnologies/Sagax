@@ -152,7 +152,14 @@ if (existsSync(join(root, "enterprise", "server", "index.ts")) || existsSync(joi
   process.exit(1);
 }
 
-// pi-mcp-extension.ts is NOT a Sagax entry point: it is loaded by the
+// The model catalog snapshot (server/model-catalog/catalog.ts) is read from
+// disk, not inlined: 1.5 MB of JSON has no place in index.js. The bundle looks
+// for it under model-catalog/ beside itself. Its MIT notice is inside the file.
+const catalogSnapshot = join(root, "dist-server", "model-catalog", "models-dev.snapshot.json");
+mkdirSync(dirname(catalogSnapshot), { recursive: true });
+copyFileSync(join(server, "model-catalog", "models-dev.snapshot.json"), catalogSnapshot);
+
+// pi-mcp-extension.ts is NOT an Sagax entry point: it is loaded by the
 // external `pi` process (pi's own jiti), which resolves its
 // @earendil-works/pi-coding-agent and typebox imports from pi's install. Ship
 // it verbatim as .ts so the packaged app has it too — never bundle it, or

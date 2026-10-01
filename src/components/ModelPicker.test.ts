@@ -68,6 +68,22 @@ function renderEffort(instances: InstanceInfo[], effort?: EffortLevel): string {
 }
 
 describe("EffortRow", () => {
+  it("uses a compact dropdown without changing scope or conflating None with Default", () => {
+    fixture.instances = [engine(["none", "low", "high"])];
+    const row = EffortRow({ bot: bot("high"), threadId: "independent-thread", updateBotDefault: true, compact: true })!;
+    const select = Children.toArray(row.props.children).at(-1) as ReactElement<{ value: string; onChange: (event: ChangeEvent<HTMLSelectElement>) => void }>;
+    expect(select.type).toBe("select");
+    expect(select.props.value).toBe("high");
+    for (const value of ["none", ""]) {
+      select.props.onChange({ target: { value } } as ChangeEvent<HTMLSelectElement>);
+      expect(fixture.dispatch).toHaveBeenLastCalledWith({ type: "setModel", botId: "atlas", threadId: "independent-thread", updateBotDefault: true,
+        selection: { instanceId: "codex", model: "gpt-5.6", effort: value || undefined } });
+    }
+    const markup = renderToStaticMarkup(createElement(EffortRow, { bot: bot(), compact: true }));
+    expect(markup).toContain('aria-label="Reasoning effort"');
+    expect(markup).not.toContain("<button");
+    expect([...markup.matchAll(/<option[^>]*>([^<]+)</g)].map((match) => match[1])).toEqual(["Default", "None", "Low", "High"]);
+  });
   it("can apply effort to the pinned thread and bot default together", () => {
     fixture.instances = [engine(["high"])];
     const row = EffortRow({ bot: bot(), threadId: "thread-atlas", updateBotDefault: true })!;
@@ -131,6 +147,22 @@ describe("OpenCode model variants", () => {
   const selected = (variant?: string): Bot => ({ ...bot(), modelSelection: { instanceId: "opencode", model: "provider/model", ...(variant !== undefined ? { variant } : {}) } });
   beforeEach(() => { fixture.instances = [opencode()]; fixture.modelVariantSessions = {}; fixture.dispatch.mockClear(); });
   const render = (variant?: string) => renderToStaticMarkup(createElement(ModelVariantRow, { bot: selected(variant), threadId: "thread-atlas" }));
+
+  it("keeps opaque variant ids and omission distinct in the compact dropdown", () => {
+    const row = ModelVariantRow({ bot: selected("default"), threadId: "thread-atlas", compact: true })!;
+    const label = Children.toArray(row.props.children)[0] as ReactElement<{ children: ReactNode }>;
+    const select = Children.toArray(label.props.children).at(-1) as ReactElement<{ value: string; onChange: (event: ChangeEvent<HTMLSelectElement>) => void }>;
+    expect(select.props.value).toBe("2");
+    for (const [value, variant] of [["3", "deep/custom"], ["unset", undefined]]) {
+      select.props.onChange({ target: { value } } as ChangeEvent<HTMLSelectElement>);
+      expect(fixture.dispatch).toHaveBeenLastCalledWith({ type: "setModel", botId: "atlas", threadId: "thread-atlas",
+        selection: { instanceId: "opencode", model: "provider/model", ...(variant !== undefined ? { variant } : {}) } });
+    }
+    const markup = renderToStaticMarkup(createElement(ModelVariantRow, { bot: { ...selected("removed"), busy: true }, compact: true }));
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain("removed (unverified)");
+    expect(markup).toContain("Use session setting");
+  });
 
   it("offers exact advertised ids without assuming that omission means none or default", () => {
     const markup = render();
@@ -279,6 +311,33 @@ describe("ModelPicker trigger", () => {
   });
 });
 
+describe("OpenAI sign-ins in the rail", () => {
+  const codex: InstanceInfo = { ...engine(), instanceId: "codex", driverKind: "codex", displayName: "Codex" };
+  const plan: InstanceInfo = { ...engine(), instanceId: "chatgpt", driverKind: "codex", displayName: "ChatGPT plan" };
+  const apiKey: InstanceInfo = { ...engine(), instanceId: "openai", driverKind: "openai-compat", displayName: "OpenAI", access: "api" };
+
+  it("folds Codex and the ChatGPT plan into one OpenAI button, apart from the API-key OpenAI", () => {
+    const markup = renderToStaticMarkup(createElement(ModelEngineRail, {
+      instances: [codex, plan, apiKey], selectedInstance: plan, onSelect: () => {},
+    }));
+    // one folded sign-in button, pressed for either of its engines, plus the key engine
+    expect(markup.match(/aria-label="OpenAI"/g)).toHaveLength(2);
+    expect(markup).toContain('aria-label="OpenAI" aria-pressed="true"');
+    expect(markup).not.toContain('aria-label="Codex"');
+    expect(markup).not.toContain('aria-label="ChatGPT plan"');
+    // only the key engine carries the key badge
+    expect(markup.match(/data-rail-key-badge/g)).toHaveLength(1);
+  });
+
+  it("opens the remembered OpenAI sign-in", () => {
+    const onSelect = vi.fn();
+    const rail = ModelEngineRail({ instances: [codex, plan], openaiInstance: plan, onSelect });
+    const button = Children.toArray(rail.props.children).find((child) => (child as ReactElement).type === "button") as ReactElement<{ onClick: () => void }>;
+    button.props.onClick();
+    expect(onSelect).toHaveBeenLastCalledWith(plan);
+  });
+});
+
 describe("Claude provider and account selection", () => {
   const personal: InstanceInfo = { ...engine(), instanceId: "claude-personal", driverKind: "claudeAgent", displayName: "Personal" };
   const work: InstanceInfo = { ...engine(), instanceId: "claude-work", driverKind: "claudeAgent", displayName: "Work", access: "custom" };
@@ -290,7 +349,7 @@ describe("Claude provider and account selection", () => {
       }));
       expect(markup.match(/aria-label="Claude"/g)).toHaveLength(1);
       expect(markup).toContain('aria-label="Claude" aria-pressed="true"');
-      expect(markup).toContain('aria-label="Codex" aria-pressed="false"');
+      expect(markup).toContain('aria-label="OpenAI" aria-pressed="false"');
       expect(markup).not.toContain('aria-label="Personal"');
       expect(markup).not.toContain('aria-label="Work"');
       expect(markup).toContain("w-14");
@@ -336,7 +395,7 @@ describe("organisation policy", () => {
   it("shows an engine the organisation disallows as managed and dimmed, not hidden", () => {
     const blocked: InstanceInfo = { ...engine(), policy: { organizationName: "Fixture Agency", reason: "Fixture Agency allows only company models on this computer. Choose a Company model for this bot." } };
     const markup = renderToStaticMarkup(createElement(ModelEngineRail, { instances: [blocked], onSelect: () => {} }));
-    expect(markup).toContain('aria-label="Codex · Managed by Fixture Agency"');
+    expect(markup).toContain('aria-label="OpenAI · Managed by Fixture Agency"');
     expect(markup).toContain("opacity-40");
     const allowed = renderToStaticMarkup(createElement(ModelEngineRail, { instances: [engine()], onSelect: () => {} }));
     expect(allowed).not.toContain("Managed by");

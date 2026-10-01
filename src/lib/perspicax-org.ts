@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { personAvatarSrc } from "@/lib/profile-management";
 
 export interface PerspicaxOrg {
   org: { name: string; identity: { kind: "perspicax"; issuer: string; serverId?: string } };
@@ -21,6 +22,45 @@ export interface OrgDirectoryPerson {
   email?: string;
   role: "admin" | "member";
   disabled: boolean;
+  /** Their Perspicax avatar as this server serves it, when they have one. */
+  avatarUrl?: string;
+}
+
+let peoplePending: Promise<Map<string, OrgDirectoryPerson>> | null = null;
+
+/** The organization's people by principal id, asked once per page load (on
+ * a Perspicax server only; empty elsewhere or when the answer fails). */
+export function loadOrgPeople(force = false): Promise<Map<string, OrgDirectoryPerson>> {
+  if (force) peoplePending = null;
+  peoplePending ??= loadPerspicaxOrg()
+    .then((org) => (org ? api<{ people?: OrgDirectoryPerson[] }>("/api/org/directory") : { people: [] }))
+    .then((body) => new Map((body.people ?? []).map((person) => [person.principalId.toLowerCase(), person])), () => new Map());
+  return peoplePending;
+}
+
+/** loadOrgPeople as a hook: empty until it answers. */
+export function useOrgPeople(): Map<string, OrgDirectoryPerson> {
+  const [people, setPeople] = useState<Map<string, OrgDirectoryPerson>>(() => new Map());
+  useEffect(() => {
+    let alive = true;
+    void loadOrgPeople().then((value) => { if (alive) setPeople(value); });
+    return () => { alive = false; };
+  }, []);
+  return people;
+}
+
+/** A room's person as the Gens list shows them: their display name and
+ * avatar from the directory, else the id the room stores. */
+export function channelHumanRow(id: string, people: ReadonlyMap<string, OrgDirectoryPerson>): { id: string; label: string; detail?: string; avatarUrl?: string } {
+  const person = people.get(id.trim().toLowerCase());
+  if (!person) return { id, label: id };
+  const avatarUrl = personAvatarSrc(person.avatarUrl);
+  return {
+    id,
+    label: person.name || person.login || id,
+    ...(person.email && person.email !== person.name ? { detail: person.email } : {}),
+    ...(avatarUrl ? { avatarUrl } : {}),
+  };
 }
 
 export function isPerspicaxOrg(body: unknown): body is PerspicaxOrg {

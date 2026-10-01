@@ -15,6 +15,7 @@ import {
   isLoopbackHost,
   isProxied,
   isSameOrigin,
+  provesSameOrigin,
   parseCookies,
   requestOrigin,
   requestSource,
@@ -99,7 +100,7 @@ describe("scopes", () => {
   it("is default deny: chat, approvals, rooms, attachments, routines and own session are client; everything else admin", () => {
     for (const [method, path] of [
       ["POST", "/api/bots/x/messages"], ["POST", "/api/bots/x/respond"], ["POST", "/api/threads/t/respond"],
-      ["POST", "/api/bots/x/compact"],
+      ["POST", "/api/bots/x/compact"], ["POST", "/api/bots/x/tasks/t/title"],
       ["PATCH", "/api/bots/x/cards/m"], ["POST", "/api/groups/g/messages"], ["PATCH", "/api/groups/g"],
       ["PATCH", "/api/bots/x"], ["PATCH", "/api/bots/x/profile"], ["POST", "/api/attachments"],
       ["GET", "/api/attachments/a.png"], ["POST", "/api/routines"], ["POST", "/api/routines/r/run"],
@@ -299,6 +300,11 @@ describe("resolveRequestAuth", () => {
     );
     expect(connectorRefresh.auth).toBeNull();
     expect(connectorRefresh.status).toBe(403);
+    // The remote viewer route hands out a desktop password and its RFB
+    // socket; native owners use the direct viewer instead.
+    for (const path of ["/api/desktop-viewer/vps/bot-1", "/api/desktop-viewer/local/shared/websockify"]) {
+      expect(resolveRequestAuth(request({ host: "127.0.0.1:8799" }, "GET"), options(path)).status).toBe(403);
+    }
     expect(resolveRequestAuth(
       request({ host: "127.0.0.1:8799" }, "POST"),
       options("/api/internal/ask-bot"),
@@ -335,6 +341,33 @@ describe("resolveRequestAuth", () => {
     expect(csrf.auth).toBeNull();
     expect(csrf.status).toBe(403);
     expect(csrf.error).toBe("forbidden: cross-origin request");
+  });
+
+  it("lets a browser sign-in's session make changes only when the browser says the request is its own page's", () => {
+    const { credential } = sessions.openPairing({ browser: true, owner: "ada@example.test" });
+    const signedIn = sessions.exchange({ code: credential, label: "Chrome on Mac", source: "1.2.3.4", browser: true });
+    if (!signedIn.ok) throw new Error(signedIn.error);
+    const cookie = `${cookieName}=${signedIn.token}`;
+    const cloud = { host: "omb-u-0123456789ab.fly.dev", "x-forwarded-proto": "https", cookie };
+    // Reading needs nothing more.
+    expect(resolve(cloud).auth?.kind).toBe("session");
+    // A change: the browser's Origin, or its Sec-Fetch-Site, must say same-origin.
+    expect(resolve({ ...cloud, origin: "https://omb-u-0123456789ab.fly.dev" }, "/api/bots", "POST").auth?.kind).toBe("session");
+    expect(resolve({ ...cloud, "sec-fetch-site": "same-origin" }, "/api/bots", "DELETE").auth?.kind).toBe("session");
+    for (const [headers, method] of [[{}, "POST"], [{}, "PUT"], [{}, "PATCH"], [{}, "DELETE"], [{ "sec-fetch-site": "none" }, "POST"], [{ "sec-fetch-site": "cross-site" }, "POST"],
+      [{ "sec-fetch-site": "same-site" }, "POST"], [{ origin: "https://evil.example", "sec-fetch-site": "same-origin" }, "POST"]] as const) {
+      const refused = resolve({ ...cloud, ...headers }, "/api/bots", method);
+      expect(refused.auth, `${method} ${JSON.stringify(headers)}`).toBeNull();
+      expect(refused.status).toBe(403);
+    }
+    expect(resolve(cloud, "/api/bots", "POST").error).toBe("forbidden: this browser's session makes changes only from its own page");
+    // Any other session's cookie keeps the old rule: a missing Origin passes.
+    const paired = pairedToken();
+    expect(resolve({ host: "omb-u-0123456789ab.fly.dev", "x-forwarded-proto": "https", cookie: `${cookieName}=${paired}` }, "/api/bots", "POST").auth?.kind).toBe("session");
+    expect(provesSameOrigin(request({ host: "a.example", origin: "http://a.example" }))).toBe(true);
+    expect(provesSameOrigin(request({ host: "a.example" }))).toBe(false);
+    // A foreign Origin is never outvoted by Sec-Fetch-Site.
+    expect(provesSameOrigin(request({ host: "a.example", origin: "https://evil.example", "sec-fetch-site": "same-origin" }))).toBe(false);
   });
 
   it("accepts a stream ticket on the event stream only, once", () => {
@@ -551,6 +584,15 @@ describe("loopback trust: owner on one person's machine, service on a shared wor
     const desktop = pick({ OMB_LOOPBACK_TRUST: "service" }, { desktopManaged: true, hostedWorkspace: true });
     expect(desktop.trust).toBe("owner");
     expect(desktop.warning).toMatch(/ignored in the desktop app/);
+  });
+
+  it("is always service on an OMB Cloud home, where a local request is only ever a process on the machine", () => {
+    const pick = (env: NodeJS.ProcessEnv) => resolveLoopbackTrust({ env, desktopManaged: false, hostedWorkspace: false, cloudHome: true });
+    expect(pick({})).toEqual({ trust: "service", reason: "OMB Cloud home" });
+    expect(pick({ OMB_LOOPBACK_TRUST: "service" })).toEqual({ trust: "service", reason: "OMB Cloud home" });
+    const forced = pick({ OMB_LOOPBACK_TRUST: "owner" });
+    expect(forced.trust).toBe("service");
+    expect(forced.warning).toMatch(/ignored on an OMB Cloud home/);
   });
 
   it("lets only the CLI that started the server, holding its secret, mint a pairing code under service trust", () => {

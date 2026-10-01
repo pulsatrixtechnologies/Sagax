@@ -7,6 +7,17 @@
 @import "@fontsource-variable/geist/wght.css";
 @import "@fontsource-variable/geist/wght-italic.css";
 
+/* Phones and tablets have no hover, and Tailwind only applies `hover:` and
+   `group-hover:` under `@media (hover: hover)`. A control revealed on hover
+   (`opacity-0 group-hover:opacity-100`) is therefore invisible there. Pair
+   every such reveal with `touch:` so it stays visible on touch screens; mouse
+   users see no change. src/components/touch-actions.test.ts enforces it. */
+@custom-variant touch {
+  @media (hover: none), (pointer: coarse) {
+    @slot;
+  }
+}
+
 /* Inline mentions keep the surrounding font metrics, including in the
    textarea mirror. No padding/border/font-weight changes that shift the caret. */
 .mention-highlight {
@@ -109,6 +120,7 @@
   --animate-panel-in: panel-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-workspace-in: workspace-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-pop-in: pop-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-pop-out: pop-out 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   --animate-caret: caret-blink 1s step-end infinite;
   --animate-msg-in: msg-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-shimmer: shimmer 2s linear infinite;
@@ -158,6 +170,13 @@
   --color-sidebar-hairline: #363636;      /* #333333 measured 1.49:1 on the sidebar; nudged to clear 1.5:1 */
   --color-ink: #fcfcfc;
   --color-ink-secondary: #fcfcfc99;
+  /* quiet text: timestamps, hints, placeholders, calendar hours. It used to
+     be `text-ink-secondary/70`, which fades an ink already tuned close to
+     AA and landed at 2.2–4:1. Each skin sets this to the quietest ink that
+     still clears 4.5:1 on every text surface, raised-hover included; on the
+     light skins that leaves little room below the secondary ink, so there
+     size carries the hierarchy. Measured by pnpm check:contrast. */
+  --color-ink-tertiary: #fcfcfc90;
   --color-accent: #d6d6d6;
   --color-accent-border: #a3a3a3;
   /* the ring a keyboard user follows; sits on the accent so focus reads as
@@ -179,7 +198,7 @@
    `inline` keeps them resolving where they are used (under [data-skin])
    instead of once on :root. On the default skin they land on Grok Bot's
    dark values: elevated #181818, hairline-weak #fcfcfc1a, border #fcfcfc26,
-   border-strong #fcfcfc4d, ink-tertiary #fcfcfc8f. Depth comes from these
+   border-strong #fcfcfc4d. Quiet text (ink-tertiary) is set per skin. Depth comes from these
    surfaces and hairlines, not from drop shadows. */
 @theme inline {
   --color-elevated: color-mix(in srgb, var(--color-ink) 3%, var(--color-panel));
@@ -189,7 +208,6 @@
   --color-hairline-weak: color-mix(in srgb, var(--color-ink) 10%, transparent);
   --color-border: color-mix(in srgb, var(--color-ink) 15%, transparent);
   --color-border-strong: color-mix(in srgb, var(--color-ink) 30%, transparent);
-  --color-ink-tertiary: color-mix(in srgb, var(--color-ink) 56%, transparent);
 }
 
 /* The text color that reads on the accent fill. It lives on :root (each skin
@@ -264,6 +282,7 @@
 
   --color-ink: #eef2fb;
   --color-ink-secondary: #9aa6c2;   /* 5.62:1 on raised-hover, the tightest surface */
+  --color-ink-tertiary: #8d99b5;   /* quiet text; clears 4.5:1 on raised-hover */
 
   --color-accent: #3c76f4;
   --color-accent-border: #4f86f7;
@@ -349,11 +368,12 @@
 
   --color-ink: #0b1526;
   --color-ink-secondary: #545e6e;   /* v3's #5a6577 darkened one notch for 4.5:1 on inset */
+  --color-ink-tertiary: #545e6e;   /* = ink-secondary: the light ground leaves no room below it */
 
   --color-accent: #2f62dd;
   --color-accent-border: #3c76f4;
   --color-accent-text: #2652bd;     /* darkened from accent for 4.5:1 on the app ground */
-  --color-focus: #3c76f4;
+  --color-focus: #2652bd;          /* 3:1 on control too, where a focused field paints its border */
   --color-accent-ink: #f6f8fc;
   --color-bubble-user: #dceafe;     /* v3's --bg-query, the softest of its blue badges */
   --color-bubble-user-ink: #0b1526;   /* = ink: unchanged */
@@ -410,6 +430,7 @@
   --sidebar-mark-on-light: none;
   --color-ink: #fcfcfc;
   --color-ink-secondary: #fcfcfc99;
+  --color-ink-tertiary: #fcfcfc90;
   --color-accent: #d6d6d6;
   --color-accent-border: #a3a3a3;
   --color-accent-text: #e8e8e8;
@@ -467,6 +488,7 @@
 
   --color-ink: #1a1a18;           /* 17.4:1 on white */
   --color-ink-secondary: #6b6559; /* #8b8578 was 3.67:1 → 5.78:1 */
+  --color-ink-tertiary: #6d685c;
 
   /* Two accent tones: the fill carries white, the text stands on white. */
   --color-accent: #a05f25;        /* #b06a2c darkened → 5.05:1 */
@@ -534,6 +556,7 @@
 
   --color-ink: #f4efe4;           /* warm off-white, never pure #fff */
   --color-ink-secondary: #b0a696; /* 6.7:1 on raised, 5.9:1 on hover */
+  --color-ink-tertiary: #9c9384;
 
   /* Brass. Bright fill, dark lettering — the inversion described above. */
   --color-accent: #d99a3e;
@@ -608,6 +631,7 @@
   --color-ink: #14201f;           /* dark petrol; a neutral black would read
                                      as a foreign object on a tinted ground */
   --color-ink-secondary: #4d5c5b; /* 7.0:1 on white, 5.8:1 on the ground */
+  --color-ink-tertiary: #566564;
 
   --color-accent: #11736d;        /* deep teal, carries white at 5.68:1 */
   --color-accent-border: #14807a;
@@ -661,6 +685,7 @@
 
   --color-ink: #f2f4f7;
   --color-ink-secondary: #b3b8c2;
+  --color-ink-tertiary: #9fa4ad;
 
   --color-accent: #d0d4da;
   --color-accent-border: #9aa3ad;
@@ -714,6 +739,7 @@
 
   --color-ink: #1d2229;
   --color-ink-secondary: #59616c;
+  --color-ink-tertiary: #5f6671;
 
   --color-accent: #2a2a2a;
   --color-accent-border: #3a3a3a;
@@ -766,6 +792,7 @@
 
   --color-ink: #f4eff6;
   --color-ink-secondary: #b9afbd;
+  --color-ink-tertiary: #a199a5;
 
   --color-accent: #765683;
   --color-accent-border: #9670a3;
@@ -827,6 +854,7 @@
 
   --color-ink: #0d0d0d;
   --color-ink-secondary: #575757;
+  --color-ink-tertiary: #5c5c5c;
 
   /* The upstream blue is #1084fe, which carries white at 3.1:1 — fine for the
      unread dot it is mostly used for, not for a filled button's label. The
@@ -891,6 +919,7 @@
 
   --color-ink: #000000;
   --color-ink-secondary: #3c3c3c;
+  --color-ink-tertiary: #3c3c3c;   /* = ink-secondary, as on the other light skins */
 
   --color-accent: #000080;        /* the era's selection navy */
   --color-accent-border: #000080;
@@ -1068,6 +1097,7 @@
   background: var(--color-sidebar);
   --color-ink: var(--color-sidebar-ink);
   --color-ink-secondary: var(--color-sidebar-ink-secondary);
+  --color-ink-tertiary: var(--color-sidebar-ink-secondary);
   --color-panel: var(--color-sidebar);
   --color-hairline: var(--color-sidebar-hairline);
   --color-raised: var(--color-sidebar-hover);
@@ -1219,11 +1249,25 @@ body {
 /* Text fields already sit in a bordered card (the composer pill especially).
    Chromium treats a pointer click as :focus-visible on inputs, so the
    global ring above becomes a sharp blue rectangle inside the rounded
-   chrome. Fields keep their own focus:border-*; buttons still use the
-   :focus-visible ring. */
-:is(input, textarea, select):focus,
-:is(input, textarea, select):focus-visible {
+   chrome. Buttons still use the :focus-visible ring. Checkboxes, radios,
+   sliders, colour wells and file pickers are not text fields: they have no
+   border to repaint, so they keep the ring, or a keyboard user tabbing onto
+   one sees nothing. */
+:is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), textarea, select):focus,
+:is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), textarea, select):focus-visible {
   outline: none;
+}
+
+/* In its place a field shows focus on its own border, in the ring's colour.
+   Unlayered, so it wins over the resting `border-hairline/40` every field
+   carries as well as over a faint per-file `focus:border-*`. --color-focus
+   clears 3:1 on every field surface (pnpm check:contrast). A borderless
+   field, such as the composer or a find bar, has no border to paint and is
+   left as it was; its rounded wrapper takes `focus-within:border-focus`.
+   A field reporting an error (aria-invalid) keeps its danger border, so the
+   red does not vanish while the user is fixing it. */
+:is(input, textarea, select):focus-visible:not([aria-invalid="true"]) {
+  border-color: var(--color-focus);
 }
 
 ::selection {
@@ -1262,6 +1306,10 @@ body {
 @keyframes pop-in {
   from { transform: scale(0.96) translateY(6px); opacity: 0; }
   to { transform: scale(1) translateY(0); opacity: 1; }
+}
+@keyframes pop-out {
+  from { transform: scale(1) translateY(0); opacity: 1; }
+  to { transform: scale(0.96) translateY(6px); opacity: 0; }
 }
 /* streaming caret: a true typing blink (step, not fade) */
 @keyframes caret-blink {
@@ -1375,7 +1423,7 @@ body {
   color: transparent;
 }
 @media (prefers-reduced-motion: reduce) {
-  .animate-caret, .animate-msg-in, .animate-shimmer { animation: none; }
+  .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out { animation: none; }
   .animate-status-pulse { animation: none; opacity: 0.6; }
   .thinking-shimmer { background: none; color: var(--color-ink-secondary); }
   .turn-mascot-in, .turn-mascot-out, .turn-answer { animation: none; }
@@ -1389,6 +1437,8 @@ body {
    its view transitions. Mirrors the media block above for its own classes. */
 :root[data-reduced-motion="true"] .animate-rise,
 :root[data-reduced-motion="true"] .animate-spot-in,
+:root[data-reduced-motion="true"] .animate-pop-in,
+:root[data-reduced-motion="true"] .animate-pop-out,
 :root[data-reduced-motion="true"] .welcome-card * {
   animation: none !important;
   transition: none !important;
@@ -1911,6 +1961,7 @@ body {
   .bg-bubble-user {
     --color-ink: #fcfcfc;
     --color-ink-secondary: #c4c4c4;
+    --color-ink-tertiary: #aaaaaa;
     --color-panel: #111111;
     --color-inset: #191919;
     --color-raised: #2f2f2f;
@@ -2085,4 +2136,8 @@ button:disabled.bg-danger {
   [data-owl-fx] * {
     animation: none !important;
   }
+}
+
+::highlight(omb-citation-source) {
+  background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }

@@ -23,7 +23,7 @@ function initialsFor(label: string): string {
 }
 
 export function ChannelMembers(props: {
-  humans: { id: string; label?: string; detail?: string; removable?: boolean }[];
+  humans: { id: string; label?: string; detail?: string; avatarUrl?: string; removable?: boolean }[];
   bots: { id: string; name: string; title?: string; color?: string; avatarUrl?: string | null; mascotBody?: string | null }[];
   canAddHuman: boolean;
   canAddBot: boolean;
@@ -44,7 +44,11 @@ export function ChannelMembers(props: {
             const label = human.label || human.id;
             return (
               <li key={human.id} className="flex items-center gap-3 border-b border-hairline/30 px-3 py-2 last:border-b-0">
-                <InitialsAvatar initials={initialsFor(label)} size={32} />
+                {human.avatarUrl ? (
+                  <img src={human.avatarUrl} alt="" width={32} height={32} className="size-8 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <InitialsAvatar initials={initialsFor(label)} size={32} />
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[14px] font-medium text-ink">{label}</div>
                   {human.detail && <div className="truncate text-[12px] text-ink-secondary">{human.detail}</div>}

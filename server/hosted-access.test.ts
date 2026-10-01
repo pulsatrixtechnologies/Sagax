@@ -8,12 +8,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { freePortBlock } from "./testing/ports.ts";
 import { SessionRegistry } from "./sessions.ts";
 import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA } from "./hosted-contract.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const enterpriseAdapterPresent = existsSync(join(ROOT, "enterprise/server/workspace-access.ts"));
-const PORT = 35000 + Math.floor(Math.random() * 5000);
+let PORT: number;
 const HOST = "acme.example.test";
 const EMAIL = "member@example.test";
 const INSTANCES = { fixture: { driver: "hosted-access-test-shadow" }, claude: {
@@ -92,6 +93,7 @@ async function restart(env: NodeJS.ProcessEnv = {}) {
 
 beforeAll(async () => {
   if (!enterpriseAdapterPresent) return;
+  PORT = await freePortBlock([0, 1], 35_000, 5_000);
   home = mkdtempSync(join(tmpdir(), "omb-hosted-server-"));
   stateFile = join(home, "portal-fixture.json"); state();
   const data = join(home, ".openmausbot");

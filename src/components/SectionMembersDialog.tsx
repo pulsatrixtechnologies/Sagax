@@ -100,7 +100,7 @@ export function SectionMembersDialog({ section, onClose, onSaved }: { section: O
           placeholder={t("botSettings.sharing.searchPeopleTeams")}
           aria-label={t("botSettings.sharing.searchPeopleTeams")}
           maxLength={200}
-          className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
+          className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] placeholder:text-ink-secondary focus:outline-none"
         />
         {candidates.length > 0 && (
           <ul className="flex flex-col divide-y divide-hairline/40">
