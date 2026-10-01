@@ -210,13 +210,23 @@ export function wireUsageRow(row: OrgUsageAggregate, person: (principalId: strin
   };
 }
 
+/** A session row (written before every Sagax change named the person by
+ * principal id): the person when its user id is a known principal, else the
+ * device label. Never the email: the console shows none in org mode. */
+function sessionPerson(actor: { userId?: string; label: string }, person: (principalId: string) => AdminPerson): AdminPerson {
+  if (actor.userId) {
+    const known = person(actor.userId);
+    if (known.name !== actor.userId) return known;
+  }
+  return { principalId: "", sub: null, name: actor.label.includes("@") ? "Signed-in user" : actor.label };
+}
+
 /** One audit row as the console reads it. */
 export function wireAuditRow(row: IdentifiedAdminAction, person: (principalId: string) => AdminPerson) {
   const actor = row.actor.kind === "person"
     ? { kind: "person" as const, ...person(row.actor.principalId), via: row.actor.via }
     : row.actor.kind === "session"
-      // A session row from before slice 7 names a person by device label.
-      ? { kind: "person" as const, principalId: row.actor.userId ?? "", sub: null, name: row.actor.email ?? row.actor.label, via: "sagax" as const }
+      ? { kind: "person" as const, ...sessionPerson(row.actor, person), via: "sagax" as const }
       : row.actor.kind === "loopback"
         ? { kind: "local" as const }
         : { kind: row.actor.kind };

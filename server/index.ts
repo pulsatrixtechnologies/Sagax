@@ -1244,7 +1244,9 @@ function adminActivityRecording(): boolean {
 function adminActorFor(auth: RequestAuth, req: IncomingMessage): AdminActor {
   if (auth.kind === "loopback" && auth.trust !== "service" &&
     (req.headers["x-openmausbot-cli"] === "1" || req.headers["x-openmausbot-cli-owner"] !== undefined)) return { kind: "cli" };
-  return decisionActorFor(auth);
+  // A signed-in person is named by principal id, never by email (org mode
+  // shows no email; the audit resolves the name when it is read).
+  return orgAuditActor(auth);
 }
 
 /** The admin whose request is running, for config saves made while it runs.
@@ -8092,7 +8094,7 @@ function routineAudit(action: string, principalId: string | undefined, extra: { 
       ? { kind: "routine", id: extra.routine.id, name: extra.routine.name }
       : { kind: "person", ...(principalId ? { id: principalId } : {}), ...(person?.name ? { name: person.name } : {}) },
     ...(extra.reason ? { after: { reason: extra.reason } } : {}),
-    actor: extra.auth ? decisionActorFor(extra.auth) : { kind: "worker" },
+    actor: extra.auth ? orgAuditActor(extra.auth) : { kind: "worker" },
   });
 }
 /** Slice 7: who made an organization change: the person of a session by

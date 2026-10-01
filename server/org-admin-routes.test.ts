@@ -13,6 +13,7 @@ import {
   createOrgAdminRoutes,
   managedReach,
   sortAdminBots,
+  wireAuditRow,
   type AdminApproval,
   type AdminBot,
   type AdminBotReach,
@@ -227,6 +228,18 @@ describe("org admin API: answers", () => {
 });
 
 describe("org admin API: pure pieces", () => {
+  it("an audit actor never carries an email: a session row names the principal or the device (S7-8)", () => {
+    const person = (id: string) => (id === CAROL ? { principalId: CAROL, sub: "S3", name: "Carol" } : { principalId: id, sub: null, name: id });
+    const row = (actor: Record<string, unknown>) => ({ id: "2026-10-1", at: "2026-10-01T00:00:00.000Z", category: "bot", action: "bot.update", actor }) as unknown as Parameters<typeof wireAuditRow>[0];
+    const byPrincipal = wireAuditRow(row({ kind: "session", sessionId: "s", label: "Chrome", email: "carol@example.test", userId: CAROL }), person);
+    expect(byPrincipal.actor).toEqual({ kind: "person", principalId: CAROL, sub: "S3", name: "Carol", via: "sagax" });
+    const byLabel = wireAuditRow(row({ kind: "session", sessionId: "s", label: "Chrome", email: "dave@example.test", userId: "google:42" }), person);
+    expect(byLabel.actor).toEqual({ kind: "person", principalId: "", sub: null, name: "Chrome", via: "sagax" });
+    const emailLabel = wireAuditRow(row({ kind: "session", sessionId: "s", label: "dave@example.test", email: "dave@example.test" }), person);
+    expect(JSON.stringify([byPrincipal, byLabel, emailLabel])).not.toContain("@example.test");
+    expect(wireAuditRow(row({ kind: "person", principalId: CAROL, via: "sagax" }), person).actor).toMatchObject({ name: "Carol", via: "sagax" });
+  });
+
   it("the replay cache keeps ids until exp plus a minute, at most its cap", () => {
     const cache = new AssertionReplayCache(3);
     expect(cache.admit("a", 1_000, 0)).toBe(true);
