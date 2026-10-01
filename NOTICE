@@ -53,3 +53,9 @@ The browser desktop viewer bundles the unmodified noVNC 1.7.0 library,
 Copyright the noVNC authors, under MPL-2.0 and its accompanying licenses.
 Attribution, license terms and the corresponding source location are in
 public/novnc-NOTICE.txt (novnc-NOTICE.txt in the built UI).
+
+The 3D Sagax owl (src/components/floating-bots/owl3d/owl.glb) is original
+work of this project: modeled, rigged and animated from scratch by
+tools/owl3d/build_owl.py, after the project's own 2D owl art. Blender is only
+the tool that runs that script; no third-party model, texture or animation
+is included.
