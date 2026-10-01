@@ -152,6 +152,43 @@ export const INTERIM_SIGNIN_REFUSAL = {
   code: "identity_perspicax",
 } as const;
 
+/** Who owns a signed-in person's name and email on this server. On an
+ * organization server it is Perspicax: the person's name and email come from
+ * the id_token and the directory, are refreshed on every sign-in and token
+ * refresh, and are changed in the issuer's console (`/console/me`), never
+ * here. A solo server owns its profile (null). */
+export interface ProfileManagement {
+  profileManagedBy: "perspicax";
+  /** The issuer console's own profile page. */
+  profileManageUrl: string;
+}
+
+export function profileManagement(config: IdentityConfig): ProfileManagement | null {
+  if (config.kind !== "perspicax") return null;
+  let origin: string;
+  try {
+    origin = new URL(config.issuer).origin;
+  } catch {
+    return null;
+  }
+  return { profileManagedBy: "perspicax", profileManageUrl: `${origin}/console/me` };
+}
+
+/** A config patch that writes a profile's name or email: refused for a
+ * person whose profile Perspicax manages (403 identity_perspicax). The rest
+ * of the profile (about me, photo) is Sagax's own and stays writable. */
+export function writesManagedProfile(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const profile = (body as { profile?: unknown }).profile;
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) return false;
+  return Object.hasOwn(profile, "name") || Object.hasOwn(profile, "email");
+}
+
+export const MANAGED_PROFILE_REFUSAL = {
+  error: "Your name and email come from your organization (Pulsatrix Perspicax). Change them in Perspicax.",
+  code: "identity_perspicax",
+} as const;
+
 /** Extra fields for GET /api/auth/session on a session from this sign-in. */
 export function oidcSessionFields(session: SessionRecord, principal: Principal | null, teamName?: (id: string) => string | undefined): Record<string, unknown> {
   if (!session.idp) return {};
@@ -202,7 +239,7 @@ export interface OidcLoginDeps {
   rp?: OidcRelyingParty;
   /** The Sagax session cookie name (server/request-auth.ts). */
   sessionCookie: string;
-  forSubject: (input: { iss: string; sub: string; claims: { email?: string; name?: string; login?: string }; orgRole: "admin" | "member"; teams?: { id: string; name: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }) => Principal;
+  forSubject: (input: { iss: string; sub: string; claims: { email?: string; name?: string; login?: string; avatar?: string }; orgRole: "admin" | "member"; teams?: { id: string; name: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }) => Principal;
   issueSession: (input: { label: string; scopes: Scope[]; email?: string; principalId: string; idp: NonNullable<SessionRecord["idp"]> }) => { token: string; session: PublicSession };
   /** Where each sign-in's refresh token is kept. */
   grants: OidcGrantKeeper;
@@ -375,7 +412,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     deps.forSubject({
       iss: identity.iss,
       sub: identity.sub,
-      claims: { email: identity.email, name: identity.name, login: identity.preferredUsername },
+      claims: { email: identity.email, name: identity.name, login: identity.preferredUsername, ...(identity.avatar ? { avatar: identity.avatar } : {}) },
       orgRole,
       ...(identity.teams ? { teams: identity.teams } : {}),
       ...(identity.role === "admin" || identity.role === "manager" || identity.role === "employee" ? { perspicaxRole: identity.role } : {}),
@@ -486,7 +523,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     const principal = deps.forSubject({
       iss: identity.iss,
       sub: identity.sub,
-      claims: { email: identity.email, name: identity.name, login: identity.preferredUsername },
+      claims: { email: identity.email, name: identity.name, login: identity.preferredUsername, ...(identity.avatar ? { avatar: identity.avatar } : {}) },
       orgRole,
       ...(identity.teams ? { teams: identity.teams } : {}),
       ...(identity.role === "admin" || identity.role === "manager" || identity.role === "employee" ? { perspicaxRole: identity.role } : {}),

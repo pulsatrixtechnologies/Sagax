@@ -381,6 +381,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // share with, from the Perspicax directory. Names, logins and addresses
   // only. PATCH /api/org/settings stays admin.
   { methods: ["GET"], path: /^\/api\/org\/directory$/, feature: "orgDirectory" },
+  // a person's Perspicax avatar (the "You" row, room members, pickers)
+  { methods: ["GET"], path: /^\/api\/people\/[\w-]{1,80}\/avatar$/, feature: "orgDirectory" },
   // Organization server, slice 4: a bot's grants (user or team, with a
   // level). server/bot-grants.ts decides who may read and change them (the
   // owner, manage holders, organization admins, team managers).

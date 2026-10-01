@@ -370,7 +370,7 @@ export class RoutineConsents {
     this.principals.forSubject({
       iss: grant.iss,
       sub: grant.sub,
-      claims: { email: identity.email, name: identity.name, login: identity.preferredUsername },
+      claims: { email: identity.email, name: identity.name, login: identity.preferredUsername, ...(identity.avatar ? { avatar: identity.avatar } : {}) },
       orgRole,
       ...(identity.teams ? { teams: identity.teams.map(({ id, manager }) => ({ id, manager })) } : {}),
       ...(perspicaxRoleOf(identity.role) ? { perspicaxRole: perspicaxRoleOf(identity.role) } : {}),
