@@ -33,9 +33,11 @@ services:
       OMB_SIGNIN_EMAILS: ${OMB_SIGNIN_EMAILS:-}
       OMB_SIGNIN_MEMBER_EMAILS: ${OMB_SIGNIN_MEMBER_EMAILS:-}
       # Mail for sign-in codes and invitations (docs/self-hosting.md, "Sending
-      # mail from your server"): smtp, sendgrid or twilio. Empty is ignored.
+      # mail from your server"): smtp, sendgrid or twilio. Empty is ignored;
+      # Settings > Email overrides any of these.
       OMB_MAIL_PROVIDER: ${OMB_MAIL_PROVIDER:-}
       OMB_MAIL_FROM: ${OMB_MAIL_FROM:-}
+      OMB_MAIL_FROM_NAME: ${OMB_MAIL_FROM_NAME:-}
       OMB_SMTP_HOST: ${OMB_SMTP_HOST:-}
       OMB_SMTP_PORT: ${OMB_SMTP_PORT:-}
       OMB_SMTP_SECURE: ${OMB_SMTP_SECURE:-}

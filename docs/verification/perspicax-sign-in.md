@@ -588,8 +588,8 @@ node --test electron/org-join.node-test.mjs
   `GET /api/org` settings and `PATCH /api/org/settings { interimAttachDays }`.
 - Email stays solo (decision: "Garder le courriel en solo"): a solo server
   keeps `POST /api/auth/email/start|verify` for its sign-in list, the mailer
-  (SMTP, SendGrid, Twilio, `OMB_MAIL_*` over `config.json`, `*_FILE`
-  secrets), Settings > People and its invitations (`/api/org/invites*`, the
+  (SMTP, SendGrid, Twilio, Settings > Email saved in `config.json` over the
+  `OMB_MAIL_*` defaults, `*_FILE` secrets), Settings > People and its invitations (`/api/org/invites*`, the
   `/join` page), issued in the server's own name. Solo `POST`/`PATCH
   /api/org` answer 410 `interim_org_removed`, `GET /api/org` 404
   `no_organization`; an old `config.json` `org` key is ignored. An
