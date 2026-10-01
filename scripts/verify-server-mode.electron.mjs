@@ -252,6 +252,25 @@ app.whenReady().then(async () => {
     check(`the floating window draws the ${look.character}${look.shape ? ` (${look.shape})` : ""}`, Boolean(seen) && drawn);
   }
 
+  // 9. The composer's model chip opens the model picker on the server.
+  await until("the composer model chip", async () => win.webContents.executeJavaScript(`Boolean(document.querySelector('[data-tour=model]'))`), 15_000).catch(() => null);
+  await win.webContents.executeJavaScript(`document.querySelector('[data-tour=model]')?.click(); true`);
+  await wait(800);
+  const picker = await win.webContents.executeJavaScript(`(() => {
+    const panel = document.querySelector('[data-model-picker-content]');
+    if (!panel) return { found: false };
+    const rect = panel.getBoundingClientRect();
+    return { found: true, width: Math.round(rect.width), height: Math.round(rect.height), top: Math.round(rect.top), bottom: Math.round(rect.bottom), innerHeight, modal: panel.getAttribute('aria-modal'), text: panel.innerText.slice(0, 400) };
+  })()`);
+  check("the composer's model chip opens a visible model picker", picker.found && picker.height > 200 && picker.top >= 0 && picker.bottom <= picker.innerHeight, JSON.stringify(picker));
+  if (process.env.VERIFY_SHOT) {
+    const { writeFileSync } = await import("node:fs");
+    win.show();
+    await wait(400);
+    writeFileSync(process.env.VERIFY_SHOT, (await win.webContents.capturePage()).toPNG());
+    log(`screenshot ${process.env.VERIFY_SHOT}`);
+  }
+
   const ok = checks.every(Boolean);
   console.log(`[verify] ${ok ? "PASS" : "FAIL"} (${checks.filter(Boolean).length}/${checks.length})`);
   floats.closeAll();
