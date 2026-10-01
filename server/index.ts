@@ -597,6 +597,7 @@ import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createOrgExportRoute } from "./org-export.ts";
+import { createOrgImportRoute } from "./org-import-routes.ts";
 import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
@@ -1292,7 +1293,7 @@ function adminAuditPlan(method: string, path: string): AuditPlan | null {
   if (path.startsWith("/api/internal/") || path.startsWith("/api/testing/")) return null;
   const plan: AuditPlan = {
     config: requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg) }) === "admin",
-    createsBots: method === "POST" && (path === "/api/bots" || path === "/api/teams/import" || path === "/api/org-library/add"),
+    createsBots: method === "POST" && (path === "/api/bots" || path === "/api/teams/import" || path === "/api/org/import" || path === "/api/org-library/add"),
     createsWebhook: method === "POST" && path === "/api/webhooks",
     pairing: method === "POST" && path === "/api/auth/pairing",
   };
@@ -15961,6 +15962,30 @@ ROUTES.push(createDirectGrantRoutes({
 // The organization of a server signed in with Perspicax (slice 3). Tried
 // before the interim organization routes, which serve solo mode only.
 let perspicaxDirectory: PerspicaxDirectory | null = null;
+// Slice 8: "Bring bots from a solo Sagax" (a solo server answers 403).
+ROUTES.push(createOrgImportRoute({
+  organization: IDENTITY.kind === "perspicax",
+  mayCreateBots: botCreationAllowed,
+  importCopy: async ({ document, importer, people }) => {
+    const imported = importTeamBackup(store, routines!, document.backup, await defaultSelection(), {
+      ownerUserId: importer,
+      groupHumanIds: (key) => people.groupsHumans[key],
+      routineRunAs: (index) => people.routinesRunAs[index],
+      ...(sectionChannels ? { sectionChannels } : {}),
+    });
+    for (const bot of imported.bots) broadcast({ kind: "bot", bot: publicBot(bot) });
+    for (const group of imported.groups) broadcast({ kind: "group", group: { ...publicGroupState(group), ...transcriptPage(group.threadId, undefined) } });
+    audienceChanged();
+    return {
+      bots: imported.bots.map((bot) => ({ id: bot.id, name: bot.name, section: bot.section ?? "" })),
+      groups: imported.groups.map((group) => ({ id: group.id, name: group.name })),
+      routines: imported.routines.map((routine) => ({ id: routine.id, name: routine.name })),
+    };
+  },
+  audit: (auth, details) => orgAudit({
+    category: "org", action: "org.import", target: { kind: "server" }, after: { ...details }, actor: orgAuditActor(auth),
+  }),
+}));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
   ROUTES.push(createPerspicaxOrgRoutes({
@@ -16647,6 +16672,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // name and icon before anyone has a session, and it holds nothing secret.
     if (method === "GET" && path === "/api/brand" && !gate.auth) {
       return json(res, 200, loadBrand());
+    }
+    // Slice 8: an organization copy is always someone's. Loopback (a bot's
+    // shell here) and anyone without a session are told to sign in.
+    if (IDENTITY.kind === "perspicax" && path === "/api/org/import" && gate.auth?.kind !== "session") {
+      return json(res, 401, { error: "Sign in with Pulsatrix to copy bots into this organization.", code: "session_required" });
     }
     if (!gate.auth) return json(res, gate.status, { error: gate.error });
     const auth = gate.auth;
@@ -20471,7 +20501,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body?.format === "openmaus.backup") {
         if (importMode !== "add") return json(res, 400, { error: "Import backups alongside your existing bots; project mode is only for templates" });
         try {
-          const imported = importTeamBackup(store, routines!, body, await defaultSelection(), { visibility: importVisibility });
+          // Organization server (slice 8, D7): no ownerless bots. The
+          // caller owns every bot, and the sections the import creates are
+          // their private sections.
+          const orgOwner = IDENTITY.kind === "perspicax" ? creatingBotOwnerId(auth) : "";
+          const imported = importTeamBackup(store, routines!, body, await defaultSelection(), {
+            visibility: importVisibility,
+            ...(orgOwner ? { ownerUserId: orgOwner, ...(sectionChannels ? { sectionChannels } : {}) } : {}),
+          });
           const bots = imported.bots.map((bot) => publicBot(bot));
           const groups = imported.groups.map((group) => ({ ...publicGroupState(group), ...transcriptPage(group.threadId, undefined) }));
           for (const bot of bots) broadcast({ kind: "bot", bot });

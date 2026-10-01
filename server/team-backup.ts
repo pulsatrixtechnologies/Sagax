@@ -158,8 +158,39 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
 
 /** Import is always additive, including sections and Chiefs. Rollback owns
  * only the fresh records below and cannot touch any pre-existing bot/chat. */
-export function importTeamBackup(store: Store, routines: RoutineManager, input: unknown, selection: ModelSelection, options: { visibility?: BotVisibility } = {}) {
+/** The section-channel records an organization import keeps in step
+ * (server/section-channels.ts); absent in solo mode. */
+export interface ImportSectionChannels {
+  byName(name: string): unknown;
+  ensure(name: string, ownerPrincipalId: string): unknown;
+  removeByName(name: string): void;
+  recordPlacement(name: string, botId: string, ownerPrincipalId: string): void;
+  recordRoomPlacement(name: string, roomId: string): void;
+}
+
+export interface TeamBackupImportOptions {
+  visibility?: BotVisibility;
+  /** Organization server (slice 8): every bot is this person's. */
+  ownerUserId?: string;
+  /** A room's people, by its backup key. */
+  groupHumanIds?: (sourceKey: string) => string[] | undefined;
+  /** Who a routine runs as, by its index in the backup. */
+  routineRunAs?: (index: number) => string | undefined;
+  /** Every section the import creates becomes a private section-channel
+   * of `ownerUserId`, holding its bots and rooms; undone on rollback. */
+  sectionChannels?: ImportSectionChannels;
+}
+
+export function importTeamBackup(store: Store, routines: RoutineManager, input: unknown, selection: ModelSelection, options: TeamBackupImportOptions = {}) {
   const backup = parseTeamBackup(input);
+  const channels = options.ownerUserId ? options.sectionChannels : undefined;
+  const createdChannels: string[] = [];
+  const channelFor = (name: string) => {
+    if (!channels || createdChannels.includes(name)) return;
+    if (channels.byName(name)) return;
+    channels.ensure(name, options.ownerUserId!);
+    createdChannels.push(name);
+  };
   const bots: BotRecord[] = [];
   const groups: GroupRecord[] = [];
   const createdRoutines: Routine[] = [];
@@ -205,12 +236,17 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
         modelSelection: selection, section: sectionFor(source.section),
         // who may see the imported team is the importing admin's choice
         ...(options.visibility ? { visibility: options.visibility } : {}),
+        ...(options.ownerUserId ? { ownerUserId: options.ownerUserId } : {}),
       }, { seedMessages: false });
       bots.push(bot);
       botIds.set(source.key, bot.id);
       store.patchBot(bot.id, { composio: false, computer: "off", browser: false, approvalMode: "ask", autoApprove: false,
         connectorTools: {}, hidden: source.hidden, chiefOfStaff: source.chiefOfStaff, playbooks: source.playbooks });
       if (source.memory) restoreMemory(bot.id, source.memory);
+      if (channels && bot.section) {
+        channelFor(bot.section);
+        channels.recordPlacement(bot.section, bot.id, options.ownerUserId!);
+      }
     }
     for (const source of backup.bots) {
       const bot = store.bot(botIds.get(source.key)!)!;
@@ -244,6 +280,12 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
       const group = store.createGroup(takeImportName(source.name, takenGroups), source.memberIds.map((id) => botIds.get(id)!), source.dm, sectionFor(source.section));
       groups.push(group);
       groupIds.set(source.key, group.id);
+      const humans = options.groupHumanIds?.(source.key);
+      if (humans) store.patchGroup(group.id, { humanIds: humans });
+      if (channels && group.section) {
+        channelFor(group.section);
+        channels.recordRoomPlacement(group.section, group.id);
+      }
       const responder = source.defaultResponder;
       store.patchGroup(group.id, { bulletin: source.bulletin, setupCompletedAt: Date.now(), defaultResponder:
         responder.kind === "member" ? { kind: "member", botId: botIds.get(responder.botId)! } : responder });
@@ -266,9 +308,11 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
         store.switchGroupTask(group.id, threads[source.tasks.findIndex((task) => task.key === source.activeTask)]);
       }
     }
-    for (const source of backup.routines) {
+    for (const [index, source] of backup.routines.entries()) {
+      const runAs = options.routineRunAs?.(index);
       createdRoutines.push(routines.create({ ...source, botId: botIds.get(source.botId)!,
-        groupId: source.target === "room-goal" ? groupIds.get(source.groupId!) : undefined, enabled: false }));
+        groupId: source.target === "room-goal" ? groupIds.get(source.groupId!) : undefined, enabled: false },
+      undefined, runAs ? { actorPrincipalId: runAs } : undefined));
     }
     return { name: backup.name, bots, groups, routines: createdRoutines };
   } catch (error) {
@@ -281,6 +325,7 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
     for (const section of sections.values()) {
       if (store.sections.includes(section)) store.changeEmptySection(section, null);
     }
+    for (const name of createdChannels) channels!.removeByName(name);
     throw error;
   }
 }
