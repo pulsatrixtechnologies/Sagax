@@ -391,9 +391,19 @@ export interface WireAccessCard {
   botId: string;
   ownerPrincipalId: string;
   detail?: string;
-  /** Slice 4: where the owner sets their model keys (Perspicax console),
+  /** Slice 4: where a person sets their model keys (Perspicax console),
    * on a no_access card of an organization server. */
   keysUrl?: string;
+  /** 2026-10-01, no_access: whose credentials the turn needed (the person
+   * who spoke, or the bot's owner for its routines), and why none served. */
+  payer?: "speaker" | "owner";
+  payerPrincipalId?: string;
+  cause?: "payer_disabled" | "no_credentials";
+  /** The bot's routine: it runs on its owner's credentials only. */
+  routine?: true;
+  /** The engine takes a personal subscription sign-in (Claude, Codex):
+   * the card offers Settings > Organization > My engines. */
+  subscriptionSignIn?: true;
   /** Slice 6, routine_delegation: who the routine runs as, which routine,
    * and why it is paused. */
   runAsPrincipalId?: string;

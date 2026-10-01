@@ -697,15 +697,16 @@ id).
   settings, **Shared with**): they see the bot and its conversations and
   can write to it. Removing someone takes effect at once: their lists and
   live updates lose the bot and its thread answers 404.
-- Engine access: the engines logged in on the server (subscriptions) and
-  the keys in Settings > Connections serve an admin's own bots. Every other
-  turn (a member's own bot, anyone writing to someone else's bot, a member
-  bot's routines) runs only when an admin turned on **Use the
-  organization's key** in Settings > Organization, and only on a key-backed
-  engine (Claude, Mistral, xAI, OpenAI compatible or OpenCode with a key in
-  Settings > Connections). Otherwise, or when the bot's engine is not
-  installed on the server, the message is kept and the thread shows a card
-  saying why; the owner gets a notification. The authenticated
+- Engine access: the person who speaks pays (2026-10-01; see "Who pays
+  for a turn" below). The keys an admin sets in Settings > Connections are
+  the organization's key, used automatically after a person's own
+  subscription and key, and only on a key-backed engine (Claude, Mistral,
+  xAI, OpenAI compatible or OpenCode with a key in Settings > Connections).
+  The engines logged in on the server itself no longer serve anyone, admins
+  included: each person signs in their own. When nothing serves a turn, or
+  the bot's engine is not installed on the server, the message is kept and
+  the thread shows a card saying why to the person who spoke, with what
+  they can do; the owner gets a notification. The authenticated
   `GET /api/health` lists the engines and whether each is installed.
 - Until each owner gets a container of their own, a bot whose owner is not
   an organization admin never runs with full access (`409
@@ -735,20 +736,33 @@ id).
   administers the grants of their teams and members on a bot already
   shared with one of their teams, up to that level, and may always lower
   or remove them; a manager does not read a bot through that right.
-- **Owner keys live in Perspicax.** A bot owner saves their Anthropic or
-  OpenAI key in the Perspicax console (`/console/pulsabot/keys`); Pulsa Bot
-  reads it through the link for each turn, keeps it in memory 60 s at most
-  and never writes it to disk. A bot on Claude or Codex then answers
-  everyone it is shared with on its owner's key. The order for each turn:
-  engine not installed, the owner's own subscription (the owner speaking),
-  the owner's key (anyone), the server's configuration (an admin owner
-  speaking), the organization's key when allowed, else the no_access card
-  with a link to the keys page.
+- **Who pays for a turn (2026-10-01).** Every turn, on a person's own bot
+  or on a bot shared with them, runs on the credentials of the person who
+  speaks, in this order: the engine not installed (card), the person
+  disabled (card), their own subscription for the bot's engine (Claude or
+  Codex sign-in, the default and preferred), their own model key in
+  Perspicax for the engine's provider (`speaker-key`, or `owner-key` when
+  they own the bot), the organization's key (a key in Settings >
+  Connections; there is no switch any more), else the no_access card with
+  **Sign in with my subscription** (Settings > Organization > My engines)
+  and **Add my key in Perspicax**. The owner's subscription and key never
+  pay for the people the bot is shared with. A bot's routines always run on
+  its owner's credentials (subscription, key, then the organization's key),
+  whoever created, edited or started them; a disabled owner's routines are
+  refused. The thread shows what paid under each reply ("Your
+  subscription", "Your key", "Owner's credentials", "Organization's key"),
+  never the secret, and the usage rows carry `access` and
+  `payerPrincipalId`.
+- **Keys live in Perspicax.** A person saves their Anthropic or OpenAI key
+  in the Perspicax console (`/console/pulsabot/keys`); Pulsa Bot reads it
+  through the link for each turn, keeps it in memory 60 s at most and never
+  writes it to disk.
 - **Personal subscriptions**: in Settings > Organization, **My engines**,
-  a person signs in to Claude or Codex with their own account. The login
-  is kept in `/data/principals/<principal id>/claude` or `/codex` (0700);
-  it answers only that person speaking to their own bots (and their
-  routines), never someone else's turn.
+  each person (from the desktop app or the web) signs in to Claude or Codex
+  with their own account. The login is kept in
+  `/data/principals/<principal id>/claude` or `/codex` (0700); it pays for
+  that person's own turns, on any bot they may talk to, and for the
+  routines of the bots they own; never for someone else's turn.
 - **Sections are channels.** Right-click a section header (or Shift+F10)
   for New section, Rename, Members and sharing, Move up or down,
   Collapse or expand all, Delete. Members (people or teams, moderator,

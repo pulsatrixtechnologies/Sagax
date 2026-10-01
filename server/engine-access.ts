@@ -1,27 +1,13 @@
-// Which engine access a turn may use on an organization server (slice 3,
-// D13), before per-owner keys (slice 4). Pure: the caller gathers the facts.
-//
-// Solo mode is unchanged: every turn uses what the server has.
-//
-// Organization mode:
-//   - everything configured on the server (subscriptions logged in on it,
-//     the workspace keys) serves only an admin owner speaking to their own
-//     bot;
-//   - every other turn (a member's own bot, anyone on someone else's bot,
-//     a member bot's routines) needs the organization setting
-//     memberBotsUseOrgKey AND a key-backed instance: the workspace key is
-//     then the organization's key. Login-backed engines (Codex, grokAgent,
-//     ACP agents) never serve those turns.
-//   - an instance whose CLI is not installed is `engine_missing` first,
-//     whoever speaks.
+// Who a turn speaks for on an organization server, and the cards and
+// approvals around engine access (slice 3, D13). Which credentials a turn
+// runs with is server/engine-credentials.ts (the person who speaks pays;
+// the bot's routines run on its owner's credentials).
 //
 // Spec: docs/superpowers/specs/2026-09-29-perspicax-multiuser-design.md,
 // section 4 bis ("Où vivent les accès aux engines", "Échecs visibles").
 
 import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-
-import { resolveEngineAccess } from "./engine-credentials.ts";
 
 export type EngineAccessRefusal = "engine_missing" | "no_access";
 
@@ -35,7 +21,9 @@ export type EngineAccessRefusal = "engine_missing" | "no_access";
  *   - peer: another bot's hop (ask_bot, delegation, an opened thread, an
  *     aside, a Chief's retry). `principalId` is whoever the source turn spoke
  *     for ("" when that was an unknown person); absent, the requesting bot's
- *     owner speaks. `routine` marks a hop a routine or other automation
+ *     owner speaks. `routinePayer` (2026-10-01): on a routine's hop, whose
+ *     credentials the routine runs on (its bot's owner), carried along the
+ *     hops. `routine` marks a hop a routine or other automation
  *     started, directly or through other hops: from slice 6 it reaches
  *     Perspicax only through the routine delegation of the person it speaks
  *     for, never through a sign-in. */
@@ -43,7 +31,7 @@ export type TurnSpeaker =
   | { origin: "person"; principalId?: string }
   | { origin: "operator" }
   | { origin: "owner-routine"; principalId?: string }
-  | { origin: "peer"; fromBotId?: string; principalId?: string; routine?: true };
+  | { origin: "peer"; fromBotId?: string; principalId?: string; routine?: true; routinePayer?: string };
 
 /** A turn a routine or other automation started, directly or through hops. */
 export function routineLineage(speaker: TurnSpeaker): boolean {
@@ -78,50 +66,19 @@ export function speakerPrincipal(speaker: TurnSpeaker, ownerPrincipalId: string,
   }
 }
 
-export interface EngineAccessInput {
-  identity: "solo" | "perspicax";
-  /** Who the turn speaks for (see TurnSpeaker). */
-  speaker: TurnSpeaker;
-  /** For a peer hop: the owner of the bot that asked. */
-  peerOwnerPrincipalId?: string;
-  ownerPrincipalId: string;
-  /** The owner's organization role; the operator at this computer counts
-   * as an admin. */
-  ownerOrgRole: "admin" | "member" | undefined;
-  memberBotsUseOrgKey: boolean;
-  driver: string;
-  /** The instance's driver reads a key the workspace configured. */
-  keyBacked: boolean;
-  /** The instance's CLI answered its availability probe (true when not
-   * probed yet: an unknown is never a refusal). */
-  installed: boolean;
-}
-
-export type EngineAccess = { ok: true; via: "server" | "org-key" } | { ok: false; reason: EngineAccessRefusal };
-
-/** The slice 3 gate: server/engine-credentials.ts with no subscription and
- * no owner key (slice 4 adds both steps; this wrapper keeps the old answers). */
-export function engineAccessFor(input: EngineAccessInput): EngineAccess {
-  const plan = resolveEngineAccess({
-    identity: input.identity,
-    speaker: input.speaker,
-    ...(input.peerOwnerPrincipalId !== undefined ? { peerOwnerPrincipalId: input.peerOwnerPrincipalId } : {}),
-    owner: { principalId: input.ownerPrincipalId, orgRole: input.ownerOrgRole },
-    instance: { instanceId: "", driver: input.driver, installed: input.installed },
-    subscriptionSignedIn: () => false,
-    ownerHasKey: () => false,
-    memberBotsUseOrgKey: input.memberBotsUseOrgKey,
-    keyBacked: input.keyBacked,
-  });
-  if (!plan.ok) return plan;
-  return { ok: true, via: plan.via === "org-key" ? "org-key" : "server" };
-}
-
-/** The notification body for a refused turn (never provider text). */
-export function engineAccessNotice(reason: EngineAccessRefusal | "key_refused", engine: string): string {
+/** The notification body for a refused turn (never provider text). A
+ * no_access turn is the payer's to fix: the person who speaks, or the
+ * owner for the bot's routines (engine-credentials.ts). */
+export function engineAccessNotice(reason: EngineAccessRefusal | "key_refused", engine: string, refusal: { payer?: "speaker" | "owner"; cause?: "payer_disabled" | "no_credentials"; routine?: boolean } = {}): string {
   if (reason === "engine_missing") return `This bot uses ${engine}, which is not installed on this server.`;
   if (reason === "key_refused") return "The provider refused this bot's key.";
-  return `This bot can't answer: no key for ${engine}. Its owner has to add one.`;
+  if (refusal.cause === "payer_disabled") {
+    return refusal.routine || refusal.payer === "owner"
+      ? `This bot can't run: its owner's account is disabled, so their ${engine} access is off.`
+      : `This bot can't answer: your account is disabled.`;
+  }
+  if (refusal.routine) return `This routine can't run: its owner has no ${engine} subscription or key here, and the server has no organization key for it.`;
+  return `No ${engine} access for this turn: sign in with your own ${engine} subscription or add your key in Perspicax, or ask an admin to set the organization's key.`;
 }
 
 /** A bot owned by someone who is not an organization admin (JC rule until

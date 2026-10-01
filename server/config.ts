@@ -393,11 +393,13 @@ const appConfigSchema = z.object({
   // config.json that still has it loads, the key is dropped on read and
   // never written back. A solo server keeps its email sign-in list,
   // invitations and mail transport (above and below).
-  /** Organization server settings (OMB_IDENTITY=perspicax, slice 3):
-   * whether turns other than an admin owner's own may use the workspace
-   * keys (the organization's key) on key-backed engines. */
+  /** Organization server settings (OMB_IDENTITY=perspicax, slice 3). The
+   * slice 3 switch `memberBotsUseOrgKey` was retired on 2026-10-01 (the
+   * organization's key now serves whenever an admin set one,
+   * engine-credentials.ts): an older config.json that still has it loads,
+   * the key is dropped on read and removed at the next start
+   * (dropRetiredOrganizationKeys). */
   organization: z.object({
-    memberBotsUseOrgKey: z.boolean().optional(),
     /** Slice 8: the window to attach people from before Perspicax
      * (server/interim-attach-routes.ts), written at the first organization
      * start that found any. */
@@ -584,7 +586,7 @@ export interface AppConfig {
   signIn?: { admins?: string[]; members?: string[] };
 
   /** Organization server settings (slice 3); see appConfigSchema. */
-  organization?: { memberBotsUseOrgKey?: boolean; interimAttach?: { since: number; days: number } };
+  organization?: { interimAttach?: { since: number; days: number } };
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt?: number;
   invites?: Array<{
@@ -1215,6 +1217,22 @@ export function onConfigSaved(listener: (before: JsonObject, after: JsonObject) 
 
 /** Merge a partial config into ~/.openmausbot/config.json (secrets never
  * echoed back — callers report configured-or-not booleans only). */
+/** Remove the organization keys retired on 2026-10-01 (memberBotsUseOrgKey)
+ * from config.json, once, at start. True when the file changed. */
+export function dropRetiredOrganizationKeys(): boolean {
+  let raw: unknown;
+  try {
+    raw = parseJson(readFileSync(join(DATA_DIR, "config.json"), "utf8"));
+  } catch {
+    return false;
+  }
+  const organization = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>).organization : undefined;
+  if (!organization || typeof organization !== "object" || Array.isArray(organization) || !("memberBotsUseOrgKey" in organization)) return false;
+  const { memberBotsUseOrgKey: _retired, ...rest } = organization as Record<string, unknown>;
+  saveConfig({ organization: appConfigSchema.shape.organization.unwrap().parse(rest) });
+  return true;
+}
+
 export function saveConfig(
   patch: Partial<Omit<AppConfig, "threads" | "newBots">> & {
     threads?: z.output<typeof threadsPatchSchema>;

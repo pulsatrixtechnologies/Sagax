@@ -166,7 +166,7 @@ export function codexAccessLaunch(env: Record<string, string | undefined>, acces
     env.CODEX_HOME = access.codexHome;
     return { ownerKey: false };
   }
-  if (access.via === "owner-key" && access.codexOwnerKey && access.environment?.OMB_OWNER_OPENAI_API_KEY) {
+  if ((access.via === "owner-key" || access.via === "speaker-key") && access.codexOwnerKey && access.environment?.OMB_OWNER_OPENAI_API_KEY) {
     if (access.codexHome) {
       mkdirSync(access.codexHome, { recursive: true, mode: 0o700 });
       env.CODEX_HOME = access.codexHome;

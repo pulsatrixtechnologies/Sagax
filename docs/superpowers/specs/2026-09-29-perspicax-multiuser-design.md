@@ -288,15 +288,19 @@ Aujourd'hui les accès sont communs à tout le serveur: comptes Claude nommés (
 
 | Accès | Où | Qui le pose | Pour quels tours |
 |---|---|---|---|
-| Clé API du propriétaire (Anthropic, OpenAI, ...) | coffre de Perspicax, identifiant `scope: user` lié au propriétaire (P10) | le propriétaire, dans Pulsa Bot ou dans la console Perspicax | tous les tours de ses bots, y compris ceux des personnes à qui il les partage, et ses routines |
-| Clé d'organisation | Réglages > Connections du serveur (existant), posée par un admin | un admin | repli quand le propriétaire n'a pas de clé, **seulement si l'admin a activé « utiliser la clé d'organisation pour les bots des membres »** (décision 7) |
-| Abonnement (connexion Claude ou ChatGPT) | dossier de connexion propre au principal (`/data/principals/<id>/claude`, `CLAUDE_CONFIG_DIR` et équivalent Codex), au lieu du dossier commun | la personne elle-même | seulement les tours qu'elle lance elle-même sur ses propres bots, et ses routines; jamais le tour d'une autre personne |
+Révision du 2026-10-01 (décision de JC, remplace la décision 7 du 2026-09-28 « la clé du propriétaire sert tout le monde », l'interrupteur `memberBotsUseOrgKey` et la règle « les abonnements connectés sur ce serveur restent aux bots des admins »): **la personne qui parle paie.**
 
-Ordre de résolution pour un tour (celui du document du 2026-09-28, complété): clé de la routine, `credentialRef` du bot, abonnement de qui lance **si c'est le propriétaire**, clé du propriétaire, clé d'organisation si l'admin l'autorise. La clé est lue au moment du tour, injectée dans l'environnement de l'instance de ce seul tour, jamais écrite dans `config.json`.
+| Accès | Où | Qui le pose | Pour quels tours |
+|---|---|---|---|
+| Abonnement (connexion Claude ou ChatGPT) | dossier de connexion propre au principal (`/data/principals/<id>/claude`, `CLAUDE_CONFIG_DIR` et équivalent Codex), au lieu du dossier commun | la personne elle-même, depuis le poste ou le web (Réglages > Organisation > Mes engines) | tous les tours qu'elle lance, sur ses bots et sur les bots partagés avec elle; les routines des bots dont elle est propriétaire; jamais le tour d'une autre personne |
+| Clé API de la personne (Anthropic, OpenAI) | coffre de Perspicax, identifiant `scope: user` lié à la personne (P10) | la personne, dans la console Perspicax | les mêmes tours que son abonnement, quand elle n'en a pas pour cet engine |
+| Clé d'organisation | Réglages > Connections du serveur (existant), posée par un admin | un admin | repli automatique après l'abonnement et la clé de la personne, sur un engine à clé; plus d'interrupteur |
+
+Ordre de résolution pour un tour (`server/engine-credentials.ts`): engine absent, payeur désactivé (refus), abonnement du payeur, clé du payeur dans Perspicax (`owner-key` s'il est propriétaire du bot, sinon `speaker-key`), clé d'organisation, sinon refus avec la carte « connectez-vous avec votre abonnement ou ajoutez votre clé, ou demandez à un admin ». Le payeur est la personne qui parle; pour une routine du bot, toujours son **propriétaire**, quelle que soit la personne qui l'a créée, modifiée ou lancée (son `runAs` ne sert qu'à l'identité MCP). Les connexions et clés propres au serveur ne servent plus les bots des admins. La clé est lue au moment du tour, injectée dans l'environnement de l'instance de ce seul tour, jamais écrite dans `config.json`.
 
 ### Quand B parle au bot de A
 
-- **Engine:** l'accès de A (sa clé, ou la clé d'organisation si permise). Jamais l'abonnement de A, puisque A ne lance pas ce tour; jamais l'abonnement de B, qui n'est pas propriétaire du bot. Le coût va au propriétaire ou à l'organisation, et la page Utilisation le montre par personne qui parle.
+- **Engine:** l'accès de B (son abonnement, sa clé, sinon la clé d'organisation). Jamais l'abonnement ni la clé de A. Le coût va à B ou à l'organisation; le fil indique ce qui a payé (« Votre abonnement », « Votre clé », « Clé de l'organisation », « Identifiants du propriétaire » pour une routine) et la page Utilisation le montre par personne qui parle (`access`, `payerPrincipalId`).
 - **MCP:** l'identité de B (section 4). Le bot de A ne voit jamais les données ConnectWise que B ne voit pas.
 - **Approbation:** A ou son `approver` (décision 5); B voit que la carte attend le propriétaire.
 
@@ -313,12 +317,12 @@ Jamais un tour qui échoue en silence. Chaque cas donne une carte dans le fil, �
 | Cas | Ce que voit qui parle | Ce que voit le propriétaire |
 |---|---|---|
 | engine absent de l'image | « Ce bot utilise Codex, qui n'est pas installé sur ce serveur. » | idem, plus « demander à un admin » |
-| aucun accès résolu | « Ce bot ne peut pas répondre: aucune clé pour Claude. Son propriétaire doit en ajouter une. » | carte avec le lien vers sa clé (Pulsa Bot ou console Perspicax) |
+| aucun accès résolu | « Aucun accès Claude pour votre tour. » avec « Me connecter avec mon abonnement » et « Ajouter ma clé dans Perspicax », ou demander à un admin la clé de l'organisation (pour une routine: la carte va au propriétaire) | rien pour le tour d'une autre personne; pour une routine, la même carte |
 | clé refusée par le fournisseur (401, quota) | « Le fournisseur a refusé la clé de ce bot. » | le message du fournisseur, caviardé (`provider-key-check.ts`) |
 | profil MCP non détenu par qui parle | le bot répond sans l'outil et dit pourquoi (note système au tour) | rien |
 | délégation de routine expirée | la routine est suspendue, pas relancée en boucle | carte « reconnecter mes routines » |
 
-À la création et dans l'écran du bot, le choix d'engine indique d'avance « répondra pour vous seulement » (abonnement) ou « répondra aussi aux personnes à qui vous le partagez » (clé).
+Dans Mes engines et le choix d'engine, une ligne dit ce que les tours de la personne utilisent sur cet engine (« Vos tours utilisent votre abonnement », « votre clé dans Perspicax », « la clé de l'organisation », ou rien encore).
 
 ## 5. Section « Pulsa Bot » de la console Perspicax
 

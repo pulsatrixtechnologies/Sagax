@@ -4,7 +4,7 @@
 //                             viewer's role and the settings (no people, no
 //                             invitations: Perspicax owns both)
 //   GET   /api/org/directory  the people a bot owner may share with (client)
-//   PATCH /api/org/settings   { memberBotsUseOrgKey } (organization admin)
+//   PATCH /api/org/settings   { interimAttachDays } (organization admin)
 //   GET   /api/org/approvals  approvals waiting for an organization admin
 //                             (server commands of members' bots)
 //   GET, POST, DELETE /api/org/routine-delegation
@@ -19,9 +19,10 @@ import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 
 export interface OrgSettings {
-  /** Let turns that are not an admin owner's own use the organization's key
-   * (the workspace key in Settings > Connections) on key-backed engines. */
-  memberBotsUseOrgKey: boolean;
+  /** The server has a key for at least one engine (Settings > Connections):
+   * the organization's key, used after the speaker's own subscription and
+   * key (2026-10-01; the old memberBotsUseOrgKey switch is gone). */
+  orgKeyConfigured: boolean;
   /** Slice 8: the window to attach people from before Perspicax. `until`
    * is null when it never opened or is closed; `people` still waiting. */
   interimAttach?: { until: number | null; people: number };
@@ -71,8 +72,6 @@ export interface PerspicaxOrgRouteDeps {
   bySubject(iss: string, sub: string): Principal | null;
   viewerRole(auth: RequestAuth): "admin" | "member";
   settings(): OrgSettings;
-  /** Saves the settings; throws when they could not be written. */
-  saveSettings(next: OrgSettings, auth: RequestAuth): void;
   /** Slice 8: set the interim attach window (0..90 days from when it
    * opened; 0 closes it now); throws when it could not be written. */
   saveInterimAttachDays?(days: number, auth: RequestAuth): void;
@@ -142,16 +141,14 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       if (deps.viewerRole(auth) !== "admin") return json(res, 403, { error: "Only an organization admin can change these settings." });
       const body = await readBody(req);
       const keys = body && typeof body === "object" && !Array.isArray(body) ? Object.keys(body) : null;
-      const hasKey = "memberBotsUseOrgKey" in (body ?? {});
-      const hasDays = "interimAttachDays" in (body ?? {});
-      if (!keys || !keys.length || keys.some((key) => key !== "memberBotsUseOrgKey" && key !== "interimAttachDays") ||
-        (hasKey && typeof body.memberBotsUseOrgKey !== "boolean") ||
-        (hasDays && (!deps.saveInterimAttachDays || !Number.isInteger(body.interimAttachDays) || body.interimAttachDays < 0 || body.interimAttachDays > 90))) {
-        return json(res, 400, { error: "send { memberBotsUseOrgKey: true | false } and/or { interimAttachDays: 0 to 90 }" });
+      // memberBotsUseOrgKey is gone (2026-10-01): the organization's key
+      // serves whenever an admin set one, so it is refused like any other.
+      if (!keys || !keys.length || keys.some((key) => key !== "interimAttachDays") ||
+        !deps.saveInterimAttachDays || !Number.isInteger(body.interimAttachDays) || body.interimAttachDays < 0 || body.interimAttachDays > 90) {
+        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 }" });
       }
       try {
-        if (hasKey) deps.saveSettings({ ...deps.settings(), memberBotsUseOrgKey: body.memberBotsUseOrgKey }, auth);
-        if (hasDays) deps.saveInterimAttachDays!(body.interimAttachDays, auth);
+        deps.saveInterimAttachDays(body.interimAttachDays, auth);
       } catch (error) {
         return json(res, 500, { error: `the organization settings could not be saved: ${error instanceof Error ? error.message : String(error)}` });
       }

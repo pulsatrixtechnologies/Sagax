@@ -140,6 +140,7 @@ import { attachForTurn, saveBotAttachment } from "./bot-attachment.ts";
 import {
   ensureDirs,
   instanceConfigs,
+  dropRetiredOrganizationKeys,
   loadConfig,
   providerReloadKeys,
   localVmMaxInstances,
@@ -516,7 +517,7 @@ import {
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
-import { materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, type EngineCredentialInput, type TurnAccess } from "./engine-credentials.ts";
+import { keyVia, materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
@@ -753,6 +754,8 @@ let desktopMutationToken: string | undefined = DESKTOP_MANAGED ? "" : undefined;
 let companionMutationToken: string | undefined = DESKTOP_MANAGED ? "" : undefined;
 // Where remote clients reach this server (a proxy's public address); pairing URLs use it.
 const FALLBACK_PUBLIC_URL = process.env.OMB_PUBLIC_URL?.trim().replace(/\/+$/, "") || null;
+// 2026-10-01: the organization key switch is retired (engine-credentials.ts).
+dropRetiredOrganizationKeys();
 const cfg = loadConfig();
 const hostedModels = hostedModelPolicy(DATA_DIR);
 const providerConfigs = () => hostedModels ? hostedModels.configs() : instanceConfigs(cfg);
@@ -851,11 +854,15 @@ const turnTriggers = new Map<string, UsageTrigger>();
 const turnSpeakers = new Map<string, TurnSpeaker>();
 const turnSpeakerPrincipals = new Map<string, string>();
 /** Who ran each thread's current turn, for a key the provider refuses. */
-const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; ownerSub?: string; provider?: "anthropic" | "openai" }>();
+const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; payer: AccessPayer; payerPrincipalId?: string; routine?: true; payerSub?: string; provider?: "anthropic" | "openai" }>();
 /** Threads whose last admitted turn (Direct or room) descends from a routine
  * or other automation: a bot hop it starts carries the mark, so no turn a
  * routine started ever reaches someone's Perspicax access (slice 5, D5). */
 const turnRoutineLineage = new Set<string>();
+/** For a thread whose last admitted turn descends from a routine: whose
+ * credentials that routine runs on (its bot's owner, 2026-10-01), carried
+ * to the bot hops it starts. */
+const turnRoutinePayers = new Map<string, string>();
 /** Slice 6: the routine delegations of an organization server (set with
  * the sign-in grants, below); null in solo mode. */
 let routineConsents: RoutineConsents | null = null;
@@ -1494,7 +1501,9 @@ function bookTurnUsage(row: Omit<UsageRow, "at" | "costSource">, tokensReported 
 function orgUsageFacts(row: Omit<UsageRow, "at" | "costSource">): Partial<UsageRow> {
   if (IDENTITY.kind !== "perspicax") return {};
   const bot = store.bot(row.botId);
-  const access = row.access ?? turnAccessByThread.get(row.threadId)?.via;
+  const ran = turnAccessByThread.get(row.threadId);
+  const access = row.access ?? ran?.via;
+  const payerPrincipalId = row.payerPrincipalId ?? (ran && ran.payer !== "organization" ? ran.payerPrincipalId : undefined);
   let trigger = row.trigger;
   if (trigger.kind === "user" && !trigger.principalId) {
     const speaker = turnSpeakerPrincipals.get(row.threadId);
@@ -1504,6 +1513,7 @@ function orgUsageFacts(row: Omit<UsageRow, "at" | "costSource">): Partial<UsageR
     trigger,
     ...(row.ownerPrincipalId ? {} : bot ? { ownerPrincipalId: effectiveBotOwner(bot) } : {}),
     ...(access ? { access } : {}),
+    ...(payerPrincipalId ? { payerPrincipalId } : {}),
   };
 }
 
@@ -6374,6 +6384,9 @@ async function scheduleTurnDigest(input: {
       ...(input.usage ? { usage: input.usage } : {}),
       hookCoverage: coverageForDriver(input.driverKind, toolEvidence(activities, input.turnId), activities.some(m => m.kind === "activity" && m.turnId === input.turnId && m.tool?.itemId)),
     });
+    // Organization server: which credentials this turn ran with (no secret).
+    const ran = IDENTITY.kind === "perspicax" ? turnAccessByThread.get(input.threadId) : undefined;
+    if (ran) digest.access = { via: ran.via, payer: ran.payer, ...(ran.payerPrincipalId ? { payerPrincipalId: ran.payerPrincipalId } : {}), ...(ran.routine ? { routine: true as const } : {}) };
     const message = store.appendMessage(input.threadId, {
         role: "bot",
         kind: "digest",
@@ -7668,12 +7681,12 @@ bus.subscribe((event: RuntimeEvent) => {
       const ranOn = turnAccessByThread.get(event.threadId);
       const keyRefused = bot && refusedInstance ? keyRefusedCard({
         identity: IDENTITY.kind, setup: event.setup, claudeUpdate: event.claudeUpdate,
-        keyBacked: driverKeyBacked(cfg, refusedInstance.driverKind) || ranOn?.via === "owner-key",
+        keyBacked: driverKeyBacked(cfg, refusedInstance.driverKind) || keyVia(ranOn?.via),
         message: event.message, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
         engine: refusedInstance.displayName || refusedInstance.driverKind, redact: redactSecretsInText,
       }) : null;
-      // An owner-key turn (slice 4) also counts: that key is dropped at once.
-      if (keyRefused && ranOn?.via === "owner-key" && ranOn.ownerSub && ranOn.provider) perspicaxDirectory?.invalidate(ranOn.ownerSub, ranOn.provider);
+      // A turn on a person's own key (slice 4) also counts: that key is dropped at once.
+      if (keyRefused && keyVia(ranOn?.via) && ranOn?.payerSub && ranOn.provider) perspicaxDirectory?.invalidate(ranOn.payerSub, ranOn.provider);
       if (keyRefused && bot) {
         pushMessage({ role: "bot", kind: "access", access: keyRefused });
         notify(buildNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }));
@@ -9370,9 +9383,9 @@ async function startTurn(
       kind: "access",
       access: accessCardFor(bot, accessRefusal, engine),
     });
-    const notice = engineAccessNotice(accessRefusal, engine);
+    const notice = engineAccessNotice(accessRefusal.reason, engine, accessRefusal);
     notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
-    console.error(`[omb-turn] bot=${botId} refused: ${accessRefusal} (${instance.instanceId})`);
+    console.error(`[omb-turn] bot=${botId} refused: ${accessRefusal.reason}${accessRefusal.cause ? `/${accessRefusal.cause}` : ""} (${instance.instanceId})`);
     opts?.coordination?.settle({ ok: false, text: notice });
     opts?.onDispatchError?.(notice);
     opts?.onTurnSettled?.();
@@ -9389,8 +9402,15 @@ async function startTurn(
   if (!opts.cardContinuation || (opts.coordination && !opts.coordination.resumed)) {
     turnSpeakers.set(threadId, speaker);
     turnSpeakerPrincipals.set(threadId, orgSpeakerPrincipal(bot, speaker));
-    if (routineLineage(speaker)) turnRoutineLineage.add(threadId);
-    else turnRoutineLineage.delete(threadId);
+    if (routineLineage(speaker)) {
+      turnRoutineLineage.add(threadId);
+      const payer = turnPayer({ speaker, owner: { principalId: effectiveBotOwner(bot) }, peerOwnerPrincipalId: peerOwnerPrincipal(speaker) }).principalId;
+      if (payer) turnRoutinePayers.set(threadId, payer);
+      else turnRoutinePayers.delete(threadId);
+    } else {
+      turnRoutineLineage.delete(threadId);
+      turnRoutinePayers.delete(threadId);
+    }
   }
   // A card continuation neither starts nor ends the person's ask: it
   // resumes the turn their last message began, so that record stands.
@@ -10515,8 +10535,8 @@ async function startTurn(
         // The owner key went away between admission and dispatch: the same
         // card and notice a refusal at admission gives.
         const engine = engineDisplayName(instance);
-        store.appendMessage(threadId, { role: "bot", kind: "access", access: accessCardFor(bot, e.reason, engine, e.detail) });
-        message = engineAccessNotice(e.reason, engine);
+        store.appendMessage(threadId, { role: "bot", kind: "access", access: accessCardFor(bot, e.refusal, engine, e.detail) });
+        message = engineAccessNotice(e.refusal.reason, engine, e.refusal);
         notify(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }));
       }
       settleDirectFollowup(dispatchClaimId, { ok: false, text: message });
@@ -11901,8 +11921,15 @@ async function runGroupMemberTurn(
   // A room turn no person asked for (a goal routine, other automation)
   // marks its thread, so a bot hop it starts carries the routine lineage.
   if (!cardContinuation) {
-    if (roomSpeakerId) turnRoutineLineage.delete(threadId);
-    else turnRoutineLineage.add(threadId);
+    if (roomSpeakerId) {
+      turnRoutineLineage.delete(threadId);
+      turnRoutinePayers.delete(threadId);
+    } else {
+      turnRoutineLineage.add(threadId);
+      // a room routine runs on this bot's owner's credentials
+      const owner = effectiveBotOwner(bot);
+      if (owner) turnRoutinePayers.set(threadId, owner);
+    }
   }
   const roomAccessRefusal = cardContinuation ? null
     : orgEngineRefusal(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" });
@@ -11914,7 +11941,7 @@ async function runGroupMemberTurn(
       from: { botId: bot.id, name: bot.name, color: bot.color },
       access: accessCardFor(bot, roomAccessRefusal, engine),
     });
-    const notice = engineAccessNotice(roomAccessRefusal, engine);
+    const notice = engineAccessNotice(roomAccessRefusal.reason, engine, roomAccessRefusal);
     notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
     if (orchestration) {
       orchestration.result.outcome = "dispatch_failed";
@@ -12625,8 +12652,8 @@ async function runGroupMemberTurn(
         let message = err instanceof Error ? err.message : "turn failed";
         if (err instanceof EngineAccessLost) {
           const engine = engineDisplayName(instance);
-          store.appendMessage(threadId, { role: "bot", kind: "access", from: { botId: bot.id, name: bot.name, color: bot.color }, access: accessCardFor(bot, err.reason, engine, err.detail) });
-          message = engineAccessNotice(err.reason, engine);
+          store.appendMessage(threadId, { role: "bot", kind: "access", from: { botId: bot.id, name: bot.name, color: bot.color }, access: accessCardFor(bot, err.refusal, engine, err.detail) });
+          message = engineAccessNotice(err.refusal.reason, engine, err.refusal);
           notify(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }));
         } else store.appendMessage(threadId, {
           role: "bot",
@@ -14866,7 +14893,8 @@ function orgSpeakerPrincipal(bot: { ownerUserId?: unknown }, speaker: TurnSpeake
 function peerSpeaker(fromBotId: string, fromThreadId?: string): TurnSpeaker {
   const principalId = fromThreadId ? turnSpeakerPrincipals.get(fromThreadId) : undefined;
   const routine = fromThreadId ? turnRoutineLineage.has(fromThreadId) : false;
-  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}) };
+  const routinePayer = routine && fromThreadId ? turnRoutinePayers.get(fromThreadId) : undefined;
+  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}), ...(routinePayer ? { routinePayer } : {}) };
 }
 /** On an organization server, words may join a running turn only when they
  * speak for the same principal as that turn: anyone else's words wait for a
@@ -14880,38 +14908,59 @@ function orgJoinsRunningTurn(bot: { ownerUserId?: unknown }, threadId: string, s
   if (routineLineage(speaker) !== turnRoutineLineage.has(threadId)) return false;
   return Boolean(running) && running === joining;
 }
-/** Slice 4 (D8): the facts engine-credentials.ts decides a turn's access from. */
+/** Slice 4 (D8, revised 2026-10-01): the facts engine-credentials.ts
+ * decides a turn's access from. The payer is the person who speaks, or the
+ * bot's owner for its routines. */
 function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): EngineCredentialInput {
   const ownerId = effectiveBotOwner(bot);
   const owner = principals.byId(ownerId);
-  const sub = IDENTITY.kind === "perspicax" && owner?.subject?.iss === IDENTITY.issuer ? owner.subject.sub : undefined;
   return {
     identity: IDENTITY.kind,
     speaker,
     peerOwnerPrincipalId: peerOwnerPrincipal(speaker),
-    owner: { principalId: ownerId, ...(sub ? { sub } : {}), orgRole: botOwnerOrgRole(bot), ...(owner?.disabledAt !== undefined ? { disabled: true } : {}) },
+    owner: { principalId: ownerId, ...orgPersonFacts(owner) },
     instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId) },
+    person: (principalId) => {
+      const person = principals.byId(principalId);
+      return person ? orgPersonFacts(person) : undefined;
+    },
     subscriptionSignedIn: (principalId, driver) => engineLogins?.signedIn(principalId, driver) ?? false,
-    ownerHasKey: (ownerSub, provider) => perspicaxDirectory?.providerKeys(ownerSub).includes(provider) ?? false,
-    memberBotsUseOrgKey: orgSettings().memberBotsUseOrgKey,
+    hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
     keyBacked: driverKeyBacked(cfg, instance.driverKind),
   };
 }
+/** A person's Perspicax subject (only from this server's issuer) and
+ * whether they are disabled. */
+function orgPersonFacts(person: { subject?: { iss: string; sub: string }; disabledAt?: unknown } | null | undefined): { sub?: string; disabled?: true } {
+  const sub = IDENTITY.kind === "perspicax" && person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+  return { ...(sub ? { sub } : {}), ...(person?.disabledAt !== undefined && person?.disabledAt !== null ? { disabled: true as const } : {}) };
+}
+/** A refused turn: why, and whose credentials it needed. */
+type OrgAccessRefusal = { reason: EngineAccessRefusal; cause?: NoAccessCause; payer?: "speaker" | "owner"; payerPrincipalId?: string; routine?: true };
+function orgRefusalOf(plan: Extract<EngineCredentialPlan, { ok: false }>): OrgAccessRefusal {
+  return {
+    reason: plan.reason,
+    ...(plan.cause ? { cause: plan.cause } : {}),
+    ...(plan.payer ? { payer: plan.payer } : {}),
+    ...(plan.payerPrincipalId ? { payerPrincipalId: plan.payerPrincipalId } : {}),
+    ...(plan.routine ? { routine: true as const } : {}),
+  };
+}
 /** The organization refusal for a turn, or null (checked when the turn is
- * admitted; the owner key itself is read at dispatch). */
-function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): EngineAccessRefusal | null {
+ * admitted; the payer's key itself is read at dispatch). */
+function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): OrgAccessRefusal | null {
   if (IDENTITY.kind !== "perspicax") return null;
   const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
-  return plan.ok ? null : plan.reason;
+  return plan.ok ? null : orgRefusalOf(plan);
 }
-/** A turn admitted with an owner key whose key Perspicax no longer gives
- * (and nothing after it serves): the dispatch stops with the access card. */
+/** A turn admitted with a person's key that Perspicax no longer gives (and
+ * nothing after it serves): the dispatch stops with the access card. */
 class EngineAccessLost extends Error {
-  readonly reason: EngineAccessRefusal;
+  readonly refusal: OrgAccessRefusal;
   readonly detail?: string;
-  constructor(reason: EngineAccessRefusal, detail?: string) {
-    super(reason === "engine_missing" ? "the engine is not installed" : "no engine access for this turn");
-    this.reason = reason;
+  constructor(refusal: OrgAccessRefusal, detail?: string) {
+    super(refusal.reason === "engine_missing" ? "the engine is not installed" : "no engine access for this turn");
+    this.refusal = refusal;
     if (detail) this.detail = detail;
   }
 }
@@ -14926,19 +14975,43 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
     invalidate: (sub, provider) => perspicaxDirectory?.invalidate(sub, provider),
     loginDir: (principalId, driver) => engineLogins?.loginDir(principalId, driver) ?? join(DATA_DIR, "principals", principalId, driver === "claudeAgent" ? "claude" : "codex"),
   });
-  if (!outcome.ok) throw new EngineAccessLost(outcome.reason, outcome.detail);
+  if (!outcome.ok) throw new EngineAccessLost(outcome.plan ? orgRefusalOf(outcome.plan) : { reason: outcome.reason }, outcome.detail);
   const provider = providerOfDriver(instance.driverKind) ?? undefined;
-  turnAccessByThread.set(threadId, { via: outcome.access.via, ...(input.owner.sub ? { ownerSub: input.owner.sub } : {}), ...(provider ? { provider } : {}) });
+  const { plan } = outcome;
+  const payerSub = plan.payerPrincipalId ? (plan.payer === "owner" ? input.owner.sub : input.person?.(plan.payerPrincipalId)?.sub) : undefined;
+  turnAccessByThread.set(threadId, {
+    via: outcome.access.via,
+    payer: plan.payer,
+    ...(plan.payerPrincipalId ? { payerPrincipalId: plan.payerPrincipalId } : {}),
+    ...(plan.routine ? { routine: true as const } : {}),
+    ...(payerSub ? { payerSub } : {}),
+    ...(provider ? { provider } : {}),
+  });
   return outcome.access;
 }
-/** Where an owner sets their model keys (Perspicax console, slice 4). */
+/** Where a person sets their model keys (Perspicax console, slice 4). */
 function perspicaxKeysUrl(): string | undefined {
   return IDENTITY.kind === "perspicax" ? `${IDENTITY.issuer.replace(/\/+$/, "")}/console/pulsabot/keys` : undefined;
 }
-/** The access card of a refused or lost turn. */
-function accessCardFor(bot: BotRecord, reason: EngineAccessRefusal, engine: string, detail?: string): WireAccessCard {
-  const keysUrl = reason === "no_access" ? perspicaxKeysUrl() : undefined;
-  return { reason, engine, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot), ...(detail ? { detail } : {}), ...(keysUrl ? { keysUrl } : {}) };
+/** The access card of a refused or lost turn: who has to act (the person
+ * who speaks, or the owner for a routine) and where. */
+function accessCardFor(bot: BotRecord, refusal: OrgAccessRefusal, engine: string, detail?: string): WireAccessCard {
+  const keysUrl = refusal.reason === "no_access" ? perspicaxKeysUrl() : undefined;
+  const instance = registry.get(bot.modelSelection.instanceId);
+  const driver = instance?.driverKind ?? "";
+  return {
+    reason: refusal.reason,
+    engine,
+    botId: bot.id,
+    ownerPrincipalId: effectiveBotOwner(bot),
+    ...(detail ? { detail } : {}),
+    ...(keysUrl ? { keysUrl } : {}),
+    ...(refusal.cause ? { cause: refusal.cause } : {}),
+    ...(refusal.payer ? { payer: refusal.payer } : {}),
+    ...(refusal.payerPrincipalId ? { payerPrincipalId: refusal.payerPrincipalId } : {}),
+    ...(refusal.routine ? { routine: true as const } : {}),
+    ...(refusal.reason === "no_access" && subscriptionDriver(driver) ? { subscriptionSignIn: true as const } : {}),
+  };
 }
 
 async function describeInstances() {
@@ -15316,9 +15389,14 @@ function orgAdminCaller(auth: RequestAuth): boolean {
   const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
   return person?.local === true || person?.orgRole === "admin";
 }
-function orgSettings(): { memberBotsUseOrgKey: boolean; interimAttach?: { until: number | null; people: number } } {
+/** Whether the server has a key for at least one engine of its fleet: the
+ * organization's key (engine-credentials.ts, step 5). */
+function orgKeyConfigured(): boolean {
+  return Object.values(instanceConfigs(cfg)).some((entry) => driverKeyBacked(cfg, entry.driver));
+}
+function orgSettings(): { orgKeyConfigured: boolean; interimAttach?: { until: number | null; people: number } } {
   return {
-    memberBotsUseOrgKey: cfg.organization?.memberBotsUseOrgKey === true,
+    orgKeyConfigured: orgKeyConfigured(),
     ...(IDENTITY.kind === "perspicax"
       ? { interimAttach: { until: interimWindowUntil(cfg.organization?.interimAttach, Date.now()), people: principals.listInterim().length } }
       : {}),
@@ -15803,7 +15881,8 @@ if (IDENTITY.kind === "perspicax") {
     return json(res, 200, { bots });
   });
 }
-// Slice 4 (D10): a person's own engines. Which answer for whom, and their
+// Slice 4 (D10): a person's own engines. What their own turns run with (on
+// their bots and on bots shared with them: engine-credentials.ts), and their
 // own subscription sign-in, in their own login directory.
 if (IDENTITY.kind === "perspicax" && engineLogins) {
   const logins = engineLogins;
@@ -15814,7 +15893,6 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
     if (!principalId || !isPrincipalId(principalId)) return json(res, 403, { error: "sign in as a person first" });
     const person = principals.byId(principalId);
     const sub = person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
-    const admin = orgAdminCaller(auth);
     if (method === "GET" && path === "/api/me/engines") {
       const engines = registry.entries().map((entry) => {
         const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
@@ -15822,9 +15900,10 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         const supported = isLoginDriver(driver);
         const signedIn = supported && logins.signedIn(principalId, driver);
         const provider = providerOfDriver(driver);
-        const ownerKey = Boolean(provider && sub && perspicaxDirectory?.providerKeys(sub).includes(provider));
-        const orgKey = orgSettings().memberBotsUseOrgKey && driverKeyBacked(cfg, driver);
-        const answersFor = !installed ? "nobody" : ownerKey || orgKey ? "everyone" : signedIn || admin ? "me" : "nobody";
+        const myKey = Boolean(provider && sub && perspicaxDirectory?.providerKeys(sub).includes(provider));
+        const orgKey = driverKeyBacked(cfg, driver);
+        // the order of engine-credentials.ts for this person speaking
+        const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn ? "subscription" : myKey ? "key" : orgKey ? "org-key" : "none";
         const live = registry.get(entry.instanceId);
         return {
           instanceId: entry.instanceId,
@@ -15832,9 +15911,9 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
           displayName: live ? engineDisplayName(live) : entry.instanceId,
           installed,
           subscription: { supported, signedIn },
-          ownerKey,
+          myKey,
           orgKey,
-          answersFor,
+          myTurns,
         };
       });
       return json(res, 200, { engines, ...(perspicaxKeysUrl() ? { keysUrl: perspicaxKeysUrl() } : {}) });
@@ -16106,17 +16185,6 @@ if (IDENTITY.kind === "perspicax") {
     bySubject: (iss, sub) => principals.bySubject(iss, sub),
     viewerRole: (auth) => (orgAdminCaller(auth) ? "admin" : "member"),
     settings: orgSettings,
-    saveSettings: (next, auth) => {
-      const before = orgSettings();
-      saveConfig({ organization: { ...cfg.organization, memberBotsUseOrgKey: next.memberBotsUseOrgKey } });
-      cfg.organization = { ...cfg.organization, memberBotsUseOrgKey: next.memberBotsUseOrgKey };
-      orgAudit({
-        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["memberBotsUseOrgKey"],
-        before: { memberBotsUseOrgKey: before.memberBotsUseOrgKey },
-        after: { memberBotsUseOrgKey: next.memberBotsUseOrgKey },
-        actor: orgAuditActor(auth),
-      });
-    },
     // Slice 8: shorten, extend (at most 90 days from when it opened) or
     // close the window to attach people from before Perspicax.
     saveInterimAttachDays: (days, auth) => {

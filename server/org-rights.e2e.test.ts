@@ -4,14 +4,16 @@
 //
 //   S4-1  teams from the id_token and the directory reach the session and
 //         /api/org/directory
-//   S4-3  a bot shared with a person and a team; the owner's key answers
-//         another speaker; someone outside sees nothing
+//   S4-3  a bot shared with a person and a team; the person who speaks
+//         pays: bob's own key answers bob, never the owner's (2026-10-01);
+//         someone outside sees nothing
 //   S4-5  levels: use, run, edit, manage
 //   S4-6  a team manager administers grants of their team with the anchor
 //   S4-7  an admin administers a bot they cannot open
 //   S4-4  removal from the team through the directory, then through a
 //         refreshed id_token, narrows at once
-//   S4-9  a person's own Codex subscription, only for them
+//   S4-9  a person's own Codex subscription pays for their own turns, on
+//         their bots and on bots shared with them, never for someone else
 //   S4-10 a section shared with a team; a room with a team
 //   S4-12 a shared section opens only what its owners consented to; a
 //         read-only member changes nothing; moving rooms needs moderators
@@ -33,6 +35,7 @@ const FAKE_CODEX_LOGIN = join(SERVER_DIR, "testing", "fake-codex-login-cli.ts");
 const posixOnly = describe.skipIf(process.platform === "win32");
 const ORG_KEY = "sk-ant-test-org-key-000000";
 const ALICE_KEY = "sk-ant-test-alice-key-0001";
+const BOB_KEY = "sk-ant-test-bob-key-00001";
 const TEAM_T = "01J9S4TEAMT0000000000000TT";
 const TEAM_U = "01J9S4TEAMU0000000000000UU";
 const ALICE: FakeOidcUser = { sub: "01J9S4ALICE0000000000000A", name: "Alice", preferred_username: "alice", role: "admin", teams: [] };
@@ -205,9 +208,10 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect(directory.viewer).toMatchObject({ principalId: ids.mia, orgRole: "member", perspicaxRole: "manager", managedTeamIds: [TEAM_T] });
   });
 
-  it("S4-3: shared with bob and team T; alice's own key answers bob; dave sees none of it", async () => {
+  it("S4-3: shared with bob and team T; bob's own key answers bob, never alice's; dave sees none of it", async () => {
     idp.providerKeys.set(`${ALICE.sub}/anthropic`, ALICE_KEY);
-    alice = await signIn(ALICE); // a sign-in refreshes the directory: provider_keys now lists alice
+    idp.providerKeys.set(`${BOB.sub}/anthropic`, BOB_KEY);
+    alice = await signIn(ALICE); // a sign-in refreshes the directory: provider_keys now lists alice and bob
     x = await createBot(alice, "Xavier", "claude");
     expect((await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
     const team = await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `team:${TEAM_T}`, level: "use" });
@@ -220,14 +224,22 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect(await botIds(bob)).toContain(x.id);
     expect(await botIds(carol)).toContain(x.id);
     expect(await botIds(dave)).not.toContain(x.id);
-    await waitFor(async () => (await api("GET", "/api/me/engines", alice)).body.engines?.find((e: { instanceId: string }) => e.instanceId === "claude")?.ownerKey === true);
+    await waitFor(async () => (await api("GET", "/api/me/engines", alice)).body.engines?.find((e: { instanceId: string }) => e.instanceId === "claude")?.myKey === true);
+    // bob has no subscription: his own key comes before the organization's
+    expect((await api("GET", "/api/me/engines", bob)).body.engines?.find((e: { instanceId: string }) => e.instanceId === "claude")).toMatchObject({ myKey: true, orgKey: true, myTurns: "key" });
     expect((await api("POST", `/api/bots/${x.id}/messages`, bob, { text: "ping from bob" })).status).toBe(202);
     await waitFor(async () => (await botOf(bob, x.id))?.messages.some((m) => m.role === "bot" && m.kind === "text" && m.text), 30_000);
     await waitFor(async () => existsSync(dump));
     const env = (JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env;
-    expect(env.ANTHROPIC_API_KEY).toBe(ALICE_KEY);
-    expect(idp.resolveRequests.at(-1)).toEqual({ sub: ALICE.sub, provider: "anthropic" });
+    expect(env.ANTHROPIC_API_KEY).toBe(BOB_KEY);
+    expect(idp.resolveRequests.map((r) => r.sub)).not.toContain(ALICE.sub);
+    expect(idp.resolveRequests.at(-1)).toEqual({ sub: BOB.sub, provider: "anthropic" });
     expect(log).not.toContain(ALICE_KEY);
+    expect(log).not.toContain(BOB_KEY);
+    // the thread says "your key" to bob, without the key
+    const digest = await waitFor(async () => (await botOf(bob, x.id))?.messages.find((m) => m.kind === "digest" && (m as { digest?: { access?: unknown } }).digest?.access) ?? null, 15_000);
+    expect((digest as unknown as { digest: { access: unknown } }).digest.access).toEqual({ via: "speaker-key", payer: "speaker", payerPrincipalId: ids.bob });
+    expect(JSON.stringify(digest)).not.toContain(BOB_KEY);
     expect([403, 404]).toContain((await api("GET", `/api/threads/${x.threadId}/messages`, dave)).status);
     expect([403, 404]).toContain((await api("GET", `/api/bots/${x.id}/grants`, dave)).status);
     expect((await api("GET", `/api/search?q=${encodeURIComponent("ping from bob")}`, dave)).text).not.toContain(x.id);
@@ -298,11 +310,16 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect([403, 404]).toContain((await api("GET", `/api/threads/${z.threadId}/messages`, alice)).status);
     expect((await api("PUT", `/api/bots/${z.id}/grants`, alice, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
     expect(((await api("GET", "/api/org/bots", alice)).body.bots as Array<{ id: string }>).map((b) => b.id)).toContain(z.id);
-    // bob speaking to erin's bot: no key of erin's and no org key
+    // bob speaking to erin's bot: his own key (erin has none), never hers
     const bob = await signIn(BOB);
+    const resolvedBefore = idp.resolveRequests.length;
     expect((await api("POST", `/api/bots/${z.id}/messages`, bob, { text: "hello erin's bot" })).status).toBe(202);
-    const card = await waitFor(async () => (await botOf(bob, z.id))?.messages.find((m) => m.kind === "access") ?? null);
-    expect(card.access).toMatchObject({ reason: "no_access", keysUrl: `${idp.issuer}/console/pulsabot/keys` });
+    await waitFor(async () => (await botOf(bob, z.id))?.messages.some((m) => m.role === "bot" && m.kind === "text" && m.text), 30_000);
+    expect((await botOf(bob, z.id))?.messages.some((m) => m.kind === "access")).toBe(false);
+    // read from Perspicax (or its 60 s cache) with bob's subject only
+    expect(idp.resolveRequests.slice(resolvedBefore).map((r) => r.sub).filter((sub) => sub !== BOB.sub)).toEqual([]);
+    await waitFor(async () => existsSync(dump) && JSON.stringify(JSON.parse(readFileSync(dump, "utf8")).prompt).includes("hello erin's bot"));
+    expect((JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env.ANTHROPIC_API_KEY).toBe(BOB_KEY);
   }, 60_000);
 
   it("S4-4: leaving the team through the directory, then through a refreshed id_token, narrows at once", async () => {
@@ -335,21 +352,22 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     const flowId = started.body.auth.flowId as string;
     writeFileSync(join(home, ".omb-fake-codex-login-approved"), "yes");
     await waitFor(async () => (await api("GET", `/api/me/engines/codex/login/status?flowId=${encodeURIComponent(flowId)}`, erin)).body.auth?.phase === "succeeded", 20_000);
-    const engines = (await api("GET", "/api/me/engines", erin)).body.engines as Array<{ instanceId: string; subscription: { signedIn: boolean }; answersFor: string }>;
-    expect(engines.find((e) => e.instanceId === "codex")).toMatchObject({ subscription: { supported: true, signedIn: true }, answersFor: "me" });
+    const engines = (await api("GET", "/api/me/engines", erin)).body.engines as Array<{ instanceId: string; subscription: { signedIn: boolean }; myTurns: string }>;
+    expect(engines.find((e) => e.instanceId === "codex")).toMatchObject({ subscription: { supported: true, signedIn: true }, myTurns: "subscription" });
     const dir = join(home, ".openmausbot", "principals", ids.erin!, "codex");
     expect(statSync(dir).mode & 0o777).toBe(0o700);
     expect(statSync(join(dir, ".pulsabot-login.json")).mode & 0o777).toBe(0o600);
     // another person's session cannot read erin's flow, and no engine without personal sign-in
     const bob = await signIn(BOB);
     expect((await api("GET", `/api/me/engines/codex/login/status?flowId=${encodeURIComponent(flowId)}`, bob)).status).toBe(404);
-    expect((await api("GET", "/api/me/engines", bob)).body.engines.find((e: { instanceId: string }) => e.instanceId === "codex")).toMatchObject({ subscription: { signedIn: false }, answersFor: "nobody" });
-    // bob speaking to erin's codex bot: not her subscription
+    // Codex has no organization key (login-backed): bob's turns there need his own
+    expect((await api("GET", "/api/me/engines", bob)).body.engines.find((e: { instanceId: string }) => e.instanceId === "codex")).toMatchObject({ subscription: { signedIn: false }, orgKey: false, myTurns: "none" });
+    // bob speaking to erin's codex bot: not her subscription; the card is his to act on
     const w = await createBot(erin, "Wendy", "codex");
     expect((await api("PUT", `/api/bots/${w.id}/grants`, erin, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
     expect((await api("POST", `/api/bots/${w.id}/messages`, bob, { text: "hi wendy" })).status).toBe(202);
     const card = await waitFor(async () => (await botOf(bob, w.id))?.messages.find((m) => m.kind === "access") ?? null);
-    expect(card.access).toMatchObject({ reason: "no_access" });
+    expect(card.access).toMatchObject({ reason: "no_access", payer: "speaker", payerPrincipalId: ids.bob, cause: "no_credentials", subscriptionSignIn: true, keysUrl: `${idp.issuer}/console/pulsabot/keys` });
     expect((await api("POST", "/api/me/engines/codex/login/sign-out", erin, {})).status).toBe(200);
     expect(existsSync(join(dir, ".pulsabot-login.json"))).toBe(false);
   }, 60_000);

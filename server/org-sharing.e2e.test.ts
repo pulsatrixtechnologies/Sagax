@@ -7,7 +7,9 @@
 //   S3-4  B: an admin shares a bot with bob; bob sees it, writes, gets a reply
 //         produced with the organization key; dave sees nothing of it
 //   S3-5  C: the grant removed, bob's stream ends and the bot is gone at once
-//   S3-6  F: no org key or no installed engine gives an access card, no turn
+//   S3-6  F: no org key (an admin cleared it in Settings > Connections; the
+//         org key switch is gone since 2026-10-01) or no installed engine
+//         gives an access card to the person who spoke, no turn
 //   S3-6b F on every path a person reaches: a queued send, an edit, a bot hop
 //   S3-7  a member's bot never gets full access
 //   S3-7b its cards that reach past its own workspace (a shell command, a
@@ -198,7 +200,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       const got = await api("GET", "/api/org", alice);
       return got.body.link?.state === "ok" ? got.body : null;
     });
-    expect(org).toMatchObject({ org: { name: "Acme", identity: { kind: "perspicax", issuer: idp.issuer, serverId: idp.serverId } }, viewerRole: "admin", settings: { memberBotsUseOrgKey: false } });
+    expect(org).toMatchObject({ org: { name: "Acme", identity: { kind: "perspicax", issuer: idp.issuer, serverId: idp.serverId } }, viewerRole: "admin", settings: { orgKeyConfigured: true } });
+    expect(org.settings).not.toHaveProperty("memberBotsUseOrgKey");
     expect(idp.directoryRequests.at(-1)).toMatchObject({ authorization: `Bearer ${idp.linkToken}`, "x-pulsabot-version": PACKAGE_VERSION });
     const people = (await api("GET", "/api/org/directory", alice)).body.people as Array<{ principalId: string; login: string; role: string; disabled: boolean }>;
     expect(people.map((p) => p.login)).toEqual(["alice", "bob", "dave", "erin"]);
@@ -211,7 +214,9 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // a member reads the directory and the organization, never changes the settings
     expect((await api("GET", "/api/org/directory", bob)).status).toBe(200);
     expect((await api("GET", "/api/org", bob)).body.viewerRole).toBe("member");
-    expect((await api("PATCH", "/api/org/settings", bob, { memberBotsUseOrgKey: true })).status).toBe(403);
+    expect((await api("PATCH", "/api/org/settings", bob, { interimAttachDays: 3 })).status).toBe(403);
+    // the retired switch is refused, even from an admin
+    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: true })).status).toBe(400);
     expect((await api("POST", "/api/org/invites", alice, { email: "x@example.test" })).status).toBe(403);
   });
 
@@ -230,8 +235,10 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
   });
 
   it("S3-4 (B): shared with bob, answered with the org key; dave sees none of it", async () => {
-    // Slice 8: the settings also carry the interim attach window (none here).
-    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: true })).body).toEqual({ settings: { memberBotsUseOrgKey: true, interimAttach: { until: null, people: 0 } } });
+    // The organization's key serves by itself (2026-10-01): bob has no
+    // subscription and no key of his own. Slice 8: the settings also carry
+    // the interim attach window (none here).
+    expect((await api("GET", "/api/org", alice)).body.settings).toEqual({ orgKeyConfigured: true, interimAttach: { until: null, people: 0 } });
     shared = await createBot(alice, "Xavier", "claude");
     const refusals = [
       await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: "bob@example.test" }),
@@ -262,6 +269,10 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const env = (JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env;
     expect(env.ANTHROPIC_API_KEY).toBe(ORG_KEY);
     expect(log).toContain(`[omb-turn] bot=${shared.id}`);
+    // the thread says what paid, without the key
+    const digest = await waitFor(async () => (await botsOf(bob)).find((b) => b.id === shared.id)?.messages.find((m) => m.kind === "digest" && (m as { digest?: { access?: unknown } }).digest?.access) ?? null, 15_000);
+    expect((digest as unknown as { digest: { access: unknown } }).digest.access).toEqual({ via: "org-key", payer: "organization" });
+    expect(JSON.stringify(digest)).not.toContain(ORG_KEY);
 
     expect((await botsOf(dave)).map((b) => b.id)).not.toContain(shared.id);
     expect([403, 404]).toContain((await api("GET", `/api/threads/${shared.threadId}/messages`, dave)).status);
@@ -290,7 +301,9 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
   });
 
   it("S3-6 (F): without the org key or an installed engine, the send is accepted and the card says why", async () => {
-    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: false })).status).toBe(200);
+    // an admin clears the organization's key in Settings > Connections
+    expect((await api("PATCH", "/api/config", alice, { anthropic: { key: "" } })).status).toBe(200);
+    await waitFor(async () => (await api("GET", "/api/org", alice)).body.settings?.orgKeyConfigured === false);
     expect((await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: bobId })).status).toBe(200);
     const bob = await signIn(BOB);
     const aliceStream = await openStream(alice);
@@ -301,7 +314,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       const bot = (await botsOf(bob)).find((b) => b.id === shared.id);
       return bot?.messages.find((m) => m.kind === "access") ?? null;
     });
-    expect(card.access).toMatchObject({ reason: "no_access", engine: "Claude", botId: shared.id });
+    // bob spoke: the card is his to act on (his subscription, his key)
+    expect(card.access).toMatchObject({ reason: "no_access", engine: "Claude", botId: shared.id, payer: "speaker", payerPrincipalId: bobId, cause: "no_credentials", subscriptionSignIn: true, keysUrl: `${idp.issuer}/console/pulsabot/keys` });
     expect(readFileSync(dump, "utf8")).toBe(before);
     await waitFor(async () => aliceStream.text().includes("turn-failed"));
     aliceStream.close();
@@ -325,21 +339,29 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const missing = await waitFor(async () => (await botsOf(alice)).find((b) => b.id === ghost.id)?.messages.find((m) => m.kind === "access") ?? null);
     expect(missing.access).toMatchObject({ reason: "engine_missing", botId: ghost.id });
 
-    // an admin's own bot on a login-backed engine still answers (scenario A)
+    // 2026-10-01: the server's own sign-ins no longer serve an admin's own
+    // bot; an engine without a personal sign-in or key and no org key is refused
     const own = await createBot(alice, "Grokker", "grok");
     expect((await api("POST", `/api/bots/${own.id}/messages`, alice, { text: "ping" })).status).toBe(202);
-    await waitFor(async () => (await botsOf(alice)).find((b) => b.id === own.id)?.messages.some((m) => m.role === "bot" && m.kind === "text" && m.text), 30_000);
-    expect((await botsOf(alice)).find((b) => b.id === own.id)?.messages.some((m) => m.kind === "access")).toBe(false);
+    const ownCard = await waitFor(async () => (await botsOf(alice)).find((b) => b.id === own.id)?.messages.find((m) => m.kind === "access") ?? null);
+    expect(ownCard.access).toMatchObject({ reason: "no_access", payer: "owner", cause: "no_credentials" });
+    expect(ownCard.access.subscriptionSignIn).toBeUndefined();
   }, 60_000);
 
   it("S3-6b (F): bob's queued send, his edit and his bot's ask_bot on alice's bot get the card, never a turn", async () => {
-    // the organization key is still off (S3-6); bob still holds his grant on Xavier
+    // the organization key is still cleared (S3-6); bob still holds his grant on Xavier
     const bob = await signIn(BOB);
     const promptsNow = () => (existsSync(prompts) ? readFileSync(prompts, "utf8") : "");
     const accessCards = async (auth: Auth, botId: string) =>
       ((await botsOf(auth)).find((b) => b.id === botId)?.messages ?? []).filter((m) => m.kind === "access");
 
-    // 1. queued: alice's turn holds the bot, bob's words wait for it
+    // 1. queued: alice's turn holds the bot, bob's words wait for it. Alice
+    // runs on her own Claude subscription (the server's sign-ins no longer
+    // serve an admin, 2026-10-01): the marker a finished sign-in leaves.
+    const aliceId = (await api("GET", "/api/auth/session", alice)).body.principalId as string;
+    const aliceLogin = join(home, ".openmausbot", "principals", aliceId, "claude");
+    mkdirSync(aliceLogin, { recursive: true, mode: 0o700 });
+    writeFileSync(join(aliceLogin, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
     const held = await createBot(alice, "Holder", "stuck");
     expect((await api("POST", `/api/bots/${held.id}/direct-grants`, alice, { userId: bobId })).status).toBe(200);
     expect((await api("POST", `/api/bots/${held.id}/messages`, alice, { text: "hold on, alice" })).status).toBe(202);
@@ -415,7 +437,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
   });
 
   it("S3-7b: a member's bot's card outside its workspace needs an admin; the owner's answer is 403", async () => {
-    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: true })).status).toBe(200);
+    // the organization's key is back: erin's own turn runs on it
+    expect((await api("PATCH", "/api/config", alice, { anthropic: { key: ORG_KEY } })).status).toBe(200);
     const erin = await signIn(ERIN);
     const wren = await createBot(erin, "Wren", "hold");
     const holdDump = join(home, "hold-dump.json");
@@ -476,7 +499,6 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     } finally {
       for (const socket of sockets) socket.destroy();
       await api("POST", `/api/bots/${wren.id}/interrupt`, erin, {});
-      expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: false })).status).toBe(200);
     }
   }, 60_000);
 
