@@ -1,8 +1,9 @@
-// A member of the organization through the real server: she joins by an
-// invite link and then sees herself, not the operator, in /api/config and in
-// config frames; she creates a bot that is hers alone, edits and deletes only
-// her own bots, and still cannot reach server admin routes. A guest (a person
-// with no organization role) creates nothing.
+// A member of the organization through the real server: she signs in with
+// Pulsatrix (the fake provider, server/testing/fake-oidc-provider.ts; slice 8
+// removed the interim invite links) and then sees herself, not the operator,
+// in /api/config and in config frames; she creates a bot that is hers alone,
+// edits and deletes only her own bots, and still cannot reach server admin
+// routes. A guest (a person with no organization role) creates nothing.
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { SessionRegistry } from "./sessions.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const PORT = 28800 + Math.floor(Math.random() * 10_000);
@@ -27,18 +29,33 @@ const GUEST_ID = "pr_0f0f0f0f-1111-4222-8333-444455556666";
 // no loopback trust and needs its own session.
 const REMOTE = { "x-forwarded-for": "198.51.100.23", "x-forwarded-proto": "https" };
 
+const ZARA_USER: FakeOidcUser = { sub: "01J9S8ZARA000000000000000Z", email: ZARA, preferred_username: "zara", role: "employee" };
+const MAX_USER: FakeOidcUser = { sub: "01J9S8MAX0000000000000000M", email: MAX, preferred_username: "max", role: "employee" };
+
 let child: ChildProcess | undefined;
+let idp: FakeOidcProvider | undefined;
 let home = "";
-let captureFile = "";
 let log = "";
-let maxToken = "";
+let maxCookie = "";
 let guestToken = "";
 let zaraCookie = "";
+
+const cookiePair = (setCookie: string) => setCookie.split(";")[0]!;
+async function signIn(user: FakeOidcUser): Promise<string> {
+  idp!.user = { ...user };
+  const start = await fetch(`${BASE}/auth/oidc/start`, { redirect: "manual" });
+  const binding = cookiePair(start.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
+  const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
+  const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
+  const session = callback.headers.getSetCookie().find((c) => c.startsWith("omb_session_") && !c.includes("_oidc="));
+  expect(callback.headers.get("location"), log.slice(-2000)).toBe("/");
+  return cookiePair(session!);
+}
 
 type Who = "owner" | "zara" | "max" | "guest";
 function headersFor(who: Who): Record<string, string> {
   if (who === "zara") return { ...REMOTE, cookie: zaraCookie };
-  if (who === "max") return { ...REMOTE, authorization: `Bearer ${maxToken}` };
+  if (who === "max") return { ...REMOTE, cookie: maxCookie };
   if (who === "guest") return { ...REMOTE, authorization: `Bearer ${guestToken}` };
   return {};
 }
@@ -73,14 +90,6 @@ async function until<T>(check: () => T | undefined, ms = 5_000): Promise<T | und
   }
 }
 
-function mails(): { to: string; text: string }[] {
-  try {
-    return readFileSync(captureFile, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
-  } catch {
-    return [];
-  }
-}
-
 posixOnly("an organization member's identity and bots", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-member-identity-"));
@@ -88,26 +97,31 @@ posixOnly("an organization member's identity and bots", () => {
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({
       profile: { name: OWNER_NAME, email: OWNER_EMAIL, aboutMe: OWNER_ABOUT },
-      signIn: { admins: [], members: [MAX] },
     }));
+    idp = await startFakeOidcProvider({ user: ZARA_USER });
+    idp.directoryPeople = [ZARA_USER, MAX_USER].map((user) => idp!.personOf(user));
+    mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
+    writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
+      version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
+    }), { mode: 0o640 });
     // A guest: a person the server knows, in no sign-in list.
     writeFileSync(join(data, "principals.json"), JSON.stringify({
       version: 1,
       principals: [{ id: GUEST_ID, kind: "guest", email: "gus@example.test", createdAt: 1 }],
     }));
-    const registry = new SessionRegistry({ file: join(data, "sessions.json"), emailScopes: () => ["client"] });
-    maxToken = registry.issue({ label: "Max's laptop", email: MAX, scopes: ["client"] }).token;
+    const registry = new SessionRegistry({ file: join(data, "sessions.json") });
     guestToken = registry.issue({ label: "Guest", principalId: GUEST_ID, scopes: ["client"] }).token;
     registry.close();
-    captureFile = join(home, "mail-capture.jsonl");
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),
       env: {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-        OMB_MAIL_PROVIDER: "sendgrid", OMB_MAIL_FROM: "bot@gox.ca", OMB_SENDGRID_API_KEY: "test-key",
-        OMB_MAIL_CAPTURE_FILE: captureFile, OMB_TEST_SEAMS: "1",
+        OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: BASE,
+        OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+        // The operator at this computer, as on a desktop or a one-person server.
+        OMB_LOOPBACK_TRUST: "owner",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -123,19 +137,13 @@ posixOnly("an organization member's identity and bots", () => {
       if (Date.now() > deadline) throw new Error(`server never came up:\n${log}`);
       await new Promise((r) => setTimeout(r, 150));
     }
-    const org = await api("POST", "/api/org", { body: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } } });
-    expect(org.status, JSON.stringify(org.body)).toBe(200);
-    const invite = await api("POST", "/api/org/invites", { body: { email: ZARA } });
-    expect(invite.status, JSON.stringify(invite.body)).toBe(200);
-    await until(() => mails().find((m) => m.to === ZARA));
-    const token = /token=([0-9a-f]+)/.exec(invite.body.link)![1]!;
-    const joined = await api("POST", `/api/org/invites/${token}/join`, { body: {}, headers: REMOTE });
-    expect(joined.status, JSON.stringify(joined.body)).toBe(200);
-    zaraCookie = joined.cookie!.split(";")[0]!;
+    zaraCookie = await signIn(ZARA_USER);
+    maxCookie = await signIn(MAX_USER);
   }, 40_000);
 
   afterAll(async () => {
     if (child) await waitForExit(child, { signal: "SIGTERM" });
+    await idp?.close();
     await removeTempDir(home);
   });
 
@@ -230,7 +238,8 @@ posixOnly("an organization member's identity and bots", () => {
     const ops = await api("POST", "/api/bots", { body: { name: "Ops" } });
     expect(ops.status).toBe(201);
     opsBot = ops.body.bot.id;
-    const granted = await api("POST", `/api/bots/${opsBot}/direct-grants`, { body: { userId: ZARA } });
+    const zaraId = (await api("GET", "/api/config", { as: "zara" })).body.viewer.principalId;
+    const granted = await api("POST", `/api/bots/${opsBot}/direct-grants`, { body: { userId: zaraId } });
     expect(granted.status, granted.text).toBe(200);
     expect((await api("GET", "/api/bots", { as: "zara" })).body.bots.map((b: any) => b.id)).toContain(opsBot);
     expect((await api("PATCH", `/api/bots/${opsBot}`, { as: "zara", body: { name: "Hijacked" } })).status).toBe(403);

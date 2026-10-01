@@ -791,8 +791,8 @@ computer are unchanged.
 For several people on one server, run Sagax with Perspicax (the compose in
 `pulsatrix-v3/deploy`, `docker-compose.pulsabot.yml`). Emailed sign-in codes,
 invitation links, the sign-in allow-list, `pulsa access` and the mail
-settings (`OMB_SIGNIN_*`, `OMB_MAIL_*`, `OMB_SMTP_*`, SendGrid, Twilio) were
-removed; an old `config.json` that still has `mail`, `signIn`, `invites` or
+settings (the sign-in and mail environment variables, and the SMTP and
+other mail providers) were removed; an old `config.json` that still has `mail`, `signIn`, `invites` or
 `org` loads and ignores them, and a session that signed in with an emailed
 code ends at its next request.
 

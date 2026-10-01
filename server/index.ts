@@ -15450,6 +15450,11 @@ function memberOwnsBot(auth: RequestAuth, bot: { ownerUserId?: unknown }): boole
   const actor = actorPrincipalId(auth).trim().toLowerCase();
   return Boolean(actor) && effectiveBotOwner(bot) === actor;
 }
+/** On an organization server, a chat-scoped session who is not the
+ * operator changes how a bot looks only on bots they own or may edit. */
+function botEditsNeedOwner(auth: RequestAuth): boolean {
+  return auth.kind === "session" && !auth.scopes.includes("admin") && IDENTITY.kind === "perspicax" && !viewerIsOperator(auth);
+}
 function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
   if (auth.kind === "loopback" && auth.trust === "service") return null;
   const role = channelActorRole(auth);
@@ -21337,6 +21342,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/profile$/);
     if (m && method === "PATCH") {
+      const target = store.bot(m[1]);
+      if (target && botEditsNeedOwner(auth) && !memberOwnsBot(auth, target) && !atLeast(viewerBotLevel(auth, target), "edit")) {
+        return json(res, 403, { error: "forbidden: only the bot owner can change its profile" });
+      }
       const parsed = parseBotProfilePatch(await readBody(req), true);
       if (!parsed.ok) return json(res, 400, { error: parsed.error });
       if (parsed.patch.avatarUrl && !storedAvatarExists(parsed.patch.avatarUrl)) {
@@ -21487,6 +21496,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               ? `forbidden: a member may change their bot's name, look, instructions and model, not "${field}"`
               : `forbidden: this session may change how a bot looks, not "${field}" (needs the admin scope)`,
           });
+        }
+        if (!own && !editor && target && botEditsNeedOwner(auth) && Object.keys(body).some((key) => key === "color" || key.startsWith("mascot"))) {
+          return json(res, 403, { error: "forbidden: only the bot owner can change how it looks" });
         }
       }
       const existingBot = store.bot(m[1]);

@@ -450,7 +450,7 @@ export class SessionRegistry {
     return result;
   }
 
-  /** A session from a verified account sign-in (server/account-signin.ts)
+  /** A session from a verified account sign-in (a hosted portal sign-in)
    * rather than a pairing code: same token, same term, same gates. */
   issue(input: { label: string; scopes: Scope[]; userId?: string; email?: string; principalId?: string; idp?: SessionRecord["idp"] }): { token: string; session: PublicSession } {
     return this.issueAccount(input);
