@@ -385,6 +385,11 @@ describe("OIDC relying party: console assertions (slice 7)", () => {
   type Bend = Record<string, unknown>;
   const assertion = (extra: Partial<Parameters<FakeOidcProvider["consoleAssertion"]>[0]> = {}) => idp.consoleAssertion({ sub, aud: ORIGIN, role: "manager", teams: [{ id: "T1", name: "Support", manager: true }], ...extra });
 
+  it("accepts an assertion within 5 s of its expiry tolerance (S7-2)", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await expect(rp().verifyConsoleAssertion(assertion({ claims: (c: Bend) => ({ ...c, iat: now - 62, exp: now - 2 }) }), ORIGIN)).resolves.toMatchObject({ sub });
+  });
+
   it("verifies a good assertion: role, teams, jti, server id; one trailing slash on the origin is the same", async () => {
     const party = rp();
     const got = await party.verifyConsoleAssertion(assertion(), `${ORIGIN}/`, idp.serverId);
@@ -407,6 +412,9 @@ describe("OIDC relying party: console assertions (slice 7)", () => {
     ["a 300 s life", { claims: (c: Bend) => ({ ...c, exp: (c.iat as number) + 300 }) }, "console_assertion_exp"],
     ["an expired assertion", { claims: (c: Bend) => ({ ...c, iat: Math.floor(Date.now() / 1000) - 200, exp: Math.floor(Date.now() / 1000) - 140 }) }, "console_assertion_exp"],
     ["no expiry", { claims: (c: Bend) => { const { exp: _exp, ...rest } = c; return rest; } }, "console_assertion_exp"],
+    // S7-2: a 60 s assertion is dead 70 s after iat (tolerance 5 s, not the id_token's 60 s).
+    ["an assertion 70 s after iat", { claims: (c: Bend) => ({ ...c, iat: Math.floor(Date.now() / 1000) - 70, exp: Math.floor(Date.now() / 1000) - 10 }) }, "console_assertion_exp"],
+    ["an issue time 30 s ahead", { claims: (c: Bend) => ({ ...c, iat: Math.floor(Date.now() / 1000) + 30, exp: Math.floor(Date.now() / 1000) + 90 }) }, "console_assertion_iat"],
     ["an issue time in the future", { claims: (c: Bend) => ({ ...c, iat: Math.floor(Date.now() / 1000) + 600, exp: Math.floor(Date.now() / 1000) + 660 }) }, "console_assertion_iat"],
     ["a nonce", { claims: (c: Bend) => ({ ...c, nonce: "n" }) }, "console_assertion_nonce"],
     ["events", { claims: (c: Bend) => ({ ...c, events: { "http://schemas.openid.net/event/backchannel-logout": {} } }) }, "console_assertion_events"],

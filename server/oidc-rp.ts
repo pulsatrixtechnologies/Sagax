@@ -298,6 +298,10 @@ type TokenKind = "id_token" | "logout_token" | "console_assertion";
 export const CONSOLE_ASSERTION_TYP = "pulsabot-console+jwt";
 /** The longest life a console assertion may claim (exp - iat), in seconds. */
 export const CONSOLE_ASSERTION_MAX_LIFE_SECONDS = 120;
+/** Clock tolerance on a console assertion's `exp` and `iat`, in seconds. Far
+ * tighter than the id_token's 60 s: the assertion is minted per request and
+ * lives 60 s, so a 60 s tolerance would let it work for two minutes. */
+export const CONSOLE_ASSERTION_SKEW_SECONDS = 5;
 
 /** The OpenID Connect Back-Channel Logout 1.0 event key. */
 export const BACKCHANNEL_LOGOUT_EVENT = "http://schemas.openid.net/event/backchannel-logout";
@@ -447,7 +451,7 @@ const CONSOLE_ROLES = new Set(["admin", "manager", "employee"]);
  * The replay cache is the caller's (server/org-admin-routes.ts). */
 export async function verifyConsoleAssertion(input: VerifyConsoleAssertionInput): Promise<ConsoleAssertion> {
   const kind = "console_assertion";
-  const { header, claims } = await verifyJws(input, kind);
+  const { header, claims } = await verifyJws({ ...input, skewSeconds: input.skewSeconds ?? CONSOLE_ASSERTION_SKEW_SECONDS }, kind);
   if (header.typ !== CONSOLE_ASSERTION_TYP) throw new OidcError(`${kind}_typ`, "The token is not a console assertion.");
   // One audience string, never an array, and no authorized party.
   if (typeof claims.aud !== "string" || claims.aud !== input.audience || claims.azp !== undefined) throw new OidcError(`${kind}_aud`, "The console assertion must name this server as its one audience.");
