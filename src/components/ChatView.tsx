@@ -84,6 +84,9 @@ import { effectivePlace, toolPlace, type EffectivePlace } from "@/lib/place";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { activeLocale, t } from "@/lib/i18n";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { showPrivateConversationHint } from "@/lib/private-threads";
+import { viewerActorId } from "@/lib/viewer";
 import { COMPACT_BUBBLE } from "@/lib/compact-chip";
 import { useFocusMessage } from "@/lib/focus-message";
 import { groupTranscript, isRecoveryActivity } from "@/lib/activity-runs";
@@ -963,6 +966,10 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   // strip, so the two stay vertically aligned; every other skin ignores it.
   const { macInset, browser } = useMacInsetChrome();
   const panelOpen = !remoteClient && (state.settingsOpen || state.computerOpen);
+  // A shared bot on an organization server: each person's conversation is
+  // their own; several people talk together in a group.
+  const perspicaxOrg = usePerspicaxOrg();
+  const privateHint = showPrivateConversationHint({ org: perspicaxOrg !== null, viewerId: viewerActorId(state.config), bot });
   const scrollRef = useRef<HTMLDivElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const composerDockRef = useRef<HTMLDivElement>(null);
@@ -1354,6 +1361,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           none is showing so the transcript can run to the top. */}
       <div className="chat-banners pt-[52px] empty:hidden">
       <BotActivityPicker bot={bot} />
+      {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {routineExecution && <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[11.5px] text-ink-secondary">
         <span className="min-w-0 flex-1 truncate">{t("routines.executionDetails", { name: routineExecution.routineName })}</span>
         {canOpenResults && resultsThreadId && <button type="button" onClick={() => openNotificationTarget(dispatch, { botId: bot.id, threadId: resultsThreadId }, state)} className="rounded px-2 py-1 text-accent hover:bg-raised">{t("routines.results.back")}</button>}

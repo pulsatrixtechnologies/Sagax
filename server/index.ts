@@ -576,7 +576,8 @@ import {
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
-import { atLeast, botLevel, canEditRoomHumans, canInChannel, canModerateSection, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
+import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
+import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
@@ -1189,8 +1190,10 @@ function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opt
       for (const task of group.tasks ?? []) roomByThread.set(task.threadId, group);
     }
   }
+  const privateAllow = privateRecallFilter(bot, threadId);
   const threadIds = opts.conversations
-    ? [...new Set([bot.threadId, ...(bot.tasks ?? []).map((task) => task.threadId), ...roomByThread.keys()])].filter((id) => id !== threadId)
+    ? [...new Set([bot.threadId, ...(bot.tasks ?? []).map((task) => task.threadId), ...roomByThread.keys()])]
+      .filter((id) => id !== threadId && (!privateAllow || privateAllow(id)))
     : [];
   try {
     const recalled = buildRecall({
@@ -2453,7 +2456,8 @@ function requestedTaskBot(botId: string, rawThreadId: unknown): BotRecord {
   if (rawThreadId !== undefined && (typeof rawThreadId !== "string" || !/^[\w-]+$/.test(rawThreadId))) {
     throw Object.assign(new Error("threadId must be a task id"), { status: 400 });
   }
-  const threadId = typeof rawThreadId === "string" ? rawThreadId : profile.threadId;
+  // Organization server: the viewer's own thread, never someone else's.
+  const threadId = routeThreadId(profile, rawThreadId);
   const task = store.projectBotForTask(botId, threadId);
   if (!task) throw Object.assign(new Error("no such task"), { status: 404 });
   return task;
@@ -5807,6 +5811,27 @@ function sseFrameFor(
       const serialized = `id: ${STREAM_ID}:${seq}\ndata: ${JSON.stringify({ ...payload, seq })}\n\n`;
       frame = serialized;
       clientFrame = serialized;
+    }
+  }
+  // Private threads (server/thread-privacy.ts): a bot frame shows each
+  // organization viewer their own threads and transcript only, and queued
+  // sends list their threads only. Admin streams too: the admin projection
+  // below would otherwise send the frame as it was broadcast.
+  if (payload && client.viewerId && privateThreads() && (payload.kind === "bot" || payload.kind === "bot.queued")) {
+    let narrowed: Record<string, unknown> = payload;
+    if (payload.kind === "bot" && payload.bot && typeof payload.bot === "object" && !Array.isArray(payload.bot)) {
+      const bot = botForViewer(payload.bot as Record<string, unknown>, client.viewerId);
+      if (bot !== payload.bot) narrowed = { ...payload, bot };
+    } else if (payload.kind === "bot.queued" && payload.queues && typeof payload.queues === "object") {
+      const queues = payload.queues as Record<string, unknown>;
+      const shown = threadKeyedForViewer(queues, client.viewerId);
+      if (Object.keys(shown).length !== Object.keys(queues).length) narrowed = { ...payload, queues: shown };
+    }
+    if (narrowed !== payload) {
+      payload = narrowed;
+      const serialized = `id: ${STREAM_ID}:${seq}\ndata: ${JSON.stringify({ ...payload, seq })}\n\n`;
+      frame = serialized;
+      if (clientFrame !== null) clientFrame = serialized;
     }
   }
   // A config frame names its viewer: each stream gets its own profile and
@@ -10327,7 +10352,7 @@ async function startTurn(
         { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
         // what the bot said lately in its other conversations, so a task
         // never redoes — or forgets — what another one already did
-        { id: "recent", label: "Recent work", text: recentWorkPrompt(recentWork(recentWorkSources(bot), bot, { userName: botUserName(bot), currentThreadId: threadId })) },
+        { id: "recent", label: "Recent work", text: recentWorkPrompt(recentWorkFor(bot, threadId, { userName: botUserName(bot) })) },
         { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace }) },
         { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id) : "" },
         { id: "skill-instructions", label: "Skill instructions", text: skillInstructions },
@@ -10827,8 +10852,9 @@ routines = new RoutineManager({
     }
     return groupIsWorking(group) || coordinator.busy ? "busy" : "ready";
   },
-  createTask: (botId, title, activate = false) => {
-    const task = store.createTask(botId, title, activate);
+  createTask: (botId, title, activate = false, runAs) => {
+    // Private threads: the run's thread is the person it runs as (else the bot owner's).
+    const task = store.createTask(botId, title, activate, undefined, undefined, undefined, privateThreads() && runAs ? runAs : undefined);
     const bot = store.bot(botId);
     if (task && bot) broadcast({ kind: "bot", bot: publicBot(bot) });
     return task;
@@ -10845,14 +10871,16 @@ routines = new RoutineManager({
   isResultsThread: (botId, threadId) => {
     const bot = store.bot(botId);
     const task = store.taskByThread(botId, threadId);
-    return Boolean(bot && !bot.hidden && task && !task.routineRunId);
+    // Private threads: a routine reports only into a thread of the person
+    // setting it up, never into someone else's conversation.
+    return Boolean(bot && !bot.hidden && task && !task.routineRunId && botThreadReadable(bot, threadId, scopedThreadViewer(), "thread.post"));
   },
   resolveResultsThread: (routine, forceNew) => {
     // A trusted chat source is already snapshotted as sourceThreadId on each
     // run. Keep it distinct: it can belong to a teammate or room, whereas an
     // explicit resultsThreadId must be a visible task owned by the running bot.
     if (!forceNew && routineSourceOwner(routine)) return routine.resultsThreadId;
-    return store.createTask(routine.botId, `${routine.name} · Results`, false)?.threadId;
+    return store.createTask(routine.botId, `${routine.name} · Results`, false, undefined, undefined, undefined, privateThreads() && routine.runAs ? routine.runAs : undefined)?.threadId;
   },
   discardResultsThread: (botId, threadId) => {
     const task = store.taskByThread(botId, threadId);
@@ -12463,7 +12491,7 @@ async function runGroupMemberTurn(
   // brief can carry a private chat into the room; as with session_search
   // (#754) the room is told, once per source thread, rather than the
   // crossing being blocked.
-  const recentLines = recentWork(recentWorkSources(bot), bot, { userName, currentThreadId: threadId });
+  const recentLines = recentWorkFor(bot, threadId, { userName });
   const roomComputerPromptKind = resolveComputerPromptKind({
     kind: roomTeamComputer || roomComputerKind === "box" ? "box" : roomVmTarget ? "vm" : roomComputerKind,
     driverKind: instance.driverKind, cloudComputerMcp: instance.adapter.capabilities.cloudComputerMcp,
@@ -13682,6 +13710,8 @@ async function attachmentVmForTurn(capability: InternalCapability): Promise<Loca
 function connectorThread(botId: string, threadId: string) {
   const bot = store.bot(botId);
   if (!bot) return null;
+  // Organization server: a bot thread's cards are its owner's only.
+  if ((bot.threadId === threadId || store.taskByThread(botId, threadId)) && !botThreadReadable(bot, threadId, scopedThreadViewer(), "thread.answer")) return null;
   if (bot.threadId === threadId) return { bot, group: undefined }; // a bot's own main chat
   if (store.taskByThread(botId, threadId)) return { bot, group: undefined };
   const group = store.groupByThread(threadId);
@@ -15492,9 +15522,188 @@ function viewerBotLevel(auth: RequestAuth, bot: Parameters<typeof botFacts>[0]):
   if (!viewer) return "owner";
   return botLevel({ viewer, ...botFacts(bot) });
 }
+// ── private threads (server/thread-privacy.ts) ─────────────────────────
+// On an organization server each 1:1 thread with a bot is one person's; only
+// group chats are shared. Every read, write, stream, search, export, file
+// and card of a bot thread asks botThreadReadable.
+function privateThreads(): boolean {
+  return IDENTITY.kind === "perspicax";
+}
+/** Per viewer and bot: the thread they last opened (`botId\nprincipal`).
+ * Kept in memory; after a restart they land on their newest thread. */
+const viewerSelections = new Map<string, string>();
+const selectionKey = (botId: string, viewerId: string) => `${botId}\n${viewerId.trim().toLowerCase()}`;
+/** The filtered viewer of the request being served (channelFilterViewerId),
+ * for the helpers below that routes call without the request. Null: the
+ * operator at this computer, a local service, or a solo server. */
+const threadViewerScope = new AsyncLocalStorage<string | null>();
+function scopedThreadViewer(): string | undefined {
+  return privateThreads() ? threadViewerScope.getStore() ?? undefined : undefined;
+}
+/** Whether this viewer may act on this bot thread (owner of the thread,
+ * still holding bot.use). No viewer, or a solo server: yes. */
+function botThreadReadable(bot: { id: string; ownerUserId?: unknown; grants?: unknown; directGrants?: unknown; section?: unknown; createdAt?: unknown }, threadId: string, viewerId: string | undefined, action: ThreadAction = "thread.read"): boolean {
+  if (!viewerId || !privateThreads()) return true;
+  return canOnThread(authzViewerFromId(viewerId), action, { bot: botFacts(bot), task: store.taskByThread(bot.id, threadId) });
+}
+/** A bot's threads as this viewer lists them: their own. */
+function threadsShownTo<T extends { ownerPrincipalId?: unknown }>(bot: { ownerUserId?: unknown }, tasks: readonly T[], viewerId: string | undefined): T[] {
+  if (!viewerId || !privateThreads()) return [...tasks];
+  return ownThreads(tasks, viewerId, effectiveBotOwner(bot));
+}
+/** The viewer's thread on this bot (viewerThread), without starting one. */
+function viewerThreadOf(bot: BotRecord, viewerId: string): string | undefined {
+  return viewerThread({
+    tasks: store.tasks(bot.id),
+    viewerId,
+    botOwnerPrincipalId: effectiveBotOwner(bot),
+    selected: viewerSelections.get(selectionKey(bot.id, viewerId)),
+    current: bot.threadId,
+  });
+}
+/** The viewer's thread on this bot, started for them when they have none
+ * yet ("opening the bot starts their own private thread"). Only for someone
+ * who may use the bot. */
+function ensureViewerThread(bot: BotRecord, viewerId: string): string | undefined {
+  const mine = viewerThreadOf(bot, viewerId);
+  if (mine || !isPrincipalId(viewerId)) return mine;
+  const viewer = authzViewerFromId(viewerId);
+  if (!viewer || !canOnBot(viewer, "bot.use", botFacts(bot))) return undefined;
+  const task = store.createTask(bot.id, undefined, false, undefined, undefined, undefined, viewerId);
+  if (task) console.log(`[private-threads] bot ${bot.id}: a person's first private thread started`);
+  return task?.threadId;
+}
+/** Remember which of their threads a viewer opened. */
+function selectViewerThread(botId: string, viewerId: string, threadId: string): void {
+  if (viewerSelections.size >= 50_000) viewerSelections.clear();
+  viewerSelections.set(selectionKey(botId, viewerId), threadId);
+}
+/** The bot thread a bot route acts on for the request being served: the one
+ * it names, else the viewer's own (started if needed), else the bot's
+ * selected one. A thread the viewer may not open reads as missing. */
+function routeThreadId(bot: BotRecord, rawThreadId: unknown, action: ThreadAction = "thread.post"): string {
+  if (rawThreadId !== undefined && rawThreadId !== null && (typeof rawThreadId !== "string" || !/^[\w-]+$/.test(rawThreadId))) {
+    throw Object.assign(new Error("threadId must be a task id"), { status: 400 });
+  }
+  const viewerId = scopedThreadViewer();
+  if (typeof rawThreadId === "string") {
+    if (viewerId && store.taskByThread(bot.id, rawThreadId) && !botThreadReadable(bot, rawThreadId, viewerId, action)) {
+      throw Object.assign(new Error("no such task"), { status: 404 });
+    }
+    return rawThreadId;
+  }
+  if (!viewerId) return bot.threadId;
+  const mine = ensureViewerThread(bot, viewerId);
+  if (!mine) throw Object.assign(new Error("no such task"), { status: 404 });
+  return mine;
+}
+/** A bot (wire shape) as one viewer receives it: their threads only, their
+ * thread selected, nobody else's transcript (thread-privacy.ts). */
+function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: string | undefined): T {
+  if (!viewerId || !privateThreads() || typeof bot.id !== "string") return bot;
+  const record = store.bot(bot.id);
+  if (!record) return bot;
+  const mine = viewerThreadOf(record, viewerId);
+  const mineTask = mine ? store.taskByThread(record.id, mine) : undefined;
+  return narrowBotForViewer(bot, {
+    viewerId,
+    botOwnerPrincipalId: effectiveBotOwner(record),
+    ...(mine ? { mine } : {}),
+    ...(mineTask ? { mineTask: { ...wireTask(mineTask), ...store.projectBotForTask(record.id, mine!) } as unknown as Record<string, unknown> } : {}),
+  });
+}
+/** A JSON response as an organization viewer receives it: every bot it
+ * carries (under `bot`, or in `bots`, at the top or one level down)
+ * through botForViewer. */
+function bodyForThreadViewer(body: unknown, viewerId: string): unknown {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const narrow = (value: unknown, depth: number): unknown => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    const record = value as Record<string, unknown>;
+    let out: Record<string, unknown> | null = null;
+    for (const [field, child] of Object.entries(record)) {
+      let next = child;
+      if (field === "bot" && child && typeof child === "object" && !Array.isArray(child)) next = botForViewer(child as Record<string, unknown>, viewerId);
+      else if (field === "bots" && Array.isArray(child)) {
+        next = child.map((bot) => (bot && typeof bot === "object" && !Array.isArray(bot) ? botForViewer(bot as Record<string, unknown>, viewerId) : bot));
+      } else if (depth > 0 && field !== "messages" && child && typeof child === "object" && !Array.isArray(child)) next = narrow(child, depth - 1);
+      if (next !== child) (out ??= { ...record })[field] = next;
+    }
+    return out ?? record;
+  };
+  return narrow(body, 1);
+}
+/** Thread ids keyed in a map (queued sends) an organization viewer may see. */
+function threadKeyedForViewer<T>(entries: Record<string, T>, viewerId: string | undefined): Record<string, T> {
+  if (!viewerId || !privateThreads()) return entries;
+  return Object.fromEntries(Object.entries(entries).filter(([threadId]) => {
+    const bot = store.botByThread(threadId);
+    return !bot || botThreadReadable(bot, threadId, viewerId, "thread.stream");
+  }));
+}
+/** One-time (config.privateThreadsMigratedAt): every bot thread written
+ * before private threads gets its owner (thread-privacy.ts planThreadOwners).
+ * Counts go to the server log, never ids or names. */
+function migrateThreadOwners(): void {
+  if (!privateThreads() || cfg.privateThreadsMigratedAt) return;
+  const plan = planThreadOwners(
+    store.bots.map((bot) => ({ id: bot.id, ownerPrincipalId: effectiveBotOwner(bot), tasks: store.tasks(bot.id) })),
+    (threadId) => store.messagesFor(threadId).flatMap((message) => (message.role === "user" && !message.peerAsk && message.sender?.id ? [message.sender.id] : [])),
+    (id) => isPrincipalId(id) && Boolean(principals.byId(id)),
+  );
+  store.assignTaskOwners(plan.assignments);
+  console.log(migrationLogLine(plan.report));
+  cfg.privateThreadsMigratedAt = Date.now();
+  saveConfig({ privateThreadsMigratedAt: cfg.privateThreadsMigratedAt });
+}
+
+/** Private threads: who owns a thread a bot opens while working in
+ * `fromThreadId`: the person that work is for (the owner of that thread, or
+ * the person whose request it is in a group chat), when they may use the bot
+ * the thread opens on; else undefined, the bot owner. */
+function openedThreadOwner(from: BotRecord, fromThreadId: string, target: BotRecord): string | undefined {
+  if (!privateThreads()) return undefined;
+  const person = store.groupByThread(fromThreadId)
+    ? threadPersonKey(fromThreadId)
+    : privateThreadOwner(store.taskByThread(from.id, fromThreadId), effectiveBotOwner(from));
+  if (!person || !isPrincipalId(person)) return undefined;
+  const viewer = authzViewerFromId(person);
+  return viewer && canOnBot(viewer, "bot.use", botFacts(target)) ? person : undefined;
+}
+/** Organization server: which conversations a bot's automatic recall,
+ * recent-work brief, session_search and session_read may draw on during a
+ * turn in `threadId`. A room turn: that room only (its people would read
+ * whatever comes back). A 1:1 turn: the same person's threads with this bot
+ * and the rooms that person reads. Null: no narrowing (solo server). */
+function privateRecallFilter(bot: BotRecord, threadId: string): ((candidate: string) => boolean) | null {
+  if (!privateThreads()) return null;
+  const room = store.groupByThread(threadId);
+  if (room) return (candidate) => store.groupByThread(candidate)?.id === room.id;
+  const botOwner = effectiveBotOwner(bot);
+  const person = privateThreadOwner(store.taskByThread(bot.id, threadId), botOwner);
+  const operator = person === localPrincipalId().trim().toLowerCase();
+  return (candidate) => {
+    const group = store.groupByThread(candidate);
+    if (group) return operator || groupVisible(group, person);
+    if (store.botByThread(candidate)?.id !== bot.id) return false;
+    return privateThreadOwner(store.taskByThread(bot.id, candidate), botOwner) === person;
+  };
+}
+/** The recent-work brief for a turn, narrowed by privateRecallFilter. */
+function recentWorkFor(bot: BotRecord, threadId: string, opts: { userName: string }) {
+  const sources = recentWorkSources(bot);
+  const allow = privateRecallFilter(bot, threadId);
+  if (!allow) return recentWork(sources, bot, { ...opts, currentThreadId: threadId });
+  return recentWork(
+    { ...sources, groups: sources.groups.filter((group) => allow(group.threadId)) },
+    { ...bot, threadId, tasks: (bot.tasks ?? []).filter((task) => allow(task.threadId)) },
+    { ...opts, currentThreadId: threadId },
+  );
+}
+
 function searchHitVisibleNow(threadId: string, viewerId: string | undefined): boolean {
   const bot = store.botByThread(threadId);
-  if (bot) return listedBotVisible(bot, viewerId);
+  if (bot) return listedBotVisible(bot, viewerId) && botThreadReadable(bot, threadId, viewerId, "thread.search");
   const group = store.groupByThread(threadId);
   if (group) return groupVisible(group, viewerId);
   return searchHitVisible({ viewerId, channel: null, bot: null });
@@ -15505,18 +15714,32 @@ function searchHitVisibleNow(threadId: string, viewerId: string | undefined): bo
  * bot and room are gone is seen only by the person it runs as. Never the
  * legacy email-keyed VisibleSet alone: organization members carry no email,
  * so that set opens everything to them (slice 8 fix). */
-function routineSeenBy(value: { botId?: unknown; groupId?: unknown; runAs?: unknown }, viewerId: string): boolean {
+function routineSeenBy(value: { botId?: unknown; groupId?: unknown; runAs?: unknown; sourceThreadId?: unknown }, viewerId: string): boolean {
   if (typeof value.groupId === "string" && value.groupId) {
     const group = store.group(value.groupId);
     if (group) return groupVisible(group, viewerId);
   }
-  if (typeof value.botId === "string" && value.botId) {
-    const bot = store.bot(value.botId);
-    if (bot) return listedBotVisible(bot, viewerId);
-  }
   const runAs = typeof value.runAs === "string"
     ? value.runAs
     : value.runAs && typeof value.runAs === "object" ? (value.runAs as { principalId?: unknown }).principalId : undefined;
+  if (typeof value.botId === "string" && value.botId) {
+    const bot = store.bot(value.botId);
+    if (bot) {
+      if (!listedBotVisible(bot, viewerId)) return false;
+      if (!privateThreads()) return true;
+      // Private threads: a bot routine and its runs are the person it runs
+      // as (else the bot owner), like the thread it writes; one that reports
+      // into a group chat is that group's. The run level keeps its written
+      // right to operate every routine that targets the bot (spec section 3,
+      // slice 4), so a run holder still lists them; the threads stay private.
+      const room = typeof value.sourceThreadId === "string" ? store.groupByThread(value.sourceThreadId) : null;
+      if (room && groupVisible(room, viewerId)) return true;
+      const person = typeof runAs === "string" && runAs.trim() ? runAs : effectiveBotOwner(bot);
+      if (person.trim().toLowerCase() === viewerId.trim().toLowerCase()) return true;
+      const viewer = authzViewerFromId(viewerId);
+      return Boolean(viewer && atLeast(botLevel({ viewer, ...botFacts(bot) }), "run"));
+    }
+  }
   return typeof runAs === "string" && runAs.trim().toLowerCase() === viewerId.trim().toLowerCase();
 }
 
@@ -15545,7 +15768,31 @@ function subjectSeesChannel(subject: PathSubject, viewerId: string): boolean {
     const run = routines?.listRuns().find((candidate) => candidate.id === subject.id);
     return !run || routineSeenBy(run, viewerId);
   }
+  if (subject.kind === "attachment" && privateThreads()) return attachmentSeenBy(subject.name, viewerId);
   return true;
+}
+
+/** Organization server: a file in a conversation is served to whoever may
+ * read one conversation that holds it (a bot thread's owner, a group chat's
+ * people). A bot's avatar, and a file nothing references yet (a person's own
+ * upload before sending; its name is random), stay served. */
+function attachmentSeenBy(name: string, viewerId: string): boolean {
+  const url = `/api/attachments/${name}`;
+  if (store.bots.some((bot) => bot.avatarUrl === url)) return true;
+  let referenced = false;
+  for (const threadId of threadsUsingAttachment(name)) {
+    const group = store.groupByThread(threadId);
+    if (group) {
+      if (groupVisible(group, viewerId)) return true;
+      referenced = true;
+      continue;
+    }
+    const bot = store.botByThread(threadId);
+    if (!bot) continue;
+    if (listedBotVisible(bot, viewerId) && botThreadReadable(bot, threadId, viewerId, "thread.attachments")) return true;
+    referenced = true;
+  }
+  return !referenced;
 }
 
 function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): boolean {
@@ -15573,9 +15820,11 @@ function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): bo
   if (typeof threadId === "string") {
     const group = store.groupByThread(threadId);
     if (group) return groupVisible(group, viewerId);
-    // A bot's own conversation: the viewer sees it only when they see the bot.
+    // A bot's own conversation: the viewer sees it only when they see the
+    // bot, and on an organization server only when it is theirs.
     const owner = store.botByThread(threadId);
     if (owner && !listedBotVisible(owner, viewerId)) return false;
+    if (owner && !botThreadReadable(owner, threadId, viewerId, "thread.stream")) return false;
   }
   const botField = payload.bot && typeof payload.bot === "object" ? (payload.bot as { id?: unknown }).id : undefined;
   const botId = typeof payload.botId === "string" ? payload.botId : typeof botField === "string" ? botField : nested("notification", "botId") ?? nested("event", "botId");
@@ -16933,6 +17182,26 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // A bot's grants are judged by server/bot-grants.ts (slice 4): an admin
     // or a team manager administers them without seeing the bot.
     const grantRoute = IDENTITY.kind === "perspicax" && /^\/api\/bots\/[\w-]+\/grants(?:\/[^/]+)?$/.test(path);
+    // Private threads (server/thread-privacy.ts): the helpers routes call
+    // without the request read who is asking from here. Set for every
+    // request, so a kept-alive connection never inherits one.
+    threadViewerScope.enterWith(viewerId ?? null);
+    if (viewerId && privateThreads()) {
+      // A bot thread named in the path or the query is its owner's only;
+      // every bot a response carries shows this viewer their threads only.
+      const named = path.match(/^\/api\/threads\/([\w-]+)(?:\/|$)/)?.[1]
+        ?? path.match(/^\/api\/bots\/[\w-]+\/tasks\/([\w-]+)$/)?.[1]
+        ?? (/^\/api\/bots\/[\w-]+\//.test(path) ? url.searchParams.get("threadId") ?? undefined : undefined);
+      const owner = named ? store.botByThread(named) : null;
+      // The one exception the spec writes down (slice 3, D15): an
+      // organization admin answers a card that waits for an admin, without
+      // reading the thread (POST .../respond only).
+      if (named && owner && !adminAnswersPendingApproval(method, path, auth) &&
+        !botThreadReadable(owner, named, viewerId, method === "GET" ? "thread.read" : "thread.post")) {
+        return json(res, 404, { error: "no such conversation" });
+      }
+      onJsonBody(res, (body) => bodyForThreadViewer(body, viewerId));
+    }
     if (viewerId && !grantRoute && !adminAnswersPendingApproval(method, path, auth)) {
       const subject = pathSubject(path);
       if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
@@ -17924,7 +18193,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           roomByThread.set(group.threadId, group);
           for (const task of group.tasks ?? []) roomByThread.set(task.threadId, group);
         }
-        const ownThreads = [...new Set([from.threadId, ...(from.tasks ?? []).map((task) => task.threadId), ...roomByThread.keys()])];
+        // Organization server: the person of this turn's own threads only.
+        const recallAllow = privateRecallFilter(from, fromThreadId);
+        const ownThreads = [...new Set([from.threadId, ...(from.tasks ?? []).map((task) => task.threadId), ...roomByThread.keys()])]
+          .filter((id) => !recallAllow || recallAllow(id));
         // A room is the only place a recall can be a disclosure, and only a
         // private chat is one: in a 1:1 the user already owns every thread
         // the bot can reach, and a room's lines were said in the open.
@@ -17961,7 +18233,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const threadId = String(url.searchParams.get("threadId") ?? "").trim();
         const messageId = String(url.searchParams.get("messageId") ?? "").trim();
         if (!threadId || !messageId) return json(res, 400, { error: "threadId and messageId are required" });
-        const own = threadId === from.threadId || Boolean(store.taskByThread(from.id, threadId));
+        const readAllow = privateRecallFilter(from, fromThreadId);
+        const own = (threadId === from.threadId || Boolean(store.taskByThread(from.id, threadId))) && (!readAllow || readAllow(threadId));
         const message = own ? readMessageText(threadId, messageId) : null;
         if (!message) return json(res, 404, { error: "no such message in your conversations" });
         const readInRoom = Boolean(store.groupByThread(fromThreadId));
@@ -18934,7 +19207,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const sourceTitle = owner.group ? owner.group.name : (store.taskByThread(from.id, fromThreadId)?.title ?? "");
         if (target.id === from.id) {
-          const task = store.createTask(from.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() });
+          const task = store.createTask(from.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() }, undefined, openedThreadOwner(from, fromThreadId, from));
           if (!task) return json(res, 500, { error: "couldn't create that thread" });
           threadStarters.set(task.threadId, threadPersonKey(fromThreadId));
           internalCapability.openedThreads += 1;
@@ -18974,7 +19247,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!peerAllowed(from, target)) {
           return json(res, 403, { error: `that bot is not on this bot's allowed peers. ${PEER_ACCESS_HELP}` });
         }
-        const task = store.createTask(target.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() });
+        const task = store.createTask(target.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() }, undefined, openedThreadOwner(from, fromThreadId, target));
         if (!task) return json(res, 500, { error: "couldn't create that thread" });
         // The work is still for the person whose request the opener is on.
         threadStarters.set(task.threadId, threadPersonKey(fromThreadId));
@@ -19819,9 +20092,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // only narrow behavior (including its capability-free local dev proxy);
     // it never grants authority or replaces the existing request gate.
     const requirePinnedClientThread = (botId: string, threadId: unknown): void => {
+      const owner = store.bot(botId);
       if (threadId === undefined &&
         (auth.kind === "session" || req.headers["x-openmausbot-companion"] === "1") &&
-        store.tasks(botId).length > 1) {
+        // Organization server: only the caller's own threads count.
+        (owner ? threadsShownTo(owner, store.tasks(botId), scopedThreadViewer()) : store.tasks(botId)).length > 1) {
         throw Object.assign(new Error("This bot has more than one thread. Update the Sagax app on this device, then choose a thread and try again."), { status: 409 });
       }
     };
@@ -19839,13 +20114,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // see (bot-visibility.ts); for everyone else these filters keep all.
       const shownBots = store.bots.filter((bot) => visible.bot(bot.id) && listedBotVisible(bot, viewerId));
       const queued = publicBotQueuedMessages();
+      // Organization server: each person opens a bot on their own thread
+      // (started for them the first time) and lists only their threads.
+      const listed = shownBots.map((bot) => {
+        const mine = viewerId && privateThreads() ? ensureViewerThread(bot, viewerId) : undefined;
+        const record = mine ? store.projectBotForTask(bot.id, mine) ?? bot : bot;
+        return memberBot({
+          ...wireBot(record),
+          tasks: threadsShownTo(bot, store.tasks(bot.id), viewerId).map(wireTask),
+          ...messagePage(record.threadId, limit, null, viewerForApproval(auth)),
+        }, visible);
+      });
       return json(res, 200, {
-        bots: shownBots.map((bot) => memberBot({
-          ...wireBot(bot),
-          tasks: store.tasks(bot.id).map(wireTask),
-          ...messagePage(bot.threadId, limit, null, viewerForApproval(auth)),
-        }, visible)),
-        botQueuedMessages: visible.everything ? queued : Object.fromEntries(Object.entries(queued).filter(([threadId]) => visible.thread(threadId))),
+        bots: listed,
+        botQueuedMessages: threadKeyedForViewer(visible.everything ? queued : Object.fromEntries(Object.entries(queued).filter(([threadId]) => visible.thread(threadId))), viewerId),
         sections: orgVisibleSections(visible.sections(store.sections), viewerId),
         groups: store.groups.filter((g) => visible.group(g.id) && groupVisible(g, viewerId)).map((g) => {
           const room = { ...publicGroupState(g), ...messagePage(g.threadId, limit, null, viewerForApproval(auth)) };
@@ -20286,7 +20568,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       };
       // A member who may not see every bot: look further, then keep only
       // hits in conversations they can open.
-      const found = await searchMessagesAsync(q, visible.everything ? limit : Math.min(limit * 10, 1_000), threadId);
+      const found = await searchMessagesAsync(q, visible.everything && !(viewerId && privateThreads()) ? limit : Math.min(limit * 10, 1_000), threadId);
       // A scan may outlive a revocation or audience edit. Authorize again
       // after the await, and resolve visibility from current store state.
       if (HOSTED_WORKSPACE && auth.kind === "session") {
@@ -22688,6 +22970,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }).strict()).safeParse(body);
       if (!parsed.success) return json(res, 400, { error: "A pinned thread and exact request snapshot are required" });
       const threadId = parsed.data.threadId;
+      const requestBot = store.bot(m[1]);
+      if (requestBot) routeThreadId(requestBot, threadId, method === "GET" ? "thread.read" : "thread.post");
       const snapshot = guardedRequestSnapshot(m[1], threadId, m[2]);
       res.setHeader("cache-control", "private, no-store");
       if (method === "GET") {
@@ -22732,8 +23016,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       // A retry carries its original task. That lets us return the canonical
       // receipt after a task switch, while a genuinely new send still has to
-      // target the task that is active now.
-      const threadId = body.threadId ?? bot.threadId;
+      // target the task that is active now. On an organization server: the
+      // sender's own thread, started for them on their first message.
+      const threadId = routeThreadId(bot, body.threadId);
       // Who this message is from, for the ledger. It is captured here and
       // travels with the message: into the turn it starts, or into the queue
       // until it drains. A message steered into someone else's running turn
@@ -23292,6 +23577,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const body = rawBody ?? {};
       requirePinnedClientThread(bot.id, body.threadId);
+      // Organization server: a person stops their own thread only, never
+      // the bot's work for someone else (another person's thread, a room,
+      // the owner's routine). The owner keeps the whole-bot stop.
+      const stopper = scopedThreadViewer();
+      if (stopper && !(viewerBotLevel(auth, bot) === "owner")) {
+        const own = routeThreadId(bot, body.threadId);
+        const run = routines!.activeBotRunForBot(bot.id);
+        if (run?.threadId === own) await routines!.cancelRun(run.id);
+        else {
+          handoffs.stoppedByPerson(own);
+          await interruptDirectThread(bot.id, own);
+        }
+        return json(res, 200, { ok: true });
+      }
+      if (stopper && body.threadId !== undefined) routeThreadId(bot, body.threadId);
       const expectedThreadId = body.threadId;
       if (expectedThreadId !== undefined && (typeof expectedThreadId !== "string" || !/^[\w-]+$/.test(expectedThreadId))) {
         return json(res, 400, { error: "threadId must be a task id" });
@@ -23429,11 +23729,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.projectId !== undefined && (typeof body.projectId !== "string" || !store.project(bot.id, body.projectId))) {
         return json(res, 400, { error: "projectId must belong to this bot" });
       }
-      const task = store.createTask(bot.id, typeof body.title === "string" ? body.title : undefined, true, body.projectId, undefined, body.approvalMode);
+      // Organization server: the new thread is its creator's, and only their
+      // selection moves (the bot's own selection is its owner's).
+      const creator = scopedThreadViewer();
+      const ownerCreates = !creator || viewerBotLevel(auth, bot) === "owner";
+      const task = store.createTask(bot.id, typeof body.title === "string" ? body.title : undefined, ownerCreates, body.projectId, undefined, body.approvalMode, creator && isPrincipalId(creator) ? creator : undefined);
       if (!task) return json(res, 500, { error: "couldn't create that task" });
+      if (creator) selectViewerThread(bot.id, creator, task.threadId);
       // Who opened it decides who may answer its cards on a shared workspace.
       if (auth.kind === "session") threadStarters.set(task.threadId, personKey(auth.session));
-      const fresh = botWithThread(store.bot(bot.id)!);
+      // A non-owner's new thread is not the bot's selection: answer with
+      // the bot as seen from that thread.
+      const fresh = botWithThread(ownerCreates ? store.bot(bot.id)! : store.projectBotForTask(bot.id, task.threadId) ?? store.bot(bot.id)!);
       broadcast({ kind: "bot", bot: fresh });
       return json(res, 201, { bot: projectBotTranscript(fresh, viewerForApproval(auth)), task: wireTask(task) });
     }
@@ -23448,7 +23755,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const requestedMessages = url.searchParams.get("messages");
       const switchLimit = pageSize(requestedMessages);
       if (switchLimit === null) return json(res, 400, { error: "messages must be a non-negative whole number" });
-      const switched = store.switchTask(bot.id, m[2]);
+      // Organization server: the gate already refused a thread that is not
+      // the caller's; switching moves the caller's selection, and the bot's
+      // own only for its owner.
+      const switcher = scopedThreadViewer();
+      if (switcher && store.taskByThread(bot.id, m[2])) selectViewerThread(bot.id, switcher, m[2]);
+      const switched = switcher && viewerBotLevel(auth, bot) !== "owner"
+        ? store.projectBotForTask(bot.id, m[2])
+        : store.switchTask(bot.id, m[2]);
       if (!switched) return json(res, 404, { error: "no such task" });
       const switchedSettings = { ...wireBot(switched), tasks: store.tasks(switched.id).map(wireTask) };
       // Bounded for the same reason as the channel switch above.
@@ -25698,6 +26012,9 @@ restoreChannelMessages();
   }
   if (movedAutoPins) console.log(`Works on: moved ${movedAutoPins} auto-pinned thread(s) to their bot's current Works on`);
 }
+// Organization server, once: every bot thread from before private threads
+// gets its owner (server/thread-privacy.ts), before anyone can read one.
+migrateThreadOwners();
 
 server.listen(PORT, "127.0.0.1", () => {
   companyRuntimeReady();
