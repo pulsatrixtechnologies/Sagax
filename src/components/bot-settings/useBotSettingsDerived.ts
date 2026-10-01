@@ -26,6 +26,7 @@ export type BotPatch = Partial<
     | "mascotExpression"
     | "mascotBody"
     | "mascotSkin"
+    | "mascotLook"
     | "avatarUrl"
     | "avatarCrop"
     | "avatarZoom"

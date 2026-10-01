@@ -1,0 +1,48 @@
+/* The original mascot shapes (ShapeMascot.tsx) and Trombi as an avatar:
+   a slow breath, a blink every few seconds, a bounce while working. */
+
+.shape-mascot-live .shape-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: shape-breathe 3.4s ease-in-out infinite;
+}
+.shape-mascot-live.shape-mood-working .shape-body {
+  animation: shape-bounce 0.9s ease-in-out infinite;
+}
+.shape-mascot-live .shape-eye {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: shape-blink 4.2s ease-in-out infinite;
+}
+
+/* Trombi's skins, over his own drawing */
+.trombi-skin-gold svg {
+  filter: sepia(0.9) saturate(2.4) hue-rotate(-12deg) brightness(1.04);
+}
+.trombi-skin-neon svg {
+  filter: drop-shadow(0 0 3px #5ff) drop-shadow(0 0 6px #f5f) saturate(1.6);
+}
+.trombi-skin-retro98 svg {
+  filter: grayscale(0.35) contrast(1.15);
+}
+
+@keyframes shape-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.02, 0.98); }
+}
+@keyframes shape-bounce {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  45% { transform: translateY(-6%) scale(0.98, 1.03); }
+  70% { transform: translateY(0) scale(1.04, 0.96); }
+}
+@keyframes shape-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shape-mascot-live .shape-body,
+  .shape-mascot-live .shape-eye {
+    animation: none;
+  }
+}

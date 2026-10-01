@@ -159,3 +159,17 @@ describe("soul (standing instructions)", () => {
     expect(parseBotProfilePatch({ soul: 5 } as never)).toEqual({ ok: false, error: "soul must be a string" });
   });
 });
+
+describe("mascotLook", () => {
+  it("accepts a character and its look, from the desktop and from a paired client", () => {
+    const look = { character: "shape", shape: "cloud", skins: { shape: "neon", trombi: "gold" } };
+    expect(parseBotProfilePatch({ mascotLook: look } as never)).toEqual({ ok: true, patch: { mascotLook: look } });
+    expect(parseBotProfilePatch({ mascotLook: { character: "trombi" } } as never, true)).toEqual({ ok: true, patch: { mascotLook: { character: "trombi" } } });
+  });
+
+  it("refuses an unknown character, shape or skin, or an extra field", () => {
+    for (const mascotLook of [{ character: "dragon" }, { character: "shape", shape: "star" }, { character: "shape", skins: { shape: "chrome" } }, { character: "owl", extra: 1 }]) {
+      expect(parseBotProfilePatch({ mascotLook } as never, true).ok).toBe(false);
+    }
+  });
+});

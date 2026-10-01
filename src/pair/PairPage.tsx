@@ -68,7 +68,7 @@ export function BrowserSignInWaiting({ onCancel, onReopen }: { onCancel: () => v
   return (
     <div data-testid="browser-sign-in-waiting">
       <p role="status" className="mt-4 text-[13.5px] text-ink-secondary">{t("pair.pulsatrix.waiting")}</p>
-      <button type="button" onClick={onCancel} className="mt-5 w-full rounded-md border border-line px-4 py-2 text-[14px] font-medium text-ink">
+      <button type="button" onClick={onCancel} className="mt-5 w-full rounded-md border border-hairline/40 px-4 py-2 text-[14px] font-medium text-ink">
         {t("pair.pulsatrix.cancel")}
       </button>
       <button type="button" onClick={onReopen} className="mt-3 w-full text-[13px] text-ink-secondary underline">

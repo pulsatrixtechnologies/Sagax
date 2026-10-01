@@ -3,7 +3,8 @@
 // is the stuff shared by every bot: who you are, your keys, and the
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
@@ -70,7 +71,7 @@ export const SECTIONS: Array<{
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "analytics", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "cloudAccount", labelKey: "settings.section.cloudAccount", icon: User, keywords: ["cloud", "account", "personal", "sign in", "pro", "subscription", "billing"] },
-  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime"] },
+  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
   { id: "decisionModel", labelKey: "settings.section.decisionModel", icon: Zap, keywords: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"] },
@@ -475,6 +476,39 @@ function LanguageRow() {
           <option key={code} value={code}>
             {label}
           </option>
+        ))}
+      </select>
+    </SettingRow>
+  );
+}
+
+/** Desktop mascots: fly off to the screen edge while the bot works, back when done. */
+function FloatingFlyAwayRow() {
+  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
+  return (
+    <SettingRow title={t("settings.floatingBots.flyAway.title")} subtitle={t("settings.floatingBots.flyAway.subtitle")}>
+      <Switch
+        checked={prefs.flyAway}
+        aria-label={t("settings.floatingBots.flyAway.title")}
+        onClick={() => setFloatingFlyAway(!prefs.flyAway)}
+      />
+    </SettingRow>
+  );
+}
+
+/** Desktop mascots: how often they move and play on their own. */
+function FloatingLivelinessRow() {
+  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
+  return (
+    <SettingRow title={t("settings.floatingBots.liveliness.title")} subtitle={t("settings.floatingBots.liveliness.subtitle")}>
+      <select
+        value={prefs.liveliness}
+        aria-label={t("settings.floatingBots.liveliness.title")}
+        onChange={(event) => setFloatingLiveliness(event.target.value as FloatingLiveliness)}
+        className="w-full max-w-[240px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
+      >
+        {FLOATING_LIVELINESS.map((level) => (
+          <option key={level} value={level}>{t(`settings.floatingBots.liveliness.${level}`)}</option>
         ))}
       </select>
     </SettingRow>
@@ -1050,6 +1084,8 @@ export function SettingsModal() {
                   <SidebarDensityRow />
                   <ShowThreadsRow />
                   <NotificationSoundsRow />
+                  <FloatingFlyAwayRow />
+                  <FloatingLivelinessRow />
                   {!remoteActive && <ToolCallsRow />}
                   <RunCardRow />
                 </div>

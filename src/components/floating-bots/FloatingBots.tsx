@@ -13,8 +13,13 @@ import { brand } from "@/lib/brand";
 import { useRetroSkin } from "@/components/RetroChromeHost";
 import { botAvatarProfile } from "../../../shared/bot-avatar";
 import {
+  floatingBotPrefs,
   floatingBots,
+  nextLiveliness,
   setFloatingBotOnTop,
+  setFloatingFlyAway,
+  setFloatingLiveliness,
+  type FloatingLiveliness,
   setFloatingBotPosition,
   subscribeFloatingBots,
   unfloatBot,
@@ -25,18 +30,22 @@ import {
   clampOverlayPosition,
   defaultOverlayPosition,
   floatingStatus,
+  floatingTask,
   newFloatingSession,
+  withHistory,
   type FloatingLabels,
   type FloatingSession,
 } from "./brain";
-import { CHARACTER_SIZE, FloatingBotView, type FloatingMover } from "./FloatingBotView";
+import { FloatingBotView, MASCOT_SIZE, type FloatingMover } from "./FloatingBotView";
+import { floatingContext } from "./context";
+import { moodNow, raiseMood, readMoods, writeMoods, type MoodGain, type MoodRecord } from "./mood";
 import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type FloatingEvent, type FloatingSnapshot } from "./protocol";
 
 /** A picture bigger than this stays in the app; the window shows the owl instead. */
 const AVATAR_BYTES_MAX = 280_000;
 const CELEBRATE_MS = 1400;
 
-function labelsFor(bot: Pick<Bot, "name">): FloatingLabels {
+function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "normal"): FloatingLabels {
   const name = bot.name;
   return {
     character: t("floatingBots.aria", { name }),
@@ -56,6 +65,14 @@ function labelsFor(bot: Pick<Bot, "name">): FloatingLabels {
     menuShow: t("floatingBots.menu.show"),
     menuTop: t("floatingBots.menu.top"),
     menuDock: t("floatingBots.menu.dock"),
+    menuFly: t("floatingBots.menu.fly"),
+    moodLow: t("floatingBots.mood.low", { name }),
+    moodOk: t("floatingBots.mood.ok", { name }),
+    moodHappy: t("floatingBots.mood.happy", { name }),
+    working: t("floatingBots.working", { name }),
+    hoot: t("floatingBots.hoot"),
+    pin: t("floatingBots.pin"),
+    menuLively: t("floatingBots.menu.lively", { level: t(`floatingBots.lively.${liveliness}`) }),
   };
 }
 
@@ -124,6 +141,21 @@ export function FloatingBots() {
   const { state, dispatch } = useStore();
   const { streaming } = useStreaming();
   const entries = useSyncExternalStore(subscribeFloatingBots, floatingBots, floatingBots);
+  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
+  // each mascot's mood, kept on this device (mood.ts); refreshed now and then so it drifts down
+  const [moods, setMoods] = useState<Record<string, MoodRecord>>(() => readMoods());
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setClock(Date.now()), 5 * 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const cheer = useCallback((botId: string, gain: MoodGain) => {
+    setMoods((current) => {
+      const next = { ...current, [botId]: raiseMood(current[botId], gain, Date.now()) };
+      writeMoods(next);
+      return next;
+    });
+  }, []);
   const retro = useRetroSkin();
   const reduced = useReducedMotion();
   const bridge = useMemo(desktopBridge, []);
@@ -163,13 +195,22 @@ export function FloatingBots() {
 
   // A reply that settles: remember it, sparkle, hop; an approval opens the balloon.
   const previous = useRef<Record<string, { busy: boolean; waiting: boolean }>>({});
-  const statusKey = statuses.map(({ bot, status }) => `${bot.id}:${status.busy}:${status.waiting}:${status.streaming}:${status.reply.length}`).join("|");
+  const previousTask = useRef<Record<string, string>>({});
+  const statusKey = statuses
+    .map(({ bot, session, status }) => `${bot.id}:${status.busy}:${status.waiting}:${status.streaming}:${status.reply.length}:${floatingTask(bot, session, status)}`)
+    .join("|");
   useEffect(() => {
     for (const { bot, session, status } of statuses) {
       const before = previous.current[bot.id];
       previous.current[bot.id] = { busy: status.busy, waiting: status.waiting };
+      const task = floatingTask(bot, session, status);
+      if (!before) previousTask.current[bot.id] = task;
       if (!status.streaming && status.reply && status.reply !== session.lastReply) patch(bot.id, { lastReply: status.reply });
       if (!before) continue;
+      // a finished piece of work makes the mascot happier
+      const wasWorking = previousTask.current[bot.id] === "working";
+      previousTask.current[bot.id] = task;
+      if (wasWorking && task === "idle") cheer(bot.id, "task");
       if (before.busy && !status.busy && session.sendId && status.reply && !status.waiting) {
         patch(bot.id, (current) => ({ sparkle: current.sparkle + 1, celebrate: true }));
         setTimeout(() => patch(bot.id, { celebrate: false }), CELEBRATE_MS);
@@ -182,7 +223,7 @@ export function FloatingBots() {
   const send = useCallback((bot: Bot, text: string) => {
     const threadId = bot.threadId;
     const sendId = crypto.randomUUID();
-    patch(bot.id, { open: true, threadId, sendId, asked: text, error: false, lastReply: "", celebrate: false });
+    patch(bot.id, (current) => ({ open: true, threadId, sendId, asked: text, error: false, lastReply: "", celebrate: false, history: withHistory(current) }));
     dispatch({ type: "send", botId: bot.id, text, threadId, sendId, onError: () => patch(bot.id, { error: true, open: true }) });
   }, [dispatch, patch]);
 
@@ -194,6 +235,12 @@ export function FloatingBots() {
     switch (event.type) {
       case "click":
         patch(botId, { open: !session.open });
+        break;
+      case "play":
+        cheer(botId, "play");
+        break;
+      case "pet":
+        cheer(botId, "pet");
         break;
       case "dismiss":
         patch(botId, { open: false });
@@ -208,6 +255,8 @@ export function FloatingBots() {
         if (event.id === "open") openInApp();
         else if (event.id === "balloon") patch(botId, { open: !session.open });
         else if (event.id === "dock") unfloatBot(botId);
+        else if (event.id === "fly") setFloatingFlyAway(!floatingBotPrefs().flyAway);
+        else if (event.id === "lively") setFloatingLiveliness(nextLiveliness(floatingBotPrefs().liveliness));
         else if (event.id === "top") {
           const entry = floatingBots().find((candidate) => candidate.id === botId);
           const top = !(entry?.top ?? true);
@@ -219,7 +268,7 @@ export function FloatingBots() {
       default:
         break;
     }
-  }, [bridge, dispatch, patch, send]);
+  }, [bridge, cheer, dispatch, patch, send]);
 
   /* ------------------------------------------------------------ desktop */
 
@@ -238,12 +287,17 @@ export function FloatingBots() {
         bot,
         session,
         status,
-        labels: labelsFor(bot),
+        labels: labelsFor(bot, prefs.liveliness),
         avatar,
         retro,
         reduced,
         locale,
         alwaysOnTop: bridge ? (entry?.top ?? true) : null,
+        mood: moodNow(moods[bot.id], clock),
+        flyAway: prefs.flyAway,
+        liveliness: prefs.liveliness,
+        mascot: bot.mascotLook ?? undefined,
+        context: floatingContext(bot.tasks?.find((task) => task.threadId === (session.threadId ?? bot.threadId))?.usage),
       }),
     };
   });
@@ -270,10 +324,24 @@ export function FloatingBots() {
   }, [bridge, floatedKey]);
 
   // Close them all when the brain goes away (the app page reloads or unmounts this).
+  // Forget what was sent too: a window opened again (React mounts twice in
+  // development, a hot reload remounts) must be sent its state again.
   useEffect(() => () => {
     if (!bridge) return;
     for (const id of opened.current.keys()) void bridge.close(id).catch(() => undefined);
     opened.current.clear();
+    sent.current.clear();
+  }, [bridge]);
+
+  // A window that is ready with no state asks for it (main relays): send it again.
+  const [, resend] = useState(0);
+  useEffect(() => {
+    if (!bridge?.onWant) return;
+    return bridge.onWant((value) => {
+      if (!value || typeof value.botId !== "string") return;
+      sent.current.delete(value.botId);
+      resend((n) => n + 1);
+    });
   }, [bridge]);
 
   useEffect(() => {
@@ -316,7 +384,7 @@ export function FloatingBots() {
   );
 }
 
-const STAGE = { width: CHARACTER_SIZE + 8, height: CHARACTER_SIZE + 8 };
+const STAGE = { width: MASCOT_SIZE.width + 8, height: MASCOT_SIZE.height + 8 };
 
 function viewport() {
   return { width: window.innerWidth, height: window.innerHeight };
