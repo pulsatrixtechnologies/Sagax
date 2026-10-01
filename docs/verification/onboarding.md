@@ -36,7 +36,7 @@ What each first-run surface depends on, and how it was checked:
 |---|---|---|
 | Desktop app, own server (full bridge, `remoteClient` present) | The same flow as before, decided without a new request | `src/components/onboarding/WelcomeGate.test.ts`; `HelloBeat`/`EnginesBeat` HTML compared byte for byte with main (no bridge) |
 | Hosted workspace opened inside the desktop app (reduced bridge, no `remoteClient`) | Treated like a browser: the server is asked | `src/components/onboarding/WelcomeGate.test.ts` |
-| Packaged desktop with the organization bridge | An optional "Using Sagax at work?" row on the engines beat; a signed-in Company engine counts as ready | `src/components/onboarding/beats/OrganisationRow.test.ts`, `src/components/onboarding/beats/EnginesBeat.test.ts` (fake bridge) |
+| Packaged desktop with the organization bridge | An optional "Using Sagax at work?" row on the engines beat; a signed-in Company engine counts as ready (since Oct 1 2026 the row opens the launch screen's Server mode, below) | `src/components/onboarding/beats/EnginesBeat.test.ts` (fake bridge) |
 | Browser, admin of a hosted workspace | Greeting (no inputs) and the bot beat only | `src/components/onboarding/WelcomeGate.test.ts`, `src/components/onboarding/beats/HelloBeat.test.ts`, `src/lib/onboarding.test.ts` |
 | Browser, hosted member (no admin scope) | No welcome flow; one dismissible note kept in browser storage; no first-conversation spotlights | `src/components/onboarding/WelcomeGate.test.ts`, `src/components/onboarding/FirstConversationTour.test.ts` |
 | Browser, client-scope session on a server that is not hosted | Nothing new: the flow does not open itself (it could not be saved); Settings replay and spotlights as before | `src/components/onboarding/WelcomeGate.test.ts`, `src/lib/onboarding.test.ts` |
@@ -60,3 +60,18 @@ Not covered here: the real Electron preload bridge and a real Admin enrolment
 (see [organization connection](organization-settings.md), not rerun for this
 change), and a real hosted tenant's browser. The hosted beat set was rendered
 from a temporary preview entry, not reached through a hosted sign-in.
+
+## Launch screen: No server or Server (Oct 1 2026)
+
+The desktop app's own window opens the launch screen before the welcome tour
+on a first run. Checked by unit tests with fake bridges:
+`src/components/onboarding/LaunchScreen.test.ts` (skip and No server save
+`launchMode: "solo"`, Server probes then joins, bad address, unreachable and
+not-Pulsatrix errors), `src/components/onboarding/WelcomeGate.test.ts` (first
+launch, remembered choice, back after the server is forgotten, Settings and
+the engines row), `src/lib/launch.test.ts`, `electron/org-join.node-test.mjs`
+(`join` saves, opens `/pair` and starts the sign-in) and
+`server/config.test.ts`. On an isolated `control-omb.ts launch` fixture,
+`PUT /api/config {"onboarding":{"launchMode":"server"}}` was returned by
+`GET /api/config` and `launchMode: "cloud"` answered 400. Not covered: the
+real Electron bridge and a real Perspicax sign-in.
