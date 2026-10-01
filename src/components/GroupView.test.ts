@@ -72,13 +72,9 @@ describe("room header", () => {
     createdAt: 1, setupCompletedAt: 1, messages: [],
   };
 
-  it("wraps into a name line and a control line when the column is narrow", () => {
-    // On a phone, or with a panel beside the room, the control row cannot
-    // shrink: the room name truncated to nothing. Narrow, the header wraps
-    // instead, as the 1:1 chat header does; the room's controls never fold
-    // to icons, so it wraps below 48rem. The query lives on the
-    // container's child row: a container query never matches the container
-    // element itself.
+  it("names the room in the centred header pill", () => {
+    // Sagax keeps its centred room header (the bot panel shell); upstream's
+    // wrapping two-line header is not used.
     vi.stubGlobal("window", { ogb: undefined });
     let markup: string;
     try {
@@ -86,13 +82,7 @@ describe("room header", () => {
     } finally {
       vi.unstubAllGlobals();
     }
-    expect(markup).toContain("@container/roomhead");
-    const row = /data-roomhead-row="[^"]*" class="([^"]*)"/.exec(markup)!;
-    expect(row[1].split(" ")).toContain("@max-3xl/roomhead:flex-wrap");
-    const identity = /data-roomhead-identity="[^"]*" class="([^"]*)"/.exec(markup)!;
-    expect(identity[1].split(" ")).toEqual(expect.arrayContaining(["min-w-0", "@max-3xl/roomhead:basis-full"]));
-    const controls = /data-roomhead-controls="[^"]*" class="([^"]*)"/.exec(markup)!;
-    expect(controls[1].split(" ")).toEqual(expect.arrayContaining(["@max-3xl/roomhead:ml-auto", "@max-3xl/roomhead:flex-wrap"]));
-    expect(markup).toContain("Launch planning");
+    expect(markup).toContain("@container/chathead");
+    expect(markup).toMatch(/<span class="truncate[^"]*">Launch planning<\/span>/);
   });
 });
