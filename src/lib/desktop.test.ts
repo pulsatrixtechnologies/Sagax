@@ -57,3 +57,20 @@ describe("desktop capability cache", () => {
     await expect(desktop.loadDesktopCapabilities()).resolves.toBe(ready);
   });
 });
+
+describe("servedPage", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("is a server's page in a browser and in the desktop app showing a server, never the desktop's local page", async () => {
+    const { servedPage } = await import("./desktop");
+    vi.stubGlobal("window", {});
+    expect(servedPage()).toBe(true);
+    // this app's bundle drawn on an organization server: no remoteClient
+    vi.stubGlobal("window", { ogb: { platform: "darwin", floatingBots: {} } });
+    expect(servedPage()).toBe(true);
+    vi.stubGlobal("window", { ogb: { platform: "darwin", remoteClient: { active: false } } });
+    expect(servedPage()).toBe(false);
+    vi.stubGlobal("window", { ogb: { platform: "darwin", remoteClient: { active: true } } });
+    expect(servedPage()).toBe(false);
+  });
+});

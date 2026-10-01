@@ -50,6 +50,18 @@ export function checkStagedDocument(document) {
   return bots;
 }
 
+/** Preferences handed over at join: string values under a bounded number of
+ * plain keys (the page keeps only the keys it knows,
+ * shared/user-preferences.ts). Anything else is dropped. */
+export function checkPreferences(input) {
+  if (!isRecord(input)) return null;
+  const out = {};
+  for (const [key, value] of Object.entries(input).slice(0, 64)) {
+    if (/^[\w.:-]{1,80}$/.test(key) && typeof value === "string" && value.length <= 8192) out[key] = value;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 /** A report from the org page: the shape of POST /api/org/import's answer,
  * every bot key one the staged copy carried. Returns the imported keys and
  * the subject, or throws. */
@@ -68,7 +80,7 @@ export function checkReport(report, stagedKeys) {
  *   fetch: typeof fetch,
  *   now?: () => number,
  *   parseLink: (address: string) => { origin: string } | null,
- *   saveEnvironment: (origin: string) => void,
+ *   saveEnvironment: (origin: string, options?: { serverMode?: boolean }) => void,
  *   navigate: (url: string) => void,
  *   confirm: (names: string[]) => Promise<boolean>,
  *   deleteLocalBot: (key: string) => Promise<boolean>,
@@ -81,6 +93,9 @@ export function createOrgJoin(deps) {
   let probed = null;
   /** { origin, at, document | null, bots: [{ key, name }], imported: Set } */
   let held = null;
+  /** Server mode: this computer's preferences for the server it joined,
+   * handed once to that server's page. { origin, at, preferences } */
+  let heldPreferences = null;
 
   const current = () => {
     if (held && now() - held.at >= STAGE_TTL_MS) held = null;
@@ -132,11 +147,15 @@ export function createOrgJoin(deps) {
     /** Join the probed server with nothing to copy (the launch screen's
      * Server mode, and "Join" with no bot chosen): save it, make it active,
      * open its sign-in page and start "Sign in with Pulsatrix" there, the
-     * same sign-in its own page offers (electron/oidc-system-sign-in.cjs, always the system browser). */
+     * same sign-in its own page offers (electron/oidc-system-sign-in.cjs, always the system browser).
+     * `serverMode: true` (the launch screen) locks the app to that server:
+     * no Local, no other server, until server mode is left. */
     async join(input) {
       const origin = isRecord(input) && typeof input.origin === "string" ? input.origin : "";
       if (!probed || origin !== probed) throw new Error("Check the server address first.");
-      deps.saveEnvironment(origin);
+      const preferences = input.serverMode === true ? checkPreferences(input.preferences) : null;
+      heldPreferences = preferences ? { origin, at: now(), preferences } : null;
+      deps.saveEnvironment(origin, input.serverMode === true ? { serverMode: true } : undefined);
       deps.navigate(`${origin}/pair`);
       try {
         await deps.signIn?.(origin);
@@ -144,6 +163,15 @@ export function createOrgJoin(deps) {
         throw new Error("The server is saved, but its sign-in could not start. Use Sign in with Pulsatrix on its page.");
       }
       return { ok: true };
+    },
+
+    /** The preferences brought from this computer, once, to the page of
+     * the server they were brought for (src/lib/user-preferences-sync.ts). */
+    takePreferences(senderOrigin) {
+      const copy = heldPreferences;
+      if (!copy || copy.origin !== senderOrigin || now() - copy.at >= STAGE_TTL_MS) return null;
+      heldPreferences = null;
+      return copy.preferences;
     },
 
     /** Whether a copy waits for this page's origin. */

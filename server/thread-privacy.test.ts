@@ -158,6 +158,24 @@ describe("narrowBotForViewer", () => {
     expect(JSON.stringify(bobs)).not.toContain("Alice's plans");
   });
 
+  it("reads busy over the viewer's own threads, not only the one shown, and never over someone else's", () => {
+    // alice's routine works in another of her threads: her bot reads busy
+    const alices = narrowBotForViewer(wire, {
+      viewerId: ALICE, botOwnerPrincipalId: ALICE, mine: "a1",
+      activity: { activity: "working", busy: true },
+    });
+    expect(alices.busy).toBe(true);
+    expect(alices.activity).toBe("working");
+    // bob's own threads are idle while alice's thread works
+    const bobs = narrowBotForViewer(wire, {
+      viewerId: BOB, botOwnerPrincipalId: ALICE, mine: "b1",
+      mineTask: { threadId: "b1", busy: false, activity: "idle" },
+      activity: { activity: "idle", busy: false },
+    });
+    expect(bobs.busy).toBe(false);
+    expect(bobs.activity).toBe("idle");
+  });
+
   it("someone with no thread yet gets none, and nothing of others'", () => {
     const none = narrowBotForViewer(wire, { viewerId: GUS, botOwnerPrincipalId: ALICE });
     expect(none.threadId).toBe("");

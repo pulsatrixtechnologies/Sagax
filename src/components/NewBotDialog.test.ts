@@ -55,8 +55,13 @@ describe("bot draft dialog", () => {
     fixture.admin = false;
     expect(render().html).not.toContain("Who can see it");
     fixture.admin = true;
-    vi.stubGlobal("window", { ogb: {} });
+    // the desktop app's own local page (its full bridge has remoteClient)
+    vi.stubGlobal("window", { ogb: { remoteClient: { active: false } } });
     expect(render().html).not.toContain("Who can see it");
+    // the desktop drawing its own UI on an organization server is a served
+    // page, like the browser on that server (electron/bundled-ui.cjs)
+    vi.stubGlobal("window", { ogb: { floatingBots: {} } });
+    expect(render().html).toContain("Who can see it");
   });
   it.each([false, true])("closes after a successful creation when its caller fails (async=%s)", async asyncFailure => {
     fixture.ready = true;

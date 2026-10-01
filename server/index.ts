@@ -18,10 +18,11 @@ import { z } from "zod";
 import { selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES } from "./context-rebuild.ts";
 import { draftSummary, foldPoint } from "./compaction-summary.ts";
 import { compactBudget, contextWindowFor, shouldCompact } from "./context-budget.ts";
-import { autoCompactWindow } from "./drivers/claude.ts";
+import { autoCompactWindow, resolveClaudeConfigDir } from "./drivers/claude.ts";
 import { provenRequestPerson, SharedComputers, sharedComputerOperation, sharedComputerRegistration } from "./shared-computers.ts";
 import { cloudHomeLendingRefusal, createCloudRoutineAuthors, ownerOnlyConversation, type CloudLendingTurn } from "./cloud-lending.ts";
 import { botMemoryFiles, createLendingMemory } from "./lending-memory.ts";
+import { createUserComputerRouter } from "./user-computers.ts";
 import { SharedComputerControl } from "./shared-computer-control.ts";
 import { RoomHandoffs, type RoomHandoff } from "./room-handoffs.ts";
 import { assertRequestTarget, guardedRequestPath, requestConflict, requestNeedsInput, requestSourceForCard } from "./guarded-requests.ts";
@@ -160,6 +161,7 @@ import {
   showToolCallsEnabled,
   routinesInConversationEnabled,
   claudeUserMcpEnabled,
+  claudeAiConnectorsEnabled,
   skillAuthoringEnabled,
   autoRecallEnabled,
   captureQuietMs,
@@ -301,7 +303,7 @@ import {
 import { EventBus } from "./harness/bus.ts";
 import { ProviderRegistry } from "./harness/registry.ts";
 import { ManagedDesktopProviders } from "./managed-desktop.ts";
-import { computerKindForResource, ManagedDesktopPolicy, type ComputerKind } from "./managed-policy.ts";
+import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, type ComputerKind } from "./managed-policy.ts";
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
 import {
   boatNotConfiguredMessage, CLOUD_HOME_RESTART_EXIT_CODE, CLOUD_HOME_SECRET_KEYS, CLOUD_IGNORED_KEYS, CLOUD_PAIRING_PATH, cloudHomeConfiguration, cloudHomeOffersPlace, cloudHomePlaceRefusal,
@@ -518,6 +520,7 @@ import { EmailOtpStore } from "./email-otp.ts";
 import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
+import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
@@ -600,7 +603,7 @@ import {
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
 import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
-import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
+import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
@@ -611,6 +614,8 @@ import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
+import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
+import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcBindingCookie, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
@@ -733,6 +738,21 @@ const sessions = new SessionRegistry({
   portalMembership: hostedWorkspaceConfiguration()?.portalMembership === true,
 });
 const sharedComputers = new SharedComputers(id => sessions.isLive(id));
+// Organization server: a bot reaches the computer of the person who asks,
+// through that person's own desktop app ("user-desktop"), never the server
+// and never anyone else's (server/user-computers.ts). A per-person server
+// sandbox plugs in here as a second provider ("user-sandbox").
+const userComputers = createUserComputerRouter([{
+  target: "user-desktop",
+  list: (person: string) => sharedComputers.list(person),
+  owns: (person: string, computerId: string) => sharedComputers.list(person).some((computer) => computer.id === computerId),
+  request: (person: string, operation: z.infer<typeof sharedComputerOperation>, active: () => boolean) => sharedComputers.request(operation, person, active),
+}]);
+/** The person a shared-computer call provably acts for
+ * (sharedComputerPrincipal), as the router reads a speaker. */
+function personSpeaker(principal: string | null): TurnSpeaker | undefined {
+  return principal ? { origin: "person", principalId: principal } : undefined;
+}
 // OMB Cloud Pro home machine (server/cloud-home.ts, docs/cloud-pro.md). A
 // partial or invalid boot contract stops the server here, before it serves.
 // Its secrets come over the launcher's pipe, never this process's
@@ -2185,10 +2205,18 @@ let companyRuntimeReady!: () => void;
 const companyRuntimeStarted = new Promise<void>(resolve => { companyRuntimeReady = resolve; });
 /** The enrolled organisation's desktop policy: in memory only, read-only, and
  * inert (null) unless Electron's enrolled parent sends one. */
+// An organization server never lends its own machine to a bot (its screen or
+// a local VM on it): every claim, auto choice and explicit choice of those
+// is refused here (managed-policy.ts HOST_COMPUTER_REFUSAL).
 const managedPolicy = new ManagedDesktopPolicy({ onChange: () => {
   broadcast({ kind: "config", ...configStatus() });
   resyncOpenCodeProviderKeys();
-} });
+}, hostComputersAllowed: () => IDENTITY.kind !== "perspicax" });
+/** Why this server may not set up a desktop on itself (an organization
+ * server), or undefined. */
+function hostComputerRefusal(): string | undefined {
+  return IDENTITY.kind === "perspicax" ? HOST_COMPUTER_REFUSAL : undefined;
+}
 /** A computer kind this server will not use, refused before anything is
  * prepared: a Cloud home never offers this computer or a Local VM
  * (cloud-home.ts), and an enrolled organisation may disallow any kind. */
@@ -7675,12 +7703,13 @@ async function computerPreviewSurface(bot: BotRecord, threadId?: string) {
     if (remote.ready) return "cloud";
   }
   const target = localVmTargetForStatus(bot.id, threadId);
-  // A Cloud home has neither place (cloud-home.ts), so Auto never shows one.
-  if (!CLOUD_HOME && instance?.adapter.capabilities.computerMcp && localVmSeen.has(target.key)) {
+  // A Cloud home has neither place (cloud-home.ts), so Auto never shows one;
+  // nor does an organization server or an organisation that disallows them.
+  if (!CLOUD_HOME && managedPolicy.computerAllowed("localVm") && instance?.adapter.capabilities.computerMcp && localVmSeen.has(target.key)) {
     const vm = await containerComputerStatus(undefined, undefined, target).catch(() => null);
     if (vm && autoLocalVmAttachable(vm)) return "vm";
   }
-  if (!CLOUD_HOME && shouldMountLocalComputer({ requested: undefined, hostPlatform: process.platform,
+  if (!CLOUD_HOME && managedPolicy.computerAllowed("thisComputer") && shouldMountLocalComputer({ requested: undefined, hostPlatform: process.platform,
     providerSupportsLocal: instance?.adapter.capabilities.localComputerMcp === true }) && readCuaConnection()) return "local";
   if (bot.cloudBackend === "vps") return "cloud"; // show its unavailable reason
   return plan.browser ? "browser" : "off";
@@ -11074,6 +11103,7 @@ async function startTurn(
         { id: "composio", label: "Connected apps", text: integrations.composio ? composioSystemPrompt(liveBot?.connectorTools ?? bot.connectorTools) : "" },
         { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
         { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
+        { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, speaker)) },
         { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT : "" },
         { id: "coordination", label: "Team", text: coordinationPrompt ? ` ${coordinationPrompt}` : "" },
         { id: "assignment", label: "Teammate task", text: coordinationNode ? `\n${coordinationSystemInstructions()}` : "" },
@@ -11157,6 +11187,7 @@ async function startTurn(
         mentionTurn: tagged.length > 0,
         integrations,
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
         cwd,
       }), () => !directTurnClaimExists(bot.id, dispatchClaimId, threadId), async () => {
         await instance.adapter.interruptTurn(threadId).catch(() => {});
@@ -13386,6 +13417,7 @@ async function runGroupMemberTurn(
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
+    { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" })) },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(roomTeamComputer) },
     { id: "plan", label: "Surface", text: surfacePrompt({ computer: roomTeamComputer ? "cloud" : roomVmTarget ? "vm" : surfaceOfComputerKind(roomComputerKind), browser: Boolean(integrations.browser) }, { note: roomPlan.note, cloudHome: Boolean(CLOUD_HOME) }) },
@@ -13527,6 +13559,7 @@ async function runGroupMemberTurn(
         cwd,
         integrations,
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
         ...(instance.instanceId === readyBot.modelSelection.instanceId
           ? memberTurnSelection(readyBot.modelSelection)
           : { model: instance.models.default }),
@@ -15518,6 +15551,9 @@ async function readyLocalVmForTurn(botId: string, target: LocalVmTarget, isCurre
     noteLocalVmSeen(target, status);
     if (!isCurrent()) return status;
     if (status.ready || !localVmRecreatableOnDemand(status)) return status;
+    // An organization server never creates a desktop on itself (the claim is
+    // refused too; this keeps a turn from even starting one).
+    if (hostComputerRefusal()) return status;
     // Another creation is already mid-flight and its container is not yet
     // visible to a count, so the safe answer is the inspected status —
     // exactly what the over-cap path below returns.
@@ -15951,6 +15987,27 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
   });
   return outcome.access;
 }
+/** Whether a Claude turn keeps the claude.ai connectors of the account it
+ * runs on: the speaker's own subscription only (server/harness-connectors.ts).
+ * `via` is the turn's access; without it (the prompt is built before the
+ * access is materialized) the planned access stands in. */
+function claudeAiConnectorsFor(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): boolean {
+  let planned = via;
+  if (IDENTITY.kind === "perspicax" && planned === undefined && instance.driverKind === "claudeAgent") {
+    const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+    planned = plan.ok ? plan.via : undefined;
+  }
+  return claudeAiConnectorsForTurn({
+    identity: IDENTITY.kind,
+    enabled: claudeAiConnectorsEnabled(cfg),
+    restrictedByPolicy: managedPolicy.restrictsMcp(),
+    driver: instance.driverKind,
+    ...(planned ? { via: planned } : {}),
+    speaker,
+    ownerPrincipalId: effectiveBotOwner(bot),
+    localPrincipalId: localPrincipalId(),
+  });
+}
 /** Where a person sets their model keys (Perspicax console, slice 4). */
 function perspicaxKeysUrl(): string | undefined {
   return IDENTITY.kind === "perspicax" ? `${IDENTITY.issuer.replace(/\/+$/, "")}/console/pulsabot/keys` : undefined;
@@ -16275,6 +16332,9 @@ ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: (
 // its file, so New bot cannot disagree with it. No organization: none.
 const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
+// Server mode: a person's appearance, language, notifications and mascot
+// settings follow them across devices (shared/user-preferences.ts).
+ROUTES.push(createUserPreferenceRoutes({ store: createUserPreferenceStore(DATA_DIR), organization: () => IDENTITY.kind === "perspicax" }));
 // The bot-memory panel's routes (MEMORY.md, memory/ topics, journal); the
 // store lookups — the 404 precheck and journal thread titles — stay explicit.
 ROUTES.push(createBotMemoryRoutes({
@@ -16624,6 +16684,12 @@ function routeThreadId(bot: BotRecord, rawThreadId: unknown, action: ThreadActio
   if (!mine) throw Object.assign(new Error("no such task"), { status: 404 });
   return mine;
 }
+/** The bot's activity as one organization viewer sees it: over their own
+ * threads (and the bot's rooms), never over someone else's private thread. */
+function viewerBotActivity(bot: BotRecord, viewerId: string): ReturnType<typeof store.activityOf> {
+  const owner = effectiveBotOwner(bot);
+  return store.activityOf(bot.id, (task) => ownsThread(viewerId, task, owner));
+}
 /** A bot (wire shape) as one viewer receives it: their threads only, their
  * thread selected, nobody else's transcript (thread-privacy.ts). */
 function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: string | undefined): T {
@@ -16635,6 +16701,7 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
   return narrowBotForViewer(bot, {
     viewerId,
     botOwnerPrincipalId: effectiveBotOwner(record),
+    activity: viewerBotActivity(record, viewerId),
     ...(mine ? { mine } : {}),
     ...(mineTask ? { mineTask: { ...wireTask(mineTask), ...store.projectBotForTask(record.id, mine!) } as unknown as Record<string, unknown> } : {}),
   });
@@ -17637,6 +17704,53 @@ ROUTES.push(createMailSettingsRoutes({
   callerEmail: actorEmail,
 }));
 
+// The caller's own claude.ai connectors, read through their own Claude
+// account (server/harness-connectors.ts); an admin can turn them off.
+const claudeAiInventory = new ClaudeAiConnectorInventory({ run: runClaudeCli });
+ROUTES.push(createHarnessConnectorRoutes({
+  organization: IDENTITY.kind === "perspicax",
+  enabled: () => claudeAiConnectorsEnabled(cfg),
+  setEnabled: (next) => {
+    const block = { ...cfg.harnessConnectors, claudeAi: next };
+    saveConfig({ harnessConnectors: block });
+    cfg.harnessConnectors = block;
+  },
+  restrictedByPolicy: () => managedPolicy.restrictsMcp(),
+  principalFor: (auth) => {
+    if (auth.kind === "loopback" && auth.trust === "service") return "";
+    const id = actorPrincipalId(auth) || (IDENTITY.kind === "solo" ? localPrincipalId() : "");
+    return id.trim().toLowerCase();
+  },
+  localPrincipalId,
+  isAdmin: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : true),
+  claudeAccountFor: (principalId) => {
+    const entries = Object.entries(instanceConfigs(cfg)).filter(([, entry]) => entry.driver === "claudeAgent");
+    const [instanceId, entry] = entries.find(([id]) => id === "claude") ?? entries[0] ?? [];
+    if (!instanceId || !entry) return { unavailable: "no_engine" as const };
+    const config = (entry.config ?? {}) as { cli?: unknown; configDir?: unknown };
+    const cli = typeof config.cli === "string" && config.cli.trim() ? config.cli : "claude";
+    const env: NodeJS.ProcessEnv = { ...process.env, ...entry.environment };
+    if (IDENTITY.kind === "perspicax") {
+      if (!engineLogins?.signedIn(principalId, "claudeAgent")) return { unavailable: "not_signed_in" as const };
+      env.CLAUDE_CONFIG_DIR = engineLogins.loginDir(principalId, "claudeAgent");
+      delete env.ANTHROPIC_API_KEY;
+      delete env.ANTHROPIC_AUTH_TOKEN;
+      return { cli, env, key: `person:${principalId}` };
+    }
+    // a workspace key that runs every Claude bot replaces the login
+    if (cfg.anthropic?.key && cfg.anthropic.everyClaudeBot !== false) return { unavailable: "key" as const };
+    if (typeof config.configDir === "string" && config.configDir.trim()) {
+      try {
+        env.CLAUDE_CONFIG_DIR = resolveClaudeConfigDir(config.configDir, env);
+      } catch {
+        return { unavailable: "no_engine" as const };
+      }
+    }
+    return { cli, env, key: `instance:${instanceId}` };
+  },
+  inventory: claudeAiInventory,
+}));
+
 // Invite links (/join#token=...): public like /api/auth/email/start, and
 // counted against the same per-source lockout as pairing. Security model:
 // server/org-routes.ts `joinInviteRoute`.
@@ -18508,6 +18622,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!parsed.success) return json(res, 400, { error: "Invalid computer registration" });
         const registration = parsed.data;
         if (registration.environmentId !== ENVIRONMENT_ID) return json(res, 409, { error: "Workspace identity changed. Pair again before sharing this computer." });
+        // Organization server: the computer is a person's, and only their
+        // own turns may use it (userComputers).
+        if (IDENTITY.kind === "perspicax" && !auth.session.principalId) return json(res, 403, { error: "Sign in as a person to share your computer" });
         // A Cloud home is one person's: only their own devices, which the
         // Admin's pairing signs in with admin scope, may lend to it.
         if (CLOUD_HOME && !auth.scopes.includes("admin")) return json(res, 403, { error: "Only your own computers can lend to your Cloud. Connect this computer to your Cloud from its OMB Cloud settings." });
@@ -18810,6 +18927,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Say why an owner's own conversation sees no Mac, so the bot can tell them.
         const why = CLOUD_HOME && !principal && sharedComputers.status(CLOUD_HOME_LENDER).length > 0 ? cloudLendingRefusal(internalCapability) : null;
         const notice = why === "someone-else" ? { unavailable: LENDING_SOMEONE_ELSE } : why === "memory-changed" ? { unavailable: LENDING_MEMORY_CHANGED } : {};
+        // An organization server says why there is nothing to use (no person
+        // asked, or their desktop is not connected) instead of an empty list.
+        if (IDENTITY.kind === "perspicax") {
+          try {
+            return json(res, 200, { computers: userComputers.list(personSpeaker(principal)).map(entry => ({ ...(entry.computer as object), target: entry.target })) });
+          } catch (error) {
+            return json(res, (error as { status?: number }).status ?? 409, { error: (error as Error).message, code: (error as { code?: string }).code });
+          }
+        }
         return json(res, 200, { computers: sharedComputers.list(principal), ...notice });
       }
       if (method === "POST" && path === "/api/internal/shared-computers" && lendingEnabled()) {
@@ -18825,7 +18951,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (why === "someone-else" || why === "memory-changed") {
           return json(res, 403, { error: why === "someone-else" ? LENDING_SOMEONE_ELSE : LENDING_MEMORY_CHANGED });
         }
-        return json(res, 200, { result: await sharedComputers.request(parsed.data, principal, () => lendingEnabled() && internalCapabilityIsActive(internalCapability)) });
+        const active = () => lendingEnabled() && internalCapabilityIsActive(internalCapability);
+        if (IDENTITY.kind === "perspicax") return json(res, 200, { result: await userComputers.request(personSpeaker(principal), parsed.data, active) });
+        return json(res, 200, { result: await sharedComputers.request(parsed.data, principal, active) });
       }
       if (method === "GET" && path === "/api/internal/agents") {
         const sender = internalSender;
@@ -21330,6 +21458,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const record = mine ? store.projectBotForTask(bot.id, mine) ?? bot : bot;
         return memberBot({
           ...wireBot(record),
+          // busy while any of the viewer's threads works, not only the one shown
+          ...(viewerId && privateThreads() ? viewerBotActivity(bot, viewerId) : {}),
           tasks: threadsShownTo(bot, store.tasks(bot.id), viewerId).map(wireTask),
           ...messagePage(record.threadId, limit, null, viewerForApproval(auth)),
         }, visible);
@@ -25404,6 +25534,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 415, { error: "content-type must be application/json" });
       }
       const action = z.enum(["pull", "run", "start", "stop", "remove"]).parse(m[1]);
+      // An organization server never creates or starts a desktop on itself;
+      // stop and remove stay available to clean one up.
+      const hostVmRefusal = action === "stop" || action === "remove" ? undefined : hostComputerRefusal();
+      if (hostVmRefusal) return json(res, 403, { error: hostVmRefusal, code: "host_computer" });
       if (localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(SHARED_LOCAL_VM_TARGET.key)) {
         return json(res, 409, { error: "another Local VM setup action is still running" });
       }
@@ -25466,6 +25600,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 409, { error: "this bot's computer is being changed or deleted — wait for it to finish" });
       }
       const action = z.enum(["run", "stop", "remove"]).parse(m[2]);
+      const botVmRefusal = action === "run" ? hostComputerRefusal() : undefined;
+      if (botVmRefusal) return json(res, 403, { error: botVmRefusal, code: "host_computer" });
       const target = localVmTargetForBot(bot.id);
       if (target.key === SHARED_LOCAL_VM_TARGET.key) {
         return json(res, 409, { error: "Shared mode manages this desktop in App Settings → Computers" });

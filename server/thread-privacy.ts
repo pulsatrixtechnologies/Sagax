@@ -120,7 +120,16 @@ export const TRANSCRIPT_FIELDS = ["messages", "activeLeafId", "hasMore"] as cons
  * The original object comes back when nothing changes. */
 export function narrowBotForViewer<T extends Record<string, unknown>>(
   bot: T,
-  input: { viewerId: string; botOwnerPrincipalId: string; mine?: string; mineTask?: Record<string, unknown> },
+  input: {
+    viewerId: string;
+    botOwnerPrincipalId: string;
+    mine?: string;
+    mineTask?: Record<string, unknown>;
+    /** The bot's activity over this viewer's own threads (store.activityOf):
+     * a bot reads busy while any of their threads works, as on a solo
+     * server, and never because of someone else's. */
+    activity?: { activity: string; busy: boolean };
+  },
 ): T {
   const tasks = Array.isArray(bot.tasks) ? (bot.tasks as ThreadRecord[]) : undefined;
   const shownTasks = tasks ? ownThreads(tasks, input.viewerId, input.botOwnerPrincipalId) : undefined;
@@ -141,6 +150,10 @@ export function narrowBotForViewer<T extends Record<string, unknown>>(
       else if (field === "activity") out.activity = "idle";
       else if (field === "unread") out.unread = false;
     }
+  }
+  if (input.activity) {
+    out.activity = input.activity.activity;
+    out.busy = input.activity.busy;
   }
   return out as T;
 }

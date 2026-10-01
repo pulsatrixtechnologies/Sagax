@@ -132,8 +132,19 @@ async function start() {
   }
 }
 
-/** Send `text` as `auth` and wait for the next bot reply in that thread. */
-async function turn(auth: Auth, bot: { id: string; threadId: string }, text: string): Promise<string> {
+/** The speaker's own thread on a bot. Private threads (#13,
+ * server/thread-privacy.ts): each person talks to a shared bot in their own
+ * thread, started the first time they open it; nobody reads another's. */
+async function ownThread(auth: Auth, botId: string): Promise<string> {
+  const bots = (await api("GET", "/api/bots?messages=0", auth)).body.bots as Array<{ id: string; threadId: string }>;
+  const threadId = bots.find((b) => b.id === botId)?.threadId;
+  expect(threadId).toBeTruthy();
+  return threadId!;
+}
+
+/** Send `text` as `auth` and wait for the next bot reply in their own thread. */
+async function turn(auth: Auth, target: { id: string }, text: string): Promise<string> {
+  const bot = { id: target.id, threadId: await ownThread(auth, target.id) };
   const before = (await threadMessages(auth, bot.threadId)).filter((m) => m.role === "bot" && m.kind === "text").length;
   if (existsSync(dump)) rmSync(dump);
   const sent = await api("POST", `/api/bots/${bot.id}/messages`, auth, { text });
@@ -316,7 +327,7 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect(engine.systemPrompt).toMatch(/\n\nPerspicax tools of profile "Dispatch"/);
     expect(idp.exchanges.slice(exchangesBefore)).toEqual([{ sub: CAROL.sub, profile: PROFILE.id, ok: false, error: "invalid_target" }]);
     expect(idp.mcpRequests.slice(callsBefore)).toEqual([]);
-    const row = (await threadMessages(carol, x.threadId)).find((m) => m.kind === "activity" && m.tool?.name.startsWith("Perspicax:"));
+    const row = (await threadMessages(carol, await ownThread(carol, x.id))).find((m) => m.kind === "activity" && m.tool?.name.startsWith("Perspicax:"));
     expect(row?.tool).toEqual({ name: "Perspicax: Dispatch unavailable for Carol (not_held)", ok: false });
   }, 90_000);
 
@@ -413,20 +424,22 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect((await api("PATCH", `/api/bots/${y.id}`, alice, { modelSelection: { instanceId: "claude", model: "fake-model" } })).status).toBe(200);
     expect((await api("PUT", `/api/bots/${y.id}/grants`, alice, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
     const bob = await signIn(BOB);
-    const before = await perspicaxRows(alice);
+    const before = await perspicaxRows(bob);
     const exchangesBefore = idp.exchanges.length;
     const callsBefore = idp.mcpRequests.length;
     const sent = await api("POST", `/api/bots/${y.id}/messages`, bob, { text: "COORD-XAVIER about the board" });
     expect(sent.status, sent.text).toBe(202);
     // Yves lists no profile: the only exchange is Xavier's, for the hop
     await waitFor(async () => idp.exchanges.length > exchangesBefore, 60_000);
+    // the hop runs in bob's threads (private threads): only bob sees them work
+    await allIdle(bob);
     await allIdle(alice);
     const exchanges = idp.exchanges.slice(exchangesBefore);
     expect(exchanges.map((e) => ({ sub: e.sub, profile: e.profile, ok: e.ok }))).toEqual([{ sub: BOB.sub, profile: PROFILE.id, ok: true }]);
     const calls = idp.mcpRequests.slice(callsBefore).filter((r) => r.method === "POST");
     expect(calls.length).toBeGreaterThan(0);
     expect(calls.every((r) => r.sub === BOB.sub && r.profile === PROFILE.id)).toBe(true);
-    const added = [...(await perspicaxRows(alice)).entries()].filter(([at]) => !before.has(at)).map(([, name]) => name);
+    const added = [...(await perspicaxRows(bob)).entries()].filter(([at]) => !before.has(at)).map(([, name]) => name);
     expect(added.filter((name) => name.includes("unknown")), added.join("\n")).toEqual([]);
   }, 120_000);
 });
