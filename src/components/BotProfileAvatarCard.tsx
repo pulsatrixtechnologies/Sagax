@@ -1,4 +1,5 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { lazy, Suspense, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { botMascots, MASCOT_KIND_PAINT, subscribeFloatingBots } from "@/lib/floating-bots";
 import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
@@ -31,6 +32,9 @@ type AvatarPatch = Partial<
 >;
 
 const FRAME_SIZE = 168;
+
+// The Character picker (the mascot registry and its thumbnails): fetched only when the popover opens.
+const CharacterSection = lazy(() => import("./floating-bots/CharacterSection"));
 
 const SKIN_LABEL = {
   none: "mascot.skin.none",
@@ -172,6 +176,9 @@ export function BotProfileAvatarCard({
     dispatch({ type: "playMascotMotion", botId: bot.id, kind });
   };
   const skin = botMascotSkin(bot.mascotSkin);
+  // the character this bot wears (same choice as its desktop mascot): it decides what is offered below
+  const characters = useSyncExternalStore(subscribeFloatingBots, botMascots, botMascots);
+  const paint = MASCOT_KIND_PAINT[characters[bot.id]?.kind ?? "owl"];
 
   const upload = async (file: File | undefined) => {
     if (!file || busy) return;
@@ -317,7 +324,13 @@ export function BotProfileAvatarCard({
 
         {editorTab === "bot" && crop === "mascot" && (
           <>
-            <div className="flex flex-wrap justify-center gap-2">
+            {editorOpen && (
+              <Suspense fallback={<div className="h-[86px]" />}>
+                <CharacterSection botId={bot.id} color={bot.color} skin={skin} disabled={busy} />
+              </Suspense>
+            )}
+            {paint.colors && (
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
               {MAUS_COLOR_NAMES.map((color) => (
                 <button
                   key={color}
@@ -332,7 +345,10 @@ export function BotProfileAvatarCard({
                 />
               ))}
             </div>
+            )}
 
+            {paint.skins && (
+            <>
             <div className="mb-1.5 mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">
               {t("mascot.skin.title")}
             </div>
@@ -367,7 +383,11 @@ export function BotProfileAvatarCard({
                 </button>
               ))}
             </div>
+            </>
+            )}
 
+            {paint.wingMoves && (
+            <>
             <div className="mb-1.5 mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">
               {t("mascot.moves.title")}
             </div>
@@ -386,6 +406,8 @@ export function BotProfileAvatarCard({
                 </button>
               ))}
             </div>
+            </>
+            )}
           </>
         )}
         {editorTab === "bot" && crop !== "mascot" && (

@@ -32,8 +32,6 @@ export function cleanMascotChoice(value: unknown): FloatingMascotChoice | undefi
 
 export interface FloatingBotEntry {
   id: string;
-  /** The character on the desktop; the owl when absent. */
-  mascot?: FloatingMascotChoice;
   /** Desktop: keep the bot's window above other apps. On unless switched off. */
   top: boolean;
   /** Browser and phone: the character's offset from the viewport's bottom-right corner. */
@@ -71,12 +69,11 @@ export function readFloatingBots(storage: FloatingStorage | undefined = defaultS
   const entries: FloatingBotEntry[] = [];
   for (const item of list) {
     if (!item || typeof item !== "object") continue;
-    const value = item as { id?: unknown; top?: unknown; pos?: { right?: unknown; bottom?: unknown }; mascot?: unknown };
+    const value = item as { id?: unknown; top?: unknown; pos?: { right?: unknown; bottom?: unknown } };
     if (typeof value.id !== "string" || !BOT_ID.test(value.id) || seen.has(value.id)) continue;
     seen.add(value.id);
     const pos = value.pos && finite(value.pos.right) && finite(value.pos.bottom) ? { right: value.pos.right, bottom: value.pos.bottom } : undefined;
-    const mascot = cleanMascotChoice(value.mascot);
-    entries.push({ id: value.id, top: value.top !== false, ...(pos ? { pos } : {}), ...(mascot ? { mascot } : {}) });
+    entries.push({ id: value.id, top: value.top !== false, ...(pos ? { pos } : {}) });
     if (entries.length >= MAX_FLOATING_BOTS) break;
   }
   return entries;
@@ -145,13 +142,6 @@ export function setFloatingBotOnTop(botId: string, top: boolean, storage?: Float
   commit(list.map((entry) => (entry.id === botId ? { ...entry, top } : entry)), storage);
 }
 
-/** The character a bot wears on the desktop (the Mascot tab, the right-click menu). */
-export function setFloatingBotMascot(botId: string, choice: FloatingMascotChoice, storage?: FloatingStorage): void {
-  const clean = cleanMascotChoice(choice);
-  const list = entries();
-  if (!clean || !list.some((entry) => entry.id === botId)) return;
-  commit(list.map((entry) => (entry.id === botId ? { ...entry, mascot: clean } : entry)), storage);
-}
 
 /** Browser and phone: remember where the character was dropped. */
 export function setFloatingBotPosition(botId: string, pos: { right: number; bottom: number }, storage?: FloatingStorage): void {
@@ -221,6 +211,70 @@ function savePrefs(next: FloatingBotPrefs, storage: FloatingStorage | undefined)
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
 }
 
+/* ------------------------------------------------- each bot's character */
+// One place for the character a bot wears, floated or not: the desktop
+// mascot's Mascot tab and right-click menu, and the bot's avatar popover
+// (Character), all read and write it here.
+
+const MASCOTS_KEY = "omb.botMascots.v1";
+const NO_MASCOTS: Readonly<Record<string, FloatingMascotChoice>> = Object.freeze({});
+let mascots: Readonly<Record<string, FloatingMascotChoice>> | null = null;
+
+export function readBotMascots(storage: FloatingStorage | undefined = defaultStorage()): Record<string, FloatingMascotChoice> {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(storage?.getItem(MASCOTS_KEY) ?? "null");
+  } catch {
+    raw = null;
+  }
+  const out: Record<string, FloatingMascotChoice> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [botId, value] of Object.entries(raw).slice(0, 256)) {
+    const choice = cleanMascotChoice(value);
+    if (BOT_ID.test(botId) && choice) out[botId] = choice;
+  }
+  return out;
+}
+
+/** Every bot's character (a stable object until one changes). */
+export function botMascots(): Readonly<Record<string, FloatingMascotChoice>> {
+  if (!mascots) mascots = readBotMascots();
+  return mascots ?? NO_MASCOTS;
+}
+
+/** The character a bot wears; the owl when it never chose. */
+export function botMascot(botId: string): FloatingMascotChoice | undefined {
+  return botMascots()[botId];
+}
+
+/** Wear another character: from the Mascot tab, the menu, or the avatar popover. */
+export function setBotMascot(botId: string, choice: FloatingMascotChoice, storage: FloatingStorage | undefined = defaultStorage()): void {
+  const clean = cleanMascotChoice(choice);
+  if (!clean || !BOT_ID.test(botId)) return;
+  mascots = { ...botMascots(), [botId]: clean };
+  try {
+    storage?.setItem(MASCOTS_KEY, JSON.stringify(mascots));
+  } catch {
+    /* private mode or quota: the choice holds for this session */
+  }
+  for (const listener of listeners) listener();
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
+}
+
+/**
+ * What the avatar popover offers each character: the bot colors, the owl's
+ * skins and its wing moves. Mirrors the registry (mascots.tsx, tested equal)
+ * so the popover can decide without loading the characters.
+ */
+export const MASCOT_KIND_PAINT: Readonly<Record<FloatingMascotKind, { colors: boolean; skins: boolean; wingMoves: boolean }>> = {
+  owl: { colors: true, skins: true, wingMoves: true },
+  body: { colors: true, skins: false, wingMoves: false },
+  trombi: { colors: false, skins: false, wingMoves: false },
+};
+
+/** Kept for the desktop mascot's callers. */
+export const setFloatingBotMascot = setBotMascot;
+
 export function subscribeFloatingBots(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -230,6 +284,7 @@ export function subscribeFloatingBots(listener: () => void): () => void {
 export function resetFloatingBotsForTests(): void {
   current = null;
   prefs = null;
+  mascots = null;
   listeners.clear();
 }
 

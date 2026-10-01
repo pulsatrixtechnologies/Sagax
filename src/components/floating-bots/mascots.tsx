@@ -49,6 +49,10 @@ export interface MascotCapabilities {
 export interface MascotDefinition {
   id: FloatingMascotKind;
   capabilities: MascotCapabilities;
+  /** What the avatar popover offers for it: the bot colors, the owl skins. */
+  paint: { colors: boolean; skins: boolean };
+  /** The moves the avatar popover can preview for a character without wings (the owl keeps its wing moves). */
+  moves: readonly MascotActivity[];
   Render: ComponentType<MascotRenderProps>;
   Thumb: ComponentType<MascotThumbProps>;
 }
@@ -223,9 +227,9 @@ function TrombiThumb({ size }: MascotThumbProps) {
 /* ----------------------------------------------------------- registry */
 
 export const MASCOTS: readonly MascotDefinition[] = [
-  { id: "owl", capabilities: { walk: true, fly: true, wings: true, blink: true, turn: true, flip: true }, Render: OwlRender, Thumb: OwlThumb },
-  { id: "body", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, Render: BodyRender, Thumb: BodyThumb },
-  { id: "trombi", capabilities: { walk: true, fly: false, wings: false, blink: false, turn: true, flip: true }, Render: TrombiRender, Thumb: TrombiThumb },
+  { id: "owl", capabilities: { walk: true, fly: true, wings: true, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: [], Render: OwlRender, Thumb: OwlThumb },
+  { id: "body", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, paint: { colors: true, skins: false }, moves: ["wave", "dance", "jump", "hop", "love"], Render: BodyRender, Thumb: BodyThumb },
+  { id: "trombi", capabilities: { walk: true, fly: false, wings: false, blink: false, turn: true, flip: true }, paint: { colors: false, skins: false }, moves: ["hop", "jump", "dance", "hoot"], Render: TrombiRender, Thumb: TrombiThumb },
 ];
 
 export const DEFAULT_MASCOT: FloatingMascotChoice = { kind: "owl", style: "2d" };

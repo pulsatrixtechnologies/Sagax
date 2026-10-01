@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
-import { floatBot, readFloatingBots, resetFloatingBotsForTests, setFloatingBotMascot, cleanMascotChoice, type FloatingStorage } from "@/lib/floating-bots";
+import { botMascots, cleanMascotChoice, MASCOT_KIND_PAINT, readBotMascots, resetFloatingBotsForTests, setBotMascot, setFloatingBotMascot, type FloatingStorage } from "@/lib/floating-bots";
+import CharacterSection from "./CharacterSection";
 import { MASCOT_BODY_IDS } from "../../../shared/mascot-bodies";
 import { BODY_CHOICES, cursorStateFor, MASCOTS, mascotFor, motion25dTransform, nextMascot, trombiPoseFor } from "./mascots";
 import { MascotPicker } from "./MascotPicker";
@@ -73,19 +74,39 @@ describe("the desktop mascot registry", () => {
 });
 
 describe("the mascot choice is saved per bot", () => {
-  it("keeps a well-formed choice per bot and reads it back", () => {
+  it("keeps a well-formed choice per bot, floated or not, in one place for the tab, the menu and the popover", () => {
     const storage = memoryStorage();
-    floatBot("bot_a", storage);
-    floatBot("bot_b", storage);
-    setFloatingBotMascot("bot_a", { kind: "body", body: "star" }, storage);
-    setFloatingBotMascot("bot_b", { kind: "dragon" as never }, storage);
-    expect(readFloatingBots(storage)).toEqual([
-      { id: "bot_a", top: true, mascot: { kind: "body", body: "star" } },
-      { id: "bot_b", top: true },
-    ]);
+    setBotMascot("bot_a", { kind: "body", body: "star" }, storage);
+    setFloatingBotMascot("bot_b", { kind: "trombi" }, storage);
+    setBotMascot("bot_c", { kind: "dragon" as never }, storage);
+    setBotMascot("../x", { kind: "owl" }, storage);
+    expect(readBotMascots(storage)).toEqual({ bot_a: { kind: "body", body: "star" }, bot_b: { kind: "trombi" } });
+    expect(botMascots().bot_a).toEqual({ kind: "body", body: "star" });
     expect(cleanMascotChoice({ kind: "owl", style: "3d", body: "../x" })).toEqual({ kind: "owl", style: "3d" });
     expect(isFloatingEvent({ type: "mascot", choice: { kind: "trombi" } })).toBe(true);
     expect(isFloatingEvent({ type: "mascot", choice: { kind: "x" } })).toBe(false);
+  });
+});
+
+describe("the avatar popover's Character section", () => {
+  it("offers only what each character supports, as the registry says", () => {
+    for (const entry of MASCOTS) {
+      expect(MASCOT_KIND_PAINT[entry.id].colors).toBe(entry.paint.colors);
+      expect(MASCOT_KIND_PAINT[entry.id].skins).toBe(entry.paint.skins);
+      expect(MASCOT_KIND_PAINT[entry.id].wingMoves).toBe(entry.capabilities.wings);
+    }
+  });
+
+  it("lists the characters, the shapes of the original family, and that character's own moves", () => {
+    setBotMascot("bot_p", { kind: "body", body: "drop" }, memoryStorage());
+    const html = renderToStaticMarkup(createElement(CharacterSection, { botId: "bot_p", color: "blue", skin: "none" }));
+    for (const id of ["owl", "body", "trombi"]) expect(html).toContain(`data-character-option="${id}"`);
+    expect(html).toMatch(/aria-checked="true"[^>]*data-character-option="body"/);
+    for (const id of MASCOT_BODY_IDS) expect(html).toContain(`data-character-shape="${id}"`);
+    for (const move of MASCOTS.find((entry) => entry.id === "body")!.moves) expect(html).toContain(`data-character-move="${move}"`);
+    const owl = renderToStaticMarkup(createElement(CharacterSection, { botId: "bot_none", color: "blue", skin: "none" }));
+    expect(owl).toContain('data-character-style="3d"');
+    expect(owl).not.toContain("data-character-move");
   });
 });
 

@@ -13,6 +13,8 @@ import { brand } from "@/lib/brand";
 import { useRetroSkin } from "@/components/RetroChromeHost";
 import { botAvatarProfile } from "../../../shared/bot-avatar";
 import {
+  botMascot,
+  botMascots,
   floatingBotPrefs,
   floatingBots,
   nextLiveliness,
@@ -162,6 +164,7 @@ export function FloatingBots() {
   const { streaming } = useStreaming();
   const entries = useSyncExternalStore(subscribeFloatingBots, floatingBots, floatingBots);
   const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
+  const characters = useSyncExternalStore(subscribeFloatingBots, botMascots, botMascots);
   // each mascot's mood, kept on this device (mood.ts); refreshed now and then so it drifts down
   const [moods, setMoods] = useState<Record<string, MoodRecord>>(() => readMoods());
   const [clock, setClock] = useState(() => Date.now());
@@ -281,7 +284,7 @@ export function FloatingBots() {
         else if (event.id === "fly") setFloatingFlyAway(!floatingBotPrefs().flyAway);
         else if (event.id === "lively") setFloatingLiveliness(nextLiveliness(floatingBotPrefs().liveliness));
         else if (event.id === "mascot") {
-          const current = floatingBots().find((candidate) => candidate.id === botId)?.mascot;
+          const current = botMascot(botId);
           const kind = FLOATING_MASCOT_KINDS[(FLOATING_MASCOT_KINDS.indexOf(current?.kind ?? "owl") + 1) % FLOATING_MASCOT_KINDS.length];
           setFloatingBotMascot(botId, { ...current, kind });
         }
@@ -315,7 +318,7 @@ export function FloatingBots() {
         bot,
         session,
         status,
-        labels: labelsFor(bot, prefs.liveliness, entry?.mascot?.kind),
+        labels: labelsFor(bot, prefs.liveliness, characters[bot.id]?.kind),
         avatar,
         retro,
         reduced,
@@ -324,7 +327,7 @@ export function FloatingBots() {
         mood: moodNow(moods[bot.id], clock),
         flyAway: prefs.flyAway,
         liveliness: prefs.liveliness,
-        mascot: entry?.mascot,
+        mascot: characters[bot.id],
         context: floatingContext(bot.tasks?.find((task) => task.threadId === (session.threadId ?? bot.threadId))?.usage),
       }),
     };
