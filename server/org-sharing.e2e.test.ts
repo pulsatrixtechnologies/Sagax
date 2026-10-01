@@ -230,7 +230,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
   });
 
   it("S3-4 (B): shared with bob, answered with the org key; dave sees none of it", async () => {
-    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: true })).body).toEqual({ settings: { memberBotsUseOrgKey: true } });
+    // Slice 8: the settings also carry the interim attach window (none here).
+    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: true })).body).toEqual({ settings: { memberBotsUseOrgKey: true, interimAttach: { until: null, people: 0 } } });
     shared = await createBot(alice, "Xavier", "claude");
     const refusals = [
       await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: "bob@example.test" }),
