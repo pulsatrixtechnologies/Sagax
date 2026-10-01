@@ -139,6 +139,7 @@ export function WelcomeGate({ viewer }: { viewer: WelcomeViewer | null }) {
       bot={bot}
       replay={replay}
       hosted={viewer.hosted}
+      profileManaged={viewer.profileManaged}
       initialBeat={resumeAt}
       onOpenServer={() => {
         setResumeAt("engines");

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   api,
   ApiError,
+  CLOUD_LINK_SETTINGS,
   configStatusFromFrame,
   createStreamDeltaBuffer,
   currentTaskBot,
@@ -351,6 +352,21 @@ describe("keyboard shortcuts dialog state", () => {
     const closed = reducer(opened, { type: "toggleShortcuts" });
     expect(closed.shortcutsOpen).toBe(false);
     expect(closed.botSettingsSection).toBe("soul");
+  });
+});
+
+describe("Settings opened by the Cloud link", () => {
+  it("marks only the link's own opening, counts each link, and clears on any other Settings navigation", () => {
+    expect(initialState.appSettingsCloudLink).toBe(0);
+    const link = CLOUD_LINK_SETTINGS;
+    const opened = reducer(initialState, link);
+    expect(opened).toMatchObject({ appSettingsOpen: true, appSettingsSection: "cloudAccount", appSettingsCloudLink: 1 });
+    expect(reducer(opened, link).appSettingsCloudLink).toBe(2);
+    expect(reducer(opened, { type: "toggleAppSettings", open: true, section: "cloudAccount" }).appSettingsCloudLink).toBe(0);
+    expect(reducer(opened, { type: "toggleAppSettings", open: true, section: "general" }).appSettingsCloudLink).toBe(0);
+    expect(reducer(opened, { type: "toggleAppSettings", open: false })).toMatchObject({ appSettingsOpen: false, appSettingsCloudLink: 0 });
+    expect(reducer(opened, { type: "toggleAppSettings" }).appSettingsCloudLink).toBe(0);
+    expect(reducer(initialState, { ...link, open: false }).appSettingsCloudLink).toBe(0);
   });
 });
 
@@ -889,6 +905,17 @@ describe("notification routing", () => {
 });
 
 describe("config status frames", () => {
+  it("keeps each provider's own key flag through a live config update", () => {
+    const status = configStatusFromFrame({
+      openai: { configured: true },
+      openrouter: { configured: false },
+      anthropic: { configured: true, everyClaudeBot: false },
+    } as ConfigStatusFrame);
+    expect(status.openai).toEqual({ configured: true });
+    expect(status.openrouter).toEqual({ configured: false });
+    expect(status.anthropic).toEqual({ configured: true, everyClaudeBot: false });
+  });
+
   it("keeps thread capacity and room timeout with the existing config fields", () => {
     expect(
       configStatusFromFrame({
@@ -2159,6 +2186,11 @@ describe("live config frames", () => {
     const automaticRecovery = { enabled: true, backup: { instanceId: "backup", model: "fixture-model" } };
     expect(configStatusFromFrame({ ...baseFrame, automaticRecovery }).automaticRecovery).toEqual(automaticRecovery);
     expect(configStatusFromFrame({ ...baseFrame, automaticRecovery: { enabled: false } }).automaticRecovery).toEqual({ enabled: false });
+  });
+
+  it("keeps an OMB Cloud home's flag through live config refreshes, and adds none elsewhere", () => {
+    expect(configStatusFromFrame({ ...baseFrame, cloudHome: true }).cloudHome).toBe(true);
+    expect(configStatusFromFrame(baseFrame)).not.toHaveProperty("cloudHome");
   });
 
   it("preserves edition, budgets and billing through configStatusFromFrame", () => {

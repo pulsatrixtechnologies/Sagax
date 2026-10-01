@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
+import { createServer, type Server } from "node:net";
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
 vi.mock("node:child_process", async () => ({
@@ -31,6 +32,10 @@ import {
   VPS_MANAGED_LABEL,
   VPS_VIEWER_LABEL,
   vpsComputerAction,
+  vpsComputerJoin,
+  vpsDesktopConnection,
+  closeVpsDesktopTunnel,
+  closeAllVpsDesktopTunnels,
   vpsComputerScreenshot,
   vpsComputerStatus,
   vpsComputerMcp,
@@ -952,6 +957,48 @@ describe("VPS computer", () => {
     expect(imageStatus.problem).toMatch(/Docker over SSH failed while checking the VPS/);
   });
 
+  it.each(["image", "inspect"])("recovers one transient %s inspection failure without recreating the computer", async (command) => {
+    const fake = fixture();
+    let attempts = 0;
+    const runner: VpsCommandRunner = async (args, options) => {
+      if (args[2] === command && ++attempts === 1) throw new Error("Docker-over-SSH command timed out");
+      return fake.runner(args, options);
+    };
+    expect((await vpsComputerAction("provision", CONFIG, BOT_ID, runner)).ready).toBe(true);
+    expect(attempts).toBe(2);
+    expect(fake.calls.every(({ args }) => ["image", "inspect", "exec"].includes(args[2]!))).toBe(true);
+  });
+
+  it("bounds inspection retries and never replays a failed lifecycle command", async () => {
+    const unavailable = vi.fn(async () => { throw new Error("Docker-over-SSH command timed out"); });
+    const status = await vpsComputerStatus(CONFIG, BOT_ID, unavailable);
+    expect(unavailable).toHaveBeenCalledTimes(2);
+    expect(status).toMatchObject({ ready: false, daemonUp: false });
+    expect(status.problem).toContain("Check that the VPS is online");
+
+    const fake = fixture({ running: false });
+    let starts = 0;
+    const runner: VpsCommandRunner = async (args, options) => {
+      if (args[2] === "start") { starts++; throw new Error("Docker-over-SSH command timed out"); }
+      return fake.runner(args, options);
+    };
+    await expect(vpsComputerAction("start", CONFIG, BOT_ID, runner)).rejects.toThrow("timed out");
+    expect(starts).toBe(1);
+  });
+
+  it.each(["Permission denied (publickey)", "Host key verification failed", "No such image"])(
+    "does not retry non-transient inspection errors: %s", async (message) => {
+      const fake = fixture();
+      let attempts = 0;
+      const runner: VpsCommandRunner = async (args, options) => {
+        if (args[2] === "image") { attempts++; throw new Error(message); }
+        return fake.runner(args, options);
+      };
+      expect((await vpsComputerStatus(CONFIG, BOT_ID, runner)).ready).toBe(false);
+      expect(attempts).toBe(1);
+    },
+  );
+
   it("removes a managed container even when its image is incompatible, then provisions fresh", async () => {
     // an IMAGE_LAYER_VERSION bump leaves a running container that provision
     // refuses to touch — remove is the in-app escape hatch
@@ -1091,5 +1138,78 @@ describe("VPS computer", () => {
     // another explicit destination is never the VPS
     expect(vpsStartsForTurn({ wants: "vm", automationSource: "schedule" })).toBe(false);
     expect(vpsStartsForTurn({ wants: "off", autoStartVps: true })).toBe(false);
+  });
+});
+
+// A real loopback listener stands in for SSH; no host or remote daemon is used.
+describe("remote desktop tunnel ownership", () => {
+  async function openFixture() {
+    let server: Server | undefined;
+    const child = Object.assign(new EventEmitter(), {
+      exitCode: null as number | null, killed: false, stderr: new PassThrough(),
+      kill: vi.fn(() => { child.killed = true; server?.close(); child.emit("close", 0); return true; }),
+    });
+    spawnMock.mockImplementation((_binary, args: string[]) => {
+      const port = Number(args[args.indexOf("-L") + 1].split(":")[1]);
+      server = createServer(socket => socket.end()).listen(port, "127.0.0.1");
+      return child;
+    });
+    const runner = fixture().runner;
+    try {
+      await vpsComputerJoin(CONFIG, BOT_ID, runner, true);
+      return { child, runner };
+    } catch (error) { child.kill(); throw error; }
+  }
+
+  it("retains multiple tabs, survives reconnect, then reclaims the idle tunnel", async () => {
+    const { child } = await openFixture();
+    try {
+      const connection = vpsDesktopConnection(BOT_ID)!;
+      expect(connection.password).toBeTruthy();
+      const first = connection.retain();
+      const second = connection.retain();
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      first(); first(); // release is idempotent
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(child.killed).toBe(false);
+      second();
+      await vi.advanceTimersByTimeAsync(15_000);
+      const reconnected = connection.retain();
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(connection.live()).toBe(true);
+      reconnected();
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(child.kill).toHaveBeenCalledTimes(1);
+      expect(connection.live()).toBe(false);
+      expect(vpsDesktopConnection(BOT_ID)).toBeUndefined();
+    } finally { closeAllVpsDesktopTunnels(); vi.useRealTimers(); }
+  });
+
+  it("does not close a native owner's tunnel when a remote tab leaves", async () => {
+    const { child, runner } = await openFixture();
+    try {
+      const release = vpsDesktopConnection(BOT_ID)!.retain();
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const native = await vpsComputerJoin(CONFIG, BOT_ID, runner);
+      expect(native.joinUrl).toMatch(/^http:\/\/127\.0\.0\.1:/);
+      release();
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(child.killed).toBe(false);
+      closeAllVpsDesktopTunnels();
+      expect(child.kill).toHaveBeenCalledTimes(1);
+    } finally { closeAllVpsDesktopTunnels(); vi.useRealTimers(); }
+  });
+  it("keeps remote tabs connected when the native viewer closes", async () => {
+    const { child, runner } = await openFixture();
+    try {
+      const release = vpsDesktopConnection(BOT_ID)!.retain();
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      await vpsComputerJoin(CONFIG, BOT_ID, runner);
+      expect(closeVpsDesktopTunnel(BOT_ID)).toEqual({ closed: false });
+      expect(child.killed).toBe(false);
+      release();
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(child.kill).toHaveBeenCalledTimes(1);
+    } finally { closeAllVpsDesktopTunnels(); vi.useRealTimers(); }
   });
 });

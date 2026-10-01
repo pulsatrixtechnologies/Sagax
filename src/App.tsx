@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Menu } from "lucide-react";
+import { Bot as BotIcon, Loader2, Menu, Plus } from "lucide-react";
 import { openNotificationTarget, StoreProvider, useStore } from "@/state/store";
 import { useWelcomeViewer, WelcomeGate } from "@/components/onboarding/WelcomeGate";
 import { cloudSignInDue, spotlightsQuiet, type WelcomeViewer } from "@/lib/onboarding";
@@ -25,6 +25,7 @@ import { WindowCaptionButtons } from "@/components/WindowCaptionButtons";
 import { RoutinesPage } from "@/components/RoutinesPage";
 import { NoEngines } from "@/components/NoEngines";
 import { CloudEngineSignIn } from "@/components/CloudEngineSignIn";
+import { CloudSetup } from "@/components/CloudSetup";
 import { engineReady } from "@/components/EngineLibrary";
 import { CommandPalette } from "@/components/CommandPalette";
 import { StagedOrgImport } from "@/components/OrgImportDialog";
@@ -34,18 +35,19 @@ import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LocalVmWorkspace } from "@/components/LocalVmWorkspace";
 import { TeamMapPage } from "@/components/TeamMapPage";
-import { setLocale } from "@/lib/i18n";
+import { setLocale, t } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { requestEnterpriseEntry } from "@/lib/enterprise-entry";
 import { takeRoutineDelegationReturn } from "@/lib/routine-delegation";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
+import { botShowsUnread } from "@/lib/bot-unread";
 
 function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   const { state, dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
   const unreadCount =
-    state.bots.filter((bot) => !bot.hidden && bot.unread).length +
+    state.bots.filter((bot) => !bot.hidden && botShowsUnread(bot)).length +
     state.groups.filter((group) => group.unread).length;
   const remoteClient = window.ogb?.remoteClient?.active === true;
   useEffect(() => {
@@ -60,6 +62,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     };
     const url = new URL(window.location.href);
     const requestedSettings = url.searchParams.get("desktop-settings");
+    // Sagax: the inherited OMB Cloud links ("cloud", "cloud-settings") open nothing.
     if (requestedSettings === "workspaces" || (requestedSettings === "organization" && window.ogb.organization && !remoteClient)) {
       url.searchParams.delete("desktop-settings");
       window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
@@ -331,10 +334,25 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       ) : bot ? (
         <ChatView bot={bot} />
       ) : (
+        state.connected ? (
+          // Connected with no bot: an empty state that invites creating one,
+          // not a spinner (nothing is loading).
+          <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-app text-ink-secondary">
+            <BotIcon size={28} aria-hidden />
+            <div className="text-center">
+              <div className="text-[15px] text-ink">{t("app.empty.title")}</div>
+              <div className="mt-1 text-[13px]">{t("app.empty.body")}</div>
+            </div>
+            <button type="button" className="ui-button mt-1 inline-flex items-center gap-1.5" onClick={() => dispatch({ type: "toggleNewBot", open: true })}>
+              <Plus size={14} aria-hidden />
+              {t("app.empty.create")}
+            </button>
+          </main>
+        ) : (
         <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-app text-ink-secondary">
           <Loader2 size={20} className="animate-spin" />
           <div className="text-[14px]">
-            {state.connected ? "No bots yet" : "Connecting to the bot server…"}
+            {"Connecting to the bot server…"}
           </div>
           {!state.connected && (
             <div className="text-[12px]">
@@ -342,6 +360,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
             </div>
           )}
         </main>
+        )
       )}
       {composeOpen && <ComposeToPicker onClose={() => setComposeOpen(false)} />}
       </div>
@@ -363,6 +382,9 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       )}
       {!remoteClient && state.inspectorOpen && bot && <InspectorPanel key={bot.threadId} bot={bot} />}
       {state.appSettingsOpen && <SettingsModal />}
+      {/* On the person's Cloud: its setup checklist, and after it Move to
+          Cloud's one-time card on an empty Cloud (desktop app only). */}
+      <CloudSetup viewer={viewer} />
       {state.pluginsOpen && <PluginsPanel />}
       {state.newBotOpen && <NewBotDialog />}
       {state.shortcutsOpen && (

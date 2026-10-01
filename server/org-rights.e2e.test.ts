@@ -254,7 +254,9 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     const routine = await api("POST", "/api/routines", alice, { name: "Daily", botId: x.id, prompt: "Report.", enabled: false, schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 3_600_000 } });
     expect(routine.status, routine.text).toBe(201);
     const run = await api("POST", `/api/routines/${routine.body.routine.id}/run`, bob);
-    expect(run).toMatchObject({ status: 403, body: { code: "needs_run" } });
+    // private threads: at use, alice's routine (and the thread it writes)
+    // is hers alone, so bob does not even see it; run opens it to him
+    expect(run.status).toBe(404);
     await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "run" });
     expect((await api("POST", `/api/routines/${routine.body.routine.id}/run`, bob)).status).toBe(201);
     await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "edit" });

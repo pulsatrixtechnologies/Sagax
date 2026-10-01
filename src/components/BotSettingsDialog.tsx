@@ -331,7 +331,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
         // while the user consults another section. It fetches when it
         // becomes the active section. Always mounted; visibility toggled
         // via hidden on the accordion body wrapper.
-        return <MemorySection bot={bot} active={!collapsed && section === "memory"} />;
+        return <MemorySection bot={bot} active={!collapsed && section === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />;
       case "routines":
         return <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />;
       case "access":
@@ -579,7 +579,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
           {/* Memory stays mounted so an unsaved draft survives tab and
               section changes; it shows only while it is the open section. */}
           <div hidden={!(tab === "advanced" && !collapsed && section === "memory")} className="px-4 pb-6">
-            <MemorySection bot={bot} active={tab === "advanced" && !collapsed && section === "memory"} />
+            <MemorySection bot={bot} active={tab === "advanced" && !collapsed && section === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />
           </div>
         </div>
       </aside>

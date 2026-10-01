@@ -38,6 +38,12 @@ export function pairingBlockedReason(state: SessionState | null): "chat-only" | 
   return state?.kind === "session" && !state.scopes.includes("admin") ? "chat-only" : null;
 }
 
+/** The devices the card lists: on an OMB Cloud home only the owner's own,
+ * each with full access (the server lists no other). */
+export function shownDevices(devices: PairedDevice[], cloudHome: boolean): PairedDevice[] {
+  return cloudHome ? devices.filter((device) => device.scopes.includes("admin")) : devices;
+}
+
 export function minutesLeft(expiresAt: number, now = Date.now()): number {
   return Math.max(0, Math.ceil((expiresAt - now) / 60_000));
 }
@@ -51,7 +57,7 @@ export function lastSeen(lastSeenAt: number, now = Date.now()): string {
 }
 
 const button = "rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink disabled:opacity-50";
-const quiet = "rounded-md border border-line px-3 py-1.5 text-[13px] text-ink hover:bg-surface";
+const quiet = "rounded-md border border-hairline/50 px-3 py-1.5 text-[13px] text-ink hover:bg-control";
 
 /** Settings → Remote access: mint a one-time pairing code with a QR for
  * the phone app (or for a non-phone client — MCP, `openmausbot pair`, a
@@ -60,8 +66,11 @@ const quiet = "rounded-md border border-line px-3 py-1.5 text-[13px] text-ink ho
  * from a browser, the desktop app's own local server (#950), and the
  * desktop app connected to a hosted workspace, whose requests reach that
  * server with the paired session — the only place its phones can be
- * paired from (MOCA-84). `canPairDevices` decides who may act. */
-export function ServerPairingCard({ initialSession = null, initialPairingCodes = true }: { initialSession?: SessionState | null; initialPairingCodes?: boolean }) {
+ * paired from (MOCA-84). `canPairDevices` decides who may act. On an OMB
+ * Cloud home (`cloudHome`), which is personal, every device paired is one of
+ * the owner's own, with full access: no chat-only choice, only the owner's
+ * devices listed, and one line saying why. */
+export function ServerPairingCard({ initialSession = null, initialPairingCodes = true, cloudHome = false }: { initialSession?: SessionState | null; initialPairingCodes?: boolean; cloudHome?: boolean }) {
   const [session, setSession] = useState<SessionState | null>(initialSession);
   // A hosted workspace refuses pairing codes: people sign in through the
   // organisation's portal. Offer only the signed-in devices there.
@@ -110,13 +119,14 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
     );
   }
   const expired = offer ? offer.expiresAt <= now : false;
+  const listed = shownDevices(devices, cloudHome);
 
   async function create() {
     setBusy(true);
     setError(null);
     setCopied(false);
     try {
-      const body: PairingOffer = await api("/api/auth/pairing", { method: "POST", body: JSON.stringify({ scopes: scope === "admin" ? ["admin", "client"] : ["client"] }) });
+      const body: PairingOffer = await api("/api/auth/pairing", { method: "POST", body: JSON.stringify({ scopes: scope === "admin" || cloudHome ? ["admin", "client"] : ["client"] }) });
       setOffer(body);
       setNow(Date.now());
     } catch (e) {
@@ -154,21 +164,24 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
       subtitle={t(pairingCodes ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")}
       summary={cardCount("devices", devices.length)}
     >
+      {pairingCodes && cloudHome ? <p data-server-pairing-personal className="mt-3 text-[13px] text-ink-secondary">{t("remote.serverPairing.cloudPersonal")}</p> : null}
       {pairingCodes ? <div className="mt-3 flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-1.5 text-[13px] text-ink">
-          <input type="radio" name="server-pairing-scope" checked={scope === "admin"} onChange={() => setScope("admin")} />
-          {t("remote.serverPairing.scope.admin")}
-        </label>
-        <label className="flex items-center gap-1.5 text-[13px] text-ink">
-          <input type="radio" name="server-pairing-scope" checked={scope === "client"} onChange={() => setScope("client")} />
-          {t("remote.serverPairing.scope.client")}
-        </label>
+        {cloudHome ? null : <>
+          <label className="flex items-center gap-1.5 text-[13px] text-ink">
+            <input type="radio" name="server-pairing-scope" checked={scope === "admin"} onChange={() => setScope("admin")} />
+            {t("remote.serverPairing.scope.admin")}
+          </label>
+          <label className="flex items-center gap-1.5 text-[13px] text-ink">
+            <input type="radio" name="server-pairing-scope" checked={scope === "client"} onChange={() => setScope("client")} />
+            {t("remote.serverPairing.scope.client")}
+          </label>
+        </>}
         <button type="button" onClick={() => void create()} disabled={busy} className={button}>
           {busy ? t("remote.serverPairing.creating") : t("remote.serverPairing.create")}
         </button>
       </div> : <p data-server-pairing-portal className="mt-3 text-[13px] text-ink-secondary">{t("remote.serverPairing.portal")}</p>}
       {pairingCodes && offer ? (
-        <div className="mt-4 rounded-lg border border-line bg-surface p-4">
+        <div className="mt-4 rounded-lg border border-hairline/40 bg-inset p-4">
           {expired ? (
             <p className="text-[13px] text-ink-secondary">{t("remote.serverPairing.expired")}</p>
           ) : (
@@ -197,11 +210,11 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
         </div>
       ) : null}
       <div className="mt-5 text-[13px] font-medium text-ink">{t(pairingCodes ? "remote.serverPairing.devices" : "remote.serverPairing.portalDevices")}</div>
-      {devices.length === 0 ? (
+      {listed.length === 0 ? (
         <p className="mt-1 text-[12.5px] text-ink-secondary">{t("remote.serverPairing.noDevices")}</p>
       ) : (
-        <ul className="mt-1 divide-y divide-line">
-          {devices.map((device) => (
+        <ul className="mt-1 divide-y divide-hairline/40">
+          {listed.map((device) => (
             <li key={device.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-[13px]">
               <span className="text-ink">
                 {device.label}

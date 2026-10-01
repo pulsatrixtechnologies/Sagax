@@ -20,6 +20,7 @@ import { brand } from "@/lib/brand";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { MausMotion, MausState } from "@/lib/mascot";
+import type { ManagedProfile } from "@/lib/profile-management";
 import {
   beatWidth,
   beatsFor,
@@ -79,6 +80,7 @@ export function WelcomeFlow({
   dictation,
   entrance = "arrive",
   hosted = false,
+  profileManaged,
   onOpenServer,
 }: {
   /** The seeded bot the exit beat names; null when the roster is empty. */
@@ -99,6 +101,9 @@ export function WelcomeFlow({
   entrance?: Motion;
   /** A hosted team workspace: the hosted beat set, no email field. */
   hosted?: boolean;
+  /** An organization server: Perspicax owns the name and email, so the
+   * greeting shows them read-only instead of asking. */
+  profileManaged?: ManagedProfile;
   /** The engines beat's server row asks for the launch screen's server mode. */
   onOpenServer?: () => void;
 }) {
@@ -258,7 +263,7 @@ export function WelcomeFlow({
 
         {/* keyed so a beat's rise-in plays once per visit, never on re-render */}
         <div key={beat} className="flex shrink-0 flex-col">
-          {beat === "hello" && <HelloBeat {...beatProps} hosted={hosted} />}
+          {beat === "hello" && <HelloBeat {...beatProps} hosted={hosted} profileManaged={profileManaged} />}
           {beat === "reel" && <FeatureReel {...beatProps} />}
           {beat === "engines" && <EnginesBeat {...beatProps} hosted={hosted} onOpenServer={onOpenServer} />}
           {beat === "permissions" && <PermissionsBeat {...beatProps} />}

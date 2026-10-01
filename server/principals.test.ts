@@ -211,6 +211,25 @@ describe("principals from the Perspicax directory (upsertFromDirectory)", () => 
   });
 });
 
+describe("a person's Perspicax avatar version", () => {
+  const ISS = "https://px.example.test";
+  it("is set by a picture claim, kept when a token has none, and removed only by the directory", () => {
+    const { path, reg } = registry();
+    const p = reg.forSubject({ iss: ISS, sub: "AV", claims: { name: "Ava", avatar: "a1b2c3" }, orgRole: "member" });
+    expect(p.avatar).toBe("a1b2c3");
+    // a refreshed id_token without picture says nothing about the avatar
+    expect(reg.forSubject({ iss: ISS, sub: "AV", claims: { name: "Ava" }, orgRole: "member" }).avatar).toBe("a1b2c3");
+    // an older Perspicax directory (no field) leaves it
+    expect(reg.upsertFromDirectory({ iss: ISS, sub: "AV", name: "Ava", orgRole: "member" }).avatar).toBe("a1b2c3");
+    // a new version from the directory replaces it; null removes it
+    expect(reg.upsertFromDirectory({ iss: ISS, sub: "AV", name: "Ava", avatar: "d4e5f6", orgRole: "member" }).avatar).toBe("d4e5f6");
+    expect(JSON.parse(readFileSync(path, "utf8")).principals.find((x: { id: string }) => x.id === p.id).avatar).toBe("d4e5f6");
+    expect(reg.upsertFromDirectory({ iss: ISS, sub: "AV", name: "Ava", avatar: null, orgRole: "member" }).avatar).toBeUndefined();
+    // a value that is not a version is never stored
+    expect(reg.forSubject({ iss: ISS, sub: "AV", claims: { avatar: "../../x?y" }, orgRole: "member" }).avatar).toBeUndefined();
+  });
+});
+
 describe("slice 4: teams and the Perspicax role", () => {
   it("a sign-in sets teams and role; an absent claim leaves the teams alone; a change calls the listener", () => {
     const { reg, path } = registry();

@@ -27,6 +27,8 @@
 //   FAKE_CODEX_ASK_HOLD        question modes: record the ask reply and hold the turn open, for
 //                              timeout tests that advance the clock
 //   FAKE_CODEX_DUMP   path to write {pid, argv, env, calls, decision} as JSON
+//   FAKE_CODEX_IGNORE_FEATURES  "1": config/read reports no `-c features.*` override
+//                     (a Codex that did not take them)
 //   FAKE_CODEX_APPROVAL_REQUEST JSON {method, params} override in approval mode
 //   FAKE_CODEX_ACCOUNT_EMAIL  synthetic ChatGPT identity (default ada@example.test)
 //   FAKE_CODEX_ACCOUNT_MODE   chatgpt (default) | api-key | none | unsupported | error | hang
@@ -360,6 +362,11 @@ process.stdin.on("data", (chunk) => {
                   },
                 }),
               developer_instructions: process.env.FAKE_CODEX_INSTRUCTIONS ?? null,
+              // `-c features.<name>=<bool>` overrides, as the real config/read reports them.
+              features: Object.fromEntries(process.argv.flatMap((arg, index) => {
+                const match = process.argv[index - 1] === "-c" ? /^features\.(\w+)=(true|false)$/.exec(arg) : null;
+                return match && process.env.FAKE_CODEX_IGNORE_FEATURES !== "1" ? [[match[1], match[2] === "true"]] : [];
+              })),
             },
             origins: {},
           },
@@ -373,7 +380,7 @@ process.stdin.on("data", (chunk) => {
           out({ jsonrpc: "2.0", id: msg.id, error: JSON.parse(process.env.FAKE_CODEX_RESUME_ERROR) });
         } else if (msg.params?.permissions && (!experimentalApi || mode === "config-profile-unsupported")) {
           out({ jsonrpc: "2.0", id: msg.id, error: { code: -32602, message: "experimental API required for permissions" } });
-        } else if (mode === "resume" || mode === "helper-events" || mode === "instructions-unsupported" || mode === "config-profile" || mode === "config-profile-unsupported" ||
+        } else if (mode === "resume" || mode === "review-events" || mode === "helper-events" || mode === "instructions-unsupported" || mode === "config-profile" || mode === "config-profile-unsupported" ||
             (mode === "resume-then-missing" && !existsSync(process.env.FAKE_CODEX_STATE ?? ""))) {
           threadReply({ jsonrpc: "2.0", id: msg.id, result: { thread: { id: msg.params?.threadId }, sandbox: resolvedSandbox(msg.params ?? {}) } });
         } else {
@@ -604,6 +611,13 @@ process.stdin.on("data", (chunk) => {
           : "ls -la";
         notify("item/started", { item: { id: "i1", type: "commandExecution", command } });
         notify("item/started", { item: { id: "w1", type: "webSearch", query: "Sagax" } });
+        const reviewOnce = process.env.FAKE_CODEX_REVIEW_ONCE_FILE;
+        if (process.env.FAKE_CODEX_REVIEW_EVENTS && (!reviewOnce || !existsSync(reviewOnce))) {
+          if (reviewOnce) writeFileSync(reviewOnce, "1");
+          for (const event of JSON.parse(process.env.FAKE_CODEX_REVIEW_EVENTS)) {
+            out({ jsonrpc: "2.0", method: event.method, params: event.params });
+          }
+        }
         if (mode === "mcp-elicitation") {
           out({
             jsonrpc: "2.0",
@@ -721,6 +735,10 @@ process.stdin.on("data", (chunk) => {
           // turn continues from the approval response handler above
         } else {
           finishTurn();
+          if (process.env.FAKE_CODEX_REVIEW_AFTER_COMPLETION) {
+            const event = JSON.parse(process.env.FAKE_CODEX_REVIEW_AFTER_COMPLETION);
+            out({ jsonrpc: "2.0", method: event.method, params: event.params });
+          }
         }
         break;
       }

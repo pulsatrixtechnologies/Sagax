@@ -2,9 +2,10 @@
 // carry the personality; avatars inside the room stay still so a busy group
 // does not become a wall of competing motion. Plain messages go to the room's
 // default responder; @mentions override that routing.
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { activeLocale, t } from "@/lib/i18n";
-import { ArrowDown, Bot as BotIcon, Check, ChevronDown, ChevronRight, FolderOpen, Loader2, MessageSquareReply, Pin, PinOff, Search, Users, X, type LucideIcon } from "lucide-react";
+import { ArrowDown, Check, ChevronDown, ChevronRight, FolderOpen, Loader2, MessageSquareReply, PanelRight, Pin, PinOff, Settings2, X } from "lucide-react";
 import {
   api,
   useStore,
@@ -26,9 +27,11 @@ import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
 import { viewerActorId } from "@/lib/viewer";
 import { OtherAuthorLabel } from "./MessageAuthor";
+import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { mausInk, normalizeState } from "@/lib/mascot";
-import { effectiveDefaultResponder, groupResponseHint } from "@/lib/group-routing";
+import { defaultResponderName, effectiveDefaultResponder, groupResponseHint, jevRoomRoutingOn } from "@/lib/group-routing";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 import { Composer } from "./Composer";
 import { ChatFindBar } from "./ChatFindBar";
 import { GroupTaskPicker } from "./TaskPicker";
@@ -51,11 +54,17 @@ import { ApprovalCard } from "./ApprovalCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
+import { GroupPeoplePicker, useOrgDirectory } from "./GroupPeoplePicker";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { groupHumanLabel } from "@/lib/private-threads";
 import { ManageMembersPanel } from "./ManageMembersPanel";
-import { groupActivityRuns } from "@/lib/activity-runs";
+import { GroupAvatarStack, GroupPanel } from "./GroupPanel";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
+import { groupActivityRuns, isStatusActivity } from "@/lib/activity-runs";
 import { ActivityRun } from "./ActivityRun";
 import { useDesktopCapabilities, useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { cn } from "@/lib/cn";
+import { useMenuMotion } from "./MenuMotion";
 import { useFocusMessage } from "@/lib/focus-message";
 import { shortPath } from "@/lib/short-path";
 import { BOTTOM_FOLLOW_THRESHOLD, shouldResumeBottomFollow, useBottomFollowResize } from "@/lib/bottom-follow";
@@ -70,7 +79,14 @@ import {
   resolveTranscriptWindow,
   tailWindowStart,
 } from "@/lib/transcript-window";
-import { useReplyDraft } from "@/lib/drafts";
+import { appendDraftAttachments, useReplyDraft } from "@/lib/drafts";
+import { citationPreviewText, splitTranscriptCitations, type CitationAttachment } from "@/lib/citations";
+import { highlightCitationSource } from "@/lib/citations-dom";
+import { latestReply, type TranscriptSnapshot } from "@/lib/transcript-announcer";
+import { pendingApprovals } from "./PendingApproval";
+import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
+import { channelHumanRow, useOrgPeople } from "@/lib/perspicax-org";
+import { personAvatarSrc } from "@/lib/profile-management";
 
 function dayLabel(at: number): string {
   const d = new Date(at);
@@ -167,7 +183,7 @@ function PinToggle({ group, message }: { group: Group; message: Message }) {
         })
       }
       aria-label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
-      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-70"
       title={pinned ? t("chat.unpinHint") : t("room.pinHint")}
     >
       {pinned ? <PinOff size={14} /> : <Pin size={14} />}
@@ -175,7 +191,7 @@ function PinToggle({ group, message }: { group: Group; message: Message }) {
   );
 }
 
-const Transcript = memo(function Transcript({
+export const Transcript = memo(function Transcript({
   group,
   members,
   messages,
@@ -237,7 +253,8 @@ const Transcript = memo(function Transcript({
         }
         const m = item.message;
         const user = m.role === "user";
-        const attachments = user && m.text ? splitTranscriptAttachments(m.text) : null;
+        const cited = user && m.text ? splitTranscriptCitations(m.text) : null;
+        const attachments = user && m.text ? splitTranscriptAttachments(cited?.display ?? m.text) : null;
         const newCluster = !prev || prev.role !== m.role || prev.from?.botId !== m.from?.botId || Boolean(prev.comm) || newDay;
         const routineOwner = m.kind === "routine.run" ? memberOf(m.from?.botId) : undefined;
         const routineExecutionThreadId = m.routineRun?.executionThreadId;
@@ -302,7 +319,7 @@ const Transcript = memo(function Transcript({
             </div>
           ) : m.kind === "activity" && m.tool ? (
             roomActivityVisible(m, showToolCalls) ? (
-              <RoomToolChip message={m} roomId={group.id} />
+              isStatusActivity(m) ? <StatusActivityRow message={m} /> : <RoomToolChip message={m} roomId={group.id} />
             ) : null
           ) : m.kind === "compaction" ? (
             <CompactionChip message={m} />
@@ -321,7 +338,7 @@ const Transcript = memo(function Transcript({
                       onClick={() => onReply(m)}
                       aria-label={t("chat.replyToMessage")}
                       title={t("chat.reply")}
-                      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-70"
                     >
                       <MessageSquareReply size={14} />
                     </button>
@@ -358,7 +375,22 @@ const Transcript = memo(function Transcript({
                   {user ? (
                     <>
                       {attachments && <AttachmentGallery images={attachments.images} files={attachments.files} message={{ threadId: group.threadId, messageId: m.id }} eager={m.id === newestMessageId || m.id === newestUserMessageId} className={!attachments.display ? "mb-0" : undefined} />}
-                      <ThreadRefText text={attachments?.display ?? m.text ?? ""} peers={members} everyone={!group.dm} />
+                      <div
+                        data-citation-source={m.id}
+                        data-citation-owner-type="group"
+                        data-citation-owner={group.id}
+                        data-citation-thread={group.threadId}
+                      >
+                        <ThreadRefText text={attachments?.display ?? m.text ?? ""} peers={members} everyone={!group.dm} />
+                      </div>
+                      {cited && <SentCitations
+                        citations={cited.citations}
+                        onNavigate={async (citation: CitationAttachment) => {
+                          if (citation.source.ownerType !== "group" || !group.messages.some((candidate) => candidate.id === citation.source.messageId)) return false;
+                          dispatch({ type: "focusMessage", threadId: group.threadId, messageId: citation.source.messageId });
+                          return highlightCitationSource(citation);
+                        }}
+                      />}
                       {m.via === "api" && (
                         <div className="mt-1 text-[11px] text-ink-secondary">Sent through the API, not typed here</div>
                       )}
@@ -373,7 +405,7 @@ const Transcript = memo(function Transcript({
                         </div>
                       )}
                       <MessageAttachmentGallery text={m.text ?? ""} attachments={m.attachments} message={{ threadId: group.threadId, messageId: m.id }} className={m.text ? undefined : "mb-0"} eager={m.id === newestMessageId || m.id === newestUserMessageId} />
-                      {m.text ? <ChatMarkdown text={m.text} mentionPeers={members} everyone={!group.dm} message={{ threadId: group.threadId, messageId: m.id }} /> : null}
+                      {m.text ? <div data-citation-source={m.id} data-citation-owner-type="group" data-citation-owner={group.id} data-citation-thread={group.threadId}><ChatMarkdown text={m.text} mentionPeers={members} everyone={!group.dm} message={{ threadId: group.threadId, messageId: m.id }} /></div> : null}
                     </>
                   )}
                 </div>
@@ -384,17 +416,18 @@ const Transcript = memo(function Transcript({
                       onClick={() => onReply(m)}
                       aria-label={t("chat.replyToMessage")}
                       title={t("chat.reply")}
-                      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-70"
                     >
                       <MessageSquareReply size={14} />
                     </button>
                     <PinToggle group={group} message={m} />
                   </>
                 )}
-                <span className="self-end pb-1 text-[11px] tabular-nums text-ink-secondary/70 opacity-0 transition-opacity group-hover:opacity-100">
+                <span className="self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100">
                   {formatTime(m.at)}
                 </span>
               </div>
+              {!user && m.routedBy && <RoutedByLine routedBy={m.routedBy} />}
             </div>
           ) : null;
         if (!row) return null;
@@ -416,8 +449,19 @@ const Transcript = memo(function Transcript({
   );
 });
 
-function DefaultResponderSelect({ group, members }: { group: Group; members: Bot[] }) {
-  const { dispatch } = useStore();
+/** Under a reply in an Auto room: the decision model chose this speaker. */
+export function RoutedByLine({ routedBy }: { routedBy: NonNullable<Message["routedBy"]> }) {
+  const percent = Math.round(Math.min(1, Math.max(0, routedBy.probability)) * 100);
+  return (
+    <div data-testid="routed-by" className="mt-1 px-1 text-[11px] text-ink-secondary">
+      {t("room.routedBy", { percent: String(percent) })}
+    </div>
+  );
+}
+
+export function DefaultResponderSelect({ group, members }: { group: Group; members: Bot[] }) {
+  const { state, dispatch } = useStore();
+  const jevOn = jevRoomRoutingOn(state.config);
   const responder = effectiveDefaultResponder(group, members);
   const value = responder.kind === "member" ? `member:${responder.botId}` : responder.kind;
   const lead = responder.kind === "member" ? members.find((member) => member.id === responder.botId) : undefined;
@@ -426,12 +470,18 @@ function DefaultResponderSelect({ group, members }: { group: Group; members: Bot
       ? t("room.responder.everyone")
       : responder.kind === "mentions"
         ? t("room.responder.mentions")
-        : t("room.responder.lead", { name: lead?.name ?? t("room.responder.leadFallback") });
+        : responder.kind === "auto"
+          ? jevOn
+            ? t("room.responder.auto")
+            : t("room.responder.autoOff", { name: defaultResponderName(group, members) ?? t("room.responder.leadFallback") })
+          : t("room.responder.lead", { name: lead?.name ?? t("room.responder.leadFallback") });
 
   const change = (nextValue: string) => {
     let next: GroupDefaultResponder;
     if (nextValue === "everyone") next = { kind: "everyone" };
     else if (nextValue === "mentions") next = { kind: "mentions" };
+    // The lead a room had stays on as Auto's fallback.
+    else if (nextValue === "auto") next = responder.kind === "member" ? { kind: "auto", fallbackBotId: responder.botId } : { kind: "auto" };
     else next = { kind: "member", botId: nextValue.slice("member:".length) };
     dispatch({ type: "patchGroup", groupId: group.id, patch: { defaultResponder: next } });
   };
@@ -452,6 +502,7 @@ function DefaultResponderSelect({ group, members }: { group: Group; members: Bot
           ))}
         </optgroup>
         <optgroup label={t("room.responder.groupBehavior")}>
+          <option value="auto">{jevOn ? t("room.responder.autoOption") : t("room.responder.autoOptionOff")}</option>
           <option value="everyone">{t("room.responder.everyoneOption")}</option>
           <option value="mentions">{t("room.responder.mentionsOption")}</option>
         </optgroup>
@@ -537,7 +588,7 @@ function RoomWorkingFolder({ group }: { group: Group }) {
           }}
         >
           <input
-            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2.5 font-mono text-[12.5px] text-ink placeholder:text-ink-secondary focus:outline-none focus:border-hairline"
+            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2.5 font-mono text-[12.5px] text-ink placeholder:text-ink-secondary focus:outline-none"
             placeholder={t("room.folder.placeholder")}
             value={draft ?? group.cwd ?? ""}
             onChange={(e) => setDraft(e.target.value)}
@@ -560,13 +611,13 @@ type RoomSetupFields = {
   setupSkippedAt?: number | string | null;
 };
 
-type RoomResponderMode = "lead" | "everyone" | "mentions";
+type RoomResponderMode = "lead" | "everyone" | "mentions" | "auto";
 
 function setupResponderMode(responder: GroupDefaultResponder): RoomResponderMode {
   return responder.kind === "member" ? "lead" : responder.kind;
 }
 
-function roomNeedsSetup(group: Group): boolean {
+export function roomNeedsSetup(group: Group): boolean {
   if (group.dm || group.messages.length > 0) return false;
   // SAFETY: setup fields are additive server metadata; the existing Group shape remains valid when absent.
   const marker = group as Group & RoomSetupFields;
@@ -588,17 +639,35 @@ function roomNeedsSetup(group: Group): boolean {
   return true;
 }
 
-function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
-  const { dispatch } = useStore();
+/** Group setup as a modal dialog. `first` is the pending setup of a new
+ * group: Skip and Escape record a skip so the group is usable right away.
+ * `edit` reopens the same fields later: Escape and Cancel only close. */
+export function RoomSetupDialog({
+  group,
+  members,
+  mode,
+  onClose,
+}: {
+  group: Group;
+  members: Bot[];
+  mode: "first" | "edit";
+  onClose: () => void;
+}) {
+  const { state, dispatch } = useStore();
+  const jevOn = jevRoomRoutingOn(state.config);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [folder, setFolder] = useState(group.cwd ?? "");
   const [behavior, setBehavior] = useState<RoomResponderMode>(setupResponderMode(group.defaultResponder));
   const [leadId, setLeadId] = useState(
-    group.defaultResponder.kind === "member" ? group.defaultResponder.botId : members[0]?.id ?? "",
+    group.defaultResponder.kind === "member" ? group.defaultResponder.botId
+      : group.defaultResponder.kind === "auto" && group.defaultResponder.fallbackBotId ? group.defaultResponder.fallbackBotId
+        : members[0]?.id ?? "",
   );
   const [instructions, setInstructions] = useState(group.bulletin);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leadPickerOpen, setLeadPickerOpen] = useState(false);
+  const leadMotion = useMenuMotion(behavior === "lead" && leadPickerOpen);
   const leadPickerRef = useRef<HTMLDivElement>(null);
   const selectedLead = members.find((member) => member.id === leadId) ?? members[0];
 
@@ -621,6 +690,8 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
   const responder = (): GroupDefaultResponder => {
     if (behavior === "everyone") return { kind: "everyone" };
     if (behavior === "mentions") return { kind: "mentions" };
+    // The lead picked above stays on as Auto's fallback.
+    if (behavior === "auto") return members.some((member) => member.id === leadId) ? { kind: "auto", fallbackBotId: leadId } : { kind: "auto" };
     return members.some((member) => member.id === leadId)
       ? { kind: "member", botId: leadId }
       : group.defaultResponder;
@@ -628,6 +699,10 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
 
   const finish = async (action: "complete" | "skip") => {
     setLeadPickerOpen(false);
+    if (mode === "edit") {
+      if (action === "skip") return onClose();
+      return saveEdits();
+    }
     setSaving(true);
     setError(null);
     try {
@@ -652,6 +727,7 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
         ...(action === "skip" ? { setupSkippedAt: now } : { setupCompletedAt: now }),
       };
       dispatch({ type: "groupPatched", group: nextGroup });
+      onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -659,30 +735,122 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
     }
   };
 
+  // Reopened after setup: send only what changed through the ordinary group
+  // patch (the setup endpoint is one-shot and ignores a second call).
+  const saveEdits = async () => {
+    const patch: Record<string, unknown> = {};
+    const cwd = folder.trim() || null;
+    if (cwd !== (group.cwd ?? null)) patch.cwd = cwd;
+    const nextResponder = responder();
+    if (JSON.stringify(nextResponder) !== JSON.stringify(group.defaultResponder)) patch.defaultResponder = nextResponder;
+    if (instructions !== group.bulletin) patch.bulletin = instructions;
+    if (Object.keys(patch).length === 0) return onClose();
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await api(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      dispatch({ type: "groupPatched", group: { ...(result.group ?? { ...group, ...patch }), id: group.id } });
+      onClose();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const dismiss = () => {
+    if (saving) return;
+    void finish("skip");
+  };
+  const dismissRef = useRef(dismiss);
+  dismissRef.current = dismiss;
+  const leadPickerOpenRef = useRef(leadPickerOpen);
+  leadPickerOpenRef.current = leadPickerOpen;
+
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const first = dialogRef.current?.querySelector<HTMLElement>("form input, form textarea");
+    (first ?? dialogRef.current)?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        // The lead picker owns the first Escape.
+        if (leadPickerOpenRef.current) return;
+        event.preventDefault();
+        dismissRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ) ?? [])];
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+      const head = focusable[0];
+      const tail = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === head || !dialogRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        tail.focus();
+      } else if (!event.shiftKey && (document.activeElement === tail || !dialogRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        head.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, []);
+
   const pickFolder = async () => {
     const chosen = await window.ogb?.pickFolder?.(folder || group.cwd);
     if (chosen) setFolder(chosen);
   };
 
-  return (
-    <section
+  const content = (
+    <div
+      data-testid="room-setup-overlay"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-6"
+      onMouseDown={(event) => {
+        // A stray click must not skip a pending setup; only reopened edits close.
+        if (event.target === event.currentTarget && mode === "edit") dismiss();
+      }}
+    >
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
       data-testid="room-setup"
       aria-labelledby="room-setup-title"
-      className="relative z-20 w-full overflow-visible rounded-3xl border border-hairline/50 bg-card shadow-xl shadow-black/10"
+      aria-describedby="room-setup-detail"
+      tabIndex={-1}
+      className="animate-pop-in flex max-h-[calc(100dvh-1rem)] w-full flex-col overflow-hidden rounded-t-[20px] border border-border bg-elevated outline-none sm:max-h-[min(820px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-[14px]"
     >
-      <div className="rounded-t-3xl border-b border-hairline/40 bg-panel/70 px-5 py-5 sm:px-7">
-        <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-sm font-bold text-accent-ink">1</span>
-          <div>
-            <h1 id="room-setup-title" className="text-xl font-semibold tracking-tight text-ink">{t("room.setup.title", { name: group.name })}</h1>
-            <p className="mt-1 max-w-[560px] text-[13.5px] leading-relaxed text-ink-secondary">
+      <header className="flex items-start justify-between gap-3 border-b border-hairline/40 px-5 pb-4 pt-5 sm:px-7 sm:pt-6">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink" aria-hidden="true"><Settings2 size={17} /></span>
+          <div className="min-w-0">
+            <h2 id="room-setup-title" className="truncate text-[17px] font-semibold tracking-tight text-ink">{t("room.setup.title", { name: group.name })}</h2>
+            <p id="room-setup-detail" className="mt-1 max-w-[560px] text-[13px] leading-relaxed text-ink-secondary">
               {t("room.setup.detail")}
             </p>
           </div>
         </div>
-      </div>
+        <button
+          type="button"
+          onClick={dismiss}
+          disabled={saving}
+          aria-label={t("common.close")}
+          className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary disabled:opacity-50"
+        >
+          <X size={18} />
+        </button>
+      </header>
       <form
-        className="space-y-5 px-5 py-5 sm:px-7 sm:py-6"
+        className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"
         onSubmit={(event) => {
           event.preventDefault();
           void finish("complete");
@@ -714,7 +882,39 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
         <fieldset className="block">
           <legend className="text-[13px] font-semibold text-ink">{t("room.responder.aria")}</legend>
           <p className="mt-1 text-[12px] text-ink-secondary">{t("room.setup.responderDetail")}</p>
-          <div role="radiogroup" aria-label={t("room.responder.aria")} className="mt-2 grid gap-2 sm:grid-cols-3">
+          <div role="radiogroup" aria-label={t("room.responder.aria")} className="mt-2 grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={behavior === "auto"}
+              onClick={() => {
+                setBehavior("auto");
+                setLeadPickerOpen(false);
+              }}
+              disabled={saving}
+              className={cn(
+                "flex min-h-[72px] w-full cursor-pointer flex-col items-start justify-between rounded-2xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50",
+                behavior === "auto"
+                  ? "border-accent bg-accent/10 text-ink ring-1 ring-accent/30"
+                  : "border-hairline/50 bg-inset text-ink-secondary hover:border-hairline hover:bg-raised",
+              )}
+            >
+              <span className="flex items-center gap-2 text-[13px] font-semibold">
+                <span
+                  className={cn(
+                    "flex size-4 shrink-0 items-center justify-center rounded-full border",
+                    behavior === "auto" ? "border-accent bg-accent" : "border-ink-secondary/60",
+                  )}
+                >
+                  {behavior === "auto" && <span className="size-1.5 rounded-full bg-white" />}
+                </span>
+                {jevOn ? t("room.responder.autoOption") : t("room.responder.autoOptionOff")}
+              </span>
+              <span className="ml-6 mt-2 text-[11.5px] text-ink-secondary">
+                {jevOn ? t("room.setup.autoDetail") : t("room.setup.autoDetailOff")}
+              </span>
+            </button>
+
             <div ref={leadPickerRef} className="relative min-w-0">
               <button
                 type="button"
@@ -756,11 +956,11 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
                   {selectedLead?.name ?? t("room.behavior.chooseTeammate")}
                 </span>
               </button>
-              {behavior === "lead" && leadPickerOpen && (
+              {leadMotion.shown && (
                 <div
                   role="listbox"
                   aria-label={t("room.behavior.chooseLead")}
-                  className="absolute left-0 top-full z-30 mt-2 w-72 max-w-[calc(100vw-3rem)] overflow-hidden rounded-2xl border border-hairline/60 bg-panel shadow-2xl shadow-black/20"
+                  className={cn("absolute left-0 top-full z-30 mt-2 w-72 max-w-[calc(100vw-3rem)] overflow-hidden rounded-2xl border border-hairline/60 bg-panel shadow-2xl shadow-black/20", leadMotion.className)} {...leadMotion.exitProps}
                 >
                   <div className="border-b border-hairline/40 px-3 py-2.5">
                     <div className="text-[12.5px] font-semibold text-ink">{t("room.behavior.chooseLead")}</div>
@@ -885,7 +1085,7 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
             disabled={saving}
             className="rounded-xl px-3 py-2 text-left text-[13px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
           >
-            {t("room.setup.skip")}
+            {mode === "first" ? t("room.setup.skip") : t("common.cancel")}
           </button>
           <button
             type="submit"
@@ -893,46 +1093,14 @@ function RoomSetup({ group, members }: { group: Group; members: Bot[] }) {
             className="flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
-            {t("room.setup.save")}
+            {mode === "first" ? t("room.setup.save") : t("common.save")}
           </button>
         </div>
       </form>
-    </section>
-  );
-}
-function ChannelAccordion({
-  id,
-  label,
-  icon: Icon,
-  open,
-  onToggle,
-  children,
-}: {
-  id: string;
-  label: string;
-  icon: LucideIcon;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="border-b border-hairline/30" data-channel-section={id}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className={cn(
-          "flex w-full shrink-0 items-center gap-2.5 px-4 py-2.5 text-left text-[14px]",
-          open ? "bg-control/60 text-ink" : "text-ink-secondary hover:bg-control/40 hover:text-ink",
-        )}
-      >
-        <Icon size={15} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        <ChevronDown size={16} className={cn("shrink-0 text-ink-secondary transition-transform", open && "rotate-180")} />
-      </button>
-      {open && <div className="px-4 pb-4 pt-1">{children}</div>}
+    </div>
     </div>
   );
+  return createPortal(content, document.body);
 }
 
 export function GroupView({ group }: { group: Group }) {
@@ -975,7 +1143,13 @@ export function GroupView({ group }: { group: Group }) {
   const [bulletinOpen, setBulletinOpen] = useState(false);
   const [bulletinDraft, setBulletinDraft] = useState(group.bulletin);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [channelSection, setChannelSection] = useState<string | null>(null);
+  // The group panel shares the bot panel's slot: one open flag in the store.
+  const panelOpen = state.settingsOpen && !group.dm;
+  // Organization server: a group's people come from the Perspicax directory
+  // (by principal id) and read by their names.
+  const perspicaxOrg = usePerspicaxOrg();
+  const orgDirectory = useOrgDirectory(perspicaxOrg !== null && !group.dm);
+  const [pickingPeople, setPickingPeople] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const { replyTo, selectReply, clearReply, consumeReply, restoreReply } = useReplyDraft(
     group.threadId,
@@ -1000,18 +1174,28 @@ export function GroupView({ group }: { group: Group }) {
     () => group.memberIds.map((id) => state.bots.find((b) => b.id === id)).filter((b): b is Bot => Boolean(b)),
     [group.memberIds, state.bots],
   );
+  const orgPeople = useOrgPeople();
   const viewerEmail = state.config?.profile?.email?.trim().toLowerCase() || "";
   const viewerName = state.config?.profile?.name?.trim() || viewerEmail || "Vous";
   // The server's word on who is looking, when it gives one; before that,
   // the remote client's own lookup, else the operator.
   const viewer = state.config?.viewer;
   const viewerId = viewerActorId(state.config);
+  // On an organization server each person reads as their Perspicax display
+  // name with their avatar (the directory); elsewhere the stored id, as before.
+  const viewerAvatar = personAvatarSrc(state.config?.profile?.avatarUrl);
   const channelHumans = [
-    { id: viewerId, label: viewerName, detail: viewerEmail && viewerName !== viewerEmail ? viewerEmail : undefined, removable: false as boolean },
+    { id: viewerId, label: viewerName, detail: viewerEmail && viewerName !== viewerEmail ? viewerEmail : undefined, ...(viewerAvatar ? { avatarUrl: viewerAvatar } : {}), removable: false as boolean },
     ...(group.humanIds ?? [])
       .map((id) => id.trim().toLowerCase())
       .filter((id) => id && id !== viewerId && id !== viewerEmail)
-      .map((id) => ({ id, label: id, detail: undefined, removable: true })),
+      .map((id) => {
+        // The Perspicax person (display name, email, avatar) when the people
+        // list knows them; otherwise the directory label (teams, user: ids).
+        const row = channelHumanRow(id.replace(/^user:/, ""), orgPeople);
+        const known = row.label !== row.id;
+        return { ...row, id, label: known ? row.label : groupHumanLabel(id, orgDirectory), removable: true };
+      }),
   ];
   const actorId = viewer ? viewerId : remoteClient ? remoteActor.id : viewerId;
   const roster = channelRosterActions({
@@ -1021,6 +1205,10 @@ export function GroupView({ group }: { group: Group }) {
   });
   const speaker = members.find((b) => b.id === group.busyBotId);
   const setupPending = !remoteClient && roomNeedsSetup(group);
+  // Reopened from the header after the first setup; a pending setup is
+  // always shown and closes by saving or skipping.
+  const [setupOpen, setSetupOpen] = useState(false);
+  useEffect(() => setSetupOpen(false), [group.id]);
 
   // Mascot stays while a member works; the finished reply pops in above it.
   const lastGroupMessage = group.messages.at(-1);
@@ -1068,6 +1256,16 @@ export function GroupView({ group }: { group: Group }) {
     lastGroupMessage?.from?.botId,
   ]);
   const presenceVisible = waiting || popping !== null;
+  const announcement = useMemo((): TranscriptSnapshot => {
+    const approval = pendingApprovals(group.messages)[0];
+    return {
+      busy: Boolean(group.working || group.busyBotId),
+      reply: latestReply(group.messages, (m) => m.from?.name ?? group.name),
+      approval: approval
+        ? { id: approval.requestId, name: approval.message.from?.name ?? speaker?.name ?? group.name }
+        : undefined,
+    };
+  }, [group.messages, group.working, group.busyBotId, group.name, speaker?.name]);
   const presenceSpeaker =
     speaker ?? awaited ?? members.find((member) => member.id === popping?.botId) ?? members[0];
 
@@ -1221,56 +1419,94 @@ export function GroupView({ group }: { group: Group }) {
     <main className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
       <div className="flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
+      {(setupPending || setupOpen) && (
+        <RoomSetupDialog
+          key={group.id}
+          group={group}
+          members={members}
+          mode={setupPending ? "first" : "edit"}
+          onClose={() => setSetupOpen(false)}
+        />
+      )}
       {membersOpen && !remoteClient && !group.dm && (
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
       )}
       {(macInset || browser) && <div className="content-topbar-strip" />}
-      {/* Header: static member avatars; a ring + dot marks the working bot. */}
+      {/* Header: laid out like a bot chat's. The centered chip (stacked
+          member faces + name) opens the group panel; the right-hand
+          controls move into the panel's top bar while it is open. */}
       <div
         style={headerDragStyle}
         className={cn(
           "content-topbar",
-          "flex items-center justify-between px-5 py-3",
+          "@container/chathead relative flex min-h-[52px] items-center justify-end px-5 py-2.5",
           // Room for the drawer button, which overlays this corner below md.
           "pl-11 md:pl-5",
         )}
       >
-        <div className="flex min-w-0 items-center gap-2" style={headerNoDragStyle}>
-          <span className="truncate text-[15px] font-semibold text-ink">{group.name}</span>
-          {!setupPending && !group.dm && <GroupTaskPicker group={group} />}
+        <div className="absolute left-1/2 top-1/2 flex max-w-[50%] -translate-x-1/2 -translate-y-1/2 items-center gap-2" style={headerNoDragStyle}>
+          {group.dm ? (
+            <span className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px]">
+              <GroupAvatarStack members={members} size={24} />
+              <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "toggleSettings", open: true })}
+              className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px] transition-colors duration-[120ms] hover:bg-elevated-hover"
+              title={t("chat.openProfile")}
+              aria-label={t("chat.openProfileAria", { name: group.name })}
+            >
+              <GroupAvatarStack members={members} size={24} />
+              <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
+            </button>
+          )}
         </div>
         <div
-          className="flex items-center gap-1.5"
+          className="flex shrink-0 items-center gap-2"
           // The caption buttons sit over the header's right end; drop this
           // control row 16px (visual only) below the 26px overlay.
           style={controlsShiftStyle}
         >
-          <button
-            type="button"
-            onClick={() => setFindOpen((open) => !open)}
-            aria-label={t("chat.find")}
-            aria-pressed={findOpen}
-            className={cn(
-              "rounded-md p-1.5 hover:bg-raised",
-              findOpen ? "text-accent" : "text-ink-secondary hover:text-ink",
-            )}
-            title={t("chat.findShortcut")}
-          >
-            <Search size={18} />
-          </button>
-          <ExportTranscriptMenu
+          {!panelOpen && <ExportTranscriptMenu
             title={group.name}
             messages={group.messages}
             isGroup
-          />
-
+          />}
+          {!setupPending && !group.dm && <GroupTaskPicker group={group} />}
           <GroupUsageChip usage={group.usage} />
-          {(group.dm || remoteClient) && memberMauses}
+          {group.dm && memberMauses}
+          {!group.dm && !panelOpen && <button
+            type="button"
+            onClick={() => dispatch({ type: "toggleSettings", open: true })}
+            aria-label={t("chat.openProfile")}
+            title={t("chat.openProfile")}
+            className={CIRCLE_BUTTON}
+          >
+            <PanelRight size={18} strokeWidth={1.75} />
+          </button>}
         </div>
       </div>
 
       <div className="content-card-body flex min-h-0 flex-1 flex-col">
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
+
+      {/* An Auto room answers like lead mode while the decision model is off: say so, once. */}
+      {!setupPending && !group.dm && !remoteClient && state.config && group.defaultResponder.kind === "auto" && !jevRoomRoutingOn(state.config) && (
+        <div className="w-full px-5">
+          <p data-testid="room-jev-off" className="mb-1 px-2 text-[12px] text-ink-secondary">
+            {t("room.responder.jevOffHint", { name: defaultResponderName(group, members) ?? t("room.responder.leadFallback") })}{" "}
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: "decisionModel" })}
+              className="cursor-pointer text-accent hover:underline"
+            >
+              {t("room.responder.jevOffOpen")}
+            </button>
+          </p>
+        </div>
+      )}
 
       {/* Bulletin: one pinned line; click to edit */}
       {!setupPending && <div className="w-full px-5">
@@ -1301,7 +1537,7 @@ export function GroupView({ group }: { group: Group }) {
             title={t("room.bulletin.title")}
           >
             <Pin size={12} className="shrink-0 text-ink-secondary" />
-            <span className={cn("truncate text-[12.5px]", group.bulletin ? "text-ink-secondary" : "text-ink-secondary/60")}>
+            <span className={cn("truncate text-[12.5px]", group.bulletin ? "text-ink-secondary" : "text-ink-tertiary")}>
               {group.bulletin.split("\n")[0] || (remoteClient ? t("room.bulletin.none") : t("room.bulletin.add"))}
             </span>
           </button>
@@ -1311,7 +1547,7 @@ export function GroupView({ group }: { group: Group }) {
       {/* Pinned message banner — resolves against the room's full transcript */}
       {(() => {
         const pinned = group.messages.find((m) => m.id === group.pinnedMessageId && m.kind === "text");
-        const text = pinned ? (pinned.text ?? "").replace(/\s+/g, " ").trim() : "";
+        const text = pinned ? citationPreviewText(pinned.text ?? "").replace(/\s+/g, " ").trim() : "";
         if (!pinned || !text) return null;
         const sender = pinned.role === "user" ? t("chat.you") : (pinned.from?.name ?? t("room.aBot"));
         return (
@@ -1367,17 +1603,13 @@ export function GroupView({ group }: { group: Group }) {
           if (resume) setBottomFollow(true);
         }}
       >
-        {setupPending ? (
-          <div className="flex min-h-full w-full items-center py-8">
-            <RoomSetup group={group} members={members} />
-          </div>
-        ) : (
         <div
           ref={transcriptRef}
           className="flex w-full flex-col gap-3"
           style={{ paddingBottom: composerDock.pad }}
           role="log"
-          aria-live="polite"
+          // off, as in ChatView: TranscriptAnnouncer speaks once per reply
+          aria-live="off"
           aria-label={t("room.aria", { name: group.name })}
         >
           <ConversationGalleryProvider>
@@ -1398,7 +1630,7 @@ export function GroupView({ group }: { group: Group }) {
               </div>
               <div className="text-[17px] font-semibold text-ink">{group.name}</div>
               <div className="max-w-[380px] text-[14px] text-ink-secondary">
-                {groupResponseHint(group, members)}
+                {groupResponseHint(group, members, { jevOn: jevRoomRoutingOn(state.config) })}
               </div>
             </div>
           )}
@@ -1462,8 +1694,9 @@ export function GroupView({ group }: { group: Group }) {
           )}
           </ConversationGalleryProvider>
         </div>
-        )}
       </div>
+
+      <TranscriptAnnouncer threadKey={transcriptKey} snapshot={announcement} />
 
       {!follow && (
         <button
@@ -1493,76 +1726,109 @@ export function GroupView({ group }: { group: Group }) {
         onConsumeReply={consumeReply}
         onRestoreReply={restoreReply}
       />
+      <CitationSelectionToolbar
+        key={`${group.id}:${group.threadId}`}
+        viewportRef={scrollRef}
+        onAdd={(citation) => appendDraftAttachments(`group:${citation.source.ownerId}:${citation.source.threadId}`, [citation])}
+      />
       </div>
       </div>
       </div>
       </div>
-      {!group.dm && (
-        <aside className="flex w-[min(420px,42vw)] shrink-0 flex-col overflow-y-auto border-l border-hairline/40 bg-panel">
-          <ChannelAccordion id="people" label="Gens" icon={Users} open={channelSection === "people"} onToggle={() => setChannelSection((current) => current === "people" ? null : "people")}>
-            <ChannelMembers
-              part="humans"
-              humans={channelHumans}
-              bots={[]}
-              {...roster}
-              onAddHuman={() => {
-                const email = window.prompt("Adresse courriel")?.trim().toLowerCase() ?? "";
-                if (!email) return;
-                const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), email])];
-                dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
-              }}
-              onRemoveHuman={(id) => {
-                dispatch({
-                  type: "patchGroup",
-                  groupId: group.id,
-                  patch: { humanIds: (group.humanIds ?? []).filter((humanId) => humanId.trim().toLowerCase() !== id.trim().toLowerCase()) },
-                });
-              }}
-            />
-          </ChannelAccordion>
-          <ChannelAccordion id="bots" label="Bots" icon={BotIcon} open={channelSection === "bots"} onToggle={() => setChannelSection((current) => current === "bots" ? null : "bots")}>
-            <ChannelMembers
-              part="bots"
-              humans={[]}
-              bots={group.memberIds.map((id) => {
-                const bot = state.bots.find((item) => item.id === id);
-                return { id, name: bot?.name || id, title: bot?.title, color: bot?.color, avatarUrl: bot?.avatarUrl, mascotBody: bot?.mascotBody };
-              })}
-              {...roster}
-              onRemoveBot={(id) => {
-                dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
-              }}
-              onAddBot={() => {
-                const owned = state.bots.find((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actorId && !group.memberIds.includes(bot.id));
-                dispatch({
-                  type: "patchGroup",
-                  groupId: group.id,
-                  patch: { memberIds: owned ? [...group.memberIds, owned.id] : [...group.memberIds] },
-                });
-              }}
-            />
-            {!remoteClient && !setupPending && (
-              <button
-                ref={membersTriggerRef}
-                type="button"
-                onClick={() => setMembersOpen(true)}
-                className="mt-2 rounded-lg bg-raised px-3 py-2 text-[13px] text-ink hover:bg-raised-hover"
-              >
-                {t("room.members.manage")}
-              </button>
-            )}
-          </ChannelAccordion>
-          {!remoteClient && !setupPending && (
-            <ChannelAccordion id="responder" label={t("room.responder.aria")} icon={MessageSquareReply} open={channelSection === "responder"} onToggle={() => setChannelSection((current) => current === "responder" ? null : "responder")}>
-              <DefaultResponderSelect group={group} members={members} />
-            </ChannelAccordion>
-          )}
-          {!remoteClient && !setupPending && (
-            <ChannelAccordion id="folder" label={t("room.folder.title")} icon={FolderOpen} open={channelSection === "folder"} onToggle={() => setChannelSection((current) => current === "folder" ? null : "folder")}>
-              <RoomWorkingFolder group={group} />
-            </ChannelAccordion>
-          )}
-        </aside>
+      {panelOpen && (
+        <GroupPanel
+          key={`panel:${group.id}`}
+          group={group}
+          members={members}
+          canEdit={!remoteClient}
+          onOpenSetup={() => setSetupOpen(true)}
+          details={
+            <>
+              <section>
+                <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("groupPanel.people")}</h3>
+                <ChannelMembers
+                  part="humans"
+                  humans={channelHumans}
+                  bots={[]}
+                  {...roster}
+                  onAddHuman={() => {
+                    if (perspicaxOrg) {
+                      setPickingPeople(true);
+                      return;
+                    }
+                    const email = window.prompt("Adresse courriel")?.trim().toLowerCase() ?? "";
+                    if (!email) return;
+                    const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), email])];
+                    dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
+                  }}
+                  onRemoveHuman={(id) => {
+                    dispatch({
+                      type: "patchGroup",
+                      groupId: group.id,
+                      patch: { humanIds: (group.humanIds ?? []).filter((humanId) => humanId.trim().toLowerCase() !== id.trim().toLowerCase()) },
+                    });
+                  }}
+                />
+                {perspicaxOrg && pickingPeople && (
+                  <GroupPeoplePicker
+                    directory={orgDirectory}
+                    taken={[viewerId, ...(group.humanIds ?? [])]}
+                    onAdd={(principalId) => {
+                      const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), principalId])];
+                      dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
+                    }}
+                    onDone={() => setPickingPeople(false)}
+                  />
+                )}
+              </section>
+              <section>
+                <h3 className="mb-1.5 text-[13px] text-ink-secondary">Bots</h3>
+                <ChannelMembers
+                  part="bots"
+                  humans={[]}
+                  bots={group.memberIds.map((id) => {
+                    const bot = state.bots.find((item) => item.id === id);
+                    return { id, name: bot?.name || id, title: bot?.title, color: bot?.color, avatarUrl: bot?.avatarUrl, mascotBody: bot?.mascotBody };
+                  })}
+                  {...roster}
+                  onRemoveBot={(id) => {
+                    dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
+                  }}
+                  onAddBot={() => {
+                    const owned = state.bots.find((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actorId && !group.memberIds.includes(bot.id));
+                    dispatch({
+                      type: "patchGroup",
+                      groupId: group.id,
+                      patch: { memberIds: owned ? [...group.memberIds, owned.id] : [...group.memberIds] },
+                    });
+                  }}
+                />
+                {!remoteClient && !setupPending && (
+                  <button
+                    ref={membersTriggerRef}
+                    type="button"
+                    onClick={() => setMembersOpen(true)}
+                    className="mt-2 rounded-lg bg-raised px-3 py-2 text-[13px] text-ink hover:bg-raised-hover"
+                  >
+                    {t("room.members.manage")}
+                  </button>
+                )}
+              </section>
+              {!remoteClient && !setupPending && (
+                <section>
+                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.responder.aria")}</h3>
+                  <DefaultResponderSelect group={group} members={members} />
+                </section>
+              )}
+              {!remoteClient && !setupPending && (
+                <section>
+                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.folder.title")}</h3>
+                  <RoomWorkingFolder group={group} />
+                </section>
+              )}
+            </>
+          }
+        />
       )}
     </main>
   );

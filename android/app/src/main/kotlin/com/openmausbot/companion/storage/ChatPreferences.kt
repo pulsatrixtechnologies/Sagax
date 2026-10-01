@@ -6,13 +6,14 @@ import com.openmausbot.companion.core.Chat
 import com.openmausbot.companion.core.forTask
 import com.openmausbot.companion.core.ActivityDetail
 import com.openmausbot.companion.core.QuickReply
+import com.openmausbot.companion.core.RosterDensity
 import com.openmausbot.companion.ui.AppearanceSkin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Phone-local controls for how a conversation is presented.
+ * Phone-local controls for how conversations and the home list are presented.
  *
  * These are intentionally separate from pairing and from the encrypted token
  * store: they are presentation choices, not capabilities of the paired
@@ -39,12 +40,26 @@ class ChatPreferences(
     )
     val appearanceSkin: StateFlow<AppearanceSkin> = _appearanceSkin.asStateFlow()
 
+    /**
+     * How much each home-list row says. Per device, like the desktop's sidebar
+     * density: a phone and a laptop have different room for a list. A value
+     * this build cannot read reads as the default.
+     */
+    private val _rosterDensity = MutableStateFlow(RosterDensity.fromWire(prefs.getString(ROSTER_DENSITY, null)))
+    val rosterDensity: StateFlow<RosterDensity> = _rosterDensity.asStateFlow()
+
     fun setActivityDetail(detail: ActivityDetail) {
         if (_activityDetail.value == detail && prefs.contains(ACTIVITY_DETAIL)) return
         // The value is small and changed only from Settings. Commit makes a
         // selection durable before a process recreation can observe it.
         prefs.edit().putString(ACTIVITY_DETAIL, detail.wireValue).commit()
         _activityDetail.value = detail
+    }
+
+    fun setRosterDensity(density: RosterDensity) {
+        if (_rosterDensity.value == density && prefs.contains(ROSTER_DENSITY)) return
+        prefs.edit().putString(ROSTER_DENSITY, density.wireValue).commit()
+        _rosterDensity.value = density
     }
 
     fun setQuickReplies(replies: List<QuickReply>) {
@@ -95,6 +110,7 @@ class ChatPreferences(
         private const val ACTIVITY_DETAIL = "companion.prefs.activityDetail"
         private const val QUICK_REPLIES = "companion.prefs.quickReplies"
         private const val APPEARANCE_SKIN = "companion.prefs.appearanceSkin"
+        private const val ROSTER_DENSITY = "companion.prefs.rosterDensity"
 
         private fun threadKey(connectionId: String, botId: String): String =
             "thread.last-opened.${connectionId.length}:$connectionId$botId"

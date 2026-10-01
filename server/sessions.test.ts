@@ -98,6 +98,67 @@ describe("the native-app encoding of a pairing window", () => {
   });
 });
 
+describe("a browser sign-in window (an OMB Cloud page's \"Use in your browser\")", () => {
+  it("is redeemed only by a browser sign-in, only by its credential, and only once", () => {
+    const { code, credential } = registry.openPairing({ scopes: ["admin", "client"], label: "Web browser", browser: true });
+    // Not by an app or a typed code, which leave it open.
+    expect(registry.exchange({ code: credential, label: "", source: "10.0.0.5" }).ok).toBe(false);
+    expect(registry.exchange({ code, label: "", source: "10.0.0.5", browser: true }).ok).toBe(false);
+    expect(registry.openPairings()).toHaveLength(1);
+    const signedIn = registry.exchange({ code: credential, label: "Safari on iPad", source: "10.0.0.5", browser: true });
+    expect(signedIn).toMatchObject({ ok: true, session: { label: "Safari on iPad", scopes: ["admin", "client"] } });
+    // A replay, from anywhere and either way, is refused.
+    expect(registry.exchange({ code: credential, label: "", source: "10.0.0.6", browser: true }).ok).toBe(false);
+    expect(registry.exchange({ code: credential, label: "", source: "10.0.0.6" }).ok).toBe(false);
+  });
+
+  it("never redeems an ordinary window, and expires with its own term", () => {
+    const ordinary = registry.openPairing({ label: "Pixel" });
+    expect(registry.exchange({ code: ordinary.credential, label: "", source: "10.0.0.7", browser: true }).ok).toBe(false);
+    expect(registry.exchange({ code: ordinary.code, label: "", source: "10.0.0.7", browser: true }).ok).toBe(false);
+    expect(registry.exchange({ code: ordinary.credential, label: "", source: "10.0.0.7" }).ok).toBe(true);
+    const { credential } = registry.openPairing({ ttlMs: 120_000, browser: true });
+    clock += 120_000;
+    expect(registry.exchange({ code: credential, label: "", source: "10.0.0.7", browser: true }).ok).toBe(false);
+  });
+
+  it("answers a lost-response retry only as the same kind of sign-in", () => {
+    const { credential } = registry.openPairing({ browser: true });
+    const first = registry.exchange({ code: credential, label: "", source: "10.0.0.8", attemptId: "attempt-browser-1", browser: true });
+    expect(first.ok).toBe(true);
+    expect(registry.exchange({ code: credential, label: "", source: "10.0.0.8", attemptId: "attempt-browser-1", browser: true })).toEqual(first);
+    expect(registry.exchange({ code: credential, label: "", source: "10.0.0.8", attemptId: "attempt-browser-1" }).ok).toBe(false);
+  });
+
+  it("names its owner before anything is redeemed, and gives its session that owner and the cookie alone", () => {
+    const { credential } = registry.openPairing({ browser: true, owner: "ada@example.test", ttlMs: 120_000 });
+    // Showing it consumes nothing, and only a browser sign-in's own credential matches.
+    expect(registry.previewBrowserSignIn(credential)).toEqual({ owner: "ada@example.test", expiresAt: clock + 120_000 });
+    expect(registry.previewBrowserSignIn(credential)).toEqual({ owner: "ada@example.test", expiresAt: clock + 120_000 });
+    const ordinary = registry.openPairing({ owner: "ignored@example.test" });
+    expect(registry.previewBrowserSignIn(ordinary.credential)).toBeNull();
+    expect(registry.previewBrowserSignIn(ordinary.code)).toBeNull();
+    const signedIn = registry.exchange({ code: credential, label: "", source: "10.0.0.9", browser: true });
+    if (!signedIn.ok) throw new Error(signedIn.error);
+    expect(signedIn.session.owner).toBe("ada@example.test");
+    expect(registry.authenticate(signedIn.token)).toMatchObject({ cookieOnly: true, owner: "ada@example.test" });
+    expect(registry.previewBrowserSignIn(credential)).toBeNull();
+    // An ordinary pairing's session is neither.
+    const app = registry.exchange({ code: ordinary.code, label: "", source: "10.0.0.9" });
+    if (!app.ok) throw new Error(app.error);
+    expect(registry.authenticate(app.token)).not.toHaveProperty("cookieOnly");
+    expect(app.session).not.toHaveProperty("owner");
+    // Survives a restart.
+    const reloaded = new SessionRegistry({ file: file(), now: () => clock });
+    expect(reloaded.authenticate(signedIn.token)).toMatchObject({ cookieOnly: true, owner: "ada@example.test" });
+  });
+
+  it("is looked at without counting toward the lockout", () => {
+    for (let attempt = 0; attempt < LOCKOUT.failures * 2; attempt += 1) registry.previewBrowserSignIn(generatePairingCredential());
+    expect(registry.failureSources()).toEqual([]);
+  });
+});
+
 function pair(label = "MacBook", source = "10.0.0.2") {
   const { code } = registry.openPairing();
   const result = registry.exchange({ code, label, source });
@@ -189,6 +250,17 @@ describe("pairing codes", () => {
     const explicit = registry.exchange({ code: c.code, label: "Kitchen iPad", source: "s3", fallbackLabel: "Safari on iPad" });
     if (!explicit.ok) throw new Error(explicit.error);
     expect(explicit.session.label).toBe("Kitchen iPad");
+  });
+
+  it("drops control and bidirectional-formatting characters from a device's name", () => {
+    const { code } = registry.openPairing();
+    const named = registry.exchange({ code, label: "Safari\u202E on iPad\n\u0007\u2066", source: "s4" });
+    if (!named.ok) throw new Error(named.error);
+    expect(named.session.label).toBe("Safari on iPad");
+    const blank = registry.exchange({ code: registry.openPairing().code, label: "\u202E\u0000", source: "s5", fallbackLabel: "Chrome\u200F on Mac" });
+    if (!blank.ok) throw new Error(blank.error);
+    expect(blank.session.label).toBe("Chrome on Mac");
+    expect(registry.issue({ label: "Ada\u202Es phone\r", scopes: ["client"] }).session.label).toBe("Adas phone");
   });
 
   it("carries scopes from the code into the session, deduplicated", () => {
@@ -634,5 +706,32 @@ describe("OpenID Connect grants on sessions (slice 2)", () => {
     registry.close();
     const again = new SessionRegistry({ file: file(), now: () => clock });
     expect(again.byId(a.session.id)!.idp?.grantRef).toBe("g-1");
+  });
+});
+
+describe("admin scope only (an OMB Cloud home is personal: server/cloud-owner.ts)", () => {
+  const PERSONAL = "Cloud Pro is personal: only your own devices can connect.";
+  it("opens, redeems, issues and accepts nothing without admin scope; the owner's devices are unaffected", () => {
+    // Made before the rule applies (as a stored session is at boot).
+    const earlier = registry.openPairing({ scopes: ["client"], label: "Guest phone" });
+    const stored = registry.exchange({ code: earlier.credential, label: "Guest phone", source: "a" });
+    expect(stored.ok).toBe(true);
+    const ticket = stored.ok ? registry.issueStreamTicket(stored.session.id).ticket : "";
+    const openWindow = registry.openPairing({ scopes: ["client"] });
+    const owner = registry.exchange({ code: registry.openPairing().credential, label: "Mac", source: "a" });
+    registry.requireAdmin(PERSONAL);
+    expect(() => registry.openPairing({ scopes: ["client"] })).toThrow(PERSONAL);
+    expect(registry.exchange({ code: openWindow.credential, label: "Guest", source: "b" })).toEqual({ ok: false, status: 403, error: PERSONAL });
+    expect(() => registry.issue({ label: "Friend", scopes: ["client"], email: "friend@example.test" })).toThrow(PERSONAL);
+    expect(() => registry.issuePortal({ email: "friend@example.test", grant: "g".repeat(43), scopes: ["client"] })).toThrow(PERSONAL);
+    if (!stored.ok || !owner.ok) throw new Error("unreachable");
+    expect(registry.authenticate(stored.token)).toBeNull();
+    expect(registry.redeemStreamTicket(ticket)).toBeNull();
+    expect(registry.isLive(stored.session.id)).toBe(false);
+    // The owner's devices: as before.
+    expect(registry.authenticate(owner.token)?.id).toBe(owner.session.id);
+    expect(registry.isLive(owner.session.id)).toBe(true);
+    const next = registry.exchange({ code: registry.openPairing({ scopes: ["admin"] }).credential, label: "Phone", source: "c" });
+    expect(next.ok).toBe(true);
   });
 });

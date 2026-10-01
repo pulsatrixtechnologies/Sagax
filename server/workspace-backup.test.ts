@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { gzipSync } from "node:zlib";
 import { Header } from "tar";
+import { SessionRegistry } from "./sessions.ts";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyPendingWorkspaceRestore, commitPendingWorkspaceRestore, createWorkspaceBackup,
@@ -38,9 +39,12 @@ function fixture(root: string): DatabaseSync {
   json(join(root, "delegations.json"), { thread: [{ id: "pending" }] });
   json(join(root, "delegation-receipts.json"), [{ id: "receipt" }]);
   json(join(root, "sessions.json"), { identity: "source-session" });
+  json(join(root, "cloud-owner.json"), { identity: "source-owner-record" });
   writeFileSync(join(root, "environment-id"), "source-environment");
   mkdirSync(join(root, "tools"));
   writeFileSync(join(root, "tools", "downloaded"), "reinstallable");
+  mkdirSync(join(root, "decider-log"));
+  writeFileSync(join(root, "decider-log", "2026-09.ndjson"), '{"seam":"roomRouting"}\n');
   const db = new DatabaseSync(join(root, "messages.db"));
   db.exec("PRAGMA journal_mode=WAL; CREATE TABLE messages(thread_id TEXT, id TEXT, text TEXT, json TEXT, PRIMARY KEY(thread_id,id)); CREATE TABLE thread_state(thread_id TEXT PRIMARY KEY, active_leaf_id TEXT);");
   const message = {
@@ -101,6 +105,7 @@ describe("encrypted full workspace backups", () => {
       json(join(target, "config.json"), { ...connections, language: "en" });
       json(join(target, "bots.json"), [{ id: "old" }]);
       json(join(target, "sessions.json"), { identity: "target-session" });
+      json(join(target, "cloud-owner.json"), { identity: "target-owner-record" });
       const targetComputers = { version: 1, environmentId: "target-environment", computers: [{ id: "target-computer", name: "Destination desktop", section: null }] };
       json(join(target, "team-computers.json"), targetComputers);
       writeFileSync(join(target, "environment-id"), "target-environment");
@@ -113,6 +118,8 @@ describe("encrypted full workspace backups", () => {
       expect(readStagedWorkspaceBackup(target, staged.id)).not.toHaveProperty("credentials");
       const data = join(target, ".backups", staged.id, "staged", "data");
       expect(existsSync(join(data, "team-computers.json"))).toBe(false);
+      expect(existsSync(join(data, "bots.json"))).toBe(true);
+      expect(existsSync(join(data, "cloud-owner.json"))).toBe(false);
       expect(readJson(join(data, "config.json"))).toEqual({ language: "ja" });
       expect(readJson(join(data, "webhooks.json")).webhooks[0]).not.toHaveProperty("secretHash");
       expect(commitPendingWorkspaceRestore(target, staged.id)).toMatchObject({ id: staged.id, restartRequired: true });
@@ -127,12 +134,16 @@ describe("encrypted full workspace backups", () => {
       expect(readJson(join(target, "config.json"))).toEqual({ ...connections, language: "ja" });
       expect(readFileSync(join(target, "task-workspaces", "bot", "thread", "binary.bin"))).toEqual(Buffer.alloc(2 * 1024 * 1024, 0xa5));
       expect(readJson(join(target, "sessions.json"))).toEqual({ identity: "target-session" });
+      // A Cloud home's record of its owner is this machine's: never carried, kept in place.
+      expect(readJson(join(target, "cloud-owner.json"))).toEqual({ identity: "target-owner-record" });
       expect(readJson(join(target, "team-computers.json"))).toEqual(targetComputers);
       expect(readFileSync(join(target, "environment-id"), "utf8")).toBe("target-environment");
       expect(readFileSync(join(target, "openmausbot-server.lease"), "utf8")).toBe("live-lease");
       expect(existsSync(join(target, "messages.db-wal"))).toBe(false);
       expect(readFileSync(join(result.safetyCopyPath!, "data", "messages.db-wal"), "utf8")).toBe("old database WAL must not enter the new DB");
       expect(existsSync(join(target, "tools"))).toBe(false);
+      // this machine's decision-model log stays on this machine
+      expect(existsSync(join(target, "decider-log"))).toBe(false);
       expect(readJson(join(result.safetyCopyPath!, "data", "bots.json"))).toEqual([{ id: "old" }]);
       const restoredDb = new DatabaseSync(join(target, "messages.db"), { readOnly: true });
       try {
@@ -316,6 +327,31 @@ describe("encrypted full workspace backups", () => {
     expect(after.byId(zach.id)).toMatchObject({ email: "zach@gox.ca" });
     expect(after.byId(sourceLocal.id)).toMatchObject({ email: "old@gox.ca" });
     expect(after.byId(sourceLocal.id)?.local).toBeUndefined();
+  });
+
+  it("leaves the destination's session open-marker in place, so a crash before a restore still ends account sign-ins", async () => {
+    const source = directory(), target = directory();
+    json(join(source, "bots.json"), [{ id: "bot" }]);
+    // The source is running: its marker exists, and is never exported.
+    writeFileSync(join(source, "sessions.json.open"), "Session registry is open.\n");
+    const exported = await createWorkspaceBackup(source, { password: PASSWORD });
+    // The destination crashed with an account session saved.
+    const sessions = new SessionRegistry({ file: join(target, "sessions.json") });
+    sessions.issue({ label: "Member", scopes: ["client"], userId: "user-1" });
+    expect(existsSync(join(target, "sessions.json.open"))).toBe(true);
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    expect(readJson(join(target, ".backups", staged.id, "staged", "manifest.json")).entries.map((entry: { path: string }) => entry.path)).not.toContain("sessions.json.open");
+    commitPendingWorkspaceRestore(target, staged.id);
+    expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
+    expect(existsSync(join(target, "sessions.json.open"))).toBe(true);
+    expect(existsSync(join(target, ".backups", `safety-${staged.id}`, "data", "sessions.json.open"))).toBe(false);
+    expect(new SessionRegistry({ file: join(target, "sessions.json") }).list()).toEqual([]);
+  });
+
+  it("never lets tar decompress a payload: zstd is refused like gzip", async () => {
+    const root = directory();
+    const archive = encryptedPayload(root, Buffer.concat([Buffer.from([0x28, 0xb5, 0x2f, 0xfd]), Buffer.alloc(1020)]));
+    await expect(stageWorkspaceBackup(directory(), archive, { password: PASSWORD })).rejects.toThrow(/Compressed payloads are not supported/);
   });
 
   it("still restores an archive from a release that exported hook tokens, without installing them", async () => {
