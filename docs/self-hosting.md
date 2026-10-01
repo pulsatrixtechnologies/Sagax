@@ -1185,6 +1185,14 @@ an optional pattern is dropped, and a malformed list grants nothing. Prefer
 exact commands over `:*` wildcards on a server many people share. Restart the
 server after a change; a running bot takes the new rules at its next launch.
 
+An allow rule never overrides a denial. Rules only go into
+`permissions.allow`; they never remove a tool from `--disallowedTools` or from
+a deny list, and in Claude Code a deny always wins over an allow. On an
+organization server where host tools (Bash, Read, Write, Edit and the like)
+are denied because commands run in each person's sandbox, a rule such as
+`Bash(claude plugin marketplace add ...)` does not reopen host Bash: the bot
+still cannot run it on the server.
+
 ## Putting a proxy in front
 
 Any reverse proxy works, given three things:

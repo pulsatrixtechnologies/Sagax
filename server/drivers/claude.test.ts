@@ -701,6 +701,26 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     }
   });
 
+  // Pending-safe guard for the organization mode host-tool denial (PR #17):
+  // a standing allow rule only ever lands in permissions.allow and never
+  // removes a tool from --disallowedTools, so deny keeps winning.
+  it("never lets the instance's allow rules reopen a denied tool", async () => {
+    process.env.OMB_CLAUDE_ALLOW = '["Bash(claude plugin marketplace add acme/marketplace)", "Read", "Edit"]';
+    try {
+      await create(undefined, {}, { disallowedTools: ["Bash", "Read", "Write", "Edit"] });
+      const dump = join(scratch, "dump-allow-deny.json");
+      process.env.FAKE_CLAUDE_DUMP = dump;
+      await instance.adapter.sendTurn({ threadId: "t-allow-deny", text: "hi" });
+      await recorder.until((e) => e.type === "turn.completed");
+      const seen = JSON.parse(readFileSync(dump, "utf8"));
+      expect(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).toBe("Bash,Read,Write,Edit");
+      expect(Object.keys(seen.settings.permissions)).toEqual(["allow"]);
+      expect(seen.settings.permissions.allow).toEqual(["Bash(claude plugin marketplace add acme/marketplace)", "Read", "Edit"]);
+    } finally {
+      delete process.env.OMB_CLAUDE_ALLOW;
+    }
+  });
+
   it("runs a guest's turn on a Cloud home with no command-running tool and no read outside its folder", async () => {
     await create(undefined, { FAKE_CLAUDE_VERSION: "2.1.284" });
     expect(instance.adapter.capabilities.guestTurns).toBe("confined");
