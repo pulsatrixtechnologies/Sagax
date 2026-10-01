@@ -4,9 +4,19 @@
 // main.mjs sets the local origin once it knows the port; every IPC module
 // wraps its handlers with localOnly(). Pure, so it is unit-tested.
 let localOrigin = null;
+// The organization server's origin while the main window draws this app's
+// own bundle there (electron/bundled-ui.cjs), else null. Only its main frame
+// counts, and only for the desktop-UI channels (desktopUiOnly): floating
+// bots, window controls, links, confirmations, the updater. Anything that
+// touches this computer's files, screen, logins or helpers stays localOnly.
+let bundledOrigin = null;
 
 function setLocalOrigin(origin) {
   localOrigin = typeof origin === "string" && origin ? origin : null;
+}
+
+function setBundledOrigin(origin) {
+  bundledOrigin = typeof origin === "string" && origin ? origin : null;
 }
 
 function getLocalOrigin() {
@@ -38,6 +48,29 @@ function isLocalSender(event) {
   return localOrigin !== null && senderOrigin(event) === localOrigin;
 }
 
+/** The bundled organization page: the main frame of a window, on the
+ * bundled origin. A subframe never qualifies. */
+function isBundledSender(event) {
+  if (bundledOrigin === null || !event?.senderFrame || !event?.sender?.mainFrame) return false;
+  if (event.senderFrame !== event.sender.mainFrame) return false;
+  return senderOrigin(event) === bundledOrigin;
+}
+
+/** The desktop's own UI: the local page, or this app's bundle drawn on the
+ * organization server's origin. */
+function isDesktopUiSender(event) {
+  return isLocalSender(event) || isBundledSender(event);
+}
+
+/** Like localOnly, for the channels the desktop's UI uses whatever server
+ * it shows (see setBundledOrigin). */
+function desktopUiOnly(channel, handler) {
+  return (event, ...args) => {
+    if (!isDesktopUiSender(event)) throw new Error(`${channel} is only available in this app's own window`);
+    return handler(event, ...args);
+  };
+}
+
 /** Wrap an ipcMain.handle handler so a page that is not the local server's
  * UI gets a clear error instead of an answer. */
 function localOnly(channel, handler) {
@@ -58,4 +91,7 @@ function localOnlySync(channel, handler, denied = false) {
   };
 }
 
-module.exports = { getLocalOrigin, isLocalSender, localOnly, localOnlySync, senderOrigin, setLocalOrigin };
+module.exports = {
+  desktopUiOnly, getLocalOrigin, isBundledSender, isDesktopUiSender, isLocalSender, localOnly, localOnlySync, senderOrigin,
+  setBundledOrigin, setLocalOrigin,
+};

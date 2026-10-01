@@ -1,4 +1,4 @@
-import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, Tray, WebContentsView, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, powerMonitor, powerSaveBlocker, safeStorage, screen, session, shell, systemPreferences, utilityProcess } from "electron";
+import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, Tray, WebContentsView, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, safeStorage, screen, session, shell, systemPreferences, utilityProcess } from "electron";
 import { createRequire } from "node:module";
 import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -78,6 +78,7 @@ import {
 } from "./companion-account-service.mjs";
 import capabilitiesModule from "./capabilities.cjs";
 import environmentsModule from "./environments.cjs";
+import bundledUiModule from "./bundled-ui.cjs";
 import oidcSignInModule from "./oidc-system-sign-in.cjs";
 import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
@@ -774,7 +775,7 @@ import { createRoutineWakeHold, rememberRoutineWake, routineWakeSettings } from 
  * android-device.mjs. Declared before any handler registration below: a
  * const declared later would be in its temporal dead zone at module load.
  */
-const { isLocalSender: senderIsLocal, localOnly, localOnlySync, setLocalOrigin } = localOriginModule;
+const { desktopUiOnly, isDesktopUiSender, isLocalSender: senderIsLocal, localOnly, localOnlySync, setBundledOrigin, setLocalOrigin } = localOriginModule;
 
 let companionPowerBlocker = null;
 
@@ -1944,7 +1945,7 @@ ipcMain.on("desktop:unread-count", (event, value) => {
 // The app switches by loading the chosen server's own UI (electron/menu.mjs).
 // Only {id, name, origin} is stored here; the session credential is the
 // HttpOnly cookie /pair set for that origin, kept by Chromium's cookie jar.
-const { LOCAL_ID, activeEnvironment, allowedOrigins, parseEnvironments, parseHostedWorkspaceLink, serializeEnvironments, withActive, withEnvironment, withoutEnvironment, workspaceMenuTemplate, workspaceNavigationAllowed, workspaceSenderAllowed, workspaceSummary, workspaceWindowTitle } = environmentsModule;
+const { LOCAL_ID, activeEnvironment, allowedOrigins, bundledOrigin, parseEnvironments, parseHostedWorkspaceLink, serializeEnvironments, serverModeEnvironment, withActive, withEnvironment, withServerMode, withoutEnvironment, withoutServerMode, workspaceMenuTemplate, workspaceNavigationAllowed, workspaceSenderAllowed, workspaceSummary, workspaceWindowTitle } = environmentsModule;
 let environmentsState = { environments: [], activeId: LOCAL_ID };
 let computerSharing;
 const sharingPrompts = new Set();
@@ -1958,6 +1959,16 @@ const sharingPrompts = new Set();
 let sharedComputersAllowed = false;
 
 async function refreshSharedComputersAllowed() {
+  // Server mode runs no local server: the organization's server says
+  // whether it accepts a person's computer (its public descriptor).
+  const locked = serverModeEnvironment(environmentsState);
+  if (locked) {
+    sharedComputersAllowed = await fetch(`${locked.origin}/.well-known/openmausbot/environment`, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((descriptor) => descriptor?.capabilities?.sharedComputers === true)
+      .catch(() => false);
+    return sharedComputersAllowed;
+  }
   sharedComputersAllowed = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/config`, { signal: AbortSignal.timeout(3_000) })
     .then((res) => (res.ok ? res.json() : null))
     .then((status) => status?.features?.sharedComputers === true)
@@ -1977,7 +1988,8 @@ function sharingController() {
     // The harness server's data directory holds provider API keys and
     // sessions.json, so a broad share must never reach it either.
     protectedPaths: [desktopDataDir()],
-    fetch: (...args) => session.defaultSession.fetch(...args),
+    // main's own calls never go through the bundled-UI handler (bundled-ui.cjs)
+    fetch: (url, init) => session.defaultSession.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
     environments: () => environmentsState.environments,
     enabled: refreshSharedComputersAllowed,
     cloud: cloudLendingSnapshot,
@@ -1985,6 +1997,9 @@ function sharingController() {
     onChange: summary => lendingIndicator().update({ lending: summary.lending.length > 0, busy: Boolean(summary.busy && summary.lending.includes(summary.busy.env)) }),
     cuaConnection: () => cuaReady,
     hostControl: async (id, signal) => {
+      // Server mode: no local server and no local bot compete for this
+      // screen, so there is no local seat to lease.
+      if (serverModeEnvironment(environmentsState) && !serverReady) return { renew: async () => {}, release: async () => {} };
       const lease = async action => {
         const response = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/desktop/shared-computer-control`, {
           method: "POST",
@@ -2062,7 +2077,7 @@ async function offerComputerSharing(win) {
     if (!info || win.isDestroyed() || activeEnvironment(environmentsState)?.id !== env.id || new URL(win.webContents.getURL()).origin !== env.origin) return;
     const choice = await dialog.showMessageBox(win, {
       type: "question", message: `Share this computer with ${env.name}?`,
-      detail: "Let this server’s bots use folders and capabilities you choose while this desktop app is running. Nothing is shared unless you enable it. You can change this later in Settings → Servers.",
+      detail: "Let this server’s bots use folders and capabilities you choose while this desktop app is running, only when you are the person asking. Nothing is shared unless you enable it. You can change this later in Settings → Organization.",
       buttons: ["Choose access", "Not now"], defaultId: 1, cancelId: 1,
     });
     sharingController().decline(env, info);
@@ -2118,13 +2133,82 @@ function refreshApplicationMenu() {
       onOpenSettings: () => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("app:open-settings");
       },
+      serverModeId: serverModeEnvironment(environmentsState)?.id ?? null,
+      onLeaveServerMode: () => void workspaceMenuAction(leaveServerMode),
     }),
   );
+}
+
+// ── this app's own UI on an organization server (electron/bundled-ui.cjs) ──
+// While the active environment is an organization server, every page request
+// to its origin is answered from this app's bundle and its API is passed
+// through untouched: the same UI as on this computer, the server's session
+// and authorization. The handler is installed only for that scheme and only
+// while such a server is active.
+let bundledScheme = null;
+let currentBundledOrigin = null;
+function bundledUiStaticDir() {
+  if (app.isPackaged) return path.join(process.resourcesPath, "ui");
+  return process.env.OMB_BUNDLED_UI_DIR || null;
+}
+function bundledUiDevOrigin() {
+  if (app.isPackaged || process.env.OMB_BUNDLED_UI_DIR) return null;
+  return new URL(DEV_URL).origin;
+}
+const bundledUiHandler = bundledUiModule.createBundledUiHandler({
+  origin: () => currentBundledOrigin,
+  staticDir: bundledUiStaticDir,
+  devOrigin: bundledUiDevOrigin,
+  fetch: (input, init) => net.fetch(input, init),
+  readFile: (file) => fs.promises.readFile(file),
+  log: (line) => slog(line),
+});
+function syncBundledUi() {
+  const origin = bundledOrigin(environmentsState);
+  const scheme = origin ? new URL(origin).protocol.slice(0, -1) : null;
+  if (bundledScheme && bundledScheme !== scheme) {
+    try { session.defaultSession.protocol.unhandle(bundledScheme); } catch {}
+    bundledScheme = null;
+  }
+  if (scheme && bundledScheme !== scheme) {
+    try {
+      session.defaultSession.protocol.handle(scheme, bundledUiHandler);
+      bundledScheme = scheme;
+    } catch (error) {
+      slog(`bundled UI: could not take over ${scheme} (${error?.message ?? error})`);
+    }
+  }
+  currentBundledOrigin = bundledScheme ? origin : null;
+  setBundledOrigin(currentBundledOrigin);
+}
+
+// The floating bots and the Hibou 98 assistant draw from the local server's
+// page. In server mode the packaged app runs no local server, so they draw
+// from this app's bundle instead, in an in-memory session of their own that
+// holds no cookie and answers nothing but UI files.
+let detachedUiSession = null;
+function detachedUiSessionIfNeeded() {
+  if (serverReady || !app.isPackaged) return null;
+  if (!detachedUiSession) {
+    detachedUiSession = session.fromPartition("sagax-detached-ui");
+    detachedUiSession.protocol.handle("https", bundledUiModule.createDetachedUiHandler({
+      staticDir: bundledUiStaticDir,
+      devOrigin: () => null,
+      fetch: (input, init) => net.fetch(input, init),
+      readFile: (file) => fs.promises.readFile(file),
+      log: (line) => slog(line),
+    }));
+  }
+  return detachedUiSession;
+}
+function detachedPageOrigin() {
+  return detachedUiSessionIfNeeded() ? bundledUiModule.DETACHED_UI_ORIGIN : rendererOrigin();
 }
 
 function persistEnvironments(next) {
   writeEnvironments(next);
   environmentsState = next;
+  syncBundledUi();
   refreshApplicationMenu();
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(workspaceWindowTitle(environmentsState, desktopRemoteAccess));
 }
@@ -2137,14 +2221,78 @@ async function workspaceMenuAction(action) {
 
 function navigateMainWindow(url) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Floating bots and the detached assistant belong to the page that drives
+  // them: another server's page brings its own.
+  try {
+    if (new URL(url).origin !== new URL(mainWindow.webContents.getURL()).origin) {
+      floatingBotWindows.closeAll();
+      retroAssistantWindow.close();
+    }
+  } catch {}
   // did-fail-load shows the connection error and returns to the local app.
   void mainWindow.loadURL(url).catch(() => {});
 }
 
+/** Server mode refuses anything that would show Local or another server. */
+function requireNotServerMode() {
+  const locked = serverModeEnvironment(environmentsState);
+  if (locked) throw new Error(`This app is connected to ${locked.name}. Change the server in Settings > General first.`);
+}
+
 function switchEnvironment(id) {
   if (id === environmentsState.activeId || (id !== LOCAL_ID && !environmentsState.environments.some((entry) => entry.id === id))) return;
+  if (serverModeEnvironment(environmentsState)) return;
   persistEnvironments(withActive(environmentsState, id));
   navigateMainWindow(activeOrigin());
+}
+
+/** Signing in from the launch screen: the organization server becomes the
+ * only one this app shows (environments.cjs withServerMode). */
+let leavingServerMode = false;
+/** Leave server mode, the one way out (Settings > General > Server >
+ * Change, or Server > Change server…): after a native confirmation, sign out
+ * of the server, forget it and its page data, and come back to this
+ * computer's launch screen. Local bots, conversations and keys were never
+ * touched and are as they were. A packaged app that ran no local server in
+ * server mode restarts to start it. */
+async function leaveServerMode() {
+  const locked = serverModeEnvironment(environmentsState);
+  if (!locked || leavingServerMode) return { left: false };
+  leavingServerMode = true;
+  try {
+    const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+      type: "question",
+      buttons: ["Change server", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+      message: `Leave ${locked.name}?`,
+      detail: `This app signs out of ${new URL(locked.origin).host} and returns to the launch screen, where you choose No server or another server. Your bots stay on the server; nothing on this computer is changed.`,
+    });
+    if (response !== 0) return { left: false };
+    try {
+      const signedOut = await session.defaultSession.fetch(`${locked.origin}/api/auth/logout`, { method: "POST", credentials: "include", headers: { origin: locked.origin }, signal: AbortSignal.timeout(5_000), bypassCustomProtocolHandlers: true });
+      if (!signedOut.ok) throw new Error(`HTTP ${signedOut.status}`);
+    } catch (error) {
+      slog(`leave server mode: logout not confirmed (${error?.message ?? error})`);
+    }
+    try {
+      await session.defaultSession.clearStorageData({ origin: locked.origin, storages: ["localstorage", "indexdb", "serviceworkers", "cachestorage"] });
+    } catch (error) {
+      slog(`leave server mode: storage clear failed: ${error?.message ?? error}`);
+    }
+    try { sharingController().forget(locked); } catch {}
+    floatingBotWindows.closeAll();
+    retroAssistantWindow.close();
+    persistEnvironments(withoutServerMode(environmentsState));
+    if (app.isPackaged && !serverReady && !desktopRemoteAccess) {
+      relaunchAfterDesktopRemoteChange();
+    } else {
+      navigateMainWindow(`${rendererOrigin()}/`);
+    }
+    return { left: true };
+  } finally {
+    leavingServerMode = false;
+  }
 }
 
 const organizationEntry = createOrganizationEntry({
@@ -2199,6 +2347,11 @@ function queueOrganizationEntry(link) {
 async function deliverOrganizationEntry() {
   if (!organizationEntryReady || !pendingOrganizationEntry) return false;
   pendingOrganizationEntry = false;
+  // Server mode: this computer's own organization sign-in does not apply.
+  if (serverModeEnvironment(environmentsState)) {
+    slog("organization entry ignored: server mode is on");
+    return false;
+  }
   let delivered = false;
   await workspaceMenuAction(async () => { delivered = await organizationEntry.request(); });
   return delivered;
@@ -2231,6 +2384,11 @@ async function openCloudEntry() {
 
 function openWorkspaceSettings(computerId) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Server mode never leaves for the local page: the server's own Settings open.
+  if (serverModeEnvironment(environmentsState)) {
+    mainWindow.webContents.send("app:open-settings", "organization");
+    return;
+  }
   if (senderIsLocal({ sender: mainWindow.webContents })) {
     mainWindow.webContents.send("workspaces:open-settings", typeof computerId === "string" ? computerId : null);
   } else {
@@ -2249,6 +2407,7 @@ async function addServerFromClipboard() {
 }
 
 async function connectHostedWorkspace(input, name) {
+  requireNotServerMode();
   const link = parseHostedWorkspaceLink(input);
   if (!link) {
     throw new Error("Enter an HTTPS server address or a full pairing link. Keep the pairing code after #, not in the URL query.");
@@ -2291,6 +2450,7 @@ function rememberCloudHome(state) {
  * signs this app in (the same link flow as Connect to a server). The person
  * chose this in Settings, so there is no second confirmation. */
 async function connectCloudHome() {
+  requireNotServerMode();
   const client = ensureCloudAccount();
   const target = client.homeTarget();
   if (!target) throw new Error("Your Cloud is not ready to connect yet.");
@@ -2307,7 +2467,7 @@ async function connectCloudHome() {
 /** Whether this app's cookie already signs it in to that server. */
 async function cloudHomeSignedIn(origin) {
   try {
-    const response = await session.defaultSession.fetch(`${origin}/api/auth/session`, { credentials: "include", signal: AbortSignal.timeout(5_000) });
+    const response = await session.defaultSession.fetch(`${origin}/api/auth/session`, { credentials: "include", signal: AbortSignal.timeout(5_000), bypassCustomProtocolHandlers: true });
     return response.ok && (await response.json())?.kind === "session";
   } catch {
     return false;
@@ -2328,6 +2488,11 @@ async function isOrganizationServer(origin) {
 async function forgetEnvironment(id) {
   const env = environmentsState.environments.find((e) => e.id === id);
   if (!env) return;
+  // Forgetting the server-mode server is leaving server mode.
+  if (serverModeEnvironment(environmentsState)?.id === id) {
+    await leaveServerMode();
+    return;
+  }
   const { response } = await dialog.showMessageBox({
     type: "warning",
     buttons: ["Forget", "Cancel"],
@@ -2345,7 +2510,7 @@ async function forgetEnvironment(id) {
   if (wasActive) navigateMainWindow(activeOrigin());
   try {
     // Revoke the session on the server while the cookie is still here.
-    const response = await session.defaultSession.fetch(`${env.origin}/api/auth/logout`, { method: "POST", credentials: "include", headers: { origin: env.origin }, signal: AbortSignal.timeout(5_000) });
+    const response = await session.defaultSession.fetch(`${env.origin}/api/auth/logout`, { method: "POST", credentials: "include", headers: { origin: env.origin }, signal: AbortSignal.timeout(5_000), bypassCustomProtocolHandlers: true });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   } catch (error) {
     slog(`forget server: logout skipped (${error?.message ?? error})`);
@@ -2538,6 +2703,12 @@ function createWindow({ deferNavigation = false } = {}) {
       origin = new URL(validatedURL).origin;
     } catch {}
     if (origin !== remote.origin) return;
+    // Server mode has no Local to fall back to: the page says the server is
+    // unreachable and Settings > General > Server > Change still works.
+    if (serverModeEnvironment(environmentsState)) {
+      slog(`server-mode server unreachable (${errorDescription})`);
+      return;
+    }
     slog(`remote server unreachable (${errorDescription}); back to Local`);
     void dialog.showMessageBox({
       type: "warning",
@@ -2851,8 +3022,9 @@ const retroAssistantWindow = createRetroAssistantWindow({
   screen,
   ipcMain,
   getMainWindow: () => mainWindow,
-  isTrustedMain: (event) => senderIsLocal(event),
-  pageUrl: () => `${rendererOrigin()}/?${DETACHED_QUERY}`,
+  isTrustedMain: (event) => isDesktopUiSender(event),
+  pageUrl: () => `${detachedPageOrigin()}/?${DETACHED_QUERY}`,
+  session: detachedUiSessionIfNeeded,
   preload: path.join(__dirname, "retro-assistant-preload.cjs"),
   readPositions: () => JSON.parse(fs.readFileSync(RETRO_ASSISTANT_POSITIONS(), "utf8")),
   writePositions: (positions) => fs.writeFileSync(RETRO_ASSISTANT_POSITIONS(), JSON.stringify(positions), { mode: 0o600 }),
@@ -2871,8 +3043,9 @@ const floatingBotWindows = createFloatingBotWindows({
   screen,
   ipcMain,
   getMainWindow: () => mainWindow,
-  isTrustedMain: (event) => senderIsLocal(event),
-  pageUrl: () => `${rendererOrigin()}/?${FLOATING_QUERY}`,
+  isTrustedMain: (event) => isDesktopUiSender(event),
+  pageUrl: () => `${detachedPageOrigin()}/?${FLOATING_QUERY}`,
+  session: detachedUiSessionIfNeeded,
   preload: path.join(__dirname, "floating-bot-preload.cjs"),
   readPositions: () => JSON.parse(fs.readFileSync(FLOATING_BOT_POSITIONS(), "utf8")),
   writePositions: (positions) => fs.writeFileSync(FLOATING_BOT_POSITIONS(), JSON.stringify(positions), { mode: 0o600 }),
@@ -2910,7 +3083,7 @@ ipcMain.handle("window:state", (event) => {
   return { maximized: Boolean(win && !win.isDestroyed() && win.isMaximized()) };
 });
 
-ipcMain.handle("desktop:open-external", localOnly("desktop:open-external", async (_event, rawUrl) => {
+ipcMain.handle("desktop:open-external", desktopUiOnly("desktop:open-external", async (_event, rawUrl) => {
   await shell.openExternal(externalWebUrl(rawUrl));
   return true;
 }));
@@ -3281,26 +3454,36 @@ const savedWorkspace = id => {
   if (!env) throw new Error("This server is no longer connected");
   return env;
 };
-ipcMain.handle("sharing:state", localWorkspaceOnly("sharing:state", async (_event, id) => {
+// Share this computer: the local page for any saved server, and in server
+// mode the organization server's page drawn from this app's bundle, for that
+// server only (the person decides there what their own computer lends).
+const sharingUiOnly = (channel, handler) => desktopUiOnly(channel, workspaceOnly((event, id, ...rest) => {
+  if (!senderIsLocal(event)) {
+    const locked = serverModeEnvironment(environmentsState);
+    if (!locked || (id !== undefined && id !== locked.id)) throw new Error(`${channel} is only available for this server`);
+  }
+  return handler(event, id, ...rest);
+}));
+ipcMain.handle("sharing:state", sharingUiOnly("sharing:state", async (_event, id) => {
   await requireSharedComputers();
   return sharingController().state(savedWorkspace(id).id);
 }));
-ipcMain.handle("sharing:folder", localWorkspaceOnly("sharing:folder", async () => {
+ipcMain.handle("sharing:folder", sharingUiOnly("sharing:folder", async () => {
   await requireSharedComputers();
   const picked = await dialog.showOpenDialog(mainWindow, { title: "Choose a folder to share", properties: ["openDirectory"] });
   if (picked.canceled || !picked.filePaths[0]) return null;
   return (await validateSharedFolders([{ id: randomUUID(), path: picked.filePaths[0], write: false }]))[0];
 }));
-ipcMain.handle("sharing:revoke", localWorkspaceOnly("sharing:revoke", async (_event, id) => {
+ipcMain.handle("sharing:revoke", sharingUiOnly("sharing:revoke", async (_event, id) => {
   await requireSharedComputers();
   return sharingController().revoke(savedWorkspace(id));
 }));
 // What that server's bots did here: the local log, never a server's claim.
-ipcMain.handle("sharing:activity", localWorkspaceOnly("sharing:activity", async (_event, id) => {
+ipcMain.handle("sharing:activity", sharingUiOnly("sharing:activity", async (_event, id) => {
   await requireSharedComputers();
   return sharingController().activity(savedWorkspace(id).id, 50);
 }));
-ipcMain.handle("sharing:save", localWorkspaceOnly("sharing:save", async (_event, id, input) => {
+ipcMain.handle("sharing:save", sharingUiOnly("sharing:save", async (_event, id, input) => {
   await requireSharedComputers();
   const env = savedWorkspace(id);
   const info = await sharingController().identity(env);
@@ -3364,11 +3547,15 @@ ipcMain.handle("lending:stop", localWorkspaceOnly("lending:stop", async () => {
 const orgJoin = createOrgJoin({
   fetch: (url, init) => fetch(url, init),
   parseLink: (address) => parseHostedWorkspaceLink(address),
-  saveEnvironment: (origin) => {
-    let next = withEnvironment(environmentsState, { origin, name: new URL(origin).host }, () => randomUUID());
+  // Probed first (org-join.mjs): an organization server, so the desktop
+  // draws its own UI there (org: true). The launch screen's Server locks the
+  // app to it (server mode).
+  saveEnvironment: (origin, options) => {
+    requireNotServerMode();
+    let next = withEnvironment(environmentsState, { origin, name: new URL(origin).host, org: true }, () => randomUUID());
     const entry = next.environments.find((candidate) => candidate.origin === origin);
     if (!entry) throw new Error("The server could not be saved.");
-    next = withActive(next, entry.id);
+    next = options?.serverMode === true ? withServerMode(next, entry.id) : withActive(next, entry.id);
     persistEnvironments(next);
   },
   navigate: (url) => navigateMainWindow(url),
@@ -3432,9 +3619,13 @@ ipcMain.handle("org-join:take", (event) => {
   const origin = orgJoinSender(event);
   return origin ? orgJoin.take(origin) : null;
 });
+ipcMain.handle("org-join:take-preferences", (event) => {
+  const origin = orgJoinSender(event);
+  return origin ? orgJoin.takePreferences(origin) : null;
+});
 ipcMain.handle("org-join:finished", orgJoinRemote((origin, input) => orgJoin.finished(origin, input)));
 ipcMain.handle("org-join:remove-local", orgJoinRemote((origin, keys) => orgJoin.removeLocal(origin, keys)));
-ipcMain.handle("dialog:confirm", localWorkspaceOnly("dialog:confirm", async (_event, message) => {
+ipcMain.handle("dialog:confirm", desktopUiOnly("dialog:confirm", workspaceOnly(async (_event, message) => {
   if (typeof message !== "string" || !message.trim() || message.length > 4096 || !mainWindow || mainWindow.isDestroyed()) return false;
   const { response } = await dialog.showMessageBox(mainWindow, {
     type: "warning",
@@ -3444,7 +3635,30 @@ ipcMain.handle("dialog:confirm", localWorkspaceOnly("dialog:confirm", async (_ev
     cancelId: 1,
   });
   return response === 0;
-}));
+})));
+
+// Server mode: the page asks which organization server this app is locked
+// to, and leaves through the same confirmation as the Server menu. This
+// app's own UI only (the local page, or the bundle on that server).
+ipcMain.handle("server-mode:state", desktopUiOnly("server-mode:state", workspaceOnly(() => {
+  const locked = serverModeEnvironment(environmentsState);
+  return locked ? { active: true, id: locked.id, name: locked.name, origin: locked.origin } : { active: false };
+})));
+ipcMain.handle("server-mode:leave", desktopUiOnly("server-mode:leave", workspaceOnly(() => leaveServerMode())));
+// The preload asks once per page whether it is this app's bundle drawn on
+// the active organization server (bundled-ui.cjs): only then does it expose
+// the desktop-UI parts of the bridge. The main window's top frame only.
+ipcMain.on("workspace:bundled-ui", (event) => {
+  let bundled = false;
+  try {
+    const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    bundled = Boolean(win && currentBundledOrigin && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame &&
+      new URL(event.senderFrame.url).origin === currentBundledOrigin);
+  } catch {
+    bundled = false;
+  }
+  event.returnValue = bundled;
+});
 
 ipcMain.handle("environments:state", localWorkspaceOnly("environments:state", (event) => ({
   localOrigin: rendererOrigin(),
@@ -3470,6 +3684,7 @@ ipcMain.handle("workspaces:menu", workspaceOnly(async () => {
       onSwitch: (id) => void workspaceMenuAction(() => switchEnvironment(id)),
       onConnect: () => void workspaceMenuAction(openWorkspaceSettings),
       onForget: (id) => void workspaceMenuAction(() => forgetEnvironment(id)),
+      onLeaveServerMode: () => void workspaceMenuAction(leaveServerMode),
     }));
     await new Promise((resolve) => menu.popup({ window: mainWindow, callback: resolve }));
   } finally {
@@ -3752,6 +3967,12 @@ app.whenReady().then(async () => {
       serverReady = false;
       slog(`desktop companion relay failed: ${error?.message ?? error}`);
     }
+  } else if (app.isPackaged && serverModeEnvironment(readEnvironments())) {
+    // Server mode: every bot runs on the organization's server. No local
+    // server starts, so nothing of this computer's own (routines, channels,
+    // memory upkeep, queued sends) runs in the background. Leaving server
+    // mode restarts the app, which starts it again.
+    slog("server mode: the local server is not started");
   } else if (app.isPackaged) {
     await startServerPackaged();
   }
@@ -3783,6 +4004,7 @@ app.whenReady().then(async () => {
     return appPermissionAllowed(permission, requesting, rendererOrigin(), details);
   });
   environmentsState = readEnvironments();
+  syncBundledUi();
   // Maintainer grants never start while computer sharing is off: no poll
   // loop, no registration, no grant replay from disk. Lending to the person's
   // own Cloud is gated by their Cloud sign-in instead, so its saved grant

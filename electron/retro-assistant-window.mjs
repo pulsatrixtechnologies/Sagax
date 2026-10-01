@@ -23,7 +23,7 @@ export const DETACHED_QUERY = "omb-retro-assistant=1";
  * Transparent, frameless, above other apps, out of the taskbar, never stealing
  * focus. Shared with the floating bots (electron/floating-bot-window.mjs).
  */
-export function assistantWindowOptions({ preload, bounds, title = "Trombi" }) {
+export function assistantWindowOptions({ preload, bounds, title = "Trombi", session }) {
   return {
     ...bounds,
     show: false,
@@ -48,6 +48,9 @@ export function assistantWindowOptions({ preload, bounds, title = "Trombi" }) {
       webviewTag: false,
       spellcheck: false,
       backgroundThrottling: false,
+      // server mode with no local server: the page comes from this app's
+      // bundle in a session of its own (electron/bundled-ui.cjs)
+      ...(session ? { session } : {}),
     },
   };
 }
@@ -267,7 +270,7 @@ export function createRetroAssistantWindow(deps) {
 
   function open() {
     if (win && !win.isDestroyed()) return win;
-    const created = new BrowserWindow(assistantWindowOptions({ preload, bounds: startBounds() }));
+    const created = new BrowserWindow(assistantWindowOptions({ preload, bounds: startBounds(), session: deps.session?.() ?? undefined }));
     win = created;
     try {
       created.setAlwaysOnTop(true, "floating");

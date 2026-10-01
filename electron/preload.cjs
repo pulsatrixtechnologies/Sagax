@@ -39,6 +39,28 @@ const isLocalPage = !localOrigin || location.origin === localOrigin;
 // that page is the person's own verified Cloud in this window (Move to
 // Cloud's card and the Cloud's setup checklist).
 const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin", "cloudMove", "cloudLending"]);
+// An organization server's page drawn from THIS app's bundle
+// (electron/bundled-ui.cjs) is the desktop's own UI on that server, so it
+// also gets the desktop-UI parts that hold no local data: floating bots and
+// the Hibou 98 assistant (windows that only draw what the page sends), the
+// window's caption buttons, the app menu's Preferences, links in the system
+// browser, native confirmations, this app's updater, server mode's state
+// and way out, and in server mode the person's own "Share this computer"
+// for that server (each grant confirmed in a native dialog). Main checks
+// every one of these channels again (local-origin.cjs desktopUiOnly, and
+// sharingUiOnly for the server-mode server only). Nothing that reads this
+// computer's files, screen, logins or secrets is handed to the page.
+const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing"]);
+let bundledPage = false;
+// main.mjs always answers this channel: a sendSync nobody answers would
+// block this page for good (a test harness must answer it too).
+if (!isLocalPage) {
+  try {
+    bundledPage = ipcRenderer.sendSync("workspace:bundled-ui") === true;
+  } catch {
+    bundledPage = false;
+  }
+}
 
 // Sandboxed preload cannot import TS or sibling modules. Keep this list in
 // parity with shared/workspace-backup-client.ts (covered by the preload test).
@@ -304,8 +326,18 @@ const bridge = {
     join: (input) => ipcRenderer.invoke("org-join:join", input),
     staged: () => ipcRenderer.invoke("org-join:staged"),
     take: () => ipcRenderer.invoke("org-join:take"),
+    takePreferences: () => ipcRenderer.invoke("org-join:take-preferences"),
     finished: (input) => ipcRenderer.invoke("org-join:finished", input),
     removeLocal: (keys) => ipcRenderer.invoke("org-join:remove-local", Array.isArray(keys) ? keys.map(String) : []),
+  },
+
+  /** Server mode (the launch screen's "Server"): which organization server
+   * this app is locked to, and the one way out (Settings > General >
+   * Server > Change), which signs out of it and returns to the launch
+   * screen. Main answers only the main window's top frame. */
+  serverMode: {
+    state: () => ipcRenderer.invoke("server-mode:state"),
+    leave: () => ipcRenderer.invoke("server-mode:leave"),
   },
 
   /** Saved servers and the active one (Server menu). Switching, adding and
@@ -448,5 +480,5 @@ const bridge = {
 
 contextBridge.exposeInMainWorld(
   "ogb",
-  isLocalPage ? bridge : Object.fromEntries(Object.entries(bridge).filter(([key]) => REMOTE_SAFE.has(key))),
+  isLocalPage ? bridge : Object.fromEntries(Object.entries(bridge).filter(([key]) => REMOTE_SAFE.has(key) || (bundledPage && BUNDLED_EXTRA.has(key)))),
 );

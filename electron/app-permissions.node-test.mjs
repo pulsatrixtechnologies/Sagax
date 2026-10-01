@@ -78,9 +78,10 @@ test("web links reject embedded credentials and non-web schemes", () => {
     assert.throws(() => externalWebUrl(url), /web address/);
 });
 
-test("both external-link entry points use the policy and IPC retains the local-origin gate", () => {
+test("both external-link entry points use the policy and IPC retains the desktop-UI gate", () => {
   const main = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
-  assert.match(main, /ipcMain\.handle\("desktop:open-external", localOnly\("desktop:open-external"/);
+  // this app's own UI: the local page, or its bundle on an organization server
+  assert.match(main, /ipcMain\.handle\("desktop:open-external", desktopUiOnly\("desktop:open-external"/);
   assert.match(main, /shell\.openExternal\(externalWebUrl\(rawUrl\)\)/);
   assert.match(main, /shell\.openExternal\(externalOpenUrl\(url\)\)/);
 });
