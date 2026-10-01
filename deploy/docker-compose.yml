@@ -28,6 +28,22 @@ services:
       OMB_WEBHOOK_PUBLIC_URL: https://${DOMAIN}
       # pairing links for remote clients point here (docs/self-hosting.md)
       OMB_PUBLIC_URL: https://${DOMAIN}
+      # Who may sign in with an emailed code at /pair (docs/self-hosting.md,
+      # "Sign in with your email"). Empty means pairing codes only.
+      OMB_SIGNIN_EMAILS: ${OMB_SIGNIN_EMAILS:-}
+      OMB_SIGNIN_MEMBER_EMAILS: ${OMB_SIGNIN_MEMBER_EMAILS:-}
+      # Mail for sign-in codes and invitations (docs/self-hosting.md, "Sending
+      # mail from your server"): smtp, sendgrid or twilio. Empty is ignored.
+      OMB_MAIL_PROVIDER: ${OMB_MAIL_PROVIDER:-}
+      OMB_MAIL_FROM: ${OMB_MAIL_FROM:-}
+      OMB_SMTP_HOST: ${OMB_SMTP_HOST:-}
+      OMB_SMTP_PORT: ${OMB_SMTP_PORT:-}
+      OMB_SMTP_SECURE: ${OMB_SMTP_SECURE:-}
+      OMB_SMTP_USER: ${OMB_SMTP_USER:-}
+      OMB_SMTP_PASSWORD: ${OMB_SMTP_PASSWORD:-}
+      OMB_SENDGRID_API_KEY: ${OMB_SENDGRID_API_KEY:-}
+      OMB_TWILIO_API_KEY_SID: ${OMB_TWILIO_API_KEY_SID:-}
+      OMB_TWILIO_API_KEY_SECRET: ${OMB_TWILIO_API_KEY_SECRET:-}
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8799/api/health | grep -q openmausbot"]
       interval: 30s

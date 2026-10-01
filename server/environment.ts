@@ -123,10 +123,15 @@ export function serverVersion(): string {
   return "unknown";
 }
 
+/** This server's display name: OMB_ENVIRONMENT_LABEL, else the host name. */
+export function environmentLabel(): string {
+  return process.env.OMB_ENVIRONMENT_LABEL?.trim() || hostname();
+}
+
 export function environmentDescriptor(input: { environmentId: string; desktopManaged: boolean; emailSignIn?: boolean; sharedComputers?: boolean; identity?: IdentityDescriptor }): EnvironmentDescriptor {
   return {
     environmentId: input.environmentId,
-    label: process.env.OMB_ENVIRONMENT_LABEL?.trim() || hostname(),
+    label: environmentLabel(),
     platform: process.platform,
     version: serverVersion(),
     capabilities: {

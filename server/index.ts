@@ -484,11 +484,15 @@ import {
 import { createGracefulShutdown } from "./graceful-shutdown.ts";
 import { acquireDataDirLeaseForProcess } from "./data-dir-lease.ts";
 import { createWorkspaceAccess, describeEdition, editionStatus, hostedWorkspaceConfiguration, hostedWorkspaceConfigured, editionForMembers, LICENSE_WARN_DAYS, licenseWarning, sharedWorkspaceFullAccessConfigured, loadEnterpriseLayer, workspaceMembership, type EditionStatus, type WorkspaceAccess } from "./enterprise.ts";
-import { environmentDescriptor, loadEnvironmentId, serverVersion } from "./environment.ts";
+import { environmentDescriptor, environmentLabel, loadEnvironmentId, serverVersion } from "./environment.ts";
 import { WorkspaceBackupMaintenance } from "./workspace-backup-maintenance.ts";
 import { createWorkspaceBackupRoutes, isWorkspaceBackupSessionControl } from "./workspace-backup-http.ts";
 import { applyPendingWorkspaceRestore, readLastWorkspaceRestore, type WorkspaceRestoreResult } from "./workspace-backup.ts";
 import { createCustomDomainVerifier, customDomainIpv4, normalizeCustomDomain } from "./custom-domain.ts";
+import { allowedScopes, createServerEmailSignIn, parseAllowList } from "./account-signin.ts";
+import { EmailOtpStore } from "./email-otp.ts";
+import { resolveMailSettings } from "./mail-config.ts";
+import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
@@ -530,6 +534,8 @@ import {
   pruneAdminActivity,
   readAdminActivityRange,
   readOrgAuditPage,
+  sharedSignIn,
+  signInListsOf,
   type AdminActionRow,
   type AdminActor,
 } from "./admin-activity.ts";
@@ -566,11 +572,12 @@ import {
   phoneSecretOperationId,
   type PhoneSecretContext,
 } from "./phone-secret.ts";
-import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement, type OrgRole } from "./channel-membership.ts";
+import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
 import { atLeast, botLevel, canEditRoomHumans, canInChannel, canModerateSection, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
+import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { configForViewer, displayNameFromEmail, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
@@ -579,12 +586,13 @@ import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, oidcBindingCookie, oidcSessionFields } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
-import { createSoloOrgRoutes, interimRetiredRefusal } from "./org-routes.ts";
+import { acceptOpenInvitesForEmail, createPublicInviteRoutes, createSoloOrgRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
@@ -657,12 +665,34 @@ const workspaceMaintenance = new WorkspaceBackupMaintenance();
 // Remote clients (server/request-auth.ts, server/sessions.ts): a stable identity
 // for this server, the paired sessions, and the cookie the served UI uses.
 const ENVIRONMENT_ID = loadEnvironmentId(DATA_DIR);
-// No email membership resolver (slice 8): a session that signed in with an
-// emailed code or an invitation (non-OIDC, carrying an email, not the hosted
-// portal's) is revoked at its next request. Pairing, OIDC and portal
-// sessions are untouched.
+// Who signs people in here (OMB_IDENTITY): a solo server keeps its email
+// sign-in list, invitations and mailer; an organization server signs people
+// in with Pulsatrix only (Perspicax owns accounts), so the list is empty
+// there and a legacy email session ends at its next request.
+const IDENTITY = identityConfigFromEnv();
+const EMPTY_SIGN_IN = { admins: [] as string[], members: [] as string[] };
+function signInAllowList() {
+  if (IDENTITY.kind === "perspicax") return EMPTY_SIGN_IN;
+  const current = loadConfig().signIn;
+  return { admins: parseAllowList(current?.admins?.join(",")), members: parseAllowList(current?.members?.join(",")) };
+}
+function emailSignInAllowList() {
+  const list = signInAllowList();
+  return signInListWithOpenInvites({
+    admins: list.admins,
+    members: list.members,
+    invites: loadConfig().invites ?? [],
+    now: Date.now(),
+  });
+}
 const sessions = new SessionRegistry({
   file: join(DATA_DIR, "sessions.json"),
+  ...(IDENTITY.kind === "perspicax" ? {} : {
+    emailScopesSnapshot: () => {
+      const membership = emailSignInAllowList();
+      return (email: string) => allowedScopes(email, membership);
+    },
+  }),
   portalMembership: hostedWorkspaceConfiguration()?.portalMembership === true,
 });
 const sharedComputers = new SharedComputers(id => sessions.isLive(id));
@@ -694,7 +724,6 @@ const sharedWorkspaceFullAccessEnabled = () => SHARED_WORKSPACE_FULL_ACCESS && B
 // Organization sign-in (server/oidc-login.ts): OMB_IDENTITY=perspicax. A
 // half-configured organization server stops here rather than fall back to
 // email codes.
-const IDENTITY = identityConfigFromEnv();
 // An organization server is shared: loopback is a bot's shell, not an owner,
 // unless the operator says otherwise (spec section 8, request-auth.ts).
 const LOOPBACK = IDENTITY.kind === "perspicax" && !DESKTOP_MANAGED && process.env.OMB_LOOPBACK_TRUST === undefined
@@ -740,6 +769,48 @@ bindThreadLogCapProvider(() => threadEventLogMaxBytes(cfg));
 // prune, so a Settings change applies at the next one without a restart.
 bindDecisionRetention(() => decisionRetentionDays(cfg.decisions?.retentionDays));
 const customDomainVerifier = createCustomDomainVerifier({ environmentId: ENVIRONMENT_ID });
+// Server-issued sign-in codes (server/email-otp.ts) and the mail that
+// carries them (server/mail-config.ts, server/mailer.ts). Settings are
+// resolved per call so a Settings change or a Docker env bootstrap applies
+// without a restart; the mailer is cached by a hash of the resolved settings
+// so a new transport is not built on every call (and no secret sits around
+// as a plain cache key).
+const emailOtp = new EmailOtpStore();
+const mailResolved = () => resolveMailSettings({ file: cfg.mail, env: process.env });
+// OMB_MAIL_CAPTURE_FILE (test/e2e seam only): instead of sending, append
+// each message as one JSON line to this file. Requires an explicit test
+// marker (VITEST, set by the test runner itself, or OMB_TEST_SEAMS=1 for a
+// harness that does not inherit it) on top of a non-production NODE_ENV, so
+// a misconfigured deploy cannot silently stop sending real mail.
+const MAIL_CAPTURE_FILE = process.env.OMB_MAIL_CAPTURE_FILE;
+const mailCaptureFile = MAIL_CAPTURE_FILE && process.env.NODE_ENV !== "production" && (process.env.VITEST || process.env.OMB_TEST_SEAMS === "1")
+  ? MAIL_CAPTURE_FILE
+  : undefined;
+if (MAIL_CAPTURE_FILE && !mailCaptureFile) {
+  console.warn("OMB_MAIL_CAPTURE_FILE is set but ignored (needs VITEST or OMB_TEST_SEAMS=1, and NODE_ENV other than production)");
+} else if (mailCaptureFile) {
+  console.warn(`OMB_MAIL_CAPTURE_FILE seam is active: mail is captured to ${mailCaptureFile} instead of being sent`);
+}
+let cachedMailerKey: string | null = null;
+let cachedMailer: Mailer | null = null;
+const mailer = (): Mailer | null => {
+  if (mailCaptureFile) return createCaptureMailer(mailCaptureFile);
+  const settings = mailResolved().settings;
+  const settingsKey = createHash("sha256").update(JSON.stringify(settings)).digest("hex");
+  if (settingsKey !== cachedMailerKey) {
+    cachedMailer = createMailer(settings);
+    cachedMailerKey = settingsKey;
+  }
+  return cachedMailer;
+};
+// "Sign in with your email" on /pair: the allow-list is read per call so a
+// Settings change or an env bootstrap applies without a restart.
+const emailSignIn = createServerEmailSignIn({
+  allow: emailSignInAllowList,
+  otp: emailOtp,
+  mailer,
+  publicUrl,
+});
 let customDomainRevision = 0;
 function savedCustomDomain(): string | null {
   if (DESKTOP_MANAGED || !cfg.customDomain) return null;
@@ -829,10 +900,10 @@ function legacyPersonKey(session: SessionRecord): string {
   return `p_${createHash("sha256").update(basis).digest("base64url").slice(0, 22)}`;
 }
 
-/** More than one person uses this workspace: portal membership. Only then
- * does who-may-answer narrow. */
+/** More than one person uses this workspace: portal membership, or an email
+ * sign-in list that names members. Only then does who-may-answer narrow. */
 function sharedMembership(): boolean {
-  return hostedWorkspaceConfiguration()?.portalMembership === true;
+  return hostedWorkspaceConfiguration()?.portalMembership === true || signInAllowList().members.length > 0;
 }
 
 /** The person a user line came from, when a session sent it. A bot's line
@@ -1183,7 +1254,7 @@ function adminActivityRecording(): boolean {
   if (DESKTOP_MANAGED) return false;
   if (HOSTED_WORKSPACE) return true;
   const chatOnly = (scopes: readonly string[]) => !scopes.includes("admin");
-  return sessions.list().some((session) => chatOnly(session.scopes)) ||
+  return sharedSignIn(signInAllowList()) || sessions.list().some((session) => chatOnly(session.scopes)) ||
     sessions.openPairings().some((pairing) => chatOnly(pairing.scopes));
 }
 
@@ -1206,7 +1277,7 @@ onConfigSaved((before, after) => {
   if (!scope || DESKTOP_MANAGED) return;
   // Shared when the request began, or now: the change that makes a server
   // shared, or stops it being, is kept.
-  if (!scope.sharedAtStart && !adminActivityRecording()) return;
+  if (!scope.sharedAtStart && !adminActivityRecording() && !sharedSignIn(signInListsOf(before)) && !sharedSignIn(signInListsOf(after))) return;
   for (const row of configChangeRows(before, after)) appendAdminAction(DATA_DIR, { ...row, actor: scope.actor });
 });
 
@@ -14624,6 +14695,9 @@ function configStatus() {
     // show the same durable session as an agent, but config PATCH validation
     // keeps it read-only and rejects callers that try to choose it.
     browserProfiles: cfg.browserProfiles ?? [],
+    // who may sign in with an emailed code (server/account-signin.ts); a
+    // solo server's only: an organization server's people are in Perspicax
+    ...(IDENTITY.kind === "perspicax" ? {} : { signIn: { admins: cfg.signIn?.admins ?? [], members: cfg.signIn?.members ?? [] } }),
     // whether that list decides anything here, or the organisation's Admin does
     membership: workspaceMembership(),
   };
@@ -14637,7 +14711,7 @@ function configForAccess(status: ReturnType<typeof configStatus>, admin: boolean
   return {
     ...status,
     edition: { edition: status.edition.edition, features: status.edition.features },
-    signIn: { admins: [], members: [] },
+    ...("signIn" in status ? { signIn: { admins: [], members: [] } } : {}),
     vps: { configured: status.vps.configured, sshAlias: "" },
     profile: { name: status.profile.name, email: "" },
     browserProfiles: status.browserProfiles.map((profile) => Object.fromEntries(Object.entries(profile).filter(([key]) => key !== "partitionId"))),
@@ -15142,6 +15216,32 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+// The people of a solo server: its email sign-in list and the invitations
+// that add to it (server/org-routes.ts). A solo server has no organization
+// (slice 8), so the invitations are issued in the name of this server: the
+// local operator is the owner and the links point at the public address.
+// An organization server never builds these routes (Perspicax owns accounts).
+function soloServerRecord(): OrgRecord {
+  return { name: environmentLabel(), host: { kind: "this-computer" }, ownerUserId: localPrincipalId() };
+}
+const orgState: OrgState = {
+  get org() {
+    return IDENTITY.kind === "perspicax" ? null : soloServerRecord();
+  },
+  set org(_value) {
+    // Read-only: a solo server's record is derived, never stored.
+  },
+  get invites() {
+    if (!cfg.invites) cfg.invites = [];
+    return cfg.invites;
+  },
+  get signIn() {
+    if (!cfg.signIn) cfg.signIn = { admins: [], members: [] };
+    if (!cfg.signIn.admins) cfg.signIn.admins = [];
+    if (!cfg.signIn.members) cfg.signIn.members = [];
+    return cfg.signIn as { admins: string[]; members: string[] };
+  },
+};
 /** The operator at this computer, as a principal. The profile email is an
  * attribute of it, never a second person. */
 function localPrincipalId(): string {
@@ -15171,6 +15271,11 @@ function channelFilterViewerId(auth: RequestAuth): string | undefined {
   if (!viewerId) return undefined;
   if (viewerId.startsWith("anon:")) return IDENTITY.kind === "perspicax" ? viewerId : undefined;
   return auth.scopes.includes("admin") && viewerId === localPrincipalId() ? undefined : viewerId;
+}
+/** The actor's sign-in email: sign-in lists and invites stay in emails. */
+function actorEmail(auth: RequestAuth): string | undefined {
+  if (auth.kind === "session") return auth.session.email?.trim().toLowerCase() || undefined;
+  return cfg.profile?.email?.trim().toLowerCase() || undefined;
 }
 function channelActorId(auth: RequestAuth): string {
   return actorPrincipalId(auth);
@@ -16125,8 +16230,70 @@ ROUTES.push(createWorkerRoutes({
     failWorkerTurns([messageId], "The turn failed because the author cancelled.");
   },
 }));
-// Slice 8: a solo server has no organization; the interim one is gone.
-if (IDENTITY.kind !== "perspicax") ROUTES.push(createSoloOrgRoutes());
+/** A principal's sign-in email. The local operator without one takes the
+ * profile email, and it is synced onto the principal, so the owner is shown
+ * by address rather than by id. */
+function principalEmail(id: string): string | undefined {
+  const found = principals.byId(id);
+  if (found?.email) return found.email;
+  if (found?.local && cfg.profile?.email && isAccountEmail(cfg.profile.email)) return principals.localOperator(cfg.profile.email).email;
+  return undefined;
+}
+function persistOrgState() {
+  saveConfig({
+    invites: orgState.invites,
+    signIn: { admins: orgState.signIn.admins, members: orgState.signIn.members },
+  });
+}
+// Slice 8: a solo server has no organization (GET /api/org 404, creating
+// or moving one 410), but keeps inviting people to its own sign-in list.
+// An organization server serves /api/org from Perspicax and refuses the
+// invitation routes before the auth gate.
+if (IDENTITY.kind !== "perspicax") ROUTES.push(createSoloOrgRoutes({
+  state: orgState,
+  // The operator (loopback, or a device they paired with admin access) is
+  // this server's owner; anyone else is matched by their sign-in email.
+  actorId: (auth) => (viewerIsOperator(auth) ? localPrincipalId() : actorPrincipalId(auth)),
+  actorEmail,
+  ownerEmail: () => (orgState.org ? principalEmail(orgState.org.ownerUserId) : undefined),
+  emailOf: principalEmail,
+  publicUrl,
+  persist: persistOrgState,
+  mailInvite: async ({ email, inviterEmail, link }) => {
+    const send = mailer();
+    if (!send) return false;
+    const orgName = orgState.org?.name ?? "Sagax";
+    const message = inviteMailMessage({ orgName, inviterEmail, link });
+    try {
+      await send.send({ to: email, ...message });
+      return true;
+    } catch (error) {
+      console.warn(`invite email to ${email} could not be sent: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  },
+}));
+
+// Invite links (/join#token=...): public like /api/auth/email/start, and
+// counted against the same per-source lockout as pairing. Security model:
+// server/org-routes.ts `joinInviteRoute`.
+const publicInvites = createPublicInviteRoutes({
+  state: orgState,
+  ownerEmail: () => (orgState.org ? principalEmail(orgState.org.ownerUserId) : undefined),
+  limiter: {
+    source: requestSource,
+    allowed: (source) => sessions.attemptAllowed(source),
+    noteFailure: (source) => sessions.noteFailure(source),
+    clearFailures: (source) => sessions.clearFailures(source),
+  },
+  persist: () => persistOrgState(),
+  signIn: ({ req, res, email }) => {
+    const principal = principals.forAccount({ email });
+    const issued = sessions.issue({ label: `Invited: ${email}`, scopes: ["client"], email, principalId: principal.id });
+    const secure = requestOrigin(req)?.startsWith("https://") === true;
+    res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }));
+  },
+});
 
 // "Sign in with Pulsatrix" (server/oidc-login.ts), only on an organization
 // server. One relying party serves the sign-in routes, the grant refreshes
@@ -16408,12 +16575,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // interim email codes and invitation links are refused outright.
     if (IDENTITY.kind === "perspicax") {
       if (isInterimSignInRoute(method, path)) return json(res, 403, INTERIM_SIGNIN_REFUSAL);
+      // The old invitation page sends its visitors to the sign-in page.
+      if (method === "GET" && (path === "/join" || path === "/join/")) {
+        res.writeHead(302, { location: "/pair", "cache-control": "no-store" });
+        res.end();
+        return;
+      }
       if (oidcLogin && await oidcLogin(req, res, url)) return;
     }
     // Hosted workspaces have one sign-in authority. A missing optional layer
     // must not accidentally reactivate legacy email/QR credential minting.
     if (HOSTED_WORKSPACE) {
-      if ((method === "POST" && ["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path)) || path.startsWith("/api/org/invites/")) {
+      if ((method === "POST" && ["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path)) || PUBLIC_INVITE_PATH.test(path)) {
         return json(res, 403, { error: "Sign in through the workspace portal." });
       }
       if (workspaceAccess) {
@@ -16422,19 +16595,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 503, { error: "Workspace sign-in is unavailable." });
       }
     }
-    // Slice 8: email codes and invitations are gone (410 on a solo server;
-    // an organization server answered 403 above), and the old invitation
-    // page sends its visitors to the pairing page.
-    const retired = interimRetiredRefusal(method, path, IDENTITY.kind);
-    if (retired) return json(res, retired.status, retired.body);
-    if (method === "GET" && (path === "/join" || path === "/join/")) {
-      res.writeHead(302, { location: "/pair", "cache-control": "no-store" });
-      res.end();
-      return;
-    }
     // An enrolled organisation that turns remote access off refuses new pairing
     // codes and new remote sessions. Existing sessions and this app are unchanged.
-    if (method === "POST" && ["/api/auth/pair", "/api/pair", "/api/auth/pairing"].includes(path)) {
+    if (method === "POST" && (["/api/auth/pair", "/api/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"].includes(path) || PUBLIC_INVITE_PATH.test(path))) {
       const refusal = managedPolicy.remoteAccessRefusal();
       if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
     }
@@ -16444,7 +16607,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // paired session with the right scope.
     if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
     if (method === "GET" && path === "/.well-known/openmausbot/environment") {
-      return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: false, sharedComputers: sharedComputersEnabled(cfg), identity: identityDescriptor(IDENTITY) }));
+      return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && IDENTITY.kind === "solo" && emailSignIn.enabled(), sharedComputers: sharedComputersEnabled(cfg), identity: identityDescriptor(IDENTITY) }));
     }
     // The browser lands here after an MCP server's sign-in. Public: the
     // single-use `state` bound to the pending flow is the authorization.
@@ -16467,6 +16630,54 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const challenge = customDomainVerifier.challenge(domainCheck[1]);
       return json(res, challenge ? 200 : 404, challenge ?? { error: "No active domain check." });
     }
+    // Sign in with an emailed code (server/account-signin.ts). Public like
+    // /api/auth/pair, JSON-only for the same reason, and counted against the
+    // same per-source lockout so a code cannot be guessed.
+    if (method === "POST" && (path === "/api/auth/email/start" || path === "/api/auth/email/verify")) {
+      if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {
+        return json(res, 415, { error: "send the sign-in request as JSON (content-type: application/json)" });
+      }
+      if (!emailSignIn.enabled()) return json(res, 404, { error: "email sign-in is not set up on this server; use a pairing code" });
+      const source = requestSource(req);
+      const allowed = sessions.attemptAllowed(source);
+      if (!allowed.ok) return json(res, 429, { error: `too many failed sign-in attempts from your address; try again in ${Math.ceil(allowed.retryAfterMs / 1000)}s` });
+      const body = await readBody(req);
+      const email = typeof body?.email === "string" ? body.email : "";
+      if (path === "/api/auth/email/start") {
+        const started = await emailSignIn.start(email, source);
+        if (!started.ok) {
+          if (started.status === 403) sessions.noteFailure(source);
+          return json(res, started.status, { error: started.error });
+        }
+        return json(res, 200, { ok: true });
+      }
+      const code = typeof body?.code === "string" ? body.code : "";
+      const label = typeof body?.label === "string" ? body.label : "";
+      const verified = await emailSignIn.verify(email, code);
+      if (!verified.ok) {
+        if (verified.status === 401 || verified.status === 403) sessions.noteFailure(source);
+        console.warn(`email sign-in refused from ${source}: ${verified.error}`);
+        return json(res, verified.status, { error: verified.error });
+      }
+      sessions.clearFailures(source);
+      if (!isAccountEmail(verified.email)) return json(res, 400, { error: "this address cannot sign in: at most 320 characters, shaped name@domain" });
+      // A verified address with an open invite joins: proving you own the
+      // address is what the invite link would have proven. Idempotent.
+      if (acceptOpenInvitesForEmail(orgState, { email: verified.email, now: Date.now() })) {
+        try {
+          persistOrgState();
+        } catch (error) {
+          console.warn(`accepting the invite for ${verified.email} could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      const principal = principals.forAccount({ email: verified.email, controlPlaneUserId: verified.userId || undefined });
+      const issued = sessions.issue({ label: label.trim() || labelFromUserAgent(req.headers["user-agent"]), scopes: verified.scopes, userId: verified.userId, email: verified.email, principalId: principal.id });
+      const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: true, sharedComputers: sharedComputersEnabled(cfg) });
+      const secure = requestOrigin(req)?.startsWith("https://") === true;
+      res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }));
+      return json(res, 200, { session: issued.session, environment });
+    }
+    if (await publicInvites({ req, res, path, method, json, readBody })) return;
     // The Admin's signed request for one pairing window on a Cloud home
     // machine. Public like /api/auth/pair, JSON only, and bad signatures
     // count against the same lockout. Never log its headers, body or code.
@@ -16502,7 +16713,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         console.warn(`pairing refused from ${requestSource(req)}: ${result.error}`);
         return json(res, result.status, { error: result.error });
       }
-      const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: false, sharedComputers: sharedComputersEnabled(cfg) });
+      const environment = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: emailSignIn.enabled(), sharedComputers: sharedComputersEnabled(cfg) });
       if (wantsCookie) {
         const secure = requestOrigin(req)?.startsWith("https://") === true;
         res.setHeader("set-cookie", serializeSessionCookie(SESSION_COOKIE, result.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(result.session) }));
@@ -24734,6 +24945,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         else principals.setEmail(principals.localOperator().id, "");
       }
       let browserReferenceCleanupError: unknown = null;
+      if (patch.signIn !== undefined) sessions.revalidateEmailSessions();
       if (!sharedComputersEnabled(cfg)) {
         sharedComputers.close();
         sharedComputerControl.close();

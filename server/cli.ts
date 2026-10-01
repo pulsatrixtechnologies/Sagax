@@ -31,8 +31,12 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import qrcode from "qrcode-terminal";
 
+import { parseAllowList } from "./account-signin.ts";
+import { appendAdminAction, flushAdminActivity, sharedSignIn } from "./admin-activity.ts";
+import { bindDecisionRetention, decisionRetentionDays } from "./decision-log.ts";
 import { hostedWorkspaceConfigured } from "./enterprise.ts";
 import { resolveLoopbackTrust } from "./request-auth.ts";
+import { writeFileAtomic } from "./atomic.ts";
 import { ensureCaddy, normalizeDomainOption, startCaddy, type RunningCaddy } from "./caddy.ts";
 import { runServiceCommand } from "./service-cli.ts";
 import { runFleetCommand, type FleetInput } from "./fleet-cli.ts";
@@ -75,6 +79,8 @@ export interface CliOptions {
   client: boolean;
   pair: boolean;
   revoke?: string;
+  /** `access list|add|remove` */
+  accessAction?: "list" | "add" | "remove";
   chatOnly?: boolean;
   /** `service install|uninstall` */
   serviceAction?: "install" | "uninstall";
@@ -163,9 +169,10 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
       else if (arg === "--json") options.json = true;
       else if (arg === "--email") options.email = value();
       else if (options.command === "sessions" && arg === "revoke") options.revoke = value();
-      // `access` was removed (slice 8); whatever follows it is ignored and
-      // the command explains what replaced it.
-      else if (options.command === "access") continue;
+      else if (options.command === "access" && !options.accessAction && (arg === "list" || arg === "add" || arg === "remove")) {
+        options.accessAction = arg;
+        if (arg !== "list") options.email = value();
+      } else if (options.command === "access" && arg === "--chat-only") options.chatOnly = true;
       else if (options.command === "service" && !options.serviceAction && (arg === "install" || arg === "uninstall")) options.serviceAction = arg;
       else if (options.command === "browser" && (arg === "install" || arg === "status")) options.browserAction = arg;
       else if (options.command === "browser" && arg === "--with-deps") options.withDeps = true;
@@ -195,6 +202,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65_535) return { error: "--port must be 1-65535" };
   if (options.publicUrl && !/^https?:\/\//.test(options.publicUrl)) return { error: "--public-url must start with http:// or https://" };
   if (options.tailscale && options.tunnel) return { error: "choose one of --tailscale (your tailnet) and --tunnel (a public address)" };
+  if (options.command === "access" && !options.accessAction) return { error: "access needs one of: list, add EMAIL [--chat-only], remove EMAIL" };
   if (options.command === "service" && !options.serviceAction) return { error: "service needs one of: install [the same options as serve], uninstall" };
   if (options.domain && (options.tailscale || options.tunnel || options.publicUrl)) return { error: "--domain already gives the server its address; drop --tailscale, --tunnel and --public-url" };
   if (options.local && (options.tailscale || options.tunnel || options.publicUrl)) return { error: "--local cannot be combined with a remote-access option" };
@@ -221,6 +229,7 @@ export const USAGE = `openmausbot — your team of AI bots, ready in a few steps
   openmausbot status
   openmausbot login [--email you@example.com]
   openmausbot logout
+  openmausbot access list | add EMAIL [--chat-only] | remove EMAIL
   openmausbot service install [--domain HOST | --tunnel | --tailscale] [--port N] [--data-dir DIR] | uninstall
   openmausbot browser install [--with-deps] | status
   openmausbot fleet init --domain HOST [--operator USER] | create NAME --admin EMAIL [--member EMAIL] [--brand FILE]
@@ -238,6 +247,9 @@ status  what the server says about itself
 login   signs this machine in to a Sagax account (an emailed code)
         and reserves its public address for --tunnel
 logout  releases that address and signs out
+access  who may sign in with an emailed code at /pair: an address or
+        @domain; --chat-only gives chat and approvals without settings.
+        Takes effect at once, no restart.
 service keep the server running across reboots: writes a systemd unit
         (Linux) or a launchd agent (macOS) for the same serve options and
         prints the commands that install it. Install the package
@@ -327,7 +339,7 @@ async function api(port: number, path: string, init: { method?: string; body?: s
 
 /** What to do when a server treats this command as a local service rather
  * than its owner (OMB_LOOPBACK_TRUST=service, or a hosted workspace). */
-export const SERVICE_TRUST_HELP = "This server does not treat commands on this computer as its owner (OMB_LOOPBACK_TRUST=service, or a hosted workspace), so it will not pair devices or list sessions for them. Sign in as an admin and use Settings → Remote access, or restart the server with OMB_LOOPBACK_TRUST=owner.";
+export const SERVICE_TRUST_HELP = "This server does not treat commands on this computer as its owner (OMB_LOOPBACK_TRUST=service, or a hosted workspace), so it will not pair devices or list sessions for them. Sign in as an admin and use Settings → Remote access, let people sign in with their email (openmausbot access add you@example.com), or restart the server with OMB_LOOPBACK_TRUST=owner.";
 
 function refusedAsService(status: number, body: any): boolean {
   return status === 403 && typeof body?.error === "string" && /shared server|Sign in through the workspace portal/.test(body.error);
@@ -633,13 +645,76 @@ export async function runStatus(options: CliOptions, io: CliIo = defaultIo()): P
   return code;
 }
 
-/** `pulsa access` managed the emailed-code sign-in list, removed in slice 8:
- * devices pair with a code, and an organization signs people in with
- * Perspicax. */
-export const ACCESS_REMOVED = "pulsa access was removed; pair devices with pulsa pair";
-export async function runAccess(_options: CliOptions, io: CliIo = defaultIo()): Promise<number> {
-  io.error(ACCESS_REMOVED);
-  return 2;
+/** The sign-in allow-list, edited straight in config.json: the server reads
+ * it per request, so this works with the server running or stopped and
+ * needs no restart. Environment variables (OMB_SIGNIN_EMAILS) win when set.
+ * Written the way the server writes it (atomic, 0600), touching only the
+ * one key, so nothing else in the file moves. */
+export async function runAccess(options: CliOptions, io: CliIo = defaultIo()): Promise<number> {
+  const file = join(options.dataDir, "config.json");
+  let raw: Record<string, unknown> = {};
+  if (existsSync(file)) {
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("not an object");
+      raw = Object.fromEntries(Object.entries(parsed));
+    } catch (error) {
+      io.error(`${file} could not be read (${message(error)}); fix it before changing who can sign in`);
+      return 1;
+    }
+  }
+  const current = typeof raw.signIn === "object" && raw.signIn !== null ? Object(raw.signIn) : {};
+  const list = (value: unknown) => parseAllowList(Array.isArray(value) ? value.map(String).join(",") : "");
+  const admins = list(Reflect.get(current, "admins"));
+  const members = list(Reflect.get(current, "members"));
+  const overridden = process.env.OMB_SIGNIN_EMAILS !== undefined || process.env.OMB_SIGNIN_MEMBER_EMAILS !== undefined;
+  const write = async (next: { admins: string[]; members: string[] }) => {
+    mkdirSync(options.dataDir, { recursive: true, mode: 0o700 });
+    writeFileAtomic(file, `${JSON.stringify({ ...raw, signIn: next }, null, 2)}\n`, { mode: 0o600 });
+    // The same row Settings → People writes, named for the command line,
+    // pruned by the same window the server would use — kept, like the
+    // server's, only where more than one person signs in.
+    if (!sharedSignIn({ admins, members }) && !sharedSignIn(next) && !hostedWorkspaceConfigured()) return;
+    const decisions = raw.decisions && typeof raw.decisions === "object" ? (raw.decisions as { retentionDays?: unknown }).retentionDays : undefined;
+    bindDecisionRetention(() => decisionRetentionDays(typeof decisions === "number" ? decisions : undefined));
+    const changed = (["admins", "members"] as const).filter((key) => next[key].join(",") !== (key === "admins" ? admins : members).join(","));
+    appendAdminAction(options.dataDir, {
+      category: "people", action: "people.update", target: { kind: "settings" }, actor: { kind: "cli" },
+      changed: changed.map((key) => `signIn.${key}`),
+      before: Object.fromEntries(changed.map((key) => [`signIn.${key}`, key === "admins" ? admins : members])),
+      after: Object.fromEntries(changed.map((key) => [`signIn.${key}`, next[key]])),
+    });
+    await flushAdminActivity(options.dataDir);
+  };
+  if (options.accessAction === "list") {
+    if (!admins.length && !members.length) {
+      io.log("nobody can sign in with an email yet; pairing codes only. Add someone with: openmausbot access add you@example.com");
+      return 0;
+    }
+    for (const entry of admins) io.log(`${entry.padEnd(40)} full access`);
+    for (const entry of members) io.log(`${entry.padEnd(40)} chat and approvals`);
+    if (overridden) io.log("(OMB_SIGNIN_EMAILS / OMB_SIGNIN_MEMBER_EMAILS are set in the environment and win over this list while the server runs)");
+    return 0;
+  }
+  const entry = (options.email ?? "").trim().toLowerCase();
+  if (!entry || (!entry.startsWith("@") && !entry.includes("@")) || /\s/.test(entry)) {
+    io.error("give an email address, or @domain for everyone at that domain");
+    return 2;
+  }
+  const without = (items: string[]) => items.filter((item) => item !== entry);
+  if (options.accessAction === "remove") {
+    if (!admins.includes(entry) && !members.includes(entry)) {
+      io.error(`${entry} is not on the list`);
+      return 1;
+    }
+    await write({ admins: without(admins), members: without(members) });
+    io.log(`${entry} can no longer sign in (existing sessions stay until they expire or are revoked with \`openmausbot sessions revoke\`)`);
+    return 0;
+  }
+  await write(options.chatOnly ? { admins: without(admins), members: [...without(members), entry] } : { admins: [...without(admins), entry], members: without(members) });
+  io.log(`${entry} can sign in at /pair with an emailed code (${options.chatOnly ? "chat and approvals" : "full access"})`);
+  if (overridden) io.log("note: OMB_SIGNIN_EMAILS / OMB_SIGNIN_MEMBER_EMAILS are set in the environment and win over this list while the server runs");
+  return 0;
 }
 
 export async function runLogin(options: CliOptions, io: CliIo = defaultIo()): Promise<number> {

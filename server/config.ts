@@ -13,6 +13,7 @@ import { EFFORT_LEVELS, type EffortLevel } from "../shared/wire.ts";
 import { isModelVariant, type InstanceConfigMap, type ModelSelection } from "./contracts.ts";
 import { PROVIDER_ICON_PRESETS, providerIconError } from "../shared/provider-icon.ts";
 import type { McpServerSpec } from "./contracts.ts";
+import type { MailSettings } from "./mail-config.ts";
 import { isRemoteMcpServer, parseStoredMcpServer } from "./mcp-registry.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 import { CLOUD_SEAT_IDLE_STOP_MS } from "./cloud-overflow.ts";
@@ -382,10 +383,13 @@ const threadsPatchSchema = threadsConfigSchema.extend({
 const appConfigSchema = z.object({
   /** Verified by the dedicated domain endpoint, never a generic config patch. */
   customDomain: z.string().optional(),
-  // Slice 8: `signIn`, `org`, `invites` and `mail` (the interim email
-  // sign-in, organization, invitations and their mail transport) were
-  // removed. An older config.json that still has them loads: unknown keys
-  // are dropped on read and never written back by a patch.
+  /** Who may sign in with an emailed code (server/account-signin.ts):
+   * addresses or `@domain` entries; admins get every scope, members chat only. */
+  signIn: z.object({ admins: z.array(z.string().max(320)).max(500).optional(), members: z.array(z.string().max(320)).max(5000).optional() }).optional(),
+  // Slice 8: the interim organization (`org`) was removed; an older
+  // config.json that still has it loads, the key is dropped on read and
+  // never written back. A solo server keeps its email sign-in list,
+  // invitations and mail transport (above and below).
   /** Organization server settings (OMB_IDENTITY=perspicax, slice 3):
    * whether turns other than an admin owner's own may use the workspace
    * keys (the organization's key) on key-backed engines. */
@@ -398,6 +402,30 @@ const appConfigSchema = z.object({
   }).optional(),
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt: z.number().optional(),
+  invites: z.array(z.object({
+    token: z.string().min(1),
+    email: z.string().max(320),
+    createdAt: z.number(),
+    expiresAt: z.number(),
+    usedAt: z.number().optional(),
+    revokedAt: z.number().optional(),
+  })).max(5000).optional(),
+  /** Mail transport for server-issued sign-in codes and org invites
+   * (server/mail-config.ts, server/mailer.ts). OMB_MAIL_* environment
+   * variables always win over whatever is saved here. */
+  mail: z.object({
+    provider: z.enum(["smtp", "sendgrid", "twilio"]).optional(),
+    from: optionalText,
+    smtp: z.object({
+      host: optionalText,
+      port: z.number().int().min(1).max(65535).optional(),
+      secure: z.enum(["tls", "starttls", "none"]).optional(),
+      user: optionalText,
+      password: optionalText,
+    }).optional(),
+    sendgrid: z.object({ apiKey: optionalText }).optional(),
+    twilio: z.object({ apiKeySid: optionalText, apiKeySecret: optionalText }).optional(),
+  }).optional(),
   defaultModelSelection: defaultModelSelectionSchema.optional(),
   automaticRecovery: automaticRecoverySchema.optional(),
   newBotDefaults: newBotDefaultsSchema.optional(),
@@ -542,16 +570,27 @@ const appConfigSchema = z.object({
 const storedAppConfigSchema = appConfigSchema.extend({
   browserProfiles: storedBrowserProfilesSchema.optional(),
 });
-const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, identityMigratedAt: true })
+const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, identityMigratedAt: true, invites: true })
   .extend({ threads: threadsPatchSchema.optional(), newBots: newBotsPatchSchema.optional() });
 const jsonObjectSchema = z.record(z.string(), z.json());
 
 export interface AppConfig {
   customDomain?: string;
+  signIn?: { admins?: string[]; members?: string[] };
+
   /** Organization server settings (slice 3); see appConfigSchema. */
   organization?: { memberBotsUseOrgKey?: boolean; interimAttach?: { since: number; days: number } };
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt?: number;
+  invites?: Array<{
+    token: string;
+    email: string;
+    createdAt: number;
+    expiresAt: number;
+    usedAt?: number;
+    revokedAt?: number;
+  }>;
+  mail?: MailSettings;
   /** Preferred selection for newly created bots; existing bots keep theirs. */
   defaultModelSelection?: ModelSelection;
   /** Off by default; one backup attempt only before any work starts. */
@@ -1022,6 +1061,14 @@ export function loadConfig(): AppConfig {
   cfg.imageGen = { ...cfg.imageGen };
   if (process.env.OMB_OPENAI_IMAGE_KEY !== undefined) cfg.imageGen.key = process.env.OMB_OPENAI_IMAGE_KEY;
   if (process.env.OMB_CUSTOM_IMAGE_KEY !== undefined) cfg.imageGen.customApiKey = process.env.OMB_CUSTOM_IMAGE_KEY;
+  // The sign-in allow-list: env is how a headless box or a container is
+  // bootstrapped before anyone can reach Settings.
+  const splitEmails = (value: string) => value.split(/[,\s]+/).map((entry) => entry.trim().toLowerCase()).filter(Boolean);
+  if (process.env.OMB_SIGNIN_EMAILS !== undefined || process.env.OMB_SIGNIN_MEMBER_EMAILS !== undefined) {
+    cfg.signIn = { ...cfg.signIn };
+    if (process.env.OMB_SIGNIN_EMAILS !== undefined) cfg.signIn.admins = splitEmails(process.env.OMB_SIGNIN_EMAILS);
+    if (process.env.OMB_SIGNIN_MEMBER_EMAILS !== undefined) cfg.signIn.members = splitEmails(process.env.OMB_SIGNIN_MEMBER_EMAILS);
+  }
   return cfg;
 }
 
@@ -1207,8 +1254,10 @@ export function saveConfig(
   // scalar, not a section: the merge loop above only walks objects
   if (checkedPatch.language !== undefined) disk.language = checkedPatch.language;
   if (checkedPatch.customDomain !== undefined) disk.customDomain = checkedPatch.customDomain;
+  if (checkedPatch.signIn !== undefined) disk.signIn = checkedPatch.signIn;
   if (checkedPatch.organization !== undefined) disk.organization = checkedPatch.organization;
   if (checkedPatch.identityMigratedAt !== undefined) disk.identityMigratedAt = checkedPatch.identityMigratedAt;
+  if (checkedPatch.invites !== undefined) disk.invites = checkedPatch.invites;
   // Replace the section so clearing a backup cannot revive the old selection.
   if (checkedPatch.automaticRecovery !== undefined) disk.automaticRecovery = checkedPatch.automaticRecovery;
   // A selection is replaced as one value, so changing engines also clears
