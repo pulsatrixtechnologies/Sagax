@@ -3,7 +3,7 @@
 // the stage is sized for the widest pose, the camera sees the whole stage.
 import { PIVOT } from "../fit";
 
-/** The top of the art's 256-unit box in model units (its feet line is 0), as baked by scripts/gen-owl-3d.ts. */
+/** The top of the art's 256-unit box in model units (its feet line is 0): the 3D owl (tools/owl3d/build_owl.py) stands on 0, centered on x 0, about 2.42 tall, the 2D owl's size. */
 export const OWL_MODEL_HEIGHT = 2.506;
 
 export interface OwlCameraFit {
