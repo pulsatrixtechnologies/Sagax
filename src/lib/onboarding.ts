@@ -14,6 +14,9 @@ export interface OnboardingStatus {
   hintsSeen: string[];
   /** The launch screen's choice (src/lib/launch.ts); absent until made. */
   launchMode?: "solo" | "server";
+  /** OMB Cloud home only: when a bot's turn first finished there. The
+   * server writes it (server/cloud-home.ts firstCloudTurnPatch). */
+  firstTurnAt?: string;
 }
 
 /** Bump when the welcome flow changes enough that existing users should see

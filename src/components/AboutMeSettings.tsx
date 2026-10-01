@@ -43,7 +43,7 @@ export function AboutMeSettings({ inCard = false }: { inCard?: boolean } = {}) {
       <textarea id="profile-about-me" value={value} rows={5} maxLength={24_000}
         onChange={(event) => controller.edit(event.target.value)}
         onBlur={() => void flush()}
-        className="min-h-[96px] w-full resize-y rounded-lg border border-hairline/40 bg-transparent px-3 py-2 text-[13px] text-ink focus:border-hairline focus:outline-none"
+        className="min-h-[96px] w-full resize-y rounded-lg border border-hairline/40 bg-transparent px-3 py-2 text-[13px] text-ink focus:outline-none"
       />
       <LearnedFacts onChanged={(aboutMe) => { controller.confirm(aboutMe); dispatch({ type: "profileSaved", profile: { aboutMe } }); }} />
       <div className="min-h-4 text-[12px]" role="status">

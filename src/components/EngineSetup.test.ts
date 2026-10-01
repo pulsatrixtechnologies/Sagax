@@ -80,6 +80,24 @@ describe("managed engine setup errors", () => {
   });
 });
 
+describe("engines set up with a key in Settings", () => {
+  it("opens Settings → API keys instead of offering a terminal command", () => {
+    vi.stubGlobal("window", { ogb: { platform: "darwin" } });
+    const engine: InstanceInfo = {
+      ...instance({ state: "unavailable", reason: "No API key — open Settings → API keys." }),
+      instanceId: "openaiCompat",
+      driverKind: "openai-compat",
+      displayName: "Other (OpenAI-compatible)",
+      install: { docsUrl: "https://openrouter.ai/keys", settings: "connections" },
+    };
+    const markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(EngineSetup, { instance: engine })));
+    expect(markup).toContain("Other (OpenAI-compatible) needs an API key");
+    expect(markup).toContain("Open API keys");
+    expect(markup).not.toContain("Open install in Terminal");
+    expect(markup).not.toContain("config.json");
+  });
+});
+
 describe("install from Settings on the server", () => {
   function npmEngine(snapshot: InstanceInfo["snapshot"], server = true): InstanceInfo {
     return {
@@ -131,6 +149,34 @@ describe("install from Settings on the server", () => {
 });
 
 describe("server device-code sign-in", () => {
+  it("offers the distinct ChatGPT plan connection without the legacy Codex command", () => {
+    vi.stubGlobal("window", { ogb: { platform: "linux" } });
+    const engine: InstanceInfo = {
+      ...instance({ state: "available", authenticated: false, chatgptPlan: true }),
+      instanceId: "chatgpt", displayName: "ChatGPT plan", driverKind: "codex",
+      authentication: { method: "browser-pkce" }, install: { signInCommand: "codex login" },
+    };
+    const markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(EngineSetup, { instance: engine })));
+    expect(markup).toContain("Continue with ChatGPT");
+    expect(markup).toContain("separate from OpenMausBot Pro");
+    expect(markup).not.toContain("codex login");
+    expect(markup).not.toContain("Device-code login");
+  });
+
+  it("explains unavailable hosted plan auth without offering a broken login or install", () => {
+    vi.stubGlobal("window", { ogb: { platform: "linux" } });
+    const engine: InstanceInfo = {
+      ...instance({ state: "unavailable", authenticated: false, chatgptPlan: true, authenticationUnavailableReason: "Hosted ChatGPT plan access requires approval." }),
+      instanceId: "chatgpt", displayName: "ChatGPT plan", driverKind: "codex",
+      authentication: { method: "browser-pkce" }, install: { command: { linux: "npm install -g @openai/codex" }, signInCommand: "codex login" },
+    };
+    const markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(EngineSetup, { instance: engine })));
+    expect(markup).toContain("Hosted ChatGPT plan access requires approval.");
+    expect(markup).not.toContain("Continue with ChatGPT");
+    expect(markup).not.toContain("npm install");
+    expect(markup).not.toContain("codex login");
+  });
+
   it("uses the supported browser sign-in flow instead of asking a remote user to run a command", () => {
     vi.stubGlobal("window", { ogb: { platform: "linux" } });
     const engine: InstanceInfo = {
@@ -157,5 +203,33 @@ describe("server device-code sign-in", () => {
     const markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(EngineSetup, { instance: engine, intent: "inject" })));
     expect(markup).not.toContain("Connect ChatGPT");
     expect(markup).toContain("npm install");
+  });
+});
+
+describe("API-key engine setup", () => {
+  function keyEngine(driverKind: string, snapshot: InstanceInfo["snapshot"]): InstanceInfo {
+    return { ...instance(snapshot), instanceId: driverKind, driverKind, displayName: "Grok (API)", access: "api", install: { docsUrl: "https://console.x.ai" } };
+  }
+  const render = (engine: InstanceInfo, ogb: Record<string, unknown> = { platform: "darwin" }) => {
+    vi.stubGlobal("window", { ogb });
+    return renderToStaticMarkup(createElement(StoreProvider, null, createElement(EngineSetup, { instance: engine })));
+  };
+
+  it("sends a missing key to Settings → API keys, not to a config file", () => {
+    const html = render(keyEngine("grok", { state: "unavailable", reason: "No xAI API key — open Settings → API keys." }));
+    expect(html).toContain("data-engine-setup-api-key");
+    expect(html).toContain("Grok (API) needs an API key");
+    expect(html).toContain("Open API keys");
+    expect(html).not.toContain("config.json");
+  });
+
+  it("has no button on a remote client, whose settings hide the keys", () => {
+    const html = render(keyEngine("openai-compat", { state: "unavailable" }), { platform: "darwin", remoteClient: { active: true } });
+    expect(html).toContain("on the computer running OpenMausBot");
+    expect(html).not.toContain("Open API keys");
+  });
+
+  it("leaves CLI engines on their install card", () => {
+    expect(render(instance({ state: "unavailable", reason: "`kimi` CLI not found" }))).not.toContain("data-engine-setup-api-key");
   });
 });

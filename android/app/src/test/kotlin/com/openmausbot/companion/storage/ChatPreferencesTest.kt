@@ -10,6 +10,7 @@ import com.openmausbot.companion.ui.bot
 import com.openmausbot.companion.ui.room
 import com.openmausbot.companion.core.ActivityDetail
 import com.openmausbot.companion.core.QuickReply
+import com.openmausbot.companion.core.RosterDensity
 import com.openmausbot.companion.ui.AppearanceSkin
 import com.openmausbot.companion.ui.cssHexToArgb
 import kotlin.test.assertEquals
@@ -35,6 +36,31 @@ class ChatPreferencesTest {
         store(name).setActivityDetail(ActivityDetail.HIDDEN)
 
         assertEquals(ActivityDetail.HIDDEN, store(name).activityDetail.value)
+    }
+
+    @Test
+    fun `a fresh install lists the roster compactly`() {
+        assertEquals(RosterDensity.COMPACT, store("chat-density-fresh").rosterDensity.value)
+    }
+
+    @Test
+    fun `the list density survives a new preferences instance`() {
+        val name = "chat-density-saved"
+        store(name).setRosterDensity(RosterDensity.COMFORTABLE)
+
+        assertEquals(RosterDensity.COMFORTABLE, store(name).rosterDensity.value)
+        store(name).setRosterDensity(RosterDensity.COMPACT)
+        assertEquals(RosterDensity.COMPACT, store(name).rosterDensity.value)
+    }
+
+    @Test
+    fun `a stored density this build cannot read falls back to compact`() {
+        // The desktop's third density is avatars only; a phone has no such mode.
+        val name = "chat-density-unreadable"
+        context.getSharedPreferences(name, Context.MODE_PRIVATE).edit()
+            .putString("companion.prefs.rosterDensity", "icons").commit()
+
+        assertEquals(RosterDensity.COMPACT, store(name).rosterDensity.value)
     }
 
     @Test

@@ -3,6 +3,7 @@ import { Check, Copy, Download, Share } from "lucide-react";
 
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { cn } from "@/lib/cn";
+import { useMenuMotion } from "./MenuMotion";
 import {
   copyTranscriptToClipboard,
   downloadMarkdownTranscript,
@@ -36,6 +37,7 @@ export function ExportTranscriptMenu({
   className,
 }: ExportTranscriptMenuProps) {
   const [open, setOpen] = useState(false);
+  const motion = useMenuMotion(open);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -116,11 +118,11 @@ export function ExportTranscriptMenu({
         <Share size={18} strokeWidth={1.75} />
       </button>
 
-      {open && (
+      {motion.shown && (
         <div
           role="menu"
           aria-label="Export options"
-          className="absolute right-0 top-full z-40 mt-1 flex w-[220px] min-w-[200px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]"
+          className={cn("absolute right-0 top-full z-40 mt-1 flex w-[220px] min-w-[200px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
         >
           <div className="px-2 py-1 text-[12px] leading-4 text-ink-secondary">
             Export Conversation

@@ -100,9 +100,16 @@ export function resolveLoopbackTrust(input: {
   env?: NodeJS.ProcessEnv;
   desktopManaged: boolean;
   hostedWorkspace: boolean;
+  /** An OMB Cloud home: every request from the network arrives through its
+   * edge proxy, so a bare loopback request is only ever a process on the
+   * machine (a bot's shell). Always `service`, whatever the setting. */
+  cloudHome?: boolean;
 }): { trust: LoopbackTrust; reason: string; warning?: string } {
   const raw = (input.env ?? process.env).OMB_LOOPBACK_TRUST;
   const requested = raw?.trim().toLowerCase();
+  if (input.cloudHome) {
+    return { trust: "service", reason: "OMB Cloud home", ...(raw !== undefined && requested !== "service" ? { warning: "OMB_LOOPBACK_TRUST is ignored on an OMB Cloud home: a local request is always a service" } : {}) };
+  }
   if (input.desktopManaged) {
     return { trust: "owner", reason: "desktop app", ...(raw !== undefined ? { warning: "OMB_LOOPBACK_TRUST is ignored in the desktop app" } : {}) };
   }
@@ -195,6 +202,14 @@ export function isSameOrigin(req: IncomingMessage): boolean {
   if (!origin) return true;
   const own = requestOrigin(req);
   return own !== null && origin.trim().toLowerCase() === own;
+}
+
+/** A browser says this request came from this origin's own page: an
+ * `Origin` equal to this request's origin, or `Sec-Fetch-Site: same-origin`.
+ * Unlike isSameOrigin, a request that carries neither does not pass. */
+export function provesSameOrigin(req: IncomingMessage): boolean {
+  if (headerValue(req.headers.origin)) return isSameOrigin(req);
+  return headerValue(req.headers["sec-fetch-site"])?.trim().toLowerCase() === "same-origin";
 }
 
 /** Who to count a pairing attempt against. The server binds loopback, so a
@@ -293,6 +308,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // phone or computer. The handler binds the code to the member's person and
   // clamps its scopes to the session's own.
   { methods: ["POST"], path: /^\/api\/auth\/pairing$/, feature: "orgPairing" },
+  // What this person has lent (owner-scoped status, no secrets). Same gate.
+  { methods: ["GET"], path: /^\/api\/shared-computers$/, feature: "sharedComputers" },
   // liveness, identity, the stream
   { methods: ["GET"], path: /^\/api\/health$/ },
   { methods: ["GET"], path: /^\/api\/edition$/ },
@@ -321,6 +338,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/queue\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tasks$/ },
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+\/title$/ }, // Regenerate title: a rename by the bot's own engine
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/profile$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+$/ }, // display fields only, or the owner's own bot: see clientBotPatchViolation
   // An organization member's own bots: the handler requires a member or
@@ -494,6 +512,9 @@ function mutatingPublicRoute(method: string, path: string): boolean {
     upper === "GET" &&
     /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/status$/.test(path)
   ) return true;
+  // Remote viewer config and its WebSocket upgrade hand out a desktop's VNC
+  // password and control. Native owners open the direct viewer instead.
+  if (path.startsWith("/api/desktop-viewer/")) return true;
   if (["GET", "HEAD", "OPTIONS"].includes(upper)) return false;
   // Agent integrations have their own high-entropy, per-boot authorization
   // and narrower route semantics. Pairing-code exchange is intentionally
@@ -538,6 +559,12 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
 
   if (session && via) {
     if (via === "cookie" && !isSameOrigin(req)) return deny(403, "forbidden: cross-origin request");
+    // A browser sign-in's session is its browser's cookie, never a bearer token, and
+    // its changes come from this origin's own page, which a browser says so.
+    if (via === "bearer" && session.cookieOnly) return deny(401, "unauthorized: this session belongs to a browser; sign in with a pairing code");
+    if (via === "cookie" && session.cookieOnly && !["GET", "HEAD", "OPTIONS"].includes(method) && !provesSameOrigin(req)) {
+      return deny(403, "forbidden: this browser's session makes changes only from its own page");
+    }
     const needed = requiredScope(method, path, options.features ?? {});
     if (!session.scopes.includes(needed)) {
       return deny(403, `forbidden: this session lacks the ${needed} scope`);

@@ -185,7 +185,7 @@ export function UsageHistory({ load = fetchUsage }: { load?: typeof fetchUsage }
           value={period}
           onChange={(event) => setPeriod(event.target.value as UsagePeriod)}
           aria-label={t("usage.history.period")}
-          className="rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[12.5px] text-ink focus:border-hairline focus:outline-none"
+          className="rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[12.5px] text-ink focus:outline-none"
         >
           <option value="month">{t("usage.history.thisMonth")}</option>
           <option value="lastMonth">{t("usage.history.lastMonth")}</option>

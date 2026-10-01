@@ -75,6 +75,11 @@ extraResources:
     to: licenses/98css-LICENSE.txt
   - from: third_party/geist/OFL.txt
     to: licenses/Geist-OFL.txt
+  # The model provider catalog: models.dev data and OpenCode's refresh logic.
+  - from: third_party/models-dev/LICENSE
+    to: licenses/models-dev-LICENSE.txt
+  - from: third_party/opencode/LICENSE
+    to: licenses/opencode-LICENSE.txt
   - from: dist
     to: ui
   - from: dist-server

@@ -10,6 +10,7 @@ export const DOCS_URL = `${APP_REPOSITORY}/tree/main/docs`;
 export const HELP_CENTER_URL = DOCS_URL;
 export const APPROVAL_LEVELS_URL = `${APP_REPOSITORY}/blob/main/docs/approval-levels.md`;
 export const RELEASES_URL = `${APP_REPOSITORY}/releases`;
+export const PRO_URL = "https://www.openmausbot.com/pro";
 export const LICENSE_URL = `${APP_REPOSITORY}/blob/main/LICENSE`;
 
 /** Fork version Vite inlined from package.json forkVersion. "dev" outside the bundler. */

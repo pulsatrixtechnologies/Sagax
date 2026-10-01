@@ -19,8 +19,11 @@ Version 2.0, with the consent of all contributors whose copyright was
 incorporated before the transition.
 
 The Google Antigravity ACP integration adapts release, installation, profile,
-and authentication behavior from T3 Code, Copyright 2026 T3 Tools Inc., used
-under the MIT License.
+authentication, and runtime temporary-folder behavior from T3 Code, Copyright
+2026 T3 Tools Inc., used under the MIT License (third_party/t3-code/LICENSE).
+
+Selected-text citation matching adapts T3 Code's assistant citation selection,
+Copyright 2026 T3 Tools Inc., used under the MIT License.
 
 The secure phone credential transport uses @hpke/core and @hpke/common from
 hpke-js, Copyright 2023-2024 Ajitomi Daisuke, used under the MIT License.
@@ -38,3 +41,15 @@ The Pulsatrix and Pulsatrix Light skins use the Geist typeface, Copyright
 2024 The Geist Project Authors (https://github.com/vercel/geist-font),
 bundled from @fontsource-variable/geist and used under the SIL Open Font
 License, Version 1.1 (third_party/geist/OFL.txt).
+
+The model provider catalog bundles provider and model data from models.dev,
+https://github.com/anomalyco/models.dev, Copyright (c) 2025 models.dev, used
+under the MIT License. Its cache and refresh logic is adapted from OpenCode,
+https://github.com/anomalyco/opencode, Copyright (c) 2025 opencode, used under
+the MIT License. The full license texts are in third_party/models-dev/LICENSE
+and third_party/opencode/LICENSE.
+
+The browser desktop viewer bundles the unmodified noVNC 1.7.0 library,
+Copyright the noVNC authors, under MPL-2.0 and its accompanying licenses.
+Attribution, license terms and the corresponding source location are in
+public/novnc-NOTICE.txt (novnc-NOTICE.txt in the built UI).

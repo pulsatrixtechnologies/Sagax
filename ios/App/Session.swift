@@ -182,7 +182,7 @@ final class Session: ObservableObject {
         let arguments = ProcessInfo.processInfo.arguments
         if (arguments.contains("-store-preview") || arguments.contains("-computer-switcher-preview")),
            let url = Bundle.main.url(
-               forResource: arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : "StorePreview",
+               forResource: arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : "StorePreview",
                withExtension: "json"
            ),
            let data = try? Data(contentsOf: url),
@@ -257,7 +257,9 @@ final class Session: ObservableObject {
                 digest.compaction = nil
                 digest.at = 1789088406000
                 digest.parentId = receipt.id
-                digest.text = "Digest must stay hidden"
+                // The raw receipt never reaches the screen: it becomes a chip,
+                // and the reply part — this sentence — is dropped from its sheet.
+                digest.text = "[digest] · tools: shell ×2 · reply: Digest must stay hidden"
                 state.apply(.message(threadId: "preview-gmail", message: digest))
             }
             if arguments.contains("-chat-reasoning-preview"),
@@ -271,6 +273,11 @@ final class Session: ObservableObject {
                let pagesData = try? Data(contentsOf: pagesURL),
                let pages = try? JSONDecoder().decode([String: ThreadPage].self, from: pagesData) {
                 for (threadID, page) in pages { state.merge(page, intoThread: threadID) }
+            }
+            if arguments.contains("-reset-list-density") {
+                // The fresh-install default is checked in UI tests; an
+                // earlier run on the same simulator may have saved a choice.
+                UserDefaults.standard.removeObject(forKey: PrefKey.rosterDensity)
             }
             status = .live
             return
