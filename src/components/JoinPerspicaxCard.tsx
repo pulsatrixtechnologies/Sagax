@@ -1,8 +1,10 @@
 // Settings > Organization on a solo Sagax (slice 8): "Join a Perspicax
-// server". The person picks which of their own bots to copy, with or
-// without their conversations and memory, sees what stays behind, then
-// either hands the copy to the desktop (which opens the organization
-// server) or downloads it for the organization's own Sagax.
+// server". Copying bots is optional. With no bot chosen, Join saves the
+// server and starts its "Sign in with Pulsatrix" (orgJoin.join, the launch
+// screen's Server mode). Otherwise the person picks which of their own bots
+// to copy, with or without their conversations and memory, sees what stays
+// behind, then either hands the copy to the desktop (which opens the
+// organization server) or downloads it for the organization's own Sagax.
 import { useEffect, useMemo, useState } from "react";
 
 import { t } from "@/lib/i18n";
@@ -87,6 +89,10 @@ export function JoinPerspicaxCard() {
     setError("");
     try {
       const probed = await bridge.probe(origin);
+      if (!request.bots.length) {
+        await bridge.join({ origin: probed.origin });
+        return;
+      }
       const answer = await api<OrgExportAnswer>("/api/org/export", { method: "POST", body: JSON.stringify(request) });
       setPreview(answer);
       await bridge.stage({ origin: probed.origin, document: answer.document });
@@ -126,6 +132,7 @@ export function JoinPerspicaxCard() {
           </ul>
         )}
         <p className="text-[12px] text-ink-secondary">{t("orgJoin.neverCopied")}</p>
+        {bridge && <p className="text-[12px] text-ink-secondary">{t("orgJoin.copyOptional")}</p>}
         <div className="flex flex-wrap gap-2">
           <button type="button" className="ui-button" disabled={busy || !request.bots.length} onClick={() => void runExport()}>{t("orgJoin.preview")}</button>
         </div>
@@ -152,7 +159,7 @@ export function JoinPerspicaxCard() {
                 className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50" />
             </label>
             <button type="submit" className="w-fit rounded-lg bg-accent px-4 py-2 font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
-              disabled={busy || !request.bots.length || !address.trim()}>{busy ? t("orgJoin.working") : t("orgJoin.joinAndCopy")}</button>
+              disabled={busy || !address.trim()}>{busy ? t("orgJoin.working") : request.bots.length ? t("orgJoin.joinAndCopy") : t("orgJoin.join")}</button>
           </form>
         ) : (
           <div className="flex flex-col gap-2">

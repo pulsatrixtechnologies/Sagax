@@ -5,20 +5,23 @@
 // a glance and offers Check again, because the user often installs from a
 // terminal and comes back. The guide reacts to the result.
 //
-// On the packaged desktop, a first row offers organisation sign-in for
-// people who use the app at work; a signed-in Company engine then counts as
-// ready, so an employee with only company models is not told to set up
-// personal engines. Without that bridge the beat is exactly as before.
+// On the desktop app's own window, a first row points people who use the app
+// at work to the launch screen's Server mode (an organization's Sagax
+// server, signed in with Pulsatrix). The inherited Admin sign-in row
+// (managed desktop) is no longer offered here; Settings keeps it. A Company
+// engine that is already signed in still counts as ready, so an employee
+// with only company models is not told to set up personal engines.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, RefreshCw } from "lucide-react";
+import { Check, ChevronDown, RefreshCw, Server } from "lucide-react";
 import { EngineSetup } from "@/components/EngineSetup";
 import { engineReady } from "@/components/EngineLibrary";
 import { InstanceProviderMark } from "@/components/ProviderIcons";
+import { brand } from "@/lib/brand";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { launchBridges } from "@/lib/launch";
 import { engineSummary, organisationSignIn } from "@/lib/onboarding";
 import { api, useStore, type InstanceInfo } from "@/state/store";
-import { OrganisationRow } from "./OrganisationRow";
 import { PrimaryButton, staggerIndex, type BeatProps } from "./shared";
 
 function version(instance: InstanceInfo): string | null {
@@ -54,14 +57,15 @@ export function EnginesBeat({
   setMascot,
   bump,
   hosted = false,
-  onOpenOrganisation,
+  onOpenServer,
 }: BeatProps & {
   hosted?: boolean;
-  /** Settings → Organisation; the flow resumes here when it closes. */
-  onOpenOrganisation?: () => void;
+  /** The launch screen's Server mode; the flow resumes here when it closes. */
+  onOpenServer?: () => void;
 }) {
   const { state, dispatch } = useStore();
   const organisation = organisationSignIn(window.ogb, { hosted });
+  const serverOffered = !hosted && launchBridges(window.ogb) !== null;
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const latestRequest = useRef(0);
@@ -121,12 +125,25 @@ export function EnginesBeat({
     <div className="flex min-h-0 flex-col">
       <p className="animate-rise mt-1 text-[13.5px] text-ink-secondary">{t("onboarding.engines.intro")}</p>
 
-      {organisation && (
-        <OrganisationRow
-          bridge={organisation}
-          onOpenSettings={() => (onOpenOrganisation ? onOpenOrganisation() : dispatch({ type: "toggleAppSettings", open: true, section: "organization" }))}
-          onConnected={() => void refresh()}
-        />
+      {serverOffered && (
+        <div
+          data-server-row=""
+          className="animate-rise mt-4 flex items-center gap-3 rounded-xl border border-hairline/40 bg-card px-3.5 py-3"
+          style={staggerIndex(1)}
+        >
+          <Server size={18} className="shrink-0 text-ink-secondary" aria-hidden="true" />
+          <p className="min-w-0 flex-1 text-[13px] leading-snug text-ink-secondary">
+            <span className="font-medium text-ink">{t("onboarding.server.title", { app: brand().name })}</span>{" "}
+            {t("onboarding.server.body")}
+          </p>
+          <button
+            type="button"
+            onClick={() => (onOpenServer ? onOpenServer() : dispatch({ type: "toggleLaunch", open: true, mode: "server" }))}
+            className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-ink transition-[filter] hover:brightness-110"
+          >
+            {t("onboarding.server.connect")}
+          </button>
+        </div>
       )}
 
       {/* the whole story in one line, and the way back after a terminal trip */}

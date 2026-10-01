@@ -1054,6 +1054,15 @@ describe("credential env preference", () => {
     expect(() => parseConfigPatch({ onboarding: { unknown: true } })).toThrow();
   });
 
+  it("remembers the launch choice (no server or server) with the onboarding progress", () => {
+    saveConfig({ onboarding: { launchMode: "solo" } });
+    saveConfig({ onboarding: { hintsSeen: ["computer"] } });
+    expect(loadConfig().onboarding).toMatchObject({ launchMode: "solo", hintsSeen: ["computer"] });
+    saveConfig({ onboarding: { launchMode: "server" } });
+    expect(loadConfig().onboarding?.launchMode).toBe("server");
+    expect(() => parseConfigPatch({ onboarding: { launchMode: "cloud" } })).toThrow();
+  });
+
   it("replaces automatic recovery atomically, clears an omitted backup and keeps unrelated settings", () => {
     const backup = { instanceId: "codex", model: "backup", effort: "high" as const };
     saveConfig({ automaticRecovery: { enabled: true, backup }, profile: { name: "Recovery fixture" } });

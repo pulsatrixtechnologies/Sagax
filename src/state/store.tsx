@@ -932,6 +932,11 @@ export interface AppState {
   shortcutsOpen: boolean;
   /** the first-run welcome tour, also replayable from Settings → General */
   welcomeOpen: boolean;
+  /** the launch screen (no server or server), opened from Settings or the
+   * tour; on a first run it opens by itself (src/lib/launch.ts) */
+  launchOpen: boolean;
+  /** which mode the launch screen opens on */
+  launchMode: "solo" | "server";
   /** the guided tour on the live interface that follows the welcome flow */
   tourOpen: boolean;
   botSettingsSection: BotSettingsSection;
@@ -1208,6 +1213,7 @@ export type Action =
   | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection }
   | { type: "toggleShortcuts"; open?: boolean }
   | { type: "toggleWelcome"; open?: boolean }
+  | { type: "toggleLaunch"; open?: boolean; mode?: "solo" | "server" }
   | { type: "toggleTour"; open?: boolean }
   | {
       type: "updateBot";
@@ -2054,6 +2060,17 @@ export function reducer(state: AppState, action: Action): AppState {
       const open = action.open ?? !state.tourOpen;
       return { ...state, tourOpen: open, appSettingsOpen: open ? false : state.appSettingsOpen };
     }
+    case "toggleLaunch": {
+      const open = action.open ?? !state.launchOpen;
+      // Full-screen like the welcome tour: Settings closes underneath it.
+      return {
+        ...state,
+        launchOpen: open,
+        launchMode: action.mode ?? state.launchMode,
+        appSettingsOpen: open ? false : state.appSettingsOpen,
+        shortcutsOpen: open ? false : state.shortcutsOpen,
+      };
+    }
     case "toggleWelcome": {
       const open = action.open ?? !state.welcomeOpen;
       // The tour is a full-screen surface; nothing else should stay open
@@ -2375,6 +2392,8 @@ export const initialState: AppState = {
   appSettingsSection: "general",
   shortcutsOpen: false,
   welcomeOpen: false,
+  launchOpen: false,
+  launchMode: "solo",
   tourOpen: false,
   botSettingsSection: "overview",
   botSettingsExpandAccordion: false,

@@ -5,7 +5,7 @@
 // injected, so node:test covers each rule.
 //
 // Who may call what (main.mjs checks the sender before calling these):
-//   probe, stage                        the local renderer only
+//   probe, stage, join                  the local renderer only
 //   staged, take, finished, removeLocal the main frame of the active saved
 //                                       server, and here: only when its
 //                                       origin is the staged origin
@@ -73,6 +73,7 @@ export function checkReport(report, stagedKeys) {
  *   confirm: (names: string[]) => Promise<boolean>,
  *   deleteLocalBot: (key: string) => Promise<boolean>,
  *   postLinkedSubject: (input: { iss: string, sub: string, serverOrigin: string }) => Promise<void>,
+ *   signIn?: (origin: string) => Promise<void> | void,
  * }} deps
  */
 export function createOrgJoin(deps) {
@@ -125,6 +126,23 @@ export function createOrgJoin(deps) {
       held = { origin, at: now(), document: input.document, bots, imported: new Set() };
       deps.saveEnvironment(origin);
       deps.navigate(`${origin}/`);
+      return { ok: true };
+    },
+
+    /** Join the probed server with nothing to copy (the launch screen's
+     * Server mode, and "Join" with no bot chosen): save it, make it active,
+     * open its sign-in page and start "Sign in with Pulsatrix" there, the
+     * same sign-in its own page offers (electron/oidc-login-window.cjs). */
+    async join(input) {
+      const origin = isRecord(input) && typeof input.origin === "string" ? input.origin : "";
+      if (!probed || origin !== probed) throw new Error("Check the server address first.");
+      deps.saveEnvironment(origin);
+      deps.navigate(`${origin}/pair`);
+      try {
+        await deps.signIn?.(origin);
+      } catch {
+        throw new Error("The server is saved, but its sign-in could not start. Use Sign in with Pulsatrix on its page.");
+      }
       return { ok: true };
     },
 

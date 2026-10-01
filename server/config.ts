@@ -328,6 +328,9 @@ const onboardingConfigSchema = z.object({
   version: z.number().int().min(0).max(1000).optional(),
   reelSeen: z.boolean().optional(),
   hintsSeen: z.array(z.string().trim().min(1).max(60)).max(100).optional(),
+  /** The desktop launch screen's choice: no server (solo) or an
+   * organization server (src/lib/launch.ts). */
+  launchMode: z.enum(["solo", "server"]).optional(),
 }).strict();
 const instanceConfigSchema = z.object({
   driver: z.string().min(1),
@@ -638,7 +641,7 @@ export interface AppConfig {
    * the operator's own per-second rate; unset keeps the feature inert. */
   cloudOverflow?: { perSecondCostUsd?: number; idleStopMs?: number; allowlistedThreads?: string[] };
   /** First-run progress; see onboardingConfigSchema. */
-  onboarding?: { completedAt?: string; version?: number; reelSeen?: boolean; hintsSeen?: string[] };
+  onboarding?: { completedAt?: string; version?: number; reelSeen?: boolean; hintsSeen?: string[]; launchMode?: "solo" | "server" };
   /** Named browser sessions any bot can be pointed at. */
   browserProfiles?: BrowserProfile[];
   /** CDP target of a Chrome the operator already has running (a bare port,

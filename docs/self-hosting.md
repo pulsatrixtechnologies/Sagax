@@ -742,6 +742,39 @@ server.
 
 ## Join a Perspicax server
 
+### At launch: No server or Server
+
+On a first run, the desktop app asks how this computer is used before the
+welcome tour:
+
+- **No server** (or **Skip**): the solo, local-first app. The welcome tour
+  follows.
+- **Server**: the address of your organization's Sagax, prefilled with
+  `https://bot.pulsatrix.mcp.goxcloud.ca`. **Sign in** checks that the
+  server signs people in with Pulsatrix (its
+  `/.well-known/openmausbot/environment` names a `perspicax` identity),
+  saves it under Servers, selects it and starts its **Sign in with
+  Pulsatrix** (the same sign-in its own page offers, see above). A server
+  that cannot be reached, or that is not linked to Pulsatrix, is refused
+  with a message and nothing is saved.
+
+The choice is kept in the workspace config (`onboarding.launchMode`, `solo`
+or `server`). After **No server** the screen does not come back. After
+**Server** it comes back once no server is saved any more (forgetting the
+server under Servers signs this app out of it). **Settings > General >
+Choose no server or server** opens it at any time. An install that had
+already finished the welcome tour is not interrupted. Only the desktop app's
+own window shows it; a browser and a hosted page never do.
+
+Another organization's build sets `SAGAX_DEFAULT_SERVER=https://...` when it
+runs `vite build` (vite.config.ts); the address is only a prefill.
+
+The tour's engines beat no longer offers the inherited OpenMausBot Admin
+sign-in (`admin.openmausbot.com`); its row now opens Server mode.
+Settings > Organization keeps that managed-desktop sign-in for now.
+
+### Copy your bots
+
 A solo Sagax is one person and their devices (pairing codes). To work with
 other people, join your organization's Sagax, the one that runs beside
 Perspicax and signs everyone in with Pulsatrix. Your bots come with you as a
@@ -761,7 +794,10 @@ many secrets will be removed.
   Pulsatrix, saves it under Servers, opens it, and, once you are signed in,
   hands the copy to that page once (it is kept in memory for 30 minutes,
   for that address only). After the copy, each bot can be removed from this
-  computer, after a confirmation.
+  computer, after a confirmation. Copying is optional: with no bot chosen
+  the button reads **Join**, and the app checks the server, saves it under
+  Servers and starts its **Sign in with Pulsatrix** (the launch screen's
+  Server mode, below), copying nothing.
 - **Browser:** **Download the copy file**, then in your organization's Sagax
   open **Settings > Organization > Bring bots from a solo Sagax** and choose
   that file.

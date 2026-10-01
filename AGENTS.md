@@ -33,3 +33,18 @@ the mail of a solo server. Keep these rules, each covered by a test in
   only provides defaults.
 - A sender always has a name (default `Sagax`); Twilio refuses one without.
 - Tests and fixtures use fake credentials only.
+
+## Launch flow (desktop)
+
+First run on the desktop app's own window opens the launch screen
+(`src/components/onboarding/LaunchScreen.tsx`, rules in `src/lib/launch.ts`)
+before the welcome tour: **No server** / **Skip** is the solo app, **Server**
+probes the address (`orgJoin.probe`, Perspicax-linked servers only) then
+`orgJoin.join` saves the server and starts the existing **Sign in with
+Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in
+`electron/main.mjs`). Do not add another sign-in path. The choice lives in
+`config.onboarding.launchMode`; the default address is
+`DEFAULT_SERVER_ADDRESS`, overridable at build time with
+`SAGAX_DEFAULT_SERVER`. The welcome tour no longer surfaces the inherited
+managed-desktop Admin sign-in; Settings > Organization still does. See
+`docs/self-hosting.md` ("At launch: No server or Server").

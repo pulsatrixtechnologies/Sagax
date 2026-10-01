@@ -2993,6 +2993,12 @@ const orgJoin = createOrgJoin({
     }).catch(() => null);
     if (!response?.ok) slog(`org join: the linked organization account could not be recorded (${response?.status ?? "unreachable"})`);
   },
+  // The launch screen's Server mode: the same "Sign in with Pulsatrix" the
+  // server's /pair page starts, on the server join just saved and selected.
+  signIn: async (origin) => {
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error("no main window");
+    await startPulsatrixSignIn(mainWindow, `${origin}${oidcLoginWindowModule.OIDC_START_PATH}`);
+  },
 });
 /** The origin of a call from the active saved server's main frame, or null. */
 function orgJoinSender(event) {
@@ -3012,6 +3018,7 @@ const orgJoinRemote = (handler) => (event, ...args) => {
 };
 ipcMain.handle("org-join:probe", localWorkspaceOnly("org-join:probe", (_event, address) => orgJoin.probe(address)));
 ipcMain.handle("org-join:stage", localWorkspaceOnly("org-join:stage", (_event, input) => orgJoin.stage(input)));
+ipcMain.handle("org-join:join", localWorkspaceOnly("org-join:join", (_event, input) => orgJoin.join(input)));
 ipcMain.handle("org-join:staged", (event) => {
   const origin = orgJoinSender(event);
   return origin ? orgJoin.staged(origin) : null;

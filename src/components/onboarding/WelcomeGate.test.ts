@@ -23,12 +23,14 @@ vi.mock("@/state/store", () => ({ api: store.api, useStore: () => ({ state: stor
 vi.mock("@/lib/analytics", () => ({ emailGateDone: () => false }));
 // The gate's job is choosing; the flow itself has its own recipe.
 vi.mock("./WelcomeFlow", () => ({ WelcomeFlow: () => null }));
+vi.mock("./LaunchScreen", () => ({ LaunchScreen: () => null }));
 vi.mock("@/components/Avatar", () => ({ MausAvatar: () => null }));
 import { SharedWorkspaceHint } from "./SharedWorkspaceHint";
 import { useWelcomeViewer, WelcomeGate } from "./WelcomeGate";
 import { WelcomeFlow } from "./WelcomeFlow";
+import { LaunchScreen } from "./LaunchScreen";
 
-type Node = ReactElement<Record<string, unknown> & { onClick?: () => void; onClose?: () => void; onOpenOrganisation?: () => void; children?: ReactNode }>;
+type Node = ReactElement<Record<string, unknown> & { onClick?: () => void; onClose?: () => void; onOpenServer?: () => void; onSolo?: () => void; children?: ReactNode }>;
 function render(component: () => ReactNode) {
   fixture.index = 0;
   fixture.effects = [];
@@ -60,13 +62,25 @@ const LOCAL_PAGE = { ogb: { platform: "darwin", remoteClient: { active: false },
 // A hosted workspace the desktop app opened (Server → Connect hosted
 // workspace…): preload exposes only its remote-safe subset, still truthy.
 const REMOTE_PAGE = { ogb: { platform: "darwin", workspaces: {}, getCapabilities: () => ({}) } };
+// The packaged desktop's own page with the bridges the launch screen uses.
+const environmentsState = vi.hoisted(() => ({ value: { environments: [] as unknown[] } }));
+const DESKTOP_PAGE = {
+  ogb: {
+    platform: "darwin",
+    remoteClient: { active: false },
+    workspaces: {},
+    environments: { state: () => Promise.resolve(environmentsState.value) },
+    orgJoin: { probe: vi.fn(), join: vi.fn() },
+  },
+};
 beforeEach(() => {
   fixture.values = [];
   fixture.index = 0;
   fixture.effects = [];
   store.dispatch.mockReset();
   store.api.mockReset();
-  store.state = { config: fresh, welcomeOpen: false, appSettingsOpen: false, appSettingsSection: "general", bots: [] };
+  store.state = { config: fresh, welcomeOpen: false, launchOpen: false, launchMode: "solo", appSettingsOpen: false, appSettingsSection: "general", bots: [] };
+  environmentsState.value = { environments: [] };
   vi.stubGlobal("window", {});
   vi.stubGlobal("localStorage", storage());
   vi.stubGlobal("fetch", vi.fn());
@@ -170,21 +184,76 @@ describe("who gets the welcome flow", () => {
     expect(gate({ hosted: true, canSave: true }).tree).toBeNull();
     expect(gate(LOCAL_VIEWER).tree).toBeNull();
   });
+});
 
-  it("resumes on the engines beat after the organisation row opens Settings", () => {
-    vi.stubGlobal("window", LOCAL_PAGE);
-    const first = gate(LOCAL_VIEWER).tree!;
-    first.props.onOpenOrganisation!();
-    expect(store.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "organization" });
-    store.state = { ...store.state, appSettingsOpen: true, appSettingsSection: "organization" };
+describe("the launch screen before the tour", () => {
+  it("opens first on a fresh desktop app, before the welcome tour", () => {
+    vi.stubGlobal("window", DESKTOP_PAGE);
+    const { tree } = gate(LOCAL_VIEWER);
+    expect(tree?.type).toBe(LaunchScreen);
+    expect(tree?.props.initialMode).toBe("solo");
+  });
+
+  it("goes on to the tour once no server is chosen, without waiting for the save", () => {
+    vi.stubGlobal("window", DESKTOP_PAGE);
+    gate(LOCAL_VIEWER).tree!.props.onSolo!();
+    expect(gate(LOCAL_VIEWER).tree?.type).toBe(WelcomeFlow);
+  });
+
+  it("remembers no server: the next launch opens the tour directly", () => {
+    vi.stubGlobal("window", DESKTOP_PAGE);
+    store.state = { ...store.state, config: { onboarding: { ...EMPTY_ONBOARDING, launchMode: "solo" } } };
+    expect(gate(LOCAL_VIEWER).tree?.type).toBe(WelcomeFlow);
+  });
+
+  it("never shows it to a browser, a hosted page or someone who finished the tour", () => {
+    expect(gate(LOCAL_VIEWER).tree?.type).toBe(WelcomeFlow);
+    vi.stubGlobal("window", REMOTE_PAGE);
+    expect(gate({ hosted: true, canSave: true }).tree?.type).toBe(WelcomeFlow);
+    vi.stubGlobal("window", DESKTOP_PAGE);
+    store.state = { ...store.state, config: { onboarding: { ...EMPTY_ONBOARDING, completedAt: "2026-09-23T00:00:00.000Z", version: WELCOME_VERSION } } };
     expect(gate(LOCAL_VIEWER).tree).toBeNull();
-    store.state = { ...store.state, appSettingsOpen: false };
-    const resumed = gate(LOCAL_VIEWER).tree!;
-    expect(resumed.props.initialBeat).toBe("engines");
-    // finishing forgets it: a later Settings replay starts at the greeting
-    (resumed.props.onDone as () => void)();
-    store.state = { ...store.state, welcomeOpen: true };
-    expect(gate(LOCAL_VIEWER).tree?.props.initialBeat).toBeUndefined();
+  });
+
+  it("comes back after server mode once the server was forgotten (signed out)", async () => {
+    vi.stubGlobal("window", DESKTOP_PAGE);
+    store.state = { ...store.state, config: { onboarding: { ...EMPTY_ONBOARDING, completedAt: "2026-09-23T00:00:00.000Z", version: WELCOME_VERSION, launchMode: "server" } } };
+    environmentsState.value = { environments: [{ id: "a", name: "GOX", origin: "https://bot.example.test" }] };
+    expect(gate(LOCAL_VIEWER).tree).toBeNull();
+    for (const effect of fixture.effects) effect();
+    await flush();
+    expect(gate(LOCAL_VIEWER).tree).toBeNull();
+    fixture.values = [];
+    environmentsState.value = { environments: [] };
+    gate(LOCAL_VIEWER);
+    for (const effect of fixture.effects) effect();
+    await flush();
+    const again = gate(LOCAL_VIEWER).tree!;
+    expect(again.type).toBe(LaunchScreen);
+    expect(again.props.initialMode).toBe("server");
+  });
+
+  it("opens from Settings and closes back to the app on no server", () => {
+    vi.stubGlobal("window", DESKTOP_PAGE);
+    store.state = { ...store.state, launchOpen: true, launchMode: "server", config: { onboarding: { ...EMPTY_ONBOARDING, completedAt: "2026-09-23T00:00:00.000Z", version: WELCOME_VERSION, launchMode: "solo" } } };
+    const screen = gate(LOCAL_VIEWER).tree!;
+    expect(screen.type).toBe(LaunchScreen);
+    expect(screen.props.initialMode).toBe("server");
+    screen.props.onSolo!();
+    expect(store.dispatch).toHaveBeenCalledWith({ type: "toggleLaunch", open: false });
+  });
+
+  it("the tour's server row opens server mode and the tour resumes on the engines beat", () => {
+    vi.stubGlobal("window", DESKTOP_PAGE);
+    store.state = { ...store.state, config: { onboarding: { ...EMPTY_ONBOARDING, launchMode: "solo" } } };
+    const flow = gate(LOCAL_VIEWER).tree!;
+    expect(flow.type).toBe(WelcomeFlow);
+    flow.props.onOpenServer!();
+    expect(store.dispatch).toHaveBeenCalledWith({ type: "toggleLaunch", open: true, mode: "server" });
+    store.state = { ...store.state, launchOpen: true, launchMode: "server" };
+    gate(LOCAL_VIEWER).tree!.props.onSolo!();
+    store.state = { ...store.state, launchOpen: false };
+    expect(gate(LOCAL_VIEWER).tree?.props.initialBeat).toBe("engines");
   });
 });
 

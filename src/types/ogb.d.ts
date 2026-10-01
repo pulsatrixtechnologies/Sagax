@@ -22,6 +22,8 @@ declare global {
 /** Fork version inlined by Vite. Official base is __BASE_VERSION__. */
 const __APP_VERSION__: string;
 const __BASE_VERSION__: string;
+/** The launch screen's prefilled server address (vite.config.ts, env SAGAX_DEFAULT_SERVER). */
+const __SAGAX_DEFAULT_SERVER__: string;
 
   type DesktopSharedFolder = import("../../electron/computer-sharing.mjs").SharedFolder;
   type DesktopComputerSharing = import("../../electron/computer-sharing.mjs").SharingState;
@@ -153,12 +155,14 @@ const __BASE_VERSION__: string;
         forget: (id: string) => Promise<void>;
         onOpenSettings?: (callback: (computerId?: string | null) => void) => () => void;
       };
-      /** Slice 8, "Join a Perspicax server": probe and stage answer only the
-       * local renderer; staged, take, finished and removeLocal answer only
+      /** Slice 8, "Join a Perspicax server": probe, stage and join answer
+       * only the local renderer; staged, take, finished and removeLocal answer only
        * the main frame of the organization server the copy was staged for. */
       orgJoin?: {
         probe(address: string): Promise<{ origin: string; issuer: string }>;
         stage(input: { origin: string; document: unknown }): Promise<{ ok: true }>;
+        /** Save the probed server, open it and start "Sign in with Pulsatrix", copying nothing. */
+        join(input: { origin: string }): Promise<{ ok: true }>;
         staged(): Promise<{ origin: string; bots: number; name: string } | null>;
         take(): Promise<unknown>;
         finished(input: { report: unknown }): Promise<{ ok: true }>;
