@@ -619,11 +619,15 @@ const appConfigSchema = z.object({
    * file on a schema error, and one bad server entry must degrade to a
    * skipped entry (customMcpServers), never to a vanished config. */
   mcpServers: z.record(z.string(), z.unknown()).optional(),
+  /** Connectors the engines bring with a person's own account
+   * (server/harness-connectors.ts). `claudeAi` unset means on; an admin
+   * turns it off through PUT /api/harness-connectors/settings only. */
+  harnessConnectors: z.object({ claudeAi: z.boolean().optional() }).strict().optional(),
 });
 const storedAppConfigSchema = appConfigSchema.extend({
   browserProfiles: storedBrowserProfilesSchema.optional(),
 });
-const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, identityMigratedAt: true, privateThreadsMigratedAt: true, invites: true, mail: true })
+const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, harnessConnectors: true, cliStartup: true, customDomain: true, identityMigratedAt: true, privateThreadsMigratedAt: true, invites: true, mail: true })
   .extend({ threads: threadsPatchSchema.optional(), newBots: newBotsPatchSchema.optional() });
 const jsonObjectSchema = z.record(z.string(), z.json());
 
@@ -660,6 +664,8 @@ export interface AppConfig {
     phone?: "ios" | "android";
   };
   mcpServers?: Record<string, unknown>;
+  /** See appConfigSchema.harnessConnectors. */
+  harnessConnectors?: { claudeAi?: boolean };
   language?: string;
   xai?: { key?: string; url?: string };
   mistral?: { key?: string };
@@ -931,6 +937,12 @@ export function builtInBrowserEnabled(cfg: AppConfig, env: NodeJS.ProcessEnv = p
  * (`{"features": {"sharedComputers": true}}`) and restarts the server. */
 export function sharedComputersEnabled(cfg: AppConfig): boolean {
   return cfg.features?.sharedComputers === true;
+}
+
+/** The speaker's own claude.ai connectors reach their Claude turns unless
+ * an admin turned them off (server/harness-connectors.ts). */
+export function claudeAiConnectorsEnabled(cfg: AppConfig): boolean {
+  return cfg.harnessConnectors?.claudeAi !== false;
 }
 
 /** Claude bots also see the MCP servers of this machine's own Claude Code

@@ -1459,6 +1459,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const replaysUserMessages = cliVersion === null || versionAtLeast(cliVersion, CLAUDE_REPLAY_FLOOR);
       if (replaysUserMessages) args.push("--replay-user-messages");
       const isolated = !inheritsUserConfig(turnEnvironment);
+      // A guest's confined turn never gets anyone's connectors. Standing
+      // allow rules (OMB_CLAUDE_ALLOW) may name mcp__claude_ai_ tools; deny
+      // rules still win, and nothing here pre-allows them.
+      const keepsClaudeAiConnectors = turn.claudeAiConnectors === true && !turn.guestConfined;
       if (isolated) {
         // A bot gets the tools and instructions its owner gave it, not
         // whatever this machine's Claude Code happens to be set up with.
@@ -1474,7 +1478,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // and connectors from the person's own Claude Code config — the way
         // Codex reads its own config.toml — while skills, hooks and the
         // personal CLAUDE.md stay out.
-        if (!turn.mcpFromUserConfig && claudeCliSupports(cliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
+        // The speaker's own claude.ai connectors (server/harness-connectors.ts)
+        // need the same: --strict-mcp-config also drops them (measured on CLI
+        // 2.1.287), while --setting-sources project still keeps the machine's
+        // user-scope servers, skills and hooks out.
+        if (!turn.mcpFromUserConfig && !keepsClaudeAiConnectors && claudeCliSupports(cliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
         if (claudeCliSupports(cliVersion, "--setting-sources")) args.push("--setting-sources", "project");
       }
       const compactWindow = autoCompactWindow(turnEnvironment);
@@ -1618,6 +1626,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       }
 
       const env = environment(turnModel, turn.access);
+      // No claude.ai connector unless the turn asked for them: the docs say
+      // --strict-mcp-config alone does not exclude them, so say it twice.
+      if (isolated && !turn.mcpFromUserConfig && !keepsClaudeAiConnectors) env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
       const authSettings = isolated && !injected.injected
         ? readClaudeAuthSettings(env, input.environment) : {};
       // Harness hooks (item 0.2): one helper command for the events the

@@ -18,7 +18,7 @@ import { z } from "zod";
 import { selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES } from "./context-rebuild.ts";
 import { draftSummary, foldPoint } from "./compaction-summary.ts";
 import { compactBudget, contextWindowFor, shouldCompact } from "./context-budget.ts";
-import { autoCompactWindow } from "./drivers/claude.ts";
+import { autoCompactWindow, resolveClaudeConfigDir } from "./drivers/claude.ts";
 import { provenRequestPerson, SharedComputers, sharedComputerOperation, sharedComputerRegistration } from "./shared-computers.ts";
 import { cloudHomeLendingRefusal, createCloudRoutineAuthors, ownerOnlyConversation, type CloudLendingTurn } from "./cloud-lending.ts";
 import { botMemoryFiles, createLendingMemory } from "./lending-memory.ts";
@@ -160,6 +160,7 @@ import {
   showToolCallsEnabled,
   routinesInConversationEnabled,
   claudeUserMcpEnabled,
+  claudeAiConnectorsEnabled,
   skillAuthoringEnabled,
   autoRecallEnabled,
   captureQuietMs,
@@ -518,6 +519,7 @@ import { EmailOtpStore } from "./email-otp.ts";
 import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
+import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
@@ -11081,6 +11083,7 @@ async function startTurn(
         { id: "composio", label: "Connected apps", text: integrations.composio ? composioSystemPrompt(liveBot?.connectorTools ?? bot.connectorTools) : "" },
         { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
         { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
+        { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, speaker)) },
         { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT : "" },
         { id: "coordination", label: "Team", text: coordinationPrompt ? ` ${coordinationPrompt}` : "" },
         { id: "assignment", label: "Teammate task", text: coordinationNode ? `\n${coordinationSystemInstructions()}` : "" },
@@ -11164,6 +11167,7 @@ async function startTurn(
         mentionTurn: tagged.length > 0,
         integrations,
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
         cwd,
       }), () => !directTurnClaimExists(bot.id, dispatchClaimId, threadId), async () => {
         await instance.adapter.interruptTurn(threadId).catch(() => {});
@@ -13386,6 +13390,7 @@ async function runGroupMemberTurn(
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
+    { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" })) },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(roomTeamComputer) },
     { id: "plan", label: "Surface", text: surfacePrompt({ computer: roomTeamComputer ? "cloud" : roomVmTarget ? "vm" : surfaceOfComputerKind(roomComputerKind), browser: Boolean(integrations.browser) }, { note: roomPlan.note, cloudHome: Boolean(CLOUD_HOME) }) },
@@ -13527,6 +13532,7 @@ async function runGroupMemberTurn(
         cwd,
         integrations,
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
         ...(instance.instanceId === readyBot.modelSelection.instanceId
           ? memberTurnSelection(readyBot.modelSelection)
           : { model: instance.models.default }),
@@ -15923,6 +15929,27 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
   turnAccessByThread.set(threadId, { via: outcome.access.via, ...(input.owner.sub ? { ownerSub: input.owner.sub } : {}), ...(provider ? { provider } : {}) });
   return outcome.access;
 }
+/** Whether a Claude turn keeps the claude.ai connectors of the account it
+ * runs on: the speaker's own subscription only (server/harness-connectors.ts).
+ * `via` is the turn's access; without it (the prompt is built before the
+ * access is materialized) the planned access stands in. */
+function claudeAiConnectorsFor(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): boolean {
+  let planned = via;
+  if (IDENTITY.kind === "perspicax" && planned === undefined && instance.driverKind === "claudeAgent") {
+    const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+    planned = plan.ok ? plan.via : undefined;
+  }
+  return claudeAiConnectorsForTurn({
+    identity: IDENTITY.kind,
+    enabled: claudeAiConnectorsEnabled(cfg),
+    restrictedByPolicy: managedPolicy.restrictsMcp(),
+    driver: instance.driverKind,
+    ...(planned ? { via: planned } : {}),
+    speaker,
+    ownerPrincipalId: effectiveBotOwner(bot),
+    localPrincipalId: localPrincipalId(),
+  });
+}
 /** Where an owner sets their model keys (Perspicax console, slice 4). */
 function perspicaxKeysUrl(): string | undefined {
   return IDENTITY.kind === "perspicax" ? `${IDENTITY.issuer.replace(/\/+$/, "")}/console/pulsabot/keys` : undefined;
@@ -17607,6 +17634,53 @@ ROUTES.push(createMailSettingsRoutes({
   env: () => process.env,
   mailer,
   callerEmail: actorEmail,
+}));
+
+// The caller's own claude.ai connectors, read through their own Claude
+// account (server/harness-connectors.ts); an admin can turn them off.
+const claudeAiInventory = new ClaudeAiConnectorInventory({ run: runClaudeCli });
+ROUTES.push(createHarnessConnectorRoutes({
+  organization: IDENTITY.kind === "perspicax",
+  enabled: () => claudeAiConnectorsEnabled(cfg),
+  setEnabled: (next) => {
+    const block = { ...cfg.harnessConnectors, claudeAi: next };
+    saveConfig({ harnessConnectors: block });
+    cfg.harnessConnectors = block;
+  },
+  restrictedByPolicy: () => managedPolicy.restrictsMcp(),
+  principalFor: (auth) => {
+    if (auth.kind === "loopback" && auth.trust === "service") return "";
+    const id = actorPrincipalId(auth) || (IDENTITY.kind === "solo" ? localPrincipalId() : "");
+    return id.trim().toLowerCase();
+  },
+  localPrincipalId,
+  isAdmin: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : true),
+  claudeAccountFor: (principalId) => {
+    const entries = Object.entries(instanceConfigs(cfg)).filter(([, entry]) => entry.driver === "claudeAgent");
+    const [instanceId, entry] = entries.find(([id]) => id === "claude") ?? entries[0] ?? [];
+    if (!instanceId || !entry) return { unavailable: "no_engine" as const };
+    const config = (entry.config ?? {}) as { cli?: unknown; configDir?: unknown };
+    const cli = typeof config.cli === "string" && config.cli.trim() ? config.cli : "claude";
+    const env: NodeJS.ProcessEnv = { ...process.env, ...entry.environment };
+    if (IDENTITY.kind === "perspicax") {
+      if (!engineLogins?.signedIn(principalId, "claudeAgent")) return { unavailable: "not_signed_in" as const };
+      env.CLAUDE_CONFIG_DIR = engineLogins.loginDir(principalId, "claudeAgent");
+      delete env.ANTHROPIC_API_KEY;
+      delete env.ANTHROPIC_AUTH_TOKEN;
+      return { cli, env, key: `person:${principalId}` };
+    }
+    // a workspace key that runs every Claude bot replaces the login
+    if (cfg.anthropic?.key && cfg.anthropic.everyClaudeBot !== false) return { unavailable: "key" as const };
+    if (typeof config.configDir === "string" && config.configDir.trim()) {
+      try {
+        env.CLAUDE_CONFIG_DIR = resolveClaudeConfigDir(config.configDir, env);
+      } catch {
+        return { unavailable: "no_engine" as const };
+      }
+    }
+    return { cli, env, key: `instance:${instanceId}` };
+  },
+  inventory: claudeAiInventory,
 }));
 
 // Invite links (/join#token=...): public like /api/auth/email/start, and
