@@ -441,6 +441,9 @@ const LID_MORPHS = ["blink", "sleepy", "happy", "sad", "squint"] as const;
 /* ------------------------------------------------------------- the pose */
 
 const DEG = Math.PI / 180;
+/** How far the head may turn, nod and tilt (radians); the gaze adds a little on top at runtime. */
+export const HEAD_MAX = { yaw: 0.35, pitch: 0.4, tilt: 0.4 } as const;
+const clampTo = (value: number, max: number) => Math.min(max, Math.max(-max, value));
 /** owl-art's turning point (src/components/floating-bots/fit.ts PIVOT: the middle, 62 % down its box). */
 const PIVOT = new Vector3(X(128), Y(256 * 0.62), 0);
 const quat = (x: number, y: number, z: number) => new Quaternion().setFromEuler(new Euler(x, y, z, "YXZ"));
@@ -473,7 +476,8 @@ export function rigPose(frame: MascotFrame): RigPose {
         quaternion: quat(0, 0, -f.lean * 0.8 - f.sway * 0.5),
         scale: new Vector3((f.puff ?? 1) / Math.sqrt(f.squash), f.squash, (f.puff ?? 1) / Math.sqrt(f.squash)),
       },
-      head: { quaternion: quat(f.headPitch * 0.6, f.headYaw * 0.8, -f.headTilt * 0.7) },
+      // the head is a layer of the body's slab: it turns only so far, or it would tear from the body
+      head: { quaternion: quat(clampTo(f.headPitch * 0.6, HEAD_MAX.pitch), clampTo(f.headYaw * 0.8, HEAD_MAX.yaw), clampTo(-f.headTilt * 0.7, HEAD_MAX.tilt)) },
       tuftNear: { quaternion: quat(0, 0, -(f.tufts ?? 0) * 0.35) },
       tuftFar: { quaternion: quat(0, 0, (f.tufts ?? 0) * 0.35) },
       // the near wing: spread swings it up and back (as owl-art's 108 degrees), swing on top

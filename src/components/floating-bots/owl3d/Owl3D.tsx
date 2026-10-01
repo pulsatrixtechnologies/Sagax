@@ -39,6 +39,7 @@ import { owlPalette, shade, type OwlPalette } from "@/lib/owl/owl-art";
 import { owlSkinId, owlSkinPalette } from "@/lib/owl/owl-skins";
 import { blinkAt, type MascotActivity, type MascotFrame } from "../behavior";
 import { fitOwlCamera } from "./fit3d";
+import { flatTurn } from "../Owl25D";
 import owlUrl from "./owl.glb?url";
 
 export interface Owl3DProps {
@@ -57,6 +58,8 @@ export interface Owl3DProps {
 /** Clips that loop until the activity changes; the others play once and hold. */
 const LOOPS = new Set<MascotActivity>(["idle", "walk", "fly", "drag", "working", "sleep"]);
 const FADE_S = 0.25;
+/** The head's turn, clip and gaze together, never past this (radians, about 25 degrees): the head is a layer of the body. */
+const HEAD_YAW_MAX = 0.45;
 
 /** Each part's color from the bot's palette (the parts are named by the generator). */
 export function partColors(palette: OwlPalette): Record<string, string> {
@@ -161,11 +164,11 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
     const actions = new Map<string, AnimationAction>();
     let current: AnimationAction | null = null;
     let playing = "";
-    let rootBone: Bone | null = null;
     let headBone: Bone | null = null;
     let lid: SkinnedMesh | null = null;
     const solids: Mesh[] = [];
-    let facing = 0;
+    let facing = 1;
+    let gaze = 0;
     const raycaster = new Raycaster();
 
     const play = (name: string) => {
@@ -198,7 +201,6 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
             solids.push(mesh);
             if (mesh.name === "lid") lid = mesh;
           }
-          if ((node as Bone).isBone && node.name === "rootBone") rootBone = node as Bone;
           if ((node as Bone).isBone && node.name === "headBone") headBone = node as Bone;
         });
         recolor.current = (tint, wear) => {
@@ -236,10 +238,15 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
       mixer.update(dt);
       // on top of the clip: face the way it goes, look at the pointer, blink
       const f = live.current.frame(now);
-      const want = ((1 - (f.face ?? 1)) / 2) * Math.PI;
-      facing += (want - facing) * (1 - Math.exp(-dt / 0.12));
-      if (rootBone) rootBone.rotation.y += facing;
-      if (headBone && live.current.activity === "idle") headBone.rotation.y += f.pupilX * 0.5;
+      // facing the other way is a mirror, through a quick squash: a half turn would show the
+      // model's flat back (it is the 2D art given depth, not a sculpture)
+      facing += ((f.face ?? 1) - facing) * (1 - Math.exp(-dt / 0.08));
+      const turn = flatTurn(facing);
+      owl.scale.set(turn.sx, turn.sy, 1);
+      // the gaze is an offset on top of the clip's head (the mixer rewrites the head every frame),
+      // eased, and the total kept within reach so the head never ends up sideways
+      gaze += ((live.current.activity === "idle" ? f.pupilX * 0.35 : 0) - gaze) * (1 - Math.exp(-dt / 0.2));
+      if (headBone) headBone.rotation.y = Math.min(HEAD_YAW_MAX, Math.max(-HEAD_YAW_MAX, headBone.rotation.y + gaze));
       const lidMesh = lid as SkinnedMesh | null;
       if (lidMesh?.morphTargetInfluences) lidMesh.morphTargetInfluences[0] = Math.max(lidMesh.morphTargetInfluences[0], blinkAt(now));
       renderer.render(scene, camera);

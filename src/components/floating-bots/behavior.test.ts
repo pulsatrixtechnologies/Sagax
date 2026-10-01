@@ -14,7 +14,7 @@ import {
   type MascotState,
 } from "./behavior";
 import { CLIP_MS, TAKEOFF_MS } from "./clips";
-import { sleepAfterMs } from "./scheduler";
+import { newSchedulerMemory, pickIdleAction, sleepAfterMs } from "./scheduler";
 
 /** A fixed sequence of "random" numbers, so every choice is known. */
 function rolls(...values: number[]) {
@@ -68,6 +68,23 @@ describe("mascot behavior: idle life", () => {
     expect(asleep.activity).toBe("sleep");
     expect(stepMascot(asleep, { type: "tick", now: asleep.since + 10 * 60_000 }, desk()).state.activity).toBe("sleep");
     expect(stepMascot(asleep, { type: "play", now: asleep.since + 1000 }, desk()).state.activity).toBe("wake");
+  });
+
+  it("turns its head all the way only rarely, never twice running, never when calm", () => {
+    let memory = newSchedulerMemory();
+    let spins = 0;
+    let seed = 3;
+    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let now = 0; now < 10 * 60_000; now += 4000) {
+      const pick = pickIdleAction(memory, now, { liveliness: "lively", mood: 0.9, reduced: false, canMove: true, depth: true, random });
+      memory = pick.memory;
+      if (pick.action?.id === "headSpin") spins += 1;
+    }
+    expect(spins).toBeLessThanOrEqual(2);
+    for (let roll = 0; roll < 1; roll += 0.01) {
+      const pick = pickIdleAction(newSchedulerMemory(), 0, { liveliness: "calm", mood: 0.9, reduced: false, canMove: true, depth: true, random: () => roll });
+      expect(pick.action?.id).not.toBe("headSpin");
+    }
   });
 
   it("naps sooner when calm, later when lively", () => {

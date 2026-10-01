@@ -24,6 +24,8 @@ export interface IdleAction {
   gentle?: boolean;
   /** Turns the character around in depth: only for a renderer with real depth (a 3D model). */
   rotates?: boolean;
+  /** Never on the calm activity level. */
+  lively?: boolean;
 }
 
 const clip = (id: TimedClip, weight: number, cooldown: number, energy: 0 | 1 | 2, gentle = false): IdleAction => ({
@@ -38,7 +40,8 @@ const clip = (id: TimedClip, weight: number, cooldown: number, energy: 0 | 1 | 2
 export const IDLE_ACTIONS: readonly IdleAction[] = [
   clip("look", 10, 6_000, 0, true),
   { ...clip("lookBack", 4, 20_000, 0), rotates: true },
-  { ...clip("headSpin", 3, 40_000, 1), rotates: true },
+  // the owl's head turn: rare (every few minutes at most), never when calm
+  { ...clip("headSpin", 1, 300_000, 2), rotates: true, lively: true },
   clip("tilt", 6, 10_000, 0, true),
   { id: "turn", choice: { kind: "turn" }, weight: 4, cooldown: 15_000, energy: 0, rotates: true },
   { ...clip("spin", 4, 25_000, 2), rotates: true },
@@ -106,6 +109,7 @@ export function idleWeights(memory: SchedulerMemory, now: number, options: Sched
       memory.previous === action.id ||
       (options.reduced && !action.gentle) ||
       (action.rotates && !options.depth) ||
+      (action.lively && options.liveliness === "calm") ||
       (action.choice.kind === "move" && !options.canMove);
     return { action, weight: blocked ? 0 : weight };
   });

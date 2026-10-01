@@ -168,10 +168,11 @@ export function clipPose(clip: ClipName, context: ClipContext): Partial<MascotFr
       return { headYaw: Math.sin(t * TAU) * 0.9 * calm, headTilt: bell(t) * 0.18 * calm, pupilX: Math.sin(t * TAU) };
     case "lookBack":
       // looks over its shoulder: a turn most of the way round, a peek, back
-      return { spin: hold(t, 0, 1, 0.3) * Math.PI * 0.85 * calm, headTilt: hold(t, 0.2, 0.8) * 0.15, pupilX: -0.6 * hold(t, 0.2, 0.8) };
+      return { spin: hold(t, 0, 1, 0.3) * 0.4 * calm, headTilt: hold(t, 0.2, 0.8) * 0.15, pupilX: -0.6 * hold(t, 0.2, 0.8) };
     case "headSpin":
       // the owl trick: the head turns three quarters round and back
-      return { headYaw: Math.sin(t * Math.PI) * Math.PI * 1.5 * calm, spin: Math.sin(t * Math.PI) * Math.PI * 1.5 * calm, squash: 1 + 0.03 * bell(t) };
+      // the head leads, the body follows a little: a slow look all the way to one side and back
+      return { headYaw: Math.sin(t * Math.PI) * 1.2 * calm, spin: Math.sin(t * Math.PI) * 0.3 * calm, squash: 1 + 0.03 * bell(t) };
     case "tilt":
       return { headTilt: hold(t, 0, 1, 0.25) * (variant < 0.5 ? -0.4 : 0.4), eyeScale: 1 + 0.1 * hold(t, 0, 1, 0.25), pupilY: 0.3 * bell(t) };
     case "turn":
