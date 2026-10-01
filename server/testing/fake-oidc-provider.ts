@@ -123,6 +123,10 @@ export interface FakeOidcProvider {
   /** A back-channel logout token for this subject, signed by the provider's
    * key unless `strayKey`; `claims` and `header` bend one thing at a time. */
   logoutToken(input: { sub: string; claims?: (claims: Record<string, unknown>) => Record<string, unknown>; header?: (header: Record<string, unknown>) => Record<string, unknown>; strayKey?: boolean }): string;
+  /** Slice 7: a console assertion (typ `pulsabot-console+jwt`) for this
+   * subject and audience origin, as Perspicax signs one per proxied request;
+   * `claims` and `header` bend one thing at a time. */
+  consoleAssertion(input: { sub: string; aud: string; role?: string; teams?: Array<{ id: string; name: string; manager: boolean }>; serverId?: string; claims?: (claims: Record<string, unknown>) => Record<string, unknown>; header?: (header: Record<string, unknown>) => Record<string, unknown>; strayKey?: boolean }): string;
   /** Replace the signing key (the old one leaves the JWKS). */
   rotateKey(): void;
   /** Slice 3 directory: the link token it accepts (Bearer), this server's
@@ -245,6 +249,19 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       };
       if (input.claims) claims = input.claims(claims);
       let header: Record<string, unknown> = { alg: "ES256", typ: "logout+jwt", kid: key.kid };
+      if (input.header) header = input.header(header);
+      const signed = `${b64(header)}.${b64(claims)}`;
+      const signature = sign("sha256", Buffer.from(signed), { key: input.strayKey ? stray.privateKey : key.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url");
+      return `${signed}.${signature}`;
+    },
+    consoleAssertion(input) {
+      const now = Math.floor(Date.now() / 1000);
+      let claims: Record<string, unknown> = {
+        iss: provider.issuer, aud: input.aud, sub: input.sub, act: { sub: "console" }, jti: randomBytes(16).toString("hex"),
+        iat: now, exp: now + 60, server_id: input.serverId ?? provider.serverId, role: input.role ?? "admin", teams: input.teams ?? [],
+      };
+      if (input.claims) claims = input.claims(claims);
+      let header: Record<string, unknown> = { alg: "ES256", typ: "pulsabot-console+jwt", kid: key.kid };
       if (input.header) header = input.header(header);
       const signed = `${b64(header)}.${b64(claims)}`;
       const signature = sign("sha256", Buffer.from(signed), { key: input.strayKey ? stray.privateKey : key.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url");

@@ -291,7 +291,13 @@ function es256Key(jwk: Record<string, unknown>): KeyObject | null {
   }
 }
 
-type TokenKind = "id_token" | "logout_token";
+type TokenKind = "id_token" | "logout_token" | "console_assertion";
+
+/** Slice 7: the header `typ` of a console assertion (Perspicax signs one per
+ * proxied console request). Never an id_token nor a logout token. */
+export const CONSOLE_ASSERTION_TYP = "pulsabot-console+jwt";
+/** The longest life a console assertion may claim (exp - iat), in seconds. */
+export const CONSOLE_ASSERTION_MAX_LIFE_SECONDS = 120;
 
 /** The OpenID Connect Back-Channel Logout 1.0 event key. */
 export const BACKCHANNEL_LOGOUT_EVENT = "http://schemas.openid.net/event/backchannel-logout";
@@ -356,6 +362,7 @@ export interface VerifyIdTokenInput extends JwsCheck {
 export async function verifyIdToken(input: VerifyIdTokenInput): Promise<OidcIdentity> {
   const { header, claims } = await verifyJws(input, "id_token");
   if (typeof header.typ === "string" && header.typ.toLowerCase().includes("logout")) throw new OidcError("id_token_typ", "A logout token is not an id_token.");
+  if (typeof header.typ === "string" && header.typ.toLowerCase() === CONSOLE_ASSERTION_TYP) throw new OidcError("id_token_typ", "A console assertion is not an id_token.");
   if (claims.events !== undefined) throw new OidcError("id_token_typ", "A token carrying events is not an id_token.");
   if (input.nonce === null) {
     if (claims.nonce !== undefined) throw new OidcError("id_token_nonce", "A refreshed id_token must not carry a nonce.");
@@ -397,6 +404,7 @@ export interface LogoutClaims {
 export async function verifyLogoutToken(input: JwsCheck): Promise<LogoutClaims> {
   const { header, claims } = await verifyJws(input, "logout_token");
   if (header.typ !== undefined && header.typ !== "JWT" && header.typ !== "logout+jwt") throw new OidcError("logout_token_typ", "The logout token has an unexpected type.");
+  if (claims.act !== undefined) throw new OidcError("logout_token_typ", "A console assertion is not a logout token.");
   if (claims.nonce !== undefined) throw new OidcError("logout_token_nonce", "A logout token must not carry a nonce.");
   const events = claims.events;
   if (!events || typeof events !== "object" || Array.isArray(events)) throw new OidcError("logout_token_events", "The logout token carries no events.");
@@ -407,6 +415,62 @@ export async function verifyLogoutToken(input: JwsCheck): Promise<LogoutClaims> 
   const sub = stringClaim(claims.sub, MAX_SUB_LENGTH);
   if (!sub) throw new OidcError("logout_token_sub", "The logout token names no subject.");
   return { iss: input.issuer, sub, jti, exp: claims.exp as number };
+}
+
+/** What a verified console assertion names (slice 7). */
+export interface ConsoleAssertion {
+  iss: string;
+  /** The console person's Perspicax user id. */
+  sub: string;
+  jti: string;
+  /** Seconds since the epoch. */
+  iat: number;
+  exp: number;
+  serverId: string | null;
+  role: "admin" | "manager" | "employee";
+  teams: OidcTeamClaim[];
+}
+
+export interface VerifyConsoleAssertionInput extends JwsCheck {
+  /** The link file's server id when a link is loaded: the assertion's
+   * `server_id` must equal it. */
+  serverId?: string | null;
+}
+
+const CONSOLE_ROLES = new Set(["admin", "manager", "employee"]);
+
+/** Verify a console assertion: the same ES256 signature, iss, exp and iat
+ * rules as the other two tokens, then `aud` a single string equal to this
+ * server's public origin, header `typ` exactly `pulsabot-console+jwt`,
+ * `act.sub` "console", no nonce, no events, exp - iat at most 120 s, a `jti`
+ * of 16 to 256 characters, a role, the teams, and the server id when known.
+ * The replay cache is the caller's (server/org-admin-routes.ts). */
+export async function verifyConsoleAssertion(input: VerifyConsoleAssertionInput): Promise<ConsoleAssertion> {
+  const kind = "console_assertion";
+  const { header, claims } = await verifyJws(input, kind);
+  if (header.typ !== CONSOLE_ASSERTION_TYP) throw new OidcError(`${kind}_typ`, "The token is not a console assertion.");
+  // One audience string, never an array, and no authorized party.
+  if (typeof claims.aud !== "string" || claims.aud !== input.audience || claims.azp !== undefined) throw new OidcError(`${kind}_aud`, "The console assertion must name this server as its one audience.");
+  const act = claims.act;
+  if (!act || typeof act !== "object" || Array.isArray(act) || (act as Record<string, unknown>).sub !== "console") {
+    throw new OidcError(`${kind}_act`, "The console assertion does not name the console as its actor.");
+  }
+  if (claims.nonce !== undefined) throw new OidcError(`${kind}_nonce`, "A console assertion must not carry a nonce.");
+  if (claims.events !== undefined) throw new OidcError(`${kind}_events`, "A console assertion must not carry events.");
+  const exp = claims.exp as number;
+  const iat = claims.iat as number;
+  if (exp - iat > CONSOLE_ASSERTION_MAX_LIFE_SECONDS) throw new OidcError(`${kind}_exp`, "The console assertion lives too long.");
+  const sub = stringClaim(claims.sub, 256);
+  if (!sub) throw new OidcError(`${kind}_sub`, "The console assertion names no person.");
+  const jti = typeof claims.jti === "string" && claims.jti.length >= 16 && claims.jti.length <= 256 ? claims.jti : undefined;
+  if (!jti) throw new OidcError(`${kind}_jti`, "The console assertion has no usable identifier.");
+  const role = claims.role;
+  if (typeof role !== "string" || !CONSOLE_ROLES.has(role)) throw new OidcError(`${kind}_role`, "The console assertion carries no known role.");
+  const teams = claims.teams === undefined ? [] : parseTeamsClaim(claims.teams);
+  if (!teams) throw new OidcError(`${kind}_teams`, "The console assertion teams are not a list.");
+  const serverId = stringClaim(claims.server_id, 256) ?? null;
+  if (input.serverId && serverId !== input.serverId) throw new OidcError(`${kind}_server`, "The console assertion is meant for another linked server.");
+  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams };
 }
 
 /** An issuer URL the server may talk to: https, or http on this machine
@@ -890,6 +954,20 @@ export class OidcRelyingParty {
       audience: this.clientId,
       keyFor: (kid) => this.keyFor(kid),
       nowSeconds: Math.floor(this.now() / 1000),
+    });
+  }
+
+  /** Slice 7: verify a console assertion for this server's public origin
+   * (one trailing slash ignored) and, when a link is loaded, its server id. */
+  async verifyConsoleAssertion(token: string, audienceOrigin: string, serverId?: string | null): Promise<ConsoleAssertion> {
+    await this.discover();
+    return verifyConsoleAssertion({
+      token,
+      issuer: this.issuer,
+      audience: audienceOrigin.replace(/\/$/, ""),
+      keyFor: (kid) => this.keyFor(kid),
+      nowSeconds: Math.floor(this.now() / 1000),
+      ...(serverId ? { serverId } : {}),
     });
   }
 

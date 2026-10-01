@@ -379,6 +379,89 @@ describe("OIDC relying party: back-channel logout tokens", () => {
   });
 });
 
+describe("OIDC relying party: console assertions (slice 7)", () => {
+  const sub = "01J0000000000000000000ADMN";
+  const ORIGIN = "http://127.0.0.1:19192";
+  type Bend = Record<string, unknown>;
+  const assertion = (extra: Partial<Parameters<FakeOidcProvider["consoleAssertion"]>[0]> = {}) => idp.consoleAssertion({ sub, aud: ORIGIN, role: "manager", teams: [{ id: "T1", name: "Support", manager: true }], ...extra });
+
+  it("verifies a good assertion: role, teams, jti, server id; one trailing slash on the origin is the same", async () => {
+    const party = rp();
+    const got = await party.verifyConsoleAssertion(assertion(), `${ORIGIN}/`, idp.serverId);
+    expect(got).toMatchObject({ iss: idp.issuer, sub, role: "manager", serverId: idp.serverId, teams: [{ id: "T1", name: "Support", manager: true }], jti: expect.stringMatching(/^[0-9a-f]{32}$/) });
+    expect(got.exp - got.iat).toBe(60);
+    // no link loaded: the server id is not checked
+    await expect(party.verifyConsoleAssertion(assertion({ serverId: "other" }), ORIGIN)).resolves.toMatchObject({ serverId: "other" });
+    // teams absent = none
+    await expect(party.verifyConsoleAssertion(assertion({ claims: (c: Bend) => { const { teams: _t, ...rest } = c; return rest; } }), ORIGIN)).resolves.toMatchObject({ teams: [] });
+  });
+
+  it.each([
+    ["another typ", { header: (h: Bend) => ({ ...h, typ: "JWT" }) }, "console_assertion_typ"],
+    ["no typ", { header: (h: Bend) => { const { typ: _typ, ...rest } = h; return rest; } }, "console_assertion_typ"],
+    ["no act", { claims: (c: Bend) => { const { act: _act, ...rest } = c; return rest; } }, "console_assertion_act"],
+    ["an act that is not the console", { claims: (c: Bend) => ({ ...c, act: { sub: "someone" } }) }, "console_assertion_act"],
+    ["an audience array", { claims: (c: Bend) => ({ ...c, aud: [ORIGIN] }) }, "console_assertion_aud"],
+    ["another origin", { aud: "http://127.0.0.1:19999" }, "console_assertion_aud"],
+    ["an azp", { claims: (c: Bend) => ({ ...c, azp: ORIGIN }) }, "console_assertion_aud"],
+    ["a 300 s life", { claims: (c: Bend) => ({ ...c, exp: (c.iat as number) + 300 }) }, "console_assertion_exp"],
+    ["an expired assertion", { claims: (c: Bend) => ({ ...c, iat: Math.floor(Date.now() / 1000) - 200, exp: Math.floor(Date.now() / 1000) - 140 }) }, "console_assertion_exp"],
+    ["no expiry", { claims: (c: Bend) => { const { exp: _exp, ...rest } = c; return rest; } }, "console_assertion_exp"],
+    ["an issue time in the future", { claims: (c: Bend) => ({ ...c, iat: Math.floor(Date.now() / 1000) + 600, exp: Math.floor(Date.now() / 1000) + 660 }) }, "console_assertion_iat"],
+    ["a nonce", { claims: (c: Bend) => ({ ...c, nonce: "n" }) }, "console_assertion_nonce"],
+    ["events", { claims: (c: Bend) => ({ ...c, events: { "http://schemas.openid.net/event/backchannel-logout": {} } }) }, "console_assertion_events"],
+    ["alg none", { header: (h: Bend) => ({ ...h, alg: "none" }) }, "console_assertion_alg"],
+    ["another key", { strayKey: true }, "console_assertion_signature"],
+    ["an unknown kid", { header: (h: Bend) => ({ ...h, kid: "nope" }) }, "console_assertion_kid"],
+    ["another issuer", { claims: (c: Bend) => ({ ...c, iss: "https://evil.example" }) }, "console_assertion_iss"],
+    ["no subject", { claims: (c: Bend) => ({ ...c, sub: "" }) }, "console_assertion_sub"],
+    ["a subject over 256", { claims: (c: Bend) => ({ ...c, sub: "a".repeat(257) }) }, "console_assertion_sub"],
+    ["a short jti", { claims: (c: Bend) => ({ ...c, jti: "abc" }) }, "console_assertion_jti"],
+    ["a jti over 256", { claims: (c: Bend) => ({ ...c, jti: "a".repeat(257) }) }, "console_assertion_jti"],
+    ["an unknown role", { role: "owner" }, "console_assertion_role"],
+    ["teams that are not a list", { claims: (c: Bend) => ({ ...c, teams: "T1" }) }, "console_assertion_teams"],
+    ["another linked server", { serverId: "01j9s3fake0000000000other" }, "console_assertion_server"],
+  ])("refuses %s", async (_what, tamper, code) => {
+    const party = rp();
+    await expect(party.verifyConsoleAssertion(assertion(tamper as Partial<Parameters<FakeOidcProvider["consoleAssertion"]>[0]>), ORIGIN, idp.serverId)).rejects.toMatchObject({ code });
+  });
+
+  it("refetches the JWKS once on an unknown kid, then accepts the rotated key", async () => {
+    const party = rp();
+    await party.verifyConsoleAssertion(assertion(), ORIGIN);
+    const before = idp.jwksFetches;
+    idp.rotateKey();
+    await expect(party.verifyConsoleAssertion(assertion(), ORIGIN)).resolves.toMatchObject({ sub });
+    expect(idp.jwksFetches - before).toBe(1);
+  });
+
+  it("never takes an assertion for an id_token or a logout token, nor the reverse", async () => {
+    const party = rp();
+    // an assertion is not a logout token
+    await expect(party.verifyLogoutToken(idp.consoleAssertion({ sub, aud: "pulsa-bot" }))).rejects.toMatchObject({ code: expect.stringMatching(/^logout_token_/) });
+    // an assertion is not an id_token, even with this client as audience
+    const { verifyIdToken } = await import("./oidc-rp.ts");
+    await party.discover();
+    await party.verifyConsoleAssertion(assertion(), ORIGIN);
+    const keyFor = async () => (party as unknown as { keys: Map<string, import("node:crypto").KeyObject> }).keys.values().next().value ?? null;
+    await expect(verifyIdToken({
+      token: idp.consoleAssertion({ sub, aud: "pulsa-bot" }), issuer: idp.issuer, audience: "pulsa-bot", nonce: null, keyFor,
+      nowSeconds: Math.floor(Date.now() / 1000),
+    })).rejects.toMatchObject({ code: "id_token_typ" });
+    // a logout token is not an assertion (typ), even aimed at this origin
+    await expect(party.verifyConsoleAssertion(idp.logoutToken({ sub, claims: (c) => ({ ...c, aud: ORIGIN }) }), ORIGIN)).rejects.toMatchObject({ code: "console_assertion_typ" });
+    // an id_token is not an assertion
+    let captured = "";
+    const spy = new OidcRelyingParty({ issuer: idp.issuer, clientId: "pulsa-bot", redirectUri: REDIRECT, resource: "http://127.0.0.1:9", fetch: async (input, init) => {
+      const res = await fetch(input, init);
+      if (String(input).endsWith("/oauth/token")) captured = ((await res.clone().json()) as { id_token?: string }).id_token ?? "";
+      return res;
+    } });
+    await signedInGrant(spy);
+    await expect(party.verifyConsoleAssertion(captured, "pulsa-bot")).rejects.toMatchObject({ code: expect.stringMatching(/^console_assertion_/) });
+  });
+});
+
 describe("OIDC relying party: internal server-to-server base (slice 3, D17)", () => {
   const ISSUER = "https://px.example.test";
   const INTERNAL = "http://perspicax:8787";
