@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.89",
   "baseVersion": "0.1.89",
-  "forkVersion": "0.2.0",
+  "forkVersion": "0.3.0",
   "description": "Pulsatrix Sagax: a local-first chat app for running a team of AI agents.",
   "homepage": "https://github.com/pulsatrixtechnologies/pulsa-bot",
   "repository": {
