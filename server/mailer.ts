@@ -49,6 +49,7 @@ function createSendGridMailer(settings: MailSettings, fetchImpl: typeof fetch): 
 }
 
 const TWILIO_EMAIL_URL = "https://comms.twilio.com/v1/Emails";
+const TWILIO_DEFAULT_SENDER_NAME = "Sagax";
 
 /** `from` may be a bare address or `Name <address>`. */
 function parseFromAddress(from: string): { address: string; name?: string } {
@@ -93,7 +94,11 @@ async function twilioErrorDetail(response: Response, secrets: string[]): Promise
 function createTwilioMailer(settings: MailSettings, fetchImpl: typeof fetch): Mailer {
   const { apiKeySid, apiKeySecret } = settings.twilio!;
   const authorization = `Basic ${Buffer.from(`${apiKeySid!}:${apiKeySecret!}`).toString("base64")}`;
-  const from = parseFromAddress(settings.from!);
+  // Twilio's Email API refuses a sender without a display name (400
+  // "Invalid value provided for field 'from'"), so a bare address gets the
+  // product's name.
+  const parsed = parseFromAddress(settings.from!);
+  const from = { address: parsed.address, name: parsed.name ?? TWILIO_DEFAULT_SENDER_NAME };
   return {
     async send(message) {
       const response = await fetchImpl(TWILIO_EMAIL_URL, {

@@ -40,12 +40,12 @@ describe("mailer", () => {
     });
   });
 
-  it("sends a bare Twilio sender address without a name", async () => {
+  it("gives a bare Twilio sender address the default name Twilio requires", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 202 }));
     const mailer = createMailer({ provider: "twilio", from: "pulsa@gox.ca", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
     await mailer.send({ to: "z@g.ca", subject: "s", text: "t" });
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(init.body)).from).toEqual({ address: "pulsa@gox.ca" });
+    expect(JSON.parse(String(init.body)).from).toEqual({ address: "pulsa@gox.ca", name: "Sagax" });
   });
 
   it("reports a Twilio refusal without leaking the secret", async () => {
