@@ -180,6 +180,18 @@ node --experimental-strip-types scripts/verify-desktop-sign-in.ts               
 node --experimental-strip-types scripts/verify-desktop-sign-in.ts --old-target  # PASS: the 0.3.x delivery stays signed out
 ```
 
+Server mode's UI is checked the same way, with the second server serving a
+decoy page of its own: the window must show this app's bundle on the
+server's origin (`electron/bundled-ui.cjs`), sign in, create a bot through
+the API with the session, expose the desktop-UI bridge and nothing local,
+and float that server's bot as a desktop mascot whose look follows a change
+made on the server:
+
+```sh
+pnpm exec vite build
+node --experimental-strip-types scripts/verify-server-mode.ts   # PASS (23/23)
+```
+
 The window already shows `<origin>/pair` when the credential comes back, so
 the delivery must be a new document (`/pair?signin=<nonce>#code=...`): a
 target that differs only in its fragment is a same-document navigation and

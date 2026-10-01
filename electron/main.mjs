@@ -1940,6 +1940,16 @@ const sharingPrompts = new Set();
 let sharedComputersAllowed = false;
 
 async function refreshSharedComputersAllowed() {
+  // Server mode runs no local server: the organization's server says
+  // whether it accepts a person's computer (its public descriptor).
+  const locked = serverModeEnvironment(environmentsState);
+  if (locked) {
+    sharedComputersAllowed = await fetch(`${locked.origin}/.well-known/openmausbot/environment`, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((descriptor) => descriptor?.capabilities?.sharedComputers === true)
+      .catch(() => false);
+    return sharedComputersAllowed;
+  }
   sharedComputersAllowed = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/config`, { signal: AbortSignal.timeout(3_000) })
     .then((res) => (res.ok ? res.json() : null))
     .then((status) => status?.features?.sharedComputers === true)
@@ -1965,6 +1975,9 @@ function sharingController() {
     enabled: refreshSharedComputersAllowed,
     cuaConnection: () => cuaReady,
     hostControl: async (id, signal) => {
+      // Server mode: no local server and no local bot compete for this
+      // screen, so there is no local seat to lease.
+      if (serverModeEnvironment(environmentsState) && !serverReady) return { renew: async () => {}, release: async () => {} };
       const lease = async action => {
         const response = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/desktop/shared-computer-control`, {
           method: "POST",
@@ -1992,7 +2005,7 @@ async function offerComputerSharing(win) {
     if (!info || win.isDestroyed() || activeEnvironment(environmentsState)?.id !== env.id || new URL(win.webContents.getURL()).origin !== env.origin) return;
     const choice = await dialog.showMessageBox(win, {
       type: "question", message: `Share this computer with ${env.name}?`,
-      detail: "Let this server’s bots use folders and capabilities you choose while this desktop app is running. Nothing is shared unless you enable it. You can change this later in Settings → Servers.",
+      detail: "Let this server’s bots use folders and capabilities you choose while this desktop app is running, only when you are the person asking. Nothing is shared unless you enable it. You can change this later in Settings → Organization.",
       buttons: ["Choose access", "Not now"], defaultId: 1, cancelId: 1,
     });
     sharingController().decline(env, info);
@@ -2276,7 +2289,7 @@ function openWorkspaceSettings(computerId) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   // Server mode never leaves for the local page: the server's own Settings open.
   if (serverModeEnvironment(environmentsState)) {
-    mainWindow.webContents.send("app:open-settings");
+    mainWindow.webContents.send("app:open-settings", "organization");
     return;
   }
   if (senderIsLocal({ sender: mainWindow.webContents })) {
@@ -3255,21 +3268,31 @@ const savedWorkspace = id => {
   if (!env) throw new Error("This server is no longer connected");
   return env;
 };
-ipcMain.handle("sharing:state", localWorkspaceOnly("sharing:state", async (_event, id) => {
+// Share this computer: the local page for any saved server, and in server
+// mode the organization server's page drawn from this app's bundle, for that
+// server only (the person decides there what their own computer lends).
+const sharingUiOnly = (channel, handler) => desktopUiOnly(channel, workspaceOnly((event, id, ...rest) => {
+  if (!senderIsLocal(event)) {
+    const locked = serverModeEnvironment(environmentsState);
+    if (!locked || (id !== undefined && id !== locked.id)) throw new Error(`${channel} is only available for this server`);
+  }
+  return handler(event, id, ...rest);
+}));
+ipcMain.handle("sharing:state", sharingUiOnly("sharing:state", async (_event, id) => {
   await requireSharedComputers();
   return sharingController().state(savedWorkspace(id).id);
 }));
-ipcMain.handle("sharing:folder", localWorkspaceOnly("sharing:folder", async () => {
+ipcMain.handle("sharing:folder", sharingUiOnly("sharing:folder", async () => {
   await requireSharedComputers();
   const picked = await dialog.showOpenDialog(mainWindow, { title: "Choose a folder to share", properties: ["openDirectory"] });
   if (picked.canceled || !picked.filePaths[0]) return null;
   return (await validateSharedFolders([{ id: randomUUID(), path: picked.filePaths[0], write: false }]))[0];
 }));
-ipcMain.handle("sharing:revoke", localWorkspaceOnly("sharing:revoke", async (_event, id) => {
+ipcMain.handle("sharing:revoke", sharingUiOnly("sharing:revoke", async (_event, id) => {
   await requireSharedComputers();
   return sharingController().revoke(savedWorkspace(id));
 }));
-ipcMain.handle("sharing:save", localWorkspaceOnly("sharing:save", async (_event, id, input) => {
+ipcMain.handle("sharing:save", sharingUiOnly("sharing:save", async (_event, id, input) => {
   await requireSharedComputers();
   const env = savedWorkspace(id);
   const info = await sharingController().identity(env);
@@ -3370,6 +3393,10 @@ ipcMain.handle("org-join:take", (event) => {
   const origin = orgJoinSender(event);
   return origin ? orgJoin.take(origin) : null;
 });
+ipcMain.handle("org-join:take-preferences", (event) => {
+  const origin = orgJoinSender(event);
+  return origin ? orgJoin.takePreferences(origin) : null;
+});
 ipcMain.handle("org-join:finished", orgJoinRemote((origin, input) => orgJoin.finished(origin, input)));
 ipcMain.handle("org-join:remove-local", orgJoinRemote((origin, keys) => orgJoin.removeLocal(origin, keys)));
 ipcMain.handle("dialog:confirm", desktopUiOnly("dialog:confirm", workspaceOnly(async (_event, message) => {
@@ -3389,7 +3416,7 @@ ipcMain.handle("dialog:confirm", desktopUiOnly("dialog:confirm", workspaceOnly(a
 // app's own UI only (the local page, or the bundle on that server).
 ipcMain.handle("server-mode:state", desktopUiOnly("server-mode:state", workspaceOnly(() => {
   const locked = serverModeEnvironment(environmentsState);
-  return locked ? { active: true, name: locked.name, origin: locked.origin } : { active: false };
+  return locked ? { active: true, id: locked.id, name: locked.name, origin: locked.origin } : { active: false };
 })));
 ipcMain.handle("server-mode:leave", desktopUiOnly("server-mode:leave", workspaceOnly(() => leaveServerMode())));
 // The preload asks once per page whether it is this app's bundle drawn on

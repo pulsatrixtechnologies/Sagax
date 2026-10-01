@@ -66,13 +66,22 @@ export function computerKindForResource(resource: string): ComputerKind | undefi
   if (resource.startsWith("computer:vps:")) return "vps";
 }
 
+/** On an organization server bots never use the server's own machine: not
+ * its screen ("this computer") and not a local virtual machine on it. A
+ * person's computer is reached through their own desktop app instead
+ * (server/user-computers.ts). */
+export const HOST_COMPUTER_REFUSAL = "On an organization server, bots never use the server's own computer or a virtual machine on it. They use the computer of the person who asks, through the Sagax desktop app on that computer (Settings > Organization > Share this computer).";
+const HOST_KINDS: ReadonlySet<ComputerKind> = new Set(["thisComputer", "localVm"]);
+
 export class ManagedDesktopPolicy {
   private policy: ManagedPolicy | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private readonly now: () => number;
   private readonly onChange: () => void;
-  constructor(options: { now?: () => number; onChange?: () => void } = {}) {
+  private readonly hostComputersAllowed: () => boolean;
+  constructor(options: { now?: () => number; onChange?: () => void; hostComputersAllowed?: () => boolean } = {}) {
     this.now = options.now ?? Date.now; this.onChange = options.onChange ?? (() => {});
+    this.hostComputersAllowed = options.hostComputersAllowed ?? (() => true);
   }
 
   apply(raw: unknown): void {
@@ -119,8 +128,12 @@ export class ManagedDesktopPolicy {
     return `${policy.organizationName} allows only MCP servers it has approved. Ask your administrator to add this server to the approved list.`;
   }
 
-  computerAllowed(kind: ComputerKind): boolean { return this.current()?.computers[kind] ?? true; }
+  computerAllowed(kind: ComputerKind): boolean {
+    if (HOST_KINDS.has(kind) && !this.hostComputersAllowed()) return false;
+    return this.current()?.computers[kind] ?? true;
+  }
   computerRefusal(kind: ComputerKind): string | undefined {
+    if (HOST_KINDS.has(kind) && !this.hostComputersAllowed()) return HOST_COMPUTER_REFUSAL;
     const policy = this.current();
     if (!policy || policy.computers[kind]) return;
     return `${policy.organizationName} does not allow bots to use ${computerLabels[kind]}.`;

@@ -105,3 +105,43 @@ test("the packaged app starts no local server in server mode, and the window nev
   // forgetting the server-mode server is leaving it
   assert.match(section("async function forgetEnvironment(", "function showContextMenu"), /serverModeEnvironment\(environmentsState\)\?\.id === id\) \{\n    await leaveServerMode\(\);/);
 });
+
+test("in server mode the bundled page sets what this computer lends to that server only; never to another", async () => {
+  const localOrigin = require("./local-origin.cjs");
+  const LOCAL_PAGE = "http://127.0.0.1:48998";
+  let state = env.withEnvironment({ environments: [], activeId: "local" }, { origin: "https://hosted.example.test" }, () => "h1");
+  state = env.withServerMode(env.withEnvironment(state, { origin: ORG, name: "GOX", org: true }, () => "o1"), "o1");
+  const frame = { url: `${ORG}/` }, contents = { mainFrame: frame };
+  const context = vm.createContext({
+    desktopUiOnly: localOrigin.desktopUiOnly, senderIsLocal: localOrigin.isLocalSender,
+    workspaceOnly: (handler) => handler, serverModeEnvironment: env.serverModeEnvironment, environmentsState: state,
+  });
+  vm.runInContext(`${section("const sharingUiOnly =", 'ipcMain.handle("sharing:state"')}; this.sharingUiOnly = sharingUiOnly;`, context);
+  const handler = context.sharingUiOnly("sharing:state", (_event, id) => `state of ${id}`);
+  localOrigin.setLocalOrigin(LOCAL_PAGE);
+  localOrigin.setBundledOrigin(ORG);
+  try {
+    const event = { sender: contents, senderFrame: frame };
+    assert.equal(handler(event, "o1"), "state of o1");
+    assert.throws(() => handler(event, "h1"), /only available for this server/);
+    // out of server mode the organization page may not touch sharing at all
+    context.environmentsState = env.withoutServerMode(state);
+    assert.throws(() => handler(event, "o1"), /only available for this server/);
+    // the local page keeps sharing for any saved server
+    const localFrame = { url: `${LOCAL_PAGE}/` };
+    assert.equal(handler({ sender: { mainFrame: localFrame }, senderFrame: localFrame }, "h1"), "state of h1");
+  } finally {
+    localOrigin.setBundledOrigin(null);
+    localOrigin.setLocalOrigin(null);
+  }
+});
+
+test("server mode shares this computer by the organization server's own word, with no local seat to lease", () => {
+  const refresh = section("async function refreshSharedComputersAllowed()", "/** Refuse a workspace sharing control");
+  assert.match(refresh, /const locked = serverModeEnvironment\(environmentsState\);\n  if \(locked\) \{\n    sharedComputersAllowed = await fetch\(`\$\{locked\.origin\}\/\.well-known\/openmausbot\/environment`/);
+  assert.match(refresh, /descriptor\?\.capabilities\?\.sharedComputers === true/);
+  assert.match(source, /if \(serverModeEnvironment\(environmentsState\) && !serverReady\) return \{ renew: async \(\) => \{\}, release: async \(\) => \{\} \};/);
+  for (const channel of ["sharing:state", "sharing:folder", "sharing:revoke", "sharing:save"]) {
+    assert.match(source, new RegExp(`ipcMain\\.handle\\("${channel}", sharingUiOnly\\("${channel}"`));
+  }
+});

@@ -4942,7 +4942,11 @@
       "settings.serverMode.botsOnServer": "59e3a0d9e6b3ce85fc2cd5daa9d0b3158cb867e354cd61f7b9bf1b56b02cf81c",
       "settings.serverMode.leaveFailed": "c0cc875bb1994e76c7fd8fcc99d02ee8179056ffd90c2db6bebf625230ccb01c",
       "settings.serverMode.managed": "9868c4e37d16fdec41d4ef7d69b959c7f1578d92bc53a06b713d5097a523e694",
-      "settings.serverMode.managedShort": "54508019ad7e308c79aaa8fcb5765ee52a34df234edead1bbc2f141a33ace1a1"
+      "settings.serverMode.managedShort": "54508019ad7e308c79aaa8fcb5765ee52a34df234edead1bbc2f141a33ace1a1",
+      "settings.serverMode.computerTitle": "c3f8ae398ae456890a079dd4016774d78e0b99763c763f243f937a459ff1389e",
+      "settings.serverMode.computerBody": "5792a7d4ad021064200051c3b167f7f1846d8c3f0b5d00b9696cd78da839d1c7",
+      "settings.serverMode.computerOff": "00606d6d46b09545fbb64c088e623300d9f6f60279900002bdc052094b68e0f1",
+      "settings.serverMode.computerOpen": "d0ba133d4e820ec75a8c127fea38ffa6bfe6f6b8f8906b7f1154c0ab8c04ae5c"
     },
     "hi": {
       "noEngines.title": "af88855a5f80377de709995229ba3907df9e8fb3b940fbf7c0d9cbe6eea54afe",

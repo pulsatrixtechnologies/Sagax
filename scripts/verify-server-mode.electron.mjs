@@ -91,6 +91,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("window:state", () => ({ maximized: false }));
   ipcMain.handle("update:get-state", () => ({ status: "idle" }));
   ipcMain.handle("org-join:staged", () => null);
+  // The launch screen handed this computer's preferences over at join.
+  let handedOver = { "omb-skin": "midnight", "omb-language": "fr" };
+  ipcMain.handle("org-join:take-preferences", () => { const out = handedOver; handedOver = null; return out; });
   ipcMain.on("desktop:unread-count", () => {});
 
   // Floating bots: watch what the page sends and what the windows answer.
@@ -146,6 +149,16 @@ app.whenReady().then(async () => {
   check("signed in to the organization server through this app's page", true, `role ${signed.role}`);
   await until("the app home", async () => new URL(win.webContents.getURL()).pathname === "/");
   await wait(2500);
+
+  // 2b. First sign-in: this computer's preferences became the person's, on the server.
+  const prefs = await win.webContents.executeJavaScript(`fetch("/api/me/preferences").then(r => r.json()).then(record => ({ record, skin: localStorage.getItem("omb-skin"), language: localStorage.getItem("omb-language") }))`);
+  check("this computer's preferences were saved for the person on the server, once, without asking", prefs.record.stored === true && prefs.record.preferences["omb-skin"] === "midnight" && prefs.skin === "midnight" && prefs.language === "fr", JSON.stringify(prefs.record.preferences));
+  await win.webContents.executeJavaScript(`localStorage.setItem("omb-font", "serif")`);
+  const saved = await until("a changed preference on the server", async () => {
+    const record = await win.webContents.executeJavaScript(`fetch("/api/me/preferences").then(r => r.json())`);
+    return record.preferences?.["omb-font"] === "serif" ? record : null;
+  }).catch(() => null);
+  check("a preference changed in the app is saved on the server", Boolean(saved));
 
   // 3. The UI is this app's own, with the desktop-UI bridge and nothing local.
   const page = await win.webContents.executeJavaScript(`({

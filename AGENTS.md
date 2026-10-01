@@ -49,6 +49,49 @@ Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in
 managed-desktop Admin sign-in; Settings > Organization still does. See
 `docs/self-hosting.md` ("At launch: No server or Server").
 
+Server mode (the launch screen's Server) is exclusive: `serverModeId` in
+`environments.json` (`electron/environments.cjs`) locks the app to that
+organization server. While it is set nothing switches to Local or another
+server (`withActive`, `switchEnvironment`, `requireNotServerMode`), the
+packaged app starts no local server, and the only way out is `leaveServerMode`
+in `electron/main.mjs` (Settings > General > Server > Change, Server > Change
+server…), which signs out and returns to the launch screen. Tests:
+`electron/server-mode.node-test.mjs`, `electron/environments.node-test.mjs`.
+
+An organization server (`org: true`, set by org-join after its probe) is
+drawn with this app's own bundle (`electron/bundled-ui.cjs`): page requests
+come from the bundle, `/api/`, `/.well-known/` and `/auth/` pass through.
+Keep these rules: the session cookie rides only with the bundled page's own
+requests (its referrer is the server's origin), never a widget's or another
+origin's; main's own calls to a server pass `bypassCustomProtocolHandlers`;
+the bundled page gets only `BUNDLED_EXTRA` in `electron/preload.cjs`, and
+main checks those channels with `desktopUiOnly` (`electron/local-origin.cjs`);
+anything touching this computer stays `localOnly`. Tests:
+`electron/bundled-ui.node-test.mjs`; real Electron:
+`scripts/verify-server-mode.ts`.
+
+On an organization server (`OMB_IDENTITY=perspicax`) bots never use the
+server's own machine: `ManagedDesktopPolicy` refuses `thisComputer` and
+`localVm` there (`HOST_COMPUTER_REFUSAL`, every claim passes
+`bindTurnComputer`), and the Local VM create/start routes refuse with
+`hostComputerRefusal()`. A bot reaches the computer of the person who asks
+through `server/user-computers.ts`: `speakingPerson` (a person's message or a
+hop carrying it; never a routine), then a provider per target
+(`user-desktop`: that person's desktop app via `SharedComputers.listFor` /
+`ownedBy`; `user-sandbox`: plugs in as a second provider). Not connected, not
+theirs, or no person: the tool answers why. `shared_computer` is never
+pre-allowed for Claude (`agentsAllowedTools`), so the bot's approval mode
+applies. Tests: `server/user-computers.test.ts`,
+`electron/server-mode.node-test.mjs`.
+
+A person's preferences on an organization server live per principal
+(`shared/user-preferences.ts` lists the only keys that travel,
+`server/user-preferences.ts`, `GET/PUT /api/me/preferences`). The renderer
+syncs them before the app draws (`src/lib/user-preferences-sync.ts`); the
+launch screen hands this computer's own values over once at join
+(`orgJoin.join({ preferences })`, `takePreferences`). Device-only state
+(drafts, sizes, floating list and positions, mood, voices) never travels.
+
 ## Floating bots and the desktop mascot
 
 A bot put "on the desktop" stands in its own transparent window

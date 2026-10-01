@@ -51,6 +51,7 @@ import { appendNative } from "./native.ts";
 import { permissionCommand, permissionLaunchCwd, permissionPaths } from "./permission-command.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
+import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
 import {
   ASK_USER_QUESTION_TOOL,
   askQuestionSummary,
@@ -1355,7 +1356,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // Coordination is foundational, not an optional deferred lookup.
         // Claude waits for always-loaded tools before building the prompt.
         mcpServers.agents = { ...turn.integrations.agents, alwaysLoad: true };
-        allowed.push("mcp__agents");
+        allowed.push(...agentsAllowedTools(turn.integrations.agents.env));
       }
       if (turn.integrations?.phone) {
         mcpServers.phone = { ...turn.integrations.phone };
@@ -2325,3 +2326,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     };
   },
 };
+
+/** What a turn pre-allows of the agents MCP. Everything, except the one tool
+ * that acts on a person's own computer (shared_computer: files, terminal,
+ * screen control through their desktop app): that one goes through the
+ * permission prompt like the host's own computer tools, so the bot's
+ * approval mode decides and the person sees each action. */
+export function agentsAllowedTools(env: Record<string, string> | undefined): string[] {
+  const profile = catalogProfileFromEnv(env ?? {});
+  if (!profile.sharedComputers) return ["mcp__agents"];
+  return availableTools(profile).map((tool) => tool.name).filter((name) => name !== "shared_computer").map((name) => `mcp__agents__${name}`);
+}

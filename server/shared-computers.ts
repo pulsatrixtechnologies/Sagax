@@ -18,7 +18,10 @@ export const sharedComputerOperation = z.object({
 type Registration = z.infer<typeof sharedComputerRegistration>;
 type Operation = z.infer<typeof sharedComputerOperation>;
 type Job = { id: string; operation: Operation; active: () => boolean; sent: boolean; resolve: (result: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
-type Computer = { registration: Registration; owner: string; secret: string; seen: number; jobs: Map<string, Job>; wake?: () => void };
+/** `person`: the principal of the session that registered it, lowercased;
+ * on an organization server only that person's turns may use it
+ * (server/user-computers.ts). */
+type Computer = { registration: Registration; owner: string; person: string; secret: string; seen: number; jobs: Map<string, Job>; wake?: () => void };
 const failure = (message: string, status = 409) => Object.assign(new Error(message), { status });
 
 /** In-memory rendezvous only. Authority over local resources stays on the
@@ -27,7 +30,7 @@ export class SharedComputers {
   private computers = new Map<string, Computer>();
   private sessionLive: (id: string) => boolean;
   constructor(sessionLive: (id: string) => boolean) { this.sessionLive = sessionLive; }
-  register(registration: Registration, owner: string, secret: string) {
+  register(registration: Registration, owner: string, secret: string, person = "") {
     if (!/^[a-f0-9]{64}$/.test(secret)) throw failure("Invalid computer credential", 400);
     const old = this.computers.get(registration.id);
     if (old) {
@@ -37,7 +40,7 @@ export class SharedComputers {
       // Reap dead devices before applying the bounded registration limit.
       for (const [id, entry] of this.computers) if (!this.online(entry) && entry.jobs.size === 0) this.computers.delete(id);
       if (this.computers.size >= 20) throw failure("Too many shared computers");
-      this.computers.set(registration.id, { registration, owner, secret, seen: Date.now(), jobs: new Map() });
+      this.computers.set(registration.id, { registration, owner, person: person.trim().toLowerCase(), secret, seen: Date.now(), jobs: new Map() });
     }
   }
   private online(entry: Computer) { return this.sessionLive(entry.owner) && Date.now() - entry.seen < 40_000; }
@@ -47,6 +50,18 @@ export class SharedComputers {
     return entry;
   }
   list() { return [...this.computers.values()].filter(entry => this.online(entry)).map(entry => entry.registration); }
+  /** The connected computers registered by this person's own sessions. */
+  listFor(person: string) {
+    const key = person.trim().toLowerCase();
+    if (!key) return [];
+    return [...this.computers.values()].filter(entry => entry.person === key && this.online(entry)).map(entry => entry.registration);
+  }
+  /** Whether this computer is this person's and connected. */
+  ownedBy(computerId: string, person: string) {
+    const entry = this.computers.get(computerId);
+    const key = person.trim().toLowerCase();
+    return Boolean(key && entry && entry.person === key && this.online(entry));
+  }
   async poll(id: string, owner: string, secret: string) {
     const entry = this.authorize(id, owner, secret);
     if (entry.wake) throw failure("A computer poll is already running");

@@ -38,10 +38,13 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // also gets the desktop-UI parts that hold no local data: floating bots and
 // the Hibou 98 assistant (windows that only draw what the page sends), the
 // window's caption buttons, the app menu's Preferences, links in the system
-// browser, native confirmations and this app's updater. Main checks every
-// one of these channels again (local-origin.cjs desktopUiOnly). Nothing that
-// reads this computer's files, screen, logins or secrets is added.
-const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode"]);
+// browser, native confirmations, this app's updater, server mode's state
+// and way out, and in server mode the person's own "Share this computer"
+// for that server (each grant confirmed in a native dialog). Main checks
+// every one of these channels again (local-origin.cjs desktopUiOnly, and
+// sharingUiOnly for the server-mode server only). Nothing that reads this
+// computer's files, screen, logins or secrets is handed to the page.
+const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing"]);
 let bundledPage = false;
 if (!isLocalPage) {
   try {
@@ -314,6 +317,7 @@ const bridge = {
     join: (input) => ipcRenderer.invoke("org-join:join", input),
     staged: () => ipcRenderer.invoke("org-join:staged"),
     take: () => ipcRenderer.invoke("org-join:take"),
+    takePreferences: () => ipcRenderer.invoke("org-join:take-preferences"),
     finished: (input) => ipcRenderer.invoke("org-join:finished", input),
     removeLocal: (keys) => ipcRenderer.invoke("org-join:remove-local", Array.isArray(keys) ? keys.map(String) : []),
   },

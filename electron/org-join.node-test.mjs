@@ -129,6 +129,18 @@ test("the launch screen's join locks the app to that server (server mode); a pla
   assert.deepEqual(h.calls.modes, [true, false, false]);
 });
 
+test("server mode hands this computer's preferences to that server's page once, nothing else", async () => {
+  const h = harness();
+  await h.join.probe(ORG);
+  await h.join.join({ origin: ORG, serverMode: true, preferences: { "omb-skin": "midnight", "bad key!": "x", "omb-font": 3, "omb-language": "x".repeat(9000) } });
+  assert.equal(h.join.takePreferences("https://other.example.test"), null);
+  assert.deepEqual(h.join.takePreferences(ORG), { "omb-skin": "midnight" });
+  assert.equal(h.join.takePreferences(ORG), null, "once");
+  // a plain join (not server mode) hands nothing
+  await h.join.join({ origin: ORG, preferences: { "omb-skin": "paper" } });
+  assert.equal(h.join.takePreferences(ORG), null);
+});
+
 test("join still saves the server when the sign-in cannot start, and says so", async () => {
   const h = harness({ signIn: async () => { throw new Error("no window"); } });
   await h.join.probe(ORG);

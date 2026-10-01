@@ -16,8 +16,17 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { defaultServerAddress, launchErrorKey, launchModePatch, type LaunchBridges, type LaunchMode } from "@/lib/launch";
 import { serverAddress } from "@/lib/org-join";
+import { readPreferences } from "@/lib/user-preferences-sync";
 import { api, useStore } from "@/state/store";
 import { inputClass, PrimaryButton } from "./beats/shared";
+
+function localStorageOrNull(): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
+  try {
+    return window.localStorage;
+  } catch {
+    return { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+  }
+}
 
 export function LaunchScreen({
   bridges,
@@ -66,7 +75,10 @@ export function LaunchScreen({
       const probed = await bridges.orgJoin.probe(origin);
       await remember("server");
       // The window leaves for the server's sign-in from here.
-      await bridges.orgJoin.join({ origin: probed.origin, serverMode: true });
+      // This computer's preferences go along, once: the server keeps them for
+      // the person on first sign-in (src/lib/user-preferences-sync.ts). The
+      // local copy stays as it is for No server.
+      await bridges.orgJoin.join({ origin: probed.origin, serverMode: true, preferences: readPreferences(localStorageOrNull()) });
     } catch (failure) {
       setError(t(launchErrorKey(failure)));
     } finally {

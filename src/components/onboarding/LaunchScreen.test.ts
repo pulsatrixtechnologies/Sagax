@@ -108,7 +108,7 @@ describe("launch screen", () => {
     await flush();
     expect(probe).toHaveBeenCalledExactlyOnceWith("https://bot.pulsatrix.mcp.goxcloud.ca");
     expect(store.api).toHaveBeenCalledWith("/api/config", expect.objectContaining({ body: JSON.stringify({ onboarding: { launchMode: "server" } }) }));
-    expect(join).toHaveBeenCalledExactlyOnceWith({ origin: "https://bot.pulsatrix.mcp.goxcloud.ca", serverMode: true });
+    expect(join).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ origin: "https://bot.pulsatrix.mcp.goxcloud.ca", serverMode: true }));
     expect(onSolo).not.toHaveBeenCalled();
   });
 
@@ -120,7 +120,7 @@ describe("launch screen", () => {
     submit();
     await flush();
     expect(probe).toHaveBeenCalledExactlyOnceWith("https://sagax.example.test");
-    expect(join).toHaveBeenCalledExactlyOnceWith({ origin: "https://sagax.example.test", serverMode: true });
+    expect(join).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ origin: "https://sagax.example.test", serverMode: true }));
   });
 
   it("refuses an address that is not https before asking anything", async () => {
