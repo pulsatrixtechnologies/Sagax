@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { botLevel, canInChannel, type TeamRef, type Viewer } from "./authz.ts";
-import { createSectionChannelRoutes, migrationOwner, SectionChannels, validSectionName } from "./section-channels.ts";
+import { createSectionChannelRoutes, type SectionAuditRow, migrationOwner, SectionChannels, validSectionName } from "./section-channels.ts";
 
 const pid = (n: number) => `pr_00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const ALICE = pid(1);
@@ -68,6 +68,7 @@ function harness() {
   };
   const rooms = new Set<string>();
   let changed = 0;
+  const audits: Array<SectionAuditRow & { actor: string }> = [];
   channels.migrate([...sections], () => ALICE);
   const route = createSectionChannelRoutes({
     channels,
@@ -106,6 +107,7 @@ function harness() {
     createRoom: (name) => { const id = `room-${name}`; rooms.add(id); return id; },
     roomExists: (id) => rooms.has(id),
     onChanged: () => { changed += 1; },
+    audit: (auth, row) => { audits.push({ ...row, actor: (auth as unknown as { actor: string }).actor }); },
   });
   const call = async (actor: string | undefined, method: string, path: string, body?: unknown) => {
     let answer: { status: number; body: any } | undefined;
@@ -121,7 +123,7 @@ function harness() {
     });
     return answer!;
   };
-  return { channels, sections, bots, rooms, call, changed: () => changed };
+  return { channels, sections, bots, rooms, call, changed: () => changed, audits };
 }
 
 describe("section access follows the bot owner's consent", () => {
@@ -258,5 +260,36 @@ describe("section routes", () => {
     expect((await h.call(MIA, "PUT", `/api/org/sections/${id}/members`, { members: [] })).status).toBe(200);
     // the default level is the moderators' call
     expect((await h.call(MIA, "PUT", `/api/org/sections/${id}/members`, { members: [], defaultLevel: "run" })).status).toBe(403);
+  });
+});
+
+describe("section audit (slice 7)", () => {
+  it("writes one row per saved change, none for a refusal", async () => {
+    const h = harness();
+    const id = (await h.call(ALICE, "POST", "/api/org/sections", { name: "Ventes" })).body.section.id;
+    await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "participant" }, { target: `user:${DAVE}`, role: "readonly" }], defaultLevel: "run" });
+    await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "moderator" }], defaultLevel: "run" });
+    await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { add: ["v"] });
+    await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { remove: ["v"] });
+    await h.call(ALICE, "PATCH", `/api/org/sections/${id}`, { name: "Ventes QC" });
+    // refused: nothing written
+    const before = h.audits.length;
+    expect((await h.call(BOB, "PATCH", `/api/org/sections/${id}`, { name: "Nope" })).status).toBe(403);
+    expect((await h.call(BOB, "PUT", `/api/org/sections/${id}/members`, { members: [] })).status).toBe(403);
+    expect(h.audits.length).toBe(before);
+    await h.call(ALICE, "DELETE", `/api/org/sections/${id}`);
+    expect(h.audits.map((row) => row.action)).toEqual([
+      "section.create",
+      "section.member.set", "section.member.set", "section.default_level",
+      "section.member.set", "section.member.remove",
+      "section.bot.place", "section.bot.remove",
+      "section.rename",
+      "section.delete",
+    ]);
+    expect(h.audits.every((row) => row.actor === ALICE && row.section.id === id)).toBe(true);
+    expect(h.audits[4]).toMatchObject({ before: { target: "team:T", role: "participant" }, after: { target: "team:T", role: "moderator" } });
+    expect(h.audits[5]).toMatchObject({ before: { target: `user:${DAVE}`, role: "readonly" } });
+    expect(h.audits[3]).toMatchObject({ before: { defaultLevel: "use" }, after: { defaultLevel: "run" } });
+    expect(h.audits[8]).toMatchObject({ before: { name: "Ventes" }, after: { name: "Ventes QC" } });
   });
 });

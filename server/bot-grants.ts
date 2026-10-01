@@ -184,11 +184,11 @@ export function createBotGrantRoutes(deps: BotGrantRouteDeps): RouteHandler {
       if (!canAdministerGrant(viewer, { bot: facts, target, teamsOf: deps.teamsOf })) {
         return reply(403, { error: "you may not remove this grant", code: "not_allowed" });
       }
+      const removed = bot.grants.find((grant) => grant.target === target);
       const next = bot.grants.filter((grant) => grant.target !== target);
       deps.setGrants(botId, next);
       console.log(`[grants] bot ${botId}: ${target.startsWith("team:") ? "team" : "user"} grant removed`);
       deps.onChanged(botId);
-      const removed = bot.grants.find((grant) => grant.target === target);
       deps.audit?.(auth, { action: "grant.remove", botId, before: removed ? { target, level: removed.level } : null, after: null });
       return answer(deps.bot(botId)?.grants ?? next);
     }

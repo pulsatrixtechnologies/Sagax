@@ -427,6 +427,7 @@ export function activityEntries(
   decisions: readonly DecisionRow[],
   actions: readonly AdminActionRow[],
   filter: { what: ActivityWhat; who?: string },
+  nameOf?: (principalId: string) => string | undefined,
 ): ActivityEntry[] {
   const who = filter.who?.trim().toLowerCase() ?? "";
   const entries: ActivityEntry[] = [];
@@ -454,7 +455,7 @@ export function activityEntries(
       entries.push({
         type: "admin",
         at: row.at,
-        who: adminActorLabel(row.actor),
+        who: adminActorLabel(row.actor, nameOf),
         what: row.category,
         action: row.action,
         ...(row.target ? { target: row.target } : {}),

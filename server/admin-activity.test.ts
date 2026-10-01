@@ -17,6 +17,7 @@ import {
   parseActivityWhat,
   pruneAdminActivity,
   readAdminActivityRange,
+  readOrgAuditPage,
   sharedSignIn,
   signInListsOf,
   type AdminActionRow,
@@ -202,5 +203,40 @@ describe("the Activity view", () => {
     expect(lines[0]).toBe("time,type,who,what,action,target,changed,before,after,bot,tool,summary,thread");
     expect(lines[1]).toContain("visibility.update,Payroll,visibility");
     expect(csv).toContain(",'=cmd|' /C calc'!A0,");
+  });
+});
+
+describe("organization audit page (slice 7)", () => {
+  it("reads org categories newest first with stable ids and a cursor", async () => {
+    const dir = tempDir();
+    const actor = { kind: "person" as const, principalId: "pr_00000000-0000-4000-8000-000000000001", via: "sagax" as const };
+    appendAdminAction(dir, { at: "2026-08-31T10:00:00.000Z", category: "rights", action: "grant.set", target: { kind: "bot", id: "b1" }, after: { target: "team:T", level: "run" }, actor });
+    appendAdminAction(dir, { at: "2026-09-01T10:00:00.000Z", category: "config", action: "config.update", actor: { kind: "loopback" } });
+    appendAdminAction(dir, { at: "2026-09-02T10:00:00.000Z", category: "section", action: "section.create", target: { kind: "section", id: "s1" }, actor });
+    appendAdminAction(dir, { at: "2026-09-03T10:00:00.000Z", category: "approval", action: "approval.answer", after: { decision: "allow", token: "sk-ant-secret-value-123456" }, actor: { ...actor, via: "console" } });
+    appendAdminAction(dir, { at: "2026-09-04T10:00:00.000Z", category: "people", action: "person.disabled", actor: { kind: "worker" } });
+    await flushAdminActivity(dir);
+    const all = readOrgAuditPage(dir, { limit: 10 });
+    expect(all.rows.map((row) => row.action)).toEqual(["person.disabled", "approval.answer", "section.create", "grant.set"]);
+    expect(all.rows.map((row) => row.id)).toEqual(["2026-09-4", "2026-09-3", "2026-09-2", "2026-08-1"]);
+    expect(all.next).toBeNull();
+    // a secret under a credential name never reaches the page
+    expect(JSON.stringify(all.rows)).not.toContain("sk-ant-secret");
+    const first = readOrgAuditPage(dir, { limit: 2 });
+    expect(first.rows.map((row) => row.id)).toEqual(["2026-09-4", "2026-09-3"]);
+    expect(first.next).toBe("2026-09-3");
+    const second = readOrgAuditPage(dir, { limit: 2, before: first.next });
+    expect(second.rows.map((row) => row.id)).toEqual(["2026-09-2", "2026-08-1"]);
+    expect(second.next).toBeNull();
+    // the time range
+    expect(readOrgAuditPage(dir, { limit: 10, from: Date.parse("2026-09-02T00:00:00.000Z"), to: Date.parse("2026-09-03T23:00:00.000Z") }).rows.map((row) => row.action)).toEqual(["approval.answer", "section.create"]);
+    // an empty data dir
+    expect(readOrgAuditPage(tempDir(), { limit: 5 })).toEqual({ rows: [], next: null });
+  });
+
+  it("parses the new categories and names a person actor", () => {
+    for (const what of ["rights", "section", "org", "approval"]) expect(parseActivityWhat(what)).toBe(what);
+    const rows: AdminActionRow[] = [{ at: "2026-09-01T00:00:00.000Z", category: "rights", action: "grant.set", actor: { kind: "person", principalId: "p1", via: "console" } }];
+    expect(activityEntries([], rows, { what: "all" }, (id) => (id === "p1" ? "Alice" : undefined))[0]).toMatchObject({ who: "Alice (console)", what: "rights" });
   });
 });

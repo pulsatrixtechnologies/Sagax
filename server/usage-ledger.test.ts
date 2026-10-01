@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { removeTempDir } from "./testing/cleanup.ts";
 import {
+  aggregateOrgUsage,
   appendUsage,
+  orgUsageSpeaker,
+  parseOrgUsageRange,
   flushUsageLedger,
   parseUsageRange,
   readUsage,
@@ -203,5 +206,59 @@ describe("usage summaries", () => {
     expect(summary.groups.find((g) => g.label === "Scout")!.estimatedUsd).toBeNull();
     // an unpriced row is still counted as unpriced, never as a $0 estimate
     expect(summarizeUsage([rows[1]!], "bot").total).toMatchObject({ costUsd: null, estimatedUsd: null, unpriced: 1 });
+  });
+});
+
+describe("organization admin usage (slice 7)", () => {
+  const base = (over: Partial<UsageRow>): UsageRow => ({ ...(row() as UsageRow), cachedInput: 0, at: "2026-09-10T12:00:00.000Z", ...over });
+  const P1 = "pr_00000000-0000-4000-8000-000000000001";
+  const P2 = "pr_00000000-0000-4000-8000-000000000002";
+
+  it("names the speaker by principal, routine runAs, bot or nobody", () => {
+    expect(orgUsageSpeaker({ trigger: { kind: "user", principalId: P1, label: "x" } })).toEqual({ kind: "person", principalId: P1 });
+    expect(orgUsageSpeaker({ trigger: { kind: "user", email: "a@example.test" } })).toEqual({ kind: "unattributed" });
+    expect(orgUsageSpeaker({ trigger: { kind: "routine", routineId: "r1", runAsPrincipalId: P2 } })).toEqual({ kind: "routine", routineId: "r1", runAsPrincipalId: P2 });
+    expect(orgUsageSpeaker({ trigger: { kind: "routine", routineId: "r1" } })).toEqual({ kind: "routine", routineId: "r1", runAsPrincipalId: null });
+    expect(orgUsageSpeaker({ trigger: { kind: "bot", botId: "b2" } })).toEqual({ kind: "bot", botId: "b2" });
+    expect(orgUsageSpeaker({ trigger: { kind: "owner" } })).toEqual({ kind: "unattributed" });
+  });
+
+  it("groups by day, bot and speaker with the access split, and filters by reach", () => {
+    const rows = [
+      base({ trigger: { kind: "user", principalId: P1 }, input: 10, output: 5, cachedInput: 2, costUsd: 0.1, costSource: "reported", access: "owner-key", ownerPrincipalId: P2 }),
+      base({ trigger: { kind: "user", principalId: P1 }, input: 1, output: 1, costUsd: 0.05, costSource: "estimated", access: "server", ownerPrincipalId: P2 }),
+      base({ trigger: { kind: "user", principalId: P1 }, at: "2026-09-11T00:00:00.000Z", ownerPrincipalId: P2 }),
+      base({ trigger: { kind: "routine", routineId: "r1", runAsPrincipalId: P2 }, ownerPrincipalId: P2, access: "subscription" }),
+      base({ trigger: { kind: "owner" } }),
+    ];
+    const all = aggregateOrgUsage(rows, () => true);
+    expect(all.truncated).toBe(false);
+    expect(all.rows).toHaveLength(4);
+    expect(all.rows[0]).toMatchObject({ day: "2026-09-10", botId: "b1", speaker: { kind: "person", principalId: P1 }, turns: 2, input: 11, output: 6, cachedInput: 2, ownerPrincipalId: P2, access: { "owner-key": 1, server: 1, unknown: 0 } });
+    expect(all.rows[0]!.costUsd).toBeCloseTo(0.15);
+    expect(all.rows[0]!.estimatedUsd).toBeCloseTo(0.05);
+    expect(all.rows.find((r) => r.speaker.kind === "unattributed")).toMatchObject({ ownerPrincipalId: null, access: { unknown: 1 } });
+    // a manager reaching P1 only: P1's rows; the routine of P2 and the unattributed row go
+    const reach = new Set([P1]);
+    const narrowed = aggregateOrgUsage(rows, ({ speaker, ownerPrincipalId }) => speaker.kind === "unattributed" ? false
+      : speaker.kind === "person" ? reach.has(speaker.principalId) : reach.has(ownerPrincipalId ?? ""));
+    expect(narrowed.rows.map((r) => r.speaker.kind)).toEqual(["person", "person"]);
+    // the row cap truncates
+    expect(aggregateOrgUsage(rows, () => true, 2)).toMatchObject({ truncated: true });
+  });
+
+  it("reads YYYY-MM-DD ranges: 30 days by default, at most 92, never reversed", () => {
+    const now = new Date("2026-09-30T15:00:00.000Z");
+    expect(parseOrgUsageRange(null, null, now)).toMatchObject({ fromDay: "2026-09-01", toDay: "2026-09-30" });
+    expect(parseOrgUsageRange("2026-07-01", "2026-09-30", now)).toMatchObject({ fromDay: "2026-07-01" });
+    expect(parseOrgUsageRange("2026-06-30", "2026-09-30", now)).toBeNull();
+    expect(parseOrgUsageRange("2026-09-30", "2026-09-01", now)).toBeNull();
+    expect(parseOrgUsageRange("2026-9-1", null, now)).toBeNull();
+    expect(parseOrgUsageRange("2026-02-31", null, now)).toBeNull();
+  });
+
+  it("keys a person by principal when the row names one", () => {
+    expect(triggerKey({ kind: "user", principalId: P1, email: "a@example.test" })).toBe(`principal:${P1}`);
+    expect(triggerKey({ kind: "user", email: "A@example.test" })).toBe("user:a@example.test");
   });
 });

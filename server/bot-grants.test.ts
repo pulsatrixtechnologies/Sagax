@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BotGrant, TeamRef, Viewer } from "./authz.ts";
-import { createBotGrantRoutes } from "./bot-grants.ts";
+import { createBotGrantRoutes, type GrantAuditRow } from "./bot-grants.ts";
 import { requiredScope } from "./request-auth.ts";
 
 const pid = (n: number) => `pr_00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -20,6 +20,7 @@ const active = new Set([ALICE, BOB, CAROL, DAVE, MIA, ADMIN]);
 function harness() {
   const bots: Record<string, { id: string; grants: BotGrant[] }> = { x: { id: "x", grants: [] }, y: { id: "y", grants: [] } };
   const changed: string[] = [];
+  const audits: Array<GrantAuditRow & { actor?: string }> = [];
   let clock = 100;
   const route = createBotGrantRoutes({
     bot: (id) => bots[id],
@@ -35,6 +36,7 @@ function harness() {
     describe: (target) => (target === `user:${GONE}` ? { label: "Gone", disabled: true } : { label: target.startsWith("team:") ? `Team ${target.slice(5)}` : target.slice(5, 12) }),
     setGrants: (id, grants) => { bots[id]!.grants = grants; },
     onChanged: (id) => changed.push(id),
+    audit: (auth, row) => { audits.push({ ...row, actor: (auth as unknown as { actor?: string }).actor }); },
     now: () => ++clock,
   });
   const call = async (actor: string | undefined, method: string, path: string, body?: unknown) => {
@@ -53,7 +55,7 @@ function harness() {
   };
   const put = (actor: string, bot: string, target: string, level: string) => call(actor, "PUT", `/api/bots/${bot}/grants`, { target, level });
   const del = (actor: string, bot: string, target: string) => call(actor, "DELETE", `/api/bots/${bot}/grants/${encodeURIComponent(target)}`);
-  return { bots, changed, call, put, del };
+  return { bots, changed, call, put, del, audits };
 }
 
 describe("bot grants routes", () => {
@@ -151,3 +153,22 @@ describe("bot grants routes", () => {
 async function put(h: ReturnType<typeof harness>, actor: string, bot: string, target: string, level: string) {
   return h.put(actor, bot, target, level);
 }
+
+describe("bot grants audit (slice 7)", () => {
+  it("writes grant.set and grant.remove on success only, with before and after", async () => {
+    const h = harness();
+    await h.put(ALICE, "x", `user:${BOB}`, "use");
+    await h.put(ALICE, "x", `user:${BOB}`, "edit");
+    // unchanged level, refused caller, bad input: nothing written
+    await h.put(ALICE, "x", `user:${BOB}`, "edit");
+    expect((await h.put(DAVE, "x", "team:T", "use")).status).toBe(403);
+    expect((await h.put(ALICE, "x", "bob@example.test", "use")).status).toBe(400);
+    await h.del(ALICE, "x", `user:${BOB}`);
+    expect((await h.del(ALICE, "x", `user:${BOB}`)).status).toBe(404);
+    expect(h.audits).toEqual([
+      { action: "grant.set", botId: "x", before: null, after: { target: `user:${BOB}`, level: "use" }, actor: ALICE },
+      { action: "grant.set", botId: "x", before: { target: `user:${BOB}`, level: "use" }, after: { target: `user:${BOB}`, level: "edit" }, actor: ALICE },
+      { action: "grant.remove", botId: "x", before: { target: `user:${BOB}`, level: "edit" }, after: null, actor: ALICE },
+    ]);
+  });
+});
