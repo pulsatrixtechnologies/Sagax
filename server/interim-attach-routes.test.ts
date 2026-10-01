@@ -100,7 +100,7 @@ describe("GET and POST /api/org/interim-people", () => {
 
   it("refuses unknown people, non-interim sources and bad targets", async () => {
     const h = harness();
-    const attach = (body: unknown, auth = admin) => h.call(auth, "POST", "/api/org/interim-people/attach", body);
+    const attach = (body: unknown, auth: RequestAuth = admin) => h.call(auth, "POST", "/api/org/interim-people/attach", body);
     expect(await attach({ interimPrincipalId: EVE_OLD, principalId: EVE }, member)).toMatchObject({ status: 403 });
     expect(await attach({ interimPrincipalId: "pr_00000000-0000-4000-8000-000000000000", principalId: EVE })).toMatchObject({ status: 404, body: { code: "unknown_person" } });
     expect(await attach({ interimPrincipalId: EVE_OLD })).toMatchObject({ status: 404, body: { code: "unknown_person" } });

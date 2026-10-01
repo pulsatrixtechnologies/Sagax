@@ -20,6 +20,7 @@ import { LocalComputerSection } from "./LocalComputerSection";
 import { CompanionSection } from "./CompanionSection";
 import { ServerPairingCard } from "./ServerPairingCard";
 import { PeopleSection } from "./PeopleSection";
+import { readMembership } from "../lib/membership";
 import { ActivitySection } from "./ActivitySection";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
@@ -771,8 +772,9 @@ export function SettingsModal() {
     .filter((entry) => entry.id !== "cloudAccount" || Boolean(window.ogb?.cloudAccount))
     // the operator's screen for other workspaces exists only where a fleet agent does
     .filter((entry) => entry.id !== "workspaces" || workspacesAvailable(state.config))
-    // sign-in by email is a hosted server's; the desktop app pairs devices under Remote access
-    .filter((entry) => entry.id !== "people" || !window.ogb)
+    // People is the read-only view of a hosted workspace whose members the
+    // organisation's Admin decides; the email sign-in list is gone (slice 8)
+    .filter((entry) => entry.id !== "people" || (!window.ogb && readMembership(state.config).authority === "portal"))
     // the activity log belongs to a workspace served to a browser, and to its admins
     .filter((entry) => entry.id !== "activity" || (!window.ogb && ownerOrAdmin === true));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));

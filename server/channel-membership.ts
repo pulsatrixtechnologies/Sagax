@@ -1,13 +1,15 @@
-import type { OrgRole } from "./org-directory.ts";
+/** Who someone is to a channel: the operator at this computer (owner), an
+ * admin, or a member. */
+export type OrgRole = "owner" | "admin" | "member";
 
 /** True only when the actor owns the bot. An admin is not an exception. */
 export function canPlaceBot(input: { actorId: string; ownerUserId: string }): boolean {
   return input.actorId.trim().toLowerCase() === input.ownerUserId.trim().toLowerCase();
 }
 
-/** The id canPlaceBot compares against. A recorded owner wins. Otherwise
- * the org owner, or the local operator when there is no organization.
- * This never substitutes the caller's id. */
+/** The id canPlaceBot compares against. A recorded owner wins, then a
+ * given organization owner, else the local operator. This never
+ * substitutes the caller's id. */
 export function ownerUserIdForPlacement(input: {
   recordedOwnerUserId?: string;
   orgOwnerUserId?: string;
