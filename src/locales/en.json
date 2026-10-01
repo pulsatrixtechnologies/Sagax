@@ -54,6 +54,8 @@
   "common.checkAgain": "Check again",
   "common.checking": "Checking…",
   "approval.someone": "Someone",
+  "approval.ownerSettled.allowed": "{name} allowed this request.",
+  "approval.ownerSettled.denied": "{name} declined this request.",
   "approval.tool.action": "an action",
   "approval.tool.runCommand": "run a command",
   "approval.tool.readFile": "read a file",

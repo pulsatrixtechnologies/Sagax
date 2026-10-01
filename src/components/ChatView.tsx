@@ -60,7 +60,7 @@ import { ToolActivity } from "./ToolActivity";
 import { ThreadRefText } from "./ThreadRefs";
 import { OptionCard, shouldHideOnboardingCard } from "./OptionCard";
 import { ApprovalCard } from "./ApprovalCard";
-import { OwnerWait } from "./OwnerWait";
+import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { Composer } from "./Composer";
 import { ChatFindBar } from "./ChatFindBar";
@@ -787,6 +787,7 @@ const MessagesList = memo(function MessagesList({
         const m = item.message;
         const row = (() => {
           if (m.state === "waiting-on-owner") return <OwnerWait ownerName={m.ownerName ?? ""} />;
+          if (m.state === "owner-settled") return <OwnerSettled message={m} />;
           switch (m.kind) {
             case "access":
               return m.access ? (

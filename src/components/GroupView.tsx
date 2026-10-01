@@ -48,7 +48,7 @@ import { OptionCard } from "./OptionCard";
 import { GroupCallOverlay } from "./GroupCallView";
 
 import { ApprovalCard } from "./ApprovalCard";
-import { OwnerWait } from "./OwnerWait";
+import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
 import { ManageMembersPanel } from "./ManageMembersPanel";
@@ -255,6 +255,10 @@ const Transcript = memo(function Transcript({
           m.state === "waiting-on-owner" ? (
             <div className="flex justify-start">
               <OwnerWait ownerName={m.ownerName ?? ""} />
+            </div>
+          ) : m.state === "owner-settled" ? (
+            <div className="flex justify-start">
+              <OwnerSettled message={m} />
             </div>
           ) : m.kind === "secret" && m.secret && m.from?.botId ? (
             <SecretRequestCard botId={m.from.botId} threadId={group.threadId} message={m} />

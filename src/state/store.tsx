@@ -13,7 +13,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { BotVisibility, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, ServerFrame, GroupThreadUsage, SteerQueueReason } from "../../shared/wire";
+import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, ServerFrame, GroupThreadUsage, SteerQueueReason } from "../../shared/wire";
 import type { TurnDigest } from "../../shared/digest";
 import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-events";
 import type { MausColor, MausMotion } from "@/lib/mascot";
@@ -87,6 +87,8 @@ export interface OptionCardData {
    * only holds the behavior once the server settles a live ask. */
   answeredText?: string;
   dismissed?: boolean;
+  /** Who settled the card, when a person or service answered it. */
+  answeredBy?: CardAnswerer;
   /** Present when this card is a live provider ask (approval/question). */
   requestId?: string;
   /** permission asks: the tool being requested (drives the approval box) */
@@ -217,7 +219,7 @@ export interface Message {
    * match on this id, not on equal text. Absent on ordinary sends. */
   queueId?: string;
   /** Projected for someone who is not the approval audience. */
-  state?: "waiting-on-owner";
+  state?: "waiting-on-owner" | "owner-settled";
   ownerName?: string;
   /** A dropped worker, or a person or bot removed during the turn. */
   status?: "failed";

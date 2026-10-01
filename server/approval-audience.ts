@@ -60,17 +60,45 @@ function cardStillOpen(card: unknown): boolean {
   return !row.answered && !row.dismissed && !row.expired;
 }
 
+/** What another viewer learns of a settled card: the verdict and who gave
+ * it, never the title, the request, the tool or its arguments. No
+ * `requestId`, so no client can offer to answer it. */
+export interface SettledCardForOthers {
+  title: "";
+  subtitle: "";
+  options: [];
+  answered?: string;
+  answeredBy?: unknown;
+  dismissed?: true;
+  expired?: true;
+}
+
+function settledForOthers(card: unknown): SettledCardForOthers | null {
+  if (!card || typeof card !== "object") return null;
+  const row = card as { answered?: unknown; answeredBy?: unknown; dismissed?: unknown; expired?: unknown };
+  const slim: SettledCardForOthers = { title: "", subtitle: "", options: [] };
+  if (typeof row.answered === "string") slim.answered = row.answered.slice(0, 200);
+  if (row.answeredBy && typeof row.answeredBy === "object") slim.answeredBy = row.answeredBy;
+  if (row.dismissed) slim.dismissed = true;
+  if (row.expired) slim.expired = true;
+  return slim;
+}
+
 /** The matching session keeps the card. Every other session does not get
  * the card. While it is still open they get `waiting-on-owner` and the
- * owner's name. */
+ * owner's name; once settled, `owner-settled` with only the verdict and
+ * who answered (slice 7: a console answer reads "<name> (console)"). */
 export function approvalDelivery<T extends { card?: unknown }>(input: {
   audience: { userId: string; deviceId: string | null };
   viewer: ApprovalViewer;
   message: T;
   ownerName: string;
-}): T | Omit<T, "card"> | (Omit<T, "card"> & { state: "waiting-on-owner"; ownerName: string }) {
+}): T | Omit<T, "card"> | (Omit<T, "card"> & { state: "waiting-on-owner" | "owner-settled"; ownerName: string; card?: SettledCardForOthers }) {
   if (receivesApprovalCard(input.viewer, input.audience)) return input.message;
   const { card, ...rest } = input.message;
-  if (!cardStillOpen(card)) return rest;
+  if (!cardStillOpen(card)) {
+    const slim = settledForOthers(card);
+    return slim ? { ...rest, card: slim, state: "owner-settled", ownerName: input.ownerName } : rest;
+  }
   return { ...rest, state: "waiting-on-owner", ownerName: input.ownerName };
 }

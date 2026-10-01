@@ -3297,6 +3297,8 @@
       "approvalMode.antigravityLocalOnly": "35eb8de54cfc75f5ad70e9215514b8f5e9660c3cb0cade3cfe346b0c393b9139",
       "approvalMode.trustedLocalOnly": "f6a8857f9bd7855d0b5ffa3d70c1b4959a519254ca5a390e5d715ba25a404deb",
       "approval.someone": "864c855e3d64399dc06fa30ebb75526c2c2e73db7216b16a3d4cf03e8a52ec3b",
+      "approval.ownerSettled.allowed": "0b8b81a2c31ac865b5f6959efefe5b13c5f8b68c9ae13196863ed432ceabdd5e",
+      "approval.ownerSettled.denied": "75ec7a707b7714928e7920ca70ecd4e383c544b14cad63b5ff1eb5a01a3fa6fa",
       "approval.tool.action": "a1d98dfadc18e0c7409ec2d2a883f967de1e139e066c8758a35183d9346f1a25",
       "approval.tool.runCommand": "4cc4fa0b5de124a161e7bdd25a4386176cc8c93abb67306fe79a88670a09c3f5",
       "approval.tool.readFile": "983f92956ac1a23e6e5b5c58af68db1e0579d13424bed1fdc4ab3c87f86f47b8",

@@ -49,8 +49,30 @@ describe("approval audience", () => {
       message: { ...card, card: { ...card.card, answered: "allow" } },
       ownerName: "Jean-Christophe",
     });
-    expect(settled).not.toHaveProperty("card");
-    expect(settled).not.toHaveProperty("state");
+    expect(settled).toEqual({
+      id: "m1",
+      kind: "options",
+      state: "owner-settled",
+      ownerName: "Jean-Christophe",
+      card: { title: "", subtitle: "", options: [], answered: "allow" },
+    });
+  });
+
+  it("tells another viewer who settled a card, without its request or tool (S7-7)", () => {
+    const audience = approvalAudience({ ownerUserId: "alice", host: { kind: "fleet" } });
+    const message = {
+      id: "m2",
+      kind: "options" as const,
+      card: { title: "Run rm -rf /tmp/x?", subtitle: "secret args", options: ["Allow once", "Deny"], requestId: "r2", tool: "bash", answered: "Allow once", answeredBy: { kind: "session", name: "alice (console)" } },
+    };
+    const bob = approvalDelivery({ audience, viewer: { userId: "bob", deviceId: null }, message, ownerName: "alice" });
+    expect(bob).toMatchObject({ state: "owner-settled", card: { answered: "Allow once", answeredBy: { kind: "session", name: "alice (console)" } } });
+    const card = (bob as { card: Record<string, unknown> }).card;
+    expect(card).not.toHaveProperty("requestId");
+    expect(card).not.toHaveProperty("tool");
+    expect(JSON.stringify(bob)).not.toContain("rm -rf");
+    expect(JSON.stringify(bob)).not.toContain("secret args");
+    expect(approvalDelivery({ audience, viewer: { userId: "alice", deviceId: null }, message, ownerName: "alice" })).toBe(message);
   });
 
   it("refuses a non-owner answer and leaves the card unchanged", () => {

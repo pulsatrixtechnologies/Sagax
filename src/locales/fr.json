@@ -527,6 +527,8 @@
   "approvalMode.antigravityLocalOnly": "Automatique (accès complet) est disponible dans l'application de bureau installée.",
   "approvalMode.trustedLocalOnly": "Accès complet et Personnalisé sont disponibles dans l'application de bureau installée.",
   "approval.someone": "Quelqu'un",
+  "approval.ownerSettled.allowed": "{name} a autorisé cette demande.",
+  "approval.ownerSettled.denied": "{name} a refusé cette demande.",
   "approval.tool.action": "une action",
   "approval.tool.runCommand": "exécuter une commande",
   "approval.tool.readFile": "lire un fichier",
