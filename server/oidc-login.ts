@@ -16,7 +16,11 @@
 //   - signs the desktop app and the phones in through the system browser:
 //     /auth/oidc/start?client=desktop|phone ends on an openmausbot:// link
 //     carrying a two-minute, single-use pairing credential bound to the
-//     person (slice 2).
+//     person (slice 2);
+//   - or, for the desktop app, on its loopback listener (RFC 8252 7.3):
+//     /auth/oidc/start?client=desktop&return=http://127.0.0.1:<port>/<state>
+//     ends on that address with the credential in the fragment, which a
+//     browser never sends to any server and so never reaches a log.
 //
 // Configuration (environment only, read once at boot):
 //   OMB_IDENTITY=perspicax
@@ -67,6 +71,25 @@ export interface IdentityDescriptor {
   /** The start path takes `?client=desktop|phone` and ends on an
    * openmausbot:// link (slice 2), so native apps may use the system browser. */
   nativeReturn: true;
+  /** The desktop start also takes `&return=<loopback URL>` and ends there
+   * (validLoopbackReturn), so the app that started the sign-in gets it back
+   * whichever app owns openmausbot://. */
+  loopbackReturn: true;
+}
+
+/** The loopback return a desktop sign-in may name: http on 127.0.0.1 or
+ * [::1], an explicit port, and one path segment of 32 to 128 URL-safe
+ * characters (the listener's random state). Never a host name (not even
+ * localhost), a query, a fragment or credentials. Returns the canonical URL
+ * or null. */
+const LOOPBACK_RETURN = /^http:\/\/(127\.0\.0\.1|\[::1\]):([1-9][0-9]{3,4})\/([A-Za-z0-9_-]{32,128})$/;
+export function validLoopbackReturn(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || value.length > 200) return null;
+  const match = LOOPBACK_RETURN.exec(value);
+  if (!match) return null;
+  const port = Number(match[2]);
+  if (port < 1024 || port > 65535) return null;
+  return `http://${match[1]}:${port}/${match[3]}`;
 }
 
 /** Read the identity mode from the environment. A half-configured
@@ -98,7 +121,7 @@ export function identityConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Ide
 }
 
 export function identityDescriptor(config: IdentityConfig): IdentityDescriptor | undefined {
-  return config.kind === "perspicax" ? { kind: "perspicax", protocol: "oidc", issuer: config.issuer, loginPath: OIDC_START_PATH, nativeReturn: true } : undefined;
+  return config.kind === "perspicax" ? { kind: "perspicax", protocol: "oidc", issuer: config.issuer, loginPath: OIDC_START_PATH, nativeReturn: true, loopbackReturn: true } : undefined;
 }
 
 /** Session scopes for a Perspicax role (spec section 3). No claim is an
@@ -210,10 +233,13 @@ function parseClient(value: string | null): OidcClientKind | null {
   return value === "desktop" || value === "phone" ? value : null;
 }
 
-/** The link the desktop app receives from the system browser. */
-export function desktopReturnLink(publicOrigin: string, outcome: { code: string } | { error: string }): string {
-  const base = `openmausbot://auth?origin=${encodeURIComponent(publicOrigin)}`;
-  return "code" in outcome ? `${base}#code=${outcome.code}` : `${base}#error=${encodeURIComponent(outcome.error)}`;
+/** The link the desktop app receives from the system browser: its loopback
+ * listener when the sign-in named one, else openmausbot://auth. The
+ * credential always rides in the fragment. */
+export function desktopReturnLink(publicOrigin: string, outcome: { code: string } | { error: string }, returnTo?: string): string {
+  const fragment = "code" in outcome ? `#code=${outcome.code}` : `#error=${encodeURIComponent(outcome.error)}`;
+  if (returnTo) return `${returnTo}${fragment}`;
+  return `openmausbot://auth?origin=${encodeURIComponent(publicOrigin)}${fragment}`;
 }
 
 /** The link a phone's authentication sheet receives: the invite shape both
@@ -269,8 +295,8 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
   const now = deps.now ?? Date.now;
   const origin = deps.config.publicOrigin;
   const revocations = deps.revocations ?? immediateRevocations((token, hint) => rp.revokeToken(token, hint), log, "oidc");
-  const fail = (res: ServerResponse, code: string, cookies: string[] = [], client: OidcClientKind = "web") =>
-    redirect(res, client === "desktop" ? desktopReturnLink(origin, { error: code }) : `/pair#signin_error=${encodeURIComponent(code)}`, cookies);
+  const fail = (res: ServerResponse, code: string, cookies: string[] = [], client: OidcClientKind = "web", returnTo?: string) =>
+    redirect(res, client === "desktop" ? desktopReturnLink(origin, { error: code }, returnTo) : `/pair#signin_error=${encodeURIComponent(code)}`, cookies);
   /** Logout token ids already honoured, until they expire (+60 s). */
   const seenJti = new Map<string, number>();
 
@@ -393,18 +419,28 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
         fail(res, "client");
         return true;
       }
+      // A loopback return is the desktop app's only: anything else, or an
+      // address that is not exactly a loopback listener, ends on /pair
+      // (never on the address it named).
+      const rawReturn = url.searchParams.get("return");
+      const returnTo = rawReturn === null ? undefined : validLoopbackReturn(rawReturn) ?? null;
+      if (returnTo === null || (returnTo && client !== "desktop")) {
+        log("oidc sign-in refused: a return address that is not this desktop's loopback listener");
+        fail(res, "return");
+        return true;
+      }
       const unavailable = deps.grants.unavailableReason();
       if (unavailable) {
         log(`oidc sign-in could not start: ${unavailable}`);
-        fail(res, "unavailable", [], client);
+        fail(res, "unavailable", [], client, returnTo);
         return true;
       }
       let started;
       try {
-        started = await rp.start({ client });
+        started = await rp.start({ client, ...(returnTo ? { returnTo } : {}) });
       } catch (error) {
         log(`oidc sign-in could not start: ${error instanceof Error ? error.message : String(error)}`);
-        fail(res, "unavailable", [], client);
+        fail(res, "unavailable", [], client, returnTo);
         return true;
       }
       redirect(res, started.authorizationUrl, [oidcBindingCookie(deps.sessionCookie, deps.config.redirectUri, started.binding)]);
@@ -415,7 +451,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     if (!outcome.ok) {
       log(`oidc ${outcome.purpose === "routines" ? "routine delegation" : "sign-in"} refused (${outcome.code}): ${outcome.error}`);
       if (outcome.purpose === "routines") redirect(res, routineDelegationReturn({ error: outcome.code }), [clearBinding]);
-      else fail(res, outcome.code, [clearBinding], outcome.client);
+      else fail(res, outcome.code, [clearBinding], outcome.client, outcome.returnTo);
       return true;
     }
     if (outcome.purpose === "routines") {
@@ -424,11 +460,12 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
     }
     const identity: OidcIdentity = outcome.identity;
     const client = outcome.client;
+    const returnTo = outcome.returnTo;
     const refreshToken = outcome.grant.refreshToken;
     const refuse = (code: string, why: string) => {
       log(`oidc sign-in refused (${code}): ${why}`);
       if (refreshToken) revocations.enqueue(refreshToken, "refresh_token", `a refused sign-in (${code})`);
-      fail(res, code, [clearBinding], client);
+      fail(res, code, [clearBinding], client, returnTo);
     };
     const scopes = scopesForRole(identity.role);
     const orgRole = orgRoleForRole(identity.role);
@@ -480,7 +517,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
         idp,
       });
       redirect(res, client === "desktop"
-        ? desktopReturnLink(origin, { code: pairing.credential })
+        ? desktopReturnLink(origin, { code: pairing.credential }, returnTo)
         : phoneReturnLink(origin, pairing.credential, deps.serverName()), [clearBinding]);
       return true;
     }
