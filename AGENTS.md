@@ -48,3 +48,29 @@ Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in
 `SAGAX_DEFAULT_SERVER`. The welcome tour no longer surfaces the inherited
 managed-desktop Admin sign-in; Settings > Organization still does. See
 `docs/self-hosting.md` ("At launch: No server or Server").
+
+## Floating bots and the 3D mascot
+
+A bot put "on the desktop" is a 3D owl in its own window
+(`electron/floating-bot-window.mjs`). The main app page stays the brain
+(`src/components/floating-bots/FloatingBots.tsx`, `brain.ts`): it sends each
+window a validated snapshot (pose, balloon, `task`, `mood`, `flyAway`,
+`hints`) and receives clicks, typed text, `play` and `pet` events. Keep it
+that way: a floating window holds no session and calls no API.
+
+- `behavior.ts` is the mascot's pure state machine (idle, look, spin, hop,
+  wander, sleep, react, petted, drag, flyOut, working, return, celebrate,
+  sad) and its per-frame motion. Test new behavior there, not in the view.
+- `pilot.ts` moves the window for the mascot (fly to the screen edge, home,
+  wander) through `floating-bots:geometry`, `move-to` and `autopilot`; main
+  clamps every move to the work areas and does not save spots flown under
+  autopilot.
+- `owl3d/` is three.js, procedural only (no model files). It must stay
+  behind `lazy(() => import("./owl3d/Mascot3D"))` so the main bundle never
+  loads three; `src/lib/floating-bots.test.ts` guards this. Without WebGL the
+  view falls back to the 2D `OwlAvatar`.
+- `mood.ts` keeps a gentle per-bot mood in localStorage
+  (`omb.floatingBots.mood.v1`); never add punishing mechanics.
+- The "Fly away during tasks" setting lives in `src/lib/floating-bots.ts`
+  (`omb.floatingBots.prefs.v1`), shown under Settings > Appearance and in the
+  mascot's right-click menu. User docs: `apps/docs/content/docs/features/floating-bots.mdx`.
