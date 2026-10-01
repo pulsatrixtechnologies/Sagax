@@ -9,7 +9,6 @@
 import "./floating-bots.css";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent, type Ref } from "react";
 import { cn } from "@/lib/cn";
-import { OwlAvatar } from "@/components/OwlAvatar";
 import type { OwlState } from "@/lib/owl/owl-art";
 import { MAUS_COLORS } from "@/lib/mascot";
 import {
@@ -22,14 +21,14 @@ import {
   type MascotInput,
   type MascotState,
 } from "./behavior";
+import { newStroke, strokeLeave, strokeStep } from "./gestures";
 import type { FloatingPilot } from "./pilot";
+import Owl25D from "./Owl25D";
 import { mascotFields, type FloatingEvent, type FloatingPose, type FloatingSnapshot } from "./protocol";
 
 // The Hibou 98 extras (retro balloon stylesheet, Trombi's sparkle) load only
 // while that skin is worn, so a device that never found the egg never fetches them.
 const RetroDecor = lazy(() => import("./RetroDecor"));
-// three.js and the 3D owl: their own chunk, fetched only by a floating mascot.
-const Mascot3D = lazy(() => import("./owl3d/Mascot3D"));
 
 /** How far the pointer must travel before a press becomes a drag. */
 const DRAG_SLOP = 4;
@@ -37,10 +36,6 @@ const DRAG_SLOP = 4;
 const LONG_PRESS_MS = 550;
 /** A second click within this long is a double click (the balloon), not a game. */
 const DOUBLE_CLICK_MS = 260;
-/** Stroking: this much pointer travel over the owl within PET_WINDOW_MS is a pet. */
-const PET_TRAVEL = 160;
-const PET_WINDOW_MS = 1500;
-const PET_EVERY_MS = 2500;
 const TICK_MS = 250;
 /** The window follows what is drawn a moment later (FloatingBotWindow resizes it); flights wait for that. */
 const RESIZE_SETTLE_MS = 220;
@@ -49,6 +44,8 @@ const GAZE_MS = 200;
 export const CHARACTER_SIZE = 88;
 /** The 3D owl's canvas: room above the owl for its hops and spins. */
 export const MASCOT_SIZE = { width: 140, height: 152 } as const;
+/** The owl's own box inside the stage (the art leaves room around it). */
+const OWL_SIZE = 128;
 
 /** A bot colour name or hex, as CSS (the parked badge wears it). */
 const owlHex = (color: string) => (MAUS_COLORS as Record<string, string>)[color] ?? (/^#[0-9a-fA-F]{3,8}$/.test(color) ? color : MAUS_COLORS.green);
@@ -108,52 +105,18 @@ interface CharacterProps {
   };
 }
 
-function Character({ snapshot, activity, mascot }: CharacterProps) {
+function Character({ snapshot, mascot }: CharacterProps) {
   const { avatar } = snapshot;
-  const [flat, setFlat] = useState(false);
-  if (avatar) {
-    const radius = avatar.crop === "circle" ? "50%" : avatar.crop === "rounded" ? "22%" : "4px";
-    const origin = `${avatar.focusX * 100}% ${avatar.focusY * 100}%`;
-    return (
-      <span className="fb-picture" style={{ width: CHARACTER_SIZE, height: CHARACTER_SIZE, borderRadius: radius }}>
-        <img
-          src={avatar.src}
-          alt=""
-          draggable={false}
-          width={CHARACTER_SIZE}
-          height={CHARACTER_SIZE}
-          style={{ objectPosition: origin, transform: avatar.zoom === 1 ? undefined : `scale(${avatar.zoom})`, transformOrigin: origin }}
-        />
-      </span>
-    );
-  }
-  const owl2d = (
-    <OwlAvatar
-      color={snapshot.color}
-      skin={snapshot.skin}
-      size={CHARACTER_SIZE}
-      state={owlStateFor(snapshot.pose, activity)}
-      reducedMotion={snapshot.reduced}
-      trackPointer={false}
-      label={null}
-    />
-  );
-  if (flat) return owl2d;
   return (
-    <Suspense fallback={owl2d}>
-      <Mascot3D
-        color={snapshot.color}
-        width={MASCOT_SIZE.width}
-        height={MASCOT_SIZE.height}
-        frame={mascot.frame}
-        fps={mascot.fps}
-        onHitTest={mascot.onHitTest}
-        onFail={() => {
-          mascot.onHitTest(null);
-          setFlat(true);
-        }}
-      />
-    </Suspense>
+    <>
+      {avatar && (
+        // the bot's picture rides along as a small medallion; the body is always the owl
+        <span className="fb-medallion" aria-hidden="true">
+          <img src={avatar.src} alt="" draggable={false} style={{ objectPosition: `${avatar.focusX * 100}% ${avatar.focusY * 100}%` }} />
+        </span>
+      )}
+      <Owl25D color={snapshot.color} skin={snapshot.skin} size={OWL_SIZE} frame={mascot.frame} fps={mascot.fps} onHitTest={mascot.onHitTest} />
+    </>
   );
 }
 
@@ -223,7 +186,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const [burst, setBurst] = useState<{ kind: "hearts" | "sparkles"; key: number } | null>(null);
   const hitTest = useRef<((x: number, y: number) => boolean) | null>(null);
   const gaze = useRef<{ x: number; y: number } | null>(null);
-  const pet = useRef({ travel: 0, since: 0, x: Number.NaN, y: Number.NaN, last: 0 });
+  const pet = useRef(newStroke());
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const options = useRef({ reduced, flyAway: snapshot.flyAway, canMove: Boolean(pilot), random: Math.random });
   options.current = { reduced, flyAway: snapshot.flyAway, canMove: Boolean(pilot), random: Math.random };
@@ -374,6 +337,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   /** Over the owl itself (its pixels, when drawn in 3D), not the empty corners of its canvas. */
   const overOwl = (event: ReactPointerEvent) => !hitTest.current || hitTest.current(event.clientX, event.clientY);
   const owlHovered = (on: boolean) => {
+    if (!on) pet.current = strokeLeave(pet.current);
     if (owlHoverRef.current === on) return;
     owlHoverRef.current = on;
     setOwlHover(on);
@@ -382,17 +346,9 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const stroke = (event: ReactPointerEvent) => {
     if (event.pointerType === "touch") return;
     const at = now();
-    const state = pet.current;
-    if (at - state.since > PET_WINDOW_MS) {
-      state.travel = 0;
-      state.since = at;
-    }
-    if (Number.isFinite(state.x)) state.travel += Math.hypot(event.clientX - state.x, event.clientY - state.y);
-    state.x = event.clientX;
-    state.y = event.clientY;
-    if (state.travel >= PET_TRAVEL && at - state.last >= PET_EVERY_MS) {
-      state.travel = 0;
-      state.last = at;
+    const step = strokeStep(pet.current, event.clientX, event.clientY, at);
+    pet.current = step.state;
+    if (step.pet) {
       dispatch({ type: "pet", now: at });
       onEvent({ type: "pet" });
     }
@@ -568,7 +524,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
         className="fb-stage"
         data-pose={snapshot.pose}
         data-activity={activity}
-        data-3d={snapshot.avatar ? undefined : ""}
+        data-3d=""
         data-away={away ? "" : undefined}
         style={{ "--fb-owl": owlHex(snapshot.color) } as React.CSSProperties}
       >

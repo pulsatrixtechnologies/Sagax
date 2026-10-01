@@ -128,6 +128,6 @@ describe("floating bots: the fly-away setting", () => {
     expect(settings).not.toMatch(/from\s+"@\/components\/floating-bots\//);
     const view = readFileSync(join(here, "../components/floating-bots/FloatingBotView.tsx"), "utf8");
     expect(view).not.toMatch(/from\s+"three"/);
-    expect(view).toContain('import("./owl3d/Mascot3D")');
+    expect(view).not.toMatch(/from\s+"\.\/owl3d\//);
   });
 });

@@ -19,15 +19,21 @@ export interface Mascot3DProps {
 }
 
 export default function Mascot3D({ color, width, height, frame, fps, onHitTest, onFail }: Mascot3DProps) {
-  const canvas = useRef<HTMLCanvasElement>(null);
+  const host = useRef<HTMLSpanElement>(null);
   const scene = useRef<OwlScene | null>(null);
   // the callbacks change identity with every render; the scene reads the latest
   const live = useRef({ frame, fps });
   live.current = { frame, fps };
 
   useEffect(() => {
-    const node = canvas.current;
-    if (!node) return;
+    const box = host.current;
+    if (!box) return;
+    // a fresh canvas per mount: a context lost on unmount (StrictMode mounts
+    // twice in development) can never be reused, so it must not be the same element
+    const node = document.createElement("canvas");
+    node.className = "fb-canvas";
+    node.setAttribute("aria-hidden", "true");
+    box.appendChild(node);
     let made: OwlScene;
     try {
       made = new OwlScene(node, {
@@ -36,6 +42,7 @@ export default function Mascot3D({ color, width, height, frame, fps, onHitTest, 
         fps: () => live.current.fps(),
       });
     } catch {
+      node.remove();
       onFail();
       return;
     }
@@ -53,6 +60,7 @@ export default function Mascot3D({ color, width, height, frame, fps, onHitTest, 
       onHitTest(null);
       scene.current = null;
       made.dispose();
+      node.remove();
     };
     // the scene is made once; color and size follow below
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,5 +69,5 @@ export default function Mascot3D({ color, width, height, frame, fps, onHitTest, 
   useEffect(() => scene.current?.setColor(color), [color]);
   useEffect(() => scene.current?.resize(width, height), [width, height]);
 
-  return <canvas ref={canvas} className="fb-canvas" width={width} height={height} style={{ width, height }} aria-hidden="true" />;
+  return <span ref={host} className="fb-canvas-host" style={{ display: "block", width, height }} />;
 }

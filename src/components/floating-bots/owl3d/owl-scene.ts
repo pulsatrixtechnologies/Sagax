@@ -72,7 +72,7 @@ export class OwlScene {
 
   /** The canvas's size in CSS px. */
   resize(width: number, height: number): void {
-    this.renderer.setSize(width, height, false);
+    this.renderer.setSize(width, height);
     this.camera.aspect = width / Math.max(1, height);
     this.camera.updateProjectionMatrix();
     this.draw(performance.now());
