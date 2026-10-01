@@ -228,6 +228,8 @@ posixOnly("Perspicax organization: private threads with a shared bot, group chat
       await api("POST", `/api/bots/${botId}/tasks/${thread}`, auth),
       await api("PATCH", `/api/bots/${botId}/tasks/${thread}`, auth, { title: "mine now" }),
       await api("DELETE", `/api/bots/${botId}/tasks/${thread}`, auth),
+      // Regenerate title (from upstream) reads the thread to name it.
+      await api("POST", `/api/bots/${botId}/tasks/${thread}/title`, auth),
       await api("POST", `/api/bots/${botId}/read`, auth, { threadId: thread }),
       await api("POST", `/api/bots/${botId}/compact`, auth, { threadId: thread }),
       await api("POST", `/api/bots/${botId}/interrupt`, auth, { threadId: thread }),

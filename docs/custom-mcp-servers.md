@@ -172,6 +172,11 @@ The same registry lives in `~/.openmausbot/config.json`:
       "type": "http",
       "url": "https://mcp.example.com/mcp",
       "headers": { "Authorization": "Bearer …" }
+    },
+    "corp": {
+      "type": "http",
+      "url": "https://mcp.corp.example/mcp",
+      "oauth": { "clientId": "…", "clientSecret": "…", "scopes": ["api://corp-mcp/read", "offline_access"] }
     }
   },
   "features": { "claudeUserMcp": false }

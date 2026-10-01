@@ -1,10 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import { readSessionState, SERVICE_TRUST_REASON, takePairingFromLocation, takeInvitedEmailFromLocation } from "./lib/session";
+import {
+  BROWSER_SIGN_IN_FAILED, previewBrowserSignIn, readSessionState, SERVICE_TRUST_REASON, takeBrowserSignInFromLocation, takePairingFromLocation, takeInvitedEmailFromLocation,
+} from "./lib/session";
 import { bootstrapBrand } from "./lib/brand";
 import { applySkin, readSkin } from "./lib/skins";
 import { applyFont, readFont } from "./lib/fonts";
+import { BrowserSignInPage } from "./pair/BrowserSignInPage";
 import { PairPage } from "./pair/PairPage";
 import { rememberOpenThreadHash } from "./lib/open-thread-hash";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
@@ -46,6 +49,12 @@ async function chooseRoot(): Promise<React.ReactNode> {
   // An invite link works without a session: redeeming it is the sign-in.
   if (location.pathname === "/join") return <JoinPage initialToken={takeInviteTokenFromLocation()} />;
   if (location.pathname === "/pair") {
+    // A browser sign-in link carries a one-time credential: whose server it is, then one Continue.
+    const signIn = takeBrowserSignInFromLocation();
+    if (signIn) {
+      const preview = await previewBrowserSignIn(signIn);
+      return preview ? <BrowserSignInPage credential={signIn} owner={preview.owner} /> : <PairPage initialCode={null} reason={BROWSER_SIGN_IN_FAILED} />;
+    }
     const pairing = takePairingFromLocation();
     return <PairPage initialCode={pairing.code} autoSubmit={pairing.auto} initialEmail={takeInvitedEmailFromLocation()} />;
   }
@@ -54,6 +63,10 @@ async function chooseRoot(): Promise<React.ReactNode> {
   // A service-trust server answers this machine's requests without a session
   // but refuses to let it manage anything: sign in first, as a remote browser would.
   if (session.kind === "loopback" && session.trust === "service") return <PairPage initialCode={null} reason={SERVICE_TRUST_REASON} />;
+  if (location.pathname === "/desktop-viewer") {
+    const { DesktopViewer } = await import("./components/DesktopViewer");
+    return <DesktopViewer />;
+  }
   return <App />;
 }
 

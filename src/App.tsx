@@ -25,6 +25,7 @@ import { WindowCaptionButtons } from "@/components/WindowCaptionButtons";
 import { RoutinesPage } from "@/components/RoutinesPage";
 import { NoEngines } from "@/components/NoEngines";
 import { CloudEngineSignIn } from "@/components/CloudEngineSignIn";
+import { CloudSetup } from "@/components/CloudSetup";
 import { engineReady } from "@/components/EngineLibrary";
 import { CommandPalette } from "@/components/CommandPalette";
 import { StagedOrgImport } from "@/components/OrgImportDialog";
@@ -40,12 +41,13 @@ import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference"
 import { requestEnterpriseEntry } from "@/lib/enterprise-entry";
 import { takeRoutineDelegationReturn } from "@/lib/routine-delegation";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
+import { botShowsUnread } from "@/lib/bot-unread";
 
 function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   const { state, dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
   const unreadCount =
-    state.bots.filter((bot) => !bot.hidden && bot.unread).length +
+    state.bots.filter((bot) => !bot.hidden && botShowsUnread(bot)).length +
     state.groups.filter((group) => group.unread).length;
   const remoteClient = window.ogb?.remoteClient?.active === true;
   useEffect(() => {
@@ -60,6 +62,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     };
     const url = new URL(window.location.href);
     const requestedSettings = url.searchParams.get("desktop-settings");
+    // Sagax: the inherited OMB Cloud links ("cloud", "cloud-settings") open nothing.
     if (requestedSettings === "workspaces" || (requestedSettings === "organization" && window.ogb.organization && !remoteClient)) {
       url.searchParams.delete("desktop-settings");
       window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
@@ -379,6 +382,9 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       )}
       {!remoteClient && state.inspectorOpen && bot && <InspectorPanel key={bot.threadId} bot={bot} />}
       {state.appSettingsOpen && <SettingsModal />}
+      {/* On the person's Cloud: its setup checklist, and after it Move to
+          Cloud's one-time card on an empty Cloud (desktop app only). */}
+      <CloudSetup viewer={viewer} />
       {state.pluginsOpen && <PluginsPanel />}
       {state.newBotOpen && <NewBotDialog />}
       {state.shortcutsOpen && (

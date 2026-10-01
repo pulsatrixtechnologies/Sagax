@@ -51,7 +51,7 @@ export function ClaudeAccountForm({ instance, onSaved, onCancel }: {
           maxLength={80}
           required
           disabled={saving}
-          className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink focus:border-hairline focus:outline-none disabled:opacity-50"
+          className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink focus:outline-none disabled:opacity-50"
         />
       </label>
       <details>
@@ -65,7 +65,7 @@ export function ClaudeAccountForm({ instance, onSaved, onCancel }: {
               maxLength={4096}
               spellCheck={false}
               disabled={saving}
-              className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12px] text-ink focus:border-hairline focus:outline-none disabled:opacity-50"
+              className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12px] text-ink focus:outline-none disabled:opacity-50"
           />
         </label>
         <p className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">{t("engines.account.configDirHint")}</p>
@@ -112,7 +112,7 @@ export function ClaudeAccountSettings({ instance }: { instance: InstanceInfo }) 
   // Only a hosted server that can run `claude auth logout` for this account
   // offers it; the desktop app keeps the CLI's own sign-out.
   // On the workspace API key there is no personal login to sign out of;
-  // removing the key in Settings → Connections is the way back.
+  // removing the key in Settings → API keys is the way back.
   const onApiKey = instance.snapshot.account?.method === "api-key";
   const canSignOut = authenticated && instance.authentication?.signOut === true && !onApiKey;
   const identity = authenticated

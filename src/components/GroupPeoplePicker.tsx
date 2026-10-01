@@ -44,7 +44,7 @@ export function GroupPeoplePicker({ directory, taken, onAdd, onDone }: {
         placeholder={t("room.people.search")}
         aria-label={t("room.people.search")}
         maxLength={200}
-        className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
+        className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] placeholder:text-ink-secondary focus:outline-none"
       />
       {directory && candidates.length === 0 && <p className="px-1 text-[12px] text-ink-secondary">{t("room.people.none")}</p>}
       {candidates.length > 0 && (

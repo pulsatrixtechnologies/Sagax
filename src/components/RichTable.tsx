@@ -116,7 +116,7 @@ export function RichTable({ model, dir, caption }: { model: TableModel; dir?: "l
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t("rich.table.filter")}
               aria-label={t("rich.table.filter")}
-              className="w-28 min-w-0 bg-transparent text-[11px] text-ink outline-none placeholder:text-ink-secondary/70 sm:w-36"
+              className="w-28 min-w-0 bg-transparent text-[11px] text-ink outline-none placeholder:text-ink-tertiary sm:w-36"
             />
           </label>
         )}
@@ -173,7 +173,7 @@ export function RichTable({ model, dir, caption }: { model: TableModel; dir?: "l
                       ) : active === "desc" ? (
                         <ArrowDown size={11} aria-hidden="true" className="shrink-0 text-accent" />
                       ) : (
-                        <ArrowUpDown size={11} aria-hidden="true" className="shrink-0 opacity-0 transition-opacity group-hover/sort:opacity-50 group-focus-visible/sort:opacity-50 motion-reduce:transition-none" />
+                        <ArrowUpDown size={11} aria-hidden="true" className="shrink-0 opacity-0 transition-opacity group-hover/sort:opacity-50 group-focus-visible/sort:opacity-50 touch:opacity-50 motion-reduce:transition-none" />
                       )}
                     </button>
                   </th>

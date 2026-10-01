@@ -3,6 +3,7 @@ import { Check, FilePen, Hand, ListChecks, Settings, ShieldAlert, ShieldCheck } 
 
 import { approvalModeFor, hasNativeAutoReview, supportsApprovalMode, type ApprovalMode } from "../../shared/approval-mode";
 import { cn } from "@/lib/cn";
+import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 
@@ -107,6 +108,7 @@ export function ApprovalModeSelector({
   onManageCommandAllowlist?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const motion = useMenuMotion(open);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const savedMode = approvalModeFor({ approvalMode, autoApprove });
@@ -187,10 +189,11 @@ export function ApprovalModeSelector({
         {wide && <span aria-hidden className="text-[11px] text-ink-secondary">⌄</span>}
       </button>
 
-      {open && (
+      {motion.shown && (
         <div
           role="menu"
           aria-label={t("approvalMode.menuAria", { provider: providerName })}
+          {...motion.exitProps}
           className={cn(
             // Same surface and scale as the right-click menus: no heading,
             // 13px rows, and nothing listed that cannot be picked here.
@@ -198,6 +201,7 @@ export function ApprovalModeSelector({
             menuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2",
             align === "right" ? "right-0" : "left-0",
             wide && "w-full min-w-[260px]",
+            motion.className,
           )}
         >
           {visibleOptions.map((option) => {

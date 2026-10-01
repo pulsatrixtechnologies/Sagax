@@ -5,7 +5,7 @@
 import { useRetroSkin } from "./RetroChromeHost";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
-import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2 } from "lucide-react";
+import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
 import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
@@ -14,8 +14,9 @@ import { t } from "@/lib/i18n";
 import { withTourReset } from "@/lib/guided-tour";
 import { completionPatch } from "@/lib/onboarding";
 import { launchBridges } from "@/lib/launch";
-import { ApiKeyRow, OpenAiCompatUrl, VpsConnection } from "./ApiKeys";
+import { AnthropicEveryClaudeBot, ApiKeyRow, OpenAiCompatUrl, VpsConnection } from "./ApiKeys";
 import { COMPOSIO_PLATFORM_URL } from "./ConnectedAppsSetup";
+import { DecisionModelSettings } from "./DecisionModelSettings";
 import { useUpdaterState } from "@/lib/updater";
 import { EnginesSettings } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
@@ -40,7 +41,6 @@ import { WorkspacesSection, workspacesAvailable } from "./WorkspacesSection";
 import { SkinPicker } from "./SkinPicker";
 import { SKINS, readSkin } from "@/lib/skins";
 import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
-import { loadSidebarDensity, saveSidebarDensity, subscribeSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { AboutMeSettings } from "./AboutMeSettings";
 import { InitialsAvatar } from "./Avatar";
@@ -56,13 +56,15 @@ import { CompanyBackupSettings } from "./CompanyBackupSettings";
 import { cn } from "@/lib/cn";
 import { setNotificationSounds, useNotificationSounds } from "@/lib/notification-preferences";
 import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
+import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
+import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
 
 // `labelKey`, not a label: t() reads the active pack when it is called, so a
 // label resolved here at module scope would freeze the language the app booted
 // in. The English keywords stay untranslated — they are a search index, and a
 // pack that omits them still matches what people type.
-const SECTIONS: Array<{
+export const SECTIONS: Array<{
   id: AppSettingsSection;
   labelKey: LocaleKey;
   icon: typeof User;
@@ -71,10 +73,11 @@ const SECTIONS: Array<{
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "analytics", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "cloudAccount", labelKey: "settings.section.cloudAccount", icon: User, keywords: ["cloud", "account", "personal", "sign in", "pro", "subscription", "billing"] },
-  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "display", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating"] },
+  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
-  { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "composio", "box", "xai", "mistral", "vps"] },
-  { id: "engines", labelKey: "settings.section.engines", icon: Terminal, keywords: ["models", "claude", "grok", "providers", "cli"] },
+  { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
+  { id: "decisionModel", labelKey: "settings.section.decisionModel", icon: Zap, keywords: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"] },
+  { id: "engines", labelKey: "settings.section.engines", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription"] },
   { id: "companion", labelKey: "settings.section.companion", icon: TabletSmartphone, keywords: ["companion", "device", "phone", "desktop", "client", "host", "pair", "pairing", "mobile", "https", "secure", "tailscale", "wifi", "remote", "advanced", "domain", "dns", "self-hosted", "server", "caddy"] },
   { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["vm", "virtual", "desktop"] },
   { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing"] },
@@ -105,7 +108,7 @@ export function cardsMatching(query: string): string[] {
     .map(([id]) => id);
 }
 
-function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
+export function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
   if (!query) return true;
   return [t(section.labelKey), ...section.keywords].some((part) => part.toLowerCase().includes(query));
 }
@@ -234,7 +237,7 @@ function OperatorProfileFields() {
   );
 }
 
-type ConnectionKey = "anthropic" | "openaiCompat" | "xai" | "mistral" | "composio" | "box" | "vps" | "opencodeGo";
+type ConnectionKey = "openai" | "openrouter" | "anthropic" | "openaiCompat" | "xai" | "mistral" | "composio" | "box" | "vps" | "opencodeGo";
 
 /** "Set" / "Not set" for one connection, "2 of 4 set" for a group. Reads
  * only the configured flags the server returns; never a secret. */
@@ -555,19 +558,19 @@ function FontRow() {
 }
 
 function SidebarDensityRow() {
-  const density = useSyncExternalStore(subscribeSidebarDensity, loadSidebarDensity, () => "comfortable" as const);
-  const choose = (next: SidebarDensity) => saveSidebarDensity(next);
+  const density = useSidebarDensity();
+  const choose = (next: SidebarDensity) => setSidebarDensity(parseSidebarDensity(next));
   return (
-    <SettingRow title={t("sidebar.density.title")} subtitle={t("sidebar.density.chooseAria")}>
+    <SettingRow title={t("sidebar.density.title")} subtitle={t("settings.sidebarDensity.subtitle")}>
       <select
         aria-label={t("sidebar.density.chooseAria")}
         value={density}
         onChange={(event) => choose(event.target.value as SidebarDensity)}
         className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none"
       >
-        <option value="comfortable">{t("sidebar.density.comfortable")}</option>
-        <option value="compact">{t("sidebar.density.compact")}</option>
-        <option value="icons">{t("sidebar.density.iconsOnly")}</option>
+        {SIDEBAR_DENSITIES.map((option) => (
+          <option key={option} value={option}>{t(option === "icons" ? "sidebar.density.iconsOnly" : option === "compact" ? "sidebar.density.compact" : "sidebar.density.comfortable")}</option>
+        ))}
       </select>
     </SettingRow>
   );
@@ -581,6 +584,19 @@ function ShowThreadsRow() {
         checked={enabled}
         aria-label={t("settings.threadDisplay.show")}
         onClick={() => setShowThreads(!enabled)}
+      />
+    </SettingRow>
+  );
+}
+
+function RunCardRow() {
+  const enabled = useShowRunCard();
+  return (
+    <SettingRow title={t("settings.runCard.title")} subtitle={t("settings.runCard.subtitle")}>
+      <Switch
+        checked={enabled}
+        aria-label={t("settings.runCard.show")}
+        onClick={() => setShowRunCard(!enabled)}
       />
     </SettingRow>
   );
@@ -844,9 +860,10 @@ export function SettingsModal() {
     .filter((entry) => entry.id !== "workspaces" || workspacesAvailable(state.config))
     // sign-in by email is a served solo server's (the desktop app pairs
     // devices under Remote access), or the read-only view of a hosted
-    // workspace whose members the organisation's Admin decides. An
+    // workspace whose members the organisation's Admin decides. An OMB
+    // Cloud home is personal: nobody is invited to it. An
     // organization server sends no sign-in list: Perspicax owns its people.
-    .filter((entry) => entry.id !== "people" || (!window.ogb && (readMembership(state.config).authority === "portal" || peopleListServed(state.config))))
+    .filter((entry) => entry.id !== "people" || (!window.ogb && state.config?.cloudHome !== true && (readMembership(state.config).authority === "portal" || peopleListServed(state.config))))
     // how the server sends sign-in codes and invitations: its admins and
     // the operator, on the desktop and on the web
     .filter((entry) => entry.id !== "mail" || ownerOrAdmin === true)
@@ -1003,7 +1020,7 @@ export function SettingsModal() {
             <div className="flex flex-col gap-3 px-4 pb-6 pt-4 sm:px-8">
             <LicenseExpiryBanner config={state.config} />
             {section === "organization" && <OrganizationSettings />}
-            {section === "cloudAccount" && window.ogb?.cloudAccount && !remoteActive && <CloudAccountSettings />}
+            {section === "cloudAccount" && window.ogb?.cloudAccount && !remoteActive && <CloudAccountSettings linkRequest={state.appSettingsCloudLink} />}
             {section === "general" && (
               <>
                 <ThisComputerSettings />
@@ -1076,6 +1093,7 @@ export function SettingsModal() {
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
                   {!remoteActive && <ToolCallsRow />}
+                  <RunCardRow />
                 </div>
               </>
             )}
@@ -1100,14 +1118,22 @@ export function SettingsModal() {
                   cardId="connections.providers"
                   title={t("keys.providers.title")}
                   subtitle={t("keys.providers.subtitle")}
-                  summary={configuredSummary(state.config, ["anthropic", "openaiCompat", "xai", "mistral"])}
+                  summary={configuredSummary(state.config, ["openai", "anthropic", "xai", "openrouter", "mistral", "openaiCompat"])}
                 >
                   <div className="flex flex-col gap-4">
+                    <ApiKeyRow section="openai" testProvider="openai" />
                     <ApiKeyRow section="anthropic" testProvider="anthropic" />
-                    <ApiKeyRow section="openaiCompat" testProvider="openaiCompat" />
-                    <OpenAiCompatUrl />
+                    <AnthropicEveryClaudeBot />
                     <ApiKeyRow section="xai" testProvider="xai" />
+                    <ApiKeyRow section="openrouter" testProvider="openrouter" />
                     <ApiKeyRow section="mistral" testProvider="mistral" />
+                    <details data-api-keys-other className="rounded-lg border border-hairline/40 bg-inset px-3 py-2" open={Boolean(state.config?.openaiCompat?.configured)}>
+                      <summary className="cursor-pointer text-[13px] text-ink-secondary">{t("keys.other.title")}</summary>
+                      <div className="mt-3 flex flex-col gap-4">
+                        <ApiKeyRow section="openaiCompat" testProvider="openaiCompat" />
+                        <OpenAiCompatUrl />
+                      </div>
+                    </details>
                   </div>
                 </Card>
                 <Card
@@ -1136,10 +1162,17 @@ export function SettingsModal() {
                     <ApiKeyRow section="box" />
                     <VpsConnection />
                     <ApiKeyRow section="opencodeGo" />
+                    <p className="-mt-2 text-[11.5px] leading-relaxed text-ink-secondary">
+                      {/* {command} marks where the code chip goes, so a translator can move it */}
+                      {t("keys.opencode.providersHint").split("{command}").flatMap((part, index) =>
+                        index === 0 ? [part] : [<code key={index} className="font-mono">opencode auth login</code>, part])}
+                    </p>
                   </div>
                 </Card>
               </>
             )}
+
+            {section === "decisionModel" && <DecisionModelSettings />}
 
             {section === "engines" && (
               <EnginesSettings />
@@ -1156,7 +1189,7 @@ export function SettingsModal() {
                     a remote client of a hosted workspace: its requests carry that server's session, and
                     Settings there is the only place that server's phones can be paired from (MOCA-84).
                     The server decides who may act — an owner or an admin session — not this gate. */}
-                <ServerPairingCard />
+                <ServerPairingCard cloudHome={state.config?.cloudHome === true} />
                 {!remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} />}
               </>
             )}

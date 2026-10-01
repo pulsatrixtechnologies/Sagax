@@ -69,7 +69,14 @@ struct WidgetAnswerIntent: AppIntent {
             // reviewedSha256 stays nil on purpose: that field is the
             // skill-request review receipt, and a widget may never answer
             // one — answerableCard already refused every skill card.
-            let outcome = try await WidgetRouteRequest.perform(connection: connection, token: token) { client in
+            // An answer is consumed on first delivery, so it replays onto
+            // another route only when the failure proves the request never
+            // left the phone; anything ambiguous could have landed.
+            let outcome = try await WidgetRouteRequest.perform(
+                connection: connection,
+                token: token,
+                replay: .onlyWhenUndelivered
+            ) { client in
                 try await client.respond(
                     threadId: threadId,
                     requestId: requestId,
