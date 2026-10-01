@@ -600,7 +600,7 @@ import {
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
 import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
-import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
+import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
@@ -16579,6 +16579,12 @@ function routeThreadId(bot: BotRecord, rawThreadId: unknown, action: ThreadActio
   if (!mine) throw Object.assign(new Error("no such task"), { status: 404 });
   return mine;
 }
+/** The bot's activity as one organization viewer sees it: over their own
+ * threads (and the bot's rooms), never over someone else's private thread. */
+function viewerBotActivity(bot: BotRecord, viewerId: string): ReturnType<typeof store.activityOf> {
+  const owner = effectiveBotOwner(bot);
+  return store.activityOf(bot.id, (task) => ownsThread(viewerId, task, owner));
+}
 /** A bot (wire shape) as one viewer receives it: their threads only, their
  * thread selected, nobody else's transcript (thread-privacy.ts). */
 function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: string | undefined): T {
@@ -16590,6 +16596,7 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
   return narrowBotForViewer(bot, {
     viewerId,
     botOwnerPrincipalId: effectiveBotOwner(record),
+    activity: viewerBotActivity(record, viewerId),
     ...(mine ? { mine } : {}),
     ...(mineTask ? { mineTask: { ...wireTask(mineTask), ...store.projectBotForTask(record.id, mine!) } as unknown as Record<string, unknown> } : {}),
   });
@@ -21309,6 +21316,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const record = mine ? store.projectBotForTask(bot.id, mine) ?? bot : bot;
         return memberBot({
           ...wireBot(record),
+          // busy while any of the viewer's threads works, not only the one shown
+          ...(viewerId && privateThreads() ? viewerBotActivity(bot, viewerId) : {}),
           tasks: threadsShownTo(bot, store.tasks(bot.id), viewerId).map(wireTask),
           ...messagePage(record.threadId, limit, null, viewerForApproval(auth)),
         }, visible);

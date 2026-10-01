@@ -30,6 +30,20 @@ describe("thread owners in the store", () => {
     expect(savedBots()[0]!.tasks!.find((entry) => entry.threadId === task.threadId)?.ownerPrincipalId).toBe(BOB);
   });
 
+  it("the bot's activity folds over the threads asked for: a viewer's own, never someone else's", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const alices = store.createTask(bot.id, "Alice's routine", false, undefined, undefined, undefined, ALICE)!;
+    const bobs = store.createTask(bot.id, "Bob's", false, undefined, undefined, undefined, BOB)!;
+    store.setTaskActivity(bot.id, alices.threadId, "working");
+    expect(store.bot(bot.id)!.busy).toBe(true);
+    expect(store.activityOf(bot.id, (task) => task.ownerPrincipalId === ALICE)).toEqual({ activity: "working", busy: true });
+    expect(store.activityOf(bot.id, (task) => task.threadId === bobs.threadId)).toEqual({ activity: "idle", busy: false });
+    store.setTaskActivity(bot.id, alices.threadId, "idle");
+    expect(store.activityOf(bot.id, () => true)).toEqual({ activity: "idle", busy: false });
+    expect(store.bot(bot.id)!.busy).toBe(false);
+  });
+
   it("no client patch can change an owner", () => {
     const store = new Store(selection);
     const bot = store.createBot({}, { seedMessages: false });
