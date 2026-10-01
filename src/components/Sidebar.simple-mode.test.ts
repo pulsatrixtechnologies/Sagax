@@ -177,6 +177,29 @@ describe("bot-first sidebar", () => {
   });
 });
 
+describe("group rows line up with bot rows", () => {
+  const twoBots: Group = {
+    id: "group", name: "Dumpling & co.", threadId: "group-thread", memberIds: ["atlas", "pepper"], defaultResponder: { kind: "mentions" }, bulletin: "", unread: false, createdAt: 0, messages: [],
+    tasks: [{ threadId: "group-thread", title: "Group conversation", createdAt: 1 }],
+  };
+  const pepper: Bot = { ...bot, id: "pepper", name: "Pepper", tasks: [], projects: [] };
+  const rowClass = (markup: string, marker: string) => markup.match(new RegExp(`${marker}[^>]*class="([^"]*)"`))?.[1]
+    ?? markup.match(new RegExp(`class="([^"]*)"[^>]*${marker}`))?.[1] ?? "";
+
+  it.each([true, false])("uses the bot row inset with showThreads=%s and draws no outline around stacked faces", (showThreads) => {
+    fixture.showThreads = showThreads;
+    fixture.state.bots = [bot, pepper];
+    const groupMarkup = renderToStaticMarkup(createElement(GroupListItem, { group: twoBots, density: "comfortable", onMenu: vi.fn() }));
+    const botMarkup = renderToStaticMarkup(createElement(BotListItem, { bot: pepper, density: "comfortable", onMenu: vi.fn() }));
+    const inset = showThreads ? "pl-6" : "pl-2";
+    expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).toContain(inset);
+    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).toContain(inset);
+    // same 36px avatar footprint as the bot row
+    expect(groupMarkup).toContain("relative shrink-0 size-9");
+    expect(groupMarkup).not.toMatch(/ring-2 ring-panel/);
+  });
+});
+
 describe("group preview", () => {
   it("previews the last reply, not the digest receipt that follows it", () => {
     const group: Group = {

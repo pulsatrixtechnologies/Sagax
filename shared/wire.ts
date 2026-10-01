@@ -14,6 +14,7 @@ import type { TurnDigest } from "./digest.ts";
 import type { BotAvatarCrop } from "./bot-avatar.ts";
 import type { MascotBodyId } from "./mascot-bodies.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
+import type { MascotLook } from "./mascot-look.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
 import type { TeamSetupRequest } from "./team-setup.ts";
 import type { RoutineRequestCardData } from "./routine-request.ts";
@@ -128,6 +129,10 @@ export interface WireTask {
   routineRunId?: string;
   /** Set when a bot, not a person, opened this thread. */
   openedBy?: TaskOpenedBy;
+  /** Organization server: the person this 1:1 thread belongs to (who
+   * started it; a routine's runAs; else the bot owner when absent). Only
+   * they read or write it (server/thread-privacy.ts). */
+  ownerPrincipalId?: string;
   /** Set by close_thread; absent while the thread is open. */
   closedBy?: TaskClosedBy;
   /** When the person archived this thread. Absent = unarchived. */
@@ -257,6 +262,8 @@ export interface WireBot {
   mascotBody?: MascotBodyId | null;
   /** Special-edition skin over the body and colour. Absent means none. */
   mascotSkin?: MascotSkinId | null;
+  /** The bot's character (owl, original shape, Trombi) and its look; absent means the owl. */
+  mascotLook?: MascotLook | null;
   /** App-owned attachment served as this bot's custom profile image;
    * always present on the wire, null when the bot has none. */
   avatarUrl: string | null;

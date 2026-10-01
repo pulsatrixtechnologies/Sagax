@@ -424,7 +424,7 @@ export function requiredScope(method: string, path: string, features: ClientFeat
 
 /** Fields a client session may change on a bot: how it looks in the list,
  * never what it may do. Returns the first offending field, or null. */
-const CLIENT_BOT_PATCH_FIELDS = new Set(["unread", "pinned", "pinnedMessageId", "color", "mascotExpression", "mascotBody", "mascotSkin"]);
+const CLIENT_BOT_PATCH_FIELDS = new Set(["unread", "pinned", "pinnedMessageId", "color", "mascotExpression", "mascotBody", "mascotSkin", "mascotLook"]);
 export function clientBotPatchViolation(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
   for (const key of Object.keys(body)) if (!CLIENT_BOT_PATCH_FIELDS.has(key)) return key;

@@ -1,19 +1,12 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react";
+import { createPortal } from "react-dom";
 import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./bot-settings/BotEditorContext";
 import { imageAttachmentFromFile } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
-import { t } from "@/lib/i18n";
-import type { LocaleKey } from "@/locales";
-import {
-  MAUS_COLOR_NAMES,
-  MAUS_WING_MOTIONS,
-  swatchStyle,
-  type MausMotion,
-  type MausState,
-} from "@/lib/mascot";
+import { type MausMotion, type MausState } from "@/lib/mascot";
 import {
   AVATAR_FOCUS_CENTER,
   AVATAR_ZOOM_MAX,
@@ -22,33 +15,73 @@ import {
   clampAvatarFocus,
   clampAvatarZoom,
 } from "../../shared/bot-avatar";
-import { MASCOT_SKIN_IDS, botMascotSkin, type MascotSkinId } from "../../shared/mascot-skins";
-import { BotAvatar, MausAvatar } from "./Avatar";
+import { BotAvatar } from "./Avatar";
 import { AvatarImageGenerator } from "./AvatarImageGenerator";
 
 type AvatarPatch = Partial<
-  Pick<Bot, "avatarCrop" | "avatarUrl" | "avatarZoom" | "avatarFocusX" | "avatarFocusY" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin">
+  Pick<Bot, "avatarCrop" | "avatarUrl" | "avatarZoom" | "avatarFocusX" | "avatarFocusY" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin" | "mascotLook">
 >;
 
 const FRAME_SIZE = 168;
 
-const SKIN_LABEL = {
-  none: "mascot.skin.none",
-  lightning: "mascot.skin.lightning",
-  gold: "mascot.skin.gold",
-  neon: "mascot.skin.neon",
-  inferno: "mascot.skin.inferno",
-  frost: "mascot.skin.frost",
-  carbon: "mascot.skin.carbon",
-} satisfies Record<MascotSkinId, LocaleKey>;
+/** The popover's width: wide enough for the cards in few rows, never wider than the window allows. */
+const POPOVER_WIDTH = 452;
+const MARGIN = 12;
 
-const MOVE_LABEL = {
-  "spread-wings": "mascot.motion.spreadWings",
-  flap: "mascot.motion.flap",
-  "take-off": "mascot.motion.takeOff",
-  shake: "mascot.motion.shake",
-  hoot: "mascot.motion.hoot",
-} satisfies Record<(typeof MAUS_WING_MOTIONS)[number], LocaleKey>;
+/**
+ * Where the popover stands: under the avatar, centered on it, shifted to stay
+ * inside the window, flipped above when there is no room below, never taller
+ * than the window. Follows resizes and scrolls; Escape closes it.
+ */
+function usePopoverPlace(open: boolean, anchor: RefObject<HTMLElement | null>, popover: RefObject<HTMLElement | null>, close: () => void) {
+  const [place, setPlace] = useState({ left: 0, top: 0, width: POPOVER_WIDTH, maxHeight: 600, ready: false });
+  const measure = () => {
+    const box = anchor.current?.getBoundingClientRect();
+    if (!box) return;
+    const width = Math.min(POPOVER_WIDTH, window.innerWidth - MARGIN * 2);
+    const left = Math.min(Math.max(box.left + box.width / 2 - width / 2, MARGIN), window.innerWidth - width - MARGIN);
+    const maxHeight = window.innerHeight - MARGIN * 2;
+    const height = Math.min(popover.current?.scrollHeight ?? 0, maxHeight);
+    let top = box.bottom + 8;
+    if (top + height > window.innerHeight - MARGIN) {
+      const above = box.top - 8 - height;
+      top = above >= MARGIN ? above : Math.max(MARGIN, window.innerHeight - MARGIN - height);
+    }
+    setPlace({ left, top, width, maxHeight, ready: true });
+  };
+  useLayoutEffect(() => {
+    if (!open) {
+      setPlace((current) => ({ ...current, ready: false }));
+      return;
+    }
+    measure();
+    const again = () => measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(again);
+    if (popover.current) observer?.observe(popover.current);
+    window.addEventListener("resize", again);
+    window.addEventListener("scroll", again, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", again);
+      window.removeEventListener("scroll", again, true);
+    };
+    // measure reads the refs; it only needs to rerun when the popover opens
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, close]);
+  return place;
+}
+
+// The character and its look (the mascot registry, its thumbnails and a live preview): fetched only when the popover opens.
+const MascotLookEditor = lazy(() => import("./floating-bots/MascotLookEditor"));
+
 
 function AvatarFraming({
   bot,
@@ -154,6 +187,9 @@ export function BotProfileAvatarCard({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const popover = useRef<HTMLDivElement>(null);
+  const place = usePopoverPlace(editorOpen, anchor, popover, () => setEditorOpen(false));
   const crop = bot.avatarCrop ?? "mascot";
   // A custom picture opens on its own tab, where its zoom and framing live.
   const [editorTab, setEditorTab] = useState<"bot" | "generate" | "upload" | "reset">(
@@ -171,7 +207,6 @@ export function BotProfileAvatarCard({
     setTriedMove((last) => ({ kind, nonce: (last?.nonce ?? 0) + 1 }));
     dispatch({ type: "playMascotMotion", botId: bot.id, kind });
   };
-  const skin = botMascotSkin(bot.mascotSkin);
 
   const upload = async (file: File | undefined) => {
     if (!file || busy) return;
@@ -242,28 +277,10 @@ export function BotProfileAvatarCard({
   };
 
   const resetMascot = () =>
-    onPatch({ avatarCrop: "mascot", color: "green", mascotExpression: null, mascotBody: "cursor", mascotSkin: "none" });
+    onPatch({ avatarCrop: "mascot", color: "green", mascotExpression: null, mascotBody: "cursor", mascotSkin: "none", mascotLook: { character: "owl" } });
 
-  return (
-    <div className="relative">
-      <div className="flex justify-center py-3">
-        <button
-          type="button"
-          aria-label="Edit avatar"
-          aria-expanded={editorOpen}
-          onClick={() => setEditorOpen((open) => !open)}
-          className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <BotAvatar
-            bot={bot}
-            state={activeState}
-            size={112}
-            motion={previewMotion?.kind ?? "none"}
-            motionKey={previewMotion?.nonce ?? 0}
-          />
-        </button>
-      </div>
-      <div hidden={!editorOpen} className="absolute left-1/2 top-full z-30 mt-2 w-[280px] -translate-x-1/2 rounded-2xl border border-hairline/50 bg-card p-3 shadow-2xl shadow-black/50">
+  const body = (
+    <>
         <div className="mb-3 flex items-center gap-1 text-[12px]">
           {(["bot", "generate", "upload"] as const).map((tab) => (
             <button
@@ -315,78 +332,10 @@ export function BotProfileAvatarCard({
           </div>
         )}
 
-        {editorTab === "bot" && crop === "mascot" && (
-          <>
-            <div className="flex flex-wrap justify-center gap-2">
-              {MAUS_COLOR_NAMES.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  disabled={busy}
-                  aria-pressed={bot.color === color}
-                  onClick={() => onPatch({ color })}
-                  className={cn("size-6 rounded-full disabled:opacity-50", bot.color === color && "ring-2 ring-white/80 ring-offset-2 ring-offset-card")}
-                  style={swatchStyle(color)}
-                  title={color}
-                  aria-label={`Use ${color} mascot color`}
-                />
-              ))}
-            </div>
-
-            <div className="mb-1.5 mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">
-              {t("mascot.skin.title")}
-            </div>
-            <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label={t("mascot.skin.title")}>
-              {MASCOT_SKIN_IDS.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  disabled={busy}
-                  aria-checked={skin === id}
-                  aria-label={t("mascot.skin.use", { skin: t(SKIN_LABEL[id]) })}
-                  data-mascot-skin-option={id}
-                  onClick={() => onPatch({ mascotSkin: id })}
-                  className={cn(
-                    "flex flex-col items-center gap-0.5 rounded-lg bg-inset px-0.5 pb-1 pt-1.5 transition-colors hover:bg-control disabled:opacity-50",
-                    skin === id && "ring-2 ring-accent-border",
-                  )}
-                >
-                  {/* The owl stays still; only the skin's own effects play, so
-                      the previews cost no frame loop. */}
-                  <MausAvatar
-                    color={bot.color}
-                    skin={id}
-                    state="idle"
-                    size={44}
-                    animated={false}
-                    skinAnimated
-                    trackPointer={false}
-                  />
-                  <span className="text-[11px] leading-4 text-ink-secondary">{t(SKIN_LABEL[id])}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="mb-1.5 mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">
-              {t("mascot.moves.title")}
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {MAUS_WING_MOTIONS.map((move) => (
-                <button
-                  key={move}
-                  type="button"
-                  disabled={busy}
-                  data-mascot-move={move}
-                  aria-label={t("mascot.moves.play", { move: t(MOVE_LABEL[move]) })}
-                  onClick={() => playMove(move)}
-                  className="rounded-md bg-control px-2 py-1 text-[12px] text-ink hover:bg-raised-hover disabled:opacity-50"
-                >
-                  {t(MOVE_LABEL[move])}
-                </button>
-              ))}
-            </div>
-          </>
+        {editorTab === "bot" && crop === "mascot" && editorOpen && (
+          <Suspense fallback={<div className="h-[320px]" />}>
+            <MascotLookEditor bot={bot} disabled={busy} onPatch={onPatch} onOwlMove={playMove} />
+          </Suspense>
         )}
         {editorTab === "bot" && crop !== "mascot" && (
           <button type="button" onClick={() => onPatch({ avatarCrop: "mascot" })} className="text-[13px] text-ink-secondary hover:text-ink">Use the mascot</button>
@@ -402,7 +351,49 @@ export function BotProfileAvatarCard({
         )}
 
         {error && <div role="alert" className="mt-3 text-[12px] text-danger">{error}</div>}
+    </>
+  );
+
+  return (
+    <div className="relative">
+      <div className="flex justify-center py-3">
+        <button
+          ref={anchor}
+          type="button"
+          aria-label="Edit avatar"
+          aria-expanded={editorOpen}
+          onClick={() => setEditorOpen((open) => !open)}
+          className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <BotAvatar
+            bot={bot}
+            state={activeState}
+            size={112}
+            motion={previewMotion?.kind ?? "none"}
+            motionKey={previewMotion?.nonce ?? 0}
+          />
+        </button>
       </div>
+      {editorOpen && typeof document !== "undefined" ? (
+        // a portal above the whole window: no panel's overflow can clip it
+        createPortal(
+          <div
+            ref={popover}
+            data-avatar-popover=""
+            role="dialog"
+            aria-label="Edit avatar"
+            className="fixed z-[1000] overflow-y-auto rounded-2xl border border-hairline/50 bg-card p-3.5 shadow-2xl shadow-black/50"
+            style={{ left: place.left, top: place.top, width: place.width, maxHeight: place.maxHeight, visibility: place.ready ? "visible" : "hidden" }}
+          >
+            {body}
+          </div>,
+          document.body,
+        )
+      ) : (
+        <div hidden data-avatar-popover="">
+          {body}
+        </div>
+      )}
     </div>
   );
 }
