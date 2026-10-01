@@ -32,6 +32,7 @@ import {
   floatingStatus,
   floatingTask,
   newFloatingSession,
+  withHistory,
   type FloatingLabels,
   type FloatingSession,
 } from "./brain";
@@ -70,6 +71,7 @@ function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "nor
     moodHappy: t("floatingBots.mood.happy", { name }),
     working: t("floatingBots.working", { name }),
     hoot: t("floatingBots.hoot"),
+    pin: t("floatingBots.pin"),
     menuLively: t("floatingBots.menu.lively", { level: t(`floatingBots.lively.${liveliness}`) }),
   };
 }
@@ -221,7 +223,7 @@ export function FloatingBots() {
   const send = useCallback((bot: Bot, text: string) => {
     const threadId = bot.threadId;
     const sendId = crypto.randomUUID();
-    patch(bot.id, { open: true, threadId, sendId, asked: text, error: false, lastReply: "", celebrate: false });
+    patch(bot.id, (current) => ({ open: true, threadId, sendId, asked: text, error: false, lastReply: "", celebrate: false, history: withHistory(current) }));
     dispatch({ type: "send", botId: bot.id, text, threadId, sendId, onError: () => patch(bot.id, { error: true, open: true }) });
   }, [dispatch, patch]);
 

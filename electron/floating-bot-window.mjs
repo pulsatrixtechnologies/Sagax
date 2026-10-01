@@ -29,7 +29,8 @@ export const FLOATING_QUERY = "omb-floating-bot=1";
 
 export const FLOAT_SIZE = Object.freeze({ width: 156, height: 172 });
 export const FLOAT_MIN = Object.freeze({ width: 60, height: 60 });
-export const FLOAT_MAX = Object.freeze({ width: 400, height: 560 });
+/** Room for the mascot and a resized, moved balloon (the balloon itself caps at about 60 % of the work area). */
+export const FLOAT_MAX = Object.freeze({ width: 1100, height: 1100 });
 /** More than this many floating windows is a mistake, not a desk. */
 export const MAX_FLOATING = 12;
 const MAX_MOVE = 4000;
@@ -80,6 +81,9 @@ export function floatingDefaultBounds(primaryWorkArea, index = 0, size = FLOAT_S
 /* ---------------------------------------------------------------- payloads */
 
 export const REPLY_MAX = 4000;
+/** Earlier exchanges kept in a balloon, and how much of each. */
+export const HISTORY_MAX = 4;
+export const HISTORY_TEXT_MAX = 2000;
 const ID_RE = /^[a-zA-Z0-9:_-]{1,64}$/;
 const POSES = new Set(["idle", "think", "speak", "celebrate", "alert", "sleep"]);
 const BALLOON_KINDS = new Set(["chat", "thinking", "approval", "error"]);
@@ -163,6 +167,8 @@ export function sanitizeFloatingSnapshot(value) {
   if (!POSES.has(value.pose) || typeof value.name !== "string") return null;
   const snapshot = {
     v: 1,
+    // the bot's id, so the balloon can remember its size and place per bot
+    id: isBotId(value.id) ? value.id : "",
     name: value.name.slice(0, 80),
     label: text(value.label, 200) ?? value.name.slice(0, 80),
     color: typeof value.color === "string" && COLOR_RE.test(value.color) ? value.color : "blue",
@@ -183,6 +189,7 @@ export function sanitizeFloatingSnapshot(value) {
       mood: text(value.hints?.mood, 80) ?? "",
       working: text(value.hints?.working, 200) ?? "",
       ...(typeof value.hints?.hoot === "string" ? { hoot: value.hints.hoot.slice(0, 40) } : {}),
+      ...(typeof value.hints?.pin === "string" ? { pin: value.hints.pin.slice(0, 80) } : {}),
     },
     liveliness: LIVELINESS.has(value.liveliness) ? value.liveliness : "normal",
     context: context(value.context),
@@ -195,6 +202,13 @@ export function sanitizeFloatingSnapshot(value) {
       title: text(balloon.title, 160),
       asked: text(balloon.asked, 300),
       text: text(balloon.text, REPLY_MAX) ?? "",
+      // earlier exchanges of this conversation, oldest first (a few, bounded)
+      history: Array.isArray(balloon.history)
+        ? balloon.history.slice(-HISTORY_MAX).filter((item) => item && typeof item === "object").map((item) => ({
+            asked: text(item.asked, 300) ?? "",
+            text: text(item.text, HISTORY_TEXT_MAX) ?? "",
+          }))
+        : [],
       streaming: flag(balloon.streaming),
       truncated: flag(balloon.truncated),
       open: text(balloon.open, 80) ?? "",
@@ -546,8 +560,16 @@ export function createFloatingBotWindows(deps) {
       const bounds = win.getBounds();
       const width = Math.round(clampNumber(size.width, FLOAT_MIN.width, FLOAT_MAX.width));
       const height = Math.round(clampNumber(size.height, FLOAT_MIN.height, FLOAT_MAX.height));
-      // grow up and to the left: the character's feet stay where they were
-      const next = clampToDisplays({ x: bounds.x + bounds.width - width, y: bounds.y + bounds.height - height, width, height }, workAreas());
+      // the character's corner stays where it was: by default the bottom-right (the window grows
+      // up and to the left); a balloon flipped below or to the right asks for the other corner
+      const fromLeft = size.anchorX === "left";
+      const fromTop = size.anchorY === "top";
+      const next = clampToDisplays({
+        x: fromLeft ? bounds.x : bounds.x + bounds.width - width,
+        y: fromTop ? bounds.y : bounds.y + bounds.height - height,
+        width,
+        height,
+      }, workAreas());
       win.setBounds(next);
       return next;
     },

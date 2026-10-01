@@ -10,6 +10,7 @@ import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, us
 import { OwlAvatar } from "@/components/OwlAvatar";
 import { FloatingBotView, MASCOT_SIZE, type FloatingMover } from "./FloatingBotView";
 import { createWindowPilot } from "./pilot";
+import type { BalloonSide } from "./Balloon";
 import { isFloatingSnapshot, mascotFields, type FloatingEvent, type FloatingSnapshot, type FloatingWindowBridge } from "./protocol";
 
 /** With nothing to draw this long, the window shows the plain owl rather than nothing. */
@@ -84,6 +85,10 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   const [blank, setBlank] = useState(false);
   const [failed, setFailed] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const anchor = useRef<{ x: "left" | "right"; y: "top" | "bottom" }>({ x: "right", y: "bottom" });
+  const onSide = useCallback((side: BalloonSide) => {
+    anchor.current = { x: side.right ? "left" : "right", y: side.below ? "top" : "bottom" };
+  }, []);
 
   // no state yet: keep asking every second (main replays it, or asks the app for it)
   useEffect(() => {
@@ -124,7 +129,8 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   useLayoutEffect(() => {
     const node = root.current;
     if (!node || !bridge || typeof ResizeObserver === "undefined") return;
-    const report = () => void bridge.resize(Math.ceil(node.scrollWidth), Math.ceil(node.scrollHeight));
+    // the window keeps the mascot's corner in place: bottom-right, or the corner the balloon opened away from
+    const report = () => void bridge.resize(Math.ceil(node.scrollWidth), Math.ceil(node.scrollHeight), anchor.current);
     const observer = new ResizeObserver(report);
     observer.observe(node);
     report();
@@ -157,6 +163,7 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
       interactive={interactive}
       wantsKeyboard={wantsKeyboard}
       pilot={pilot}
+      onSide={onSide}
     />
     </Fallback>
   );

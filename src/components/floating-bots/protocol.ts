@@ -30,6 +30,8 @@ export interface FloatingBalloon {
   title?: string;
   /** What the person last asked, shown small above the answer. */
   asked?: string;
+  /** Earlier exchanges of this conversation, oldest first: scroll up to read them. */
+  history?: { asked: string; text: string }[];
   text: string;
   streaming: boolean;
   truncated: boolean;
@@ -42,6 +44,8 @@ export interface FloatingBalloon {
 
 export interface FloatingSnapshot {
   v: 1;
+  /** The bot's id: the balloon remembers its size and place per bot. */
+  id?: string;
   name: string;
   /** The character's accessible name. */
   label: string;
@@ -64,7 +68,7 @@ export interface FloatingSnapshot {
   /** The "Fly away during tasks" setting. */
   flyAway: boolean;
   /** Short texts the mascot shows: the mood meter's label, the parked badge's, its hoot. */
-  hints: { mood: string; working: string; hoot?: string };
+  hints: { mood: string; working: string; hoot?: string; pin?: string };
   /** The "Activity level" setting; normal when absent. */
   liveliness?: Liveliness;
   /** The followed thread's context use, for the energy bar; null before its first turn. */
@@ -106,7 +110,8 @@ export interface FloatingWindowBridge {
   autopilot?(on: boolean): void;
   moveBy(dx: number, dy: number): Promise<{ x: number; y: number } | null>;
   moved(): void;
-  resize(width: number, height: number): Promise<unknown>;
+  /** Size the window to what is drawn, keeping the character's corner in place (bottom-right unless said otherwise). */
+  resize(width: number, height: number, anchor?: { x: "left" | "right"; y: "top" | "bottom" }): Promise<unknown>;
   setInteractive(on: boolean): void;
   setFocusable(on: boolean): void;
   send(event: FloatingEvent): void;

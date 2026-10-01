@@ -26,6 +26,8 @@ export interface FloatingSession {
   celebrate: boolean;
   /** The last reply seen, kept while the app shows another of the bot's threads. */
   lastReply: string;
+  /** Earlier exchanges of this conversation, oldest first. */
+  history: { asked: string; text: string }[];
 }
 
 export const newFloatingSession = (): FloatingSession => ({
@@ -37,7 +39,18 @@ export const newFloatingSession = (): FloatingSession => ({
   sparkle: 0,
   celebrate: false,
   lastReply: "",
+  history: [],
 });
+
+/** Earlier exchanges kept in the balloon, and how much of each. */
+export const BALLOON_HISTORY = 4;
+const HISTORY_TEXT = 2000;
+
+/** The conversation so far, before a new question: the last exchange joins the history. */
+export function withHistory(session: FloatingSession): FloatingSession["history"] {
+  if (!session.asked && !session.lastReply) return session.history;
+  return [...session.history, { asked: session.asked ?? "", text: truncateReply(session.lastReply, HISTORY_TEXT).text }].slice(-BALLOON_HISTORY);
+}
 
 export interface FloatingLabels {
   character: string;
@@ -65,6 +78,8 @@ export interface FloatingLabels {
   working: string;
   /** The owl's hoot bubble. */
   hoot?: string;
+  /** The balloon's "put back by the mascot" button. */
+  pin?: string;
   /** "Activity: normal", the menu item that cycles the activity level. */
   menuLively?: string;
 }
@@ -194,7 +209,7 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
         : session.celebrate
           ? "celebrate"
           : "idle";
-  const common = { open: labels.open, close: labels.close, asked: session.asked ?? undefined };
+  const common = { open: labels.open, close: labels.close, asked: session.asked ?? undefined, history: session.history ?? [] };
   const mood = Math.round(Math.min(1, Math.max(0, input.mood ?? 0.6)) * 100) / 100;
   const level = moodLevel(mood);
   const flyAway = input.flyAway !== false;
@@ -208,7 +223,8 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
     } else if (status.busy && !status.reply) {
       balloon = { ...common, kind: "thinking", text: labels.thinking, streaming: false, truncated: false, input: input_ };
     } else {
-      const reply = truncateReply(plainReply(status.reply));
+      // the reply as markdown: the balloon renders it like the chat
+      const reply = truncateReply(status.reply);
       balloon = {
         ...common,
         kind: "chat",
@@ -221,6 +237,7 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
   }
   return {
     v: 1,
+    id: bot.id,
     name: bot.name,
     label: labels.character,
     color: bot.color,
@@ -240,6 +257,7 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
       mood: level === "low" ? labels.moodLow : level === "happy" ? labels.moodHappy : labels.moodOk,
       working: labels.working,
       ...(labels.hoot ? { hoot: labels.hoot } : {}),
+      ...(labels.pin ? { pin: labels.pin } : {}),
     },
     liveliness: input.liveliness ?? "normal",
     context: input.context ?? null,

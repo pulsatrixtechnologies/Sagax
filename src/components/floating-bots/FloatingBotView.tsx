@@ -7,7 +7,7 @@
 // (FloatingBots.tsx) decides everything else. The same view runs in a
 // desktop window (FloatingBotWindow.tsx) and in the in-app overlay.
 import "./floating-bots.css";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent, type Ref } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type Ref } from "react";
 import { cn } from "@/lib/cn";
 import type { OwlState } from "@/lib/owl/owl-art";
 import { MAUS_COLORS } from "@/lib/mascot";
@@ -25,6 +25,7 @@ import { clickGesture, eventsForClick, newStroke, strokeLeave, strokeStep } from
 import { crossedThreshold, GAUGE_LINGER_MS, GAUGE_SEGMENTS, gaugeFor, gaugeShown, type FloatingContext } from "./gauge";
 import type { FloatingPilot } from "./pilot";
 import { mascotFor } from "./mascots";
+import { Balloon, BALLOON_MAX_W, type BalloonSide } from "./Balloon";
 import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
 import { mascotFields, type FloatingEvent, type FloatingPose, type FloatingSnapshot } from "./protocol";
@@ -99,6 +100,8 @@ export interface FloatingBotViewProps {
   below?: boolean;
   /** Desktop: lets the mascot move its own window (fly off, come back, wander). */
   pilot?: FloatingPilot | null;
+  /** Desktop: which way the balloon opened, so the window keeps the mascot's corner in place. */
+  onSide?: (side: BalloonSide) => void;
 }
 
 interface CharacterProps {
@@ -138,6 +141,35 @@ function Character({ snapshot, activity, mascot }: CharacterProps) {
       />
     </>
   );
+}
+
+/**
+ * Which way the balloon opens and how much room it has: on the desktop from
+ * where the window stands on its screen, in the app from the overlay's own
+ * placement.
+ */
+export function balloonSide(where: "desktop" | "overlay", below: boolean, stageHeight: number): { side: BalloonSide; room: { x: number; y: number; w: number; h: number } } {
+  if (typeof window === "undefined") return { side: { below, right: false }, room: { x: 0, y: 0, w: BALLOON_MAX_W, h: 420 } };
+  const screenH = window.screen?.availHeight ?? window.innerHeight;
+  const screenW = window.screen?.availWidth ?? window.innerWidth;
+  const top = (window.screen as Screen & { availTop?: number })?.availTop ?? 0;
+  const left = (window.screen as Screen & { availLeft?: number })?.availLeft ?? 0;
+  const maxH = Math.round(screenH * 0.6);
+  if (where === "overlay") return { side: { below, right: false }, room: { x: 0, y: 0, w: Math.min(BALLOON_MAX_W, window.innerWidth - 16), h: Math.min(maxH, window.innerHeight - stageHeight - 24) } };
+  const mascotTop = window.screenY + window.innerHeight - stageHeight;
+  const mascotRight = window.screenX + window.innerWidth;
+  const spaceAbove = mascotTop - top;
+  const spaceBelow = top + screenH - (window.screenY + window.innerHeight);
+  const spaceLeft = mascotRight - left;
+  const spaceRight = left + screenW - window.screenX;
+  const openBelow = spaceAbove < 260 && spaceBelow > spaceAbove;
+  const openRight = spaceLeft < 320 && spaceRight > spaceLeft;
+  const vertical = openBelow ? spaceBelow + stageHeight : spaceAbove;
+  const horizontal = openRight ? spaceRight : spaceLeft;
+  return {
+    side: { below: openBelow, right: openRight },
+    room: { x: Math.max(0, horizontal - 300), y: Math.max(0, vertical - 220), w: Math.max(280, horizontal - 16), h: Math.max(160, Math.min(maxH, vertical - 24)) },
+  };
 }
 
 /** A small sign over the owl for some clips: a question mark, a hoot, a surprise, a temper, confetti. */
@@ -247,14 +279,12 @@ function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnap
   );
 }
 
-export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null }: FloatingBotViewProps) {
+export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide }: FloatingBotViewProps) {
   // an older brain may not send the mascot's fields yet
   const snapshot: FloatingSnapshot = given.hints ? given : { ...given, ...mascotFields(given) };
   const [menuOpen, setMenuOpen] = useState(false);
-  const [draft, setDraft] = useState("");
   const drag = useRef<{ x: number; y: number; moved: boolean; id: number; timer?: ReturnType<typeof setTimeout>; menu?: boolean } | null>(null);
   const hovering = useRef(false);
-  const textRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const reduced = snapshot.reduced;
   // Trombi talks in the Hibou 98 look, whatever the skin
@@ -413,6 +443,20 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   }).current;
 
   const balloon = away ? null : snapshot.balloon;
+  // Which way the balloon opens, decided when it opens and kept while it is open, so the
+  // mascot never jumps: above unless the screen's top is too near, to the left unless its edge is
+  const [side, setSide] = useState<BalloonSide>({ below: Boolean(below), right: false });
+  const [room, setRoom] = useState({ x: 0, y: 0, w: BALLOON_MAX_W, h: 420 });
+  const balloonOpen = Boolean(balloon);
+  useLayoutEffect(() => {
+    if (!balloonOpen) return;
+    const next = balloonSide(pilot ? "desktop" : "overlay", Boolean(below), STAGE.height);
+    setSide(next.side);
+    setRoom(next.room);
+    onSide?.(next.side);
+    // decided once per opening
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [balloonOpen]);
   const interacting = owlHover || activity === "drag" || activity === "petted" || activity === "love" || Boolean(balloon);
   const energyShown = gaugeShown({ interacting, lingerUntil: energyUntil }, now());
   // keep it a moment after the interaction ends; show it a moment when the context crosses 50, 80 or 85 %
@@ -430,11 +474,6 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     return () => clearTimeout(later);
   }, [interacting, energyUntil]);
 
-  // Follow a streaming reply to its newest words.
-  useEffect(() => {
-    const node = textRef.current;
-    if (node && balloon?.streaming) node.scrollTop = node.scrollHeight;
-  }, [balloon?.text, balloon?.streaming]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -446,18 +485,10 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     return () => window.removeEventListener("keydown", onKey);
   }, [menuOpen, balloon, onEvent]);
 
-  // With no balloon to type in, give the keyboard back to whatever had it;
-  // when the balloon opens, it is ready to type in.
+  // With no balloon to type in, give the keyboard back to whatever had it (the balloon takes it when it opens).
   const hasInput = Boolean(balloon?.input);
-  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (!hasInput) {
-      wantsKeyboard?.(false);
-      return;
-    }
-    wantsKeyboard?.(true);
-    const later = setTimeout(() => inputRef.current?.focus(), 60);
-    return () => clearTimeout(later);
+    if (!hasInput) wantsKeyboard?.(false);
   }, [hasInput, wantsKeyboard]);
 
   const hover = (on: boolean) => {
@@ -539,88 +570,30 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     if (!hovering.current) interactive?.(false);
   };
 
-  const onSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text) return;
-    onEvent({ type: "send", text });
-    setDraft("");
-  };
 
-  const button = retro ? "r98-btn" : "fb-btn";
 
   return (
     <div
       ref={rootRef}
-      className={cn("fb-root", retro && "r98-root", below && "fb-below", className)}
-      style={{ ...style, "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px` } as React.CSSProperties}
+      className={cn("fb-root", retro && "r98-root", (balloon ? side.below : below) && "fb-below", balloon && side.right && "fb-left", className)}
+      style={{ ...style, ...(balloon && side.right ? { alignItems: "flex-start" } : {}), "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px` } as React.CSSProperties}
       data-reduced={snapshot.reduced ? "" : undefined}
       data-retro={retro ? "" : undefined}
       lang={snapshot.locale}
     >
       {balloon && (
-        <div
-          role="dialog"
-          aria-label={snapshot.name}
-          data-kind={balloon.kind}
-          className={cn("fb-balloon", retro && "r98-balloon r98-balloon-docked")}
-          onPointerEnter={() => hover(true)}
-          onPointerLeave={() => hover(false)}
-          onPointerDown={() => {
-            if (balloon.input) wantsKeyboard?.(true);
-          }}
-        >
-          {retro && <span className="r98-balloon-shade" aria-hidden="true" />}
-          <div className={retro ? "r98-balloon-face" : "fb-face"}>
-            {retro ? <span className="r98-tail" aria-hidden="true" /> : <span className="fb-tail" aria-hidden="true" />}
-            <div className="fb-head">
-              <strong className="fb-name">{balloon.title ?? snapshot.name}</strong>
-              <button type="button" className="fb-close" aria-label={balloon.close} title={balloon.close} onClick={() => onEvent({ type: "dismiss" })}>
-                ×
-              </button>
-            </div>
-            {balloon.asked && balloon.kind !== "approval" && <p className="fb-asked">{balloon.asked}</p>}
-            <div
-              ref={textRef}
-              className="fb-text"
-              data-streaming={balloon.streaming ? "" : undefined}
-              aria-live={balloon.streaming ? "off" : "polite"}
-              tabIndex={0}
-            >
-              {balloon.kind === "thinking" ? (
-                <span className="fb-thinking">
-                  {balloon.text}
-                  <span className="fb-dots" aria-hidden="true"><span /><span /><span /></span>
-                </span>
-              ) : (
-                balloon.text
-              )}
-            </div>
-            {(balloon.kind !== "chat" || balloon.asked || balloon.truncated) && (
-              <button type="button" className="fb-open" onClick={() => onEvent({ type: "open" })}>
-                {balloon.open}
-              </button>
-            )}
-            {balloon.input && (
-              <form className="fb-ask" onSubmit={onSubmit}>
-                <input
-                  ref={inputRef}
-                  className={retro ? "r98-field fb-input" : "fb-field fb-input"}
-                  value={draft}
-                  aria-label={balloon.input.label}
-                  placeholder={balloon.input.placeholder}
-                  autoComplete="off"
-                  maxLength={4000}
-                  onFocus={() => wantsKeyboard?.(true)}
-                  onChange={(event) => setDraft(event.target.value)}
-                />
-                <button type="submit" className={cn(button, "fb-send", retro && "r98-default")} disabled={!draft.trim()}>
-                  {balloon.input.send}
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
+        <Balloon
+          botId={snapshot.id ?? snapshot.name}
+          name={snapshot.name}
+          balloon={balloon}
+          retro={retro}
+          side={side}
+          room={room}
+          onEvent={onEvent}
+          hover={hover}
+          wantsKeyboard={wantsKeyboard}
+          pinLabel={snapshot.hints.pin ?? ""}
+        />
       )}
       {menuOpen && (
         <div role="menu" aria-label={snapshot.name} className={cn("fb-menu", retro && "r98-menu")} onPointerEnter={() => hover(true)} onPointerLeave={() => hover(false)}>

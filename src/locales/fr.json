@@ -2009,6 +2009,7 @@
   "floatingBots.working": "{name} est au travail. Cliquez pour ouvrir le fil.",
   "floatingBots.context": "Contexte {percent} %",
   "floatingBots.hoot": "Hou hou !",
+  "floatingBots.pin": "Remettre près de la mascotte",
   "floatingBots.menu.lively": "Activité : {level}",
   "floatingBots.lively.calm": "calme",
   "floatingBots.lively.normal": "normale",

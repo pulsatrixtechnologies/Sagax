@@ -15,7 +15,12 @@ contextBridge.exposeInMainWorld("floatingBotWindow", {
   moveTo: (x, y) => ipcRenderer.invoke("floating-bots:move-to", { x: finite(x), y: finite(y) }),
   geometry: () => ipcRenderer.invoke("floating-bots:geometry"),
   autopilot: (on) => ipcRenderer.send("floating-bots:autopilot", on === true),
-  resize: (width, height) => ipcRenderer.invoke("floating-bots:resize", { width: finite(width), height: finite(height) }),
+  resize: (width, height, anchor) => ipcRenderer.invoke("floating-bots:resize", {
+    width: finite(width),
+    height: finite(height),
+    anchorX: anchor && anchor.x === "left" ? "left" : "right",
+    anchorY: anchor && anchor.y === "top" ? "top" : "bottom",
+  }),
   setInteractive: (on) => ipcRenderer.send("floating-bots:set-interactive", on === true),
   setFocusable: (on) => ipcRenderer.send("floating-bots:set-focusable", on === true),
   send: (event) => ipcRenderer.send("floating-bots:event", event),

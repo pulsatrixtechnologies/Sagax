@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AVATAR_MAX,
   createFloatingBotWindows,
+  FLOAT_MAX,
   FLOATING_QUERY,
   floatingDefaultBounds,
   MAX_FLOATING,
@@ -410,6 +411,15 @@ describe("floating bots: positions and screens", () => {
     expect(bounds.y).toBeGreaterThanOrEqual(SECOND.workArea.y);
   });
 
+  it("grows a window from the mascot's corner: bottom-right, or the one the balloon opened away from", () => {
+    const { open, invoke } = setup();
+    const { win, from } = open("bot_a");
+    win.setBounds({ x: 600, y: 300, width: 200, height: 200 });
+    expect(invoke("floating-bots:resize", from, { width: 500, height: 400 })).toMatchObject({ x: 300, y: 100 });
+    win.setBounds({ x: 600, y: 300, width: 200, height: 200 });
+    expect(invoke("floating-bots:resize", from, { width: 500, height: 400, anchorX: "left", anchorY: "top" })).toMatchObject({ x: 600, y: 300 });
+  });
+
   it("drags and resizes inside the work areas", () => {
     const { invoke, open } = setup();
     const { win, from } = open("bot_a");
@@ -417,8 +427,8 @@ describe("floating bots: positions and screens", () => {
     expect(win.bounds).toMatchObject({ x: PRIMARY.workArea.x, y: PRIMARY.workArea.y });
     expect(invoke("floating-bots:move-by", from, { dx: Number.NaN, dy: 0 })).toBeNull();
     invoke("floating-bots:resize", from, { width: 99999, height: 99999 });
-    expect(win.bounds.width).toBeLessThanOrEqual(400);
-    expect(win.bounds.height).toBeLessThanOrEqual(560);
+    expect(win.bounds.width).toBeLessThanOrEqual(FLOAT_MAX.width);
+    expect(win.bounds.height).toBeLessThanOrEqual(Math.min(FLOAT_MAX.height, PRIMARY.workArea.height));
   });
 
   it("drops malformed saved positions", () => {
@@ -480,6 +490,20 @@ describe("floating bots: payload validation", () => {
     expect(clean.mascot).toEqual({ character: "shape", shape: "cloud", style: "3d", skins: { shape: "neon", trombi: "gold" } });
     expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "dragon" } }).mascot).toEqual({ character: "owl" });
     expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "shape", shape: "star" } }).mascot).toEqual({ character: "shape" });
+  });
+
+  it("keeps the bot's id, a few earlier exchanges and the pin label, bounded", () => {
+    const clean = sanitizeFloatingSnapshot({
+      ...SNAPSHOT,
+      id: "bot_a",
+      hints: { pin: "Put back" },
+      balloon: { ...SNAPSHOT.balloon, history: [...Array.from({ length: 9 }, (_, i) => ({ asked: `q${i}`, text: "t".repeat(3000) })), null] },
+    });
+    expect(clean.id).toBe("bot_a");
+    expect(clean.hints.pin).toBe("Put back");
+    expect(clean.balloon.history).toHaveLength(3);
+    expect(clean.balloon.history[0].text.length).toBe(2000);
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, id: "../x" }).id).toBe("");
   });
 
   it("keeps the activity level, the hoot and the context figures for the energy bar, bounded", () => {

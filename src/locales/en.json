@@ -3393,6 +3393,7 @@
   "floatingBots.working": "{name} is working on it. Click to open the thread.",
   "floatingBots.context": "Context {percent}%",
   "floatingBots.hoot": "Hoot!",
+  "floatingBots.pin": "Put back by the mascot",
   "floatingBots.menu.lively": "Activity: {level}",
   "floatingBots.lively.calm": "calm",
   "floatingBots.lively.normal": "normal",
