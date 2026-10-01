@@ -199,3 +199,24 @@ test("only an organization server is drawn with this app's own bundle", () => {
   assert.equal(env.bundledOrigin(state), "https://hosted.example");
   assert.equal(env.bundledOrigin({ ...state, activeId: "local" }), null);
 });
+
+test("a save from before organization servers were marked is upgraded: org flag, then server mode if Server was chosen", () => {
+  let legacy = env.withEnvironment({ environments: [], activeId: "local" }, { origin: "https://org.example" }, () => "o1");
+  legacy = env.withEnvironment(legacy, { origin: "https://hosted.example" }, () => "h1");
+  legacy = env.withActive(legacy, "o1");
+  // the old save: the server's own page, no bundle, no server mode
+  assert.equal(env.bundledOrigin(legacy), null);
+  const orgOrigins = new Set(["https://org.example"]);
+  const marked = env.withOrganizationUpgrade(legacy, { orgOrigins, serverModeChosen: false });
+  assert.equal(env.bundledOrigin(marked), "https://org.example");
+  assert.equal(marked.serverModeId, undefined);
+  assert.equal(marked.environments.find((entry) => entry.id === "h1").org, undefined, "a server the probe did not confirm stays as it was");
+  const locked = env.withOrganizationUpgrade(legacy, { orgOrigins, serverModeChosen: true });
+  assert.equal(env.serverModeEnvironment(locked).id, "o1");
+  // nothing to do: the same state, so main saves and reloads nothing
+  assert.equal(env.withOrganizationUpgrade(locked, { orgOrigins, serverModeChosen: true }), locked);
+  assert.equal(env.withOrganizationUpgrade(legacy, { orgOrigins: new Set(), serverModeChosen: true }), legacy);
+  // Server chosen, but the active server is not an organization server: no lock
+  const hostedActive = env.withActive(legacy, "h1");
+  assert.equal(env.withOrganizationUpgrade(hostedActive, { orgOrigins, serverModeChosen: true }).serverModeId, undefined);
+});

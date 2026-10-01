@@ -271,6 +271,24 @@ function withServerMode(state, id) {
   return { ...state, activeId: id, serverModeId: id };
 }
 
+/** A save from before organization servers were marked (`org: true`) and
+ * server mode existed: mark the saved servers whose descriptor says they
+ * sign people in with Pulsatrix, and when this computer chose Server at
+ * launch, lock the app to the active one if it is such a server. Anything
+ * else is left as it was (same object when nothing changes). */
+function withOrganizationUpgrade(state, { orgOrigins, serverModeChosen }) {
+  let changed = false;
+  const environments = state.environments.map((entry) => {
+    if (entry.org === true || !orgOrigins?.has(entry.origin)) return entry;
+    changed = true;
+    return { ...entry, org: true };
+  });
+  let next = changed ? { ...state, environments } : state;
+  const active = activeEnvironment(next);
+  if (serverModeChosen === true && !next.serverModeId && active?.org === true) next = withServerMode(next, active.id);
+  return next;
+}
+
 /** Leave server mode: the server is forgotten and Local is active again. */
 function withoutServerMode(state) {
   const locked = serverModeEnvironment(state);
@@ -293,6 +311,7 @@ module.exports = {
   allowedOrigins,
   bundledOrigin,
   serverModeEnvironment,
+  withOrganizationUpgrade,
   withServerMode,
   withoutServerMode,
   normalizeOrigin,

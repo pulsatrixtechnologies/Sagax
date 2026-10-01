@@ -145,3 +145,12 @@ test("server mode shares this computer by the organization server's own word, wi
     assert.match(source, new RegExp(`ipcMain\\.handle\\("${channel}", sharingUiOnly\\("${channel}"`));
   }
 });
+
+test("main upgrades an old save at launch and reloads a window that already shows that server", () => {
+  const upgrade = section("async function upgradeSavedOrganizationServers()", "async function isOrganizationServer(");
+  assert.match(upgrade, /isOrganizationServer\(entry\.origin\)/);
+  assert.match(upgrade, /\(await localLaunchMode\(\)\) === "server"/);
+  assert.match(upgrade, /withOrganizationUpgrade\(environmentsState, \{ orgOrigins, serverModeChosen \}\)/);
+  assert.match(upgrade, /if \(current\?\.origin === now\) navigateMainWindow\(current\.href\);/);
+  assert.match(source, /createWindow\(\);\n  void upgradeSavedOrganizationServers\(\)/);
+});
