@@ -15162,12 +15162,14 @@ function actorPrincipalId(auth: RequestAuth): string {
 /** Whose channels and bots a request may see (requests, live frames and
  * search all read this). Unfiltered, like loopback: the operator's own phone
  * (an admin code paired from this computer), and a session without a
- * principal (a chat-only device on a personal server keeps seeing the
- * operator's bots; its scope still gates it). */
+ * principal on a personal server (a chat-only device keeps seeing the
+ * operator's bots; its scope still gates it). On an organization server a
+ * session without a principal (an interim-era pairing, a chat-only code made
+ * from this computer) stays filtered: it sees no one's Directs or sections. */
 function channelFilterViewerId(auth: RequestAuth): string | undefined {
   const viewerId = channelViewerId(auth);
   if (!viewerId) return undefined;
-  if (viewerId.startsWith("anon:")) return undefined;
+  if (viewerId.startsWith("anon:")) return IDENTITY.kind === "perspicax" ? viewerId : undefined;
   return auth.scopes.includes("admin") && viewerId === localPrincipalId() ? undefined : viewerId;
 }
 function channelActorId(auth: RequestAuth): string {
@@ -15430,7 +15432,9 @@ function viewerIsOperator(auth: RequestAuth): boolean {
     admin: auth.scopes.includes("admin"),
     localPrincipalId: localPrincipalId(),
     operatorEmail: cfg.profile?.email,
-    orgExists: false,
+    // On an organization server a session with no person behind it is never
+    // the operator (its profile, bot looks), unless it holds admin scope.
+    orgExists: IDENTITY.kind === "perspicax",
   });
 }
 /** Whether this request may create a bot: the operator and server admins,
