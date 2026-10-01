@@ -2160,5 +2160,8 @@
   "settings.launch.server": "Connecté au serveur Sagax de votre organisation avec votre compte Pulsatrix.",
   "settings.launch.change": "Modifier",
   "orgJoin.join": "Rejoindre",
-  "orgJoin.copyOptional": "La copie de bots est facultative. N'en choisissez aucun pour rejoindre sans eux."
+  "orgJoin.copyOptional": "La copie de bots est facultative. N'en choisissez aucun pour rejoindre sans eux.",
+  "app.empty.title": "C'est bien vide ici.",
+  "app.empty.body": "Tu devrais créer un nouveau bot.",
+  "app.empty.create": "Créer un bot"
 }
