@@ -154,9 +154,19 @@ function createSignInHandoff({ now = Date.now } = {}) {
   };
 }
 
-/** Where the main window goes for a returned credential or error. */
-function authReturnTarget(parsed) {
-  return "code" in parsed ? `${parsed.origin}/pair#code=${parsed.code}&auto=1` : `${parsed.origin}/pair#signin_error=${encodeURIComponent(parsed.error)}`;
+/** Where the main window goes for a returned credential or error. The
+ * window usually already shows <origin>/pair (the server sends a browser
+ * without a session there): loading /pair#code=... on it would only be a
+ * same-document fragment change, so /pair would never read the credential.
+ * A fresh `?signin=<nonce>` makes it a new document every time. */
+function authReturnTarget(parsed, nonce = crypto.randomBytes(9).toString("base64url")) {
+  const base = `${parsed.origin}/pair?signin=${encodeURIComponent(nonce)}`;
+  return "code" in parsed ? `${base}#code=${parsed.code}&auto=1` : `${base}#signin_error=${encodeURIComponent(parsed.error)}`;
+}
+
+/** The return target with the credential masked, for logs. */
+function redactedTarget(target) {
+  return String(target).replace(/#code=[^&]*/, "#code=<redacted>");
 }
 
 /** The page the browser shows on the loopback address. Its script posts the
@@ -262,18 +272,21 @@ function startLoopbackReturn({ timeoutMs = SYSTEM_SIGN_IN_TTL_MS, log = () => {}
         };
         // DNS rebinding and stray requests: this exact host and path only.
         if (done || req.headers.host !== self || req.url !== path) {
+          log(`sign-in listener refused a ${req.method} (${done ? "already done" : req.headers.host !== self ? "another host" : "another path"})`);
           req.resume();
           answer(404, "text/plain; charset=utf-8", "Not found");
           return;
         }
         if (req.method === "GET") {
           const nonce = crypto.randomBytes(16).toString("base64");
+          log("sign-in listener: the browser came back, page served");
           answer(200, "text/html; charset=utf-8", loopbackPage(nonce), {
             "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
           });
           return;
         }
         if (req.method !== "POST" || req.headers.origin !== `http://${self}`) {
+          log(`sign-in listener refused a ${req.method} (${req.method === "POST" ? "another origin" : "method"})`);
           req.resume();
           answer(req.method === "POST" ? 403 : 405, "text/plain; charset=utf-8", "Refused");
           return;
@@ -286,13 +299,16 @@ function startLoopbackReturn({ timeoutMs = SYSTEM_SIGN_IN_TTL_MS, log = () => {}
           if (code && CREDENTIAL.test(code)) outcome = { code };
           else if (!code && error && ERROR_CODE.test(error)) outcome = { error };
           if (!outcome || done) {
+            log("sign-in listener refused a malformed return");
             answer(400, "text/plain; charset=utf-8", "Refused");
             return;
           }
+          log(outcome.code ? "sign-in listener: credential received" : `sign-in listener: error received (${outcome.error})`);
           res.once("finish", () => finish(outcome));
           answer(200, "application/json", "{}");
         });
       });
+      log(`sign-in listener on 127.0.0.1:${port}`);
       timer = setTimeout(() => {
         log("the browser sign-in timed out");
         finish({ timeout: true });
@@ -301,7 +317,10 @@ function startLoopbackReturn({ timeoutMs = SYSTEM_SIGN_IN_TTL_MS, log = () => {}
       resolve({
         returnTo: `http://${self}${path}`,
         result,
-        cancel: () => finish({ cancelled: true }),
+        cancel: () => {
+          if (!done) log("sign-in listener cancelled");
+          finish({ cancelled: true });
+        },
       });
     });
   });
@@ -320,6 +339,7 @@ module.exports = {
   loopbackPage,
   oidcLoginStartUrl,
   ownsScheme,
+  redactedTarget,
   signInSupport,
   startLoopbackReturn,
 };

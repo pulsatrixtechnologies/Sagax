@@ -285,6 +285,41 @@ let signInState = { status: "idle" };
 /** Bumped by every start and cancel, so a slower earlier start gives up. */
 let signInAttempt = 0;
 
+/** Every step of "Sign in with Pulsatrix", never the credential: the app
+ * log (server.log), and stdout in a dev run. */
+function signInLog(line) {
+  slog(`sign-in: ${line}`);
+  if (!app.isPackaged) console.log(`[sign-in] ${line}`);
+}
+
+/** Log how the main window's redeem of a handed-over credential answers
+ * (POST <origin>/api/auth/pair), once, for two minutes. Status only. */
+let redeemWatchTimer = null;
+function watchSignInRedeem(win, origin) {
+  const requests = win.webContents.session.webRequest;
+  const stop = () => {
+    if (redeemWatchTimer) clearTimeout(redeemWatchTimer);
+    redeemWatchTimer = null;
+    try { requests.onCompleted(null); requests.onErrorOccurred(null); } catch { /* window gone */ }
+  };
+  stop();
+  const filter = { urls: [`${origin}/api/auth/pair`, `${origin}/api/auth/pair?*`] };
+  requests.onCompleted(filter, (details) => {
+    if (details.method !== "POST") return;
+    signInLog(`redeem POST ${origin}/api/auth/pair answered ${details.statusCode}${details.responseHeaders && Object.keys(details.responseHeaders).some((h) => h.toLowerCase() === "set-cookie") ? " with a session cookie" : ""}`);
+    stop();
+  });
+  requests.onErrorOccurred(filter, (details) => {
+    signInLog(`redeem POST ${origin}/api/auth/pair failed (${details.error})`);
+    stop();
+  });
+  redeemWatchTimer = setTimeout(() => {
+    signInLog("no redeem request from /pair within two minutes");
+    stop();
+  }, 120_000);
+  redeemWatchTimer.unref?.();
+}
+
 function setSignInState(next) {
   signInState = next;
   const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
@@ -332,17 +367,23 @@ function bringMainWindowForward(win) {
 function deliverSignInReturn(parsed) {
   const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   if (!win || activeEnvironment(environmentsState)?.origin !== parsed.origin) {
-    slog(`ignored a sign-in return from ${parsed.origin}: that server is no longer the selected one`);
+    signInLog(`ignored a return from ${parsed.origin}: ${win ? "that server is no longer the selected one" : "no main window"}`);
     return;
   }
   signInHandoff.accept(parsed);
-  void win.loadURL(oidcSignInModule.authReturnTarget(parsed));
+  const target = oidcSignInModule.authReturnTarget(parsed);
+  let showing = "nothing";
+  try { showing = new URL(win.webContents.getURL()).origin + new URL(win.webContents.getURL()).pathname; } catch { /* blank */ }
+  signInLog(`${"code" in parsed ? "credential" : `error (${parsed.error})`} handed to the main window (was on ${showing}), loading ${oidcSignInModule.redactedTarget(target)}`);
+  if ("code" in parsed) watchSignInRedeem(win, parsed.origin);
+  win.loadURL(target).catch((error) => signInLog(`the main window could not load /pair (${error?.code ?? error?.message ?? "error"})`));
   bringMainWindowForward(win);
 }
 
 /** Stop waiting: close the loopback listener and forget the scheme return. */
 function cancelPulsatrixSignIn() {
   const current = currentSignIn;
+  if (current) signInLog(`cancelled the waiting sign-in on ${current.origin}`);
   currentSignIn = null;
   signInAttempt += 1;
   pendingSystemSignIn.clear();
@@ -358,8 +399,10 @@ async function startPulsatrixSignIn(_win, loginStart) {
   const origin = new URL(start).origin;
   cancelPulsatrixSignIn();
   const attempt = signInAttempt;
+  signInLog(`starting on ${origin}`);
   const support = await serverSignInSupport(origin);
   if (attempt !== signInAttempt) return;
+  signInLog(support ? `${origin} supports loopback return: ${support.loopbackReturn}, openmausbot return: ${support.nativeReturn}` : `${origin} environment unreachable`);
   if (!support) {
     setSignInState({ status: "error", origin, error: "unreachable" });
     return;
@@ -367,9 +410,9 @@ async function startPulsatrixSignIn(_win, loginStart) {
   let loopback = null;
   if (support.loopbackReturn) {
     try {
-      loopback = await oidcSignInModule.startLoopbackReturn({ log: slog });
-    } catch {
-      slog("the sign-in could not listen on 127.0.0.1");
+      loopback = await oidcSignInModule.startLoopbackReturn({ log: signInLog });
+    } catch (error) {
+      signInLog(`could not listen on 127.0.0.1 (${error?.code ?? "error"})`);
     }
   }
   const owns = support.nativeReturn && !loopback ? await thisAppOwnsAuthScheme() : false;
@@ -385,7 +428,7 @@ async function startPulsatrixSignIn(_win, loginStart) {
   });
   if (path === "unsupported") {
     loopback?.cancel();
-    slog(`the sign-in on ${origin} cannot come back to this app (server loopback return: ${support.loopbackReturn})`);
+    signInLog(`${origin} cannot come back to this app (server loopback return: ${support.loopbackReturn}, this app owns openmausbot: ${owns})`);
     setSignInState({ status: "error", origin, error: "unsupported" });
     return;
   }
@@ -398,7 +441,9 @@ async function startPulsatrixSignIn(_win, loginStart) {
   const current = { origin, url, loopback };
   currentSignIn = current;
   setSignInState({ status: "waiting", origin });
+  signInLog(`return path ${path}; opening the system browser`);
   loopback?.result.then((outcome) => {
+    signInLog(`listener settled: ${"code" in outcome ? "credential" : Object.keys(outcome)[0]}${currentSignIn !== current ? " (no longer the current sign-in, dropped)" : ""}`);
     if (currentSignIn !== current) return;
     currentSignIn = null;
     if ("code" in outcome || "error" in outcome) {
@@ -410,8 +455,9 @@ async function startPulsatrixSignIn(_win, loginStart) {
   });
   try {
     await shell.openExternal(url);
+    signInLog("system browser opened");
   } catch {
-    slog("the system browser could not open the sign-in");
+    signInLog("the system browser could not open the sign-in");
     if (currentSignIn === current) {
       cancelPulsatrixSignIn();
       setSignInState({ status: "error", origin, error: "browser" });
@@ -425,11 +471,11 @@ function takeAuthReturnLink(rawUrl) {
   if (typeof rawUrl !== "string" || !/^openmausbot:\/\/auth(?:[/?#]|$)/i.test(rawUrl)) return false;
   const parsed = environmentsModule.parseAuthReturnLink(rawUrl, environmentsState);
   if (!parsed) {
-    slog("ignored a sign-in return link that does not name a saved server");
+    signInLog("ignored an openmausbot://auth link that does not name a saved server");
     return true;
   }
   if (!pendingSystemSignIn.take(parsed.origin)) {
-    slog(`ignored a sign-in return from ${parsed.origin} that this app did not start or that expired`);
+    signInLog(`ignored an openmausbot://auth return from ${parsed.origin} that this app did not start or that expired`);
     return true;
   }
   if (currentSignIn?.origin === parsed.origin) currentSignIn = null;
@@ -2544,14 +2590,19 @@ function createWindow({ deferNavigation = false } = {}) {
 // window's top frame, on the origin of that return, can claim it, once.
 ipcMain.handle("auth-return:take", (event, code) => {
   const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) return false;
+  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
+    signInLog("a page that is not the main window's top frame asked to redeem a returned credential: refused");
+    return false;
+  }
   let origin;
   try {
     origin = new URL(event.senderFrame.url).origin;
   } catch {
     return false;
   }
-  return signInHandoff.redeem(origin, code);
+  const handed = signInHandoff.redeem(origin, code);
+  signInLog(`/pair on ${origin} asked to redeem a returned credential: ${handed ? "confirmed" : "refused (not handed over, another origin or expired)"}`);
+  return handed;
 });
 
 // The waiting state of "Sign in with Pulsatrix" for /pair in the main window:

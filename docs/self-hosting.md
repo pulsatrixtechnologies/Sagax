@@ -658,7 +658,13 @@ OMB_PERSPICAX_LINK_FILE=/link/pulsabot.json    # written by Perspicax (PXC_PULSA
 # OMB_PERSPICAX_DIRECTORY_SECONDS=300              # 5 to 3600: how often the directory is read
 # OMB_PERSPICAX_TOKEN_BUDGET=45                    # 1 to 60: token and revocation calls to Perspicax per minute
 # OMB_ORG_NAME=Acme                                # shown in Settings > Organization (default Pulsatrix)
+# OMB_ENVIRONMENT_LABEL="Acme bots"                # the server's name on /pair and in the apps
 ```
+
+The server's name on `/pair` ("Sign in to ...") and in the apps is
+`OMB_ENVIRONMENT_LABEL`, else `OMB_ORG_NAME`, else the host of
+`OMB_PUBLIC_URL`, and only then the machine's host name (in a container, its
+id).
 
 - The link file must match this server (issuer, client id, public origin),
   hold at most 4 KiB, and give no permission to "other" users (0640 or
