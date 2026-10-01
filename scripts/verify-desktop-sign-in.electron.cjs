@@ -28,6 +28,9 @@ app.whenReady().then(async () => {
     return handed;
   });
   ipcMain.handle("pulsatrix-sign-in:state", () => ({ status: "waiting", origin }));
+  // main always answers this (electron/main.mjs): this window is a plain
+  // remote page, not this app's bundle on an organization server
+  ipcMain.on("workspace:bundled-ui", (event) => { event.returnValue = false; });
   win.webContents.session.webRequest.onCompleted({ urls: [`${origin}/api/auth/pair`] }, (d) => {
     if (d.method === "POST") log(`redeem POST answered ${d.statusCode}`);
   });

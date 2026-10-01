@@ -297,6 +297,8 @@ export type ClientFeatures = Partial<Record<ClientFeature, boolean>>;
 export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: RegExp; feature?: ClientFeature }> = [
   // own session
   { methods: ["GET"], path: /^\/api\/auth\/session$/ },
+  // own preferences (organization server; the handler answers the session's person only)
+  { methods: ["GET", "PUT"], path: /^\/api\/me\/preferences$/ },
   { methods: ["POST"], path: /^\/api\/auth\/stream-ticket$/ },
   { methods: ["POST"], path: /^\/api\/auth\/logout$/ },
   // Own outbound desktop connector, additionally bound to a private secret.

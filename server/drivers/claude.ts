@@ -51,6 +51,7 @@ import { appendNative } from "./native.ts";
 import { permissionCommand, permissionLaunchCwd, permissionPaths } from "./permission-command.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
+import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
 import {
   ASK_USER_QUESTION_TOOL,
   askQuestionSummary,
@@ -353,6 +354,32 @@ export const GUEST_CLAUDE_PERMISSIONS = {
   blockReadsOutsideWorkingDirectories: true,
   deny: ["Bash", "PowerShell", "WebFetch", "Read(//proc/**)"],
 } as const;
+
+/** A Claude Code permission rule: a tool name, then an optional pattern in
+ * parentheses (`Bash(git status)`, `mcp__ogb`). Control characters never pass. */
+const CLAUDE_RULE = /^[A-Za-z_][\w-]*(\([^\p{Cc}]+\))?$/u;
+
+/** The instance's standing allow rules (OMB_CLAUDE_ALLOW: a JSON list, or one
+ * rule per line), set by the operator on the server. They ride in the private
+ * --settings file, the one source --setting-sources project still reads besides
+ * the bot's folder, so every bot of the instance gets them; a guest's confined
+ * turn never does. A malformed value grants nothing. */
+export function instanceClaudeAllowRules(env: NodeJS.ProcessEnv = process.env): string[] {
+  const raw = env.OMB_CLAUDE_ALLOW?.trim();
+  if (!raw) return [];
+  let rules: unknown;
+  if (raw.startsWith("[")) {
+    try {
+      rules = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+    if (!Array.isArray(rules) || rules.some((rule) => typeof rule !== "string")) return [];
+  } else {
+    rules = raw.split(/\r?\n/);
+  }
+  return [...new Set((rules as string[]).map((rule) => rule.trim()).filter((rule) => CLAUDE_RULE.test(rule)))];
+}
 
 export type ClaudeCliVersion = readonly [number, number, number];
 
@@ -1505,7 +1532,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // Coordination is foundational, not an optional deferred lookup.
         // Claude waits for always-loaded tools before building the prompt.
         mcpServers.agents = { ...turn.integrations.agents, alwaysLoad: true };
-        allowed.push("mcp__agents");
+        allowed.push(...agentsAllowedTools(turn.integrations.agents.env));
       }
       if (turn.integrations?.phone) {
         mcpServers.phone = { ...turn.integrations.phone };
@@ -1620,6 +1647,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const settings: Record<string, unknown> = { ...authSettings };
       if (hooks) settings.hooks = claudeHookSettings(HOOK_HELPER_PATH);
       if (turn.guestConfined) settings.permissions = GUEST_CLAUDE_PERMISSIONS;
+      else {
+        const allow = instanceClaudeAllowRules();
+        if (allow.length) settings.permissions = { allow };
+      }
       const authSettingsPath = mcpConfigPath && Object.keys(settings).length
         ? join(dirname(mcpConfigPath), "auth-settings.json") : null;
       if (authSettingsPath) args.push("--settings", authSettingsPath);
@@ -2639,3 +2670,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     };
   },
 };
+
+/** What a turn pre-allows of the agents MCP. Everything, except the one tool
+ * that acts on a person's own computer (shared_computer: files, terminal,
+ * screen control through their desktop app): that one goes through the
+ * permission prompt like the host's own computer tools, so the bot's
+ * approval mode decides and the person sees each action. */
+export function agentsAllowedTools(env: Record<string, string> | undefined): string[] {
+  const profile = catalogProfileFromEnv(env ?? {});
+  if (!profile.sharedComputers) return ["mcp__agents"];
+  return availableTools(profile).map((tool) => tool.name).filter((name) => name !== "shared_computer").map((name) => `mcp__agents__${name}`);
+}

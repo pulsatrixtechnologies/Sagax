@@ -10,11 +10,11 @@
 //
 // On the desktop app's own window, the launch screen (no server or server,
 // src/lib/launch.ts) comes first on a first run, and again after server mode
-// once no server is saved any more. Settings and the tour's server row open
-// it on request.
+// was left (Settings > General > Server > Change). Settings and the tour's
+// server row open it on request.
 import { useEffect, useState } from "react";
 import { emailGateDone } from "@/lib/analytics";
-import { launchBridges, launchDue } from "@/lib/launch";
+import { launchBridges, launchDue, serverModeBridge } from "@/lib/launch";
 import { hostedMember, LOCAL_VIEWER, welcomeDue, welcomeViewer, type BeatId, type WelcomeViewer } from "@/lib/onboarding";
 import { api, useStore } from "@/state/store";
 import { LaunchScreen } from "./LaunchScreen";
@@ -65,23 +65,23 @@ export function WelcomeGate({ viewer }: { viewer: WelcomeViewer | null }) {
   // Set once "No server" was chosen this visit, so the tour never
   // waits on that choice being saved.
   const [launchChosen, setLaunchChosen] = useState(false);
-  // How many servers this desktop has saved; null until it answers.
-  const [savedServers, setSavedServers] = useState<number | null>(null);
+  // Whether the desktop is in server mode; null until it answers.
+  const [serverMode, setServerMode] = useState<boolean | null>(null);
   const bridges = viewer && !viewer.hosted ? launchBridges(window.ogb) : null;
-  const environments = bridges?.environments;
+  const serverModeState = bridges ? serverModeBridge(window.ogb) : null;
   useEffect(() => {
-    if (!environments) return;
+    if (!serverModeState) return;
     let active = true;
-    void environments
+    void serverModeState
       .state()
-      .then((saved) => {
-        if (active) setSavedServers(saved.environments.length);
+      .then((state) => {
+        if (active) setServerMode(state.active);
       })
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, [environments]);
+  }, [serverModeState]);
   const remoteClient = window.ogb?.remoteClient?.active === true;
   if (!viewer) return null;
   // Only a hosted workspace is a team's by definition. Elsewhere a session
@@ -119,7 +119,7 @@ export function WelcomeGate({ viewer }: { viewer: WelcomeViewer | null }) {
     );
   }
   const launchMode = state.config?.onboarding?.launchMode;
-  if (bridges && !launchChosen && launchDue(state.config, { welcomeDue: due, savedServers })) {
+  if (bridges && !launchChosen && launchDue(state.config, { welcomeDue: due, serverMode })) {
     return (
       <LaunchScreen
         bridges={bridges}

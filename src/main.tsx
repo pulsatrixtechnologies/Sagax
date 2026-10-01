@@ -10,6 +10,7 @@ import { applyFont, readFont } from "./lib/fonts";
 import { BrowserSignInPage } from "./pair/BrowserSignInPage";
 import { PairPage } from "./pair/PairPage";
 import { rememberOpenThreadHash } from "./lib/open-thread-hash";
+import { syncUserPreferences } from "./lib/user-preferences-sync";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
 import "katex/dist/katex.min.css";
 import "./styles.css";
@@ -66,6 +67,13 @@ async function chooseRoot(): Promise<React.ReactNode> {
   if (location.pathname === "/desktop-viewer") {
     const { DesktopViewer } = await import("./components/DesktopViewer");
     return <DesktopViewer />;
+  }
+  // A signed-in person on an organization server: their preferences come
+  // from the server before the app draws (src/lib/user-preferences-sync.ts).
+  if (session.kind === "session") {
+    await syncUserPreferences();
+    applySkin(readSkin());
+    applyFont(readFont());
   }
   return <App />;
 }

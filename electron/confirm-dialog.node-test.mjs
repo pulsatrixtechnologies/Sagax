@@ -20,12 +20,12 @@ function fixture(response = 0) {
   localOrigin.setLocalOrigin(ORIGIN);
   const context = vm.createContext({
     ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
-    localOnly: localOrigin.localOnly, workspaceSenderAllowed: environments.workspaceSenderAllowed,
+    localOnly: localOrigin.localOnly, desktopUiOnly: localOrigin.desktopUiOnly, workspaceSenderAllowed: environments.workspaceSenderAllowed,
     mainWindow, rendererOrigin: () => ORIGIN, environmentsState: { activeId: "local", environments: [] },
     dialog: { showMessageBox: async (...args) => { calls.push(args); return { response }; } },
   });
   vm.runInContext(section("const workspaceOnly =", 'ipcMain.handle("organization:settings-opened"')
-    + section('ipcMain.handle("dialog:confirm"', 'ipcMain.handle("environments:state"'), context);
+    + section('ipcMain.handle("dialog:confirm"', "// Server mode: the page asks"), context);
   return { confirm: handlers.get("dialog:confirm"), calls, mainWindow, context, event: { sender: contents, senderFrame: frame } };
 }
 
@@ -58,4 +58,23 @@ test("invalid messages and closed windows fail closed without opening a dialog",
   f.mainWindow.isDestroyed = () => true;
   assert.equal(await f.confirm(f.event, "Delete?"), false);
   assert.equal(f.calls.length, 0);
+});
+
+test("this app's bundle drawn on the active organization server may confirm; another origin may not", async () => {
+  const BUNDLED = "https://org.example.test";
+  const f = fixture(0);
+  const frame = { url: `${BUNDLED}/` }, contents = { mainFrame: frame };
+  f.mainWindow.webContents = contents;
+  f.context.mainWindow = f.mainWindow;
+  f.context.environmentsState = { activeId: "o", environments: [{ id: "o", name: "Org", origin: BUNDLED, org: true }] };
+  const event = { sender: contents, senderFrame: frame };
+  localOrigin.setBundledOrigin(null);
+  assert.throws(() => f.confirm(event, "Delete?"), /only available/);
+  localOrigin.setBundledOrigin(BUNDLED);
+  try {
+    assert.equal(await f.confirm(event, "Delete?"), true);
+    assert.throws(() => f.confirm({ sender: contents, senderFrame: { url: `${BUNDLED}/frame` } }, "Delete?"), /only available/);
+  } finally {
+    localOrigin.setBundledOrigin(null);
+  }
 });

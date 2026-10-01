@@ -73,3 +73,13 @@ export function cacheDesktopCapabilities(capabilities: DesktopCapabilities): Des
   cached = capabilities;
   return capabilities;
 }
+
+/** A page a server serves: in a browser, or the desktop app showing a
+ * server (its reduced bridge has no `remoteClient`), including this app's
+ * own UI drawn on an organization server (electron/bundled-ui.cjs). Not the
+ * desktop app's own local page. The same server shows the same sections in
+ * both places. */
+export function servedPage(): boolean {
+  if (typeof window === "undefined") return true;
+  return !window.ogb || window.ogb.remoteClient === undefined;
+}

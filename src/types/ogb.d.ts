@@ -156,8 +156,15 @@ const __SAGAX_DEFAULT_SERVER__: string;
         onState(callback: (state: CompanyBackupState) => void): () => void;
       };
       workspaces?: {
-        state: () => Promise<{ local: boolean; name: string; origin?: string }>;
+        state: () => Promise<{ local: boolean; name: string; origin?: string; serverMode?: boolean }>;
         menu: () => Promise<void>;
+      };
+      /** Server mode (electron/environments.cjs): the organization server
+       * this app is locked to, and leaving it (signs out, back to the launch
+       * screen). This app's own UI only. */
+      serverMode?: {
+        state: () => Promise<{ active: false } | { active: true; id: string; name: string; origin: string }>;
+        leave: () => Promise<{ left: boolean }>;
       };
       /** Saved servers and the active one (desktop Server menu). Present on
        * the local server's UI; a remote server's page sees a reduced bridge. */
@@ -179,8 +186,12 @@ const __SAGAX_DEFAULT_SERVER__: string;
       orgJoin?: {
         probe(address: string): Promise<{ origin: string; issuer: string }>;
         stage(input: { origin: string; document: unknown }): Promise<{ ok: true }>;
-        /** Save the probed server, open it and start "Sign in with Pulsatrix", copying nothing. */
-        join(input: { origin: string }): Promise<{ ok: true }>;
+        /** Save the probed server, open it and start "Sign in with Pulsatrix", copying nothing.
+         * `serverMode: true` (the launch screen) locks the app to that server. */
+        join(input: { origin: string; serverMode?: boolean; preferences?: Record<string, string> }): Promise<{ ok: true }>;
+        /** Server mode: the preferences this computer's solo app had, handed
+         * once to the organization server's page that joined (never asked). */
+        takePreferences?(): Promise<Record<string, string> | null>;
         staged(): Promise<{ origin: string; bots: number; name: string } | null>;
         take(): Promise<unknown>;
         finished(input: { report: unknown }): Promise<{ ok: true }>;

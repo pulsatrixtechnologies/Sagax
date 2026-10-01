@@ -72,8 +72,9 @@ function setState(patch) {
   }
 }
 
-// The updater changes THIS app: only the local server's UI may drive it.
-const { localOnly } = localOriginModule;
+// The updater changes THIS app: only this app's own UI may drive it, the
+// local page or the bundle drawn on an organization server (bundled-ui.cjs).
+const { desktopUiOnly: localOnly } = localOriginModule;
 
 export function registerUpdaterIpc() {
   ipcMain.handle("update:get-state", localOnly("update:get-state", () => state));
