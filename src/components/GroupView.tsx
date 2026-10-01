@@ -52,6 +52,9 @@ import { ApprovalCard } from "./ApprovalCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
+import { GroupPeoplePicker, useOrgDirectory } from "./GroupPeoplePicker";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { groupHumanLabel } from "@/lib/private-threads";
 import { ManageMembersPanel } from "./ManageMembersPanel";
 import { GroupAvatarStack, GroupPanel } from "./GroupPanel";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
@@ -1056,6 +1059,11 @@ export function GroupView({ group }: { group: Group }) {
   const [membersOpen, setMembersOpen] = useState(false);
   // The group panel shares the bot panel's slot: one open flag in the store.
   const panelOpen = state.settingsOpen && !group.dm;
+  // Organization server: a group's people come from the Perspicax directory
+  // (by principal id) and read by their names.
+  const perspicaxOrg = usePerspicaxOrg();
+  const orgDirectory = useOrgDirectory(perspicaxOrg !== null && !group.dm);
+  const [pickingPeople, setPickingPeople] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const { replyTo, selectReply, clearReply, consumeReply, restoreReply } = useReplyDraft(
     group.threadId,
@@ -1091,7 +1099,7 @@ export function GroupView({ group }: { group: Group }) {
     ...(group.humanIds ?? [])
       .map((id) => id.trim().toLowerCase())
       .filter((id) => id && id !== viewerId && id !== viewerEmail)
-      .map((id) => ({ id, label: id, detail: undefined, removable: true })),
+      .map((id) => ({ id, label: groupHumanLabel(id, orgDirectory), detail: undefined, removable: true })),
   ];
   const actorId = viewer ? viewerId : remoteClient ? remoteActor.id : viewerId;
   const roster = channelRosterActions({
@@ -1614,6 +1622,10 @@ export function GroupView({ group }: { group: Group }) {
                   bots={[]}
                   {...roster}
                   onAddHuman={() => {
+                    if (perspicaxOrg) {
+                      setPickingPeople(true);
+                      return;
+                    }
                     const email = window.prompt("Adresse courriel")?.trim().toLowerCase() ?? "";
                     if (!email) return;
                     const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), email])];
@@ -1627,6 +1639,17 @@ export function GroupView({ group }: { group: Group }) {
                     });
                   }}
                 />
+                {perspicaxOrg && pickingPeople && (
+                  <GroupPeoplePicker
+                    directory={orgDirectory}
+                    taken={[viewerId, ...(group.humanIds ?? [])]}
+                    onAdd={(principalId) => {
+                      const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), principalId])];
+                      dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
+                    }}
+                    onDone={() => setPickingPeople(false)}
+                  />
+                )}
               </section>
               <section>
                 <h3 className="mb-1.5 text-[13px] text-ink-secondary">Bots</h3>
