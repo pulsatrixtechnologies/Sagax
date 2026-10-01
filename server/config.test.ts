@@ -1543,6 +1543,30 @@ describe("loadConfig with an unusable config.json", () => {
   });
 });
 
+describe("the saved mail settings", () => {
+  const path = join(DATA_DIR, "config.json");
+  beforeEach(() => {
+    mkdirSync(DATA_DIR, { recursive: true });
+    rmSync(path, { force: true });
+  });
+  afterEach(() => {
+    rmSync(path, { force: true });
+  });
+
+  it("are written whole into config.json's mail block, owner-only, like the other config secrets", () => {
+    writeFileSync(path, JSON.stringify({ profile: { name: "Ada" }, mail: { provider: "smtp", smtp: { host: "old" } } }));
+    const mail = { provider: "twilio" as const, from: "bot@example.com", fromName: "GOX", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } };
+    saveConfig({ mail });
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ profile: { name: "Ada" }, mail });
+    expect(loadConfig().mail).toEqual(mail);
+    if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it("are not part of the generic config patch: the mail route owns them", () => {
+    expect(parseConfigPatch({ mail: { provider: "smtp" } } as unknown as JsonValue)).toEqual({});
+  });
+});
+
 describe("slice 8: the interim organization key", () => {
   it("loads an old config.json with org and ignores it, keeping the solo sign-in list, invitations and mail", () => {
     const parsed = parseStoredConfig({

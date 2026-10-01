@@ -864,6 +864,7 @@ export type AppSettingsSection =
   | "computer"
   | "usage"
   | "people"
+  | "mail"
   | "activity"
   | "backups"
   | "workspaces";

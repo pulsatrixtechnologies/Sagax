@@ -838,13 +838,21 @@ pairing codes. Sessions from a sign-in show the email in
 ### Sending mail from your server
 
 Sign-in codes and invitations leave through one of three providers: `smtp`,
-`sendgrid` or `twilio` (the Twilio Email API). Set it in the environment, or
-save it in `config.json` under `mail`. An environment variable always wins
-over the saved value for the same field.
+`sendgrid` or `twilio` (the Twilio Email API). An admin sets them in
+**Settings > Email** (on the desktop app and on the web), or the server's
+environment provides them. A value saved in Settings wins over the
+environment for that field; the environment gives every field its default,
+so a container can be bootstrapped before anyone signs in. Settings marks a
+field the server provides with "Default value provided by the server", and
+**Revert to the server's value** removes the saved value of one field.
+Before Settings > Email existed the environment won instead; a server that
+has both a hand-edited `mail` block and `OMB_MAIL_*` now uses the saved
+block for every field it names.
 
 ```sh
 OMB_MAIL_PROVIDER=twilio                 # smtp | sendgrid | twilio
-OMB_MAIL_FROM="Sagax <bot@yourcompany.com>"
+OMB_MAIL_FROM=bot@yourcompany.com
+OMB_MAIL_FROM_NAME=Sagax                 # the sender's name; Sagax when none is set
 
 # smtp
 OMB_SMTP_HOST=smtp.yourcompany.com
@@ -869,22 +877,37 @@ key SID and its secret. The Twilio provider posts to
 Basic credentials; create an API key in the Twilio Console and verify the
 sender domain there first.
 
-The same settings in `config.json`, for a server run without Docker:
+Settings > Email saves into `config.json` under `mail`, the owner-only
+(mode 0600) file that holds this server's other settings and keys:
 
 ```json
 "mail": {
   "provider": "twilio",
-  "from": "Sagax <bot@yourcompany.com>",
+  "from": "bot@yourcompany.com",
+  "fromName": "Sagax",
   "twilio": { "apiKeySid": "SK...", "apiKeySecret": "..." }
 }
 ```
 
 `smtp` takes `host`, `port`, `secure`, `user` and `password`; `sendgrid`
-takes `apiKey`. A password, API key or key secret is never shown back: a
-mail status reports only whether one is configured, and a refused message
-is logged with the provider's status code (and, for Twilio, its reason,
-such as "The from.address domain ... is not valid or authorized."), never
-the credential.
+takes `apiKey`. The sender's name is `fromName`, then a name written in
+`from` (`Sagax <bot@yourcompany.com>`), then `Sagax`: every provider sends
+with a name, which the Twilio Email API requires.
+
+A password, API key or key secret is write-only: Settings shows only
+"Configured" and a **Replace** button, and `GET /api/mail/settings` never
+returns any part of one. **Send a test** sends one message to the address
+you signed in with (the profile address on the computer running the server)
+and to nobody else; it is limited to one every 30 seconds and five an hour
+per person. A refused message is logged with the provider's status code
+(and, for Twilio, its reason, such as "The from.address domain ... is not
+valid or authorized."), never the credential.
+
+The routes are admin only: `GET` and `PUT /api/mail/settings` (a field set
+to `null` goes back to the server's value) and `POST /api/mail/test`, which
+takes no fields. An organization server (`OMB_IDENTITY=perspicax`) answers
+them with 403 `identity_perspicax`, and Settings > Email says that
+Perspicax manages its mail.
 
 ### Inviting people
 

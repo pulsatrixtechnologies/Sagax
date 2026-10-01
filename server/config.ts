@@ -410,12 +410,14 @@ const appConfigSchema = z.object({
     usedAt: z.number().optional(),
     revokedAt: z.number().optional(),
   })).max(5000).optional(),
-  /** Mail transport for server-issued sign-in codes and org invites
-   * (server/mail-config.ts, server/mailer.ts). OMB_MAIL_* environment
-   * variables always win over whatever is saved here. */
+  /** Mail transport for server-issued sign-in codes and invitations
+   * (server/mail-config.ts, server/mailer.ts). Saved by Settings > Email
+   * (server/mail-routes.ts), never by a generic config patch; a saved field
+   * wins over its OMB_MAIL_* environment default. */
   mail: z.object({
     provider: z.enum(["smtp", "sendgrid", "twilio"]).optional(),
     from: optionalText,
+    fromName: optionalText,
     smtp: z.object({
       host: optionalText,
       port: z.number().int().min(1).max(65535).optional(),
@@ -570,7 +572,7 @@ const appConfigSchema = z.object({
 const storedAppConfigSchema = appConfigSchema.extend({
   browserProfiles: storedBrowserProfilesSchema.optional(),
 });
-const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, identityMigratedAt: true, invites: true })
+const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, identityMigratedAt: true, invites: true, mail: true })
   .extend({ threads: threadsPatchSchema.optional(), newBots: newBotsPatchSchema.optional() });
 const jsonObjectSchema = z.record(z.string(), z.json());
 
@@ -1258,6 +1260,9 @@ export function saveConfig(
   if (checkedPatch.organization !== undefined) disk.organization = checkedPatch.organization;
   if (checkedPatch.identityMigratedAt !== undefined) disk.identityMigratedAt = checkedPatch.identityMigratedAt;
   if (checkedPatch.invites !== undefined) disk.invites = checkedPatch.invites;
+  // Replaced whole: the mail route merges, and a field it removed (back to
+  // the server's value) must not survive through a section merge.
+  if (checkedPatch.mail !== undefined) disk.mail = checkedPatch.mail;
   // Replace the section so clearing a backup cannot revive the old selection.
   if (checkedPatch.automaticRecovery !== undefined) disk.automaticRecovery = checkedPatch.automaticRecovery;
   // A selection is replaced as one value, so changing engines also clears

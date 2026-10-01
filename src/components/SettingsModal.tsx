@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Archive, Coins, FlaskConical, KeyRound, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2 } from "lucide-react";
+import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
 import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
@@ -22,6 +22,7 @@ import { ServerPairingCard } from "./ServerPairingCard";
 import { PeopleSection } from "./PeopleSection";
 import { peopleListServed, readMembership } from "../lib/membership";
 import { ActivitySection } from "./ActivitySection";
+import { MailSettings } from "./MailSettings";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
@@ -74,6 +75,7 @@ const SECTIONS: Array<{
   { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["vm", "virtual", "desktop"] },
   { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing"] },
   { id: "people", labelKey: "settings.section.people", icon: Users, keywords: ["people", "users", "invite", "sign in", "members", "admins", "access"] },
+  { id: "mail", labelKey: "settings.section.mail", icon: Mail, keywords: ["email", "mail", "courriel", "smtp", "sendgrid", "twilio", "sender", "invitations", "sign-in codes"] },
   { id: "activity", labelKey: "settings.section.activity", icon: ScrollText, keywords: ["activity", "audit", "log", "history", "who changed", "approvals", "decisions", "admin"] },
   { id: "backups", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery"] },
   { id: "workspaces", labelKey: "settings.section.workspaces", icon: Building2, keywords: ["clients", "tenants", "fleet", "workspaces", "installation", "installations"] },
@@ -777,6 +779,9 @@ export function SettingsModal() {
     // workspace whose members the organisation's Admin decides. An
     // organization server sends no sign-in list: Perspicax owns its people.
     .filter((entry) => entry.id !== "people" || (!window.ogb && (readMembership(state.config).authority === "portal" || peopleListServed(state.config))))
+    // how the server sends sign-in codes and invitations: its admins and
+    // the operator, on the desktop and on the web
+    .filter((entry) => entry.id !== "mail" || ownerOrAdmin === true)
     // the activity log belongs to a workspace served to a browser, and to its admins
     .filter((entry) => entry.id !== "activity" || (!window.ogb && ownerOrAdmin === true));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
@@ -1090,6 +1095,7 @@ export function SettingsModal() {
 
             {section === "usage" && <UsageSection />}
             {section === "people" && <PeopleSection />}
+            {section === "mail" && <MailSettings />}
             {section === "activity" && <ActivitySection />}
             {section === "workspaces" && <WorkspacesSection />}
             </div>

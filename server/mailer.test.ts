@@ -98,6 +98,20 @@ describe("mailer", () => {
     const mailer = createMailer({ provider: "smtp", from: "p@g.ca", smtp: { host: "smtp.g.ca", port: 587, secure: "starttls", user: "u", password: "pw" } }, { smtpTransport })!;
     await mailer.send({ to: "z@g.ca", subject: "s", text: "t" });
     expect(smtpTransport).toHaveBeenCalledWith(expect.objectContaining({ host: "smtp.g.ca", port: 587, secure: false, requireTLS: true, auth: { user: "u", pass: "pw" } }));
-    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: "p@g.ca", to: "z@g.ca", subject: "s", text: "t" }));
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: { name: "Sagax", address: "p@g.ca" }, to: "z@g.ca", subject: "s", text: "t" }));
+  });
+
+  it("uses the configured sender name with every provider, and Sagax when none is set", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 202 }));
+    const twilio = createMailer({ provider: "twilio", from: "p@g.ca", fromName: "GOX", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
+    await twilio.send({ to: "z@g.ca", subject: "s", text: "t" });
+    expect(JSON.parse(String((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body)).from).toEqual({ address: "p@g.ca", name: "GOX" });
+    const sendgrid = createMailer({ provider: "sendgrid", from: "p@g.ca", sendgrid: { apiKey: "SG.k" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
+    await sendgrid.send({ to: "z@g.ca", subject: "s", text: "t" });
+    expect(JSON.parse(String((fetchImpl.mock.calls[1] as unknown as [string, RequestInit])[1].body)).from).toEqual({ email: "p@g.ca", name: "Sagax" });
+    const sendMail = vi.fn(async () => ({}));
+    const smtp = createMailer({ provider: "smtp", from: "Old <p@g.ca>", fromName: "GOX", smtp: { host: "smtp.g.ca" } }, { smtpTransport: () => ({ sendMail }) })!;
+    await smtp.send({ to: "z@g.ca", subject: "s", text: "t" });
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: { name: "GOX", address: "p@g.ca" } }));
   });
 });
