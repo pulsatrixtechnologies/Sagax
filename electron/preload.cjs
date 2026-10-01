@@ -32,7 +32,7 @@ ipcRenderer.on("app:open-settings", (_event, section) => {
 // helpers here. Main enforces the same rule on the sensitive channels.
 const localOrigin = process.argv.find((arg) => arg.startsWith("--omb-local-origin="))?.slice("--omb-local-origin=".length) ?? null;
 const isLocalPage = !localOrigin || location.origin === localOrigin;
-const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces", "takeSignInReturn"]);
+const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces", "takeSignInReturn", "orgJoin"]);
 
 // Sandboxed preload cannot import TS or sibling modules. Keep this list in
 // parity with shared/workspace-backup-client.ts (covered by the preload test).
@@ -273,6 +273,18 @@ const bridge = {
       ipcRenderer.on("update:state", handler);
       return () => ipcRenderer.removeListener("update:state", handler);
     },
+  },
+
+  /** "Join a Perspicax server" (slice 8, electron/org-join.mjs). Main checks
+   * every call's sender: probe and stage answer the local page only; the
+   * others answer only the organization server the copy was staged for. */
+  orgJoin: {
+    probe: (address) => ipcRenderer.invoke("org-join:probe", String(address ?? "")),
+    stage: (input) => ipcRenderer.invoke("org-join:stage", input),
+    staged: () => ipcRenderer.invoke("org-join:staged"),
+    take: () => ipcRenderer.invoke("org-join:take"),
+    finished: (input) => ipcRenderer.invoke("org-join:finished", input),
+    removeLocal: (keys) => ipcRenderer.invoke("org-join:remove-local", Array.isArray(keys) ? keys.map(String) : []),
   },
 
   /** Saved servers and the active one (Server menu). Switching, adding and

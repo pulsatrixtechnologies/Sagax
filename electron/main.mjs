@@ -25,6 +25,7 @@ import { pollServerIdentity } from "./server-boot-probe.mjs";
 import { createServerSupervisor } from "./server-supervisor.mjs";
 import { packageUrlFromCommandLine, packageUrlFromDeepLink } from "./package-link.mjs";
 import { createOrganizationEntry, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
+import { createOrgJoin, forgetDetail } from "./org-join.mjs";
 import { trafficLightsForSkin, windowChromeOptions } from "./window-chrome.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
 import { createSystemTray } from "./system-tray.mjs";
@@ -2068,6 +2069,17 @@ async function cloudHomeSignedIn(origin) {
   }
 }
 
+/** Whether a saved server signs people in with Perspicax (its public
+ * descriptor), for the Forget dialog. Unreachable reads as no. */
+async function isOrganizationServer(origin) {
+  try {
+    const response = await fetch(`${origin}/.well-known/openmausbot/environment`, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) });
+    return response.ok && (await response.json())?.identity?.kind === "perspicax";
+  } catch {
+    return false;
+  }
+}
+
 async function forgetEnvironment(id) {
   const env = environmentsState.environments.find((e) => e.id === id);
   if (!env) return;
@@ -2077,7 +2089,7 @@ async function forgetEnvironment(id) {
     defaultId: 1,
     cancelId: 1,
     message: `Forget “${env.name}”?`,
-    detail: "This app signs out of that server. The server keeps its own session list; revoke it there too if the device is gone.",
+    detail: forgetDetail(await isOrganizationServer(env.origin)),
   });
   if (response !== 0) return;
   sharingController().forget(env);
@@ -2831,6 +2843,77 @@ const workspaceOnly = (handler) => (event, ...args) => {
   return handler(event, ...args);
 };
 const localWorkspaceOnly = (channel, handler) => localOnly(channel, workspaceOnly(handler));
+
+// "Join a Perspicax server" (slice 8, electron/org-join.mjs). probe and stage
+// answer the local page only. The others answer only the main frame of the
+// active saved server, and org-join itself checks that this origin is the
+// one the copy was staged for.
+const orgJoin = createOrgJoin({
+  fetch: (url, init) => fetch(url, init),
+  parseLink: (address) => parseHostedWorkspaceLink(address),
+  saveEnvironment: (origin) => {
+    let next = withEnvironment(environmentsState, { origin, name: new URL(origin).host }, () => randomUUID());
+    const entry = next.environments.find((candidate) => candidate.origin === origin);
+    if (!entry) throw new Error("The server could not be saved.");
+    next = withActive(next, entry.id);
+    persistEnvironments(next);
+  },
+  navigate: (url) => navigateMainWindow(url),
+  confirm: async (names) => {
+    const { response } = await dialog.showMessageBox({
+      type: "warning",
+      buttons: ["Remove", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+      message: names.length === 1 ? `Remove “${names[0]}” from this computer?` : `Remove ${names.length} bots from this computer?`,
+      detail: `${names.join("\n")}\n\nTheir copies in the organization stay. This removes them and their conversations from this computer only.`,
+    });
+    return response === 0;
+  },
+  deleteLocalBot: async (key) => {
+    const response = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/bots/${encodeURIComponent(key)}`, {
+      method: "DELETE", redirect: "error", credentials: "omit", signal: AbortSignal.timeout(15_000),
+      headers: { [DESKTOP_MUTATION_HEADER]: desktopMutationToken ?? "" },
+    }).catch(() => null);
+    return Boolean(response?.ok);
+  },
+  postLinkedSubject: async (input) => {
+    const response = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/identity/linked-subjects`, {
+      method: "POST", redirect: "error", credentials: "omit", signal: AbortSignal.timeout(5_000),
+      headers: { "content-type": "application/json", [DESKTOP_MUTATION_HEADER]: desktopMutationToken ?? "" },
+      body: JSON.stringify(input),
+    }).catch(() => null);
+    if (!response?.ok) slog(`org join: the linked organization account could not be recorded (${response?.status ?? "unreachable"})`);
+  },
+});
+/** The origin of a call from the active saved server's main frame, or null. */
+function orgJoinSender(event) {
+  const active = activeEnvironment(environmentsState);
+  if (!active || !workspaceSenderAllowed(event, mainWindow?.webContents, environmentsState, rendererOrigin())) return null;
+  try {
+    const origin = new URL(event.senderFrame.url).origin;
+    return origin === active.origin ? origin : null;
+  } catch {
+    return null;
+  }
+}
+const orgJoinRemote = (handler) => (event, ...args) => {
+  const origin = orgJoinSender(event);
+  if (!origin) throw new Error("No copy was staged for this server.");
+  return handler(origin, ...args);
+};
+ipcMain.handle("org-join:probe", localWorkspaceOnly("org-join:probe", (_event, address) => orgJoin.probe(address)));
+ipcMain.handle("org-join:stage", localWorkspaceOnly("org-join:stage", (_event, input) => orgJoin.stage(input)));
+ipcMain.handle("org-join:staged", (event) => {
+  const origin = orgJoinSender(event);
+  return origin ? orgJoin.staged(origin) : null;
+});
+ipcMain.handle("org-join:take", (event) => {
+  const origin = orgJoinSender(event);
+  return origin ? orgJoin.take(origin) : null;
+});
+ipcMain.handle("org-join:finished", orgJoinRemote((origin, input) => orgJoin.finished(origin, input)));
+ipcMain.handle("org-join:remove-local", orgJoinRemote((origin, keys) => orgJoin.removeLocal(origin, keys)));
 // Personal Cloud authority stays in main. No renderer-supplied address, token,
 // paid flag or callback can choose an account or activate Pro.
 for (const method of ["state", "begin", "reopen", "cancel", "refresh", "signOut", "openDashboard"]) {
