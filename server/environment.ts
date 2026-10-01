@@ -123,9 +123,20 @@ export function serverVersion(): string {
   return "unknown";
 }
 
-/** This server's display name: OMB_ENVIRONMENT_LABEL, else the host name. */
-export function environmentLabel(): string {
-  return process.env.OMB_ENVIRONMENT_LABEL?.trim() || hostname();
+/** This server's display name: OMB_ENVIRONMENT_LABEL, else the
+ * organization's name (OMB_ORG_NAME), else the host of its public address
+ * (OMB_PUBLIC_URL), else the machine's host name. A container's host name is
+ * its id (say 2f463c19755e), never a name to show people. */
+export function environmentLabel(env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = env.OMB_ENVIRONMENT_LABEL?.trim() || env.OMB_ORG_NAME?.trim();
+  if (explicit) return explicit.slice(0, 120);
+  try {
+    const host = env.OMB_PUBLIC_URL?.trim() ? new URL(env.OMB_PUBLIC_URL.trim()).hostname : "";
+    if (host) return host;
+  } catch {
+    /* not a URL: fall through */
+  }
+  return hostname();
 }
 
 export function environmentDescriptor(input: { environmentId: string; desktopManaged: boolean; emailSignIn?: boolean; sharedComputers?: boolean; identity?: IdentityDescriptor }): EnvironmentDescriptor {

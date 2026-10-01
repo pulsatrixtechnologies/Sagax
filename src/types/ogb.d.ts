@@ -1,6 +1,11 @@
 // The narrow bridge the Electron preload exposes. Absent in the browser.
 
 declare global {
+  /** electron/main.mjs signInState: the system-browser sign-in /pair waits on. */
+  type PulsatrixSignInState =
+    | { status: "idle" }
+    | { status: "waiting"; origin: string }
+    | { status: "error"; origin: string; error: "timeout" | "unsupported" | "browser" | "unreachable" };
   type CompanyBackupEntry = Omit<import("../../electron/company-backups.mjs").CompanyBackupMetadata, "status"> & { status: "creating" | "uploading" | "completing" | "ready" | "cleanup" };
   interface CompanyBackupScheduleState {
     enabled: boolean;
@@ -123,8 +128,15 @@ const __SAGAX_DEFAULT_SERVER__: string;
       platform: NodeJS.Platform;
       /** Desktop only: true once when the main process handed this exact
        * credential to /pair from a "Sign in with Pulsatrix" return it was
-       * waiting for (electron/oidc-login-window.cjs createSignInHandoff). */
+       * waiting for (electron/oidc-system-sign-in.cjs createSignInHandoff). */
       takeSignInReturn?: (code: string) => Promise<boolean>;
+      /** Desktop only: "Sign in with Pulsatrix" waiting in the system browser. */
+      pulsatrixSignIn?: {
+        state(): Promise<PulsatrixSignInState>;
+        cancel(): Promise<boolean>;
+        reopen(): Promise<boolean>;
+        onChange(cb: (state: PulsatrixSignInState) => void): () => void;
+      };
       organization?: import("../../electron/managed-desktop.mjs").ManagedDesktopBridge;
       cloudAccount?: import("../../electron/cloud-account.mjs").CloudAccountBridge;
       /** Move to Cloud; on a remote page, only the person's own Cloud is answered. */

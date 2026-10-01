@@ -9,7 +9,7 @@ touches the user's app, `~/.openmausbot`, or a live Perspicax.
 
 ```sh
 pnpm exec vitest run server/oidc-rp.test.ts server/oidc-login.test.ts server/oidc-login.e2e.test.ts
-node --test electron/oidc-login-window.node-test.mjs
+node --test electron/oidc-system-sign-in.node-test.mjs
 ```
 
 `server/testing/fake-oidc-provider.ts` generates an ES256 key with
@@ -79,7 +79,7 @@ computer.
 pnpm exec vitest run server/oidc-rp.test.ts server/oidc-login.test.ts server/idp-session.test.ts \
   server/sessions.test.ts server/request-auth.test.ts server/principals.test.ts server/environment.test.ts \
   server/oidc-login.e2e.test.ts server/oidc-session.e2e.test.ts src/pair
-node --test electron/oidc-login-window.node-test.mjs electron/environments.node-test.mjs
+node --test electron/oidc-system-sign-in.node-test.mjs electron/environments.node-test.mjs
 ```
 
 The fake provider now rotates refresh tokens (the old one dies), checks the
@@ -103,7 +103,11 @@ family, and signs back-channel logout tokens; `disable(sub)`,
   logout and expiry, the sweep (unredeemed and orphan grants) and
   back-channel logout by subject and by principal.
 - `server/oidc-login.test.ts`: the routes in process: the `client`
-  parameter, the exact desktop and phone return links, no-store, and the
+  parameter, the exact desktop and phone return links, the desktop loopback
+  `return` (127.0.0.1 and [::1] with a port and a state accepted; localhost,
+  other hosts, https, no port, privileged ports, a query, a fragment, extra
+  path and a missing state refused, on /pair, never on the address named;
+  refused on phone and web), no-store, and the
   back-channel route (405, wrong content type, oversized body, every forged
   token, 200 once then a replay refused).
 - `server/oidc-session.e2e.test.ts` (real server, fake provider, fake engine,
@@ -111,7 +115,9 @@ family, and signs back-channel logout tokens; `disable(sub)`,
   change narrows the session, S2-3 a back-channel logout ends the sessions
   and the open event stream at once, S2-5 logout revokes the grant, S2-6
   forged and replayed logout tokens, S2-7 the desktop return link redeemed
-  once into a cookie session, S2-8 the phone return link redeemed into a
+  once into a cookie session, S2-7b the same through the desktop app's real
+  loopback listener (the credential only in the fragment, posted back by the
+  listener's page, never in the server log), S2-8 the phone return link redeemed into a
   bearer that a back-channel logout ends by principal, a disabled person's
   refresh ending the session, and a member pairing their own device.
 
@@ -147,13 +153,48 @@ admin console session for alice:
    `/auth/oidc/start?client=desktop` (and `?client=phone`), sign in, and read
    the `openmausbot://` address the browser is sent to; redeem it with
    `POST /api/auth/pair` (desktop) or `POST /api/pair` (phone) once.
+   S2-7b: listen with `nc -l 127.0.0.1 53123` and open
+   `/auth/oidc/start?client=desktop&return=http://127.0.0.1:53123/<43 url-safe chars>`:
+   after the sign-in the browser asks for that path with no credential in
+   the request line (it rides in the fragment).
 8. S2-9: start a desktop flow and never redeem it: after about 3 minutes the
    sweep revokes the grant (`token_revoked`).
 9. S2-10: stop Perspicax: requests still answer 200 and the server logs a
    deferred refresh; start it again and the next due refresh succeeds.
 
-The desktop click-through (system browser and return) and the phone apps on
-a device are checked by hand.
+- `electron/oidc-system-sign-in.node-test.mjs`: the desktop never opens a
+  sign-in window of its own; the loopback listener binds 127.0.0.1 only on an
+  ephemeral port at a random 43-character state, serves its FR/EN page with
+  a nonce CSP, takes only that state, that Host and that Origin, a credential
+  or an error once, then closes; it times out and can be cancelled; the
+  return decision (loopback, else openmausbot:// only when this exact copy of
+  the app owns the scheme, else none with a reason).
+
+The desktop return into a real Electron window is checked with the app's
+real preload on a second local server acting as the remote environment
+(fake Perspicax, temporary home and profile, free ports):
+
+```sh
+pnpm exec vite build
+node --experimental-strip-types scripts/verify-desktop-sign-in.ts               # PASS: signed in, back on /
+node --experimental-strip-types scripts/verify-desktop-sign-in.ts --old-target  # PASS: the 0.3.x delivery stays signed out
+```
+
+The window already shows `<origin>/pair` when the credential comes back, so
+the delivery must be a new document (`/pair?signin=<nonce>#code=...`): a
+target that differs only in its fragment is a same-document navigation and
+`/pair` never reads it. In a dev run every step is printed as `[sign-in] ...`
+on stdout (and always written to the app's `server.log`), never the
+credential.
+
+The desktop click-through is checked by hand on a build that is not the
+system's openmausbot handler (the dev build next to an installed
+`/Applications/Sagax.app`): "Sign in with Pulsatrix" opens the default
+browser (a passkey works there), /pair in the app shows "Annuler" and
+"Rouvrir le navigateur" while it waits, the browser ends on "Connexion
+réussie, vous pouvez revenir à Sagax" and the app comes to the front signed
+in; the installed app gets nothing. The phone apps on a device are checked
+by hand.
 
 ## Slice 3: the link, the directory and sharing with a person
 

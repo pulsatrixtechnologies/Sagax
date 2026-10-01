@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { environmentDescriptor, loadEnvironmentId, serverVersion } from "./environment.ts";
+import { environmentDescriptor, environmentLabel, loadEnvironmentId, serverVersion } from "./environment.ts";
+import { hostname } from "node:os";
 import { identityDescriptor } from "./oidc-login.ts";
 
 const dirs: string[] = [];
@@ -135,6 +136,14 @@ describe("environment identity", () => {
       .toEqual({ remoteSessions: true, sharedComputers: true, selfUpdate: "desktop-managed", emailSignIn: false });
   });
 
+  it("names the server by its label, its organization, its public host, never first by a container id", () => {
+    expect(environmentLabel({ OMB_ENVIRONMENT_LABEL: "cab mini", OMB_ORG_NAME: "Acme", OMB_PUBLIC_URL: "https://bot.example.test" })).toBe("cab mini");
+    expect(environmentLabel({ OMB_ORG_NAME: " Acme ", OMB_PUBLIC_URL: "https://bot.example.test" })).toBe("Acme");
+    expect(environmentLabel({ OMB_PUBLIC_URL: "https://bot.pulsatrix.example.test/" })).toBe("bot.pulsatrix.example.test");
+    expect(environmentLabel({ OMB_PUBLIC_URL: "not a url" })).toBe(hostname());
+    expect(environmentLabel({})).toBe(hostname());
+  });
+
   it("falls back to the checkout's package.json version, then to unknown", () => {
     delete process.env.OMB_APP_VERSION;
     expect(serverVersion()).toMatch(/^\d+\.\d+\.\d+/);
@@ -145,7 +154,7 @@ describe("the sign-in identity in the descriptor", () => {
   it("tells native apps an organization server returns to them (slice 2)", () => {
     const identity = identityDescriptor({ kind: "perspicax", issuer: "https://px.example.test", clientId: "pulsa-bot", publicOrigin: "https://bot.example.test", redirectUri: "https://bot.example.test/auth/oidc/callback" });
     const descriptor = environmentDescriptor({ environmentId: "00000000-0000-4000-8000-000000000000", desktopManaged: false, identity });
-    expect(descriptor.identity).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true });
+    expect(descriptor.identity).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true });
     expect(environmentDescriptor({ environmentId: "00000000-0000-4000-8000-000000000000", desktopManaged: false }).identity).toBeUndefined();
   });
 });

@@ -627,14 +627,30 @@ What changes:
 - Loopback without a session is a service, not the owner
   (`OMB_LOOPBACK_TRUST=service`), unless you set `OMB_LOOPBACK_TRUST`
   yourself: every bot's shell on a shared server is a loopback caller.
-- The desktop app, connected to this server as a saved server, runs the
-  sign-in in the person's own browser when it is the system's handler for
-  `openmausbot://` links (`/auth/oidc/start?client=desktop` ends on
-  `openmausbot://auth?origin=...#code=...`, a two-minute, single-use pairing
-  credential bound to the person), else in a small window of its own (no
-  preload, same cookie jar). Only the app redeems that credential without a
-  click: `/pair#code=...&auto=1` opened in an ordinary browser shows the code
-  form. The phone apps offer **Sign in with Pulsatrix**
+- The desktop app, connected to this server as a saved server, always runs
+  the sign-in in the person's own default browser, where their password
+  manager and passkeys work; it never opens a sign-in window of its own
+  (RFC 8252). It listens once on `127.0.0.1`, on an ephemeral port at a
+  random path, and opens
+  `/auth/oidc/start?client=desktop&return=http://127.0.0.1:<port>/<state>`.
+  The server accepts as `return` only `http://127.0.0.1:<port>/<state>` or
+  `http://[::1]:<port>/<state>` (a port of 1024 or more, a state of 32 to 128
+  URL-safe characters, nothing else: never `localhost` or another host) and
+  ends there with `#code=...`, a two-minute, single-use pairing credential
+  bound to the person, in the fragment, which no browser sends to a server.
+  The page on that address posts it to the app, says "Connexion réussie,
+  vous pouvez revenir à Sagax" (and in English), and the app comes to the
+  front signed in. While it waits, the app's `/pair` shows **Annuler** and
+  **Rouvrir le navigateur**; it stops after ten minutes. The descriptor's
+  `identity.loopbackReturn: true` says the server takes `return`. Against an
+  older server without it, the app falls back to
+  `openmausbot://auth?origin=...#code=...` only when this exact copy of the
+  app is the system's handler for `openmausbot://` (another installed copy
+  would otherwise get the return), and otherwise says the server must be
+  updated. Perspicax is unchanged: its redirect stays
+  `<OMB_PUBLIC_URL>/auth/oidc/callback`. Only the app redeems that
+  credential without a click: `/pair#code=...&auto=1` opened in an ordinary
+  browser shows the code form. The phone apps offer **Sign in with Pulsatrix**
   for such a server: `?client=phone` ends on the same
   `openmausbot://pair?address=...&token=...` link a pairing QR code carries.
   A signed-in member may also open a pairing code for their own device; the
@@ -663,7 +679,13 @@ OMB_PERSPICAX_LINK_FILE=/link/pulsabot.json    # written by Perspicax (PXC_PULSA
 # OMB_PERSPICAX_DIRECTORY_SECONDS=300              # 5 to 3600: how often the directory is read
 # OMB_PERSPICAX_TOKEN_BUDGET=45                    # 1 to 60: token and revocation calls to Perspicax per minute
 # OMB_ORG_NAME=Acme                                # shown in Settings > Organization (default Pulsatrix)
+# OMB_ENVIRONMENT_LABEL="Acme bots"                # the server's name on /pair and in the apps
 ```
+
+The server's name on `/pair` ("Sign in to ...") and in the apps is
+`OMB_ENVIRONMENT_LABEL`, else `OMB_ORG_NAME`, else the host of
+`OMB_PUBLIC_URL`, and only then the machine's host name (in a container, its
+id).
 
 - The link file must match this server (issuer, client id, public origin),
   hold at most 4 KiB, and give no permission to "other" users (0640 or

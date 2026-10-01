@@ -27,7 +27,55 @@ export function signInErrorText(code: string): string {
   if (code === "rate_limited") return t("pair.pulsatrix.errorRateLimited");
   if (code === "unavailable") return t("pair.pulsatrix.errorUnavailable");
   if (code === "client") return t("pair.pulsatrix.errorClient");
+  if (code === "return") return t("pair.pulsatrix.errorReturn");
   return t("pair.pulsatrix.error");
+}
+
+/** Why the desktop app's browser sign-in stopped, in the reader's words. */
+export function browserSignInErrorText(error: string): string {
+  if (error === "timeout") return t("pair.pulsatrix.errorTimeout");
+  if (error === "unsupported") return t("pair.pulsatrix.errorUnsupported");
+  if (error === "browser") return t("pair.pulsatrix.errorBrowser");
+  if (error === "unreachable") return t("pair.pulsatrix.errorUnreachable");
+  return t("pair.pulsatrix.error");
+}
+
+/** The desktop app's "Sign in with Pulsatrix" runs in the system browser
+ * (electron/oidc-system-sign-in.cjs): this page shows that it waits, with
+ * Cancel and Reopen the browser, or why it stopped. Idle in a plain browser. */
+function useBrowserSignIn(): { state: PulsatrixSignInState; cancel: () => void; reopen: () => void } {
+  const [state, setState] = useState<PulsatrixSignInState>({ status: "idle" });
+  useEffect(() => {
+    const bridge = typeof window !== "undefined" ? window.ogb?.pulsatrixSignIn : undefined;
+    if (!bridge) return;
+    let live = true;
+    const off = bridge.onChange((next) => { if (live) setState(next); });
+    void bridge.state().then((next) => { if (live) setState(next); }).catch(() => {});
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
+  return {
+    state,
+    cancel: () => void window.ogb?.pulsatrixSignIn?.cancel().catch(() => false),
+    reopen: () => void window.ogb?.pulsatrixSignIn?.reopen().catch(() => false),
+  };
+}
+
+/** Waiting on the browser: what to do there, Cancel, Reopen the browser. */
+export function BrowserSignInWaiting({ onCancel, onReopen }: { onCancel: () => void; onReopen: () => void }) {
+  return (
+    <div data-testid="browser-sign-in-waiting">
+      <p role="status" className="mt-4 text-[13.5px] text-ink-secondary">{t("pair.pulsatrix.waiting")}</p>
+      <button type="button" onClick={onCancel} className="mt-5 w-full rounded-md border border-line px-4 py-2 text-[14px] font-medium text-ink">
+        {t("pair.pulsatrix.cancel")}
+      </button>
+      <button type="button" onClick={onReopen} className="mt-3 w-full text-[13px] text-ink-secondary underline">
+        {t("pair.pulsatrix.reopen")}
+      </button>
+    </div>
+  );
 }
 
 /** Redeem a credential the desktop app brought back from "Sign in with
@@ -66,6 +114,7 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
   const [email, setEmail] = useState(initialEmail ?? "");
   const [otp, setOtp] = useState("");
   const [sent, setSent] = useState(false);
+  const browserSignIn = useBrowserSignIn();
   // The desktop app came back from "Sign in with Pulsatrix" in the system
   // browser: redeem its credential once, without asking, when the app's main
   // process confirms it handed it over; anything else (a plain browser, a
@@ -174,11 +223,17 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
           </p>
         ) : finishing ? (
           <p role="status" className="mt-4 text-[13.5px] text-ink-secondary">{t("pair.pulsatrix.finishing")}</p>
+        ) : mode === "pulsatrix" && loginPath && browserSignIn.state.status === "waiting" ? (
+          <BrowserSignInWaiting onCancel={browserSignIn.cancel} onReopen={browserSignIn.reopen} />
         ) : mode === "pulsatrix" && loginPath ? (
           <div>
-            {signInError ? <p role="alert" className="mt-3 text-[13px] text-danger">{signInErrorText(signInError)}</p> : null}
+            {browserSignIn.state.status === "error" ? (
+              <p role="alert" className="mt-3 text-[13px] text-danger">{browserSignInErrorText(browserSignIn.state.error)}</p>
+            ) : signInError ? <p role="alert" className="mt-3 text-[13px] text-danger">{signInErrorText(signInError)}</p> : null}
             {/* A full-page navigation: the server answers with the Perspicax
-                sign-in page and comes back here with its own session cookie. */}
+                sign-in page and comes back here with its own session cookie.
+                The desktop app takes this navigation over and opens the
+                system browser instead (never a window of its own). */}
             <a href={loginPath} className={`${button} block text-center`}>
               {t("pair.pulsatrix.signIn")}
             </a>

@@ -4879,7 +4879,15 @@
       "settings.launch.server": "0ac0ce8f67d3350f8da789cb790d79d6848802379d6759160b6ee7ea8ae1615b",
       "settings.launch.change": "c0bf75bd78bf9572596720d596bd5a20a5b9145cde0fe50dec1e783cb184d69b",
       "orgJoin.join": "fd30fe681b4b2d9e55f851cb34641f907401aa43e9d80f5b1e14ce714ef00497",
-      "orgJoin.copyOptional": "900eb2a2d14740454dc6e3aba12a88fee1bd40ccd17916905a54ea70a57e3733"
+      "orgJoin.copyOptional": "900eb2a2d14740454dc6e3aba12a88fee1bd40ccd17916905a54ea70a57e3733",
+      "pair.pulsatrix.waiting": "a995ee0e426aa35ba53373877b7126853c863a975f7054b7fa32666927fc5f3e",
+      "pair.pulsatrix.cancel": "19766ed6ccb2f4a32778eed80d1928d2c87a18d7c275ccb163ec6709d3eb2e27",
+      "pair.pulsatrix.reopen": "109292641d596471d248e5981a46599f3478043e7118d56e0570d1bcdb2df13d",
+      "pair.pulsatrix.errorTimeout": "19d4c237869626f8e04ee006b5bc687ef744a929530c4a6cc5007cebd73a4de4",
+      "pair.pulsatrix.errorUnsupported": "66e100e80bf613add62410ecb0ab312999d1bd774cc5beca6bf3a989fca128e3",
+      "pair.pulsatrix.errorBrowser": "6f6a4e969c0700ea433d8f2c4f24bae6e27ebe3c2604109d70bc82fb2dcf77d3",
+      "pair.pulsatrix.errorUnreachable": "f3a30e85d2f5c222a3622a79e96fd56589b4495605d9c58e9b7e9e555b22aa9d",
+      "pair.pulsatrix.errorReturn": "85c62c281b2921c8879a9f001d526376c519e3c196951a4916a1a54f1b1cd92d"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
