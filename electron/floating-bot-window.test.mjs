@@ -294,6 +294,19 @@ describe("floating bots: a window is never left invisible", () => {
     }
   });
 
+  it("listens to display changes only once the app is ready (the screen module needs it)", async () => {
+    let ready;
+    const whenReady = () => new Promise((resolve) => { ready = resolve; });
+    const fake = fakeElectron();
+    const on = vi.spyOn(fake.screen, "on");
+    createFloatingBotWindows({ BrowserWindow: fake.BrowserWindow, screen: fake.screen, ipcMain: fake.ipcMain, getMainWindow: () => fake.main, pageUrl: () => "http://x/", preload: "/p", whenReady });
+    expect(on).not.toHaveBeenCalled();
+    ready();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(on).toHaveBeenCalledWith("display-removed", expect.any(Function));
+  });
+
   it("brings every mascot back on screen when a display goes away", () => {
     const { fake, open } = setup({ displays: [PRIMARY, SECOND] });
     const { win } = open("bot_a");
