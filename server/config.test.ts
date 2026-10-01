@@ -6,6 +6,7 @@ import type { JsonValue } from "./schema.ts";
 
 import { customMcpServers,
   DATA_DIR,
+  dropRetiredOrganizationKeys,
   ensureDirs,
   instanceConfigs,
   isValidSshAlias,
@@ -1831,5 +1832,32 @@ describe("slice 8: the interim organization key", () => {
     // A patch naming org is not an error and writes nothing for it.
     expect(parseConfigPatch({ org: { name: "X" } })).toEqual({});
     expect(parseConfigPatch({ signIn: { admins: ["x@example.com"] } })).toEqual({ signIn: { admins: ["x@example.com"] } });
+  });
+});
+
+describe("2026-10-01: the retired organization key switch", () => {
+  const path = join(DATA_DIR, "config.json");
+  beforeEach(() => {
+    mkdirSync(DATA_DIR, { recursive: true });
+    rmSync(path, { force: true });
+  });
+  afterEach(() => {
+    rmSync(path, { force: true });
+  });
+
+  it("loads an old config.json with memberBotsUseOrgKey, ignores it, and removes it once at start", () => {
+    const interimAttach = { since: 1, days: 30 };
+    expect(parseStoredConfig({ organization: { memberBotsUseOrgKey: true, interimAttach } }).organization).toEqual({ interimAttach });
+    writeFileSync(path, JSON.stringify({ profile: { name: "Ada" }, organization: { memberBotsUseOrgKey: true, interimAttach } }));
+    expect(dropRetiredOrganizationKeys()).toBe(true);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ profile: { name: "Ada" }, organization: { interimAttach } });
+    expect(dropRetiredOrganizationKeys()).toBe(false);
+  });
+
+  it("leaves a config.json without it alone", () => {
+    expect(dropRetiredOrganizationKeys()).toBe(false);
+    writeFileSync(path, JSON.stringify({ profile: { name: "Ada" } }));
+    expect(dropRetiredOrganizationKeys()).toBe(false);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ profile: { name: "Ada" } });
   });
 });

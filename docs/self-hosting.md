@@ -718,15 +718,16 @@ id).
   settings, **Shared with**): they see the bot and its conversations and
   can write to it. Removing someone takes effect at once: their lists and
   live updates lose the bot and its thread answers 404.
-- Engine access: the engines logged in on the server (subscriptions) and
-  the keys in Settings > Connections serve an admin's own bots. Every other
-  turn (a member's own bot, anyone writing to someone else's bot, a member
-  bot's routines) runs only when an admin turned on **Use the
-  organization's key** in Settings > Organization, and only on a key-backed
-  engine (Claude, Mistral, xAI, OpenAI compatible or OpenCode with a key in
-  Settings > Connections). Otherwise, or when the bot's engine is not
-  installed on the server, the message is kept and the thread shows a card
-  saying why; the owner gets a notification. The authenticated
+- Engine access: the person who speaks pays (2026-10-01; see "Who pays
+  for a turn" below). The keys an admin sets in Settings > Connections are
+  the organization's key, used automatically after a person's own
+  subscription and key, and only on a key-backed engine (Claude, Mistral,
+  xAI, OpenAI compatible or OpenCode with a key in Settings > Connections).
+  The engines logged in on the server itself no longer serve anyone, admins
+  included: each person signs in their own. When nothing serves a turn, or
+  the bot's engine is not installed on the server, the message is kept and
+  the thread shows a card saying why to the person who spoke, with what
+  they can do; the owner gets a notification. The authenticated
   `GET /api/health` lists the engines and whether each is installed.
 - Until each owner gets a container of their own, a bot whose owner is not
   an organization admin never runs with full access (`409
@@ -756,20 +757,33 @@ id).
   administers the grants of their teams and members on a bot already
   shared with one of their teams, up to that level, and may always lower
   or remove them; a manager does not read a bot through that right.
-- **Owner keys live in Perspicax.** A bot owner saves their Anthropic or
-  OpenAI key in the Perspicax console (`/console/pulsabot/keys`); Pulsa Bot
-  reads it through the link for each turn, keeps it in memory 60 s at most
-  and never writes it to disk. A bot on Claude or Codex then answers
-  everyone it is shared with on its owner's key. The order for each turn:
-  engine not installed, the owner's own subscription (the owner speaking),
-  the owner's key (anyone), the server's configuration (an admin owner
-  speaking), the organization's key when allowed, else the no_access card
-  with a link to the keys page.
+- **Who pays for a turn (2026-10-01).** Every turn, on a person's own bot
+  or on a bot shared with them, runs on the credentials of the person who
+  speaks, in this order: the engine not installed (card), the person
+  disabled (card), their own subscription for the bot's engine (Claude or
+  Codex sign-in, the default and preferred), their own model key in
+  Perspicax for the engine's provider (`speaker-key`, or `owner-key` when
+  they own the bot), the organization's key (a key in Settings >
+  Connections; there is no switch any more), else the no_access card with
+  **Sign in with my subscription** (Settings > Organization > My engines)
+  and **Add my key in Perspicax**. The owner's subscription and key never
+  pay for the people the bot is shared with. A bot's routines always run on
+  its owner's credentials (subscription, key, then the organization's key),
+  whoever created, edited or started them; a disabled owner's routines are
+  refused. The thread shows what paid under each reply ("Your
+  subscription", "Your key", "Owner's credentials", "Organization's key"),
+  never the secret, and the usage rows carry `access` and
+  `payerPrincipalId`.
+- **Keys live in Perspicax.** A person saves their Anthropic or OpenAI key
+  in the Perspicax console (`/console/pulsabot/keys`); Pulsa Bot reads it
+  through the link for each turn, keeps it in memory 60 s at most and never
+  writes it to disk.
 - **Personal subscriptions**: in Settings > Organization, **My engines**,
-  a person signs in to Claude or Codex with their own account. The login
-  is kept in `/data/principals/<principal id>/claude` or `/codex` (0700);
-  it answers only that person speaking to their own bots (and their
-  routines), never someone else's turn.
+  each person (from the desktop app or the web) signs in to Claude or Codex
+  with their own account. The login is kept in
+  `/data/principals/<principal id>/claude` or `/codex` (0700); it pays for
+  that person's own turns, on any bot they may talk to, and for the
+  routines of the bots they own; never for someone else's turn.
 - **Sections are channels.** Right-click a section header (or Shift+F10)
   for New section, Rename, Members and sharing, Move up or down,
   Collapse or expand all, Delete. Members (people or teams, moderator,
@@ -802,12 +816,57 @@ welcome tour:
   with a message and nothing is saved.
 
 The choice is kept in the workspace config (`onboarding.launchMode`, `solo`
-or `server`). After **No server** the screen does not come back. After
-**Server** it comes back once no server is saved any more (forgetting the
-server under Servers signs this app out of it). **Settings > General >
-Choose no server or server** opens it at any time. An install that had
-already finished the welcome tour is not interrupted. Only the desktop app's
-own window shows it; a browser and a hosted page never do.
+or `server`). After **No server** the screen does not come back. **Server**
+is exclusive (server mode): the app then shows that server only. There is no
+**This computer** in the server switcher or the Server menu, no other saved
+server and no **Connect to a server**, and the packaged app starts no local
+server, so no bot runs on this computer. Every bot runs on the
+organization's server. The one way out is **Settings > General > Server >
+Change** (or **Server > Change server…** in the menu bar): after a
+confirmation the app signs out of the server, forgets it and its page data,
+and returns to the launch screen. **No server** there brings back the solo
+app with its local bots, conversations and keys exactly as they were. An
+install that had already finished the welcome tour is not interrupted. Only
+the desktop app's own window shows the launch screen; a browser and a hosted
+page never do.
+
+#### The same UI in both modes
+
+On an organization server the desktop draws **its own** UI, not the page the
+server image serves: the window navigates to the server's address, but every
+page request (the document, scripts, styles, images) is answered from the
+app's bundle, and the server keeps `/api/*`, `/.well-known/*` and `/auth/*`
+(`electron/bundled-ui.cjs`). The page stays same-origin with its API, so the
+session cookie, the server's authorization and its organization rules are
+unchanged; only the code that draws the page comes from the app installed on
+this computer. The desktop-only parts that hold no local data work there too:
+floating bots and their mascot look, the Hibou 98 assistant, the window's
+caption buttons, Preferences in the app menu, links in the system browser,
+native confirmations and the app's updater. What touches this computer
+(files, screen, saved logins and keys, local helpers, diagnostics) stays with
+the local page. A server image older than the app may lack an API the UI
+calls; keep the server image current with the desktop release.
+
+#### Your preferences and your computer
+
+On an organization server a person's preferences follow them: appearance
+(skin, font, threads, Hibou 98), language, notification sounds, the desktop
+mascot's behavior and the sidebar layout are kept on the server for that
+person (`GET/PUT /api/me/preferences`) and applied on every device they sign
+in on. The first time, the desktop app brings the values it had in No server
+mode, without asking; the local copy stays for No server. What belongs to
+one device stays there: drafts, window and panel sizes, which bots float and
+where, the mascot's mood, this device's voices.
+
+Bots run on the server but never use the server's own machine: an
+organization server refuses "This computer" and local virtual machines for
+every bot. A bot works on the computer of the person who asks, through that
+person's Sagax desktop app (Settings > Organization > This computer for your
+bots, then Choose access: folders, terminal, screen control), only while the
+app is open, and each action goes through the bot's usual approvals. A
+routine, another person, or a person whose app is not connected gets a plain
+refusal. The server must have computer sharing on in its `config.json`
+(`"features": { "sharedComputers": true }`).
 
 Another organization's build sets `SAGAX_DEFAULT_SERVER=https://...` when it
 runs `vite build` (vite.config.ts); the address is only a prefill.
@@ -1121,6 +1180,32 @@ nothing there changes.
 On the Workspaces screen, creating a client workspace shows the same kind of
 link for that workspace's admin, so a client gets one address, one workspace
 and one link.
+
+## Standing Claude Code permissions for every bot
+
+Claude Code runs with `--setting-sources project`: the server's own
+`~/.claude/settings.json` is not read, so a rule placed there never applies.
+To let every bot of the server run one command without a card, set
+`OMB_CLAUDE_ALLOW` on the server, as a JSON list or one rule per line, in
+Claude Code's rule syntax:
+
+```sh
+OMB_CLAUDE_ALLOW='["Bash(claude plugin marketplace add acme/marketplace)"]'
+```
+
+The rules go into each turn's private settings file (`permissions.allow`).
+A guest's confined turn never gets them. A rule that is not a tool name with
+an optional pattern is dropped, and a malformed list grants nothing. Prefer
+exact commands over `:*` wildcards on a server many people share. Restart the
+server after a change; a running bot takes the new rules at its next launch.
+
+An allow rule never overrides a denial. Rules only go into
+`permissions.allow`; they never remove a tool from `--disallowedTools` or from
+a deny list, and in Claude Code a deny always wins over an allow. On an
+organization server where host tools (Bash, Read, Write, Edit and the like)
+are denied because commands run in each person's sandbox, a rule such as
+`Bash(claude plugin marketplace add ...)` does not reopen host Bash: the bot
+still cannot run it on the server.
 
 ## Putting a proxy in front
 

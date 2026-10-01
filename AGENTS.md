@@ -81,6 +81,67 @@ Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in
 managed-desktop Admin sign-in; Settings > Organization still does. See
 `docs/self-hosting.md` ("At launch: No server or Server").
 
+Server mode (the launch screen's Server) is exclusive: `serverModeId` in
+`environments.json` (`electron/environments.cjs`) locks the app to that
+organization server. While it is set nothing switches to Local or another
+server (`withActive`, `switchEnvironment`, `requireNotServerMode`), the
+packaged app starts no local server, and the only way out is `leaveServerMode`
+in `electron/main.mjs` (Settings > General > Server > Change, Server > Change
+server…), which signs out and returns to the launch screen. Tests:
+`electron/server-mode.node-test.mjs`, `electron/environments.node-test.mjs`.
+
+An organization server (`org: true`, set by org-join after its probe) is
+drawn with this app's own bundle (`electron/bundled-ui.cjs`): page requests
+come from the bundle, `/api/`, `/.well-known/` and `/auth/` pass through.
+Keep these rules: the session cookie rides only with the bundled page's own
+requests (its referrer is the server's origin), never a widget's or another
+origin's; main's own calls to a server pass `bypassCustomProtocolHandlers`;
+the bundled page gets only `BUNDLED_EXTRA` in `electron/preload.cjs`, and
+main checks those channels with `desktopUiOnly` (`electron/local-origin.cjs`);
+anything touching this computer stays `localOnly`. Tests:
+`electron/bundled-ui.node-test.mjs`; real Electron:
+`scripts/verify-server-mode.ts`.
+
+On an organization server (`OMB_IDENTITY=perspicax`) bots never use the
+server's own machine: `ManagedDesktopPolicy` refuses `thisComputer` and
+`localVm` there (`HOST_COMPUTER_REFUSAL`, every claim passes
+`bindTurnComputer`), and the Local VM create/start routes refuse with
+`hostComputerRefusal()`. A bot reaches the computer of the person who asks
+through `server/user-computers.ts`: `speakingPerson` (a person's message or a
+hop carrying it; never a routine), then a provider per target
+(`user-desktop`: that person's desktop app via the owner-scoped `SharedComputers`
+`list(person)` and `request`, for the person `sharedComputerPrincipal` proves; `user-sandbox`: plugs in as a second provider). Not connected, not
+theirs, or no person: the tool answers why. `shared_computer` is never
+pre-allowed for Claude (`agentsAllowedTools`), so the bot's approval mode
+applies. Tests: `server/user-computers.test.ts`,
+`electron/server-mode.node-test.mjs`.
+
+A person's preferences on an organization server live per principal
+(`shared/user-preferences.ts` lists the only keys that travel,
+`server/user-preferences.ts`, `GET/PUT /api/me/preferences`). The renderer
+syncs them before the app draws (`src/lib/user-preferences-sync.ts`); the
+launch screen hands this computer's own values over once at join
+(`orgJoin.join({ preferences })`, `takePreferences`). Device-only state
+(drafts, sizes, floating list and positions, mood, voices) never travels.
+
+## Model picker
+
+The model chip (composer and chat header, `src/components/ModelPicker.tsx`)
+opens a modal like Settings, portalled to `<body>`: providers with their
+status on the left, account, scope, models, effort and payers on the right,
+a bottom sheet on a narrow window; focus stays inside and Escape closes it.
+Only `contained` (the bot settings dialog) keeps the inline panel. On an
+organization server it shows the speaker's payer order
+(`src/lib/model-payers.ts`: subscription, key in Perspicax, organization
+key, as `server/engine-credentials.ts` decides; the payer used now is the
+server's `myTurns`, never recomputed; a routine thread shows the owner's
+credentials) and signs in their own subscription through `/api/me/engines/<id>/login`
+(`ModelPickerPayers.tsx`), never the server's engine login; the server's
+local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
+`src/lib/model-payers.test.ts`; real Electron: `scripts/verify-server-mode.ts`
+(org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
+(solo).
+
 ## Floating bots and the desktop mascot
 
 A bot put "on the desktop" stands in its own transparent window
@@ -173,6 +234,31 @@ Keep these rules, each covered by `server/user-sandbox*.test.ts`,
   parameter properties in these files.
 - `scripts/smoke-user-sandbox.ts` proves isolation on a real Docker host and
   removes everything it creates.
+
+## Connectors from the person's own Claude account
+
+Sagax builds no GitHub, Outlook or Calendar integration of its own: a Claude
+turn keeps the claude.ai connectors (Microsoft 365, GitHub, Gmail, ...) of
+the account it runs on when that account is the speaker's own
+(`server/harness-connectors.ts`, rules in `claudeAiConnectorsForTurn`). Keep
+these rules, each covered by `server/harness-connectors.test.ts` or
+`server/drivers/claude.test.ts`:
+
+- Organization server: only an access `via: "subscription"` (the owner
+  speaking, from their own login directory). Owner key, org key and server
+  turns get none. Solo server: the operator and the operator's routines only.
+- The Claude driver drops `--strict-mcp-config` for such a turn (it also
+  drops claude.ai connectors, measured on CLI 2.1.287) and keeps
+  `--setting-sources project`; every other isolated turn sets
+  `ENABLE_CLAUDEAI_MCP_SERVERS=false`.
+- Connector tools (`mcp__claude_ai_*`) are never pre-allowed: they ride the
+  approval flow. An engine tool denial blocks host built-ins, never them.
+- Connected apps shows them read-only (`GET /api/me/harness-connectors`, the
+  caller's own account only, no email or URL) with a link to
+  claude.ai/customize/connectors; an admin turns them off with
+  `PUT /api/harness-connectors/settings` (`config.harnessConnectors.claudeAi`).
+- Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
+  ChatGPT plan mode and API keys do not have, so Codex turns get none.
 
 ## Upstream sync
 

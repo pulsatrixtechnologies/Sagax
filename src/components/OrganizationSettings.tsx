@@ -13,6 +13,7 @@ import { JoinPerspicaxCard } from "./JoinPerspicaxCard";
 import { OrgDirectory, type OrgPersonView, type PendingInviteView } from "./OrgDirectory";
 import type { OrgRole } from "../../server/org-directory.ts";
 import { isPerspicaxOrg, type PerspicaxOrg } from "@/lib/perspicax-org";
+import { ServerModeComputerAccess } from "./ServerModeSettings";
 
 const providerNames: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter" };
 const DEFAULT_PORTAL_ORIGIN = "https://admin.openmausbot.com";
@@ -194,7 +195,11 @@ export function OrganizationSettings() {
   const hasSavedServers = (servers?.count ?? 0) > 0;
   const showJoinOnly = !hasSavedServers && !connectedToAnotherServer;
 
-  if (perspicaxOrg) return <PerspicaxOrgSettings org={perspicaxOrg} onChanged={() => loadOrg()} />;
+  // Server mode: this person's own computer for the organization's bots.
+  if (perspicaxOrg) return <>
+    <PerspicaxOrgSettings org={perspicaxOrg} onChanged={() => loadOrg()} />
+    <ServerModeComputerAccess />
+  </>;
 
   const directory = (
     <>

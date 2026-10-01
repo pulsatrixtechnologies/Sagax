@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { EMPTY_ONBOARDING } from "./onboarding";
-import { DEFAULT_SERVER_ADDRESS, defaultServerAddress, launchBridges, launchDue, launchErrorKey, launchModePatch } from "./launch";
+import { DEFAULT_SERVER_ADDRESS, defaultServerAddress, launchBridges, launchDue, launchErrorKey, launchModePatch, serverModeBridge } from "./launch";
 
 const environments = { state: async () => ({ environments: [] }) };
 const orgJoin = { probe: async () => ({ origin: "", issuer: "" }), join: async () => ({ ok: true }) };
@@ -24,25 +24,32 @@ describe("launch screen", () => {
   });
 
   it("shows on first launch and waits for the config", () => {
-    expect(launchDue(null, { welcomeDue: true, savedServers: null })).toBe(false);
-    expect(launchDue({ onboarding: EMPTY_ONBOARDING }, { welcomeDue: true, savedServers: null })).toBe(true);
-    expect(launchDue({}, { welcomeDue: true, savedServers: 0 })).toBe(true);
+    expect(launchDue(null, { welcomeDue: true, serverMode: null })).toBe(false);
+    expect(launchDue({ onboarding: EMPTY_ONBOARDING }, { welcomeDue: true, serverMode: null })).toBe(true);
+    expect(launchDue({}, { welcomeDue: true, serverMode: false })).toBe(true);
   });
 
   it("does not interrupt someone who already finished the welcome tour", () => {
-    expect(launchDue({ onboarding: EMPTY_ONBOARDING }, { welcomeDue: false, savedServers: 0 })).toBe(false);
+    expect(launchDue({ onboarding: EMPTY_ONBOARDING }, { welcomeDue: false, serverMode: false })).toBe(false);
   });
 
   it("remembers no server for good", () => {
     const solo = { onboarding: { ...EMPTY_ONBOARDING, launchMode: "solo" as const } };
-    expect(launchDue(solo, { welcomeDue: true, savedServers: 0 })).toBe(false);
+    expect(launchDue(solo, { welcomeDue: true, serverMode: false })).toBe(false);
   });
 
-  it("comes back after server mode only when no server is saved any more (signed out and forgotten)", () => {
+  it("comes back on this computer's page whenever server mode was left (signed out), never while it is on", () => {
     const server = { onboarding: { ...EMPTY_ONBOARDING, launchMode: "server" as const } };
-    expect(launchDue(server, { welcomeDue: true, savedServers: 1 })).toBe(false);
-    expect(launchDue(server, { welcomeDue: false, savedServers: null })).toBe(false);
-    expect(launchDue(server, { welcomeDue: false, savedServers: 0 })).toBe(true);
+    expect(launchDue(server, { welcomeDue: true, serverMode: true })).toBe(false);
+    expect(launchDue(server, { welcomeDue: false, serverMode: null })).toBe(false);
+    expect(launchDue(server, { welcomeDue: false, serverMode: false })).toBe(true);
+  });
+
+  it("finds server mode's bridge on this app's own UI only", () => {
+    const serverMode = { state: async () => ({ active: false as const }), leave: async () => ({ left: false }) };
+    expect(serverModeBridge(undefined)).toBeNull();
+    expect(serverModeBridge({})).toBeNull();
+    expect(serverModeBridge({ serverMode })).toBe(serverMode);
   });
 
   it("saves the choice in the onboarding record", () => {

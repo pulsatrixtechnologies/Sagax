@@ -17,11 +17,23 @@ import { DISPLAY_NAME } from "./app-name.mjs";
  * @param {(id: string) => void} input.onForget
  * @param {() => void} input.onOpenSettings
  * @param {() => void} input.onOrganizationSignIn
+ * @param {string | null} [input.serverModeId]  server mode: the one server this app shows
+ * @param {() => void} [input.onLeaveServerMode]
  */
-export function buildApplicationMenu({ environments, activeId, onSwitch, onAddFromClipboard, onConnect, onForget, onOpenSettings, onOrganizationSignIn }) {
+export function buildApplicationMenu({ environments, activeId, onSwitch, onAddFromClipboard, onConnect, onForget, onOpenSettings, onOrganizationSignIn, serverModeId = null, onLeaveServerMode }) {
   const isMac = process.platform === "darwin";
   const active = environments.find((e) => e.id === activeId) ?? null;
-  const server = {
+  const locked = serverModeId ? environments.find((e) => e.id === serverModeId) ?? null : null;
+  // Server mode is exclusive: the organization's server only, no Local, no
+  // other saved server, no way to add one. Leaving signs out of it.
+  const server = locked ? {
+    label: "Server",
+    submenu: [
+      { label: `${locked.name} — ${new URL(locked.origin).host}`, type: "radio", checked: true },
+      { type: "separator" },
+      { label: "Change server…", click: () => onLeaveServerMode?.() },
+    ],
+  } : {
     label: "Server",
     submenu: [
       { label: "Local (this computer)", type: "radio", checked: !active, click: () => onSwitch("local") },

@@ -23,10 +23,12 @@ import { ToolActivity } from "./ToolActivity";
 import { ThreadRefText } from "./ThreadRefs";
 import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
-import { CompactionChip, DigestChip } from "./DigestChip";
+import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
 import { viewerActorId } from "@/lib/viewer";
-import { OtherAuthorLabel } from "./MessageAuthor";
+import { RoomPersonLabel } from "./MessageAuthor";
+import { continuesRun, roomAuthor, runCorners } from "@/lib/room-authors";
+import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { mausInk, normalizeState } from "@/lib/mascot";
 import { defaultResponderName, effectiveDefaultResponder, groupResponseHint, jevRoomRoutingOn } from "@/lib/group-routing";
@@ -154,7 +156,7 @@ export function RoomToolChip({ message, roomId }: { message: Message; roomId?: s
 function ClusterLabel({ bot, name, color }: { bot?: Bot; name: string; color: string }) {
   const tint = mausInk(bot?.color ?? color) ?? color;
   return (
-    <div className="mb-1 ml-1.5 mt-3 flex items-center gap-1.5 px-1.5">
+    <div className="-mb-1.5 ms-1.5 mt-3 flex items-center gap-1.5 px-1.5">
       <BotAvatar
         bot={bot ?? { name, color: color as Bot["color"] }}
         state={normalizeState(bot?.mascotExpression) ?? "happy"}
@@ -191,6 +193,8 @@ function PinToggle({ group, message }: { group: Group; message: Message }) {
   );
 }
 
+const NO_PEOPLE: ReadonlyMap<string, OrgDirectoryPerson> = new Map();
+
 export const Transcript = memo(function Transcript({
   group,
   members,
@@ -198,6 +202,7 @@ export const Transcript = memo(function Transcript({
   transcript,
   emergingId,
   onReply,
+  people,
 }: {
   group: Group;
   members: Bot[];
@@ -209,6 +214,8 @@ export const Transcript = memo(function Transcript({
   transcript: Message[];
   emergingId?: string | null;
   onReply: (message: Message) => void;
+  /** The organization's people (display names, avatars); empty elsewhere. */
+  people?: ReadonlyMap<string, OrgDirectoryPerson>;
 }) {
   const { state, dispatch } = useStore();
   const showToolCalls = showToolCallsEnabled(state.config);
@@ -221,6 +228,21 @@ export const Transcript = memo(function Transcript({
   const newestUserMessageId = [...messages].reverse().find((message) => message.role === "user")?.id;
   const focus = state.focusMessage;
   const focusedId = focus && !focus.consumed && focus.threadId === group.threadId ? focus.messageId : null;
+  // Who wrote each item, and whether it continues the run above it: one
+  // name and avatar per run, tighter spacing inside it.
+  const runs = useMemo(() => {
+    const directory = people ?? NO_PEOPLE;
+    const entries = items.map((item) => {
+      const first = item.kind === "run" ? item.messages[0] : item.message;
+      const last = item.kind === "run" ? item.messages.at(-1)! : item.message;
+      return { first, last, author: roomAuthor(first, state.config, directory) };
+    });
+    const joinsAbove = entries.map((entry, i) => {
+      const prev = entries[i - 1];
+      return continuesRun(prev && { at: prev.last.at, comm: prev.last.comm, author: prev.author }, { at: entry.first.at, author: entry.author });
+    });
+    return entries.map((entry, i) => ({ author: entry.author, joinsAbove: joinsAbove[i]!, joinsBelow: joinsAbove[i + 1] ?? false }));
+  }, [items, people, state.config]);
   return (
     <>
       {items.map((item, i) => {
@@ -230,7 +252,7 @@ export const Transcript = memo(function Transcript({
         const newDay = !prev || new Date(prev.at).toDateString() !== new Date(first.at).toDateString();
         if (item.kind === "run") {
           if (!showToolCalls) return null;
-          const cluster = !prev || prev.role !== first.role || prev.from?.botId !== first.from?.botId || newDay;
+          const cluster = !runs[i]!.joinsAbove;
           return (
             <div key={item.id} className="contents">
               {newDay && (
@@ -255,7 +277,11 @@ export const Transcript = memo(function Transcript({
         const user = m.role === "user";
         const cited = user && m.text ? splitTranscriptCitations(m.text) : null;
         const attachments = user && m.text ? splitTranscriptAttachments(cited?.display ?? m.text) : null;
-        const newCluster = !prev || prev.role !== m.role || prev.from?.botId !== m.from?.botId || Boolean(prev.comm) || newDay;
+        const { author, joinsAbove, joinsBelow } = runs[i]!;
+        const newCluster = !joinsAbove;
+        // Your own lines sit on the end side; everyone else's on the start side.
+        const mine = author.kind === "self";
+        const person = author.kind === "person" ? author : null;
         const routineOwner = m.kind === "routine.run" ? memberOf(m.from?.botId) : undefined;
         const routineExecutionThreadId = m.routineRun?.executionThreadId;
         const routineTarget = routineOwner && hasRoutineExecutionTask(routineOwner.tasks, routineExecutionThreadId)
@@ -301,6 +327,7 @@ export const Transcript = memo(function Transcript({
               <AccessCard
                 access={m.access}
                 viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
+                onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "organization" })}
               />
             </div>
           ) : m.kind === "goal.run" ? (
@@ -323,12 +350,16 @@ export const Transcript = memo(function Transcript({
           ) : m.kind === "compaction" ? (
             <CompactionChip message={m} />
           ) : m.kind === "digest" ? (
-            showToolCalls ? <DigestChip message={m} /> : null
+            showToolCalls
+              ? <DigestChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
+              : <TurnAccessChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
           ) : m.kind === "text" && (m.text || m.attachments?.length) ? (
-            <div className={cn("group flex w-full flex-col", user ? "items-end" : "items-start")}>
-              {user && <OtherAuthorLabel message={m} />}
-              <div className={cn("flex w-full items-end gap-1.5", user ? "justify-end" : "justify-start")}>
-                {user && (
+            <div
+              data-author={mine ? "self" : person ? "person" : "bot"}
+              className={cn("group flex w-full flex-col", mine ? "items-end" : "items-start", joinsAbove && "-mt-2")}
+            >
+              <div className={cn("flex w-full items-end gap-1.5", mine ? "justify-end" : "justify-start")}>
+                {mine && (
                   <>
                     <button
                       type="button"
@@ -350,7 +381,12 @@ export const Transcript = memo(function Transcript({
                     // A bot message that is only attachments is just the files: no bubble.
                     !user && !m.text?.trim() && !m.replyToId && m.attachments?.length
                       ? "text-ink"
-                      : user ? "chat-text whitespace-pre-wrap bg-bubble-user px-3 py-[7px] text-ink" : "bg-card px-3 py-[7px] text-ink",
+                      : mine
+                        ? "chat-text whitespace-pre-wrap bg-bubble-user px-3 py-[7px] text-ink"
+                        : user
+                          ? "chat-text whitespace-pre-wrap bg-raised px-3 py-[7px] text-ink ring-1 ring-inset ring-hairline/40"
+                          : "bg-card px-3 py-[7px] text-ink",
+                    runCorners(mine ? "end" : "start", joinsAbove, joinsBelow),
                   )}
                   title={new Date(m.at).toLocaleString()}
                 >
@@ -406,7 +442,7 @@ export const Transcript = memo(function Transcript({
                     </>
                   )}
                 </div>
-                {!user && (
+                {!mine && (
                   <>
                     <button
                       type="button"
@@ -438,6 +474,7 @@ export const Transcript = memo(function Transcript({
             {!user && m.from && newCluster && !(m.kind === "activity" && m.comm) && (
               <ClusterLabel bot={memberOf(m.from.botId)} name={m.from.name} color={m.from.color} />
             )}
+            {person && newCluster && <RoomPersonLabel name={person.name} initials={person.initials} avatarUrl={person.avatarUrl} />}
             {row}
           </div>
         );
@@ -1659,6 +1696,7 @@ export function GroupView({ group }: { group: Group }) {
             transcript={group.messages}
             emergingId={popping?.id}
             onReply={selectReply}
+            people={orgPeople}
           />
           {laterCount > 0 && (
             <div className="flex justify-center">

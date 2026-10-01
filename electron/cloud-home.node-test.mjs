@@ -171,6 +171,8 @@ test("main lists the machine from verified states only, and connects without a d
     session: { defaultSession: { fetch: async (url, init) => { probes.push([url, init.credentials]); return { ok: signedIn, json: async () => ({ kind: signedIn ? "session" : undefined }) }; } } },
     dialog: { showMessageBox: async () => { dialogs.push(1); return { response: 1 }; } },
     ensureCloudAccount: () => client,
+    // server mode is off in this fixture; it refuses Cloud connections when on
+    requireNotServerMode: () => {},
   });
   vm.runInContext(`${source.slice(start, end)}; this.rememberCloudHome = rememberCloudHome; this.connectCloudHome = connectCloudHome;`, context);
   context.rememberCloudHome({ status: "unavailable", machine: { status: "ready", origin } });

@@ -53,7 +53,7 @@ export interface OrgAdminViewer {
   teams: OidcTeamClaim[];
 }
 
-export type AccessKind = "subscription" | "owner-key" | "org-key" | "server" | "none";
+export type AccessKind = "subscription" | "owner-key" | "speaker-key" | "org-key" | "server" | "none";
 
 export interface AdminBot {
   id: string;

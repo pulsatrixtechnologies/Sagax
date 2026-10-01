@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { AccessVia } from "./engine-credentials.ts";
+import { ACCESS_VIAS, type AccessVia } from "./engine-credentials.ts";
 import type { CostSource } from "./model-prices.ts";
 import { billableFor, type PriceList } from "./prices.ts";
 
@@ -53,8 +53,14 @@ export interface UsageRow {
   trigger: UsageTrigger;
   /** Slice 7: the bot owner when the turn settled (organization server). */
   ownerPrincipalId?: string;
-  /** Slice 7: the credentials the turn ran with (organization server). */
+  /** Slice 7: the credentials the turn ran with (organization server).
+   * `speaker-key` (2026-10-01): the key of the person who spoke, not the
+   * owner's. */
   access?: AccessVia;
+  /** 2026-10-01: whose credentials paid (organization server): the person
+   * who spoke, or the bot's owner (their own turn, the bot's routines);
+   * absent when the organization's key paid. */
+  payerPrincipalId?: string;
 }
 
 export type UsageGroupBy = "bot" | "model" | "user" | "day" | "engine" | "routine";
@@ -427,7 +433,7 @@ function speakerKey(speaker: OrgUsageSpeaker): string {
   }
 }
 
-const ACCESS_KINDS = new Set<string>(["subscription", "owner-key", "org-key", "server"]);
+const ACCESS_KINDS = new Set<string>(ACCESS_VIAS);
 
 /** Rows grouped by (UTC day, bot, speaker), filtered by `visible` (the
  * caller's reach), oldest day first, at most `max` groups. */
@@ -453,7 +459,7 @@ export function aggregateOrgUsage(
       group = {
         day, botId: row.botId, botName: row.botName || row.botId, ownerPrincipalId, speaker,
         turns: 0, input: 0, output: 0, cachedInput: 0, costUsd: null, estimatedUsd: null,
-        access: { subscription: 0, "owner-key": 0, "org-key": 0, server: 0, unknown: 0 },
+        access: { subscription: 0, "owner-key": 0, "speaker-key": 0, "org-key": 0, server: 0, unknown: 0 },
       };
       groups.set(key, group);
     }

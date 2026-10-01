@@ -161,7 +161,7 @@ posixOnly("Perspicax organization: private threads with a shared bot, group chat
     });
     const idOf = (login: string) => people.find((person) => person.login === login)!.principalId;
     ids = { alice: idOf("alice"), bob: idOf("bob"), carol: idOf("carol"), dave: idOf("dave"), erin: idOf("erin") };
-    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: true })).status).toBe(200);
+    // the organization's key (OMB_ANTHROPIC_API_KEY) serves by itself since 2026-10-01
   }, 40_000);
 
   afterAll(async () => {

@@ -180,6 +180,22 @@ node --experimental-strip-types scripts/verify-desktop-sign-in.ts               
 node --experimental-strip-types scripts/verify-desktop-sign-in.ts --old-target  # PASS: the 0.3.x delivery stays signed out
 ```
 
+Server mode's UI is checked the same way, with the second server serving a
+decoy page of its own: the window must show this app's bundle on the
+server's origin (`electron/bundled-ui.cjs`), sign in, create a bot through
+the API with the session, expose the desktop-UI bridge and nothing local,
+and float that server's bot as a desktop mascot whose look follows a change
+made on the server. It starts from a save made before organization servers
+were marked (no `org`, no server mode), checks that the upgrade at launch
+fixes it, then checks the mascot's balloon (a message reaches the server as
+the signed-in person), Open in the app, and the owl, shape and Trombi:
+
+```sh
+pnpm exec vite build
+node --experimental-strip-types scripts/verify-server-mode.ts         # PASS (32/32), built bundle
+node --experimental-strip-types scripts/verify-server-mode.ts --dev   # the same, UI from Vite as in the dev app
+```
+
 The window already shows `<origin>/pair` when the credential comes back, so
 the delivery must be a new document (`/pair?signin=<nonce>#code=...`): a
 target that differs only in its fragment is a same-document navigation and
@@ -219,9 +235,8 @@ and `directoryTeams`, and `setDirectoryStatus(sub, status)`.
   never cleared, a disabled or vanished person logged out once, a demotion
   narrowed, 304, a 401 followed by a rotated file, single flight, a timeout
   or a 5xx keeping the last data).
-- `server/engine-access.test.ts`: the whole access matrix (solo, an admin
-  owner, someone else with and without the org key and a key-backed
-  engine, a member's own bot and its routines, a missing engine first), the
+- `server/engine-access.test.ts`: who a turn speaks for, the refusal
+  notices (the speaker's, a routine's, a disabled payer's), the
   key_refused card and who sees its detail, and who answers a server
   command of a member's bot.
 - `server/org-sharing.e2e.test.ts` (real server, fake provider, fake Claude
@@ -296,10 +311,13 @@ disabled person).
   default levels capped at run, rooms with `team:` entries, section roles.
 - `server/bot-grants.test.ts`: GET, PUT and DELETE `/api/bots/:id/grants`
   with every answer code, and the new `CLIENT_ALLOW` rows.
-- `server/engine-credentials.test.ts`: the whole resolution order (engine
-  missing, owner subscription only for the owner, owner key for any
-  speaker, server for an admin owner, org key, no_access), a key that went
-  away falling through, an unreachable Perspicax.
+- `server/engine-credentials.test.ts` (revised 2026-10-01, the person who
+  speaks pays): the whole decision table (speaker owner or someone shared
+  with, x subscription, key, org key or nothing, x Claude, Codex or another
+  engine, disabled people, unknown people), the bot's routines on the
+  owner's credentials (scheduled, started or edited by someone else, owner
+  disabled, owner without credentials, hops), a key that went away falling
+  through, an inactive payer refused, an unreachable Perspicax.
 - `server/drivers/claude.test.ts` and `server/drivers/codex.test.ts`: an
   owner key reaching the CLI, a subscription's `CLAUDE_CONFIG_DIR` /
   `CODEX_HOME`, no process reused under another identity, the
@@ -308,12 +326,21 @@ disabled person).
   rename and delete kept in step, General refused, sharing with a team,
   readonly, moving bots in and out, the manager anchor on members.
 - `server/org-rights.e2e.test.ts` (real server): S4-1 teams in the session
-  and the directory, S4-3 a person and a team grant with the owner's key
-  answering another speaker, S4-5 levels, S4-6 the manager, S4-7 an admin
+  and the directory, S4-3 a person and a team grant, the speaker's own key
+  answering them (never the owner's, 2026-10-01), S4-5 levels, S4-6 the manager, S4-7 an admin
   without a grant, S4-4 removal through the directory then through a
   refreshed id_token, S4-9 a personal Codex subscription (fake device
   login), S4-10 and S4-11 a section shared with a team and a room with a
   team.
+- Who pays (2026-10-01): `server/org-sharing.e2e.test.ts` (the org key by
+  itself, cleared by an admin then refused with the speaker's card, an
+  admin's own login-backed bot refused, the digest's `access`),
+  `server/org-routines.e2e.test.ts` (a routine started or rewritten by a
+  shared user runs on the owner's key, never his own subscription or key;
+  refused with the owner's card without credentials and once the owner is
+  disabled; usage rows with `access` and `payerPrincipalId`) and
+  `server/org-admin.e2e.test.ts` (the retired switch refused, the usage
+  split with `speaker-key`).
 
 ### Against a real Perspicax (manual)
 

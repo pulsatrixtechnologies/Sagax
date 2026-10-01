@@ -297,6 +297,8 @@ export type ClientFeatures = Partial<Record<ClientFeature, boolean>>;
 export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: RegExp; feature?: ClientFeature }> = [
   // own session
   { methods: ["GET"], path: /^\/api\/auth\/session$/ },
+  // own preferences (organization server; the handler answers the session's person only)
+  { methods: ["GET", "PUT"], path: /^\/api\/me\/preferences$/ },
   { methods: ["POST"], path: /^\/api\/auth\/stream-ticket$/ },
   { methods: ["POST"], path: /^\/api\/auth\/logout$/ },
   // Own outbound desktop connector, additionally bound to a private secret.
@@ -413,14 +415,18 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET", "POST"], path: /^\/api\/org\/sections$/, feature: "orgDirectory" },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/org\/sections\/(?:sec_[0-9a-f-]{36}|general)$/, feature: "orgDirectory" },
   { methods: ["PUT"], path: /^\/api\/org\/sections\/(?:sec_[0-9a-f-]{36}|general)\/(?:members|bots)$/, feature: "orgDirectory" },
-  // A person's own engines: which answer for whom, and their own
+  // A person's own engines: what their own turns run on, and their own
   // subscription sign-in (server/principal-engine-logins.ts).
   { methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" },
   // The caller's own server environment (user-sandbox): status and reset.
   { methods: ["GET"], path: /^\/api\/me\/server-environment$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/server-environment\/reset$/, feature: "orgDirectory" },
-  { methods: ["POST"], path: /^\/api\/me\/engines\/[\w-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" },
-  { methods: ["GET"], path: /^\/api\/me\/engines\/[\w-]+\/login\/status$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" },
+  { methods: ["GET"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/status$/, feature: "orgDirectory" },
+  // The caller's own claude.ai connectors (server/harness-connectors.ts):
+  // names and statuses of their own account only. The admin switch
+  // (PUT /api/harness-connectors/settings) stays admin.
+  { methods: ["GET"], path: /^\/api\/me\/harness-connectors$/ },
   // Slice 6: the caller's own routine delegation (allow, status, revoke).
   { methods: ["GET", "POST", "DELETE"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler

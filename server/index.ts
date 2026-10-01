@@ -18,10 +18,11 @@ import { z } from "zod";
 import { selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES } from "./context-rebuild.ts";
 import { draftSummary, foldPoint } from "./compaction-summary.ts";
 import { compactBudget, contextWindowFor, shouldCompact } from "./context-budget.ts";
-import { autoCompactWindow } from "./drivers/claude.ts";
+import { autoCompactWindow, resolveClaudeConfigDir } from "./drivers/claude.ts";
 import { provenRequestPerson, SharedComputers, sharedComputerOperation, sharedComputerRegistration } from "./shared-computers.ts";
 import { cloudHomeLendingRefusal, createCloudRoutineAuthors, ownerOnlyConversation, type CloudLendingTurn } from "./cloud-lending.ts";
 import { botMemoryFiles, createLendingMemory } from "./lending-memory.ts";
+import { createUserComputerRouter } from "./user-computers.ts";
 import { SharedComputerControl } from "./shared-computer-control.ts";
 import { RoomHandoffs, type RoomHandoff } from "./room-handoffs.ts";
 import { assertRequestTarget, guardedRequestPath, requestConflict, requestNeedsInput, requestSourceForCard } from "./guarded-requests.ts";
@@ -145,6 +146,7 @@ import { attachForTurn, saveBotAttachment } from "./bot-attachment.ts";
 import {
   ensureDirs,
   instanceConfigs,
+  dropRetiredOrganizationKeys,
   loadConfig,
   providerReloadKeys,
   localVmIdleTimeoutMinutes,
@@ -159,6 +161,7 @@ import {
   showToolCallsEnabled,
   routinesInConversationEnabled,
   claudeUserMcpEnabled,
+  claudeAiConnectorsEnabled,
   skillAuthoringEnabled,
   autoRecallEnabled,
   captureQuietMs,
@@ -301,7 +304,7 @@ import {
 import { EventBus } from "./harness/bus.ts";
 import { ProviderRegistry } from "./harness/registry.ts";
 import { ManagedDesktopProviders } from "./managed-desktop.ts";
-import { computerKindForResource, ManagedDesktopPolicy, type ComputerKind } from "./managed-policy.ts";
+import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, type ComputerKind } from "./managed-policy.ts";
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
 import {
   boatNotConfiguredMessage, CLOUD_HOME_RESTART_EXIT_CODE, CLOUD_HOME_SECRET_KEYS, CLOUD_IGNORED_KEYS, CLOUD_PAIRING_PATH, cloudHomeConfiguration, cloudHomeOffersPlace, cloudHomePlaceRefusal,
@@ -518,6 +521,7 @@ import { EmailOtpStore } from "./email-otp.ts";
 import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
+import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
@@ -540,7 +544,7 @@ import {
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
-import { materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, type EngineCredentialInput, type TurnAccess } from "./engine-credentials.ts";
+import { keyVia, materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
@@ -600,7 +604,7 @@ import {
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
 import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
-import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
+import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
@@ -611,6 +615,8 @@ import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
+import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
+import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcBindingCookie, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
@@ -739,6 +745,21 @@ const sessions = new SessionRegistry({
   portalMembership: hostedWorkspaceConfiguration()?.portalMembership === true,
 });
 const sharedComputers = new SharedComputers(id => sessions.isLive(id));
+// Organization server: a bot reaches the computer of the person who asks,
+// through that person's own desktop app ("user-desktop"), never the server
+// and never anyone else's (server/user-computers.ts). A per-person server
+// sandbox plugs in here as a second provider ("user-sandbox").
+const userComputers = createUserComputerRouter([{
+  target: "user-desktop",
+  list: (person: string) => sharedComputers.list(person),
+  owns: (person: string, computerId: string) => sharedComputers.list(person).some((computer) => computer.id === computerId),
+  request: (person: string, operation: z.infer<typeof sharedComputerOperation>, active: () => boolean) => sharedComputers.request(operation, person, active),
+}]);
+/** The person a shared-computer call provably acts for
+ * (sharedComputerPrincipal), as the router reads a speaker. */
+function personSpeaker(principal: string | null): TurnSpeaker | undefined {
+  return principal ? { origin: "person", principalId: principal } : undefined;
+}
 // OMB Cloud Pro home machine (server/cloud-home.ts, docs/cloud-pro.md). A
 // partial or invalid boot contract stops the server here, before it serves.
 // Its secrets come over the launcher's pipe, never this process's
@@ -844,6 +865,8 @@ let desktopMutationToken: string | undefined = DESKTOP_MANAGED ? "" : undefined;
 let companionMutationToken: string | undefined = DESKTOP_MANAGED ? "" : undefined;
 // Where remote clients reach this server (a proxy's public address); pairing URLs use it.
 const FALLBACK_PUBLIC_URL = process.env.OMB_PUBLIC_URL?.trim().replace(/\/+$/, "") || null;
+// 2026-10-01: the organization key switch is retired (engine-credentials.ts).
+dropRetiredOrganizationKeys();
 const cfg = loadConfig();
 const hostedModels = hostedModelPolicy(DATA_DIR);
 const providerConfigs = () => hostedModels ? hostedModels.configs() : instanceConfigs(cfg);
@@ -945,11 +968,15 @@ const turnTriggers = new Map<string, UsageTrigger>();
 const turnSpeakers = new Map<string, TurnSpeaker>();
 const turnSpeakerPrincipals = new Map<string, string>();
 /** Who ran each thread's current turn, for a key the provider refuses. */
-const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; ownerSub?: string; provider?: "anthropic" | "openai" }>();
+const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; payer: AccessPayer; payerPrincipalId?: string; routine?: true; payerSub?: string; provider?: "anthropic" | "openai" }>();
 /** Threads whose last admitted turn (Direct or room) descends from a routine
  * or other automation: a bot hop it starts carries the mark, so no turn a
  * routine started ever reaches someone's Perspicax access (slice 5, D5). */
 const turnRoutineLineage = new Set<string>();
+/** For a thread whose last admitted turn descends from a routine: whose
+ * credentials that routine runs on (its bot's owner, 2026-10-01), carried
+ * to the bot hops it starts. */
+const turnRoutinePayers = new Map<string, string>();
 /** Slice 6: the routine delegations of an organization server (set with
  * the sign-in grants, below); null in solo mode. */
 let routineConsents: RoutineConsents | null = null;
@@ -2010,7 +2037,9 @@ function bookTurnUsage(row: Omit<UsageRow, "at" | "costSource">, tokensReported 
 function orgUsageFacts(row: Omit<UsageRow, "at" | "costSource">): Partial<UsageRow> {
   if (IDENTITY.kind !== "perspicax") return {};
   const bot = store.bot(row.botId);
-  const access = row.access ?? turnAccessByThread.get(row.threadId)?.via;
+  const ran = turnAccessByThread.get(row.threadId);
+  const access = row.access ?? ran?.via;
+  const payerPrincipalId = row.payerPrincipalId ?? (ran && ran.payer !== "organization" ? ran.payerPrincipalId : undefined);
   let trigger = row.trigger;
   if (trigger.kind === "user" && !trigger.principalId) {
     const speaker = turnSpeakerPrincipals.get(row.threadId);
@@ -2020,6 +2049,7 @@ function orgUsageFacts(row: Omit<UsageRow, "at" | "costSource">): Partial<UsageR
     trigger,
     ...(row.ownerPrincipalId ? {} : bot ? { ownerPrincipalId: effectiveBotOwner(bot) } : {}),
     ...(access ? { access } : {}),
+    ...(payerPrincipalId ? { payerPrincipalId } : {}),
   };
 }
 
@@ -2182,10 +2212,18 @@ let companyRuntimeReady!: () => void;
 const companyRuntimeStarted = new Promise<void>(resolve => { companyRuntimeReady = resolve; });
 /** The enrolled organisation's desktop policy: in memory only, read-only, and
  * inert (null) unless Electron's enrolled parent sends one. */
+// An organization server never lends its own machine to a bot (its screen or
+// a local VM on it): every claim, auto choice and explicit choice of those
+// is refused here (managed-policy.ts HOST_COMPUTER_REFUSAL).
 const managedPolicy = new ManagedDesktopPolicy({ onChange: () => {
   broadcast({ kind: "config", ...configStatus() });
   resyncOpenCodeProviderKeys();
-} });
+}, hostComputersAllowed: () => IDENTITY.kind !== "perspicax" });
+/** Why this server may not set up a desktop on itself (an organization
+ * server), or undefined. */
+function hostComputerRefusal(): string | undefined {
+  return IDENTITY.kind === "perspicax" ? HOST_COMPUTER_REFUSAL : undefined;
+}
 /** A computer kind this server will not use, refused before anything is
  * prepared: a Cloud home never offers this computer or a Local VM
  * (cloud-home.ts), and an enrolled organisation may disallow any kind. */
@@ -7173,6 +7211,9 @@ async function scheduleTurnDigest(input: {
       ...(input.usage ? { usage: input.usage } : {}),
       hookCoverage: coverageForDriver(input.driverKind, toolEvidence(activities, input.turnId), activities.some(m => m.kind === "activity" && m.turnId === input.turnId && m.tool?.itemId)),
     });
+    // Organization server: which credentials this turn ran with (no secret).
+    const ran = IDENTITY.kind === "perspicax" ? turnAccessByThread.get(input.threadId) : undefined;
+    if (ran) digest.access = { via: ran.via, payer: ran.payer, ...(ran.payerPrincipalId ? { payerPrincipalId: ran.payerPrincipalId } : {}), ...(ran.routine ? { routine: true as const } : {}) };
     const message = store.appendMessage(input.threadId, {
         role: "bot",
         kind: "digest",
@@ -7736,12 +7777,13 @@ async function computerPreviewSurface(bot: BotRecord, threadId?: string) {
     if (remote.ready) return "cloud";
   }
   const target = localVmTargetForStatus(bot.id, threadId);
-  // A Cloud home has neither place (cloud-home.ts), so Auto never shows one.
-  if (!CLOUD_HOME && instance?.adapter.capabilities.computerMcp && localVmSeen.has(target.key)) {
+  // A Cloud home has neither place (cloud-home.ts), so Auto never shows one;
+  // nor does an organization server or an organisation that disallows them.
+  if (!CLOUD_HOME && managedPolicy.computerAllowed("localVm") && instance?.adapter.capabilities.computerMcp && localVmSeen.has(target.key)) {
     const vm = await containerComputerStatus(undefined, undefined, target).catch(() => null);
     if (vm && autoLocalVmAttachable(vm)) return "vm";
   }
-  if (!CLOUD_HOME && shouldMountLocalComputer({ requested: undefined, hostPlatform: process.platform,
+  if (!CLOUD_HOME && managedPolicy.computerAllowed("thisComputer") && shouldMountLocalComputer({ requested: undefined, hostPlatform: process.platform,
     providerSupportsLocal: instance?.adapter.capabilities.localComputerMcp === true }) && readCuaConnection()) return "local";
   if (bot.cloudBackend === "vps") return "cloud"; // show its unavailable reason
   return plan.browser ? "browser" : "off";
@@ -8494,12 +8536,12 @@ bus.subscribe((event: RuntimeEvent) => {
       const ranOn = turnAccessByThread.get(event.threadId);
       const keyRefused = bot && refusedInstance ? keyRefusedCard({
         identity: IDENTITY.kind, setup: event.setup, claudeUpdate: event.claudeUpdate,
-        keyBacked: driverKeyBacked(cfg, refusedInstance.driverKind, refusedInstance.instanceId) || ranOn?.via === "owner-key",
+        keyBacked: driverKeyBacked(cfg, refusedInstance.driverKind, refusedInstance.instanceId) || keyVia(ranOn?.via),
         message: event.message, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
         engine: refusedInstance.displayName || refusedInstance.driverKind, redact: redactSecretsInText,
       }) : null;
-      // An owner-key turn (slice 4) also counts: that key is dropped at once.
-      if (keyRefused && ranOn?.via === "owner-key" && ranOn.ownerSub && ranOn.provider) perspicaxDirectory?.invalidate(ranOn.ownerSub, ranOn.provider);
+      // A turn on a person's own key (slice 4) also counts: that key is dropped at once.
+      if (keyRefused && keyVia(ranOn?.via) && ranOn?.payerSub && ranOn.provider) perspicaxDirectory?.invalidate(ranOn.payerSub, ranOn.provider);
       if (keyRefused && bot) {
         pushMessage({ role: "bot", kind: "access", access: keyRefused });
         notify(buildNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }));
@@ -10204,9 +10246,9 @@ async function startTurn(
       kind: "access",
       access: accessCardFor(bot, accessRefusal, engine),
     });
-    const notice = engineAccessNotice(accessRefusal, engine);
+    const notice = engineAccessNotice(accessRefusal.reason, engine, accessRefusal);
     notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
-    console.error(`[omb-turn] bot=${botId} refused: ${accessRefusal} (${instance.instanceId})`);
+    console.error(`[omb-turn] bot=${botId} refused: ${accessRefusal.reason}${accessRefusal.cause ? `/${accessRefusal.cause}` : ""} (${instance.instanceId})`);
     opts?.coordination?.settle({ ok: false, text: notice });
     opts?.onDispatchError?.(notice);
     opts?.onTurnSettled?.();
@@ -10223,8 +10265,15 @@ async function startTurn(
   if (!opts.cardContinuation || (opts.coordination && !opts.coordination.resumed)) {
     turnSpeakers.set(threadId, speaker);
     turnSpeakerPrincipals.set(threadId, orgSpeakerPrincipal(bot, speaker));
-    if (routineLineage(speaker)) turnRoutineLineage.add(threadId);
-    else turnRoutineLineage.delete(threadId);
+    if (routineLineage(speaker)) {
+      turnRoutineLineage.add(threadId);
+      const payer = turnPayer({ speaker, owner: { principalId: effectiveBotOwner(bot) }, peerOwnerPrincipalId: peerOwnerPrincipal(speaker) }).principalId;
+      if (payer) turnRoutinePayers.set(threadId, payer);
+      else turnRoutinePayers.delete(threadId);
+    } else {
+      turnRoutineLineage.delete(threadId);
+      turnRoutinePayers.delete(threadId);
+    }
   }
   // A card continuation neither starts nor ends the person's ask: it
   // resumes the turn their last message began, so that record stands.
@@ -11137,6 +11186,7 @@ async function startTurn(
         { id: "composio", label: "Connected apps", text: integrations.composio ? composioSystemPrompt(liveBot?.connectorTools ?? bot.connectorTools) : "" },
         { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
         { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
+        { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, speaker)) },
         { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT : "" },
         { id: "coordination", label: "Team", text: coordinationPrompt ? ` ${coordinationPrompt}` : "" },
         { id: "assignment", label: "Teammate task", text: coordinationNode ? `\n${coordinationSystemInstructions()}` : "" },
@@ -11221,6 +11271,7 @@ async function startTurn(
         integrations,
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
         cwd,
       }), () => !directTurnClaimExists(bot.id, dispatchClaimId, threadId), async () => {
         await instance.adapter.interruptTurn(threadId).catch(() => {});
@@ -11371,8 +11422,8 @@ async function startTurn(
         // The owner key went away between admission and dispatch: the same
         // card and notice a refusal at admission gives.
         const engine = engineDisplayName(instance);
-        store.appendMessage(threadId, { role: "bot", kind: "access", access: accessCardFor(bot, e.reason, engine, e.detail) });
-        message = engineAccessNotice(e.reason, engine);
+        store.appendMessage(threadId, { role: "bot", kind: "access", access: accessCardFor(bot, e.refusal, engine, e.detail) });
+        message = engineAccessNotice(e.refusal.reason, engine, e.refusal);
         notify(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }));
       }
       settleDirectFollowup(dispatchClaimId, { ok: false, text: message });
@@ -12884,8 +12935,15 @@ async function runGroupMemberTurn(
   // A room turn no person asked for (a goal routine, other automation)
   // marks its thread, so a bot hop it starts carries the routine lineage.
   if (!cardContinuation) {
-    if (roomSpeakerId) turnRoutineLineage.delete(threadId);
-    else turnRoutineLineage.add(threadId);
+    if (roomSpeakerId) {
+      turnRoutineLineage.delete(threadId);
+      turnRoutinePayers.delete(threadId);
+    } else {
+      turnRoutineLineage.add(threadId);
+      // a room routine runs on this bot's owner's credentials
+      const owner = effectiveBotOwner(bot);
+      if (owner) turnRoutinePayers.set(threadId, owner);
+    }
   }
   const roomAccessRefusal = cardContinuation ? null
     : orgEngineRefusal(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" });
@@ -12897,7 +12955,7 @@ async function runGroupMemberTurn(
       from: { botId: bot.id, name: bot.name, color: bot.color },
       access: accessCardFor(bot, roomAccessRefusal, engine),
     });
-    const notice = engineAccessNotice(roomAccessRefusal, engine);
+    const notice = engineAccessNotice(roomAccessRefusal.reason, engine, roomAccessRefusal);
     notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
     if (orchestration) {
       orchestration.result.outcome = "dispatch_failed";
@@ -13453,6 +13511,7 @@ async function runGroupMemberTurn(
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
+    { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" })) },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(roomTeamComputer) },
     { id: "plan", label: "Surface", text: surfacePrompt({ computer: roomTeamComputer ? "cloud" : roomVmTarget ? "vm" : surfaceOfComputerKind(roomComputerKind), browser: Boolean(integrations.browser) }, { note: roomPlan.note, cloudHome: Boolean(CLOUD_HOME) }) },
@@ -13595,6 +13654,7 @@ async function runGroupMemberTurn(
         integrations,
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
         ...(instance.instanceId === readyBot.modelSelection.instanceId
           ? memberTurnSelection(readyBot.modelSelection)
           : { model: instance.models.default }),
@@ -13628,8 +13688,8 @@ async function runGroupMemberTurn(
         let message = err instanceof Error ? err.message : "turn failed";
         if (err instanceof EngineAccessLost) {
           const engine = engineDisplayName(instance);
-          store.appendMessage(threadId, { role: "bot", kind: "access", from: { botId: bot.id, name: bot.name, color: bot.color }, access: accessCardFor(bot, err.reason, engine, err.detail) });
-          message = engineAccessNotice(err.reason, engine);
+          store.appendMessage(threadId, { role: "bot", kind: "access", from: { botId: bot.id, name: bot.name, color: bot.color }, access: accessCardFor(bot, err.refusal, engine, err.detail) });
+          message = engineAccessNotice(err.refusal.reason, engine, err.refusal);
           notify(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }));
         } else store.appendMessage(threadId, {
           role: "bot",
@@ -15588,6 +15648,9 @@ async function readyLocalVmForTurn(botId: string, target: LocalVmTarget, isCurre
     noteLocalVmSeen(target, status);
     if (!isCurrent()) return status;
     if (status.ready || !localVmRecreatableOnDemand(status)) return status;
+    // An organization server never creates a desktop on itself (the claim is
+    // refused too; this keeps a turn from even starting one).
+    if (hostComputerRefusal()) return status;
     // Another creation is already mid-flight and its container is not yet
     // visible to a count, so the safe answer is the inspected status —
     // exactly what the over-cap path below returns.
@@ -15925,7 +15988,8 @@ function orgSpeakerPrincipal(bot: { ownerUserId?: unknown }, speaker: TurnSpeake
 function peerSpeaker(fromBotId: string, fromThreadId?: string): TurnSpeaker {
   const principalId = fromThreadId ? turnSpeakerPrincipals.get(fromThreadId) : undefined;
   const routine = fromThreadId ? turnRoutineLineage.has(fromThreadId) : false;
-  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}) };
+  const routinePayer = routine && fromThreadId ? turnRoutinePayers.get(fromThreadId) : undefined;
+  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}), ...(routinePayer ? { routinePayer } : {}) };
 }
 /** On an organization server, words may join a running turn only when they
  * speak for the same principal as that turn: anyone else's words wait for a
@@ -15939,38 +16003,59 @@ function orgJoinsRunningTurn(bot: { ownerUserId?: unknown }, threadId: string, s
   if (routineLineage(speaker) !== turnRoutineLineage.has(threadId)) return false;
   return Boolean(running) && running === joining;
 }
-/** Slice 4 (D8): the facts engine-credentials.ts decides a turn's access from. */
+/** Slice 4 (D8, revised 2026-10-01): the facts engine-credentials.ts
+ * decides a turn's access from. The payer is the person who speaks, or the
+ * bot's owner for its routines. */
 function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): EngineCredentialInput {
   const ownerId = effectiveBotOwner(bot);
   const owner = principals.byId(ownerId);
-  const sub = IDENTITY.kind === "perspicax" && owner?.subject?.iss === IDENTITY.issuer ? owner.subject.sub : undefined;
   return {
     identity: IDENTITY.kind,
     speaker,
     peerOwnerPrincipalId: peerOwnerPrincipal(speaker),
-    owner: { principalId: ownerId, ...(sub ? { sub } : {}), orgRole: botOwnerOrgRole(bot), ...(owner?.disabledAt !== undefined ? { disabled: true } : {}) },
+    owner: { principalId: ownerId, ...orgPersonFacts(owner) },
     instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId) },
+    person: (principalId) => {
+      const person = principals.byId(principalId);
+      return person ? orgPersonFacts(person) : undefined;
+    },
     subscriptionSignedIn: (principalId, driver) => engineLogins?.signedIn(principalId, driver) ?? false,
-    ownerHasKey: (ownerSub, provider) => perspicaxDirectory?.providerKeys(ownerSub).includes(provider) ?? false,
-    memberBotsUseOrgKey: orgSettings().memberBotsUseOrgKey,
+    hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
     keyBacked: driverKeyBacked(cfg, instance.driverKind, instance.instanceId),
   };
 }
+/** A person's Perspicax subject (only from this server's issuer) and
+ * whether they are disabled. */
+function orgPersonFacts(person: { subject?: { iss: string; sub: string }; disabledAt?: unknown } | null | undefined): { sub?: string; disabled?: true } {
+  const sub = IDENTITY.kind === "perspicax" && person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+  return { ...(sub ? { sub } : {}), ...(person?.disabledAt !== undefined && person?.disabledAt !== null ? { disabled: true as const } : {}) };
+}
+/** A refused turn: why, and whose credentials it needed. */
+type OrgAccessRefusal = { reason: EngineAccessRefusal; cause?: NoAccessCause; payer?: "speaker" | "owner"; payerPrincipalId?: string; routine?: true };
+function orgRefusalOf(plan: Extract<EngineCredentialPlan, { ok: false }>): OrgAccessRefusal {
+  return {
+    reason: plan.reason,
+    ...(plan.cause ? { cause: plan.cause } : {}),
+    ...(plan.payer ? { payer: plan.payer } : {}),
+    ...(plan.payerPrincipalId ? { payerPrincipalId: plan.payerPrincipalId } : {}),
+    ...(plan.routine ? { routine: true as const } : {}),
+  };
+}
 /** The organization refusal for a turn, or null (checked when the turn is
- * admitted; the owner key itself is read at dispatch). */
-function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): EngineAccessRefusal | null {
+ * admitted; the payer's key itself is read at dispatch). */
+function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): OrgAccessRefusal | null {
   if (IDENTITY.kind !== "perspicax") return null;
   const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
-  return plan.ok ? null : plan.reason;
+  return plan.ok ? null : orgRefusalOf(plan);
 }
-/** A turn admitted with an owner key whose key Perspicax no longer gives
- * (and nothing after it serves): the dispatch stops with the access card. */
+/** A turn admitted with a person's key that Perspicax no longer gives (and
+ * nothing after it serves): the dispatch stops with the access card. */
 class EngineAccessLost extends Error {
-  readonly reason: EngineAccessRefusal;
+  readonly refusal: OrgAccessRefusal;
   readonly detail?: string;
-  constructor(reason: EngineAccessRefusal, detail?: string) {
-    super(reason === "engine_missing" ? "the engine is not installed" : "no engine access for this turn");
-    this.reason = reason;
+  constructor(refusal: OrgAccessRefusal, detail?: string) {
+    super(refusal.reason === "engine_missing" ? "the engine is not installed" : "no engine access for this turn");
+    this.refusal = refusal;
     if (detail) this.detail = detail;
   }
 }
@@ -15985,19 +16070,64 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
     invalidate: (sub, provider) => perspicaxDirectory?.invalidate(sub, provider),
     loginDir: (principalId, driver) => engineLogins?.loginDir(principalId, driver) ?? join(DATA_DIR, "principals", principalId, driver === "claudeAgent" ? "claude" : "codex"),
   });
-  if (!outcome.ok) throw new EngineAccessLost(outcome.reason, outcome.detail);
+  if (!outcome.ok) throw new EngineAccessLost(outcome.plan ? orgRefusalOf(outcome.plan) : { reason: outcome.reason }, outcome.detail);
   const provider = providerOfDriver(instance.driverKind) ?? undefined;
-  turnAccessByThread.set(threadId, { via: outcome.access.via, ...(input.owner.sub ? { ownerSub: input.owner.sub } : {}), ...(provider ? { provider } : {}) });
+  const { plan } = outcome;
+  const payerSub = plan.payerPrincipalId ? (plan.payer === "owner" ? input.owner.sub : input.person?.(plan.payerPrincipalId)?.sub) : undefined;
+  turnAccessByThread.set(threadId, {
+    via: outcome.access.via,
+    payer: plan.payer,
+    ...(plan.payerPrincipalId ? { payerPrincipalId: plan.payerPrincipalId } : {}),
+    ...(plan.routine ? { routine: true as const } : {}),
+    ...(payerSub ? { payerSub } : {}),
+    ...(provider ? { provider } : {}),
+  });
   return outcome.access;
 }
-/** Where an owner sets their model keys (Perspicax console, slice 4). */
+/** Whether a Claude turn keeps the claude.ai connectors of the account it
+ * runs on: the speaker's own subscription only (server/harness-connectors.ts).
+ * `via` is the turn's access; without it (the prompt is built before the
+ * access is materialized) the planned access stands in. */
+function claudeAiConnectorsFor(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): boolean {
+  let planned = via;
+  if (IDENTITY.kind === "perspicax" && planned === undefined && instance.driverKind === "claudeAgent") {
+    const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+    planned = plan.ok ? plan.via : undefined;
+  }
+  return claudeAiConnectorsForTurn({
+    identity: IDENTITY.kind,
+    enabled: claudeAiConnectorsEnabled(cfg),
+    restrictedByPolicy: managedPolicy.restrictsMcp(),
+    driver: instance.driverKind,
+    ...(planned ? { via: planned } : {}),
+    speaker,
+    ownerPrincipalId: effectiveBotOwner(bot),
+    localPrincipalId: localPrincipalId(),
+  });
+}
+/** Where a person sets their model keys (Perspicax console, slice 4). */
 function perspicaxKeysUrl(): string | undefined {
   return IDENTITY.kind === "perspicax" ? `${IDENTITY.issuer.replace(/\/+$/, "")}/console/pulsabot/keys` : undefined;
 }
-/** The access card of a refused or lost turn. */
-function accessCardFor(bot: BotRecord, reason: EngineAccessRefusal, engine: string, detail?: string): WireAccessCard {
-  const keysUrl = reason === "no_access" ? perspicaxKeysUrl() : undefined;
-  return { reason, engine, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot), ...(detail ? { detail } : {}), ...(keysUrl ? { keysUrl } : {}) };
+/** The access card of a refused or lost turn: who has to act (the person
+ * who speaks, or the owner for a routine) and where. */
+function accessCardFor(bot: BotRecord, refusal: OrgAccessRefusal, engine: string, detail?: string): WireAccessCard {
+  const keysUrl = refusal.reason === "no_access" ? perspicaxKeysUrl() : undefined;
+  const instance = registry.get(bot.modelSelection.instanceId);
+  const driver = instance?.driverKind ?? "";
+  return {
+    reason: refusal.reason,
+    engine,
+    botId: bot.id,
+    ownerPrincipalId: effectiveBotOwner(bot),
+    ...(detail ? { detail } : {}),
+    ...(keysUrl ? { keysUrl } : {}),
+    ...(refusal.cause ? { cause: refusal.cause } : {}),
+    ...(refusal.payer ? { payer: refusal.payer } : {}),
+    ...(refusal.payerPrincipalId ? { payerPrincipalId: refusal.payerPrincipalId } : {}),
+    ...(refusal.routine ? { routine: true as const } : {}),
+    ...(refusal.reason === "no_access" && subscriptionDriver(driver) ? { subscriptionSignIn: true as const } : {}),
+  };
 }
 
 async function describeInstances() {
@@ -16299,6 +16429,9 @@ ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: (
 // its file, so New bot cannot disagree with it. No organization: none.
 const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
+// Server mode: a person's appearance, language, notifications and mascot
+// settings follow them across devices (shared/user-preferences.ts).
+ROUTES.push(createUserPreferenceRoutes({ store: createUserPreferenceStore(DATA_DIR), organization: () => IDENTITY.kind === "perspicax" }));
 // The bot-memory panel's routes (MEMORY.md, memory/ topics, journal); the
 // store lookups — the 404 precheck and journal thread titles — stay explicit.
 ROUTES.push(createBotMemoryRoutes({
@@ -16427,9 +16560,14 @@ function orgAdminCaller(auth: RequestAuth): boolean {
   const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
   return person?.local === true || person?.orgRole === "admin";
 }
-function orgSettings(): { memberBotsUseOrgKey: boolean; interimAttach?: { until: number | null; people: number } } {
+/** Whether the server has a key for at least one engine of its fleet: the
+ * organization's key (engine-credentials.ts, step 5). */
+function orgKeyConfigured(): boolean {
+  return Object.entries(instanceConfigs(cfg)).some(([instanceId, entry]) => driverKeyBacked(cfg, entry.driver, instanceId));
+}
+function orgSettings(): { orgKeyConfigured: boolean; interimAttach?: { until: number | null; people: number } } {
   return {
-    memberBotsUseOrgKey: cfg.organization?.memberBotsUseOrgKey === true,
+    orgKeyConfigured: orgKeyConfigured(),
     ...(IDENTITY.kind === "perspicax"
       ? { interimAttach: { until: interimWindowUntil(cfg.organization?.interimAttach, Date.now()), people: principals.listInterim().length } }
       : {}),
@@ -16643,6 +16781,12 @@ function routeThreadId(bot: BotRecord, rawThreadId: unknown, action: ThreadActio
   if (!mine) throw Object.assign(new Error("no such task"), { status: 404 });
   return mine;
 }
+/** The bot's activity as one organization viewer sees it: over their own
+ * threads (and the bot's rooms), never over someone else's private thread. */
+function viewerBotActivity(bot: BotRecord, viewerId: string): ReturnType<typeof store.activityOf> {
+  const owner = effectiveBotOwner(bot);
+  return store.activityOf(bot.id, (task) => ownsThread(viewerId, task, owner));
+}
 /** A bot (wire shape) as one viewer receives it: their threads only, their
  * thread selected, nobody else's transcript (thread-privacy.ts). */
 function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: string | undefined): T {
@@ -16654,6 +16798,7 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
   return narrowBotForViewer(bot, {
     viewerId,
     botOwnerPrincipalId: effectiveBotOwner(record),
+    activity: viewerBotActivity(record, viewerId),
     ...(mine ? { mine } : {}),
     ...(mineTask ? { mineTask: { ...wireTask(mineTask), ...store.projectBotForTask(record.id, mine!) } as unknown as Record<string, unknown> } : {}),
   });
@@ -17159,7 +17304,8 @@ if (IDENTITY.kind === "perspicax") {
     return json(res, 200, { bots });
   });
 }
-// Slice 4 (D10): a person's own engines. Which answer for whom, and their
+// Slice 4 (D10): a person's own engines. What their own turns run with (on
+// their bots and on bots shared with them: engine-credentials.ts), and their
 // own subscription sign-in, in their own login directory.
 if (IDENTITY.kind === "perspicax" && engineLogins) {
   const logins = engineLogins;
@@ -17170,7 +17316,6 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
     if (!principalId || !isPrincipalId(principalId)) return json(res, 403, { error: "sign in as a person first" });
     const person = principals.byId(principalId);
     const sub = person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
-    const admin = orgAdminCaller(auth);
     if (method === "GET" && path === "/api/me/engines") {
       const engines = registry.entries().map((entry) => {
         const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
@@ -17178,9 +17323,10 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         const supported = isLoginDriver(driver);
         const signedIn = supported && logins.signedIn(principalId, driver);
         const provider = providerOfDriver(driver);
-        const ownerKey = Boolean(provider && sub && perspicaxDirectory?.providerKeys(sub).includes(provider));
-        const orgKey = orgSettings().memberBotsUseOrgKey && driverKeyBacked(cfg, driver, entry.instanceId);
-        const answersFor = !installed ? "nobody" : ownerKey || orgKey ? "everyone" : signedIn || admin ? "me" : "nobody";
+        const myKey = Boolean(provider && sub && perspicaxDirectory?.providerKeys(sub).includes(provider));
+        const orgKey = driverKeyBacked(cfg, driver, entry.instanceId);
+        // the order of engine-credentials.ts for this person speaking
+        const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn ? "subscription" : myKey ? "key" : orgKey ? "org-key" : "none";
         const live = registry.get(entry.instanceId);
         return {
           instanceId: entry.instanceId,
@@ -17188,9 +17334,9 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
           displayName: live ? engineDisplayName(live) : entry.instanceId,
           installed,
           subscription: { supported, signedIn },
-          ownerKey,
+          myKey,
           orgKey,
-          answersFor,
+          myTurns,
         };
       });
       return json(res, 200, { engines, ...(perspicaxKeysUrl() ? { keysUrl: perspicaxKeysUrl() } : {}) });
@@ -17480,17 +17626,6 @@ if (IDENTITY.kind === "perspicax") {
     bySubject: (iss, sub) => principals.bySubject(iss, sub),
     viewerRole: (auth) => (orgAdminCaller(auth) ? "admin" : "member"),
     settings: orgSettings,
-    saveSettings: (next, auth) => {
-      const before = orgSettings();
-      saveConfig({ organization: { ...cfg.organization, memberBotsUseOrgKey: next.memberBotsUseOrgKey } });
-      cfg.organization = { ...cfg.organization, memberBotsUseOrgKey: next.memberBotsUseOrgKey };
-      orgAudit({
-        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["memberBotsUseOrgKey"],
-        before: { memberBotsUseOrgKey: before.memberBotsUseOrgKey },
-        after: { memberBotsUseOrgKey: next.memberBotsUseOrgKey },
-        actor: orgAuditActor(auth),
-      });
-    },
     // Slice 8: shorten, extend (at most 90 days from when it opened) or
     // close the window to attach people from before Perspicax.
     saveInterimAttachDays: (days, auth) => {
@@ -17664,6 +17799,53 @@ ROUTES.push(createMailSettingsRoutes({
   env: () => process.env,
   mailer,
   callerEmail: actorEmail,
+}));
+
+// The caller's own claude.ai connectors, read through their own Claude
+// account (server/harness-connectors.ts); an admin can turn them off.
+const claudeAiInventory = new ClaudeAiConnectorInventory({ run: runClaudeCli });
+ROUTES.push(createHarnessConnectorRoutes({
+  organization: IDENTITY.kind === "perspicax",
+  enabled: () => claudeAiConnectorsEnabled(cfg),
+  setEnabled: (next) => {
+    const block = { ...cfg.harnessConnectors, claudeAi: next };
+    saveConfig({ harnessConnectors: block });
+    cfg.harnessConnectors = block;
+  },
+  restrictedByPolicy: () => managedPolicy.restrictsMcp(),
+  principalFor: (auth) => {
+    if (auth.kind === "loopback" && auth.trust === "service") return "";
+    const id = actorPrincipalId(auth) || (IDENTITY.kind === "solo" ? localPrincipalId() : "");
+    return id.trim().toLowerCase();
+  },
+  localPrincipalId,
+  isAdmin: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : true),
+  claudeAccountFor: (principalId) => {
+    const entries = Object.entries(instanceConfigs(cfg)).filter(([, entry]) => entry.driver === "claudeAgent");
+    const [instanceId, entry] = entries.find(([id]) => id === "claude") ?? entries[0] ?? [];
+    if (!instanceId || !entry) return { unavailable: "no_engine" as const };
+    const config = (entry.config ?? {}) as { cli?: unknown; configDir?: unknown };
+    const cli = typeof config.cli === "string" && config.cli.trim() ? config.cli : "claude";
+    const env: NodeJS.ProcessEnv = { ...process.env, ...entry.environment };
+    if (IDENTITY.kind === "perspicax") {
+      if (!engineLogins?.signedIn(principalId, "claudeAgent")) return { unavailable: "not_signed_in" as const };
+      env.CLAUDE_CONFIG_DIR = engineLogins.loginDir(principalId, "claudeAgent");
+      delete env.ANTHROPIC_API_KEY;
+      delete env.ANTHROPIC_AUTH_TOKEN;
+      return { cli, env, key: `person:${principalId}` };
+    }
+    // a workspace key that runs every Claude bot replaces the login
+    if (cfg.anthropic?.key && cfg.anthropic.everyClaudeBot !== false) return { unavailable: "key" as const };
+    if (typeof config.configDir === "string" && config.configDir.trim()) {
+      try {
+        env.CLAUDE_CONFIG_DIR = resolveClaudeConfigDir(config.configDir, env);
+      } catch {
+        return { unavailable: "no_engine" as const };
+      }
+    }
+    return { cli, env, key: `instance:${instanceId}` };
+  },
+  inventory: claudeAiInventory,
 }));
 
 // Invite links (/join#token=...): public like /api/auth/email/start, and
@@ -18537,6 +18719,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!parsed.success) return json(res, 400, { error: "Invalid computer registration" });
         const registration = parsed.data;
         if (registration.environmentId !== ENVIRONMENT_ID) return json(res, 409, { error: "Workspace identity changed. Pair again before sharing this computer." });
+        // Organization server: the computer is a person's, and only their
+        // own turns may use it (userComputers).
+        if (IDENTITY.kind === "perspicax" && !auth.session.principalId) return json(res, 403, { error: "Sign in as a person to share your computer" });
         // A Cloud home is one person's: only their own devices, which the
         // Admin's pairing signs in with admin scope, may lend to it.
         if (CLOUD_HOME && !auth.scopes.includes("admin")) return json(res, 403, { error: "Only your own computers can lend to your Cloud. Connect this computer to your Cloud from its OMB Cloud settings." });
@@ -18863,6 +19048,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Say why an owner's own conversation sees no Mac, so the bot can tell them.
         const why = CLOUD_HOME && !principal && sharedComputers.status(CLOUD_HOME_LENDER).length > 0 ? cloudLendingRefusal(internalCapability) : null;
         const notice = why === "someone-else" ? { unavailable: LENDING_SOMEONE_ELSE } : why === "memory-changed" ? { unavailable: LENDING_MEMORY_CHANGED } : {};
+        // An organization server says why there is nothing to use (no person
+        // asked, or their desktop is not connected) instead of an empty list.
+        if (IDENTITY.kind === "perspicax") {
+          try {
+            return json(res, 200, { computers: userComputers.list(personSpeaker(principal)).map(entry => ({ ...(entry.computer as object), target: entry.target })) });
+          } catch (error) {
+            return json(res, (error as { status?: number }).status ?? 409, { error: (error as Error).message, code: (error as { code?: string }).code });
+          }
+        }
         return json(res, 200, { computers: sharedComputers.list(principal), ...notice });
       }
       if (method === "POST" && path === "/api/internal/shared-computers" && lendingEnabled()) {
@@ -18878,7 +19072,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (why === "someone-else" || why === "memory-changed") {
           return json(res, 403, { error: why === "someone-else" ? LENDING_SOMEONE_ELSE : LENDING_MEMORY_CHANGED });
         }
-        return json(res, 200, { result: await sharedComputers.request(parsed.data, principal, () => lendingEnabled() && internalCapabilityIsActive(internalCapability)) });
+        const active = () => lendingEnabled() && internalCapabilityIsActive(internalCapability);
+        if (IDENTITY.kind === "perspicax") return json(res, 200, { result: await userComputers.request(personSpeaker(principal), parsed.data, active) });
+        return json(res, 200, { result: await sharedComputers.request(parsed.data, principal, active) });
       }
       if (method === "GET" && path === "/api/internal/agents") {
         const sender = internalSender;
@@ -21383,6 +21579,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const record = mine ? store.projectBotForTask(bot.id, mine) ?? bot : bot;
         return memberBot({
           ...wireBot(record),
+          // busy while any of the viewer's threads works, not only the one shown
+          ...(viewerId && privateThreads() ? viewerBotActivity(bot, viewerId) : {}),
           tasks: threadsShownTo(bot, store.tasks(bot.id), viewerId).map(wireTask),
           ...messagePage(record.threadId, limit, null, viewerForApproval(auth)),
         }, visible);
@@ -25462,6 +25660,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 415, { error: "content-type must be application/json" });
       }
       const action = z.enum(["pull", "run", "start", "stop", "remove"]).parse(m[1]);
+      // An organization server never creates or starts a desktop on itself;
+      // stop and remove stay available to clean one up.
+      const hostVmRefusal = action === "stop" || action === "remove" ? undefined : hostComputerRefusal();
+      if (hostVmRefusal) return json(res, 403, { error: hostVmRefusal, code: "host_computer" });
       if (localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(SHARED_LOCAL_VM_TARGET.key)) {
         return json(res, 409, { error: "another Local VM setup action is still running" });
       }
@@ -25524,6 +25726,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 409, { error: "this bot's computer is being changed or deleted — wait for it to finish" });
       }
       const action = z.enum(["run", "stop", "remove"]).parse(m[2]);
+      const botVmRefusal = action === "run" ? hostComputerRefusal() : undefined;
+      if (botVmRefusal) return json(res, 403, { error: botVmRefusal, code: "host_computer" });
       const target = localVmTargetForBot(bot.id);
       if (target.key === SHARED_LOCAL_VM_TARGET.key) {
         return json(res, 409, { error: "Shared mode manages this desktop in App Settings → Computers" });

@@ -92,6 +92,11 @@ describe("request source for the lockout", () => {
 });
 
 describe("scopes", () => {
+  it("lets a person read their own Claude connectors; only an admin turns them off", () => {
+    expect(requiredScope("GET", "/api/me/harness-connectors")).toBe("client");
+    expect(requiredScope("PUT", "/api/me/harness-connectors")).toBe("admin");
+    expect(requiredScope("PUT", "/api/harness-connectors/settings")).toBe("admin");
+  });
   it("keeps full backups, credentials and replacement behind admin scope", () => {
     for (const path of ["status", "export", "upload", "preview", "restore", "client-state", "download/123"]) {
       for (const method of ["GET", "POST", "DELETE"]) expect(requiredScope(method, `/api/workspace-backup/${path}`)).toBe("admin");

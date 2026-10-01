@@ -12,7 +12,10 @@ export interface PerspicaxOrg {
   org: { name: string; identity: { kind: "perspicax"; issuer: string; serverId?: string } };
   link: { state: "missing" | "ok" | "error"; syncedAt?: number; error?: string };
   viewerRole: "admin" | "member";
-  settings: { memberBotsUseOrgKey: boolean; interimAttach?: { until: number | null; people: number } };
+  /** orgKeyConfigured: the server has a key for at least one engine (the
+   * organization's key, used automatically after the speaker's own
+   * subscription and key, 2026-10-01). */
+  settings: { orgKeyConfigured?: boolean; interimAttach?: { until: number | null; people: number } };
 }
 
 export interface OrgDirectoryPerson {
@@ -182,9 +185,13 @@ export interface MyEngine {
   displayName: string;
   installed: boolean;
   subscription: { supported: boolean; signedIn: boolean };
-  ownerKey: boolean;
+  /** The person's own key for this engine's provider is in Perspicax. */
+  myKey: boolean;
+  /** The server has a key for this engine (the organization's key). */
   orgKey: boolean;
-  answersFor: "me" | "everyone" | "nobody";
+  /** What the person's own turns on this engine run with, on their bots
+   * and on the bots shared with them (server/engine-credentials.ts). */
+  myTurns: "subscription" | "key" | "org-key" | "none";
 }
 
 export interface OrgSection {
@@ -204,26 +211,58 @@ export function perspicaxKeysUrl(issuer: string): string {
 }
 
 let enginesPending: Promise<MyEngine[] | null> | null = null;
+const engineListeners = new Set<(engines: MyEngine[] | null) => void>();
 
-/** GET /api/me/engines once per page load on a Perspicax server; null on
- * a solo server or while loading. */
+function loadMyEngines(): Promise<MyEngine[] | null> {
+  enginesPending ??= loadPerspicaxOrg().then((org) => (org
+    ? api<{ engines: MyEngine[] }>("/api/me/engines").then((body) => body.engines ?? [], () => null)
+    : null));
+  return enginesPending;
+}
+
+/** Ask the server again (after a personal sign-in or sign-out) and update
+ * every useMyEngines on the page. */
+export function reloadMyEngines(): Promise<MyEngine[] | null> {
+  enginesPending = null;
+  const next = loadMyEngines();
+  void next.then((value) => { for (const listener of engineListeners) listener(value); });
+  return next;
+}
+
+/** GET /api/me/engines once per page load on a Perspicax server (again
+ * after reloadMyEngines); null on a solo server or while loading. */
 export function useMyEngines(): MyEngine[] | null {
   const [engines, setEngines] = useState<MyEngine[] | null>(null);
   useEffect(() => {
     let alive = true;
-    enginesPending ??= loadPerspicaxOrg().then((org) => (org
-      ? api<{ engines: MyEngine[] }>("/api/me/engines").then((body) => body.engines ?? [], () => null)
-      : null));
-    void enginesPending.then((value) => { if (alive) setEngines(value); });
-    return () => { alive = false; };
+    const listener = (value: MyEngine[] | null) => { if (alive) setEngines(value); };
+    engineListeners.add(listener);
+    void loadMyEngines().then(listener);
+    return () => {
+      alive = false;
+      engineListeners.delete(listener);
+    };
   }, []);
   return engines;
 }
 
-/** The one line saying who a bot on this engine can answer. */
-export function answersForText(engine: Pick<MyEngine, "answersFor" | "installed">): string {
+/** The one line saying what the person's own turns on this engine use. */
+export function myTurnsText(engine: Pick<MyEngine, "myTurns" | "installed">): string {
   if (!engine.installed) return t("myEngines.notInstalled");
-  if (engine.answersFor === "everyone") return t("myEngines.answersFor.everyone");
-  if (engine.answersFor === "me") return t("myEngines.answersFor.me");
-  return t("myEngines.answersFor.nobody");
+  if (engine.myTurns === "subscription") return t("myEngines.turns.subscription");
+  if (engine.myTurns === "key") return t("myEngines.turns.key");
+  if (engine.myTurns === "org-key") return t("myEngines.turns.orgKey");
+  return t("myEngines.turns.none");
+}
+
+/** What a turn ran with (a turn digest's `access`), named for this viewer:
+ * "Your subscription" to the person who paid, "Owner's credentials" on a
+ * routine, never a secret. */
+export function turnAccessLabel(access: { via: string; payer: string; payerPrincipalId?: string; routine?: boolean }, viewerPrincipalId: string | null): string {
+  if (access.via === "org-key") return t("turnAccess.orgKey");
+  if (access.via === "server") return t("turnAccess.server");
+  if (access.routine && access.payer === "owner") return t("turnAccess.ownerCredentials");
+  const mine = Boolean(viewerPrincipalId && access.payerPrincipalId && viewerPrincipalId.toLowerCase() === access.payerPrincipalId.toLowerCase());
+  if (access.via === "subscription") return mine ? t("turnAccess.yourSubscription") : t("turnAccess.speakerSubscription");
+  return mine ? t("turnAccess.yourKey") : t("turnAccess.speakerKey");
 }

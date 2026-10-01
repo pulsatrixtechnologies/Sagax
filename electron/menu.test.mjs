@@ -67,4 +67,17 @@ describe("buildApplicationMenu", () => {
     item.click();
     expect(onOrganizationSignIn).toHaveBeenCalledOnce();
   });
+
+  it("in server mode the Server menu shows the organization's server and Change server only", () => {
+    const onLeaveServerMode = vi.fn();
+    const onSwitch = vi.fn();
+    const template = build("darwin", { serverModeId: "x", onLeaveServerMode, onSwitch });
+    const items = template.find(entry => entry.label === "Server").submenu;
+    const labels = items.map(entry => entry.label).filter(Boolean);
+    expect(labels).toEqual(["X — localhost", "Change server…"]);
+    expect(JSON.stringify(items)).not.toContain("Local (this computer)");
+    items.find(entry => entry.label === "Change server…").click();
+    expect(onLeaveServerMode).toHaveBeenCalledOnce();
+    expect(onSwitch).not.toHaveBeenCalled();
+  });
 });
