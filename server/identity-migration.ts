@@ -116,3 +116,147 @@ export function applyIdentityMigration(deps: IdentityMigrationDeps): ReturnType<
   }
   return migrated;
 }
+
+// ── Slice 8: copying a solo person's bots into an organization ─────────────
+
+/** Why an organization copy is refused before anything is written. */
+export type ImportRefusal = "foreign_owner" | "foreign_room" | "foreign_routine";
+
+export interface ImportPeopleInput {
+  /** The exporting person's local principal id: the only key of the table. */
+  self: string;
+  /** The importer's principal on the organization server. */
+  importer: string;
+  people: {
+    bots: Record<string, { owner: string | null; grants: string[] }>;
+    groups: Record<string, { humans: string[] }>;
+    routines: { runAs: string | null }[];
+  };
+  /** Names for the report, by backup key. */
+  names?: { bots?: Record<string, string>; groups?: Record<string, string>; routines?: string[] };
+}
+
+export interface ImportPeopleResult {
+  ok: true;
+  /** Every bot's owner on the organization server: the importer. */
+  owners: Record<string, string>;
+  /** Every room's people: the importer only. */
+  groupsHumans: Record<string, string[]>;
+  /** Every routine runs as the importer. */
+  routinesRunAs: string[];
+  /** People refs dropped (never turned into a right), counted per object. */
+  removed: { object: "bot" | "room" | "routine"; sourceKey: string; name: string; refs: number }[];
+}
+
+/** The rewrite table of an organization copy is `{ self -> importer }`.
+ * An owner, a room person or a routine runner other than `self` (or none)
+ * refuses the whole copy; every grant other than `self` is dropped and
+ * counted. Pure. */
+export function rewritePeopleForImport(input: ImportPeopleInput): ImportPeopleResult | { ok: false; code: ImportRefusal; sourceKey: string } {
+  const { self, importer, people } = input;
+  const owners: Record<string, string> = {};
+  const groupsHumans: Record<string, string[]> = {};
+  const removed: ImportPeopleResult["removed"] = [];
+  for (const [key, bot] of Object.entries(people.bots)) {
+    if (bot.owner !== null && bot.owner !== self) return { ok: false, code: "foreign_owner", sourceKey: key };
+    owners[key] = importer;
+    const refs = new Set(bot.grants.filter((ref) => ref !== self)).size;
+    if (refs) removed.push({ object: "bot", sourceKey: key, name: input.names?.bots?.[key] ?? key, refs });
+  }
+  for (const [key, group] of Object.entries(people.groups)) {
+    if (group.humans.some((ref) => ref !== self)) return { ok: false, code: "foreign_room", sourceKey: key };
+    groupsHumans[key] = [importer];
+  }
+  const routinesRunAs: string[] = [];
+  for (const [index, routine] of people.routines.entries()) {
+    if (routine.runAs !== null && routine.runAs !== self) return { ok: false, code: "foreign_routine", sourceKey: String(index) };
+    routinesRunAs.push(importer);
+  }
+  return { ok: true, owners, groupsHumans, routinesRunAs, removed };
+}
+
+// ── Slice 8: attaching an interim person to a Perspicax person ─────────────
+
+type GrantLevel = "use" | "run" | "edit" | "manage";
+type MemberRole = "moderator" | "participant" | "readonly";
+const GRANT_RANK: Record<GrantLevel, number> = { use: 1, run: 2, edit: 3, manage: 4 };
+const ROLE_RANK: Record<MemberRole, number> = { readonly: 1, participant: 2, moderator: 3 };
+
+export interface AttachRecords {
+  bots: { id: string; ownerUserId?: string; directGrants?: string[]; grants?: { target: string; level: GrantLevel; by: string; at: number }[] }[];
+  groups: { id: string; humanIds?: string[] }[];
+  sections: { id: string; ownerPrincipalId: string; members: { target: string; role: MemberRole }[]; placedBots?: { botId: string; ownerPrincipalId: string }[] }[];
+  routines: { id: string; runAs?: string }[];
+}
+
+export interface AttachResult {
+  bots: { id: string; ownerUserId?: string; directGrants?: string[]; grants?: AttachRecords["bots"][number]["grants"] }[];
+  groups: { id: string; humanIds: string[] }[];
+  sections: AttachRecords["sections"];
+  routines: { id: string; runAs: string }[];
+  counts: { bots: number; grants: number; rooms: number; sections: number; routines: number };
+}
+
+/** Fold every reference to `from` into `to`. Refs to anyone else are kept
+ * as they are. Where `to` already holds a grant or a section role, the
+ * higher of the two stays. Only changed records are returned; a second
+ * application changes nothing. Pure. */
+export function rewritePeopleForAttach(table: { from: string; to: string }, records: AttachRecords): AttachResult {
+  const { from, to } = table;
+  const fromUser = `user:${from}`;
+  const toUser = `user:${to}`;
+  const result: AttachResult = { bots: [], groups: [], sections: [], routines: [], counts: { bots: 0, grants: 0, rooms: 0, sections: 0, routines: 0 } };
+  const mapIds = (ids: string[]) => [...new Set(ids.map((id) => (id === from ? to : id)))];
+  for (const bot of records.bots) {
+    const ownerMoved = bot.ownerUserId === from;
+    const directMoved = Boolean(bot.directGrants?.includes(from));
+    const grantMoved = Boolean(bot.grants?.some((grant) => grant.target === fromUser));
+    if (!ownerMoved && !directMoved && !grantMoved) continue;
+    const next: AttachResult["bots"][number] = { id: bot.id };
+    if (ownerMoved) {
+      next.ownerUserId = to;
+      result.counts.bots += 1;
+    }
+    if (directMoved) next.directGrants = mapIds(bot.directGrants!);
+    if (grantMoved) {
+      const moved = bot.grants!.find((grant) => grant.target === fromUser)!;
+      const existing = bot.grants!.find((grant) => grant.target === toUser);
+      const merged = existing && GRANT_RANK[existing.level] >= GRANT_RANK[moved.level] ? existing : { ...moved, target: toUser };
+      next.grants = [...bot.grants!.filter((grant) => grant.target !== fromUser && grant.target !== toUser), merged];
+      result.counts.grants += 1;
+    }
+    result.bots.push(next);
+  }
+  for (const group of records.groups) {
+    if (!group.humanIds?.includes(from)) continue;
+    result.groups.push({ id: group.id, humanIds: mapIds(group.humanIds) });
+    result.counts.rooms += 1;
+  }
+  for (const section of records.sections) {
+    const ownerMoved = section.ownerPrincipalId === from;
+    const memberMoved = section.members.some((member) => member.target === fromUser);
+    const placedMoved = Boolean(section.placedBots?.some((entry) => entry.ownerPrincipalId === from));
+    if (!ownerMoved && !memberMoved && !placedMoved) continue;
+    let members = section.members;
+    if (memberMoved) {
+      const moved = members.find((member) => member.target === fromUser)!;
+      const existing = members.find((member) => member.target === toUser);
+      const merged = existing && ROLE_RANK[existing.role] >= ROLE_RANK[moved.role] ? existing : { ...moved, target: toUser };
+      members = members.filter((member) => member.target !== fromUser && member.target !== toUser);
+      members.push(merged);
+    }
+    result.sections.push({
+      ...section,
+      ownerPrincipalId: ownerMoved ? to : section.ownerPrincipalId,
+      members,
+      ...(section.placedBots ? { placedBots: section.placedBots.map((entry) => (entry.ownerPrincipalId === from ? { ...entry, ownerPrincipalId: to } : entry)) } : {}),
+    });
+    result.counts.sections += 1;
+  }
+  for (const routine of records.routines) {
+    if (routine.runAs !== from) continue;
+    result.routines.push({ id: routine.id, runAs: to });
+    result.counts.routines += 1;
+  }
+  return result;
+}
