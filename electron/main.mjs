@@ -2612,7 +2612,11 @@ const floatingBotWindows = createFloatingBotWindows({
     win.show();
     win.focus();
   },
-  log: (line) => slog(line),
+  log: (line) => {
+    slog(line);
+    // in development the floating windows' troubles show in the terminal too
+    if (!app.isPackaged) console.log(`[floating-bots] ${line}`);
+  },
 });
 
 // Caption controls for the overlay-less frameless window. The renderer's

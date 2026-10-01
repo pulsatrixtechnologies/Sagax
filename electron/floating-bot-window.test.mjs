@@ -276,6 +276,16 @@ describe("floating bots: a window is never left invisible", () => {
     }
   });
 
+  it("keeps a snapshot sent a moment before the window exists, for the window that opens", () => {
+    const { emit, fromMain, open } = setup();
+    emit("floating-bots:update", fromMain, { botId: "bot_a", snapshot: SNAPSHOT });
+    const { win, from } = open("bot_a");
+    emit("floating-bots:ready", from);
+    const [channel, state] = win.webContents.sent.at(-1);
+    expect(channel).toBe("floating-bot:state");
+    expect(state).toMatchObject({ name: "Ada", pose: "speak" });
+  });
+
   it("reloads a page that never says it is ready, and logs the page's errors", () => {
     vi.useFakeTimers();
     try {

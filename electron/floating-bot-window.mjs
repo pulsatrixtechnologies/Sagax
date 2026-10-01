@@ -271,6 +271,12 @@ export function createFloatingBotWindows(deps) {
   const log = deps.log ?? (() => {});
   /** botId -> { win, snapshot, onTop, autopilot } */
   const floats = new Map();
+  /**
+   * The latest snapshot for a bot whose window is not open (yet): the brain
+   * may send it a moment before the window exists, and only sends again when
+   * something changes, so it is kept for the window that opens next.
+   */
+  const pending = new Map();
   let positions = null;
   let silent = false;
 
@@ -353,7 +359,8 @@ export function createFloatingBotWindows(deps) {
     const options = assistantWindowOptions({ preload, bounds: startBounds(botId), title: "Floating bot" });
     // throttled when hidden or covered, so the 3D mascot stops drawing (and spending battery) there
     const created = new BrowserWindow({ ...options, alwaysOnTop, webPreferences: { ...options.webPreferences, backgroundThrottling: true } });
-    const entry = { win: created, snapshot: existing?.snapshot ?? null, onTop: alwaysOnTop, autopilot: false };
+    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false };
+    pending.delete(botId);
     floats.set(botId, entry);
     applyOnTop(created, alwaysOnTop);
     try {
@@ -543,7 +550,13 @@ export function createFloatingBotWindows(deps) {
       const clean = sanitizeFloatingSnapshot(message.snapshot);
       if (!clean) return;
       const entry = floats.get(message.botId);
-      if (!live(entry)) return;
+      if (!live(entry)) {
+        // the window is about to open: keep it for then (a few bots at most)
+        pending.delete(message.botId);
+        pending.set(message.botId, clean);
+        while (pending.size > MAX_FLOATING) pending.delete(pending.keys().next().value);
+        return;
+      }
       entry.snapshot = clean;
       entry.win.webContents.send("floating-bot:state", clean);
     },
