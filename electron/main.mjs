@@ -1945,7 +1945,7 @@ ipcMain.on("desktop:unread-count", (event, value) => {
 // The app switches by loading the chosen server's own UI (electron/menu.mjs).
 // Only {id, name, origin} is stored here; the session credential is the
 // HttpOnly cookie /pair set for that origin, kept by Chromium's cookie jar.
-const { LOCAL_ID, activeEnvironment, allowedOrigins, bundledOrigin, parseEnvironments, parseHostedWorkspaceLink, serializeEnvironments, serverModeEnvironment, withActive, withEnvironment, withServerMode, withoutEnvironment, withoutServerMode, workspaceMenuTemplate, workspaceNavigationAllowed, workspaceSenderAllowed, workspaceSummary, workspaceWindowTitle } = environmentsModule;
+const { LOCAL_ID, activeEnvironment, allowedOrigins, bundledOrigin, parseEnvironments, parseHostedWorkspaceLink, serializeEnvironments, serverModeEnvironment, withActive, withEnvironment, withOrganizationUpgrade, withServerMode, withoutEnvironment, withoutServerMode, workspaceMenuTemplate, workspaceNavigationAllowed, workspaceSenderAllowed, workspaceSummary, workspaceWindowTitle } = environmentsModule;
 let environmentsState = { environments: [], activeId: LOCAL_ID };
 let computerSharing;
 const sharingPrompts = new Set();
@@ -2476,6 +2476,46 @@ async function cloudHomeSignedIn(origin) {
 
 /** Whether a saved server signs people in with Perspicax (its public
  * descriptor), for the Forget dialog. Unreachable reads as no. */
+/** The launch screen's choice, from this computer's own server (null when
+ * it does not answer). */
+async function localLaunchMode() {
+  try {
+    const response = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/config`, { signal: AbortSignal.timeout(3_000), redirect: "error" });
+    const mode = response.ok ? (await response.json())?.onboarding?.launchMode : null;
+    return mode === "server" || mode === "solo" ? mode : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A server saved before organization servers were marked (`org: true`) is
+ * drawn from the server's own page, without the desktop bridge: no floating
+ * mascot, no server mode. Probe it once at launch and upgrade the save
+ * (environments.cjs withOrganizationUpgrade); when the window already shows
+ * that server, reload it so it gets this app's bundle and bridge. */
+async function upgradeSavedOrganizationServers() {
+  const pending = environmentsState.environments.filter((entry) => entry.org !== true);
+  const orgOrigins = new Set();
+  for (const entry of pending) if (await isOrganizationServer(entry.origin)) orgOrigins.add(entry.origin);
+  const serverModeChosen = !serverModeEnvironment(environmentsState) && orgOrigins.size ? (await localLaunchMode()) === "server" : false;
+  const next = withOrganizationUpgrade(environmentsState, { orgOrigins, serverModeChosen });
+  if (next === environmentsState) return;
+  const before = bundledOrigin(environmentsState);
+  try {
+    persistEnvironments(next);
+  } catch (error) {
+    slog(`organization server upgrade not saved: ${error?.message ?? error}`);
+    return;
+  }
+  slog(`organization servers marked: ${[...orgOrigins].join(", ")}${serverModeEnvironment(next) ? " (server mode)" : ""}`);
+  const now = bundledOrigin(next);
+  if (now && now !== before && mainWindow && !mainWindow.isDestroyed()) {
+    let current = null;
+    try { current = new URL(mainWindow.webContents.getURL()); } catch {}
+    if (current?.origin === now) navigateMainWindow(current.href);
+  }
+}
+
 async function isOrganizationServer(origin) {
   try {
     const response = await fetch(`${origin}/.well-known/openmausbot/environment`, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) });
@@ -4023,6 +4063,7 @@ app.whenReady().then(async () => {
   const deliveredOrganizationEntry = await deliverOrganizationEntry();
   const deliveredCloudEntry = await cloudEntry.ready();
   if (!restoredOrganizationEntry && !deliveredOrganizationEntry && !deliveredCloudEntry && (!mainWindow || mainWindow.isDestroyed())) createWindow();
+  void upgradeSavedOrganizationServers().catch((error) => slog(`organization server upgrade failed: ${error?.message ?? error}`));
   // Reconcile incomplete setup and resume interrupted sign-out only after the
   // local app is usable. This background network work never gates LAN pairing
   // or the first window.

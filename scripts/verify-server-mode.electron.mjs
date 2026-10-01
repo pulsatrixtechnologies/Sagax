@@ -22,6 +22,8 @@ const localOrigin = require("../electron/local-origin.cjs");
 
 const origin = process.env.VERIFY_ORIGIN;
 const bundle = process.env.VERIFY_BUNDLE;
+// Development: the UI comes from Vite, as in the dev app (main.mjs DEV_URL).
+const devOrigin = process.env.VERIFY_DEV_ORIGIN || null;
 const FAKE_LOCAL = "http://127.0.0.1:1";
 const log = (line) => console.log(`[server-mode] ${line}`);
 const checks = [];
@@ -40,18 +42,21 @@ async function until(what, predicate, ms = 15_000) {
   throw new Error(`timed out waiting for ${what}`);
 }
 
-// Server mode, as the launch screen's join leaves it.
-let state = environments.withEnvironment({ environments: [], activeId: "local" }, { origin, name: "GOX", org: true }, () => "org");
-state = environments.withServerMode(state, "org");
+// A server saved before organization servers were marked (the owner's
+// profile): no org flag, no server mode. main.mjs upgrades it at launch
+// (upgradeSavedOrganizationServers); this harness runs the same rule.
+let state = environments.withEnvironment({ environments: [], activeId: "local" }, { origin, name: "GOX" }, () => "org");
+state = environments.withActive(state, "org");
 const handoff = signIn.createSignInHandoff();
 
 app.whenReady().then(async () => {
   localOrigin.setLocalOrigin(FAKE_LOCAL);
-  const bundled = environments.bundledOrigin(state);
+  let bundled = environments.bundledOrigin(state);
   localOrigin.setBundledOrigin(bundled);
-  const scheme = new URL(bundled).protocol.slice(0, -1);
+  const scheme = new URL(origin).protocol.slice(0, -1);
   session.defaultSession.protocol.handle(scheme, bundledUi.createBundledUiHandler({
-    origin: () => bundled, staticDir: () => bundle, fetch: (i, init) => net.fetch(i, init), readFile: (f) => readFile(f),
+    origin: () => bundled, staticDir: () => (devOrigin ? null : bundle), devOrigin: () => devOrigin,
+    fetch: (i, init) => net.fetch(i, init), readFile: (f) => readFile(f),
   }));
   const detached = session.fromPartition("sagax-detached-ui");
   detached.protocol.handle("https", bundledUi.createDetachedUiHandler({
@@ -72,7 +77,7 @@ app.whenReady().then(async () => {
 
   // The IPC main.mjs answers for this page.
   ipcMain.on("workspace:bundled-ui", (event) => {
-    event.returnValue = event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame &&
+    event.returnValue = Boolean(bundled) && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame &&
       new URL(event.senderFrame.url).origin === bundled;
   });
   ipcMain.handle("server-mode:state", localOrigin.desktopUiOnly("server-mode:state", () => ({ active: true, name: "GOX", origin })));
@@ -98,6 +103,7 @@ app.whenReady().then(async () => {
 
   // Floating bots: watch what the page sends and what the windows answer.
   const updates = [];
+  let focused = 0;
   let floatReady = 0;
   const watchedIpc = {
     handle: (channel, handler) => ipcMain.handle(channel, handler),
@@ -113,15 +119,28 @@ app.whenReady().then(async () => {
     whenReady: () => app.whenReady(), BrowserWindow, screen, ipcMain: watchedIpc,
     getMainWindow: () => win,
     isTrustedMain: (event) => localOrigin.isDesktopUiSender(event),
-    pageUrl: () => `${bundledUi.DETACHED_UI_ORIGIN}/?${FLOATING_QUERY}`,
+    pageUrl: () => `${devOrigin ?? bundledUi.DETACHED_UI_ORIGIN}/?${FLOATING_QUERY}`,
     preload: path.join(ROOT, "electron", "floating-bot-preload.cjs"),
-    session: () => detached,
+    session: () => (devOrigin ? null : detached),
+    focusMain: () => { focused++; },
     log: (line) => log(`floating: ${line}`),
   });
 
-  // 1. Where org-join leaves the window: the server's sign-in page.
+  // 0. The bug: an old save shows the server's own page, with no desktop bridge.
   await win.loadURL(`${origin}/pair`);
   await wait(1500);
+  const legacy = await win.webContents.executeJavaScript(`({ decoy: document.body.innerText.includes("served by the server"), floating: Boolean(window.ogb?.floatingBots) })`);
+  check("before the upgrade, an old save shows the server's own page without floating bots (the reported bug)", legacy.decoy && !legacy.floating);
+  // main.mjs at launch: probe, mark, lock server mode (the launch screen said Server), reload.
+  const descriptor = await (await fetch(`${origin}/.well-known/openmausbot/environment`)).json();
+  state = environments.withOrganizationUpgrade(state, { orgOrigins: new Set(descriptor?.identity?.kind === "perspicax" ? [origin] : []), serverModeChosen: true });
+  bundled = environments.bundledOrigin(state);
+  localOrigin.setBundledOrigin(bundled);
+  check("the upgrade marks the organization server and turns server mode on", bundled === origin && environments.serverModeEnvironment(state)?.origin === origin);
+
+  // 1. Where org-join leaves the window: the server's sign-in page.
+  await win.loadURL(`${origin}/pair`);
+  await wait(devOrigin ? 4000 : 1500);
   const pairTitle = await win.webContents.executeJavaScript("document.title");
   const pairText = await win.webContents.executeJavaScript("document.body.innerText");
   check("the /pair page is this app's bundle, not the server's page", !/SERVER IMAGE UI/.test(pairTitle) && !/served by the server/.test(pairText), `title "${pairTitle}"`);
@@ -203,6 +222,35 @@ app.whenReady().then(async () => {
     body: JSON.stringify({ mascotLook: { character: "trombi" } }) }).then(r => r.status)`);
   const changed = await until("the new look in a snapshot", async () => updates.slice(before).find((u) => u?.botId === botId && u.snapshot?.mascot?.character === "trombi"), 15_000).catch(() => null);
   check("a change made on the server reaches the mascot", patched < 300 && Boolean(changed), `PATCH ${patched}`);
+
+  // 6. The balloon: words typed at the mascot go to the server as the signed-in person.
+  const floatWin = BrowserWindow.getAllWindows().find((candidate) => candidate !== win);
+  const threadId = created.body?.bot?.threadId ?? created.body?.threadId;
+  await floatWin.webContents.executeJavaScript(`window.floatingBotWindow.send({ type: "send", text: "Hello from the desktop mascot" })`);
+  const sent = await until("the balloon's message on the server", async () => {
+    const page = await win.webContents.executeJavaScript(`fetch("/api/threads/${threadId}/messages").then(r => r.json()).catch(() => null)`);
+    const list = Array.isArray(page) ? page : page?.messages ?? [];
+    return list.find((message) => message.role === "user" && String(message.text ?? "").includes("Hello from the desktop mascot")) ?? null;
+  }, 15_000).catch(() => null);
+  check("a message typed in the mascot's balloon reaches the server as the signed-in person", Boolean(sent) && Boolean(sent.sender?.id), sent ? `sender ${sent.sender?.name ?? sent.sender?.id}` : "none");
+
+  // 7. Double-click (Open in the app): the app comes forward on that bot's thread.
+  await floatWin.webContents.executeJavaScript(`window.floatingBotWindow.send({ type: "open" })`);
+  const opened = await until("the thread selected in the app", async () => {
+    const current = await win.webContents.executeJavaScript(`document.querySelector('[aria-current="page"]')?.textContent ?? ""`);
+    return focused > 0 && current.includes("Remote owl") ? current : null;
+  }, 10_000).catch(() => null);
+  check("opening from the mascot brings the app forward on its thread", Boolean(opened), `focus ${focused}`);
+
+  // 8. The other characters draw too, from the server's look.
+  for (const look of [{ character: "shape", shape: "blob" }, { character: "trombi" }, { character: "owl" }]) {
+    const mark = updates.length;
+    await win.webContents.executeJavaScript(`fetch("/api/bots/" + ${JSON.stringify(botId)}, { method: "PATCH", headers: { "content-type": "application/json" }, body: ${JSON.stringify(JSON.stringify({ mascotLook: look }))} }).then(r => r.status)`);
+    const seen = await until(`the ${look.character} look`, async () => updates.slice(mark).find((u) => u?.botId === botId && u.snapshot?.mascot?.character === look.character), 15_000).catch(() => null);
+    await wait(800);
+    const drawn = await floatWin.webContents.executeJavaScript(`Boolean(document.querySelector("#root svg, #root canvas, #root img"))`);
+    check(`the floating window draws the ${look.character}${look.shape ? ` (${look.shape})` : ""}`, Boolean(seen) && drawn);
+  }
 
   const ok = checks.every(Boolean);
   console.log(`[verify] ${ok ? "PASS" : "FAIL"} (${checks.filter(Boolean).length}/${checks.length})`);

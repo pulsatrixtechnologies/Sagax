@@ -185,11 +185,15 @@ decoy page of its own: the window must show this app's bundle on the
 server's origin (`electron/bundled-ui.cjs`), sign in, create a bot through
 the API with the session, expose the desktop-UI bridge and nothing local,
 and float that server's bot as a desktop mascot whose look follows a change
-made on the server:
+made on the server. It starts from a save made before organization servers
+were marked (no `org`, no server mode), checks that the upgrade at launch
+fixes it, then checks the mascot's balloon (a message reaches the server as
+the signed-in person), Open in the app, and the owl, shape and Trombi:
 
 ```sh
 pnpm exec vite build
-node --experimental-strip-types scripts/verify-server-mode.ts   # PASS (23/23)
+node --experimental-strip-types scripts/verify-server-mode.ts         # PASS (32/32), built bundle
+node --experimental-strip-types scripts/verify-server-mode.ts --dev   # the same, UI from Vite as in the dev app
 ```
 
 The window already shows `<origin>/pair` when the credential comes back, so

@@ -7,7 +7,10 @@
 // Isolated: temporary home and Electron profile, free ports.
 //
 //   pnpm exec vite build
-//   node --experimental-strip-types scripts/verify-server-mode.ts
+//   node --experimental-strip-types scripts/verify-server-mode.ts [--dev]
+//
+// --dev serves the UI from a Vite dev server on a free port, as the dev app
+// does, instead of the built bundle.
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -51,15 +54,31 @@ for (;;) {
 }
 console.log(`[verify] organization server ${origin} (serves a decoy page of its own)`);
 
+let vite: ChildProcess | null = null;
+let devOrigin = "";
+if (process.argv.includes("--dev")) {
+  const vitePort = await freePortBlock([0]);
+  if (RESERVED.includes(vitePort)) throw new Error("reserved port, run again");
+  devOrigin = `http://127.0.0.1:${vitePort}`;
+  vite = spawn(process.execPath, [join(ROOT, "node_modules", "vite", "bin", "vite.js"), "--port", String(vitePort), "--strictPort", "--host", "127.0.0.1"], { cwd: ROOT, stdio: "ignore" });
+  const viteDeadline = Date.now() + 30_000;
+  for (;;) {
+    try { if ((await fetch(`${devOrigin}/`)).ok) break; } catch { /* not yet */ }
+    if (Date.now() > viteDeadline) throw new Error("vite never came up");
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  console.log(`[verify] UI from Vite at ${devOrigin}`);
+}
 const userData = mkdtempSync(join(tmpdir(), "omb-verify-servermode-ud-"));
 const code = await new Promise<number>((resolve) => {
   const child = spawn(electron, [join(ROOT, "scripts", "verify-server-mode.electron.mjs"), `--user-data-dir=${userData}`], {
-    env: { ...process.env, VERIFY_ORIGIN: origin, VERIFY_BUNDLE: join(ROOT, "dist") },
+    env: { ...process.env, VERIFY_ORIGIN: origin, VERIFY_BUNDLE: join(ROOT, "dist"), VERIFY_DEV_ORIGIN: devOrigin },
     stdio: ["ignore", "inherit", "inherit"],
   });
   child.on("exit", (status) => resolve(status ?? 1));
 });
 server.kill("SIGTERM");
+vite?.kill("SIGTERM");
 await idp.close();
 if (serverLog.match(/omb_pair_[A-Za-z0-9_-]{43}/)) {
   console.log("[verify] FAIL: a credential reached the server log");
