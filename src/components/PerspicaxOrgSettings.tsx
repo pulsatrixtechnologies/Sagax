@@ -11,11 +11,12 @@ import { ExternalLink } from "lucide-react";
 
 import { activeLocale, t } from "@/lib/i18n";
 import type { PerspicaxOrg } from "@/lib/perspicax-org";
-import { api } from "@/state/store";
+import { api, useStore } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { MyEngines } from "./settings/MyEngines";
 import { MyRoutineDelegation } from "./settings/MyRoutineDelegation";
 import { OrgSharing } from "./settings/OrgSharing";
+import { OrgImportDialog } from "./OrgImportDialog";
 
 interface PendingAdminApproval {
   botId: string;
@@ -44,6 +45,9 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
   const [error, setError] = useState("");
   const [approvals, setApprovals] = useState<PendingAdminApproval[] | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const { state: store } = useStore();
+  const canCreateBots = store.config?.viewer?.canCreateBots !== false;
 
   const loadApprovals = async () => {
     if (!admin) return;
@@ -121,6 +125,15 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
           {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
         </div>
       </Card>
+      {canCreateBots && (
+        <Card cardId="organization.orgImport" title={t("orgImport.title")} summary={t("orgImport.summary")}>
+          <div className="flex flex-col gap-2 text-[13px]">
+            <p className="text-ink-secondary">{t("orgImport.intro")}</p>
+            <button type="button" className="ui-button w-fit" onClick={() => setImporting(true)}>{t("orgImport.choose")}</button>
+          </div>
+        </Card>
+      )}
+      {importing && <OrgImportDialog onClose={() => setImporting(false)} />}
       <MyEngines issuer={org.org.identity.issuer} />
       <MyRoutineDelegation />
       <OrgSharing />
