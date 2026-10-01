@@ -588,6 +588,11 @@ html[data-floating-bot] #root {
   transform-origin: 50% 0%;
   pointer-events: none;
   transition: transform 0.2s ease, opacity 0.2s ease;
+  will-change: opacity;
+}
+.fb-root .fb-energy:not([data-shown]):not([data-mini]) {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.7);
 }
 .fb-root .fb-energy[data-big] {
   opacity: 1;
@@ -757,3 +762,64 @@ html[data-floating-bot] #root {
   0%, 100% { box-shadow: 0 2px 6px rgb(0 0 0 / 0.22); }
   50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--fb-energy) 35%, transparent); }
 }
+
+/* ─── effects anchored to the character's head ────────────────────────── */
+/* The box is the character's own (FloatingBotView), so the effects scale with
+   it and stay inside the window's room; --hx and --hy are the head's middle. */
+.fb-root .fb-fx {
+  --hx: 61%;
+  --hy: 30%;
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+.fb-root .fb-fx[data-character="shape"] {
+  --hx: 50%;
+  --hy: 44%;
+}
+.fb-root .fb-fx[data-character="trombi"] {
+  --hx: 52%;
+  --hy: 22%;
+}
+.fb-root .fb-fx .fb-thought {
+  top: calc(var(--hy) - 26%);
+  left: calc(var(--hx) - 36%);
+}
+.fb-root .fb-fx .fb-zzz {
+  top: calc(var(--hy) - 16%);
+  right: auto;
+  left: calc(var(--hx) + 8%);
+}
+.fb-root .fb-fx .fb-zzz span {
+  animation-name: fb-zzz-near;
+}
+.fb-root .fb-fx .fb-emote {
+  top: calc(var(--hy) - 30%);
+  right: auto;
+  left: calc(var(--hx) + 2%);
+}
+.fb-root .fb-fx .fb-burst {
+  inset: auto;
+  top: calc(var(--hy) - 24%);
+  left: calc(var(--hx) - 32%);
+  width: 64%;
+}
+.fb-root .fb-fx .fb-burst span {
+  top: 0;
+  left: calc(var(--i) * 100% / var(--n));
+  animation-name: fb-float-near;
+}
+.fb-root .fb-fx .fb-confetti span {
+  top: calc(var(--hy) - 10%);
+}
+@keyframes fb-zzz-near {
+  0% { opacity: 0; transform: translate(0, 0); }
+  30% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(12px, -28px); }
+}
+@keyframes fb-float-near {
+  0% { opacity: 0; transform: translateY(0) scale(0.6); }
+  20% { opacity: 1; transform: translateY(-6px) scale(1); }
+  100% { opacity: 0; transform: translateY(-32px) scale(0.9); }
+}
+

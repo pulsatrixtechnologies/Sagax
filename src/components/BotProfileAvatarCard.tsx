@@ -1,4 +1,5 @@
-import { lazy, Suspense, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react";
+import { createPortal } from "react-dom";
 import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
@@ -22,6 +23,61 @@ type AvatarPatch = Partial<
 >;
 
 const FRAME_SIZE = 168;
+
+/** The popover's width: wide enough for the cards in few rows, never wider than the window allows. */
+const POPOVER_WIDTH = 452;
+const MARGIN = 12;
+
+/**
+ * Where the popover stands: under the avatar, centered on it, shifted to stay
+ * inside the window, flipped above when there is no room below, never taller
+ * than the window. Follows resizes and scrolls; Escape closes it.
+ */
+function usePopoverPlace(open: boolean, anchor: RefObject<HTMLElement | null>, popover: RefObject<HTMLElement | null>, close: () => void) {
+  const [place, setPlace] = useState({ left: 0, top: 0, width: POPOVER_WIDTH, maxHeight: 600, ready: false });
+  const measure = () => {
+    const box = anchor.current?.getBoundingClientRect();
+    if (!box) return;
+    const width = Math.min(POPOVER_WIDTH, window.innerWidth - MARGIN * 2);
+    const left = Math.min(Math.max(box.left + box.width / 2 - width / 2, MARGIN), window.innerWidth - width - MARGIN);
+    const maxHeight = window.innerHeight - MARGIN * 2;
+    const height = Math.min(popover.current?.scrollHeight ?? 0, maxHeight);
+    let top = box.bottom + 8;
+    if (top + height > window.innerHeight - MARGIN) {
+      const above = box.top - 8 - height;
+      top = above >= MARGIN ? above : Math.max(MARGIN, window.innerHeight - MARGIN - height);
+    }
+    setPlace({ left, top, width, maxHeight, ready: true });
+  };
+  useLayoutEffect(() => {
+    if (!open) {
+      setPlace((current) => ({ ...current, ready: false }));
+      return;
+    }
+    measure();
+    const again = () => measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(again);
+    if (popover.current) observer?.observe(popover.current);
+    window.addEventListener("resize", again);
+    window.addEventListener("scroll", again, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", again);
+      window.removeEventListener("scroll", again, true);
+    };
+    // measure reads the refs; it only needs to rerun when the popover opens
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, close]);
+  return place;
+}
 
 // The character and its look (the mascot registry, its thumbnails and a live preview): fetched only when the popover opens.
 const MascotLookEditor = lazy(() => import("./floating-bots/MascotLookEditor"));
@@ -131,6 +187,9 @@ export function BotProfileAvatarCard({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const popover = useRef<HTMLDivElement>(null);
+  const place = usePopoverPlace(editorOpen, anchor, popover, () => setEditorOpen(false));
   const crop = bot.avatarCrop ?? "mascot";
   // A custom picture opens on its own tab, where its zoom and framing live.
   const [editorTab, setEditorTab] = useState<"bot" | "generate" | "upload" | "reset">(
@@ -220,31 +279,8 @@ export function BotProfileAvatarCard({
   const resetMascot = () =>
     onPatch({ avatarCrop: "mascot", color: "green", mascotExpression: null, mascotBody: "cursor", mascotSkin: "none", mascotLook: { character: "owl" } });
 
-  return (
-    <div className="relative">
-      <div className="flex justify-center py-3">
-        <button
-          type="button"
-          aria-label="Edit avatar"
-          aria-expanded={editorOpen}
-          onClick={() => setEditorOpen((open) => !open)}
-          className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <BotAvatar
-            bot={bot}
-            state={activeState}
-            size={112}
-            motion={previewMotion?.kind ?? "none"}
-            motionKey={previewMotion?.nonce ?? 0}
-          />
-        </button>
-      </div>
-      {/* wide enough for the character cards; on a small window it becomes a centered sheet */}
-      <div
-        hidden={!editorOpen}
-        data-avatar-popover=""
-        className="fixed inset-x-3 top-[8vh] z-30 max-h-[84vh] overflow-y-auto rounded-2xl border border-hairline/50 bg-card p-4 shadow-2xl shadow-black/50 sm:absolute sm:inset-x-auto sm:left-1/2 sm:top-full sm:mt-2 sm:max-h-[min(680px,78vh)] sm:w-[456px] sm:-translate-x-1/2"
-      >
+  const body = (
+    <>
         <div className="mb-3 flex items-center gap-1 text-[12px]">
           {(["bot", "generate", "upload"] as const).map((tab) => (
             <button
@@ -315,7 +351,49 @@ export function BotProfileAvatarCard({
         )}
 
         {error && <div role="alert" className="mt-3 text-[12px] text-danger">{error}</div>}
+    </>
+  );
+
+  return (
+    <div className="relative">
+      <div className="flex justify-center py-3">
+        <button
+          ref={anchor}
+          type="button"
+          aria-label="Edit avatar"
+          aria-expanded={editorOpen}
+          onClick={() => setEditorOpen((open) => !open)}
+          className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <BotAvatar
+            bot={bot}
+            state={activeState}
+            size={112}
+            motion={previewMotion?.kind ?? "none"}
+            motionKey={previewMotion?.nonce ?? 0}
+          />
+        </button>
       </div>
+      {editorOpen && typeof document !== "undefined" ? (
+        // a portal above the whole window: no panel's overflow can clip it
+        createPortal(
+          <div
+            ref={popover}
+            data-avatar-popover=""
+            role="dialog"
+            aria-label="Edit avatar"
+            className="fixed z-[1000] overflow-y-auto rounded-2xl border border-hairline/50 bg-card p-3.5 shadow-2xl shadow-black/50"
+            style={{ left: place.left, top: place.top, width: place.width, maxHeight: place.maxHeight, visibility: place.ready ? "visible" : "hidden" }}
+          >
+            {body}
+          </div>,
+          document.body,
+        )
+      ) : (
+        <div hidden data-avatar-popover="">
+          {body}
+        </div>
+      )}
     </div>
   );
 }

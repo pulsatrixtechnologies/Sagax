@@ -22,7 +22,7 @@ import {
   type MascotState,
 } from "./behavior";
 import { clickGesture, eventsForClick, newStroke, strokeLeave, strokeStep } from "./gestures";
-import { GAUGE_SEGMENTS, gaugeFor, type FloatingContext } from "./gauge";
+import { crossedThreshold, GAUGE_LINGER_MS, GAUGE_SEGMENTS, gaugeFor, gaugeShown, type FloatingContext } from "./gauge";
 import type { FloatingPilot } from "./pilot";
 import { mascotFor } from "./mascots";
 import { completeMascotLook } from "../../../shared/mascot-look";
@@ -173,7 +173,7 @@ function Emote({ activity, hoot }: { activity: MascotActivity; hoot?: string }) 
 }
 
 /** The bot's context left, as a game energy bar (gauge.ts): small at rest, bigger on hover. */
-function EnergyBar({ context, big, mini }: { context?: FloatingContext | null; big?: boolean; mini?: boolean }) {
+function EnergyBar({ context, big, mini, shown = true }: { context?: FloatingContext | null; big?: boolean; mini?: boolean; shown?: boolean }) {
   const gauge = gaugeFor(context);
   if (!context || !gauge) return null;
   return (
@@ -182,6 +182,7 @@ function EnergyBar({ context, big, mini }: { context?: FloatingContext | null; b
       data-level={gauge.level}
       data-pulse={gauge.pulse ? "" : undefined}
       data-big={big ? "" : undefined}
+      data-shown={shown ? "" : undefined}
       data-mini={mini ? "" : undefined}
       role="meter"
       aria-valuemin={0}
@@ -265,6 +266,9 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const [activity, setActivity] = useState<MascotActivity>("idle");
   const [away, setAway] = useState(false);
   const [owlHover, setOwlHover] = useState(false);
+  // the energy bar shows while the person deals with the mascot, then lingers a moment
+  const [energyUntil, setEnergyUntil] = useState(0);
+  const [, setEnergyTick] = useState(0);
   const owlHoverRef = useRef(false);
   const [burst, setBurst] = useState<{ kind: "hearts" | "sparkles"; key: number } | null>(null);
   const hitTest = useRef<((x: number, y: number) => boolean) | null>(null);
@@ -409,6 +413,22 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   }).current;
 
   const balloon = away ? null : snapshot.balloon;
+  const interacting = owlHover || activity === "drag" || activity === "petted" || activity === "love" || Boolean(balloon);
+  const energyShown = gaugeShown({ interacting, lingerUntil: energyUntil }, now());
+  // keep it a moment after the interaction ends; show it a moment when the context crosses 50, 80 or 85 %
+  const percent = snapshot.context?.percent;
+  const lastPercent = useRef(percent);
+  useEffect(() => {
+    const crossed = crossedThreshold(lastPercent.current, percent);
+    lastPercent.current = percent;
+    if (!interacting && !crossed) return;
+    setEnergyUntil(now() + GAUGE_LINGER_MS);
+  }, [interacting, percent]);
+  useEffect(() => {
+    if (interacting || energyUntil <= now()) return;
+    const later = setTimeout(() => setEnergyTick((n) => n + 1), energyUntil - now() + 20);
+    return () => clearTimeout(later);
+  }, [interacting, energyUntil]);
 
   // Follow a streaming reply to its newest words.
   useEffect(() => {
@@ -643,14 +663,22 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           }} />
         ) : (
         <>
-        {snapshot.pose === "think" && activity !== "flyOut" && activity !== "think" && (
-          <span className="fb-thought" aria-hidden="true"><span /><span /><span /></span>
-        )}
-        {activity === "sleep" && (
-          <span className="fb-zzz" aria-hidden="true"><span>z</span><span>z</span><span>Z</span></span>
-        )}
-        <Emote activity={activity} hoot={snapshot.hints.hoot} />
-        {burst && <Burst key={burst.key} kind={burst.kind} reduced={reduced} />}
+        {/* effects are anchored to the character's head, inside its own box */}
+        <span
+          className="fb-fx"
+          data-character={snapshot.mascot?.character ?? "owl"}
+          aria-hidden="true"
+          style={{ left: STAGE.left, top: STAGE.top, width: OWL_SIZE, height: OWL_SIZE }}
+        >
+          {snapshot.pose === "think" && activity !== "flyOut" && activity !== "think" && (
+            <span className="fb-thought"><span /><span /><span /></span>
+          )}
+          {activity === "sleep" && (
+            <span className="fb-zzz"><span>z</span><span>z</span><span>Z</span></span>
+          )}
+          <Emote activity={activity} hoot={snapshot.hints.hoot} />
+          {burst && <Burst key={burst.key} kind={burst.kind} reduced={reduced} />}
+        </span>
         <button
           type="button"
           className="fb-art"
@@ -687,7 +715,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
             <Character snapshot={snapshot} activity={activity} mascot={mascot} />
           </span>
         </button>
-        {!["flyOut", "return", "fly", "drag"].includes(activity) && <EnergyBar context={snapshot.context} big={owlHover} />}
+        {!["flyOut", "return", "fly"].includes(activity) && <EnergyBar context={snapshot.context} big={owlHover} shown={energyShown} />}
         </>
         )}
       </div>

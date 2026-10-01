@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gaugeFor, litSegments } from "./gauge";
+import { crossedThreshold, GAUGE_LINGER_MS, gaugeFor, gaugeShown, litSegments } from "./gauge";
 
 const ctx = (percent?: number) => ({ percent, tokens: 1000, window: percent === undefined ? undefined : 200_000, detail: "d", label: "l" });
 
@@ -28,5 +28,22 @@ describe("the context energy bar", () => {
     expect(litSegments(76)).toBe(8);
     expect(litSegments(1)).toBe(1);
     expect(litSegments(0)).toBe(0);
+  });
+});
+
+describe("when the energy bar shows", () => {
+  it("only while the person deals with the mascot, and a moment after", () => {
+    expect(gaugeShown({ interacting: true, lingerUntil: 0 }, 1000)).toBe(true);
+    expect(gaugeShown({ interacting: false, lingerUntil: 1000 + GAUGE_LINGER_MS }, 2000)).toBe(true);
+    expect(gaugeShown({ interacting: false, lingerUntil: 1000 }, 2000)).toBe(false);
+  });
+
+  it("a moment when the context crosses 50, 80 or 85 %, not while it stays past one", () => {
+    expect(crossedThreshold(48, 52)).toBe(true);
+    expect(crossedThreshold(79, 81)).toBe(true);
+    expect(crossedThreshold(84, 86)).toBe(true);
+    expect(crossedThreshold(52, 60)).toBe(false);
+    expect(crossedThreshold(90, 40)).toBe(false);
+    expect(crossedThreshold(undefined, 90)).toBe(false);
   });
 });

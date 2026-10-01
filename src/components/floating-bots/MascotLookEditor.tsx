@@ -2,8 +2,8 @@
 // stored with the bot (bot.mascotLook, bot.color, bot.mascotSkin), so the
 // change shows everywhere the bot appears and on its desktop mascot.
 //
-//   a large live preview (plays the move picked below)
-//   Character: Owl, Original shapes, Trombi (the registry, mascots.tsx)
+//   Character: Owl, Original shapes, Trombi (the registry, mascots.tsx), beside
+//   a small live preview that plays the move picked below
 //   that character's own options:
 //     Owl: color, skin, style 2D / 3D (preview)
 //     Original shapes: shape, color, shape skin
@@ -106,9 +106,9 @@ const MOVE_LABEL: Partial<Record<MascotActivity, LocaleKey>> = {
   hoot: "floatingBots.move.hoot",
 };
 
-const PREVIEW = 132;
-const heading = "mb-2 mt-4 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary";
-const card = "flex flex-col items-center justify-center gap-1 rounded-xl bg-inset p-2 transition-colors hover:bg-control disabled:opacity-50";
+const PREVIEW = 60;
+const heading = "mb-1.5 mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary";
+const card = "flex flex-col items-center justify-center gap-0.5 rounded-lg bg-inset p-1 transition-colors hover:bg-control disabled:opacity-50";
 const on = "ring-2 ring-accent-border";
 
 export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: MascotLookEditorProps) {
@@ -124,7 +124,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
   const colors = (
     <>
       <div className={heading}>{t("mascot.color.title")}</div>
-      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t("mascot.color.title")}>
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("mascot.color.title")}>
         {MAUS_COLOR_NAMES.map((color) => (
           <button
             key={color}
@@ -133,7 +133,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
             disabled={disabled}
             aria-checked={bot.color === color}
             onClick={() => onPatch({ color })}
-            className={cn("size-7 rounded-full disabled:opacity-50", bot.color === color && "ring-2 ring-white/80 ring-offset-2 ring-offset-card")}
+            className={cn("size-6 rounded-full disabled:opacity-50", bot.color === color && "ring-2 ring-white/80 ring-offset-2 ring-offset-card")}
             style={swatchStyle(color)}
             title={color}
             aria-label={`Use ${color} mascot color`}
@@ -150,24 +150,25 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
 
   return (
     <div data-mascot-look-editor="">
-      {/* the large live preview: the character as it stands on the desktop, playing the chosen move */}
-      <div className="flex h-[150px] items-end justify-center rounded-2xl bg-inset" aria-hidden="true">
-        <entry.Render
-          key={`${entry.id}-${move?.at ?? 0}`}
-          color={bot.color}
-          skin={owlSkin}
-          look={look}
-          size={PREVIEW}
-          activity={move?.clip ?? "idle"}
-          pose="idle"
-          frame={(now) => mascotMotion({ activity: moveRef.current?.clip ?? "idle", since: moveRef.current?.at ?? 0, facing: 1, moveMs: 1600 }, { now, pose: "idle", reduced: false, gaze: null })}
-          fps={() => 30}
-          onHitTest={() => undefined}
-        />
-      </div>
-
-      <div className={heading}>{t("mascot.character.title")}</div>
-      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t("mascot.character.title")}>
+      {/* the character row, with a small live preview of the chosen one (it plays the moves below) */}
+      <div className="flex items-center gap-3">
+        <span className="grid size-[64px] shrink-0 place-items-end overflow-visible rounded-xl bg-inset" aria-hidden="true">
+          <entry.Render
+            key={`${entry.id}-${move?.at ?? 0}`}
+            color={bot.color}
+            skin={owlSkin}
+            look={look}
+            size={PREVIEW}
+            activity={move?.clip ?? "idle"}
+            pose="idle"
+            frame={(now) => mascotMotion({ activity: moveRef.current?.clip ?? "idle", since: moveRef.current?.at ?? 0, facing: 1, moveMs: 1600 }, { now, pose: "idle", reduced: false, gaze: null })}
+            fps={() => 30}
+            onHitTest={() => undefined}
+          />
+        </span>
+        <div className="min-w-0 flex-1">
+      <div className={cn(heading, "mt-0")}>{t("mascot.character.title")}</div>
+      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label={t("mascot.character.title")}>
         {MASCOTS.map((option) => (
           <button
             key={option.id}
@@ -177,21 +178,23 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
             aria-checked={look.character === option.id}
             data-character-option={option.id}
             onClick={() => setLook({ character: option.id })}
-            className={cn(card, "h-[92px]", look.character === option.id && on)}
+            className={cn(card, "h-[64px]", look.character === option.id && on)}
           >
-            <span className="grid size-14 place-items-center overflow-hidden" aria-hidden="true">
-              <option.Thumb color={bot.color} skin={owlSkin} look={{ ...look, character: option.id }} size={52} />
+            <span className="grid size-9 place-items-center overflow-hidden" aria-hidden="true">
+              <option.Thumb color={bot.color} skin={owlSkin} look={{ ...look, character: option.id }} size={34} />
             </span>
-            <span className="text-[12px] leading-4 text-ink">{t(CHARACTER_LABEL[option.id])}</span>
+            <span className="truncate text-[11px] leading-4 text-ink">{t(CHARACTER_LABEL[option.id])}</span>
           </button>
         ))}
+      </div>
+        </div>
       </div>
 
       {look.character === "owl" && (
         <div data-character-options="owl">
           {colors}
           <div className={heading}>{t("mascot.skin.title")}</div>
-          <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label={t("mascot.skin.title")}>
+          <div className="grid grid-cols-7 gap-1" role="radiogroup" aria-label={t("mascot.skin.title")}>
             {MASCOT_SKIN_IDS.map((id) => (
               <button
                 key={id}
@@ -202,10 +205,10 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
                 aria-label={t("mascot.skin.use", { skin: t(OWL_SKIN_LABEL[id]) })}
                 data-mascot-skin-option={id}
                 onClick={() => onPatch({ mascotSkin: id })}
-                className={cn(card, "h-[78px]", owlSkin === id && on)}
+                className={cn(card, "h-[60px]", owlSkin === id && on)}
               >
-                <MausAvatar color={bot.color} skin={id} state="idle" size={44} animated={false} skinAnimated trackPointer={false} />
-                <span className="text-[11px] leading-4 text-ink-secondary">{t(OWL_SKIN_LABEL[id])}</span>
+                <MausAvatar color={bot.color} skin={id} state="idle" size={36} animated={false} skinAnimated trackPointer={false} />
+                <span className="w-full truncate text-center text-[10px] leading-3 text-ink-secondary">{t(OWL_SKIN_LABEL[id])}</span>
               </button>
             ))}
           </div>
@@ -232,7 +235,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
       {look.character === "shape" && (
         <div data-character-options="shape">
           <div className={heading}>{t("floatingBots.mascot.shape")}</div>
-          <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label={t("floatingBots.mascot.shape")}>
+          <div className="grid grid-cols-8 gap-1" role="radiogroup" aria-label={t("floatingBots.mascot.shape")}>
             {SHAPE_CHOICES.map((shape) => (
               <button
                 key={shape}
@@ -241,17 +244,18 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
                 disabled={disabled}
                 aria-checked={look.shape === shape}
                 data-character-shape={shape}
+                aria-label={t(SHAPE_LABEL[shape])}
+                title={t(SHAPE_LABEL[shape])}
                 onClick={() => setLook({ shape })}
-                className={cn(card, "h-[78px]", look.shape === shape && on)}
+                className={cn(card, "h-[46px]", look.shape === shape && on)}
               >
-                <entry.Thumb color={bot.color} skin={owlSkin} look={{ ...look, shape }} size={40} />
-                <span className="text-[11px] leading-4 text-ink-secondary">{t(SHAPE_LABEL[shape])}</span>
+                <entry.Thumb color={bot.color} skin={owlSkin} look={{ ...look, shape }} size={32} />
               </button>
             ))}
           </div>
           {colors}
           <div className={heading}>{t("mascot.skin.title")}</div>
-          <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t("mascot.skin.title")}>
+          <div className="grid grid-cols-6 gap-1" role="radiogroup" aria-label={t("mascot.skin.title")}>
             {SHAPE_SKINS.map((skin) => (
               <button
                 key={skin}
@@ -261,10 +265,10 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
                 aria-checked={look.skins.shape === skin}
                 data-shape-skin-option={skin}
                 onClick={() => setLook({ skins: { ...look.skins, shape: skin } })}
-                className={cn(card, "h-[78px]", look.skins.shape === skin && on)}
+                className={cn(card, "h-[58px]", look.skins.shape === skin && on)}
               >
-                <entry.Thumb color={bot.color} skin={owlSkin} look={{ ...look, skins: { ...look.skins, shape: skin } }} size={40} />
-                <span className="text-[11px] leading-4 text-ink-secondary">{t(SHAPE_SKIN_LABEL[skin])}</span>
+                <entry.Thumb color={bot.color} skin={owlSkin} look={{ ...look, skins: { ...look.skins, shape: skin } }} size={30} />
+                <span className="w-full truncate text-center text-[10px] leading-3 text-ink-secondary">{t(SHAPE_SKIN_LABEL[skin])}</span>
               </button>
             ))}
           </div>
@@ -274,7 +278,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
       {look.character === "trombi" && (
         <div data-character-options="trombi">
           <div className={heading}>{t("mascot.skin.title")}</div>
-          <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label={t("mascot.skin.title")}>
+          <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label={t("mascot.skin.title")}>
             {TROMBI_SKINS.map((skin) => (
               <button
                 key={skin}
@@ -284,9 +288,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
                 aria-checked={look.skins.trombi === skin}
                 data-trombi-skin-option={skin}
                 onClick={() => setLook({ skins: { ...look.skins, trombi: skin } })}
-                className={cn(card, "h-[92px]", look.skins.trombi === skin && on)}
+                className={cn(card, "h-[64px]", look.skins.trombi === skin && on)}
               >
-                <entry.Thumb color={bot.color} skin={owlSkin} look={{ ...look, skins: { ...look.skins, trombi: skin } }} size={52} />
+                <entry.Thumb color={bot.color} skin={owlSkin} look={{ ...look, skins: { ...look.skins, trombi: skin } }} size={40} />
                 <span className="text-[11px] leading-4 text-ink-secondary">{t(TROMBI_SKIN_LABEL[skin])}</span>
               </button>
             ))}
@@ -295,7 +299,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
       )}
 
       <div className={heading}>{t("mascot.moves.title")}</div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1">
         {moves.map((item) => (
           <button
             key={item.id}

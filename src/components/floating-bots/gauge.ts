@@ -38,3 +38,20 @@ export const GAUGE_SEGMENTS = 10;
 export function litSegments(remaining: number): number {
   return Math.max(0, Math.min(GAUGE_SEGMENTS, Math.ceil((remaining / 100) * GAUGE_SEGMENTS)));
 }
+
+/** The bar shows this long after the last interaction, or after a threshold is crossed. */
+export const GAUGE_LINGER_MS = 3000;
+/** Context use (%) the person is told about once it is crossed. */
+export const GAUGE_THRESHOLDS = [50, 80, 85] as const;
+
+/** Whether going from `before` to `after` percent crosses one of the thresholds upward. */
+export function crossedThreshold(before: number | undefined, after: number | undefined): boolean {
+  if (before === undefined || after === undefined) return false;
+  return GAUGE_THRESHOLDS.some((mark) => before < mark && after >= mark);
+}
+
+/** The bar shows only while the person deals with the mascot, and a moment after. */
+export function gaugeShown(state: { interacting: boolean; lingerUntil: number }, now: number): boolean {
+  return state.interacting || now < state.lingerUntil;
+}
+
