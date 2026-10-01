@@ -129,7 +129,7 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
   it("advertises the Perspicax sign-in and no email codes", async () => {
     const res = await fetch(`${BASE}/.well-known/openmausbot/environment`);
     const body = await res.json() as any;
-    expect(body.identity).toEqual({ kind: "perspicax", protocol: "oidc", issuer: idp.issuer, loginPath: "/auth/oidc/start", nativeReturn: true });
+    expect(body.identity).toEqual({ kind: "perspicax", protocol: "oidc", issuer: idp.issuer, loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true });
     expect(body.capabilities.emailSignIn).toBe(false);
     expect(log).toMatch(/service trust \(organization server/);
   });

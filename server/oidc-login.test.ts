@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { IDP_SWEEP_SLACK_MS, IdpGrantVault, IdpSessionManager } from "./idp-session.ts";
-import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneReturnLink, scopesForRole } from "./oidc-login.ts";
+import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneReturnLink, scopesForRole, validLoopbackReturn } from "./oidc-login.ts";
 import { RoutineConsents } from "./org-routine-consent.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import { PrincipalRegistry } from "./principals.ts";
@@ -26,7 +26,7 @@ describe("OMB_IDENTITY", () => {
   it("derives the redirect URI from the public origin and defaults the client id", () => {
     const config = identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://px.example.test/", OMB_PUBLIC_URL: "https://bot.example.test/" });
     expect(config).toEqual({ kind: "perspicax", issuer: "https://px.example.test", clientId: "pulsa-bot", publicOrigin: "https://bot.example.test", redirectUri: "https://bot.example.test/auth/oidc/callback" });
-    expect(identityDescriptor(config)).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true });
+    expect(identityDescriptor(config)).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true });
     expect(identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "http://localhost:18787", OMB_PUBLIC_URL: "http://localhost:18788", OMB_OIDC_CLIENT_ID: "other" }))
       .toMatchObject({ clientId: "other", redirectUri: "http://localhost:18788/auth/oidc/callback" });
   });
@@ -45,6 +45,54 @@ describe("OMB_IDENTITY", () => {
     expect(identityConfigFromEnv(base)).not.toHaveProperty("internalBase");
     expect(() => identityConfigFromEnv({ ...base, OMB_PERSPICAX_INTERNAL_URL: "http://perspicax:8787/api" })).toThrow(/OMB_PERSPICAX_INTERNAL_URL/);
     expect(() => identityConfigFromEnv({ ...base, OMB_PERSPICAX_INTERNAL_URL: "ftp://perspicax" })).toThrow(/OMB_PERSPICAX_INTERNAL_URL/);
+  });
+});
+
+describe("a desktop sign-in's loopback return (RFC 8252 7.3)", () => {
+  const STATE = "AbCdEfGhIjKlMnOpQrStUvWxYz012345_-xy";
+  it("accepts http on 127.0.0.1 or [::1] with an explicit port and the listener's state", () => {
+    expect(validLoopbackReturn(`http://127.0.0.1:53123/${STATE}`)).toBe(`http://127.0.0.1:53123/${STATE}`);
+    expect(validLoopbackReturn(`http://[::1]:1024/${STATE}`)).toBe(`http://[::1]:1024/${STATE}`);
+    expect(validLoopbackReturn(`http://127.0.0.1:65535/${STATE}`)).not.toBeNull();
+  });
+  it("refuses host names, other hosts, https, no port, a privileged or out-of-range port, and anything around the state", () => {
+    for (const bad of [
+      `http://localhost:53123/${STATE}`,
+      `http://127.0.0.2:53123/${STATE}`,
+      `http://10.0.0.1:53123/${STATE}`,
+      `http://evil.example:53123/${STATE}`,
+      `http://127.0.0.1.evil.example:53123/${STATE}`,
+      `http://[::2]:53123/${STATE}`,
+      `https://127.0.0.1:53123/${STATE}`,
+      `openmausbot://auth/${STATE}`,
+      `http://127.0.0.1/${STATE}`,
+      `http://127.0.0.1:80/${STATE}`,
+      `http://127.0.0.1:0999/${STATE}`,
+      `http://127.0.0.1:65536/${STATE}`,
+      `http://127.0.0.1:99999/${STATE}`,
+      `http://user:pw@127.0.0.1:53123/${STATE}`,
+      `http://127.0.0.1:53123/${STATE}?x=1`,
+      `http://127.0.0.1:53123/${STATE}#code=1`,
+      `http://127.0.0.1:53123/a/${STATE}`,
+      `http://127.0.0.1:53123/${STATE}/`,
+      " http://127.0.0.1:53123/" + STATE,
+      `HTTP://127.0.0.1:53123/${STATE}`,
+      "",
+      null,
+      undefined,
+    ]) expect(validLoopbackReturn(bad), String(bad)).toBeNull();
+  });
+  it("refuses a missing or too short state", () => {
+    expect(validLoopbackReturn("http://127.0.0.1:53123/")).toBeNull();
+    expect(validLoopbackReturn("http://127.0.0.1:53123")).toBeNull();
+    expect(validLoopbackReturn("http://127.0.0.1:53123/short")).toBeNull();
+    expect(validLoopbackReturn(`http://127.0.0.1:53123/${"a".repeat(129)}`)).toBeNull();
+  });
+  it("puts the credential or the error in the fragment of that return", () => {
+    const back = `http://127.0.0.1:53123/${STATE}`;
+    expect(desktopReturnLink("https://bot.example.test", { code: "omb_pair_x" }, back)).toBe(`${back}#code=omb_pair_x`);
+    expect(desktopReturnLink("https://bot.example.test", { error: "role" }, back)).toBe(`${back}#error=role`);
+    expect(desktopReturnLink("https://bot.example.test", { code: "omb_pair_x" })).toBe("openmausbot://auth?origin=https%3A%2F%2Fbot.example.test#code=omb_pair_x");
   });
 });
 
@@ -137,8 +185,11 @@ describe("the sign-in routes (in process)", () => {
     provider.user = { ...USER };
   });
 
-  async function walk(client?: string, options: { binding?: string } = {}) {
-    const start = await fetch(`${base}/auth/oidc/start${client ? `?client=${client}` : ""}`, { redirect: "manual" });
+  async function walk(client?: string, options: { binding?: string; returnTo?: string } = {}) {
+    const query = new URLSearchParams();
+    if (client) query.set("client", client);
+    if (options.returnTo !== undefined) query.set("return", options.returnTo);
+    const start = await fetch(`${base}/auth/oidc/start${query.size ? `?${query}` : ""}`, { redirect: "manual" });
     const location = start.headers.get("location") ?? "";
     if (!location.startsWith(provider.issuer)) return { start, callback: null as Response | null, location };
     const bindingCookie = start.headers.getSetCookie().find((c) => c.includes("_oidc="))!.split(";")[0]!;
@@ -187,6 +238,36 @@ describe("the sign-in routes (in process)", () => {
       expect(bindBy).toBeGreaterThanOrEqual(at + OIDC_NATIVE_PAIRING_TTL_MS);
       expect(bindBy + IDP_SWEEP_SLACK_MS - flowStart).toBeLessThan(180_000);
     }
+  });
+
+  it("ends a desktop sign-in on its loopback listener, the credential in the fragment, errors too", async () => {
+    const back = `http://127.0.0.1:53123/${"S".repeat(43)}`;
+    const { callback, location } = await walk("desktop", { returnTo: back });
+    expect(callback!.status).toBe(303);
+    expect(callback!.headers.get("cache-control")).toBe("no-store");
+    expect(callback!.headers.get("referrer-policy")).toBe("no-referrer");
+    const match = new RegExp(`^${back.replace(/[.]/g, "\\.")}#code=(omb_pair_[A-Za-z0-9_-]{43})$`).exec(location);
+    expect(match, location).not.toBeNull();
+    expect(sessions.exchange({ code: match![1]!, label: "My Mac", source: "10.0.0.1" }).ok).toBe(true);
+    // an [::1] listener too
+    const v6 = `http://[::1]:61000/${"T".repeat(40)}`;
+    expect((await walk("desktop", { returnTo: v6 })).location).toMatch(new RegExp(`^http://\\[::1\\]:61000/T{40}#code=omb_pair_`));
+    // a refusal at the callback and at the start both come back to the listener
+    expect((await walk("desktop", { returnTo: back, binding: "omb_session_test_oidc=wrong" })).location).toBe(`${back}#error=binding`);
+    vaultOk = false;
+    expect((await walk("desktop", { returnTo: back })).location).toBe(`${back}#error=unavailable`);
+  });
+
+  it("refuses a return that is not a loopback listener, or on another client, without going there", async () => {
+    for (const returnTo of ["http://localhost:53123/" + "S".repeat(43), "http://evil.example:53123/" + "S".repeat(43), "http://127.0.0.1:53123/", "https://127.0.0.1:53123/" + "S".repeat(43), ""]) {
+      const { start, location } = await walk("desktop", { returnTo });
+      expect(start.status).toBe(303);
+      expect(location, returnTo).toBe("/pair#signin_error=return");
+    }
+    for (const client of ["phone", "web"]) {
+      expect((await walk(client, { returnTo: `http://127.0.0.1:53123/${"S".repeat(43)}` })).location).toBe("/pair#signin_error=return");
+    }
+    expect(rp.pendingCount()).toBe(0);
   });
 
   it("ends a phone sign-in on the invite link both phone apps already parse", async () => {
