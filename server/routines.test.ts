@@ -3120,7 +3120,7 @@ describe("slice 6: routines in their person's name", () => {
     expect(new RoutineManager({ ...h.options, file: (h.manager as unknown as { options: { file: string } }).options.file }).listRuns()[0]).toMatchObject({ admitAttempts: 3 });
   });
 
-  it("honors a Retry-After longer than the back-off, runs when a retry is admitted, and skips when the next occurrence comes first (fix 2)", async () => {
+  it("honors a Retry-After longer than the back-off and runs when a retry is admitted (fix 2)", async () => {
     const hourly = { ...input, schedule: { type: "cron" as const, expression: "0 * * * *", timeZone: "UTC" } };
     let answer: { ok: true } | { ok: false; error: string; retryAfterMs: number } = { ok: false, error: "Perspicax is rate limiting this server; this run is retried", retryAfterMs: 300_000 };
     const h = withAdmission(() => answer);
@@ -3134,12 +3134,28 @@ describe("slice 6: routines in their person's name", () => {
     await h.manager.tick();
     expect(h.started).toHaveLength(1);
 
-    // every minute: a 60 s wait reaches the next occurrence, so the run is skipped at once
-    const m = withAdmission(() => ({ ok: false, error: "Perspicax is rate limiting this server; this run is retried", retryAfterMs: 60_000 }));
-    const often = m.manager.create(input, undefined, { actorPrincipalId: "pr_alice" });
-    m.setNow(often.nextRunAt!);
+  });
+
+  it("retries a rate-limited run of a per-minute routine; the occurrences that fall due fold into it (fix 2, e2e S6-14a)", async () => {
+    let calls = 0;
+    const m = withAdmission(() => (++calls <= 2
+      ? { ok: false, error: "Perspicax is rate limiting this server; this run is retried", retryAfterMs: 60_000 }
+      : { ok: true }));
+    const often = m.manager.create({ ...input, schedule: { type: "cron" as const, expression: "* * * * *", timeZone: "UTC" } }, undefined, { actorPrincipalId: "pr_alice" });
+    const due = often.nextRunAt!;
+    m.setNow(due);
     await m.manager.tick();
-    expect(m.manager.listRuns()[0]).toMatchObject({ status: "failed", error: "Perspicax is rate limiting this server; this run is skipped" });
+    const first = m.manager.listRuns()[0];
+    expect(first).toMatchObject({ status: "queued", admitAfter: due + 60_000, admitAttempts: 1 });
+    m.setNow(due + 60_000);
+    await m.manager.tick();
+    // the next occurrence did not add a second run
+    expect(m.manager.listRuns()).toHaveLength(1);
+    expect(m.manager.listRuns()[0]).toMatchObject({ id: first.id, status: "queued", admitAfter: due + 180_000, admitAttempts: 2 });
+    m.setNow(due + 180_000);
+    await m.manager.tick();
+    expect(m.started).toHaveLength(1);
+    expect(m.manager.listRuns().find((run) => run.id === first.id)?.status).toBe("running");
     expect(m.manager.listRoutines()[0].suspended).toBeUndefined();
   });
 

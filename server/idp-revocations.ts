@@ -93,6 +93,7 @@ export class RevocationQueue implements RevocationSink {
   private cancelTimer: (() => void) | null = null;
   private stopped = false;
   private persistQueued = false;
+  private waitLogged = false;
 
   constructor(options: RevocationQueueOptions) {
     this.file = join(options.dataDir, IDP_REVOCATIONS_FILE);
@@ -139,6 +140,7 @@ export class RevocationQueue implements RevocationSink {
     }
     this.entries = [...this.entries, entry];
     this.trim();
+    this.log(`idp revocations: a revocation (${entry.why}) is queued; ${this.entries.length} pending`);
     // A burst (a person out, a sweep) is sealed once, at the end of the tick.
     this.persistSoon();
     this.arm(0);
@@ -181,7 +183,17 @@ export class RevocationQueue implements RevocationSink {
       if (this.trim()) this.persist();
       const due = this.entries.filter((entry) => entry.nextAt <= now).sort((a, b) => a.nextAt - b.nextAt || a.enqueuedAt - b.enqueuedAt)[0];
       if (!due) return;
-      if (!this.pacer.tryAcquire("revoke").ok) return;
+      const slot = this.pacer.tryAcquire("revoke");
+      if (!slot.ok) {
+        // Told once per wait, not on every timer.
+        if (!this.waitLogged) {
+          this.waitLogged = true;
+          const why = this.pacer.pauseRemaining() > 0 ? "Perspicax's rate limit pause" : "a free slot in the token budget";
+          this.log(`idp revocations: ${this.entries.length} pending revocation(s) wait ${Math.ceil(slot.retryAfterMs / 1000)} s for ${why}`);
+        }
+        return;
+      }
+      this.waitLogged = false;
       let result: RevokeAttempt;
       try {
         result = await this.send(due.token, due.hint);
@@ -198,6 +210,7 @@ export class RevocationQueue implements RevocationSink {
         this.pacer.noteRateLimited(result.retryAfterMs);
         current.attempts += 1;
         current.nextAt = at + result.retryAfterMs;
+        this.log(`idp revocations: Perspicax rate limited a revocation (${due.why}); it is retried in ${Math.ceil(result.retryAfterMs / 1000)} s`);
       } else {
         current.attempts += 1;
         current.nextAt = at + Math.min(REVOCATION_BACKOFF_MAX_MS, REVOCATION_BACKOFF_MS * 2 ** Math.min(current.attempts - 1, 10));

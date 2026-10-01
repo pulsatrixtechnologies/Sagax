@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SubjectTokenOutcome } from "./idp-session.ts";
 import type { ExchangeResult } from "./perspicax-link.ts";
-import { PERSPICAX_ACCESS_ENDED, PerspicaxMcp, parseMcpBody, type PerspicaxMcpLink } from "./perspicax-mcp.ts";
+import { PERSPICAX_ACCESS_ENDED, PerspicaxMcp, parseMcpBody, perspicaxUnavailableRow, type PerspicaxMcpLink } from "./perspicax-mcp.ts";
 
 const ISS = "https://px.example.test";
 const ALICE = "pr_alice";
@@ -311,5 +311,12 @@ describe("PerspicaxMcp", () => {
     expect(parseMcpBody(`{"jsonrpc":"2.0","id":1}`, 1)).toEqual({ jsonrpc: "2.0", id: 1 });
     expect(parseMcpBody(`event: message\ndata: {"id":0}\n\ndata: {"id":1,"x":true}\n\n`, 1)).toEqual({ id: 1, x: true });
     expect(parseMcpBody("", 1)).toBeNull();
+  });
+});
+
+describe("perspicaxUnavailableRow", () => {
+  it("says the rate limit sentence on the activity row, and the code for the other reasons (fix 2, e2e S6-14b)", () => {
+    expect(perspicaxUnavailableRow(["Dispatch"], "bob", "rate_limited")).toBe("Perspicax: Dispatch unavailable for bob: Perspicax is rate limiting this server; try again in a minute");
+    expect(perspicaxUnavailableRow(["Dispatch", "Billing"], "Carol", "not_held")).toBe("Perspicax: Dispatch, Billing unavailable for Carol (not_held)");
   });
 });

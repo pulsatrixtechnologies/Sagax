@@ -37,6 +37,18 @@ function setup(options: { answers?: Array<RevokeAttempt>; budget?: number; key?:
 }
 
 describe("RevocationQueue", () => {
+  it("logs the queued revocation, the rate limit and the wait, never the token (e2e S6-14c)", async () => {
+    const { queue, logs } = setup({ answers: [{ kind: "rate_limited", retryAfterMs: 60_000 }] });
+    queue.enqueue("pxlr1.secret-a", "refresh_token", "session ended");
+    queue.enqueue("pxlr1.secret-b", "refresh_token", "session ended");
+    await queue.pump();
+    await queue.pump();
+    expect(logs.some((line) => /a revocation \(session ended\) is queued; 2 pending/.test(line))).toBe(true);
+    expect(logs.some((line) => /Perspicax rate limited a revocation \(session ended\); it is retried in 60 s/.test(line))).toBe(true);
+    expect(logs.filter((line) => /pending revocation\(s\) wait 60 s for Perspicax's rate limit pause/.test(line))).toHaveLength(1);
+    expect(logs.join("\n")).not.toContain("secret");
+  });
+
   it("waits a 429's Retry-After before the next attempt", async () => {
     const { queue, sent, pacer } = setup({ answers: [{ kind: "rate_limited", retryAfterMs: 60_000 }] });
     queue.enqueue("pxlr1.limited", "refresh_token", "session ended");

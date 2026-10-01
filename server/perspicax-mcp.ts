@@ -29,6 +29,25 @@ import type { DirectoryProfile, ExchangeResult } from "./perspicax-link.ts";
 
 export type PerspicaxUnavailableReason = "not_held" | "no_session" | "unreachable" | "rate_limited" | "no_delegation" | "unknown_speaker" | "unknown_profile";
 
+/** Why a profile is not mounted, as the system note and the activity row say it. */
+export const PERSPICAX_UNAVAILABLE_WHY: Record<PerspicaxUnavailableReason, string> = {
+  not_held: "the person speaking does not hold this profile in Perspicax",
+  no_session: "the person speaking has no live Perspicax sign-in on this server",
+  unreachable: "Perspicax could not be reached",
+  rate_limited: "Perspicax is rate limiting this server; try again in a minute",
+  no_delegation: "the person it runs as has not allowed routines to act in their name",
+  unknown_speaker: "the person speaking is not known to Perspicax",
+  unknown_profile: "Perspicax no longer lists this profile",
+};
+
+/** The activity row of the profiles one reason left out of a turn. A rate
+ * limit says its sentence, so the person knows to wait; the other reasons
+ * keep their code. */
+export function perspicaxUnavailableRow(names: readonly string[], speakerName: string, reason: PerspicaxUnavailableReason): string {
+  const head = `Perspicax: ${names.join(", ")} unavailable for ${speakerName}`;
+  return reason === "rate_limited" ? `${head}: ${PERSPICAX_UNAVAILABLE_WHY.rate_limited}` : `${head} (${reason})`;
+}
+
 export interface PerspicaxMountedProfile {
   profileId: string;
   slug: string;

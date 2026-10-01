@@ -592,7 +592,7 @@ import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionMa
 import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
-import { PerspicaxMcp, type PerspicaxTurnPlan } from "./perspicax-mcp.ts";
+import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
@@ -2657,15 +2657,6 @@ function perspicaxServerName(label: string, taken: ReadonlySet<string>): string 
     if (!taken.has(candidate)) return candidate;
   }
 }
-const PERSPICAX_UNAVAILABLE_WHY: Record<PerspicaxTurnPlan["unavailable"][number]["reason"], string> = {
-  not_held: "the person speaking does not hold this profile in Perspicax",
-  no_session: "the person speaking has no live Perspicax sign-in on this server",
-  unreachable: "Perspicax could not be reached",
-  rate_limited: "Perspicax is rate limiting this server; try again in a minute",
-  no_delegation: "the person it runs as has not allowed routines to act in their name",
-  unknown_speaker: "the person speaking is not known to Perspicax",
-  unknown_profile: "Perspicax no longer lists this profile",
-};
 /** The engine servers, the system note and the activity rows of a turn's
  * Perspicax profiles, for whoever speaks (never the owner for someone
  * else). Nothing in solo mode, without a link, or for a bot without
@@ -2743,14 +2734,14 @@ async function perspicaxTurnIntegration(input: {
   const speakerName = routine
     ? (personName ? `a routine of ${personName}` : "a routine")
     : personName || "an unknown person";
-  const byReason = new Map<string, string[]>();
+  const byReason = new Map<PerspicaxUnavailableReason, string[]>();
   for (const entry of plan.unavailable) byReason.set(entry.reason, [...(byReason.get(entry.reason) ?? []), entry.name]);
   for (const [reason, names] of byReason) {
     store.appendMessage(input.threadId, {
       role: "bot",
       kind: "activity",
       ...(input.from ? { from: input.from } : {}),
-      tool: { name: `Perspicax: ${names.join(", ")} unavailable for ${speakerName} (${reason})`, ok: false },
+      tool: { name: perspicaxUnavailableRow(names, speakerName, reason), ok: false },
     });
   }
   // sections are concatenated as is: this one brings its own separation

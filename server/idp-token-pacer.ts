@@ -42,6 +42,8 @@ export interface TokenCallPacerOptions {
   now?: () => number;
   /** Waits `ms` (tests pass one that moves a fake clock). */
   sleep?: (ms: number) => Promise<void>;
+  /** Where the pause and the deferred refreshes are told (never a token). */
+  log?: (line: string) => void;
 }
 
 export class TokenCallPacer {
@@ -49,6 +51,7 @@ export class TokenCallPacer {
   readonly reserve: number;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly log: (line: string) => void;
   /** When each counted call went out, oldest first, within the window. */
   private stamps: number[] = [];
   private pausedUntil = 0;
@@ -59,6 +62,7 @@ export class TokenCallPacer {
     this.reserve = revokeReserve(this.budget);
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref?.(); }));
+    this.log = options.log ?? ((line) => console.warn(line));
   }
 
   private prune(now: number): void {
@@ -78,7 +82,10 @@ export class TokenCallPacer {
 
   /** A 429 came back: every refresh and revocation waits this long. */
   noteRateLimited(ms: number): void {
-    this.pausedUntil = Math.max(this.pausedUntil, this.now() + Math.max(0, ms));
+    const until = this.now() + Math.max(0, ms);
+    if (until <= this.pausedUntil) return;
+    this.pausedUntil = until;
+    this.log(`perspicax token budget: Perspicax rate limited this server; refreshes and revocations wait ${Math.ceil(Math.max(0, ms) / 1000)} s`);
   }
 
   /** Revocations keep the reserve free, but never starve outright: on a
@@ -114,7 +121,11 @@ export class TokenCallPacer {
       const slot = this.tryAcquire(kind);
       if (slot.ok) return slot;
       const at = this.now() + slot.retryAfterMs;
-      if (at > deadline) return slot;
+      if (at > deadline) {
+        const why = this.pauseRemaining() > 0 ? "Perspicax rate limit pause" : `budget of ${this.budget} a minute used`;
+        this.log(`perspicax token budget: a refresh is deferred without a call (${why}; next slot in ${Math.ceil(slot.retryAfterMs / 1000)} s)`);
+        return slot;
+      }
       await this.sleep(slot.retryAfterMs);
     }
   }

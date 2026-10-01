@@ -236,12 +236,18 @@ What Sagax does:
   session is never ended by rate limits (`idp: renewal deferred (Perspicax is
   rate limiting this server; retry in N s)`). A turn whose Perspicax tools are
   refused by a rate limit says "Perspicax is rate limiting this server; try
-  again in a minute", never "could not be reached".
+  again in a minute" in its system note and on its activity row
+  (`Perspicax: <profiles> unavailable for <person>: Perspicax is rate limiting
+  this server; try again in a minute`), never "could not be reached". The log
+  says when a 429 pauses calls (`perspicax token budget: ...`), when a refresh
+  is deferred without a call, and when a revocation is queued, rate limited or
+  waiting for the budget (`idp revocations: ...`).
 - **Routine runs.** A run whose delegation renewal is rate limited stays
   queued (`admitAfter`, `admitAttempts` on the run) and is retried at most 3
-  times, after max(`Retry-After`, 60 s x 2^n), capped at 10 minutes, and only
-  while the retry comes before the routine's next occurrence. Then it fails
-  with "Perspicax is rate limiting this server; this run is skipped". A
+  times, after max(`Retry-After`, 60 s x 2^n), capped at 10 minutes.
+  Occurrences that fall due while it waits fold into it (counted as skipped,
+  as for any overlap), so a per-minute routine still gets its retries. Then it
+  fails with "Perspicax is rate limiting this server; this run is skipped". A
   routine is never paused for a rate limit; a real outage keeps "Perspicax is
   unreachable; this run is skipped".
 - **Sign-in and consent.** A rate-limited code exchange comes back as

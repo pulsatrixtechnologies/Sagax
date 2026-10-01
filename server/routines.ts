@@ -1682,13 +1682,14 @@ export class RoutineManager {
           if (run.status !== "queued") continue;
           if (!admission.ok) {
             if (admission.retryAfterMs !== undefined && !admission.suspend) {
-              // A rate limit is retried a few times before the next occurrence;
-              // the routine is never paused for it.
+              // A rate limit is retried a few times; the routine is never
+              // paused for it. While the run waits, the occurrences that fall
+              // due fold into it (a queued run of the routine already stands
+              // for them), so even a per-minute routine gets its retries.
               const attempts = run.admitAttempts ?? 0;
               const at = this.now();
               const delay = routineAdmitDelayMs(admission.retryAfterMs, attempts);
-              const nextRunAt = routine?.enabled && !routine.suspended ? routine.nextRunAt : null;
-              if (attempts < ROUTINE_ADMIT_MAX_ATTEMPTS && (nextRunAt == null || at + delay < nextRunAt)) {
+              if (attempts < ROUTINE_ADMIT_MAX_ATTEMPTS) {
                 run.admitAfter = at + delay;
                 run.admitAttempts = attempts + 1;
                 this.save();

@@ -6,11 +6,22 @@ import { revokeReserve, TOKEN_BUDGET_DEFAULT, TokenCallPacer, tokenBudget } from
 
 function clocked(budget: number) {
   const clock = { now: 1_000_000 };
-  const pacer = new TokenCallPacer({ budget, now: () => clock.now, sleep: async (ms) => { clock.now += ms; } });
+  const pacer = new TokenCallPacer({ budget, now: () => clock.now, sleep: async (ms) => { clock.now += ms; }, log: () => {} });
   return { clock, pacer };
 }
 
 describe("TokenCallPacer", () => {
+  it("logs a 429 pause once and a deferred refresh (e2e S6-14c)", async () => {
+    const clock = { now: 1_000_000 };
+    const logs: string[] = [];
+    const pacer = new TokenCallPacer({ budget: 45, now: () => clock.now, sleep: async (ms) => { clock.now += ms; }, log: (line) => logs.push(line) });
+    pacer.noteRateLimited(60_000);
+    pacer.noteRateLimited(30_000);
+    expect(logs).toEqual(["perspicax token budget: Perspicax rate limited this server; refreshes and revocations wait 60 s"]);
+    expect((await pacer.acquire("refresh")).ok).toBe(false);
+    expect(logs[1]).toBe("perspicax token budget: a refresh is deferred without a call (Perspicax rate limit pause; next slot in 60 s)");
+  });
+
   it("reads OMB_PERSPICAX_TOKEN_BUDGET as a whole number from 1 to 60, 45 otherwise", () => {
     expect(tokenBudget(undefined)).toBe(TOKEN_BUDGET_DEFAULT);
     expect(tokenBudget("")).toBe(45);
