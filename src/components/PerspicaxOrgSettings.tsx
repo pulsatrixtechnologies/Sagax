@@ -40,6 +40,13 @@ export function linkStateLine(link: PerspicaxOrg["link"]): string {
   return t("organization.link.error", { error: link.error ?? "error" });
 }
 
+/** Whether the "People from before Perspicax" card shows: while the window
+ * is open and someone is left, and also once the last one is attached in
+ * this view, so the admin still sees the "Attached to" notice. */
+export function showInterimCard(admin: boolean, interim: PerspicaxOrg["settings"]["interimAttach"], shownBefore: boolean): boolean {
+  return admin && Boolean(interim?.until) && ((interim?.people ?? 0) > 0 || shownBefore);
+}
+
 export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; onChanged: () => void | Promise<void> }) {
   const admin = org.viewerRole === "admin";
   const [saving, setSaving] = useState(false);
@@ -47,6 +54,10 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
   const [approvals, setApprovals] = useState<PendingAdminApproval[] | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const interim = org.settings.interimAttach;
+  const [interimShown, setInterimShown] = useState(false);
+  const interimVisible = showInterimCard(admin, interim, interimShown);
+  useEffect(() => { if (interimVisible) setInterimShown(true); }, [interimVisible]);
   const { state: store } = useStore();
   const canCreateBots = store.config?.viewer?.canCreateBots !== false;
 
@@ -135,9 +146,7 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
         </Card>
       )}
       {importing && <OrgImportDialog onClose={() => setImporting(false)} />}
-      {admin && org.settings.interimAttach?.until && org.settings.interimAttach.people > 0 ? (
-        <InterimPeople until={org.settings.interimAttach.until} onChanged={onChanged} />
-      ) : null}
+      {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
       <MyEngines issuer={org.org.identity.issuer} />
       <MyRoutineDelegation />
       <OrgSharing />

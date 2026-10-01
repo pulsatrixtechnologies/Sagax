@@ -9,7 +9,7 @@ import { answersForText, grantCandidates, levelAllowed, perspicaxKeysUrl, shareP
 import { orgSectionMenuItems } from "../OrgSectionMenu";
 import { grantEditable, levelLabel } from "./GrantEditor";
 import { accessCardLines } from "../AccessCard";
-import { PerspicaxOrgSettings, perspicaxConsoleUrl } from "../PerspicaxOrgSettings";
+import { PerspicaxOrgSettings, perspicaxConsoleUrl, showInterimCard } from "../PerspicaxOrgSettings";
 
 const OWNER = "pr_00000000-0000-4000-8000-0000000000a0";
 const BOB = "pr_00000000-0000-4000-8000-0000000000b0";
@@ -118,6 +118,14 @@ describe("Settings > Organization on a Perspicax server", () => {
     expect(markup).toContain("You are a member of this organization.");
     expect(markup).not.toContain("Use the organization");
     expect(markup).not.toContain("Commands waiting for an admin");
+  });
+  it("keeps the interim card after the last attach so its notice stays visible, and hides it once closed", () => {
+    const until = Date.UTC(2026, 10, 1);
+    expect(showInterimCard(true, { until, people: 2 }, false)).toBe(true);
+    expect(showInterimCard(true, { until, people: 0 }, false)).toBe(false);
+    expect(showInterimCard(true, { until, people: 0 }, true)).toBe(true);
+    expect(showInterimCard(true, { until: null, people: 0 }, true)).toBe(false);
+    expect(showInterimCard(false, { until, people: 2 }, true)).toBe(false);
   });
 });
 
