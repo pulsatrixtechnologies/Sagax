@@ -64,5 +64,9 @@ when this exact running copy owns the scheme and the server advertises
 port and a state only; the credential rides in the fragment) and the
 descriptor's `identity.loopbackReturn`. Tests:
 `electron/oidc-system-sign-in.node-test.mjs`, `server/oidc-login.test.ts`,
-`server/oidc-session.e2e.test.ts` (S2-7b). A change to that server code needs
-the server image redeployed.
+`server/oidc-session.e2e.test.ts` (S2-7b). The return lands in the main window as
+`<origin>/pair?signin=<nonce>#code=...` (`authReturnTarget`): never a
+fragment-only change of the `/pair` the window already shows, which would
+not reload the page. `scripts/verify-desktop-sign-in.ts` proves it in a real
+Electron window. A change to that server code needs the server image
+redeployed.

@@ -8,7 +8,7 @@ import test from "node:test";
 const require = createRequire(import.meta.url);
 const {
   SIGN_IN_HANDOFF_TTL_MS, SYSTEM_SIGN_IN_TTL_MS, appHandlerPath, authReturnTarget, chooseReturnPath, createPendingSystemSignIn,
-  createSignInHandoff, desktopStartUrl, oidcLoginStartUrl, ownsScheme, signInSupport, startLoopbackReturn,
+  createSignInHandoff, desktopStartUrl, oidcLoginStartUrl, ownsScheme, redactedTarget, signInSupport, startLoopbackReturn,
 } = require("./oidc-system-sign-in.cjs");
 
 const ORG = "https://bot.example.test";
@@ -144,6 +144,19 @@ test("only the exact state, host and origin; the credential once; then the liste
   await assert.rejects(post(back.returnTo, `code=${CODE}`));
 });
 
+test("the listener logs each step and never the credential", async () => {
+  const lines = [];
+  const back = await startLoopbackReturn({ log: (line) => lines.push(line) });
+  await fetch(back.returnTo);
+  await post(back.returnTo, `code=${CODE}`);
+  await back.result;
+  assert.match(lines.join("\n"), /listener on 127\.0\.0\.1:\d+/);
+  assert.match(lines.join("\n"), /page served/);
+  assert.match(lines.join("\n"), /credential received/);
+  assert.doesNotMatch(lines.join("\n"), new RegExp(CODE));
+  assert.doesNotMatch(lines.join("\n"), new RegExp(new URL(back.returnTo).pathname.slice(1)));
+});
+
 test("a provider or server error comes back as an error, not a credential", async () => {
   const back = await startLoopbackReturn();
   assert.equal((await post(back.returnTo, "error=role")).status, 200);
@@ -195,8 +208,17 @@ test("a return link is honoured only for a saved server, with the credential in 
 });
 
 test("the return lands on /pair to be redeemed once, or shows the error", () => {
-  assert.equal(authReturnTarget({ origin: ORG, code: CREDENTIAL }), `${ORG}/pair#code=${CREDENTIAL}&auto=1`);
-  assert.equal(authReturnTarget({ origin: ORG, error: "role" }), `${ORG}/pair#signin_error=role`);
+  assert.equal(authReturnTarget({ origin: ORG, code: CREDENTIAL }, "n1"), `${ORG}/pair?signin=n1#code=${CREDENTIAL}&auto=1`);
+  assert.equal(authReturnTarget({ origin: ORG, error: "role" }, "n1"), `${ORG}/pair?signin=n1#signin_error=role`);
+  // The main window already shows <origin>/pair: a target that differed only
+  // in its fragment would be a same-document navigation, and /pair would
+  // never read the credential. Every target is a new document.
+  const first = new URL(authReturnTarget({ origin: ORG, code: CREDENTIAL }));
+  const second = new URL(authReturnTarget({ origin: ORG, code: CREDENTIAL }));
+  assert.equal(first.pathname, "/pair");
+  assert.match(first.search, /^\?signin=[A-Za-z0-9_-]{12}$/);
+  assert.notEqual(first.search, second.search);
+  assert.equal(redactedTarget(authReturnTarget({ origin: ORG, code: CREDENTIAL }, "n1")), `${ORG}/pair?signin=n1#code=<redacted>&auto=1`);
 });
 
 test("only the sign-in this app started, for ten minutes, once", () => {

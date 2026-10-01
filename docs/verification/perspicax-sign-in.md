@@ -170,6 +170,23 @@ admin console session for alice:
   return decision (loopback, else openmausbot:// only when this exact copy of
   the app owns the scheme, else none with a reason).
 
+The desktop return into a real Electron window is checked with the app's
+real preload on a second local server acting as the remote environment
+(fake Perspicax, temporary home and profile, free ports):
+
+```sh
+pnpm exec vite build
+node --experimental-strip-types scripts/verify-desktop-sign-in.ts               # PASS: signed in, back on /
+node --experimental-strip-types scripts/verify-desktop-sign-in.ts --old-target  # PASS: the 0.3.x delivery stays signed out
+```
+
+The window already shows `<origin>/pair` when the credential comes back, so
+the delivery must be a new document (`/pair?signin=<nonce>#code=...`): a
+target that differs only in its fragment is a same-document navigation and
+`/pair` never reads it. In a dev run every step is printed as `[sign-in] ...`
+on stdout (and always written to the app's `server.log`), never the
+credential.
+
 The desktop click-through is checked by hand on a build that is not the
 system's openmausbot handler (the dev build next to an installed
 `/Applications/Sagax.app`): "Sign in with Pulsatrix" opens the default
