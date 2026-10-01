@@ -2179,7 +2179,7 @@
   "app.empty.body": "Tu devrais créer un nouveau bot.",
   "app.empty.create": "Créer un bot",
   "serverEnvironment.title": "Votre environnement serveur",
-  "serverEnvironment.help": "Une machine Linux isolée, à vous, sur ce serveur. Tous vos bots, et les routines des bots qui vous appartiennent, y exécutent leurs commandes, fichiers et pages web quand ils ne travaillent pas sur votre ordinateur. Les fichiers de /workspace sont conservés; rien ici n'atteint le serveur lui-même ni les environnements des autres.",
+  "serverEnvironment.help": "Une machine Linux isolée, à vous, sur ce serveur. Chaque bot avec qui vous parlez, le vôtre ou celui d'un collègue, y exécute ses commandes, fichiers et pages web quand il ne travaille pas sur votre ordinateur, tout comme les routines des bots qui vous appartiennent. Les fichiers de /workspace sont conservés; rien ici n'atteint le serveur lui-même ni les environnements des autres.",
   "serverEnvironment.notConfigured": "Ce serveur n'offre pas d'environnement serveur.",
   "serverEnvironment.running": "En marche",
   "serverEnvironment.stopped": "Arrêté (redémarre à la prochaine tâche)",
@@ -2195,7 +2195,7 @@
   "serverEnvironment.idle": "Arrêt après inactivité",
   "serverEnvironment.idleValue": "après {minutes} min",
   "serverEnvironment.reset": "Réinitialiser",
-  "serverEnvironment.reset.confirm": "Réinitialiser votre environnement serveur? Il est recréé à neuf et tout le contenu de /workspace est effacé. Tous vos bots l'utilisent.",
+  "serverEnvironment.reset.confirm": "Réinitialiser votre environnement serveur? Il est recréé à neuf et tout le contenu de /workspace est effacé. Chaque bot avec qui vous parlez l'utilise.",
   "serverEnvironment.reset.error": "L'environnement n'a pas pu être réinitialisé. Réessayez dans un moment.",
   "toolTarget.userSandbox": "Votre environnement serveur",
   "toolTarget.userDesktop": "Votre ordinateur"

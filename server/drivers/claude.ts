@@ -8,6 +8,7 @@
 //   - Composio Sessions (connected apps → tools) over streamable HTTP
 //   - the bot's cloud computer (boat.dev) via server/computer-proxy.ts
 //     — screenshot/exec/open_url, the CUA-on-the-boat bridge
+import { claudeDisallowedTools } from "./host-tools.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
@@ -1274,8 +1275,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         "--permission-mode", permissionMode,
       ];
       if (config.tools !== undefined) args.push("--tools", config.tools.join(","));
-      if (config.disallowedTools?.length) {
-        args.push("--disallowedTools", config.disallowedTools.join(","));
+      const disallowedTools = claudeDisallowedTools(config.disallowedTools, turn.withholdHostTools === true);
+      if (disallowedTools.length) {
+        args.push("--disallowedTools", disallowedTools.join(","));
       }
       const turnEnvironment = environment();
       if (turn.refreshSystemPrompt && !cliVersionChecked) {
@@ -2265,6 +2267,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         provider: DRIVER_KIND,
         capabilities: {
           sessionModelSwitch: "in-session",
+          withholdsHostTools: true,
           agentsMcp: true,
         customMcp: true,
           computerMcp: true,

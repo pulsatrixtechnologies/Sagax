@@ -4956,7 +4956,7 @@
       "app.empty.body": "12747ccf92c6181e2aec121e5e1f103a41d8ae0b7d6df89660a70f08391a6209",
       "app.empty.create": "325f81cc2ca26fffdad326ced0c870187f5e6ed6741769b48555ad8fe627e657",
       "serverEnvironment.title": "f9fa430e222982f9fc8f98f4ec3c58059e74f45de372378d815c7da506ed327a",
-      "serverEnvironment.help": "d4c1a90ed4296972ea85cb3c11569b4df61d8a288e9d229fda276142df78b6ac",
+      "serverEnvironment.help": "dca7ed77cfb59f157001b15ae8944b173a800335fefe75d2958325b02402e207",
       "serverEnvironment.notConfigured": "8d5c6f67ffb29f8ad13ed933ecdf816c1762ae3406131adbb86aa8317d5c9496",
       "serverEnvironment.running": "f4ccae29e1bb0c20a124570a1b43f4347ea94bba9f84ffdfddd9c7445b126128",
       "serverEnvironment.stopped": "4f46513afefda6a9c4457b2a9dbf5f3c714c642ab07ac698688a017adaece8f4",
@@ -4972,7 +4972,7 @@
       "serverEnvironment.idle": "2d37b2b1f330a6a924d9370ed2eb46ccf5964f6add449ecaaaa3e49d60989e41",
       "serverEnvironment.idleValue": "357f161b28c1a6adaf2cca413f8b280c62606efec6190ff81b15c6fba1654149",
       "serverEnvironment.reset": "daee7606b339f3c339076fe2c9f372a3ff40c8ee896005d829c7481b64ca5303",
-      "serverEnvironment.reset.confirm": "cce75aad1cae92b194a7a6b00558ac38b2c334e79652536b7b8dbf62bef7a91c",
+      "serverEnvironment.reset.confirm": "6fd54ca4974cf1bcca1366c14f9094642b929fa65115ffddadc5e0af16e74f38",
       "serverEnvironment.reset.error": "879209a4cf701d8108c87c1deebb76d561409c8df230b2ae2791ee1d0a5b0440",
       "toolTarget.userSandbox": "f9fa430e222982f9fc8f98f4ec3c58059e74f45de372378d815c7da506ed327a",
       "toolTarget.userDesktop": "493611954285e785b0528faacc0193ebcc72cea00209f8bf9d3c0fb50f95402c"

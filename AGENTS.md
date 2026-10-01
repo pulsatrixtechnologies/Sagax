@@ -113,8 +113,10 @@ redeployed.
 
 ## Server environments (organization mode)
 
-On an organization server, bots run shell, file and browser tools in their
-OWNER's server environment (`user-sandbox`): one isolated container per
+On an organization server, bots run shell, file and browser tools in a
+person's server environment (`user-sandbox`): the SPEAKER's for a
+conversation, the bot OWNER's for routines, the asker's or else the room
+creator's in a room (`sandboxPrincipalForTurn`). One isolated container per
 person, never per bot, never on the Sagax host (`docs/user-sandbox.md`).
 Keep these rules, each covered by `server/user-sandbox*.test.ts`,
 `server/sandboxd*.test.ts` or `server/user-sandbox.e2e.test.ts`:
@@ -123,6 +125,10 @@ Keep these rules, each covered by `server/user-sandbox*.test.ts`,
   Sagax server calls it with signed requests (`server/sandboxd-auth.ts`).
 - The provisioner API is keyed by person (`sandboxKeyForPrincipal`); never add
   a bot parameter. Every create body passes `assertSandboxIsolation()`.
+- Engines get no shell, file or fetch tool of their own there
+  (`withholdHostTools`, `server/drivers/host-tools.ts`); an engine that
+  cannot withhold them is refused. `scripts/smoke-host-tools.ts` checks the
+  real Claude Code CLI.
 - Server code runs under `--experimental-strip-types`: no TypeScript
   parameter properties in these files.
 - `scripts/smoke-user-sandbox.ts` proves isolation on a real Docker host and

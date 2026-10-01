@@ -647,6 +647,10 @@ export interface WireGroup {
   bulletin: string;
   unread: boolean;
   createdAt: number;
+  /** Organization server: the principal who created the room. A bot's
+   * follow-up no person asked for runs in this person's server environment
+   * (server/user-sandbox-routing.ts). Absent on older rooms. */
+  createdBy?: string;
   /** true for auto-created bot-bot channels. */
   dm?: boolean;
   /** transient: the member currently running a turn. */

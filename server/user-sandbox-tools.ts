@@ -1,6 +1,6 @@
-// The tools a bot gets in its owner's server environment: run a command,
+// The tools a bot gets in a person's server environment: run a command,
 // read, write and list files, and open a web page in a headless browser. Each
-// call becomes one exec in the owner's sandbox through the manager; nothing
+// call becomes one exec in that person's sandbox through the manager; nothing
 // here touches the Sagax server's own filesystem or processes.
 import type { SandboxExecOutput } from "./sandboxd-core.ts";
 

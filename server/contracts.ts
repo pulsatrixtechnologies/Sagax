@@ -242,6 +242,12 @@ export interface SendTurnInput {
    * config.toml and ignores this; the Claude driver drops
    * --strict-mcp-config for the turn. */
   mcpFromUserConfig?: boolean;
+  /** Organization server: this machine is the Sagax server, nobody's
+   * computer. The engine must not get its own shell, file or fetch tools
+   * here; shell and files go through the person's server environment
+   * (integrations.custom["sagax-environment"]). Only a driver declaring
+   * capabilities.withholdsHostTools may receive such a turn. */
+  withholdHostTools?: boolean;
 }
 
 /** An MCP server this machine starts and talks to over stdio. */
@@ -340,6 +346,10 @@ export interface ProviderAdapter {
      * engine (integrations.hooks). Only Claude Code today; other engines
      * deliver the same information through their protocols. */
     hooks?: boolean;
+    /** True when the driver honours SendTurnInput.withholdHostTools (or its
+     * engine never runs anything on this machine). Organization servers
+     * refuse turns on any other engine. */
+    withholdsHostTools?: boolean;
   };
   sendTurn(input: SendTurnInput): Promise<TurnStartResult>;
   interruptTurn(threadId: ThreadId, turnId?: TurnId): Promise<void>;

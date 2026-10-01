@@ -1,4 +1,5 @@
 import { codexToolSurfaceArgs } from "./codex-tool-surface.ts";
+import { CODEX_WITHHELD_APPROVAL, codexHostToolArgs, codexHostToolRequest } from "./host-tools.ts";
 // Codex driver — upstream CodexDriver skeleton over agentcal's
 // drivers/codex.js runtime: the official `codex` CLI headless over its
 // app-server JSON-RPC protocol (newline-delimited JSON on stdio).
@@ -687,7 +688,8 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           throw new Error(`Custom MCP server “${name}” cannot set reserved environment variable “${reserved}”`);
         }
       }
-      let autoAcceptPermissions = approvalMode === "full";
+      const withholdHostTools = turn.withholdHostTools === true;
+      let autoAcceptPermissions = approvalMode === "full" && !withholdHostTools;
       if (active.has(threadId)) throw new Error("a turn is already running on this thread");
       const turnId = newId();
       // a retry relaunches the whole app-server; the backoff is scaled down in
@@ -697,7 +699,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       const launchAttempt = async (attempt: number): Promise<void> => {
         const env = childEnv();
         const launch = codexAccessLaunch(env, turn.access);
-        const appServerArgs = ["app-server", ...(launch.ownerKey ? ownerKeyCodexArgs() : config.managed ? managedCodexArgs(config.managed) : codexLocalProviderArgs(env, turn.model)), ...codexToolSurfaceArgs()];
+        const appServerArgs = ["app-server", ...(launch.ownerKey ? ownerKeyCodexArgs() : config.managed ? managedCodexArgs(config.managed) : codexLocalProviderArgs(env, turn.model)), ...codexToolSurfaceArgs(), ...codexHostToolArgs(withholdHostTools)];
         if (turn.integrations?.composio) {
           mountMcpServer(appServerArgs, env, "openmausbot_connectors", turn.integrations.composio);
         }
@@ -930,6 +932,14 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         const isPermission = legacy || isMcpPermission || isAdditionalPermission ||
           method === "item/commandExecution/requestApproval" ||
           method === "item/fileChange/requestApproval";
+        // Organization server: nothing runs or writes on the Sagax server.
+        if (withholdHostTools && codexHostToolRequest(method)) {
+          const declined = method === "item/permissions/requestApproval"
+            ? { permissions: {}, scope: "turn" }
+            : { decision: legacy ? "denied" : "decline" };
+          send({ jsonrpc: "2.0", id: msg.id, result: declined });
+          return;
+        }
         // A normal MCP elicitation is a form or URL asking for real user input,
         // not a permission. We cannot safely synthesize its structured answer.
         // Unknown future server requests also fail closed instead of being
@@ -1470,6 +1480,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         } else {
           approvalParams = namedApprovalParams(approvalMode);
         }
+        // Organization server: read-only and asking, every command or write
+        // is then a request the handler below declines.
+        if (withholdHostTools) approvalParams = structuredClone(CODEX_WITHHELD_APPROVAL) as unknown as CodexApprovalParams;
         // Codex's `never` means "do not ask to escalate", not "grant every
         // requested permission". Only the user's explicit Sagax Full
         // mode may synthesize approvals; Custom must preserve the sandbox
@@ -1697,6 +1710,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       provider: DRIVER_KIND,
       capabilities: {
         sessionModelSwitch: "unsupported",
+        withholdsHostTools: true,
         queueing: true,
         computerMcp: true,
         localComputerMcp: true,

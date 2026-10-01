@@ -4,9 +4,11 @@
 // (the real HTTP handler and lifecycle over a FakeDocker), and the tests read
 // which person's sandbox each call landed in.
 //
-//   routing   a turn with no desktop target lands in the bot OWNER's sandbox,
-//             whoever speaks; two bots of one person share one sandbox; another
-//             person's bot gets another sandbox
+//   routing   a conversation lands in the SPEAKER's sandbox: two bots one
+//             person talks to share it, a teammate talking to that person's
+//             bot uses the teammate's own sandbox, never the owner's
+//   engine    the engine gets no shell or file tool of its own (Bash, Read,
+//             Write... are in --disallowedTools)
 //   settings  each person reads their own environment
 //   per-bot   no VM or VPS per bot on an organization server (409)
 import { spawn, type ChildProcess } from "node:child_process";
@@ -41,6 +43,7 @@ let BASE = "";
 let child: ChildProcess;
 let home: string;
 let mcpDump = "";
+let engineDump = "";
 let log = "";
 let idp: FakeOidcProvider;
 let provisioner: Server;
@@ -132,6 +135,7 @@ posixOnly("organization server environments (user-sandbox)", () => {
     }), { mode: 0o640 });
     writeFileSync(join(home, "sandboxd-key"), `${SANDBOXD_KEY}\n`, { mode: 0o400 });
     mcpDump = join(home, "mcp-dump.json");
+    engineDump = join(home, "claude-dump.json");
     writeFileSync(join(data, "config.json"), JSON.stringify({
       organization: { memberBotsUseOrgKey: true },
       instances: {
@@ -140,6 +144,7 @@ posixOnly("organization server environments (user-sandbox)", () => {
           environment: {
             FAKE_CLAUDE_MCP_CALLS: JSON.stringify([{ server: "sagax-environment", tool: "run_command", arguments: { command: "echo hi" } }]),
             FAKE_CLAUDE_MCP_DUMP: mcpDump,
+            FAKE_CLAUDE_DUMP: engineDump,
           },
           config: { cli: FAKE_CLAUDE, fullAuto: true },
         },
@@ -190,27 +195,48 @@ posixOnly("organization server environments (user-sandbox)", () => {
     expect(docker.containers.size).toBe(0);
   });
 
-  it("runs a bot's command in its owner's sandbox, and every bot of that person shares it", async () => {
+  it("runs a conversation in the speaker's sandbox; every bot that person uses shares it", async () => {
     const aliceContainer = sandboxNames(sandboxKeyForPrincipal(INSTANCE, ids.alice!)).container;
     const x = await createBot(alice, "Xavier");
     const y = await createBot(alice, "Yuna");
     expect(await turn(alice, x, "run it")).toContain("mcp:run_command:ok");
     expect(JSON.parse(readFileSync(mcpDump, "utf8")).servers).toContain("sagax-environment");
     expect(await turn(alice, y, "run it")).toContain("mcp:run_command:ok");
-    // Bob speaking to alice's bot still lands in alice's environment.
-    expect((await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
-    expect(await turn(bob, x, "run it as bob")).toContain("mcp:run_command:ok");
     expect(containersExecuted()).toEqual([aliceContainer]);
     expect(docker.calls.filter((call) => call.startsWith("create"))).toEqual([`create ${aliceContainer}`]);
   }, 120_000);
 
-  it("gives another person their own sandbox", async () => {
+  it("never puts a teammate's commands in the bot owner's sandbox", async () => {
+    const aliceContainer = sandboxNames(sandboxKeyForPrincipal(INSTANCE, ids.alice!)).container;
     const bobContainer = sandboxNames(sandboxKeyForPrincipal(INSTANCE, ids.bob!)).container;
+    const bots = (await api("GET", "/api/bots", alice)).body.bots as Array<{ id: string; name: string; threadId: string }>;
+    const x = bots.find((bot) => bot.name === "Xavier")!;
+    expect((await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
+    const aliceExecs = docker.execs.filter((e) => e.name === aliceContainer).length;
+    const bobView = ((await api("GET", "/api/bots", bob)).body.bots as Array<{ id: string; threadId: string }>).find((bot) => bot.id === x.id)!;
+    expect(await turn(bob, { id: x.id, threadId: bobView.threadId }, "run it as bob")).toContain("mcp:run_command:ok");
+    expect(docker.execs.filter((e) => e.name === aliceContainer).length).toBe(aliceExecs);
+    expect(containersExecuted()).toContain(bobContainer);
+    // Bob's own bot reuses Bob's one sandbox.
     const z = await createBot(bob, "Zed");
     expect(await turn(bob, z, "run it")).toContain("mcp:run_command:ok");
-    expect(containersExecuted()).toContain(bobContainer);
     expect(docker.containers.size).toBe(2);
-  }, 90_000);
+  }, 120_000);
+
+  it("gives the engine no shell or file tool of its own on the server", async () => {
+    const engine = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[] };
+    const index = engine.argv.indexOf("--disallowedTools");
+    expect(index).toBeGreaterThan(-1);
+    const denied = engine.argv[index + 1]!.split(",");
+    for (const tool of ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch"]) expect(denied).toContain(tool);
+  });
+
+  it("records who created a room: its follow-ups no person asked for use that person's sandbox", async () => {
+    const bots = (await api("GET", "/api/bots", alice)).body.bots as Array<{ id: string; name: string }>;
+    const created = await api("POST", "/api/groups", alice, { name: "Ops", memberIds: [bots.find((bot) => bot.name === "Xavier")!.id] });
+    expect(created.status, created.text).toBe(201);
+    expect(created.body.group.createdBy).toBe(ids.alice);
+  });
 
   it("shows each person their own environment in settings", async () => {
     expect((await api("GET", "/api/me/server-environment", alice)).body).toMatchObject({ configured: true, state: "running" });

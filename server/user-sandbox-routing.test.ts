@@ -31,9 +31,27 @@ describe("resolveExecutionTarget", () => {
 });
 
 describe("sandboxPrincipalForTurn", () => {
-  it("is always the bot owner (teammates, routines and delegations included)", () => {
-    expect(sandboxPrincipalForTurn({ botOwnerPrincipalId: "pr_owner" })).toBe("pr_owner");
-    expect(() => sandboxPrincipalForTurn({ botOwnerPrincipalId: "" })).toThrow();
+  const owner = "pr_owner";
+  it("runs a conversation in the SPEAKER's environment, never the bot owner's", () => {
+    expect(sandboxPrincipalForTurn({ botOwnerPrincipalId: owner, routine: false, speakerPrincipalId: "pr_teammate" })).toBe("pr_teammate");
+    expect(sandboxPrincipalForTurn({ botOwnerPrincipalId: owner, routine: false, speakerPrincipalId: owner })).toBe(owner);
+  });
+
+  it("runs routines, and threads or hops a routine starts, in the bot OWNER's environment", () => {
+    expect(sandboxPrincipalForTurn({ botOwnerPrincipalId: owner, routine: true, speakerPrincipalId: "pr_teammate" })).toBe(owner);
+    expect(sandboxPrincipalForTurn({ botOwnerPrincipalId: owner, routine: true })).toBe(owner);
+  });
+
+  it("runs a room turn in the environment of the person whose message it answers", () => {
+    expect(sandboxPrincipalForTurn({ botOwnerPrincipalId: owner, routine: false, speakerPrincipalId: "pr_bob", roomCreatorPrincipalId: "pr_alice" })).toBe("pr_bob");
+  });
+
+  it("runs a room follow-up no person asked for in the room creator's environment", () => {
+    expect(sandboxPrincipalForTurn({ botOwnerPrincipalId: owner, routine: false, roomCreatorPrincipalId: "pr_alice" })).toBe("pr_alice");
+  });
+
+  it("mounts nothing when nobody is known (fail closed)", () => {
+    expect(sandboxPrincipalForTurn({ botOwnerPrincipalId: owner, routine: false, speakerPrincipalId: "" })).toBeNull();
   });
 });
 

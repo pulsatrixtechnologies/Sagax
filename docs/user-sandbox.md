@@ -2,18 +2,34 @@
 
 On an organization server (`OMB_IDENTITY=perspicax`), each **person** gets one
 isolated Linux environment on the server: their "server environment"
-(`user-sandbox`). Every bot that person owns, in every conversation, and the
-routines of those bots, run their shell, file and browser tools there whenever
-the turn does not target the person's own computer (`user-desktop`). There is
-never one environment per bot, and an organization server never runs a bot's
-tools on the Sagax host or inside the Sagax container.
+(`user-sandbox`). Shell, file and browser tools run there whenever the turn
+does not target the person's own computer (`user-desktop`). There is never
+one environment per bot, and an organization server never runs a bot's tools
+on the Sagax host or inside the Sagax container.
 
 | Target | When | Where |
 |---|---|---|
 | `user-desktop` | the turn's place is the person's computer | their desktop (desktop routing) |
-| `user-sandbox` | organization mode, any other turn | the bot owner's environment |
+| `user-sandbox` | organization mode, any other turn | one person's environment (below) |
 | `host` | solo server | this machine, unchanged |
 | `none` | organization mode without a provisioner | nothing is mounted |
+
+Whose environment (`sandboxPrincipalForTurn`, matching private threads and
+"the speaker pays"):
+
+| Turn | Environment |
+|---|---|
+| a conversation (1:1, private thread with a shared bot) | the **speaker**, the person talking; a bot hop keeps the person its source turn spoke for |
+| a routine, and any thread or hop a routine starts | the bot **owner** (routines run as the owner) |
+| a room turn answering a person | that person (the latest person who spoke in the room) |
+| a room follow-up no person ever asked for | the room's **creator** (`group.createdBy`, else its first listed person) |
+| nobody known | nothing is mounted (fail closed) |
+
+A teammate's files and commands therefore never land in the bot owner's
+environment, and a person's work follows them across every bot they use. A
+bot's follow-up after a person's message keeps that person's environment
+rather than the creator's: the work they asked for and its files stay
+together, and nothing they wrote moves into someone else's environment.
 
 Code: `server/user-sandbox-routing.ts` (targets, owner), `server/user-sandbox-tools.ts`
 (`run_command`, `read_file`, `write_file`, `list_files`, `browse`, mounted as the
@@ -25,7 +41,9 @@ the Sagax side), `server/sandboxd*.ts` (the provisioner), `server/user-sandbox-s
 
 - **Lazy:** mounting the tools creates nothing; the first tool call creates the
   network, the `/workspace` volume and the container, then starts it.
-- **One per person:** the provisioner is addressed by an opaque key,
+- **One per person:** the capability a turn's tools carry names the person
+  (fixed at mount, never read from the request). The provisioner is
+  addressed by an opaque key,
   `sha256(instance, principal id)`; its API has no bot parameter. Objects are
   named `sagax-user-<key>` and labelled `com.pulsatrix.sagax.sandbox.user=<key>`
   and `sagax-user=<key>`.
@@ -79,6 +97,32 @@ the Sagax side), `server/sandboxd*.ts` (the provisioner), `server/user-sandbox-s
   `write_file` is refused and Settings shows it; one file is capped by
   `SAGAX_SANDBOX_MAX_FILE_MB`. For a hard cap, put `/var/lib/docker` on xfs
   with project quotas.
+
+## The engines' own tools
+
+Running the engine CLI itself inside the person's environment was not
+feasible safely now (it would need the CLIs, their credentials and a route
+back to the Sagax loopback inside a sandbox whose egress policy forbids
+exactly that). So on an organization server every turn sets
+`withholdHostTools` (`server/drivers/host-tools.ts`):
+
+- **Claude Code:** `--disallowedTools` adds `Bash`, `BashOutput`,
+  `KillShell`, `Monitor`, `Read`, `Write`, `Edit`, `MultiEdit`,
+  `NotebookEdit`, `Glob`, `Grep`, `LS`, `WebFetch`, `EnterWorktree`,
+  `ExitWorktree`, `Workflow`, `DesignSync`. Deny rules, so subagents get them
+  too. `WebSearch` (run by Anthropic) stays.
+- **Codex:** `features.shell_tool=false`, `features.unified_exec=false`,
+  `features.view_image=false`, a read-only sandbox asking for approval, and
+  every command, patch or permission request is declined before any card or
+  Full-access auto-accept.
+- **Chat engines** (OpenAI-compatible) and the Boat agent never run anything
+  on this machine.
+- **Any other engine** (pi, ACP engines, ...) is refused on an organization
+  server (409 `host_tools`) rather than run in the container.
+
+Shell, files and pages then go through `sagax-environment`.
+`scripts/smoke-host-tools.ts` starts the real Claude Code CLI with the
+driver's flags (no model request) and checks its tool list has no `Bash`.
 
 ## Resource defaults (8 GiB host)
 

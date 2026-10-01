@@ -3537,7 +3537,7 @@
   "app.empty.body": "You should create a new bot.",
   "app.empty.create": "Create a bot",
   "serverEnvironment.title": "Your server environment",
-  "serverEnvironment.help": "An isolated Linux machine of your own on this server. All your bots, and the routines of bots you own, run their commands, files and web pages here when they are not working on your computer. Files in /workspace persist; nothing here reaches the server itself or other people's environments.",
+  "serverEnvironment.help": "An isolated Linux machine of your own on this server. Every bot you talk to, yours or a teammate's, runs its commands, files and web pages here when it is not working on your computer, and so do the routines of the bots you own. Files in /workspace persist; nothing here reaches the server itself or other people's environments.",
   "serverEnvironment.notConfigured": "This server has no server environments.",
   "serverEnvironment.running": "Running",
   "serverEnvironment.stopped": "Stopped (starts again on the next task)",
@@ -3553,7 +3553,7 @@
   "serverEnvironment.idle": "Stops when idle",
   "serverEnvironment.idleValue": "after {minutes} min",
   "serverEnvironment.reset": "Reset",
-  "serverEnvironment.reset.confirm": "Reset your server environment? It is recreated from scratch and everything in /workspace is erased. All your bots use it.",
+  "serverEnvironment.reset.confirm": "Reset your server environment? It is recreated from scratch and everything in /workspace is erased. Every bot you talk to uses it.",
   "serverEnvironment.reset.error": "The environment could not be reset. Try again in a moment.",
   "toolTarget.userSandbox": "Your server environment",
   "toolTarget.userDesktop": "Your computer"

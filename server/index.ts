@@ -1739,6 +1739,8 @@ type InternalCapability = {
   kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox";
   /** Slice 5: the one Perspicax profile a "perspicax" capability relays for. */
   perspicaxProfile?: string;
+  /** A "sandbox" capability: whose server environment it runs in. */
+  sandboxPrincipalId?: string;
   skillAuthoring: boolean;
   createdBots: number;
   createdRooms?: number;
@@ -2680,12 +2682,12 @@ export function browserEngineSummary(): { kind: "engine" | "unavailable"; reason
     : { kind: "unavailable", reason: status.reason, installable: status.installable, ...progress };
 }
 
-/** The owner's server environment tools for one turn (organization mode):
- * a stdio proxy holding only a turn-scoped capability. The environment is
- * created lazily, on the first tool call, never at mount time. */
-function userSandboxIntegration(botId: string, threadId: string, generation: string) {
+/** One person's server environment tools for one turn (organization mode):
+ * a stdio proxy holding only a turn-scoped capability bound to that person.
+ * The environment is created lazily, on the first tool call. */
+function userSandboxIntegration(botId: string, threadId: string, generation: string, sandboxPrincipalId: string) {
   const token = mintInternalCapability({
-    botId, threadId, generation, depth: 0, kind: "sandbox", skillAuthoring: false, createdBots: 0, openedThreads: 0,
+    botId, threadId, generation, depth: 0, kind: "sandbox", skillAuthoring: false, createdBots: 0, openedThreads: 0, sandboxPrincipalId,
   });
   return {
     command: process.execPath,
@@ -2694,18 +2696,31 @@ function userSandboxIntegration(botId: string, threadId: string, generation: str
   };
 }
 
-/** Mount the owner's environment when this turn's hands land there. */
+/** Mount the right person's environment when this turn's hands land there
+ * (sandboxPrincipalForTurn). */
 function mountUserSandbox(
   integrations: NonNullable<SendTurnInput["integrations"]>,
-  input: { botId: string; threadId: string; generation: string; desktopTargeted: boolean; customMcp: boolean },
+  input: { botId: string; threadId: string; generation: string; desktopTargeted: boolean; customMcp: boolean; sandboxPrincipalId: string | null },
 ): void {
   const target = resolveExecutionTarget({
     organization: IDENTITY.kind === "perspicax",
     sandboxConfigured: Boolean(userSandbox),
     desktopTargeted: input.desktopTargeted,
   });
-  if (target !== "user-sandbox" || !input.customMcp) return;
-  integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation) };
+  if (target === "user-sandbox" && input.customMcp && input.sandboxPrincipalId) {
+    integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation, input.sandboxPrincipalId) };
+  }
+}
+
+/** Organization server: an engine never gets its own shell, file or fetch
+ * tools on the Sagax server (server/drivers/host-tools.ts). An engine that
+ * cannot withhold them is refused rather than let loose in the container. */
+function withholdHostToolsFor(instance: { adapter: { capabilities: { withholdsHostTools?: boolean } }; displayName?: string; driverKind: string }): boolean {
+  if (IDENTITY.kind !== "perspicax") return false;
+  if (instance.adapter.capabilities.withholdsHostTools !== true) {
+    throw Object.assign(new Error(`${engineDisplayName(instance)} runs commands on the server itself; on an organization server choose Claude Code, Codex or a chat engine, which work in your server environment.`), { status: 409, code: "host_tools" });
+  }
+  return true;
 }
 
 function phoneIntegration(botId: string, threadId: string, generation: string) {
@@ -9812,6 +9827,11 @@ async function startTurn(
       mountUserSandbox(integrations, {
         botId: bot.id, threadId, generation: dispatchClaimId,
         desktopTargeted: wants === "local", customMcp: instance.adapter.capabilities.customMcp === true,
+        sandboxPrincipalId: sandboxPrincipalForTurn({
+          botOwnerPrincipalId: effectiveBotOwner(bot),
+          routine: routineLineage(speaker),
+          speakerPrincipalId: orgSpeakerPrincipal(bot, speaker),
+        }),
       });
       // A place the organisation disallows is refused before anything is
       // prepared; Auto below simply skips disallowed places.
@@ -10452,6 +10472,7 @@ async function startTurn(
         // must still deliver their note (SendTurnInput.mentionTurn)
         mentionTurn: tagged.length > 0,
         integrations,
+        ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         cwd,
       }), () => !directTurnClaimExists(bot.id, dispatchClaimId, threadId), async () => {
@@ -12365,6 +12386,12 @@ async function runGroupMemberTurn(
   mountUserSandbox(integrations, {
     botId: readyBot.id, threadId, generation: internalGeneration,
     desktopTargeted: roomPlan.computer === "local", customMcp: instance.adapter.capabilities.customMcp === true,
+    sandboxPrincipalId: sandboxPrincipalForTurn({
+      botOwnerPrincipalId: effectiveBotOwner(readyBot),
+      routine: !roomSpeakerId && roomRoutineSpeaker(threadId) !== null,
+      speakerPrincipalId: roomSpeakerId,
+      roomCreatorPrincipalId: readyGroup.createdBy ?? readyGroup.humanIds?.[0],
+    }),
   });
   if (!roomTeamComputer && roomPlan.computer === "local") {
     integrations.localComputer = await mountHostComputer(
@@ -12686,6 +12713,7 @@ async function runGroupMemberTurn(
         systemVolatile: roomSystem.volatile,
         cwd,
         integrations,
+        ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         ...(instance.instanceId === readyBot.modelSelection.instanceId
           ? memberTurnSelection(readyBot.modelSelection)
@@ -17695,12 +17723,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 200, { result });
       }
       if (method === "POST" && path === "/api/internal/sandbox/mcp") {
-        // The owner's server environment (organization mode). The bearer is
-        // the authority: the environment is the bot OWNER's, whoever spoke.
+        // A person's server environment (organization mode). The bearer is
+        // the authority: it names whose environment (speaker or routine owner).
         if (!userSandbox) return json(res, 404, { error: "unknown internal endpoint" });
         const frame = await readInternalBody() as { method?: unknown; params?: unknown } | null;
         const rpcMethod = typeof frame?.method === "string" ? frame.method : "";
-        const ownerId = sandboxPrincipalForTurn({ botOwnerPrincipalId: effectiveBotOwner(internalSender) });
+        // The capability names whose environment it is (fixed at mount).
+        const ownerId = internalCapability.sandboxPrincipalId;
+        if (!ownerId) return json(res, 403, { error: "this capability has no server environment" });
         try {
           const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
             exec: (input) => userSandbox.exec(ownerId, input),
@@ -20717,7 +20747,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
       if (hiddenMember) return json(res, 400, { error: `unknown channel member: ${String(hiddenMember)}` });
-      const group = createChannel(withCreatorListed(auth, body));
+      const created = createChannel(withCreatorListed(auth, body));
+      const creatorId = IDENTITY.kind === "perspicax" ? channelActorId(auth) : "";
+      const group = (creatorId && store.patchGroup(created.id, { createdBy: creatorId })) || created;
       // Created in a section by one of its members: the section opens it.
       if (group.section && mayPlaceRoomIn(auth, group.section)) sectionChannels?.recordRoomPlacement(group.section, group.id);
       return json(res, 201, { group: { ...publicGroupState(group), messages: [] } });

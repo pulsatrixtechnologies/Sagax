@@ -1,7 +1,8 @@
-// Per-turn MCP entry point for the owner's server environment
+// Per-turn MCP entry point for a person's server environment
 // ("sagax-environment"). Only a turn-scoped capability crosses into the agent
 // process; the provisioner address and its key stay in the Sagax server, which
-// resolves the bot's OWNER and runs the call in that person's sandbox.
+// runs the call in the sandbox of the person the turn's capability names
+// (the speaker, or the bot owner for routines).
 import { pathToFileURL } from "node:url";
 
 const MAX_INPUT_BYTES = 2_097_152;

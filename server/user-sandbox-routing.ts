@@ -23,13 +23,33 @@ export function resolveExecutionTarget(input: {
   return input.sandboxConfigured ? "user-sandbox" : "none";
 }
 
-/** Whose environment a turn uses: the bot's OWNER, always. A teammate
- * talking to a shared bot, a routine running as its owner, a delegated turn:
- * all land in the owner's one environment. There is deliberately no bot id
- * in this signature; a per-bot environment cannot be expressed. */
-export function sandboxPrincipalForTurn(input: { botOwnerPrincipalId: string }): string {
-  if (!input.botOwnerPrincipalId) throw new Error("a bot without an owner has no server environment");
-  return input.botOwnerPrincipalId;
+/** Whose environment a turn uses. There is deliberately no bot id in this
+ * signature: a per-bot environment cannot be expressed.
+ *
+ * - A conversation runs in the SPEAKER's environment (the person talking,
+ *   or the person a bot hop speaks for): a teammate's files and commands
+ *   never land in the bot owner's environment, and the speaker's own work
+ *   follows them across every bot they use. Private threads stay private.
+ * - A routine, and every thread or hop a routine starts, runs in the bot
+ *   OWNER's environment (routines run as the bot owner).
+ * - A room turn runs in the environment of the person whose message it
+ *   answers (the latest person who spoke in the room). A follow-up no person
+ *   ever asked for falls back to the room's creator. A bot's follow-up after
+ *   a person's message keeps that person's environment: the work they asked
+ *   for, and their files, stay together instead of moving to the creator's.
+ * - Null when nobody is known: nothing is mounted (fail closed). */
+export function sandboxPrincipalForTurn(input: {
+  botOwnerPrincipalId: string;
+  /** The turn belongs to a routine (directly or through hops). */
+  routine: boolean;
+  /** The person this turn speaks for, "" or absent when unknown. */
+  speakerPrincipalId?: string;
+  /** Rooms only: who created the room. */
+  roomCreatorPrincipalId?: string;
+}): string | null {
+  if (input.routine) return input.botOwnerPrincipalId || null;
+  if (input.speakerPrincipalId) return input.speakerPrincipalId;
+  return input.roomCreatorPrincipalId || null;
 }
 
 /** The MCP server name the environment tools are mounted under. The UI reads
