@@ -1490,6 +1490,19 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.argv[seen.argv.indexOf("--setting-sources") + 1]).toBe("project");
   });
 
+  it("never keeps claude.ai connectors on a guest's confined turn", async () => {
+    await create(undefined, { FAKE_CLAUDE_VERSION: "2.1.284" });
+    const dump = join(scratch, "claude-ai-guest.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+
+    await instance.adapter.sendTurn({ threadId: "t-claude-ai-guest", text: "hi", claudeAiConnectors: true, guestConfined: true, approvalMode: "ask" });
+    await recorder.until((e) => e.type === "turn.completed");
+
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv).toContain("--strict-mcp-config");
+    expect(seen.env.ENABLE_CLAUDEAI_MCP_SERVERS).toBe("false");
+  });
+
   it("mounts a url server in the CLI's own shape, header values in the private file", async () => {
     await create();
     const dump = join(scratch, "remote-mcp.json");
