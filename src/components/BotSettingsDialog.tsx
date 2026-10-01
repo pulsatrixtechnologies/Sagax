@@ -39,6 +39,7 @@ import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import type { PromptPreviewData } from "./bot-settings/PromptPreview";
+import { servedPage } from "@/lib/desktop";
 
 const sectionLabel = (entry: (typeof BOT_SECTIONS)[number]) => (entry.labelKey ? t(entry.labelKey) : entry.label);
 
@@ -109,7 +110,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
   const sections = BOT_SECTIONS
     .filter((entry) => isAdvancedSection(entry.id))
     .filter((entry) => entry.id !== "slack" || slackUrl !== null)
-    .filter((entry) => entry.id !== "visibility" || (!window.ogb && ownerOrAdmin === true && perspicaxOrg === null))
+    .filter((entry) => entry.id !== "visibility" || (servedPage() && ownerOrAdmin === true && perspicaxOrg === null))
     .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null)
     .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null);
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));

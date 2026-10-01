@@ -14,6 +14,9 @@ import { t } from "@/lib/i18n";
 import { withTourReset } from "@/lib/guided-tour";
 import { completionPatch } from "@/lib/onboarding";
 import { launchBridges } from "@/lib/launch";
+import { servedPage } from "@/lib/desktop";
+import { brand } from "@/lib/brand";
+import { ManagedByOrganization, ServerModeCard, useServerMode } from "./ServerModeSettings";
 import { ApiKeyRow, OpenAiCompatUrl, VpsConnection } from "./ApiKeys";
 import { COMPOSIO_PLATFORM_URL } from "./ConnectedAppsSetup";
 import { useUpdaterState } from "@/lib/updater";
@@ -821,6 +824,9 @@ export function SettingsModal() {
   useEffect(() => window.ogb?.onOpenAppSettings?.(() => setQuery("")), []);
   const q = query.trim().toLowerCase();
   const ownerOrAdmin = useOwnerOrAdmin();
+  // Server mode: this app shows its organization's server only (src/lib/launch.ts).
+  const serverMode = useServerMode();
+  const lockedServer = serverMode?.active ? serverMode : null;
   const soloDesktop = !remoteActive && Boolean(launchBridges(window.ogb)) && state.config?.onboarding?.launchMode !== "server";
   // A request for Settings > Organization (the Server menu, a deep link) on
   // a desktop with no server opens the launch screen on Server instead.
@@ -840,12 +846,14 @@ export function SettingsModal() {
     // devices under Remote access), or the read-only view of a hosted
     // workspace whose members the organisation's Admin decides. An
     // organization server sends no sign-in list: Perspicax owns its people.
-    .filter((entry) => entry.id !== "people" || (!window.ogb && (readMembership(state.config).authority === "portal" || peopleListServed(state.config))))
+    // A served page, in a browser or drawn by the desktop app on that server
+    // (electron/bundled-ui.cjs): the same server shows the same sections.
+    .filter((entry) => entry.id !== "people" || (servedPage() && (readMembership(state.config).authority === "portal" || peopleListServed(state.config))))
     // how the server sends sign-in codes and invitations: its admins and
     // the operator, on the desktop and on the web
     .filter((entry) => entry.id !== "mail" || ownerOrAdmin === true)
     // the activity log belongs to a workspace served to a browser, and to its admins
-    .filter((entry) => entry.id !== "activity" || (!window.ogb && ownerOrAdmin === true));
+    .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
   const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
   const nextVisibleSection = visibleSections.some((entry) => entry.id === section) ? undefined : visibleSections[0]?.id;
@@ -1000,7 +1008,7 @@ export function SettingsModal() {
             {section === "cloudAccount" && window.ogb?.cloudAccount && !remoteActive && <CloudAccountSettings />}
             {section === "general" && (
               <>
-                <ThisComputerSettings />
+                {lockedServer ? <ServerModeCard state={lockedServer} /> : <ThisComputerSettings />}
                 <Card
                   collapsible
                   cardId="general.profile"
@@ -1151,7 +1159,9 @@ export function SettingsModal() {
                     Settings there is the only place that server's phones can be paired from (MOCA-84).
                     The server decides who may act — an owner or an admin session — not this gate. */}
                 <ServerPairingCard />
-                {!remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} />}
+                {lockedServer
+                  ? <ManagedByOrganization cardId="companion.managed" title={t("remote.desktopOnly.title", { app: brand().name })} />
+                  : !remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} />}
               </>
             )}
 

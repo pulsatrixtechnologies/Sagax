@@ -267,9 +267,10 @@ export function sanitizePositions(value) {
  * @param {string} deps.preload             path to floating-bot-preload.cjs
  * @param {() => unknown} [deps.readPositions]
  * @param {(positions: Record<string, Record<string, {x:number,y:number}>>) => void} [deps.writePositions]
- * @param {(event: any) => boolean} [deps.isTrustedMain]  the sender is the local app page
+ * @param {(event: any) => boolean} [deps.isTrustedMain]  the sender is this app's own UI (local, or bundled on an organization server)
  * @param {() => Promise<unknown>} [deps.whenReady]  resolves once Electron's app is ready (the screen module needs it)
  * @param {() => void} [deps.focusMain]     bring the app window forward ("Open in the app")
+ * @param {() => (import("electron").Session | null)} [deps.session]  the session for the page (server mode without a local server)
  * @param {string} [deps.platform]          process.platform by default
  * @param {(line: string) => void} [deps.log]
  */
@@ -373,7 +374,7 @@ export function createFloatingBotWindows(deps) {
       return existing.win;
     }
     if (floats.size >= MAX_FLOATING) return null;
-    const options = assistantWindowOptions({ preload, bounds: startBounds(botId), title: "Floating bot" });
+    const options = assistantWindowOptions({ preload, bounds: startBounds(botId), title: "Floating bot", session: deps.session?.() ?? undefined });
     // throttled when hidden or covered, so the 3D mascot stops drawing (and spending battery) there
     const created = new BrowserWindow({ ...options, alwaysOnTop, webPreferences: { ...options.webPreferences, backgroundThrottling: true } });
     const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false };

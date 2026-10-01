@@ -2,9 +2,10 @@
 // tour. "No server" (or Escape) is the solo, local-first app; the tour
 // follows. "Server" checks that the address is a Sagax server that signs
 // people in with Pulsatrix (the same probe "Join a Perspicax server" uses),
-// remembers the choice, then saves and selects that server and starts its
-// own "Sign in with Pulsatrix" (electron/org-join.mjs join). No new sign-in
-// path: the server is the OIDC client and the desktop only opens it.
+// remembers the choice, then saves that server, locks the app to it (server
+// mode: no Local, no other server) and starts its own "Sign in with
+// Pulsatrix" (electron/org-join.mjs join). No new sign-in path: the server
+// is the OIDC client and the desktop only opens it.
 //
 // The card is the welcome flow's card, so the two read as one surface.
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -65,7 +66,7 @@ export function LaunchScreen({
       const probed = await bridges.orgJoin.probe(origin);
       await remember("server");
       // The window leaves for the server's sign-in from here.
-      await bridges.orgJoin.join({ origin: probed.origin });
+      await bridges.orgJoin.join({ origin: probed.origin, serverMode: true });
     } catch (failure) {
       setError(t(launchErrorKey(failure)));
     } finally {

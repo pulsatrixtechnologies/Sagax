@@ -148,3 +148,54 @@ test("native window identity distinguishes hosted HTML, companion data, and the 
   assert.equal(env.workspaceWindowTitle(state, { serverName: "Office", endpoint: "https://c-office.openmausbot.com" }), "Sagax — Connected to: Office (c-office.openmausbot.com)");
   assert.equal(env.workspaceWindowTitle(env.withActive(state, "local")), "Sagax");
 });
+
+test("server mode locks the app to one organization server: no Local, no other server", () => {
+  let state = { environments: [], activeId: "local" };
+  state = env.withEnvironment(state, { origin: "https://hosted.example" }, () => "h1");
+  state = env.withEnvironment(state, { origin: "https://org.example", org: true }, () => "o1");
+  // only an organization server can be the server-mode server
+  assert.equal(env.withServerMode(state, "h1"), state);
+  assert.equal(env.withServerMode(state, "ghost"), state);
+  state = env.withServerMode(state, "o1");
+  assert.equal(state.activeId, "o1");
+  assert.equal(env.serverModeEnvironment(state).origin, "https://org.example");
+  assert.equal(env.bundledOrigin(state), "https://org.example");
+  // nothing switches away while it is on
+  assert.equal(env.withActive(state, "local"), state);
+  assert.equal(env.withActive(state, "h1"), state);
+  // the native chooser lists that server and the way out only
+  const calls = [];
+  const items = env.workspaceMenuTemplate(state, { onSwitch: (id) => calls.push(["switch", id]), onConnect: () => calls.push(["connect"]), onForget: () => calls.push(["forget"]), onLeaveServerMode: () => calls.push(["leave"]) });
+  assert.deepEqual(items.filter((item) => item.id).map((item) => item.id), ["workspace-o1", "workspace-leave-server-mode"]);
+  assert.ok(!JSON.stringify(items).includes("This computer"));
+  items.find((item) => item.id === "workspace-o1").click();
+  items.find((item) => item.id === "workspace-leave-server-mode").click();
+  assert.deepEqual(calls, [["leave"]]);
+  assert.deepEqual(env.workspaceSummary(state), { local: false, name: "org.example", origin: "https://org.example", serverMode: true });
+  // it survives a restart, and only on an organization server
+  const reread = env.parseEnvironments(env.serializeEnvironments(state));
+  assert.equal(reread.serverModeId, "o1");
+  assert.equal(reread.activeId, "o1");
+  const tampered = JSON.parse(env.serializeEnvironments(state));
+  tampered.serverModeId = "h1";
+  tampered.activeId = "local";
+  assert.deepEqual(env.parseEnvironments(tampered).serverModeId, undefined);
+  assert.equal(env.parseEnvironments(tampered).activeId, "local");
+  // leaving forgets that server and shows Local again; other saved servers stay
+  const left = env.withoutServerMode(state);
+  assert.equal(left.serverModeId, undefined);
+  assert.equal(left.activeId, "local");
+  assert.deepEqual(left.environments.map((entry) => entry.id), ["h1"]);
+  assert.equal(env.bundledOrigin(left), null);
+});
+
+test("only an organization server is drawn with this app's own bundle", () => {
+  let state = env.withEnvironment({ environments: [], activeId: "local" }, { origin: "https://hosted.example" }, () => "h1");
+  state = env.withActive(state, "h1");
+  assert.equal(env.bundledOrigin(state), null, "a hosted workspace keeps its own page");
+  // org is sticky once a probe said so; a plain re-add never takes it back
+  state = env.withEnvironment(state, { origin: "https://hosted.example", org: true }, () => "x");
+  state = env.withEnvironment(state, { origin: "https://hosted.example" }, () => "y");
+  assert.equal(env.bundledOrigin(state), "https://hosted.example");
+  assert.equal(env.bundledOrigin({ ...state, activeId: "local" }), null);
+});

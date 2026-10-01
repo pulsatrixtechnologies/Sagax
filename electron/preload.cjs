@@ -33,6 +33,23 @@ ipcRenderer.on("app:open-settings", (_event, section) => {
 const localOrigin = process.argv.find((arg) => arg.startsWith("--omb-local-origin="))?.slice("--omb-local-origin=".length) ?? null;
 const isLocalPage = !localOrigin || location.origin === localOrigin;
 const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin"]);
+// An organization server's page drawn from THIS app's bundle
+// (electron/bundled-ui.cjs) is the desktop's own UI on that server, so it
+// also gets the desktop-UI parts that hold no local data: floating bots and
+// the Hibou 98 assistant (windows that only draw what the page sends), the
+// window's caption buttons, the app menu's Preferences, links in the system
+// browser, native confirmations and this app's updater. Main checks every
+// one of these channels again (local-origin.cjs desktopUiOnly). Nothing that
+// reads this computer's files, screen, logins or secrets is added.
+const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode"]);
+let bundledPage = false;
+if (!isLocalPage) {
+  try {
+    bundledPage = ipcRenderer.sendSync("workspace:bundled-ui") === true;
+  } catch {
+    bundledPage = false;
+  }
+}
 
 // Sandboxed preload cannot import TS or sibling modules. Keep this list in
 // parity with shared/workspace-backup-client.ts (covered by the preload test).
@@ -301,6 +318,15 @@ const bridge = {
     removeLocal: (keys) => ipcRenderer.invoke("org-join:remove-local", Array.isArray(keys) ? keys.map(String) : []),
   },
 
+  /** Server mode (the launch screen's "Server"): which organization server
+   * this app is locked to, and the one way out (Settings > General >
+   * Server > Change), which signs out of it and returns to the launch
+   * screen. Main answers only the main window's top frame. */
+  serverMode: {
+    state: () => ipcRenderer.invoke("server-mode:state"),
+    leave: () => ipcRenderer.invoke("server-mode:leave"),
+  },
+
   /** Saved servers and the active one (Server menu). Switching, adding and
    * forgetting are local-only: a remote page may read the list but not change
    * where this window goes. */
@@ -411,5 +437,5 @@ const bridge = {
 
 contextBridge.exposeInMainWorld(
   "ogb",
-  isLocalPage ? bridge : Object.fromEntries(Object.entries(bridge).filter(([key]) => REMOTE_SAFE.has(key))),
+  isLocalPage ? bridge : Object.fromEntries(Object.entries(bridge).filter(([key]) => REMOTE_SAFE.has(key) || (bundledPage && BUNDLED_EXTRA.has(key)))),
 );

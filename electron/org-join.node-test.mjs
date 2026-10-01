@@ -17,7 +17,7 @@ function copy() {
 const report = (keys = ["atlas", "bolt"]) => ({ bots: keys.map((sourceKey) => ({ sourceKey, id: `org-${sourceKey}` })), subject: { iss: "https://px.example.test", sub: "B1" } });
 
 function harness(overrides = {}) {
-  const calls = { saved: [], navigated: [], deleted: [], linked: [], confirmed: [], fetched: [], signedIn: [] };
+  const calls = { saved: [], navigated: [], deleted: [], linked: [], confirmed: [], fetched: [], signedIn: [], modes: [] };
   let clock = 1_000;
   const descriptor = overrides.descriptor ?? { identity: { kind: "perspicax", issuer: "https://px.example.test" } };
   const join = createOrgJoin({
@@ -35,7 +35,7 @@ function harness(overrides = {}) {
         return null;
       }
     },
-    saveEnvironment: (origin) => calls.saved.push(origin),
+    saveEnvironment: (origin, options) => { calls.saved.push(origin); calls.modes.push(options?.serverMode === true); },
     navigate: (url) => calls.navigated.push(url),
     confirm: async (names) => { calls.confirmed.push(names); return overrides.confirm ?? true; },
     deleteLocalBot: async (key) => { calls.deleted.push(key); return true; },
@@ -118,6 +118,15 @@ test("join saves the server, opens its sign-in page and starts Sign in with Puls
   // nothing is held for the server to take
   assert.equal(h.join.staged(ORG), null);
   assert.equal(h.join.take(ORG), null);
+});
+
+test("the launch screen's join locks the app to that server (server mode); a plain join does not", async () => {
+  const h = harness();
+  await h.join.probe(ORG);
+  await h.join.join({ origin: ORG, serverMode: true });
+  await h.join.join({ origin: ORG });
+  await h.join.join({ origin: ORG, serverMode: "yes" });
+  assert.deepEqual(h.calls.modes, [true, false, false]);
 });
 
 test("join still saves the server when the sign-in cannot start, and says so", async () => {

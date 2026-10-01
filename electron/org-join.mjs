@@ -68,7 +68,7 @@ export function checkReport(report, stagedKeys) {
  *   fetch: typeof fetch,
  *   now?: () => number,
  *   parseLink: (address: string) => { origin: string } | null,
- *   saveEnvironment: (origin: string) => void,
+ *   saveEnvironment: (origin: string, options?: { serverMode?: boolean }) => void,
  *   navigate: (url: string) => void,
  *   confirm: (names: string[]) => Promise<boolean>,
  *   deleteLocalBot: (key: string) => Promise<boolean>,
@@ -132,11 +132,13 @@ export function createOrgJoin(deps) {
     /** Join the probed server with nothing to copy (the launch screen's
      * Server mode, and "Join" with no bot chosen): save it, make it active,
      * open its sign-in page and start "Sign in with Pulsatrix" there, the
-     * same sign-in its own page offers (electron/oidc-system-sign-in.cjs, always the system browser). */
+     * same sign-in its own page offers (electron/oidc-system-sign-in.cjs, always the system browser).
+     * `serverMode: true` (the launch screen) locks the app to that server:
+     * no Local, no other server, until server mode is left. */
     async join(input) {
       const origin = isRecord(input) && typeof input.origin === "string" ? input.origin : "";
       if (!probed || origin !== probed) throw new Error("Check the server address first.");
-      deps.saveEnvironment(origin);
+      deps.saveEnvironment(origin, input.serverMode === true ? { serverMode: true } : undefined);
       deps.navigate(`${origin}/pair`);
       try {
         await deps.signIn?.(origin);

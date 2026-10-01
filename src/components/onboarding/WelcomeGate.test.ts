@@ -64,6 +64,7 @@ const LOCAL_PAGE = { ogb: { platform: "darwin", remoteClient: { active: false },
 const REMOTE_PAGE = { ogb: { platform: "darwin", workspaces: {}, getCapabilities: () => ({}) } };
 // The packaged desktop's own page with the bridges the launch screen uses.
 const environmentsState = vi.hoisted(() => ({ value: { environments: [] as unknown[] } }));
+const serverModeState = vi.hoisted(() => ({ value: { active: false } as { active: boolean } }));
 const DESKTOP_PAGE = {
   ogb: {
     platform: "darwin",
@@ -71,6 +72,7 @@ const DESKTOP_PAGE = {
     workspaces: {},
     environments: { state: () => Promise.resolve(environmentsState.value) },
     orgJoin: { probe: vi.fn(), join: vi.fn() },
+    serverMode: { state: () => Promise.resolve(serverModeState.value), leave: vi.fn() },
   },
 };
 beforeEach(() => {
@@ -81,6 +83,7 @@ beforeEach(() => {
   store.api.mockReset();
   store.state = { config: fresh, welcomeOpen: false, launchOpen: false, launchMode: "solo", appSettingsOpen: false, appSettingsSection: "general", bots: [] };
   environmentsState.value = { environments: [] };
+  serverModeState.value = { active: false };
   vi.stubGlobal("window", {});
   vi.stubGlobal("localStorage", storage());
   vi.stubGlobal("fetch", vi.fn());
@@ -215,16 +218,17 @@ describe("the launch screen before the tour", () => {
     expect(gate(LOCAL_VIEWER).tree).toBeNull();
   });
 
-  it("comes back after server mode once the server was forgotten (signed out)", async () => {
+  it("comes back after server mode was left (signed out), even with other servers saved", async () => {
     vi.stubGlobal("window", DESKTOP_PAGE);
     store.state = { ...store.state, config: { onboarding: { ...EMPTY_ONBOARDING, completedAt: "2026-09-23T00:00:00.000Z", version: WELCOME_VERSION, launchMode: "server" } } };
     environmentsState.value = { environments: [{ id: "a", name: "GOX", origin: "https://bot.example.test" }] };
+    serverModeState.value = { active: true };
     expect(gate(LOCAL_VIEWER).tree).toBeNull();
     for (const effect of fixture.effects) effect();
     await flush();
     expect(gate(LOCAL_VIEWER).tree).toBeNull();
     fixture.values = [];
-    environmentsState.value = { environments: [] };
+    serverModeState.value = { active: false };
     gate(LOCAL_VIEWER);
     for (const effect of fixture.effects) effect();
     await flush();

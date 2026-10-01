@@ -2159,6 +2159,11 @@
   "settings.launch.solo": "Sans serveur : vos bots, conversations et clés restent sur cet ordinateur.",
   "settings.launch.server": "Connecté au serveur Sagax de votre organisation avec votre compte Pulsatrix.",
   "settings.launch.change": "Modifier",
+  "settings.serverMode.connected": "Connecté à {server} : le serveur de votre organisation est le seul que cette application affiche.",
+  "settings.serverMode.botsOnServer": "Vos bots roulent sur ce serveur. Modifier vous déconnecte et revient à l'écran de démarrage ; rien n'est changé sur cet ordinateur.",
+  "settings.serverMode.leaveFailed": "Le serveur n'a pas pu être changé. Réessayez, ou utilisez Serveur > Changer de serveur dans la barre de menus.",
+  "settings.serverMode.managed": "Vos bots roulent sur le serveur de votre organisation, qui gère ce réglage. Adressez-vous à un administrateur de ce serveur.",
+  "settings.serverMode.managedShort": "Géré par votre organisation",
   "orgJoin.join": "Rejoindre",
   "orgJoin.copyOptional": "La copie de bots est facultative. N'en choisissez aucun pour rejoindre sans eux."
 }
