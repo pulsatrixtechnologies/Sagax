@@ -37,6 +37,9 @@ export interface OidcIdentity {
   email?: string;
   name?: string;
   preferredUsername?: string;
+  /** The version of the person's avatar, from a `picture` claim on the
+   * issuer's own origin (`...?v=<version>`); never fetched from the claim. */
+  avatar?: string;
   /** Perspicax role claim, verbatim: `admin`, `manager` or `employee`. */
   role?: string;
   /** Slice 4: the Perspicax `teams` claim, malformed entries dropped.
@@ -367,6 +370,26 @@ export interface VerifyIdTokenInput extends JwsCheck {
  * JWKS knows, a valid P-256 signature, then iss, aud (and azp when there are
  * several audiences), exp, iat and nonce. A logout token (typ `logout+jwt`
  * or an `events` claim) is never an id_token. Throws OidcError on any failure. */
+/** The avatar version a `picture` claim carries: the claim must be a URL on
+ * the issuer's own origin with a `v` query parameter (Perspicax:
+ * `<issuer>/api/v1/pulsabot/people/<sub>/avatar?v=<version>`). Anything else
+ * (another host, no version) is ignored; Sagax reads the image through the
+ * link, never from the claim. */
+export function avatarVersionFromPicture(picture: unknown, issuer: string): string | undefined {
+  if (typeof picture !== "string" || !picture || picture.length > 2048) return undefined;
+  let url: URL;
+  let issuerOrigin: string;
+  try {
+    url = new URL(picture);
+    issuerOrigin = new URL(issuer).origin;
+  } catch {
+    return undefined;
+  }
+  if (url.origin !== issuerOrigin) return undefined;
+  const version = url.searchParams.get("v") ?? "";
+  return /^[0-9A-Za-z_-]{1,64}$/.test(version) ? version : undefined;
+}
+
 export async function verifyIdToken(input: VerifyIdTokenInput): Promise<OidcIdentity> {
   const { header, claims } = await verifyJws(input, "id_token");
   if (typeof header.typ === "string" && header.typ.toLowerCase().includes("logout")) throw new OidcError("id_token_typ", "A logout token is not an id_token.");
@@ -387,6 +410,8 @@ export async function verifyIdToken(input: VerifyIdTokenInput): Promise<OidcIden
   if (name) identity.name = name;
   const login = stringClaim(claims.preferred_username, 200);
   if (login) identity.preferredUsername = login;
+  const avatar = avatarVersionFromPicture(claims.picture, input.issuer);
+  if (avatar) identity.avatar = avatar;
   const role = stringClaim(claims.role, 40);
   if (role) identity.role = role;
   const teams = parseTeamsClaim(claims.teams);

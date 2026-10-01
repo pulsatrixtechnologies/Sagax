@@ -44,6 +44,8 @@ import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { AboutMeSettings } from "./AboutMeSettings";
 import { InitialsAvatar } from "./Avatar";
 import { profileInitials, profileLabel } from "./SidebarProfileMenu";
+import { ManagedProfileIdentity } from "./ManagedProfileIdentity";
+import { managedProfile } from "@/lib/profile-management";
 import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
 import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
 import { ThreadCleanupSettings } from "./ThreadCleanupSettings";
@@ -138,10 +140,14 @@ function profilePhoto(file: File): Promise<string> {
 
 /** Name, email, and photo. Shared context has its own autosave. Someone
  * signed in to another person's server sees who they are signed in as: the
- * editable profile is the operator's, and saving it would overwrite theirs. */
+ * editable profile is the operator's, and saving it would overwrite theirs.
+ * On an organization server the name and email are Perspicax's: read-only,
+ * with a link to change them there (the server's answer, never a guess). */
 function ProfileFields() {
   const { state } = useStore();
   const viewer = state.config?.viewer;
+  const managed = managedProfile(viewer);
+  if (managed) return <ManagedProfileIdentity profile={managed} />;
   if (viewer && !viewer.operator) return <SignedInIdentity name={viewer.name} email={viewer.email} />;
   return <OperatorProfileFields />;
 }

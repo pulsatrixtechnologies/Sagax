@@ -71,6 +71,8 @@ import {
   tailWindowStart,
 } from "@/lib/transcript-window";
 import { useReplyDraft } from "@/lib/drafts";
+import { channelHumanRow, useOrgPeople } from "@/lib/perspicax-org";
+import { personAvatarSrc } from "@/lib/profile-management";
 
 function dayLabel(at: number): string {
   const d = new Date(at);
@@ -997,18 +999,22 @@ export function GroupView({ group }: { group: Group }) {
     () => group.memberIds.map((id) => state.bots.find((b) => b.id === id)).filter((b): b is Bot => Boolean(b)),
     [group.memberIds, state.bots],
   );
+  const orgPeople = useOrgPeople();
   const viewerEmail = state.config?.profile?.email?.trim().toLowerCase() || "";
   const viewerName = state.config?.profile?.name?.trim() || viewerEmail || "Vous";
   // The server's word on who is looking, when it gives one; before that,
   // the remote client's own lookup, else the operator.
   const viewer = state.config?.viewer;
   const viewerId = viewerActorId(state.config);
+  // On an organization server each person reads as their Perspicax display
+  // name with their avatar (the directory); elsewhere the stored id, as before.
+  const viewerAvatar = personAvatarSrc(state.config?.profile?.avatarUrl);
   const channelHumans = [
-    { id: viewerId, label: viewerName, detail: viewerEmail && viewerName !== viewerEmail ? viewerEmail : undefined, removable: false as boolean },
+    { id: viewerId, label: viewerName, detail: viewerEmail && viewerName !== viewerEmail ? viewerEmail : undefined, ...(viewerAvatar ? { avatarUrl: viewerAvatar } : {}), removable: false as boolean },
     ...(group.humanIds ?? [])
       .map((id) => id.trim().toLowerCase())
       .filter((id) => id && id !== viewerId && id !== viewerEmail)
-      .map((id) => ({ id, label: id, detail: undefined, removable: true })),
+      .map((id) => ({ ...channelHumanRow(id, orgPeople), removable: true })),
   ];
   const actorId = viewer ? viewerId : remoteClient ? remoteActor.id : viewerId;
   const roster = channelRosterActions({

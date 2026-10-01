@@ -15,6 +15,9 @@ const teamMembershipSchema = z.object({ id: z.string().regex(TEAM_ID_REGEX), man
 export type TeamMembership = z.infer<typeof teamMembershipSchema>;
 export type PerspicaxRole = "admin" | "manager" | "employee";
 
+/** An avatar version: opaque, short, URL-safe (it lands in a query string). */
+export const AVATAR_VERSION_REGEX = /^[0-9A-Za-z_-]{1,64}$/;
+
 const principalSchema = z.object({
   id: z.string().regex(PRINCIPAL_ID_REGEX),
   kind: z.enum(["human", "guest"]),
@@ -26,6 +29,11 @@ const principalSchema = z.object({
   subject: z.object({ iss: z.string().min(1).max(2048), sub: z.string().min(1).max(255) }).optional(),
   name: z.string().max(200).optional(),
   login: z.string().max(200).optional(),
+  /** Organization mode: the version of this person's Perspicax avatar (the
+   * `v` of the id_token `picture` URL, or the directory's `avatar`); absent
+   * when they have none. The image is read through the link
+   * (PerspicaxDirectory.avatar) and served at /api/people/<id>/avatar. */
+  avatar: z.string().regex(AVATAR_VERSION_REGEX).optional(),
   /** The last Sagax organization role computed from the provider's
    * `role` claim, for display while offline. */
   orgRole: z.enum(["admin", "member"]).optional(),
@@ -308,7 +316,7 @@ export class PrincipalRegistry {
    * `iss` + `sub` only. Name, login, address and role are attributes,
    * refreshed on every sign-in; an address that is not an account email is
    * dropped rather than stored. */
-  forSubject(input: { iss: string; sub: string; claims?: { email?: string; name?: string; login?: string }; orgRole?: "admin" | "member"; teams?: readonly { id: string; manager?: boolean }[]; perspicaxRole?: PerspicaxRole }): Principal {
+  forSubject(input: { iss: string; sub: string; claims?: { email?: string; name?: string; login?: string; avatar?: string }; orgRole?: "admin" | "member"; teams?: readonly { id: string; manager?: boolean }[]; perspicaxRole?: PerspicaxRole }): Principal {
     const iss = input.iss.trim();
     const sub = input.sub.trim();
     if (!iss || iss.length > 2048 || !sub || sub.length > 255) throw new Error("an issuer and a subject are required");
@@ -328,6 +336,10 @@ export class PrincipalRegistry {
     else delete found.name;
     if (login) found.login = login;
     else delete found.login;
+    // A `picture` claim sets the avatar; its absence says nothing (the
+    // directory, which always carries the field, removes one).
+    const avatar = input.claims?.avatar;
+    if (avatar && AVATAR_VERSION_REGEX.test(avatar)) found.avatar = avatar;
     if (input.orgRole) found.orgRole = input.orgRole;
     if (input.perspicaxRole) found.perspicaxRole = input.perspicaxRole;
     // An absent claim leaves the teams as they are (never "no teams").
@@ -346,7 +358,7 @@ export class PrincipalRegistry {
    * sign-in), else their name, login, address and organization role are
    * refreshed. `disabledAt` is left alone: only a sign-in or a refresh says
    * a person is back in. An absent attribute is dropped, as on a sign-in. */
-  upsertFromDirectory(input: { iss: string; sub: string; name?: string | null; login?: string | null; email?: string | null; orgRole: "admin" | "member"; teams?: readonly { id: string; manager?: boolean }[]; perspicaxRole?: PerspicaxRole }): Principal {
+  upsertFromDirectory(input: { iss: string; sub: string; name?: string | null; login?: string | null; email?: string | null; avatar?: string | null; orgRole: "admin" | "member"; teams?: readonly { id: string; manager?: boolean }[]; perspicaxRole?: PerspicaxRole }): Principal {
     const iss = input.iss.trim();
     const sub = input.sub.trim();
     if (!iss || iss.length > 2048 || !sub || sub.length > 255) throw new Error("an issuer and a subject are required");
@@ -366,6 +378,10 @@ export class PrincipalRegistry {
     else delete found.name;
     if (login) found.login = login;
     else delete found.login;
+    // null: Perspicax says there is none; undefined: an older Perspicax that
+    // does not send the field, which changes nothing.
+    if (input.avatar === null) delete found.avatar;
+    else if (input.avatar !== undefined && AVATAR_VERSION_REGEX.test(input.avatar)) found.avatar = input.avatar;
     found.orgRole = input.orgRole;
     if (input.perspicaxRole) found.perspicaxRole = input.perspicaxRole;
     const teamsChanged = this.applyTeams(found, input.teams);

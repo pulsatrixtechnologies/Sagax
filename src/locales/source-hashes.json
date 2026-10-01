@@ -4885,7 +4885,10 @@
       "pair.pulsatrix.errorUnsupported": "66e100e80bf613add62410ecb0ab312999d1bd774cc5beca6bf3a989fca128e3",
       "pair.pulsatrix.errorBrowser": "6f6a4e969c0700ea433d8f2c4f24bae6e27ebe3c2604109d70bc82fb2dcf77d3",
       "pair.pulsatrix.errorUnreachable": "f3a30e85d2f5c222a3622a79e96fd56589b4495605d9c58e9b7e9e555b22aa9d",
-      "pair.pulsatrix.errorReturn": "85c62c281b2921c8879a9f001d526376c519e3c196951a4916a1a54f1b1cd92d"
+      "pair.pulsatrix.errorReturn": "85c62c281b2921c8879a9f001d526376c519e3c196951a4916a1a54f1b1cd92d",
+      "settings.profile.managedByOrg": "bc2dd8ee27dff13778402562b56ca00daea65194d091dea7ab05b7f9258df783",
+      "settings.profile.editInPerspicax": "e3597bcf63d0b32967ca90b93ec53a99678b2a7b76983c95f38273b1ea4cfebf",
+      "onboarding.managed.intro": "5002889194a4c9905a6ee53c9c56fe07b43b555e3fcb9868bfd5e66e4fdad75b"
     },
     "hi": {
       "noEngines.title": "af88855a5f80377de709995229ba3907df9e8fb3b940fbf7c0d9cbe6eea54afe",
