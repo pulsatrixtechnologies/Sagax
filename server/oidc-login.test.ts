@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { IDP_SWEEP_SLACK_MS, IdpGrantVault, IdpSessionManager } from "./idp-session.ts";
-import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneReturnLink, scopesForRole, validLoopbackReturn } from "./oidc-login.ts";
+import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneReturnLink, profileManagement, scopesForRole, validLoopbackReturn, writesManagedProfile } from "./oidc-login.ts";
 import { RoutineConsents } from "./org-routine-consent.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import { PrincipalRegistry } from "./principals.ts";
@@ -119,6 +119,28 @@ describe("interim sign-in routes on an organization server", () => {
     expect(isInterimSignInRoute("GET", "/api/org")).toBe(false);
     expect(isInterimSignInRoute("POST", "/api/auth/pair")).toBe(false);
     expect(isInterimSignInRoute("GET", "/api/org/invitesx")).toBe(false);
+  });
+});
+
+describe("a person's profile on an organization server", () => {
+  it("is managed by Perspicax, edited in the issuer console's /console/me", () => {
+    const org = identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://pulsatrix.mcp.goxcloud.ca", OMB_PUBLIC_URL: "https://bot.pulsatrix.mcp.goxcloud.ca" });
+    expect(profileManagement(org)).toEqual({ profileManagedBy: "perspicax", profileManageUrl: "https://pulsatrix.mcp.goxcloud.ca/console/me" });
+  });
+
+  it("is the server's own on a solo server", () => {
+    expect(profileManagement({ kind: "solo" })).toBeNull();
+  });
+
+  it("refuses a name or an email, never the about-me or the photo", () => {
+    expect(writesManagedProfile({ profile: { name: "JC" } })).toBe(true);
+    expect(writesManagedProfile({ profile: { email: "jc@example.test" } })).toBe(true);
+    expect(writesManagedProfile({ profile: { name: "", email: "" } })).toBe(true);
+    expect(writesManagedProfile({ profile: { aboutMe: "Prefers French" } })).toBe(false);
+    expect(writesManagedProfile({ profile: { avatarUrl: "" } })).toBe(false);
+    expect(writesManagedProfile({ language: "fr" })).toBe(false);
+    expect(writesManagedProfile(null)).toBe(false);
+    expect(writesManagedProfile([])).toBe(false);
   });
 });
 

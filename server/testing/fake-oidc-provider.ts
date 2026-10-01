@@ -129,6 +129,15 @@ export interface FakeOidcProvider {
   consoleAssertion(input: { sub: string; aud: string; role?: string; teams?: Array<{ id: string; name: string; manager: boolean }>; serverId?: string; claims?: (claims: Record<string, unknown>) => Record<string, unknown>; header?: (header: Record<string, unknown>) => Record<string, unknown>; strayKey?: boolean }): string;
   /** Replace the signing key (the old one leaves the JWKS). */
   rotateKey(): void;
+  /** Avatars (the Perspicax change Sagax consumes): off, the provider is a
+   * Perspicax without them (no `avatar` field, no `picture` claim, no
+   * route). On, each person's image by subject; the version is the first 16
+   * hex of its SHA-256. */
+  avatarsEnabled: boolean;
+  avatars: Map<string, Buffer>;
+  avatarVersion(sub: string): string | null;
+  /** Every avatar request: the subject and whether the link token matched. */
+  avatarRequests: Array<{ sub: string; authorized: boolean }>;
   /** Slice 3 directory: the link token it accepts (Bearer), this server's
    * id, and the people and teams it lists. */
   linkToken: string;
@@ -289,6 +298,13 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
     setDirectoryStatus(sub, status) {
       provider.directoryPeople = provider.directoryPeople.map((person) => (person.sub === sub ? { ...person, status } : person));
     },
+    avatarsEnabled: false,
+    avatars: new Map(),
+    avatarVersion(sub) {
+      const bytes = provider.avatars.get(sub);
+      return bytes ? createHash("sha256").update(bytes).digest("hex").slice(0, 16) : null;
+    },
+    avatarRequests: [],
     personOf(user, status = "active") {
       const role = user.role === "admin" || user.role === "manager" ? user.role : "employee";
       return { sub: user.sub, login: user.preferred_username ?? user.sub, name: user.name ?? user.preferred_username ?? user.sub, email: user.email ?? null, role, status, locale: null };
@@ -317,6 +333,9 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       ...(user.preferred_username ? { preferred_username: user.preferred_username } : {}),
       ...(user.role ? { role: user.role } : {}),
       ...(user.teams ? { teams: user.teams } : {}),
+      ...(provider.avatarsEnabled && provider.avatarVersion(user.sub)
+        ? { picture: `${provider.issuer}/api/v1/pulsabot/people/${encodeURIComponent(user.sub)}/avatar?v=${provider.avatarVersion(user.sub)}` }
+        : {}),
     };
     if (provider.tamper.claims) claims = provider.tamper.claims(claims);
     let header: Record<string, unknown> = { alg: "ES256", typ: "JWT", kid: key.kid };
@@ -354,6 +373,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         people: [...provider.directoryPeople].sort((a, b) => a.sub.localeCompare(b.sub)).map(({ omitRoutineDelegation, ...person }) => ({
           ...person,
           ...(omitRoutineDelegation ? {} : { routine_delegation: routineDelegationOf(person) }),
+          ...(provider.avatarsEnabled ? { avatar: provider.avatarVersion(person.sub) } : {}),
           provider_keys: person.provider_keys ?? ["anthropic", "openai"].filter((name) => provider.providerKeys.has(`${person.sub}/${name}`)),
           ...(provider.profiles.length ? { profiles: [...held(person.sub)].sort() } : {}),
         })),
@@ -368,6 +388,19 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       }
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", etag });
       res.end(body);
+      return;
+    }
+    const avatarRoute = /^\/api\/v1\/pulsabot\/people\/([^/]+)\/avatar$/.exec(url.pathname);
+    if (req.method === "GET" && avatarRoute && provider.avatarsEnabled) {
+      const sub = decodeURIComponent(avatarRoute[1]!);
+      const authorized = req.headers.authorization === `Bearer ${provider.linkToken}`;
+      provider.avatarRequests.push({ sub, authorized });
+      if (!authorized) return send(res, 401, { error: "unauthorized" });
+      const bytes = provider.avatars.get(sub);
+      if (!bytes) return send(res, 404, { error: "no avatar" });
+      const type = bytes[0] === 0x89 ? "image/png" : "image/jpeg";
+      res.writeHead(200, { "content-type": type, "cache-control": "no-store", etag: `"${provider.avatarVersion(sub)}"` });
+      res.end(bytes);
       return;
     }
     if (req.method === "POST" && url.pathname === "/api/v1/pulsabot/provider-keys/resolve") {

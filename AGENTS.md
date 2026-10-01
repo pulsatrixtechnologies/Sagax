@@ -34,6 +34,38 @@ the mail of a solo server. Keep these rules, each covered by a test in
 - A sender always has a name (default `Sagax`); Twilio refuses one without.
 - Tests and fixtures use fake credentials only.
 
+## Profile on an organization server
+
+On an organization server (`OMB_IDENTITY=perspicax`) a signed-in person's
+name and email belong to Perspicax. Keep these rules, each covered by a test
+in `server/member-identity.e2e.test.ts`, `server/org-identity.e2e.test.ts`,
+`server/org-profile.e2e.test.ts`, `server/oidc-login.test.ts` or the
+onboarding tests:
+
+- `GET /api/auth/session` and the config's `viewer` carry
+  `profileManagedBy: "perspicax"` and `profileManageUrl` (the issuer's
+  `/console/me`) for every session; never on a solo server or for the
+  operator at the server's own console (loopback).
+- `PUT`/`PATCH /api/config` with `profile.name` or `profile.email` answers
+  403 `identity_perspicax` for those sessions. About me and the rest of the
+  config stay as they were.
+- The name and email come from the id_token and the directory and are
+  refreshed at each sign-in and token refresh (`PrincipalRegistry.forSubject`).
+- The UI follows the server's answer (`src/lib/profile-management.ts`): the
+  welcome greeting asks for nothing and Settings > General shows the identity
+  read-only ("Géré par votre organisation (Pulsatrix Perspicax)", "Modifier
+  dans Perspicax"). A change here needs the server image redeployed.
+- A person reads as `personDisplayName` (`server/viewer-identity.ts`): the
+  Perspicax display name, else the address's local part, else the login; a
+  directory name equal to the login is not a display name.
+- Avatar (`server/org-profile.e2e.test.ts`): Sagax keeps only a version
+  (`Principal.avatar`) from the id_token `picture` claim (a URL on the
+  issuer's origin with `?v=<version>`) or the directory's `avatar`
+  (null removes it), reads the PNG or JPEG through the link
+  (`GET /api/v1/pulsabot/people/<sub>/avatar`, Bearer link token) and serves
+  it at `/api/people/<principalId>/avatar?v=<version>`. Without those
+  Perspicax fields everyone keeps their initials.
+
 ## Launch flow (desktop)
 
 First run on the desktop app's own window opens the launch screen

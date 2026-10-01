@@ -17,6 +17,7 @@ import type { DirectoryPerson, DirectoryState } from "./perspicax-link.ts";
 import type { Principal } from "./principals.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
+import { personAvatarUrl, personDisplayName } from "./viewer-identity.ts";
 
 export interface OrgSettings {
   /** Let turns that are not an admin owner's own use the organization's key
@@ -36,6 +37,8 @@ export interface OrgDirectoryEntry {
   disabled: boolean;
   /** Slice 4: the teams this person is in. */
   teams?: { id: string; manager: boolean }[];
+  /** Their Perspicax avatar as this server serves it, when they have one. */
+  avatarUrl?: string;
 }
 
 export interface OrgDirectoryTeam {
@@ -103,10 +106,13 @@ export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], b
     const principal = bySubject(issuer, person.sub);
     if (!principal) continue;
     const email = principal.email ?? person.email ?? undefined;
+    const avatarUrl = personAvatarUrl(principal);
     entries.push({
       principalId: principal.id,
-      name: person.name || person.login,
+      // the display name, else the address, else the login
+      name: personDisplayName({ name: person.name, login: person.login, ...(email ? { email } : {}) }) || person.login,
       login: person.login,
+      ...(avatarUrl ? { avatarUrl } : {}),
       ...(email ? { email } : {}),
       role: person.role === "admin" ? "admin" : "member",
       disabled: person.status === "disabled",
