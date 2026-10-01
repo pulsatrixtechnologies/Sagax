@@ -1,0 +1,110 @@
+import { rmSync } from "node:fs";
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { parseOrgImportDocument } from "../shared/org-import.ts";
+import { DATA_DIR } from "./config.ts";
+import { createOrgImportDocument, parseOrgExportChoices } from "./org-export.ts";
+import { RoutineManager } from "./routines.ts";
+import { Store } from "./store.ts";
+import { appendMemoryLog, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
+
+const SELF = "pr_11111111-1111-4111-8111-111111111111";
+const DANA = "pr_22222222-2222-4222-8222-222222222222";
+const KEY = "sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKEFAKE00";
+
+function fixture() {
+  const store = new Store(() => ({ instanceId: "fixture", model: "fixture-model" }));
+  const routines = new RoutineManager({
+    botState: (id) => (store.bot(id) ? "ready" : "missing"),
+    goalState: (id, botId) => (store.group(id)?.memberIds.includes(botId) ? "ready" : "missing"),
+    createTask: (id, title) => store.createTask(id, title),
+    startTurn: async () => { throw new Error("never runs"); },
+  });
+  const atlas = store.createBot({ name: "Atlas" }, { seedMessages: false });
+  const bolt = store.createBot({ name: "Bolt" }, { seedMessages: false });
+  const cleo = store.createBot({ name: "Cleo" }, { seedMessages: false });
+  store.patchBot(atlas.id, { ownerUserId: SELF, directGrants: [DANA],
+    playbooks: [{ key: "p", name: "Deploy", summary: "", triggers: [], instructions: `use ${KEY}` }] });
+  store.setSoul(atlas.id, `Never print password=hunter2hunter2`);
+  store.patchBot(cleo.id, { ownerUserId: DANA });
+  store.appendMessage(atlas.threadId, { role: "user", kind: "text", text: `my key is ${KEY}`, at: 1 });
+  store.appendMessage(atlas.threadId, { role: "bot", kind: "text", text: "noted", at: 2 });
+  store.appendMessage(bolt.threadId, { role: "user", kind: "text", text: "hello bolt", at: 3 });
+  writeMemoryFile(atlas.id, `remember ${KEY}`);
+  writeMemoryTopic(atlas.id, "people.md", "topic");
+  appendMemoryLog(atlas.id, "a day");
+  writeMemoryFile(bolt.id, "bolt memory");
+  const pair = store.createGroup("Atlas and Bolt", [atlas.id, bolt.id], false);
+  store.patchGroup(pair.id, { humanIds: [SELF] });
+  const withDana = store.createGroup("With Dana", [atlas.id, bolt.id], false);
+  store.patchGroup(withDana.id, { humanIds: [SELF, DANA] });
+  const withCleo = store.createGroup("With Cleo", [atlas.id, cleo.id], false);
+  routines.create({ name: "Hourly", prompt: "check", botId: atlas.id, enabled: true, schedule: { type: "interval", everyMinutes: 60, anchorAt: 0 } });
+  routines.create({ name: "Cleo job", prompt: "check", botId: cleo.id, enabled: true, schedule: { type: "interval", everyMinutes: 60, anchorAt: 0 } });
+  routines.create({ name: "Dana goal", prompt: "goal", target: "room-goal", groupId: withDana.id, botId: atlas.id, enabled: true, schedule: { type: "interval", everyMinutes: 60, anchorAt: 0 } });
+  return { store, routines, atlas, bolt, cleo, pair, withDana, withCleo };
+}
+
+const describePerson = (id: string) => (id === DANA ? "dana@example.test" : undefined);
+
+describe("createOrgImportDocument", () => {
+  beforeEach(() => rmSync(DATA_DIR, { recursive: true, force: true }));
+
+  it("copies only the chosen bots, applies the choices, names people by id and scrubs secrets", () => {
+    const f = fixture();
+    const result = createOrgImportDocument(f.store, f.routines.listRoutines(), {
+      localPrincipalId: SELF,
+      choices: [{ id: f.atlas.id, threads: true, memory: true }, { id: f.bolt.id, threads: false, memory: false }],
+      describe: describePerson,
+      now: () => Date.UTC(2026, 9, 1),
+    });
+    if (!result.ok) throw new Error(result.code);
+    expect(result.filename).toBe("sagax-org-copy-2026-10-01.json");
+    const doc = parseOrgImportDocument(JSON.parse(JSON.stringify(result.document)));
+    expect(doc.backup.bots.map((b) => b.name).sort()).toEqual(["Atlas", "Bolt"]);
+    const bolt = doc.backup.bots.find((b) => b.name === "Bolt")!;
+    expect(bolt.tasks).toHaveLength(1);
+    expect(bolt.tasks[0]!.messages).toHaveLength(0);
+    expect(bolt.memory).toBeUndefined();
+    const atlas = doc.backup.bots.find((b) => b.name === "Atlas")!;
+    expect(atlas.memory?.topics).toHaveLength(1);
+    expect(atlas.memory?.logs).toHaveLength(1);
+    // Rooms: only the operator's own room with every bot chosen travels.
+    expect(doc.backup.groups.map((g) => g.name)).toEqual(["Atlas and Bolt"]);
+    // Routines: with their bot, and only when their room travels.
+    expect(doc.backup.routines.map((r) => r.name)).toEqual(["Hourly"]);
+    expect(doc.people.routines).toEqual([{ runAs: null }]);
+    expect(doc.people.bots[f.atlas.id]).toEqual({ owner: SELF, grants: [DANA] });
+    expect(doc.people.bots[f.bolt.id]).toEqual({ owner: null, grants: [] });
+    expect(doc.people.groups[f.pair.id]).toEqual({ humans: [SELF] });
+    const text = JSON.stringify(result.document);
+    expect(text).not.toContain("dana@example.test");
+    expect(text).not.toContain("sk-ant-api03");
+    expect(text).not.toContain("hunter2hunter2");
+    // The message, the instructions and the playbook (memory is scrubbed when written).
+    expect(result.summary.redacted).toBe(3);
+    expect(result.summary.bots.find((b) => b.name === "Atlas")).toMatchObject({ threads: 1, messages: 2, memoryFiles: 3 });
+    expect(result.summary.bots.find((b) => b.name === "Bolt")).toMatchObject({ threads: 0, messages: 0, memoryFiles: 0 });
+    expect(result.summary.notCopied).toEqual(expect.arrayContaining([
+      { kind: "room", name: "With Dana", reason: "other_people", person: "dana@example.test" },
+      { kind: "room", name: "With Cleo", reason: "bot_not_chosen" },
+      { kind: "routine", name: "Dana goal", reason: "room_not_copied" },
+      { kind: "grant", name: "Atlas", reason: "other_people", person: "dana@example.test" },
+    ]));
+    expect(result.summary.notCopied.some((entry) => entry.name === "Cleo job")).toBe(false);
+  });
+
+  it("refuses a bot owned by someone else and an unknown bot", () => {
+    const f = fixture();
+    const base = { localPrincipalId: SELF, describe: describePerson };
+    expect(createOrgImportDocument(f.store, [], { ...base, choices: [{ id: f.cleo.id, threads: true, memory: true }] })).toMatchObject({ ok: false, status: 403, code: "not_your_bot" });
+    expect(createOrgImportDocument(f.store, [], { ...base, choices: [{ id: "nope", threads: true, memory: true }] })).toMatchObject({ ok: false, status: 404, code: "unknown_bot" });
+  });
+
+  it("checks the request body", () => {
+    expect(parseOrgExportChoices({ bots: [] })).toMatch(/between 1 and 200/);
+    expect(parseOrgExportChoices({ bots: [{ id: "a", threads: true }] })).toMatch(/threads, memory/);
+    expect(parseOrgExportChoices({ bots: [{ id: "a", threads: true, memory: false }, { id: "a", threads: true, memory: false }] })).toMatch(/twice/);
+    expect(parseOrgExportChoices({ bots: [{ id: "a", threads: true, memory: false }] })).toEqual([{ id: "a", threads: true, memory: false }]);
+  });
+});

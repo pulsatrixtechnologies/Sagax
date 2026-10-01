@@ -16,15 +16,15 @@ import {
  * log — scrubbed on the way out, because a file the bot's own file tools
  * wrote never passed the server's scrub. Absent when the bot has none, so
  * a backup of a bot that never remembered anything is unchanged. */
-function memoryFor(botId: string): TeamBackup["bots"][number]["memory"] {
-  const file = redactSecretsInText(readMemoryFile(botId).text);
+function memoryFor(botId: string, scrub: (text: string) => string = redactSecretsInText): TeamBackup["bots"][number]["memory"] {
+  const file = scrub(readMemoryFile(botId).text);
   const topics = listMemoryTopics(botId).flatMap((topic) => {
     const text = readMemoryTopic(botId, topic.name);
-    return text === null ? [] : [{ name: topic.name, text: redactSecretsInText(text) }];
+    return text === null ? [] : [{ name: topic.name, text: scrub(text) }];
   });
   const logs = listMemoryLogs(botId).flatMap((name) => {
     const text = readMemoryLog(botId, name);
-    return text === null ? [] : [{ name, text: redactSecretsInText(text) }];
+    return text === null ? [] : [{ name, text: scrub(text) }];
   });
   if (!file && !topics.length && !logs.length) return undefined;
   return { file, topics, logs };
@@ -54,10 +54,31 @@ function messageText(message: Message): string {
   return parts.filter(Boolean).join("\n");
 }
 
-export function createTeamBackup(store: Store, routines: Routine[], name: string): TeamBackup {
-  const botIds = new Set(store.bots.map((bot) => bot.id));
+/** What a backup of a subset carries (slice 8 organization copy). Without
+ * options: every bot, room and routine, message text as written. */
+export interface TeamBackupOptions {
+  /** Only these bots (and the rooms in `groupIds`). */
+  botIds?: ReadonlySet<string>;
+  groupIds?: ReadonlySet<string>;
+  /** Run over message text, instructions, description, playbook
+   * instructions and memory (memory is always scrubbed). */
+  scrub?: (text: string) => string;
+  /** False: the bot travels with one empty "Conversation". */
+  threads?: (botId: string) => boolean;
+  /** False: the bot travels without its memory. */
+  memory?: (botId: string) => boolean;
+}
+
+export function createTeamBackup(store: Store, routines: Routine[], name: string, options: TeamBackupOptions = {}): TeamBackup {
+  const chosenBots = options.botIds ? store.bots.filter((bot) => options.botIds!.has(bot.id)) : store.bots;
+  const chosenGroups = options.groupIds ? store.groups.filter((group) => options.groupIds!.has(group.id)) : store.groups;
+  const botIds = new Set(chosenBots.map((bot) => bot.id));
+  const text = options.scrub ?? ((value: string) => value);
   const warnings: string[] = [];
   const history = (record: BotRecord | GroupRecord): BackupTask[] => {
+    if (options.threads && store.bot(record.id) && !options.threads(record.id)) {
+      return [{ key: record.threadId, title: "Conversation", createdAt: record.createdAt, activeLeafId: null, messages: [] }];
+    }
     const tasks = record.tasks?.length ? record.tasks : [{ threadId: record.threadId, title: "Conversation", createdAt: record.createdAt }];
     return tasks.map((task) => ({
       key: task.threadId, title: task.title, createdAt: task.createdAt,
@@ -80,13 +101,13 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
       pinned: task.pinned === true ? true : undefined,
       activeLeafId: store.activeLeaf(task.threadId),
       messages: store.messagesFor(task.threadId).map((message) => ({
-        id: message.id, role: message.role, text: messageText(message), at: message.at,
+        id: message.id, role: message.role, text: text(messageText(message)), at: message.at,
         parentId: message.parentId ?? null, replyToId: message.replyToId,
         from: message.from, peerPost: message.peerPost,
       })),
     }));
   };
-  const groups = store.groups.map((group) => {
+  const groups = chosenGroups.map((group) => {
     const memberIds = group.memberIds.filter((id) => botIds.has(id));
     if (memberIds.length !== group.memberIds.length) warnings.push(`Room “${group.name}” contains deleted bots. Its conversation is included with the remaining members.`);
     return {
@@ -106,17 +127,19 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
   const document = parseTeamBackup({
     format: "openmaus.backup", version: 1, name, exportedAt: Date.now(),
     warnings,
-    bots: store.bots.map((bot) => ({
-      key: bot.id, name: bot.name, title: bot.title, description: bot.description, soul: bot.soul,
+    bots: chosenBots.map((bot) => ({
+      key: bot.id, name: bot.name, title: bot.title, description: options.scrub ? text(bot.description) : bot.description,
+      soul: bot.soul !== undefined && options.scrub ? text(bot.soul) : bot.soul,
       section: bot.section, color: bot.color,
       mascotExpression: bot.mascotExpression ?? undefined, mascotBody: bot.mascotBody ?? undefined,
       mascotSkin: bot.mascotSkin && bot.mascotSkin !== "none" ? bot.mascotSkin : undefined,
-      chiefOfStaff: Boolean(bot.chiefOfStaff), hidden: Boolean(bot.hidden), playbooks: bot.playbooks ?? [],
+      chiefOfStaff: Boolean(bot.chiefOfStaff), hidden: Boolean(bot.hidden),
+      playbooks: options.scrub ? (bot.playbooks ?? []).map((playbook) => ({ ...playbook, instructions: text(playbook.instructions) })) : bot.playbooks ?? [],
       // Grants are workspace-private authority: they travel in this backup
       // so the team's shape is not lost, but the import below still lands
       // every bot grant-less — restoring them is a deliberate later choice.
       ...(bot.connectorTools ? { connectorTools: structuredClone(bot.connectorTools) } : {}),
-      memory: memoryFor(bot.id),
+      memory: options.memory && !options.memory(bot.id) ? undefined : memoryFor(bot.id, options.scrub),
       activeTask: bot.threadId, tasks: history(bot),
     })),
     groups,

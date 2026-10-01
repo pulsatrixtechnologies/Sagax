@@ -596,6 +596,7 @@ import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
+import { createOrgExportRoute } from "./org-export.ts";
 import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
@@ -16022,6 +16023,19 @@ if (IDENTITY.kind === "perspicax") {
     },
   }));
 } else {
+  // Slice 8: the copy of the operator's own bots for an organization server.
+  ROUTES.push(createOrgExportRoute({
+    isOperator: (auth) => auth.kind === "loopback"
+      ? auth.trust !== "service"
+      : auth.scopes.includes("admin") && auth.session.principalId === localPrincipalId(),
+    localPrincipalId,
+    store: () => store,
+    routines: () => routines?.listRoutines() ?? [],
+    describe: (principalId) => {
+      const person = principals.byId(principalId);
+      return person?.name?.trim() || person?.email || undefined;
+    },
+  }));
   // Slice 6: routine delegation exists only on an organization server.
   ROUTES.push(async ({ res, path, json }) => path === "/api/org/routine-delegation"
     ? json(res, 403, { error: "This server does not sign people in with Pulsatrix.", code: "identity_perspicax" })
