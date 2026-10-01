@@ -75,12 +75,14 @@ describe("mascot behavior: idle life", () => {
     expect(sleepAfterMs("lively", 0.6)).toBeGreaterThan(sleepAfterMs("normal", 0.6));
   });
 
-  it("turns around to face the other way", () => {
+  it("turns around in place only with real depth (a 3D model)", () => {
     let state = newMascotState(0);
-    // find the turn action through the scheduler by forcing its memory
+    for (let roll = 0; roll < 1; roll += 0.01) {
+      expect(["turn", "spin", "backflip", "headSpin", "lookBack"]).not.toContain(stepMascot(state, { type: "tick", now: state.nextIdle }, desk({ random: rolls(roll) })).state.activity);
+    }
     state = { ...state, memory: { last: {}, previous: null } };
     for (let roll = 0; roll < 1; roll += 0.01) {
-      const next = stepMascot(state, { type: "tick", now: state.nextIdle }, desk({ random: rolls(roll) })).state;
+      const next = stepMascot(state, { type: "tick", now: state.nextIdle }, desk({ depth: true, random: rolls(roll) })).state;
       if (next.activity === "turn") {
         expect(next.facing).toBe(-1);
         return;
@@ -107,6 +109,24 @@ describe("mascot behavior: walking and short flights along the desk", () => {
     expect(effect).toMatchObject({ type: "wander", style: "walk" });
     expect(effect.type === "wander" && effect.dx).toBeGreaterThan(0);
     expect(stepMascot(step.state, { type: "arrived", now: 9000 }, desk()).state.activity).toBe("idle");
+  });
+
+  it("faces another way only when it walks or flies the other way", () => {
+    const options = desk({ random: Math.random });
+    let state = stepMascot(newMascotState(0), { type: "room", now: 0, left: 600, right: 600 }, options).state;
+    let now = 0;
+    for (let i = 0; i < 400; i += 1) {
+      const before = state.facing;
+      now += 250;
+      const step = stepMascot(state, { type: "tick", now }, options);
+      if (step.state.facing !== before) {
+        expect(["walk", "fly"]).toContain(step.state.activity);
+        const move = step.effects.find((effect) => effect.type === "wander");
+        expect(move && move.type === "wander" && Math.sign(move.dx)).toBe(step.state.facing);
+      }
+      state = step.state;
+      if (state.activity === "walk" || state.activity === "fly") state = stepMascot(state, { type: "arrived", now: now + 10 }, options).state;
+    }
   });
 
   it("never walks into the screen edge", () => {

@@ -81,6 +81,8 @@ export interface MascotOptions {
   liveliness?: Liveliness;
   /** The mood, 0..1 (mood.ts); content when absent. */
   mood?: number;
+  /** The character has real depth (a 3D model): it may spin, flip and turn in place. A flat one only turns to walk the other way. */
+  depth?: boolean;
 }
 
 export type MascotInput =
@@ -121,8 +123,9 @@ export const MASCOT_MS = {
   idleMin: 3500,
 } as const;
 
-/** The clips a click picks from; under reduced motion, only the quiet ones. */
-export const PLAY_POOL: readonly TimedClip[] = ["spin", "backflip", "wave", "dance", "jump"];
+/** The clips a click picks from; a flat character never spins or flips; under reduced motion, only the quiet ones. */
+export const PLAY_POOL_3D: readonly TimedClip[] = ["spin", "backflip", "wave", "dance", "jump"];
+export const PLAY_POOL: readonly TimedClip[] = ["wave", "dance", "jump", "love", "hop"];
 const PLAY_POOL_REDUCED: readonly TimedClip[] = ["wave", "love"];
 /** Near enough (px) for the owl to notice the pointer; fast enough (px/s) to startle it. */
 const NEAR = 220;
@@ -230,6 +233,7 @@ function idleAction(state: MascotState, now: number, options: MascotOptions): St
     mood: moodOf(options),
     reduced: options.reduced,
     canMove: options.canMove,
+    depth: options.depth,
     random: options.random,
   });
   const gap = idleGapMs({ liveliness: liveliness(options), mood: moodOf(options), reduced: options.reduced, random: options.random });
@@ -266,7 +270,7 @@ function onPlay(state: MascotState, now: number, options: MascotOptions): Step {
   if (dwelling(state, now)) return same(base);
   // a flurry of clicks makes it cross; otherwise a joyful emote, not the same twice
   if (plays.length >= 4 && !options.reduced) return { state: become({ ...base, plays: [] }, "angry", now, options), effects: [] };
-  const pool = (options.reduced ? PLAY_POOL_REDUCED : PLAY_POOL).filter((clip) => clip !== state.lastEmote);
+  const pool = (options.reduced ? PLAY_POOL_REDUCED : options.depth ? PLAY_POOL_3D : PLAY_POOL).filter((clip) => clip !== state.lastEmote);
   const emote = pool[Math.min(pool.length - 1, Math.floor(options.random() * pool.length))];
   return { state: become({ ...base, lastEmote: emote }, emote, now, options), effects: [{ type: "hearts" }] };
 }

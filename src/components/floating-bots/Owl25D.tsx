@@ -42,6 +42,23 @@ const DEG = 180 / Math.PI;
 
 /** The transforms of one frame, as CSS strings: pure, so it can be tested. */
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+/** A flat drawing tilts at most this much (degrees): more reads as a sheet of paper. */
+export const FLAT_TILT_MAX = 15;
+
+/**
+ * A flat character never turns in depth (it would show a paper-thin edge).
+ * It only faces the other way, when it walks the other way: a quick swap at
+ * the bottom of a squash, never narrower than FLAT_MIN_WIDTH of itself.
+ */
+export const FLAT_MIN_WIDTH = 0.82;
+export function flatTurn(face: number | undefined): { sx: number; sy: number; lift: number } {
+  const f = Math.min(1, Math.max(-1, face ?? 1));
+  const k = Math.abs(f);
+  const side = f >= 0 ? 1 : -1;
+  return { sx: side * (FLAT_MIN_WIDTH + (1 - FLAT_MIN_WIDTH) * k), sy: 1 - 0.12 * (1 - k), lift: (1 - k) * 0.06 };
+}
+
+export const flatTilt = (deg: number) => Math.min(FLAT_TILT_MAX, Math.max(-FLAT_TILT_MAX, deg));
 
 export function owl25dTransforms(frame: MascotFrame) {
   const lift = frame.y * UNIT;
@@ -50,7 +67,7 @@ export function owl25dTransforms(frame: MascotFrame) {
   const pose = {
     x: frame.sway * UNIT * 0.6 + frame.headYaw * 4 + (frame.x ?? 0) * UNIT,
     y: -lift,
-    tilt: (frame.headTilt * 0.6 + frame.lean * 0.5) * DEG,
+    tilt: flatTilt((frame.headTilt * 0.6 + frame.lean * 0.5) * DEG),
     sx: (puff / Math.sqrt(squash)),
     sy: squash * Math.sqrt(puff),
   };
@@ -58,12 +75,11 @@ export function owl25dTransforms(frame: MascotFrame) {
   const openFar = clamp01(frame.wingFar ?? frame.wing);
   const swing = (frame.wingSwing ?? 0) * DEG;
   const pupil = frame.pupilX === 0 && frame.pupilY === 0 ? gazeToOffset(null) : gazeToOffset({ x: frame.pupilX, y: -frame.pupilY });
-  // facing the other way is a half turn: past a quarter turn the art shows its mirrored side
-  const facing = ((1 - (frame.face ?? 1)) / 2) * 180;
+  // no spin, flip or roll in depth for a flat owl: it only faces left or right
+  const facing = flatTurn(frame.face);
   const turn =
-    `perspective(520px) rotateY(${(frame.spin * DEG + facing).toFixed(2)}deg) ` +
-    `rotateX(${((frame.roll ?? 0) * DEG + frame.headPitch * 0.25 * DEG).toFixed(2)}deg) ` +
-    `rotateZ(${((frame.flip ?? 0) * DEG).toFixed(2)}deg) scale(${frame.scale.toFixed(4)})`;
+    `translateY(${(-facing.lift * UNIT * 0.5).toFixed(2)}px) ` +
+    `scale(${(facing.sx * frame.scale).toFixed(4)}, ${(facing.sy * frame.scale).toFixed(4)})`;
   const foot = (lift: number | undefined) => `translate(0px, ${(-clamp01(lift ?? 0) * 14).toFixed(2)}px) rotate(${(-clamp01(lift ?? 0) * 18).toFixed(2)}deg)`;
   return {
     turn,

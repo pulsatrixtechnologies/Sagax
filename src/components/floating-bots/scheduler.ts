@@ -22,6 +22,8 @@ export interface IdleAction {
   energy: 0 | 1 | 2;
   /** Gentle enough for reduced motion. */
   gentle?: boolean;
+  /** Turns the character around in depth: only for a renderer with real depth (a 3D model). */
+  rotates?: boolean;
 }
 
 const clip = (id: TimedClip, weight: number, cooldown: number, energy: 0 | 1 | 2, gentle = false): IdleAction => ({
@@ -35,12 +37,12 @@ const clip = (id: TimedClip, weight: number, cooldown: number, energy: 0 | 1 | 2
 
 export const IDLE_ACTIONS: readonly IdleAction[] = [
   clip("look", 10, 6_000, 0, true),
-  clip("lookBack", 4, 20_000, 0),
-  clip("headSpin", 3, 40_000, 1),
+  { ...clip("lookBack", 4, 20_000, 0), rotates: true },
+  { ...clip("headSpin", 3, 40_000, 1), rotates: true },
   clip("tilt", 6, 10_000, 0, true),
-  { id: "turn", choice: { kind: "turn" }, weight: 4, cooldown: 15_000, energy: 0 },
-  clip("spin", 4, 25_000, 2),
-  clip("backflip", 1.5, 60_000, 2),
+  { id: "turn", choice: { kind: "turn" }, weight: 4, cooldown: 15_000, energy: 0, rotates: true },
+  { ...clip("spin", 4, 25_000, 2), rotates: true },
+  { ...clip("backflip", 1.5, 60_000, 2), rotates: true },
   clip("hop", 5, 8_000, 1),
   clip("hopForward", 3, 15_000, 1),
   clip("wave", 2, 40_000, 1),
@@ -79,6 +81,8 @@ export interface SchedulerOptions {
   reduced: boolean;
   /** Moves (walk, fly) need a window the mascot can move. */
   canMove: boolean;
+  /** The renderer has real depth (a 3D model): spins, flips and turning in place are allowed. */
+  depth?: boolean;
   random: () => number;
 }
 
@@ -101,6 +105,7 @@ export function idleWeights(memory: SchedulerMemory, now: number, options: Sched
       resting ||
       memory.previous === action.id ||
       (options.reduced && !action.gentle) ||
+      (action.rotates && !options.depth) ||
       (action.choice.kind === "move" && !options.canMove);
     return { action, weight: blocked ? 0 : weight };
   });
