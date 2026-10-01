@@ -46,6 +46,8 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // computer's files, screen, logins or secrets is handed to the page.
 const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing"]);
 let bundledPage = false;
+// main.mjs always answers this channel: a sendSync nobody answers would
+// block this page for good (a test harness must answer it too).
 if (!isLocalPage) {
   try {
     bundledPage = ipcRenderer.sendSync("workspace:bundled-ui") === true;
