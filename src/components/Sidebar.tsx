@@ -228,8 +228,10 @@ function groupPreview(group: Group, bots: Bot[]): string {
 /** A small member stack identifies a group without turning it into a card. */
 function StackedMauses({ members, density }: { members: Bot[]; density: SidebarDensity }) {
   const iconOnly = density === "icons";
-  const slotSize = iconOnly ? "size-12" : density === "compact" ? "size-7" : "size-8";
-  const singleSize = iconOnly ? 44 : density === "compact" ? 26 : 32;
+  // Same footprint as a bot row's avatar (BotListItem: 28 compact, 36
+  // comfortable) so group and bot names share one left edge.
+  const slotSize = iconOnly ? "size-12" : density === "compact" ? "size-7" : "size-9";
+  const singleSize = iconOnly ? 44 : density === "compact" ? 28 : 36;
   if (members.length <= 1) {
     const b = members[0];
     return (
@@ -239,14 +241,16 @@ function StackedMauses({ members, density }: { members: Bot[]; density: SidebarD
     );
   }
   const shown = members.slice(0, 3);
-  const face = iconOnly ? 22 : density === "compact" ? 16 : 18;
+  const face = iconOnly ? 22 : density === "compact" ? 16 : 20;
   const spots = shown.length === 2
     ? ["left-0 top-0.5", "right-0 bottom-0"]
     : ["left-0 top-0", "left-0 bottom-0", "right-0 bottom-0"];
   return (
-    <div className={cn("relative shrink-0", iconOnly ? "size-10" : density === "compact" ? "size-7" : "size-8")}>
+    <div className={cn("relative shrink-0", iconOnly ? "size-10" : density === "compact" ? "size-7" : "size-9")}>
+      {/* No outline ring: a ring in a fixed color reads as a dark border on
+          hover and selected rows. The faces simply overlap. */}
       {shown.map((b, index) => (
-        <span key={b.id} className={cn("absolute rounded-full ring-2 ring-panel", spots[index])}>
+        <span key={b.id} className={cn("absolute rounded-full", spots[index])}>
           <BotAvatar bot={b} state="idle" size={face} animated={false} />
         </span>
       ))}
@@ -308,7 +312,9 @@ export function GroupListItem({
       className={cn(
         "relative flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
         density === "icons" ? "justify-center px-1 py-1.5" : density === "compact" ? "gap-2 py-1.5 pr-9" : "min-h-[54px] gap-2 py-2 pr-2",
-        density !== "icons" && (hasThreadList ? "pl-5" : "pl-2"),
+        // Same inset as BotListItem so the group and its bots line up; the
+        // disclosure chevron sits inside it.
+        density !== "icons" && (showThreads ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
       title={density === "icons" ? group.name : undefined}
@@ -1050,7 +1056,12 @@ export function BotDeleteMenuItem({ deleting, onClick }: { deleting: boolean; on
 /** The thread tree under one bot row: project folders, then ungrouped rows.
  * Visibility folds old threads away. Pins stay, then the newest update.
  * Waiting and working stay visible as status, not as a sort key. */
-export function BotThreadList({ bot, selected, density = "comfortable", query = "", hidden = false }: { bot: Bot; selected: boolean; density?: SidebarDensity; query?: string; hidden?: boolean }) {
+export function BotThreadList({ bot, selected, density = "comfortable", query = "", hidden = false, mine = false }: {
+  bot: Bot; selected: boolean; density?: SidebarDensity; query?: string; hidden?: boolean;
+  /** An organization server sends each person only their own threads with
+   * a bot: the list says so. */
+  mine?: boolean;
+}) {
   const { state, dispatch } = useStore();
   const now = useRelativeNow();
   const tasks = (bot.tasks ?? [{ threadId: bot.threadId, title: t("task.newShort"), createdAt: 0 }])
@@ -1136,6 +1147,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
       onDragOver={(event) => { if (event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) event.stopPropagation(); }}
       onDrop={(event) => { if (event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) { event.preventDefault(); event.stopPropagation(); resetFolderDrag(); } }}>
       {!hidden && <>
+      {mine && <div data-sidebar-my-threads className="px-2 pt-1 text-[11px] font-medium text-sidebar-ink-secondary">{t("sidebar.threads.mine")}</div>}
       {orderedProjects.map((project) => {
         const index = projects.indexOf(project);
         const projectTasks = tasks.filter((task) => task.projectId === project.id);
@@ -1224,9 +1236,12 @@ export function BotListItem({
   onMenu,
   startRename = false,
   onRenameStarted,
+  mine = false,
 }: {
   bot: Bot;
   density: SidebarDensity;
+  /** Organization server: the thread list holds only the viewer's own. */
+  mine?: boolean;
   /** Quiet rows: name and status only (see sidebar-preferences). */
   quiet?: boolean;
   query?: string;
@@ -1462,7 +1477,7 @@ export function BotListItem({
     </div>
     {/* Keep folder expansion state mounted while the preference is off. The
         hidden list omits its children, including any thread-menu portals. */}
-    {!iconOnly && threadsOpen && hasThreadList && <BotThreadList bot={bot} selected={selected} density={density} hidden={!showThreads} query={bot.name.toLowerCase().includes(query.toLowerCase()) || bot.title.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
+    {!iconOnly && threadsOpen && hasThreadList && <BotThreadList bot={bot} selected={selected} density={density} hidden={!showThreads} mine={mine} query={bot.name.toLowerCase().includes(query.toLowerCase()) || bot.title.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
     {!expanded && <SidebarBotActivity bot={bot} density={density} />}
     {showThreads && creatingProject && <BotProjectDialog bot={bot} onClose={() => setCreatingProject(false)} />}
     </>
@@ -2365,6 +2380,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                         onMenu={setMenu}
                         startRename={renameBotId === bot.id}
                         onRenameStarted={() => setRenameBotId(null)}
+                        mine={orgMode}
                       />
                     ))}
                     {sectionGroupItems.map((group) => (
@@ -2387,6 +2403,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                         onMenu={setMenu}
                         startRename={renameBotId === bot.id}
                         onRenameStarted={() => setRenameBotId(null)}
+                        mine={orgMode}
                       />
                     ))}
                   </div>

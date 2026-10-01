@@ -129,6 +129,10 @@ export interface WireTask {
   routineRunId?: string;
   /** Set when a bot, not a person, opened this thread. */
   openedBy?: TaskOpenedBy;
+  /** Organization server: the person this 1:1 thread belongs to (who
+   * started it; a routine's runAs; else the bot owner when absent). Only
+   * they read or write it (server/thread-privacy.ts). */
+  ownerPrincipalId?: string;
   /** Set by close_thread; absent while the thread is open. */
   closedBy?: TaskClosedBy;
   /** When the person archived this thread. Absent = unarchived. */
