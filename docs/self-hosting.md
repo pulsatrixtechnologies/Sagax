@@ -487,10 +487,11 @@ webhooks, sessions and pairing, people and sign-in lists, usage, budgets,
 the decision log, fleet, workspace backups, creating or loosening bots, and
 approving or answering any card. The Slack worker (the only session-less
 local caller a hosted workspace has) needs nothing more and keeps working
-unchanged. Sessions (a portal sign-in or a pairing) work exactly as before,
-with their own scopes.
+unchanged. Sessions — a portal sign-in, an email sign-in or a pairing — work
+exactly as before, with their own scopes.
 
-Set `OMB_LOOPBACK_TRUST=service` on a self-hosted server people share, or `OMB_LOOPBACK_TRUST=owner` to opt a hosted
+Set `OMB_LOOPBACK_TRUST=service` on a self-hosted server people share (with
+an email sign-in list, say), or `OMB_LOOPBACK_TRUST=owner` to opt a hosted
 workspace back into the old behaviour (the log then warns). Any other value
 means `service`. The desktop app ignores the setting: its local changes
 already need the app's own per-launch capability.
@@ -504,7 +505,9 @@ With `service` on a self-hosted server:
   the server refuses one anyway, `serve` says why and keeps running.
 - `openmausbot pair` and `openmausbot sessions`, run later from another
   terminal, are refused like any other admin change and say so. Pair from
-  Settings → Remote access while signed in as an admin.
+  Settings → Remote access while signed in as an admin, or let people sign
+  in with their email (`openmausbot access add you@example.com`, which edits
+  the sign-in list on disk).
 - A browser on an SSH tunnel gets the sign-in page instead of the app.
 - The MCP server script works with `OPENMAUSBOT_TOKEN` set to a paired session.
 
@@ -789,20 +792,124 @@ there. Your bots copied there stay in the organization; your bots on this
 computer are unchanged.
 
 For several people on one server, run Sagax with Perspicax (the compose in
-`pulsatrix-v3/deploy`, `docker-compose.pulsabot.yml`). Emailed sign-in codes,
-invitation links, the sign-in allow-list, `pulsa access` and the mail
-settings (the sign-in and mail environment variables, and the SMTP and
-other mail providers) were removed; an old `config.json` that still has `mail`, `signIn`, `invites` or
-`org` loads and ignores them, and a session that signed in with an emailed
-code ends at its next request.
+`pulsatrix-v3/deploy`, `docker-compose.pulsabot.yml`): Perspicax owns the
+accounts there, so an organization server (`OMB_IDENTITY=perspicax`) offers
+no emailed sign-in codes, invitation links or sign-in list, and an old
+`config.json` `org` key is ignored. A solo server keeps them, as below: its
+own sign-in list, emailed codes and invitations.
 
-### People on a hosted workspace
+## Sign in with your email
+
+A pairing code is fine for the owner's own devices. For a workspace other
+people use every day, let them sign in with an emailed code instead: set an
+allow-list, and `/pair` on your server offers "Sign in with your email" first.
+
+```sh
+OMB_SIGNIN_EMAILS="her@yourcompany.com, @yourcompany.com"   # full access
+OMB_SIGNIN_MEMBER_EMAILS="freelancer@example.com"          # chat and approvals only
+```
+
+Signed in as an admin? Settings → Remote access → **Who can sign in with an
+email** edits the same list in the browser, no command line needed. With the
+npm package, the same thing from the command line, with the server running
+or not, no restart needed:
+
+```sh
+npx openmausbot access add her@yourcompany.com
+npx openmausbot access add freelancer@example.com --chat-only
+npx openmausbot access list
+```
+
+An entry is an address or `@domain` (everyone at that domain). Admins get
+the same access as a pairing code from `openmausbot serve`; members get the
+chat-only scope, the same as `openmausbot pair --client`. The same lists live
+in `config.json` under `signIn.admins` and `signIn.members` and can be changed
+through the settings API without a restart; the environment variables win
+when set, which is how a container or a service unit is bootstrapped.
+
+Your server mints the code, emails it through the mail provider you
+configure (below), checks the answer, and then issues its own session
+cookie: the browser only ever talks to your server, and who is welcome is
+decided only by your allow-list. Until a mail provider is ready, `/pair`
+offers pairing codes only. Wrong codes count against the same lockout as
+pairing codes. Sessions from a sign-in show the email in
+`openmausbot sessions` and can be revoked the same way.
+
+### Sending mail from your server
+
+Sign-in codes and invitations leave through one of three providers: `smtp`,
+`sendgrid` or `twilio` (the Twilio Email API). Set it in the environment, or
+save it in `config.json` under `mail`. An environment variable always wins
+over the saved value for the same field.
+
+```sh
+OMB_MAIL_PROVIDER=twilio                 # smtp | sendgrid | twilio
+OMB_MAIL_FROM="Sagax <bot@yourcompany.com>"
+
+# smtp
+OMB_SMTP_HOST=smtp.yourcompany.com
+OMB_SMTP_PORT=587                        # default 465 with tls, 587 otherwise
+OMB_SMTP_SECURE=starttls                 # tls | starttls | none
+OMB_SMTP_USER=bot@yourcompany.com
+OMB_SMTP_PASSWORD=...                    # or OMB_SMTP_PASSWORD_FILE=/run/secrets/smtp
+
+# sendgrid
+OMB_SENDGRID_API_KEY=...                 # or OMB_SENDGRID_API_KEY_FILE=/run/secrets/sendgrid
+
+# twilio
+OMB_TWILIO_API_KEY_SID=SK...
+OMB_TWILIO_API_KEY_SECRET=...            # or OMB_TWILIO_API_KEY_SECRET_FILE=/run/secrets/twilio
+```
+
+Each secret also reads from a `_FILE` path (a Docker secret); when both are
+set, the direct value wins. Mail is ready once the provider, `from` and that
+provider's fields are set: SMTP needs a host, SendGrid an API key, Twilio a
+key SID and its secret. The Twilio provider posts to
+`https://comms.twilio.com/v1/Emails` with the key SID and secret as HTTP
+Basic credentials; create an API key in the Twilio Console and verify the
+sender domain there first.
+
+The same settings in `config.json`, for a server run without Docker:
+
+```json
+"mail": {
+  "provider": "twilio",
+  "from": "Sagax <bot@yourcompany.com>",
+  "twilio": { "apiKeySid": "SK...", "apiKeySecret": "..." }
+}
+```
+
+`smtp` takes `host`, `port`, `secure`, `user` and `password`; `sendgrid`
+takes `apiKey`. A password, API key or key secret is never shown back: a
+mail status reports only whether one is configured, and a refused message
+is logged with the provider's status code (and, for Twilio, its reason,
+such as "The from.address domain ... is not valid or authorized."), never
+the credential.
+
+### Inviting people
+
+**Settings → People** lists who may sign in, their role, when they were last
+seen, and what each person spent this month. **Invite** adds an address (or
+`@company.com` for everyone there) and shows a link like
+`https://your.host/pair?email=name%40company.com`: it opens the sign-in page
+with the address filled in, and the one-time code still goes to that address.
+Roles change with one click; removing someone stops new sign-ins.
+
+On a solo server, **Settings > Organization > Invite someone** also emails
+a one-time invitation link (`https://your.host/join#token=...`, valid seven
+days) once mail is set up; opening it adds the address to the members list
+and signs that browser in. The invitations are issued in the name of the
+server itself: a solo server has no organization to create or move (`POST`
+and `PATCH /api/org` answer 410 `interim_org_removed`). An organization
+server refuses the email and invitation routes (403 `identity_perspicax`)
+and sends `/join` to `/pair`.
 
 On a hosted workspace whose members your organization's Admin manages
-(`OMB_ADMIN_MEMBERSHIP=portal`), Settings > People shows, read-only, who has
-signed in and what they spent, with a **Manage people in Admin** link to that
-workspace in Admin > People. Remote access there lists signed-in devices and
-offers no pairing codes, since a hosted workspace refuses them.
+(`OMB_ADMIN_MEMBERSHIP=portal`), this list decides nothing, so Settings →
+People shows, read-only, who has signed in and what they spent, with a
+**Manage people in Admin** link to that workspace in Admin → People. Remote
+access there lists signed-in devices and offers no pairing codes, since a
+hosted workspace refuses them.
 
 ### People from before Perspicax
 
@@ -819,8 +926,8 @@ shorten the window, extend it up to 90 days, or close it now.
 ### Who may answer a card
 
 Approval cards are the provider's own (see the approval modes); Sagax
-adds none. On a workspace several people share (portal membership), it
-narrows only whose answer counts,
+adds none. On a workspace several people share — portal membership, or an
+email sign-in list that names members — it narrows only whose answer counts,
 and only when the card can be traced to a person:
 
 - a card for a request a member sent, or in a thread a member opened, is
@@ -1019,19 +1126,20 @@ start a spreadsheet formula are prefixed with `'`.
 
 ### Admin activity
 
-On a workspace several people share (a hosted workspace, an organization
-server, or a device paired, or a pairing code open, with chat-only access,
-whether before or after the change), every admin change is recorded beside the decision
+On a workspace several people share — a hosted workspace, an email sign-in
+list that names more than one person or a whole `@domain`, or a device paired
+(or a pairing code open) with chat-only access, whether before or after the
+change — every admin change is recorded beside the decision
 log, in `<data dir>/admin-activity/YYYY-MM.ndjson` (0600), and kept for the
 same window (`decisions.retentionDays` / `OMB_DECISION_RETENTION_DAYS`; a
 quiet server prunes on a timer, and pending rows are written out at
 shutdown): settings
-(which keys changed), people, pairing codes and revoked
+(which keys changed), sign-in lists and people, pairing codes and revoked
 sessions, webhooks, MCP servers, engines and keys, bots created, deleted or
 given different permissions, spend limits and prices, and who can see a bot.
-Each row names who acted (the session's email or device label, `This
+Each row names who acted — the session's email or device label, `This
 computer` for the owner, `Command line` for `openmausbot` commands such as
-`openmausbot pair`) and the values before and after. Values are
+`openmausbot access add` — and the values before and after. Values are
 redacted: anything under a key that names a credential, every value in a
 headers or environment map, the value after a flag such as `--api-key` or
 `-k`, URL parameters such as `?key=`, a token before a URL's host

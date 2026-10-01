@@ -586,11 +586,17 @@ node --test electron/org-join.node-test.mjs
   `interim_attach_closed`), `POST /api/org/interim-people/attach` (404
   `unknown_person`, 400 `not_interim`, 400 `bad_target`, 410), the window in
   `GET /api/org` settings and `PATCH /api/org/settings { interimAttachDays }`.
-- Retired: solo `POST /api/auth/email/*` and `/api/org/invites*` answer 410
-  `interim_signin_removed`, `POST`/`PATCH /api/org` 410 `interim_org_removed`,
-  `GET /api/org` 404 `no_organization`, `GET /join` redirects to `/pair`; an
-  organization server keeps 403 `identity_perspicax`. A seeded email session
-  ends at its first request while a pairing session in the same file works.
+- Email stays solo (decision: "Garder le courriel en solo"): a solo server
+  keeps `POST /api/auth/email/start|verify` for its sign-in list, the mailer
+  (SMTP, SendGrid, Twilio, `OMB_MAIL_*` over `config.json`, `*_FILE`
+  secrets), Settings > People and its invitations (`/api/org/invites*`, the
+  `/join` page), issued in the server's own name. Solo `POST`/`PATCH
+  /api/org` answer 410 `interim_org_removed`, `GET /api/org` 404
+  `no_organization`; an old `config.json` `org` key is ignored. An
+  organization server answers 403 `identity_perspicax` on the email and
+  invitation routes, sends `GET /join` to `/pair`, sends no sign-in list and
+  ends a seeded email session at its first request while a pairing session
+  in the same file works.
 
 ### Against a real Perspicax (manual, isolated instances only)
 
