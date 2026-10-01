@@ -2595,6 +2595,7 @@ const retroAssistantWindow = createRetroAssistantWindow({
 // call; see electron/floating-bot-window.mjs.
 const FLOATING_BOT_POSITIONS = () => path.join(app.getPath("userData"), "floating-bot-positions.json");
 const floatingBotWindows = createFloatingBotWindows({
+  whenReady: () => app.whenReady(),
   BrowserWindow,
   screen,
   ipcMain,

@@ -258,6 +258,7 @@ export function sanitizePositions(value) {
  * @param {() => unknown} [deps.readPositions]
  * @param {(positions: Record<string, Record<string, {x:number,y:number}>>) => void} [deps.writePositions]
  * @param {(event: any) => boolean} [deps.isTrustedMain]  the sender is the local app page
+ * @param {() => Promise<unknown>} [deps.whenReady]  resolves once Electron's app is ready (the screen module needs it)
  * @param {() => void} [deps.focusMain]     bring the app window forward ("Open in the app")
  * @param {string} [deps.platform]          process.platform by default
  * @param {(line: string) => void} [deps.log]
@@ -434,7 +435,13 @@ export function createFloatingBotWindows(deps) {
       }
     }
   };
-  for (const change of ["display-added", "display-removed", "display-metrics-changed"]) screen.on?.(change, reclamp);
+  // The screen module exists only after app "ready"; createFloatingBotWindows
+  // can run earlier, so the display listeners wait for it.
+  const listenDisplays = () => {
+    for (const change of ["display-added", "display-removed", "display-metrics-changed"]) screen.on?.(change, reclamp);
+  };
+  if (deps.whenReady) void deps.whenReady().then(listenDisplays);
+  else listenDisplays();
 
   function close(botId) {
     const entry = floats.get(botId);
