@@ -2844,76 +2844,6 @@ const workspaceOnly = (handler) => (event, ...args) => {
 };
 const localWorkspaceOnly = (channel, handler) => localOnly(channel, workspaceOnly(handler));
 
-// "Join a Perspicax server" (slice 8, electron/org-join.mjs). probe and stage
-// answer the local page only. The others answer only the main frame of the
-// active saved server, and org-join itself checks that this origin is the
-// one the copy was staged for.
-const orgJoin = createOrgJoin({
-  fetch: (url, init) => fetch(url, init),
-  parseLink: (address) => parseHostedWorkspaceLink(address),
-  saveEnvironment: (origin) => {
-    let next = withEnvironment(environmentsState, { origin, name: new URL(origin).host }, () => randomUUID());
-    const entry = next.environments.find((candidate) => candidate.origin === origin);
-    if (!entry) throw new Error("The server could not be saved.");
-    next = withActive(next, entry.id);
-    persistEnvironments(next);
-  },
-  navigate: (url) => navigateMainWindow(url),
-  confirm: async (names) => {
-    const { response } = await dialog.showMessageBox({
-      type: "warning",
-      buttons: ["Remove", "Cancel"],
-      defaultId: 1,
-      cancelId: 1,
-      message: names.length === 1 ? `Remove “${names[0]}” from this computer?` : `Remove ${names.length} bots from this computer?`,
-      detail: `${names.join("\n")}\n\nTheir copies in the organization stay. This removes them and their conversations from this computer only.`,
-    });
-    return response === 0;
-  },
-  deleteLocalBot: async (key) => {
-    const response = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/bots/${encodeURIComponent(key)}`, {
-      method: "DELETE", redirect: "error", credentials: "omit", signal: AbortSignal.timeout(15_000),
-      headers: { [DESKTOP_MUTATION_HEADER]: desktopMutationToken ?? "" },
-    }).catch(() => null);
-    return Boolean(response?.ok);
-  },
-  postLinkedSubject: async (input) => {
-    const response = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/identity/linked-subjects`, {
-      method: "POST", redirect: "error", credentials: "omit", signal: AbortSignal.timeout(5_000),
-      headers: { "content-type": "application/json", [DESKTOP_MUTATION_HEADER]: desktopMutationToken ?? "" },
-      body: JSON.stringify(input),
-    }).catch(() => null);
-    if (!response?.ok) slog(`org join: the linked organization account could not be recorded (${response?.status ?? "unreachable"})`);
-  },
-});
-/** The origin of a call from the active saved server's main frame, or null. */
-function orgJoinSender(event) {
-  const active = activeEnvironment(environmentsState);
-  if (!active || !workspaceSenderAllowed(event, mainWindow?.webContents, environmentsState, rendererOrigin())) return null;
-  try {
-    const origin = new URL(event.senderFrame.url).origin;
-    return origin === active.origin ? origin : null;
-  } catch {
-    return null;
-  }
-}
-const orgJoinRemote = (handler) => (event, ...args) => {
-  const origin = orgJoinSender(event);
-  if (!origin) throw new Error("No copy was staged for this server.");
-  return handler(origin, ...args);
-};
-ipcMain.handle("org-join:probe", localWorkspaceOnly("org-join:probe", (_event, address) => orgJoin.probe(address)));
-ipcMain.handle("org-join:stage", localWorkspaceOnly("org-join:stage", (_event, input) => orgJoin.stage(input)));
-ipcMain.handle("org-join:staged", (event) => {
-  const origin = orgJoinSender(event);
-  return origin ? orgJoin.staged(origin) : null;
-});
-ipcMain.handle("org-join:take", (event) => {
-  const origin = orgJoinSender(event);
-  return origin ? orgJoin.take(origin) : null;
-});
-ipcMain.handle("org-join:finished", orgJoinRemote((origin, input) => orgJoin.finished(origin, input)));
-ipcMain.handle("org-join:remove-local", orgJoinRemote((origin, keys) => orgJoin.removeLocal(origin, keys)));
 // Personal Cloud authority stays in main. No renderer-supplied address, token,
 // paid flag or callback can choose an account or activate Pro.
 for (const method of ["state", "begin", "reopen", "cancel", "refresh", "signOut", "openDashboard"]) {
@@ -3022,6 +2952,76 @@ ipcMain.handle("sharing:save", localWorkspaceOnly("sharing:save", async (_event,
 // ones on Linux) can't center it — it lands at a default screen origin
 // instead of over the app. Route renderer confirms through the main process
 // so dialog.showMessageBox can anchor it to mainWindow.
+// "Join a Perspicax server" (slice 8, electron/org-join.mjs). probe and stage
+// answer the local page only. The others answer only the main frame of the
+// active saved server, and org-join itself checks that this origin is the
+// one the copy was staged for.
+const orgJoin = createOrgJoin({
+  fetch: (url, init) => fetch(url, init),
+  parseLink: (address) => parseHostedWorkspaceLink(address),
+  saveEnvironment: (origin) => {
+    let next = withEnvironment(environmentsState, { origin, name: new URL(origin).host }, () => randomUUID());
+    const entry = next.environments.find((candidate) => candidate.origin === origin);
+    if (!entry) throw new Error("The server could not be saved.");
+    next = withActive(next, entry.id);
+    persistEnvironments(next);
+  },
+  navigate: (url) => navigateMainWindow(url),
+  confirm: async (names) => {
+    const { response } = await dialog.showMessageBox({
+      type: "warning",
+      buttons: ["Remove", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+      message: names.length === 1 ? `Remove “${names[0]}” from this computer?` : `Remove ${names.length} bots from this computer?`,
+      detail: `${names.join("\n")}\n\nTheir copies in the organization stay. This removes them and their conversations from this computer only.`,
+    });
+    return response === 0;
+  },
+  deleteLocalBot: async (key) => {
+    const response = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/bots/${encodeURIComponent(key)}`, {
+      method: "DELETE", redirect: "error", credentials: "omit", signal: AbortSignal.timeout(15_000),
+      headers: { [DESKTOP_MUTATION_HEADER]: desktopMutationToken ?? "" },
+    }).catch(() => null);
+    return Boolean(response?.ok);
+  },
+  postLinkedSubject: async (input) => {
+    const response = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/identity/linked-subjects`, {
+      method: "POST", redirect: "error", credentials: "omit", signal: AbortSignal.timeout(5_000),
+      headers: { "content-type": "application/json", [DESKTOP_MUTATION_HEADER]: desktopMutationToken ?? "" },
+      body: JSON.stringify(input),
+    }).catch(() => null);
+    if (!response?.ok) slog(`org join: the linked organization account could not be recorded (${response?.status ?? "unreachable"})`);
+  },
+});
+/** The origin of a call from the active saved server's main frame, or null. */
+function orgJoinSender(event) {
+  const active = activeEnvironment(environmentsState);
+  if (!active || !workspaceSenderAllowed(event, mainWindow?.webContents, environmentsState, rendererOrigin())) return null;
+  try {
+    const origin = new URL(event.senderFrame.url).origin;
+    return origin === active.origin ? origin : null;
+  } catch {
+    return null;
+  }
+}
+const orgJoinRemote = (handler) => (event, ...args) => {
+  const origin = orgJoinSender(event);
+  if (!origin) throw new Error("No copy was staged for this server.");
+  return handler(origin, ...args);
+};
+ipcMain.handle("org-join:probe", localWorkspaceOnly("org-join:probe", (_event, address) => orgJoin.probe(address)));
+ipcMain.handle("org-join:stage", localWorkspaceOnly("org-join:stage", (_event, input) => orgJoin.stage(input)));
+ipcMain.handle("org-join:staged", (event) => {
+  const origin = orgJoinSender(event);
+  return origin ? orgJoin.staged(origin) : null;
+});
+ipcMain.handle("org-join:take", (event) => {
+  const origin = orgJoinSender(event);
+  return origin ? orgJoin.take(origin) : null;
+});
+ipcMain.handle("org-join:finished", orgJoinRemote((origin, input) => orgJoin.finished(origin, input)));
+ipcMain.handle("org-join:remove-local", orgJoinRemote((origin, keys) => orgJoin.removeLocal(origin, keys)));
 ipcMain.handle("dialog:confirm", localWorkspaceOnly("dialog:confirm", async (_event, message) => {
   if (typeof message !== "string" || !message.trim() || message.length > 4096 || !mainWindow || mainWindow.isDestroyed()) return false;
   const { response } = await dialog.showMessageBox(mainWindow, {
