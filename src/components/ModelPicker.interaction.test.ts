@@ -20,8 +20,17 @@ const fixture = vi.hoisted(() => {
     dispatch: (() => {}) as (...args: unknown[]) => void,
     refreshInstances: (() => Promise.resolve()) as () => Promise<void>,
     refreshModels: ((_id: string) => Promise.resolve()) as (instanceId: string) => Promise<void>,
+    // An organization server (Perspicax): null on a solo server.
+    org: null as unknown,
+    myEngines: null as unknown,
   };
 });
+vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/perspicax-org")>()),
+  usePerspicaxOrg: () => fixture.org,
+  useMyEngines: () => fixture.myEngines,
+  reloadMyEngines: () => Promise.resolve(fixture.myEngines),
+}));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
   useState: (initial: unknown) => {
@@ -122,6 +131,8 @@ beforeEach(() => {
   fixture.dispatch = vi.fn();
   fixture.refreshInstances = vi.fn(() => Promise.resolve());
   fixture.refreshModels = vi.fn(() => Promise.resolve());
+  fixture.org = null;
+  fixture.myEngines = null;
 });
 afterEach(() => vi.useRealTimers());
 
@@ -280,5 +291,112 @@ describe("the way into local models", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(settled).toBe(true);
     await expect(probeLocalModels("claude", () => Promise.reject(new Error("offline")))).resolves.toBeUndefined();
+  });
+});
+
+describe("the picker opens as a modal like Settings", () => {
+  it("draws a modal dialog with the providers on the left, the choice on the right and a way to close", () => {
+    fixture.instances = [codex, signedIn()];
+    const onClaude = bot("claude", "claude-opus-5-5");
+    const closed = render(onClaude).html;
+    expect(closed).not.toContain("data-model-picker-content");
+    const opened = open(onClaude);
+    const html = menu(opened.html);
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('aria-labelledby="model-picker-title"');
+    expect(opened.html).toContain("data-model-picker-backdrop");
+    expect(html).toContain("data-model-provider-column");
+    expect(html).toContain('aria-label="Close"');
+    // Account, scope, models and the way to Settings, each with room.
+    expect(html).toContain(">Only this thread<");
+    expect(html).toContain(">Thread + bot default<");
+    expect(html).toContain(">Opus 5.5<");
+    expect(html).toContain("Model providers and accounts");
+    expect(html).toContain("data-model-local-entry");
+    // Each provider names its status in the column.
+    expect(html).toContain("data-rail-status");
+
+    const close = opened.nodes.find((node) => node.props["aria-label"] === "Close")!;
+    (close.props.onClick as () => void)();
+    expect(render(onClaude).html).not.toContain("data-model-picker-content");
+  });
+
+  it("closes from its backdrop, not from a click inside", () => {
+    fixture.instances = [signedIn()];
+    const onClaude = bot("claude", "claude-opus-5-5");
+    const opened = open(onClaude);
+    const backdrop = opened.nodes.find((node) => node.props["data-model-picker-backdrop"])!;
+    const inside = {};
+    (backdrop.props.onMouseDown as (event: unknown) => void)({ target: inside, currentTarget: backdrop });
+    expect(render(onClaude).html).toContain("data-model-picker-content");
+    (backdrop.props.onMouseDown as (event: unknown) => void)({ target: backdrop, currentTarget: backdrop });
+    expect(render(onClaude).html).not.toContain("data-model-picker-content");
+  });
+});
+
+describe("on an organization server", () => {
+  const issuer = "https://px.example.test";
+  const orgOf = (viewerRole: "admin" | "member") => ({
+    org: { name: "GOX", identity: { kind: "perspicax", issuer } }, link: { state: "ok" }, viewerRole,
+    settings: { memberBotsUseOrgKey: true },
+  });
+  const engine = (patch: Record<string, unknown> = {}) => ({
+    instanceId: "claude", driver: "claudeAgent", displayName: "Claude", installed: true,
+    subscription: { supported: true, signedIn: false }, ownerKey: false, orgKey: true, answersFor: "everyone", ...patch,
+  });
+  const ollama: InstanceInfo = {
+    instanceId: "ollama", driverKind: "openaiCompatible", displayName: "Ollama", access: "custom",
+    snapshot: { state: "available", authenticated: true }, models: { default: "", options: [qwen] },
+  };
+
+  it("opens, shows the person's payer order and keeps the server's models pickable without the server's own sign-in", () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [engine()];
+    fixture.instances = [signedOut(), ollama];
+    const onClaude = bot("claude", "claude-opus-5-5");
+    const opened = open(onClaude);
+    const html = menu(opened.html);
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain("Who pays for your turns");
+    const order = ["subscription", "ownerKey", "orgKey"].map((id) => html.indexOf(`data-payer="${id}"`));
+    expect(order.every((index) => index > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // A member never pays with the server's own account.
+    expect(html).not.toContain('data-payer="server"');
+    expect(html).toMatch(/data-payer="orgKey"[^>]*aria-current="true"/);
+    expect(html).toContain("Used now");
+    // Their own subscription signs in through the organization server.
+    expect(html).toContain("data-model-personal-sign-in");
+    expect(html).toContain("Sign in with your Claude account");
+    expect(html).toContain(`${issuer}/console/pulsabot/keys`);
+    // The server's sign-in card is not the person's: models stay listed.
+    expect(html).toContain(">Opus 5.5<");
+    expect(html).not.toContain("2 models will appear after setup.");
+    // No local model from the server's machine.
+    expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude"]);
+    expect(html).not.toContain("data-model-local-entry");
+    expect(html).toContain("data-model-local-hidden");
+  });
+
+  it("puts the server's own account third for an organization admin and the subscription first once signed in", () => {
+    fixture.org = orgOf("admin");
+    fixture.myEngines = [engine({ subscription: { supported: true, signedIn: true }, ownerKey: true, answersFor: "everyone" })];
+    fixture.instances = [signedIn()];
+    const html = menu(open(bot("claude", "claude-opus-5-5")).html);
+    const order = ["subscription", "ownerKey", "server", "orgKey"].map((id) => html.indexOf(`data-payer="${id}"`));
+    expect(order.every((index) => index > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(html).toMatch(/data-payer="subscription"[^>]*aria-current="true"/);
+    expect(html).not.toContain("data-model-personal-sign-in");
+  });
+
+  it("warns when nothing pays yet", () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [engine({ orgKey: false, answersFor: "nobody" })];
+    fixture.instances = [signedOut()];
+    const html = menu(open(bot("claude", "claude-opus-5-5")).html);
+    expect(html).toContain("Nothing pays for this provider yet");
+    expect(html).not.toContain('aria-current="true"');
   });
 });

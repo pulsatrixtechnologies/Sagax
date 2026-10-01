@@ -204,18 +204,37 @@ export function perspicaxKeysUrl(issuer: string): string {
 }
 
 let enginesPending: Promise<MyEngine[] | null> | null = null;
+const engineListeners = new Set<(engines: MyEngine[] | null) => void>();
 
-/** GET /api/me/engines once per page load on a Perspicax server; null on
- * a solo server or while loading. */
+function loadMyEngines(): Promise<MyEngine[] | null> {
+  enginesPending ??= loadPerspicaxOrg().then((org) => (org
+    ? api<{ engines: MyEngine[] }>("/api/me/engines").then((body) => body.engines ?? [], () => null)
+    : null));
+  return enginesPending;
+}
+
+/** Ask the server again (after a personal sign-in or sign-out) and update
+ * every useMyEngines on the page. */
+export function reloadMyEngines(): Promise<MyEngine[] | null> {
+  enginesPending = null;
+  const next = loadMyEngines();
+  void next.then((value) => { for (const listener of engineListeners) listener(value); });
+  return next;
+}
+
+/** GET /api/me/engines once per page load on a Perspicax server (again
+ * after reloadMyEngines); null on a solo server or while loading. */
 export function useMyEngines(): MyEngine[] | null {
   const [engines, setEngines] = useState<MyEngine[] | null>(null);
   useEffect(() => {
     let alive = true;
-    enginesPending ??= loadPerspicaxOrg().then((org) => (org
-      ? api<{ engines: MyEngine[] }>("/api/me/engines").then((body) => body.engines ?? [], () => null)
-      : null));
-    void enginesPending.then((value) => { if (alive) setEngines(value); });
-    return () => { alive = false; };
+    const listener = (value: MyEngine[] | null) => { if (alive) setEngines(value); };
+    engineListeners.add(listener);
+    void loadMyEngines().then(listener);
+    return () => {
+      alive = false;
+      engineListeners.delete(listener);
+    };
   }, []);
   return engines;
 }

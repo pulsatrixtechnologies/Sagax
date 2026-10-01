@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, ExternalLink, Loader2, LogIn } from "lucide-react";
 import { api, ApiError, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -105,14 +105,29 @@ export function DeviceSignInProgress({ auth, browserPkce = false }: { auth: Devi
   );
 }
 
-export function CodexDeviceSignIn({ instanceId, browserPkce = false }: { instanceId: string; browserPkce?: boolean }) {
+export function CodexDeviceSignIn({ instanceId, browserPkce = false, base: baseOverride, onSignedIn }: {
+  instanceId: string;
+  browserPkce?: boolean;
+  /** Another sign-in with the same verbs (start, status, cancel): a
+   * person's own subscription on an organization server
+   * (`/api/me/engines/<id>/login`). Defaults to the server's own engine. */
+  base?: string;
+  /** Called after a sign-in succeeds, in place of refreshing the engines. */
+  onSignedIn?: () => Promise<unknown> | void;
+}) {
   const { refreshInstances, refreshModels } = useStore();
   const [auth, setAuth] = useState<DeviceSignInStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const base = `/api/instances/${encodeURIComponent(instanceId)}/auth`;
+  const base = baseOverride ?? `/api/instances/${encodeURIComponent(instanceId)}/auth`;
+  const signedInRef = useRef(onSignedIn);
+  signedInRef.current = onSignedIn;
 
   const refresh = async () => {
+    if (signedInRef.current) {
+      await signedInRef.current();
+      return;
+    }
     await refreshInstances();
     await refreshModels(instanceId);
   };
@@ -132,10 +147,7 @@ export function CodexDeviceSignIn({ instanceId, browserPkce = false }: { instanc
           if (controller.signal.aborted) return;
           setAuth(next);
           setError(null);
-          if (next.phase === "succeeded") {
-            await refreshInstances();
-            await refreshModels(instanceId);
-          }
+          if (next.phase === "succeeded") await refresh();
         })
         .catch((cause: unknown) => {
           if (controller.signal.aborted) return;
