@@ -418,6 +418,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // A person's own engines: what their own turns run on, and their own
   // subscription sign-in (server/principal-engine-logins.ts).
   { methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" },
+  // The caller's own server environment (user-sandbox): status and reset.
+  { methods: ["GET"], path: /^\/api\/me\/server-environment$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/me\/server-environment\/reset$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/status$/, feature: "orgDirectory" },
   // The caller's own claude.ai connectors (server/harness-connectors.ts):

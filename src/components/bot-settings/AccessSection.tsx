@@ -11,6 +11,7 @@ import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
 import { api, useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./BotEditorContext";
 import { cn } from "@/lib/cn";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { mcpServersForBot, useMcpServers } from "@/lib/mcp-servers";
@@ -515,6 +516,8 @@ export function AccessSection({
 }) {
   const { draft } = useBotEditor();
   const { state, dispatch } = useStore();
+  // Organization server: bots work in their owner's server environment.
+  const organization = usePerspicaxOrg() !== null;
   const {
     patch,
     canUseVps,
@@ -622,6 +625,7 @@ export function AccessSection({
             <CloudBackendPicker
               value={bot.cloudBackend ?? "box"}
               vpsSupported={canUseVps}
+              organization={organization}
               onChange={(backend) => patch({ cloudBackend: backend })}
             />
             {!bot.computer && bot.cloudBackend === "vps" && (

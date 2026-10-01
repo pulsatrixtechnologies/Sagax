@@ -75,6 +75,9 @@ const ENTRY_POINTS = [
   "perspicax-mcp-bridge.ts",
   "mcp-gate.ts",
   "browser-proxy.ts",
+  "user-sandbox-proxy.ts",
+  // the sandbox provisioner service (deploy/docker-compose.sandbox.yml)
+  "sandboxd.ts",
   "drivers/agents-proxy.ts",
   "drivers/dweb-proxy.ts",
   "drivers/phone-proxy.ts",

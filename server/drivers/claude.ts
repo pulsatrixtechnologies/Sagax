@@ -8,6 +8,7 @@
 //   - Composio Sessions (connected apps → tools) over streamable HTTP
 //   - the bot's cloud computer (boat.dev) via server/computer-proxy.ts
 //     — screenshot/exec/open_url, the CUA-on-the-boat bridge
+import { claudeDisallowedTools } from "./host-tools.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
@@ -1440,8 +1441,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       }
       if (turn.guestConfined) args.push("--restricted", "--tools", GUEST_CLAUDE_TOOLS.join(","));
       else if (config.tools !== undefined) args.push("--tools", config.tools.join(","));
-      if (config.disallowedTools?.length) {
-        args.push("--disallowedTools", config.disallowedTools.join(","));
+      // Organization server: no shell, file or fetch tool on the Sagax server.
+      const disallowedTools = claudeDisallowedTools(config.disallowedTools, turn.withholdHostTools === true);
+      if (disallowedTools.length) {
+        args.push("--disallowedTools", disallowedTools.join(","));
       }
       const turnEnvironment = environment();
       if ((turn.refreshSystemPrompt || turn.guestConfined) && !cliVersionChecked) {
@@ -2611,6 +2614,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         provider: DRIVER_KIND,
         capabilities: {
           sessionModelSwitch: "in-session",
+          withholdsHostTools: true,
           // A guest's turn runs with no command-running tool and no read
           // outside its folder (guestConfined, GUEST_CLAUDE_TOOLS).
           guestTurns: "confined",

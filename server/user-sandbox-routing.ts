@@ -1,0 +1,57 @@
+// Where a bot's shell, file and browser tools run (organization mode).
+//
+//   user-desktop  the person's own computer, when the turn targets it
+//                 (routed by the desktop work, not here)
+//   user-sandbox  the person's server environment: one isolated container
+//                 per PERSON on the server, shared by all their bots
+//   host          a solo server's own machine (unchanged)
+//   none          an organization server with no provisioner configured:
+//                 nothing is mounted rather than falling back to the host
+//
+// An organization server never answers "host": the Sagax server container is
+// not anyone's computer.
+export type ExecutionTarget = "user-desktop" | "user-sandbox" | "host" | "none";
+
+export function resolveExecutionTarget(input: {
+  organization: boolean;
+  sandboxConfigured: boolean;
+  /** The turn's place is the person's own desktop. */
+  desktopTargeted: boolean;
+}): ExecutionTarget {
+  if (!input.organization) return "host";
+  if (input.desktopTargeted) return "user-desktop";
+  return input.sandboxConfigured ? "user-sandbox" : "none";
+}
+
+/** Whose environment a turn uses. There is deliberately no bot id in this
+ * signature: a per-bot environment cannot be expressed.
+ *
+ * - A conversation runs in the SPEAKER's environment (the person talking,
+ *   or the person a bot hop speaks for): a teammate's files and commands
+ *   never land in the bot owner's environment, and the speaker's own work
+ *   follows them across every bot they use. Private threads stay private.
+ * - A routine, and every thread or hop a routine starts, runs in the bot
+ *   OWNER's environment (routines run as the bot owner).
+ * - A room turn runs in the environment of the person whose message it
+ *   answers (the latest person who spoke in the room). A follow-up no person
+ *   ever asked for falls back to the room's creator. A bot's follow-up after
+ *   a person's message keeps that person's environment: the work they asked
+ *   for, and their files, stay together instead of moving to the creator's.
+ * - Null when nobody is known: nothing is mounted (fail closed). */
+export function sandboxPrincipalForTurn(input: {
+  botOwnerPrincipalId: string;
+  /** The turn belongs to a routine (directly or through hops). */
+  routine: boolean;
+  /** The person this turn speaks for, "" or absent when unknown. */
+  speakerPrincipalId?: string;
+  /** Rooms only: who created the room. */
+  roomCreatorPrincipalId?: string;
+}): string | null {
+  if (input.routine) return input.botOwnerPrincipalId || null;
+  if (input.speakerPrincipalId) return input.speakerPrincipalId;
+  return input.roomCreatorPrincipalId || null;
+}
+
+/** The MCP server name the environment tools are mounted under. The UI reads
+ * it back from tool names to show where a tool ran. */
+export const USER_SANDBOX_MCP_NAME = "sagax-environment";

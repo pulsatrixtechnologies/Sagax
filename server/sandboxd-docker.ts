@@ -1,0 +1,251 @@
+// The provisioner's Docker Engine API client, over the unix socket only the
+// provisioner container mounts. Small on purpose: the calls the sandbox
+// lifecycle needs and nothing that could build an arbitrary container.
+import { request } from "node:http";
+
+export interface ExecRequest {
+  Cmd: string[];
+  User: string;
+  Env: string[];
+  WorkingDir: string;
+}
+
+export interface ExecResult {
+  exitCode: number | null;
+  stdout: Buffer;
+  stderr: Buffer;
+  truncated: boolean;
+}
+
+export interface ContainerSummary {
+  name: string;
+  running: boolean;
+  labels: Record<string, string>;
+  /** Docker's own State.StartedAt, ms. */
+  startedAt?: number;
+}
+
+export interface DockerApi {
+  ping(): Promise<boolean>;
+  imageExists(image: string): Promise<boolean>;
+  inspectContainer(name: string): Promise<ContainerSummary | null>;
+  listContainers(labels: Record<string, string>): Promise<ContainerSummary[]>;
+  createContainer(name: string, spec: Record<string, unknown>): Promise<void>;
+  startContainer(name: string): Promise<void>;
+  stopContainer(name: string, timeoutSeconds: number): Promise<void>;
+  removeContainer(name: string): Promise<void>;
+  inspectNetwork(name: string): Promise<{ labels: Record<string, string>; subnets: string[] } | null>;
+  listNetworks(labels: Record<string, string>): Promise<{ name: string; subnets: string[] }[]>;
+  createNetwork(spec: Record<string, unknown>): Promise<void>;
+  removeNetwork(name: string): Promise<void>;
+  inspectVolume(name: string): Promise<{ labels: Record<string, string> } | null>;
+  createVolume(spec: Record<string, unknown>): Promise<void>;
+  removeVolume(name: string): Promise<void>;
+  exec(name: string, exec: ExecRequest, maxBytes: number): Promise<ExecResult>;
+  /** Create, run to completion, collect output and remove a one-shot
+   * container (the egress policy helper only). */
+  runOnce(name: string, spec: Record<string, unknown>, timeoutMs: number): Promise<{ exitCode: number; output: string }>;
+}
+
+class DockerError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+function safeName(name: string): string {
+  if (!NAME_RE.test(name)) throw new Error("invalid Docker object name");
+  return encodeURIComponent(name);
+}
+
+function labelFilter(labels: Record<string, string>): string {
+  return encodeURIComponent(JSON.stringify({ label: Object.entries(labels).map(([key, value]) => `${key}=${value}`) }));
+}
+
+export function demuxDockerStream(chunks: Buffer, maxBytes: number): { stdout: Buffer; stderr: Buffer; truncated: boolean } {
+  const out: Buffer[] = [];
+  const err: Buffer[] = [];
+  let outSize = 0;
+  let errSize = 0;
+  let truncated = false;
+  let offset = 0;
+  while (offset + 8 <= chunks.length) {
+    const stream = chunks[offset]!;
+    const size = chunks.readUInt32BE(offset + 4);
+    const payload = chunks.subarray(offset + 8, Math.min(chunks.length, offset + 8 + size));
+    offset += 8 + size;
+    if (stream === 2) {
+      const room = Math.max(0, maxBytes - errSize);
+      if (payload.length > room) truncated = true;
+      err.push(payload.subarray(0, room));
+      errSize += Math.min(room, payload.length);
+    } else {
+      const room = Math.max(0, maxBytes - outSize);
+      if (payload.length > room) truncated = true;
+      out.push(payload.subarray(0, room));
+      outSize += Math.min(room, payload.length);
+    }
+  }
+  return { stdout: Buffer.concat(out), stderr: Buffer.concat(err), truncated };
+}
+
+/** The daemon's own API version, so the client works from Docker 24 (1.43)
+ * to Docker 29 (minimum 1.44) without pinning either end. */
+function negotiateVersion(socketPath: string): Promise<string> {
+  return new Promise((resolve) => {
+    const req = request({ socketPath, method: "GET", path: "/version", timeout: 10_000 }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        try {
+          const version = String((JSON.parse(Buffer.concat(chunks).toString("utf8")) as { ApiVersion?: string }).ApiVersion ?? "");
+          resolve(/^\d+\.\d+$/.test(version) ? `v${version}` : "v1.44");
+        } catch { resolve("v1.44"); }
+      });
+    });
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve("v1.44"));
+    req.end();
+  });
+}
+
+export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi {
+  let version: Promise<string> | null = pinnedVersion ? Promise.resolve(pinnedVersion) : null;
+  const call = async (method: string, path: string, body?: unknown, options: { raw?: boolean; maxBytes?: number; timeoutMs?: number } = {}) => {
+    version ??= negotiateVersion(socketPath);
+    const apiVersion = await version;
+    return new Promise<{ status: number; body: Buffer; truncated: boolean }>((resolve, reject) => {
+      const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
+      const req = request({
+        socketPath,
+        method,
+        path: `/${apiVersion}${path}`,
+        headers: payload ? { "content-type": "application/json", "content-length": payload.length } : {},
+        timeout: options.timeoutMs ?? 60_000,
+      }, (res) => {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        let truncated = false;
+        const cap = (options.maxBytes ?? 4 * 1024 * 1024) * 2 + 65_536;
+        res.on("data", (chunk: Buffer) => {
+          if (size + chunk.length > cap) {
+            truncated = true;
+            chunks.push(chunk.subarray(0, Math.max(0, cap - size)));
+            size = cap;
+            res.destroy();
+            return;
+          }
+          size += chunk.length;
+          chunks.push(chunk);
+        });
+        const finish = () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks), truncated });
+        res.on("end", finish);
+        res.on("close", finish);
+        res.on("error", (error) => truncated ? finish() : reject(error));
+      });
+      req.on("timeout", () => req.destroy(new Error("Docker request timed out")));
+      req.on("error", reject);
+      if (payload) req.write(payload);
+      req.end();
+    });
+  };
+
+  const json = async (method: string, path: string, body?: unknown, okStatuses: number[] = [200, 201, 204]) => {
+    const response = await call(method, path, body);
+    if (!okStatuses.includes(response.status)) {
+      let message = response.body.toString("utf8").slice(0, 500);
+      try { message = (JSON.parse(message) as { message?: string }).message ?? message; } catch { /* plain text */ }
+      throw new DockerError(response.status, `Docker ${method} ${path.split("?")[0]} failed (${response.status}): ${message}`);
+    }
+    const text = response.body.toString("utf8");
+    return text ? JSON.parse(text) as Record<string, unknown> : {};
+  };
+  const orNull = async <T>(work: () => Promise<T>): Promise<T | null> => {
+    try { return await work(); } catch (error) {
+      if (error instanceof DockerError && error.status === 404) return null;
+      throw error;
+    }
+  };
+  const summary = (raw: Record<string, unknown>): ContainerSummary => {
+    const config = (raw.Config ?? {}) as { Labels?: Record<string, string> };
+    const state = (raw.State ?? {}) as { Running?: boolean; StartedAt?: string };
+    const started = state.StartedAt ? Date.parse(state.StartedAt) : NaN;
+    return {
+      name: String(raw.Name ?? "").replace(/^\//, ""),
+      running: state.Running === true,
+      labels: config.Labels ?? {},
+      ...(Number.isFinite(started) && started > 0 ? { startedAt: started } : {}),
+    };
+  };
+  const subnetsOf = (raw: Record<string, unknown>) =>
+    (((raw.IPAM as { Config?: { Subnet?: string }[] } | undefined)?.Config) ?? []).map((entry) => entry.Subnet).filter((value): value is string => Boolean(value));
+
+  return {
+    async ping() {
+      try { return (await call("GET", "/_ping")).status === 200; } catch { return false; }
+    },
+    async imageExists(image) {
+      const response = await call("GET", `/images/${encodeURIComponent(image)}/json`);
+      return response.status === 200;
+    },
+    inspectContainer: (name) => orNull(async () => summary(await json("GET", `/containers/${safeName(name)}/json`))),
+    async listContainers(labels) {
+      const rows = await json("GET", `/containers/json?all=1&filters=${labelFilter(labels)}`) as unknown as { Names?: string[]; State?: string; Labels?: Record<string, string> }[];
+      return rows.map((row) => ({ name: (row.Names?.[0] ?? "").replace(/^\//, ""), running: row.State === "running", labels: row.Labels ?? {} }));
+    },
+    async createContainer(name, spec) { await json("POST", `/containers/create?name=${safeName(name)}`, spec); },
+    async startContainer(name) { await json("POST", `/containers/${safeName(name)}/start`, undefined, [204, 304]); },
+    async stopContainer(name, timeoutSeconds) { await json("POST", `/containers/${safeName(name)}/stop?t=${Math.max(0, Math.floor(timeoutSeconds))}`, undefined, [204, 304, 404]); },
+    async removeContainer(name) { await json("DELETE", `/containers/${safeName(name)}?force=1&v=0`, undefined, [204, 404]); },
+    inspectNetwork: (name) => orNull(async () => {
+      const raw = await json("GET", `/networks/${safeName(name)}`);
+      return { labels: (raw.Labels ?? {}) as Record<string, string>, subnets: subnetsOf(raw) };
+    }),
+    async listNetworks(labels) {
+      const rows = await json("GET", `/networks?filters=${labelFilter(labels)}`) as unknown as Record<string, unknown>[];
+      return rows.map((row) => ({ name: String(row.Name ?? ""), subnets: subnetsOf(row) }));
+    },
+    async createNetwork(spec) { await json("POST", "/networks/create", spec); },
+    async removeNetwork(name) { await json("DELETE", `/networks/${safeName(name)}`, undefined, [204, 404]); },
+    inspectVolume: (name) => orNull(async () => {
+      const raw = await json("GET", `/volumes/${safeName(name)}`);
+      return { labels: (raw.Labels ?? {}) as Record<string, string> };
+    }),
+    async createVolume(spec) { await json("POST", "/volumes/create", spec); },
+    async removeVolume(name) { await json("DELETE", `/volumes/${safeName(name)}`, undefined, [204, 404]); },
+    async exec(name, exec, maxBytes) {
+      const created = await json("POST", `/containers/${safeName(name)}/exec`, {
+        AttachStdin: false, AttachStdout: true, AttachStderr: true, Tty: false, Privileged: false, ...exec,
+      });
+      const id = String(created.Id ?? "");
+      if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Docker returned no exec id");
+      const started = await call("POST", `/exec/${id}/start`, { Detach: false, Tty: false }, { raw: true, maxBytes, timeoutMs: 15 * 60_000 });
+      if (started.status !== 200 && started.status !== 101) throw new DockerError(started.status, `Docker exec start failed (${started.status})`);
+      const streams = demuxDockerStream(started.body, maxBytes);
+      let exitCode: number | null = null;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const inspected = await json("GET", `/exec/${id}/json`) as { Running?: boolean; ExitCode?: number | null };
+        if (!inspected.Running) { exitCode = inspected.ExitCode ?? null; break; }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return { exitCode, stdout: streams.stdout, stderr: streams.stderr, truncated: streams.truncated || started.truncated };
+    },
+    async runOnce(name, spec, timeoutMs) {
+      await json("DELETE", `/containers/${safeName(name)}?force=1`, undefined, [204, 404]);
+      await json("POST", `/containers/create?name=${safeName(name)}`, spec);
+      try {
+        await json("POST", `/containers/${safeName(name)}/start`, undefined, [204, 304]);
+        const waited = await call("POST", `/containers/${safeName(name)}/wait`, undefined, { timeoutMs });
+        const exitCode = Number((JSON.parse(waited.body.toString("utf8") || "{}") as { StatusCode?: number }).StatusCode ?? -1);
+        const logs = await call("GET", `/containers/${safeName(name)}/logs?stdout=1&stderr=1`);
+        const streams = demuxDockerStream(logs.body, 64 * 1024);
+        return { exitCode, output: `${streams.stdout.toString("utf8")}${streams.stderr.toString("utf8")}` };
+      } finally {
+        await json("DELETE", `/containers/${safeName(name)}?force=1`, undefined, [204, 404]).catch(() => {});
+      }
+    },
+  };
+}

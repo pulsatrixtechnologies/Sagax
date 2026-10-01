@@ -1,0 +1,95 @@
+# Per-person server environments for an organization server
+# (docs/user-sandbox.md). Every service here carries the `pulsabot` profile:
+# without it nothing below is pulled or started.
+#
+#   docker compose -f compose.yaml -f deploy/docker-compose.sandbox.yml \
+#     --profile pulsabot up -d --build
+#
+# Security model in one paragraph: the Docker socket is mounted into
+# `sagax-sandboxd` ONLY, never into the Sagax server. sagax-sandboxd sits on an
+# internal network shared with the Sagax server alone, answers signed requests
+# only (a key it writes to the `sandboxd-key` volume, read-only for the
+# server), and can create nothing but the fixed, isolated sandbox spec of
+# server/user-sandbox-spec.ts, one per PERSON. The GOX deploy uses the same
+# services under the Perspicax infra compose (service `pulsabot` there).
+services:
+  omb:
+    environment:
+      SAGAX_SANDBOXD_URL: http://sagax-sandboxd:8791
+      SAGAX_SANDBOXD_KEY_FILE: /run/sagax-sandboxd/key
+      SAGAX_SANDBOX_INSTANCE: ${SAGAX_SANDBOX_INSTANCE:-default}
+      SAGAX_SANDBOX_DELETE_GRACE_HOURS: ${SAGAX_SANDBOX_DELETE_GRACE_HOURS:-72}
+    volumes:
+      - sandboxd-key:/run/sagax-sandboxd:ro
+    networks:
+      - default
+      - sandbox-control
+
+  # The provisioner: the same server image, another entry point.
+  sagax-sandboxd:
+    profiles: ["pulsabot"]
+    image: ${OMB_LOCAL_IMAGE:-pulsa-bot-server:local}
+    command: ["node", "dist-server/sandboxd.js"]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 192m
+    pids_limit: 64
+    # The docker socket's group on the host (`stat -c %g /var/run/docker.sock`).
+    group_add: ["${SAGAX_DOCKER_GID:-999}"]
+    tmpfs:
+      - /tmp:size=16m
+    environment:
+      SAGAX_SANDBOXD_LISTEN: 0.0.0.0:8791
+      SAGAX_SANDBOXD_KEY_FILE: /run/sagax-sandboxd/key
+      SAGAX_SANDBOXD_DOCKER_SOCKET: /var/run/docker.sock
+      SAGAX_SANDBOX_INSTANCE: ${SAGAX_SANDBOX_INSTANCE:-default}
+      SAGAX_SANDBOX_IMAGE: ${SAGAX_SANDBOX_IMAGE:-sagax-sandbox:local}
+      SAGAX_SANDBOX_RUNTIME: ${SAGAX_SANDBOX_RUNTIME:-}
+      SAGAX_SANDBOX_MEMORY_MB: ${SAGAX_SANDBOX_MEMORY_MB:-1024}
+      SAGAX_SANDBOX_CPUS: ${SAGAX_SANDBOX_CPUS:-1}
+      SAGAX_SANDBOX_PIDS: ${SAGAX_SANDBOX_PIDS:-256}
+      SAGAX_SANDBOX_TMP_MB: ${SAGAX_SANDBOX_TMP_MB:-256}
+      SAGAX_SANDBOX_DISK_MB: ${SAGAX_SANDBOX_DISK_MB:-2048}
+      SAGAX_SANDBOX_MAX_FILE_MB: ${SAGAX_SANDBOX_MAX_FILE_MB:-512}
+      SAGAX_SANDBOX_MAX_RUNNING: ${SAGAX_SANDBOX_MAX_RUNNING:-3}
+      SAGAX_SANDBOX_IDLE_MINUTES: ${SAGAX_SANDBOX_IDLE_MINUTES:-15}
+      SAGAX_SANDBOX_SUBNET_POOL: ${SAGAX_SANDBOX_SUBNET_POOL:-10.213.0.0/16}
+      SAGAX_SANDBOX_EGRESS_DENY: ${SAGAX_SANDBOX_EGRESS_DENY:-}
+      SAGAX_SANDBOX_REQUIRE_EGRESS_POLICY: ${SAGAX_SANDBOX_REQUIRE_EGRESS_POLICY:-true}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - sandboxd-key:/run/sagax-sandboxd
+    networks:
+      - sandbox-control
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8791/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      sagax-sandbox-image:
+        condition: service_completed_successfully
+
+  # Pull-or-build only: makes the sandbox image present on the host, then
+  # exits. The provisioner never pulls.
+  sagax-sandbox-image:
+    profiles: ["pulsabot"]
+    image: ${SAGAX_SANDBOX_IMAGE:-sagax-sandbox:local}
+    build:
+      context: .
+      dockerfile: deploy/sandbox/Dockerfile
+    entrypoint: ["true"]
+    restart: "no"
+    network_mode: none
+    read_only: true
+
+volumes:
+  sandboxd-key:
+
+networks:
+  # Sagax server <-> provisioner only; no route out.
+  sandbox-control:
+    internal: true

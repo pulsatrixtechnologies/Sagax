@@ -216,6 +216,7 @@ import {
   type ModelSelection,
   type RequestOutcome,
   type RuntimeEvent,
+  type SendTurnInput,
   type SteerOutcome,
   newId,
 } from "./contracts.ts";
@@ -631,6 +632,12 @@ import { createPerspicaxOrgRoutes, orgDirectoryEntries, type PendingAdminApprova
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
+import { readSandboxdKey } from "./sandboxd-auth.ts";
+import { sandboxdClient } from "./user-sandbox-client.ts";
+import { UserSandboxManager, UserSandboxUnavailable, userSandboxSettingsFromEnv } from "./user-sandbox-manager.ts";
+import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
+import { resolveExecutionTarget, sandboxPrincipalForTurn, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
+import { handleUserSandboxMcp } from "./user-sandbox-tools.ts";
 import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
@@ -2320,9 +2327,11 @@ type InternalCapability = {
   threadId: string;
   generation: string;
   depth: number;
-  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax";
+  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox";
   /** Slice 5: the one Perspicax profile a "perspicax" capability relays for. */
   perspicaxProfile?: string;
+  /** A "sandbox" capability: whose server environment it runs in. */
+  sandboxPrincipalId?: string;
   skillAuthoring: boolean;
   createdBots: number;
   createdRooms?: number;
@@ -3314,6 +3323,47 @@ export function browserEngineSummary(): { kind: "engine" | "unavailable"; reason
     : { kind: "unavailable", reason: status.reason, installable: status.installable, ...progress };
 }
 
+/** One person's server environment tools for one turn (organization mode):
+ * a stdio proxy holding only a turn-scoped capability bound to that person.
+ * The environment is created lazily, on the first tool call. */
+function userSandboxIntegration(botId: string, threadId: string, generation: string, sandboxPrincipalId: string) {
+  const token = mintInternalCapability({
+    botId, threadId, generation, depth: 0, kind: "sandbox", skillAuthoring: false, createdBots: 0, openedThreads: 0, sandboxPrincipalId,
+  });
+  return {
+    command: process.execPath,
+    args: [SPAWNED_PROXIES.userSandbox],
+    env: { ...AGENTS_NODE_FLAG, OMB_SANDBOX_TOKEN: token, OMB_HARNESS_URL: `http://127.0.0.1:${PORT}` },
+  };
+}
+
+/** Mount the right person's environment when this turn's hands land there
+ * (sandboxPrincipalForTurn). */
+function mountUserSandbox(
+  integrations: NonNullable<SendTurnInput["integrations"]>,
+  input: { botId: string; threadId: string; generation: string; desktopTargeted: boolean; customMcp: boolean; sandboxPrincipalId: string | null },
+): void {
+  const target = resolveExecutionTarget({
+    organization: IDENTITY.kind === "perspicax",
+    sandboxConfigured: Boolean(userSandbox),
+    desktopTargeted: input.desktopTargeted,
+  });
+  if (target === "user-sandbox" && input.customMcp && input.sandboxPrincipalId) {
+    integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation, input.sandboxPrincipalId) };
+  }
+}
+
+/** Organization server: an engine never gets its own shell, file or fetch
+ * tools on the Sagax server (server/drivers/host-tools.ts). An engine that
+ * cannot withhold them is refused rather than let loose in the container. */
+function withholdHostToolsFor(instance: { adapter: { capabilities: { withholdsHostTools?: boolean } }; displayName?: string; driverKind: string }): boolean {
+  if (IDENTITY.kind !== "perspicax") return false;
+  if (instance.adapter.capabilities.withholdsHostTools !== true) {
+    throw Object.assign(new Error(`${engineDisplayName(instance)} runs commands on the server itself; on an organization server choose Claude Code, Codex or a chat engine, which work in your server environment.`), { status: 409, code: "host_tools" });
+  }
+  return true;
+}
+
 function phoneIntegration(botId: string, threadId: string, generation: string) {
   // The phone is claimed lazily, at the first tools/call the engine makes
   // through this proxy (/api/internal/phone/claim): trigger-term matching
@@ -3951,6 +4001,30 @@ principals.onDisabledChanged((person, disabled) => orgAudit({
   actor: { kind: "worker" },
 }));
 principals.localOperator(cfg.profile?.email);
+// The per-person server environments (server/user-sandbox-manager.ts):
+// organization mode with a provisioner only. A person signed out by
+// Perspicax has theirs stopped now and deleted after the grace period.
+const userSandbox: UserSandboxManager | null = (() => {
+  if (IDENTITY.kind !== "perspicax") return null;
+  const settings = userSandboxSettingsFromEnv();
+  if (!settings) return null;
+  let cachedKey = "";
+  const manager = new UserSandboxManager({
+    client: sandboxdClient(settings.url, () => (cachedKey ||= readSandboxdKey(settings.keyFile))),
+    instance: settings.instance,
+    stateFile: join(DATA_DIR, "user-sandbox-deletions.json"),
+    graceMs: settings.graceMs,
+  });
+  manager.start();
+  return manager;
+})();
+if (userSandbox) {
+  principals.onDisabledChanged((person, disabled) => {
+    if (disabled) void userSandbox.personOut(person.id);
+    else userSandbox.personBack(person.id);
+  });
+}
+ROUTES.push(createUserSandboxRoutes({ manager: () => userSandbox, organization: IDENTITY.kind === "perspicax" }));
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
 const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
 /** Slice 4 (D10): each person's own engine sign-ins, organization mode. */
@@ -10544,6 +10618,15 @@ async function startTurn(
         throw new Error("the Computer engine works on the cloud computer — set Works on to Cloud, or choose another engine");
       }
       const wants = plan.computer;
+      mountUserSandbox(integrations, {
+        botId: bot.id, threadId, generation: dispatchClaimId,
+        desktopTargeted: wants === "local", customMcp: instance.adapter.capabilities.customMcp === true,
+        sandboxPrincipalId: sandboxPrincipalForTurn({
+          botOwnerPrincipalId: effectiveBotOwner(bot),
+          routine: routineLineage(speaker),
+          speakerPrincipalId: orgSpeakerPrincipal(bot, speaker),
+        }),
+      });
       // A place the organisation disallows, or a Cloud home never offers, is
       // refused before anything is prepared; Auto below simply skips them.
       const wantedKind = teamComputer ? "box" : wants === "local" ? "thisComputer" : wants === "vm" ? "localVm"
@@ -11186,6 +11269,7 @@ async function startTurn(
         // must still deliver their note (SendTurnInput.mentionTurn)
         mentionTurn: tagged.length > 0,
         integrations,
+        ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
         cwd,
@@ -13232,6 +13316,16 @@ async function runGroupMemberTurn(
   const roomSetupIsCurrent = () => !isCancelled?.() &&
     groupSpeakers.get(threadId) === roomSpeaker &&
     activeInternalGenerationByThread.get(threadId) === internalGeneration;
+  mountUserSandbox(integrations, {
+    botId: readyBot.id, threadId, generation: internalGeneration,
+    desktopTargeted: roomPlan.computer === "local", customMcp: instance.adapter.capabilities.customMcp === true,
+    sandboxPrincipalId: sandboxPrincipalForTurn({
+      botOwnerPrincipalId: effectiveBotOwner(readyBot),
+      routine: !roomSpeakerId && roomRoutineSpeaker(threadId) !== null,
+      speakerPrincipalId: roomSpeakerId,
+      roomCreatorPrincipalId: readyGroup.createdBy ?? readyGroup.humanIds?.[0],
+    }),
+  });
   if (!roomTeamComputer && roomPlan.computer === "local") {
     integrations.localComputer = await mountHostComputer(
       resourceOwner, readyBot.id, instance.adapter.capabilities.localComputerMcp === true);
@@ -13558,6 +13652,7 @@ async function runGroupMemberTurn(
         systemVolatile: roomSystem.volatile,
         cwd,
         integrations,
+        ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
         ...(instance.instanceId === readyBot.modelSelection.instanceId
@@ -15508,6 +15603,8 @@ async function localVmPayload(target: LocalVmTarget, auth: RequestAuth) {
     idle_timeout_ms: localVmIdleMs(),
     mode: localVmMode(cfg),
     max_instances: localVmMaxInstances(cfg),
+    // The UI hides the per-bot choice: one environment per person instead.
+    organization: IDENTITY.kind === "perspicax",
   };
 }
 
@@ -18721,6 +18818,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? "browser"
         : path === "/api/internal/phone/claim"
         ? "phone"
+        : path === "/api/internal/sandbox/mcp"
+        ? "sandbox"
         : path === "/api/internal/perspicax/mcp"
         ? "perspicax"
         : path.startsWith("/api/internal/connectors/")
@@ -18906,6 +19005,28 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         });
         requireActiveInternalCapability();
         return json(res, 200, { result });
+      }
+      if (method === "POST" && path === "/api/internal/sandbox/mcp") {
+        // A person's server environment (organization mode). The bearer is
+        // the authority: it names whose environment (speaker or routine owner).
+        if (!userSandbox) return json(res, 404, { error: "unknown internal endpoint" });
+        const frame = await readInternalBody() as { method?: unknown; params?: unknown } | null;
+        const rpcMethod = typeof frame?.method === "string" ? frame.method : "";
+        // The capability names whose environment it is (fixed at mount).
+        const ownerId = internalCapability.sandboxPrincipalId;
+        if (!ownerId) return json(res, 403, { error: "this capability has no server environment" });
+        try {
+          const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
+            exec: (input) => userSandbox.exec(ownerId, input),
+            overQuota: () => userSandbox.workspaceOverQuota(ownerId),
+          });
+          requireActiveInternalCapability();
+          return json(res, 200, { result });
+        } catch (error) {
+          if (error instanceof UserSandboxUnavailable) return json(res, 200, { result: { content: [{ type: "text", text: error.message }], isError: true } });
+          const status = (error as { status?: number }).status;
+          return json(res, status === 400 || status === 404 ? status : 502, { error: error instanceof Error ? error.message : "the server environment failed" });
+        }
       }
       if (method === "POST" && path === "/api/internal/phone/claim") {
         // Lazy phone exclusivity (issue #1663): the turn holds computer:phone
@@ -22014,7 +22135,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
       if (hiddenMember) return json(res, 400, { error: `unknown channel member: ${String(hiddenMember)}` });
-      const group = createChannel(withCreatorListed(auth, body));
+      const created = createChannel(withCreatorListed(auth, body));
+      const creatorId = IDENTITY.kind === "perspicax" ? channelActorId(auth) : "";
+      const group = (creatorId && store.patchGroup(created.id, { createdBy: creatorId })) || created;
       // Created in a section by one of its members: the section opens it.
       if (group.section && mayPlaceRoomIn(auth, group.section)) sectionChannels?.recordRoomPlacement(group.section, group.id);
       // On a Cloud home whoever opens a room names it (cloudThreadRefusal).
@@ -23656,6 +23779,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (body.cloudBackend !== undefined && !["box", "vps"].includes(String(body.cloudBackend))) {
         return json(res, 400, { error: "cloudBackend must be box or vps" });
+      }
+      if (body.cloudBackend === "vps" && IDENTITY.kind === "perspicax") {
+        return json(res, 409, { error: "On an organization server a bot works in its owner's server environment; a VPS computer per bot is not available.", code: "org_user_sandbox" });
       }
       if (body.autoStartVps !== undefined) {
         if (typeof body.autoStartVps !== "boolean") return json(res, 400, { error: "autoStartVps must be true or false" });
@@ -26487,6 +26613,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ...(changingBoatToken ? ["box" as const] : []),
         ...(changingVpsAlias ? ["vps" as const] : []),
       ];
+      // Organization mode: one server environment per PERSON
+      // (user-sandbox), never a VM per bot.
+      if (IDENTITY.kind === "perspicax" && patch.localVm?.mode === "per-bot") {
+        return json(res, 409, { error: "On an organization server each person has one server environment shared by all their bots; a VM per bot is not available.", code: "org_user_sandbox" });
+      }
       providerConfigBusy = true;
       const changingLocalVmMode = patch.localVm?.mode !== undefined && patch.localVm.mode !== localVmMode(cfg);
       if (changingLocalVmMode) localVmModeChangeBusy = true;

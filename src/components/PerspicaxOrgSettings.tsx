@@ -17,6 +17,7 @@ import { api, useStore } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { MyEngines } from "./settings/MyEngines";
 import { MyRoutineDelegation } from "./settings/MyRoutineDelegation";
+import { MyServerEnvironment } from "./settings/MyServerEnvironment";
 import { OrgSharing } from "./settings/OrgSharing";
 import { OrgImportDialog } from "./OrgImportDialog";
 import { InterimPeople } from "./settings/InterimPeople";
@@ -129,6 +130,7 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
       {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
       <MyEngines issuer={org.org.identity.issuer} />
       <MyRoutineDelegation />
+      <MyServerEnvironment />
       <OrgSharing />
       {admin && (
         <Card cardId="organization.adminApprovals" title={t("organization.adminApprovals.title")} summary={approvals?.length ? String(approvals.length) : ""}>
