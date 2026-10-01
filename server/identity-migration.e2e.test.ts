@@ -86,7 +86,7 @@ function identitySnapshot() {
   const group = (read("groups.json") as any[]).find((g) => g.id === channelId);
   const sessions = (read("sessions.json").sessions as any[]).map((s) => ({ id: s.id, principalId: s.principalId }));
   return {
-    orgOwner: read("config.json").org.ownerUserId,
+    orgOwner: read("config.json").org?.ownerUserId,
     bot: { ownerUserId: bot.ownerUserId, directGrants: bot.directGrants },
     humanIds: group.humanIds,
     principals: read("principals.json").principals,
@@ -160,7 +160,9 @@ posixOnly("identity migration at boot", () => {
     expect(zach.id).toMatch(/^pr_/);
     expect(principals).toHaveLength(2);
 
-    expect(first.orgOwner).toBe(localId);
+    // Slice 8: the interim organization is gone; its old key is left as it
+    // was (ignored), never rewritten.
+    expect(first.orgOwner).toBe("jc@gox.ca");
     expect(first.bot).toEqual({ ownerUserId: localId, directGrants: [zach.id] });
     expect(first.humanIds).toEqual([localId, zach.id]);
     const byId = new Map(first.sessions.map((s) => [s.id, s.principalId]));
@@ -184,13 +186,15 @@ posixOnly("identity migration at boot", () => {
     expect([403, 404], JSON.stringify(answer.body)).not.toContain(answer.status);
   });
 
-  it("keeps the old kiosk out of the channel, the bot and its approvals", async () => {
+  it("leaves the old kiosk a principal-less chat device, as on any personal server", async () => {
+    // Slice 8: no interim organization, so a chat-only device sees the
+    // operator's bots and rooms (its scope still gates what it may do), and
+    // it is never given a principal.
     const seen = await api("GET", "/api/bots", undefined, kioskToken);
     expect(seen.status).toBe(200);
-    expect(seen.body.groups.map((g: any) => g.id)).not.toContain(channelId);
-    expect(seen.body.bots.map((b: any) => b.id)).not.toContain(botId);
-    const answer = await api("POST", `/api/bots/${botId}/respond`, { requestId: "r1", behavior: "allow" }, kioskToken);
-    expect([403, 404]).toContain(answer.status);
+    expect(seen.body.groups.map((g: any) => g.id)).toContain(channelId);
+    expect(seen.body.bots.map((b: any) => b.id)).toContain(botId);
+    expect(identitySnapshot().sessions.find((session) => session.id === kioskSessionId)?.principalId).toBeUndefined();
   });
 
   it("changes nothing on a second boot", async () => {
