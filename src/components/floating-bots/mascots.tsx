@@ -4,7 +4,7 @@
 // The same behavior state machine (behavior.ts) drives them all; each
 // renderer maps the clips it can show and degrades gracefully: the original
 // bodies and Trombi have no wings, so a flight is a bouncing hop across.
-import { useEffect, useRef, type ComponentType } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
 import { MAUS_COLORS } from "@/lib/mascot";
 import { OwlAvatar } from "@/components/OwlAvatar";
 import { CursorAvatar, type CursorState } from "@/components/CursorAvatar";
@@ -26,6 +26,8 @@ export interface MascotRenderProps {
   frame: (now: number) => MascotFrame;
   fps: () => number;
   onHitTest: (test: ((clientX: number, clientY: number) => boolean) | null) => void;
+  /** The whole stage around the character's box (a 3D canvas covers it, fit.ts). */
+  stage?: { width: number; height: number; left: number; top: number };
 }
 
 export interface MascotThumbProps {
@@ -109,8 +111,18 @@ function Motion25D({ size, frame, fps, onHitTest, children }: Pick<MascotRenderP
 
 /* ------------------------------------------------------------ the owl */
 
-function OwlRender({ color, skin, size, frame, fps, onHitTest }: MascotRenderProps) {
-  return <Owl25D color={color} skin={skin} size={size} frame={frame} fps={fps} onHitTest={onHitTest} />;
+// the 3D owl and three.js: their own chunk, fetched only when a bot's owl is set to 3D
+const Owl3D = lazy(() => import("./owl3d/Owl3D"));
+
+function OwlRender({ color, skin, size, frame, fps, onHitTest, choice, activity, stage }: MascotRenderProps) {
+  const [flat, setFlat] = useState(false);
+  const owl2d = <Owl25D color={color} skin={skin} size={size} frame={frame} fps={fps} onHitTest={onHitTest} />;
+  if (choice.style !== "3d" || !stage || flat) return owl2d;
+  return (
+    <Suspense fallback={owl2d}>
+      <Owl3D color={color} skin={skin} activity={activity} stage={stage} owlSize={size} frame={frame} fps={fps} onHitTest={onHitTest} onFail={() => setFlat(true)} />
+    </Suspense>
+  );
 }
 
 function OwlThumb({ color, skin, size }: MascotThumbProps) {

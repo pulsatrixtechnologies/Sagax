@@ -135,6 +135,7 @@ function Character({ snapshot, activity, mascot }: CharacterProps) {
         frame={mascot.frame}
         fps={mascot.fps}
         onHitTest={mascot.onHitTest}
+        stage={STAGE}
       />
     </>
   );
@@ -279,6 +280,8 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     random: Math.random,
     liveliness: snapshot.liveliness ?? "normal",
     mood: snapshot.mood,
+    // only the 3D owl has real depth: spins, flips and turns in place are its alone
+    depth: (snapshot.mascot?.kind ?? "owl") === "owl" && snapshot.mascot?.style === "3d",
   });
   const options = useRef(mascotOptions());
   options.current = mascotOptions();

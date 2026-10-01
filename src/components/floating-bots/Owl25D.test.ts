@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { lidTransform, rigTransform } from "@/lib/owl/owl-art";
 import { mascotMotion } from "./behavior";
-import { REST_FRAME } from "./owl3d/owl-model";
+import { REST as REST_FRAME } from "./clips";
 import { FLAT_MIN_WIDTH, flatTurn, owl25dTransforms } from "./Owl25D";
 
 const at = (activity: Parameters<typeof mascotMotion>[0]["activity"], elapsed: number) =>

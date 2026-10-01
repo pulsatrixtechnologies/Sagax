@@ -141,5 +141,8 @@ describe("floating bots: the fly-away setting", () => {
     const view = readFileSync(join(here, "../components/floating-bots/FloatingBotView.tsx"), "utf8");
     expect(view).not.toMatch(/from\s+"three"/);
     expect(view).not.toMatch(/from\s+"\.\/owl3d\//);
+    const registry = readFileSync(join(here, "../components/floating-bots/mascots.tsx"), "utf8");
+    expect(registry).not.toMatch(/from\s+"three"/);
+    expect(registry).toContain('import("./owl3d/Owl3D")');
   });
 });
