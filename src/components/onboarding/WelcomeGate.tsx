@@ -62,7 +62,7 @@ export function WelcomeGate({ viewer }: { viewer: WelcomeViewer | null }) {
   // choosing no server there brings the person back to that beat rather
   // than the greeting.
   const [resumeAt, setResumeAt] = useState<BeatId | undefined>(undefined);
-  // Set once "No server" or Skip was chosen this visit, so the tour never
+  // Set once "No server" was chosen this visit, so the tour never
   // waits on that choice being saved.
   const [launchChosen, setLaunchChosen] = useState(false);
   // How many servers this desktop has saved; null until it answers.

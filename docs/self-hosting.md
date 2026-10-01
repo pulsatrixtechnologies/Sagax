@@ -747,7 +747,7 @@ server.
 On a first run, the desktop app asks how this computer is used before the
 welcome tour:
 
-- **No server** (or **Skip**): the solo, local-first app. The welcome tour
+- **No server**: the solo, local-first app. The welcome tour
   follows.
 - **Server**: the address of your organization's Sagax, prefilled with
   `https://bot.pulsatrix.mcp.goxcloud.ca`. **Sign in** checks that the

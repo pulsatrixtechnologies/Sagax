@@ -35,11 +35,6 @@ function nodes(value: ReactNode): Node[] {
   const node = value as Node;
   return [node, ...Children.toArray(node.props.children).flatMap(nodes)];
 }
-function text(value: ReactNode): string {
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  if (Array.isArray(value)) return value.map(text).join("");
-  return isValidElement(value) ? text((value as Node).props.children) : "";
-}
 
 const probe = vi.fn();
 const join = vi.fn();
@@ -60,8 +55,6 @@ function render(initialMode?: "solo" | "server") {
 const flush = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
-// Skip is the flow's QuietButton, a component rather than a bare <button>.
-const button = (label: string) => render().nodes.find((node) => node.props.onClick !== undefined && text(node.props.children).includes(label));
 const mode = (id: string) => render().nodes.find((node) => node.props["data-mode"] === id)!;
 const input = () => render().nodes.find((node) => node.type === "input")!;
 const submit = () => render().nodes.find((node) => node.type === "form")!.props.onSubmit!({ preventDefault() {} });
@@ -82,19 +75,20 @@ afterEach(() => {
 });
 
 describe("launch screen", () => {
-  it("offers no server and server, with Skip, and the product name", () => {
+  it("offers no server and server, without a Skip, and the product name", () => {
     const html = render().html;
     expect(html).toContain("Welcome to Sagax");
     expect(html).toContain("No server");
     expect(html).toContain("Server");
-    expect(html).toContain("Skip");
+    expect(html).not.toContain("Skip");
     expect(html).toContain("role=\"dialog\"");
     // no address field until server mode is chosen
     expect(render().nodes.some((node) => node.type === "input")).toBe(false);
   });
 
-  it("skip is no server: remembered, and the tour goes on", async () => {
-    button("Skip")!.props.onClick!();
+  it("no server is remembered, and the tour goes on", async () => {
+    mode("solo").props.onClick!();
+    submit();
     expect(onSolo).toHaveBeenCalledOnce();
     await flush();
     expect(store.api).toHaveBeenCalledWith("/api/config", expect.objectContaining({ method: "PUT", body: JSON.stringify({ onboarding: { launchMode: "solo" } }) }));
@@ -103,13 +97,6 @@ describe("launch screen", () => {
     expect(join).not.toHaveBeenCalled();
   });
 
-  it("no server continues the same way", async () => {
-    mode("solo").props.onClick!();
-    submit();
-    expect(onSolo).toHaveBeenCalledOnce();
-    await flush();
-    expect(store.api).toHaveBeenCalledWith("/api/config", expect.objectContaining({ body: JSON.stringify({ onboarding: { launchMode: "solo" } }) }));
-  });
 
   it("server mode prefills the default address, checks the server, saves it and starts Sign in with Pulsatrix", async () => {
     mode("server").props.onClick!();

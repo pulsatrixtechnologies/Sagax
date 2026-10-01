@@ -2085,7 +2085,6 @@
   "launch.continue": "Continuer",
   "launch.signIn": "Se connecter",
   "launch.working": "Connexion...",
-  "launch.skip": "Passer",
   "launch.later": "Vous pourrez changer ce choix plus tard dans Paramètres > Général.",
   "launch.error.address": "Entrez une adresse https, ou http://localhost sur cet ordinateur.",
   "launch.error.unreachable": "Ce serveur est injoignable. Vérifiez l'adresse et votre connexion.",
@@ -2094,7 +2093,12 @@
   "onboarding.server.title": "Vous utilisez {app} au travail?",
   "onboarding.server.body": "Connectez-vous au serveur de votre organisation.",
   "onboarding.server.connect": "Se connecter à un serveur",
-  "settings.welcome.launch": "Choisir sans serveur ou serveur",
+  "settings.appTour.title": "Visite de l'app",
+  "settings.appTour.subtitle": "Une courte visite guidée des principales zones de l'app.",
+  "settings.launch.title": "Serveur",
+  "settings.launch.solo": "Sans serveur : vos bots, conversations et clés restent sur cet ordinateur.",
+  "settings.launch.server": "Connecté au serveur Sagax de votre organisation avec votre compte Pulsatrix.",
+  "settings.launch.change": "Modifier",
   "orgJoin.join": "Rejoindre",
   "orgJoin.copyOptional": "La copie de bots est facultative. N'en choisissez aucun pour rejoindre sans eux."
 }

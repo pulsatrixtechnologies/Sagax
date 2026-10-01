@@ -415,29 +415,36 @@ function ReplayAppTourButton() {
   );
 }
 
+// Three rows, one action each, so every button sits in the row's action
+// column like Updates and Diagnostics.
 function ReplayTourRow() {
   const { state, dispatch } = useStore();
+  const launchMode = state.config?.onboarding?.launchMode ?? "solo";
   return (
-    <SettingRow title={t("settings.welcome.title")} subtitle={t("settings.welcome.subtitle")}>
-      <div className="flex flex-wrap gap-2">
+    <>
+      <SettingRow title={t("settings.appTour.title")} subtitle={t("settings.appTour.subtitle")}>
         <ReplayAppTourButton />
-        <button
-          onClick={() => dispatch({ type: "toggleWelcome", open: true })}
-          className="ui-button"
-        >
+      </SettingRow>
+      <SettingRow title={t("settings.welcome.title")} subtitle={t("settings.welcome.subtitle")}>
+        <button onClick={() => dispatch({ type: "toggleWelcome", open: true })} className="ui-button">
           {t("settings.welcome.replay")}
         </button>
-        {/* the launch screen: no server or an organization server */}
-        {launchBridges(window.ogb) && (
+      </SettingRow>
+      {/* the launch screen: no server or an organization server */}
+      {launchBridges(window.ogb) && (
+        <SettingRow
+          title={t("settings.launch.title")}
+          subtitle={t(launchMode === "server" ? "settings.launch.server" : "settings.launch.solo")}
+        >
           <button
-            onClick={() => dispatch({ type: "toggleLaunch", open: true, mode: state.config?.onboarding?.launchMode ?? "solo" })}
+            onClick={() => dispatch({ type: "toggleLaunch", open: true, mode: launchMode })}
             className="ui-button"
           >
-            {t("settings.welcome.launch")}
+            {t("settings.launch.change")}
           </button>
-        )}
-      </div>
-    </SettingRow>
+        </SettingRow>
+      )}
+    </>
   );
 }
 
@@ -780,7 +787,18 @@ export function SettingsModal() {
   useEffect(() => window.ogb?.onOpenAppSettings?.(() => setQuery("")), []);
   const q = query.trim().toLowerCase();
   const ownerOrAdmin = useOwnerOrAdmin();
+  const soloDesktop = !remoteActive && Boolean(launchBridges(window.ogb)) && state.config?.onboarding?.launchMode !== "server";
+  // A request for Settings > Organization (the Server menu, a deep link) on
+  // a desktop with no server opens the launch screen on Server instead.
+  useEffect(() => {
+    if (!soloDesktop || state.appSettingsSection !== "organization") return;
+    dispatch({ type: "toggleAppSettings", open: false, section: "general" });
+    dispatch({ type: "toggleLaunch", open: true, mode: "server" });
+  }, [soloDesktop, state.appSettingsSection, dispatch]);
   const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization")
+    // the desktop app in "No server" mode has no organization to show; it
+    // joins one from General > Server, which brings this section back
+    .filter((entry) => entry.id !== "organization" || !soloDesktop)
     .filter((entry) => entry.id !== "cloudAccount" || Boolean(window.ogb?.cloudAccount))
     // the operator's screen for other workspaces exists only where a fleet agent does
     .filter((entry) => entry.id !== "workspaces" || workspacesAvailable(state.config))
