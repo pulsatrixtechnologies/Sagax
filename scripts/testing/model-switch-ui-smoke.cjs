@@ -50,7 +50,7 @@ module.exports = async function verifyModelSwitch({ root, url, api, until, grant
     assert.equal(instances.find(instance => instance.instanceId === "claude-signed-out").snapshot.authenticated, false);
     assert.notEqual(instances.find(instance => instance.instanceId === "missing-codex").snapshot.state, "available");
     assert.equal(await evaluate("!!document.querySelector('[data-model-picker-content] button[aria-label=\"Missing provider fixture\"]')"), false);
-    assert.ok((await text()).includes("Engines and accounts"));
+    assert.ok((await text()).includes("Model providers and accounts"));
     assert.equal(await evaluate("[...document.querySelectorAll('[aria-label=\"Apply model changes to\"] button')].find(b => b.textContent === 'Only this thread').getAttribute('aria-pressed')"), "true");
     await click("Claude");
     await until(() => evaluate("!!document.querySelector('[data-model-picker-content] select option[value=claude]')"));
@@ -71,17 +71,24 @@ module.exports = async function verifyModelSwitch({ root, url, api, until, grant
       window.setSize(width, height);
       await until(() => evaluate(`innerWidth === ${width}`));
       await evaluate("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+      // let the opening animation (a scale) finish before measuring
+      await new Promise(resolve => setTimeout(resolve, 400));
       const geometry = await evaluate(`(() => {
         const panel = document.querySelector('[data-model-picker-content]');
         const list = panel.querySelector('[data-model-list]');
         const rect = panel.getBoundingClientRect();
-        return { left: rect.left, right: rect.right, bottom: rect.bottom, width: innerWidth, height: innerHeight,
-          listHeight: list.clientHeight, effortHeight: panel.querySelector('select[aria-label="Reasoning effort"]').parentElement.getBoundingClientRect().height };
+        const listRect = list.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: innerWidth, height: innerHeight,
+          modal: panel.getAttribute('aria-modal'), listHeight: listRect.height,
+          effort: Boolean(panel.querySelector('[role="group"][aria-label="Reasoning effort"]')),
+          providers: panel.querySelectorAll('[data-model-provider-column] [data-rail-provider]').length };
       })()`);
+      // A modal like Settings (a bottom sheet on a narrow window), inside the window.
+      assert.equal(geometry.modal, "true", JSON.stringify(geometry));
       assert.ok(geometry.left >= 0 && geometry.right <= geometry.width, JSON.stringify(geometry));
-      assert.ok(geometry.bottom <= geometry.height, JSON.stringify(geometry));
-      assert.ok(geometry.listHeight >= Math.min(180, geometry.height * 0.3) - 2, JSON.stringify(geometry));
-      assert.ok(geometry.effortHeight <= 52, JSON.stringify(geometry));
+      assert.ok(geometry.top >= 0 && geometry.bottom <= geometry.height + 1, JSON.stringify(geometry));
+      assert.ok(geometry.height - geometry.top >= Math.min(300, geometry.height * 0.6), JSON.stringify(geometry));
+      assert.ok(geometry.listHeight > 0 && geometry.effort && geometry.providers > 0, JSON.stringify(geometry));
       writeFileSync(join(evidence, `model-picker-${width}x${height}.png`), (await window.webContents.capturePage()).toPNG());
     }
     window.setSize(1100, 850);

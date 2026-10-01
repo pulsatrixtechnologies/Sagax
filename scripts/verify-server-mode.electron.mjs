@@ -252,24 +252,61 @@ app.whenReady().then(async () => {
     check(`the floating window draws the ${look.character}${look.shape ? ` (${look.shape})` : ""}`, Boolean(seen) && drawn);
   }
 
-  // 9. The composer's model chip opens the model picker on the server.
+  // 9. The composer's model chip opens the model picker, a modal, on the
+  // server: the person's payer order, no local model from the server.
   await until("the composer model chip", async () => win.webContents.executeJavaScript(`Boolean(document.querySelector('[data-tour=model]'))`), 15_000).catch(() => null);
-  await win.webContents.executeJavaScript(`document.querySelector('[data-tour=model]')?.click(); true`);
-  await wait(800);
-  const picker = await win.webContents.executeJavaScript(`(() => {
+  const shoot = async (name) => {
+    if (!process.env.VERIFY_SHOT_DIR) return;
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    mkdirSync(process.env.VERIFY_SHOT_DIR, { recursive: true });
+    const file = path.join(process.env.VERIFY_SHOT_DIR, name);
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG());
+    log(`screenshot ${file}`);
+  };
+  const measure = () => win.webContents.executeJavaScript(`(() => {
     const panel = document.querySelector('[data-model-picker-content]');
     if (!panel) return { found: false };
     const rect = panel.getBoundingClientRect();
-    return { found: true, width: Math.round(rect.width), height: Math.round(rect.height), top: Math.round(rect.top), bottom: Math.round(rect.bottom), innerHeight, modal: panel.getAttribute('aria-modal'), text: panel.innerText.slice(0, 400) };
+    return { found: true, width: Math.round(rect.width), height: Math.round(rect.height), top: Math.round(rect.top), bottom: Math.round(rect.bottom),
+      left: Math.round(rect.left), right: Math.round(rect.right), innerWidth, innerHeight, modal: panel.getAttribute('aria-modal'),
+      focusInside: panel.contains(document.activeElement), payers: [...panel.querySelectorAll('[data-payer]')].map((row) => row.dataset.payer),
+      localHidden: Boolean(panel.querySelector('[data-model-local-hidden]')), localEntry: Boolean(panel.querySelector('[data-model-local-entry]')),
+      providers: panel.querySelectorAll('[data-model-provider-column] [data-rail-provider]').length };
   })()`);
-  check("the composer's model chip opens a visible model picker", picker.found && picker.height > 200 && picker.top >= 0 && picker.bottom <= picker.innerHeight, JSON.stringify(picker));
-  if (process.env.VERIFY_SHOT) {
-    const { writeFileSync } = await import("node:fs");
-    win.show();
-    await wait(400);
-    writeFileSync(process.env.VERIFY_SHOT, (await win.webContents.capturePage()).toPNG());
-    log(`screenshot ${process.env.VERIFY_SHOT}`);
-  }
+  win.show();
+  await win.webContents.executeJavaScript(`document.querySelector('[data-tour=model]').click(); true`);
+  const picker = await until("the model picker", async () => {
+    const value = await measure();
+    return value.found && value.payers.length ? value : null;
+  }, 10_000).catch(measure);
+  await wait(600);
+  Object.assign(picker, await measure());
+  check("the composer's model chip opens a model picker modal inside the window", picker.found && picker.modal === "true" && picker.height > 300 && picker.top >= 0 && picker.bottom <= picker.innerHeight && picker.left >= 0 && picker.right <= picker.innerWidth, JSON.stringify(picker));
+  check("the modal takes focus", picker.focusInside === true);
+  check("the modal shows the person's payer order (subscription, own key, server for an admin, organization key)", JSON.stringify(picker.payers) === JSON.stringify(["subscription", "ownerKey", "server", "orgKey"]), JSON.stringify(picker.payers));
+  check("no local model from the server's machine, with a note", picker.localHidden && !picker.localEntry);
+  await wait(300);
+  await shoot("model-picker-server-1200.png");
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+  const closed = await until("the picker to close", async () => {
+    const state = await win.webContents.executeJavaScript(`({ open: Boolean(document.querySelector('[data-model-picker-content]')), chip: document.activeElement?.dataset?.tour === 'model' })`);
+    return state.open ? null : state;
+  }, 5_000).catch(() => null);
+  check("Escape closes the modal and gives focus back to the chip", Boolean(closed) && closed.chip, JSON.stringify(closed));
+  // A narrow window: a bottom sheet.
+  win.setSize(390, 760);
+  await until("a narrow window", async () => win.webContents.executeJavaScript("innerWidth <= 400"));
+  await win.webContents.executeJavaScript(`document.querySelector('[data-tour=model]').click(); true`);
+  await wait(600); // the opening animation scales the panel
+  const sheet = await until("the sheet", async () => {
+    const value = await measure();
+    return value.found && value.payers.length ? value : null;
+  }, 10_000).catch(measure);
+  check("on a narrow window the picker is a sheet along the bottom edge", sheet.found && sheet.left === 0 && sheet.right === sheet.innerWidth && Math.abs(sheet.bottom - sheet.innerHeight) <= 1 && sheet.top > 0, JSON.stringify(sheet));
+  await wait(300);
+  await shoot("model-picker-server-390.png");
+  win.setSize(1200, 800);
 
   const ok = checks.every(Boolean);
   console.log(`[verify] ${ok ? "PASS" : "FAIL"} (${checks.filter(Boolean).length}/${checks.length})`);

@@ -124,6 +124,22 @@ launch screen hands this computer's own values over once at join
 (`orgJoin.join({ preferences })`, `takePreferences`). Device-only state
 (drafts, sizes, floating list and positions, mood, voices) never travels.
 
+## Model picker
+
+The model chip (composer and chat header, `src/components/ModelPicker.tsx`)
+opens a modal like Settings, portalled to `<body>`: providers with their
+status on the left, account, scope, models, effort and payers on the right,
+a bottom sheet on a narrow window; focus stays inside and Escape closes it.
+Only `contained` (the bot settings dialog) keeps the inline panel. On an
+organization server it shows the person's payer order
+(`src/lib/model-payers.ts`, the order of `server/engine-credentials.ts`)
+and signs in their own subscription through `/api/me/engines/<id>/login`
+(`ModelPickerPayers.tsx`), never the server's engine login; the server's
+local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
+`src/lib/model-payers.test.ts`; real Electron: `scripts/verify-server-mode.ts`
+(org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
+(solo).
+
 ## Floating bots and the desktop mascot
 
 A bot put "on the desktop" stands in its own transparent window

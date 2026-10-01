@@ -424,7 +424,7 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
     const group = (label: string) => <EngineGroupLabel className="hidden px-2.5 pb-0.5 pt-2 text-[10px] first:pt-0.5 sm:block">{label}</EngineGroupLabel>;
     return (
       <nav aria-label={t("model.providers")} data-model-provider-column
-        className="flex shrink-0 gap-1 overflow-x-auto border-b border-hairline/40 bg-panel p-2 sm:w-56 sm:flex-col sm:overflow-y-auto sm:overflow-x-visible sm:border-b-0 sm:border-r sm:p-3">
+        className="flex shrink-0 gap-1 overflow-x-auto border-b border-hairline/40 bg-panel p-2 mr-12 sm:mr-0 sm:w-56 sm:flex-col sm:overflow-y-auto sm:overflow-x-visible sm:border-b-0 sm:border-r sm:p-3">
         {subscription.length > 0 && group(t("model.rail.cloud"))}
         {subscription.map(railButton)}
         {(api.length > 0 || onAddApiKeys) && group(t("model.rail.apiKeys"))}
@@ -975,6 +975,8 @@ export function ModelPicker({
       issuer={org.org.identity.issuer} admin={admin} onChanged={reloadMyEngines} />
   );
 
+  const payersFirst = Boolean(railEngine && railInstance && orgEngineState(railEngine, { admin, serverSignedIn: railInstance.snapshot.authenticated !== false }) !== "connected");
+
   const listSection = railInstance && (
     <>
       {pane === "custom" && canReturnToOfficial && (
@@ -1233,13 +1235,16 @@ export function ModelPicker({
             {railInstance ? (
               <>
                 {header}
-                {payers}
+                {/* Nothing pays yet: how to fix that comes first. Otherwise
+                    the choice does, and who pays follows. */}
+                {payersFirst && payers}
                 {scopeControl}
                 <div>
                   <div className="mb-1 text-[12.5px] font-medium text-ink">{t("model.models")}</div>
                   {listSection}
                 </div>
                 {effort}
+                {!payersFirst && payers}
                 {localEntry}
               </>
             ) : (

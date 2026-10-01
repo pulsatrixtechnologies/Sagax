@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Copy, ExternalLink, Loader2, LogIn } from "lucide-react";
 import { api, ApiError, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -120,12 +120,10 @@ export function CodexDeviceSignIn({ instanceId, browserPkce = false, base: baseO
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const base = baseOverride ?? `/api/instances/${encodeURIComponent(instanceId)}/auth`;
-  const signedInRef = useRef(onSignedIn);
-  signedInRef.current = onSignedIn;
 
   const refresh = async () => {
-    if (signedInRef.current) {
-      await signedInRef.current();
+    if (onSignedIn) {
+      await onSignedIn();
       return;
     }
     await refreshInstances();

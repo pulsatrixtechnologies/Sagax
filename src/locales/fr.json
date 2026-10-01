@@ -486,6 +486,7 @@
   "model.results": "{count} résultats",
   "model.allModels": "Tous les modèles · {count}",
   "model.suggested": "Suggérés",
+  "model.addApiKeys": "Ajouter des clés API",
   "model.useLocalCount": "Utiliser un modèle local ({count} disponibles)",
   "model.useLocal": "Utiliser un modèle local",
   "attach.loadImage": "Charger l’image",
@@ -2223,5 +2224,6 @@
   "room.people.done": "Terminé",
   "app.empty.title": "C'est bien vide ici.",
   "app.empty.body": "Tu devrais créer un nouveau bot.",
-  "app.empty.create": "Créer un bot"
+  "app.empty.create": "Créer un bot",
+  "settings.engines.title": "Fournisseurs de modèles et comptes"
 }
