@@ -41,3 +41,22 @@ describe("the desktop owl in 2.5D: owl-art's own rig, driven by the mascot", () 
     expect(at("sleep", 400).lids).toBe(lidTransform(1));
   });
 });
+
+describe("the desktop owl wears its skin's own effect layers", () => {
+  it("draws the same live effect layers as the in-app avatar, for every skin", async () => {
+    const { createElement } = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { default: Owl25D } = await import("./Owl25D");
+    const { skinFinish } = await import("./owl3d/Owl3D");
+    for (const skin of ["lightning", "gold", "neon", "inferno", "frost", "carbon"]) {
+      const html = renderToStaticMarkup(createElement(Owl25D, { color: "blue", skin, size: 120, frame: () => REST_FRAME, fps: () => 30, onHitTest: () => undefined }));
+      expect(html).toContain(`data-owl-skin="${skin}"`);
+      expect(html).toContain('data-owl-fx="live"');
+      expect(html).toMatch(/owl-fx/);
+      // and the 3D owl has a finish for it
+      expect(skinFinish(skin)).not.toEqual(skinFinish("none"));
+    }
+    const plain = renderToStaticMarkup(createElement(Owl25D, { color: "blue", skin: "none", size: 120, frame: () => REST_FRAME, fps: () => 30, onHitTest: () => undefined }));
+    expect(plain).not.toContain("data-owl-fx");
+  });
+});

@@ -62,6 +62,29 @@ const FADE_S = 0.25;
 /** The head's turn, clip and gaze together, never past this (radians, about 25 degrees): the head is a layer of the body. */
 const HEAD_YAW_MAX = 0.45;
 
+/** The parts a skin's finish applies to. */
+const FEATHERS = new Set(["plumage", "wingNear", "wingFar", "lid"]);
+
+/** Each owl skin in 3D: how the feathers shine or glow (the 2D owl draws effect layers instead). */
+export function skinFinish(skin: string): { metalness: number; roughness: number; emissive: string; glow: number; pulse: number } {
+  switch (skin) {
+    case "gold":
+      return { metalness: 0.75, roughness: 0.28, emissive: "#6b4a00", glow: 0.25, pulse: 0 };
+    case "neon":
+      return { metalness: 0, roughness: 0.4, emissive: "#29f0ff", glow: 0.55, pulse: 0.25 };
+    case "inferno":
+      return { metalness: 0, roughness: 0.6, emissive: "#ff5a12", glow: 0.6, pulse: 0.3 };
+    case "frost":
+      return { metalness: 0.1, roughness: 0.2, emissive: "#bfe8ff", glow: 0.3, pulse: 0.1 };
+    case "carbon":
+      return { metalness: 0.45, roughness: 0.35, emissive: "#000000", glow: 0, pulse: 0 };
+    case "lightning":
+      return { metalness: 0.2, roughness: 0.45, emissive: "#ffe14a", glow: 0.35, pulse: 0.5 };
+    default:
+      return { metalness: 0, roughness: 0.75, emissive: "#000000", glow: 0, pulse: 0 };
+  }
+}
+
 /** Each part's color from the bot's palette (the parts are named by the generator). */
 export function partColors(palette: OwlPalette): Record<string, string> {
   return {
@@ -170,6 +193,7 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
     const solids: Mesh[] = [];
     let facing = 1;
     let gaze = 0;
+    let skinPulse = 0;
     const raycaster = new Raycaster();
 
     const play = (name: string) => {
@@ -208,10 +232,19 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
         recolor.current = (tint, wear) => {
           const hex = (MAUS_COLORS as Record<string, string>)[tint] ?? tint;
           const colors = partColors(owlSkinPalette(owlSkinId(wear), owlPalette(hex), hex));
+          const finish = skinFinish(owlSkinId(wear));
           for (const mesh of solids) {
             const value = colors[mesh.name];
-            if (value) (mesh.material as MeshStandardMaterial).color = new Color(value);
+            const material = mesh.material as MeshStandardMaterial;
+            if (value) material.color = new Color(value);
+            // the skin's look in 3D: a sheen, a glow, a frost, on the feathers only
+            const feathers = FEATHERS.has(mesh.name);
+            material.metalness = feathers ? finish.metalness : 0;
+            material.roughness = feathers ? finish.roughness : 0.75;
+            material.emissive = new Color(feathers ? finish.emissive : "#000000");
+            material.emissiveIntensity = feathers ? finish.glow : 0;
           }
+          skinPulse = finish.pulse;
         };
         recolor.current(color, skin);
         const info = (gltf.scene.getObjectByName("owl")?.userData ?? {}) as { clips?: Record<string, [number, number]>; fps?: number };
@@ -253,6 +286,11 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
       const headYaw = head?.rotation.y ?? 0;
       const lidWeight = lidMesh?.morphTargetInfluences?.[0] ?? 0;
       if (head) head.rotation.y = Math.min(HEAD_YAW_MAX, Math.max(-HEAD_YAW_MAX, headYaw + gaze));
+      if (skinPulse > 0) {
+        // a glowing skin breathes (lightning flickers faster)
+        const glow = 0.5 + 0.5 * Math.sin((now / 1000) * Math.PI * 2 * (skinPulse > 0.4 ? 3 : 0.8));
+        for (const mesh of solids) if (FEATHERS.has(mesh.name)) (mesh.material as MeshStandardMaterial).emissiveIntensity = 0.2 + glow * skinPulse;
+      }
       if (lidMesh?.morphTargetInfluences) lidMesh.morphTargetInfluences[0] = Math.max(lidWeight, blinkAt(now));
       renderer.render(scene, camera);
       if (head) head.rotation.y = headYaw;

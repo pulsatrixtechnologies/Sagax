@@ -22,7 +22,8 @@ import {
   wingTransform,
   type OwlPath,
 } from "@/lib/owl/owl-art";
-import { owlSkinId, owlSkinPalette } from "@/lib/owl/owl-skins";
+import { owlSkinId, owlSkinLook, owlSkinPalette } from "@/lib/owl/owl-skins";
+import { OwlSkinBack, OwlSkinDefs, OwlSkinEyeGlow, OwlSkinFront, OwlSkinPlumage, OwlSkinWing } from "@/components/OwlSkinFx";
 import { createFrameSmoother, type MascotFrame } from "./behavior";
 
 export interface Owl25DProps {
@@ -104,7 +105,9 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
   const hex = (MAUS_COLORS as Record<string, string>)[color] ?? color;
   const skinId = owlSkinId(skin);
   const parts = useMemo(() => owlSvgParts(owlSkinPalette(skinId, owlPalette(hex), hex), { size }), [skinId, hex, size]);
-  const rim = owlRim(hex);
+  // the skin's own effect layers, exactly as the in-app avatar draws them (OwlSkinFx.tsx)
+  const look = owlSkinLook(skinId, hex);
+  const rim = skinId === "none" ? owlRim(hex) : look.rim;
   const uid = `fbowl-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const svg = useRef<SVGSVGElement>(null);
   const turn = useRef<HTMLSpanElement>(null);
@@ -166,15 +169,28 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
   }, []);
 
   const { eye } = parts;
+  const fx = { skin: skinId, look, uid, detail: true, silhouette: parts.body };
   return (
     <span ref={turn} className="fb-owl25" style={{ display: "block", width: size, height: size, transformOrigin: "50% 62%" }}>
-      <svg ref={svg} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width={size} height={size} style={{ overflow: "visible", display: "block" }} aria-hidden="true">
+      <svg
+        ref={svg}
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 256 256"
+        width={size}
+        height={size}
+        style={{ overflow: "visible", display: "block" }}
+        aria-hidden="true"
+        data-owl-skin={skinId === "none" ? undefined : skinId}
+        data-owl-fx={skinId === "none" ? undefined : "live"}
+      >
         <defs>
           <clipPath id={`${uid}-iris`}>
             <circle cx={eye.cx} cy={eye.cy} r={eye.clipR} />
           </clipPath>
+          {skinId !== "none" && <OwlSkinDefs {...fx} />}
         </defs>
         <g ref={rig}>
+          <OwlSkinBack {...fx} />
           <g ref={farWing} style={{ opacity: 0 }}>
             <g transform={FAR_WING_MIRROR}>
               {rim && rims(parts.farWing, rim)}
@@ -184,11 +200,12 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
           {rim && (
             <>
               <g ref={nearWingBack}>{rims(parts.nearWing, rim)}</g>
-              <g>{rims([...parts.body, ...parts.feet], rim)}</g>
+              <g className={skinId === "none" ? undefined : `owl-fx-rim owl-fx-rim-${skinId}`}>{rims([...parts.body, ...parts.feet], rim)}</g>
             </>
           )}
           <g>
             {paths(parts.body)}
+            <OwlSkinPlumage {...fx} />
             <g>{paths(parts.faceMask)}</g>
             {parts.spots && <g>{paths(parts.spots)}</g>}
             <g ref={feet} className="fb-owl25-feet">{paths(parts.feet)}</g>
@@ -196,6 +213,7 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
           </g>
           <g>
             <g>{paths(parts.socket)}</g>
+            <OwlSkinEyeGlow {...fx} />
             <g ref={eyes}>
               <circle cx={eye.cx} cy={eye.cy} r={eye.iris.r} fill={eye.iris.fill} />
               <g ref={pupil}>
@@ -210,7 +228,11 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
             </g>
           </g>
           {/* over the face, so a wing can hide the eyes (shy) or tap the chin (thinking) */}
-          <g ref={nearWing}>{paths(parts.nearWing)}</g>
+          <g ref={nearWing}>
+            {paths(parts.nearWing)}
+            <OwlSkinWing {...fx} wing={parts.nearWing} />
+          </g>
+          <OwlSkinFront {...fx} />
         </g>
       </svg>
     </span>
