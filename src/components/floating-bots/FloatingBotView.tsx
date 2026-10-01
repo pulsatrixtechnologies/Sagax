@@ -24,6 +24,7 @@ import {
 import { newStroke, strokeLeave, strokeStep } from "./gestures";
 import type { FloatingPilot } from "./pilot";
 import Owl25D from "./Owl25D";
+import { mascotStage } from "./fit";
 import { mascotFields, type FloatingEvent, type FloatingPose, type FloatingSnapshot } from "./protocol";
 
 // The Hibou 98 extras (retro balloon stylesheet, Trombi's sparkle) load only
@@ -39,13 +40,17 @@ const DOUBLE_CLICK_MS = 260;
 const TICK_MS = 250;
 /** The window follows what is drawn a moment later (FloatingBotWindow resizes it); flights wait for that. */
 const RESIZE_SETTLE_MS = 220;
+/** A flight to the screen edge or back home (the clips are timed to it). */
+const FLIGHT_MS = 1400;
 const GAZE_MS = 200;
 /** A bot's picture, drawn flat. */
 export const CHARACTER_SIZE = 88;
 /** The 3D owl's canvas: room above the owl for its hops and spins. */
-export const MASCOT_SIZE = { width: 140, height: 152 } as const;
-/** The owl's own box inside the stage (the art leaves room around it). */
-const OWL_SIZE = 128;
+/** The owl's own box. */
+const OWL_SIZE = 120;
+/** The stage around it: big enough that no spin, flip, jump or spread wing is ever cut off (fit.ts). */
+const STAGE = mascotStage(OWL_SIZE);
+export const MASCOT_SIZE = { width: STAGE.width, height: STAGE.height } as const;
 
 /** A bot colour name or hex, as CSS (the parked badge wears it). */
 const owlHex = (color: string) => (MAUS_COLORS as Record<string, string>)[color] ?? (/^#[0-9a-fA-F]{3,8}$/.test(color) ? color : MAUS_COLORS.green);
@@ -56,7 +61,7 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
 /** The flat owl's state when the 3D one cannot be drawn: the mascot's activity first, then the brain's pose. */
 export function owlStateFor(pose: FloatingPose, activity: MascotActivity): OwlState {
   if (activity === "sleep") return "sleepy";
-  if (activity === "react" || activity === "celebrate" || activity === "petted") return "success";
+  if (activity === "spin" || activity === "celebrate" || activity === "petted") return "success";
   if (activity === "sad") return "alert";
   if (activity === "working" || activity === "flyOut" || activity === "return") return "working";
   return owlStateForPose(pose);
@@ -117,6 +122,38 @@ function Character({ snapshot, mascot }: CharacterProps) {
       )}
       <Owl25D color={snapshot.color} skin={snapshot.skin} size={OWL_SIZE} frame={mascot.frame} fps={mascot.fps} onHitTest={mascot.onHitTest} />
     </>
+  );
+}
+
+/** A small sign over the owl for some clips: a question mark, a hoot, a surprise, a temper, confetti. */
+export function emoteFor(activity: MascotActivity): "question" | "hoot" | "bang" | "anger" | "confetti" | "thought" | null {
+  if (activity === "confused") return "question";
+  if (activity === "hoot") return "hoot";
+  if (activity === "surprised" || activity === "startled") return "bang";
+  if (activity === "angry") return "anger";
+  if (activity === "celebrate") return "confetti";
+  if (activity === "think") return "thought";
+  return null;
+}
+
+function Emote({ activity, hoot }: { activity: MascotActivity; hoot?: string }) {
+  const kind = emoteFor(activity);
+  if (!kind) return null;
+  if (kind === "confetti") {
+    return (
+      <span className="fb-confetti" aria-hidden="true">
+        {Array.from({ length: 14 }, (_, index) => <span key={index} style={{ "--i": index } as React.CSSProperties} />)}
+      </span>
+    );
+  }
+  if (kind === "thought") return <span className="fb-thought" aria-hidden="true"><span /><span /><span /></span>;
+  const text = kind === "question" ? "?" : kind === "bang" ? "!" : kind === "hoot" ? (hoot || "Hoot!") : "";
+  return (
+    <span className="fb-emote" data-kind={kind} aria-hidden="true">
+      {kind === "anger" ? (
+        <svg viewBox="0 0 20 20" width="18" height="18"><path d="M3 7 Q7 7 7 3 M13 3 Q13 7 17 7 M17 13 Q13 13 13 17 M7 17 Q7 13 3 13" fill="none" stroke="#e5484d" strokeWidth="2.4" strokeLinecap="round" /></svg>
+      ) : text}
+    </span>
   );
 }
 
@@ -188,8 +225,18 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const gaze = useRef<{ x: number; y: number } | null>(null);
   const pet = useRef(newStroke());
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const options = useRef({ reduced, flyAway: snapshot.flyAway, canMove: Boolean(pilot), random: Math.random });
-  options.current = { reduced, flyAway: snapshot.flyAway, canMove: Boolean(pilot), random: Math.random };
+  const mascotOptions = () => ({
+    reduced,
+    flyAway: snapshot.flyAway,
+    canMove: Boolean(pilot),
+    random: Math.random,
+    liveliness: snapshot.liveliness ?? "normal",
+    mood: snapshot.mood,
+  });
+  const options = useRef(mascotOptions());
+  options.current = mascotOptions();
+  const moodRef = useRef(snapshot.mood);
+  moodRef.current = snapshot.mood;
   const poseRef = useRef(snapshot.pose);
   poseRef.current = snapshot.pose;
   const pilotRef = useRef(pilot);
@@ -201,16 +248,17 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     const arrived = () => dispatchRef.current({ type: "arrived", now: now() });
     switch (effect.type) {
       case "flyOut":
-        if (flight) void flight.flyOut().finally(arrived);
-        else setTimeout(arrived, 900);
+        // the owl crouches and spreads its wings first; the window leaves with the jump
+        if (flight) setTimeout(() => void flight.flyOut(FLIGHT_MS).finally(arrived), effect.delay);
+        else setTimeout(arrived, effect.delay + FLIGHT_MS);
         break;
       case "flyHome":
         // let the window grow back to the owl first, then fly it home
-        if (flight) setTimeout(() => void flight.flyHome().finally(arrived), RESIZE_SETTLE_MS);
-        else setTimeout(arrived, 1000);
+        if (flight) setTimeout(() => void flight.flyHome(FLIGHT_MS).finally(arrived), RESIZE_SETTLE_MS);
+        else setTimeout(arrived, FLIGHT_MS);
         break;
       case "wander":
-        if (flight) void flight.wander(effect.dx).finally(arrived);
+        if (flight) setTimeout(() => void flight.wander(effect.dx, effect.ms, effect.style).finally(arrived), effect.delay);
         else arrived();
         break;
       case "halt":
@@ -272,13 +320,23 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       gaze.current = null;
       return;
     }
+    // the pointer: where the eyes look, and how near and fast it is (startle, greeting)
+    let previous: { x: number; y: number; at: number } | null = null;
+    const notice = (offset: { x: number; y: number } | null) => {
+      const at = now();
+      gaze.current = offset ? { x: clamp(offset.x / 420, -1, 1), y: clamp(offset.y / 320, -1, 1) } : null;
+      const speed = offset && previous ? Math.hypot(offset.x - previous.x, offset.y - previous.y) / Math.max(0.016, (at - previous.at) / 1000) : 0;
+      previous = offset ? { ...offset, at } : null;
+      dispatchRef.current({ type: "cursor", now: at, distance: offset ? Math.hypot(offset.x, offset.y) : null, speed });
+    };
     if (pilot) {
       let alive = true;
       const timer = setInterval(() => {
         if (document.hidden || mascotRef.current.away || mascotRef.current.activity === "sleep") return;
-        void pilot.cursor().then((offset) => {
+        void pilot.sense().then(({ cursor, room }) => {
           if (!alive) return;
-          gaze.current = offset ? { x: clamp(offset.x / 420, -1, 1), y: clamp(offset.y / 320, -1, 1) } : null;
+          notice(cursor);
+          if (room) dispatchRef.current({ type: "room", now: now(), left: room.left, right: room.right });
         });
       }, GAZE_MS);
       return () => {
@@ -286,20 +344,19 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
         clearInterval(timer);
       };
     }
+    let lastNotice = 0;
     const onMove = (event: PointerEvent) => {
       const rect = stageRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      gaze.current = {
-        x: clamp((event.clientX - (rect.left + rect.width / 2)) / 420, -1, 1),
-        y: clamp((event.clientY - (rect.top + rect.height * 0.4)) / 320, -1, 1),
-      };
+      if (!rect || now() - lastNotice < GAZE_MS / 2) return;
+      lastNotice = now();
+      notice({ x: event.clientX - (rect.left + rect.width / 2), y: event.clientY - (rect.top + rect.height * 0.4) });
     };
     window.addEventListener("pointermove", onMove);
     return () => window.removeEventListener("pointermove", onMove);
   }, [pilot, reduced]);
 
   const mascot = useRef({
-    frame: (at: number) => mascotMotion(mascotRef.current, { now: at, pose: poseRef.current, reduced: options.current.reduced, gaze: gaze.current }),
+    frame: (at: number) => mascotMotion(mascotRef.current, { now: at, pose: poseRef.current, reduced: options.current.reduced, gaze: gaze.current, mood: moodRef.current }),
     fps: () => mascotFrameRate(mascotRef.current.activity, owlHoverRef.current, options.current.reduced),
     onHitTest: (test: ((x: number, y: number) => boolean) | null) => {
       hitTest.current = test;
@@ -431,7 +488,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     <div
       ref={rootRef}
       className={cn("fb-root", retro && "r98-root", below && "fb-below", className)}
-      style={style}
+      style={{ ...style, "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px` } as React.CSSProperties}
       data-reduced={snapshot.reduced ? "" : undefined}
       data-retro={retro ? "" : undefined}
       lang={snapshot.locale}
@@ -526,7 +583,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
         data-activity={activity}
         data-3d=""
         data-away={away ? "" : undefined}
-        style={{ "--fb-owl": owlHex(snapshot.color) } as React.CSSProperties}
+        style={{ "--fb-owl": owlHex(snapshot.color), ...(away ? {} : { width: STAGE.width, height: STAGE.height }) } as React.CSSProperties}
       >
         {retro && !away && (
           <Suspense fallback={null}>
@@ -540,12 +597,13 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           }} />
         ) : (
         <>
-        {snapshot.pose === "think" && activity !== "flyOut" && (
+        {snapshot.pose === "think" && activity !== "flyOut" && activity !== "think" && (
           <span className="fb-thought" aria-hidden="true"><span /><span /><span /></span>
         )}
         {activity === "sleep" && (
           <span className="fb-zzz" aria-hidden="true"><span>z</span><span>z</span><span>Z</span></span>
         )}
+        <Emote activity={activity} hoot={snapshot.hints.hoot} />
         {burst && <Burst key={burst.key} kind={burst.kind} reduced={reduced} />}
         <button
           type="button"
@@ -578,7 +636,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
             setMenuOpen((open) => !open);
           }}
         >
-          <span className="fb-body">
+          <span className="fb-body" style={{ position: "absolute", left: STAGE.left, top: STAGE.top, width: OWL_SIZE, height: OWL_SIZE }}>
             <Character snapshot={snapshot} activity={activity} mascot={mascot} />
           </span>
         </button>

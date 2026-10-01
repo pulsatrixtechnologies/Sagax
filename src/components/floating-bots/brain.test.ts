@@ -131,7 +131,7 @@ describe("floating bot brain: the mascot", () => {
     delete old.task;
     delete old.mood;
     delete old.hints;
-    expect(mascotFields(old)).toEqual({ task: "idle", mood: 0.6, flyAway: true, hints: { mood: "", working: "" } });
+    expect(mascotFields(old)).toEqual({ task: "idle", mood: 0.6, flyAway: true, hints: { mood: "", working: "" }, liveliness: "normal" });
     expect(mascotFields({ task: "working", mood: -3, flyAway: false })).toMatchObject({ task: "working", mood: 0, flyAway: false });
   });
 });

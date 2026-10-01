@@ -2,7 +2,7 @@
 // floating bot's window (a dumb renderer). Mirrors the validation in
 // electron/floating-bot-window.mjs, which checks every payload in main.
 
-import type { MascotTask } from "./behavior";
+import type { Liveliness, MascotTask } from "./behavior";
 
 export type FloatingPose = "idle" | "think" | "speak" | "celebrate" | "alert" | "sleep";
 export type { MascotTask };
@@ -61,8 +61,10 @@ export interface FloatingSnapshot {
   mood: number;
   /** The "Fly away during tasks" setting. */
   flyAway: boolean;
-  /** Short texts the mascot shows: the mood meter's label and the parked badge's. */
-  hints: { mood: string; working: string };
+  /** Short texts the mascot shows: the mood meter's label, the parked badge's, its hoot. */
+  hints: { mood: string; working: string; hoot?: string };
+  /** The "Activity level" setting; normal when absent. */
+  liveliness?: Liveliness;
 }
 
 /**
@@ -121,7 +123,7 @@ const POSES = new Set<FloatingPose>(["idle", "think", "speak", "celebrate", "ale
 const TASKS = new Set<MascotTask>(["idle", "working", "waiting", "error"]);
 
 /** A snapshot from an older brain may lack the mascot's fields: fill them in. */
-export function mascotFields(snapshot: Partial<FloatingSnapshot>): Pick<FloatingSnapshot, "task" | "mood" | "flyAway" | "hints"> {
+export function mascotFields(snapshot: Partial<FloatingSnapshot>): Pick<FloatingSnapshot, "task" | "mood" | "flyAway" | "hints" | "liveliness"> {
   const mood = typeof snapshot.mood === "number" && Number.isFinite(snapshot.mood) ? Math.min(1, Math.max(0, snapshot.mood)) : 0.6;
   return {
     task: TASKS.has(snapshot.task as MascotTask) ? (snapshot.task as MascotTask) : "idle",
@@ -130,7 +132,9 @@ export function mascotFields(snapshot: Partial<FloatingSnapshot>): Pick<Floating
     hints: {
       mood: typeof snapshot.hints?.mood === "string" ? snapshot.hints.mood : "",
       working: typeof snapshot.hints?.working === "string" ? snapshot.hints.working : "",
+      ...(typeof snapshot.hints?.hoot === "string" ? { hoot: snapshot.hints.hoot } : {}),
     },
+    liveliness: snapshot.liveliness === "calm" || snapshot.liveliness === "lively" ? snapshot.liveliness : "normal",
   };
 }
 

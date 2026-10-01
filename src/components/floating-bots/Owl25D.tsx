@@ -23,7 +23,7 @@ import {
   type OwlPath,
 } from "@/lib/owl/owl-art";
 import { owlSkinId, owlSkinPalette } from "@/lib/owl/owl-skins";
-import type { MascotFrame } from "./behavior";
+import { createFrameSmoother, type MascotFrame } from "./behavior";
 
 export interface Owl25DProps {
   color: string;
@@ -41,29 +41,42 @@ const UNIT = 80;
 const DEG = 180 / Math.PI;
 
 /** The transforms of one frame, as CSS strings: pure, so it can be tested. */
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
 export function owl25dTransforms(frame: MascotFrame) {
   const lift = frame.y * UNIT;
   const squash = frame.squash;
+  const puff = frame.puff ?? 1;
   const pose = {
-    x: frame.sway * UNIT * 0.6 + frame.headYaw * 4,
+    x: frame.sway * UNIT * 0.6 + frame.headYaw * 4 + (frame.x ?? 0) * UNIT,
     y: -lift,
     tilt: (frame.headTilt * 0.6 + frame.lean * 0.5) * DEG,
-    sx: 1 / Math.sqrt(squash),
-    sy: squash,
+    sx: (puff / Math.sqrt(squash)),
+    sy: squash * Math.sqrt(puff),
   };
-  const open = Math.min(1, Math.max(0, frame.wing));
-  // gentle flutter on top of the spread, so a beating wing never looks frozen
-  const flutter = open > 0.05 ? Math.sin(open * Math.PI * 3) * 4 : 0;
+  const open = clamp01(frame.wing);
+  const openFar = clamp01(frame.wingFar ?? frame.wing);
+  const swing = (frame.wingSwing ?? 0) * DEG;
   const pupil = frame.pupilX === 0 && frame.pupilY === 0 ? gazeToOffset(null) : gazeToOffset({ x: frame.pupilX, y: -frame.pupilY });
+  // facing the other way is a half turn: past a quarter turn the art shows its mirrored side
+  const facing = ((1 - (frame.face ?? 1)) / 2) * 180;
+  const turn =
+    `perspective(520px) rotateY(${(frame.spin * DEG + facing).toFixed(2)}deg) ` +
+    `rotateX(${((frame.roll ?? 0) * DEG + frame.headPitch * 0.25 * DEG).toFixed(2)}deg) ` +
+    `rotateZ(${((frame.flip ?? 0) * DEG).toFixed(2)}deg) scale(${frame.scale.toFixed(4)})`;
+  const foot = (lift: number | undefined) => `translate(0px, ${(-clamp01(lift ?? 0) * 14).toFixed(2)}px) rotate(${(-clamp01(lift ?? 0) * 18).toFixed(2)}deg)`;
   return {
-    turn: `perspective(520px) rotateY(${(frame.spin * DEG).toFixed(2)}deg) rotateX(${(frame.headPitch * 0.25 * DEG).toFixed(2)}deg) scale(${frame.scale.toFixed(4)})`,
+    turn,
     rig: rigTransform(pose),
-    nearWing: wingTransform(flutter, open),
-    farWing: farWingTransform(flutter, open),
-    farWingOpacity: farWingOpacity(open),
-    eyes: eyesTransform(1),
+    nearWing: wingTransform(swing, open),
+    farWing: farWingTransform(-swing * 0.3, openFar),
+    farWingOpacity: farWingOpacity(openFar),
+    eyes: eyesTransform(frame.eyeScale ?? 1),
     pupil: pupilTransform(pupil),
     lids: lidTransform(frame.lid),
+    beak: `rotate(${(clamp01(frame.beak ?? 0) * 16).toFixed(2)}deg)`,
+    footNear: foot(frame.footNear),
+    footFar: foot(frame.footFar),
   };
 }
 
@@ -86,14 +99,18 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
   const eyes = useRef<SVGGElement>(null);
   const pupil = useRef<SVGGElement>(null);
   const lids = useRef<SVGGElement>(null);
+  const beak = useRef<SVGGElement>(null);
+  const feet = useRef<SVGGElement>(null);
   const live = useRef({ frame, fps });
   live.current = { frame, fps };
 
   useEffect(() => {
     let raf = 0;
     let last = 0;
+    // eased toward each frame with a clamped step: a jumpy pointer never shakes the owl
+    const smooth = createFrameSmoother();
     const draw = (now: number) => {
-      const t = owl25dTransforms(live.current.frame(now));
+      const t = owl25dTransforms(smooth(live.current.frame(now), now));
       if (turn.current) turn.current.style.transform = t.turn;
       rig.current?.style.setProperty("transform", t.rig);
       nearWing.current?.style.setProperty("transform", t.nearWing);
@@ -105,6 +122,10 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
       eyes.current?.style.setProperty("transform", t.eyes);
       pupil.current?.style.setProperty("transform", t.pupil);
       lids.current?.style.setProperty("transform", t.lids);
+      beak.current?.style.setProperty("transform", t.beak);
+      const toes = feet.current?.children;
+      // the art's feet: the first path is the near foot, the rest the far one
+      if (toes) for (let i = 0; i < toes.length; i += 1) (toes[i] as SVGElement).style.transform = i === 0 ? t.footNear : t.footFar;
     };
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
@@ -130,7 +151,7 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
 
   const { eye } = parts;
   return (
-    <span ref={turn} className="fb-owl25" style={{ display: "block", width: size, height: size, transformOrigin: "50% 80%" }}>
+    <span ref={turn} className="fb-owl25" style={{ display: "block", width: size, height: size, transformOrigin: "50% 62%" }}>
       <svg ref={svg} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width={size} height={size} style={{ overflow: "visible", display: "block" }} aria-hidden="true">
         <defs>
           <clipPath id={`${uid}-iris`}>
@@ -154,10 +175,9 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
             {paths(parts.body)}
             <g>{paths(parts.faceMask)}</g>
             {parts.spots && <g>{paths(parts.spots)}</g>}
-            <g>{paths(parts.feet)}</g>
-            <g>{paths(parts.beak)}</g>
+            <g ref={feet} className="fb-owl25-feet">{paths(parts.feet)}</g>
+            <g ref={beak} className="fb-owl25-beak">{paths(parts.beak)}</g>
           </g>
-          <g ref={nearWing}>{paths(parts.nearWing)}</g>
           <g>
             <g>{paths(parts.socket)}</g>
             <g ref={eyes}>
@@ -173,6 +193,8 @@ export default function Owl25D({ color, skin, size, frame, fps, onHitTest }: Owl
               </g>
             </g>
           </g>
+          {/* over the face, so a wing can hide the eyes (shy) or tap the chin (thinking) */}
+          <g ref={nearWing}>{paths(parts.nearWing)}</g>
         </g>
       </svg>
     </span>
