@@ -26,12 +26,9 @@ vi.mock("react", async (original) => ({
 }));
 const store = vi.hoisted(() => ({ instances: [] as unknown[], dispatch: vi.fn(), api: vi.fn() }));
 vi.mock("@/state/store", () => ({ api: store.api, useStore: () => ({ state: { instances: store.instances }, dispatch: store.dispatch }) }));
-// The row has its own tests; here only whether the beat offers it.
-vi.mock("./OrganisationRow", () => ({ OrganisationRow: () => null }));
 import { EnginesBeat } from "./EnginesBeat";
-import { OrganisationRow } from "./OrganisationRow";
 
-type Node = ReactElement<{ children?: ReactNode; bridge?: unknown; onOpenSettings?: () => void; onConnected?: () => void }>;
+type Node = ReactElement<{ children?: ReactNode; onClick?: () => void; "data-server-row"?: string }>;
 function nodes(value: ReactNode): Node[] {
   if (!isValidElement(value)) return Children.toArray(value as ReactNode).flatMap((child) => (isValidElement(child) ? nodes(child) : []));
   const node = value as Node;
@@ -52,7 +49,7 @@ const company = (ready: boolean): InstanceInfo => ({
 const bridge = { onState: vi.fn(), state: vi.fn() } as unknown as ManagedDesktopBridge;
 const props = { onNext: vi.fn(), onSkip: vi.fn(), setMascot: vi.fn(), bump: vi.fn() };
 
-function render(extra: { hosted?: boolean; onOpenOrganisation?: () => void } = {}) {
+function render(extra: { hosted?: boolean; onOpenServer?: () => void } = {}) {
   fixture.index = 0;
   fixture.effects = [];
   let tree: ReactNode = null;
@@ -61,7 +58,9 @@ function render(extra: { hosted?: boolean; onOpenOrganisation?: () => void } = {
     return tree;
   }
   const html = renderToStaticMarkup(createElement(Capture));
-  return { html, row: nodes(tree).find((node) => node.type === OrganisationRow) };
+  const all = nodes(tree);
+  const row = all.find((node) => node.props["data-server-row"] !== undefined);
+  return { html, row, connect: row ? nodes(row).find((node) => node.type === "button") : undefined };
 }
 
 beforeEach(() => {
@@ -75,7 +74,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("organisation sign-in in the engines beat", () => {
+const desktop = { environments: { state: vi.fn() }, orgJoin: { probe: vi.fn(), join: vi.fn() }, remoteClient: { active: false } };
+
+describe("server sign-in in the engines beat", () => {
   it("is absent without the desktop bridge, and the counts are unchanged", () => {
     const { html, row } = render();
     expect(row).toBeUndefined();
@@ -85,22 +86,31 @@ describe("organisation sign-in in the engines beat", () => {
   });
 
   it("is absent on a remote client and on a hosted workspace", () => {
-    vi.stubGlobal("window", { ogb: { organization: bridge, remoteClient: { active: true } } });
+    vi.stubGlobal("window", { ogb: { ...desktop, remoteClient: { active: true } } });
     expect(render().row).toBeUndefined();
-    vi.stubGlobal("window", { ogb: { organization: bridge } });
+    vi.stubGlobal("window", { ogb: desktop });
     expect(render({ hosted: true }).row).toBeUndefined();
   });
 
-  it("is the first row on the local desktop and opens Settings → Organisation for other addresses", () => {
-    vi.stubGlobal("window", { ogb: { organization: bridge } });
-    const { html, row } = render();
-    expect(row?.props.bridge).toBe(bridge);
-    expect(html).toContain("2 to set up");
-    row!.props.onOpenSettings!();
-    expect(store.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "organization" });
+  it("no longer offers the inherited Admin sign-in", () => {
+    vi.stubGlobal("window", { ogb: { ...desktop, organization: bridge } });
+    const html = render().html;
+    expect(html).not.toContain("Other Admin address");
+    expect(html).not.toContain("admin.openmausbot.com");
+    expect(bridge.state).not.toHaveBeenCalled();
+  });
+
+  it("points people who use Sagax at work to server mode", () => {
+    vi.stubGlobal("window", { ogb: desktop });
     const resume = vi.fn();
-    render({ onOpenOrganisation: resume }).row!.props.onOpenSettings!();
+    const { html, connect } = render({ onOpenServer: resume });
+    expect(html).toContain("Using Sagax at work?");
+    expect(html).toContain("2 to set up");
+    connect!.props.onClick!();
     expect(resume).toHaveBeenCalledOnce();
+    // without the welcome gate, the row opens the launch screen itself
+    render().connect!.props.onClick!();
+    expect(store.dispatch).toHaveBeenCalledWith({ type: "toggleLaunch", open: true, mode: "server" });
   });
 
   it("reads everything as ready when a signed-in Company engine is all there is", () => {

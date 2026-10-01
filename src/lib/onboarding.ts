@@ -12,6 +12,8 @@ export interface OnboardingStatus {
   version: number;
   reelSeen: boolean;
   hintsSeen: string[];
+  /** The launch screen's choice (src/lib/launch.ts); absent until made. */
+  launchMode?: "solo" | "server";
 }
 
 /** Bump when the welcome flow changes enough that existing users should see
@@ -174,11 +176,9 @@ export function beatWidth(beat: BeatId): number {
 
 // ── engines and organisation sign-in ───────────────────────────────────
 
-/** The Admin portal the welcome flow signs in to. Another address is an
- * advanced choice made in Settings → Organisation, never here. */
-export const DEFAULT_ADMIN_ORIGIN = "https://admin.openmausbot.com";
-
-/** The organisation sign-in bridge, when this window may offer it. Only the
+/** The inherited organisation sign-in bridge (managed desktop, Settings →
+ * Organization), when this window has it. The welcome flow no longer offers
+ * that sign-in; it only counts a Company engine already signed in. Only the
  * packaged local desktop has one; a desktop acting as a remote client of
  * another server, a browser and a hosted workspace never do. */
 export function organisationSignIn<Bridge>(

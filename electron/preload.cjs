@@ -281,6 +281,7 @@ const bridge = {
   orgJoin: {
     probe: (address) => ipcRenderer.invoke("org-join:probe", String(address ?? "")),
     stage: (input) => ipcRenderer.invoke("org-join:stage", input),
+    join: (input) => ipcRenderer.invoke("org-join:join", input),
     staged: () => ipcRenderer.invoke("org-join:staged"),
     take: () => ipcRenderer.invoke("org-join:take"),
     finished: (input) => ipcRenderer.invoke("org-join:finished", input),

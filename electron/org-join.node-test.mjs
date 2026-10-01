@@ -17,7 +17,7 @@ function copy() {
 const report = (keys = ["atlas", "bolt"]) => ({ bots: keys.map((sourceKey) => ({ sourceKey, id: `org-${sourceKey}` })), subject: { iss: "https://px.example.test", sub: "B1" } });
 
 function harness(overrides = {}) {
-  const calls = { saved: [], navigated: [], deleted: [], linked: [], confirmed: [], fetched: [] };
+  const calls = { saved: [], navigated: [], deleted: [], linked: [], confirmed: [], fetched: [], signedIn: [] };
   let clock = 1_000;
   const descriptor = overrides.descriptor ?? { identity: { kind: "perspicax", issuer: "https://px.example.test" } };
   const join = createOrgJoin({
@@ -40,6 +40,10 @@ function harness(overrides = {}) {
     confirm: async (names) => { calls.confirmed.push(names); return overrides.confirm ?? true; },
     deleteLocalBot: async (key) => { calls.deleted.push(key); return true; },
     postLinkedSubject: async (input) => { calls.linked.push(input); },
+    signIn: async (origin) => {
+      if (overrides.signIn) await overrides.signIn(origin);
+      calls.signedIn.push(origin);
+    },
   });
   return { join, calls, tick: (ms) => { clock += ms; } };
 }
@@ -92,6 +96,35 @@ test("stage saves and opens the server; take returns the copy once", async () =>
   assert.deepEqual(h.join.take(ORG), copy());
   assert.equal(h.join.take(ORG), null);
   assert.deepEqual(h.join.staged(ORG), { origin: ORG, bots: 2, name: "Atlas, Bolt" });
+});
+
+test("join refuses an origin that was not probed", async () => {
+  const h = harness();
+  await assert.rejects(h.join.join({ origin: ORG }), /Check the server address first/);
+  await h.join.probe(ORG);
+  await assert.rejects(h.join.join({ origin: "https://other.example.test" }), /Check the server address first/);
+  await assert.rejects(h.join.join(null), /Check the server address first/);
+  assert.deepEqual(h.calls.saved, []);
+  assert.deepEqual(h.calls.signedIn, []);
+});
+
+test("join saves the server, opens its sign-in page and starts Sign in with Pulsatrix, with no copy", async () => {
+  const h = harness();
+  await h.join.probe(`${ORG}/`);
+  assert.deepEqual(await h.join.join({ origin: ORG }), { ok: true });
+  assert.deepEqual(h.calls.saved, [ORG]);
+  assert.deepEqual(h.calls.navigated, [`${ORG}/pair`]);
+  assert.deepEqual(h.calls.signedIn, [ORG]);
+  // nothing is held for the server to take
+  assert.equal(h.join.staged(ORG), null);
+  assert.equal(h.join.take(ORG), null);
+});
+
+test("join still saves the server when the sign-in cannot start, and says so", async () => {
+  const h = harness({ signIn: async () => { throw new Error("no window"); } });
+  await h.join.probe(ORG);
+  await assert.rejects(h.join.join({ origin: ORG }), /sign-in could not start/);
+  assert.deepEqual(h.calls.saved, [ORG]);
 });
 
 test("another origin's page gets nothing", async () => {

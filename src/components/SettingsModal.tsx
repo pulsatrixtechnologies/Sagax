@@ -12,6 +12,7 @@ import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { withTourReset } from "@/lib/guided-tour";
 import { completionPatch } from "@/lib/onboarding";
+import { launchBridges } from "@/lib/launch";
 import { ApiKeyRow, OpenAiCompatUrl, VpsConnection } from "./ApiKeys";
 import { COMPOSIO_PLATFORM_URL } from "./ConnectedAppsSetup";
 import { useUpdaterState } from "@/lib/updater";
@@ -415,7 +416,7 @@ function ReplayAppTourButton() {
 }
 
 function ReplayTourRow() {
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
   return (
     <SettingRow title={t("settings.welcome.title")} subtitle={t("settings.welcome.subtitle")}>
       <div className="flex flex-wrap gap-2">
@@ -426,6 +427,15 @@ function ReplayTourRow() {
         >
           {t("settings.welcome.replay")}
         </button>
+        {/* the launch screen: no server or an organization server */}
+        {launchBridges(window.ogb) && (
+          <button
+            onClick={() => dispatch({ type: "toggleLaunch", open: true, mode: state.config?.onboarding?.launchMode ?? "solo" })}
+            className="ui-button"
+          >
+            {t("settings.welcome.launch")}
+          </button>
+        )}
       </div>
     </SettingRow>
   );

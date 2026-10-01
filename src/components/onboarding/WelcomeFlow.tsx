@@ -79,7 +79,7 @@ export function WelcomeFlow({
   dictation,
   entrance = "arrive",
   hosted = false,
-  onOpenOrganisation,
+  onOpenServer,
 }: {
   /** The seeded bot the exit beat names; null when the roster is empty. */
   bot: Bot | null;
@@ -87,7 +87,7 @@ export function WelcomeFlow({
   /** Replays skip nothing but are tracked separately. */
   replay?: boolean;
   /** Open on a given beat: the preview, and resuming after the engines beat
-   * sent the person to Settings → Organisation. */
+   * opened the launch screen's server mode. */
   initialBeat?: BeatId;
   /** Preview only: fill the parent instead of the viewport. */
   embedded?: boolean;
@@ -99,8 +99,8 @@ export function WelcomeFlow({
   entrance?: Motion;
   /** A hosted team workspace: the hosted beat set, no email field. */
   hosted?: boolean;
-  /** The engines beat's organisation row asks for Settings → Organisation. */
-  onOpenOrganisation?: () => void;
+  /** The engines beat's server row asks for the launch screen's server mode. */
+  onOpenServer?: () => void;
 }) {
   const { dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
@@ -260,7 +260,7 @@ export function WelcomeFlow({
         <div key={beat} className="flex shrink-0 flex-col">
           {beat === "hello" && <HelloBeat {...beatProps} hosted={hosted} />}
           {beat === "reel" && <FeatureReel {...beatProps} />}
-          {beat === "engines" && <EnginesBeat {...beatProps} hosted={hosted} onOpenOrganisation={onOpenOrganisation} />}
+          {beat === "engines" && <EnginesBeat {...beatProps} hosted={hosted} onOpenServer={onOpenServer} />}
           {beat === "permissions" && <PermissionsBeat {...beatProps} />}
           {beat === "phone" && <PhoneBeat {...beatProps} />}
           {beat === "bot" && (

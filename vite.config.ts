@@ -18,6 +18,9 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(forkVersion),
     __BASE_VERSION__: JSON.stringify(baseVersion),
+    // The launch screen's Server mode is prefilled with this address. A build
+    // for another organization sets SAGAX_DEFAULT_SERVER (src/lib/launch.ts).
+    __SAGAX_DEFAULT_SERVER__: JSON.stringify(process.env.SAGAX_DEFAULT_SERVER?.trim() ?? ""),
   },
   test: {
     environment: "node",

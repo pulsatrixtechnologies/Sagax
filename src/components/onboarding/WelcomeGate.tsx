@@ -7,10 +7,17 @@
 // its engine sign-in (CloudEngineSignIn) rather than this flow. A session
 // that cannot save the workspace config is never shown a tour it could not
 // finish.
+//
+// On the desktop app's own window, the launch screen (no server or server,
+// src/lib/launch.ts) comes first on a first run, and again after server mode
+// once no server is saved any more. Settings and the tour's server row open
+// it on request.
 import { useEffect, useState } from "react";
 import { emailGateDone } from "@/lib/analytics";
+import { launchBridges, launchDue } from "@/lib/launch";
 import { hostedMember, LOCAL_VIEWER, welcomeDue, welcomeViewer, type BeatId, type WelcomeViewer } from "@/lib/onboarding";
 import { api, useStore } from "@/state/store";
+import { LaunchScreen } from "./LaunchScreen";
 import { SharedWorkspaceHint } from "./SharedWorkspaceHint";
 import { WelcomeFlow } from "./WelcomeFlow";
 
@@ -51,9 +58,30 @@ export function useWelcomeViewer(): WelcomeViewer | null {
 export function WelcomeGate({ viewer }: { viewer: WelcomeViewer | null }) {
   const { state, dispatch } = useStore();
   const [dismissed, setDismissed] = useState(false);
-  // Set when the engines beat's organisation row opened Settings, so closing
-  // Settings brings the person back to that beat rather than the greeting.
+  // Set when the engines beat's server row opened the launch screen, so
+  // choosing no server there brings the person back to that beat rather
+  // than the greeting.
   const [resumeAt, setResumeAt] = useState<BeatId | undefined>(undefined);
+  // Set once "No server" or Skip was chosen this visit, so the tour never
+  // waits on that choice being saved.
+  const [launchChosen, setLaunchChosen] = useState(false);
+  // How many servers this desktop has saved; null until it answers.
+  const [savedServers, setSavedServers] = useState<number | null>(null);
+  const bridges = viewer && !viewer.hosted ? launchBridges(window.ogb) : null;
+  const environments = bridges?.environments;
+  useEffect(() => {
+    if (!environments) return;
+    let active = true;
+    void environments
+      .state()
+      .then((saved) => {
+        if (active) setSavedServers(saved.environments.length);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [environments]);
   const remoteClient = window.ogb?.remoteClient?.active === true;
   if (!viewer) return null;
   // Only a hosted workspace is a team's by definition. Elsewhere a session
@@ -78,6 +106,28 @@ export function WelcomeGate({ viewer }: { viewer: WelcomeViewer | null }) {
       canSave: viewer.canSave,
       cloudHome: viewer.cloudHome,
     });
+  if (bridges && state.launchOpen) {
+    return (
+      <LaunchScreen
+        bridges={bridges}
+        initialMode={state.launchMode}
+        onSolo={() => {
+          setLaunchChosen(true);
+          dispatch({ type: "toggleLaunch", open: false });
+        }}
+      />
+    );
+  }
+  const launchMode = state.config?.onboarding?.launchMode;
+  if (bridges && !launchChosen && launchDue(state.config, { welcomeDue: due, savedServers })) {
+    return (
+      <LaunchScreen
+        bridges={bridges}
+        initialMode={launchMode === "server" ? "server" : "solo"}
+        onSolo={() => setLaunchChosen(true)}
+      />
+    );
+  }
   // Explicit desktop connection Settings need no local provider onboarding.
   // Organisation remains optional; closing Settings resumes the normal tour.
   if (state.appSettingsOpen && state.appSettingsSection === "organization") return null;
@@ -90,9 +140,9 @@ export function WelcomeGate({ viewer }: { viewer: WelcomeViewer | null }) {
       replay={replay}
       hosted={viewer.hosted}
       initialBeat={resumeAt}
-      onOpenOrganisation={() => {
+      onOpenServer={() => {
         setResumeAt("engines");
-        dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
+        dispatch({ type: "toggleLaunch", open: true, mode: "server" });
       }}
       onDone={() => {
         setDismissed(true);
