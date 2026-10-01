@@ -15358,6 +15358,26 @@ function searchHitVisibleNow(threadId: string, viewerId: string | undefined): bo
   return searchHitVisible({ viewerId, channel: null, bot: null });
 }
 
+/** A routine or one of its runs, for a signed-in viewer: seen only by
+ * someone who sees the room it runs in, or else its bot. A routine whose
+ * bot and room are gone is seen only by the person it runs as. Never the
+ * legacy email-keyed VisibleSet alone: organization members carry no email,
+ * so that set opens everything to them (slice 8 fix). */
+function routineSeenBy(value: { botId?: unknown; groupId?: unknown; runAs?: unknown }, viewerId: string): boolean {
+  if (typeof value.groupId === "string" && value.groupId) {
+    const group = store.group(value.groupId);
+    if (group) return groupVisible(group, viewerId);
+  }
+  if (typeof value.botId === "string" && value.botId) {
+    const bot = store.bot(value.botId);
+    if (bot) return listedBotVisible(bot, viewerId);
+  }
+  const runAs = typeof value.runAs === "string"
+    ? value.runAs
+    : value.runAs && typeof value.runAs === "object" ? (value.runAs as { principalId?: unknown }).principalId : undefined;
+  return typeof runAs === "string" && runAs.trim().toLowerCase() === viewerId.trim().toLowerCase();
+}
+
 function subjectSeesChannel(subject: PathSubject, viewerId: string): boolean {
   if (subject.kind === "group") {
     const group = store.group(subject.id);
@@ -15375,10 +15395,23 @@ function subjectSeesChannel(subject: PathSubject, viewerId: string): boolean {
     const bot = store.bot(subject.id);
     return !bot || listedBotVisible(bot, viewerId);
   }
+  if (subject.kind === "routine") {
+    const routine = routines?.listRoutines().find((candidate) => candidate.id === subject.id);
+    return !routine || routineSeenBy(routine, viewerId);
+  }
+  if (subject.kind === "routine-run") {
+    const run = routines?.listRuns().find((candidate) => candidate.id === subject.id);
+    return !run || routineSeenBy(run, viewerId);
+  }
   return true;
 }
 
 function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): boolean {
+  // A routine or run frame names its bot and room inside the record.
+  if (payload.kind === "routine" || payload.kind === "routine.run") {
+    const held = payload.kind === "routine" ? payload.routine : payload.run;
+    return Boolean(held) && typeof held === "object" && routineSeenBy(held as Record<string, unknown>, viewerId);
+  }
   const groupField = payload.group && typeof payload.group === "object" ? (payload.group as { id?: unknown }).id : undefined;
   const groupId = typeof payload.groupId === "string" ? payload.groupId : typeof groupField === "string" ? groupField : undefined;
   if (typeof groupId === "string") {
@@ -19221,9 +19254,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const from = fromParam == null ? undefined : Number(fromParam);
       const to = toParam == null ? undefined : Number(toParam);
       return json(res, 200, {
-        routines: routines!.listRoutines().filter((routine) => routineVisible(routine, visible)).map(routineOnWire),
+        routines: routines!.listRoutines()
+          .filter((routine) => routineVisible(routine, visible) && (!viewerId || routineSeenBy(routine, viewerId)))
+          .map(routineOnWire),
         runs: routines!.listRuns(from != null && Number.isFinite(from) ? from : undefined, to != null && Number.isFinite(to) ? to : undefined)
-          .filter((run) => routineVisible(run, visible)),
+          .filter((run) => routineVisible(run, visible) && (!viewerId || routineSeenBy(run, viewerId))),
       });
     }
     if (path === "/api/routines" && method === "POST") {
