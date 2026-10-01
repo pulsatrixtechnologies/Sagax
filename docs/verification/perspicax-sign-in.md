@@ -463,21 +463,66 @@ Walk S6-1 to S6-13 of the slice 6 acceptance:
 
 ## Slice 7: the Sagax console in Perspicax
 
-Spec section 5. Not on this branch yet: this is what the slice must pass
-when it lands.
+Spec sections 5 and 8. Sagax answers the Perspicax console at
+`/api/org/admin/*` (`server/org-admin-routes.ts`), before the auth gate and
+before loopback trust: the only credential is a console assertion Perspicax
+signs per proxied request (ES256 with the OIDC key, header typ
+`pulsabot-console+jwt`, `aud` = this server's `OMB_PUBLIC_URL` origin,
+`act.sub = "console"`, `exp - iat <= 120`, a `jti` kept until exp + 60 s, at
+most 10,000). A session cookie is ignored there and a loopback request
+without an assertion is 401. Every answer carries `X-Sagax-Admin-Api: 1` and
+`Cache-Control: no-store`; errors are `{ code, message, error }`.
+`/api/health` lists `capabilities.orgAdminApi: 1` on an organization server.
 
 ### Automated
 
-- Sagax: the admin API under `/api/org/admin/*` accepts only a Perspicax
-  console assertion (ES256, 60 s, `aud` = this server's origin,
-  `act.sub = "console"`, a `jti` never seen before) verified with the same
-  JWKS as the `id_token`, and applies `can()` as the console's person. The
-  test suite covers a replayed `jti`, an expired or foreign-audience
-  assertion, a missing `act`, and a manager reaching only their teams' bots.
-- Perspicax: `crates/gateway/tests/route_roles.rs` has a row per new route
-  (`/api/v1/pulsabot/servers/{id}/proxy/{*path}` Manager or Any per page),
-  the proxy refuses an impersonating session, and `console/e2e/routes.ts`
-  lists the Bots, Usage, Approvals and Audit pages.
+```sh
+pnpm exec vitest run server/oidc-rp.test.ts server/org-admin-routes.test.ts server/usage-ledger.test.ts \
+  server/admin-activity.test.ts server/bot-grants.test.ts server/section-channels.test.ts \
+  src/lib/open-thread-hash.test.ts server/org-admin.e2e.test.ts \
+  server/org-routines.e2e.test.ts server/org-mcp.e2e.test.ts server/org-sharing.e2e.test.ts \
+  server/oidc-session.e2e.test.ts server/peer-approval.e2e.test.ts
+pnpm -s typecheck && pnpm -s lint && pnpm -s i18n:check
+```
+
+The fake provider signs console assertions (`consoleAssertion`, one claim or
+header bent at a time).
+
+- `server/oidc-rp.test.ts` ("console assertions"): a good assertion, then
+  each refusal (typ, act, an audience array or another origin, an `azp`, a
+  300 s life, expired, no expiry, a future `iat`, a nonce, events, alg
+  `none`, another key, an unknown kid, another issuer, the subject, the
+  `jti` length, the role, the teams, another linked server), one JWKS
+  refetch on rotation, and the three tokens never taken for one another.
+- `server/org-admin-routes.test.ts`: the gate (missing, forged, too long,
+  replayed, unknown and disabled people, solo), 404 and 405, the role per
+  route, a manager's reach on bots and usage, approvals oldest first, the
+  POST body (`allow` or `deny` only, never `always` or `rememberCommand`),
+  the audit parameters and cursor, the replay cache's expiry and cap.
+- `server/usage-ledger.test.ts` ("organization admin usage"): speakers by
+  principal, routine runAs, bot or unattributed; grouping by day, bot and
+  speaker with the access split; the 92 day and 20,000 row caps.
+- `server/admin-activity.test.ts` ("organization audit page"): the org
+  categories newest first, stable `<month>-<line>` ids, the `before` cursor,
+  the time range, no secret value.
+- `server/bot-grants.test.ts` and `server/section-channels.test.ts`: one
+  audit row per saved change (`grant.set`, `grant.remove`,
+  `section.create` ... `section.bot.remove`), none for a refusal.
+- `server/org-admin.e2e.test.ts` (real server): every refusal of the gate
+  (including a loopback request and a session cookie without an assertion,
+  a replay, a logout token, another server id), the role gates, bots for an
+  admin and a manager (metadata only), usage attributed to principals,
+  approvals listed to the owner or the admins as Sagax decides and a
+  console decision resuming the waiting turn once (then 409), and the audit
+  with `grant.*`, `org.settings`, `org.link`, `approval.answer` (via
+  console) and `person.disabled`, paged.
+- `src/lib/open-thread-hash.test.ts`: `#thread=<id>&bot=<id>` parsed, kept
+  through the sign-in in sessionStorage (blocked storage never throws), and
+  opened only when the viewer's lists hold the thread.
+
+Not decidable from the console (listed with "Open in Sagax" only): skill,
+routine, profile, model, team setup, tightening and peer cards, and any card
+of a bot on a machine host. Ownership transfer is not in this slice.
 
 ### Against a real Perspicax (manual)
 
