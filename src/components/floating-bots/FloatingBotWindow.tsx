@@ -2,11 +2,14 @@
 // renderer. The main app page decides the pose and the balloon and sends a
 // snapshot; this page draws it, moves its own window when dragged, sizes the
 // window to what is drawn, lets clicks fall through wherever it is
-// transparent, and reports every click and typed message back. It holds no
-// session and calls no API.
+// transparent (the 3D owl's own pixels take the pointer, not its empty
+// corners), lets the mascot fly the window off and back while its bot works,
+// and reports every click and typed message back. It holds no session and
+// calls no API.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FloatingBotView, type FloatingMover } from "./FloatingBotView";
-import { isFloatingSnapshot, type FloatingEvent, type FloatingSnapshot, type FloatingWindowBridge } from "./protocol";
+import { createWindowPilot } from "./pilot";
+import { isFloatingSnapshot, mascotFields, type FloatingEvent, type FloatingSnapshot, type FloatingWindowBridge } from "./protocol";
 
 export function FloatingBotWindow({ bridge = typeof window === "undefined" ? undefined : window.floatingBotWindow }: { bridge?: FloatingWindowBridge }) {
   const [snapshot, setSnapshot] = useState<FloatingSnapshot | null>(null);
@@ -22,7 +25,7 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   useEffect(() => {
     if (!bridge) return;
     const off = bridge.onState((value) => {
-      if (isFloatingSnapshot(value)) setSnapshot(value);
+      if (isFloatingSnapshot(value)) setSnapshot({ ...value, ...mascotFields(value) });
     });
     bridge.ready();
     return off;
@@ -50,6 +53,8 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
     }),
     [bridge],
   );
+  // the mascot flies its own window off while its bot works, and back
+  const pilot = useMemo(() => createWindowPilot(bridge), [bridge]);
 
   if (!snapshot) return <div ref={root} className="fb-root fb-window" />;
   return (
@@ -61,6 +66,7 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
       mover={mover}
       interactive={interactive}
       wantsKeyboard={wantsKeyboard}
+      pilot={pilot}
     />
   );
 }

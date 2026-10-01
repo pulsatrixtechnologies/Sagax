@@ -49,7 +49,7 @@ function fakeElectron({ displays = [PRIMARY] } = {}) {
     removeHandler: (channel) => handlers.delete(channel),
     removeListener: (channel) => listeners.delete(channel),
   };
-  const screen = { getAllDisplays: () => displays, getPrimaryDisplay: () => displays[0] };
+  const screen = { getAllDisplays: () => displays, getPrimaryDisplay: () => displays[0], getCursorScreenPoint: () => ({ x: 700, y: 400 }) };
   const main = { webContents: { sent: [], send(channel, payload) { this.sent.push([channel, payload]); } }, isDestroyed: () => false };
   return { BrowserWindow: FakeWindow, ipcMain, screen, handlers, listeners, windows, main };
 }
@@ -104,6 +104,8 @@ describe("floating bots: one window per bot", () => {
     const { win } = open("bot_a");
     expect(win.options).toMatchObject({ frame: false, transparent: true, skipTaskbar: true, focusable: false, alwaysOnTop: true, show: false });
     expect(win.options.webPreferences).toMatchObject({ contextIsolation: true, sandbox: true, nodeIntegration: false, preload: "/app/electron/floating-bot-preload.cjs" });
+    // hidden or covered, the page is throttled: the 3D mascot stops drawing there
+    expect(win.options.webPreferences.backgroundThrottling).toBe(true);
     expect(win.loadURL).toHaveBeenCalledWith(`http://127.0.0.1:8799/?${FLOATING_QUERY}`);
     expect(win.calls).toContainEqual(["setAlwaysOnTop", true, "floating"]);
     expect(win.calls).toContainEqual(["setIgnoreMouseEvents", true, { forward: true }]);
@@ -242,6 +244,31 @@ describe("floating bots: positions and screens", () => {
     expect(again.open("bot_a").win.getBounds()).toMatchObject({ x: spot.x, y: spot.y });
   });
 
+  it("lets the mascot fly its own window inside the work areas, without saving where it flew", () => {
+    const { open, invoke, emit, saved, fake } = setup({ displays: [PRIMARY, SECOND] });
+    const { win, from } = open("bot_a");
+    const home = win.getBounds();
+    const geometry = invoke("floating-bots:geometry", from);
+    expect(geometry).toEqual({ bounds: home, workArea: PRIMARY.workArea, cursor: { x: 700, y: 400 } });
+    emit("floating-bots:autopilot", from, true);
+    // a flight cannot leave the screens
+    expect(invoke("floating-bots:move-to", from, { x: -5000, y: 600 })).toMatchObject({ x: 0, y: 600 });
+    expect(invoke("floating-bots:move-to", from, { x: 100, y: -900 })).toMatchObject({ x: 100, y: PRIMARY.workArea.y });
+    win.events.get("moved")?.forEach((fn) => fn());
+    emit("floating-bots:moved", from);
+    expect(saved.positions).toBeUndefined();
+    // flown onto the second display, it reports that display's work area
+    invoke("floating-bots:move-to", from, { x: 2000, y: 500 });
+    expect(invoke("floating-bots:geometry", from).workArea).toEqual(SECOND.workArea);
+    emit("floating-bots:autopilot", from, false);
+    emit("floating-bots:moved", from);
+    expect(Object.values(saved.positions)[0].bot_a).toBeDefined();
+    // the main page and a stranger cannot fly it
+    expect(invoke("floating-bots:move-to", { sender: fake.main.webContents }, { x: 0, y: 0 })).toBeNull();
+    expect(invoke("floating-bots:geometry", { sender: {} })).toBeNull();
+    expect(invoke("floating-bots:move-to", from, { x: "1", y: 2 })).toBeNull();
+  });
+
   it("pulls a spot saved off every screen back onto the visible displays", () => {
     const key = displaySignature([PRIMARY, SECOND]);
     const { open } = setup({ displays: [PRIMARY, SECOND], positions: { [key]: { bot_a: { x: 99999, y: -5000 } } } });
@@ -301,6 +328,16 @@ describe("floating bots: payload validation", () => {
     expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, balloon: { kind: "html" } }).balloon).toBeNull();
   });
 
+  it("keeps the mascot's task, mood, fly-away choice and hints, bounded", () => {
+    expect(sanitizeFloatingSnapshot(SNAPSHOT)).toMatchObject({ task: "idle", mood: 0.6, flyAway: true, hints: { mood: "", working: "" } });
+    const clean = sanitizeFloatingSnapshot({ ...SNAPSHOT, task: "working", mood: 4, flyAway: false, hints: { mood: "m".repeat(500), working: "w".repeat(500), html: "<b>" } });
+    expect(clean).toMatchObject({ task: "working", mood: 1, flyAway: false });
+    expect(clean.hints.mood.length).toBe(80);
+    expect(clean.hints.working.length).toBe(200);
+    expect(clean.hints).not.toHaveProperty("html");
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, task: "rm -rf", mood: Number.NaN })).toMatchObject({ task: "idle", mood: 0.6 });
+  });
+
   it("takes a picture only as a bounded inline image, never a URL", () => {
     const png = "data:image/png;base64,iVBORw0KGgo=";
     expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, avatar: { src: png, crop: "rounded", zoom: 9 } }).avatar).toEqual({ src: png, crop: "rounded", zoom: 3, focusX: 0.5, focusY: 0.5 });
@@ -311,6 +348,8 @@ describe("floating bots: payload validation", () => {
 
   it("accepts only the events a floating window can make", () => {
     expect(sanitizeFloatingEvent({ type: "click" })).toEqual({ type: "click" });
+    expect(sanitizeFloatingEvent({ type: "play", extra: 1 })).toEqual({ type: "play" });
+    expect(sanitizeFloatingEvent({ type: "pet" })).toEqual({ type: "pet" });
     expect(sanitizeFloatingEvent({ type: "menu", id: "dock" })).toEqual({ type: "menu", id: "dock" });
     expect(sanitizeFloatingEvent({ type: "menu", id: "../x" })).toBeNull();
     expect(sanitizeFloatingEvent({ type: "send", text: "q".repeat(5000) }).text.length).toBe(4000);

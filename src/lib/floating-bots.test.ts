@@ -4,11 +4,14 @@ import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   floatBot,
+  floatingBotPrefs,
   floatingBots,
   isBotFloating,
   MAX_FLOATING_BOTS,
+  readFloatingBotPrefs,
   readFloatingBots,
   resetFloatingBotsForTests,
+  setFloatingFlyAway,
   setFloatingBotOnTop,
   setFloatingBotPosition,
   subscribeFloatingBots,
@@ -92,5 +95,39 @@ describe("floating bots: the per-device list", () => {
     const staticImports = [...eager.matchAll(/^import[^;]*from\s+"([^"]+)"/gm)].map(([, from]) => from);
     expect(staticImports.some((from) => from.includes("floating-bots/"))).toBe(false);
     expect(eager).toContain('import("@/components/floating-bots/FloatingBots")');
+  });
+});
+
+describe("floating bots: the fly-away setting", () => {
+  it("is on by default and survives a reload once switched off", () => {
+    const storage = memoryStorage();
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true });
+    let changes = 0;
+    subscribeFloatingBots(() => (changes += 1));
+    setFloatingFlyAway(false, storage);
+    setFloatingFlyAway(false, storage);
+    expect(floatingBotPrefs().flyAway).toBe(false);
+    expect(changes).toBe(1);
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: false });
+    setFloatingFlyAway(true, storage);
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true });
+  });
+
+  it("reads a broken or missing record as the default", () => {
+    const storage = memoryStorage();
+    storage.setItem("omb.floatingBots.prefs.v1", "{nope");
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true });
+    storage.setItem("omb.floatingBots.prefs.v1", JSON.stringify({ flyAway: "no" }));
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true });
+    expect(readFloatingBotPrefs(undefined)).toEqual({ flyAway: true });
+  });
+
+  it("keeps three.js out of every chunk but the floating mascot's", () => {
+    const settings = readFileSync(join(here, "../components/SettingsModal.tsx"), "utf8");
+    expect(settings).not.toMatch(/from\s+"three"/);
+    expect(settings).not.toMatch(/from\s+"@\/components\/floating-bots\//);
+    const view = readFileSync(join(here, "../components/floating-bots/FloatingBotView.tsx"), "utf8");
+    expect(view).not.toMatch(/from\s+"three"/);
+    expect(view).toContain('import("./owl3d/Mascot3D")');
   });
 });

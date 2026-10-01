@@ -124,6 +124,46 @@ export function setFloatingBotPosition(botId: string, pos: { right: number; bott
   commit(list.map((entry) => (entry.id === botId ? { ...entry, pos: { right: pos.right, bottom: pos.bottom } } : entry)), storage);
 }
 
+/* ------------------------------------------------------------- settings */
+
+export interface FloatingBotPrefs {
+  /** The mascot flies off to the screen edge while its bot works, and comes back when done. */
+  flyAway: boolean;
+}
+
+const PREFS_KEY = "omb.floatingBots.prefs.v1";
+
+export function readFloatingBotPrefs(storage: FloatingStorage | undefined = defaultStorage()): FloatingBotPrefs {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(storage?.getItem(PREFS_KEY) ?? "null");
+  } catch {
+    raw = null;
+  }
+  const value = raw && typeof raw === "object" ? (raw as { flyAway?: unknown }) : {};
+  return { flyAway: value.flyAway !== false };
+}
+
+let prefs: FloatingBotPrefs | null = null;
+
+export function floatingBotPrefs(): FloatingBotPrefs {
+  if (!prefs) prefs = readFloatingBotPrefs();
+  return prefs;
+}
+
+/** Settings > Appearance and the mascot's own menu: "Fly away during tasks". */
+export function setFloatingFlyAway(on: boolean, storage: FloatingStorage | undefined = defaultStorage()): void {
+  if (floatingBotPrefs().flyAway === on) return;
+  prefs = { ...floatingBotPrefs(), flyAway: on };
+  try {
+    storage?.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* private mode or quota: the choice holds for this session */
+  }
+  for (const listener of listeners) listener();
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
+}
+
 export function subscribeFloatingBots(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -132,6 +172,7 @@ export function subscribeFloatingBots(listener: () => void): () => void {
 /** Tests only: forget the cached list so the next read comes from storage. */
 export function resetFloatingBotsForTests(): void {
   current = null;
+  prefs = null;
   listeners.clear();
 }
 

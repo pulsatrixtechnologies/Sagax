@@ -2,7 +2,10 @@
 // floating bot's window (a dumb renderer). Mirrors the validation in
 // electron/floating-bot-window.mjs, which checks every payload in main.
 
+import type { MascotTask } from "./behavior";
+
 export type FloatingPose = "idle" | "think" | "speak" | "celebrate" | "alert" | "sleep";
+export type { MascotTask };
 export type FloatingBalloonKind = "chat" | "thinking" | "approval" | "error";
 
 export interface FloatingMenuItem {
@@ -52,15 +55,46 @@ export interface FloatingSnapshot {
   locale: string;
   menu: FloatingMenuItem[];
   balloon: FloatingBalloon | null;
+  /** The bot's work, for the mascot: it flies off while "working" (when flyAway). */
+  task: MascotTask;
+  /** The Tamagotchi meter, 0..1, kept by the brain per bot. */
+  mood: number;
+  /** The "Fly away during tasks" setting. */
+  flyAway: boolean;
+  /** Short texts the mascot shows: the mood meter's label and the parked badge's. */
+  hints: { mood: string; working: string };
 }
 
+/**
+ * "click" opens or closes the balloon (a double click, or Enter); "play" is a
+ * single click on the mascot and "pet" a stroke over it (both raise its mood).
+ */
 export type FloatingEvent =
-  | { type: "click" | "context" | "dismiss" | "open" }
+  | { type: "click" | "context" | "dismiss" | "open" | "play" | "pet" }
   | { type: "menu"; id: string }
   | { type: "send"; text: string };
 
+export interface FloatingRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Where a floating window stands, the work area of its display, and the pointer (screen coordinates). */
+export interface FloatingGeometry {
+  bounds: FloatingRect;
+  workArea: FloatingRect;
+  cursor: { x: number; y: number } | null;
+}
+
 /** window.floatingBotWindow, from electron/floating-bot-preload.cjs. */
 export interface FloatingWindowBridge {
+  /** Optional: an older main process lacks these and the mascot simply stays put. */
+  geometry?(): Promise<FloatingGeometry | null>;
+  moveTo?(x: number, y: number): Promise<FloatingRect | null>;
+  /** While on, the mascot moves its own window and main does not save the spot. */
+  autopilot?(on: boolean): void;
   moveBy(dx: number, dy: number): Promise<{ x: number; y: number } | null>;
   moved(): void;
   resize(width: number, height: number): Promise<unknown>;
@@ -84,6 +118,21 @@ export interface FloatingBotsBridge {
 
 const ID = /^[a-zA-Z0-9:_-]{1,64}$/;
 const POSES = new Set<FloatingPose>(["idle", "think", "speak", "celebrate", "alert", "sleep"]);
+const TASKS = new Set<MascotTask>(["idle", "working", "waiting", "error"]);
+
+/** A snapshot from an older brain may lack the mascot's fields: fill them in. */
+export function mascotFields(snapshot: Partial<FloatingSnapshot>): Pick<FloatingSnapshot, "task" | "mood" | "flyAway" | "hints"> {
+  const mood = typeof snapshot.mood === "number" && Number.isFinite(snapshot.mood) ? Math.min(1, Math.max(0, snapshot.mood)) : 0.6;
+  return {
+    task: TASKS.has(snapshot.task as MascotTask) ? (snapshot.task as MascotTask) : "idle",
+    mood,
+    flyAway: snapshot.flyAway !== false,
+    hints: {
+      mood: typeof snapshot.hints?.mood === "string" ? snapshot.hints.mood : "",
+      working: typeof snapshot.hints?.working === "string" ? snapshot.hints.working : "",
+    },
+  };
+}
 
 /** The renderer's own check of an incoming snapshot (main already validated it). */
 export function isFloatingSnapshot(value: unknown): value is FloatingSnapshot {
@@ -104,5 +153,5 @@ export function isFloatingEvent(value: unknown): value is FloatingEvent {
   const event = value as { type?: unknown; id?: unknown; text?: unknown };
   if (event.type === "menu") return typeof event.id === "string" && ID.test(event.id);
   if (event.type === "send") return typeof event.text === "string" && event.text.trim().length > 0;
-  return event.type === "click" || event.type === "context" || event.type === "dismiss" || event.type === "open";
+  return ["click", "context", "dismiss", "open", "play", "pet"].includes(event.type as string);
 }

@@ -3,7 +3,8 @@
 // may stand. The main app page runs it for every floated bot and sends the
 // result to that bot's window (desktop) or draws it itself (browser, phone).
 import type { Bot, Message, Task } from "@/state/store";
-import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPose, FloatingSnapshot } from "./protocol";
+import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPose, FloatingSnapshot, MascotTask } from "./protocol";
+import { moodLevel } from "./mood";
 
 /** What the balloon keeps of a long reply; the rest is one click away in the app. */
 export const BALLOON_REPLY_CHARS = 3000;
@@ -53,6 +54,12 @@ export interface FloatingLabels {
   menuShow: string;
   menuTop: string;
   menuDock: string;
+  menuFly: string;
+  moodLow: string;
+  moodOk: string;
+  moodHappy: string;
+  /** The parked badge's label while the bot works away from its spot. */
+  working: string;
 }
 
 export type FloatingBot = Pick<Bot, "id" | "name" | "color" | "mascotSkin" | "threadId" | "messages" | "busy" | "activity"> & {
@@ -122,13 +129,26 @@ export function floatingStatus(bot: FloatingBot, session: FloatingSession, strea
   };
 }
 
-export function floatingMenu(labels: FloatingLabels, session: FloatingSession, alwaysOnTop: boolean | null): FloatingMenuItem[] {
+export function floatingMenu(labels: FloatingLabels, session: FloatingSession, alwaysOnTop: boolean | null, flyAway = true): FloatingMenuItem[] {
   return [
     { id: "open", label: labels.menuOpen },
     { id: "balloon", label: session.open ? labels.menuHide : labels.menuShow },
     ...(alwaysOnTop === null ? [] : [{ id: "top", label: labels.menuTop, checked: alwaysOnTop }]),
+    { id: "fly", label: labels.menuFly, checked: flyAway },
     { id: "dock", label: labels.menuDock },
   ];
+}
+
+/**
+ * What the mascot should do about the bot's work: fly off while any of its
+ * threads runs, come back for an approval, look sad after a failed send.
+ */
+export function floatingTask(bot: FloatingBot, session: FloatingSession, status: FloatingStatus): MascotTask {
+  if (session.error) return "error";
+  const tasks = bot.tasks ?? [];
+  if (status.waiting || bot.activity === "waiting-on-you" || tasks.some((task) => task.activity === "waiting-on-you")) return "waiting";
+  if (status.busy || bot.busy || tasks.some((task) => task.busy)) return "working";
+  return "idle";
 }
 
 export interface FloatingInput {
@@ -142,6 +162,10 @@ export interface FloatingInput {
   locale: string;
   /** null where there is no desktop window to keep on top (browser, phone). */
   alwaysOnTop: boolean | null;
+  /** The mascot's mood, 0..1 (mood.ts); a new mascot when absent. */
+  mood?: number;
+  /** The "Fly away during tasks" setting; on when absent. */
+  flyAway?: boolean;
 }
 
 /** The pose and balloon for this moment, as one snapshot. */
@@ -157,6 +181,9 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
           ? "celebrate"
           : "idle";
   const common = { open: labels.open, close: labels.close, asked: session.asked ?? undefined };
+  const mood = Math.round(Math.min(1, Math.max(0, input.mood ?? 0.6)) * 100) / 100;
+  const level = moodLevel(mood);
+  const flyAway = input.flyAway !== false;
   const input_ = { label: labels.inputLabel, placeholder: labels.placeholder, send: labels.send };
   let balloon: FloatingBalloon | null = null;
   if (session.open) {
@@ -190,8 +217,15 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
     retro: input.retro,
     sparkle: session.sparkle,
     locale: input.locale,
-    menu: floatingMenu(labels, session, input.alwaysOnTop),
+    menu: floatingMenu(labels, session, input.alwaysOnTop, flyAway),
     balloon,
+    task: floatingTask(bot, session, status),
+    mood,
+    flyAway,
+    hints: {
+      mood: level === "low" ? labels.moodLow : level === "happy" ? labels.moodHappy : labels.moodOk,
+      working: labels.working,
+    },
   };
 }
 

@@ -4,6 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { floatingBotPrefs, setFloatingFlyAway, subscribeFloatingBots } from "@/lib/floating-bots";
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
@@ -68,7 +69,7 @@ const SECTIONS: Array<{
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "analytics", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "cloudAccount", labelKey: "settings.section.cloudAccount", icon: User, keywords: ["cloud", "account", "personal", "sign in", "pro", "subscription", "billing"] },
-  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "display", "notifications", "sound", "sounds", "mute", "silent", "chime"] },
+  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "display", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "composio", "box", "xai", "mistral", "vps"] },
   { id: "engines", labelKey: "settings.section.engines", icon: Terminal, keywords: ["models", "claude", "grok", "providers", "cli"] },
@@ -474,6 +475,20 @@ function LanguageRow() {
           </option>
         ))}
       </select>
+    </SettingRow>
+  );
+}
+
+/** Desktop mascots: fly off to the screen edge while the bot works, back when done. */
+function FloatingFlyAwayRow() {
+  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
+  return (
+    <SettingRow title={t("settings.floatingBots.flyAway.title")} subtitle={t("settings.floatingBots.flyAway.subtitle")}>
+      <Switch
+        checked={prefs.flyAway}
+        aria-label={t("settings.floatingBots.flyAway.title")}
+        onClick={() => setFloatingFlyAway(!prefs.flyAway)}
+      />
     </SettingRow>
   );
 }
@@ -1033,6 +1048,7 @@ export function SettingsModal() {
                   <SidebarDensityRow />
                   <ShowThreadsRow />
                   <NotificationSoundsRow />
+                  <FloatingFlyAwayRow />
                   {!remoteActive && <ToolCallsRow />}
                 </div>
               </>

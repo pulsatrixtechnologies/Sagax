@@ -27,7 +27,7 @@ import { assistantWindowOptions, clampToDisplays, displaySignature } from "./ret
 
 export const FLOATING_QUERY = "omb-floating-bot=1";
 
-export const FLOAT_SIZE = Object.freeze({ width: 132, height: 136 });
+export const FLOAT_SIZE = Object.freeze({ width: 156, height: 172 });
 export const FLOAT_MIN = Object.freeze({ width: 60, height: 60 });
 export const FLOAT_MAX = Object.freeze({ width: 400, height: 560 });
 /** More than this many floating windows is a mistake, not a desk. */
@@ -64,6 +64,7 @@ export const REPLY_MAX = 4000;
 const ID_RE = /^[a-zA-Z0-9:_-]{1,64}$/;
 const POSES = new Set(["idle", "think", "speak", "celebrate", "alert", "sleep"]);
 const BALLOON_KINDS = new Set(["chat", "thinking", "approval", "error"]);
+const TASKS = new Set(["idle", "working", "waiting", "error"]);
 const CROPS = new Set(["circle", "rounded", "square"]);
 const COLOR_RE = /^#?[a-zA-Z0-9-]{1,24}$/;
 const SKIN_RE = /^[a-z0-9-]{1,32}$/;
@@ -120,6 +121,14 @@ export function sanitizeFloatingSnapshot(value) {
     locale: /^[a-zA-Z-]{2,16}$/.test(value.locale ?? "") ? value.locale : "en",
     menu: menuItems(value.menu),
     balloon: null,
+    // the mascot: what its bot is doing, its mood, and whether it flies off meanwhile
+    task: TASKS.has(value.task) ? value.task : "idle",
+    mood: isFiniteNumber(value.mood) ? clampNumber(value.mood, 0, 1) : 0.6,
+    flyAway: value.flyAway !== false,
+    hints: {
+      mood: text(value.hints?.mood, 80) ?? "",
+      working: text(value.hints?.working, 200) ?? "",
+    },
   };
   const balloon = value.balloon;
   if (balloon && typeof balloon === "object" && BALLOON_KINDS.has(balloon.kind)) {
@@ -144,7 +153,7 @@ export function sanitizeFloatingSnapshot(value) {
   return snapshot;
 }
 
-const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send"]);
+const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send", "play", "pet"]);
 export const SEND_MAX = 4000;
 
 /** What a floating window may report back: a click, a menu choice, or typed text. */
@@ -179,7 +188,7 @@ export function sanitizePositions(value) {
 /**
  * @param {object} deps
  * @param {typeof import("electron").BrowserWindow} deps.BrowserWindow
- * @param {{ getAllDisplays(): any[]; getPrimaryDisplay(): any }} deps.screen
+ * @param {{ getAllDisplays(): any[]; getPrimaryDisplay(): any; getCursorScreenPoint?(): {x:number,y:number} }} deps.screen
  * @param {{ handle: Function; on: Function; removeHandler?: Function; removeListener?: Function }} deps.ipcMain
  * @param {() => (import("electron").BrowserWindow | null)} deps.getMainWindow
  * @param {() => string} deps.pageUrl       the app origin's floating-only page
@@ -197,7 +206,7 @@ export function createFloatingBotWindows(deps) {
   // the small window simply stays clickable rather than becoming unreachable.
   const clickThrough = (deps.platform ?? process.platform) !== "linux";
   const log = deps.log ?? (() => {});
-  /** botId -> { win, snapshot, onTop } */
+  /** botId -> { win, snapshot, onTop, autopilot } */
   const floats = new Map();
   let positions = null;
   let silent = false;
@@ -237,7 +246,8 @@ export function createFloatingBotWindows(deps) {
 
   const remember = (botId) => {
     const entry = floats.get(botId);
-    if (!live(entry)) return;
+    // the mascot flying off or wandering is not the person choosing a spot
+    if (!live(entry) || entry.autopilot) return;
     const { x, y, width, height } = entry.win.getBounds();
     const all = savedPositions();
     const key = signature();
@@ -278,8 +288,9 @@ export function createFloatingBotWindows(deps) {
     }
     if (floats.size >= MAX_FLOATING) return null;
     const options = assistantWindowOptions({ preload, bounds: startBounds(botId), title: "Floating bot" });
-    const created = new BrowserWindow({ ...options, alwaysOnTop });
-    const entry = { win: created, snapshot: existing?.snapshot ?? null, onTop: alwaysOnTop };
+    // throttled when hidden or covered, so the 3D mascot stops drawing (and spending battery) there
+    const created = new BrowserWindow({ ...options, alwaysOnTop, webPreferences: { ...options.webPreferences, backgroundThrottling: true } });
+    const entry = { win: created, snapshot: existing?.snapshot ?? null, onTop: alwaysOnTop, autopilot: false };
     floats.set(botId, entry);
     applyOnTop(created, alwaysOnTop);
     try {
@@ -357,6 +368,34 @@ export function createFloatingBotWindows(deps) {
       win.setBounds(next);
       return { x: next.x, y: next.y };
     },
+    "floating-bots:move-to": (event, point) => {
+      const found = senderFloat(event);
+      if (!found || !point || !isFiniteNumber(point.x) || !isFiniteNumber(point.y)) return null;
+      const { win } = found.entry;
+      const next = clampToDisplays({ ...win.getBounds(), x: Math.round(point.x), y: Math.round(point.y) }, workAreas());
+      win.setBounds(next);
+      return next;
+    },
+    "floating-bots:geometry": (event) => {
+      const found = senderFloat(event);
+      if (!found) return null;
+      const bounds = found.entry.win.getBounds();
+      const areas = workAreas();
+      if (!areas.length) return null;
+      // the display the window stands on: clamping a copy of it picks the same area main would
+      const clamped = clampToDisplays(bounds, areas);
+      const workArea = areas.find((area) =>
+        clamped.x >= area.x && clamped.y >= area.y && clamped.x + clamped.width <= area.x + area.width && clamped.y + clamped.height <= area.y + area.height,
+      ) ?? areas[0];
+      let cursor = null;
+      try {
+        const point = screen.getCursorScreenPoint?.();
+        if (point && isFiniteNumber(point.x) && isFiniteNumber(point.y)) cursor = { x: point.x, y: point.y };
+      } catch {
+        /* no pointer to follow: the mascot looks ahead */
+      }
+      return { bounds, workArea: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height }, cursor };
+    },
     "floating-bots:resize": (event, size) => {
       const found = senderFloat(event);
       if (!found || !size || !isFiniteNumber(size.width) || !isFiniteNumber(size.height)) return null;
@@ -419,6 +458,10 @@ export function createFloatingBotWindows(deps) {
       } catch {
         /* keep the last state */
       }
+    },
+    "floating-bots:autopilot": (event, on) => {
+      const found = senderFloat(event);
+      if (found && typeof on === "boolean") found.entry.autopilot = on;
     },
     "floating-bots:moved": (event) => {
       const found = senderFloat(event);

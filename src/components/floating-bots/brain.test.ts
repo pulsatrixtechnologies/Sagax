@@ -5,6 +5,7 @@ import {
   clampOverlayPosition,
   defaultOverlayPosition,
   floatingStatus,
+  floatingTask,
   newFloatingSession,
   plainReply,
   replyAfter,
@@ -12,10 +13,10 @@ import {
   type FloatingBot,
   type FloatingLabels,
 } from "./brain";
-import { isFloatingEvent, isFloatingSnapshot } from "./protocol";
+import { isFloatingEvent, isFloatingSnapshot, mascotFields } from "./protocol";
 
 const labels: FloatingLabels = Object.fromEntries(
-  ["character", "inputLabel", "placeholder", "send", "open", "close", "hello", "thinking", "approvalTitle", "approval", "errorTitle", "error", "menuOpen", "menuHide", "menuShow", "menuTop", "menuDock"].map((key) => [key, key]),
+  ["character", "inputLabel", "placeholder", "send", "open", "close", "hello", "thinking", "approvalTitle", "approval", "errorTitle", "error", "menuOpen", "menuHide", "menuShow", "menuTop", "menuDock", "menuFly", "moodLow", "moodOk", "moodHappy", "working"].map((key) => [key, key]),
 ) as unknown as FloatingLabels;
 
 const msg = (partial: Partial<Message>): Message => ({ id: crypto.randomUUID(), role: "bot", kind: "text", at: 1, ...partial });
@@ -77,9 +78,9 @@ describe("floating bot brain: poses and balloons", () => {
   });
 
   it("offers the right-click menu, with always-on-top only on the desktop", () => {
-    expect(snapshot(bot()).menu.map((item) => item.id)).toEqual(["open", "balloon", "top", "dock"]);
+    expect(snapshot(bot()).menu.map((item) => item.id)).toEqual(["open", "balloon", "top", "fly", "dock"]);
     expect(snapshot(bot(), newFloatingSession(), undefined, false).menu.find((item) => item.id === "top")).toMatchObject({ checked: false });
-    expect(snapshot(bot(), newFloatingSession(), undefined, null).menu.map((item) => item.id)).toEqual(["open", "balloon", "dock"]);
+    expect(snapshot(bot(), newFloatingSession(), undefined, null).menu.map((item) => item.id)).toEqual(["open", "balloon", "fly", "dock"]);
   });
 
   it("checks what comes back from a window", () => {
@@ -87,6 +88,8 @@ describe("floating bot brain: poses and balloons", () => {
     expect(isFloatingEvent({ type: "send", text: "  " })).toBe(false);
     expect(isFloatingEvent({ type: "menu", id: "../x" })).toBe(false);
     expect(isFloatingEvent({ type: "eval" })).toBe(false);
+    expect(isFloatingEvent({ type: "play" })).toBe(true);
+    expect(isFloatingEvent({ type: "pet" })).toBe(true);
   });
 });
 
@@ -99,5 +102,36 @@ describe("floating bot brain: the in-app overlay stays on screen", () => {
   });
   it("puts new bots side by side", () => {
     expect(defaultOverlayPosition(0, size).right).toBeLessThan(defaultOverlayPosition(1, size).right);
+  });
+});
+
+describe("floating bot brain: the mascot", () => {
+  const full = (b: FloatingBot, session = newFloatingSession(), extra: { mood?: number; flyAway?: boolean } = {}) =>
+    buildFloatingSnapshot({ bot: b, session, status: floatingStatus(b, session, undefined), labels, avatar: null, retro: false, reduced: false, locale: "en", alwaysOnTop: true, ...extra });
+
+  it("tells the mascot when its bot works, waits, fails or rests", () => {
+    const session = newFloatingSession();
+    expect(floatingTask(bot(), session, floatingStatus(bot(), session, undefined))).toBe("idle");
+    expect(full(bot({ busy: true })).task).toBe("working");
+    // any of its threads counts, not only the one on screen
+    expect(full(bot({ tasks: [{ threadId: "t9", busy: true }] })).task).toBe("working");
+    expect(full(bot({ busy: true, tasks: [{ threadId: "t9", busy: true, activity: "waiting-on-you" }] })).task).toBe("waiting");
+    expect(full(bot(), { ...session, error: true }).task).toBe("error");
+  });
+
+  it("sends the mood with its label, and the fly-away setting", () => {
+    expect(full(bot())).toMatchObject({ mood: 0.6, flyAway: true, hints: { mood: "moodOk", working: "working" } });
+    expect(full(bot(), newFloatingSession(), { mood: 0.123, flyAway: false })).toMatchObject({ mood: 0.12, flyAway: false, hints: { mood: "moodLow" } });
+    expect(full(bot(), newFloatingSession(), { mood: 7 })).toMatchObject({ mood: 1, hints: { mood: "moodHappy" } });
+    expect(full(bot(), newFloatingSession(), { flyAway: false }).menu.find((item) => item.id === "fly")).toMatchObject({ checked: false });
+  });
+
+  it("fills in the mascot's fields for a snapshot from an older brain", () => {
+    const old = { ...full(bot()) } as Partial<ReturnType<typeof full>>;
+    delete old.task;
+    delete old.mood;
+    delete old.hints;
+    expect(mascotFields(old)).toEqual({ task: "idle", mood: 0.6, flyAway: true, hints: { mood: "", working: "" } });
+    expect(mascotFields({ task: "working", mood: -3, flyAway: false })).toMatchObject({ task: "working", mood: 0, flyAway: false });
   });
 });
