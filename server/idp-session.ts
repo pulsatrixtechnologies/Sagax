@@ -248,7 +248,7 @@ export interface IdpSessionStore {
 }
 
 export interface IdpPrincipalStore {
-  forSubject(input: { iss: string; sub: string; claims?: { email?: string; name?: string; login?: string }; orgRole?: "admin" | "member"; teams?: { id: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }): Principal;
+  forSubject(input: { iss: string; sub: string; claims?: { email?: string; name?: string; login?: string; avatar?: string }; orgRole?: "admin" | "member"; teams?: { id: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }): Principal;
   bySubject(iss: string, sub: string): Principal | null;
   markDisabled(iss: string, sub: string, at?: number): Principal | null;
 }
@@ -624,7 +624,7 @@ export class IdpSessionManager {
     const principal = this.principals.forSubject({
       iss: grant.iss,
       sub: grant.sub,
-      claims: { email: identity.email, name: identity.name, login: identity.preferredUsername },
+      claims: { email: identity.email, name: identity.name, login: identity.preferredUsername, ...(identity.avatar ? { avatar: identity.avatar } : {}) },
       orgRole,
       ...(identity.teams ? { teams: identity.teams.map(({ id, manager }) => ({ id, manager })) } : {}),
       ...(perspicaxRoleOf(identity.role) ? { perspicaxRole: perspicaxRoleOf(identity.role) } : {}),

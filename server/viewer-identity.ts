@@ -20,6 +20,14 @@ export interface ViewerIdentity {
   /** The operator's display name, for lines the operator sent without a
    * named sender. Only set for someone who is not the operator. */
   operatorName?: string;
+  /** Organization server: Perspicax owns this person's name and email, which
+   * are read-only here (server/oidc-login.ts profileManagement). Absent on a
+   * solo server and for the operator at the server's own console. */
+  profileManagedBy?: "perspicax";
+  /** Where to change them: the issuer console's profile page. */
+  profileManageUrl?: string;
+  /** Their Perspicax avatar as this server serves it (personAvatarUrl). */
+  avatarUrl?: string;
 }
 
 /** "zara.q@example.test" becomes "zara.q". Anything without an "@" stays itself. */
@@ -27,6 +35,25 @@ export function displayNameFromEmail(email: string | undefined): string {
   const trimmed = email?.trim() ?? "";
   const at = trimmed.indexOf("@");
   return (at > 0 ? trimmed.slice(0, at) : trimmed).slice(0, 100);
+}
+
+/** How a person reads everywhere they are shown (the "You" row, room
+ * members, sharing pickers, message authors, mentions): their display name
+ * from Perspicax, else their address's local part, else their login. A name
+ * that is only the login (Perspicax's directory falls back to it) does not
+ * count as a display name. */
+export function personDisplayName(person: { name?: string; email?: string; login?: string } | null | undefined): string {
+  const name = person?.name?.trim() ?? "";
+  const login = person?.login?.trim() ?? "";
+  if (name && name !== login) return name.slice(0, 200);
+  return displayNameFromEmail(person?.email) || login || name;
+}
+
+/** The URL this server serves a person's Perspicax avatar at, versioned so a
+ * changed image is a new URL; undefined when they have none. */
+export function personAvatarUrl(person: { id: string; subject?: unknown; avatar?: string } | null | undefined): string | undefined {
+  if (!person?.subject || !person.avatar) return undefined;
+  return `/api/people/${encodeURIComponent(person.id)}/avatar?v=${encodeURIComponent(person.avatar)}`;
 }
 
 /** Whether a session is the operator: its principal is the local operator's,
@@ -59,5 +86,5 @@ export function configForViewer<T extends { profile: { name: string; email: stri
 ): T & { viewer?: ViewerIdentity } {
   if (!viewer) return status;
   if (viewer.operator) return { ...status, viewer };
-  return { ...status, profile: { name: viewer.name, email: viewer.email, aboutMe: "", avatarUrl: "" }, viewer };
+  return { ...status, profile: { name: viewer.name, email: viewer.email, aboutMe: "", avatarUrl: viewer.avatarUrl ?? "" }, viewer };
 }

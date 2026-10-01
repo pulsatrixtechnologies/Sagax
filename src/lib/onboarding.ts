@@ -4,6 +4,7 @@
 // the server, never in browser storage: clearing site data or opening a
 // second profile must not replay the tour, and a phone paired later should
 // see the same hints as already dismissed.
+import { managedProfile, type ManagedProfile } from "./profile-management";
 
 export interface OnboardingStatus {
   /** ISO timestamp; "" until the welcome flow has been finished or skipped. */
@@ -37,6 +38,9 @@ export interface WelcomeViewer {
   /** An OMB Cloud home (docs/cloud-pro.md): its first run is the engine
    * sign-in, not the welcome flow, which describes the person's computer. */
   cloudHome?: boolean;
+  /** An organization server: Perspicax owns this person's name and email,
+   * so the greeting asks for neither. Absent everywhere else. */
+  profileManaged?: ManagedProfile;
 }
 
 /** The desktop app's own window talking to its own server: never hosted,
@@ -62,10 +66,12 @@ export function spotlightsQuiet(viewer: WelcomeViewer | null): boolean {
  * hosted, which is also what it always was to the welcome flow. */
 export function welcomeViewer(session: unknown): WelcomeViewer {
   const record = session && typeof session === "object" ? (session as { hosted?: unknown; scopes?: unknown; cloudHome?: unknown }) : {};
+  const profileManaged = managedProfile(session);
   return {
     hosted: record.hosted === true,
     canSave: Array.isArray(record.scopes) ? record.scopes.includes("admin") : true,
     ...(record.cloudHome === true ? { cloudHome: true } : {}),
+    ...(profileManaged ? { profileManaged } : {}),
   };
 }
 

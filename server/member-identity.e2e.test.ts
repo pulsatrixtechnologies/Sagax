@@ -31,6 +31,8 @@ const REMOTE = { "x-forwarded-for": "198.51.100.23", "x-forwarded-proto": "https
 
 const ZARA_USER: FakeOidcUser = { sub: "01J9S8ZARA000000000000000Z", email: ZARA, preferred_username: "zara", role: "employee" };
 const MAX_USER: FakeOidcUser = { sub: "01J9S8MAX0000000000000000M", email: MAX, preferred_username: "max", role: "employee" };
+const AVA = "ava@example.test";
+const AVA_USER: FakeOidcUser = { sub: "01J9S8AVA0000000000000000A", email: AVA, name: "Ava Admin", preferred_username: "ava", role: "admin" };
 
 let child: ChildProcess | undefined;
 let idp: FakeOidcProvider | undefined;
@@ -39,6 +41,7 @@ let log = "";
 let maxCookie = "";
 let guestToken = "";
 let zaraCookie = "";
+let avaCookie = "";
 
 const cookiePair = (setCookie: string) => setCookie.split(";")[0]!;
 async function signIn(user: FakeOidcUser): Promise<string> {
@@ -52,8 +55,9 @@ async function signIn(user: FakeOidcUser): Promise<string> {
   return cookiePair(session!);
 }
 
-type Who = "owner" | "zara" | "max" | "guest";
+type Who = "owner" | "zara" | "max" | "guest" | "ava";
 function headersFor(who: Who): Record<string, string> {
+  if (who === "ava") return { ...REMOTE, cookie: avaCookie };
   if (who === "zara") return { ...REMOTE, cookie: zaraCookie };
   if (who === "max") return { ...REMOTE, cookie: maxCookie };
   if (who === "guest") return { ...REMOTE, authorization: `Bearer ${guestToken}` };
@@ -99,7 +103,7 @@ posixOnly("an organization member's identity and bots", () => {
       profile: { name: OWNER_NAME, email: OWNER_EMAIL, aboutMe: OWNER_ABOUT },
     }));
     idp = await startFakeOidcProvider({ user: ZARA_USER });
-    idp.directoryPeople = [ZARA_USER, MAX_USER].map((user) => idp!.personOf(user));
+    idp.directoryPeople = [ZARA_USER, MAX_USER, AVA_USER].map((user) => idp!.personOf(user));
     mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
       version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
@@ -139,6 +143,7 @@ posixOnly("an organization member's identity and bots", () => {
     }
     zaraCookie = await signIn(ZARA_USER);
     maxCookie = await signIn(MAX_USER);
+    avaCookie = await signIn(AVA_USER);
   }, 40_000);
 
   afterAll(async () => {
@@ -278,5 +283,49 @@ posixOnly("an organization member's identity and bots", () => {
       expect(res.status, `${method} ${path}: ${res.text}`).toBe(403);
     }
     expect((await api("GET", "/api/config")).body.profile.name).toBe(OWNER_NAME);
+  });
+
+  // Perspicax owns a signed-in person's name and email: the UI shows them
+  // read-only with a link to the issuer console, and the server refuses to
+  // change them, even for an organization admin.
+  it("tells every signed-in person that Perspicax manages their name and email", async () => {
+    const manageUrl = `${new URL(idp!.issuer).origin}/console/me`;
+    for (const who of ["zara", "ava"] as const) {
+      const session = await api("GET", "/api/auth/session", { as: who });
+      expect(session.status, session.text).toBe(200);
+      expect(session.body).toMatchObject({ identity: "perspicax", profileManagedBy: "perspicax", profileManageUrl: manageUrl });
+      const config = await api("GET", "/api/config", { as: who });
+      expect(config.body.viewer).toMatchObject({ profileManagedBy: "perspicax", profileManageUrl: manageUrl });
+    }
+    const ava = await api("GET", "/api/config", { as: "ava" });
+    expect(ava.body.viewer).toMatchObject({ operator: false, name: "Ava Admin", email: AVA });
+    expect(ava.body.profile).toMatchObject({ name: "Ava Admin", email: AVA });
+    // the operator at the server's own console keeps the local profile
+    const owner = await api("GET", "/api/config");
+    expect(owner.body.viewer.profileManagedBy).toBeUndefined();
+    expect((await api("GET", "/api/auth/session")).body.profileManagedBy).toBeUndefined();
+  });
+
+  it("refuses an organization admin's name or email with identity_perspicax", async () => {
+    for (const profile of [{ name: "Someone Else" }, { email: "other@example.test" }, { name: "Ava", email: AVA }]) {
+      const refused = await api("PUT", "/api/config", { as: "ava", body: { profile } });
+      expect(refused.status, refused.text).toBe(403);
+      expect(refused.body.code).toBe("identity_perspicax");
+    }
+    const patched = await api("PATCH", "/api/config", { as: "ava", body: { profile: { name: "x" } } });
+    expect(patched.status).toBe(403);
+    expect(patched.body.code).toBe("identity_perspicax");
+    // the rest of the config is still an admin's to change
+    const language = await api("PUT", "/api/config", { as: "ava", body: { language: "en" } });
+    expect(language.status, language.text).toBe(200);
+    const owner = await api("GET", "/api/config");
+    expect(owner.body.profile).toMatchObject({ name: OWNER_NAME, email: OWNER_EMAIL });
+  });
+
+  it("takes a changed name from Perspicax at the next sign-in", async () => {
+    avaCookie = await signIn({ ...AVA_USER, name: "Ava Q. Admin" });
+    const config = await api("GET", "/api/config", { as: "ava" });
+    expect(config.body.viewer.name).toBe("Ava Q. Admin");
+    expect((await api("GET", "/api/auth/session", { as: "ava" })).body.name).toBe("Ava Q. Admin");
   });
 });

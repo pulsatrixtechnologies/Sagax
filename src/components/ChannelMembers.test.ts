@@ -2,6 +2,8 @@ import { createElement, type MouseEvent, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@/state/store", () => ({ api: vi.fn() }));
+import { channelHumanRow } from "@/lib/perspicax-org";
 import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
 
 describe("ChannelMembers", () => {
@@ -93,3 +95,33 @@ function findAjouter(tree: ReactNode): { props: { onClick?: (event: MouseEvent<H
     if (found) return found;
   }
 }
+
+describe("a room's people on an organization server", () => {
+  const PEOPLE = new Map([
+    ["pr_jc", { principalId: "pr_jc", name: "Jean-Christophe Proulx", login: "jcproulx", email: "jcproulx@example.test", role: "admin" as const, disabled: false, avatarUrl: "/api/people/pr_jc/avatar?v=0a1b2c" }],
+    ["pr_sam", { principalId: "pr_sam", name: "sam.t", login: "samt", email: "sam.t@example.test", role: "member" as const, disabled: false, avatarUrl: "https://tracker.example.test/pixel.png" }],
+  ]);
+
+  it("reads each person as their display name with their Perspicax avatar", () => {
+    expect(channelHumanRow("PR_JC", PEOPLE)).toEqual({ id: "PR_JC", label: "Jean-Christophe Proulx", detail: "jcproulx@example.test", avatarUrl: "/api/people/pr_jc/avatar?v=0a1b2c" });
+    // an image from anywhere else is never used
+    expect(channelHumanRow("pr_sam", PEOPLE).avatarUrl).toBeUndefined();
+    // a solo server (no directory) keeps the stored id
+    expect(channelHumanRow("zara@example.test", new Map())).toEqual({ id: "zara@example.test", label: "zara@example.test" });
+  });
+
+  it("draws the avatar, or the letters when there is none", () => {
+    const html = renderToStaticMarkup(createElement(ChannelMembers, {
+      humans: [channelHumanRow("pr_jc", PEOPLE), channelHumanRow("pr_sam", PEOPLE)],
+      bots: [],
+      canAddHuman: false,
+      canAddBot: false,
+      part: "humans",
+    }));
+    expect(html).toContain('src="/api/people/pr_jc/avatar?v=0a1b2c"');
+    expect(html).toContain("Jean-Christophe Proulx");
+    expect(html).not.toContain("jcproulx<");
+    expect(html).not.toContain("tracker.example.test");
+    expect(html).toContain(">ST<");
+  });
+});

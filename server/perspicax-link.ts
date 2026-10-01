@@ -112,6 +112,10 @@ const personSchema = z.object({
   profiles: z.array(z.string().min(1).max(64)).max(1_000).optional(),
   /** Slice 6: this person's routine delegation for this server (null: none,
    * or the person is disabled; absent: an older Perspicax, unknown). */
+  /** The version of the person's avatar (opaque, changes with the image),
+   * null when they have none; absent from a Perspicax that does not send
+   * avatars yet. The image is GET AVATAR_PATH with the link token. */
+  avatar: z.string().regex(/^[0-9A-Za-z_-]{1,64}$/).nullable().optional().catch(undefined),
   routine_delegation: z.object({
     consented_at: z.string().max(40),
     renewed_at: z.string().max(40),
@@ -152,7 +156,7 @@ export interface DirectoryState {
 }
 
 export interface DirectoryPrincipals {
-  upsertFromDirectory(input: { iss: string; sub: string; name?: string | null; login?: string | null; email?: string | null; orgRole: "admin" | "member"; teams?: { id: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }): Principal;
+  upsertFromDirectory(input: { iss: string; sub: string; name?: string | null; login?: string | null; email?: string | null; avatar?: string | null; orgRole: "admin" | "member"; teams?: { id: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }): Principal;
   listBySubjectIssuer(iss: string): Principal[];
   /** Slice 7: the directory lists this person active again: clear a
    * `disabledAt` set before the fetch started (a later back-channel logout
@@ -166,6 +170,25 @@ export interface DirectoryTeamNames {
 }
 
 export const PROVIDER_KEY_RESOLVE_PATH = "/api/v1/pulsabot/provider-keys/resolve";
+/** A person's avatar through the link (the directory's `avatar` names its
+ * version): `GET <base>/api/v1/pulsabot/people/<sub>/avatar`, a PNG or a
+ * JPEG of at most AVATAR_MAX_BYTES, 404 when there is none. */
+export const avatarPath = (sub: string) => `/api/v1/pulsabot/people/${encodeURIComponent(sub)}/avatar`;
+export const AVATAR_MAX_BYTES = 256 * 1024;
+export const AVATAR_TIMEOUT_MS = 5_000;
+const AVATAR_CACHE_MAX = 256;
+
+export interface AvatarImage {
+  bytes: Buffer;
+  contentType: "image/png" | "image/jpeg";
+}
+
+/** What an image's first bytes say it is; only a PNG or a JPEG is served. */
+export function avatarContentType(bytes: Uint8Array): AvatarImage["contentType"] | null {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  return null;
+}
 export const PROVIDER_KEY_TIMEOUT_MS = 5_000;
 export const PROVIDER_KEY_MAX_BYTES = 8 * 1024;
 export const PROVIDER_KEY_CACHE_MS = 60_000;
@@ -220,6 +243,24 @@ export interface PerspicaxDirectoryOptions {
   timeoutMs?: number;
 }
 
+async function readLimitedBytes(response: Response, max: number): Promise<Buffer | null> {
+  const reader = response.body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
 async function readLimited(response: Response, max: number): Promise<string | null> {
   const reader = response.body?.getReader();
   if (!reader) return "";
@@ -257,6 +298,8 @@ export class PerspicaxDirectory {
   private keysBySub = new Map<string, string[]>();
   /** Slice 4: owner keys read through the link, in memory only. */
   private readonly keyCache = new Map<string, { key: string; fingerprint: string; until: number }>();
+  /** Avatars read through the link, by subject and version, in memory only. */
+  private readonly avatarCache = new Map<string, AvatarImage>();
 
   constructor(options: PerspicaxDirectoryOptions) {
     this.options = options;
@@ -479,6 +522,59 @@ export class PerspicaxDirectory {
     return { ok: true, key, fingerprint };
   }
 
+  /** A person's avatar at a given version, read through the link and kept
+   * in memory (a new version is a new key, so a changed image is read
+   * again). Null when there is none, the link is missing, Perspicax does not
+   * serve avatars yet, or the answer is not a PNG or a JPEG. Never throws. */
+  async avatar(sub: string, version: string): Promise<AvatarImage | null> {
+    const cacheKey = `${sub}\u0000${version}`;
+    const cached = this.avatarCache.get(cacheKey);
+    if (cached) return cached;
+    let link = this.link ?? this.readLink();
+    if (!link) return null;
+    const call = (token: string) => this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}${avatarPath(sub)}`, {
+      method: "GET",
+      redirect: "error",
+      signal: AbortSignal.timeout(AVATAR_TIMEOUT_MS),
+      headers: { accept: "image/png, image/jpeg", authorization: `Bearer ${token}` },
+    });
+    let response: Response;
+    try {
+      response = await call(link.linkToken);
+      if (response.status === 401) {
+        void response.body?.cancel().catch(() => {});
+        const again = this.readLink();
+        if (!again) return null;
+        link = again;
+        response = await call(link.linkToken);
+      }
+    } catch {
+      return null;
+    }
+    if (response.status !== 200) {
+      void response.body?.cancel().catch(() => {});
+      return null;
+    }
+    let bytes: Buffer | null;
+    try {
+      bytes = await readLimitedBytes(response, AVATAR_MAX_BYTES);
+    } catch {
+      return null;
+    }
+    const contentType = bytes ? avatarContentType(bytes) : null;
+    if (!bytes || !contentType) return null;
+    const image: AvatarImage = { bytes, contentType };
+    // drop older versions of this person, then the oldest entries overall
+    for (const key of this.avatarCache.keys()) if (key.startsWith(`${sub}\u0000`)) this.avatarCache.delete(key);
+    while (this.avatarCache.size >= AVATAR_CACHE_MAX) {
+      const oldest = this.avatarCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.avatarCache.delete(oldest);
+    }
+    this.avatarCache.set(cacheKey, image);
+    return image;
+  }
+
   start(intervalMs: number): void {
     this.stop();
     void this.refresh("boot");
@@ -686,7 +782,7 @@ export class PerspicaxDirectory {
       const teams = [...(teamsBySub.get(person.sub) ?? new Map<string, boolean>())].map(([id, manager]) => ({ id, manager }));
       let after: Principal;
       try {
-        after = this.options.principals.upsertFromDirectory({ iss, sub: person.sub, name: person.name || person.login, login: person.login, email: person.email, orgRole, teams, perspicaxRole: person.role });
+        after = this.options.principals.upsertFromDirectory({ iss, sub: person.sub, name: person.name && person.name !== person.login ? person.name : null, login: person.login, email: person.email, ...(person.avatar !== undefined ? { avatar: person.avatar } : {}), orgRole, teams, perspicaxRole: person.role });
       } catch (error) {
         this.log(`perspicax directory: skipped a person (${error instanceof Error ? error.message : String(error)})`);
         continue;

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { directoryIntervalMs, PerspicaxDirectory, readLinkFile, type Directory } from "./perspicax-link.ts";
+import { avatarContentType, directoryIntervalMs, PerspicaxDirectory, readLinkFile, type Directory } from "./perspicax-link.ts";
 import { PrincipalRegistry } from "./principals.ts";
 
 const ISSUER = "https://px.example.test";
@@ -507,5 +507,14 @@ describe("PerspicaxDirectory, slice 6: routine delegations", () => {
     const h = harness({ ...directoryOf([]), people: [{ ...person("ALICE"), routine_delegation: { consented_at: 5 } }] } as unknown as Directory);
     expect((await h.sync.refresh()).state).toBe("error");
     expect(h.delegationCalls).toEqual([]);
+  });
+});
+
+describe("an avatar read through the link", () => {
+  it("is served only when its bytes are a PNG or a JPEG", () => {
+    expect(avatarContentType(Buffer.from("89504e470d0a1a0a00", "hex"))).toBe("image/png");
+    expect(avatarContentType(Buffer.from("ffd8ffe000", "hex"))).toBe("image/jpeg");
+    expect(avatarContentType(Buffer.from("<svg onload=alert(1)>"))).toBeNull();
+    expect(avatarContentType(Buffer.alloc(0))).toBeNull();
   });
 });
