@@ -65,5 +65,6 @@ Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
 - Run `pnpm install --frozen-lockfile`, typecheck, lint, the unit suites and
   `pnpm build`; compare failures with `origin/main` before pushing to
   `origin` only.
-- Upstream's own MCP sign-in is kept unwired in
-  `server/mcp-oauth-upstream.ts`; `server/mcp-oauth.ts` is ours.
+- MCP sign-in is ours (`server/mcp-oauth.ts`, vault `mcp-oauth.enc` and
+  `mcp-oauth.key`, both left out of workspace backups). Upstream's own
+  MCP sign-in manager and routes were not taken.
