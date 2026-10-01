@@ -774,7 +774,7 @@ const lendingMemory = CLOUD_HOME ? createLendingMemory({
 }) : null;
 // On a Cloud home memory is never read through a link (server/workspace.ts).
 if (CLOUD_HOME) readMemoryOnlyFromRegularFiles();
-const cloudPairing = CLOUD_HOME ? createCloudPairing({ secret: CLOUD_HOME.bootstrapSecret, sessions }) : null;
+const cloudPairing = CLOUD_HOME ? createCloudPairing({ secret: CLOUD_HOME.bootstrapSecret, sessions, ownerPrincipalId: () => localPrincipalId() }) : null;
 if (CLOUD_HOME) {
   // The signing secret is held in memory from here on, and a platform
   // gateway's settings are dropped: no engine or tool this server starts

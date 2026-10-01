@@ -127,7 +127,9 @@ beforeAll(async () => {
   const deadline = Date.now() + 20_000;
   for (;;) {
     if (child.exitCode !== null) throw new Error(`the server exited:\n${log}`);
-    try { if ((await api("GET", "/api/health")).body?.pid === child.pid) break; } catch { /* starting */ }
+    // Sagax: a Cloud home's loopback is service trust, which /api/health
+    // answers with capabilities but no pid (request-auth healthDetail).
+    try { const health = (await api("GET", "/api/health")).body; if (health?.pid === child.pid || (health?.app === "openmausbot" && health?.capabilities && health?.pid === undefined)) break; } catch { /* starting */ }
     if (Date.now() > deadline) throw new Error(`the server did not start:\n${log}`);
     await new Promise((resolve) => setTimeout(resolve, 100));
   }

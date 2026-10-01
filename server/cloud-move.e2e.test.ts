@@ -53,8 +53,9 @@ async function boot(fixture: Fixture): Promise<void> {
   for (;;) {
     if (child.exitCode !== null) throw new Error(`the ${fixture.name} server exited:\n${fixture.log}`);
     try {
-      const health = await (await fetch(`${fixture.base}/api/health`)).json() as { pid?: number };
-      if (health.pid === child.pid) return;
+      const health = await (await fetch(`${fixture.base}/api/health`)).json() as { pid?: number; app?: string; capabilities?: unknown };
+      // Sagax: a Cloud home's loopback is service trust: capabilities, no pid.
+      if (health.pid === child.pid || (health.app === "openmausbot" && health.capabilities && health.pid === undefined)) return;
     } catch { /* starting */ }
     if (Date.now() > deadline) throw new Error(`the ${fixture.name} server did not start:\n${fixture.log}`);
     await new Promise((resolve) => setTimeout(resolve, 100));

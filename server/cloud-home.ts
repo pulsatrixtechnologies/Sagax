@@ -163,6 +163,9 @@ export function createCloudPairing(options: {
   secret: string;
   sessions: PairingSessions;
   now?: () => number;
+  /** Sagax: whose device this is. The Cloud's owner is the operator, so
+   * the paired device carries the local principal and owns its bots. */
+  ownerPrincipalId?: () => string | undefined;
 }) {
   const { secret, sessions } = options;
   const now = options.now ?? Date.now;
@@ -212,6 +215,7 @@ export function createCloudPairing(options: {
         ttlMs: ttl * 1000,
         browser,
         ...(browser ? { owner: owner as string } : {}),
+        ...(options.ownerPrincipalId?.() ? { principalId: options.ownerPrincipalId() } : {}),
       });
       // A browser sign-in has no code to type: only its credential redeems it, and saying `purpose` back tells the
       // Admin this machine made one (a machine from before this ignores `purpose` and opens an ordinary window).
