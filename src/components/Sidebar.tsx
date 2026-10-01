@@ -219,8 +219,10 @@ function groupPreview(group: Group, bots: Bot[]): string {
 /** A small member stack identifies a group without turning it into a card. */
 function StackedMauses({ members, density }: { members: Bot[]; density: SidebarDensity }) {
   const iconOnly = density === "icons";
-  const slotSize = iconOnly ? "size-12" : density === "compact" ? "size-7" : "size-8";
-  const singleSize = iconOnly ? 44 : density === "compact" ? 26 : 32;
+  // Same footprint as a bot row's avatar (BotListItem: 28 compact, 36
+  // comfortable) so group and bot names share one left edge.
+  const slotSize = iconOnly ? "size-12" : density === "compact" ? "size-7" : "size-9";
+  const singleSize = iconOnly ? 44 : density === "compact" ? 28 : 36;
   if (members.length <= 1) {
     const b = members[0];
     return (
@@ -230,14 +232,16 @@ function StackedMauses({ members, density }: { members: Bot[]; density: SidebarD
     );
   }
   const shown = members.slice(0, 3);
-  const face = iconOnly ? 22 : density === "compact" ? 16 : 18;
+  const face = iconOnly ? 22 : density === "compact" ? 16 : 20;
   const spots = shown.length === 2
     ? ["left-0 top-0.5", "right-0 bottom-0"]
     : ["left-0 top-0", "left-0 bottom-0", "right-0 bottom-0"];
   return (
-    <div className={cn("relative shrink-0", iconOnly ? "size-10" : density === "compact" ? "size-7" : "size-8")}>
+    <div className={cn("relative shrink-0", iconOnly ? "size-10" : density === "compact" ? "size-7" : "size-9")}>
+      {/* No outline ring: a ring in a fixed color reads as a dark border on
+          hover and selected rows. The faces simply overlap. */}
       {shown.map((b, index) => (
-        <span key={b.id} className={cn("absolute rounded-full ring-2 ring-panel", spots[index])}>
+        <span key={b.id} className={cn("absolute rounded-full", spots[index])}>
           <BotAvatar bot={b} state="idle" size={face} animated={false} />
         </span>
       ))}
@@ -299,7 +303,9 @@ export function GroupListItem({
       className={cn(
         "relative flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
         density === "icons" ? "justify-center px-1 py-1.5" : density === "compact" ? "gap-2 py-1.5 pr-9" : "min-h-[54px] gap-2 py-2 pr-2",
-        density !== "icons" && (hasThreadList ? "pl-5" : "pl-2"),
+        // Same inset as BotListItem so the group and its bots line up; the
+        // disclosure chevron sits inside it.
+        density !== "icons" && (showThreads ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
       title={density === "icons" ? group.name : undefined}

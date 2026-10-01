@@ -40,6 +40,7 @@ vi.mock("@/state/store", async (original) => {
 vi.mock("./DesktopCapabilities", () => ({
   useDesktopCapabilities: () => ({ capabilities: { dictation: { available: false } } }),
   useCaptionChrome: () => ({}),
+  useMacInsetChrome: () => ({}),
 }));
 vi.mock("react-dom", async (original) => ({ ...await original<object>(), createPortal: (children: unknown) => children }));
 import { GroupView, RoomToolChip } from "./GroupView";

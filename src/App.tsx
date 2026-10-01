@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Menu } from "lucide-react";
+import { Bot as BotIcon, Loader2, Menu, Plus } from "lucide-react";
 import { openNotificationTarget, StoreProvider, useStore } from "@/state/store";
 import { useWelcomeViewer, WelcomeGate } from "@/components/onboarding/WelcomeGate";
 import { cloudSignInDue, spotlightsQuiet, type WelcomeViewer } from "@/lib/onboarding";
@@ -34,7 +34,7 @@ import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LocalVmWorkspace } from "@/components/LocalVmWorkspace";
 import { TeamMapPage } from "@/components/TeamMapPage";
-import { setLocale } from "@/lib/i18n";
+import { setLocale, t } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { requestEnterpriseEntry } from "@/lib/enterprise-entry";
@@ -331,10 +331,25 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       ) : bot ? (
         <ChatView bot={bot} />
       ) : (
+        state.connected ? (
+          // Connected with no bot: an empty state that invites creating one,
+          // not a spinner (nothing is loading).
+          <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-app text-ink-secondary">
+            <BotIcon size={28} aria-hidden />
+            <div className="text-center">
+              <div className="text-[15px] text-ink">{t("app.empty.title")}</div>
+              <div className="mt-1 text-[13px]">{t("app.empty.body")}</div>
+            </div>
+            <button type="button" className="ui-button mt-1 inline-flex items-center gap-1.5" onClick={() => dispatch({ type: "toggleNewBot", open: true })}>
+              <Plus size={14} aria-hidden />
+              {t("app.empty.create")}
+            </button>
+          </main>
+        ) : (
         <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-app text-ink-secondary">
           <Loader2 size={20} className="animate-spin" />
           <div className="text-[14px]">
-            {state.connected ? "No bots yet" : "Connecting to the bot server…"}
+            {"Connecting to the bot server…"}
           </div>
           {!state.connected && (
             <div className="text-[12px]">
@@ -342,6 +357,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
             </div>
           )}
         </main>
+        )
       )}
       {composeOpen && <ComposeToPicker onClose={() => setComposeOpen(false)} />}
       </div>
