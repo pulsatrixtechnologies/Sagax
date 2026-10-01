@@ -368,9 +368,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/webhooks$/ },
   // configured-or-not booleans; the handler strips the few identifying fields for clients
   { methods: ["GET"], path: /^\/api\/config$/ },
-  // Accepting an invite is how a person who is not yet a member joins.
-  // Creating the org and issuing invites stay admin (owner/admin in the handler).
-  { methods: ["POST"], path: /^\/api\/org\/invites\/[^/]+\/accept$/ },
+  // The organization (Perspicax on an organization server; a solo server
+  // answers 404 no_organization). The interim invitations are gone.
   { methods: ["GET"], path: /^\/api\/org$/ },
   // Organization server (OMB_IDENTITY=perspicax): the people a bot owner may
   // share with, from the Perspicax directory. Names, logins and addresses

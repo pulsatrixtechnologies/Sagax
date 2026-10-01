@@ -1542,3 +1542,19 @@ describe("loadConfig with an unusable config.json", () => {
     }
   });
 });
+
+describe("slice 8: removed interim keys", () => {
+  it("loads an old config.json with mail, signIn, invites and org, and ignores them", () => {
+    const parsed = parseStoredConfig({
+      profile: { name: "Ada" },
+      signIn: { admins: ["ada@example.com"], members: ["@example.com"] },
+      invites: [{ token: "t", email: "x@example.com", createdAt: 1, expiresAt: 2 }],
+      org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" }, ownerUserId: "ada@example.com" },
+      mail: { provider: "smtp", from: "bot@example.com", smtp: { host: "smtp.example.com", port: 99999 } },
+    });
+    expect(parsed.profile).toEqual({ name: "Ada" });
+    for (const key of ["signIn", "invites", "org", "mail"]) expect(parsed).not.toHaveProperty(key);
+    // A patch naming them is not an error and writes nothing.
+    expect(parseConfigPatch({ signIn: { admins: ["x@example.com"] }, mail: { provider: "smtp" } })).toEqual({});
+  });
+});

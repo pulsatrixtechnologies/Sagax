@@ -110,7 +110,6 @@ describe("scopes", () => {
       ["GET", "/api/bots/x/slack-management"], // a link to Admin, read-only
       ["POST", "/api/bots/x/direct-grants"],
       ["POST", "/api/bots"], ["DELETE", "/api/bots/x"], // a member's own bots: the handler checks role and owner
-      ["POST", "/api/org/invites/tok/accept"],
       ["GET", "/api/org"],
       ["POST", "/api/workers"],
       ["POST", "/api/workers/laptop/pull"],
@@ -129,7 +128,7 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/slack-management"], ["GET", "/api/bots/x/slack-management/extra"],
       ["PUT", "/api/config"], ["POST", "/api/auth/pairing"], ["GET", "/api/auth/sessions"], ["DELETE", "/api/auth/sessions/abc"],
       ["POST", "/api/auth/pair"], // handled before the gate; the gate itself never grants it
-      ["POST", "/api/org"], ["POST", "/api/org/invites"],
+      ["POST", "/api/org"], ["POST", "/api/org/invites"], ["POST", "/api/org/invites/tok/accept"],
       ["GET", "/api/something-new"], // anything unlisted is admin until listed
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
   });
