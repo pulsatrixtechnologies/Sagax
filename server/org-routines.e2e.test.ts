@@ -387,9 +387,12 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     // the usage ledger says the owner's key paid for this run
     const paid = await waitFor(async () => usageRows().findLast((row) => row.trigger?.kind === "routine" && row.trigger.routineId === r2) ?? null, 15_000);
     expect(paid).toMatchObject({ access: "owner-key", payerPrincipalId: ids.alice, ownerPrincipalId: ids.alice, trigger: { runAsPrincipalId: ids.bob } });
-    // bob speaking to the same bot himself: his own subscription, no key at all
+    // bob speaking to the same bot himself (his own private thread): his own
+    // subscription, no key at all
     rmSync(dump);
-    const asked = await api("POST", `/api/bots/${x.id}/messages`, bob, { text: "bob asks himself", threadId: x.threadId });
+    const own = await api("POST", `/api/bots/${x.id}/tasks`, bob, { title: "Bob's own" });
+    expect(own.status, own.text).toBe(201);
+    const asked = await api("POST", `/api/bots/${x.id}/messages`, bob, { text: "bob asks himself", threadId: own.body.task.threadId });
     expect(asked.status, asked.text).toBe(202);
     await waitFor(async () => existsSync(dump) && JSON.stringify(JSON.parse(readFileSync(dump, "utf8")).prompt).includes("bob asks himself"), 30_000);
     expect(engineEnv().CLAUDE_CONFIG_DIR).toBe(bobLogin);
@@ -421,8 +424,9 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     const refused = await runNow(bob, r2);
     expect(refused.status).toBe("failed");
     expect(existsSync(dump)).toBe(false);
+    // the run's thread is bob's (its runAs, private threads); alice is notified
     const thread = runThread(refused.id);
-    const card = await waitFor(async () => (((await api("GET", `/api/threads/${thread}/messages`, alice)).body.messages ?? []) as Message[])
+    const card = await waitFor(async () => (((await api("GET", `/api/threads/${thread}/messages`, bob)).body.messages ?? []) as Message[])
       .findLast((m) => m.kind === "access" && m.access?.reason === "no_access") ?? null);
     expect(card.access).toMatchObject({ payer: "owner", payerPrincipalId: ids.alice, routine: true, cause: "no_credentials" });
     // the key is back for what follows
