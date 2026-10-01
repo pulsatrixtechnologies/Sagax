@@ -227,6 +227,18 @@ posixOnly("org identity", () => {
     expect(seen.body.bots.map((b: any) => b.id)).toContain(botId);
   });
 
+  it("lets the operator's own paired device edit the name and email, as a solo server always did", async () => {
+    const token = await pairAs(["admin", "client"]);
+    const session = await api("GET", "/api/auth/session", undefined, token);
+    expect(session.body.profileManagedBy).toBeUndefined();
+    const saved = await api("PUT", "/api/config", { profile: { name: "JC Proulx", email: "jc@gox.ca" } }, token);
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body.profile).toMatchObject({ name: "JC Proulx", email: "jc@gox.ca" });
+    const config = await api("GET", "/api/config", undefined, token);
+    expect(config.body.viewer.profileManagedBy).toBeUndefined();
+    expect(config.body.viewer.profileManageUrl).toBeUndefined();
+  });
+
   it("keeps one local operator and the same owner across a restart", async () => {
     await stop();
     // A bad entry (an oversized email, as an older build could write) is

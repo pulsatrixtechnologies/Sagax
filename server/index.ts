@@ -603,7 +603,7 @@ import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narro
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
-import { configForViewer, displayNameFromEmail, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
+import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
 import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
@@ -612,7 +612,7 @@ import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
-import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, oidcBindingCookie, oidcSessionFields } from "./oidc-login.ts";
+import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcBindingCookie, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
@@ -704,6 +704,8 @@ const ENVIRONMENT_ID = loadEnvironmentId(DATA_DIR);
 // in with Pulsatrix only (Perspicax owns accounts), so the list is empty
 // there and a legacy email session ends at its next request.
 const IDENTITY = identityConfigFromEnv();
+/** Organization server: Perspicax owns each signed-in person's name and email. */
+const PROFILE_MANAGEMENT = profileManagement(IDENTITY);
 const EMPTY_SIGN_IN = { admins: [] as string[], members: [] as string[] };
 function signInAllowList() {
   if (IDENTITY.kind === "perspicax") return EMPTY_SIGN_IN;
@@ -955,7 +957,7 @@ function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   // display name, then their login.
   if (IDENTITY.kind === "perspicax") {
     const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
-    const orgName = (person?.name?.trim() || person?.login?.trim() || auth.session.label?.trim() || "");
+    const orgName = (personDisplayName(person) || auth.session.label?.trim() || "");
     return orgName ? { name: orgName, id: personKey(auth.session) } : undefined;
   }
   const name = (auth.session.email ?? auth.session.label ?? "").trim();
@@ -16832,22 +16834,46 @@ function memberOwnsBot(auth: RequestAuth, bot: { ownerUserId?: unknown }): boole
 function botEditsNeedOwner(auth: RequestAuth): boolean {
   return auth.kind === "session" && !auth.scopes.includes("admin") && IDENTITY.kind === "perspicax" && !viewerIsOperator(auth);
 }
+/** Whether Perspicax owns this caller's name and email: anyone who reaches
+ * an organization server through a session (a browser, the desktop app or a
+ * phone signed in with Pulsatrix). The operator at the server's own console
+ * (loopback) keeps the local profile, as before. */
+/** The display name and avatar of a signed-in person, for
+ * GET /api/auth/session (the id_token name alone may be missing). */
+function sessionPersonFields(principalId: string | undefined): { name?: string; avatarUrl?: string } {
+  if (IDENTITY.kind !== "perspicax" || !principalId) return {};
+  const person = principals.byId(principalId);
+  if (!person) return {};
+  const name = personDisplayName(person);
+  const avatarUrl = personAvatarUrl(person);
+  return { ...(name ? { name } : {}), ...(avatarUrl ? { avatarUrl } : {}) };
+}
+function profileManagedFor(auth: RequestAuth): boolean {
+  return PROFILE_MANAGEMENT !== null && auth.kind === "session";
+}
 function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
   if (auth.kind === "loopback" && auth.trust === "service") return null;
   const role = channelActorRole(auth);
   const canCreateBots = botCreationAllowed(auth);
+  const managed = profileManagedFor(auth) ? PROFILE_MANAGEMENT! : {};
   if (viewerIsOperator(auth)) {
     return {
       operator: true, principalId: localPrincipalId(), email: cfg.profile?.email?.trim() ?? "",
-      name: cfg.profile?.name?.trim() ?? "", role, canCreateBots,
+      name: cfg.profile?.name?.trim() ?? "", role, canCreateBots, ...managed,
     };
   }
   const session = (auth as Extract<RequestAuth, { kind: "session" }>).session;
   const principalId = session.principalId?.trim() || null;
-  const email = session.email?.trim() || (principalId ? principals.byId(principalId)?.email?.trim() : undefined) || "";
+  const person = principalId ? principals.byId(principalId) : undefined;
+  const email = session.email?.trim() || person?.email?.trim() || "";
+  const avatarUrl = personAvatarUrl(person);
   return {
-    operator: false, principalId, email, name: displayNameFromEmail(email), role, canCreateBots,
+    // the name Perspicax sent (refreshed on each sign-in and directory
+    // sync), else the address, else the login
+    operator: false, principalId, email, name: personDisplayName({ ...person, email }), role, canCreateBots,
     operatorName: cfg.profile?.name?.trim() || "",
+    ...managed,
+    ...(avatarUrl ? { avatarUrl } : {}),
   };
 }
 /** The profile a bot's turns speak to: the operator's for the operator's
@@ -16859,7 +16885,7 @@ function botUserProfile(bot: { ownerUserId?: unknown }): { aboutMe?: string } {
 function botUserName(bot: { ownerUserId?: unknown }): string {
   const owner = effectiveBotOwner(bot);
   if (owner === localPrincipalId()) return cfg.profile?.name?.trim() || "User";
-  return displayNameFromEmail(principals.byId(owner)?.email) || "User";
+  return personDisplayName(principals.byId(owner)) || "User";
 }
 
 /** Organization server: a room a signed-in person creates without naming
@@ -17315,6 +17341,24 @@ ROUTES.push(createOrgImportRoute({
 }));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
+  // A person's Perspicax avatar (personAvatarUrl), read through the link and
+  // served to any signed-in caller, as Perspicax serves it to its own. The
+  // version in the URL makes a changed image a new URL.
+  ROUTES.push(async ({ res, url, path, method, json }) => {
+    const match = /^\/api\/people\/([\w-]{1,80})\/avatar$/.exec(path);
+    if (!match || method !== "GET") return PASS;
+    const person = principals.byId(match[1]!);
+    if (!person?.subject || person.subject.iss !== issuer || !person.avatar || !perspicaxDirectory) return json(res, 404, { error: "no avatar" });
+    const image = await perspicaxDirectory.avatar(person.subject.sub, person.avatar);
+    if (!image) return json(res, 404, { error: "no avatar" });
+    res.writeHead(200, {
+      "content-type": image.contentType,
+      "content-length": String(image.bytes.length),
+      "x-content-type-options": "nosniff",
+      "cache-control": url.searchParams.get("v") === person.avatar ? "private, max-age=86400" : "no-store",
+    });
+    res.end(image.bytes);
+  });
   // Slice 8: people from before Perspicax, attached by an admin.
   ROUTES.push(createInterimAttachRoutes({
     isAdmin: orgAdminCaller,
@@ -17324,7 +17368,7 @@ if (IDENTITY.kind === "perspicax") {
     isTarget: (person) => person.subject?.iss === issuer,
     directory: () => (perspicaxDirectory
       ? orgDirectoryEntries(issuer, perspicaxDirectory.people(), (iss, sub) => principals.bySubject(iss, sub))
-      : principals.listBySubjectIssuer(issuer).map((person) => ({ principalId: person.id, name: person.name ?? person.login ?? "", login: person.login ?? "", ...(person.email ? { email: person.email } : {}), disabled: person.disabledAt !== undefined }))),
+      : principals.listBySubjectIssuer(issuer).map((person) => ({ principalId: person.id, name: personDisplayName(person), login: person.login ?? "", ...(person.email ? { email: person.email } : {}), disabled: person.disabledAt !== undefined }))),
     counts: (principalId) => ({
       bots: store.bots.filter((bot) => recordedBotOwner(bot) === principalId).length,
       rooms: store.groups.filter((group) => (group.humanIds ?? []).includes(principalId)).length,
@@ -18233,6 +18277,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               // writes only in conversations it opened: the composer offers
               // a new conversation everywhere else.
               ...(CLOUD_HOME && !cloudOwnerSession(auth) ? { cloudGuest: true, openedThreads: threadStarters.threadsOf(actorKey(auth), 2_000) } : {}),
+              // an organization server: the person's name and email are
+              // Perspicax's, read-only here (the UI asks, never guesses)
+              ...(profileManagedFor(auth) ? PROFILE_MANAGEMENT : {}),
+              ...sessionPersonFields(auth.session.principalId),
             },
       );
     }
@@ -26129,6 +26177,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if ((method === "PUT" || method === "PATCH") && path === "/api/config") {
       const body = await readBody(req);
       if (hostedModels && ["instances", "anthropic", "openai", "openrouter", "openaiCompat", "xai", "mistral", "opencodeGo"].some(key => Object.hasOwn(body, key))) return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });
+      if (profileManagedFor(auth) && writesManagedProfile(body)) return json(res, 403, MANAGED_PROFILE_REFUSAL);
       const patch = parseConfigPatch(body);
       // A Cloud home is personal: nobody is invited to sign in to it.
       if (CLOUD_HOME && (patch.signIn?.admins?.length || patch.signIn?.members?.length)) {

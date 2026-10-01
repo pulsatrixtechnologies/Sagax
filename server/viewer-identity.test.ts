@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { configForViewer, displayNameFromEmail, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
+import { configForViewer, displayNameFromEmail, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
 
 const LOCAL = "pr_00000000-0000-4000-8000-000000000001";
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
@@ -31,5 +31,31 @@ describe("viewer identity", () => {
     const operator: ViewerIdentity = { operator: true, principalId: LOCAL, email: "jc@gox.ca", name: "JC", role: "owner", canCreateBots: true };
     expect(configForViewer(status, operator)).toEqual({ ...status, viewer: operator });
     expect(configForViewer(status, null)).toBe(status);
+  });
+});
+
+describe("how a person reads on an organization server", () => {
+  it("is their Perspicax display name, else their address, else their login", () => {
+    expect(personDisplayName({ name: "Jean-Christophe Proulx", login: "jcproulx", email: "jcproulx@example.test" })).toBe("Jean-Christophe Proulx");
+    // the directory sends the login as the name when there is no display name
+    expect(personDisplayName({ name: "jcproulx", login: "jcproulx", email: "jc@example.test" })).toBe("jc");
+    expect(personDisplayName({ login: "jcproulx", email: "jc@example.test" })).toBe("jc");
+    expect(personDisplayName({ login: "jcproulx" })).toBe("jcproulx");
+    expect(personDisplayName({ name: "jcproulx", login: "jcproulx" })).toBe("jcproulx");
+    expect(personDisplayName(null)).toBe("");
+  });
+
+  it("has an avatar URL only with a version and a Perspicax subject", () => {
+    const subject = { iss: "https://px.example.test", sub: "S" };
+    expect(personAvatarUrl({ id: ZARA, subject, avatar: "a1b2" })).toBe(`/api/people/${ZARA}/avatar?v=a1b2`);
+    expect(personAvatarUrl({ id: ZARA, subject })).toBeUndefined();
+    expect(personAvatarUrl({ id: ZARA, avatar: "a1b2" })).toBeUndefined();
+  });
+
+  it("puts the viewer's avatar in the profile they see", () => {
+    const status = { profile: { name: "Op", email: "op@example.test", aboutMe: "x", avatarUrl: "data:op" } };
+    const viewer: ViewerIdentity = { operator: false, principalId: ZARA, email: "z@example.test", name: "Zara", role: "member", canCreateBots: true, avatarUrl: `/api/people/${ZARA}/avatar?v=1` };
+    expect(configForViewer(status, viewer).profile).toEqual({ name: "Zara", email: "z@example.test", aboutMe: "", avatarUrl: `/api/people/${ZARA}/avatar?v=1` });
+    expect(configForViewer(status, { ...viewer, avatarUrl: undefined }).profile.avatarUrl).toBe("");
   });
 });

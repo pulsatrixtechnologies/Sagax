@@ -3,7 +3,7 @@
 // HTTP. Every refusal the spec lists (T10) is proven by bending one thing.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { accessExpiresIn, OIDC_MAX_PENDING_FLOWS, ROUTINE_DELEGATION_SCOPES, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseRetryAfter, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
+import { accessExpiresIn, avatarVersionFromPicture, OIDC_MAX_PENDING_FLOWS, ROUTINE_DELEGATION_SCOPES, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseRetryAfter, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
 
 const REDIRECT = "http://127.0.0.1:9/auth/oidc/callback";
@@ -709,5 +709,20 @@ describe("rate limits at the provider (slice 6, fix 2)", () => {
     expect(await party.revokeAttempt("t")).toEqual({ kind: "rate_limited", retryAfterMs: 30_000 });
     expect(await party.revokeAttempt("t")).toMatchObject({ kind: "retry" });
     expect(party.pacer.pauseRemaining()).toBeGreaterThan(0);
+  });
+});
+
+describe("the picture claim", () => {
+  const ISS = "https://px.example.test";
+  it("gives the avatar version of a URL on the issuer's own origin", () => {
+    expect(avatarVersionFromPicture(`${ISS}/api/v1/pulsabot/people/S/avatar?v=0a1b2c3d4e5f6a7b`, ISS)).toBe("0a1b2c3d4e5f6a7b");
+  });
+
+  it("ignores another host, a missing or odd version, and anything not a URL", () => {
+    expect(avatarVersionFromPicture("https://tracker.example.test/a.png?v=1", ISS)).toBeUndefined();
+    expect(avatarVersionFromPicture(`${ISS}/api/v1/users/S/avatar`, ISS)).toBeUndefined();
+    expect(avatarVersionFromPicture(`${ISS}/a?v=../x`, ISS)).toBeUndefined();
+    expect(avatarVersionFromPicture(42, ISS)).toBeUndefined();
+    expect(avatarVersionFromPicture("not a url", ISS)).toBeUndefined();
   });
 });

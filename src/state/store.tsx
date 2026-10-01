@@ -727,6 +727,12 @@ export interface ConfigViewer {
   canCreateBots: boolean;
   /** The operator's name, for their lines that carry no sender. */
   operatorName?: string;
+  /** Organization server: Perspicax owns this person's name and email
+   * (read-only here; src/lib/profile-management.ts). */
+  profileManagedBy?: "perspicax";
+  profileManageUrl?: string;
+  /** Their Perspicax avatar as this server serves it. */
+  avatarUrl?: string;
 }
 
 export interface ManagedPolicySummary {
