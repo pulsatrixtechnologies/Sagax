@@ -154,6 +154,10 @@ export interface DirectoryState {
 export interface DirectoryPrincipals {
   upsertFromDirectory(input: { iss: string; sub: string; name?: string | null; login?: string | null; email?: string | null; orgRole: "admin" | "member"; teams?: { id: string; manager: boolean }[]; perspicaxRole?: "admin" | "manager" | "employee" }): Principal;
   listBySubjectIssuer(iss: string): Principal[];
+  /** Slice 7: the directory lists this person active again: clear a
+   * `disabledAt` set before the fetch started (a later back-channel logout
+   * wins). Returns the principal, or null when nothing changed. */
+  markEnabled?(iss: string, sub: string, disabledBefore: number): Principal | null;
 }
 
 /** The team names registry (org-teams.ts). */
@@ -617,7 +621,7 @@ export class PerspicaxDirectory {
       this.fail("server_mismatch", "the directory names another server id than the link file");
       return this.state();
     }
-    this.apply(parsed);
+    this.apply(parsed, fetchStartedAt);
     this.data = parsed;
     this.reportDelegations(parsed, fetchStartedAt);
     const etag = response.headers.get("etag");
@@ -644,7 +648,7 @@ export class PerspicaxDirectory {
   /** D10: people upsert their principal; the ones who are out (disabled, or
    * a known subject now absent) get the back-channel logout effect; a person
    * who stopped being an admin is narrowed at once. */
-  private apply(directory: Directory): void {
+  private apply(directory: Directory, fetchStartedAt: number): void {
     const iss = this.options.issuer;
     const known = new Map(this.options.principals.listBySubjectIssuer(iss).map((p) => [p.subject!.sub, p] as const));
     const listed = new Set<string>();
@@ -691,6 +695,10 @@ export class PerspicaxDirectory {
         if (after.disabledAt === undefined) this.options.onPersonOut(iss, person.sub);
         continue;
       }
+      // Re-enabled in Perspicax: back in now, not only at the next sign-in
+      // (the audit gains person.enabled). A disable that landed after this
+      // fetch started is newer than this answer and stays.
+      if (after.disabledAt !== undefined) this.options.principals.markEnabled?.(iss, person.sub, fetchStartedAt);
       if (before?.orgRole === "admin" && orgRole !== "admin") this.options.onRoleNarrowed(after.id);
     }
     for (const [sub, principal] of known) {

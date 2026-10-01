@@ -372,6 +372,18 @@ export class PrincipalRegistry {
     return { ...found };
   }
 
+  /** Slice 7: the directory lists this person active again. Clears a
+   * `disabledAt` older than `disabledBefore` (when the directory fetch
+   * started); a newer one stays. Null when nothing changed. */
+  markEnabled(iss: string, sub: string, disabledBefore: number): Principal | null {
+    const found = this.principals.find((p) => p.subject?.iss === iss && p.subject.sub === sub);
+    if (!found || found.disabledAt === undefined || found.disabledAt >= disabledBefore) return null;
+    delete found.disabledAt;
+    this.persist();
+    this.disabledChanged(found, false);
+    return { ...found };
+  }
+
   bySubject(iss: string, sub: string): Principal | null {
     const found = this.principals.find((p) => p.subject?.iss === iss && p.subject.sub === sub);
     return found ? { ...found } : null;

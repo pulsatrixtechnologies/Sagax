@@ -92,7 +92,7 @@ function harness(initial: Directory) {
   const linkFile = join(dir, "pulsabot.json");
   writeLink(linkFile, linkDoc());
   let n = 0;
-  const principals = new PrincipalRegistry({ path: join(dir, "principals.json"), newId: () => `pr_00000000-0000-4000-8000-${String(n++).padStart(12, "0")}` });
+  const principals = new PrincipalRegistry({ path: join(dir, "principals.json"), now: () => clock.now, newId: () => `pr_00000000-0000-4000-8000-${String(n++).padStart(12, "0")}` });
   const out: string[] = [];
   const narrowed: string[] = [];
   const requests: Array<{ url: string; headers: Record<string, string> }> = [];
@@ -169,17 +169,34 @@ describe("PerspicaxDirectory", () => {
     expect(h.sync.serverId()).toBe(SERVER_ID);
   });
 
-  it("updates attributes, never clears disabledAt, and a 304 changes nothing", async () => {
+  it("updates attributes, keeps a disable newer than the fetch, and a 304 changes nothing", async () => {
     const h = harness(directoryOf([person("BOB")]));
     await h.sync.refresh();
-    h.principals.markDisabled(ISSUER, "BOB", 42);
+    const later = h.clock.now + 60_000;
+    h.principals.markDisabled(ISSUER, "BOB", later);
     h.setDirectory(directoryOf([person("BOB", { name: "Robert" })]));
     await h.sync.refresh();
-    expect(h.principals.bySubject(ISSUER, "BOB")).toMatchObject({ name: "Robert", disabledAt: 42 });
+    expect(h.principals.bySubject(ISSUER, "BOB")).toMatchObject({ name: "Robert", disabledAt: later });
     const before = h.requests.length;
     await h.sync.refresh();
     expect(h.requests[before]?.headers["if-none-match"]).toMatch(/^"/);
     expect(h.sync.state().state).toBe("ok");
+  });
+
+  it("re-enables a person the directory lists active again, once (S7-9)", async () => {
+    const h = harness(directoryOf([person("CAROL")]));
+    const changes: Array<[string, boolean]> = [];
+    h.principals.onDisabledChanged((p, disabled) => changes.push([p.subject?.sub ?? "", disabled]));
+    await h.sync.refresh();
+    h.setDirectory(directoryOf([person("CAROL", { status: "disabled" })]));
+    await h.sync.refresh();
+    expect(h.principals.bySubject(ISSUER, "CAROL")?.disabledAt).toBeDefined();
+    h.clock.now += 1_000;
+    h.setDirectory(directoryOf([person("CAROL", { name: "Carol" })]));
+    await h.sync.refresh();
+    expect(h.principals.bySubject(ISSUER, "CAROL")?.disabledAt).toBeUndefined();
+    await h.sync.refresh();
+    expect(changes).toEqual([["CAROL", true], ["CAROL", false]]);
   });
 
   it("logs out a disabled person and a known subject gone from the directory", async () => {
