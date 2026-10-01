@@ -33,6 +33,11 @@ export const FLOAT_MAX = Object.freeze({ width: 400, height: 560 });
 /** More than this many floating windows is a mistake, not a desk. */
 export const MAX_FLOATING = 12;
 const MAX_MOVE = 4000;
+/** A page that failed or died is reloaded this many times at most, a little later each time. */
+const MAX_RELOADS = 3;
+const RELOAD_DELAY_MS = 800;
+/** A page that has not said it is ready after this long is reloaded. */
+export const READY_TIMEOUT_MS = 12_000;
 
 const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const clampNumber = (value, low, high) => Math.min(Math.max(value, low), high);
@@ -364,14 +369,72 @@ export function createFloatingBotWindows(deps) {
     });
     created.on("moved", () => remember(botId));
     created.once("closed", () => {
+      clearTimeout(entry.watchdog);
       if (floats.get(botId)?.win !== created) return;
       floats.delete(botId);
       // closed from outside the brain (a window shortcut): the bot goes back in the app
       if (!silent) notifyMain("floating-bots:closed", { botId });
     });
-    void created.loadURL(pageUrl()).catch((error) => log(`floating bot window failed to load: ${error?.message ?? error}`));
+    keepAlive(botId, entry);
+    load(entry);
     return created;
   }
+
+  /*
+   * A window whose page never loads, or dies, is an invisible mascot: the
+   * window is there, transparent and empty. So a failed load is retried, a
+   * dead page reloaded, a page that never says it is ready reloaded once,
+   * and every error of the page reaches main's log.
+   */
+  const load = (entry) => {
+    if (!live(entry)) return;
+    void entry.win.loadURL(pageUrl()).catch((error) => log(`floating bot window failed to load: ${error?.message ?? error}`));
+  };
+
+  function keepAlive(botId, entry) {
+    const { win } = entry;
+    entry.ready = false;
+    entry.retries = 0;
+    const retry = (why) => {
+      if (!live(entry) || entry.retries >= MAX_RELOADS) return;
+      entry.retries += 1;
+      log(`floating bot ${botId}: ${why}; reloading (${entry.retries}/${MAX_RELOADS})`);
+      entry.ready = false;
+      setTimeout(() => load(entry), RELOAD_DELAY_MS * entry.retries);
+    };
+    win.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
+      // -3 is an aborted load (a reload, or the window closing), not a failure
+      if (isMainFrame !== false && code !== -3) retry(`page failed to load (${code} ${description})`);
+    });
+    win.webContents.on("render-process-gone", (_event, details) => retry(`page process gone (${details?.reason ?? "unknown"})`));
+    win.webContents.on("console-message", (...args) => {
+      // Electron passes one event object (newer) or (event, level, message, line, source)
+      const [first, level, message] = args;
+      const text = typeof first?.message === "string" ? first.message : message;
+      const severity = typeof first?.level === "string" ? first.level : level;
+      if (severity === "error" || severity === 3) log(`floating bot ${botId} page error: ${String(text).slice(0, 500)}`);
+    });
+    entry.watchdog = setTimeout(function check() {
+      if (!live(entry) || entry.ready) return;
+      retry("page never became ready");
+      entry.watchdog = setTimeout(check, READY_TIMEOUT_MS);
+    }, READY_TIMEOUT_MS);
+  }
+
+  /** A display was removed, added or resized: every mascot back inside what is left. */
+  const reclamp = () => {
+    const areas = workAreas();
+    for (const [botId, entry] of floats) {
+      if (!live(entry)) continue;
+      const bounds = entry.win.getBounds();
+      const next = clampToDisplays(bounds, areas);
+      if (next.x !== bounds.x || next.y !== bounds.y || next.width !== bounds.width || next.height !== bounds.height) {
+        entry.win.setBounds(next);
+        log(`floating bot ${botId}: moved back on screen after a display change`);
+      }
+    }
+  };
+  for (const change of ["display-added", "display-removed", "display-metrics-changed"]) screen.on?.(change, reclamp);
 
   function close(botId) {
     const entry = floats.get(botId);
@@ -479,6 +542,7 @@ export function createFloatingBotWindows(deps) {
     },
     "floating-bots:ready": (event) => {
       const found = senderFloat(event);
+      if (found) found.entry.ready = true;
       if (found?.entry.snapshot) found.entry.win.webContents.send("floating-bot:state", found.entry.snapshot);
     },
     "floating-bots:event": (event, value) => {
@@ -546,6 +610,7 @@ export function createFloatingBotWindows(deps) {
     dispose() {
       closeAll();
       for (const channel of Object.keys(handlers)) ipcMain.removeHandler?.(channel);
+      for (const change of ["display-added", "display-removed", "display-metrics-changed"]) screen.removeListener?.(change, reclamp);
       for (const [channel, handler] of Object.entries(listeners)) ipcMain.removeListener?.(channel, handler);
     },
   };

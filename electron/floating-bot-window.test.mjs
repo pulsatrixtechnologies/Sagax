@@ -6,6 +6,7 @@ import {
   FLOATING_QUERY,
   floatingDefaultBounds,
   MAX_FLOATING,
+  READY_TIMEOUT_MS,
   sanitizeFloatingEvent,
   sanitizeFloatingSnapshot,
   sanitizePositions,
@@ -26,7 +27,15 @@ function fakeElectron({ displays = [PRIMARY] } = {}) {
       this.destroyed = false;
       this.events = new Map();
       this.calls = [];
-      this.webContents = { sent: [], send: (channel, payload) => this.webContents.sent.push([channel, payload]), setWindowOpenHandler: vi.fn(), on: vi.fn() };
+      const handlers = new Map();
+      this.webContents = {
+        sent: [],
+        handlers,
+        send: (channel, payload) => this.webContents.sent.push([channel, payload]),
+        setWindowOpenHandler: vi.fn(),
+        on: (name, fn) => handlers.set(name, [...(handlers.get(name) ?? []), fn]),
+        fire: (name, ...args) => (handlers.get(name) ?? []).forEach((fn) => fn(...args)),
+      };
       this.loadURL = vi.fn(async () => undefined);
       windows.push(this);
     }
@@ -49,7 +58,16 @@ function fakeElectron({ displays = [PRIMARY] } = {}) {
     removeHandler: (channel) => handlers.delete(channel),
     removeListener: (channel) => listeners.delete(channel),
   };
-  const screen = { getAllDisplays: () => displays, getPrimaryDisplay: () => displays[0], getCursorScreenPoint: () => ({ x: 700, y: 400 }) };
+  const screenEvents = new Map();
+  const screen = {
+    getAllDisplays: () => displays,
+    getPrimaryDisplay: () => displays[0],
+    getCursorScreenPoint: () => ({ x: 700, y: 400 }),
+    on: (name, fn) => screenEvents.set(name, fn),
+    removeListener: (name) => screenEvents.delete(name),
+    setDisplays: (next) => { displays = next; },
+    fire: (name) => screenEvents.get(name)?.(),
+  };
   const main = { webContents: { sent: [], send(channel, payload) { this.sent.push([channel, payload]); } }, isDestroyed: () => false };
   return { BrowserWindow: FakeWindow, ipcMain, screen, handlers, listeners, windows, main };
 }
@@ -70,7 +88,9 @@ function setup(extra = {}) {
     readPositions: () => saved.positions ?? {},
     writePositions: (positions) => { saved.positions = JSON.parse(JSON.stringify(positions)); },
     focusMain,
+    log: (line) => logs.push(line),
   });
+  const logs = [];
   const fromMain = { sender: fake.main.webContents };
   const invoke = (channel, event, ...args) => fake.handlers.get(channel)(event, ...args);
   const emit = (channel, event, ...args) => fake.listeners.get(channel)(event, ...args);
@@ -79,7 +99,7 @@ function setup(extra = {}) {
     const win = controller.window(botId);
     return { win, from: { sender: win.webContents } };
   };
-  return { fake, controller, fromMain, invoke, emit, open, saved, focusMain };
+  return { fake, controller, fromMain, invoke, emit, open, saved, focusMain, logs };
 }
 
 const SNAPSHOT = {
@@ -227,6 +247,61 @@ describe("floating bots: lifecycle", () => {
     controller.dispose();
     expect(fake.handlers.size).toBe(0);
     expect(fake.listeners.size).toBe(0);
+  });
+});
+
+describe("floating bots: a window is never left invisible", () => {
+  it("retries a page that fails to load, reloads one that dies, and ignores an aborted load", () => {
+    vi.useFakeTimers();
+    try {
+      const { open, logs } = setup();
+      const { win } = open("bot_a");
+      expect(win.loadURL).toHaveBeenCalledTimes(1);
+      win.webContents.fire("did-fail-load", {}, -3, "ERR_ABORTED", "", true);
+      vi.advanceTimersByTime(5000);
+      expect(win.loadURL).toHaveBeenCalledTimes(1);
+      win.webContents.fire("did-fail-load", {}, -2, "ERR_FAILED", "", true);
+      vi.advanceTimersByTime(1000);
+      expect(win.loadURL).toHaveBeenCalledTimes(2);
+      win.webContents.fire("render-process-gone", {}, { reason: "crashed" });
+      vi.advanceTimersByTime(2000);
+      expect(win.loadURL).toHaveBeenCalledTimes(3);
+      expect(logs.some((line) => line.includes("page failed to load"))).toBe(true);
+      // never more than a few times
+      for (let i = 0; i < 6; i += 1) win.webContents.fire("did-fail-load", {}, -2, "ERR_FAILED", "", true);
+      vi.advanceTimersByTime(60_000);
+      expect(win.loadURL.mock.calls.length).toBeLessThanOrEqual(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reloads a page that never says it is ready, and logs the page's errors", () => {
+    vi.useFakeTimers();
+    try {
+      const { open, emit, logs } = setup();
+      const ready = open("bot_a");
+      const silent = open("bot_b");
+      emit("floating-bots:ready", ready.from);
+      vi.advanceTimersByTime(READY_TIMEOUT_MS + 3000);
+      expect(ready.win.loadURL).toHaveBeenCalledTimes(1);
+      expect(silent.win.loadURL).toHaveBeenCalledTimes(2);
+      silent.win.webContents.fire("console-message", { level: "error", message: "TypeError: boom" });
+      silent.win.webContents.fire("console-message", { level: "info", message: "hello" });
+      expect(logs.filter((line) => line.includes("page error"))).toEqual(["floating bot bot_b page error: TypeError: boom"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("brings every mascot back on screen when a display goes away", () => {
+    const { fake, open } = setup({ displays: [PRIMARY, SECOND] });
+    const { win } = open("bot_a");
+    win.setBounds({ x: 3000, y: 500, width: 156, height: 172 });
+    fake.screen.setDisplays([PRIMARY]);
+    fake.screen.fire("display-removed");
+    const bounds = win.getBounds();
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(PRIMARY.workArea.x + PRIMARY.workArea.width);
   });
 });
 
