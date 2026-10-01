@@ -65,7 +65,7 @@ from a temporary preview entry, not reached through a hosted sign-in.
 
 The desktop app's own window opens the launch screen before the welcome tour
 on a first run. Checked by unit tests with fake bridges:
-`src/components/onboarding/LaunchScreen.test.ts` (skip and No server save
+`src/components/onboarding/LaunchScreen.test.ts` (No server saves
 `launchMode: "solo"`, Server probes then joins, bad address, unreachable and
 not-Pulsatrix errors), `src/components/onboarding/WelcomeGate.test.ts` (first
 launch, remembered choice, back after the server is forgotten, Settings and

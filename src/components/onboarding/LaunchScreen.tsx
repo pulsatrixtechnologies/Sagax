@@ -1,5 +1,5 @@
 // The launch screen: the desktop app's first question, before the welcome
-// tour. "No server" (and Skip) is the solo, local-first app; the tour
+// tour. "No server" (or Escape) is the solo, local-first app; the tour
 // follows. "Server" checks that the address is a Sagax server that signs
 // people in with Pulsatrix (the same probe "Join a Perspicax server" uses),
 // remembers the choice, then saves and selects that server and starts its
@@ -16,7 +16,7 @@ import { t } from "@/lib/i18n";
 import { defaultServerAddress, launchErrorKey, launchModePatch, type LaunchBridges, type LaunchMode } from "@/lib/launch";
 import { serverAddress } from "@/lib/org-join";
 import { api, useStore } from "@/state/store";
-import { inputClass, PrimaryButton, QuietButton } from "./beats/shared";
+import { inputClass, PrimaryButton } from "./beats/shared";
 
 export function LaunchScreen({
   bridges,
@@ -24,7 +24,7 @@ export function LaunchScreen({
   initialMode = "solo",
 }: {
   bridges: LaunchBridges;
-  /** No server, or Skip: the app goes on (the tour, or back to where it was). */
+  /** No server, or Escape: the app goes on (the tour, or back to where it was). */
   onSolo: () => void;
   initialMode?: LaunchMode;
 }) {
@@ -117,10 +117,6 @@ export function LaunchScreen({
         className="welcome-card relative flex max-h-full w-full flex-col overflow-y-auto rounded-2xl border border-hairline/40 bg-panel p-5 sm:p-8 shadow-[0_30px_80px_-28px_rgba(0,0,0,0.45),0_8px_24px_-12px_rgba(0,0,0,0.25)] outline-none"
         style={{ maxWidth: 460 }}
       >
-        <QuietButton type="button" disabled={busy} onClick={solo} className="absolute right-4 top-4">
-          {t("launch.skip")}
-        </QuietButton>
-
         <div className="flex shrink-0 flex-col items-center">
           <div className="welcome-maus flex shrink-0">
             {logo ? (

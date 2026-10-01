@@ -38,7 +38,7 @@ the mail of a solo server. Keep these rules, each covered by a test in
 
 First run on the desktop app's own window opens the launch screen
 (`src/components/onboarding/LaunchScreen.tsx`, rules in `src/lib/launch.ts`)
-before the welcome tour: **No server** / **Skip** is the solo app, **Server**
+before the welcome tour: **No server** is the solo app, **Server**
 probes the address (`orgJoin.probe`, Perspicax-linked servers only) then
 `orgJoin.join` saves the server and starts the existing **Sign in with
 Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in

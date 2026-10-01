@@ -4862,7 +4862,6 @@
       "launch.continue": "31fbef162594de01bab0cd525c51f74de7bcb15063029fa1a54b2cf5944c80d8",
       "launch.signIn": "bfd402b2f6f3812529b55596136d3a11c51616317e3b1cd999928e2d4eae7d3f",
       "launch.working": "5f04ae9ed6a865bb382c66ef4bd4e57df4ce19d4142b8c87ac40d65ae54d278f",
-      "launch.skip": "28d03596d24eeb4eab2d6fe21ca1cb95be7cb1fa6f92933db05e2cc4f4cdfa06",
       "launch.later": "46238be658a5b085a90ca17d8eefdfbc912a6f8321aec980b6ace336b64004f4",
       "launch.error.address": "4f7347a808732ec3edbb36a48c61326c15875de44c3899789820cc49add29338",
       "launch.error.unreachable": "603f87582b87c3fa725671569286dc01bb6befa075894d570ed3212a2f813c3e",
@@ -4871,9 +4870,14 @@
       "onboarding.server.title": "0d9cbecbb0bbc50593ec2219ca5a7fc235cfce2f6237666497a81fb6977e6312",
       "onboarding.server.body": "3038460917004935699ce191626cd4230d56cca0c09cbce31237bbc83ce269e5",
       "onboarding.server.connect": "232ac7de45dec163e87954aa00d7272db2ae74ec4ed5b1198c0dbcbc0242ca85",
-      "settings.welcome.launch": "8df0a5f0e80652b56b13888b3bf1d02b07d31fa600ed1f8a1bb9e3ef0d7db887",
       "orgJoin.join": "fd30fe681b4b2d9e55f851cb34641f907401aa43e9d80f5b1e14ce714ef00497",
-      "orgJoin.copyOptional": "900eb2a2d14740454dc6e3aba12a88fee1bd40ccd17916905a54ea70a57e3733"
+      "orgJoin.copyOptional": "900eb2a2d14740454dc6e3aba12a88fee1bd40ccd17916905a54ea70a57e3733",
+      "settings.appTour.title": "d874edba4d8e096c8bb63d1cf6c3ac0c5e610c2608c7e73f25cc25a5c3a987bc",
+      "settings.appTour.subtitle": "0e40ed006d6bbf1ec2d6c5a75ebdf0167c55b30fdd5a5d9a4d4fb4f0b09bae14",
+      "settings.launch.title": "aef7de28d52977f1b5cd0fecfdc151717610adf41e0aa33b4d9f7522a43337ef",
+      "settings.launch.solo": "ed0dd6e17c875f7a4ceefcbca57458cce1d5b9dafe8ec52eb53ba22fb46b2ad1",
+      "settings.launch.server": "0ac0ce8f67d3350f8da789cb790d79d6848802379d6759160b6ee7ea8ae1615b",
+      "settings.launch.change": "c0bf75bd78bf9572596720d596bd5a20a5b9145cde0fe50dec1e783cb184d69b"
     },
     "hi": {
       "noEngines.title": "af88855a5f80377de709995229ba3907df9e8fb3b940fbf7c0d9cbe6eea54afe",
