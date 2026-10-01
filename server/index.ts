@@ -307,6 +307,7 @@ import {
   sectionKey,
   Store,
   cleanBotGrants,
+  directFromGrants,
   grantsFromDirect,
   titleFromLlm,
   type BotRecord,
@@ -519,7 +520,7 @@ import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { createBotPerspicaxRoutes } from "./bot-perspicax.ts";
-import { applyIdentityMigration, principalIdFor } from "./identity-migration.ts";
+import { applyIdentityMigration, principalIdFor, rewritePeopleForAttach } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
 import {
   activityCsv,
@@ -595,7 +596,8 @@ import { acceptOpenInvitesForEmail, createOrgRoutes, createPublicInviteRoutes, i
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
-import { createPerspicaxOrgRoutes, type PendingAdminApproval } from "./perspicax-org-routes.ts";
+import { createPerspicaxOrgRoutes, orgDirectoryEntries, type PendingAdminApproval } from "./perspicax-org-routes.ts";
+import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
@@ -15296,8 +15298,13 @@ function orgAdminCaller(auth: RequestAuth): boolean {
   const person = auth.session.principalId ? principals.byId(auth.session.principalId) : null;
   return person?.local === true || person?.orgRole === "admin";
 }
-function orgSettings(): { memberBotsUseOrgKey: boolean } {
-  return { memberBotsUseOrgKey: cfg.organization?.memberBotsUseOrgKey === true };
+function orgSettings(): { memberBotsUseOrgKey: boolean; interimAttach?: { until: number | null; people: number } } {
+  return {
+    memberBotsUseOrgKey: cfg.organization?.memberBotsUseOrgKey === true,
+    ...(IDENTITY.kind === "perspicax"
+      ? { interimAttach: { until: interimWindowUntil(cfg.organization?.interimAttach, Date.now()), people: principals.listInterim().length } }
+      : {}),
+  };
 }
 
 function botDirectGrants(bot: { directGrants?: unknown }): string[] {
@@ -15962,6 +15969,52 @@ ROUTES.push(createDirectGrantRoutes({
 // The organization of a server signed in with Perspicax (slice 3). Tried
 // before the interim organization routes, which serve solo mode only.
 let perspicaxDirectory: PerspicaxDirectory | null = null;
+// Slice 8: the window to attach people from before Perspicax opens at the
+// first organization start that finds any (30 days; an admin can change it).
+if (IDENTITY.kind === "perspicax" && !cfg.organization?.interimAttach && principals.listInterim().length) {
+  const opened = { since: Date.now(), days: INTERIM_WINDOW_DAYS };
+  saveConfig({ organization: { ...cfg.organization, interimAttach: opened } });
+  cfg.organization = { ...cfg.organization, interimAttach: opened };
+  console.log(`organization: ${principals.listInterim().length} people from before Perspicax can be attached by an admin for ${INTERIM_WINDOW_DAYS} days`);
+}
+/** Slice 8: fold an interim person into a Perspicax person: every bot,
+ * grant, room, section and routine of theirs moves, their sessions end, and
+ * one audit row names both by principal id only. */
+function attachInterimPerson(from: string, to: string, auth: RequestAuth) {
+  const result = rewritePeopleForAttach({ from, to }, {
+    bots: store.bots.map((bot) => ({
+      id: bot.id,
+      ...(recordedBotOwner(bot) ? { ownerUserId: recordedBotOwner(bot) } : {}),
+      directGrants: botDirectGrants(bot),
+      ...(Array.isArray(bot.grants) ? { grants: cleanBotGrants(bot.grants) } : {}),
+    })),
+    groups: store.groups.map((group) => ({ id: group.id, humanIds: group.humanIds ?? [] })),
+    sections: sectionChannels?.list() ?? [],
+    routines: (routines?.listRoutines() ?? []).map((routine) => ({ id: routine.id, ...(routine.runAs ? { runAs: routine.runAs } : {}) })),
+  });
+  for (const bot of result.bots) {
+    store.patchBot(bot.id, {
+      ...(bot.ownerUserId ? { ownerUserId: bot.ownerUserId } : {}),
+      ...(bot.grants ? { grants: bot.grants, directGrants: directFromGrants(bot.grants) } : bot.directGrants ? { directGrants: bot.directGrants } : {}),
+    });
+  }
+  for (const group of result.groups) store.patchGroup(group.id, { humanIds: group.humanIds });
+  for (const section of result.sections) sectionChannels?.setPeople(section.id, section);
+  for (const routine of result.routines) routines?.setRunAs(routine.id, routine.runAs);
+  principals.markMerged(from, to);
+  const revoked = sessions.revokeWhere((session) => session.principalId === from);
+  for (const bot of result.bots) {
+    const updated = store.bot(bot.id);
+    if (updated) broadcast({ kind: "bot", bot: wireBot(updated) });
+  }
+  audienceChanged();
+  orgAudit({
+    category: "org", action: "person.attach_interim", target: { kind: "person", id: to },
+    before: { principalId: from }, after: { principalId: to, ...result.counts },
+    actor: orgAuditActor(auth),
+  });
+  return { rewritten: result.counts, sessionsRevoked: revoked.length };
+}
 // Slice 8: "Bring bots from a solo Sagax" (a solo server answers 403).
 ROUTES.push(createOrgImportRoute({
   organization: IDENTITY.kind === "perspicax",
@@ -15988,6 +16041,23 @@ ROUTES.push(createOrgImportRoute({
 }));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
+  // Slice 8: people from before Perspicax, attached by an admin.
+  ROUTES.push(createInterimAttachRoutes({
+    isAdmin: orgAdminCaller,
+    window: () => cfg.organization?.interimAttach,
+    interim: () => principals.listInterim(),
+    byId: (id) => principals.byId(id),
+    isTarget: (person) => person.subject?.iss === issuer,
+    directory: () => (perspicaxDirectory
+      ? orgDirectoryEntries(issuer, perspicaxDirectory.people(), (iss, sub) => principals.bySubject(iss, sub))
+      : principals.listBySubjectIssuer(issuer).map((person) => ({ principalId: person.id, name: person.name ?? person.login ?? "", login: person.login ?? "", ...(person.email ? { email: person.email } : {}), disabled: person.disabledAt !== undefined }))),
+    counts: (principalId) => ({
+      bots: store.bots.filter((bot) => recordedBotOwner(bot) === principalId).length,
+      rooms: store.groups.filter((group) => (group.humanIds ?? []).includes(principalId)).length,
+      routines: (routines?.listRoutines() ?? []).filter((routine) => routine.runAs === principalId).length,
+    }),
+    attach: ({ from, to, auth }) => attachInterimPerson(from, to, auth),
+  }));
   ROUTES.push(createPerspicaxOrgRoutes({
     issuer,
     orgName: process.env.OMB_ORG_NAME?.trim().slice(0, 120) || "Pulsatrix",
@@ -15997,12 +16067,25 @@ if (IDENTITY.kind === "perspicax") {
     settings: orgSettings,
     saveSettings: (next, auth) => {
       const before = orgSettings();
-      saveConfig({ organization: { memberBotsUseOrgKey: next.memberBotsUseOrgKey } });
+      saveConfig({ organization: { ...cfg.organization, memberBotsUseOrgKey: next.memberBotsUseOrgKey } });
       cfg.organization = { ...cfg.organization, memberBotsUseOrgKey: next.memberBotsUseOrgKey };
       orgAudit({
         category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["memberBotsUseOrgKey"],
         before: { memberBotsUseOrgKey: before.memberBotsUseOrgKey },
         after: { memberBotsUseOrgKey: next.memberBotsUseOrgKey },
+        actor: orgAuditActor(auth),
+      });
+    },
+    // Slice 8: shorten, extend (at most 90 days from when it opened) or
+    // close the window to attach people from before Perspicax.
+    saveInterimAttachDays: (days, auth) => {
+      const before = cfg.organization?.interimAttach;
+      const next = windowWithDays(before, days, Date.now());
+      saveConfig({ organization: { ...cfg.organization, interimAttach: next } });
+      cfg.organization = { ...cfg.organization, interimAttach: next };
+      orgAudit({
+        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["interimAttachDays"],
+        before: { interimAttachDays: before?.days ?? null }, after: { interimAttachDays: days },
         actor: orgAuditActor(auth),
       });
     },

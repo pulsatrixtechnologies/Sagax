@@ -398,7 +398,13 @@ const appConfigSchema = z.object({
   /** Organization server settings (OMB_IDENTITY=perspicax, slice 3):
    * whether turns other than an admin owner's own may use the workspace
    * keys (the organization's key) on key-backed engines. */
-  organization: z.object({ memberBotsUseOrgKey: z.boolean().optional() }).optional(),
+  organization: z.object({
+    memberBotsUseOrgKey: z.boolean().optional(),
+    /** Slice 8: the window to attach people from before Perspicax
+     * (server/interim-attach-routes.ts), written at the first organization
+     * start that found any. */
+    interimAttach: z.object({ since: z.number().finite().nonnegative(), days: z.number().int().min(0).max(90) }).optional(),
+  }).optional(),
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt: z.number().optional(),
   invites: z.array(z.object({
@@ -582,7 +588,7 @@ export interface AppConfig {
     ownerUserId: string;
   };
   /** Organization server settings (slice 3); see appConfigSchema. */
-  organization?: { memberBotsUseOrgKey?: boolean };
+  organization?: { memberBotsUseOrgKey?: boolean; interimAttach?: { since: number; days: number } };
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt?: number;
   invites?: Array<{

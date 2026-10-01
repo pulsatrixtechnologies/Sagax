@@ -1917,6 +1917,18 @@ export class RoutineManager {
     return touched;
   }
 
+  /** Slice 8: an interim person was attached to a Perspicax person: the
+   * routine runs as them from now on (no consent is implied; the usual
+   * delegation rules apply at the next run). False for an unknown id. */
+  setRunAs(id: string, principalId: string): boolean {
+    const routine = this.routines.find((candidate) => candidate.id === id);
+    if (!routine || routine.runAs === principalId) return false;
+    routine.runAs = principalId;
+    this.save();
+    this.emitRoutine(routine);
+    return true;
+  }
+
   /** Slice 6: the person consented again. Their delegation and person-out
    * suspensions clear, and recurring routines resume from now. */
   resumeFor(principalId: string, ownerOf: (routine: Routine) => string | undefined): Routine[] {

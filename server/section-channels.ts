@@ -253,6 +253,18 @@ export class SectionChannels {
     return structuredClone(found);
   }
 
+  /** Slice 8: the people of a section after an interim attach (owner,
+   * members, placements); the name and the room stay. Null for an unknown id. */
+  setPeople(id: string, people: Pick<SectionRecord, "ownerPrincipalId" | "members" | "placedBots">): SectionRecord | null {
+    const found = this.records.find((record) => record.id === id);
+    if (!found) return null;
+    found.ownerPrincipalId = people.ownerPrincipalId;
+    found.members = people.members.map((member) => ({ ...member }));
+    if (people.placedBots) found.placedBots = people.placedBots.map((entry) => ({ ...entry }));
+    this.save();
+    return structuredClone(found);
+  }
+
   setRoom(id: string, roomId: string): void {
     const found = this.records.find((record) => record.id === id);
     if (!found) return;

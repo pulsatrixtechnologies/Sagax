@@ -22,6 +22,9 @@ export interface OrgSettings {
   /** Let turns that are not an admin owner's own use the organization's key
    * (the workspace key in Settings > Connections) on key-backed engines. */
   memberBotsUseOrgKey: boolean;
+  /** Slice 8: the window to attach people from before Perspicax. `until`
+   * is null when it never opened or is closed; `people` still waiting. */
+  interimAttach?: { until: number | null; people: number };
 }
 
 export interface OrgDirectoryEntry {
@@ -70,6 +73,9 @@ export interface PerspicaxOrgRouteDeps {
   settings(): OrgSettings;
   /** Saves the settings; throws when they could not be written. */
   saveSettings(next: OrgSettings, auth: RequestAuth): void;
+  /** Slice 8: set the interim attach window (0..90 days from when it
+   * opened; 0 closes it now); throws when it could not be written. */
+  saveInterimAttachDays?(days: number, auth: RequestAuth): void;
   pendingAdminApprovals(): PendingAdminApproval[];
   /** Slice 4: the teams with their people (principal ids). */
   teams?(): OrgDirectoryTeam[];
@@ -135,16 +141,21 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
     if (method === "PATCH" && path === "/api/org/settings") {
       if (deps.viewerRole(auth) !== "admin") return json(res, 403, { error: "Only an organization admin can change these settings." });
       const body = await readBody(req);
-      if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((key) => key !== "memberBotsUseOrgKey") || typeof body.memberBotsUseOrgKey !== "boolean") {
-        return json(res, 400, { error: "send { memberBotsUseOrgKey: true | false }" });
+      const keys = body && typeof body === "object" && !Array.isArray(body) ? Object.keys(body) : null;
+      const hasKey = "memberBotsUseOrgKey" in (body ?? {});
+      const hasDays = "interimAttachDays" in (body ?? {});
+      if (!keys || !keys.length || keys.some((key) => key !== "memberBotsUseOrgKey" && key !== "interimAttachDays") ||
+        (hasKey && typeof body.memberBotsUseOrgKey !== "boolean") ||
+        (hasDays && (!deps.saveInterimAttachDays || !Number.isInteger(body.interimAttachDays) || body.interimAttachDays < 0 || body.interimAttachDays > 90))) {
+        return json(res, 400, { error: "send { memberBotsUseOrgKey: true | false } and/or { interimAttachDays: 0 to 90 }" });
       }
-      const next: OrgSettings = { ...deps.settings(), memberBotsUseOrgKey: body.memberBotsUseOrgKey };
       try {
-        deps.saveSettings(next, auth);
+        if (hasKey) deps.saveSettings({ ...deps.settings(), memberBotsUseOrgKey: body.memberBotsUseOrgKey }, auth);
+        if (hasDays) deps.saveInterimAttachDays!(body.interimAttachDays, auth);
       } catch (error) {
         return json(res, 500, { error: `the organization settings could not be saved: ${error instanceof Error ? error.message : String(error)}` });
       }
-      return json(res, 200, { settings: next });
+      return json(res, 200, { settings: deps.settings() });
     }
     if (method === "GET" && path === "/api/org/approvals") {
       if (deps.viewerRole(auth) !== "admin") return json(res, 403, { error: "Only an organization admin can answer these approvals." });
