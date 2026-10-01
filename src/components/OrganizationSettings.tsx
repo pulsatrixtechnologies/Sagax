@@ -10,10 +10,73 @@ import { RemoteComputerSection } from "./RemoteComputerSection";
 import { CustomDomainSettings } from "./CustomDomainSettings";
 import { PerspicaxOrgSettings } from "./PerspicaxOrgSettings";
 import { JoinPerspicaxCard } from "./JoinPerspicaxCard";
+import { OrgDirectory, type OrgPersonView, type PendingInviteView } from "./OrgDirectory";
+import type { OrgRole } from "../../server/org-directory.ts";
 import { isPerspicaxOrg, type PerspicaxOrg } from "@/lib/perspicax-org";
 
 const providerNames: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter" };
 const DEFAULT_PORTAL_ORIGIN = "https://admin.openmausbot.com";
+
+type ServerInvites = { org: { name: string }; people: OrgPersonView[]; pendingInvites: PendingInviteView[]; viewerRole?: OrgRole | null };
+
+/** A solo server's invitations to its own sign-in list (GET /api/org/invites,
+ * admin only): invite by email, the people who may sign in, and the
+ * pending links. Not an organization: nothing to create or move. Renders
+ * nothing where the route is refused (a member, an organization server). */
+function ServerInvitesDirectory() {
+  const [data, setData] = useState<ServerInvites | null>(null);
+  const [lastInvite, setLastInvite] = useState<{ email: string; link?: string } | null>(null);
+  const [error, setError] = useState("");
+  const load = async (alive = () => true) => {
+    try {
+      const body = await api<ServerInvites>("/api/org/invites");
+      if (alive()) setData({ org: { name: body.org?.name ?? "" }, people: body.people ?? [], pendingInvites: body.pendingInvites ?? [], viewerRole: body.viewerRole });
+    } catch {
+      if (alive()) setData(null);
+    }
+  };
+  useEffect(() => {
+    let cancelled = false;
+    void load(() => !cancelled);
+    return () => { cancelled = true; };
+  }, []);
+  if (!data) return null;
+  const canManage = data.viewerRole === undefined || data.viewerRole === "owner" || data.viewerRole === "admin";
+  if (!canManage) return null;
+  return (
+    <>
+      <OrgDirectory
+        org={{ name: data.org.name }}
+        people={data.people}
+        pendingInvites={data.pendingInvites}
+        canManage
+        lastInvite={lastInvite}
+        onCreate={() => {}}
+        onInvite={async (email) => {
+          try {
+            const issued = await api<{ invite?: { email?: string }; link?: string }>("/api/org/invites", { method: "POST", body: JSON.stringify({ email }) });
+            setLastInvite({ email: issued.invite?.email ?? email, link: issued.link });
+            setError("");
+            await load();
+          } catch (cause) {
+            setError(t("org.inviteFailed"));
+            throw cause;
+          }
+        }}
+        onRevoke={async (token) => {
+          try {
+            await api(`/api/org/invites/${encodeURIComponent(token)}/revoke`, { method: "POST", body: "{}" });
+            setLastInvite((current) => (current?.link?.endsWith(`token=${encodeURIComponent(token)}`) ? null : current));
+            await load();
+          } catch {
+            setError(t("org.revokeFailed"));
+          }
+        }}
+      />
+      {error && <p role="alert" className="text-[13px] text-danger">{error}</p>}
+    </>
+  );
+}
 
 /** Only the trusted desktop bridge can enroll this computer or hold its token. */
 export function OrganizationSettings() {
@@ -135,6 +198,7 @@ export function OrganizationSettings() {
 
   const directory = (
     <>
+      {orgReady && !remoteActive && <ServerInvitesDirectory />}
       {orgReady && !remoteActive && store.config?.viewer?.operator !== false && <CustomDomainSettings />}
       {directoryError && <p role="alert" className="text-[13px] text-danger">{directoryError}</p>}
     </>

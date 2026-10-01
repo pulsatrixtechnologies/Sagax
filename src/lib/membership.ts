@@ -26,3 +26,10 @@ export function readMembership(config: unknown): Membership {
   }
   return { authority: value.authority === "portal" ? "portal" : "local", pairingCodes: value.pairingCodes !== false, peopleUrl };
 }
+
+/** Whether this server sends its email sign-in list (a solo server does; an
+ * organization server, whose people live in Perspicax, does not). */
+export function peopleListServed(config: unknown): boolean {
+  const signIn = config && typeof config === "object" ? (config as { signIn?: unknown }).signIn : undefined;
+  return Boolean(signIn && typeof signIn === "object");
+}

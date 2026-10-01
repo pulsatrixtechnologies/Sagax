@@ -10,7 +10,9 @@ import {
   pulsatrixLoginPath,
   readSessionState,
   reasonWorthShowing,
+  startEmailSignIn,
   takeSignInErrorFromLocation,
+  verifyEmailSignIn,
   type EnvironmentDescriptor,
   type SessionState,
 } from "../lib/session";
@@ -48,9 +50,9 @@ export async function finishReturnedSignIn<R>({ code, bridge, pair }: { code: st
 
 /** The page a pairing link opens: /pair#code=XXXX-XXXX-XXXX. Also what the
  * app shows instead of itself when a remote browser has no session yet.
- * On an organization server "Sign in with Pulsatrix" comes first and the
- * pairing code stays one link away. */
-export function PairPage({ initialCode, reason, autoSubmit = false }: { initialCode: string | null; reason?: string; autoSubmit?: boolean }) {
+ * When the server has a sign-in allow-list, "sign in with your email" comes
+ * first and the pairing code stays one link away. */
+export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit = false }: { initialCode: string | null; initialEmail?: string | null; reason?: string; autoSubmit?: boolean }) {
   const [code, setCode] = useState(initialCode ?? "");
   const [label, setLabel] = useState(defaultDeviceLabel());
   const [environment, setEnvironment] = useState<EnvironmentDescriptor | null>(null);
@@ -59,8 +61,11 @@ export function PairPage({ initialCode, reason, autoSubmit = false }: { initialC
   const [error, setError] = useState<string | null>(null);
   // one id per code typed: a retry after a lost response reuses it, a new code gets a new one
   const [attemptId, setAttemptId] = useState(() => newAttemptId());
-  const [mode, setMode] = useState<"pulsatrix" | "code" | null>(initialCode ? "code" : null);
+  const [mode, setMode] = useState<"pulsatrix" | "email" | "code" | null>(initialCode ? "code" : null);
   const [signInError] = useState(() => takeSignInErrorFromLocation());
+  const [email, setEmail] = useState(initialEmail ?? "");
+  const [otp, setOtp] = useState("");
+  const [sent, setSent] = useState(false);
   // The desktop app came back from "Sign in with Pulsatrix" in the system
   // browser: redeem its credential once, without asking, when the app's main
   // process confirms it handed it over; anything else (a plain browser, a
@@ -95,7 +100,7 @@ export function PairPage({ initialCode, reason, autoSubmit = false }: { initialC
       .then((r) => (r.ok ? r.json() : null))
       .then((d: EnvironmentDescriptor | null) => {
         setEnvironment(d);
-        setMode((current) => current ?? (pulsatrixLoginPath(d) ? "pulsatrix" : "code"));
+        setMode((current) => current ?? (pulsatrixLoginPath(d) ? "pulsatrix" : d?.capabilities.emailSignIn ? "email" : "code"));
       })
       .catch(() => {
         setEnvironment(null);
@@ -105,8 +110,9 @@ export function PairPage({ initialCode, reason, autoSubmit = false }: { initialC
   }, []);
 
   const connected = isConnected(session);
-  // An organization server signs people in with Pulsatrix.
+  // An organization server signs people in with Pulsatrix, never by email.
   const loginPath = pulsatrixLoginPath(environment);
+  const emailOffered = !loginPath && environment?.capabilities.emailSignIn === true;
 
   async function submitCode(e: React.FormEvent) {
     e.preventDefault();
@@ -121,7 +127,24 @@ export function PairPage({ initialCode, reason, autoSubmit = false }: { initialC
     setError(result.error);
   }
 
-  function switchMode(next: "pulsatrix" | "code") {
+  async function submitEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const result = sent ? await verifyEmailSignIn({ email, code: otp, label }) : await startEmailSignIn(email);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (sent) {
+      location.replace("/");
+      return;
+    }
+    setSent(true);
+  }
+
+  function switchMode(next: "pulsatrix" | "email" | "code") {
     setMode(next);
     setError(null);
   }
@@ -130,10 +153,16 @@ export function PairPage({ initialCode, reason, autoSubmit = false }: { initialC
     <main className="flex min-h-screen items-center justify-center bg-app px-6 text-ink">
       <div className="absolute left-3 top-12 max-w-[280px]"><DesktopWorkspaceSwitcher /></div>
       <div className="w-full max-w-[420px]">
-        <h1 className="text-[20px] font-semibold">{t(mode === "pulsatrix" ? "pair.heading.signIn" : "pair.heading.connect", { name: environment?.label ?? t("pair.heading.thisServer") })}</h1>
+        <h1 className="text-[20px] font-semibold">{t(mode === "email" || mode === "pulsatrix" ? "pair.heading.signIn" : "pair.heading.connect", { name: environment?.label ?? t("pair.heading.thisServer") })}</h1>
         <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-secondary">
           {environment ? `${t("pair.version", { version: environment.version, platform: environment.platform })} ` : ""}
-          {mode === "pulsatrix" ? t("pair.pulsatrix.intro") : t("pair.code.intro")}
+          {mode === "pulsatrix"
+            ? t("pair.pulsatrix.intro")
+            : mode === "email"
+            ? sent
+              ? `We emailed an 8-digit code to ${email}. It works once and expires in ten minutes.`
+              : "Enter your email and we will send you a one-time code."
+            : t("pair.code.intro")}
         </p>
         {reasonWorthShowing(reason) && !connected ? <p className="mt-3 text-[13px] text-ink-secondary">{reasonWorthShowing(reason)}</p> : null}
         {connected ? (
@@ -157,6 +186,59 @@ export function PairPage({ initialCode, reason, autoSubmit = false }: { initialC
               {t("pair.pulsatrix.useCode")}
             </button>
           </div>
+        ) : mode === "email" ? (
+          <form onSubmit={submitEmail}>
+            <label className={fieldLabel} htmlFor="signin-email">
+              Email
+            </label>
+            <input
+              id="signin-email"
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setSent(false);
+                setOtp("");
+              }}
+              autoComplete="email"
+              inputMode="email"
+              spellCheck={false}
+              className={input}
+            />
+            {sent ? (
+              <>
+                <label className={fieldLabel} htmlFor="signin-code">
+                  Code from the email
+                </label>
+                <input
+                  id="signin-code"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  placeholder="12345678"
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  spellCheck={false}
+                  className={`${input} font-mono text-[15px] tracking-[0.12em]`}
+                />
+                <label className={fieldLabel} htmlFor="signin-label">
+                  This device
+                </label>
+                <input id="signin-label" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={80} className={input} />
+              </>
+            ) : null}
+            {error ? <p className="mt-3 text-[13px] text-danger">{error}</p> : null}
+            <button type="submit" disabled={busy || !email.includes("@") || (sent && otp.replace(/\D/g, "").length < 8)} className={button}>
+              {busy ? (sent ? "Signing in…" : "Sending…") : sent ? "Sign in" : "Send code"}
+            </button>
+            {sent ? (
+              <button type="button" onClick={() => setSent(false)} className="mt-3 w-full text-[13px] text-ink-secondary underline">
+                Send a new code
+              </button>
+            ) : null}
+            <button type="button" onClick={() => switchMode("code")} className="mt-3 w-full text-[13px] text-ink-secondary underline">
+              Have a pairing code instead?
+            </button>
+          </form>
         ) : (
           <form onSubmit={submitCode}>
             <label className={fieldLabel} htmlFor="pair-code">
@@ -186,6 +268,10 @@ export function PairPage({ initialCode, reason, autoSubmit = false }: { initialC
             {loginPath ? (
               <button type="button" onClick={() => switchMode("pulsatrix")} className="mt-3 w-full text-[13px] text-ink-secondary underline">
                 {t("pair.pulsatrix.signIn")}
+              </button>
+            ) : emailOffered ? (
+              <button type="button" onClick={() => switchMode("email")} className="mt-3 w-full text-[13px] text-ink-secondary underline">
+                Sign in with your email instead
               </button>
             ) : null}
           </form>

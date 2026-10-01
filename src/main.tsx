@@ -1,12 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import { readSessionState, SERVICE_TRUST_REASON, takePairingFromLocation } from "./lib/session";
+import { readSessionState, SERVICE_TRUST_REASON, takePairingFromLocation, takeInvitedEmailFromLocation } from "./lib/session";
 import { bootstrapBrand } from "./lib/brand";
 import { applySkin, readSkin } from "./lib/skins";
 import { applyFont, readFont } from "./lib/fonts";
 import { PairPage } from "./pair/PairPage";
 import { rememberOpenThreadHash } from "./lib/open-thread-hash";
+import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
 import "katex/dist/katex.min.css";
 import "./styles.css";
 
@@ -43,9 +44,10 @@ async function chooseRoot(): Promise<React.ReactNode> {
     return <FloatingBotWindow />;
   }
   // An invite link works without a session: redeeming it is the sign-in.
+  if (location.pathname === "/join") return <JoinPage initialToken={takeInviteTokenFromLocation()} />;
   if (location.pathname === "/pair") {
     const pairing = takePairingFromLocation();
-    return <PairPage initialCode={pairing.code} autoSubmit={pairing.auto} />;
+    return <PairPage initialCode={pairing.code} autoSubmit={pairing.auto} initialEmail={takeInvitedEmailFromLocation()} />;
   }
   const session = await readSessionState();
   if (session.kind === "unauthenticated") return <PairPage initialCode={null} reason={session.error} />;
