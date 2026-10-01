@@ -277,6 +277,13 @@ export function createFloatingBotWindows(deps) {
    * something changes, so it is kept for the window that opens next.
    */
   const pending = new Map();
+  /** A diagnostic said once, not on every update. */
+  const noted = new Set();
+  const note = (line) => {
+    if (noted.has(line) || noted.size > 50) return;
+    noted.add(line);
+    log(`floating bots: ${line}`);
+  };
   let positions = null;
   let silent = false;
 
@@ -546,9 +553,15 @@ export function createFloatingBotWindows(deps) {
 
   const listeners = {
     "floating-bots:update": (event, message) => {
-      if (!isMain(event) || !message || !isBotId(message.botId)) return;
+      if (!isMain(event) || !message || !isBotId(message.botId)) {
+        note(`update refused (${!isMain(event) ? "not the app page" : "bad bot id"})`);
+        return;
+      }
       const clean = sanitizeFloatingSnapshot(message.snapshot);
-      if (!clean) return;
+      if (!clean) {
+        note(`state for ${message.botId} refused as malformed`);
+        return;
+      }
       const entry = floats.get(message.botId);
       if (!live(entry)) {
         // the window is about to open: keep it for then (a few bots at most)
@@ -563,6 +576,7 @@ export function createFloatingBotWindows(deps) {
     "floating-bots:ready": (event) => {
       const found = senderFloat(event);
       if (found) found.entry.ready = true;
+      if (found && !found.entry.snapshot) note(`${found.botId} is ready but no state has come from the app yet`);
       if (found?.entry.snapshot) found.entry.win.webContents.send("floating-bot:state", found.entry.snapshot);
     },
     "floating-bots:event": (event, value) => {

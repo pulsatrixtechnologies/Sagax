@@ -286,6 +286,19 @@ describe("floating bots: a window is never left invisible", () => {
     expect(state).toMatchObject({ name: "Ada", pose: "speak" });
   });
 
+  it("says in its log why a state did not reach a window", () => {
+    const { emit, open, logs, fake } = setup();
+    emit("floating-bots:update", { sender: {} }, { botId: "bot_a", snapshot: SNAPSHOT });
+    emit("floating-bots:update", { sender: fake.main.webContents }, { botId: "bot_a", snapshot: { v: 2 } });
+    const { from } = open("bot_b");
+    emit("floating-bots:ready", from);
+    expect(logs).toEqual(expect.arrayContaining([
+      "floating bots: update refused (not the app page)",
+      "floating bots: state for bot_a refused as malformed",
+      "floating bots: bot_b is ready but no state has come from the app yet",
+    ]));
+  });
+
   it("reloads a page that never says it is ready, and logs the page's errors", () => {
     vi.useFakeTimers();
     try {

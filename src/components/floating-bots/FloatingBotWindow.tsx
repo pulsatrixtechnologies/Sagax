@@ -15,19 +15,57 @@ import { isFloatingSnapshot, mascotFields, type FloatingEvent, type FloatingSnap
 /** With nothing to draw this long, the window shows the plain owl rather than nothing. */
 export const BLANK_FALLBACK_MS = 2000;
 
-/** The plain owl, standing where the mascot would: never an empty, invisible window. */
-function PlainOwl({ color, rootRef }: { color: string; rootRef: React.Ref<HTMLDivElement> }) {
+/**
+ * The plain owl, standing where the mascot would: never an empty, invisible
+ * window. It still takes the pointer over itself (the window lets clicks
+ * through everywhere else), can be dragged, and opens the app on a click.
+ */
+function PlainOwl({ color, rootRef, bridge }: { color: string; rootRef: React.Ref<HTMLDivElement>; bridge?: FloatingWindowBridge }) {
+  const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   return (
     <div ref={rootRef} className="fb-root fb-window" data-fallback="">
       <div className="fb-stage" style={{ width: MASCOT_SIZE.width, height: MASCOT_SIZE.height, display: "grid", placeItems: "center" }}>
-        <OwlAvatar color={color} size={120} state="idle" trackPointer={false} label={null} />
+        <button
+          type="button"
+          className="fb-art"
+          style={{ width: 120, height: 120 }}
+          aria-label="Sagax"
+          onPointerEnter={() => bridge?.setInteractive(true)}
+          onPointerLeave={() => {
+            if (!drag.current) bridge?.setInteractive(false);
+          }}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            drag.current = { x: event.screenX, y: event.screenY, moved: false };
+            bridge?.setInteractive(true);
+          }}
+          onPointerMove={(event) => {
+            const start = drag.current;
+            if (!start) return;
+            const dx = event.screenX - start.x;
+            const dy = event.screenY - start.y;
+            if (!start.moved && Math.hypot(dx, dy) < 4) return;
+            start.moved = true;
+            start.x = event.screenX;
+            start.y = event.screenY;
+            void bridge?.moveBy(dx, dy);
+          }}
+          onPointerUp={() => {
+            const start = drag.current;
+            drag.current = null;
+            if (start?.moved) bridge?.moved();
+            else bridge?.send({ type: "open" });
+          }}
+        >
+          <OwlAvatar color={color} size={120} state="idle" trackPointer={false} label={null} />
+        </button>
       </div>
     </div>
   );
 }
 
 /** A drawing error must not leave the window empty: report it (main logs it) and show the plain owl. */
-class Fallback extends Component<{ color: string; rootRef: React.Ref<HTMLDivElement>; onFail: () => void; children: ReactNode }, { failed: boolean }> {
+class Fallback extends Component<{ color: string; rootRef: React.Ref<HTMLDivElement>; bridge?: FloatingWindowBridge; onFail: () => void; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
@@ -37,7 +75,7 @@ class Fallback extends Component<{ color: string; rootRef: React.Ref<HTMLDivElem
     this.props.onFail();
   }
   render() {
-    return this.state.failed ? <PlainOwl color={this.props.color} rootRef={this.props.rootRef} /> : this.props.children;
+    return this.state.failed ? <PlainOwl color={this.props.color} rootRef={this.props.rootRef} bridge={this.props.bridge} /> : this.props.children;
   }
 }
 
@@ -68,6 +106,8 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
     if (!bridge) return;
     const off = bridge.onState((value) => {
       if (isFloatingSnapshot(value)) setSnapshot({ ...value, ...mascotFields(value) });
+      // main's log shows it (console errors of this page are forwarded)
+      else console.error(`floating mascot: refused a state with keys ${value && typeof value === "object" ? Object.keys(value).join(",") : typeof value}`);
     });
     bridge.ready();
     return off;
@@ -98,9 +138,9 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   // the mascot flies its own window off while its bot works, and back
   const pilot = useMemo(() => createWindowPilot(bridge), [bridge]);
 
-  if (!snapshot) return blank ? <PlainOwl color="green" rootRef={root} /> : <div ref={root} className="fb-root fb-window" />;
+  if (!snapshot) return blank ? <PlainOwl color="green" rootRef={root} bridge={bridge} /> : <div ref={root} className="fb-root fb-window" />;
   return (
-    <Fallback color={snapshot.color} rootRef={root} onFail={() => setFailed(true)}>
+    <Fallback color={snapshot.color} rootRef={root} bridge={bridge} onFail={() => setFailed(true)}>
     <FloatingBotView
       rootRef={root}
       className="fb-window"
