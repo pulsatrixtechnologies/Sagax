@@ -334,7 +334,9 @@ export function threadTitleFrom(title?: string): string {
 
 /** A task's name, taken from the first thing you asked it to do. */
 export function titleFromMessage(text: string): string {
-  const line = text.trim().split("\n")[0]!.trim();
+  // Redact before cutting: a key cut short no longer looks like a key, and
+  // its start would stay in the title (and in every copy of it).
+  const line = redactSecretsInText(text.trim().split("\n")[0]!.trim());
   return line.length > 48 ? `${line.slice(0, 47)}…` : line || UNTITLED_TASK;
 }
 

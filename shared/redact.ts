@@ -51,6 +51,16 @@ const SECRET_FLAG = /(--(?:token|password|passwd|api-key|apikey|secret|access-ke
 /** `scheme://user:secret@host` — the password in a URL's userinfo. */
 const URL_USERINFO = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@'"]+:)([^\s/@'"«»]+)(@)/gi;
 
+/** A key shape cut by a "…": what a title or a preview kept of a key once
+ * it was shortened. Too short for KEY_PREFIXES, still part of the key. */
+const CUT_KEY = /\b(?:om[dg]_|sk-|xai-|gsk_|hf_|gh[pousr]_|github_pat_|xox[abposr]-|AKIA|AIza|npm_|eyJ)[A-Za-z0-9_-]*(?=…)/g;
+
+/** Mask the start of a key left in front of an ellipsis by a cut made
+ * before any redaction (an older automatic task title, say). */
+export function redactCutSecrets(text: string): string {
+  return text && text.includes("…") ? text.replace(CUT_KEY, (m) => mask(m)) : text;
+}
+
 export function redactSecretsInText(text: string): string {
   if (!text || text.length < 8) return text;
   let out = text;

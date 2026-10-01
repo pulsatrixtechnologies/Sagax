@@ -10,7 +10,7 @@ import { PrincipalRegistry } from "./principals.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import type { RouteContext } from "./routes/table.ts";
 import { RoutineManager } from "./routines.ts";
-import { Store } from "./store.ts";
+import { Store, titleFromMessage } from "./store.ts";
 import { appendMemoryLog, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
 
 const SELF = "pr_11111111-1111-4111-8111-111111111111";
@@ -117,6 +117,25 @@ describe("createOrgImportDocument", () => {
     expect(JSON.stringify(result.document)).not.toContain("sk-ant-api03");
     // Message, soul, playbook, routine prompt, bulletin and task title.
     expect(result.summary.redacted).toBe(6);
+  });
+
+  it("masks the start of a key that a cut title kept, and names new titles after redacting", () => {
+    const f = fixture();
+    // An older automatic title: cut at 47 characters before any redaction.
+    const task = f.store.createTask(f.atlas.id)!;
+    f.store.renameTask(f.atlas.id, task.threadId, "Bonjour Atlas, voici la cle de test sk-ant-api0…");
+    const result = createOrgImportDocument(f.store, f.routines.listRoutines(), {
+      localPrincipalId: SELF,
+      choices: [{ id: f.atlas.id, threads: true, memory: false }],
+      describe: describePerson,
+    });
+    if (!result.ok) throw new Error(result.code);
+    const json = JSON.stringify(result.document);
+    expect(json).not.toContain("sk-ant-api0");
+    expect(json).toContain("Bonjour Atlas, voici la cle de test «redacted 11 chars»…");
+    expect(result.summary.redacted).toBeGreaterThanOrEqual(1);
+    // New automatic titles redact first, so no key start survives the cut.
+    expect(titleFromMessage(`Bonjour Atlas, voici la cle de test ${KEY} merci`)).not.toMatch(/sk-ant/);
   });
 
   it("refuses a bot owned by someone else and an unknown bot", () => {

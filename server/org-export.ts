@@ -4,6 +4,7 @@
 // anything leaves it, people are named only by opaque local ids, and
 // secrets are scrubbed on the way out.
 import { ORG_IMPORT_FORMAT, ORG_IMPORT_VERSION, isPersonRef, parseOrgImportDocument, type OrgImportDocument } from "../shared/org-import.ts";
+import { redactCutSecrets } from "../shared/redact.ts";
 import { redactSecretsInText } from "./redact.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
@@ -113,7 +114,8 @@ export function createOrgImportDocument(store: Store, routines: Routine[], input
 
   let redacted = 0;
   const scrub = (text: string) => {
-    const out = redactSecretsInText(text);
+    // A title cut before redaction can still hold the start of a key.
+    const out = redactCutSecrets(redactSecretsInText(text));
     if (out !== text) redacted += Math.max(0, markers(out) - markers(text));
     return out;
   };
