@@ -1,8 +1,9 @@
 // Bot avatar: the Sagax owl (OwlAvatar.tsx), wrapped in the app's
 // historical MausAvatar API so no call site changes. The bot's color is the
 // owl's plumage; the app's MausState vocabulary and one-shot MausMotion beats
-// are translated to the owl's six states by src/lib/owl/owl-state.ts. The
-// mascot body catalog (bodyId) is no longer drawn: every bot is the owl.
+// are translated to the owl's six states by src/lib/owl/owl-state.ts. A bot
+// may wear another character instead (bot.mascotLook: one of the original
+// shapes, or Trombi), drawn by BotAvatar for every bot avatar in the app.
 import {
   forwardRef,
   memo,
@@ -17,6 +18,9 @@ import { OwlAvatar, type OwlAvatarHandle } from "./OwlAvatar";
 import { botAvatarProfile, clampAvatarFocus, clampAvatarZoom, type BotAvatarCrop } from "../../shared/bot-avatar";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
+import { botMascotLook, completeMascotLook, type MascotLook } from "../../shared/mascot-look";
+import { ShapeMascot, type ShapeMood } from "./ShapeMascot";
+import { Trombi, type TrombiPose } from "./retro-assistant/Trombi";
 
 /** Kept for API compatibility (the preview page reads them); the owl ignores both. */
 export const EYE_SCALE = 1.12;
@@ -154,8 +158,47 @@ export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
     avatarFocusY?: number;
     mascotBody?: MascotBodyId | null;
     mascotSkin?: MascotSkinId | null;
+    /** The bot's character (owl, original shape, Trombi); absent means the owl. */
+    mascotLook?: MascotLook | null;
   };
 };
+
+/** A shape's mood for the app's mascot states. */
+export function shapeMoodFor(state: MausState | undefined): ShapeMood {
+  if (!state) return "idle";
+  if (["thinking", "searching", "loading", "curious", "confused"].includes(state)) return "thinking";
+  if (["working", "progress", "orbit", "radar", "writing", "uploading", "sending", "receiving", "dictating", "humming"].includes(state)) return "working";
+  if (["happy", "celebrate", "proud", "laughing", "excited", "playful"].includes(state)) return "happy";
+  if (["sleeping", "drowsy", "powering-down"].includes(state)) return "sleeping";
+  return "idle";
+}
+
+/** Trombi's pose for the app's mascot states. */
+export function trombiPoseFor(state: MausState | undefined): TrombiPose {
+  const mood = shapeMoodFor(state);
+  if (mood === "thinking" || mood === "working") return "think";
+  if (mood === "happy") return "celebrate";
+  if (mood === "sleeping") return "sleep";
+  if (state === "listening" || state === "notifying") return "speak";
+  return "idle";
+}
+
+/**
+ * The bot's character, when it is not the owl: one of the original shapes or
+ * Trombi, in the bot's look. Every bot avatar in the app comes through
+ * BotAvatar, so this is where a character change shows everywhere.
+ */
+function CharacterAvatar({ look, color, size, state, animated = true, label }: { look: MascotLook; color: MausColor; size: number; state?: MausState; animated?: boolean; label?: string | null }) {
+  const full = completeMascotLook(look);
+  if (full.character === "shape") {
+    return <ShapeMascot shape={full.shape} skin={full.skins.shape} color={color} size={size} mood={shapeMoodFor(state)} animated={animated} label={label ?? null} />;
+  }
+  return (
+    <span className={`trombi-avatar trombi-skin-${full.skins.trombi} inline-flex shrink-0 items-end justify-center`} style={{ width: size, height: size }} role={label ? "img" : undefined} aria-label={label ?? undefined}>
+      <Trombi pose={trombiPoseFor(state)} size={Math.round(size * 0.78)} still={!animated} label={null} />
+    </span>
+  );
+}
 
 export type BotAvatarOutcome = "flatImage" | "gradientMascot";
 
@@ -200,6 +243,10 @@ export function BotAvatar({ bot, size = 44, label, ...mascotProps }: BotAvatarPr
     imageFailed,
   });
 
+  const look = botMascotLook(bot.mascotLook);
+  if (outcome !== "flatImage" && look.character !== "owl") {
+    return <CharacterAvatar look={look} color={bot.color} size={size} state={mascotProps.state} animated={mascotProps.animated} label={label ?? bot.name} />;
+  }
   if (outcome !== "flatImage") {
     return (
       <MausAvatar

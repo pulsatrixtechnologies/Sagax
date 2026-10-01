@@ -3,9 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AVATAR_MAX,
   createFloatingBotWindows,
+  FLOAT_MAX,
   FLOATING_QUERY,
   floatingDefaultBounds,
   MAX_FLOATING,
+  READY_TIMEOUT_MS,
+  waitForPage,
   sanitizeFloatingEvent,
   sanitizeFloatingSnapshot,
   sanitizePositions,
@@ -26,7 +29,15 @@ function fakeElectron({ displays = [PRIMARY] } = {}) {
       this.destroyed = false;
       this.events = new Map();
       this.calls = [];
-      this.webContents = { sent: [], send: (channel, payload) => this.webContents.sent.push([channel, payload]), setWindowOpenHandler: vi.fn(), on: vi.fn() };
+      const handlers = new Map();
+      this.webContents = {
+        sent: [],
+        handlers,
+        send: (channel, payload) => this.webContents.sent.push([channel, payload]),
+        setWindowOpenHandler: vi.fn(),
+        on: (name, fn) => handlers.set(name, [...(handlers.get(name) ?? []), fn]),
+        fire: (name, ...args) => (handlers.get(name) ?? []).forEach((fn) => fn(...args)),
+      };
       this.loadURL = vi.fn(async () => undefined);
       windows.push(this);
     }
@@ -49,7 +60,16 @@ function fakeElectron({ displays = [PRIMARY] } = {}) {
     removeHandler: (channel) => handlers.delete(channel),
     removeListener: (channel) => listeners.delete(channel),
   };
-  const screen = { getAllDisplays: () => displays, getPrimaryDisplay: () => displays[0] };
+  const screenEvents = new Map();
+  const screen = {
+    getAllDisplays: () => displays,
+    getPrimaryDisplay: () => displays[0],
+    getCursorScreenPoint: () => ({ x: 700, y: 400 }),
+    on: (name, fn) => screenEvents.set(name, fn),
+    removeListener: (name) => screenEvents.delete(name),
+    setDisplays: (next) => { displays = next; },
+    fire: (name) => screenEvents.get(name)?.(),
+  };
   const main = { webContents: { sent: [], send(channel, payload) { this.sent.push([channel, payload]); } }, isDestroyed: () => false };
   return { BrowserWindow: FakeWindow, ipcMain, screen, handlers, listeners, windows, main };
 }
@@ -70,7 +90,9 @@ function setup(extra = {}) {
     readPositions: () => saved.positions ?? {},
     writePositions: (positions) => { saved.positions = JSON.parse(JSON.stringify(positions)); },
     focusMain,
+    log: (line) => logs.push(line),
   });
+  const logs = [];
   const fromMain = { sender: fake.main.webContents };
   const invoke = (channel, event, ...args) => fake.handlers.get(channel)(event, ...args);
   const emit = (channel, event, ...args) => fake.listeners.get(channel)(event, ...args);
@@ -79,7 +101,7 @@ function setup(extra = {}) {
     const win = controller.window(botId);
     return { win, from: { sender: win.webContents } };
   };
-  return { fake, controller, fromMain, invoke, emit, open, saved, focusMain };
+  return { fake, controller, fromMain, invoke, emit, open, saved, focusMain, logs };
 }
 
 const SNAPSHOT = {
@@ -104,6 +126,8 @@ describe("floating bots: one window per bot", () => {
     const { win } = open("bot_a");
     expect(win.options).toMatchObject({ frame: false, transparent: true, skipTaskbar: true, focusable: false, alwaysOnTop: true, show: false });
     expect(win.options.webPreferences).toMatchObject({ contextIsolation: true, sandbox: true, nodeIntegration: false, preload: "/app/electron/floating-bot-preload.cjs" });
+    // hidden or covered, the page is throttled: the 3D mascot stops drawing there
+    expect(win.options.webPreferences.backgroundThrottling).toBe(true);
     expect(win.loadURL).toHaveBeenCalledWith(`http://127.0.0.1:8799/?${FLOATING_QUERY}`);
     expect(win.calls).toContainEqual(["setAlwaysOnTop", true, "floating"]);
     expect(win.calls).toContainEqual(["setIgnoreMouseEvents", true, { forward: true }]);
@@ -228,6 +252,118 @@ describe("floating bots: lifecycle", () => {
   });
 });
 
+describe("floating bots: a window is never left invisible", () => {
+  it("retries a page that fails to load, reloads one that dies, and ignores an aborted load", () => {
+    vi.useFakeTimers();
+    try {
+      const { open, logs } = setup();
+      const { win } = open("bot_a");
+      expect(win.loadURL).toHaveBeenCalledTimes(1);
+      win.webContents.fire("did-fail-load", {}, -3, "ERR_ABORTED", "", true);
+      vi.advanceTimersByTime(5000);
+      expect(win.loadURL).toHaveBeenCalledTimes(1);
+      win.webContents.fire("did-fail-load", {}, -2, "ERR_FAILED", "", true);
+      vi.advanceTimersByTime(1000);
+      expect(win.loadURL).toHaveBeenCalledTimes(2);
+      win.webContents.fire("render-process-gone", {}, { reason: "crashed" });
+      vi.advanceTimersByTime(2000);
+      expect(win.loadURL).toHaveBeenCalledTimes(3);
+      expect(logs.some((line) => line.includes("page failed to load"))).toBe(true);
+      // never more than a few times
+      for (let i = 0; i < 6; i += 1) win.webContents.fire("did-fail-load", {}, -2, "ERR_FAILED", "", true);
+      vi.advanceTimersByTime(60_000);
+      expect(win.loadURL.mock.calls.length).toBeLessThanOrEqual(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a snapshot sent a moment before the window exists, for the window that opens", () => {
+    const { emit, fromMain, open } = setup();
+    emit("floating-bots:update", fromMain, { botId: "bot_a", snapshot: SNAPSHOT });
+    const { win, from } = open("bot_a");
+    emit("floating-bots:ready", from);
+    const [channel, state] = win.webContents.sent.at(-1);
+    expect(channel).toBe("floating-bot:state");
+    expect(state).toMatchObject({ name: "Ada", pose: "speak" });
+  });
+
+  it("asks the app page for a state when a window is ready without one, and keeps a closed window's state for the next", () => {
+    const { emit, fromMain, open, invoke, fake } = setup();
+    const first = open("bot_a");
+    emit("floating-bots:ready", first.from);
+    expect(fake.main.webContents.sent).toContainEqual(["floating-bots:want", { botId: "bot_a" }]);
+    emit("floating-bots:update", fromMain, { botId: "bot_a", snapshot: SNAPSHOT });
+    // closed and opened again (the app page remounted): the new window still gets the state
+    invoke("floating-bots:close", fromMain, { botId: "bot_a" });
+    const again = open("bot_a");
+    emit("floating-bots:ready", again.from);
+    expect(again.win.webContents.sent.at(-1)).toEqual(["floating-bot:state", expect.objectContaining({ name: "Ada" })]);
+  });
+
+  it("waits for a development page to answer before loading it", async () => {
+    let calls = 0;
+    const fetchImpl = async () => ({ ok: ++calls >= 3 });
+    expect(await waitForPage("http://127.0.0.1:5199/", { fetchImpl, delayMs: 1 })).toBe(true);
+    expect(calls).toBe(3);
+    expect(await waitForPage("http://x/", { fetchImpl: async () => { throw new Error("down"); }, tries: 2, delayMs: 1 })).toBe(false);
+  });
+
+  it("says in its log why a state did not reach a window", () => {
+    const { emit, open, logs, fake } = setup();
+    emit("floating-bots:update", { sender: {} }, { botId: "bot_a", snapshot: SNAPSHOT });
+    emit("floating-bots:update", { sender: fake.main.webContents }, { botId: "bot_a", snapshot: { v: 2 } });
+    const { from } = open("bot_b");
+    emit("floating-bots:ready", from);
+    expect(logs).toEqual(expect.arrayContaining([
+      "floating bots: update refused (not the app page)",
+      "floating bots: state for bot_a refused as malformed",
+      "floating bots: bot_b is ready but no state has come from the app yet; asking the app",
+    ]));
+  });
+
+  it("reloads a page that never says it is ready, and logs the page's errors", () => {
+    vi.useFakeTimers();
+    try {
+      const { open, emit, logs } = setup();
+      const ready = open("bot_a");
+      const silent = open("bot_b");
+      emit("floating-bots:ready", ready.from);
+      vi.advanceTimersByTime(READY_TIMEOUT_MS + 3000);
+      expect(ready.win.loadURL).toHaveBeenCalledTimes(1);
+      expect(silent.win.loadURL).toHaveBeenCalledTimes(2);
+      silent.win.webContents.fire("console-message", { level: "error", message: "TypeError: boom" });
+      silent.win.webContents.fire("console-message", { level: "info", message: "hello" });
+      expect(logs.filter((line) => line.includes("page error"))).toEqual(["floating bot bot_b page error: TypeError: boom"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("listens to display changes only once the app is ready (the screen module needs it)", async () => {
+    let ready;
+    const whenReady = () => new Promise((resolve) => { ready = resolve; });
+    const fake = fakeElectron();
+    const on = vi.spyOn(fake.screen, "on");
+    createFloatingBotWindows({ BrowserWindow: fake.BrowserWindow, screen: fake.screen, ipcMain: fake.ipcMain, getMainWindow: () => fake.main, pageUrl: () => "http://x/", preload: "/p", whenReady });
+    expect(on).not.toHaveBeenCalled();
+    ready();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(on).toHaveBeenCalledWith("display-removed", expect.any(Function));
+  });
+
+  it("brings every mascot back on screen when a display goes away", () => {
+    const { fake, open } = setup({ displays: [PRIMARY, SECOND] });
+    const { win } = open("bot_a");
+    win.setBounds({ x: 3000, y: 500, width: 156, height: 172 });
+    fake.screen.setDisplays([PRIMARY]);
+    fake.screen.fire("display-removed");
+    const bounds = win.getBounds();
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(PRIMARY.workArea.x + PRIMARY.workArea.width);
+  });
+});
+
 describe("floating bots: positions and screens", () => {
   it("remembers each bot's spot per display setup and restores it clamped", () => {
     const first = setup();
@@ -242,12 +378,46 @@ describe("floating bots: positions and screens", () => {
     expect(again.open("bot_a").win.getBounds()).toMatchObject({ x: spot.x, y: spot.y });
   });
 
+  it("lets the mascot fly its own window inside the work areas, without saving where it flew", () => {
+    const { open, invoke, emit, saved, fake } = setup({ displays: [PRIMARY, SECOND] });
+    const { win, from } = open("bot_a");
+    const home = win.getBounds();
+    const geometry = invoke("floating-bots:geometry", from);
+    expect(geometry).toEqual({ bounds: home, workArea: PRIMARY.workArea, cursor: { x: 700, y: 400 } });
+    emit("floating-bots:autopilot", from, true);
+    // a flight cannot leave the screens
+    expect(invoke("floating-bots:move-to", from, { x: -5000, y: 600 })).toMatchObject({ x: 0, y: 600 });
+    expect(invoke("floating-bots:move-to", from, { x: 100, y: -900 })).toMatchObject({ x: 100, y: PRIMARY.workArea.y });
+    win.events.get("moved")?.forEach((fn) => fn());
+    emit("floating-bots:moved", from);
+    expect(saved.positions).toBeUndefined();
+    // flown onto the second display, it reports that display's work area
+    invoke("floating-bots:move-to", from, { x: 2000, y: 500 });
+    expect(invoke("floating-bots:geometry", from).workArea).toEqual(SECOND.workArea);
+    emit("floating-bots:autopilot", from, false);
+    emit("floating-bots:moved", from);
+    expect(Object.values(saved.positions)[0].bot_a).toBeDefined();
+    // the main page and a stranger cannot fly it
+    expect(invoke("floating-bots:move-to", { sender: fake.main.webContents }, { x: 0, y: 0 })).toBeNull();
+    expect(invoke("floating-bots:geometry", { sender: {} })).toBeNull();
+    expect(invoke("floating-bots:move-to", from, { x: "1", y: 2 })).toBeNull();
+  });
+
   it("pulls a spot saved off every screen back onto the visible displays", () => {
     const key = displaySignature([PRIMARY, SECOND]);
     const { open } = setup({ displays: [PRIMARY, SECOND], positions: { [key]: { bot_a: { x: 99999, y: -5000 } } } });
     const bounds = open("bot_a").win.getBounds();
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(SECOND.workArea.x + SECOND.workArea.width);
     expect(bounds.y).toBeGreaterThanOrEqual(SECOND.workArea.y);
+  });
+
+  it("grows a window from the mascot's corner: bottom-right, or the one the balloon opened away from", () => {
+    const { open, invoke } = setup();
+    const { win, from } = open("bot_a");
+    win.setBounds({ x: 600, y: 300, width: 200, height: 200 });
+    expect(invoke("floating-bots:resize", from, { width: 500, height: 400 })).toMatchObject({ x: 300, y: 100 });
+    win.setBounds({ x: 600, y: 300, width: 200, height: 200 });
+    expect(invoke("floating-bots:resize", from, { width: 500, height: 400, anchorX: "left", anchorY: "top" })).toMatchObject({ x: 600, y: 300 });
   });
 
   it("drags and resizes inside the work areas", () => {
@@ -257,8 +427,8 @@ describe("floating bots: positions and screens", () => {
     expect(win.bounds).toMatchObject({ x: PRIMARY.workArea.x, y: PRIMARY.workArea.y });
     expect(invoke("floating-bots:move-by", from, { dx: Number.NaN, dy: 0 })).toBeNull();
     invoke("floating-bots:resize", from, { width: 99999, height: 99999 });
-    expect(win.bounds.width).toBeLessThanOrEqual(400);
-    expect(win.bounds.height).toBeLessThanOrEqual(560);
+    expect(win.bounds.width).toBeLessThanOrEqual(FLOAT_MAX.width);
+    expect(win.bounds.height).toBeLessThanOrEqual(Math.min(FLOAT_MAX.height, PRIMARY.workArea.height));
   });
 
   it("drops malformed saved positions", () => {
@@ -294,11 +464,60 @@ describe("floating bots: payload validation", () => {
       balloon: { ...SNAPSHOT.balloon, kind: "chat", text: "y".repeat(9000), asked: "z".repeat(900) },
     });
     expect(clean).toMatchObject({ locale: "en", color: "blue", skin: "none", sparkle: 0 });
-    expect(clean.menu).toHaveLength(6);
+    expect(clean.menu).toHaveLength(8);
     expect(clean.menu[0].label.length).toBe(80);
     expect(clean.balloon.text.length).toBe(4000);
     expect(clean.balloon.asked.length).toBe(300);
     expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, balloon: { kind: "html" } }).balloon).toBeNull();
+  });
+
+  it("keeps the mascot's task, mood, fly-away choice and hints, bounded", () => {
+    expect(sanitizeFloatingSnapshot(SNAPSHOT)).toMatchObject({ task: "idle", mood: 0.6, flyAway: true, hints: { mood: "", working: "" } });
+    const clean = sanitizeFloatingSnapshot({ ...SNAPSHOT, task: "working", mood: 4, flyAway: false, hints: { mood: "m".repeat(500), working: "w".repeat(500), html: "<b>" } });
+    expect(clean).toMatchObject({ task: "working", mood: 1, flyAway: false });
+    expect(clean.hints.mood.length).toBe(80);
+    expect(clean.hints.working.length).toBe(200);
+    expect(clean.hints).not.toHaveProperty("html");
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, task: "rm -rf", mood: Number.NaN })).toMatchObject({ task: "idle", mood: 0.6 });
+  });
+
+  it("keeps the character a bot wears and its look, known values only", () => {
+    expect(sanitizeFloatingSnapshot(SNAPSHOT)).toMatchObject({ mascot: { character: "owl" } });
+    const clean = sanitizeFloatingSnapshot({
+      ...SNAPSHOT,
+      mascot: { character: "shape", shape: "cloud", style: "3d", skins: { shape: "neon", trombi: "gold", html: "<b>" }, extra: 1 },
+    });
+    expect(clean.mascot).toEqual({ character: "shape", shape: "cloud", style: "3d", skins: { shape: "neon", trombi: "gold" } });
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "dragon" } }).mascot).toEqual({ character: "owl" });
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "shape", shape: "star" } }).mascot).toEqual({ character: "shape" });
+  });
+
+  it("keeps the bot's id, a few earlier exchanges and the pin label, bounded", () => {
+    const clean = sanitizeFloatingSnapshot({
+      ...SNAPSHOT,
+      id: "bot_a",
+      hints: { pin: "Put back" },
+      balloon: { ...SNAPSHOT.balloon, history: [...Array.from({ length: 9 }, (_, i) => ({ asked: `q${i}`, text: "t".repeat(3000) })), null] },
+    });
+    expect(clean.id).toBe("bot_a");
+    expect(clean.hints.pin).toBe("Put back");
+    expect(clean.balloon.history).toHaveLength(3);
+    expect(clean.balloon.history[0].text.length).toBe(2000);
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, id: "../x" }).id).toBe("");
+  });
+
+  it("keeps the activity level, the hoot and the context figures for the energy bar, bounded", () => {
+    expect(sanitizeFloatingSnapshot(SNAPSHOT)).toMatchObject({ liveliness: "normal", context: null });
+    const clean = sanitizeFloatingSnapshot({
+      ...SNAPSHOT,
+      liveliness: "lively",
+      hints: { hoot: "h".repeat(90) },
+      context: { percent: 24.4, tokens: 48_000, window: 200_000, detail: "d".repeat(400), label: "Context 24%", html: "<b>" },
+    });
+    expect(clean.liveliness).toBe("lively");
+    expect(clean.hints.hoot.length).toBe(40);
+    expect(clean.context).toEqual({ percent: 24, tokens: 48_000, window: 200_000, detail: "d".repeat(120), label: "Context 24%" });
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, liveliness: "wild", context: { tokens: "x" } })).toMatchObject({ liveliness: "normal", context: null });
   });
 
   it("takes a picture only as a bounded inline image, never a URL", () => {
@@ -311,6 +530,9 @@ describe("floating bots: payload validation", () => {
 
   it("accepts only the events a floating window can make", () => {
     expect(sanitizeFloatingEvent({ type: "click" })).toEqual({ type: "click" });
+    expect(sanitizeFloatingEvent({ type: "play", extra: 1 })).toEqual({ type: "play" });
+    expect(sanitizeFloatingEvent({ type: "pet" })).toEqual({ type: "pet" });
+    expect(sanitizeFloatingEvent({ type: "mascot", choice: { character: "trombi" } })).toBeNull();
     expect(sanitizeFloatingEvent({ type: "menu", id: "dock" })).toEqual({ type: "menu", id: "dock" });
     expect(sanitizeFloatingEvent({ type: "menu", id: "../x" })).toBeNull();
     expect(sanitizeFloatingEvent({ type: "send", text: "q".repeat(5000) }).text.length).toBe(4000);

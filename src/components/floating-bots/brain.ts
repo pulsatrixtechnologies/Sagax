@@ -3,7 +3,11 @@
 // may stand. The main app page runs it for every floated bot and sends the
 // result to that bot's window (desktop) or draws it itself (browser, phone).
 import type { Bot, Message, Task } from "@/state/store";
-import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPose, FloatingSnapshot } from "./protocol";
+import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPose, FloatingSnapshot, MascotTask } from "./protocol";
+import { moodLevel } from "./mood";
+import type { Liveliness } from "./behavior";
+import type { FloatingContext } from "./gauge";
+import type { MascotLook } from "../../../shared/mascot-look";
 
 /** What the balloon keeps of a long reply; the rest is one click away in the app. */
 export const BALLOON_REPLY_CHARS = 3000;
@@ -22,6 +26,8 @@ export interface FloatingSession {
   celebrate: boolean;
   /** The last reply seen, kept while the app shows another of the bot's threads. */
   lastReply: string;
+  /** Earlier exchanges of this conversation, oldest first. */
+  history: { asked: string; text: string }[];
 }
 
 export const newFloatingSession = (): FloatingSession => ({
@@ -33,7 +39,18 @@ export const newFloatingSession = (): FloatingSession => ({
   sparkle: 0,
   celebrate: false,
   lastReply: "",
+  history: [],
 });
+
+/** Earlier exchanges kept in the balloon, and how much of each. */
+export const BALLOON_HISTORY = 4;
+const HISTORY_TEXT = 2000;
+
+/** The conversation so far, before a new question: the last exchange joins the history. */
+export function withHistory(session: FloatingSession): FloatingSession["history"] {
+  if (!session.asked && !session.lastReply) return session.history;
+  return [...session.history, { asked: session.asked ?? "", text: truncateReply(session.lastReply, HISTORY_TEXT).text }].slice(-BALLOON_HISTORY);
+}
 
 export interface FloatingLabels {
   character: string;
@@ -53,6 +70,18 @@ export interface FloatingLabels {
   menuShow: string;
   menuTop: string;
   menuDock: string;
+  menuFly: string;
+  moodLow: string;
+  moodOk: string;
+  moodHappy: string;
+  /** The parked badge's label while the bot works away from its spot. */
+  working: string;
+  /** The owl's hoot bubble. */
+  hoot?: string;
+  /** The balloon's "put back by the mascot" button. */
+  pin?: string;
+  /** "Activity: normal", the menu item that cycles the activity level. */
+  menuLively?: string;
 }
 
 export type FloatingBot = Pick<Bot, "id" | "name" | "color" | "mascotSkin" | "threadId" | "messages" | "busy" | "activity"> & {
@@ -122,13 +151,27 @@ export function floatingStatus(bot: FloatingBot, session: FloatingSession, strea
   };
 }
 
-export function floatingMenu(labels: FloatingLabels, session: FloatingSession, alwaysOnTop: boolean | null): FloatingMenuItem[] {
+export function floatingMenu(labels: FloatingLabels, session: FloatingSession, alwaysOnTop: boolean | null, flyAway = true): FloatingMenuItem[] {
   return [
     { id: "open", label: labels.menuOpen },
     { id: "balloon", label: session.open ? labels.menuHide : labels.menuShow },
     ...(alwaysOnTop === null ? [] : [{ id: "top", label: labels.menuTop, checked: alwaysOnTop }]),
+    { id: "fly", label: labels.menuFly, checked: flyAway },
+    ...(labels.menuLively ? [{ id: "lively", label: labels.menuLively }] : []),
     { id: "dock", label: labels.menuDock },
   ];
+}
+
+/**
+ * What the mascot should do about the bot's work: fly off while any of its
+ * threads runs, come back for an approval, look sad after a failed send.
+ */
+export function floatingTask(bot: FloatingBot, session: FloatingSession, status: FloatingStatus): MascotTask {
+  if (session.error) return "error";
+  const tasks = bot.tasks ?? [];
+  if (status.waiting || bot.activity === "waiting-on-you" || tasks.some((task) => task.activity === "waiting-on-you")) return "waiting";
+  if (status.busy || bot.busy || tasks.some((task) => task.busy)) return "working";
+  return "idle";
 }
 
 export interface FloatingInput {
@@ -142,6 +185,16 @@ export interface FloatingInput {
   locale: string;
   /** null where there is no desktop window to keep on top (browser, phone). */
   alwaysOnTop: boolean | null;
+  /** The mascot's mood, 0..1 (mood.ts); a new mascot when absent. */
+  mood?: number;
+  /** The "Fly away during tasks" setting; on when absent. */
+  flyAway?: boolean;
+  /** The "Activity level" setting. */
+  liveliness?: Liveliness;
+  /** The followed thread's context use (context.ts), for the energy bar. */
+  context?: FloatingContext | null;
+  /** The character the bot wears on the desktop. */
+  mascot?: MascotLook;
 }
 
 /** The pose and balloon for this moment, as one snapshot. */
@@ -156,7 +209,10 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
         : session.celebrate
           ? "celebrate"
           : "idle";
-  const common = { open: labels.open, close: labels.close, asked: session.asked ?? undefined };
+  const common = { open: labels.open, close: labels.close, asked: session.asked ?? undefined, history: session.history ?? [] };
+  const mood = Math.round(Math.min(1, Math.max(0, input.mood ?? 0.6)) * 100) / 100;
+  const level = moodLevel(mood);
+  const flyAway = input.flyAway !== false;
   const input_ = { label: labels.inputLabel, placeholder: labels.placeholder, send: labels.send };
   let balloon: FloatingBalloon | null = null;
   if (session.open) {
@@ -167,7 +223,8 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
     } else if (status.busy && !status.reply) {
       balloon = { ...common, kind: "thinking", text: labels.thinking, streaming: false, truncated: false, input: input_ };
     } else {
-      const reply = truncateReply(plainReply(status.reply));
+      // the reply as markdown: the balloon renders it like the chat
+      const reply = truncateReply(status.reply);
       balloon = {
         ...common,
         kind: "chat",
@@ -180,6 +237,7 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
   }
   return {
     v: 1,
+    id: bot.id,
     name: bot.name,
     label: labels.character,
     color: bot.color,
@@ -190,8 +248,20 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
     retro: input.retro,
     sparkle: session.sparkle,
     locale: input.locale,
-    menu: floatingMenu(labels, session, input.alwaysOnTop),
+    menu: floatingMenu(labels, session, input.alwaysOnTop, flyAway),
     balloon,
+    task: floatingTask(bot, session, status),
+    mood,
+    flyAway,
+    hints: {
+      mood: level === "low" ? labels.moodLow : level === "happy" ? labels.moodHappy : labels.moodOk,
+      working: labels.working,
+      ...(labels.hoot ? { hoot: labels.hoot } : {}),
+      ...(labels.pin ? { pin: labels.pin } : {}),
+    },
+    liveliness: input.liveliness ?? "normal",
+    context: input.context ?? null,
+    mascot: input.mascot ?? { character: "owl" },
   };
 }
 

@@ -116,12 +116,110 @@ export function setFloatingBotOnTop(botId: string, top: boolean, storage?: Float
   commit(list.map((entry) => (entry.id === botId ? { ...entry, top } : entry)), storage);
 }
 
+
 /** Browser and phone: remember where the character was dropped. */
 export function setFloatingBotPosition(botId: string, pos: { right: number; bottom: number }, storage?: FloatingStorage): void {
   if (!finite(pos.right) || !finite(pos.bottom)) return;
   const list = entries();
   if (!list.some((entry) => entry.id === botId)) return;
   commit(list.map((entry) => (entry.id === botId ? { ...entry, pos: { right: pos.right, bottom: pos.bottom } } : entry)), storage);
+}
+
+/* ------------------------------------------------------------- settings */
+
+export type FloatingLiveliness = "calm" | "normal" | "lively";
+export const FLOATING_LIVELINESS: readonly FloatingLiveliness[] = ["calm", "normal", "lively"];
+
+export interface FloatingBotPrefs {
+  /** The mascot flies off to the screen edge while its bot works, and comes back when done. */
+  flyAway: boolean;
+  /** How often the mascot does something on its own. */
+  liveliness: FloatingLiveliness;
+}
+
+const PREFS_KEY = "omb.floatingBots.prefs.v1";
+
+export function readFloatingBotPrefs(storage: FloatingStorage | undefined = defaultStorage()): FloatingBotPrefs {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(storage?.getItem(PREFS_KEY) ?? "null");
+  } catch {
+    raw = null;
+  }
+  const value = raw && typeof raw === "object" ? (raw as { flyAway?: unknown; liveliness?: unknown }) : {};
+  const liveliness = FLOATING_LIVELINESS.includes(value.liveliness as FloatingLiveliness) ? (value.liveliness as FloatingLiveliness) : "normal";
+  return { flyAway: value.flyAway !== false, liveliness };
+}
+
+let prefs: FloatingBotPrefs | null = null;
+
+export function floatingBotPrefs(): FloatingBotPrefs {
+  if (!prefs) prefs = readFloatingBotPrefs();
+  return prefs;
+}
+
+/** Settings > Appearance and the mascot's own menu: "Fly away during tasks". */
+export function setFloatingFlyAway(on: boolean, storage: FloatingStorage | undefined = defaultStorage()): void {
+  if (floatingBotPrefs().flyAway === on) return;
+  savePrefs({ ...floatingBotPrefs(), flyAway: on }, storage);
+}
+
+/** Settings > Appearance and the mascot's own menu: "Activity level". */
+export function setFloatingLiveliness(level: FloatingLiveliness, storage: FloatingStorage | undefined = defaultStorage()): void {
+  if (!FLOATING_LIVELINESS.includes(level) || floatingBotPrefs().liveliness === level) return;
+  savePrefs({ ...floatingBotPrefs(), liveliness: level }, storage);
+}
+
+/** The next activity level, for the menu item that cycles through them. */
+export const nextLiveliness = (level: FloatingLiveliness): FloatingLiveliness =>
+  FLOATING_LIVELINESS[(FLOATING_LIVELINESS.indexOf(level) + 1) % FLOATING_LIVELINESS.length];
+
+function savePrefs(next: FloatingBotPrefs, storage: FloatingStorage | undefined): void {
+  prefs = next;
+  try {
+    storage?.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* private mode or quota: the choice holds for this session */
+  }
+  for (const listener of listeners) listener();
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
+}
+
+/* ------------------------------------------- the old per-device character */
+// The character used to be kept per device (omb.botMascots.v1). It now lives
+// with the bot (bot.mascotLook, shared/mascot-look.ts); this reads the old
+// record once so the app can move it onto the bots, then forgets it.
+
+const LEGACY_MASCOTS_KEY = "omb.botMascots.v1";
+const LEGACY_SHAPES: Record<string, string> = { circle: "circle", blob: "blob", squircle: "squircle", capsule: "pill", hexagon: "hexagon", drop: "drop" };
+
+/** The old per-device choices, as bot looks: { botId: { character, style, shape } }. */
+export function readLegacyBotLooks(storage: FloatingStorage | undefined = defaultStorage()): Record<string, { character: "owl" | "shape" | "trombi"; style?: "2d" | "3d"; shape?: string }> {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(storage?.getItem(LEGACY_MASCOTS_KEY) ?? "null");
+  } catch {
+    raw = null;
+  }
+  const out: Record<string, { character: "owl" | "shape" | "trombi"; style?: "2d" | "3d"; shape?: string }> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [botId, value] of Object.entries(raw).slice(0, 256)) {
+    const old = value as { kind?: unknown; body?: unknown; style?: unknown } | null;
+    if (!BOT_ID.test(botId) || !old || typeof old !== "object") continue;
+    const style = old.style === "3d" || old.style === "2d" ? old.style : undefined;
+    if (old.kind === "owl") out[botId] = { character: "owl", ...(style ? { style } : {}) };
+    else if (old.kind === "trombi") out[botId] = { character: "trombi" };
+    else if (old.kind === "body") out[botId] = { character: "shape", shape: LEGACY_SHAPES[String(old.body)] ?? "circle" };
+  }
+  return out;
+}
+
+export function forgetLegacyBotLooks(storage: FloatingStorage | undefined = defaultStorage()): void {
+  try {
+    (storage as Storage | undefined)?.removeItem?.(LEGACY_MASCOTS_KEY);
+  } catch {
+    /* nothing to forget */
+  }
 }
 
 export function subscribeFloatingBots(listener: () => void): () => void {
@@ -132,6 +230,7 @@ export function subscribeFloatingBots(listener: () => void): () => void {
 /** Tests only: forget the cached list so the next read comes from storage. */
 export function resetFloatingBotsForTests(): void {
   current = null;
+  prefs = null;
   listeners.clear();
 }
 

@@ -27,12 +27,32 @@ import { assistantWindowOptions, clampToDisplays, displaySignature } from "./ret
 
 export const FLOATING_QUERY = "omb-floating-bot=1";
 
-export const FLOAT_SIZE = Object.freeze({ width: 132, height: 136 });
+export const FLOAT_SIZE = Object.freeze({ width: 156, height: 172 });
 export const FLOAT_MIN = Object.freeze({ width: 60, height: 60 });
-export const FLOAT_MAX = Object.freeze({ width: 400, height: 560 });
+/** Room for the mascot and a resized, moved balloon (the balloon itself caps at about 60 % of the work area). */
+export const FLOAT_MAX = Object.freeze({ width: 1100, height: 1100 });
 /** More than this many floating windows is a mistake, not a desk. */
 export const MAX_FLOATING = 12;
 const MAX_MOVE = 4000;
+/** A page that failed or died is reloaded this many times at most, a little later each time. */
+const MAX_RELOADS = 3;
+const RELOAD_DELAY_MS = 800;
+/** A page that has not said it is ready after this long is reloaded. */
+export const READY_TIMEOUT_MS = 12_000;
+
+/** Resolves once `url` answers (or after `tries`): a development page server may still be starting. */
+export async function waitForPage(url, { fetchImpl = globalThis.fetch, tries = 40, delayMs = 250 } = {}) {
+  for (let i = 0; i < tries; i += 1) {
+    try {
+      const response = await fetchImpl(url, { method: "GET", signal: AbortSignal.timeout(2000) });
+      if (response.ok) return true;
+    } catch {
+      /* not up yet */
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return false;
+}
 
 const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const clampNumber = (value, low, high) => Math.min(Math.max(value, low), high);
@@ -61,9 +81,48 @@ export function floatingDefaultBounds(primaryWorkArea, index = 0, size = FLOAT_S
 /* ---------------------------------------------------------------- payloads */
 
 export const REPLY_MAX = 4000;
+/** Earlier exchanges kept in a balloon, and how much of each. */
+export const HISTORY_MAX = 4;
+export const HISTORY_TEXT_MAX = 2000;
 const ID_RE = /^[a-zA-Z0-9:_-]{1,64}$/;
 const POSES = new Set(["idle", "think", "speak", "celebrate", "alert", "sleep"]);
 const BALLOON_KINDS = new Set(["chat", "thinking", "approval", "error"]);
+const TASKS = new Set(["idle", "working", "waiting", "error"]);
+const LIVELINESS = new Set(["calm", "normal", "lively"]);
+const MAX_TOKENS = 1e9;
+const CHARACTERS = new Set(["owl", "shape", "trombi"]);
+const SHAPES = new Set(["circle", "blob", "squircle", "pill", "triangle", "hexagon", "cloud", "drop"]);
+const SHAPE_SKINS = new Set(["plain", "glossy", "outline", "neon", "pastel", "night"]);
+const TROMBI_SKINS = new Set(["classic", "gold", "neon", "retro98"]);
+
+/** The bot's character and its look (shared/mascot-look.ts): known values only. */
+export function mascotLook(value) {
+  if (!value || typeof value !== "object" || !CHARACTERS.has(value.character)) return null;
+  const skins = value.skins && typeof value.skins === "object" ? value.skins : {};
+  const cleanSkins = {
+    ...(SHAPE_SKINS.has(skins.shape) ? { shape: skins.shape } : {}),
+    ...(TROMBI_SKINS.has(skins.trombi) ? { trombi: skins.trombi } : {}),
+  };
+  return {
+    character: value.character,
+    ...(value.style === "2d" || value.style === "3d" ? { style: value.style } : {}),
+    ...(SHAPES.has(value.shape) ? { shape: value.shape } : {}),
+    ...(Object.keys(cleanSkins).length ? { skins: cleanSkins } : {}),
+  };
+}
+
+
+/** The followed thread's context use, for the mascot's energy bar: numbers and two short texts. */
+function context(value) {
+  if (!value || typeof value !== "object" || !isFiniteNumber(value.tokens) || value.tokens < 0) return null;
+  return {
+    ...(isFiniteNumber(value.percent) ? { percent: clampNumber(Math.round(value.percent), 0, 999) } : {}),
+    tokens: clampNumber(Math.round(value.tokens), 0, MAX_TOKENS),
+    ...(isFiniteNumber(value.window) && value.window > 0 ? { window: clampNumber(Math.round(value.window), 1, MAX_TOKENS) } : {}),
+    detail: text(value.detail, 120) ?? "",
+    label: text(value.label, 60) ?? "",
+  };
+}
 const CROPS = new Set(["circle", "rounded", "square"]);
 const COLOR_RE = /^#?[a-zA-Z0-9-]{1,24}$/;
 const SKIN_RE = /^[a-z0-9-]{1,32}$/;
@@ -77,7 +136,7 @@ const flag = (value) => value === true;
 function menuItems(value) {
   if (!Array.isArray(value)) return [];
   return value
-    .slice(0, 6)
+    .slice(0, 8)
     .filter((item) => item && typeof item === "object" && ID_RE.test(item.id) && typeof item.label === "string")
     .map((item) => ({
       id: item.id,
@@ -108,6 +167,8 @@ export function sanitizeFloatingSnapshot(value) {
   if (!POSES.has(value.pose) || typeof value.name !== "string") return null;
   const snapshot = {
     v: 1,
+    // the bot's id, so the balloon can remember its size and place per bot
+    id: isBotId(value.id) ? value.id : "",
     name: value.name.slice(0, 80),
     label: text(value.label, 200) ?? value.name.slice(0, 80),
     color: typeof value.color === "string" && COLOR_RE.test(value.color) ? value.color : "blue",
@@ -120,6 +181,19 @@ export function sanitizeFloatingSnapshot(value) {
     locale: /^[a-zA-Z-]{2,16}$/.test(value.locale ?? "") ? value.locale : "en",
     menu: menuItems(value.menu),
     balloon: null,
+    // the mascot: what its bot is doing, its mood, and whether it flies off meanwhile
+    task: TASKS.has(value.task) ? value.task : "idle",
+    mood: isFiniteNumber(value.mood) ? clampNumber(value.mood, 0, 1) : 0.6,
+    flyAway: value.flyAway !== false,
+    hints: {
+      mood: text(value.hints?.mood, 80) ?? "",
+      working: text(value.hints?.working, 200) ?? "",
+      ...(typeof value.hints?.hoot === "string" ? { hoot: value.hints.hoot.slice(0, 40) } : {}),
+      ...(typeof value.hints?.pin === "string" ? { pin: value.hints.pin.slice(0, 80) } : {}),
+    },
+    liveliness: LIVELINESS.has(value.liveliness) ? value.liveliness : "normal",
+    context: context(value.context),
+    mascot: mascotLook(value.mascot) ?? { character: "owl" },
   };
   const balloon = value.balloon;
   if (balloon && typeof balloon === "object" && BALLOON_KINDS.has(balloon.kind)) {
@@ -128,6 +202,13 @@ export function sanitizeFloatingSnapshot(value) {
       title: text(balloon.title, 160),
       asked: text(balloon.asked, 300),
       text: text(balloon.text, REPLY_MAX) ?? "",
+      // earlier exchanges of this conversation, oldest first (a few, bounded)
+      history: Array.isArray(balloon.history)
+        ? balloon.history.slice(-HISTORY_MAX).filter((item) => item && typeof item === "object").map((item) => ({
+            asked: text(item.asked, 300) ?? "",
+            text: text(item.text, HISTORY_TEXT_MAX) ?? "",
+          }))
+        : [],
       streaming: flag(balloon.streaming),
       truncated: flag(balloon.truncated),
       open: text(balloon.open, 80) ?? "",
@@ -144,7 +225,7 @@ export function sanitizeFloatingSnapshot(value) {
   return snapshot;
 }
 
-const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send"]);
+const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send", "play", "pet"]);
 export const SEND_MAX = 4000;
 
 /** What a floating window may report back: a click, a menu choice, or typed text. */
@@ -179,7 +260,7 @@ export function sanitizePositions(value) {
 /**
  * @param {object} deps
  * @param {typeof import("electron").BrowserWindow} deps.BrowserWindow
- * @param {{ getAllDisplays(): any[]; getPrimaryDisplay(): any }} deps.screen
+ * @param {{ getAllDisplays(): any[]; getPrimaryDisplay(): any; getCursorScreenPoint?(): {x:number,y:number} }} deps.screen
  * @param {{ handle: Function; on: Function; removeHandler?: Function; removeListener?: Function }} deps.ipcMain
  * @param {() => (import("electron").BrowserWindow | null)} deps.getMainWindow
  * @param {() => string} deps.pageUrl       the app origin's floating-only page
@@ -187,6 +268,7 @@ export function sanitizePositions(value) {
  * @param {() => unknown} [deps.readPositions]
  * @param {(positions: Record<string, Record<string, {x:number,y:number}>>) => void} [deps.writePositions]
  * @param {(event: any) => boolean} [deps.isTrustedMain]  the sender is the local app page
+ * @param {() => Promise<unknown>} [deps.whenReady]  resolves once Electron's app is ready (the screen module needs it)
  * @param {() => void} [deps.focusMain]     bring the app window forward ("Open in the app")
  * @param {string} [deps.platform]          process.platform by default
  * @param {(line: string) => void} [deps.log]
@@ -197,8 +279,21 @@ export function createFloatingBotWindows(deps) {
   // the small window simply stays clickable rather than becoming unreachable.
   const clickThrough = (deps.platform ?? process.platform) !== "linux";
   const log = deps.log ?? (() => {});
-  /** botId -> { win, snapshot, onTop } */
+  /** botId -> { win, snapshot, onTop, autopilot } */
   const floats = new Map();
+  /**
+   * The latest snapshot for a bot whose window is not open (yet): the brain
+   * may send it a moment before the window exists, and only sends again when
+   * something changes, so it is kept for the window that opens next.
+   */
+  const pending = new Map();
+  /** A diagnostic said once, not on every update. */
+  const noted = new Set();
+  const note = (line) => {
+    if (noted.has(line) || noted.size > 50) return;
+    noted.add(line);
+    log(`floating bots: ${line}`);
+  };
   let positions = null;
   let silent = false;
 
@@ -237,7 +332,8 @@ export function createFloatingBotWindows(deps) {
 
   const remember = (botId) => {
     const entry = floats.get(botId);
-    if (!live(entry)) return;
+    // the mascot flying off or wandering is not the person choosing a spot
+    if (!live(entry) || entry.autopilot) return;
     const { x, y, width, height } = entry.win.getBounds();
     const all = savedPositions();
     const key = signature();
@@ -278,8 +374,10 @@ export function createFloatingBotWindows(deps) {
     }
     if (floats.size >= MAX_FLOATING) return null;
     const options = assistantWindowOptions({ preload, bounds: startBounds(botId), title: "Floating bot" });
-    const created = new BrowserWindow({ ...options, alwaysOnTop });
-    const entry = { win: created, snapshot: existing?.snapshot ?? null, onTop: alwaysOnTop };
+    // throttled when hidden or covered, so the 3D mascot stops drawing (and spending battery) there
+    const created = new BrowserWindow({ ...options, alwaysOnTop, webPreferences: { ...options.webPreferences, backgroundThrottling: true } });
+    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false };
+    pending.delete(botId);
     floats.set(botId, entry);
     applyOnTop(created, alwaysOnTop);
     try {
@@ -296,18 +394,88 @@ export function createFloatingBotWindows(deps) {
     });
     created.on("moved", () => remember(botId));
     created.once("closed", () => {
+      clearTimeout(entry.watchdog);
       if (floats.get(botId)?.win !== created) return;
       floats.delete(botId);
       // closed from outside the brain (a window shortcut): the bot goes back in the app
       if (!silent) notifyMain("floating-bots:closed", { botId });
     });
-    void created.loadURL(pageUrl()).catch((error) => log(`floating bot window failed to load: ${error?.message ?? error}`));
+    keepAlive(botId, entry);
+    void load(entry);
     return created;
   }
+
+  /*
+   * A window whose page never loads, or dies, is an invisible mascot: the
+   * window is there, transparent and empty. So a failed load is retried, a
+   * dead page reloaded, a page that never says it is ready reloaded once,
+   * and every error of the page reaches main's log.
+   */
+  const load = async (entry) => {
+    if (!live(entry)) return;
+    const url = pageUrl();
+    // in development the page comes from Vite: wait until it answers rather than fail the first load
+    if (deps.waitForPage) await deps.waitForPage(url).catch(() => undefined);
+    if (!live(entry)) return;
+    void entry.win.loadURL(url).catch((error) => log(`floating bot window failed to load: ${error?.message ?? error}`));
+  };
+
+  function keepAlive(botId, entry) {
+    const { win } = entry;
+    entry.ready = false;
+    entry.retries = 0;
+    const retry = (why) => {
+      if (!live(entry) || entry.retries >= MAX_RELOADS) return;
+      entry.retries += 1;
+      log(`floating bot ${botId}: ${why}; reloading (${entry.retries}/${MAX_RELOADS})`);
+      entry.ready = false;
+      setTimeout(() => void load(entry), RELOAD_DELAY_MS * entry.retries);
+    };
+    win.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
+      // -3 is an aborted load (a reload, or the window closing), not a failure
+      if (isMainFrame !== false && code !== -3) retry(`page failed to load (${code} ${description})`);
+    });
+    win.webContents.on("render-process-gone", (_event, details) => retry(`page process gone (${details?.reason ?? "unknown"})`));
+    win.webContents.on("console-message", (...args) => {
+      // Electron passes one event object (newer) or (event, level, message, line, source)
+      const [first, level, message] = args;
+      const text = typeof first?.message === "string" ? first.message : message;
+      const severity = typeof first?.level === "string" ? first.level : level;
+      if (severity === "error" || severity === 3) log(`floating bot ${botId} page error: ${String(text).slice(0, 500)}`);
+    });
+    entry.watchdog = setTimeout(function check() {
+      if (!live(entry) || entry.ready) return;
+      retry("page never became ready");
+      entry.watchdog = setTimeout(check, READY_TIMEOUT_MS);
+    }, READY_TIMEOUT_MS);
+  }
+
+  /** A display was removed, added or resized: every mascot back inside what is left. */
+  const reclamp = () => {
+    const areas = workAreas();
+    for (const [botId, entry] of floats) {
+      if (!live(entry)) continue;
+      const bounds = entry.win.getBounds();
+      const next = clampToDisplays(bounds, areas);
+      if (next.x !== bounds.x || next.y !== bounds.y || next.width !== bounds.width || next.height !== bounds.height) {
+        entry.win.setBounds(next);
+        log(`floating bot ${botId}: moved back on screen after a display change`);
+      }
+    }
+  };
+  // The screen module exists only after app "ready"; createFloatingBotWindows
+  // can run earlier, so the display listeners wait for it.
+  const listenDisplays = () => {
+    for (const change of ["display-added", "display-removed", "display-metrics-changed"]) screen.on?.(change, reclamp);
+  };
+  if (deps.whenReady) void deps.whenReady().then(listenDisplays);
+  else listenDisplays();
 
   function close(botId) {
     const entry = floats.get(botId);
     floats.delete(botId);
+    // the same bot's next window starts from its last state (the brain may not send it again)
+    if (entry?.snapshot) pending.set(botId, entry.snapshot);
     if (live(entry)) entry.win.destroy();
   }
 
@@ -357,6 +525,34 @@ export function createFloatingBotWindows(deps) {
       win.setBounds(next);
       return { x: next.x, y: next.y };
     },
+    "floating-bots:move-to": (event, point) => {
+      const found = senderFloat(event);
+      if (!found || !point || !isFiniteNumber(point.x) || !isFiniteNumber(point.y)) return null;
+      const { win } = found.entry;
+      const next = clampToDisplays({ ...win.getBounds(), x: Math.round(point.x), y: Math.round(point.y) }, workAreas());
+      win.setBounds(next);
+      return next;
+    },
+    "floating-bots:geometry": (event) => {
+      const found = senderFloat(event);
+      if (!found) return null;
+      const bounds = found.entry.win.getBounds();
+      const areas = workAreas();
+      if (!areas.length) return null;
+      // the display the window stands on: clamping a copy of it picks the same area main would
+      const clamped = clampToDisplays(bounds, areas);
+      const workArea = areas.find((area) =>
+        clamped.x >= area.x && clamped.y >= area.y && clamped.x + clamped.width <= area.x + area.width && clamped.y + clamped.height <= area.y + area.height,
+      ) ?? areas[0];
+      let cursor = null;
+      try {
+        const point = screen.getCursorScreenPoint?.();
+        if (point && isFiniteNumber(point.x) && isFiniteNumber(point.y)) cursor = { x: point.x, y: point.y };
+      } catch {
+        /* no pointer to follow: the mascot looks ahead */
+      }
+      return { bounds, workArea: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height }, cursor };
+    },
     "floating-bots:resize": (event, size) => {
       const found = senderFloat(event);
       if (!found || !size || !isFiniteNumber(size.width) || !isFiniteNumber(size.height)) return null;
@@ -364,8 +560,16 @@ export function createFloatingBotWindows(deps) {
       const bounds = win.getBounds();
       const width = Math.round(clampNumber(size.width, FLOAT_MIN.width, FLOAT_MAX.width));
       const height = Math.round(clampNumber(size.height, FLOAT_MIN.height, FLOAT_MAX.height));
-      // grow up and to the left: the character's feet stay where they were
-      const next = clampToDisplays({ x: bounds.x + bounds.width - width, y: bounds.y + bounds.height - height, width, height }, workAreas());
+      // the character's corner stays where it was: by default the bottom-right (the window grows
+      // up and to the left); a balloon flipped below or to the right asks for the other corner
+      const fromLeft = size.anchorX === "left";
+      const fromTop = size.anchorY === "top";
+      const next = clampToDisplays({
+        x: fromLeft ? bounds.x : bounds.x + bounds.width - width,
+        y: fromTop ? bounds.y : bounds.y + bounds.height - height,
+        width,
+        height,
+      }, workAreas());
       win.setBounds(next);
       return next;
     },
@@ -373,16 +577,34 @@ export function createFloatingBotWindows(deps) {
 
   const listeners = {
     "floating-bots:update": (event, message) => {
-      if (!isMain(event) || !message || !isBotId(message.botId)) return;
+      if (!isMain(event) || !message || !isBotId(message.botId)) {
+        note(`update refused (${!isMain(event) ? "not the app page" : "bad bot id"})`);
+        return;
+      }
       const clean = sanitizeFloatingSnapshot(message.snapshot);
-      if (!clean) return;
+      if (!clean) {
+        note(`state for ${message.botId} refused as malformed`);
+        return;
+      }
       const entry = floats.get(message.botId);
-      if (!live(entry)) return;
+      if (!live(entry)) {
+        // the window is about to open: keep it for then (a few bots at most)
+        pending.delete(message.botId);
+        pending.set(message.botId, clean);
+        while (pending.size > MAX_FLOATING) pending.delete(pending.keys().next().value);
+        return;
+      }
       entry.snapshot = clean;
       entry.win.webContents.send("floating-bot:state", clean);
     },
     "floating-bots:ready": (event) => {
       const found = senderFloat(event);
+      if (found) found.entry.ready = true;
+      if (found && !found.entry.snapshot) {
+        note(`${found.botId} is ready but no state has come from the app yet; asking the app`);
+        // pull, not only push: the app page sends this bot's state again
+        notifyMain("floating-bots:want", { botId: found.botId });
+      }
       if (found?.entry.snapshot) found.entry.win.webContents.send("floating-bot:state", found.entry.snapshot);
     },
     "floating-bots:event": (event, value) => {
@@ -420,6 +642,10 @@ export function createFloatingBotWindows(deps) {
         /* keep the last state */
       }
     },
+    "floating-bots:autopilot": (event, on) => {
+      const found = senderFloat(event);
+      if (found && typeof on === "boolean") found.entry.autopilot = on;
+    },
     "floating-bots:moved": (event) => {
       const found = senderFloat(event);
       if (found) remember(found.botId);
@@ -446,6 +672,7 @@ export function createFloatingBotWindows(deps) {
     dispose() {
       closeAll();
       for (const channel of Object.keys(handlers)) ipcMain.removeHandler?.(channel);
+      for (const change of ["display-added", "display-removed", "display-metrics-changed"]) screen.removeListener?.(change, reclamp);
       for (const [channel, handler] of Object.entries(listeners)) ipcMain.removeListener?.(channel, handler);
     },
   };
