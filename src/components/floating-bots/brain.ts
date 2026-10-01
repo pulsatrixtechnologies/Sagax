@@ -67,8 +67,6 @@ export interface FloatingLabels {
   hoot?: string;
   /** "Activity: normal", the menu item that cycles the activity level. */
   menuLively?: string;
-  /** "Mascot: Owl", the menu item that cycles the characters. */
-  menuMascot?: string;
 }
 
 export type FloatingBot = Pick<Bot, "id" | "name" | "color" | "mascotSkin" | "threadId" | "messages" | "busy" | "activity"> & {
@@ -145,7 +143,6 @@ export function floatingMenu(labels: FloatingLabels, session: FloatingSession, a
     ...(alwaysOnTop === null ? [] : [{ id: "top", label: labels.menuTop, checked: alwaysOnTop }]),
     { id: "fly", label: labels.menuFly, checked: flyAway },
     ...(labels.menuLively ? [{ id: "lively", label: labels.menuLively }] : []),
-    ...(labels.menuMascot ? [{ id: "mascot", label: labels.menuMascot }] : []),
     { id: "dock", label: labels.menuDock },
   ];
 }

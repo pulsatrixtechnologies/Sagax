@@ -12,6 +12,7 @@ import {
   AnimationMixer,
   CanvasTexture,
   Color,
+  DoubleSide,
   DirectionalLight,
   HemisphereLight,
   LoopOnce,
@@ -196,7 +197,8 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
         owl.traverse((node) => {
           const mesh = node as SkinnedMesh;
           if (mesh.isMesh) {
-            mesh.material = new MeshStandardMaterial({ roughness: 0.75, metalness: 0 });
+            // both sides: a mirrored skinned mesh turns inside out, and a culled face would cut a part away
+            mesh.material = new MeshStandardMaterial({ roughness: 0.75, metalness: 0, side: DoubleSide });
             mesh.frustumCulled = false;
             solids.push(mesh);
             if (mesh.name === "lid") lid = mesh;
@@ -236,20 +238,25 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
       if (!mixer || !owl) return;
       play(live.current.activity);
       mixer.update(dt);
-      // on top of the clip: face the way it goes, look at the pointer, blink
+      // on top of the clip: face the way it goes, look at the pointer, blink. The mixer only
+      // writes a value when the clip changes it, so every offset here is undone after drawing:
+      // nothing may build up frame after frame (that made the head turn and stay sideways).
       const f = live.current.frame(now);
-      // facing the other way is a mirror, through a quick squash: a half turn would show the
-      // model's flat back (it is the 2D art given depth, not a sculpture)
+      // facing the other way is a mirror of the whole model through a quick squash; a half turn
+      // would show the model's flat back (it is the 2D art given depth, not a sculpture)
       facing += ((f.face ?? 1) - facing) * (1 - Math.exp(-dt / 0.08));
       const turn = flatTurn(facing);
       owl.scale.set(turn.sx, turn.sy, 1);
-      // the gaze is an offset on top of the clip's head (the mixer rewrites the head every frame),
-      // eased, and the total kept within reach so the head never ends up sideways
       gaze += ((live.current.activity === "idle" ? f.pupilX * 0.35 : 0) - gaze) * (1 - Math.exp(-dt / 0.2));
-      if (headBone) headBone.rotation.y = Math.min(HEAD_YAW_MAX, Math.max(-HEAD_YAW_MAX, headBone.rotation.y + gaze));
+      const head = headBone as Bone | null;
       const lidMesh = lid as SkinnedMesh | null;
-      if (lidMesh?.morphTargetInfluences) lidMesh.morphTargetInfluences[0] = Math.max(lidMesh.morphTargetInfluences[0], blinkAt(now));
+      const headYaw = head?.rotation.y ?? 0;
+      const lidWeight = lidMesh?.morphTargetInfluences?.[0] ?? 0;
+      if (head) head.rotation.y = Math.min(HEAD_YAW_MAX, Math.max(-HEAD_YAW_MAX, headYaw + gaze));
+      if (lidMesh?.morphTargetInfluences) lidMesh.morphTargetInfluences[0] = Math.max(lidWeight, blinkAt(now));
       renderer.render(scene, camera);
+      if (head) head.rotation.y = headYaw;
+      if (lidMesh?.morphTargetInfluences) lidMesh.morphTargetInfluences[0] = lidWeight;
     };
     raf = requestAnimationFrame(tick);
     onHitTest((x, y) => {

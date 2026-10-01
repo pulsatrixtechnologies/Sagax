@@ -13,7 +13,6 @@ import { brand } from "@/lib/brand";
 import { useRetroSkin } from "@/components/RetroChromeHost";
 import { botAvatarProfile } from "../../../shared/bot-avatar";
 import {
-  botMascot,
   botMascots,
   floatingBotPrefs,
   floatingBots,
@@ -22,9 +21,7 @@ import {
   setFloatingFlyAway,
   setFloatingBotMascot,
   setFloatingLiveliness,
-  FLOATING_MASCOT_KINDS,
   type FloatingLiveliness,
-  type FloatingMascotKind,
   setFloatingBotPosition,
   subscribeFloatingBots,
   unfloatBot,
@@ -49,9 +46,8 @@ import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type Flo
 const AVATAR_BYTES_MAX = 280_000;
 const CELEBRATE_MS = 1400;
 
-function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "normal", mascot: FloatingMascotKind = "owl"): FloatingLabels {
+function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "normal"): FloatingLabels {
   const name = bot.name;
-  const kinds = { owl: t("floatingBots.mascot.owl"), body: t("floatingBots.mascot.body"), trombi: t("floatingBots.mascot.trombi") };
   return {
     character: t("floatingBots.aria", { name }),
     inputLabel: t("floatingBots.input.label", { name }),
@@ -77,7 +73,6 @@ function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "nor
     working: t("floatingBots.working", { name }),
     hoot: t("floatingBots.hoot"),
     menuLively: t("floatingBots.menu.lively", { level: t(`floatingBots.lively.${liveliness}`) }),
-    menuMascot: t("floatingBots.menu.mascot", { name: kinds[mascot] }),
   };
 }
 
@@ -266,11 +261,6 @@ export function FloatingBots() {
         else if (event.id === "dock") unfloatBot(botId);
         else if (event.id === "fly") setFloatingFlyAway(!floatingBotPrefs().flyAway);
         else if (event.id === "lively") setFloatingLiveliness(nextLiveliness(floatingBotPrefs().liveliness));
-        else if (event.id === "mascot") {
-          const current = botMascot(botId);
-          const kind = FLOATING_MASCOT_KINDS[(FLOATING_MASCOT_KINDS.indexOf(current?.kind ?? "owl") + 1) % FLOATING_MASCOT_KINDS.length];
-          setFloatingBotMascot(botId, { ...current, kind });
-        }
         else if (event.id === "top") {
           const entry = floatingBots().find((candidate) => candidate.id === botId);
           const top = !(entry?.top ?? true);
@@ -301,7 +291,7 @@ export function FloatingBots() {
         bot,
         session,
         status,
-        labels: labelsFor(bot, prefs.liveliness, characters[bot.id]?.kind),
+        labels: labelsFor(bot, prefs.liveliness),
         avatar,
         retro,
         reduced,

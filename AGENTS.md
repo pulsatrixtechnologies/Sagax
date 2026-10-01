@@ -79,8 +79,8 @@ Electron restart (no HMR); launch-test them before committing.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
-- Per device: the character per bot (`omb.botMascots.v1`, chosen in the
-  avatar popover's Character section and the right-click menu), the mood (`omb.floatingBots.mood.v1`, never punishing),
+- Per device: the character per bot (`omb.botMascots.v1`, chosen only in
+  the avatar popover's Character section), the mood (`omb.floatingBots.mood.v1`, never punishing),
   and the settings "Fly away during tasks" and "Activity level"
   (`omb.floatingBots.prefs.v1`, Settings > Appearance and the right-click
   menu). The bar under the mascot is the thread's context, from the chat

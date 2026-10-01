@@ -2001,7 +2001,6 @@
   "floatingBots.mascot.style": "Style",
   "floatingBots.mascot.flat": "2D",
   "floatingBots.mascot.threeD": "3D (aperçu)",
-  "floatingBots.menu.mascot": "Mascotte : {name}",
   "floatingBots.body.cursor": "Curseur",
   "floatingBots.body.blob": "Blob",
   "floatingBots.body.circle": "Cercle",
