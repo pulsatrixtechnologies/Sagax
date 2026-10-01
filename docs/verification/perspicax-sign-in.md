@@ -547,48 +547,77 @@ bob (employee), open `/console/pulsabot/bots`, `usage`, `approvals` and
 ## Slice 8: joining an organization from solo, and cleanup
 
 Spec sections 1 ("Passer de solo à organisation", "Revenir en solo",
-"Serveur intérim déjà en organisation") and 8. Not on this branch yet: this
-is what the slice must pass when it lands.
+"Serveur intérim déjà en organisation"), 2, 8 and 11. One deliberate change
+from the spec text: an interim person is attached to a Perspicax person by an
+organization admin, never automatically by email (Perspicax lets people edit
+their own addresses).
 
 ### Automated
 
-- `POST /api/org/import` on the organization server takes the team backup
-  the local harness exports (`server/team-backup.ts`: bots, tasks with their
-  messages, routines, memory). Every reference to the local principal
-  (`ownerUserId`, `humanIds`, `directGrants`, `runAs`) becomes the joining
-  person's organization principal through an explicit rewrite table; any
-  other person is dropped and listed in the import report, never turned
-  into a right. No imported bot is ever ownerless. Provider keys stay
-  redacted.
-- A channel follows only when its only humans are the joining person.
-- An interim principal created by email is attached once to the first OIDC
-  sign-in of an unknown `sub` with the same email, written to the audit
-  log, and never after the migration period.
-- With `OMB_IDENTITY=perspicax` the interim code of spec section 1 is gone
-  or refused: `/join#token` invitation links, email codes, the organization
-  directory's roles, the organization people list, the identity mailer and
-  the single organization owner.
+```sh
+pnpm -s vitest run shared/org-import.test.ts server/identity-migration.test.ts \
+  server/org-export.test.ts server/org-import-routes.test.ts server/interim-attach-routes.test.ts \
+  server/principals.test.ts server/org-routes.test.ts server/perspicax-org-routes.test.ts \
+  server/org-import.e2e.test.ts server/org-interim-attach.e2e.test.ts \
+  server/member-identity.e2e.test.ts server/org-identity.e2e.test.ts \
+  src/lib/org-join.test.ts src/components/OrgImportDialog.test.ts
+node --test electron/org-join.node-test.mjs
+```
 
-### Against a real Perspicax (manual)
+- `sagax.org-import` v1 (`shared/org-import.ts`): one entry per backup bot in
+  `choices` and `people.bots`, one per room in `people.groups`, one per
+  routine in `people.routines`; people only as `pr_<uuid>`; `threads: false`
+  means one empty task, `memory: false` means no memory; at most the backup
+  limit plus 1 MiB.
+- Solo `POST /api/org/export` (operator only: 403 `operator_only`; 404
+  `unknown_bot`; 403 `not_your_bot`): only the chosen bots, rooms whose bots
+  are all chosen and whose only person is the operator, routines with their
+  bot and room; secrets scrubbed and counted; what stays behind is listed
+  with local labels in the summary only.
+- Organization `POST /api/org/import`: 403 `identity_perspicax` on a solo
+  server; 401 `session_required` without a Pulsatrix session (loopback
+  included); 403 `forbidden`; 415; 413 `too_large`; 409
+  `import_in_progress`; 400 `invalid_document`, `foreign_owner`,
+  `foreign_room`, `foreign_routine`; nothing written on a refusal, all or
+  nothing (section-channel records included); 201 with the report; one
+  `org.import` audit row with counts only. `POST /api/teams/import` on an
+  organization server also lands the caller's bots in their private sections.
+- Interim attach: `GET /api/org/interim-people` (admin, 403 `forbidden`, 410
+  `interim_attach_closed`), `POST /api/org/interim-people/attach` (404
+  `unknown_person`, 400 `not_interim`, 400 `bad_target`, 410), the window in
+  `GET /api/org` settings and `PATCH /api/org/settings { interimAttachDays }`.
+- Retired: solo `POST /api/auth/email/*` and `/api/org/invites*` answer 410
+  `interim_signin_removed`, `POST`/`PATCH /api/org` 410 `interim_org_removed`,
+  `GET /api/org` 404 `no_organization`, `GET /join` redirects to `/pair`; an
+  organization server keeps 403 `identity_perspicax`. A seeded email session
+  ends at its first request while a pairing session in the same file works.
 
-Isolated instances only, never `~/.openmausbot`. Start a solo Sagax on a
-temporary data directory with two bots (one with threads and memory), a
-routine and a channel with only its owner; then:
+### Against a real Perspicax (manual, isolated instances only)
 
-1. Settings > Organization > "Rejoindre un serveur Perspicax", paste the
-   organization server's address: the app reads
-   `/.well-known/openmausbot/environment` (`identity.kind = "oidc"`) and
-   signs in with Perspicax.
-2. "Copier des bots vers l'organisation": pick the bots, with and without
-   threads and memory. On the organization server they belong to the
-   joining person, the routine's `runAs` is them (it runs after their
-   routine consent), the channel followed; the import report lists every
-   dropped reference.
-3. It is a copy: the local bots are untouched until "Retirer ces bots de
-   cet ordinateur", bot by bot. Provider keys did not travel; the owner
-   enters them in Perspicax.
-4. No email is sent or asked for; the invitation and email sign-in routes
-   answer as retired; `/api/health` without a session gives the app name
-   only.
-5. "Quitter l'organisation" revokes the Sagax session and the Perspicax
-   refresh token and removes the environment; the local copies stay.
+Never `~/.openmausbot`, the live app or a production Perspicax. Build
+Perspicax from the current head (`bind = "127.0.0.1:19191"`), start an
+organization Sagax on 19192 (`OMB_IDENTITY=perspicax`, its own data
+directory) and a solo Sagax on 19194 (its own data directory, fake engine).
+
+1. Solo, Settings > Organization: "Join a Perspicax server" only (no create
+   form, no people list, no invitation field). Choose bots with and without
+   conversations and memory; the preview names what stays behind and how
+   many secrets are removed. Download the copy: it has no address and no
+   secret (`grep` both).
+2. Organization, as an employee: Settings > Organization > "Bring bots from
+   a solo Sagax", choose the file, copy. The bots are theirs, private, ask
+   before acting, routines paused and run as them; another member sees
+   nothing of them (list, by id, live stream). The console's Sagax > Audit
+   shows one `org.import` row.
+3. The refusals above with curl, and a second import is a second copy.
+4. Interim attach: seed an interim person owning a bot and a room in the
+   organization data directory before its first start; a person whose
+   Perspicax address matches gets nothing when they sign in; an admin
+   attaches them from "People from before Perspicax"; closing the window
+   gives 410.
+5. Solo after restart: the retired routes, the `/pair` page without an email
+   field, `pulsa access` exiting 2, an old `config.json` with `mail`,
+   `signIn`, `invites` and `org` booting.
+6. Leaving: Forget the organization server under Servers; the dialog says
+   the copied bots stay in the organization and the local ones are
+   unchanged.
