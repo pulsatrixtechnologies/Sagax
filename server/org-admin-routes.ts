@@ -131,7 +131,10 @@ export interface OrgAdminRouteDeps {
  * cannot replay a 60 s token beyond its life in practice. */
 export class AssertionReplayCache {
   private readonly seen = new Map<string, number>();
-  constructor(private readonly max = ORG_ADMIN_JTI_MAX) {}
+  private readonly max: number;
+  constructor(max = ORG_ADMIN_JTI_MAX) {
+    this.max = max;
+  }
 
   /** Records the id; false when it was already seen. */
   admit(jti: string, expMs: number, now: number): boolean {
