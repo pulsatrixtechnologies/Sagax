@@ -3,9 +3,9 @@
 // does not become a wall of competing motion. Plain messages go to the room's
 // default responder; @mentions override that routing.
 import { createPortal } from "react-dom";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { activeLocale, t } from "@/lib/i18n";
-import { ArrowDown, Bot as BotIcon, Check, ChevronDown, ChevronRight, FolderOpen, Loader2, MessageSquareReply, Pin, PinOff, Search, Settings2, Users, X, type LucideIcon } from "lucide-react";
+import { ArrowDown, Check, ChevronDown, ChevronRight, FolderOpen, Loader2, MessageSquareReply, PanelRight, Pin, PinOff, Settings2, X } from "lucide-react";
 import {
   api,
   useStore,
@@ -53,6 +53,8 @@ import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
 import { ManageMembersPanel } from "./ManageMembersPanel";
+import { GroupAvatarStack, GroupPanel } from "./GroupPanel";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { groupActivityRuns } from "@/lib/activity-runs";
 import { ActivityRun } from "./ActivityRun";
 import { useDesktopCapabilities, useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
@@ -564,7 +566,7 @@ function setupResponderMode(responder: GroupDefaultResponder): RoomResponderMode
   return responder.kind === "member" ? "lead" : responder.kind;
 }
 
-function roomNeedsSetup(group: Group): boolean {
+export function roomNeedsSetup(group: Group): boolean {
   if (group.dm || group.messages.length > 0) return false;
   // SAFETY: setup fields are additive server metadata; the existing Group shape remains valid when absent.
   const marker = group as Group & RoomSetupFields;
@@ -1011,40 +1013,6 @@ export function RoomSetupDialog({
   );
   return createPortal(content, document.body);
 }
-function ChannelAccordion({
-  id,
-  label,
-  icon: Icon,
-  open,
-  onToggle,
-  children,
-}: {
-  id: string;
-  label: string;
-  icon: LucideIcon;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="border-b border-hairline/30" data-channel-section={id}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className={cn(
-          "flex w-full shrink-0 items-center gap-2.5 px-4 py-2.5 text-left text-[14px]",
-          open ? "bg-control/60 text-ink" : "text-ink-secondary hover:bg-control/40 hover:text-ink",
-        )}
-      >
-        <Icon size={15} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        <ChevronDown size={16} className={cn("shrink-0 text-ink-secondary transition-transform", open && "rotate-180")} />
-      </button>
-      {open && <div className="px-4 pb-4 pt-1">{children}</div>}
-    </div>
-  );
-}
 
 export function GroupView({ group }: { group: Group }) {
   const { state, dispatch } = useStore();
@@ -1086,7 +1054,8 @@ export function GroupView({ group }: { group: Group }) {
   const [bulletinOpen, setBulletinOpen] = useState(false);
   const [bulletinDraft, setBulletinDraft] = useState(group.bulletin);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [channelSection, setChannelSection] = useState<string | null>(null);
+  // The group panel shares the bot panel's slot: one open flag in the store.
+  const panelOpen = state.settingsOpen && !group.dm;
   const [findOpen, setFindOpen] = useState(false);
   const { replyTo, selectReply, clearReply, consumeReply, restoreReply } = useReplyDraft(
     group.threadId,
@@ -1349,59 +1318,60 @@ export function GroupView({ group }: { group: Group }) {
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
       )}
       {(macInset || browser) && <div className="content-topbar-strip" />}
-      {/* Header: static member avatars; a ring + dot marks the working bot. */}
+      {/* Header: laid out like a bot chat's. The centered chip (stacked
+          member faces + name) opens the group panel; the right-hand
+          controls move into the panel's top bar while it is open. */}
       <div
         style={headerDragStyle}
         className={cn(
           "content-topbar",
-          "flex items-center justify-between px-5 py-3",
+          "@container/chathead relative flex min-h-[52px] items-center justify-end px-5 py-2.5",
           // Room for the drawer button, which overlays this corner below md.
           "pl-11 md:pl-5",
         )}
       >
-        <div className="flex min-w-0 items-center gap-2" style={headerNoDragStyle}>
-          <span className="truncate text-[15px] font-semibold text-ink">{group.name}</span>
-          {!setupPending && !group.dm && <GroupTaskPicker group={group} />}
+        <div className="absolute left-1/2 top-1/2 flex max-w-[50%] -translate-x-1/2 -translate-y-1/2 items-center gap-2" style={headerNoDragStyle}>
+          {group.dm ? (
+            <span className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px]">
+              <GroupAvatarStack members={members} size={24} />
+              <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "toggleSettings", open: true })}
+              className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px] transition-colors duration-[120ms] hover:bg-elevated-hover"
+              title={t("chat.openProfile")}
+              aria-label={t("chat.openProfileAria", { name: group.name })}
+            >
+              <GroupAvatarStack members={members} size={24} />
+              <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
+            </button>
+          )}
         </div>
         <div
-          className="flex items-center gap-1.5"
+          className="flex shrink-0 items-center gap-2"
           // The caption buttons sit over the header's right end; drop this
           // control row 16px (visual only) below the 26px overlay.
           style={controlsShiftStyle}
         >
-          <button
-            type="button"
-            onClick={() => setFindOpen((open) => !open)}
-            aria-label={t("chat.find")}
-            aria-pressed={findOpen}
-            className={cn(
-              "rounded-md p-1.5 hover:bg-raised",
-              findOpen ? "text-accent" : "text-ink-secondary hover:text-ink",
-            )}
-            title={t("chat.findShortcut")}
-          >
-            <Search size={18} />
-          </button>
-          {!remoteClient && !group.dm && (
-            <button
-              type="button"
-              onClick={() => setSetupOpen(true)}
-              aria-label={t("room.setup.open")}
-              title={t("room.setup.open")}
-              aria-haspopup="dialog"
-              className="rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink"
-            >
-              <Settings2 size={18} />
-            </button>
-          )}
-          <ExportTranscriptMenu
+          {!panelOpen && <ExportTranscriptMenu
             title={group.name}
             messages={group.messages}
             isGroup
-          />
-
+          />}
+          {!setupPending && !group.dm && <GroupTaskPicker group={group} />}
           <GroupUsageChip usage={group.usage} />
-          {(group.dm || remoteClient) && memberMauses}
+          {group.dm && memberMauses}
+          {!group.dm && !panelOpen && <button
+            type="button"
+            onClick={() => dispatch({ type: "toggleSettings", open: true })}
+            aria-label={t("chat.openProfile")}
+            title={t("chat.openProfile")}
+            className={CIRCLE_BUTTON}
+          >
+            <PanelRight size={18} strokeWidth={1.75} />
+          </button>}
         </div>
       </div>
 
@@ -1627,72 +1597,85 @@ export function GroupView({ group }: { group: Group }) {
       </div>
       </div>
       </div>
-      {!group.dm && (
-        <aside className="flex w-[min(420px,42vw)] shrink-0 flex-col overflow-y-auto border-l border-hairline/40 bg-panel">
-          <ChannelAccordion id="people" label="Gens" icon={Users} open={channelSection === "people"} onToggle={() => setChannelSection((current) => current === "people" ? null : "people")}>
-            <ChannelMembers
-              part="humans"
-              humans={channelHumans}
-              bots={[]}
-              {...roster}
-              onAddHuman={() => {
-                const email = window.prompt("Adresse courriel")?.trim().toLowerCase() ?? "";
-                if (!email) return;
-                const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), email])];
-                dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
-              }}
-              onRemoveHuman={(id) => {
-                dispatch({
-                  type: "patchGroup",
-                  groupId: group.id,
-                  patch: { humanIds: (group.humanIds ?? []).filter((humanId) => humanId.trim().toLowerCase() !== id.trim().toLowerCase()) },
-                });
-              }}
-            />
-          </ChannelAccordion>
-          <ChannelAccordion id="bots" label="Bots" icon={BotIcon} open={channelSection === "bots"} onToggle={() => setChannelSection((current) => current === "bots" ? null : "bots")}>
-            <ChannelMembers
-              part="bots"
-              humans={[]}
-              bots={group.memberIds.map((id) => {
-                const bot = state.bots.find((item) => item.id === id);
-                return { id, name: bot?.name || id, title: bot?.title, color: bot?.color, avatarUrl: bot?.avatarUrl, mascotBody: bot?.mascotBody };
-              })}
-              {...roster}
-              onRemoveBot={(id) => {
-                dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
-              }}
-              onAddBot={() => {
-                const owned = state.bots.find((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actorId && !group.memberIds.includes(bot.id));
-                dispatch({
-                  type: "patchGroup",
-                  groupId: group.id,
-                  patch: { memberIds: owned ? [...group.memberIds, owned.id] : [...group.memberIds] },
-                });
-              }}
-            />
-            {!remoteClient && !setupPending && (
-              <button
-                ref={membersTriggerRef}
-                type="button"
-                onClick={() => setMembersOpen(true)}
-                className="mt-2 rounded-lg bg-raised px-3 py-2 text-[13px] text-ink hover:bg-raised-hover"
-              >
-                {t("room.members.manage")}
-              </button>
-            )}
-          </ChannelAccordion>
-          {!remoteClient && !setupPending && (
-            <ChannelAccordion id="responder" label={t("room.responder.aria")} icon={MessageSquareReply} open={channelSection === "responder"} onToggle={() => setChannelSection((current) => current === "responder" ? null : "responder")}>
-              <DefaultResponderSelect group={group} members={members} />
-            </ChannelAccordion>
-          )}
-          {!remoteClient && !setupPending && (
-            <ChannelAccordion id="folder" label={t("room.folder.title")} icon={FolderOpen} open={channelSection === "folder"} onToggle={() => setChannelSection((current) => current === "folder" ? null : "folder")}>
-              <RoomWorkingFolder group={group} />
-            </ChannelAccordion>
-          )}
-        </aside>
+      {panelOpen && (
+        <GroupPanel
+          key={`panel:${group.id}`}
+          group={group}
+          members={members}
+          canEdit={!remoteClient}
+          onOpenSetup={() => setSetupOpen(true)}
+          details={
+            <>
+              <section>
+                <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("groupPanel.people")}</h3>
+                <ChannelMembers
+                  part="humans"
+                  humans={channelHumans}
+                  bots={[]}
+                  {...roster}
+                  onAddHuman={() => {
+                    const email = window.prompt("Adresse courriel")?.trim().toLowerCase() ?? "";
+                    if (!email) return;
+                    const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), email])];
+                    dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
+                  }}
+                  onRemoveHuman={(id) => {
+                    dispatch({
+                      type: "patchGroup",
+                      groupId: group.id,
+                      patch: { humanIds: (group.humanIds ?? []).filter((humanId) => humanId.trim().toLowerCase() !== id.trim().toLowerCase()) },
+                    });
+                  }}
+                />
+              </section>
+              <section>
+                <h3 className="mb-1.5 text-[13px] text-ink-secondary">Bots</h3>
+                <ChannelMembers
+                  part="bots"
+                  humans={[]}
+                  bots={group.memberIds.map((id) => {
+                    const bot = state.bots.find((item) => item.id === id);
+                    return { id, name: bot?.name || id, title: bot?.title, color: bot?.color, avatarUrl: bot?.avatarUrl, mascotBody: bot?.mascotBody };
+                  })}
+                  {...roster}
+                  onRemoveBot={(id) => {
+                    dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
+                  }}
+                  onAddBot={() => {
+                    const owned = state.bots.find((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actorId && !group.memberIds.includes(bot.id));
+                    dispatch({
+                      type: "patchGroup",
+                      groupId: group.id,
+                      patch: { memberIds: owned ? [...group.memberIds, owned.id] : [...group.memberIds] },
+                    });
+                  }}
+                />
+                {!remoteClient && !setupPending && (
+                  <button
+                    ref={membersTriggerRef}
+                    type="button"
+                    onClick={() => setMembersOpen(true)}
+                    className="mt-2 rounded-lg bg-raised px-3 py-2 text-[13px] text-ink hover:bg-raised-hover"
+                  >
+                    {t("room.members.manage")}
+                  </button>
+                )}
+              </section>
+              {!remoteClient && !setupPending && (
+                <section>
+                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.responder.aria")}</h3>
+                  <DefaultResponderSelect group={group} members={members} />
+                </section>
+              )}
+              {!remoteClient && !setupPending && (
+                <section>
+                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.folder.title")}</h3>
+                  <RoomWorkingFolder group={group} />
+                </section>
+              )}
+            </>
+          }
+        />
       )}
     </main>
   );
