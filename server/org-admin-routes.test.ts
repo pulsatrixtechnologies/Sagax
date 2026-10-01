@@ -130,7 +130,7 @@ afterAll(async () => {
 });
 
 async function call(path: string, token?: string, init: RequestInit = {}) {
-  const response = await fetch(`${base}${path}`, { ...init, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(init.headers ?? {}) } });
+  const response = await fetch(`${base}${path}`, { ...init, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...init.headers } });
   const body = await response.json().catch(() => null) as any;
   return { status: response.status, body, admin: response.headers.get("x-sagax-admin-api"), cache: response.headers.get("cache-control") };
 }

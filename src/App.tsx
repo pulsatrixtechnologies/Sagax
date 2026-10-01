@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Menu } from "lucide-react";
-import { StoreProvider, useStore } from "@/state/store";
+import { openNotificationTarget, StoreProvider, useStore } from "@/state/store";
 import { useWelcomeViewer, WelcomeGate } from "@/components/onboarding/WelcomeGate";
 import { cloudSignInDue, spotlightsQuiet, type WelcomeViewer } from "@/lib/onboarding";
 import { FirstConversationTour } from "@/components/onboarding/FirstConversationTour";
@@ -38,6 +38,7 @@ import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { requestEnterpriseEntry } from "@/lib/enterprise-entry";
 import { takeRoutineDelegationReturn } from "@/lib/routine-delegation";
+import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
 
 function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   const { state, dispatch } = useStore();
@@ -71,6 +72,22 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   useEffect(() => {
     if (takeRoutineDelegationReturn()) dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
   }, [dispatch]);
+  // Slice 7: "Open in Sagax" from the Perspicax console (#thread=…&bot=…):
+  // the thread opens once the viewer's lists hold it; a thread they may not
+  // see is never listed, so nothing happens and the link is dropped.
+  const openThreadTarget = useRef<OpenThreadTarget | null | undefined>(undefined);
+  if (openThreadTarget.current === undefined) openThreadTarget.current = pageOpenThreadTarget();
+  useEffect(() => {
+    if (!openThreadTarget.current) return;
+    const timer = setTimeout(() => { openThreadTarget.current = null; }, 30_000);
+    return () => clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    const target = openThreadTarget.current;
+    if (!target || !openThreadVisible(target, state)) return;
+    openThreadTarget.current = null;
+    openNotificationTarget(dispatch, target, state);
+  }, [state.bots, state.groups, dispatch]);
   // Mobile-only drawer state. Above md, none of these properties are emitted
   // at all — Sidebar scopes every mobile class with max-md: rather than
   // cancelling them with md:, which would still emit a translate value and

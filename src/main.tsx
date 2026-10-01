@@ -6,6 +6,7 @@ import { bootstrapBrand } from "./lib/brand";
 import { applySkin, readSkin } from "./lib/skins";
 import { applyFont, readFont } from "./lib/fonts";
 import { PairPage } from "./pair/PairPage";
+import { rememberOpenThreadHash } from "./lib/open-thread-hash";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
 import "katex/dist/katex.min.css";
 import "./styles.css";
@@ -22,6 +23,9 @@ if (detachedAssistant) document.documentElement.dataset.retroDetached = "";
 // one bot and its balloon (electron/floating-bot-window.mjs).
 const floatingBot = new URLSearchParams(location.search).get("omb-floating-bot") === "1";
 if (floatingBot) document.documentElement.dataset.floatingBot = "";
+
+// Slice 7: an "Open in Sagax" link survives the sign-in (/pair, Perspicax).
+rememberOpenThreadHash();
 
 applySkin(readSkin());
 applyFont(readFont());
