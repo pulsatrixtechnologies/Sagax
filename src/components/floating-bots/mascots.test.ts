@@ -7,21 +7,9 @@ import { botMascots, cleanMascotChoice, MASCOT_KIND_PAINT, readBotMascots, reset
 import CharacterSection from "./CharacterSection";
 import { MASCOT_BODY_IDS } from "../../../shared/mascot-bodies";
 import { BODY_CHOICES, cursorStateFor, MASCOTS, mascotFor, motion25dTransform, nextMascot, trombiPoseFor } from "./mascots";
-import { MascotPicker } from "./MascotPicker";
 import { REST } from "./clips";
-import { isFloatingEvent, type FloatingPickerLabels } from "./protocol";
+import { isFloatingEvent } from "./protocol";
 
-const labels: FloatingPickerLabels = {
-  tabs: "Tabs",
-  chat: "Conversation",
-  mascot: "Mascot",
-  kinds: { owl: "Owl", body: "Original shapes", trombi: "Trombi" },
-  shape: "Shape",
-  style: "Style",
-  flat: "2D",
-  threeD: "3D (preview)",
-  bodies: Object.fromEntries(MASCOT_BODY_IDS.map((id) => [id, id])),
-};
 
 function memoryStorage(): FloatingStorage {
   const data = new Map<string, string>();
@@ -107,27 +95,5 @@ describe("the avatar popover's Character section", () => {
     const owl = renderToStaticMarkup(createElement(CharacterSection, { botId: "bot_none", color: "blue", skin: "none" }));
     expect(owl).toContain('data-character-style="3d"');
     expect(owl).not.toContain("data-character-move");
-  });
-});
-
-describe("the balloon's Mascot tab", () => {
-  const render = (choice?: Parameters<typeof MascotPicker>[0]["choice"]) =>
-    renderToStaticMarkup(createElement(MascotPicker, { color: "green", skin: "none", choice, labels, onChoose: () => undefined }));
-
-  it("shows every character with its thumbnail, the chosen one checked", () => {
-    const html = render({ kind: "trombi" });
-    for (const id of ["owl", "body", "trombi"]) expect(html).toContain(`data-mascot="${id}"`);
-    expect(html).toMatch(/data-mascot="trombi"[^>]*aria-checked="true"|aria-checked="true"[^>]*data-mascot="trombi"/);
-    expect((html.match(/<svg/g) ?? []).length).toBeGreaterThanOrEqual(3);
-  });
-
-  it("offers the original shapes for that family, and the 2D / 3D style for the owl", () => {
-    const shapes = render({ kind: "body", body: "star" });
-    for (const id of MASCOT_BODY_IDS) expect(shapes).toContain(`data-body="${id}"`);
-    expect(shapes).not.toContain("data-style");
-    const owl = render(undefined);
-    expect(owl).toContain('data-style="2d"');
-    expect(owl).toContain("3D (preview)");
-    expect(owl).not.toContain("data-body");
   });
 });

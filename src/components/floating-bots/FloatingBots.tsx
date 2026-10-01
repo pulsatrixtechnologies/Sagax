@@ -43,31 +43,15 @@ import {
 import { FloatingBotView, MASCOT_SIZE, type FloatingMover } from "./FloatingBotView";
 import { floatingContext } from "./context";
 import { moodNow, raiseMood, readMoods, writeMoods, type MoodGain, type MoodRecord } from "./mood";
-import { MASCOT_BODY_IDS } from "../../../shared/mascot-bodies";
-import { isFloatingEvent, type FloatingPickerLabels, type FloatingAvatar, type FloatingBotsBridge, type FloatingEvent, type FloatingSnapshot } from "./protocol";
+import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type FloatingEvent, type FloatingSnapshot } from "./protocol";
 
 /** A picture bigger than this stays in the app; the window shows the owl instead. */
 const AVATAR_BYTES_MAX = 280_000;
 const CELEBRATE_MS = 1400;
 
-/** The balloon's tabs and the Mascot tab, translated once. */
-function pickerLabels(): FloatingPickerLabels {
-  return {
-    tabs: t("floatingBots.tabs"),
-    chat: t("floatingBots.tab.chat"),
-    mascot: t("floatingBots.tab.mascot"),
-    kinds: { owl: t("floatingBots.mascot.owl"), body: t("floatingBots.mascot.body"), trombi: t("floatingBots.mascot.trombi") },
-    shape: t("floatingBots.mascot.shape"),
-    style: t("floatingBots.mascot.style"),
-    flat: t("floatingBots.mascot.flat"),
-    threeD: t("floatingBots.mascot.threeD"),
-    bodies: Object.fromEntries(MASCOT_BODY_IDS.map((id) => [id, t(`floatingBots.body.${id}`)])),
-  };
-}
-
 function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "normal", mascot: FloatingMascotKind = "owl"): FloatingLabels {
   const name = bot.name;
-  const picker = pickerLabels();
+  const kinds = { owl: t("floatingBots.mascot.owl"), body: t("floatingBots.mascot.body"), trombi: t("floatingBots.mascot.trombi") };
   return {
     character: t("floatingBots.aria", { name }),
     inputLabel: t("floatingBots.input.label", { name }),
@@ -93,8 +77,7 @@ function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "nor
     working: t("floatingBots.working", { name }),
     hoot: t("floatingBots.hoot"),
     menuLively: t("floatingBots.menu.lively", { level: t(`floatingBots.lively.${liveliness}`) }),
-    menuMascot: t("floatingBots.menu.mascot", { name: picker.kinds[mascot] }),
-    picker,
+    menuMascot: t("floatingBots.menu.mascot", { name: kinds[mascot] }),
   };
 }
 

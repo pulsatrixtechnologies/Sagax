@@ -4,7 +4,7 @@
 
 import type { Liveliness, MascotTask } from "./behavior";
 import type { FloatingContext } from "./gauge";
-import { cleanMascotChoice, type FloatingMascotChoice, type FloatingMascotKind } from "@/lib/floating-bots";
+import { cleanMascotChoice, type FloatingMascotChoice } from "@/lib/floating-bots";
 
 export type FloatingPose = "idle" | "think" | "speak" | "celebrate" | "alert" | "sleep";
 export type { MascotTask };
@@ -71,21 +71,8 @@ export interface FloatingSnapshot {
   context?: FloatingContext | null;
   /** The character this bot wears on the desktop (mascots.tsx); the owl when absent. */
   mascot?: FloatingMascotChoice;
-  /** The balloon's tabs and the Mascot tab's texts, translated by the brain. */
-  picker?: FloatingPickerLabels;
 }
 
-export interface FloatingPickerLabels {
-  tabs: string;
-  chat: string;
-  mascot: string;
-  kinds: Record<FloatingMascotKind, string>;
-  shape: string;
-  style: string;
-  flat: string;
-  threeD: string;
-  bodies: Record<string, string>;
-}
 
 /**
  * "click" opens or closes the balloon (a double click, or Enter); "play" is a
@@ -93,7 +80,7 @@ export interface FloatingPickerLabels {
  */
 export type FloatingEvent =
   | { type: "click" | "context" | "dismiss" | "open" | "play" | "pet" }
-  /** The Mascot tab: wear another character. */
+  /** Wear another character (kept for a window that offers the choice). */
   | { type: "mascot"; choice: FloatingMascotChoice }
   | { type: "menu"; id: string }
   | { type: "send"; text: string };

@@ -3,7 +3,7 @@
 // may stand. The main app page runs it for every floated bot and sends the
 // result to that bot's window (desktop) or draws it itself (browser, phone).
 import type { Bot, Message, Task } from "@/state/store";
-import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPickerLabels, FloatingPose, FloatingSnapshot, MascotTask } from "./protocol";
+import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPose, FloatingSnapshot, MascotTask } from "./protocol";
 import { moodLevel } from "./mood";
 import type { Liveliness } from "./behavior";
 import type { FloatingContext } from "./gauge";
@@ -69,8 +69,6 @@ export interface FloatingLabels {
   menuLively?: string;
   /** "Mascot: Owl", the menu item that cycles the characters. */
   menuMascot?: string;
-  /** The balloon's tabs and the Mascot tab. */
-  picker?: FloatingPickerLabels;
 }
 
 export type FloatingBot = Pick<Bot, "id" | "name" | "color" | "mascotSkin" | "threadId" | "messages" | "busy" | "activity"> & {
@@ -249,7 +247,6 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
     liveliness: input.liveliness ?? "normal",
     context: input.context ?? null,
     mascot: input.mascot ?? { kind: "owl", style: "2d" },
-    ...(labels.picker ? { picker: labels.picker } : {}),
   };
 }
 
