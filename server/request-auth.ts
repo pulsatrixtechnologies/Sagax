@@ -418,6 +418,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/engines\/[\w-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/me\/engines\/[\w-]+\/login\/status$/, feature: "orgDirectory" },
+  // The caller's own claude.ai connectors (server/harness-connectors.ts):
+  // names and statuses of their own account only. The admin switch
+  // (PUT /api/harness-connectors/settings) stays admin.
+  { methods: ["GET"], path: /^\/api\/me\/harness-connectors$/ },
   // Slice 6: the caller's own routine delegation (allow, status, revoke).
   { methods: ["GET", "POST", "DELETE"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler

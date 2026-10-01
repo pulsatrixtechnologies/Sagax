@@ -256,6 +256,11 @@ export interface SendTurnInput {
    * config.toml and ignores this; the Claude driver drops
    * --strict-mcp-config for the turn. */
   mcpFromUserConfig?: boolean;
+  /** Keep the claude.ai connectors of the account this turn runs on (the
+   * speaker's own Claude subscription, server/harness-connectors.ts). The
+   * Claude driver then drops --strict-mcp-config only; other drivers ignore
+   * it. Their tools ride the normal permission flow, never pre-allowed. */
+  claudeAiConnectors?: boolean;
 }
 
 /** An MCP server this machine starts and talks to over stdio. */
