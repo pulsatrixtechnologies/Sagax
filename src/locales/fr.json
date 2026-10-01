@@ -724,7 +724,7 @@
   "usage.allBots": "Tous les bots",
   "usage.cachedNote": "Les nouveaux jetons laissent de côté {cached} de l’entrée relue depuis le cache du fournisseur, car chaque tour renvoie toute la conversation avec le prompt système et les schémas d’outils. En comptant ces relectures, {total} sont passés par le modèle. Survolez un chiffre pour le détail.",
   "usage.costLine": "Le coût est {caption}.",
-  "usage.costMixed": "tel que chaque fournisseur le rapporte — sur un abonnement, c’est un équivalent, pas un débit",
+  "usage.costMixed": "tel que chaque fournisseur le rapporte ; sur un abonnement, c’est un équivalent, pas un débit",
   "engines.selectBinary": "Choisir un binaire détecté…",
   "engines.manualPath": "Saisir le chemin manuellement…",
   "engines.detectedAria": "CLI détectée de {name}",

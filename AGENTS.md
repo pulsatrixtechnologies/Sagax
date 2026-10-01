@@ -48,3 +48,22 @@ Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in
 `SAGAX_DEFAULT_SERVER`. The welcome tour no longer surfaces the inherited
 managed-desktop Admin sign-in; Settings > Organization still does. See
 `docs/self-hosting.md` ("At launch: No server or Server").
+
+## Upstream sync
+
+Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
+`4ed952aa` (0.1.92) merged into Sagax; `baseVersion` follows it. To repeat:
+
+- Keep the `upstream` remote fetch-only (`git remote set-url --push
+  upstream no_push`). Never push, open a pull request or file an issue
+  upstream.
+- `git fetch upstream`, branch from `origin/main`, then `git merge
+  upstream/main` (a real merge, never a rebase) so history stays traceable.
+- On conflict our behavior wins and upstream improvements are layered in.
+  Merge `src/locales/*.json` and `source-hashes.json` as a union of keys and
+  run `pnpm i18n:check`.
+- Run `pnpm install --frozen-lockfile`, typecheck, lint, the unit suites and
+  `pnpm build`; compare failures with `origin/main` before pushing to
+  `origin` only.
+- Upstream's own MCP sign-in is kept unwired in
+  `server/mcp-oauth-upstream.ts`; `server/mcp-oauth.ts` is ours.
