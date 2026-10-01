@@ -1,51 +1,49 @@
-// Who pays for a turn on an organization server, as the model picker shows
-// it. Mirrors the order of server/engine-credentials.ts (first match wins):
-// the person's own subscription, then their model key in Perspicax, then
-// (organization admins only) the server's own account, then the
-// organization key. Solo servers have no payer order: the server's own
-// configuration serves every turn.
+// Who pays for a person's turns on an organization server, as the model
+// picker shows it. The server decides (server/engine-credentials.ts, the
+// person who speaks pays, 2026-10-01) and answers it per engine as
+// `myTurns` on GET /api/me/engines; this module only lays out the rows in
+// that order and never recomputes the choice. A routine pays as the bot's
+// owner. Solo servers have no payer order.
 import type { MyEngine } from "@/lib/perspicax-org";
 
-export type PayerId = "subscription" | "ownerKey" | "server" | "orgKey";
+/** A payer the person's own turns can use, in engine-credentials.ts order:
+ * their subscription, their key in Perspicax, the organization's key. */
+export type PayerId = Exclude<MyEngine["myTurns"], "none">;
+
+export const PAYER_ORDER: readonly PayerId[] = ["subscription", "key", "org-key"];
 
 export interface PayerRow {
   id: PayerId;
-  /** This payer can serve a turn now. */
+  /** This payer is available to the person (it may still not be first). */
   ready: boolean;
 }
 
 export interface PayerOrder {
   rows: PayerRow[];
-  /** The first ready payer: the one a turn uses now. Null when none is. */
+  /** The server's answer: the payer the person's turns use now, or null. */
   current: PayerId | null;
 }
+
+type EngineFacts = Pick<MyEngine, "installed" | "subscription" | "myKey" | "orgKey" | "myTurns"> & { driver: string };
 
 /** Drivers whose provider key a person can keep in Perspicax. */
 function keyProviderDriver(driver: string): boolean {
   return driver === "claudeAgent" || driver === "codex";
 }
 
-export function payerOrder(
-  engine: Pick<MyEngine, "driver" | "installed" | "subscription" | "ownerKey" | "orgKey">,
-  options: { admin: boolean; serverSignedIn: boolean },
-): PayerOrder {
-  const rows: PayerRow[] = [];
-  if (engine.subscription.supported) rows.push({ id: "subscription", ready: engine.subscription.signedIn });
-  if (keyProviderDriver(engine.driver)) rows.push({ id: "ownerKey", ready: engine.ownerKey });
-  if (options.admin) rows.push({ id: "server", ready: options.serverSignedIn });
-  rows.push({ id: "orgKey", ready: engine.orgKey });
-  const current = engine.installed ? rows.find((row) => row.ready)?.id ?? null : null;
-  return { rows, current };
+export function payerOrder(engine: EngineFacts): PayerOrder {
+  const ready: Record<PayerId, boolean> = { subscription: engine.subscription.signedIn, key: engine.myKey, "org-key": engine.orgKey };
+  const rows = PAYER_ORDER
+    .filter((id) => (id === "subscription" ? engine.subscription.supported : id === "key" ? keyProviderDriver(engine.driver) : true))
+    .map((id) => ({ id, ready: ready[id] }));
+  return { rows, current: engine.myTurns === "none" ? null : engine.myTurns };
 }
 
 export type OrgEngineState = "connected" | "signInRequired" | "noAccess" | "notInstalled";
 
 /** One word for the provider column: connected, or what is missing. */
-export function orgEngineState(
-  engine: Pick<MyEngine, "driver" | "installed" | "subscription" | "ownerKey" | "orgKey">,
-  options: { admin: boolean; serverSignedIn: boolean },
-): OrgEngineState {
+export function orgEngineState(engine: EngineFacts): OrgEngineState {
   if (!engine.installed) return "notInstalled";
-  if (payerOrder(engine, options).current) return "connected";
+  if (engine.myTurns !== "none") return "connected";
   return engine.subscription.supported ? "signInRequired" : "noAccess";
 }

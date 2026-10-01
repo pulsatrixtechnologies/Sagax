@@ -13,7 +13,12 @@
 //   revoke      from Sagax: delegation_revoked and exactly one card; from the
 //               console (the directory): delegation_ended
 //   someone     bob's routine on alice's bot runs as bob (his delegation,
-//   else        alice's key), then pauses no_right when he loses `run`
+//   else        alice's key, never his own subscription or key: the bot's
+//               routines always run on its owner's credentials, 2026-10-01),
+//               then pauses no_right when he loses `run`
+//   owner pays  a routine a shared editor rewrote or started is refused,
+//               with the owner's card, when the owner has no credentials,
+//               and when the owner is disabled
 //   subject     a consent finished as another account is refused and revoked
 //   transient   Perspicax unreachable: the run fails, the routine is kept
 //   person out  a disable pauses the routine person_out; no runs follow
@@ -33,6 +38,7 @@ const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLAUDE = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
 const posixOnly = describe.skipIf(process.platform === "win32");
 const ALICE_KEY = "sk-ant-test-alice-000000";
+const BOB_KEY = "sk-ant-test-bob-0000000000";
 const ALICE: FakeOidcUser = { sub: "01J9S6ALICE00000000000000A", email: "alice@example.test", name: "Alice", preferred_username: "alice", role: "admin" };
 const BOB: FakeOidcUser = { sub: "01J9S6BOB000000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee" };
 const CAROL: FakeOidcUser = { sub: "01J9S6CAROL00000000000000C", email: "carol@example.test", name: "Carol", preferred_username: "carol", role: "employee" };
@@ -105,7 +111,7 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
 
 type Run = { id: string; routineId: string; status: string; error?: string; runAs?: string };
 type RoutineRow = { id: string; runAs?: { principalId: string; name: string }; suspended?: { reason: string } };
-type Message = { id: string; kind: string; role: string; access?: { reason: string; routineId?: string; runAsPrincipalId?: string; suspendReason?: string } };
+type Message = { id: string; kind: string; role: string; access?: { reason: string; routineId?: string; runAsPrincipalId?: string; suspendReason?: string; payer?: string; payerPrincipalId?: string; cause?: string; routine?: boolean }; digest?: { access?: { via: string; payer: string; payerPrincipalId?: string; routine?: boolean } } };
 
 async function routineOf(auth: Auth, id: string): Promise<RoutineRow | undefined> {
   return ((await api("GET", "/api/routines", auth)).body.routines as RoutineRow[] | undefined)?.find((r) => r.id === id);
@@ -126,8 +132,21 @@ async function cardsFor(auth: Auth, threadId: string, routineId: string): Promis
 }
 /** The scheduler's file, read while nobody is signed in. */
 const onDisk = () => JSON.parse(readFileSync(join(home, ".openmausbot", "routines.json"), "utf8")) as {
-  routines: Array<{ id: string; runAs?: string; suspended?: { reason: string } }>;
-  runs: Array<Run & { resultsThreadId?: string }>;
+  routines: Array<{ id: string; botId?: string; runAs?: string; suspended?: { reason: string } }>;
+  runs: Array<Run & { resultsThreadId?: string; threadId?: string }>;
+};
+/** The thread a run's turn ran in (its own, else its results thread). */
+const runThread = (runId: string) => {
+  const run = onDisk().runs.find((r) => r.id === runId);
+  return run?.threadId ?? run?.resultsThreadId ?? "";
+};
+/** Every usage row the server booked (server/usage-ledger.ts). */
+const usageRows = () => {
+  const dir = join(home, ".openmausbot", "usage");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((name) => name.endsWith(".jsonl")).sort().flatMap((name) => readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as {
+    access?: string; payerPrincipalId?: string; ownerPrincipalId?: string; trigger?: { kind: string; routineId?: string; runAsPrincipalId?: string; principalId?: string };
+  }));
 };
 const engineEnv = () => (JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env;
 
@@ -215,7 +234,9 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     expect((await api("PUT", `/api/bots/${x.id}/perspicax`, alice, { profiles: [PROFILE.id] })).status).toBe(200);
     expect((await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "run" })).status).toBe(200);
     // the owner's key reaches the engine only once the directory lists it
-    await waitFor(async () => (await api("GET", "/api/me/engines", alice)).body.engines?.find((e: { instanceId: string }) => e.instanceId === "claude")?.ownerKey === true);
+    await waitFor(async () => (await api("GET", "/api/me/engines", alice)).body.engines?.find((e: { instanceId: string }) => e.instanceId === "claude")?.myKey === true);
+    // the retired org key switch of the old config.json is gone after start
+    expect(JSON.parse(readFileSync(join(data, "config.json"), "utf8")).organization ?? {}).not.toHaveProperty("memberBotsUseOrgKey");
   }, 90_000);
 
   afterAll(async () => {
@@ -344,12 +365,38 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     expect(idp.refreshes.slice(refreshesBefore).filter((r) => r.sub === ALICE.sub)).toEqual([]);
     expect(await consent(bob, BOB)).toBe("/#routine-delegation=ok");
     expect((await routineOf(bob, r2))?.suspended).toBeUndefined();
+    // bob has his own subscription and key: they never pay for the bot's routine
+    idp.providerKeys.set(`${BOB.sub}/anthropic`, BOB_KEY);
+    const bobLogin = join(home, ".openmausbot", "principals", ids.bob!, "claude");
+    mkdirSync(bobLogin, { recursive: true, mode: 0o700 });
+    writeFileSync(join(bobLogin, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
+    bob = await signIn(BOB);
+    await waitFor(async () => {
+      const claude = (await api("GET", "/api/me/engines", bob)).body.engines?.find((e: { instanceId: string }) => e.instanceId === "claude");
+      return claude?.myKey === true && claude?.myTurns === "subscription";
+    });
     if (existsSync(dump)) rmSync(dump);
     const exchangesBefore = idp.exchanges.length;
     const ran = await runNow(bob, r2);
     expect(ran.status, ran.error).toBe("completed");
     expect(idp.exchanges.slice(exchangesBefore).map((e) => e.sub)).toEqual([BOB.sub]);
     expect(engineEnv().ANTHROPIC_API_KEY).toBe(ALICE_KEY);
+    expect(engineEnv().CLAUDE_CONFIG_DIR ?? "").not.toContain(ids.bob!);
+    expect(idp.resolveRequests.at(-1)).toEqual({ sub: ALICE.sub, provider: "anthropic" });
+    expect(log).not.toContain(BOB_KEY);
+    // the usage ledger says the owner's key paid for this run
+    const paid = await waitFor(async () => usageRows().findLast((row) => row.trigger?.kind === "routine" && row.trigger.routineId === r2) ?? null, 15_000);
+    expect(paid).toMatchObject({ access: "owner-key", payerPrincipalId: ids.alice, ownerPrincipalId: ids.alice, trigger: { runAsPrincipalId: ids.bob } });
+    // bob speaking to the same bot himself (his own private thread): his own
+    // subscription, no key at all
+    rmSync(dump);
+    const own = await api("POST", `/api/bots/${x.id}/tasks`, bob, { title: "Bob's own" });
+    expect(own.status, own.text).toBe(201);
+    const asked = await api("POST", `/api/bots/${x.id}/messages`, bob, { text: "bob asks himself", threadId: own.body.task.threadId });
+    expect(asked.status, asked.text).toBe(202);
+    await waitFor(async () => existsSync(dump) && JSON.stringify(JSON.parse(readFileSync(dump, "utf8")).prompt).includes("bob asks himself"), 30_000);
+    expect(engineEnv().CLAUDE_CONFIG_DIR).toBe(bobLogin);
+    expect(engineEnv().ANTHROPIC_API_KEY).toBeUndefined();
     // bob loses run: the next run pauses the routine no_right
     expect((await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
     const refused = await runNow(alice, r2);
@@ -361,6 +408,32 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     expect(edited.body.routine.runAs).toEqual({ principalId: ids.alice, name: "Alice" });
     expect(edited.body.routine.suspended).toBeUndefined();
   }, 150_000);
+
+  it("a routine a shared editor rewrote and starts runs on the owner's credentials: none, refused with the owner's card", async () => {
+    const r2 = onDisk().routines.find((r) => r.id !== r1 && r.botId === x.id)!.id;
+    expect((await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "edit" })).status).toBe(200);
+    bob = await signIn(BOB);
+    const edited = await api("PATCH", `/api/routines/${r2}`, bob, { prompt: "Check for Bob again." });
+    expect(edited.status, edited.text).toBe(200);
+    expect(edited.body.routine.runAs).toEqual({ principalId: ids.bob, name: "Bob" });
+    // alice's key leaves Perspicax; bob still has his subscription and key
+    idp.providerKeys.delete(`${ALICE.sub}/anthropic`);
+    alice = await signIn(ALICE);
+    await waitFor(async () => (await api("GET", "/api/me/engines", alice)).body.engines?.find((e: { instanceId: string }) => e.instanceId === "claude")?.myKey === false);
+    if (existsSync(dump)) rmSync(dump);
+    const refused = await runNow(bob, r2);
+    expect(refused.status).toBe("failed");
+    expect(existsSync(dump)).toBe(false);
+    // the run's thread is bob's (its runAs, private threads); alice is notified
+    const thread = runThread(refused.id);
+    const card = await waitFor(async () => (((await api("GET", `/api/threads/${thread}/messages`, bob)).body.messages ?? []) as Message[])
+      .findLast((m) => m.kind === "access" && m.access?.reason === "no_access") ?? null);
+    expect(card.access).toMatchObject({ payer: "owner", payerPrincipalId: ids.alice, routine: true, cause: "no_credentials" });
+    // the key is back for what follows
+    idp.providerKeys.set(`${ALICE.sub}/anthropic`, ALICE_KEY);
+    alice = await signIn(ALICE);
+    await waitFor(async () => (await api("GET", "/api/me/engines", alice)).body.engines?.find((e: { instanceId: string }) => e.instanceId === "claude")?.myKey === true);
+  }, 120_000);
 
   it("a room bob creates without naming its people is his to see, and a room goal on it is his", async () => {
     const own = await api("POST", "/api/bots", bob, { name: "Yann" });
@@ -391,6 +464,18 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     // the scheduler ticks every 10 s: nothing new for R1 over a tick
     await sleep(12_000);
     expect(onDisk().runs.filter((r) => r.routineId === r1).length).toBe(runs);
+    // bob's run of a routine of her bot (it acts as bob): refused, her
+    // credentials are off, and never bob's own instead
+    const r2 = onDisk().routines.find((r) => r.botId === x.id && r.id !== r1 && r.runAs === ids.bob)?.id;
+    expect(r2).toBeTruthy();
+    if (existsSync(dump)) rmSync(dump);
+    const refused = await runNow(bob, r2!);
+    expect(refused.status).toBe("failed");
+    expect(existsSync(dump)).toBe(false);
+    const thread = runThread(refused.id);
+    const card = await waitFor(async () => (((await api("GET", `/api/threads/${thread}/messages`, bob)).body.messages ?? []) as Message[])
+      .findLast((m) => m.kind === "access" && m.access?.cause === "payer_disabled") ?? null);
+    expect(card.access).toMatchObject({ reason: "no_access", payer: "owner", payerPrincipalId: ids.alice, routine: true });
   }, 60_000);
 
   it("never writes a refresh or access token in clear", () => {

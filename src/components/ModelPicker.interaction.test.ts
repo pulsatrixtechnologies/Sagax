@@ -23,6 +23,7 @@ const fixture = vi.hoisted(() => {
     // An organization server (Perspicax): null on a solo server.
     org: null as unknown,
     myEngines: null as unknown,
+    bots: [] as unknown[],
   };
 });
 vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
@@ -48,7 +49,7 @@ vi.mock("./MenuMotion", () => ({ useMenuMotion: (open: boolean) => ({ shown: ope
 vi.mock("@/state/store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/state/store")>()),
   useStore: () => ({
-    state: { instances: fixture.instances, bots: [], modelVariantSessions: {} },
+    state: { instances: fixture.instances, bots: fixture.bots, modelVariantSessions: {} },
     dispatch: fixture.dispatch,
     refreshInstances: fixture.refreshInstances,
     refreshModels: fixture.refreshModels,
@@ -133,6 +134,7 @@ beforeEach(() => {
   fixture.refreshModels = vi.fn(() => Promise.resolve());
   fixture.org = null;
   fixture.myEngines = null;
+  fixture.bots = [];
 });
 afterEach(() => vi.useRealTimers());
 
@@ -343,14 +345,15 @@ describe("on an organization server", () => {
   });
   const engine = (patch: Record<string, unknown> = {}) => ({
     instanceId: "claude", driver: "claudeAgent", displayName: "Claude", installed: true,
-    subscription: { supported: true, signedIn: false }, ownerKey: false, orgKey: true, answersFor: "everyone", ...patch,
+    subscription: { supported: true, signedIn: false }, myKey: false, orgKey: true, myTurns: "org-key", ...patch,
   });
   const ollama: InstanceInfo = {
     instanceId: "ollama", driverKind: "openaiCompatible", displayName: "Ollama", access: "custom",
     snapshot: { state: "available", authenticated: true }, models: { default: "", options: [qwen] },
   };
+  const order = (html: string, ids: string[]) => ids.map((id) => html.indexOf(`data-payer="${id}"`));
 
-  it("opens, shows the person's payer order and keeps the server's models pickable without the server's own sign-in", () => {
+  it("opens, shows the speaker's payer order and keeps the server's models pickable without the server's own sign-in", () => {
     fixture.org = orgOf("member");
     fixture.myEngines = [engine()];
     fixture.instances = [signedOut(), ollama];
@@ -359,12 +362,12 @@ describe("on an organization server", () => {
     const html = menu(opened.html);
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain("Who pays for your turns");
-    const order = ["subscription", "ownerKey", "orgKey"].map((id) => html.indexOf(`data-payer="${id}"`));
-    expect(order.every((index) => index > 0)).toBe(true);
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
-    // A member never pays with the server's own account.
+    const rows = order(html, ["subscription", "key", "org-key"]);
+    expect(rows.every((index) => index > 0)).toBe(true);
+    expect([...rows].sort((a, b) => a - b)).toEqual(rows);
+    // The server's own sign-ins pay for no one, admins included.
     expect(html).not.toContain('data-payer="server"');
-    expect(html).toMatch(/data-payer="orgKey"[^>]*aria-current="true"/);
+    expect(html).toMatch(/data-payer="org-key"[^>]*aria-current="true"/);
     expect(html).toContain("Used now");
     // Their own subscription signs in through the organization server.
     expect(html).toContain("data-model-personal-sign-in");
@@ -379,24 +382,37 @@ describe("on an organization server", () => {
     expect(html).toContain("data-model-local-hidden");
   });
 
-  it("puts the server's own account third for an organization admin and the subscription first once signed in", () => {
+  it("follows the server's answer for an admin too: no server row, the subscription first once signed in", () => {
     fixture.org = orgOf("admin");
-    fixture.myEngines = [engine({ subscription: { supported: true, signedIn: true }, ownerKey: true, answersFor: "everyone" })];
+    fixture.myEngines = [engine({ subscription: { supported: true, signedIn: true }, myKey: true, myTurns: "subscription" })];
     fixture.instances = [signedIn()];
     const html = menu(open(bot("claude", "claude-opus-5-5")).html);
-    const order = ["subscription", "ownerKey", "server", "orgKey"].map((id) => html.indexOf(`data-payer="${id}"`));
-    expect(order.every((index) => index > 0)).toBe(true);
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const rows = order(html, ["subscription", "key", "org-key"]);
+    expect([...rows].sort((a, b) => a - b)).toEqual(rows);
+    expect(html).not.toContain('data-payer="server"');
     expect(html).toMatch(/data-payer="subscription"[^>]*aria-current="true"/);
     expect(html).not.toContain("data-model-personal-sign-in");
   });
 
   it("warns when nothing pays yet", () => {
     fixture.org = orgOf("member");
-    fixture.myEngines = [engine({ orgKey: false, answersFor: "nobody" })];
+    fixture.myEngines = [engine({ orgKey: false, myTurns: "none" })];
     fixture.instances = [signedOut()];
     const html = menu(open(bot("claude", "claude-opus-5-5")).html);
     expect(html).toContain("Nothing pays for this provider yet");
     expect(html).not.toContain('aria-current="true"');
+  });
+
+  it("says a routine's thread pays with the bot owner's credentials", () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [engine({ orgKey: false, myTurns: "none" })];
+    fixture.instances = [signedIn()];
+    const onClaude = bot("claude", "claude-opus-5-5");
+    fixture.bots = [{ ...onClaude, tasks: [{ threadId: onClaude.threadId, title: "Daily digest", createdAt: 1, routineRunId: "run-1" }] }];
+    const html = menu(open(onClaude).html);
+    expect(html).toContain("data-model-payers-routine");
+    expect(html).toContain("Owner&#x27;s credentials");
+    expect(html).not.toContain("data-model-personal-sign-in");
+    expect(html).not.toContain("Nothing pays for this provider yet");
   });
 });

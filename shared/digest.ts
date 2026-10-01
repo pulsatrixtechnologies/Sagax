@@ -35,4 +35,16 @@ export interface TurnDigest {
   reply: string;
   usage?: { input: number; output: number; cachedInput?: number; costUsd?: number | null };
   hookCoverage: HookCoverage;
+  /** Organization server (2026-10-01): which credentials the turn ran with,
+   * never a secret: the payer's own subscription or key, the bot owner's
+   * (their own turn, the bot's routines), or the organization's key. */
+  access?: DigestAccess;
+}
+
+export interface DigestAccess {
+  via: "subscription" | "owner-key" | "speaker-key" | "server" | "org-key";
+  payer: "speaker" | "owner" | "organization";
+  payerPrincipalId?: string;
+  /** The bot's routine (or a hop one started): the owner's credentials. */
+  routine?: true;
 }

@@ -109,10 +109,13 @@ export type RequestOutcome = "allowed-once" | "rejected" | "answered" | "unavail
 // the first turn (the agentcal per-turn-process model) with resumeCursor
 // carrying the provider-native continuation (e.g. a claude session id).
 /** See SendTurnInput.access. `identity` is a non-secret label
- * (subscription:<pid>, owner-key:<pid>:<fingerprint>, server, org-key); a
- * driver never reuses a process started under another identity. */
+ * (subscription:<pid>, owner-key:<pid>:<fingerprint>,
+ * speaker-key:<pid>:<fingerprint>, server, org-key); a driver never reuses
+ * a process started under another identity. `owner-key` and `speaker-key`
+ * are both a person's own key from Perspicax (the bot's owner's, or the
+ * person who spoke's). */
 export interface TurnAccessInput {
-  via: "subscription" | "owner-key" | "server" | "org-key";
+  via: "subscription" | "owner-key" | "speaker-key" | "server" | "org-key";
   identity: string;
   environment?: Record<string, string>;
   claudeConfigDir?: string;
@@ -256,6 +259,11 @@ export interface SendTurnInput {
    * config.toml and ignores this; the Claude driver drops
    * --strict-mcp-config for the turn. */
   mcpFromUserConfig?: boolean;
+  /** Keep the claude.ai connectors of the account this turn runs on (the
+   * speaker's own Claude subscription, server/harness-connectors.ts). The
+   * Claude driver then drops --strict-mcp-config only; other drivers ignore
+   * it. Their tools ride the normal permission flow, never pre-allowed. */
+  claudeAiConnectors?: boolean;
 }
 
 /** An MCP server this machine starts and talks to over stdio. */

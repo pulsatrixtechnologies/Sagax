@@ -14,6 +14,7 @@ import { isConnectorToolGrantShape } from "@/lib/connector-grants";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { McpServersPanel } from "./McpServersPanel";
 import { ConnectedAppsSetup } from "./ConnectedAppsSetup";
+import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
 import { requestSettingsCard } from "./SettingsPrimitives";
 
 export interface ToolkitCard {
@@ -677,6 +678,9 @@ export function PluginsPanel() {
           </label>
         </div>
 
+        {/* The person's own claude.ai connectors, ahead of the Composio
+            catalog: they need no setup on this server. */}
+        <HarnessConnectorsSection />
         {/* No connection service yet: set one up right here instead of
             sending the owner to hunt through App Settings. Only once the
             catalog has answered, so a slow first load never flashes it. */}

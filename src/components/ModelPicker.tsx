@@ -23,7 +23,7 @@ import { approvalModeFor, modelSwitchNeedsAsk } from "../../shared/approval-mode
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
-import { answersForText, reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
+import { myTurnsText, reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { orgEngineState } from "@/lib/model-payers";
 import { ModelPickerPayers } from "./ModelPickerPayers";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
@@ -562,7 +562,9 @@ export function ModelPicker({
   const displayedInstanceId = railInstance?.instanceId;
   // Slice 4, organization server: who a bot on this engine can answer.
   const railEngine = myEngines?.find((engine) => engine.instanceId === displayedInstanceId) ?? null;
-  const admin = org?.viewerRole === "admin";
+  // A routine's thread pays as the bot's owner (engine-credentials.ts).
+  const routineThread = Boolean(orgMode && threadId && state.bots.find((candidate) => candidate.id === bot.id)?.tasks
+    ?.some((task) => task.threadId === threadId && task.routineRunId));
   // A plan account discovers its allowed models only after sign-in. An empty
   // catalog must still lead to cloud sign-in, never local-model injection.
   const hasOfficialModels = Boolean(railInstance?.snapshot.chatgptPlan || railInstance?.models.options.some((option) => !option.custom));
@@ -774,7 +776,7 @@ export function ModelPicker({
   const orgStatusOf = (instance: InstanceInfo) => {
     const engine = myEngines?.find((candidate) => candidate.instanceId === instance.instanceId);
     if (!engine) return { label: engineStatus(instance), attention: needsCli(instance) };
-    const state = orgEngineState(engine, { admin, serverSignedIn: instance.snapshot.authenticated !== false });
+    const state = orgEngineState(engine);
     return { label: t(`model.org.state.${state}`), attention: state !== "connected" };
   };
   const railStatus = railInstance
@@ -914,7 +916,7 @@ export function ModelPicker({
           <h2 id={modal ? "model-picker-title" : undefined} className={cn("truncate font-semibold text-ink", modal ? "text-[16px]" : "text-[14px]")}>
             {signInFamily(railInstance) ? SIGN_IN_FAMILY_LABEL[signInFamily(railInstance)!] : railInstance.displayName}
           </h2>
-          {railEngine && !modal && <div data-answers-for={railEngine.answersFor} className="truncate text-[11px] text-ink-secondary">{answersForText(railEngine)}</div>}
+          {railEngine && !modal && <div data-my-turns={railEngine.myTurns} className="truncate text-[11px] text-ink-secondary">{myTurnsText(railEngine)}</div>}
         </div>
         <div className={cn("flex shrink-0 items-center gap-1", modal && "pr-10")}>
           <button
@@ -971,11 +973,11 @@ export function ModelPicker({
   );
 
   const payers = orgMode && org && railInstance && railEngine && !railInstance.policy && (
-    <ModelPickerPayers key={railInstance.instanceId} engine={railEngine} instance={railInstance}
-      issuer={org.org.identity.issuer} admin={admin} onChanged={reloadMyEngines} />
+    <ModelPickerPayers key={railInstance.instanceId} engine={railEngine} routine={routineThread}
+      issuer={org.org.identity.issuer} onChanged={reloadMyEngines} />
   );
 
-  const payersFirst = Boolean(railEngine && railInstance && orgEngineState(railEngine, { admin, serverSignedIn: railInstance.snapshot.authenticated !== false }) !== "connected");
+  const payersFirst = Boolean(railEngine && !routineThread && orgEngineState(railEngine) !== "connected");
 
   const listSection = railInstance && (
     <>

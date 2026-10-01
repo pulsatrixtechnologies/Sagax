@@ -1,7 +1,9 @@
 // Settings > Organization on a server signed in with Perspicax (slice 3):
 // the link to Perspicax and its last directory sync, the viewer's role, a
-// link to manage people in the Perspicax console, and, for admins, the
-// organization key switch and the server commands waiting for an admin.
+// link to manage people in the Perspicax console, who pays for a turn
+// (read-only: the speaker's subscription, their key, then the organization's
+// key; the org key switch was retired on 2026-10-01), and, for admins, the
+// server commands waiting for an admin.
 // Slice 4 adds My engines (for everyone) and Sharing in the organization
 // (the bots whose sharing the viewer administers); slice 6 adds Routines in
 // my name (the routine delegation).
@@ -49,8 +51,6 @@ export function showInterimCard(admin: boolean, interim: PerspicaxOrg["settings"
 
 export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; onChanged: () => void | Promise<void> }) {
   const admin = org.viewerRole === "admin";
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const [approvals, setApprovals] = useState<PendingAdminApproval[] | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -74,19 +74,6 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
   const synced = org.link.syncedAt
     ? new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(org.link.syncedAt))
     : null;
-
-  const toggleOrgKey = async (next: boolean) => {
-    setSaving(true);
-    setError("");
-    try {
-      await api("/api/org/settings", { method: "PATCH", body: JSON.stringify({ memberBotsUseOrgKey: next }) });
-      await onChanged();
-    } catch {
-      setError(t("organization.orgKey.failed"));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const answer = async (approval: PendingAdminApproval, behavior: "allow" | "deny") => {
     setAnswering(approval.requestId);
@@ -119,22 +106,15 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
             <ExternalLink size={13} aria-hidden="true" />
             {t("organization.manageInPerspicax")}
           </a>
-          {admin && (
-            <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-hairline/40 p-3">
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={org.settings.memberBotsUseOrgKey}
-                disabled={saving}
-                onChange={(event) => void toggleOrgKey(event.target.checked)}
-              />
-              <span className="flex flex-col gap-1">
-                <span className="text-ink">{t("organization.orgKey.label")}</span>
-                <span className="text-[12px] leading-relaxed text-ink-secondary">{t("organization.orgKey.help")}</span>
+          <div className="flex flex-col gap-1 rounded-lg border border-hairline/40 p-3" data-pay-order>
+            <span className="text-ink">{t("organization.payOrder.title")}</span>
+            <span className="text-[12px] leading-relaxed text-ink-secondary">{t("organization.payOrder.text")}</span>
+            {org.settings.orgKeyConfigured !== undefined && (
+              <span className="text-[12px] text-ink-secondary" data-org-key={org.settings.orgKeyConfigured ? "on" : "off"}>
+                {org.settings.orgKeyConfigured ? t("organization.payOrder.orgKey.on") : t("organization.payOrder.orgKey.off")}
               </span>
-            </label>
-          )}
-          {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+            )}
+          </div>
         </div>
       </Card>
       {canCreateBots && (

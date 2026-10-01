@@ -1461,6 +1461,48 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.argv[seen.argv.indexOf("--setting-sources") + 1]).toBe("project");
   });
 
+  it("keeps no claude.ai connector on an isolated turn", async () => {
+    await create();
+    const dump = join(scratch, "no-claude-ai.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+
+    await instance.adapter.sendTurn({ threadId: "t-no-claude-ai", text: "hi" });
+    await recorder.until((e) => e.type === "turn.completed");
+
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv).toContain("--strict-mcp-config");
+    expect(seen.env.ENABLE_CLAUDEAI_MCP_SERVERS).toBe("false");
+  });
+
+  it("keeps the speaker's claude.ai connectors when the turn asks, the rest still isolated", async () => {
+    await create();
+    const dump = join(scratch, "claude-ai.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+
+    await instance.adapter.sendTurn({ threadId: "t-claude-ai", text: "hi", claudeAiConnectors: true });
+    await recorder.until((e) => e.type === "turn.completed");
+
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    // --strict-mcp-config also drops claude.ai connectors (CLI 2.1.287)
+    expect(seen.argv).not.toContain("--strict-mcp-config");
+    expect(seen.env.ENABLE_CLAUDEAI_MCP_SERVERS).toBeUndefined();
+    // user-scope servers, skills and hooks stay out
+    expect(seen.argv[seen.argv.indexOf("--setting-sources") + 1]).toBe("project");
+  });
+
+  it("never keeps claude.ai connectors on a guest's confined turn", async () => {
+    await create(undefined, { FAKE_CLAUDE_VERSION: "2.1.284" });
+    const dump = join(scratch, "claude-ai-guest.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+
+    await instance.adapter.sendTurn({ threadId: "t-claude-ai-guest", text: "hi", claudeAiConnectors: true, guestConfined: true, approvalMode: "ask" });
+    await recorder.until((e) => e.type === "turn.completed");
+
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv).toContain("--strict-mcp-config");
+    expect(seen.env.ENABLE_CLAUDEAI_MCP_SERVERS).toBe("false");
+  });
+
   it("mounts a url server in the CLI's own shape, header values in the private file", async () => {
     await create();
     const dump = join(scratch, "remote-mcp.json");

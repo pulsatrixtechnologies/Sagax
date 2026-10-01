@@ -170,7 +170,8 @@ posixOnly("Perspicax organization, slice 7: the console admin API", () => {
     const bob = await signIn(BOB);
     const dave = await signIn(DAVE);
     await signIn(MONA);
-    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: true })).status).toBe(200);
+    // the organization's key serves by itself since 2026-10-01: the switch is gone
+    expect((await api("PATCH", "/api/org/settings", alice, { memberBotsUseOrgKey: true })).status).toBe(400);
     // X: alice's, shared with team T at run; Y: bob's, shared with alice;
     // Z: carol's (member-owned, raises cards); W: dave's, not shared
     bots.x = await createBot(alice, "Xavier", "claude");
@@ -278,7 +279,8 @@ posixOnly("Perspicax organization, slice 7: the console admin API", () => {
     expect(carolRow).toMatchObject({
       day: new Date().toISOString().slice(0, 10), botName: "Xavier", owner: { principalId: ids.alice },
       speaker: { kind: "person", principalId: ids.carol, sub: CAROL.sub, name: "Carol" }, turns: 1,
-      access: { "org-key": 1 },
+      // the console's keys, plus the speaker's own key (2026-10-01)
+      access: { subscription: 0, "owner-key": 0, "speaker-key": 0, "org-key": 1, server: 0, unknown: 0 },
     });
     const mona = await admin("GET", "usage", MONA);
     expect((mona.body.rows as Array<any>).map((row) => row.speaker.name)).toEqual(["Carol"]);
@@ -363,7 +365,8 @@ posixOnly("Perspicax organization, slice 7: the console admin API", () => {
       return list?.some((row) => row.action === "person.disabled") ? list : null;
     }, 20_000);
     const actions = rows.map((row) => row.action);
-    for (const action of ["grant.set", "grant.remove", "org.settings", "org.link", "approval.answer", "person.disabled"]) expect(actions, action).toContain(action);
+    // (no org.settings row: the org key switch it came from is gone, 2026-10-01)
+    for (const action of ["grant.set", "grant.remove", "org.link", "approval.answer", "person.disabled"]) expect(actions, action).toContain(action);
     expect(actions).not.toContain("config.update");
     expect(rows[0].at).toBeGreaterThanOrEqual(rows.at(-1).at);
     const answer = rows.find((row) => row.action === "approval.answer" && row.after?.requestId?.startsWith("s7-Bash"));

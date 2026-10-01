@@ -283,7 +283,7 @@ app.whenReady().then(async () => {
   Object.assign(picker, await measure());
   check("the composer's model chip opens a model picker modal inside the window", picker.found && picker.modal === "true" && picker.height > 300 && picker.top >= 0 && picker.bottom <= picker.innerHeight && picker.left >= 0 && picker.right <= picker.innerWidth, JSON.stringify(picker));
   check("the modal takes focus", picker.focusInside === true);
-  check("the modal shows the person's payer order (subscription, own key, server for an admin, organization key)", JSON.stringify(picker.payers) === JSON.stringify(["subscription", "ownerKey", "server", "orgKey"]), JSON.stringify(picker.payers));
+  check("the modal shows the speaker's payer order (subscription, own key, organization key; no server sign-in, even for an admin)", JSON.stringify(picker.payers) === JSON.stringify(["subscription", "key", "org-key"]), JSON.stringify(picker.payers));
   check("no local model from the server's machine, with a note", picker.localHidden && !picker.localEntry);
   await wait(300);
   await shoot("model-picker-server-1200.png");

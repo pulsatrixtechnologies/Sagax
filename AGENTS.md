@@ -131,9 +131,11 @@ opens a modal like Settings, portalled to `<body>`: providers with their
 status on the left, account, scope, models, effort and payers on the right,
 a bottom sheet on a narrow window; focus stays inside and Escape closes it.
 Only `contained` (the bot settings dialog) keeps the inline panel. On an
-organization server it shows the person's payer order
-(`src/lib/model-payers.ts`, the order of `server/engine-credentials.ts`)
-and signs in their own subscription through `/api/me/engines/<id>/login`
+organization server it shows the speaker's payer order
+(`src/lib/model-payers.ts`: subscription, key in Perspicax, organization
+key, as `server/engine-credentials.ts` decides; the payer used now is the
+server's `myTurns`, never recomputed; a routine thread shows the owner's
+credentials) and signs in their own subscription through `/api/me/engines/<id>/login`
 (`ModelPickerPayers.tsx`), never the server's engine login; the server's
 local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 `src/lib/model-payers.test.ts`; real Electron: `scripts/verify-server-mode.ts`
@@ -209,6 +211,31 @@ fragment-only change of the `/pair` the window already shows, which would
 not reload the page. `scripts/verify-desktop-sign-in.ts` proves it in a real
 Electron window. A change to that server code needs the server image
 redeployed.
+## Connectors from the person's own Claude account
+
+Sagax builds no GitHub, Outlook or Calendar integration of its own: a Claude
+turn keeps the claude.ai connectors (Microsoft 365, GitHub, Gmail, ...) of
+the account it runs on when that account is the speaker's own
+(`server/harness-connectors.ts`, rules in `claudeAiConnectorsForTurn`). Keep
+these rules, each covered by `server/harness-connectors.test.ts` or
+`server/drivers/claude.test.ts`:
+
+- Organization server: only an access `via: "subscription"` (the owner
+  speaking, from their own login directory). Owner key, org key and server
+  turns get none. Solo server: the operator and the operator's routines only.
+- The Claude driver drops `--strict-mcp-config` for such a turn (it also
+  drops claude.ai connectors, measured on CLI 2.1.287) and keeps
+  `--setting-sources project`; every other isolated turn sets
+  `ENABLE_CLAUDEAI_MCP_SERVERS=false`.
+- Connector tools (`mcp__claude_ai_*`) are never pre-allowed: they ride the
+  approval flow. An engine tool denial blocks host built-ins, never them.
+- Connected apps shows them read-only (`GET /api/me/harness-connectors`, the
+  caller's own account only, no email or URL) with a link to
+  claude.ai/customize/connectors; an admin turns them off with
+  `PUT /api/harness-connectors/settings` (`config.harnessConnectors.claudeAi`).
+- Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
+  ChatGPT plan mode and API keys do not have, so Codex turns get none.
+
 ## Upstream sync
 
 Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
