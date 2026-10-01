@@ -88,3 +88,18 @@ describe("the pairing hash", () => {
     expect(pair).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("the sign-in page speaks one language (S7 minor)", () => {
+  it("draws the code form in Quebec French with no English left", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    vi.stubGlobal("location", { hash: "", pathname: "/pair", search: "" });
+    vi.stubGlobal("navigator", { userAgent: "test" });
+    vi.stubGlobal("window", {});
+    setLocale("fr");
+    const html = renderToStaticMarkup(createElement(PairPage, { initialCode: "ABCD-EFGH-JKLM" }));
+    expect(html).toContain("Connecter à ce Sagax");
+    expect(html).toContain("Code de jumelage");
+    expect(html).toContain("Cet appareil");
+    for (const english of ["Connect to", "Pairing code", "This device", "Enter the pairing code"]) expect(html).not.toContain(english);
+  });
+});

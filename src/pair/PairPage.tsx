@@ -153,23 +153,23 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
     <main className="flex min-h-screen items-center justify-center bg-app px-6 text-ink">
       <div className="absolute left-3 top-12 max-w-[280px]"><DesktopWorkspaceSwitcher /></div>
       <div className="w-full max-w-[420px]">
-        <h1 className="text-[20px] font-semibold">{mode === "email" || mode === "pulsatrix" ? "Sign in to" : "Connect to"} {environment?.label ?? "this Sagax"}</h1>
+        <h1 className="text-[20px] font-semibold">{t(mode === "email" || mode === "pulsatrix" ? "pair.heading.signIn" : "pair.heading.connect", { name: environment?.label ?? t("pair.heading.thisServer") })}</h1>
         <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-secondary">
-          {environment ? `Version ${environment.version} on ${environment.platform}. ` : ""}
+          {environment ? `${t("pair.version", { version: environment.version, platform: environment.platform })} ` : ""}
           {mode === "pulsatrix"
             ? t("pair.pulsatrix.intro")
             : mode === "email"
             ? sent
               ? `We emailed an 8-digit code to ${email}. It works once and expires in ten minutes.`
               : "Enter your email and we will send you a one-time code."
-            : "Enter the pairing code shown on the server. Codes work once and expire after five minutes."}
+            : t("pair.code.intro")}
         </p>
         {reasonWorthShowing(reason) && !connected ? <p className="mt-3 text-[13px] text-ink-secondary">{reasonWorthShowing(reason)}</p> : null}
         {connected ? (
           <p className="mt-4 text-[13.5px]">
-            This browser is already connected.{" "}
+            {t("pair.connected")}{" "}
             <a href="/" className="text-accent underline">
-              Open the app
+              {t("pair.openApp")}
             </a>
           </p>
         ) : finishing ? (
@@ -242,7 +242,7 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
         ) : (
           <form onSubmit={submitCode}>
             <label className={fieldLabel} htmlFor="pair-code">
-              Pairing code
+              {t("pair.code.label")}
             </label>
             <input
               id="pair-code"
@@ -258,12 +258,12 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
               className={`${input} font-mono text-[15px] tracking-[0.12em]`}
             />
             <label className={fieldLabel} htmlFor="pair-label">
-              This device
+              {t("pair.device")}
             </label>
             <input id="pair-label" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={80} className={input} />
             {error ? <p className="mt-3 text-[13px] text-danger">{error}</p> : null}
             <button type="submit" disabled={busy || code.replace(/[^a-z0-9]/gi, "").length < 12} className={button}>
-              {busy ? "Connecting…" : "Connect"}
+              {busy ? t("pair.code.connecting") : t("pair.code.connect")}
             </button>
             {loginPath ? (
               <button type="button" onClick={() => switchMode("pulsatrix")} className="mt-3 w-full text-[13px] text-ink-secondary underline">
