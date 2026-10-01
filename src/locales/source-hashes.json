@@ -4937,7 +4937,13 @@
       "pair.pulsatrix.errorUnsupported": "66e100e80bf613add62410ecb0ab312999d1bd774cc5beca6bf3a989fca128e3",
       "pair.pulsatrix.errorBrowser": "6f6a4e969c0700ea433d8f2c4f24bae6e27ebe3c2604109d70bc82fb2dcf77d3",
       "pair.pulsatrix.errorUnreachable": "f3a30e85d2f5c222a3622a79e96fd56589b4495605d9c58e9b7e9e555b22aa9d",
-      "pair.pulsatrix.errorReturn": "85c62c281b2921c8879a9f001d526376c519e3c196951a4916a1a54f1b1cd92d"
+      "pair.pulsatrix.errorReturn": "85c62c281b2921c8879a9f001d526376c519e3c196951a4916a1a54f1b1cd92d",
+      "sidebar.threads.mine": "6705c7bf03f607a41422fb161b54901ade5c6948b95f08420176b8dcbca56d00",
+      "chat.privateConversation": "a6678d0a75d8f495357574d77897ecc8cfae94cfea203561fd02f7de3823c0a6",
+      "room.people.search": "8a7e7f1bc5631e13086496f82dd85cdc001d3998c7417d4919a2d7720ba149ee",
+      "room.people.add": "9fd728c66c9a256b121472dabf32a34317aed01d8427d70ec830289cf23a7cc8",
+      "room.people.none": "b7bab1122f03b02ba1495e241a1d4237938f13b2c3af5f1933ed0acb1d7d1f9c",
+      "room.people.done": "11a6767d5674c7e45f7e00dc525762275b3a48491ad6045427d2609cc496c516"
     },
     "hi": {
       "noEngines.title": "af88855a5f80377de709995229ba3907df9e8fb3b940fbf7c0d9cbe6eea54afe",

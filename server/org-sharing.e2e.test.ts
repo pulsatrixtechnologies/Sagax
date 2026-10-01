@@ -294,6 +294,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect((await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: bobId })).status).toBe(200);
     const bob = await signIn(BOB);
     const aliceStream = await openStream(alice);
+    const bobStream = await openStream(bob);
     const before = readFileSync(dump, "utf8");
     const sent = await api("POST", `/api/bots/${shared.id}/messages`, bob, { text: "no key now" });
     expect(sent.status, sent.text).toBe(202);
@@ -303,7 +304,13 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     });
     expect(card.access).toMatchObject({ reason: "no_access", engine: "Claude", botId: shared.id });
     expect(readFileSync(dump, "utf8")).toBe(before);
-    await waitFor(async () => aliceStream.text().includes("turn-failed"));
+    // private threads: bob hears his own thread's failure; alice, the bot's
+    // owner, hears nothing of bob's conversation
+    await waitFor(async () => bobStream.text().includes("turn-failed"));
+    bobStream.close();
+    await sleep(300);
+    expect(aliceStream.text()).not.toContain("no key now");
+    expect(aliceStream.text()).not.toContain("turn-failed");
     aliceStream.close();
 
     // the same rule in a room: bob's message there gets the card, not a turn
@@ -346,9 +353,13 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     await waitFor(async () => promptsNow().includes("hold on, alice"));
     const queued = await api("POST", `/api/bots/${held.id}/messages`, bob, { text: "queued from bob" });
     expect(queued.status, queued.text).toBe(202);
-    // never folded into alice's running turn
+    // never folded into alice's running turn: private threads put bob's
+    // words in his own conversation with the bot, not behind alice's
     expect(queued.body.steered).toBeUndefined();
-    expect(queued.body.queued).toBe(true);
+    const aliceThread = (await botsOf(alice)).find((b) => b.id === held.id)!.threadId;
+    const bobThread = (await botsOf(bob)).find((b) => b.id === held.id)!.threadId;
+    expect(bobThread).not.toBe(aliceThread);
+    expect(JSON.stringify((await api("GET", `/api/threads/${aliceThread}/messages`, alice)).body)).not.toContain("queued from bob");
     const stopped = await api("POST", `/api/bots/${held.id}/interrupt`, alice, {});
     expect(stopped.status, stopped.text).toBeLessThan(300);
     const heldCard = await waitFor(async () => (await accessCards(bob, held.id))[0] ?? null);

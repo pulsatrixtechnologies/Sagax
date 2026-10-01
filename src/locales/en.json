@@ -3519,5 +3519,11 @@
   "settings.mail.testTo": "The test goes to your own address: {address}.",
   "settings.mail.testNoAddress": "Your account has no email address, so no test can be sent.",
   "settings.mail.testSaveFirst": "Save your changes before sending a test.",
-  "settings.mail.testSent": "Test sent to {address}."
+  "settings.mail.testSent": "Test sent to {address}.",
+  "sidebar.threads.mine": "My conversations",
+  "chat.privateConversation": "Private conversation. To talk with several people, create a group.",
+  "room.people.search": "Search people",
+  "room.people.add": "Add",
+  "room.people.none": "No one matches.",
+  "room.people.done": "Done"
 }

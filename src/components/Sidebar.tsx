@@ -1003,7 +1003,12 @@ export function BotDeleteMenuItem({ deleting, onClick }: { deleting: boolean; on
 /** The thread tree under one bot row: project folders, then ungrouped rows.
  * Visibility folds old threads away. Pins stay, then the newest update.
  * Waiting and working stay visible as status, not as a sort key. */
-export function BotThreadList({ bot, selected, density = "comfortable", query = "", hidden = false }: { bot: Bot; selected: boolean; density?: SidebarDensity; query?: string; hidden?: boolean }) {
+export function BotThreadList({ bot, selected, density = "comfortable", query = "", hidden = false, mine = false }: {
+  bot: Bot; selected: boolean; density?: SidebarDensity; query?: string; hidden?: boolean;
+  /** An organization server sends each person only their own threads with
+   * a bot: the list says so. */
+  mine?: boolean;
+}) {
   const { state, dispatch } = useStore();
   const now = useRelativeNow();
   const tasks = (bot.tasks ?? [{ threadId: bot.threadId, title: t("task.newShort"), createdAt: 0 }])
@@ -1087,6 +1092,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
       onDragOver={(event) => { if (event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) event.stopPropagation(); }}
       onDrop={(event) => { if (event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) { event.preventDefault(); event.stopPropagation(); resetFolderDrag(); } }}>
       {!hidden && <>
+      {mine && <div data-sidebar-my-threads className="px-2 pt-1 text-[11px] font-medium text-sidebar-ink-secondary">{t("sidebar.threads.mine")}</div>}
       {orderedProjects.map((project) => {
         const index = projects.indexOf(project);
         const projectTasks = tasks.filter((task) => task.projectId === project.id);
@@ -1175,9 +1181,12 @@ export function BotListItem({
   onMenu,
   startRename = false,
   onRenameStarted,
+  mine = false,
 }: {
   bot: Bot;
   density: SidebarDensity;
+  /** Organization server: the thread list holds only the viewer's own. */
+  mine?: boolean;
   /** Quiet rows: name and status only (see sidebar-preferences). */
   quiet?: boolean;
   query?: string;
@@ -1413,7 +1422,7 @@ export function BotListItem({
     </div>
     {/* Keep folder expansion state mounted while the preference is off. The
         hidden list omits its children, including any thread-menu portals. */}
-    {!iconOnly && threadsOpen && hasThreadList && <BotThreadList bot={bot} selected={selected} density={density} hidden={!showThreads} query={bot.name.toLowerCase().includes(query.toLowerCase()) || bot.title.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
+    {!iconOnly && threadsOpen && hasThreadList && <BotThreadList bot={bot} selected={selected} density={density} hidden={!showThreads} mine={mine} query={bot.name.toLowerCase().includes(query.toLowerCase()) || bot.title.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
     {!expanded && <SidebarBotActivity bot={bot} density={density} />}
     {showThreads && creatingProject && <BotProjectDialog bot={bot} onClose={() => setCreatingProject(false)} />}
     </>
@@ -2312,6 +2321,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                         onMenu={setMenu}
                         startRename={renameBotId === bot.id}
                         onRenameStarted={() => setRenameBotId(null)}
+                        mine={orgMode}
                       />
                     ))}
                     {sectionGroupItems.map((group) => (
@@ -2334,6 +2344,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                         onMenu={setMenu}
                         startRename={renameBotId === bot.id}
                         onRenameStarted={() => setRenameBotId(null)}
+                        mine={orgMode}
                       />
                     ))}
                   </div>

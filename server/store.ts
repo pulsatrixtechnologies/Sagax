@@ -2595,7 +2595,7 @@ export class Store {
 
   /** A fresh context on the same bot: new thread, new session, same
    * persona/tools/computer. Becomes the active task. */
-  createTask(botId: string, title?: string, activate = true, projectId?: string, openedBy?: TaskOpenedBy, approvalMode?: "ask" | "full"): TaskRecord | null {
+  createTask(botId: string, title?: string, activate = true, projectId?: string, openedBy?: TaskOpenedBy, approvalMode?: "ask" | "full", ownerPrincipalId?: string): TaskRecord | null {
     const bot = this.bot(botId);
     if (!bot) return null;
     if (projectId !== undefined && !this.project(botId, projectId)) return null;
@@ -2607,6 +2607,8 @@ export class Store {
       updatedAt: createdAt,
       ...(projectId ? { projectId } : {}),
       ...(openedBy ? { openedBy: structuredClone(openedBy) } : {}),
+      // Set with the task, never after: a thread is never briefly someone else's.
+      ...(ownerPrincipalId?.trim() ? { ownerPrincipalId: ownerPrincipalId.trim().toLowerCase() } : {}),
       resumeCursors: {},
       modelSelection: structuredClone(bot.modelSelection),
       approvalMode: approvalMode ?? approvalModeFor(bot),
@@ -2623,6 +2625,24 @@ export class Store {
     this.saveBots();
     this.emit({ type: "bot", botId });
     return task;
+  }
+
+  /** Organization server, once (server/thread-privacy.ts migration): give
+   * each listed thread its owner. Never reachable from the HTTP task PATCH:
+   * ownerPrincipalId is not a TASK_PATCH_FIELD. Returns how many bots changed. */
+  assignTaskOwners(assignments: readonly { botId: string; threadId: string; ownerPrincipalId: string }[]): number {
+    const touched = new Set<string>();
+    for (const entry of assignments) {
+      const task = this.taskByThread(entry.botId, entry.threadId);
+      const owner = entry.ownerPrincipalId.trim().toLowerCase();
+      if (!task || !owner || task.ownerPrincipalId === owner) continue;
+      task.ownerPrincipalId = owner;
+      touched.add(entry.botId);
+    }
+    if (!touched.size) return 0;
+    this.saveBots();
+    for (const botId of touched) this.emit({ type: "bot", botId });
+    return touched.size;
   }
 
   /** Attach (or complete) the opener record after the thread exists — the
