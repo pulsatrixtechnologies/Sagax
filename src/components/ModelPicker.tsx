@@ -22,7 +22,7 @@ import { approvalModeFor, modelSwitchNeedsAsk } from "../../shared/approval-mode
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
-import { answersForText, useMyEngines } from "@/lib/perspicax-org";
+import { myTurnsText, useMyEngines } from "@/lib/perspicax-org";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
@@ -826,7 +826,7 @@ export function ModelPicker({
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 flex-col">
                       <div className="truncate text-[14px] font-semibold text-ink">{signInFamily(railInstance) ? SIGN_IN_FAMILY_LABEL[signInFamily(railInstance)!] : railInstance.displayName}</div>
-                      {railEngine && <div data-answers-for={railEngine.answersFor} className="truncate text-[11px] text-ink-secondary">{answersForText(railEngine)}</div>}
+                      {railEngine && <div data-my-turns={railEngine.myTurns} className="truncate text-[11px] text-ink-secondary">{myTurnsText(railEngine)}</div>}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <button

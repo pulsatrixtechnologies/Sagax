@@ -1,3 +1,4 @@
+import type { AccessVia } from "./engine-credentials.ts";
 // Connectors the engines already bring with the person's own account, so
 // Sagax builds no GitHub, Outlook or Calendar integration of its own.
 //
@@ -82,7 +83,7 @@ export interface ClaudeAiTurnInput extends ConnectorPrincipalInput {
   restrictedByPolicy: boolean;
   driver: string;
   /** Organization server: how this turn's credentials were chosen. */
-  via?: "subscription" | "owner-key" | "server" | "org-key";
+  via?: AccessVia;
 }
 
 /** Whether a Claude turn keeps the claude.ai connectors of the account it

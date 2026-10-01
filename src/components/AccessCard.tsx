@@ -1,9 +1,12 @@
 // A turn that could not run on an organization server (slice 3): the
-// engine is not installed, no key serves this person, or the provider
-// refused the key. Shown to everyone who sees the thread; the bot's owner
-// and the organization's admins also get what to do about it. Slice 6: a
-// routine paused because it cannot act in its person's name; that person
-// gets the button to reconnect their routines.
+// engine is not installed, no credentials serve the turn, or the provider
+// refused the key. Shown to everyone who sees the thread. Since 2026-10-01
+// the person who speaks pays (the bot's owner for its routines): that person
+// gets what to do (sign in with their own subscription, add their key in
+// Perspicax, or ask an admin for the organization's key), an admin where the
+// organization's key lives. Slice 6: a routine paused because it cannot act
+// in its person's name; that person gets the button to reconnect their
+// routines.
 import { useState } from "react";
 import { KeyRound } from "lucide-react";
 
@@ -21,10 +24,24 @@ const ROUTINE_REASON_KEYS = {
   no_right: "access.routineDelegation.reason.no_right",
 } as const;
 
-/** The card's lines for this viewer: the reason, then a hint for the
- * owner or an admin. */
-export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): { text: string; hint?: string; detail?: string; link?: string; reconnect?: boolean } {
-  const owner = Boolean(viewer.principalId && viewer.principalId.toLowerCase() === access.ownerPrincipalId.toLowerCase());
+export interface AccessCardLines {
+  text: string;
+  hint?: string;
+  detail?: string;
+  /** Where the viewer adds their own key (Perspicax console). */
+  link?: { href: string; label: string };
+  /** The viewer can sign in with their own subscription for this engine
+   * (Settings > Organization > My engines). */
+  signIn?: boolean;
+  reconnect?: boolean;
+}
+
+const same = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+
+/** The card's lines for this viewer: the reason, then what the person whose
+ * credentials the turn needed can do, or an admin. */
+export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): AccessCardLines {
+  const owner = same(viewer.principalId, access.ownerPrincipalId);
   if (access.reason === "routine_delegation") {
     const runAs = Boolean(viewer.principalId && access.runAsPrincipalId && viewer.principalId.toLowerCase() === access.runAsPrincipalId.toLowerCase());
     const reason = access.suspendReason;
@@ -45,17 +62,27 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): {
       ...((owner || viewer.admin) && access.detail ? { detail: access.detail } : {}),
     };
   }
-  // Slice 4: the owner adds their own key in Perspicax (the card links there).
-  if (owner && access.keysUrl) {
-    return { text: t("access.noAccess", { engine: access.engine }), hint: t("access.noAccess.ownerKeys"), link: access.keysUrl };
+  const engine = access.engine;
+  // whose credentials the turn needed: the speaker, or the owner for a routine
+  const payer = access.payerPrincipalId ?? (access.payer === "owner" ? access.ownerPrincipalId : undefined);
+  const mine = same(viewer.principalId, payer);
+  const admin = viewer.admin ? { hint: t("access.noAccess.admin.orgKey") } : {};
+  if (access.cause === "payer_disabled") {
+    if (access.routine || access.payer === "owner") return { text: t("access.payerDisabled.owner") };
+    return mine ? { text: t("access.payerDisabled.speaker") } : { text: t("access.noAccess.other", { engine }) };
   }
-  return {
-    text: t("access.noAccess", { engine: access.engine }),
-    ...(viewer.admin ? { hint: t("access.noAccess.admin") } : owner ? { hint: t("access.noAccess.owner") } : {}),
+  const own = {
+    ...(access.keysUrl ? { link: { href: access.keysUrl, label: t("access.addKey") } } : {}),
+    ...(access.subscriptionSignIn ? { signIn: true } : {}),
   };
+  if (access.routine) {
+    return { text: t("access.noAccess.routine", { engine }), ...(mine ? { hint: t("access.noAccess.routine.owner", { engine }), ...own } : admin) };
+  }
+  if (mine) return { text: t("access.noAccess.speaker", { engine }), hint: t("access.noAccess.speaker.hint", { engine }), ...own };
+  return { text: t("access.noAccess.other", { engine }), ...admin };
 }
 
-export function AccessCard({ access, viewer }: { access: WireAccessCard; viewer: AccessViewer }) {
+export function AccessCard({ access, viewer, onSignIn }: { access: WireAccessCard; viewer: AccessViewer; onSignIn?: () => void }) {
   const lines = accessCardLines(access, viewer);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -74,9 +101,19 @@ export function AccessCard({ access, viewer }: { access: WireAccessCard; viewer:
       <KeyRound size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
       <div className="flex min-w-0 flex-col gap-1">
         <span className="break-words">{lines.text}</span>
-        {lines.hint && (lines.link
-          ? <a href={lines.link} target="_blank" rel="noreferrer noopener" className="break-words text-[12px] text-accent underline">{lines.hint}</a>
-          : <span className="break-words text-[12px] text-ink-secondary">{lines.hint}</span>)}
+        {lines.hint && <span className="break-words text-[12px] text-ink-secondary">{lines.hint}</span>}
+        {(lines.signIn && onSignIn) || lines.link ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {lines.signIn && onSignIn && (
+              <button type="button" className="ui-button min-h-[44px] w-fit md:min-h-0" onClick={onSignIn} data-access-sign-in>
+                {t("access.signIn")}
+              </button>
+            )}
+            {lines.link && (
+              <a href={lines.link.href} target="_blank" rel="noreferrer noopener" className="break-words text-[12px] text-accent underline" data-access-add-key>{lines.link.label}</a>
+            )}
+          </div>
+        ) : null}
         {lines.detail && <code className="break-words text-[11.5px] text-ink-secondary">{lines.detail}</code>}
         {lines.reconnect && (
           <button type="button" className="ui-button mt-1 min-h-[44px] w-fit md:min-h-0" disabled={busy} onClick={() => void reconnect()}>

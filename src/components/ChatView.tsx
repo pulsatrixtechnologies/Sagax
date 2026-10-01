@@ -75,7 +75,7 @@ import { AttachmentGallery, collectMessageFiles, splitMessageAttachments } from 
 import { ConversationGalleryProvider } from "./ConversationGallery";
 import { prefersWideBubble } from "@/lib/rich-blocks";
 import { ScreenFrame } from "./ScreenFrame";
-import { CompactionChip, DigestChip } from "./DigestChip";
+import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
 import { BotActivityPicker, TaskPicker } from "./TaskPicker";
 
@@ -825,6 +825,7 @@ const MessagesList = memo(function MessagesList({
                 <AccessCard
                   access={m.access}
                   viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
+                  onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "organization" })}
                 />
               ) : null;
             case "secret":
@@ -891,7 +892,10 @@ const MessagesList = memo(function MessagesList({
             }
             case "digest":
               // the summary of the turn's tool chips: shown under the same setting
-              return showToolCalls ? <DigestChip message={m} /> : null;
+              // which credentials paid stays visible either way (organization server)
+              return showToolCalls
+                ? <DigestChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
+                : <TurnAccessChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />;
             case "compaction":
               return <CompactionChip message={m} />;
             case "screen":

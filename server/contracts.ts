@@ -109,10 +109,13 @@ export type RequestOutcome = "allowed-once" | "rejected" | "answered" | "unavail
 // the first turn (the agentcal per-turn-process model) with resumeCursor
 // carrying the provider-native continuation (e.g. a claude session id).
 /** See SendTurnInput.access. `identity` is a non-secret label
- * (subscription:<pid>, owner-key:<pid>:<fingerprint>, server, org-key); a
- * driver never reuses a process started under another identity. */
+ * (subscription:<pid>, owner-key:<pid>:<fingerprint>,
+ * speaker-key:<pid>:<fingerprint>, server, org-key); a driver never reuses
+ * a process started under another identity. `owner-key` and `speaker-key`
+ * are both a person's own key from Perspicax (the bot's owner's, or the
+ * person who spoke's). */
 export interface TurnAccessInput {
-  via: "subscription" | "owner-key" | "server" | "org-key";
+  via: "subscription" | "owner-key" | "speaker-key" | "server" | "org-key";
   identity: string;
   environment?: Record<string, string>;
   claudeConfigDir?: string;

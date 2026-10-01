@@ -1,20 +1,22 @@
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, KeyRound } from "lucide-react";
 
 import { t } from "@/lib/i18n";
+import { turnAccessLabel } from "@/lib/perspicax-org";
 import type { Message } from "@/state/store";
 
 /** The work digest as one quiet chip under a reply: how many tool calls the
  * turn made and how many files it changed, with the full digest text as the
  * tooltip. Shown under the same setting as tool chips (Settings → Tool
  * calls), because it is the summary of exactly those. */
-export function DigestChip({ message }: { message: Message }) {
+export function DigestChip({ message, viewerPrincipalId = null }: { message: Message; viewerPrincipalId?: string | null }) {
   const digest = message.digest;
   if (!digest) return null;
   const tools = digest.toolCalls ?? `${digest.tools.reduce((n, tool) => n + tool.count, 0)}${digest.toolsDropped ? "+" : ""}`;
   const files = digest.files ? digest.files.changed.length + digest.files.added.length + digest.files.deleted.length + (digest.files.truncated ?? 0) : null;
-  const label = files === null
+  const work = files === null
     ? t("chat.digestChipNoFiles", { tools })
     : t("chat.digestChip", { tools, files });
+  const label = digest.access ? `${work} · ${t("turnAccess.label", { label: turnAccessLabel(digest.access, viewerPrincipalId) })}` : work;
   return (
     <div className="flex justify-start" data-testid="digest-chip">
       <span
@@ -23,6 +25,22 @@ export function DigestChip({ message }: { message: Message }) {
       >
         <ClipboardList size={12} />
         <span className="truncate">{label}</span>
+      </span>
+    </div>
+  );
+}
+
+/** Organization server: which credentials a turn ran with ("Your
+ * subscription", "Owner's credentials", ...), shown under the reply even when
+ * tool chips are hidden. Never a secret. */
+export function TurnAccessChip({ message, viewerPrincipalId = null }: { message: Message; viewerPrincipalId?: string | null }) {
+  const access = message.digest?.access;
+  if (!access) return null;
+  return (
+    <div className="flex justify-start" data-testid="turn-access-chip" data-turn-access={access.via}>
+      <span className="inline-flex max-w-[480px] items-center gap-1.5 rounded-full border border-hairline/40 bg-panel px-3 py-1 text-[12px] text-ink-secondary">
+        <KeyRound size={12} aria-hidden="true" />
+        <span className="truncate">{t("turnAccess.label", { label: turnAccessLabel(access, viewerPrincipalId) })}</span>
       </span>
     </div>
   );

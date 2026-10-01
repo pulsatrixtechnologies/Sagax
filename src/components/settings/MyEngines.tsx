@@ -1,14 +1,15 @@
 // Settings > Organization > My engines, on a server signed in with Perspicax
-// (slice 4): for each engine, whether it is installed, who a bot of mine on
-// it can answer (me only, also the people I share it with, nobody yet), my
-// own subscription sign-in (Claude, Codex) and the link to my model keys in
-// Perspicax. Keys are never set here: they live in Perspicax.
+// (slice 4): for each engine, whether it is installed, what my own turns on
+// it run with (my subscription, my key, the organization's key: on my bots
+// and on bots shared with me, 2026-10-01), my own subscription sign-in
+// (Claude, Codex) and the link to my model keys in Perspicax. Keys are
+// never set here: they live in Perspicax.
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Loader2 } from "lucide-react";
 
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
-import { answersForText, perspicaxKeysUrl, type MyEngine } from "@/lib/perspicax-org";
+import { myTurnsText, perspicaxKeysUrl, type MyEngine } from "@/lib/perspicax-org";
 import { Card } from "../SettingsPrimitives";
 
 interface LoginState {
@@ -135,7 +136,7 @@ export function MyEngines({ issuer, initial = null }: { issuer: string; initial?
                     )
                   )}
                 </div>
-                <span className="text-[12px] text-ink-secondary">{answersForText(engine)}</span>
+                <span className="text-[12px] text-ink-secondary" data-my-turns={engine.myTurns}>{myTurnsText(engine)}</span>
                 {engine.subscription.signedIn && <span className="text-[12px] text-ink-secondary">{t("myEngines.signedIn")}</span>}
                 {login?.instanceId === engine.instanceId && (
                   <div className="flex flex-col gap-2 rounded-lg border border-hairline/40 p-3">

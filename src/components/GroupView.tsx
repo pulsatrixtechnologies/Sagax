@@ -23,7 +23,7 @@ import { ToolActivity } from "./ToolActivity";
 import { ThreadRefText } from "./ThreadRefs";
 import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
-import { CompactionChip, DigestChip } from "./DigestChip";
+import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
 import { viewerActorId } from "@/lib/viewer";
 import { RoomPersonLabel } from "./MessageAuthor";
@@ -327,6 +327,7 @@ export const Transcript = memo(function Transcript({
               <AccessCard
                 access={m.access}
                 viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
+                onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "organization" })}
               />
             </div>
           ) : m.kind === "goal.run" ? (
@@ -349,7 +350,9 @@ export const Transcript = memo(function Transcript({
           ) : m.kind === "compaction" ? (
             <CompactionChip message={m} />
           ) : m.kind === "digest" ? (
-            showToolCalls ? <DigestChip message={m} /> : null
+            showToolCalls
+              ? <DigestChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
+              : <TurnAccessChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
           ) : m.kind === "text" && (m.text || m.attachments?.length) ? (
             <div
               data-author={mine ? "self" : person ? "person" : "bot"}

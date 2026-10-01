@@ -223,6 +223,18 @@ describe("organization admin usage (slice 7)", () => {
     expect(orgUsageSpeaker({ trigger: { kind: "owner" } })).toEqual({ kind: "unattributed" });
   });
 
+  it("2026-10-01: counts the speaker's own key apart, keeps the console's keys, and drops an unknown value to unknown", () => {
+    const rows = [
+      base({ trigger: { kind: "user", principalId: P1 }, access: "speaker-key", payerPrincipalId: P1, ownerPrincipalId: P2 }),
+      base({ trigger: { kind: "user", principalId: P1 }, access: "subscription", payerPrincipalId: P1, ownerPrincipalId: P2 }),
+      base({ trigger: { kind: "user", principalId: P1 }, access: "org-key", ownerPrincipalId: P2 }),
+      base({ trigger: { kind: "user", principalId: P1 }, access: "bogus" as never, ownerPrincipalId: P2 }),
+    ];
+    const [row] = aggregateOrgUsage(rows, () => true).rows;
+    // every key the Perspicax console reads is still there (sagax-usage.tsx)
+    expect(row!.access).toEqual({ subscription: 1, "owner-key": 0, "speaker-key": 1, "org-key": 1, server: 0, unknown: 1 });
+  });
+
   it("groups by day, bot and speaker with the access split, and filters by reach", () => {
     const rows = [
       base({ trigger: { kind: "user", principalId: P1 }, input: 10, output: 5, cachedInput: 2, costUsd: 0.1, costSource: "reported", access: "owner-key", ownerPrincipalId: P2 }),

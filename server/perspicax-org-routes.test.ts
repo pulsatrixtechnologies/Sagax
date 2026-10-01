@@ -17,8 +17,7 @@ function answer(auth: RequestAuth, method = "GET") {
     directory: () => null,
     bySubject: () => null,
     viewerRole: () => "member",
-    settings: () => ({ memberBotsUseOrgKey: false }) as never,
-    saveSettings: () => {},
+    settings: () => ({ orgKeyConfigured: false }),
     pendingAdminApprovals: () => [],
     routineDelegation: {
       status: () => ({ state: "none" }),

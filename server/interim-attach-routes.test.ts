@@ -134,8 +134,7 @@ describe("PATCH /api/org/settings interimAttachDays", () => {
     const route = createPerspicaxOrgRoutes({
       issuer: "https://px.test", orgName: "Acme", directory: () => null, bySubject: () => null,
       viewerRole: (auth) => (auth.kind === "loopback" ? "admin" : "member"),
-      settings: () => ({ memberBotsUseOrgKey: false, interimAttach: { until: null, people: 1 } }),
-      saveSettings: (next) => saved.push(next),
+      settings: () => ({ orgKeyConfigured: false, interimAttach: { until: null, people: 1 } }),
       saveInterimAttachDays: (days) => saved.push({ days }),
       pendingAdminApprovals: () => [],
     });
@@ -150,16 +149,16 @@ describe("PATCH /api/org/settings interimAttachDays", () => {
     };
   }
 
-  it("accepts 0 to 90 days from an admin, alone or with the key switch", async () => {
+  it("accepts 0 to 90 days from an admin; the old org key switch is refused (2026-10-01)", async () => {
     const saved: unknown[] = [];
     const patch = settingsRoute(saved);
     expect(await patch(admin, { interimAttachDays: 0 })).toMatchObject({ status: 200, body: { settings: { interimAttach: { until: null, people: 1 } } } });
-    expect(await patch(admin, { interimAttachDays: 90, memberBotsUseOrgKey: true })).toMatchObject({ status: 200 });
-    expect(saved).toEqual([{ days: 0 }, { memberBotsUseOrgKey: true, interimAttach: { until: null, people: 1 } }, { days: 90 }]);
-    for (const bad of [{ interimAttachDays: 91 }, { interimAttachDays: -1 }, { interimAttachDays: 1.5 }, { interimAttachDays: "3" }, {}, { other: 1 }]) {
+    expect(await patch(admin, { interimAttachDays: 90 })).toMatchObject({ status: 200 });
+    expect(saved).toEqual([{ days: 0 }, { days: 90 }]);
+    for (const bad of [{ interimAttachDays: 91 }, { interimAttachDays: -1 }, { interimAttachDays: 1.5 }, { interimAttachDays: "3" }, {}, { other: 1 }, { memberBotsUseOrgKey: true }, { interimAttachDays: 3, memberBotsUseOrgKey: true }]) {
       expect(await patch(admin, bad)).toMatchObject({ status: 400 });
     }
     expect(await patch(member, { interimAttachDays: 0 })).toMatchObject({ status: 403 });
-    expect(saved).toHaveLength(3);
+    expect(saved).toHaveLength(2);
   });
 });

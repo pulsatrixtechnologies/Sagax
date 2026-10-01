@@ -5,10 +5,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Bot } from "@/state/store";
-import { answersForText, grantCandidates, levelAllowed, perspicaxKeysUrl, sharePickerPeople, isPerspicaxOrg, type OrgDirectory, type OrgDirectoryPerson } from "@/lib/perspicax-org";
+import { grantCandidates, myTurnsText, turnAccessLabel, levelAllowed, perspicaxKeysUrl, sharePickerPeople, isPerspicaxOrg, type OrgDirectory, type OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { orgSectionMenuItems } from "../OrgSectionMenu";
 import { grantEditable, levelLabel } from "./GrantEditor";
-import { accessCardLines } from "../AccessCard";
+import { AccessCard, accessCardLines } from "../AccessCard";
 import { PerspicaxOrgSettings, perspicaxConsoleUrl, showInterimCard } from "../PerspicaxOrgSettings";
 
 const OWNER = "pr_00000000-0000-4000-8000-0000000000a0";
@@ -82,10 +82,36 @@ describe("SharingSection", () => {
 
 describe("the access card", () => {
   const card = { reason: "no_access" as const, engine: "Claude", botId: "bot-1", ownerPrincipalId: OWNER };
-  it("tells everyone why, the owner what to ask, an admin where to fix it", () => {
-    expect(accessCardLines(card, { principalId: BOB, admin: false })).toEqual({ text: "This bot can't answer: no key for Claude. Its owner has to add one." });
-    expect(accessCardLines(card, { principalId: OWNER, admin: false }).hint).toBe("Ask an admin to allow the organization's key for your bots.");
-    expect(accessCardLines(card, { principalId: BOB, admin: true }).hint).toContain("Settings > Connections");
+  const KEYS = "https://px.example.test/console/pulsabot/keys";
+  it("2026-10-01: the person who spoke gets what to do; others why; an admin where the org key lives", () => {
+    const bobs = { ...card, payer: "speaker" as const, payerPrincipalId: BOB, cause: "no_credentials" as const, keysUrl: KEYS, subscriptionSignIn: true as const };
+    expect(accessCardLines(bobs, { principalId: BOB, admin: false })).toEqual({
+      text: "No Claude access for your turn.",
+      hint: "Sign in with your own Claude subscription or add your key in Perspicax. Or ask an admin to set the organization's key.",
+      link: { href: KEYS, label: "Add my key in Perspicax" },
+      signIn: true,
+    });
+    // the owner watching bob's turn: not their credentials to give
+    expect(accessCardLines(bobs, { principalId: OWNER, admin: false })).toEqual({ text: "No Claude access for this turn: the person who spoke needs their own subscription or key, or the organization's key." });
+    expect(accessCardLines(bobs, { principalId: ERIN, admin: true }).hint).toBe("A key in Settings > Connections serves as the organization's key.");
+    // a card from before the change names nobody
+    expect(accessCardLines(card, { principalId: OWNER, admin: false })).toEqual({ text: "No Claude access for this turn: the person who spoke needs their own subscription or key, or the organization's key." });
+  });
+
+  it("a routine's card goes to the owner, whose credentials it runs on", () => {
+    const routine = { ...card, payer: "owner" as const, payerPrincipalId: OWNER, routine: true as const, cause: "no_credentials" as const, keysUrl: KEYS, subscriptionSignIn: true as const };
+    expect(accessCardLines(routine, { principalId: OWNER, admin: false })).toMatchObject({ hint: "Sign in with your own Claude subscription or add your key in Perspicax.", signIn: true, link: { href: KEYS } });
+    expect(accessCardLines(routine, { principalId: BOB, admin: false })).toEqual({ text: "This routine can't run: it uses its owner's credentials, and there is no Claude subscription, key or organization key for it." });
+    expect(accessCardLines({ ...routine, cause: "payer_disabled" }, { principalId: BOB, admin: false })).toEqual({ text: "This bot's owner is disabled: their routines can't run." });
+    expect(accessCardLines({ ...card, payer: "speaker", payerPrincipalId: BOB, cause: "payer_disabled" }, { principalId: BOB, admin: false })).toEqual({ text: "Your account is disabled: this turn can't run." });
+  });
+
+  it("renders the sign-in button only where it can open My engines", () => {
+    const bobs = { ...card, payer: "speaker" as const, payerPrincipalId: BOB, keysUrl: KEYS, subscriptionSignIn: true as const };
+    const viewer = { principalId: BOB, admin: false };
+    expect(renderToStaticMarkup(createElement(AccessCard, { access: bobs, viewer, onSignIn: () => {} }))).toContain("Sign in with my subscription");
+    expect(renderToStaticMarkup(createElement(AccessCard, { access: bobs, viewer }))).not.toContain("Sign in with my subscription");
+    expect(renderToStaticMarkup(createElement(AccessCard, { access: bobs, viewer }))).toContain(`href="${KEYS}"`);
   });
 
   it("names a missing engine, and shows the provider's words to the owner and admins only", () => {
@@ -102,21 +128,24 @@ describe("Settings > Organization on a Perspicax server", () => {
     org: { name: "Acme", identity: { kind: "perspicax" as const, issuer: "https://px.example.test" } },
     link: { state: "ok" as const, syncedAt: Date.UTC(2026, 8, 29, 12) },
     viewerRole: "admin" as const,
-    settings: { memberBotsUseOrgKey: false },
+    settings: { orgKeyConfigured: false },
   };
-  it("shows the link, the role, the console link and, for an admin, the org key switch", () => {
+  it("shows the link, the role, the console link and who pays for a turn (no org key switch any more)", () => {
     const markup = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org, onChanged: () => {} }));
     expect(markup).toContain("Linked to Perspicax");
     expect(markup).toContain("You are an admin of this organization.");
     expect(markup).toContain('href="https://px.example.test/console/"');
-    expect(markup).toContain("Use the organization&#x27;s key");
+    expect(markup).not.toContain("type=\"checkbox\"");
+    expect(markup).toContain("Who pays for a turn");
+    expect(markup).toContain("No organization key is set on this server.");
+    expect(renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: { ...org, settings: { orgKeyConfigured: true } }, onChanged: () => {} }))).toContain("An organization key is set on this server");
     expect(markup).toContain("Commands waiting for an admin");
   });
-  it("gives a member the state and the link, never the switch", () => {
+  it("gives a member the state, the link and the same explanation", () => {
     const markup = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: { ...org, viewerRole: "member", link: { state: "error", error: "link_refused" } }, onChanged: () => {} }));
     expect(markup).toContain("The link to Perspicax has a problem (link_refused).");
     expect(markup).toContain("You are a member of this organization.");
-    expect(markup).not.toContain("Use the organization");
+    expect(markup).toContain("Who pays for a turn");
     expect(markup).not.toContain("Commands waiting for an admin");
   });
   it("keeps the interim card after the last attach so its notice stays visible, and hides it once closed", () => {
@@ -170,14 +199,24 @@ describe("slice 4: levels, teams and the section menu", () => {
     expect(orgSectionMenuItems({ ...section, canModerate: true }, { named: true, canMoveUp: false, canMoveDown: false, anyExpanded: true })).toEqual(["onNew", "onRename", "onMembers", "onCollapseAll", "onDelete"]);
   });
 
-  it("says who an engine answers, and links the owner to the keys page", () => {
-    expect(answersForText({ installed: true, answersFor: "me" })).toBe("Answers for you only");
-    expect(answersForText({ installed: true, answersFor: "everyone" })).toBe("Also answers the people you share with");
-    expect(answersForText({ installed: true, answersFor: "nobody" })).toBe("Can't answer yet");
-    expect(answersForText({ installed: false, answersFor: "everyone" })).toBe("Not installed on this server");
+  it("says what a person's own turns use on an engine, and links to the keys page", () => {
+    expect(myTurnsText({ installed: true, myTurns: "subscription" })).toBe("Your turns use your subscription");
+    expect(myTurnsText({ installed: true, myTurns: "key" })).toBe("Your turns use your key in Perspicax");
+    expect(myTurnsText({ installed: true, myTurns: "org-key" })).toBe("Your turns use the organization's key");
+    expect(myTurnsText({ installed: true, myTurns: "none" })).toBe("Can't answer you yet: sign in or add your key");
+    expect(myTurnsText({ installed: false, myTurns: "subscription" })).toBe("Not installed on this server");
     expect(perspicaxKeysUrl("https://px.example.test/")).toBe("https://px.example.test/console/pulsabot/keys");
-    const card = { reason: "no_access" as const, engine: "Claude", botId: "bot-1", ownerPrincipalId: OWNER, keysUrl: "https://px.example.test/console/pulsabot/keys" };
-    expect(accessCardLines(card, { principalId: OWNER, admin: false })).toEqual({ text: "This bot can't answer: no key for Claude. Its owner has to add one.", hint: "Add your own key in Perspicax.", link: card.keysUrl });
-    expect(accessCardLines(card, { principalId: BOB, admin: false }).link).toBeUndefined();
+  });
+
+  it("names what a turn ran with, for the viewer, without a secret", () => {
+    expect(turnAccessLabel({ via: "subscription", payer: "speaker", payerPrincipalId: BOB }, BOB)).toBe("Your subscription");
+    expect(turnAccessLabel({ via: "subscription", payer: "speaker", payerPrincipalId: BOB }, OWNER)).toBe("The speaker's subscription");
+    expect(turnAccessLabel({ via: "speaker-key", payer: "speaker", payerPrincipalId: BOB }, BOB)).toBe("Your key");
+    expect(turnAccessLabel({ via: "owner-key", payer: "owner", payerPrincipalId: OWNER }, OWNER)).toBe("Your key");
+    expect(turnAccessLabel({ via: "speaker-key", payer: "speaker", payerPrincipalId: BOB }, null)).toBe("The speaker's key");
+    expect(turnAccessLabel({ via: "org-key", payer: "organization" }, BOB)).toBe("Organization's key");
+    expect(turnAccessLabel({ via: "org-key", payer: "organization", routine: true }, OWNER)).toBe("Organization's key");
+    expect(turnAccessLabel({ via: "owner-key", payer: "owner", payerPrincipalId: OWNER, routine: true }, OWNER)).toBe("Owner's credentials");
+    expect(turnAccessLabel({ via: "subscription", payer: "owner", payerPrincipalId: OWNER, routine: true }, BOB)).toBe("Owner's credentials");
   });
 });
