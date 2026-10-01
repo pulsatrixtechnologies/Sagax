@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { applyStartupPreferences, formatSessions, pairingBlock, parseArgs, qrToString, runAccess, runLogin, runOnboardingCommand, serverEntry, type CliOptions, verifyPhoneEndpoint } from "./cli.ts";
+import { readAdminActivityRange } from "./admin-activity.ts";
 import { SetupCancelled } from "./cli-prompts.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startControlPlaneStub } from "./testing/control-plane-stub.ts";
@@ -51,10 +52,10 @@ describe("openmausbot command line", () => {
     expect(parseArgs(["browser", "status"], {})).toMatchObject({ command: "browser", browserAction: "status" });
     expect(parseArgs(["browser"], {})).toEqual({ error: "browser needs an action: install or status" });
     expect(parseArgs(["serve", "--tailscale", "--tunnel"], {})).toEqual({ error: "choose one of --tailscale (your tailnet) and --tunnel (a public address)" });
-    // `access` was removed: whatever follows it is accepted and ignored.
-    expect(parseArgs(["access", "add", "her@example.test", "--chat-only"], {})).toMatchObject({ command: "access" });
-    expect(parseArgs(["access", "list"], {})).toMatchObject({ command: "access" });
-    expect(parseArgs(["access"], {})).toMatchObject({ command: "access" });
+    expect(parseArgs(["access", "add", "her@example.test", "--chat-only"], {})).toMatchObject({ command: "access", accessAction: "add", email: "her@example.test", chatOnly: true });
+    expect(parseArgs(["access", "list"], {})).toMatchObject({ command: "access", accessAction: "list" });
+    expect(parseArgs(["access"], {})).toEqual({ error: "access needs one of: list, add EMAIL [--chat-only], remove EMAIL" });
+    expect(parseArgs(["access", "add"], {})).toEqual({ error: "add needs a value" });
     expect(parseArgs(["service", "install", "--domain", "maus.example.com", "--port", "8799"], {})).toMatchObject({ command: "service", serviceAction: "install", domain: "maus.example.com", port: 8799 });
     expect(parseArgs(["service", "uninstall"], {})).toMatchObject({ command: "service", serviceAction: "uninstall" });
     expect(parseArgs(["service"], {})).toEqual({ error: expect.stringContaining("service needs one of") });
@@ -556,12 +557,42 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
 });
 
 describe("openmausbot access", () => {
-  it("was removed: it says what replaced it and exits 2", async () => {
+  it("edits the sign-in allow-list in config.json without a running server", async () => {
+    const home = mkdtempSync(join(tmpdir(), "omb-cli-access-"));
+    const dataDir = join(home, "data");
+    const out: string[] = [];
     const err: string[] = [];
-    const io = { log: () => {}, error: (line: string) => err.push(line), ask: async () => "" };
-    const base = { command: "access" as const, port: 1, dataDir: "/nonexistent", tailscale: false, tunnel: false, client: false, pair: true, json: false };
-    expect(await runAccess(base, io)).toBe(2);
-    expect(err).toEqual(["pulsa access was removed; pair devices with pulsa pair"]);
+    const io = { log: (line: string) => out.push(line), error: (line: string) => err.push(line), ask: async () => "" };
+    const base = { command: "access" as const, port: 1, dataDir, tailscale: false, tunnel: false, client: false, pair: true, json: false };
+    try {
+      expect(await runAccess({ ...base, accessAction: "list" }, io)).toBe(0);
+      expect(out.at(-1)).toMatch(/pairing codes only/);
+      expect(await runAccess({ ...base, accessAction: "add", email: "Her@Example.test" }, io)).toBe(0);
+      expect(await runAccess({ ...base, accessAction: "add", email: "@agentada.test", chatOnly: true }, io)).toBe(0);
+      expect(await runAccess({ ...base, accessAction: "add", email: "not-an-email" }, io)).toBe(2);
+      const saved = JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8"));
+      expect(saved.signIn).toEqual({ admins: ["her@example.test"], members: ["@agentada.test"] });
+      // moving an entry between lists replaces it rather than duplicating it
+      expect(await runAccess({ ...base, accessAction: "add", email: "her@example.test", chatOnly: true }, io)).toBe(0);
+      expect(JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8")).signIn).toEqual({ admins: [], members: ["@agentada.test", "her@example.test"] });
+      out.length = 0;
+      expect(await runAccess({ ...base, accessAction: "list" }, io)).toBe(0);
+      expect(out.join("\n")).toMatch(/@agentada.test\s+chat and approvals/);
+      expect(await runAccess({ ...base, accessAction: "remove", email: "her@example.test" }, io)).toBe(0);
+      expect(await runAccess({ ...base, accessAction: "remove", email: "her@example.test" }, io)).toBe(1);
+      expect(JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8")).signIn).toEqual({ admins: [], members: ["@agentada.test"] });
+      // Each change once more than one person signs in is in the admin
+      // activity log, named for the command line; the first, a lone admin, is not.
+      const rows = readAdminActivityRange(dataDir, { from: new Date(Date.now() - 600_000), to: new Date(Date.now() + 600_000) });
+      expect(rows.map((row) => [row.action, row.actor.kind, row.changed])).toEqual([
+        ["people.update", "cli", ["signIn.members"]],
+        ["people.update", "cli", ["signIn.admins", "signIn.members"]],
+        ["people.update", "cli", ["signIn.members"]],
+      ]);
+      expect(rows[0]!.after).toEqual({ "signIn.members": ["@agentada.test"] });
+    } finally {
+      await removeTempDir(home);
+    }
   });
 });
 

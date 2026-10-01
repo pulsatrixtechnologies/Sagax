@@ -1543,18 +1543,22 @@ describe("loadConfig with an unusable config.json", () => {
   });
 });
 
-describe("slice 8: removed interim keys", () => {
-  it("loads an old config.json with mail, signIn, invites and org, and ignores them", () => {
+describe("slice 8: the interim organization key", () => {
+  it("loads an old config.json with org and ignores it, keeping the solo sign-in list, invitations and mail", () => {
     const parsed = parseStoredConfig({
       profile: { name: "Ada" },
       signIn: { admins: ["ada@example.com"], members: ["@example.com"] },
       invites: [{ token: "t", email: "x@example.com", createdAt: 1, expiresAt: 2 }],
       org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" }, ownerUserId: "ada@example.com" },
-      mail: { provider: "smtp", from: "bot@example.com", smtp: { host: "smtp.example.com", port: 99999 } },
+      mail: { provider: "smtp", from: "bot@example.com", smtp: { host: "smtp.example.com", port: 587 } },
     });
     expect(parsed.profile).toEqual({ name: "Ada" });
-    for (const key of ["signIn", "invites", "org", "mail"]) expect(parsed).not.toHaveProperty(key);
-    // A patch naming them is not an error and writes nothing.
-    expect(parseConfigPatch({ signIn: { admins: ["x@example.com"] }, mail: { provider: "smtp" } })).toEqual({});
+    expect(parsed).not.toHaveProperty("org");
+    expect(parsed.signIn).toEqual({ admins: ["ada@example.com"], members: ["@example.com"] });
+    expect(parsed.invites).toHaveLength(1);
+    expect(parsed.mail).toMatchObject({ provider: "smtp", from: "bot@example.com" });
+    // A patch naming org is not an error and writes nothing for it.
+    expect(parseConfigPatch({ org: { name: "X" } })).toEqual({});
+    expect(parseConfigPatch({ signIn: { admins: ["x@example.com"] } })).toEqual({ signIn: { admins: ["x@example.com"] } });
   });
 });

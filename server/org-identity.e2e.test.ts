@@ -242,22 +242,28 @@ posixOnly("org identity", () => {
   }, 40_000);
 });
 
-// A separate boot (slice 8): what is left of the interim sign-in on a solo
-// server. The data directory is one an older build left: config.json with
-// the removed keys, an email session and a pairing session.
-posixOnly("slice 8: interim sign-in removed on a solo server", () => {
-  it("answers the retired routes, ends the email session, keeps the pairing session and boots the old config", async () => {
+// A separate boot (slice 8, "email stays solo"): a solo server keeps its
+// email sign-in list, invitations and mailer; only the interim organization
+// is gone. The data directory is one an older build left: config.json with
+// an `org` key, an email session and a pairing session.
+posixOnly("slice 8: a solo server keeps email sign-in, without an organization", () => {
+  it("keeps the email routes, invitations and both sessions, refuses an organization and ignores the old org key", async () => {
     const home2 = mkdtempSync(join(tmpdir(), "omb-interim-removed-"));
     const data2 = join(home2, ".openmausbot");
     mkdirSync(data2, { recursive: true });
     writeFileSync(join(data2, "config.json"), JSON.stringify({
       profile: { name: "JC", email: "jc@gox.ca" },
       signIn: { admins: ["jc@gox.ca"], members: ["dana@example.test"] },
-      invites: [{ token: "t0k3n", email: "eve@example.test", createdAt: 1, expiresAt: 2 }],
+      invites: [
+        { token: "e".repeat(32), email: "eve@example.test", createdAt: 1, expiresAt: 2 },
+        { token: "f".repeat(32), email: "fay@example.test", createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 },
+      ],
       org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" }, ownerUserId: "jc@gox.ca" },
       mail: { provider: "smtp", from: "bot@gox.ca", smtp: { host: "smtp.gox.ca" } },
     }));
-    const seeded = new SessionRegistry({ file: join(data2, "sessions.json") });
+    // Dana signed in with an emailed code under an older build: her address
+    // is on the list, so her session survives the seeding registry's close.
+    const seeded = new SessionRegistry({ file: join(data2, "sessions.json"), emailScopes: () => ["client"] });
     const emailToken = seeded.issue({ label: "Dana's laptop", email: "dana@example.test", scopes: ["client"] }).token;
     const pairing = seeded.openPairing({ scopes: ["admin", "client"], label: "JC's phone" });
     const paired = seeded.exchange({ code: pairing.code, label: "JC's phone", source: "test" });
@@ -272,6 +278,8 @@ posixOnly("slice 8: interim sign-in removed on a solo server", () => {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: home2, USERPROFILE: home2, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
+        // Mail is captured, never sent (server/index.ts test seam).
+        OMB_MAIL_CAPTURE_FILE: join(home2, "mail.jsonl"), OMB_TEST_SEAMS: "1", NODE_ENV: "test",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -302,21 +310,36 @@ posixOnly("slice 8: interim sign-in removed on a solo server", () => {
       expect(log2).not.toMatch(/ignoring .*config\.json/);
       // The old profile still applies: the config file loaded.
       expect((await call("GET", "/api/config")).body.profile.name).toBe("JC");
-      for (const path of ["/api/auth/email/start", "/api/auth/email/verify"]) {
-        expect(await call("POST", path, { body: { email: "jc@gox.ca" } })).toMatchObject({ status: 410, body: { code: "interim_signin_removed" } });
-      }
-      expect(await call("POST", "/api/org/invites", { body: { email: "x@example.test" } })).toMatchObject({ status: 410, body: { code: "interim_signin_removed" } });
-      expect(await call("POST", "/api/org/invites/t0k3n/join", { body: {} })).toMatchObject({ status: 410, body: { code: "interim_signin_removed" } });
-      expect(await call("GET", "/api/org/invites/t0k3n/preview")).toMatchObject({ status: 410 });
-      expect(await call("POST", "/api/org", { body: { name: "X", host: { kind: "server", url: "https://x.test" } } })).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
-      expect(await call("GET", "/api/org")).toMatchObject({ status: 404, body: { code: "no_organization" } });
-      expect(await call("GET", "/join")).toMatchObject({ status: 302, location: "/pair" });
-      expect((await call("GET", "/.well-known/openmausbot/environment")).body.capabilities.emailSignIn).toBe(false);
-      // The email session ends at its first request; the pairing session works.
-      expect((await call("GET", "/api/bots", { token: emailToken })).status).toBe(401);
+      // Email sign-in for the server's list: a code is mailed, a wrong one is refused.
+      expect((await call("GET", "/.well-known/openmausbot/environment")).body.capabilities.emailSignIn).toBe(true);
+      expect(await call("POST", "/api/auth/email/start", { body: { email: "dana@example.test" } })).toMatchObject({ status: 200, body: { ok: true } });
+      const mail = readFileSync(join(home2, "mail.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { to: string; text: string });
+      expect(mail.map((m) => m.to)).toEqual(["dana@example.test"]);
+      expect(mail[0]!.text).toMatch(/\d{8}/);
+      expect((await call("POST", "/api/auth/email/start", { body: { email: "stranger@example.test" } })).status).toBe(403);
+      // The invitations from before still answer, in the server's own name.
+      expect(await call("GET", `/api/org/invites/${"e".repeat(32)}/preview`)).toMatchObject({ status: 200, body: { status: "expired" } });
+      expect(await call("GET", `/api/org/invites/${"f".repeat(32)}/preview`)).toMatchObject({ status: 200, body: { status: "open", email: "f***@example.test" } });
+      // No organization: nothing to create or move, the old org key ignored.
+      expect(await call("POST", "/api/org", { body: { name: "X", host: { kind: "server", url: "https://x.test" } }, token: paired.token })).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
+      expect(await call("PATCH", "/api/org", { body: { host: { kind: "server", url: "https://x.test" } }, token: paired.token })).toMatchObject({ status: 410, body: { code: "interim_org_removed" } });
+      expect(await call("GET", "/api/org", { token: paired.token })).toMatchObject({ status: 404, body: { code: "no_organization" } });
+      expect((await call("GET", "/join")).status).not.toBe(302);
+      const config2 = JSON.parse(readFileSync(join(data2, "config.json"), "utf8")) as Record<string, unknown>;
+      expect(config2.signIn).toEqual({ admins: ["jc@gox.ca"], members: ["dana@example.test"] });
+      // An admin issues an invitation; it is mailed with its /join link.
+      const issued = await call("POST", "/api/org/invites", { body: { email: "gus@example.test" }, token: paired.token });
+      expect(issued.status, JSON.stringify(issued.body)).toBe(200);
+      expect(issued.body).toMatchObject({ mailed: true, invite: { email: "gus@example.test" } });
+      expect(issued.body.link).toMatch(/\/join#token=/);
+      const invited = readFileSync(join(home2, "mail.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as { to: string; text: string });
+      expect(invited.at(-1)).toMatchObject({ to: "gus@example.test" });
+      expect(invited.at(-1)!.text).toContain(issued.body.link);
+      // Both sessions keep working: the email one is on the list.
+      expect((await call("GET", "/api/bots", { token: emailToken })).status).toBe(200);
       expect((await call("GET", "/api/bots", { token: paired.token })).status).toBe(200);
       const sessions2 = JSON.parse(readFileSync(join(data2, "sessions.json"), "utf8")) as { sessions: { label: string }[] };
-      expect(sessions2.sessions.map((session) => session.label)).toEqual(["JC's phone"]);
+      expect(sessions2.sessions.map((session) => session.label).sort()).toEqual(["Dana's laptop", "JC's phone"]);
     } finally {
       await waitForExit(child2, { signal: "SIGTERM" });
       await removeTempDir(home2);

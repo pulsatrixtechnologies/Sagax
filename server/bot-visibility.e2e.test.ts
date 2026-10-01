@@ -1,6 +1,6 @@
 // Per-bot visibility on a workspace several people share, through the real
-// server. One admin (Boss) and two members (Ada, Bob), each a person known by
-// address with a device paired to them before boot. Boss restricts "Payroll" to
+// server. An email sign-in list names one admin (Boss) and two members (Ada,
+// Bob); their sessions are issued before boot. Boss restricts "Payroll" to
 // Ada and "Board" to admins, then every read path a member has is checked as
 // Bob (who may see neither), as Ada (who may see Payroll), as Boss and as
 // the owner on this machine:
@@ -157,19 +157,16 @@ posixOnly("per-bot visibility on a shared workspace", () => {
     const data = join(home, ".openmausbot");
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({
+      signIn: { admins: [BOSS], members: [ADA, BOB] },
       instances: {
         grok: { driver: "grokAgent", config: { cli: FAKE_CLI, fullAuto: false } },
         // repeats its whole prompt back, so a test can read what a bot was told
         grokecho: { driver: "grokAgent", environment: { FAKE_ACP_MODE: "echo-gated" }, config: { cli: FAKE_CLI, fullAuto: false } },
       },
     }));
-    // Slice 8: each person is a principal known by address, with a device
-    // paired to them (email sign-in sessions are gone).
     const role = (email: string) => (email === BOSS ? ["admin", "client"] as const : ["client"] as const);
-    const principalOf = (email: string) => `pr_${email === BOSS ? "b" : email === ADA ? "a" : "c"}0b0b0b0-0b0b-4b0b-8b0b-0b0b0b0b0b0b`.replace(/^pr_(.)0/, "pr_$1$1");
-    writeFileSync(join(data, "principals.json"), JSON.stringify({ version: 1, principals: [BOSS, ADA, BOB].map((email) => ({ id: principalOf(email), kind: "human", email, createdAt: 1 })) }));
-    const registry = new SessionRegistry({ file: join(data, "sessions.json") });
-    for (const email of [BOSS, ADA, BOB]) tokens[email] = registry.issue({ label: `${email.split("@")[0]}'s laptop`, principalId: principalOf(email), scopes: [...role(email)] }).token;
+    const registry = new SessionRegistry({ file: join(data, "sessions.json"), emailScopes: (email) => [...role(email)] });
+    for (const email of [BOSS, ADA, BOB]) tokens[email] = registry.issue({ label: `${email.split("@")[0]}'s laptop`, email, scopes: [...role(email)] }).token;
     registry.close();
     await start();
 
@@ -204,8 +201,7 @@ posixOnly("per-bot visibility on a shared workspace", () => {
     expect((await api("PATCH", `/api/bots/${hr.id}`, { avatarUrl: `/api/attachments/${ids.avatar}` }, BOSS)).status).toBe(200);
     ids.fresh = nameOf(await upload());
     // The helpdesk and Payroll talk in their shared room before Payroll is restricted.
-    const roomSend = await api("POST", `/api/groups/${ids.roomMixed}/messages`, { text: "SECRET-ROOM-42 layoffs list" }, BOSS);
-    expect(roomSend.status, JSON.stringify(roomSend.body)).toBe(202);
+    expect((await api("POST", `/api/groups/${ids.roomMixed}/messages`, { text: "SECRET-ROOM-42 layoffs list" }, BOSS)).status).toBe(202);
     expect(await waitFor(async () => {
       const { body } = await api("GET", `/api/threads/${roomMixed.body.group.threadId}/messages`, undefined, BOSS);
       return (body.messages ?? []).some((m: any) => m.role === "bot" && m.from?.botId === pub.id && m.text);

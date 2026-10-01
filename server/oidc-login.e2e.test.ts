@@ -240,6 +240,30 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
     }
   });
 
+  it("keeps email solo: a sign-in list and mail on disk change nothing on an organization server", async () => {
+    // As if an older build or `openmausbot access add` had written them.
+    const file = join(home, ".openmausbot", "config.json");
+    let current: Record<string, unknown> = {};
+    try { current = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>; } catch { /* none yet */ }
+    writeFileSync(file, JSON.stringify({
+      ...current,
+      signIn: { admins: ["alice@example.test"], members: ["@example.test"] },
+      mail: { provider: "smtp", from: "bot@example.test", smtp: { host: "127.0.0.1", port: 9 } },
+    }));
+    idp.user = ADMIN;
+    const { jar } = await signIn();
+    const environment = await api("GET", "/.well-known/openmausbot/environment");
+    expect(environment.body.capabilities.emailSignIn).toBe(false);
+    expect(await api("POST", "/api/auth/email/start", undefined, { email: "alice@example.test" })).toMatchObject({ status: 403, body: { code: "identity_perspicax" } });
+    expect(await api("GET", "/api/org/invites", jar)).toMatchObject({ status: 403, body: { code: "identity_perspicax" } });
+    const config = await api("GET", "/api/config", jar);
+    expect(config.status).toBe(200);
+    expect(config.body).not.toHaveProperty("signIn");
+    const join_ = await fetch(`${BASE}/join`, { redirect: "manual" });
+    expect(join_.status).toBe(302);
+    expect(join_.headers.get("location")).toBe("/pair");
+  });
+
   it("treats this machine as a service, not the owner, without a session", async () => {
     const res = await api("GET", "/api/auth/session");
     expect(res.body).toMatchObject({ kind: "loopback", trust: "service" });
