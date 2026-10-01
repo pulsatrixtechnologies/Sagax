@@ -29,9 +29,8 @@ vi.mock("react", async (original) => ({ ...await original<typeof import("react")
 vi.mock("@/state/store", async (original) => ({ ...await original<typeof import("@/state/store")>(),
   useStore: () => ({ state: { bots: fixture.store.bots, instances: fixture.store.instances, config: fixture.store.config }, dispatch: fixture.store.dispatch, flushBotPatches: fixture.store.flushBotPatches }),
 }));
-import { JoinOrganizationCard, OrganizationSettings, OrgCreateForm, orgHostFromInput, suggestedOrgAddress } from "./OrganizationSettings";
+import { OrganizationSettings } from "./OrganizationSettings";
 import { CompanyModels } from "./CompanyModels";
-import { OrgDirectory } from "./OrgDirectory";
 
 type Node = ReactElement<{ children?: ReactNode; disabled?: boolean; value?: string; onChange?: (event: unknown) => void; onSubmit?: (event: unknown) => void; onClick?: () => void; onCreate?: (name: string, host: { kind: "server"; url: string }) => void | Promise<void>; onInvite?: (email: string) => void | Promise<void> }>;
 function nodes(value: ReactNode): Node[] {
@@ -299,175 +298,19 @@ describe("optional desktop Organisation settings", () => {
     expect(render().html).toContain("Sign in with your organization");
   });
 
-  it("offers to pair with a server's link or reveal Create an organization once confirmed there is none yet", async () => {
+  it("offers to join a Perspicax server once confirmed there is no organization, with no interim organization", async () => {
     vi.stubGlobal("window", { ogb: { organization: bridge } });
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(404, {}));
     render();
     for (const effect of fixture.effects) effect();
     await flush();
     const view = render();
-    expect(view.html).toContain("Join an organization");
-    expect(view.html).toContain("Open the invitation link you received");
-    expect(view.html).toContain("Create an organization");
-    expect(view.html).not.toContain("Create organization");
+    expect(view.html).toContain("Join a Perspicax server");
+    expect(view.html).not.toContain("Create an organization");
+    expect(view.html).not.toContain("invitation");
   });
 });
 
-describe("organization create form", () => {
-  it("asks for the server address everyone signs in to", () => {
-    const markup = renderToStaticMarkup(createElement(OrgCreateForm, { initialAddress: "", onCreate: async () => undefined }));
-    expect(markup).toContain('name="org-server-address"');
-    expect(markup).toContain("Name");
-    expect(markup).toContain("Create organization");
-  });
-  it("labels the form in the chosen language", () => {
-    setLocale("fr");
-    const markup = text(renderToStaticMarkup(createElement(OrgCreateForm, { initialAddress: "", onCreate: async () => undefined })));
-    expect(markup).toContain("Nom");
-    expect(markup).toContain("Créer l'organisation");
-  });
-  it("suggests the page's own address only when it would do as the server address", () => {
-    vi.stubGlobal("window", { location: { origin: "https://pulsa.gox.ca" } });
-    expect(suggestedOrgAddress()).toBe("https://pulsa.gox.ca");
-    vi.stubGlobal("window", { location: { origin: "http://192.168.1.20:5199" } });
-    expect(suggestedOrgAddress()).toBe("");
-    vi.stubGlobal("window", { location: { origin: "http://localhost:8799" } });
-    expect(suggestedOrgAddress()).toBe("http://localhost:8799");
-  });
-  it("accepts https, Tailscale and local Docker addresses only", () => {
-    expect(orgHostFromInput("http://localhost:8080")).toEqual({ kind: "server", url: "http://localhost:8080" });
-    expect(orgHostFromInput("https://pulsa.gox.ca")).toEqual({ kind: "server", url: "https://pulsa.gox.ca" });
-    expect(orgHostFromInput("http://fs01.tail1234.ts.net:8799")).toEqual({ kind: "server", url: "http://fs01.tail1234.ts.net:8799" });
-    expect(orgHostFromInput("http://10.0.0.5")).toBeNull();
-    expect(orgHostFromInput("")).toBeNull();
-  });
-});
-
-function text(html: string) {
-  return html.replace(/&#x27;/g, "'");
-}
 function jsonResponse(status: number, body: unknown): Response {
   return { ok: status >= 200 && status < 300, status, statusText: status === 404 ? "Not Found" : "Error", json: async () => body } as unknown as Response;
 }
-async function loadOrg() {
-  render();
-  for (const effect of fixture.effects) effect();
-  await flush();
-  return render();
-}
-
-describe("fleet organization directory", () => {
-  it("does not offer creation until GET /api/org returns 404", async () => {
-    let finish!: (value: Response | PromiseLike<Response>) => void;
-    vi.mocked(fetch).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
-    render();
-    for (const effect of fixture.effects) effect();
-    expect(text(render().html)).not.toContain("Create organization");
-    finish(jsonResponse(404, {}));
-    await flush();
-    expect(text(render().html)).toContain("Create an organization");
-  });
-
-  it("shows an error instead of the create form when GET fails", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(500, { error: "boom" }));
-    const html = text((await loadOrg()).html);
-    expect(html).toContain("Could not load the organization.");
-    expect(html).not.toContain("Create organization");
-    expect(html).not.toContain("boom");
-  });
-
-  it("lists the organization after GET succeeds", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, {
-      org: { name: "GOX" },
-      people: [{ id: "zachary@example.test", role: "member" }],
-    }));
-    const html = text((await loadOrg()).html);
-    expect(html).toContain("GOX");
-    expect(html).toContain("zachary@example.test");
-    expect(html).not.toContain("Create organization");
-  });
-
-  it("keeps a create error on screen", async () => {
-    vi.mocked(fetch).mockImplementation(async (_input, init) => (
-      init && "method" in init && init.method === "POST" ? jsonResponse(409, {}) : jsonResponse(404, {})
-    ));
-    await loadOrg();
-    const join = render().nodes.find((node) => node.type === JoinOrganizationCard)!;
-    await join.props.onCreate?.("GOX", { kind: "server", url: "https://pulsa.gox.ca" });
-    await flush();
-    const html = text(render().html);
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining("/api/org"), expect.objectContaining({
-      method: "POST",
-      body: JSON.stringify({ name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } }),
-    }));
-    expect(html).toContain("Could not create the organization.");
-    expect(html).toContain("Create an organization");
-  });
-
-  it("shows the new invite's link after inviting, and each pending invite's actions", async () => {
-    const link = "https://pulsa.gox.ca/join#token=0123456789abcdef0123456789abcdef";
-    vi.mocked(fetch).mockImplementation(async (_input, init) => (
-      init && "method" in init && init.method === "POST"
-        ? jsonResponse(200, { invite: { email: "zara@gox.ca", token: "0123456789abcdef0123456789abcdef" }, link, mailed: false })
-        : jsonResponse(200, {
-          org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } },
-          people: [{ id: "pr_00000000-0000-4000-8000-00000000000a", role: "owner", email: "jc@gox.ca" }],
-          pendingInvites: [{ email: "zara@gox.ca", token: "0123456789abcdef0123456789abcdef", link }],
-          viewerRole: "owner",
-        })
-    ));
-    await loadOrg();
-    const directory = render().nodes.find((node) => node.type === OrgDirectory)!;
-    await directory.props.onInvite?.("zara@gox.ca");
-    await flush();
-    const html = text(render().html);
-    expect(html).toContain("jc@gox.ca");
-    expect(html).toContain("Send this link to zara@gox.ca");
-    expect(html).toContain(link);
-    expect(html).toContain("Copy link");
-    expect(html).toContain("Revoke");
-    expect(html).toContain("Edit");
-  });
-
-  it("shows a member only the organization's name, address and status, with no people list, invites, address edit or domain", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, {
-      org: { name: "GOX", host: { kind: "server", url: "https://pulsa.gox.ca" } },
-      people: [{ id: "zara@gox.ca", role: "member", email: "zara@gox.ca" }],
-      pendingInvites: [{ email: "ada@gox.ca" }],
-      viewerRole: "member",
-    }));
-    const html = text((await loadOrg()).html);
-    expect(html).toContain("GOX");
-    expect(html).toContain("https://pulsa.gox.ca");
-    expect(html).not.toContain("zara@gox.ca");
-    expect(html).not.toContain("ada@gox.ca");
-    expect(html).not.toContain(">Invite<");
-    expect(html).not.toContain("Revoke");
-    expect(html).not.toContain(">Edit<");
-    expect(html).not.toContain("data-custom-domain-settings");
-  });
-
-  it("shows a notice when the organization has no server address yet", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, {
-      org: { name: "GOX", host: { kind: "this-computer" } },
-      people: [],
-    }));
-    const html = text((await loadOrg()).html);
-    expect(html).toContain("This organization has no server address yet.");
-  });
-
-  it("keeps an invite error on screen", async () => {
-    vi.mocked(fetch).mockImplementation(async (_input, init) => (
-      init && "method" in init && init.method === "POST"
-        ? jsonResponse(403, {})
-        : jsonResponse(200, { org: { name: "GOX" }, people: [] })
-    ));
-    await loadOrg();
-    const directory = render().nodes.find((node) => node.type === OrgDirectory)!;
-    await Promise.resolve(directory.props.onInvite?.("zachary@example.test")).then(() => undefined, () => undefined);
-    await flush();
-    const html = text(render().html);
-    expect(html).toContain("Could not send the invitation.");
-    expect(html).toContain("GOX");
-  });
-});

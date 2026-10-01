@@ -1,68 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import type { ManagedDesktopState } from "../../electron/managed-desktop.mjs";
-import type { OrgRole } from "../../server/org-directory.ts";
-import type { OrgRecord } from "../../server/org-record.ts";
 import { activeLocale, t } from "@/lib/i18n";
 import { enterpriseEntryRequested } from "@/lib/enterprise-entry";
-import { pulsatrixLoginPath, type EnvironmentDescriptor } from "@/lib/session";
 import { api, ApiError, useStore } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { CompanyModels } from "./CompanyModels";
-import { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";
-import { OrgDirectory, type OrgPersonView, type PendingInviteView } from "./OrgDirectory";
-import { notifyOrgColumn } from "./org-column";
 import { ConnectedWorkspacesSettings } from "./ConnectedWorkspacesSettings";
 import { RemoteComputerSection } from "./RemoteComputerSection";
 import { CustomDomainSettings } from "./CustomDomainSettings";
 import { PerspicaxOrgSettings } from "./PerspicaxOrgSettings";
+import { JoinPerspicaxCard } from "./JoinPerspicaxCard";
 import { isPerspicaxOrg, type PerspicaxOrg } from "@/lib/perspicax-org";
-
-export { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";
 
 const providerNames: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter" };
 const DEFAULT_PORTAL_ORIGIN = "https://admin.openmausbot.com";
-
-/** The address this page was served from, when it would do as the
- * organization's server address; empty otherwise (a loopback dev port, a
- * LAN address over http). */
-export function suggestedOrgAddress(): string {
-  const origin = typeof window !== "undefined" ? window.location?.origin ?? "" : "";
-  return orgHostFromInput(origin) ? origin : "";
-}
-
-/** How to join someone else's organization: pair with their server by
- * pasting its pairing link (the desktop app's own pairing flow), or in a
- * browser, open the invite link. Creating an organization instead sits
- * behind a small secondary link, since this card is for joining, not owning. */
-export function JoinOrganizationCard({
-  initialAddress,
-  onCreate,
-  readyToCreate,
-}: {
-  initialAddress: string;
-  onCreate: (name: string, host: { kind: "server"; url: string }) => void | Promise<void>;
-  /** Only offer creating an organization once the server has confirmed this
-   * computer is not already in one; before that, a click could race a
-   * result that is already on its way. */
-  readyToCreate: boolean;
-}) {
-  const [showCreate, setShowCreate] = useState(false);
-  return (
-    <>
-      <Card collapsible cardId="organization.join" title={t("org.join.title")} summary={t("settings.card.byInvite")}>
-        <p className="text-[13px] leading-relaxed text-ink-secondary">{t("org.join.browser")}</p>
-      </Card>
-      <RemoteComputerSection />
-      {readyToCreate && (
-        <Card collapsible cardId="organization.create" defaultOpen={false} title={t("org.createCard")} summary={t("settings.card.optional")}>
-          {showCreate
-            ? <OrgCreateForm initialAddress={initialAddress} onCreate={onCreate} />
-            : <button type="button" className="ui-button w-fit" onClick={() => setShowCreate(true)}>{t("org.createLink")}</button>}
-        </Card>
-      )}
-    </>
-  );
-}
 
 /** Only the trusted desktop bridge can enroll this computer or hold its token. */
 export function OrganizationSettings() {
@@ -78,11 +29,6 @@ export function OrganizationSettings() {
   const generation = useRef(0);
   const revision = useRef(0);
   const status = useRef<ManagedDesktopState["status"] | undefined>(undefined);
-  const [org, setOrg] = useState<{ name: string; host?: OrgRecord["host"] } | null>(null);
-  const [people, setPeople] = useState<OrgPersonView[]>([]);
-  const [pendingInvites, setPendingInvites] = useState<PendingInviteView[]>([]);
-  const [viewerRole, setViewerRole] = useState<OrgRole | null | undefined>(undefined);
-  const [lastInvite, setLastInvite] = useState<{ email: string; link?: string } | null>(null);
   const [orgReady, setOrgReady] = useState(false);
   const [directoryError, setDirectoryError] = useState("");
   const [servers, setServers] = useState<{ activeId: string; count: number } | null>(null);
@@ -121,28 +67,18 @@ export function OrganizationSettings() {
     return () => { generation.current++; unsubscribe?.(); };
   }, [bridge]);
 
+  // GET /api/org answers the Perspicax organization on an organization
+  // server; a solo server has none (404).
   const loadOrg = async (alive = () => true) => {
     try {
-      const body = await api<{ org: { name: string; host?: OrgRecord["host"] }; people?: OrgPersonView[]; pendingInvites?: PendingInviteView[]; viewerRole?: OrgRole | null }>("/api/org");
+      const body = await api<unknown>("/api/org");
       if (!alive()) return;
-      if (isPerspicaxOrg(body)) {
-        setPerspicaxOrg(body);
-        setOrgReady(true);
-        setDirectoryError("");
-        return;
-      }
-      setOrg({ name: body.org.name, host: body.org.host });
-      setPeople(body.people ?? []);
-      setPendingInvites(body.pendingInvites ?? []);
-      setViewerRole(body.viewerRole);
+      if (isPerspicaxOrg(body)) setPerspicaxOrg(body);
       setOrgReady(true);
       setDirectoryError("");
     } catch (error) {
       if (!alive()) return;
       if (error instanceof ApiError && error.status === 404) {
-        setOrg(null);
-        setPeople([]);
-        setPendingInvites([]);
         setOrgReady(true);
         setDirectoryError("");
         return;
@@ -169,19 +105,6 @@ export function OrganizationSettings() {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
-  // An organization server signs people in with Pulsatrix: no invitations
-  // here. Read after the organization, and never blocking it.
-  const [perspicax, setPerspicax] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.resolve()
-      .then(() => fetch("/.well-known/openmausbot/environment", { cache: "no-store" }))
-      .then((r) => (r?.ok ? r.json() : null))
-      .then((d: EnvironmentDescriptor | null) => { if (!cancelled) setPerspicax(pulsatrixLoginPath(d) !== null); })
-      .catch(() => { /* an older server: invitations stay as they were */ });
-    return () => { cancelled = true; };
-  }, []);
-
   const perform = async (action: () => Promise<ManagedDesktopState>) => {
     if (!bridge || pending.current) return;
     pending.current = true;
@@ -202,87 +125,33 @@ export function OrganizationSettings() {
     }
   };
 
-  // An older server sends no role: leave the controls to its own checks.
-  const canManage = viewerRole === undefined || viewerRole === "owner" || viewerRole === "admin";
   // Already active on (or saved) another server: show the connected/joined
-  // server list next to Organization instead of the bare join card.
+  // server list next to Organization.
   const connectedToAnotherServer = remoteActive || (servers ? servers.activeId !== "local" : false);
   const hasSavedServers = (servers?.count ?? 0) > 0;
-  const showJoinOnly = !org && !hasSavedServers && !connectedToAnotherServer;
-
-  const handleCreate = async (name: string, host: { kind: "server"; url: string }) => {
-    try {
-      const created = await api<{ org?: { name?: string } }>("/api/org", { method: "POST", body: JSON.stringify({ name, host }) });
-      const createdName = typeof created.org?.name === "string" ? created.org.name : name;
-      notifyOrgColumn(createdName);
-      await loadOrg();
-    } catch {
-      setDirectoryError(t("org.createFailed"));
-    }
-  };
+  const showJoinOnly = !hasSavedServers && !connectedToAnotherServer;
 
   if (perspicaxOrg) return <PerspicaxOrgSettings org={perspicaxOrg} onChanged={() => loadOrg()} />;
 
   const directory = (
     <>
-      {orgReady && org && (
-        <OrgDirectory
-          org={org}
-          people={people}
-          pendingInvites={pendingInvites}
-          initialAddress={suggestedOrgAddress()}
-          canManage={canManage}
-          invitesOff={perspicax}
-          lastInvite={lastInvite}
-          onCreate={handleCreate}
-          domainSettings={canManage && !remoteActive ? <CustomDomainSettings /> : null}
-          onInvite={async (email) => {
-            try {
-              const issued = await api<{ invite?: { email?: string }; link?: string }>("/api/org/invites", { method: "POST", body: JSON.stringify({ email }) });
-              setLastInvite({ email: issued.invite?.email ?? email, link: issued.link });
-              setDirectoryError("");
-              await loadOrg();
-            } catch (error) {
-              setDirectoryError(t("org.inviteFailed"));
-              throw error;
-            }
-          }}
-          onRevoke={async (token) => {
-            try {
-              await api(`/api/org/invites/${encodeURIComponent(token)}/revoke`, { method: "POST", body: "{}" });
-              setLastInvite((current) => (current?.link?.endsWith(`token=${encodeURIComponent(token)}`) ? null : current));
-              await loadOrg();
-            } catch {
-              setDirectoryError(t("org.revokeFailed"));
-            }
-          }}
-          onUpdateHost={async (host) => {
-            try {
-              await api("/api/org", { method: "PATCH", body: JSON.stringify({ host }) });
-              setDirectoryError("");
-              await loadOrg();
-            } catch (error) {
-              setDirectoryError(t("org.addressFailed"));
-              throw error;
-            }
-          }}
-        />
-      )}
-      {org?.host?.kind === "this-computer" && (
-        <p role="status" className="text-[13px] text-ink-secondary">{t("org.needsServerAddress")}</p>
-      )}
+      {orgReady && !remoteActive && store.config?.viewer?.operator !== false && <CustomDomainSettings />}
       {directoryError && <p role="alert" className="text-[13px] text-danger">{directoryError}</p>}
     </>
   );
 
-  // Not in any organization and no server joined yet: only the join card.
+  // No server joined yet: the join card.
   // Otherwise, show the servers this desktop already connects to (switch,
   // leave, or the active remote-client connection and its disconnect action).
   // Waits for the organization load so it settles into one shape instead of
   // swapping components once the load resolves.
   const joinOrConnect = !orgReady ? null : showJoinOnly
-    ? <JoinOrganizationCard initialAddress={suggestedOrgAddress()} onCreate={handleCreate} readyToCreate={orgReady} />
+    ? <>
+        <JoinPerspicaxCard />
+        <RemoteComputerSection />
+      </>
     : <>
+        {!remoteActive && <JoinPerspicaxCard />}
         <ConnectedWorkspacesSettings />
         {remoteActive && <RemoteComputerSection />}
       </>;

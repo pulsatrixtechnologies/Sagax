@@ -153,6 +153,17 @@ const __BASE_VERSION__: string;
         forget: (id: string) => Promise<void>;
         onOpenSettings?: (callback: (computerId?: string | null) => void) => () => void;
       };
+      /** Slice 8, "Join a Perspicax server": probe and stage answer only the
+       * local renderer; staged, take, finished and removeLocal answer only
+       * the main frame of the organization server the copy was staged for. */
+      orgJoin?: {
+        probe(address: string): Promise<{ origin: string; issuer: string }>;
+        stage(input: { origin: string; document: unknown }): Promise<{ ok: true }>;
+        staged(): Promise<{ origin: string; bots: number; name: string } | null>;
+        take(): Promise<unknown>;
+        finished(input: { report: unknown }): Promise<{ ok: true }>;
+        removeLocal(keys: string[]): Promise<{ removed: string[] }>;
+      };
       /** Local main-window only. Hosted renderers cannot grant themselves access. */
       computerSharing?: {
         state(id: string): Promise<DesktopComputerSharing>;
