@@ -26,6 +26,7 @@ import {
   ClaudeDriver,
   createPermissionBroker,
   hookTokenFile,
+  instanceClaudeAllowRules,
   parseClaudeCliVersion,
   permissionSocketPath,
   readClaudeAuthSettings,
@@ -96,6 +97,27 @@ const CONTROL_PLANE_FIXTURE = {
   OMB_CLOUD_READY_TOKEN: "ready-should-not-leak", OMB_CLOUD_BOOTSTRAP: "bootstrap-should-not-leak",
   OMB_LICENSE_KEY: "license-should-not-leak", OMB_INSTALLATION_CREDENTIAL: "fleet-should-not-leak",
 };
+
+describe("instanceClaudeAllowRules", () => {
+  it("reads a JSON list or one rule per line, trimmed and deduplicated", () => {
+    expect(instanceClaudeAllowRules({ OMB_CLAUDE_ALLOW: '["Bash(claude plugin marketplace add a/b)", "Read"]' }))
+      .toEqual(["Bash(claude plugin marketplace add a/b)", "Read"]);
+    expect(instanceClaudeAllowRules({ OMB_CLAUDE_ALLOW: " Bash(git status)\n\nBash(git status)\nmcp__ogb\n" }))
+      .toEqual(["Bash(git status)", "mcp__ogb"]);
+  });
+
+  it("is empty when unset, blank or unreadable", () => {
+    expect(instanceClaudeAllowRules({})).toEqual([]);
+    expect(instanceClaudeAllowRules({ OMB_CLAUDE_ALLOW: "  " })).toEqual([]);
+    expect(instanceClaudeAllowRules({ OMB_CLAUDE_ALLOW: "[1, 2]" })).toEqual([]);
+    expect(instanceClaudeAllowRules({ OMB_CLAUDE_ALLOW: "[not json" })).toEqual([]);
+  });
+
+  it("drops a rule that is not a tool name with an optional pattern", () => {
+    expect(instanceClaudeAllowRules({ OMB_CLAUDE_ALLOW: '["Bash(ls)", "rm -rf /", "Bash(\\u0007)", "", "Bash"]' }))
+      .toEqual(["Bash(ls)", "Bash"]);
+  });
+});
 
 describe("ClaudeDriver.decodeConfig", () => {
   it("quotes hook paths as shell data rather than JSON strings", () => {
@@ -645,6 +667,38 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(readFileSync(healthyDump, "utf8")).toBe(healthyBefore);
     expect(JSON.parse(readFileSync(retryDump, "utf8")).pid).toBe(replacement.pid);
     expect(recorder.events.some((event) => event.type === "turn.retrying")).toBe(false);
+  });
+
+  it("adds the instance's standing allow rules to the private settings file", async () => {
+    process.env.OMB_CLAUDE_ALLOW = '["Bash(claude plugin marketplace add acme/marketplace)"]';
+    try {
+      const dump = join(scratch, "dump-allow.json");
+      await create(undefined, { FAKE_CLAUDE_DUMP: dump });
+      await instance.adapter.sendTurn({ threadId: "t-allow", text: "hi" });
+      await recorder.until((e) => e.type === "turn.completed");
+      const seen = JSON.parse(readFileSync(dump, "utf8"));
+      expect(seen.settings.permissions).toEqual({ allow: ["Bash(claude plugin marketplace add acme/marketplace)"] });
+      expect(seen.argv[seen.argv.indexOf("--setting-sources") + 1]).toBe("project");
+    } finally {
+      delete process.env.OMB_CLAUDE_ALLOW;
+    }
+  });
+
+  it("never gives the instance's allow rules to a guest's confined turn", async () => {
+    process.env.OMB_CLAUDE_ALLOW = '["Bash(claude plugin marketplace add acme/marketplace)"]';
+    try {
+      await create(undefined, { FAKE_CLAUDE_VERSION: "2.1.284" });
+      const folder = mkdtempSync(join(scratch, "guest-allow-"));
+      const dump = join(scratch, "dump-guest-allow.json");
+      process.env.FAKE_CLAUDE_DUMP = dump;
+      await instance.adapter.sendTurn({ threadId: "t-guest-allow", text: "hello", approvalMode: "ask", guestConfined: true, cwd: folder });
+      await recorder.until((e) => e.type === "turn.completed");
+      const seen = JSON.parse(readFileSync(dump, "utf8"));
+      expect(seen.settings.permissions.allow).toBeUndefined();
+      expect(seen.settings.permissions.deny).toEqual(expect.arrayContaining(["Bash"]));
+    } finally {
+      delete process.env.OMB_CLAUDE_ALLOW;
+    }
   });
 
   it("runs a guest's turn on a Cloud home with no command-running tool and no read outside its folder", async () => {
