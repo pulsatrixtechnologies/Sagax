@@ -85,3 +85,21 @@ Electron restart (no HMR); launch-test them before committing.
   (`omb.floatingBots.prefs.v1`, Settings > Appearance and the right-click
   menu). The bar under the mascot is the thread's context, from the chat
   header's own figures. User docs: `apps/docs/content/docs/features/floating-bots.mdx`.
+
+## Sign in with Pulsatrix (desktop)
+
+The desktop app always signs in through the system browser, never in a
+window of its own (passkeys and password managers live in the browser).
+`startPulsatrixSignIn` in `electron/main.mjs` and
+`electron/oidc-system-sign-in.cjs` own it; there is no in-app sign-in
+window, do not add one back. Return paths, in order: a one-shot loopback
+listener on `127.0.0.1` (ephemeral port, random state path, exact Host and
+Origin, ten-minute timeout, closed after use), then `openmausbot://auth` only
+when this exact running copy owns the scheme and the server advertises
+`nativeReturn`, else an error on `/pair`. The server side is
+`validLoopbackReturn` in `server/oidc-login.ts` (loopback IP literals with a
+port and a state only; the credential rides in the fragment) and the
+descriptor's `identity.loopbackReturn`. Tests:
+`electron/oidc-system-sign-in.node-test.mjs`, `server/oidc-login.test.ts`,
+`server/oidc-session.e2e.test.ts` (S2-7b). A change to that server code needs
+the server image redeployed.

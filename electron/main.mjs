@@ -77,7 +77,7 @@ import {
 } from "./companion-account-service.mjs";
 import capabilitiesModule from "./capabilities.cjs";
 import environmentsModule from "./environments.cjs";
-import oidcLoginWindowModule from "./oidc-login-window.cjs";
+import oidcSignInModule from "./oidc-system-sign-in.cjs";
 import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
@@ -268,46 +268,155 @@ function queuePackageInstall(rawLink) {
   return true;
 }
 
-// "Sign in with Pulsatrix" in the system browser (electron/oidc-login-window.cjs):
-// the one sign-in this app is waiting for, and its return link.
-const pendingSystemSignIn = oidcLoginWindowModule.createPendingSystemSignIn();
+// "Sign in with Pulsatrix" always runs in the system browser, never in a
+// window of this app: passkeys and password managers live there
+// (electron/oidc-system-sign-in.cjs). The browser comes back on a one-shot
+// 127.0.0.1 listener, or on openmausbot://auth when only that is possible.
+// The openmausbot:// sign-in this app is waiting for, if any:
+const pendingSystemSignIn = oidcSignInModule.createPendingSystemSignIn();
 // The credential just loaded into the main window's /pair from that return:
 // /pair redeems it without asking only when this confirms it.
-const signInHandoff = oidcLoginWindowModule.createSignInHandoff();
+const signInHandoff = oidcSignInModule.createSignInHandoff();
+/** The sign-in in progress: { origin, url, loopback } or null. */
+let currentSignIn = null;
+/** What the main window's /pair shows: idle, waiting (Cancel, Reopen the
+ * browser) or an error code (timeout, unsupported, browser, unreachable). */
+let signInState = { status: "idle" };
+/** Bumped by every start and cancel, so a slower earlier start gives up. */
+let signInAttempt = 0;
 
-/** Does this saved server end a desktop sign-in on openmausbot://auth? */
-async function serverReturnsToNativeApps(origin) {
+function setSignInState(next) {
+  signInState = next;
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (win && !win.webContents.isDestroyed()) win.webContents.send("pulsatrix-sign-in:changed", signInState);
+}
+
+/** What the saved server says about desktop returns, or null when it cannot be read. */
+async function serverSignInSupport(origin) {
   try {
     const res = await fetch(`${origin}/.well-known/openmausbot/environment`, { signal: AbortSignal.timeout(3_000), redirect: "error" });
-    if (!res.ok) return false;
-    const body = await res.json();
-    return body?.identity?.kind === "perspicax" && body.identity.nativeReturn === true;
+    if (!res.ok) return null;
+    return oidcSignInModule.signInSupport(await res.json());
   } catch {
-    return false;
+    return null;
   }
 }
 
-/** Start "Sign in with Pulsatrix" for the selected saved server: the system
- * browser when this app receives openmausbot:// links and the server returns
- * to native apps, else the in-app sign-in window (slice 1). */
-async function startPulsatrixSignIn(win, loginStart) {
-  const external = oidcLoginWindowModule.systemBrowserStartUrl(loginStart, environmentsState);
-  if (external && app.isDefaultProtocolClient("openmausbot") && await serverReturnsToNativeApps(new URL(external).origin)) {
-    pendingSystemSignIn.begin(new URL(external).origin);
+/** Whether openmausbot:// links reach this exact running copy of the app. */
+async function thisAppOwnsAuthScheme() {
+  const isDefault = app.isDefaultProtocolClient("openmausbot");
+  let handlerPath = null;
+  if (isDefault && (process.platform === "darwin" || process.platform === "win32")) {
     try {
-      await shell.openExternal(external);
-      return;
+      handlerPath = (await app.getApplicationInfoForProtocol("openmausbot://auth"))?.path ?? null;
     } catch {
-      slog("the system browser could not open the sign-in; using the sign-in window");
+      handlerPath = null;
     }
   }
-  if (win.isDestroyed()) return;
-  oidcLoginWindowModule.openOidcLoginWindow({
-    BrowserWindow, parent: win, url: loginStart, log: slog,
-    onDone: (target) => {
-      if (!win.isDestroyed() && workspaceNavigationAllowed(target, environmentsState, rendererOrigin())) void win.loadURL(target);
-    },
+  return oidcSignInModule.ownsScheme({
+    isDefault,
+    handlerPath,
+    appPath: oidcSignInModule.appHandlerPath(process.execPath, process.platform),
+    platform: process.platform,
   });
+}
+
+function bringMainWindowForward(win) {
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  if (process.platform === "darwin") app.focus({ steal: true });
+}
+
+/** A credential or an error came back for `origin`: open /pair on it. */
+function deliverSignInReturn(parsed) {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win || activeEnvironment(environmentsState)?.origin !== parsed.origin) {
+    slog(`ignored a sign-in return from ${parsed.origin}: that server is no longer the selected one`);
+    return;
+  }
+  signInHandoff.accept(parsed);
+  void win.loadURL(oidcSignInModule.authReturnTarget(parsed));
+  bringMainWindowForward(win);
+}
+
+/** Stop waiting: close the loopback listener and forget the scheme return. */
+function cancelPulsatrixSignIn() {
+  const current = currentSignIn;
+  currentSignIn = null;
+  signInAttempt += 1;
+  pendingSystemSignIn.clear();
+  current?.loopback?.cancel();
+  setSignInState({ status: "idle" });
+}
+
+/** Start "Sign in with Pulsatrix" for the selected saved server, in the
+ * system browser. `loginStart` is that server's /auth/oidc/start. */
+async function startPulsatrixSignIn(_win, loginStart) {
+  const start = oidcSignInModule.oidcLoginStartUrl(loginStart, environmentsState);
+  if (!start) return;
+  const origin = new URL(start).origin;
+  cancelPulsatrixSignIn();
+  const attempt = signInAttempt;
+  const support = await serverSignInSupport(origin);
+  if (attempt !== signInAttempt) return;
+  if (!support) {
+    setSignInState({ status: "error", origin, error: "unreachable" });
+    return;
+  }
+  let loopback = null;
+  if (support.loopbackReturn) {
+    try {
+      loopback = await oidcSignInModule.startLoopbackReturn({ log: slog });
+    } catch {
+      slog("the sign-in could not listen on 127.0.0.1");
+    }
+  }
+  const owns = support.nativeReturn && !loopback ? await thisAppOwnsAuthScheme() : false;
+  if (attempt !== signInAttempt) {
+    loopback?.cancel();
+    return;
+  }
+  const path = oidcSignInModule.chooseReturnPath({
+    loopbackReturn: support.loopbackReturn,
+    loopbackReady: Boolean(loopback),
+    nativeReturn: support.nativeReturn,
+    ownsScheme: owns,
+  });
+  if (path === "unsupported") {
+    loopback?.cancel();
+    slog(`the sign-in on ${origin} cannot come back to this app (server loopback return: ${support.loopbackReturn})`);
+    setSignInState({ status: "error", origin, error: "unsupported" });
+    return;
+  }
+  if (path !== "loopback") {
+    loopback?.cancel();
+    loopback = null;
+    pendingSystemSignIn.begin(origin);
+  }
+  const url = oidcSignInModule.desktopStartUrl(origin, loopback?.returnTo);
+  const current = { origin, url, loopback };
+  currentSignIn = current;
+  setSignInState({ status: "waiting", origin });
+  loopback?.result.then((outcome) => {
+    if (currentSignIn !== current) return;
+    currentSignIn = null;
+    if ("code" in outcome || "error" in outcome) {
+      setSignInState({ status: "idle" });
+      deliverSignInReturn({ origin, ...outcome });
+    } else if ("timeout" in outcome) {
+      setSignInState({ status: "error", origin, error: "timeout" });
+    }
+  });
+  try {
+    await shell.openExternal(url);
+  } catch {
+    slog("the system browser could not open the sign-in");
+    if (currentSignIn === current) {
+      cancelPulsatrixSignIn();
+      setSignInState({ status: "error", origin, error: "browser" });
+    }
+  }
 }
 
 /** Handle an openmausbot://auth link. Returns whether it was one. The
@@ -323,16 +432,9 @@ function takeAuthReturnLink(rawUrl) {
     slog(`ignored a sign-in return from ${parsed.origin} that this app did not start or that expired`);
     return true;
   }
-  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  if (!win || activeEnvironment(environmentsState)?.origin !== parsed.origin) {
-    slog(`ignored a sign-in return from ${parsed.origin}: that server is no longer the selected one`);
-    return true;
-  }
-  signInHandoff.accept(parsed);
-  void win.loadURL(oidcLoginWindowModule.authReturnTarget(parsed));
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
+  if (currentSignIn?.origin === parsed.origin) currentSignIn = null;
+  setSignInState({ status: "idle" });
+  deliverSignInReturn(parsed);
   return true;
 }
 
@@ -2249,9 +2351,10 @@ function createWindow({ deferNavigation = false } = {}) {
   // native action, not a redirect/link from a remote page to the local bridge.
   const guardNavigation = (event, url) => {
     // "Sign in with Pulsatrix" on a saved organization server: the identity
-    // provider's page opens in its own window, never in this preload-bearing
-    // one (electron/oidc-login-window.cjs).
-    const loginStart = oidcLoginWindowModule.oidcLoginStartUrl(url, environmentsState);
+    // provider's page opens in the system browser, never in this
+    // preload-bearing window nor any other of this app
+    // (electron/oidc-system-sign-in.cjs).
+    const loginStart = oidcSignInModule.oidcLoginStartUrl(url, environmentsState);
     if (loginStart) {
       event.preventDefault();
       void startPulsatrixSignIn(win, loginStart);
@@ -2449,6 +2552,24 @@ ipcMain.handle("auth-return:take", (event, code) => {
     return false;
   }
   return signInHandoff.redeem(origin, code);
+});
+
+// The waiting state of "Sign in with Pulsatrix" for /pair in the main window:
+// read it, cancel it, or open the browser again. Main window, top frame only.
+function signInSender(event) {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  return Boolean(win) && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame;
+}
+ipcMain.handle("pulsatrix-sign-in:state", (event) => (signInSender(event) ? signInState : { status: "idle" }));
+ipcMain.handle("pulsatrix-sign-in:cancel", (event) => {
+  if (!signInSender(event)) return false;
+  cancelPulsatrixSignIn();
+  return true;
+});
+ipcMain.handle("pulsatrix-sign-in:reopen", async (event) => {
+  if (!signInSender(event) || !currentSignIn) return false;
+  await shell.openExternal(currentSignIn.url);
+  return true;
 });
 
 ipcMain.handle("screen:frame", localOnly("screen:frame", async () => {
@@ -3002,7 +3123,7 @@ const orgJoin = createOrgJoin({
   // server's /pair page starts, on the server join just saved and selected.
   signIn: async (origin) => {
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error("no main window");
-    await startPulsatrixSignIn(mainWindow, `${origin}${oidcLoginWindowModule.OIDC_START_PATH}`);
+    await startPulsatrixSignIn(mainWindow, `${origin}${oidcSignInModule.OIDC_START_PATH}`);
   },
 });
 /** The origin of a call from the active saved server's main frame, or null. */
