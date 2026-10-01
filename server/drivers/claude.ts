@@ -355,6 +355,32 @@ export const GUEST_CLAUDE_PERMISSIONS = {
   deny: ["Bash", "PowerShell", "WebFetch", "Read(//proc/**)"],
 } as const;
 
+/** A Claude Code permission rule: a tool name, then an optional pattern in
+ * parentheses (`Bash(git status)`, `mcp__ogb`). Control characters never pass. */
+const CLAUDE_RULE = /^[A-Za-z_][\w-]*(\([^\p{Cc}]+\))?$/u;
+
+/** The instance's standing allow rules (OMB_CLAUDE_ALLOW: a JSON list, or one
+ * rule per line), set by the operator on the server. They ride in the private
+ * --settings file, the one source --setting-sources project still reads besides
+ * the bot's folder, so every bot of the instance gets them; a guest's confined
+ * turn never does. A malformed value grants nothing. */
+export function instanceClaudeAllowRules(env: NodeJS.ProcessEnv = process.env): string[] {
+  const raw = env.OMB_CLAUDE_ALLOW?.trim();
+  if (!raw) return [];
+  let rules: unknown;
+  if (raw.startsWith("[")) {
+    try {
+      rules = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+    if (!Array.isArray(rules) || rules.some((rule) => typeof rule !== "string")) return [];
+  } else {
+    rules = raw.split(/\r?\n/);
+  }
+  return [...new Set((rules as string[]).map((rule) => rule.trim()).filter((rule) => CLAUDE_RULE.test(rule)))];
+}
+
 export type ClaudeCliVersion = readonly [number, number, number];
 
 /** The newest floor above: a CLI at or past it accepts everything the
@@ -1614,6 +1640,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const settings: Record<string, unknown> = { ...authSettings };
       if (hooks) settings.hooks = claudeHookSettings(HOOK_HELPER_PATH);
       if (turn.guestConfined) settings.permissions = GUEST_CLAUDE_PERMISSIONS;
+      else {
+        const allow = instanceClaudeAllowRules();
+        if (allow.length) settings.permissions = { allow };
+      }
       const authSettingsPath = mcpConfigPath && Object.keys(settings).length
         ? join(dirname(mcpConfigPath), "auth-settings.json") : null;
       if (authSettingsPath) args.push("--settings", authSettingsPath);

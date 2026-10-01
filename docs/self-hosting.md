@@ -1167,6 +1167,32 @@ On the Workspaces screen, creating a client workspace shows the same kind of
 link for that workspace's admin, so a client gets one address, one workspace
 and one link.
 
+## Standing Claude Code permissions for every bot
+
+Claude Code runs with `--setting-sources project`: the server's own
+`~/.claude/settings.json` is not read, so a rule placed there never applies.
+To let every bot of the server run one command without a card, set
+`OMB_CLAUDE_ALLOW` on the server, as a JSON list or one rule per line, in
+Claude Code's rule syntax:
+
+```sh
+OMB_CLAUDE_ALLOW='["Bash(claude plugin marketplace add acme/marketplace)"]'
+```
+
+The rules go into each turn's private settings file (`permissions.allow`).
+A guest's confined turn never gets them. A rule that is not a tool name with
+an optional pattern is dropped, and a malformed list grants nothing. Prefer
+exact commands over `:*` wildcards on a server many people share. Restart the
+server after a change; a running bot takes the new rules at its next launch.
+
+An allow rule never overrides a denial. Rules only go into
+`permissions.allow`; they never remove a tool from `--disallowedTools` or from
+a deny list, and in Claude Code a deny always wins over an allow. On an
+organization server where host tools (Bash, Read, Write, Edit and the like)
+are denied because commands run in each person's sandbox, a rule such as
+`Bash(claude plugin marketplace add ...)` does not reopen host Bash: the bot
+still cannot run it on the server.
+
 ## Putting a proxy in front
 
 Any reverse proxy works, given three things:
