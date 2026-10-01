@@ -243,3 +243,24 @@ describe("slice 4: teams and the Perspicax role", () => {
     expect(changed).toEqual([dave.id]);
   });
 });
+
+describe("interim people (slice 8)", () => {
+  it("lists people from before Perspicax and folds one into a Perspicax person once", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "interim-")), "principals.json");
+    const registry = new PrincipalRegistry({ path });
+    registry.localOperator("owner@example.test");
+    const eve = registry.forAccount({ email: "eve@example.test" });
+    const person = registry.forSubject({ iss: "https://px.test", sub: "E1", claims: { email: "eve@example.test" } });
+    expect(registry.listInterim().map((p) => p.id)).toEqual([eve.id]);
+    // A Perspicax person or the local operator is never interim.
+    expect(registry.markMerged(person.id, eve.id)).toBeNull();
+    expect(registry.markMerged(registry.local()!.id, person.id)).toBeNull();
+    const merged = registry.markMerged(eve.id, person.id, 42);
+    expect(merged).toMatchObject({ mergedInto: person.id, mergedAt: 42 });
+    expect(registry.markMerged(eve.id, person.id)).toBeNull();
+    expect(registry.listInterim()).toEqual([]);
+    // Still resolvable for history labels, and the merge survives a reload.
+    expect(new PrincipalRegistry({ path }).byId(eve.id)).toMatchObject({ email: "eve@example.test", mergedInto: person.id });
+    expect(registry.listBySubjectIssuer("https://px.test").map((p) => p.id)).toEqual([person.id]);
+  });
+});

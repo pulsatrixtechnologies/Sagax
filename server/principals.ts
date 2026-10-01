@@ -39,6 +39,11 @@ const principalSchema = z.object({
    * the next successful sign-in or refresh. While set, no session of theirs
    * is served. */
   disabledAt: z.number().optional(),
+  /** Slice 8: an interim person (from before Perspicax) an organization
+   * admin attached to a Perspicax person. Kept for history labels; never
+   * listed, chosen or signed in again. */
+  mergedInto: z.string().regex(PRINCIPAL_ID_REGEX).optional(),
+  mergedAt: z.number().optional(),
   /** Slice 8, solo: the organization accounts this person copied bots
    * into ("Copied to <origin>"), at most 20. */
   linkedSubjects: z.array(z.object({
@@ -58,6 +63,12 @@ export function isPrincipalId(value: string): boolean {
 }
 
 const emailKey = (email: string) => email.trim().toLowerCase();
+
+/** A person from before Perspicax (slice 8): no subject, not the local
+ * operator, not merged, and known by an address or a control-plane account. */
+export function isInterimPrincipal(principal: Principal): boolean {
+  return !principal.subject && !principal.local && !principal.mergedInto && Boolean(principal.email || principal.controlPlaneUserId);
+}
 
 const MAX_EMAIL = 320;
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+$/;
@@ -365,7 +376,25 @@ export class PrincipalRegistry {
 
   /** Every person known by a subject of this issuer. */
   listBySubjectIssuer(iss: string): Principal[] {
-    return this.principals.filter((p) => p.subject?.iss === iss).map((p) => ({ ...p }));
+    return this.principals.filter((p) => p.subject?.iss === iss && !p.mergedInto).map((p) => ({ ...p }));
+  }
+
+  /** Slice 8: the people from before Perspicax still waiting to be
+   * attached: no subject, not this computer's operator, not merged, known
+   * by an address or a control-plane account. */
+  listInterim(): Principal[] {
+    return this.principals.filter(isInterimPrincipal).map((p) => ({ ...p }));
+  }
+
+  /** Slice 8: fold an interim person into `to` (the rewrite of their refs
+   * is the caller's). Null when `from` is unknown or not interim. */
+  markMerged(from: string, to: string, at: number = this.now()): Principal | null {
+    const found = this.principals.find((p) => p.id === from);
+    if (!found || !isInterimPrincipal(found) || !isPrincipalId(to) || to === from) return null;
+    found.mergedInto = to;
+    found.mergedAt = at;
+    this.persist();
+    return { ...found };
   }
 
   /** Mark the person behind this provider account as out (back-channel
