@@ -9,6 +9,9 @@
 #   docker build -t openmausbot .
 #   docker build --build-arg ENGINES="@anthropic-ai/claude-code @openai/codex" -t openmausbot .
 #
+# /run/sagax-sandboxd: the provisioner's shared key (docs/user-sandbox.md);
+# an empty named volume mounted there inherits this owner.
+#
 # HOME is the /data volume, so engine CLI logins (~/.claude, ~/.codex, ...) and
 # OpenMausBot's own state (~/.openmausbot) persist across container restarts.
 
@@ -45,7 +48,8 @@ RUN apt-get update \
     libatk-bridge2.0-0 libdrm2 libxkbcommon0 libatspi2.0-0 libcups2 \
     libxshmfence1 libgbm1 fonts-noto-color-emoji fonts-noto-cjk fonts-freefont-ttf \
   && rm -rf /var/lib/apt/lists/* \
-  && useradd --create-home --home-dir /data --shell /bin/bash maus
+  && useradd --create-home --home-dir /data --shell /bin/bash maus \
+  && install -d -o maus -g maus -m 0750 /run/sagax-sandboxd
 WORKDIR /app
 COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
 COPY --from=build --chown=maus:maus /src/dist ./dist

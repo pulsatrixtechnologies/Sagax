@@ -46,6 +46,8 @@ interface Status {
   viewer_url: string;
   idle_timeout_ms: number;
   mode: "shared" | "per-bot" | "pool";
+  /** An organization server: one environment per person, no VM per bot. */
+  organization?: boolean;
   max_instances: number;
   commands: {
     install: string | null;
@@ -1346,7 +1348,7 @@ export function LocalComputerSection() {
           : t("vm.isolation.shared")}
       >
         <div className="flex overflow-hidden rounded-lg border border-hairline/40">
-          {(["shared", "per-bot"] as const).map((mode, index) => (
+          {(status?.organization ? ["shared"] as const : ["shared", "per-bot"] as const).map((mode, index) => (
             <button
               key={mode}
               type="button"

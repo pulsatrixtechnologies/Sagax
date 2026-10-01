@@ -809,8 +809,12 @@ export function threadEventLogRetentionDays(cfg: AppConfig): number | null {
   return cfg.threads?.eventLogRetentionDays ?? null;
 }
 
-export function localVmMode(cfg: AppConfig): "shared" | "per-bot" | "pool" {
-  return cfg.localVm?.mode ?? DEFAULT_LOCAL_VM_MODE;
+export function localVmMode(cfg: AppConfig, env: NodeJS.ProcessEnv = process.env): "shared" | "per-bot" | "pool" {
+  const mode = cfg.localVm?.mode ?? DEFAULT_LOCAL_VM_MODE;
+  // Organization mode never runs a VM per bot: each person has one server
+  // environment (server/user-sandbox-routing.ts). A saved per-bot choice
+  // from before reads as shared there.
+  return mode === "per-bot" && env.OMB_IDENTITY?.trim().toLowerCase() === "perspicax" ? "shared" : mode;
 }
 
 export function localVmMaxInstances(cfg: AppConfig): number {

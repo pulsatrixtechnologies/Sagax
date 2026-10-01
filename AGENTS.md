@@ -110,3 +110,20 @@ fragment-only change of the `/pair` the window already shows, which would
 not reload the page. `scripts/verify-desktop-sign-in.ts` proves it in a real
 Electron window. A change to that server code needs the server image
 redeployed.
+
+## Server environments (organization mode)
+
+On an organization server, bots run shell, file and browser tools in their
+OWNER's server environment (`user-sandbox`): one isolated container per
+person, never per bot, never on the Sagax host (`docs/user-sandbox.md`).
+Keep these rules, each covered by `server/user-sandbox*.test.ts`,
+`server/sandboxd*.test.ts` or `server/user-sandbox.e2e.test.ts`:
+
+- Only `sagax-sandboxd` (`server/sandboxd.ts`) holds the Docker socket; the
+  Sagax server calls it with signed requests (`server/sandboxd-auth.ts`).
+- The provisioner API is keyed by person (`sandboxKeyForPrincipal`); never add
+  a bot parameter. Every create body passes `assertSandboxIsolation()`.
+- Server code runs under `--experimental-strip-types`: no TypeScript
+  parameter properties in these files.
+- `scripts/smoke-user-sandbox.ts` proves isolation on a real Docker host and
+  removes everything it creates.

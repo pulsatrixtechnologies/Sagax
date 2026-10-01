@@ -1,0 +1,121 @@
+// sagax-sandboxd: the sandbox provisioner. A separate, minimal service and
+// the ONLY component that holds the Docker socket. Its API is narrow: ensure,
+// stop, delete, exec and status for sandboxes addressed by an opaque PERSON
+// key (never a bot), over signed requests only the Sagax server can make
+// (server/sandboxd-auth.ts). It cannot build an arbitrary container: every
+// create body comes from sandboxContainerSpec() and must pass
+// assertSandboxIsolation().
+//
+//   node dist-server/sandboxd.js                    serve (compose service)
+//   node dist-server/sandboxd.js --uninstall-egress remove the host egress rules
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { pathToFileURL } from "node:url";
+
+import { ensureSandboxdKey, SANDBOXD_AUTH_HEADER, SandboxdVerifier } from "./sandboxd-auth.ts";
+import { SandboxError, SandboxService } from "./sandboxd-core.ts";
+import { dockerApi } from "./sandboxd-docker.ts";
+import { egressHelperSpec, egressUninstallScript, sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
+
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+function send(res: ServerResponse, status: number, body: unknown): void {
+  const text = JSON.stringify(body);
+  res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", "content-length": Buffer.byteLength(text) });
+  res.end(text);
+}
+
+async function readBody(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY_BYTES) throw new SandboxError(413, "too_large", "the request is too large");
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
+export function createSandboxdHandler(service: SandboxService, verifier: SandboxdVerifier) {
+  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const method = req.method ?? "GET";
+    const rawPath = req.url ?? "/";
+    try {
+      if (method === "GET" && rawPath === "/healthz") {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("ok");
+        return;
+      }
+      if (!rawPath.startsWith("/v1/")) return send(res, 404, { error: "not found" });
+      const body = await readBody(req);
+      // Authenticate before anything else is parsed or touched.
+      if (!verifier.verify(req.headers[SANDBOXD_AUTH_HEADER], method, rawPath, body)) {
+        return send(res, 401, { error: "unauthorized", code: "unauthorized" });
+      }
+      const url = new URL(rawPath, "http://sandboxd");
+      if (method === "GET" && url.pathname === "/v1/status") {
+        return send(res, 200, { instance: service.config.instance, egress: service.egress, maxRunning: service.config.maxRunning, idleMinutes: service.config.idleStopMs / 60_000 });
+      }
+      if (method === "GET" && url.pathname === "/v1/sandboxes") return send(res, 200, { sandboxes: await service.list() });
+      const match = /^\/v1\/sandboxes\/([a-f0-9]{32})(?:\/(ensure|stop|exec))?$/.exec(url.pathname);
+      if (!match) return send(res, 404, { error: "not found" });
+      const key = match[1]!;
+      const action = match[2];
+      if (method === "GET" && !action) return send(res, 200, await service.status(key));
+      if (method === "POST" && action === "ensure") return send(res, 200, await service.ensure(key));
+      if (method === "POST" && action === "stop") return send(res, 200, await service.stop(key));
+      if (method === "DELETE" && !action) {
+        return send(res, 200, await service.remove(key, { keepWorkspace: url.searchParams.get("keepWorkspace") === "1" }));
+      }
+      if (method === "POST" && action === "exec") {
+        let parsed: unknown;
+        try { parsed = JSON.parse(body.toString("utf8")); } catch { return send(res, 400, { error: "invalid JSON", code: "bad_exec" }); }
+        const input = parsed as { argv?: unknown; env?: unknown; timeoutSec?: unknown; maxOutputBytes?: unknown };
+        return send(res, 200, await service.exec(key, {
+          argv: input.argv as string[],
+          ...(input.env && typeof input.env === "object" ? { env: input.env as Record<string, string> } : {}),
+          ...(typeof input.timeoutSec === "number" ? { timeoutSec: input.timeoutSec } : {}),
+          ...(typeof input.maxOutputBytes === "number" ? { maxOutputBytes: input.maxOutputBytes } : {}),
+        }));
+      }
+      return send(res, 405, { error: "method not allowed" });
+    } catch (error) {
+      if (error instanceof SandboxError) return send(res, error.status, { error: error.message, code: error.code });
+      console.error(`sandboxd: ${method} ${rawPath.split("?")[0]} failed: ${error instanceof Error ? error.message : String(error)}`);
+      return send(res, 500, { error: "the provisioner failed", code: "internal" });
+    }
+  };
+}
+
+async function main(): Promise<void> {
+  const config = sandboxdConfigFromEnv();
+  const docker = dockerApi(config.dockerSocket);
+  if (process.argv.includes("--uninstall-egress")) {
+    const result = await docker.runOnce(`sagax-sandbox-egress-${config.instance}`, egressHelperSpec(config, egressUninstallScript(config)), 60_000);
+    process.stdout.write(result.output);
+    process.exit(result.exitCode === 0 ? 0 : 1);
+  }
+  if (!(await docker.ping())) throw new Error(`sandboxd: no Docker daemon at ${config.dockerSocket}`);
+  const key = ensureSandboxdKey(config.keyFile);
+  const service = new SandboxService(docker, config);
+  const egress = await service.installEgressPolicy();
+  console.log(`sandboxd: instance ${config.instance}, egress policy ${egress}, at most ${config.maxRunning} running, idle stop ${config.idleStopMs / 60_000} min`);
+  const server = createServer(createSandboxdHandler(service, new SandboxdVerifier(key)));
+  server.requestTimeout = 16 * 60_000;
+  server.listen(config.listenPort, config.listenHost);
+  const sweep = setInterval(() => {
+    void service.sweepIdle().then((stopped) => {
+      if (stopped.length) console.log(`sandboxd: stopped ${stopped.length} idle environment(s)`);
+    }, (error: unknown) => console.error(`sandboxd: idle sweep failed: ${error instanceof Error ? error.message : String(error)}`));
+  }, 60_000);
+  sweep.unref();
+  const shutdown = () => server.close(() => process.exit(0));
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}
