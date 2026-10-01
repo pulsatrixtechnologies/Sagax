@@ -55,7 +55,7 @@ A bot put "on the desktop" stands in its own transparent window
 (`electron/floating-bot-window.mjs`). The main app page stays the brain
 (`src/components/floating-bots/FloatingBots.tsx`, `brain.ts`): it sends each
 window a validated snapshot (pose, balloon, `task`, `mood`, `flyAway`,
-`liveliness`, `context`, `mascot`, `hints`) and receives clicks,
+`liveliness`, `context`, `mascot` (the bot's look), `hints`) and receives clicks,
 typed text, `play`, `pet` and `mascot` events. Keep it that way: a floating
 window holds no session and calls no API. Changes under `electron/` need an
 Electron restart (no HMR); launch-test them before committing.
@@ -79,8 +79,11 @@ Electron restart (no HMR); launch-test them before committing.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
-- Per device: the character per bot (`omb.botMascots.v1`, chosen only in
-  the avatar popover's Character section), the mood (`omb.floatingBots.mood.v1`, never punishing),
+- The character (owl, original shape, Trombi) and its look live with the bot
+  (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
+  in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
+  every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
+- Per device:, the mood (`omb.floatingBots.mood.v1`, never punishing),
   and the settings "Fly away during tasks" and "Activity level"
   (`omb.floatingBots.prefs.v1`, Settings > Appearance and the right-click
   menu). The bar under the mascot is the thread's context, from the chat
