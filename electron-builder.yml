@@ -6,6 +6,10 @@ appId: com.openmausbot.app
 # electron/user-data-location.mjs.
 productName: Sagax
 artifactName: PulsaBot-${version}-${arch}.${ext}
+# Drives the Windows exe's VERSIONINFO LegalCopyright and (with package.json
+# "author") CompanyName; see NOTICE for the retained upstream OpenMausBot
+# attribution, which this packaging metadata does not replace.
+copyright: Copyright © 2026 Pulsatrix Technologies Inc.
 
 protocols:
   - name: Sagax package install
@@ -143,6 +147,11 @@ win:
     - target: zip
       arch: x64
   icon: build/icon.ico
+  # Distinct from the top-level artifactName (used by the mac zip), so the
+  # Windows zip never collides with the macOS Intel zip in the same release
+  # (both would otherwise be PulsaBot-${version}-x64.zip). The nsis target
+  # below keeps its own artifactName, which overrides this for the installer.
+  artifactName: PulsaBot-${version}-win-${arch}.${ext}
   extraResources:
     - from: dist-native/cloudflared/win32-x64/cloudflared.exe
       to: cloudflared/cloudflared.exe
