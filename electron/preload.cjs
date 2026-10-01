@@ -32,7 +32,7 @@ ipcRenderer.on("app:open-settings", (_event, section) => {
 // helpers here. Main enforces the same rule on the sensitive channels.
 const localOrigin = process.argv.find((arg) => arg.startsWith("--omb-local-origin="))?.slice("--omb-local-origin=".length) ?? null;
 const isLocalPage = !localOrigin || location.origin === localOrigin;
-const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces", "takeSignInReturn", "orgJoin"]);
+const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin"]);
 
 // Sandboxed preload cannot import TS or sibling modules. Keep this list in
 // parity with shared/workspace-backup-client.ts (covered by the preload test).
@@ -76,6 +76,19 @@ const bridge = {
    * "Sign in with Pulsatrix" to this page (/pair redeems it without asking).
    * Main checks the window, the frame, the origin and the credential. */
   takeSignInReturn: (code) => ipcRenderer.invoke("auth-return:take", typeof code === "string" ? code : ""),
+  /** "Sign in with Pulsatrix" runs in the system browser: /pair shows that
+   * it waits, with Cancel and Reopen the browser. Main answers only the main
+   * window's top frame. */
+  pulsatrixSignIn: {
+    state: () => ipcRenderer.invoke("pulsatrix-sign-in:state"),
+    cancel: () => ipcRenderer.invoke("pulsatrix-sign-in:cancel"),
+    reopen: () => ipcRenderer.invoke("pulsatrix-sign-in:reopen"),
+    onChange: (cb) => {
+      const handler = (_event, state) => cb(state);
+      ipcRenderer.on("pulsatrix-sign-in:changed", handler);
+      return () => ipcRenderer.removeListener("pulsatrix-sign-in:changed", handler);
+    },
+  },
   onCapabilitiesChanged: (cb) => {
     const handler = (_event, capabilities) => cb(capabilities);
     ipcRenderer.on("desktop:capabilities-changed", handler);

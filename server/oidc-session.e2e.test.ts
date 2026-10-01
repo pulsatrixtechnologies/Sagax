@@ -21,6 +21,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +32,10 @@ import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from 
 import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
+// The desktop app's own loopback listener (electron/oidc-system-sign-in.cjs).
+const { startLoopbackReturn } = createRequire(import.meta.url)("../electron/oidc-system-sign-in.cjs") as {
+  startLoopbackReturn: (options?: { timeoutMs?: number }) => Promise<{ returnTo: string; result: Promise<{ code?: string; error?: string; timeout?: true; cancelled?: true }>; cancel: () => void }>;
+};
 const FAKE_CLI = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
 const posixOnly = describe.skipIf(process.platform === "win32");
 const ALICE: FakeOidcUser = { sub: "01J9S2ALICE00000000000000A", email: "alice@example.test", name: "Alice", preferred_username: "alice", role: "admin" };
@@ -437,6 +442,49 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
     const revoked = await waitFor(async () => idp.revoked.find((r) => r.token && live.has(r.token)) ?? null, 3_000);
     expect(revoked).toMatchObject({ token_type_hint: "refresh_token", client_id: "pulsa-bot" });
     expect((await api("GET", "/api/auth/session", alice)).status).toBe(401);
+  });
+
+  it("S2-7b: the desktop sign-in comes back to the app's loopback listener, the credential in the fragment only", async () => {
+    const env = await (await fetch(`${BASE}/.well-known/openmausbot/environment`)).json() as { identity?: { loopbackReturn?: boolean } };
+    expect(env.identity?.loopbackReturn).toBe(true);
+    const listener = await startLoopbackReturn();
+    idp.user = { ...ALICE };
+    // the system browser: start (with the return), the provider, the callback
+    const start = await fetch(`${BASE}/auth/oidc/start?client=desktop&return=${encodeURIComponent(listener.returnTo)}`, { redirect: "manual" });
+    expect(start.status).toBe(303);
+    const binding = cookiePair(start.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
+    const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
+    // Perspicax is unchanged: its redirect stays the server's callback
+    expect(authorize.headers.get("location")!.startsWith(`${BASE}/auth/oidc/callback?`)).toBe(true);
+    const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
+    expect(callback.status).toBe(303);
+    const location = callback.headers.get("location") ?? "";
+    const target = new URL(location);
+    expect(`${target.origin}${target.pathname}`).toBe(listener.returnTo);
+    expect(target.search).toBe("");
+    const code = new URLSearchParams(target.hash.slice(1)).get("code")!;
+    expect(code).toMatch(/^omb_pair_[A-Za-z0-9_-]{43}$/);
+    // the browser follows without the fragment, gets the page, and its script posts the fragment back
+    const page = await fetch(listener.returnTo);
+    expect(await page.text()).toContain("Connexion réussie, vous pouvez revenir à Sagax");
+    const posted = await fetch(listener.returnTo, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: new URL(listener.returnTo).origin },
+      body: new URLSearchParams({ code }).toString(),
+    });
+    expect(posted.status).toBe(200);
+    expect(await listener.result).toEqual({ code });
+    // the app then redeems it on /pair, once
+    const paired = await api("POST", "/api/auth/pair", undefined, { code, label: "My Mac", cookie: true, attemptId: "attempt-desktop-loopback-1" });
+    expect(paired.status).toBe(200);
+    const cookie = cookiePair(paired.headers.getSetCookie().find((c) => c.startsWith("omb_session_"))!);
+    expect((await api("GET", "/api/auth/session", { cookie })).body).toMatchObject({ identity: "perspicax", role: "admin", email: "alice@example.test" });
+    expect((await api("POST", "/api/auth/pair", undefined, { code, cookie: true })).status).toBe(401);
+    // the credential never reached the server's log
+    expect(log).not.toContain(code);
+    // a return that is not a loopback listener is refused before the provider
+    const evil = await fetch(`${BASE}/auth/oidc/start?client=desktop&return=${encodeURIComponent("http://localhost:5555/" + "S".repeat(43))}`, { redirect: "manual" });
+    expect(evil.headers.get("location")).toBe("/pair#signin_error=return");
   });
 
   it("S2-7: the desktop return link redeems once into a person-bound cookie session", async () => {

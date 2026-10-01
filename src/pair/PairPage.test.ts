@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import { parsePairingHash, takePairingFromLocation } from "@/lib/session";
-import { PairPage, finishReturnedSignIn, signInErrorText } from "./PairPage";
+import { BrowserSignInWaiting, PairPage, browserSignInErrorText, finishReturnedSignIn, signInErrorText } from "./PairPage";
 
 const CREDENTIAL = `omb_pair_${"A1b2_C3d4-".repeat(4)}xyz`;
 
@@ -19,6 +19,28 @@ describe("sign-in errors (slice 6, fix 2)", () => {
     expect(signInErrorText("rate_limited")).toBe("Perspicax is busy right now. Wait a minute and try again.");
     setLocale("fr");
     expect(signInErrorText("rate_limited")).toBe("Perspicax est occupé en ce moment. Attendez une minute et réessayez.");
+  });
+});
+
+describe("the desktop app's browser sign-in", () => {
+  it("waits with Cancel and Reopen the browser, in English and Quebec French", () => {
+    const html = renderToStaticMarkup(createElement(BrowserSignInWaiting, { onCancel: () => {}, onReopen: () => {} }));
+    expect(html).toContain("Finish signing in in your browser.");
+    expect(html).toContain(">Cancel<");
+    expect(html).toContain(">Reopen the browser<");
+    setLocale("fr");
+    const fr = renderToStaticMarkup(createElement(BrowserSignInWaiting, { onCancel: () => {}, onReopen: () => {} }));
+    expect(fr).toContain(">Annuler<");
+    expect(fr).toContain(">Rouvrir le navigateur<");
+  });
+
+  it("says why it stopped", () => {
+    expect(browserSignInErrorText("timeout")).toMatch(/took too long/);
+    expect(browserSignInErrorText("unsupported")).toMatch(/update the server/);
+    expect(browserSignInErrorText("browser")).toMatch(/browser could not be opened/);
+    expect(browserSignInErrorText("unreachable")).toMatch(/could not be reached/);
+    expect(browserSignInErrorText("other")).toBe("Sign-in did not finish. Try again.");
+    expect(signInErrorText("return")).toMatch(/cannot come back to the app/);
   });
 });
 
