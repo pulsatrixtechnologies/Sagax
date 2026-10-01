@@ -405,6 +405,8 @@ const appConfigSchema = z.object({
   }).optional(),
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt: z.number().optional(),
+  /** When every bot thread got its owner (server/thread-privacy.ts). */
+  privateThreadsMigratedAt: z.number().optional(),
   invites: z.array(z.object({
     token: z.string().min(1),
     email: z.string().max(320),
@@ -575,7 +577,7 @@ const appConfigSchema = z.object({
 const storedAppConfigSchema = appConfigSchema.extend({
   browserProfiles: storedBrowserProfilesSchema.optional(),
 });
-const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, identityMigratedAt: true, invites: true, mail: true })
+const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, cliStartup: true, customDomain: true, identityMigratedAt: true, privateThreadsMigratedAt: true, invites: true, mail: true })
   .extend({ threads: threadsPatchSchema.optional(), newBots: newBotsPatchSchema.optional() });
 const jsonObjectSchema = z.record(z.string(), z.json());
 
@@ -587,6 +589,8 @@ export interface AppConfig {
   organization?: { memberBotsUseOrgKey?: boolean; interimAttach?: { since: number; days: number } };
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt?: number;
+  /** When every bot thread got its owner (server/thread-privacy.ts). */
+  privateThreadsMigratedAt?: number;
   invites?: Array<{
     token: string;
     email: string;
@@ -1266,6 +1270,7 @@ export function saveConfig(
   if (checkedPatch.signIn !== undefined) disk.signIn = checkedPatch.signIn;
   if (checkedPatch.organization !== undefined) disk.organization = checkedPatch.organization;
   if (checkedPatch.identityMigratedAt !== undefined) disk.identityMigratedAt = checkedPatch.identityMigratedAt;
+  if (checkedPatch.privateThreadsMigratedAt !== undefined) disk.privateThreadsMigratedAt = checkedPatch.privateThreadsMigratedAt;
   if (checkedPatch.invites !== undefined) disk.invites = checkedPatch.invites;
   // Replaced whole: the mail route merges, and a field it removed (back to
   // the server's value) must not survive through a section merge.
