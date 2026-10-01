@@ -22,7 +22,6 @@ import {
   type MascotState,
 } from "./behavior";
 import { clickGesture, eventsForClick, newStroke, strokeLeave, strokeStep } from "./gestures";
-import { crossedThreshold, GAUGE_LINGER_MS, GAUGE_SEGMENTS, gaugeFor, gaugeShown, type FloatingContext } from "./gauge";
 import type { FloatingPilot } from "./pilot";
 import { mascotFor } from "./mascots";
 import { Balloon, BALLOON_MAX_W, type BalloonSide } from "./Balloon";
@@ -204,35 +203,6 @@ function Emote({ activity, hoot }: { activity: MascotActivity; hoot?: string }) 
   );
 }
 
-/** The bot's context left, as a game energy bar (gauge.ts): small at rest, bigger on hover. */
-function EnergyBar({ context, big, mini, shown = true }: { context?: FloatingContext | null; big?: boolean; mini?: boolean; shown?: boolean }) {
-  const gauge = gaugeFor(context);
-  if (!context || !gauge) return null;
-  return (
-    <span
-      className="fb-energy"
-      data-level={gauge.level}
-      data-pulse={gauge.pulse ? "" : undefined}
-      data-big={big ? "" : undefined}
-      data-shown={shown ? "" : undefined}
-      data-mini={mini ? "" : undefined}
-      role="meter"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={gauge.remaining}
-      aria-valuetext={context.detail || context.label}
-      aria-label={context.label}
-      title={context.detail || context.label}
-    >
-      <svg className="fb-energy-bolt" viewBox="0 0 12 16" aria-hidden="true"><path d="M7 0 L1 9 H5.5 L4.5 16 L11 6.5 H6.5 Z" fill="currentColor" /></svg>
-      <span className="fb-energy-bar" aria-hidden="true">
-        <span className="fb-energy-fill" style={{ width: `${gauge.remaining}%` }} />
-        {Array.from({ length: GAUGE_SEGMENTS - 1 }, (_, index) => <span key={index} className="fb-energy-tick" style={{ left: `${((index + 1) * 100) / GAUGE_SEGMENTS}%` }} />)}
-      </span>
-      {big && <span className="fb-energy-label" aria-hidden="true">{context.label}</span>}
-    </span>
-  );
-}
 
 /** Hearts after a game or a stroke, sparkles after a finished task. */
 function Burst({ kind, reduced }: { kind: "hearts" | "sparkles"; reduced: boolean }) {
@@ -266,7 +236,6 @@ function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnap
       }}
     >
       <span className="fb-away-ring" aria-hidden="true" />
-      <EnergyBar context={snapshot.context} mini />
       <svg className="fb-away-owl" viewBox="0 0 32 32" aria-hidden="true" style={{ color: `var(--fb-owl, currentColor)` }}>
         <path d="M8 6 L11 11 L21 11 L24 6 L25 14 C26 22 22 28 16 28 C10 28 6 22 7 14 Z" fill="currentColor" />
         <circle cx="12.5" cy="15" r="3" fill="#F8CA48" />
@@ -295,10 +264,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const mascotRef = useRef<MascotState>(newMascotState(now()));
   const [activity, setActivity] = useState<MascotActivity>("idle");
   const [away, setAway] = useState(false);
-  const [owlHover, setOwlHover] = useState(false);
-  // the energy bar shows while the person deals with the mascot, then lingers a moment
-  const [energyUntil, setEnergyUntil] = useState(0);
-  const [, setEnergyTick] = useState(0);
+  const [, setOwlHover] = useState(false);
   const owlHoverRef = useRef(false);
   const [burst, setBurst] = useState<{ kind: "hearts" | "sparkles"; key: number } | null>(null);
   const hitTest = useRef<((x: number, y: number) => boolean) | null>(null);
@@ -457,22 +423,6 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     // decided once per opening
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [balloonOpen]);
-  const interacting = owlHover || activity === "drag" || activity === "petted" || activity === "love" || Boolean(balloon);
-  const energyShown = gaugeShown({ interacting, lingerUntil: energyUntil }, now());
-  // keep it a moment after the interaction ends; show it a moment when the context crosses 50, 80 or 85 %
-  const percent = snapshot.context?.percent;
-  const lastPercent = useRef(percent);
-  useEffect(() => {
-    const crossed = crossedThreshold(lastPercent.current, percent);
-    lastPercent.current = percent;
-    if (!interacting && !crossed) return;
-    setEnergyUntil(now() + GAUGE_LINGER_MS);
-  }, [interacting, percent]);
-  useEffect(() => {
-    if (interacting || energyUntil <= now()) return;
-    const later = setTimeout(() => setEnergyTick((n) => n + 1), energyUntil - now() + 20);
-    return () => clearTimeout(later);
-  }, [interacting, energyUntil]);
 
 
   useEffect(() => {
@@ -688,7 +638,6 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
             <Character snapshot={snapshot} activity={activity} mascot={mascot} />
           </span>
         </button>
-        {!["flyOut", "return", "fly"].includes(activity) && <EnergyBar context={snapshot.context} big={owlHover} shown={energyShown} />}
         </>
         )}
       </div>
