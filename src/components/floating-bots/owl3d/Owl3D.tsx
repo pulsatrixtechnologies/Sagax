@@ -1,19 +1,20 @@
-// The 3D Sagax owl (preview style): the skinned model baked by
-// scripts/gen-owl-3d.ts from owl-art's own paths, played like three.js's
-// RobotExpressive example: an AnimationMixer with one action per mascot clip
-// and cross-fades between them, plus a little procedural life on top (it
-// faces the way it goes, looks at the pointer, blinks). Recolored per bot
-// with owl-art's palettes. Loaded lazily, with three.js, only when a bot's
-// owl is set to 3D; the flat owl stays the default.
+// The 3D Sagax owl (preview style): a modeled, rigged and animated owl
+// (tools/owl3d/build_owl.py, built in Blender) that is the same character as
+// the 2D owl-art. Played like three.js's RobotExpressive example: an
+// AnimationMixer with one action per authored clip and cross-fades between
+// them, plus a little procedural life on top (it turns toward the way it
+// goes, looks at the pointer, blinks). Recolored per bot with owl-art's
+// palettes, material by material. Loaded lazily, with three.js, only when a
+// bot's owl is set to 3D; the flat owl stays the default.
 import { useEffect, useRef } from "react";
 import {
   AmbientLight,
-  AnimationClip,
   AnimationMixer,
   CanvasTexture,
   Color,
-  DoubleSide,
   DirectionalLight,
+  DoubleSide,
+  FrontSide,
   HemisphereLight,
   LoopOnce,
   LoopRepeat,
@@ -22,25 +23,26 @@ import {
   MeshStandardMaterial,
   PerspectiveCamera,
   PlaneGeometry,
+  Quaternion,
   Raycaster,
   Scene,
   SRGBColorSpace,
   Vector2,
+  Vector3,
   WebGLRenderer,
   type AnimationAction,
+  type AnimationClip,
   type Bone,
-  type KeyframeTrack,
   type Object3D,
-  type SkinnedMesh,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { MAUS_COLORS } from "@/lib/mascot";
-import { owlPalette, shade, type OwlPalette } from "@/lib/owl/owl-art";
+import { owlPalette, type OwlPalette } from "@/lib/owl/owl-art";
 import { owlSkinId, owlSkinPalette } from "@/lib/owl/owl-skins";
 import { blinkAt, type MascotActivity, type MascotFrame } from "../behavior";
+import { CLIP_MS, isTimed, type ClipName } from "../clips";
 import { fitOwlCamera } from "./fit3d";
-import { flatTurn } from "../Owl25D";
 import owlUrl from "./owl.glb?url";
 
 export interface Owl3DProps {
@@ -56,14 +58,75 @@ export interface Owl3DProps {
   onFail: () => void;
 }
 
-/** Clips that loop until the activity changes; the others play once and hold. */
-const LOOPS = new Set<MascotActivity>(["idle", "walk", "fly", "drag", "working", "sleep"]);
-const FADE_S = 0.25;
-/** The head's turn, clip and gaze together, never past this (radians, about 25 degrees): the head is a layer of the body. */
-const HEAD_YAW_MAX = 0.45;
+/** The model's clips (tools/owl3d/build_owl.py, CLIPS). */
+export const OWL_CLIPS = [
+  "idle", "blink", "lookLeft", "lookRight", "tilt", "walk", "hop", "turn", "takeoff", "fly", "glide", "land",
+  "wave", "spread", "ruffle", "preen", "peck", "sleep", "wake", "dance", "sad", "startled", "celebrate", "hug",
+] as const;
+export type OwlClip = (typeof OWL_CLIPS)[number];
 
-/** The parts a skin's finish applies to. */
-const FEATHERS = new Set(["plumage", "wingNear", "wingFar", "lid"]);
+/** Which of the model's clips plays each mascot activity (behavior.ts picks the activity). */
+export const OWL_CLIP_FOR: Record<ClipName, OwlClip> = {
+  idle: "idle",
+  working: "idle",
+  look: "lookLeft",
+  lookBack: "lookRight",
+  headSpin: "lookRight",
+  tilt: "tilt",
+  confused: "tilt",
+  think: "tilt",
+  bob: "tilt",
+  turn: "turn",
+  spin: "celebrate",
+  celebrate: "celebrate",
+  backflip: "hop",
+  hop: "hop",
+  hopForward: "hop",
+  jump: "hop",
+  wave: "wave",
+  dance: "dance",
+  stretch: "wake",
+  yawn: "wake",
+  wake: "wake",
+  wingStretch: "spread",
+  hoot: "spread",
+  preen: "preen",
+  scratch: "preen",
+  peck: "peck",
+  ruffle: "ruffle",
+  angry: "ruffle",
+  shy: "hug",
+  love: "hug",
+  petted: "hug",
+  wink: "blink",
+  doubleBlink: "blink",
+  surprised: "startled",
+  startled: "startled",
+  land: "land",
+  sad: "sad",
+  sleep: "sleep",
+  walk: "walk",
+  fly: "fly",
+  drag: "fly",
+  flyOut: "takeoff",
+  return: "glide",
+};
+
+/** Activities whose clip loops until the activity changes; the others play once and hold. */
+const LOOPS = new Set<MascotActivity>(["idle", "working", "walk", "fly", "drag", "sleep", "return"]);
+/** Activities on the move: the owl turns further toward where it goes. */
+const MOVING = new Set<MascotActivity>(["walk", "fly", "drag", "flyOut", "return", "turn"]);
+/** Activities that leave the eyes to the pointer (the others look where their clip looks). */
+const GAZING = new Set<MascotActivity>(["idle", "working", "tilt", "think", "confused", "bob", "wave", "dance", "hoot"]);
+const FADE_S = 0.25;
+/** How far it turns toward its side: a 3/4 view at rest, nearly a profile on the move (radians). */
+export const FACE_YAW = { rest: 0.6, moving: 1.1 } as const;
+/** The pointer turns the head this much at most on top of the clip, and the eyes this much (radians). */
+export const GAZE_HEAD_MAX = 0.35;
+export const GAZE_EYE_MAX = 0.26;
+
+/** The parts a skin's finish applies to (the feathers). */
+const FEATHERS = new Set(["plumage", "wing", "lid"]);
 
 /** Each owl skin in 3D: how the feathers shine or glow (the 2D owl draws effect layers instead). */
 export function skinFinish(skin: string): { metalness: number; roughness: number; emissive: string; glow: number; pulse: number } {
@@ -81,17 +144,16 @@ export function skinFinish(skin: string): { metalness: number; roughness: number
     case "lightning":
       return { metalness: 0.2, roughness: 0.45, emissive: "#ffe14a", glow: 0.35, pulse: 0.5 };
     default:
-      return { metalness: 0, roughness: 0.75, emissive: "#000000", glow: 0, pulse: 0 };
+      return { metalness: 0, roughness: 0.8, emissive: "#000000", glow: 0, pulse: 0 };
   }
 }
 
-/** Each part's color from the bot's palette (the parts are named by the generator). */
+/** Each material's color from the bot's palette (the materials are named by the model). */
 export function partColors(palette: OwlPalette): Record<string, string> {
   return {
     plumage: palette.plumage,
     lid: palette.plumage,
-    wingNear: palette.wingNear,
-    wingFar: shade(palette.wingNear, 0.25),
+    wing: palette.wingNear,
     cream: palette.cream,
     spots: palette.grey,
     feet: palette.greyDark,
@@ -103,24 +165,61 @@ export function partColors(palette: OwlPalette): Record<string, string> {
   };
 }
 
-/** One clip cut out of the baked timeline, re-sampled so it starts and ends exactly on its frames. */
-export function cutClip(timeline: AnimationClip, name: string, range: [number, number], fps: number): AnimationClip {
-  const [start, end] = range;
-  const count = end - start + 1;
-  const tracks = timeline.tracks.map((track) => {
-    // every keyframe track makes its own interpolant (quaternions slerp); the typings omit the method
-    const interpolant = (track as unknown as { createInterpolant(): { evaluate(time: number): ArrayLike<number> } }).createInterpolant();
-    const size = track.getValueSize();
-    const times = new Float32Array(count);
-    const values = new Float32Array(count * size);
-    for (let i = 0; i < count; i += 1) {
-      times[i] = i / fps;
-      values.set(interpolant.evaluate((start + i) / fps), i * size);
+/** How fast an activity's clip plays so it lasts as long as behavior.ts gives the activity. */
+export function clipSpeed(activity: MascotActivity, clipSeconds: number): number {
+  if (!isTimed(activity) || clipSeconds <= 0) return 1;
+  return Math.min(2.2, Math.max(0.5, clipSeconds / (CLIP_MS[activity] / 1000)));
+}
+
+/** The yaw that faces the owl toward its side (face 1 its natural side, the screen's right; -1 the left). */
+export function facingYaw(face: number, moving: boolean): number {
+  const f = Math.min(1, Math.max(-1, face));
+  return f * (moving ? FACE_YAW.moving : FACE_YAW.rest);
+}
+
+const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
+
+/**
+ * The procedural layer over the clips: the head and eyes turned toward the pointer and the
+ * blink, set just before drawing and undone right after. The mixer only writes what its
+ * clips animate, so nothing set here may stay: an offset kept would add up frame after frame.
+ */
+export function createOverlay(parts: { head: Bone | null; eyes: Bone[]; lids: { influences: number[]; blink: number }[] }) {
+  const axis = (bone: Bone, world: Vector3) => {
+    const q = new Quaternion();
+    bone.updateWorldMatrix(true, false);
+    bone.getWorldQuaternion(q);
+    return world.clone().applyQuaternion(q.invert()).normalize();
+  };
+  // the model's up and right axes in each bone's own frame, read once at rest
+  const headUp = parts.head ? axis(parts.head, new Vector3(0, 1, 0)) : null;
+  const eyeAxes = parts.eyes.map((eye) => ({ eye, up: axis(eye, new Vector3(0, 1, 0)), right: axis(eye, new Vector3(1, 0, 0)) }));
+  const turn = new Quaternion();
+  const tilt = new Quaternion();
+  return (look: { x: number; y: number }, blink: number) => {
+    const saved: (() => void)[] = [];
+    if (parts.head && headUp) {
+      const head = parts.head;
+      const before = head.quaternion.clone();
+      head.quaternion.multiply(turn.setFromAxisAngle(headUp, clamp(look.x, -1, 1) * GAZE_HEAD_MAX));
+      saved.push(() => head.quaternion.copy(before));
     }
-    const Track = track.constructor as new (name: string, times: Float32Array, values: Float32Array) => KeyframeTrack;
-    return new Track(track.name, times, values);
-  });
-  return new AnimationClip(name, (count - 1) / fps, tracks);
+    for (const { eye, up, right } of eyeAxes) {
+      const before = eye.quaternion.clone();
+      eye.quaternion.multiply(turn.setFromAxisAngle(up, clamp(look.x, -1, 1) * GAZE_EYE_MAX)).multiply(tilt.setFromAxisAngle(right, -clamp(look.y, -1, 1) * GAZE_EYE_MAX * 0.7));
+      saved.push(() => eye.quaternion.copy(before));
+    }
+    for (const lid of parts.lids) {
+      const before = lid.influences[lid.blink];
+      lid.influences[lid.blink] = Math.max(before, clamp(blink, 0, 1));
+      saved.push(() => {
+        lid.influences[lid.blink] = before;
+      });
+    }
+    return () => {
+      for (const undo of saved) undo();
+    };
+  };
 }
 
 /** A soft round shadow under the owl, drawn once. */
@@ -167,9 +266,9 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
     camera.position.set(fit.target.x, fit.target.y, fit.distance);
     camera.lookAt(fit.target.x, fit.target.y, 0);
     // bright and soft: a sky fill, a key from the front left, a rim from behind
-    scene.add(new HemisphereLight(0xffffff, 0xf3e7d8, 1.7));
-    scene.add(new AmbientLight(0xffffff, 0.35));
-    const key = new DirectionalLight(0xffffff, 1.2);
+    scene.add(new HemisphereLight(0xffffff, 0xe9e2d8, 0.9));
+    scene.add(new AmbientLight(0xffffff, 0.2));
+    const key = new DirectionalLight(0xffffff, 1.5);
     key.position.set(-2, 3, 5);
     scene.add(key);
     const rim = new DirectionalLight(0xdfe8ff, 1.1);
@@ -185,29 +284,44 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
     let last = 0;
     let mixer: AnimationMixer | null = null;
     let owl: Object3D | null = null;
+    const clips = new Map<string, AnimationClip>();
     const actions = new Map<string, AnimationAction>();
     let current: AnimationAction | null = null;
-    let playing = "";
-    let headBone: Bone | null = null;
-    let lid: SkinnedMesh | null = null;
+    let playing: MascotActivity | null = null;
+    let overlay: ReturnType<typeof createOverlay> | null = null;
     const solids: Mesh[] = [];
-    let facing = 1;
-    let gaze = 0;
+    let yaw = 0;
+    let turned = false;
+    const look = { x: 0, y: 0 };
     let skinPulse = 0;
     const raycaster = new Raycaster();
 
-    const play = (name: string) => {
-      if (!mixer || name === playing) return;
-      const action = actions.get(name) ?? actions.get("idle");
-      if (!action) return;
-      playing = name;
-      action.reset();
-      action.setLoop(LOOPS.has(name as MascotActivity) ? LoopRepeat : LoopOnce, Infinity);
-      action.clampWhenFinished = true;
-      action.enabled = true;
-      action.play();
-      if (current && current !== action) current.crossFadeTo(action, FADE_S, false);
-      current = action;
+    const play = (activity: MascotActivity) => {
+      if (!mixer || activity === playing) return;
+      const name = OWL_CLIP_FOR[activity] ?? "idle";
+      const clip = clips.get(name) ?? clips.get("idle");
+      if (!clip) return;
+      let action = actions.get(name);
+      if (!action) {
+        action = mixer.clipAction(clip);
+        actions.set(name, action);
+      }
+      playing = activity;
+      const loops = LOOPS.has(activity);
+      if (current === action) {
+        // the same clip for a new activity: start it over, no fade (a fade to itself would hold it still)
+        action.reset().play();
+      } else {
+        action.reset();
+        action.enabled = true;
+        action.setEffectiveWeight(1);
+        action.play();
+        if (current) current.crossFadeTo(action, FADE_S, false);
+        current = action;
+      }
+      action.setLoop(loops ? LoopRepeat : LoopOnce, Infinity);
+      action.clampWhenFinished = !loops;
+      action.timeScale = clipSpeed(activity, clip.duration);
     };
 
     const loader = new GLTFLoader();
@@ -218,41 +332,48 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
         if (disposed) return;
         owl = gltf.scene;
         scene.add(owl);
+        const lids: { influences: number[]; blink: number }[] = [];
+        let head: Bone | null = null;
+        const eyes: Bone[] = [];
         owl.traverse((node) => {
-          const mesh = node as SkinnedMesh;
+          const mesh = node as Mesh;
           if (mesh.isMesh) {
-            // both sides: a mirrored skinned mesh turns inside out, and a culled face would cut a part away
-            mesh.material = new MeshStandardMaterial({ roughness: 0.75, metalness: 0, side: DoubleSide });
+            const name = (mesh.material as MeshStandardMaterial).name;
+            // a lid is a thin shell, seen from both sides; every other part is closed
+            const material = new MeshStandardMaterial({ name, roughness: 0.8, metalness: 0, side: name === "lid" ? DoubleSide : FrontSide });
+            mesh.material = material;
             mesh.frustumCulled = false;
             solids.push(mesh);
-            if (mesh.name === "lid") lid = mesh;
+            const blink = mesh.morphTargetDictionary?.blink;
+            if (blink !== undefined && mesh.morphTargetInfluences) lids.push({ influences: mesh.morphTargetInfluences, blink });
           }
-          if ((node as Bone).isBone && node.name === "headBone") headBone = node as Bone;
+          if ((node as Bone).isBone) {
+            if (node.name === "head") head = node as Bone;
+            if (node.name === "eyeL" || node.name === "eyeR" || node.name === "eye.L" || node.name === "eye.R") eyes.push(node as Bone);
+          }
         });
+        overlay = createOverlay({ head, eyes, lids });
         recolor.current = (tint, wear) => {
           const hex = (MAUS_COLORS as Record<string, string>)[tint] ?? tint;
           const colors = partColors(owlSkinPalette(owlSkinId(wear), owlPalette(hex), hex));
           const finish = skinFinish(owlSkinId(wear));
           for (const mesh of solids) {
-            const value = colors[mesh.name];
             const material = mesh.material as MeshStandardMaterial;
+            const value = colors[material.name];
             if (value) material.color = new Color(value);
             // the skin's look in 3D: a sheen, a glow, a frost, on the feathers only
-            const feathers = FEATHERS.has(mesh.name);
+            const feathers = FEATHERS.has(material.name);
+            const shiny = material.name === "iris" || material.name === "pupil" || material.name === "highlight";
             material.metalness = feathers ? finish.metalness : 0;
-            material.roughness = feathers ? finish.roughness : 0.75;
+            material.roughness = feathers ? finish.roughness : shiny ? 0.3 : 0.7;
             material.emissive = new Color(feathers ? finish.emissive : "#000000");
             material.emissiveIntensity = feathers ? finish.glow : 0;
           }
           skinPulse = finish.pulse;
         };
         recolor.current(color, skin);
-        const info = (gltf.scene.getObjectByName("owl")?.userData ?? {}) as { clips?: Record<string, [number, number]>; fps?: number };
-        const timeline = gltf.animations[0];
         mixer = new AnimationMixer(owl);
-        if (timeline && info.clips) {
-          for (const [name, range] of Object.entries(info.clips)) actions.set(name, mixer.clipAction(cutClip(timeline, name, range, info.fps ?? 20)));
-        }
+        for (const clip of gltf.animations) clips.set(clip.name, clip);
         play(live.current.activity);
       },
       undefined,
@@ -269,32 +390,32 @@ export default function Owl3D({ color, skin, activity, stage, owlSize, frame, fp
       const dt = Math.min(1 / 30, (now - (last || now)) / 1000);
       last = now;
       if (!mixer || !owl) return;
-      play(live.current.activity);
+      const activity = live.current.activity;
+      play(activity);
       mixer.update(dt);
-      // on top of the clip: face the way it goes, look at the pointer, blink. The mixer only
-      // writes a value when the clip changes it, so every offset here is undone after drawing:
-      // nothing may build up frame after frame (that made the head turn and stay sideways).
       const f = live.current.frame(now);
-      // facing the other way is a mirror of the whole model through a quick squash; a half turn
-      // would show the model's flat back (it is the 2D art given depth, not a sculpture)
-      facing += ((f.face ?? 1) - facing) * (1 - Math.exp(-dt / 0.08));
-      const turn = flatTurn(facing);
-      owl.scale.set(turn.sx, turn.sy, 1);
-      gaze += ((live.current.activity === "idle" ? f.pupilX * 0.35 : 0) - gaze) * (1 - Math.exp(-dt / 0.2));
-      const head = headBone as Bone | null;
-      const lidMesh = lid as SkinnedMesh | null;
-      const headYaw = head?.rotation.y ?? 0;
-      const lidWeight = lidMesh?.morphTargetInfluences?.[0] ?? 0;
-      if (head) head.rotation.y = Math.min(HEAD_YAW_MAX, Math.max(-HEAD_YAW_MAX, headYaw + gaze));
+      // it turns toward the way it goes: a real turn in depth, through facing the camera
+      const ease = (tau: number) => 1 - Math.exp(-dt / tau);
+      const towards = facingYaw(f.face ?? 1, MOVING.has(activity));
+      // the first frame starts facing its way; after that every change of side is a turn
+      yaw = turned ? yaw + (towards - yaw) * ease(0.12) : towards;
+      turned = true;
+      owl.rotation.y = yaw;
+      const gazing = GAZING.has(activity);
+      look.x += ((gazing ? f.pupilX : 0) - look.x) * ease(0.2);
+      look.y += ((gazing ? f.pupilY : 0) - look.y) * ease(0.2);
       if (skinPulse > 0) {
         // a glowing skin breathes (lightning flickers faster)
         const glow = 0.5 + 0.5 * Math.sin((now / 1000) * Math.PI * 2 * (skinPulse > 0.4 ? 3 : 0.8));
-        for (const mesh of solids) if (FEATHERS.has(mesh.name)) (mesh.material as MeshStandardMaterial).emissiveIntensity = 0.2 + glow * skinPulse;
+        for (const mesh of solids) {
+          const material = mesh.material as MeshStandardMaterial;
+          if (FEATHERS.has(material.name)) material.emissiveIntensity = 0.2 + glow * skinPulse;
+        }
       }
-      if (lidMesh?.morphTargetInfluences) lidMesh.morphTargetInfluences[0] = Math.max(lidWeight, blinkAt(now));
+      // on top of the clip, for this frame only: the gaze and the blink (asleep, the clip keeps the eyes shut)
+      const undo = overlay?.(look, activity === "sleep" ? 0 : blinkAt(now));
       renderer.render(scene, camera);
-      if (head) head.rotation.y = headYaw;
-      if (lidMesh?.morphTargetInfluences) lidMesh.morphTargetInfluences[0] = lidWeight;
+      undo?.();
     };
     raf = requestAnimationFrame(tick);
     onHitTest((x, y) => {

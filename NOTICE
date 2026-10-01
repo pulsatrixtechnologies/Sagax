@@ -38,3 +38,9 @@ The Pulsatrix and Pulsatrix Light skins use the Geist typeface, Copyright
 2024 The Geist Project Authors (https://github.com/vercel/geist-font),
 bundled from @fontsource-variable/geist and used under the SIL Open Font
 License, Version 1.1 (third_party/geist/OFL.txt).
+
+The 3D Sagax owl (src/components/floating-bots/owl3d/owl.glb) is original
+work of this project: modeled, rigged and animated from scratch by
+tools/owl3d/build_owl.py, after the project's own 2D owl art. Blender is only
+the tool that runs that script; no third-party model, texture or animation
+is included.
