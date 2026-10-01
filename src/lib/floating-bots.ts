@@ -4,8 +4,36 @@
 // character, its balloon, the desktop windows' brain) lives behind a dynamic
 // import in src/components/floating-bots, fetched only once a bot floats.
 
+/** Which character stands for a bot on the desktop (src/components/floating-bots/mascots.tsx). */
+export type FloatingMascotKind = "owl" | "body" | "trombi";
+export const FLOATING_MASCOT_KINDS: readonly FloatingMascotKind[] = ["owl", "body", "trombi"];
+
+export interface FloatingMascotChoice {
+  kind: FloatingMascotKind;
+  /** The original body shape (shared/mascot-bodies.ts), for kind "body". */
+  body?: string;
+  /** The owl drawn flat (2D, the default) or in 3D (preview). */
+  style?: "2d" | "3d";
+}
+
+const BODY_ID = /^[a-z]{1,24}$/;
+
+/** A saved or reported choice, kept only when well-formed. */
+export function cleanMascotChoice(value: unknown): FloatingMascotChoice | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const choice = value as { kind?: unknown; body?: unknown; style?: unknown };
+  if (!FLOATING_MASCOT_KINDS.includes(choice.kind as FloatingMascotKind)) return undefined;
+  return {
+    kind: choice.kind as FloatingMascotKind,
+    ...(typeof choice.body === "string" && BODY_ID.test(choice.body) ? { body: choice.body } : {}),
+    ...(choice.style === "3d" || choice.style === "2d" ? { style: choice.style } : {}),
+  };
+}
+
 export interface FloatingBotEntry {
   id: string;
+  /** The character on the desktop; the owl when absent. */
+  mascot?: FloatingMascotChoice;
   /** Desktop: keep the bot's window above other apps. On unless switched off. */
   top: boolean;
   /** Browser and phone: the character's offset from the viewport's bottom-right corner. */
@@ -43,11 +71,12 @@ export function readFloatingBots(storage: FloatingStorage | undefined = defaultS
   const entries: FloatingBotEntry[] = [];
   for (const item of list) {
     if (!item || typeof item !== "object") continue;
-    const value = item as { id?: unknown; top?: unknown; pos?: { right?: unknown; bottom?: unknown } };
+    const value = item as { id?: unknown; top?: unknown; pos?: { right?: unknown; bottom?: unknown }; mascot?: unknown };
     if (typeof value.id !== "string" || !BOT_ID.test(value.id) || seen.has(value.id)) continue;
     seen.add(value.id);
     const pos = value.pos && finite(value.pos.right) && finite(value.pos.bottom) ? { right: value.pos.right, bottom: value.pos.bottom } : undefined;
-    entries.push({ id: value.id, top: value.top !== false, ...(pos ? { pos } : {}) });
+    const mascot = cleanMascotChoice(value.mascot);
+    entries.push({ id: value.id, top: value.top !== false, ...(pos ? { pos } : {}), ...(mascot ? { mascot } : {}) });
     if (entries.length >= MAX_FLOATING_BOTS) break;
   }
   return entries;
@@ -114,6 +143,14 @@ export function setFloatingBotOnTop(botId: string, top: boolean, storage?: Float
   const list = entries();
   if (!list.some((entry) => entry.id === botId && entry.top !== top)) return;
   commit(list.map((entry) => (entry.id === botId ? { ...entry, top } : entry)), storage);
+}
+
+/** The character a bot wears on the desktop (the Mascot tab, the right-click menu). */
+export function setFloatingBotMascot(botId: string, choice: FloatingMascotChoice, storage?: FloatingStorage): void {
+  const clean = cleanMascotChoice(choice);
+  const list = entries();
+  if (!clean || !list.some((entry) => entry.id === botId)) return;
+  commit(list.map((entry) => (entry.id === botId ? { ...entry, mascot: clean } : entry)), storage);
 }
 
 /** Browser and phone: remember where the character was dropped. */

@@ -338,6 +338,19 @@ describe("floating bots: payload validation", () => {
     expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, task: "rm -rf", mood: Number.NaN })).toMatchObject({ task: "idle", mood: 0.6 });
   });
 
+  it("keeps the character a bot wears and the Mascot tab's texts, bounded", () => {
+    expect(sanitizeFloatingSnapshot(SNAPSHOT)).toMatchObject({ mascot: { kind: "owl", style: "2d" }, picker: null });
+    const clean = sanitizeFloatingSnapshot({
+      ...SNAPSHOT,
+      mascot: { kind: "trombi", style: "3d" },
+      picker: { tabs: "Tabs", chat: "Chat", mascot: "Mascot", kinds: { owl: "Owl", body: "Shapes" }, bodies: { star: "Star", "../x": "no" }, html: "<b>" },
+    });
+    expect(clean.mascot).toEqual({ kind: "trombi", style: "3d" });
+    expect(clean.picker.kinds).toEqual({ owl: "Owl", body: "Shapes", trombi: "trombi" });
+    expect(clean.picker.bodies).toEqual({ star: "Star" });
+    expect(clean.picker).not.toHaveProperty("html");
+  });
+
   it("keeps the activity level, the hoot and the context figures for the energy bar, bounded", () => {
     expect(sanitizeFloatingSnapshot(SNAPSHOT)).toMatchObject({ liveliness: "normal", context: null });
     const clean = sanitizeFloatingSnapshot({
@@ -364,6 +377,9 @@ describe("floating bots: payload validation", () => {
     expect(sanitizeFloatingEvent({ type: "click" })).toEqual({ type: "click" });
     expect(sanitizeFloatingEvent({ type: "play", extra: 1 })).toEqual({ type: "play" });
     expect(sanitizeFloatingEvent({ type: "pet" })).toEqual({ type: "pet" });
+    expect(sanitizeFloatingEvent({ type: "mascot", choice: { kind: "body", body: "star", extra: 1 } })).toEqual({ type: "mascot", choice: { kind: "body", body: "star" } });
+    expect(sanitizeFloatingEvent({ type: "mascot", choice: { kind: "dragon" } })).toBeNull();
+    expect(sanitizeFloatingEvent({ type: "mascot", choice: { kind: "body", body: "../x" } })).toEqual({ type: "mascot", choice: { kind: "body" } });
     expect(sanitizeFloatingEvent({ type: "menu", id: "dock" })).toEqual({ type: "menu", id: "dock" });
     expect(sanitizeFloatingEvent({ type: "menu", id: "../x" })).toBeNull();
     expect(sanitizeFloatingEvent({ type: "send", text: "q".repeat(5000) }).text.length).toBe(4000);

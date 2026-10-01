@@ -18,8 +18,11 @@ import {
   nextLiveliness,
   setFloatingBotOnTop,
   setFloatingFlyAway,
+  setFloatingBotMascot,
   setFloatingLiveliness,
+  FLOATING_MASCOT_KINDS,
   type FloatingLiveliness,
+  type FloatingMascotKind,
   setFloatingBotPosition,
   subscribeFloatingBots,
   unfloatBot,
@@ -38,14 +41,31 @@ import {
 import { FloatingBotView, MASCOT_SIZE, type FloatingMover } from "./FloatingBotView";
 import { floatingContext } from "./context";
 import { moodNow, raiseMood, readMoods, writeMoods, type MoodGain, type MoodRecord } from "./mood";
-import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type FloatingEvent, type FloatingSnapshot } from "./protocol";
+import { MASCOT_BODY_IDS } from "../../../shared/mascot-bodies";
+import { isFloatingEvent, type FloatingPickerLabels, type FloatingAvatar, type FloatingBotsBridge, type FloatingEvent, type FloatingSnapshot } from "./protocol";
 
 /** A picture bigger than this stays in the app; the window shows the owl instead. */
 const AVATAR_BYTES_MAX = 280_000;
 const CELEBRATE_MS = 1400;
 
-function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "normal"): FloatingLabels {
+/** The balloon's tabs and the Mascot tab, translated once. */
+function pickerLabels(): FloatingPickerLabels {
+  return {
+    tabs: t("floatingBots.tabs"),
+    chat: t("floatingBots.tab.chat"),
+    mascot: t("floatingBots.tab.mascot"),
+    kinds: { owl: t("floatingBots.mascot.owl"), body: t("floatingBots.mascot.body"), trombi: t("floatingBots.mascot.trombi") },
+    shape: t("floatingBots.mascot.shape"),
+    style: t("floatingBots.mascot.style"),
+    flat: t("floatingBots.mascot.flat"),
+    threeD: t("floatingBots.mascot.threeD"),
+    bodies: Object.fromEntries(MASCOT_BODY_IDS.map((id) => [id, t(`floatingBots.body.${id}`)])),
+  };
+}
+
+function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "normal", mascot: FloatingMascotKind = "owl"): FloatingLabels {
   const name = bot.name;
+  const picker = pickerLabels();
   return {
     character: t("floatingBots.aria", { name }),
     inputLabel: t("floatingBots.input.label", { name }),
@@ -71,6 +91,8 @@ function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "nor
     working: t("floatingBots.working", { name }),
     hoot: t("floatingBots.hoot"),
     menuLively: t("floatingBots.menu.lively", { level: t(`floatingBots.lively.${liveliness}`) }),
+    menuMascot: t("floatingBots.menu.mascot", { name: picker.kinds[mascot] }),
+    picker,
   };
 }
 
@@ -237,6 +259,9 @@ export function FloatingBots() {
       case "play":
         cheer(botId, "play");
         break;
+      case "mascot":
+        setFloatingBotMascot(botId, event.choice);
+        break;
       case "pet":
         cheer(botId, "pet");
         break;
@@ -255,6 +280,11 @@ export function FloatingBots() {
         else if (event.id === "dock") unfloatBot(botId);
         else if (event.id === "fly") setFloatingFlyAway(!floatingBotPrefs().flyAway);
         else if (event.id === "lively") setFloatingLiveliness(nextLiveliness(floatingBotPrefs().liveliness));
+        else if (event.id === "mascot") {
+          const current = floatingBots().find((candidate) => candidate.id === botId)?.mascot;
+          const kind = FLOATING_MASCOT_KINDS[(FLOATING_MASCOT_KINDS.indexOf(current?.kind ?? "owl") + 1) % FLOATING_MASCOT_KINDS.length];
+          setFloatingBotMascot(botId, { ...current, kind });
+        }
         else if (event.id === "top") {
           const entry = floatingBots().find((candidate) => candidate.id === botId);
           const top = !(entry?.top ?? true);
@@ -285,7 +315,7 @@ export function FloatingBots() {
         bot,
         session,
         status,
-        labels: labelsFor(bot, prefs.liveliness),
+        labels: labelsFor(bot, prefs.liveliness, entry?.mascot?.kind),
         avatar,
         retro,
         reduced,
@@ -294,6 +324,7 @@ export function FloatingBots() {
         mood: moodNow(moods[bot.id], clock),
         flyAway: prefs.flyAway,
         liveliness: prefs.liveliness,
+        mascot: entry?.mascot,
         context: floatingContext(bot.tasks?.find((task) => task.threadId === (session.threadId ?? bot.threadId))?.usage),
       }),
     };

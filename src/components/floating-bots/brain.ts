@@ -3,10 +3,11 @@
 // may stand. The main app page runs it for every floated bot and sends the
 // result to that bot's window (desktop) or draws it itself (browser, phone).
 import type { Bot, Message, Task } from "@/state/store";
-import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPose, FloatingSnapshot, MascotTask } from "./protocol";
+import type { FloatingAvatar, FloatingBalloon, FloatingMenuItem, FloatingPickerLabels, FloatingPose, FloatingSnapshot, MascotTask } from "./protocol";
 import { moodLevel } from "./mood";
 import type { Liveliness } from "./behavior";
 import type { FloatingContext } from "./gauge";
+import type { FloatingMascotChoice } from "@/lib/floating-bots";
 
 /** What the balloon keeps of a long reply; the rest is one click away in the app. */
 export const BALLOON_REPLY_CHARS = 3000;
@@ -66,6 +67,10 @@ export interface FloatingLabels {
   hoot?: string;
   /** "Activity: normal", the menu item that cycles the activity level. */
   menuLively?: string;
+  /** "Mascot: Owl", the menu item that cycles the characters. */
+  menuMascot?: string;
+  /** The balloon's tabs and the Mascot tab. */
+  picker?: FloatingPickerLabels;
 }
 
 export type FloatingBot = Pick<Bot, "id" | "name" | "color" | "mascotSkin" | "threadId" | "messages" | "busy" | "activity"> & {
@@ -142,6 +147,7 @@ export function floatingMenu(labels: FloatingLabels, session: FloatingSession, a
     ...(alwaysOnTop === null ? [] : [{ id: "top", label: labels.menuTop, checked: alwaysOnTop }]),
     { id: "fly", label: labels.menuFly, checked: flyAway },
     ...(labels.menuLively ? [{ id: "lively", label: labels.menuLively }] : []),
+    ...(labels.menuMascot ? [{ id: "mascot", label: labels.menuMascot }] : []),
     { id: "dock", label: labels.menuDock },
   ];
 }
@@ -177,6 +183,8 @@ export interface FloatingInput {
   liveliness?: Liveliness;
   /** The followed thread's context use (context.ts), for the energy bar. */
   context?: FloatingContext | null;
+  /** The character the bot wears on the desktop. */
+  mascot?: FloatingMascotChoice;
 }
 
 /** The pose and balloon for this moment, as one snapshot. */
@@ -240,6 +248,8 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
     },
     liveliness: input.liveliness ?? "normal",
     context: input.context ?? null,
+    mascot: input.mascot ?? { kind: "owl", style: "2d" },
+    ...(labels.picker ? { picker: labels.picker } : {}),
   };
 }
 

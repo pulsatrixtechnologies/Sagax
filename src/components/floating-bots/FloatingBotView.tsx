@@ -24,7 +24,8 @@ import {
 import { newStroke, strokeLeave, strokeStep } from "./gestures";
 import { GAUGE_SEGMENTS, gaugeFor, type FloatingContext } from "./gauge";
 import type { FloatingPilot } from "./pilot";
-import Owl25D from "./Owl25D";
+import { DEFAULT_MASCOT, mascotFor } from "./mascots";
+import { MascotPicker } from "./MascotPicker";
 import { mascotStage } from "./fit";
 import { mascotFields, type FloatingEvent, type FloatingPose, type FloatingSnapshot } from "./protocol";
 
@@ -111,8 +112,10 @@ interface CharacterProps {
   };
 }
 
-function Character({ snapshot, mascot }: CharacterProps) {
+function Character({ snapshot, activity, mascot }: CharacterProps) {
   const { avatar } = snapshot;
+  // the character the bot wears (mascots.tsx); the owl unless chosen otherwise
+  const entry = mascotFor(snapshot.mascot);
   return (
     <>
       {avatar && (
@@ -121,7 +124,18 @@ function Character({ snapshot, mascot }: CharacterProps) {
           <img src={avatar.src} alt="" draggable={false} style={{ objectPosition: `${avatar.focusX * 100}% ${avatar.focusY * 100}%` }} />
         </span>
       )}
-      <Owl25D color={snapshot.color} skin={snapshot.skin} size={OWL_SIZE} frame={mascot.frame} fps={mascot.fps} onHitTest={mascot.onHitTest} />
+      <entry.Render
+        key={entry.id}
+        color={snapshot.color}
+        skin={snapshot.skin}
+        choice={snapshot.mascot ?? DEFAULT_MASCOT}
+        size={OWL_SIZE}
+        activity={activity}
+        pose={snapshot.pose}
+        frame={mascot.frame}
+        fps={mascot.fps}
+        onHitTest={mascot.onHitTest}
+      />
     </>
   );
 }
@@ -236,6 +250,8 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   // an older brain may not send the mascot's fields yet
   const snapshot: FloatingSnapshot = given.hints ? given : { ...given, ...mascotFields(given) };
   const [menuOpen, setMenuOpen] = useState(false);
+  /** The balloon's tab: the conversation, or the Mascot tab. */
+  const [tab, setTab] = useState<"chat" | "mascot">("chat");
   const [draft, setDraft] = useState("");
   const drag = useRef<{ x: number; y: number; moved: boolean; id: number; timer?: ReturnType<typeof setTimeout>; menu?: boolean } | null>(null);
   const hovering = useRef(false);
@@ -545,6 +561,33 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
                 ×
               </button>
             </div>
+            {snapshot.picker && (
+              <div className="fb-tabs" role="tablist" aria-label={snapshot.picker.tabs}>
+                {(["chat", "mascot"] as const).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === id}
+                    data-tab={id}
+                    className={cn("fb-tab", tab === id && "fb-tab-on")}
+                    onClick={() => setTab(id)}
+                  >
+                    {id === "chat" ? snapshot.picker!.chat : snapshot.picker!.mascot}
+                  </button>
+                ))}
+              </div>
+            )}
+            {tab === "mascot" && snapshot.picker ? (
+              <MascotPicker
+                color={snapshot.color}
+                skin={snapshot.skin}
+                choice={snapshot.mascot}
+                labels={snapshot.picker}
+                onChoose={(choice) => onEvent({ type: "mascot", choice })}
+              />
+            ) : (
+            <>
             {balloon.asked && balloon.kind !== "approval" && <p className="fb-asked">{balloon.asked}</p>}
             <div
               ref={textRef}
@@ -583,6 +626,8 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
                   {balloon.input.send}
                 </button>
               </form>
+            )}
+            </>
             )}
           </div>
         </div>

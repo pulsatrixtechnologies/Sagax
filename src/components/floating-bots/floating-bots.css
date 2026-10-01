@@ -310,6 +310,90 @@ html[data-floating-bot] #root {
   text-align: center;
 }
 
+/* the balloon's tabs (Conversation | Mascot) and the Mascot tab */
+.fb-root .fb-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 2px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-ink, #000) 6%, transparent);
+}
+.fb-root .fb-tab {
+  flex: 1;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-ink-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fb-root .fb-tab-on {
+  background: var(--color-elevated);
+  color: var(--color-ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+.fb-root .fb-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fb-root .fb-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fb-root .fb-picker-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 72px;
+  padding: 6px 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: none;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.fb-root .fb-picker-thumb {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+}
+.fb-root .fb-picker-shape {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+.fb-root .fb-picker-pill {
+  padding: 3px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: none;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fb-root .fb-picker-on {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent) inset;
+}
+
 /* ─── the character ──────────────────────────────────────────────────── */
 
 .fb-root .fb-stage {

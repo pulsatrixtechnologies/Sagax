@@ -4,6 +4,7 @@
 
 import type { Liveliness, MascotTask } from "./behavior";
 import type { FloatingContext } from "./gauge";
+import { cleanMascotChoice, type FloatingMascotChoice, type FloatingMascotKind } from "@/lib/floating-bots";
 
 export type FloatingPose = "idle" | "think" | "speak" | "celebrate" | "alert" | "sleep";
 export type { MascotTask };
@@ -68,6 +69,22 @@ export interface FloatingSnapshot {
   liveliness?: Liveliness;
   /** The followed thread's context use, for the energy bar; null before its first turn. */
   context?: FloatingContext | null;
+  /** The character this bot wears on the desktop (mascots.tsx); the owl when absent. */
+  mascot?: FloatingMascotChoice;
+  /** The balloon's tabs and the Mascot tab's texts, translated by the brain. */
+  picker?: FloatingPickerLabels;
+}
+
+export interface FloatingPickerLabels {
+  tabs: string;
+  chat: string;
+  mascot: string;
+  kinds: Record<FloatingMascotKind, string>;
+  shape: string;
+  style: string;
+  flat: string;
+  threeD: string;
+  bodies: Record<string, string>;
 }
 
 /**
@@ -76,6 +93,8 @@ export interface FloatingSnapshot {
  */
 export type FloatingEvent =
   | { type: "click" | "context" | "dismiss" | "open" | "play" | "pet" }
+  /** The Mascot tab: wear another character. */
+  | { type: "mascot"; choice: FloatingMascotChoice }
   | { type: "menu"; id: string }
   | { type: "send"; text: string };
 
@@ -160,5 +179,6 @@ export function isFloatingEvent(value: unknown): value is FloatingEvent {
   const event = value as { type?: unknown; id?: unknown; text?: unknown };
   if (event.type === "menu") return typeof event.id === "string" && ID.test(event.id);
   if (event.type === "send") return typeof event.text === "string" && event.text.trim().length > 0;
+  if (event.type === "mascot") return Boolean(cleanMascotChoice((value as { choice?: unknown }).choice));
   return ["click", "context", "dismiss", "open", "play", "pet"].includes(event.type as string);
 }
