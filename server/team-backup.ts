@@ -61,7 +61,8 @@ export interface TeamBackupOptions {
   botIds?: ReadonlySet<string>;
   groupIds?: ReadonlySet<string>;
   /** Run over message text, instructions, description, playbook
-   * instructions and memory (memory is always scrubbed). */
+   * instructions, routine prompts, room bulletins, task and room titles
+   * and memory (memory is always scrubbed). */
   scrub?: (text: string) => string;
   /** False: the bot travels with one empty "Conversation". */
   threads?: (botId: string) => boolean;
@@ -74,6 +75,10 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
   const chosenGroups = options.groupIds ? store.groups.filter((group) => options.groupIds!.has(group.id)) : store.groups;
   const botIds = new Set(chosenBots.map((bot) => bot.id));
   const text = options.scrub ?? ((value: string) => value);
+  // Free text a person typed (a routine prompt, a room bulletin, a title)
+  // can hold a pasted key just like a message: scrubbed when asked.
+  const typed = <T extends string | undefined>(value: T): T =>
+    (options.scrub && typeof value === "string" ? text(value) : value) as T;
   const warnings: string[] = [];
   const history = (record: BotRecord | GroupRecord): BackupTask[] => {
     if (options.threads && store.bot(record.id) && !options.threads(record.id)) {
@@ -81,7 +86,7 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
     }
     const tasks = record.tasks?.length ? record.tasks : [{ threadId: record.threadId, title: "Conversation", createdAt: record.createdAt }];
     return tasks.map((task) => ({
-      key: task.threadId, title: task.title, createdAt: task.createdAt,
+      key: task.threadId, title: typed(task.title), createdAt: task.createdAt,
       // Whether the first message already named this task travels with it:
       // without the marker a restore could re-arm one generated title on a
       // row that had already used it.
@@ -109,10 +114,10 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
   };
   const groups = chosenGroups.map((group) => {
     const memberIds = group.memberIds.filter((id) => botIds.has(id));
-    if (memberIds.length !== group.memberIds.length) warnings.push(`Room “${group.name}” contains deleted bots. Its conversation is included with the remaining members.`);
+    if (memberIds.length !== group.memberIds.length) warnings.push(`Room “${typed(group.name)}” contains deleted bots. Its conversation is included with the remaining members.`);
     return {
-      key: group.id, name: group.name, section: group.section, dm: Boolean(group.dm) && memberIds.length === 2,
-      bulletin: group.bulletin, memberIds,
+      key: group.id, name: typed(group.name), section: group.section, dm: Boolean(group.dm) && memberIds.length === 2,
+      bulletin: typed(group.bulletin), memberIds,
       defaultResponder: group.defaultResponder.kind === "member" && !memberIds.includes(group.defaultResponder.botId)
         ? { kind: "mentions" as const } : group.defaultResponder,
       activeTask: group.threadId, tasks: history(group),
@@ -144,7 +149,7 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
     })),
     groups,
     routines: validRoutines.map((routine) => ({
-      name: routine.name, prompt: routine.prompt, target: routine.target, botId: routine.botId,
+      name: routine.name, prompt: typed(routine.prompt), target: routine.target, botId: routine.botId,
       groupId: routine.groupId, runOn: routine.runOn, schedule: routine.schedule,
       durationMinutes: routine.durationMinutes, timeoutMinutes: routine.timeoutMinutes,
     })),

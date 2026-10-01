@@ -99,6 +99,26 @@ describe("createOrgImportDocument", () => {
     expect(result.summary.notCopied.some((entry) => entry.name === "Cleo job")).toBe(false);
   });
 
+  it("scrubs routine prompts, room bulletins and titles and counts them", () => {
+    const f = fixture();
+    const hourly = f.routines.listRoutines().find((r) => r.name === "Hourly")!;
+    f.routines.update(hourly.id, { prompt: `call the API with ${KEY}` });
+    f.store.patchGroup(f.pair.id, { bulletin: `shared token ${KEY}` });
+    f.store.createTask(f.atlas.id, `deploy with ${KEY}`);
+    const result = createOrgImportDocument(f.store, f.routines.listRoutines(), {
+      localPrincipalId: SELF,
+      choices: [{ id: f.atlas.id, threads: true, memory: false }, { id: f.bolt.id, threads: true, memory: false }],
+      describe: describePerson,
+    });
+    if (!result.ok) throw new Error(result.code);
+    const doc = parseOrgImportDocument(JSON.parse(JSON.stringify(result.document)));
+    expect(doc.backup.routines[0]!.prompt).toMatch(/«redacted \d+ chars»/);
+    expect(doc.backup.groups[0]!.bulletin).toMatch(/«redacted \d+ chars»/);
+    expect(JSON.stringify(result.document)).not.toContain("sk-ant-api03");
+    // Message, soul, playbook, routine prompt, bulletin and task title.
+    expect(result.summary.redacted).toBe(6);
+  });
+
   it("refuses a bot owned by someone else and an unknown bot", () => {
     const f = fixture();
     const base = { localPrincipalId: SELF, describe: describePerson };
