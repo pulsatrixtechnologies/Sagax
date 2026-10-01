@@ -6,8 +6,9 @@
 // Reasoning effort rides along (EffortRow): model and effort are one choice to
 // the person making it, so the chat header and the settings dialog render the
 // same row and write through the same action.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, KeyRound, Loader2, Plus, RefreshCw, Search } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, KeyRound, Loader2, Plus, RefreshCw, Search, X } from "lucide-react";
 import { useStore, currentTaskBot, type Bot, type InstanceInfo, type ModelSelection } from "@/state/store";
 import type { EffortLevel } from "../../shared/wire";
 import type { ModelVariantOption } from "../../shared/runtime-events";
@@ -22,7 +23,9 @@ import { approvalModeFor, modelSwitchNeedsAsk } from "../../shared/approval-mode
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
-import { myTurnsText, useMyEngines } from "@/lib/perspicax-org";
+import { myTurnsText, reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
+import { orgEngineState } from "@/lib/model-payers";
+import { ModelPickerPayers } from "./ModelPickerPayers";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
@@ -331,7 +334,7 @@ function ModelSearch({
   );
 }
 
-export function ModelEngineRail({ instances, selectedInstance, claudeInstance, openaiInstance, onSelect, onAddApiKeys }: {
+export function ModelEngineRail({ instances, selectedInstance, claudeInstance, openaiInstance, onSelect, onAddApiKeys, wide = false, statusOf }: {
   instances: InstanceInfo[];
   selectedInstance?: InstanceInfo;
   /** The account a folded button opens on (the last one browsed). */
@@ -341,6 +344,11 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
   /** Ends the API keys group with a way to add one; absent where Settings
    * has no keys section (a remote client). */
   onAddApiKeys?: () => void;
+  /** The modal's provider column: each provider named, with its status. */
+  wide?: boolean;
+  /** The status a provider shows (an organization server answers per
+   * person); defaults to the engine's own state. */
+  statusOf?: (instance: InstanceInfo) => { label: string; attention: boolean };
 }) {
   const firstOf: Record<SignInFamily, InstanceInfo | undefined> = {
     claude: instances.find((instance) => isClaudeAccount(instance) && instance.claudeAccount?.isDefault)
@@ -358,8 +366,39 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
     const target = family ? opensOn[family] ?? instance : instance;
     const selected = family ? signInFamily(selectedInstance) === family : instance.instanceId === selectedInstance?.instanceId;
     const label = family ? SIGN_IN_FAMILY_LABEL[family] : instance.displayName;
-    const attention = needsCli(target) || needsSignIn(target) || Boolean(target.snapshot.update);
+    const status = statusOf?.(target);
+    const attention = status ? status.attention : needsCli(target) || needsSignIn(target) || Boolean(target.snapshot.update);
     const managedBy = target.policy ? t("policy.managedBy", { organization: target.policy.organizationName }) : undefined;
+    const statusLabel = managedBy ?? status?.label ?? engineStatus(target);
+    if (wide) return (
+      <button
+        type="button"
+        key={instance.instanceId}
+        data-rail-provider={family ?? instance.instanceId}
+        onClick={() => onSelect(target)}
+        aria-label={managedBy ? `${label} · ${managedBy}` : label}
+        aria-describedby={`model-rail-status-${instance.instanceId}`}
+        aria-pressed={selected}
+        className={cn("relative flex min-w-[9.5rem] shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left sm:min-w-0 sm:w-full",
+          selected ? "bg-selected ring-1 ring-hairline/50" : "hover:bg-hover", managedBy && "opacity-50")}
+      >
+        <span className="relative flex size-7 shrink-0 items-center justify-center rounded-md bg-inset">
+          <InstanceProviderMark instance={target} size={16} />
+          {target.access === "api" && (
+            <span data-rail-key-badge className="absolute -bottom-0.5 -left-0.5 flex size-3.5 items-center justify-center rounded-full bg-panel text-ink-secondary">
+              <KeyRound size={9} aria-hidden="true" />
+            </span>
+          )}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[13px] font-medium text-ink">{label}</span>
+          <span id={`model-rail-status-${instance.instanceId}`} data-rail-status className={cn("flex items-center gap-1 truncate text-[11px]", attention ? "text-warning" : "text-ink-secondary")}>
+            <span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", attention ? "bg-warning" : "bg-success")} />
+            <span className="truncate">{statusLabel}</span>
+          </span>
+        </span>
+      </button>
+    );
     return (
       <button
         type="button"
@@ -381,6 +420,26 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
       </button>
     );
   };
+  if (wide) {
+    const group = (label: string) => <EngineGroupLabel className="hidden px-2.5 pb-0.5 pt-2 text-[10px] first:pt-0.5 sm:block">{label}</EngineGroupLabel>;
+    return (
+      <nav aria-label={t("model.providers")} data-model-provider-column
+        className="flex shrink-0 gap-1 overflow-x-auto border-b border-hairline/40 bg-panel p-2 mr-12 sm:mr-0 sm:w-56 sm:flex-col sm:overflow-y-auto sm:overflow-x-visible sm:border-b-0 sm:border-r sm:p-3">
+        {subscription.length > 0 && group(t("model.rail.cloud"))}
+        {subscription.map(railButton)}
+        {(api.length > 0 || onAddApiKeys) && group(t("model.rail.apiKeys"))}
+        {api.map(railButton)}
+        {onAddApiKeys && (
+          <button type="button" data-rail-add-api-key onClick={onAddApiKeys}
+            className="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-hairline px-2.5 py-2 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink">
+            <Plus size={14} aria-hidden="true" /> {t("model.addApiKeys")}
+          </button>
+        )}
+        {local.length > 0 && group(t("model.rail.local"))}
+        {local.map(railButton)}
+      </nav>
+    );
+  }
   return (
     <div className="flex w-14 shrink-0 flex-col gap-1 overflow-y-auto border-r border-hairline/40 bg-panel p-2">
       {subscription.length > 0 && <EngineGroupLabel className="px-0 pb-0.5 pt-0.5 text-center text-[9px]">{t("model.rail.cloud")}</EngineGroupLabel>}
@@ -428,6 +487,9 @@ export function ClaudeAccountSelect({ accounts, selectedId, onSelect }: {
   );
 }
 
+/** What Tab may land on inside the modal, in document order. */
+const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+
 export function ModelPicker({
   bot,
   threadId,
@@ -440,9 +502,11 @@ export function ModelPicker({
   threadId?: string;
   className?: string;
   /** Expand the menu in-flow under the trigger so it cannot overflow a
-   * narrow parent (the Agent profile sidebar). */
+   * narrow parent (the Agent profile sidebar). Otherwise the picker opens as
+   * a modal like Settings: providers on the left, the choice on the right,
+   * a bottom sheet on a narrow window. */
   contained?: boolean;
-  /** Sit in the composer as a text row. The menu opens upward. */
+  /** Sit in the composer as a text row. */
   inComposer?: boolean;
   label?: ReactNode;
 }) {
@@ -459,28 +523,28 @@ export function ModelPicker({
   const [pendingSwitch, setPendingSwitch] = useState<{ botId: string; threadId: string;
     selection: ModelSelection; updateBotDefault: boolean; name: string } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const [placement, setPlacement] = useState<{ left: number; maxHeight: number }>();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const refreshingRef = useRef(false);
   const lastClaudeIdRef = useRef<string | null>(null);
   const lastOpenaiIdRef = useRef<string | null>(null);
-
-  useLayoutEffect(() => {
-    if (!open || contained) return;
-    const place = () => {
-      const rect = rootRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const width = Math.min(420, window.innerWidth - 32);
-      setPlacement({ left: Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16)) - rect.left,
-        maxHeight: Math.max(0, Math.min(600, window.innerHeight - rect.bottom - 24)) });
-    };
-    place();
-    window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
-  }, [open, contained]);
+  // Organization server (Perspicax): each person pays with their own
+  // subscription, their model key, or the organization key; the server's
+  // local models are not offered (src/lib/model-payers.ts).
+  const org = usePerspicaxOrg();
+  const myEngines = useMyEngines();
+  const orgMode = org !== null;
+  const modal = !contained;
 
   const selection = bot.modelSelection;
   const active = state.instances.find((instance) => instance.instanceId === selection.instanceId);
-  const pickerInstances = configuredModelInstances(state.instances, selection.instanceId);
+  const configured = configuredModelInstances(state.instances, selection.instanceId);
+  // The server's own local engines run on the server's machine, never the
+  // person's: an organization server does not offer them (the bot's current
+  // one stays so its state is explained).
+  const pickerInstances = orgMode
+    ? configured.filter((instance) => instance.access !== "custom" || instance.instanceId === selection.instanceId)
+    : configured;
   const selectedVariantLabel = selection.variant === undefined ? undefined : variantLabel(
     active?.models.options.find((option) => option.id === selection.model)?.variants?.find((option) => option.id === selection.variant)
       ?? { id: selection.variant, label: selection.variant },
@@ -497,13 +561,19 @@ export function ModelPicker({
     pickerInstances.find((instance) => instance.instanceId === (railId ?? selection.instanceId)) ?? pickerInstances[0];
   const displayedInstanceId = railInstance?.instanceId;
   // Slice 4, organization server: who a bot on this engine can answer.
-  const myEngines = useMyEngines();
   const railEngine = myEngines?.find((engine) => engine.instanceId === displayedInstanceId) ?? null;
+  // A routine's thread pays as the bot's owner (engine-credentials.ts).
+  const routineThread = Boolean(orgMode && threadId && state.bots.find((candidate) => candidate.id === bot.id)?.tasks
+    ?.some((task) => task.threadId === threadId && task.routineRunId));
   // A plan account discovers its allowed models only after sign-in. An empty
   // catalog must still lead to cloud sign-in, never local-model injection.
   const hasOfficialModels = Boolean(railInstance?.snapshot.chatgptPlan || railInstance?.models.options.some((option) => !option.custom));
   const customOnly = isCustomOnly(railInstance);
   useEffect(() => {
+    if (orgMode) {
+      setPane("main");
+      return;
+    }
     if (railId !== null && railId !== displayedInstanceId) {
       // A refresh can remove the provider being browsed. Reset its list, not
       // the saved model selection or the pane chosen when reopening the menu.
@@ -513,7 +583,7 @@ export function ModelPicker({
     } else if (customOnly || !hasOfficialModels) {
       setPane("custom");
     }
-  }, [railId, displayedInstanceId, hasOfficialModels, customOnly]);
+  }, [railId, displayedInstanceId, hasOfficialModels, customOnly, orgMode]);
 
   const refreshLocalInstances = useCallback(() => {
     if (refreshingRef.current) return;
@@ -536,6 +606,7 @@ export function ModelPicker({
     const instanceId = displayedInstanceId;
     void refreshInstances()
       .then(() => instanceId ? refreshInstanceModels(instanceId) : undefined)
+      .then(() => (orgMode ? reloadMyEngines() : undefined))
       .catch(() => {
         // Keep the last known catalog when the app is temporarily offline.
       })
@@ -543,35 +614,75 @@ export function ModelPicker({
         refreshingRef.current = false;
         setRefreshing(false);
       });
-  }, [displayedInstanceId, refreshInstanceModels, refreshInstances]);
+  }, [displayedInstanceId, orgMode, refreshInstanceModels, refreshInstances]);
 
   useEffect(() => {
-    if (open) refreshLocalInstances();
-  }, [open, refreshLocalInstances]);
+    if (!open) return;
+    refreshLocalInstances();
+    if (orgMode) void reloadMyEngines();
+  }, [open, orgMode, refreshLocalInstances]);
 
   useEffect(() => {
     if (bot.busy) setOpen(false);
   }, [bot.busy]);
 
+  // Escape steps back (search, then the local list, then closes). The inline
+  // panel also closes on a click outside; the modal closes on its backdrop
+  // and keeps Tab inside itself.
   useEffect(() => {
     if (!open) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
       const clickedNode = event.target instanceof Node ? event.target : null;
       if (!rootRef.current?.contains(clickedNode)) setOpen(false);
     };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (query) setQuery("");
-      else if (pane === "custom" && railInstance?.models.options.some((option) => !option.custom)) setPane("main");
-      else setOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      const dialog = dialogRef.current;
+      // A child dialog (the provider switch confirmation) owns its keys.
+      if (event.defaultPrevented || document.querySelector('[role="alertdialog"]')) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (query) setQuery("");
+        else if (pane === "custom" && railInstance?.models.options.some((option) => !option.custom)) setPane("main");
+        else setOpen(false);
+        return;
+      }
+      if (!modal || event.key !== "Tab" || !dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const current = document.activeElement;
+      if (event.shiftKey && (current === first || !dialog.contains(current))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (current === last || !dialog.contains(current))) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener("mousedown", closeOnOutsideClick);
-    window.addEventListener("keydown", closeOnEscape);
+    if (!modal) window.addEventListener("mousedown", closeOnOutsideClick);
+    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("mousedown", closeOnOutsideClick);
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", onKey);
     };
-  }, [open, pane, query, railInstance]);
+  }, [open, modal, pane, query, railInstance]);
+
+  // The modal takes focus when it opens and gives it back to the chip.
+  useEffect(() => {
+    if (!open || !modal) return;
+    const trigger = triggerRef.current;
+    const dialog = dialogRef.current;
+    const start = dialog?.querySelector<HTMLElement>('[data-model-provider-column] [aria-pressed="true"]') ?? dialog;
+    start?.focus();
+    return () => {
+      if (trigger?.isConnected && !trigger.disabled) trigger.focus();
+    };
+  }, [open, modal]);
 
   const resetList = () => {
     setQuery("");
@@ -583,11 +694,12 @@ export function ModelPicker({
     const selectedIsCustom = instance?.models.options.some(
       (option) => option.id === selection.model && option.custom,
     );
-    setPane(selectedIsCustom || isCustomOnly(instance) || (official.length === 0 && !instance?.snapshot.chatgptPlan) ? "custom" : "main");
+    setPane(!orgMode && (selectedIsCustom || isCustomOnly(instance) || (official.length === 0 && !instance?.snapshot.chatgptPlan)) ? "custom" : "main");
     resetList();
   };
 
   const openLocalModels = (instance: InstanceInfo) => {
+    if (orgMode) return;
     setPane("custom");
     resetList();
     if (needsCli(instance) || instance.policy || probingLocal === instance.instanceId) return;
@@ -606,7 +718,7 @@ export function ModelPicker({
     if (signInFamily(instance) === "openai") lastOpenaiIdRef.current = instance.instanceId;
     setRailId(instance.instanceId);
     const official = instance.models.options.filter((option) => !option.custom);
-    setPane(isCustomOnly(instance) || (official.length === 0 && !instance.snapshot.chatgptPlan) ? "custom" : "main");
+    setPane(!orgMode && (isCustomOnly(instance) || (official.length === 0 && !instance.snapshot.chatgptPlan)) ? "custom" : "main");
     resetList();
   };
 
@@ -635,7 +747,7 @@ export function ModelPicker({
   };
 
   const official = railInstance?.models.options.filter((option) => !option.custom) ?? [];
-  const custom = railInstance?.models.options.filter((option) => option.custom) ?? [];
+  const custom = orgMode ? [] : railInstance?.models.options.filter((option) => option.custom) ?? [];
   const currentModel = selection.instanceId === railInstance?.instanceId ? selection.model : undefined;
   const filteredOfficial = filterCustomModels(official, query);
   const compactOfficial = railInstance
@@ -644,8 +756,11 @@ export function ModelPicker({
   const shownOfficial = query ? filteredOfficial : showAll ? official : compactOfficial;
   const filteredCustom = filterCustomModels(custom, query);
   const { pinned, rest } = partitionCustomModels(filteredCustom);
+  // On an organization server the server's own sign-in is not the person's:
+  // their payer order (below) says whether a turn can run, so only a
+  // missing engine blocks the list.
   const blocked = railInstance
-    ? pane === "custom"
+    ? orgMode || pane === "custom"
       ? needsCli(railInstance)
       : needsCli(railInstance) || needsSignIn(railInstance)
     : false;
@@ -658,6 +773,15 @@ export function ModelPicker({
       {t("model.lookingLocal")}
     </span>
   );
+  const orgStatusOf = (instance: InstanceInfo) => {
+    const engine = myEngines?.find((candidate) => candidate.instanceId === instance.instanceId);
+    if (!engine) return { label: engineStatus(instance), attention: needsCli(instance) };
+    const state = orgEngineState(engine);
+    return { label: t(`model.org.state.${state}`), attention: state !== "connected" };
+  };
+  const railStatus = railInstance
+    ? orgMode && railEngine ? orgStatusOf(railInstance) : { label: pane === "custom" && !blocked && railInstance.access !== "api" ? t("model.localModels") : engineStatus(railInstance), attention: blocked }
+    : null;
 
   const renderRow = (option: ModelOption) => (
     <ModelRow
@@ -675,21 +799,25 @@ export function ModelPicker({
     !selectedVariantLabel && selection.effort ? effortLabel(selection.effort) : "",
   ].filter(Boolean).join(" ");
 
+  const toggle = () => {
+    if (bot.busy) return;
+    if (active && isClaudeAccount(active)) lastClaudeIdRef.current = active.instanceId;
+    if (active && signInFamily(active) === "openai") lastOpenaiIdRef.current = active.instanceId;
+    const initial = pickerInstances.find((instance) => instance.instanceId === selection.instanceId) ?? pickerInstances[0];
+    setRailId(initial?.instanceId ?? null);
+    setOpen((wasOpen) => {
+      const next = !wasOpen;
+      if (next) openFor(initial);
+      return next;
+    });
+  };
+
   const trigger = inComposer ? (
     <button data-tour="model"
+      ref={triggerRef}
       type="button"
       disabled={Boolean(bot.busy)}
-      onClick={() => {
-        if (bot.busy) return;
-        if (active?.driverKind === "claudeAgent") lastClaudeIdRef.current = active.instanceId;
-        const initial = pickerInstances.find((instance) => instance.instanceId === selection.instanceId) ?? pickerInstances[0];
-        setRailId(initial?.instanceId ?? null);
-        setOpen((wasOpen) => {
-          const next = !wasOpen;
-          if (next) openFor(initial);
-          return next;
-        });
-      }}
+      onClick={toggle}
       aria-expanded={open && !bot.busy}
       aria-haspopup="dialog"
       title={
@@ -704,20 +832,10 @@ export function ModelPicker({
     </button>
   ) : (
     <button data-tour="model"
+      ref={triggerRef}
       type="button"
       disabled={Boolean(bot.busy)}
-      onClick={() => {
-        if (bot.busy) return;
-        if (active && isClaudeAccount(active)) lastClaudeIdRef.current = active.instanceId;
-        if (active && signInFamily(active) === "openai") lastOpenaiIdRef.current = active.instanceId;
-        const initial = pickerInstances.find((instance) => instance.instanceId === selection.instanceId) ?? pickerInstances[0];
-        setRailId(initial?.instanceId ?? null);
-        setOpen((wasOpen) => {
-          const next = !wasOpen;
-          if (next) openFor(initial);
-          return next;
-        });
-      }}
+      onClick={toggle}
       aria-expanded={open && !bot.busy}
       aria-haspopup="dialog"
       className={cn(
@@ -773,6 +891,374 @@ export function ModelPicker({
     </button>
   );
 
+  const scopeControl = threadId && (
+    <div className={cn("shrink-0", modal ? "" : "border-b border-hairline/40 px-3 py-2")}>
+      {modal && <div className="mb-1.5 text-[12.5px] font-medium text-ink">{t("model.scope.title")}</div>}
+      <div role="group" aria-label={t("model.scope.title")} className="flex flex-wrap gap-1">
+        {(["thread", "bot"] as const).map((value) => (
+          <button key={value} type="button" aria-pressed={scope === value} onClick={() => setScope(value)}
+            className={cn("rounded-lg px-2 py-1 text-[12px]", modal && "border border-hairline/40 px-2.5 py-1.5",
+              scope === value ? "bg-control text-ink" : "text-ink-secondary hover:bg-control/60")}>
+            {value === "bot" ? t("model.scope.bot") : t("model.scope.thread")}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 text-[11px] text-ink-secondary">
+        {scope === "bot" ? t("model.scope.botHint") : t("model.scope.threadHint")}
+      </p>
+    </div>
+  );
+
+  const header = railInstance && (
+    <div className={cn("shrink-0", modal ? "pb-1" : "px-4 pb-2 pt-3.5")}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-col">
+          <h2 id={modal ? "model-picker-title" : undefined} className={cn("truncate font-semibold text-ink", modal ? "text-[16px]" : "text-[14px]")}>
+            {signInFamily(railInstance) ? SIGN_IN_FAMILY_LABEL[signInFamily(railInstance)!] : railInstance.displayName}
+          </h2>
+          {railEngine && !modal && <div data-my-turns={railEngine.myTurns} className="truncate text-[11px] text-ink-secondary">{myTurnsText(railEngine)}</div>}
+        </div>
+        <div className={cn("flex shrink-0 items-center gap-1", modal && "pr-10")}>
+          <button
+            type="button"
+            data-model-refresh
+            disabled={refreshing}
+            onClick={refreshModels}
+            aria-label={
+              refreshing
+                ? t("model.refreshing", { name: railInstance.displayName })
+                : t("model.refresh", { name: railInstance.displayName })
+            }
+            title={t("model.refreshTitle")}
+            className="flex size-6 items-center justify-center rounded-md text-ink-secondary hover:bg-control hover:text-ink disabled:cursor-wait disabled:opacity-70"
+          >
+            {refreshing ? (
+              <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw size={12} aria-hidden="true" />
+            )}
+          </button>
+          {railStatus && (
+            <span
+              data-model-status
+              className={cn(
+                "shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-medium",
+                railStatus.attention ? "bg-warning/10 text-warning" : "bg-success/10 text-success",
+              )}
+            >
+              {railStatus.label}
+            </span>
+          )}
+        </div>
+      </div>
+      {isClaudeAccount(railInstance) && claudeAccounts.length > 1 && (
+        <ClaudeAccountSelect accounts={claudeAccounts} selectedId={railInstance.instanceId} onSelect={selectRail} />
+      )}
+      {signInFamily(railInstance) === "openai" && openaiAccounts.length > 1 && (
+        <ClaudeAccountSelect accounts={openaiAccounts} selectedId={railInstance.instanceId} onSelect={selectRail} />
+      )}
+      {/* On an organization server this is the server's own account, not the person's. */}
+      {!orgMode && railInstance.snapshot.authenticated && railInstance.snapshot.account && (
+        <p className="mt-1 truncate text-[11px] text-ink-secondary" title={[railInstance.snapshot.account.email, railInstance.snapshot.account.organization].filter(Boolean).join(" · ")}>
+          {[railInstance.snapshot.account.email, railInstance.snapshot.account.organization].filter(Boolean).join(" · ")}
+        </p>
+      )}
+      {!orgMode && railInstance.snapshot.chatgptPlan && railInstance.snapshot.authenticated && (
+        <ChatGptPlanStatus key={railInstance.instanceId} instanceId={railInstance.instanceId} />
+      )}
+      {railInstance.access === "api"
+        ? <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("model.apiKeyHint")}</div>
+        : pane === "custom" && <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("model.localHint")}</div>}
+    </div>
+  );
+
+  const payers = orgMode && org && railInstance && railEngine && !railInstance.policy && (
+    <ModelPickerPayers key={railInstance.instanceId} engine={railEngine} routine={routineThread}
+      issuer={org.org.identity.issuer} onChanged={reloadMyEngines} />
+  );
+
+  const payersFirst = Boolean(railEngine && !routineThread && orgEngineState(railEngine) !== "connected");
+
+  const listSection = railInstance && (
+    <>
+      {pane === "custom" && canReturnToOfficial && (
+        <button
+          type="button"
+          onClick={() => {
+            setPane("main");
+            resetList();
+          }}
+          className={cn("mb-1 flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12px] text-ink-secondary hover:bg-control/60", !modal && "mx-2")}
+        >
+          <ChevronLeft size={13} /> {t("model.backTo", { name: railInstance.displayName })}
+        </button>
+      )}
+
+      {railInstance.policy ? (
+        // The organisation does not allow this engine: shown, never pickable.
+        <div data-policy-blocked className={cn("min-h-0 flex-1 overflow-y-auto pb-3 pt-1 text-[12.5px] leading-relaxed text-ink-secondary", !modal && "px-3")}>
+          <p className="font-medium text-ink">{t("policy.managedBy", { organization: railInstance.policy.organizationName })}</p>
+          <p className="mt-1">{t("policy.modelBlocked", { organization: railInstance.policy.organizationName })}</p>
+        </div>
+      ) : blocked ? (
+        <div className={cn("min-h-0 pb-3 pt-1", modal ? "" : "flex-1 overflow-y-auto px-3")}>
+          <EngineSetup instance={railInstance} intent={pane === "custom" ? "inject" : "cloud"} />
+          {railInstance.claudeAccount && needsSignIn(railInstance) && pane !== "custom" && (
+            <p className="mt-2 text-[11.5px] leading-relaxed text-ink-secondary">
+              {railInstance.claudeAccount.signInShell === "powershell" && `${t("engines.account.powershell")} `}
+              {t("engines.account.signInHint")}
+            </p>
+          )}
+          <p className="mt-2 text-center text-[11.5px] text-ink-tertiary">
+            {railInstance.snapshot.chatgptPlan ? t("engineSetup.chatgpt.modelsAfterSignIn") : pane === "main" && official.length > 0
+              ? official.length === 1
+                ? t("model.afterSetupOne")
+                : t("model.afterSetupMany", { count: official.length })
+              : t("model.localSoon")}
+          </p>
+        </div>
+      ) : (
+        <>
+          {((pane === "main" && official.length > COMPACT_MODEL_COUNT) ||
+            (pane === "custom" && custom.length > COMPACT_MODEL_COUNT)) && (
+            <ModelSearch
+              value={query}
+              local={pane === "custom"}
+              onChange={(value) => {
+                setQuery(value);
+                if (value) setShowAll(true);
+              }}
+              onEscape={() => {
+                if (query) setQuery("");
+                else if (pane === "custom" && canReturnToOfficial) setPane("main");
+              }}
+            />
+          )}
+
+          <div data-model-list className={cn(modal ? "pb-2" : "min-h-[min(180px,30dvh)] flex-1 overflow-y-auto px-2 pb-2")}>
+            {pane === "main" ? (
+              <>
+                {railInstance.snapshot.update && (
+                  <EngineUpdateNotice update={railInstance.snapshot.update} instance={railInstance} className="mx-1 mb-2" />
+                )}
+                <EngineGroupLabel className="px-2 pb-1 pt-0.5">
+                  {query
+                    ? t("model.results", { count: filteredOfficial.length })
+                    : showAll
+                      ? t("model.allModels", { count: official.length })
+                      : t("model.suggested")}
+                </EngineGroupLabel>
+                {shownOfficial.map(renderRow)}
+                {shownOfficial.length === 0 && (
+                  <div className="px-2 py-5 text-center text-[12.5px] text-ink-secondary">
+                    {query ? t("model.noMatch", { query: query.trim() }) : orgMode ? t("model.org.noModels") : t("model.noMatch", { query: "" })}
+                  </div>
+                )}
+                {!query && !showAll && official.length > compactOfficial.length && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAll(true)}
+                    className="mt-1 flex w-full items-center justify-between rounded-lg border-t border-hairline/40 px-2.5 py-2 text-[12.5px] font-medium text-ink-secondary hover:bg-control/60 hover:text-ink"
+                  >
+                    {t("model.showAll", { count: official.length })} <ChevronDown size={13} />
+                  </button>
+                )}
+                {!query && showAll && official.length > COMPACT_MODEL_COUNT && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAll(false)}
+                    className="mt-1 w-full rounded-lg px-2.5 py-2 text-[12px] text-ink-secondary hover:bg-control/60 hover:text-ink"
+                  >
+                    {t("model.showSuggested")}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                {lookingForLocal && custom.length > 0 && (
+                  <div className="flex px-2 pb-1.5 pt-0.5 text-[11.5px] text-ink-secondary">{lookingForLocalStatus}</div>
+                )}
+                {pinned.length > 0 && (
+                  <EngineGroupLabel className="px-2 pb-1 pt-0.5">{t("model.loadedNow")}</EngineGroupLabel>
+                )}
+                {pinned.map(renderRow)}
+                {pinned.length > 0 && rest.length > 0 && (
+                  <div className="mx-2 my-2 border-t border-hairline/40" role="separator" />
+                )}
+                {rest.map(renderRow)}
+                {custom.length === 0 && (
+                  <div className="mx-1 rounded-xl border border-dashed border-hairline/50 px-3 py-5 text-center">
+                    {lookingForLocal ? (
+                      <div className="text-[12.5px] text-ink-secondary">{lookingForLocalStatus}</div>
+                    ) : (
+                      <>
+                        <div className="text-[12.5px] font-medium text-ink">{t("model.noLocal")}</div>
+                        <div className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">
+                          {t("model.noLocalHint")}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                {custom.length > 0 && filteredCustom.length === 0 && (
+                  <div className="px-2 py-5 text-center text-[12.5px] text-ink-secondary">
+                    {t("model.noMatch", { query: query.trim() })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  );
+
+  // Effort applies to the model this bot runs on now (its active engine,
+  // not the provider being browsed). `contained` callers (the settings
+  // dialog) render their own EffortRow card, and two copies of one control
+  // in one view read as a bug.
+  const effort = !contained && (
+    <EffortRow
+      bot={bot}
+      threadId={threadId}
+      updateBotDefault={Boolean(threadId && scope === "bot")}
+      className="shrink-0"
+      label={<span className="text-[12.5px] font-medium text-ink">{active?.capabilities?.modelVariants ? t("model.reasoning") : t("model.effort")}</span>}
+    />
+  );
+
+  const localEntry = railInstance && (orgMode ? (
+    <p data-model-local-hidden className="text-[11.5px] leading-relaxed text-ink-tertiary">{t("model.org.localHidden")}</p>
+  ) : pane === "main" && offersLocalModels(railInstance, custom.length) && (
+    <button
+      type="button"
+      data-model-local-entry
+      aria-label={
+        custom.length > 0
+          ? t("model.useLocalCount", { count: custom.length })
+          : t("model.useLocal")
+      }
+      disabled={!canOpenCustom}
+      onClick={() => openLocalModels(railInstance)}
+      className={cn("flex w-full shrink-0 items-center justify-between gap-2 border-t border-hairline/40 py-3 text-left text-[12.5px] font-medium text-ink hover:bg-control/60 disabled:cursor-not-allowed disabled:text-ink-secondary/40 disabled:hover:bg-transparent", modal ? "px-1" : "px-4")}
+    >
+      <span>{t("model.useLocal")}</span>
+      <span className="flex items-center gap-2">
+        {custom.length > 0 && (
+          <span className="rounded-full bg-inset px-2 py-0.5 text-[10.5px] text-ink-secondary">
+            {t("model.available", { count: custom.length })}
+          </span>
+        )}
+        <ChevronRight size={14} className="text-ink-secondary" />
+      </span>
+    </button>
+  ));
+
+  const footer = (
+    <div className="flex shrink-0 border-t border-hairline/40">
+      <button type="button" data-model-engines-link onClick={() => {
+        setOpen(false);
+        dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+      }} className="flex-1 px-4 py-2.5 text-left text-[12px] text-ink-secondary hover:bg-control/60 hover:text-ink">
+        {t("settings.engines.title")}
+      </button>
+      {/* A remote client's settings hide the keys section, so the
+          shortcut would land somewhere else. */}
+      {window.ogb?.remoteClient?.active !== true && (
+        <button type="button" data-model-add-api-keys onClick={openApiKeys} className="flex shrink-0 items-center gap-1.5 px-4 py-2.5 text-[12px] text-ink-secondary hover:bg-control/60 hover:text-ink">
+          <KeyRound size={12} aria-hidden="true" />
+          {t("model.addApiKeys")}
+        </button>
+      )}
+    </div>
+  );
+
+  const railProps = {
+    instances: pickerInstances, selectedInstance: railInstance, claudeInstance: claudeRailInstance,
+    openaiInstance: openaiRailInstance, onSelect: selectRail,
+    onAddApiKeys: window.ogb?.remoteClient?.active === true ? undefined : openApiKeys,
+    ...(orgMode && myEngines ? { statusOf: orgStatusOf } : {}),
+  };
+
+  const inlinePanel = (
+    <div
+      data-model-picker-content
+      role="dialog"
+      aria-label={t("model.choose")}
+      {...motion.exitProps}
+      className={cn("relative mt-3 flex w-full max-h-[min(420px,50dvh)] overflow-hidden rounded-2xl border border-hairline/50 bg-card", motion.className)}
+    >
+      {pickerInstances.length > 0 && <ModelEngineRail {...railProps} />}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+        {scopeControl}
+        {railInstance ? (
+          <>
+            {header}
+            {payers && <div className="px-3 pb-2">{payers}</div>}
+            {listSection}
+            {localEntry && <div className={orgMode ? "px-4 pb-2" : ""}>{localEntry}</div>}
+          </>
+        ) : (
+          <div className="px-4 py-5 text-[13px] text-ink-secondary">{t("model.noProviders")}</div>
+        )}
+        {footer}
+      </div>
+    </div>
+  );
+
+  const modalPanel = (
+    <div
+      data-model-picker-backdrop
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-6"
+      onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}
+    >
+      <div
+        ref={dialogRef}
+        data-model-picker-content
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={railInstance ? "model-picker-title" : undefined}
+        aria-label={railInstance ? undefined : t("model.choose")}
+        tabIndex={-1}
+        {...motion.exitProps}
+        className={cn(
+          "relative flex w-full flex-col overflow-hidden border border-border bg-app outline-none sm:flex-row",
+          "h-[min(88dvh,720px)] rounded-t-2xl sm:h-[min(640px,calc(100dvh-96px))] sm:w-[min(880px,calc(100vw-48px))] sm:rounded-[14px]",
+          motion.className,
+        )}
+      >
+        <button type="button" onClick={() => setOpen(false)} aria-label={t("model.close")}
+          className="absolute right-2.5 top-2.5 z-10 flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary">
+          <X size={18} aria-hidden="true" />
+        </button>
+        {pickerInstances.length > 0 && <ModelEngineRail {...railProps} wide />}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:pt-5">
+            {railInstance ? (
+              <>
+                {header}
+                {/* Nothing pays yet: how to fix that comes first. Otherwise
+                    the choice does, and who pays follows. */}
+                {payersFirst && payers}
+                {scopeControl}
+                <div>
+                  <div className="mb-1 text-[12.5px] font-medium text-ink">{t("model.models")}</div>
+                  {listSection}
+                </div>
+                {effort}
+                {!payersFirst && payers}
+                {localEntry}
+              </>
+            ) : (
+              <div className="py-5 pr-10 text-[13px] text-ink-secondary">{t("model.noProviders")}</div>
+            )}
+          </div>
+          {footer}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div ref={rootRef} className={cn(contained ? "w-full" : "relative", className)}>
       {contained ? (
@@ -784,294 +1270,12 @@ export function ModelPicker({
         trigger
       )}
 
-      {motion.shown && (
-        <div
-          data-model-picker-content
-          role="dialog"
-          aria-label={t("model.choose")}
-          {...motion.exitProps}
-          style={contained ? undefined : placement}
-          className={cn(
-            "flex overflow-hidden rounded-2xl border border-hairline/50 bg-card",
-            contained
-              ? "relative mt-3 w-full max-h-[min(420px,50dvh)]"
-              : inComposer
-                ? "absolute right-0 bottom-full z-40 mb-2 w-[420px] max-w-[calc(100vw-2rem)] max-h-[min(600px,calc(100dvh-8rem))] shadow-2xl shadow-black/50"
-                : "absolute right-0 top-full z-30 mt-2 w-[420px] max-w-[calc(100vw-2rem)] max-h-[min(600px,calc(100dvh-7rem))] shadow-2xl shadow-black/50",
-            motion.className,
-          )}
-        >
-          {pickerInstances.length > 0 && <ModelEngineRail instances={pickerInstances} selectedInstance={railInstance} claudeInstance={claudeRailInstance} openaiInstance={openaiRailInstance} onSelect={selectRail}
-            onAddApiKeys={window.ogb?.remoteClient?.active === true ? undefined : openApiKeys} />}
-
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-            {threadId && (
-              <div className="shrink-0 border-b border-hairline/40 px-3 py-2">
-                <div role="group" aria-label="Apply model changes to" className="flex gap-1">
-                  {(["thread", "bot"] as const).map((value) => (
-                    <button key={value} type="button" aria-pressed={scope === value} onClick={() => setScope(value)}
-                      className={cn("rounded-lg px-2 py-1 text-[12px]", scope === value ? "bg-control text-ink" : "text-ink-secondary hover:bg-control/60")}>
-                      {value === "bot" ? "Thread + bot default" : "Only this thread"}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-1 text-[11px] text-ink-secondary">
-                  {scope === "bot" ? "This thread, groups, and new threads. Other existing threads keep their model." : "Other threads and groups keep their model."}
-                </p>
-              </div>
-            )}
-            {railInstance ? (
-              <>
-                <div className="shrink-0 px-4 pb-2 pt-3.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 flex-col">
-                      <div className="truncate text-[14px] font-semibold text-ink">{signInFamily(railInstance) ? SIGN_IN_FAMILY_LABEL[signInFamily(railInstance)!] : railInstance.displayName}</div>
-                      {railEngine && <div data-my-turns={railEngine.myTurns} className="truncate text-[11px] text-ink-secondary">{myTurnsText(railEngine)}</div>}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button
-                        type="button"
-                        data-model-refresh
-                        disabled={refreshing}
-                        onClick={refreshModels}
-                        aria-label={
-                          refreshing
-                            ? t("model.refreshing", { name: railInstance.displayName })
-                            : t("model.refresh", { name: railInstance.displayName })
-                        }
-                        title={t("model.refreshTitle")}
-                        className="flex size-6 items-center justify-center rounded-md text-ink-secondary hover:bg-control hover:text-ink disabled:cursor-wait disabled:opacity-70"
-                      >
-                        {refreshing ? (
-                          <Loader2 size={12} className="animate-spin" aria-hidden="true" />
-                        ) : (
-                          <RefreshCw size={12} aria-hidden="true" />
-                        )}
-                      </button>
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-medium",
-                          blocked ? "bg-warning/10 text-warning" : "bg-success/10 text-success",
-                        )}
-                      >
-                        {pane === "custom" && !blocked && railInstance.access !== "api" ? t("model.localModels") : engineStatus(railInstance)}
-                      </span>
-                    </div>
-                  </div>
-                  {isClaudeAccount(railInstance) && claudeAccounts.length > 1 && (
-                    <ClaudeAccountSelect accounts={claudeAccounts} selectedId={railInstance.instanceId} onSelect={selectRail} />
-                  )}
-                  {signInFamily(railInstance) === "openai" && openaiAccounts.length > 1 && (
-                    <ClaudeAccountSelect accounts={openaiAccounts} selectedId={railInstance.instanceId} onSelect={selectRail} />
-                  )}
-                  {railInstance.snapshot.authenticated && railInstance.snapshot.account && (
-                    <p className="mt-1 truncate text-[11px] text-ink-secondary" title={[railInstance.snapshot.account.email, railInstance.snapshot.account.organization].filter(Boolean).join(" · ")}>
-                      {[railInstance.snapshot.account.email, railInstance.snapshot.account.organization].filter(Boolean).join(" · ")}
-                    </p>
-                  )}
-                  {railInstance.snapshot.chatgptPlan && railInstance.snapshot.authenticated && (
-                    <ChatGptPlanStatus key={railInstance.instanceId} instanceId={railInstance.instanceId} />
-                  )}
-                  {railInstance.access === "api"
-                    ? <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("model.apiKeyHint")}</div>
-                    : pane === "custom" && <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("model.localHint")}</div>}
-                </div>
-
-                {pane === "custom" && canReturnToOfficial && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPane("main");
-                      resetList();
-                    }}
-                    className="mx-2 mb-1 flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12px] text-ink-secondary hover:bg-control/60"
-                  >
-                    <ChevronLeft size={13} /> {t("model.backTo", { name: railInstance.displayName })}
-                  </button>
-                )}
-
-                {railInstance.policy ? (
-                  // The organisation does not allow this engine: shown, never pickable.
-                  <div data-policy-blocked className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1 text-[12.5px] leading-relaxed text-ink-secondary">
-                    <p className="font-medium text-ink">{t("policy.managedBy", { organization: railInstance.policy.organizationName })}</p>
-                    <p className="mt-1">{t("policy.modelBlocked", { organization: railInstance.policy.organizationName })}</p>
-                  </div>
-                ) : blocked ? (
-                  <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
-                    <EngineSetup instance={railInstance} intent={pane === "custom" ? "inject" : "cloud"} />
-                    {railInstance.claudeAccount && needsSignIn(railInstance) && pane !== "custom" && (
-                      <p className="mt-2 text-[11.5px] leading-relaxed text-ink-secondary">
-                        {railInstance.claudeAccount.signInShell === "powershell" && `${t("engines.account.powershell")} `}
-                        {t("engines.account.signInHint")}
-                      </p>
-                    )}
-                    <p className="mt-2 text-center text-[11.5px] text-ink-tertiary">
-                      {railInstance.snapshot.chatgptPlan ? t("engineSetup.chatgpt.modelsAfterSignIn") : pane === "main" && official.length > 0
-                        ? official.length === 1
-                          ? t("model.afterSetupOne")
-                          : t("model.afterSetupMany", { count: official.length })
-                        : t("model.localSoon")}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {((pane === "main" && official.length > COMPACT_MODEL_COUNT) ||
-                      (pane === "custom" && custom.length > COMPACT_MODEL_COUNT)) && (
-                      <ModelSearch
-                        value={query}
-                        local={pane === "custom"}
-                        onChange={(value) => {
-                          setQuery(value);
-                          if (value) setShowAll(true);
-                        }}
-                        onEscape={() => {
-                          if (query) setQuery("");
-                          else if (pane === "custom" && canReturnToOfficial) setPane("main");
-                        }}
-                      />
-                    )}
-
-                    <div data-model-list className="min-h-[min(180px,30dvh)] flex-1 overflow-y-auto px-2 pb-2">
-                      {pane === "main" ? (
-                        <>
-                          {railInstance.snapshot.update && (
-                            <EngineUpdateNotice update={railInstance.snapshot.update} instance={railInstance} className="mx-1 mb-2" />
-                          )}
-                          <EngineGroupLabel className="px-2 pb-1 pt-0.5">
-                            {query
-                              ? t("model.results", { count: filteredOfficial.length })
-                              : showAll
-                                ? t("model.allModels", { count: official.length })
-                                : t("model.suggested")}
-                          </EngineGroupLabel>
-                          {shownOfficial.map(renderRow)}
-                          {shownOfficial.length === 0 && (
-                            <div className="px-2 py-5 text-center text-[12.5px] text-ink-secondary">
-                              {t("model.noMatch", { query: query.trim() })}
-                            </div>
-                          )}
-                          {!query && !showAll && official.length > compactOfficial.length && (
-                            <button
-                              type="button"
-                              onClick={() => setShowAll(true)}
-                              className="mt-1 flex w-full items-center justify-between rounded-lg border-t border-hairline/40 px-2.5 py-2 text-[12.5px] font-medium text-ink-secondary hover:bg-control/60 hover:text-ink"
-                            >
-                              {t("model.showAll", { count: official.length })} <ChevronDown size={13} />
-                            </button>
-                          )}
-                          {!query && showAll && official.length > COMPACT_MODEL_COUNT && (
-                            <button
-                              type="button"
-                              onClick={() => setShowAll(false)}
-                              className="mt-1 w-full rounded-lg px-2.5 py-2 text-[12px] text-ink-secondary hover:bg-control/60 hover:text-ink"
-                            >
-                              {t("model.showSuggested")}
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          {lookingForLocal && custom.length > 0 && (
-                            <div className="flex px-2 pb-1.5 pt-0.5 text-[11.5px] text-ink-secondary">{lookingForLocalStatus}</div>
-                          )}
-                          {pinned.length > 0 && (
-                            <EngineGroupLabel className="px-2 pb-1 pt-0.5">{t("model.loadedNow")}</EngineGroupLabel>
-                          )}
-                          {pinned.map(renderRow)}
-                          {pinned.length > 0 && rest.length > 0 && (
-                            <div className="mx-2 my-2 border-t border-hairline/40" role="separator" />
-                          )}
-                          {rest.map(renderRow)}
-                          {custom.length === 0 && (
-                            <div className="mx-1 rounded-xl border border-dashed border-hairline/50 px-3 py-5 text-center">
-                              {lookingForLocal ? (
-                                <div className="text-[12.5px] text-ink-secondary">{lookingForLocalStatus}</div>
-                              ) : (
-                                <>
-                                  <div className="text-[12.5px] font-medium text-ink">{t("model.noLocal")}</div>
-                                  <div className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">
-                                    {t("model.noLocalHint")}
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          )}
-                          {custom.length > 0 && filteredCustom.length === 0 && (
-                            <div className="px-2 py-5 text-center text-[12.5px] text-ink-secondary">
-                              {t("model.noMatch", { query: query.trim() })}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                {/* The header has nowhere else to put effort, so the popover
-                    carries it. `contained` callers (the settings dialog) render
-                    their own EffortRow card, and two copies of one control in
-                    one view read as a bug. Reads the bot's active engine, not
-                    the rail being browsed: effort applies to the model this bot
-                    runs on now, and picking a model on another rail closes the
-                    popover. */}
-                {!contained && (
-                  <EffortRow
-                    compact
-                    bot={bot}
-                    threadId={threadId}
-                    updateBotDefault={Boolean(threadId && scope === "bot")}
-                    className="shrink-0 border-t border-hairline/40 px-4 py-2"
-                    label={<span className="text-[12.5px] font-medium text-ink">{active?.capabilities?.modelVariants ? "Reasoning" : "Effort"}</span>}
-                  />
-                )}
-
-                {pane === "main" && offersLocalModels(railInstance, custom.length) && (
-                  <button
-                    type="button"
-                    data-model-local-entry
-                    aria-label={
-                      custom.length > 0
-                        ? t("model.useLocalCount", { count: custom.length })
-                        : t("model.useLocal")
-                    }
-                    disabled={!canOpenCustom}
-                    onClick={() => openLocalModels(railInstance)}
-                    className="flex w-full shrink-0 items-center justify-between gap-2 border-t border-hairline/40 px-4 py-3 text-left text-[12.5px] font-medium text-ink hover:bg-control/60 disabled:cursor-not-allowed disabled:text-ink-secondary/40 disabled:hover:bg-transparent"
-                  >
-                    <span>{t("model.useLocal")}</span>
-                    <span className="flex items-center gap-2">
-                      {custom.length > 0 && (
-                        <span className="rounded-full bg-inset px-2 py-0.5 text-[10.5px] text-ink-secondary">
-                          {t("model.available", { count: custom.length })}
-                        </span>
-                      )}
-                      <ChevronRight size={14} className="text-ink-secondary" />
-                    </span>
-                  </button>
-                )}
-              </>
-            ) : (
-              <div className="px-4 py-5 text-[13px] text-ink-secondary">{t("model.noProviders")}</div>
-            )}
-            <div className="flex shrink-0 border-t border-hairline/40">
-              <button type="button" onClick={() => {
-                setOpen(false);
-                dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
-              }} className="flex-1 px-4 py-2 text-left text-[12px] text-ink-secondary hover:bg-control/60 hover:text-ink">
-                {t("settings.engines.title")}
-              </button>
-              {/* A remote client's settings hide the keys section, so the
-                  shortcut would land somewhere else. */}
-              {window.ogb?.remoteClient?.active !== true && (
-                <button type="button" data-model-add-api-keys onClick={openApiKeys} className="flex shrink-0 items-center gap-1.5 px-4 py-2 text-[12px] text-ink-secondary hover:bg-control/60 hover:text-ink">
-                  <KeyRound size={12} aria-hidden="true" />
-                  {t("model.addApiKeys")}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {motion.shown && (modal
+        // Portalled like Settings: a translated sidebar or composer would
+        // otherwise become the containing block. Without a document (static
+        // rendering in tests) the dialog renders in place.
+        ? typeof document === "undefined" ? modalPanel : createPortal(modalPanel, document.body)
+        : inlinePanel)}
       <ConfirmDialog
         open={pendingSwitch !== null}
         title={t("model.providerSwitch.title")}

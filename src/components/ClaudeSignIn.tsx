@@ -27,16 +27,28 @@ function endedFlow(phase: "expired" | "failed"): DeviceSignInStatus {
 
 /** Settings → Engines → Claude on a hosted server: open Anthropic's sign-in
  * page, paste the code it shows, done. The server drives the unmodified CLI. */
-export function ClaudeSignIn({ instanceId }: { instanceId: string }) {
+export function ClaudeSignIn({ instanceId, base: baseOverride, onSignedIn }: {
+  instanceId: string;
+  /** Another sign-in with the same verbs (start, status, complete, cancel):
+   * a person's own subscription on an organization server
+   * (`/api/me/engines/<id>/login`). Defaults to the server's own engine. */
+  base?: string;
+  /** Called after a sign-in succeeds, in place of refreshing the engines. */
+  onSignedIn?: () => Promise<unknown> | void;
+}) {
   const { refreshInstances, refreshModels } = useStore();
   const [auth, setAuth] = useState<DeviceSignInStatus | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<"start" | "finish" | "cancel" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const base = `/api/instances/${encodeURIComponent(instanceId)}/auth`;
+  const base = baseOverride ?? `/api/instances/${encodeURIComponent(instanceId)}/auth`;
   const link = claudeSignInLink(auth?.authorizationUrl);
 
   const refresh = async () => {
+    if (onSignedIn) {
+      await onSignedIn();
+      return;
+    }
     await refreshInstances();
     await refreshModels(instanceId);
   };
