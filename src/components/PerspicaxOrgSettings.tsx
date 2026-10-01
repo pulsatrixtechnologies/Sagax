@@ -17,6 +17,7 @@ import { MyEngines } from "./settings/MyEngines";
 import { MyRoutineDelegation } from "./settings/MyRoutineDelegation";
 import { OrgSharing } from "./settings/OrgSharing";
 import { OrgImportDialog } from "./OrgImportDialog";
+import { InterimPeople } from "./settings/InterimPeople";
 
 interface PendingAdminApproval {
   botId: string;
@@ -134,6 +135,9 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
         </Card>
       )}
       {importing && <OrgImportDialog onClose={() => setImporting(false)} />}
+      {admin && org.settings.interimAttach?.until && org.settings.interimAttach.people > 0 ? (
+        <InterimPeople until={org.settings.interimAttach.until} onChanged={onChanged} />
+      ) : null}
       <MyEngines issuer={org.org.identity.issuer} />
       <MyRoutineDelegation />
       <OrgSharing />

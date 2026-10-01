@@ -11,7 +11,7 @@ export interface PerspicaxOrg {
   org: { name: string; identity: { kind: "perspicax"; issuer: string; serverId?: string } };
   link: { state: "missing" | "ok" | "error"; syncedAt?: number; error?: string };
   viewerRole: "admin" | "member";
-  settings: { memberBotsUseOrgKey: boolean };
+  settings: { memberBotsUseOrgKey: boolean; interimAttach?: { until: number | null; people: number } };
 }
 
 export interface OrgDirectoryPerson {
