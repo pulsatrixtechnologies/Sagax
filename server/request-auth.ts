@@ -397,6 +397,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/me\/engines\/[\w-]+\/login\/status$/, feature: "orgDirectory" },
   // Slice 6: the caller's own routine delegation (allow, status, revoke).
   { methods: ["GET", "POST", "DELETE"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
+  // Slice 8: a person copies their own bots from a solo Sagax (the handler
+  // checks the session, the caller's right to create bots and the copy).
+  { methods: ["POST"], path: /^\/api\/org\/import$/, feature: "orgDirectory" },
   // A member's machine checks in as a worker. The handler binds it to the session user.
   // Pull and cancel stay on that session: registering does not run the queued turns.
   { methods: ["POST"], path: /^\/api\/workers$/ },
