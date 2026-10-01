@@ -125,6 +125,8 @@ export interface FloatingBotsBridge {
   update(botId: string, snapshot: FloatingSnapshot): void;
   onEvent(cb: (value: { botId: string; event: FloatingEvent }) => void): () => void;
   onClosed(cb: (value: { botId: string }) => void): () => void;
+  /** A window is ready but has no state: send it again (optional: an older preload lacks it). */
+  onWant?(cb: (value: { botId: string }) => void): () => void;
 }
 
 const ID = /^[a-zA-Z0-9:_-]{1,64}$/;

@@ -39,6 +39,20 @@ const RELOAD_DELAY_MS = 800;
 /** A page that has not said it is ready after this long is reloaded. */
 export const READY_TIMEOUT_MS = 12_000;
 
+/** Resolves once `url` answers (or after `tries`): a development page server may still be starting. */
+export async function waitForPage(url, { fetchImpl = globalThis.fetch, tries = 40, delayMs = 250 } = {}) {
+  for (let i = 0; i < tries; i += 1) {
+    try {
+      const response = await fetchImpl(url, { method: "GET", signal: AbortSignal.timeout(2000) });
+      if (response.ok) return true;
+    } catch {
+      /* not up yet */
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return false;
+}
+
 const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const clampNumber = (value, low, high) => Math.min(Math.max(value, low), high);
 
@@ -391,7 +405,7 @@ export function createFloatingBotWindows(deps) {
       if (!silent) notifyMain("floating-bots:closed", { botId });
     });
     keepAlive(botId, entry);
-    load(entry);
+    void load(entry);
     return created;
   }
 
@@ -401,9 +415,13 @@ export function createFloatingBotWindows(deps) {
    * dead page reloaded, a page that never says it is ready reloaded once,
    * and every error of the page reaches main's log.
    */
-  const load = (entry) => {
+  const load = async (entry) => {
     if (!live(entry)) return;
-    void entry.win.loadURL(pageUrl()).catch((error) => log(`floating bot window failed to load: ${error?.message ?? error}`));
+    const url = pageUrl();
+    // in development the page comes from Vite: wait until it answers rather than fail the first load
+    if (deps.waitForPage) await deps.waitForPage(url).catch(() => undefined);
+    if (!live(entry)) return;
+    void entry.win.loadURL(url).catch((error) => log(`floating bot window failed to load: ${error?.message ?? error}`));
   };
 
   function keepAlive(botId, entry) {
@@ -415,7 +433,7 @@ export function createFloatingBotWindows(deps) {
       entry.retries += 1;
       log(`floating bot ${botId}: ${why}; reloading (${entry.retries}/${MAX_RELOADS})`);
       entry.ready = false;
-      setTimeout(() => load(entry), RELOAD_DELAY_MS * entry.retries);
+      setTimeout(() => void load(entry), RELOAD_DELAY_MS * entry.retries);
     };
     win.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
       // -3 is an aborted load (a reload, or the window closing), not a failure
@@ -460,6 +478,8 @@ export function createFloatingBotWindows(deps) {
   function close(botId) {
     const entry = floats.get(botId);
     floats.delete(botId);
+    // the same bot's next window starts from its last state (the brain may not send it again)
+    if (entry?.snapshot) pending.set(botId, entry.snapshot);
     if (live(entry)) entry.win.destroy();
   }
 
@@ -576,7 +596,11 @@ export function createFloatingBotWindows(deps) {
     "floating-bots:ready": (event) => {
       const found = senderFloat(event);
       if (found) found.entry.ready = true;
-      if (found && !found.entry.snapshot) note(`${found.botId} is ready but no state has come from the app yet`);
+      if (found && !found.entry.snapshot) {
+        note(`${found.botId} is ready but no state has come from the app yet; asking the app`);
+        // pull, not only push: the app page sends this bot's state again
+        notifyMain("floating-bots:want", { botId: found.botId });
+      }
       if (found?.entry.snapshot) found.entry.win.webContents.send("floating-bot:state", found.entry.snapshot);
     },
     "floating-bots:event": (event, value) => {

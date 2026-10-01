@@ -338,10 +338,24 @@ export function FloatingBots() {
   }, [bridge, floatedKey]);
 
   // Close them all when the brain goes away (the app page reloads or unmounts this).
+  // Forget what was sent too: a window opened again (React mounts twice in
+  // development, a hot reload remounts) must be sent its state again.
   useEffect(() => () => {
     if (!bridge) return;
     for (const id of opened.current.keys()) void bridge.close(id).catch(() => undefined);
     opened.current.clear();
+    sent.current.clear();
+  }, [bridge]);
+
+  // A window that is ready with no state asks for it (main relays): send it again.
+  const [, resend] = useState(0);
+  useEffect(() => {
+    if (!bridge?.onWant) return;
+    return bridge.onWant((value) => {
+      if (!value || typeof value.botId !== "string") return;
+      sent.current.delete(value.botId);
+      resend((n) => n + 1);
+    });
   }, [bridge]);
 
   useEffect(() => {

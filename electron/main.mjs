@@ -67,7 +67,7 @@ import {
 } from "./desktop-companion-client.mjs";
 import { isKnownSkin, skinChrome } from "./skin-overlay.cjs";
 import { createRetroAssistantWindow, DETACHED_QUERY } from "./retro-assistant-window.mjs";
-import { createFloatingBotWindows, FLOATING_QUERY } from "./floating-bot-window.mjs";
+import { createFloatingBotWindows, FLOATING_QUERY, waitForPage as waitForFloatingPage } from "./floating-bot-window.mjs";
 import { readSecureCredentials } from "./secure-credentials.mjs";
 import { createControlPlaneClient } from "./control-plane-client.mjs";
 import {
@@ -2717,6 +2717,8 @@ const retroAssistantWindow = createRetroAssistantWindow({
 const FLOATING_BOT_POSITIONS = () => path.join(app.getPath("userData"), "floating-bot-positions.json");
 const floatingBotWindows = createFloatingBotWindows({
   whenReady: () => app.whenReady(),
+  // development: the page comes from Vite, which may not answer yet at launch
+  ...(app.isPackaged ? {} : { waitForPage: (url) => waitForFloatingPage(url) }),
   BrowserWindow,
   screen,
   ipcMain,

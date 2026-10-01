@@ -85,6 +85,13 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   const [failed, setFailed] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 
+  // no state yet: keep asking every second (main replays it, or asks the app for it)
+  useEffect(() => {
+    if (snapshot || !bridge) return;
+    const again = setInterval(() => bridge.ready(), 1000);
+    return () => clearInterval(again);
+  }, [bridge, snapshot]);
+
   // still nothing to draw after a moment (no snapshot came): show the plain owl meanwhile
   useEffect(() => {
     if (snapshot) return;

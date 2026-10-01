@@ -7,6 +7,7 @@ import {
   floatingDefaultBounds,
   MAX_FLOATING,
   READY_TIMEOUT_MS,
+  waitForPage,
   sanitizeFloatingEvent,
   sanitizeFloatingSnapshot,
   sanitizePositions,
@@ -286,6 +287,27 @@ describe("floating bots: a window is never left invisible", () => {
     expect(state).toMatchObject({ name: "Ada", pose: "speak" });
   });
 
+  it("asks the app page for a state when a window is ready without one, and keeps a closed window's state for the next", () => {
+    const { emit, fromMain, open, invoke, fake } = setup();
+    const first = open("bot_a");
+    emit("floating-bots:ready", first.from);
+    expect(fake.main.webContents.sent).toContainEqual(["floating-bots:want", { botId: "bot_a" }]);
+    emit("floating-bots:update", fromMain, { botId: "bot_a", snapshot: SNAPSHOT });
+    // closed and opened again (the app page remounted): the new window still gets the state
+    invoke("floating-bots:close", fromMain, { botId: "bot_a" });
+    const again = open("bot_a");
+    emit("floating-bots:ready", again.from);
+    expect(again.win.webContents.sent.at(-1)).toEqual(["floating-bot:state", expect.objectContaining({ name: "Ada" })]);
+  });
+
+  it("waits for a development page to answer before loading it", async () => {
+    let calls = 0;
+    const fetchImpl = async () => ({ ok: ++calls >= 3 });
+    expect(await waitForPage("http://127.0.0.1:5199/", { fetchImpl, delayMs: 1 })).toBe(true);
+    expect(calls).toBe(3);
+    expect(await waitForPage("http://x/", { fetchImpl: async () => { throw new Error("down"); }, tries: 2, delayMs: 1 })).toBe(false);
+  });
+
   it("says in its log why a state did not reach a window", () => {
     const { emit, open, logs, fake } = setup();
     emit("floating-bots:update", { sender: {} }, { botId: "bot_a", snapshot: SNAPSHOT });
@@ -295,7 +317,7 @@ describe("floating bots: a window is never left invisible", () => {
     expect(logs).toEqual(expect.arrayContaining([
       "floating bots: update refused (not the app page)",
       "floating bots: state for bot_a refused as malformed",
-      "floating bots: bot_b is ready but no state has come from the app yet",
+      "floating bots: bot_b is ready but no state has come from the app yet; asking the app",
     ]));
   });
 
