@@ -167,6 +167,8 @@ export interface FloatingWindowBridge {
   send(event: FloatingEvent): void;
   ready(): void;
   onState(callback: (state: FloatingSnapshot) => void): () => void;
+  /** The mascot's menu, natively, at this point of the page (optional: an older preload lacks it). */
+  popupMenu?(x: number, y: number): void;
   /** The call's levels (optional: an older preload lacks it). */
   onLevel?(callback: (levels: FloatingCallLevels) => void): () => void;
 }

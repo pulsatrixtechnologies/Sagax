@@ -48,6 +48,7 @@ class CountedWindow extends BrowserWindow {
 
 // the brain: a stand-in main window whose page "sends" through ipcMain directly
 const brainEvents = [];
+const menuPops = [];
 const brain = { isDestroyed: () => false, send: (channel, payload) => brainEvents.push({ channel, payload }) };
 const mainWindow = { isDestroyed: () => false, webContents: brain };
 
@@ -363,6 +364,23 @@ async function measureCall(win) {
   return result;
 }
 
+/** A right click on the mascot: the menu opens exactly at the pointer. */
+async function measureMenu(win) {
+  update(snapshot());
+  await wait(400);
+  const at = await js(win, "(() => { const r = document.querySelector('.fb-body').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2 + 7), y: Math.round(r.top + r.height / 2 + 5) }; })()");
+  menuPops.length = 0;
+  win.webContents.sendInputEvent({ type: "mouseMove", ...at });
+  await wait(60);
+  win.webContents.sendInputEvent({ type: "mouseDown", button: "right", clickCount: 1, ...at });
+  win.webContents.sendInputEvent({ type: "mouseUp", button: "right", clickCount: 1, ...at });
+  await wait(400);
+  const pop = menuPops.at(-1) ?? null;
+  const result = { click: at, popup: pop, drawnMenu: await js(win, "Boolean(document.querySelector('.fb-menu'))") };
+  if (!pop || Math.abs(pop.x - at.x) > 1 || Math.abs(pop.y - at.y) > 1 || result.drawnMenu) throw new Error(`menu at the pointer: ${JSON.stringify(result)}`);
+  return result;
+}
+
 async function faceColors(win) {
   return js(win, `(() => {
     const face = document.querySelector(".fb-balloon-face");
@@ -388,6 +406,8 @@ app.whenReady().then(async () => {
         counters.writes += 1;
       },
       focusMain: () => undefined,
+      // main's native menu, recorded (a real one would block the run): where it opens and with what
+      Menu: { buildFromTemplate: (items) => ({ popup: (options) => menuPops.push({ x: options.x, y: options.y, labels: items.map((item) => item.label) }) }) },
       log: (line) => console.log(`[mascot-chat] ${line}`),
     });
     const t0 = Date.now();
@@ -465,6 +485,7 @@ app.whenReady().then(async () => {
     report.resize = { steps: 60, windowMoves: moves(), positionWrites: counters.writes, ...resized, ...cpu(win), ...(await stopFrames(win)) };
     report.near = await measureNear(win);
     report.call = await measureCall(win);
+    report.menu = await measureMenu(win);
     report.events = brainEvents.filter((e) => e.channel === "floating-bots:event").map((e) => e.payload.event.type);
 
     // theme: the app's skin, live, and Trombi's own look

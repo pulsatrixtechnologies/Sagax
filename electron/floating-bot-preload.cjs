@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("floatingBotWindow", {
   setInteractive: (on) => ipcRenderer.send("floating-bots:set-interactive", on === true),
   setFocusable: (on) => ipcRenderer.send("floating-bots:set-focusable", on === true),
   send: (event) => ipcRenderer.send("floating-bots:event", event),
+  popupMenu: (x, y) => ipcRenderer.send("floating-bots:menu", { x: finite(x), y: finite(y) }),
   ready: () => ipcRenderer.send("floating-bots:ready"),
   onState: (callback) => {
     const handler = (_event, state) => callback(state);

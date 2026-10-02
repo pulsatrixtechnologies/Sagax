@@ -11,6 +11,7 @@ import {
   REMEMBER_DELAY_MS,
   waitForPage,
   sanitizeCall,
+  menuPopupPoint,
   sanitizeFloatingEvent,
   sanitizeFloatingSnapshot,
   sanitizePositions,
@@ -99,6 +100,7 @@ function setup(extra = {}) {
     readPositions: () => saved.positions ?? {},
     writePositions: (positions) => { saved.positions = JSON.parse(JSON.stringify(positions)); },
     focusMain,
+    Menu: extra.Menu,
     log: (line) => logs.push(line),
   });
   const logs = [];
@@ -593,6 +595,47 @@ describe("floating bots: a voice call with the mascot", () => {
     // a mascot window cannot speak for the app page
     emit("floating-bots:level", a.from, { botId: "bot_b", levels: { bot: 1, mic: 1 } });
     expect(b.webContents.sent).toHaveLength(0);
+  });
+});
+
+describe("floating bots: the menu opens at the pointer", () => {
+  const areas = [PRIMARY.workArea, SECOND.workArea];
+  it("puts it exactly where the click was, in the window's coordinates", () => {
+    expect(menuPopupPoint({ x: 120, y: 80 }, 1, { x: 600, y: 400, width: 240, height: 260 }, areas)).toEqual({ x: 120, y: 80 });
+    // a zoomed page reports CSS pixels: times the zoom gives the window's (DIP) coordinates
+    expect(menuPopupPoint({ x: 100, y: 50 }, 1.25, { x: 600, y: 400, width: 300, height: 300 }, areas)).toEqual({ x: 125, y: 63 });
+    // on the second display (left of it at x 1440)
+    expect(menuPopupPoint({ x: 30, y: 40 }, 1, { x: 2000, y: 500, width: 240, height: 260 }, areas)).toEqual({ x: 30, y: 40 });
+  });
+
+  it("keeps it inside the work area of the display under the click", () => {
+    // a window partly above the primary's menu bar (work area starts at y 25)
+    expect(menuPopupPoint({ x: 50, y: 5 }, 1, { x: 100, y: 0, width: 240, height: 260 }, areas)).toEqual({ x: 50, y: 25 });
+    // off the bottom of the primary (work area ends at 875): back inside
+    expect(menuPopupPoint({ x: 10, y: 250 }, 1, { x: 100, y: 700, width: 240, height: 260 }, areas)).toEqual({ x: 10, y: 174 });
+    // past the right edge of the second display: the nearest area's last pixel
+    expect(menuPopupPoint({ x: 300, y: 10 }, 1, { x: 3300, y: 100, width: 240, height: 260 }, areas)).toEqual({ x: 59, y: 10 });
+  });
+
+  it("pops main's native menu over the asking window only, with the snapshot's items", () => {
+    const popup = vi.fn();
+    let template = null;
+    const Menu = { buildFromTemplate: vi.fn((items) => { template = items; return { popup }; }) };
+    const { emit, open, fromMain, fake } = setup({ Menu });
+    const a = open("bot_a");
+    emit("floating-bots:update", fromMain, { botId: "bot_a", snapshot: { ...SNAPSHOT, menu: [{ id: "call", label: "Appeler" }, { id: "top", label: "Always on top", checked: true }] } });
+    a.win.setBounds?.({ x: 600, y: 400, width: 240, height: 260 });
+    emit("floating-bots:menu", a.from, { x: 33, y: 44 });
+    expect(popup).toHaveBeenCalledOnce();
+    const [options] = popup.mock.calls[0];
+    expect(options.window).toBe(a.win);
+    expect(template.map((item) => item.label)).toEqual(["Appeler", "Always on top"]);
+    expect(template[1]).toMatchObject({ type: "checkbox", checked: true });
+    template[0].click();
+    expect(fake.main.webContents.sent.at(-1)).toEqual(["floating-bots:event", { botId: "bot_a", event: { type: "menu", id: "call" } }]);
+    // the app page cannot pop a mascot's menu
+    emit("floating-bots:menu", fromMain, { x: 1, y: 1 });
+    expect(popup).toHaveBeenCalledOnce();
   });
 });
 

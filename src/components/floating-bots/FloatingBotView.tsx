@@ -112,6 +112,8 @@ export interface FloatingBotViewProps {
   onReserve?: (reserve: Size | null, exact: boolean) => void;
   /** The voice call's levels as they come (its waveform, the mascot's bounce). */
   onLevels?: LevelSource;
+  /** Desktop: the menu opens natively at this point of the page (the pointer); the drawn menu otherwise. */
+  menuAt?: (x: number, y: number) => void;
 }
 
 interface CharacterProps {
@@ -257,7 +259,7 @@ function Burst({ kind, reduced }: { kind: "hearts" | "sparkles"; reduced: boolea
 }
 
 /** While the bot works away from its spot: a small owl at the screen edge with a turning ring. */
-function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnapshot; onOpen: () => void; onMenu: () => void; hover: (on: boolean) => void }) {
+function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnapshot; onOpen: () => void; onMenu: (x: number, y: number) => void; hover: (on: boolean) => void }) {
   const label = snapshot.hints.working || snapshot.name;
   return (
     <button
@@ -271,7 +273,7 @@ function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnap
       onClick={onOpen}
       onContextMenu={(event) => {
         event.preventDefault();
-        onMenu();
+        onMenu(event.clientX, event.clientY);
       }}
     >
       <span className="fb-away-ring" aria-hidden="true" />
@@ -287,7 +289,7 @@ function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnap
   );
 }
 
-export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve, onLevels }: FloatingBotViewProps) {
+export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve, onLevels, menuAt }: FloatingBotViewProps) {
   // an older brain may not send the mascot's fields yet
   const snapshot: FloatingSnapshot = given.hints ? given : { ...given, ...mascotFields(given) };
   const [menuOpen, setMenuOpen] = useState(false);
@@ -513,6 +515,18 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     if (!hasInput) wantsKeyboard?.(false);
   }, [hasInput, wantsKeyboard]);
 
+  /** The menu at the pointer: main's native one on the desktop, the drawn one in the app. */
+  const openMenu = (x: number, y: number) => {
+    if (menuAt) {
+      setMenuOpen(false);
+      menuAt(x, y);
+    } else setMenuOpen((open) => !open);
+  };
+  const artCenter = () => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: 0, y: 0 };
+  };
+
   const hover = (on: boolean) => {
     hovering.current = on;
     if (!drag.current) interactive?.(on);
@@ -544,9 +558,11 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const start = { ...point(event), moved: false, id: event.pointerId } as NonNullable<typeof drag.current>;
     if (event.pointerType === "touch") {
+      const at = { x: event.clientX, y: event.clientY };
       start.timer = setTimeout(() => {
         start.menu = true;
-        setMenuOpen(true);
+        if (menuAt) menuAt(at.x, at.y);
+        else setMenuOpen(true);
       }, LONG_PRESS_MS);
     }
     drag.current = start;
@@ -666,9 +682,9 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           </Suspense>
         )}
         {away ? (
-          <AwayBadge snapshot={snapshot} hover={hover} onOpen={() => onEvent({ type: "open" })} onMenu={() => {
+          <AwayBadge snapshot={snapshot} hover={hover} onOpen={() => onEvent({ type: "open" })} onMenu={(x, y) => {
             onEvent({ type: "context" });
-            setMenuOpen((open) => !open);
+            openMenu(x, y);
           }} />
         ) : (
         <>
@@ -711,13 +727,15 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
               onEvent({ type: "click" });
             } else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
               event.preventDefault();
-              setMenuOpen((open) => !open);
+              const at = artCenter();
+              openMenu(at.x, at.y);
             }
           }}
           onContextMenu={(event) => {
             event.preventDefault();
             onEvent({ type: "context" });
-            setMenuOpen((open) => !open);
+            // right at the pointer
+            openMenu(event.clientX, event.clientY);
           }}
         >
           <span className="fb-body" style={{ position: "absolute", left: STAGE.left, top: STAGE.top, width: OWL_SIZE, height: OWL_SIZE }}>

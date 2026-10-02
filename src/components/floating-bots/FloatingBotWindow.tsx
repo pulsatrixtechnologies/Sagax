@@ -223,6 +223,8 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   }, [bridge]);
   // the mascot flies its own window off while its bot works, and back
   const pilot = useMemo(() => createWindowPilot(bridge), [bridge]);
+  // the menu opens natively, right at the pointer (an older preload: the drawn menu)
+  const menuAt = useMemo(() => (bridge?.popupMenu ? (x: number, y: number) => bridge.popupMenu!(x, y) : undefined), [bridge]);
   // the voice call's levels, straight from main (an older preload has none)
   const onLevels = useMemo(() => (bridge?.onLevel ? (listener: Parameters<NonNullable<FloatingWindowBridge["onLevel"]>>[0]) => bridge.onLevel!(listener) : undefined), [bridge]);
 
@@ -241,6 +243,7 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
       onSide={onSide}
       onReserve={onReserve}
       onLevels={onLevels}
+      menuAt={menuAt}
     />
     </Fallback>
   );

@@ -226,6 +226,24 @@ export function sanitizeCall(value) {
   };
 }
 
+/**
+ * Where the mascot's native menu opens, for Menu.popup (window coordinates,
+ * DIP): exactly at the click, which the page reports in CSS pixels (times the
+ * page's zoom to get DIP; the display's scale factor is the OS's business),
+ * kept inside the work area of the display under it (or the nearest one), so
+ * it never opens under the menu bar or the Dock or off a screen.
+ */
+export function menuPopupPoint(click, zoom, bounds, areas) {
+  const factor = isFiniteNumber(zoom) && zoom > 0 ? zoom : 1;
+  const sx = bounds.x + (isFiniteNumber(click?.x) ? click.x : 0) * factor;
+  const sy = bounds.y + (isFiniteNumber(click?.y) ? click.y : 0) * factor;
+  const distance = (area) => Math.hypot(sx - clampNumber(sx, area.x, area.x + area.width - 1), sy - clampNumber(sy, area.y, area.y + area.height - 1));
+  const area = (areas ?? []).reduce((best, candidate) => (!best || distance(candidate) < distance(best) ? candidate : best), null);
+  const x = area ? clampNumber(sx, area.x, area.x + area.width - 1) : sx;
+  const y = area ? clampNumber(sy, area.y, area.y + area.height - 1) : sy;
+  return { x: Math.round(x - bounds.x), y: Math.round(y - bounds.y) };
+}
+
 /** The call's two levels, 0..1. */
 export function sanitizeLevels(value) {
   if (!value || typeof value !== "object" || !isFiniteNumber(value.bot) || !isFiniteNumber(value.mic)) return null;
@@ -710,6 +728,37 @@ export function createFloatingBotWindows(deps) {
       }
       entry.snapshot = clean;
       entry.win.webContents.send("floating-bot:state", clean);
+    },
+    // a right click (or a long press) on the mascot: its menu, natively, right at the pointer
+    "floating-bots:menu": (event, at) => {
+      const found = senderFloat(event);
+      const items = found?.entry.snapshot?.menu ?? [];
+      if (!found || !deps.Menu || !items.length) return;
+      const win = found.entry.win;
+      let zoom = 1;
+      try {
+        zoom = win.webContents.getZoomFactor?.() ?? 1;
+      } catch {
+        /* the default zoom */
+      }
+      const point = menuPopupPoint(at, zoom, win.getBounds(), workAreas());
+      const choose = (id) => {
+        if (id === "open") {
+          try {
+            deps.focusMain?.();
+          } catch {
+            /* the brain still switches the thread */
+          }
+        }
+        // the bot id comes from which window asked, never from the payload
+        notifyMain("floating-bots:event", { botId: found.botId, event: { type: "menu", id } });
+      };
+      const menu = deps.Menu.buildFromTemplate(items.map((item) => ({
+        label: item.label,
+        ...(typeof item.checked === "boolean" ? { type: "checkbox", checked: item.checked } : {}),
+        click: () => choose(item.id),
+      })));
+      menu.popup({ window: win, x: point.x, y: point.y });
     },
     // the call's levels, many times a second: straight to that bot's window, never kept
     "floating-bots:level": (event, message) => {

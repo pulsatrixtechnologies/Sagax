@@ -409,6 +409,11 @@ Electron restart (no HMR); launch-test them before committing.
   microphone is the app page's (its permission), never the mascot window's.
   Main sanitizes `call`, its events and their settings patches. Measured in
   `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
+- The desktop mascot's menu (right click, long press, the menu key) is main's
+  native menu, popped exactly at the pointer (`floating-bots:menu`,
+  `menuPopupPoint`: the page's CSS pixels times its zoom, kept inside the work
+  area of the display under it); the drawn `.fb-menu` stays for the in-app
+  overlay and an older preload.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.
