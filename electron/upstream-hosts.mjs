@@ -1,6 +1,6 @@
 // Hosts Sagax must never reach: the original OpenMausBot project's services
-// (every *.openmausbot.com: cloud, accounts, admin, companion tunnels, the
-// site), third-party analytics, and the upstream author's GitHub repositories.
+// (cloud, accounts, admin, companion tunnels, the site, under every domain
+// below), third-party analytics, and the upstream author's GitHub repositories.
 // One list for the desktop app (electron/main.mjs installs it on every
 // session and on main's own fetch) and the server (server/network-guard.ts).
 // scripts/check-no-phone-home.mjs greps the built bundles for the same hosts.

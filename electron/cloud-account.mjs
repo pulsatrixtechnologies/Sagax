@@ -3,8 +3,7 @@ import { CLOUD_MACHINE_CONNECTABLE, parseCloudSummary, parsePairingGrant } from 
 
 import { isBlockedUrl } from "./upstream-hosts.mjs";
 
-// The original project's personal Cloud (cloud.openmausbot.com) is never
-// contacted. Empty means the Cloud account, Move to Cloud and lending are off:
+// The original project's personal Cloud is never contacted. Empty means the Cloud account, Move to Cloud and lending are off:
 // main does not expose them to any page (--sagax-cloud) and no client starts.
 export const CLOUD_ORIGIN = "";
 export const CLOUD_SERVICES_ENABLED = Boolean(CLOUD_ORIGIN) && !isBlockedUrl(CLOUD_ORIGIN);

@@ -1,4 +1,4 @@
-// Sagax sends no usage analytics. The inherited PostHog client was removed:
+// Sagax sends no usage analytics. The inherited analytics client was removed:
 // nothing here opens a connection, and track()/identifyEmail() are kept as
 // no-ops only so call sites stay unchanged. Do not add a network call here;
 // scripts/check-no-phone-home.mjs fails the build if a tracking host or SDK

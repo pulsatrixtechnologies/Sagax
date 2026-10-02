@@ -1,5 +1,6 @@
 // Rung three of the hosting ladder: `openmausbot serve --tunnel` gives a
-// server a public HTTPS address (https://c-<id>.openmausbot.com) with no
+// server a public HTTPS address (from the control plane in
+// OMB_CONTROL_PLANE_URL; Sagax has no hosted default) with no
 // domain, no proxy and no open port, through the same control plane and
 // Cloudflare tunnel the desktop app already uses. Headless, so:
 //

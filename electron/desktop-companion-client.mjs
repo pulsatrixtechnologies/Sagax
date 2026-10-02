@@ -66,7 +66,7 @@ export function normalizeDesktopCompanionEndpoint(value) {
   }
   const hostname = parsed.hostname.toLowerCase();
   // Only a Tailscale MagicDNS address: the original project's hosted
-  // companion relays (*.openmausbot.com) are never contacted.
+  // companion relays are never contacted.
   const tailscaleHttp = parsed.protocol === "http:" && hostname.endsWith(".ts.net");
   if (
     !tailscaleHttp ||

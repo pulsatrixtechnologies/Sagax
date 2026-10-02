@@ -6,7 +6,8 @@
 //
 // Why through the control plane rather than a mail provider per server: a
 // self-hoster then needs no email credentials at all; the code arrives from
-// accounts.openmausbot.com. The exchange happens server-side, so a browser
+// the control plane in OMB_CONTROL_PLANE_URL (no hosted default in Sagax).
+// The exchange happens server-side, so a browser
 // only ever talks to this server, and a server with an empty allow-list does
 // not expose the routes.
 import { resolveCompanionControlPlaneURL } from "../electron/companion-account-service.mjs";

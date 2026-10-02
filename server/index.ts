@@ -12943,7 +12943,7 @@ const webhooks = new WebhookManager({
   // delivery:"post" webhooks land in a dedicated "Updates" task, never
   // bot.threadId (the bot's currently-selected task) -- see
   // resolvePostThread below. Fixes
-  // https://github.com/milind-soni/OpenMausBot/issues/2071: a post used to
+  // upstream issue #2071: a post used to
   // land wherever the owner (or another automation) had last switched
   // that bot's selection, including a live conversation.
   post: (botId, threadId, text) => {
