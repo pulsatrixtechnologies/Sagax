@@ -25,6 +25,7 @@ import { z } from "zod";
 import type { BotWorkplace } from "../shared/bot-workplace.ts";
 
 const ABSOLUTE_PATH = /^(?:\/|[a-zA-Z]:[\\/]|\\\\)/;
+// oxlint-disable-next-line no-control-regex
 const NO_CONTROL = /^[^\u0000-\u001f\u007f]*$/;
 
 export const desktopBridgeRegistration = z.object({
