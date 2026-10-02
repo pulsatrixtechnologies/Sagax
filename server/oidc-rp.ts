@@ -156,7 +156,8 @@ export interface RoutineDelegationExpectation {
 
 interface PendingFlow {
   client: OidcClientKind;
-  /** A desktop sign-in's validated loopback return (server/oidc-login.ts). */
+  /** A desktop sign-in's validated loopback return, or a phone sign-in's
+   * `sagax` return (server/oidc-login.ts). */
   returnTo?: string;
   purpose: OidcFlowPurpose;
   expect?: RoutineDelegationExpectation;
@@ -730,8 +731,9 @@ export class OidcRelyingParty {
     const client = purpose === "routines" ? "web" : options.client ?? "web";
     this.pending.set(state, {
       client,
-      // Only a desktop sign-in comes back to a loopback listener.
-      ...(client === "desktop" && options.returnTo ? { returnTo: options.returnTo } : {}),
+      // Only a desktop sign-in comes back to a loopback listener, and only a
+      // phone sign-in to its app's scheme (PHONE_SAGAX_RETURN).
+      ...((client === "desktop" || client === "phone") && options.returnTo ? { returnTo: options.returnTo } : {}),
       purpose,
       ...(expect ? { expect } : {}),
       state,

@@ -154,7 +154,7 @@ describe("the sign-in identity in the descriptor", () => {
   it("tells native apps an organization server returns to them (slice 2)", () => {
     const identity = identityDescriptor({ kind: "perspicax", issuer: "https://px.example.test", clientId: "pulsa-bot", publicOrigin: "https://bot.example.test", redirectUri: "https://bot.example.test/auth/oidc/callback" });
     const descriptor = environmentDescriptor({ environmentId: "00000000-0000-4000-8000-000000000000", desktopManaged: false, identity });
-    expect(descriptor.identity).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"] });
+    expect(descriptor.identity).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"], phoneReturnSchemes: ["sagax", "openmausbot"] });
     expect(environmentDescriptor({ environmentId: "00000000-0000-4000-8000-000000000000", desktopManaged: false }).identity).toBeUndefined();
   });
 });
