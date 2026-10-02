@@ -4320,9 +4320,9 @@ describe("harness HTTP API", () => {
       expect(statSync(result.path).mode & 0o777).toBe(0o600);
     }
 
-    const unsupported = await fetch(`${BASE}/api/files?name=payload.zip`, {
+    const unsupported = await fetch(`${BASE}/api/files?name=payload.exe`, {
       method: "POST",
-      headers: { "content-type": "application/zip" },
+      headers: { "content-type": "application/x-msdownload" },
       body: Buffer.from("archive"),
     });
     expect(unsupported.status).toBe(400);

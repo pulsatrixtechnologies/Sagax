@@ -11,12 +11,27 @@ export type PasteAttachment = {
   lines: number;
 };
 
+/** What the server listed in an attached archive (server/attachment-archives.ts). */
+export type ArchiveSummary = {
+  kind: "zip" | "tar" | "tgz" | "7z" | null;
+  status: "ok" | "encrypted" | "too-large" | "unsupported" | "invalid";
+  reason?: string;
+  files: number;
+  totalBytes: number;
+  entries: { path: string; size: number }[];
+  truncated: boolean;
+  skippedCount: number;
+  extracted?: boolean;
+};
+
 export type FileAttachment = {
   kind: "file";
   id: string;
   path: string;
   name: string;
   size: number;
+  /** Present for an uploaded archive: its listing, for the chip. */
+  archive?: ArchiveSummary;
 };
 
 export type ImageAttachment = {
@@ -107,14 +122,16 @@ function newUploadId(): string {
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
 }
 
-export function fileAttachment(name: string, path: string, size: number): FileAttachment {
-  return { kind: "file", id: newId(), path, name, size };
+export function fileAttachment(name: string, path: string, size: number, archive?: ArchiveSummary): FileAttachment {
+  return { kind: "file", id: newId(), path, name, size, ...(archive ? { archive } : {}) };
 }
 
 /** Matches the server's IMAGE_MAX_BYTES — checked client-side so an
  * oversized paste is refused before the upload starts, not mid-stream. */
 export const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export const FILE_MAX_BYTES = 25 * 1024 * 1024;
+/** Matches the server's ARCHIVE_MAX_BYTES. */
+export const ARCHIVE_MAX_BYTES = 90 * 1024 * 1024;
 
 const DOCUMENT_MIMES: Readonly<Record<string, string>> = {
   txt: "text/plain",
@@ -152,6 +169,38 @@ const ACCEPTED_AUDIO_MIMES = new Set([
   ...Object.values(AUDIO_MIMES_BY_EXTENSION),
   "audio/x-m4a", "audio/x-wav", "audio/wave", "audio/x-flac",
 ]);
+
+/** Archives the store accepts: the bot gets the file and its unpacked
+ * folder. A bare .gz is not one (only a tar.gz is). */
+const ARCHIVE_MIMES_BY_EXTENSION: Readonly<Record<string, string>> = {
+  zip: "application/zip",
+  tar: "application/x-tar",
+  tgz: "application/gzip",
+  "tar.gz": "application/gzip",
+  "7z": "application/x-7z-compressed",
+};
+const DECLARED_ARCHIVE_MIMES: Readonly<Record<string, string>> = {
+  "application/zip": "application/zip",
+  "application/x-zip-compressed": "application/zip",
+  "application/x-zip": "application/zip",
+  "application/x-tar": "application/x-tar",
+  "application/x-7z-compressed": "application/x-7z-compressed",
+};
+
+/** The archive type a picked or dropped file is uploaded as, or null. */
+export function archiveMime(file: Pick<File, "name" | "type">): string | null {
+  const lower = file.name.trim().toLowerCase();
+  if (lower.endsWith(".tar.gz")) return ARCHIVE_MIMES_BY_EXTENSION["tar.gz"]!;
+  const byName = ARCHIVE_MIMES_BY_EXTENSION[lower.split(".").at(-1) ?? ""];
+  if (byName && lower.includes(".")) return byName;
+  const declared = file.type.split(";", 1)[0]!.trim().toLowerCase();
+  return DECLARED_ARCHIVE_MIMES[declared] ?? null;
+}
+
+/** Whether a name is an archive the chips show as one. */
+export function isArchiveName(name: string): boolean {
+  return /\.(zip|tar|tgz|tar\.gz|7z)$/i.test(name.trim());
+}
 
 export function documentMime(file: Pick<File, "name" | "type">): string | null {
   const declared = file.type.split(";", 1)[0]!.trim().toLowerCase();
@@ -204,6 +253,17 @@ export function clipboardImageFiles(
     return Array.from(clipboardData.files).filter(isImageFile);
   }
   return [];
+}
+
+/**
+ * Files on the clipboard that are not images (a zip or a document copied in
+ * the Finder or Explorer): they go through the same intake as a drop.
+ */
+export function clipboardOtherFiles(
+  clipboardData: { files?: Iterable<File> | null } | null | undefined,
+): File[] {
+  if (!clipboardData?.files) return [];
+  return Array.from(clipboardData.files).filter((file) => !isImageFile(file) && !file.type.startsWith("image/"));
 }
 
 /**
@@ -339,20 +399,24 @@ export async function imageAttachmentFromFile(
   };
 }
 
-/** Copy a supported document or audio file into the private attachment store. The prompt
+/** Copy a supported document, audio file or archive into the private attachment store. The prompt
  * then carries the same durable path for the local agent and paired phones,
  * instead of exposing an arbitrary Finder path to the companion route. */
 export async function fileAttachmentFromFile(file: File): Promise<FileAttachment | null> {
   const declared = file.type.split(";", 1)[0]!.trim().toLowerCase();
   const extension = file.name.split(".").at(-1)?.toLowerCase() ?? "";
-  const mime = documentMime(file) ??
+  const archive = archiveMime(file);
+  const mime = archive ?? documentMime(file) ??
     (ACCEPTED_AUDIO_MIMES.has(declared) ? declared : AUDIO_MIMES_BY_EXTENSION[extension]);
   if (!mime) return null;
-  if (file.size > FILE_MAX_BYTES) {
+  if (archive && file.size > ARCHIVE_MAX_BYTES) {
+    throw Object.assign(new Error(`${file.name} is ${formatSize(file.size)}; archives can be at most 90 MB`), { status: 413 });
+  }
+  if (!archive && file.size > FILE_MAX_BYTES) {
     throw Object.assign(new Error(`${file.name} exceeds 25 MB`), { status: 413 });
   }
   const uploadId = newUploadId();
-  const saved = await uploadWithRetry<{ path: string; name: string; bytes: number }>(
+  const saved = await uploadWithRetry<{ path: string; name: string; bytes: number; archive?: ArchiveSummary }>(
     `/api/files?name=${encodeURIComponent(file.name)}&uploadId=${encodeURIComponent(uploadId)}`,
     {
       method: "POST",
@@ -360,7 +424,7 @@ export async function fileAttachmentFromFile(file: File): Promise<FileAttachment
       body: file,
     },
   );
-  return fileAttachment(saved.name || file.name, saved.path, saved.bytes);
+  return fileAttachment(saved.name || file.name, saved.path, saved.bytes, saved.archive);
 }
 
 export function pasteAttachment(text: string): PasteAttachment {
@@ -839,7 +903,7 @@ export async function intakeFiles<T extends DroppedFile & { type: string }>(
   const rejectedNames = results.flatMap((result) => result.rejectedNames);
   const uploadErrors = results.flatMap((result) => result.uploadError ? [result.uploadError] : []);
   const pathless = rejectedNames.length
-    ? `Unable to attach ${rejectedNames.join(", ")}. Choose a supported image, document, or audio file.`
+    ? `Unable to attach ${rejectedNames.join(", ")}. Choose a supported image, document, audio file, or archive (zip, tar, tar.gz, 7z).`
     : null;
   const failed = uploadErrors.length ? uploadErrors.join("; ") : null;
   return {

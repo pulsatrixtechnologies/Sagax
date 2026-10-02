@@ -10,6 +10,7 @@ import http from "node:http";
 
 import { attachmentName, commandEnvironment, createDesktopBridge, createLocalVm, executeBridgeOperation, localPath, validBridgeOperation } from "./desktop-bridge.mjs";
 import net from "node:net";
+import { zipArchive } from "../server/testing/archive-fixtures.mjs";
 
 import { coarseFailure, isBlockedAddress, isLanAddress, openConnection, openDesktopTunnel, proxyChain, proxyCredentialsFromEnv, tunnelVerdict, TUNNEL, tunnelMessage } from "./desktop-tunnel.mjs";
 import { createProxyCredentialStore, createProxyCredentials, proxyPasswordPage } from "./proxy-credentials.mjs";
@@ -85,6 +86,26 @@ test("attachments are copied in order into the desktop's own folder", async () =
   assert.equal(fs.readFileSync(path.join(d.attachmentsDir, "0b5a3c1e-README.md"), "utf8"), "# Hello");
   await assert.rejects(executeBridgeOperation({ action: "stage_file", name: "0b5a3c1e-README.md", content: "eA==", offset: 99 }, d, signal()), /out of order/);
   await assert.rejects(executeBridgeOperation({ action: "stage_file", name: "../escape", content: "eA==", offset: 0 }, d, signal()), /Invalid attachment name/);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test("a staged archive is unpacked next to it, safely", async () => {
+  const home = sandboxHome();
+  const d = deps(home);
+  const zip = zipArchive([{ name: "project/a.txt", data: "alpha" }, { name: "../../escape.txt", data: "nope" }, { name: "l", data: "/etc", symlink: true }]);
+  await executeBridgeOperation({ action: "stage_file", name: "0b5a3c1e-project.zip", content: zip.toString("base64"), offset: 0, final: true }, d, signal());
+  assert.equal(validBridgeOperation({ action: "extract_archive", name: "0b5a3c1e-project.zip" }), true);
+  const result = await executeBridgeOperation({ action: "extract_archive", name: "0b5a3c1e-project.zip" }, d, signal());
+  assert.notEqual(result.isError, true);
+  assert.equal(fs.readFileSync(path.join(d.attachmentsDir, "0b5a3c1e-project", "project", "a.txt"), "utf8"), "alpha");
+  assert.deepEqual(fs.readdirSync(path.join(d.attachmentsDir, "0b5a3c1e-project")), ["project"]);
+  assert.equal(fs.existsSync(path.join(home, "tmp", "escape.txt")), false);
+  await executeBridgeOperation({ action: "stage_file", name: "0b5a3c1e-secret.zip", content: zipArchive([{ name: "s.txt", data: "x", encrypted: true, method: 0 }]).toString("base64"), offset: 0, final: true }, d, signal());
+  const encrypted = await executeBridgeOperation({ action: "extract_archive", name: "0b5a3c1e-secret.zip" }, d, signal());
+  assert.equal(encrypted.isError, true);
+  assert.match(encrypted.content[0].text, /encrypted/);
+  await assert.rejects(executeBridgeOperation({ action: "extract_archive", name: "0b5a3c1e-README.md" }, d, signal()), /Not an archive/);
+  await assert.rejects(executeBridgeOperation({ action: "extract_archive", name: "../x.zip" }, d, signal()), /Invalid attachment name/);
   fs.rmSync(home, { recursive: true, force: true });
 });
 
