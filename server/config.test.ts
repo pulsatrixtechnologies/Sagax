@@ -27,7 +27,7 @@ import { customMcpServers,
   showToolCallsEnabled,
   routinesInConversationEnabled,
   connectedAppsEnabled,
-  templatesEnabled,
+  templatesEnabled, vpsComputerEnabled, boatComputerEnabled,
   saveConfig,
   skillAuthoringEnabled,
   sharedComputersEnabled,
@@ -593,6 +593,11 @@ describe("configuration boundaries", () => {
     expect(parseConfigPatch({ features: { templates: true } })).toEqual({ features: { templates: true } });
     expect(templatesEnabled({ features: { templates: false } })).toBe(false);
     expect(templatesEnabled({ features: { templates: true } })).toBe(true);
+    expect(parseConfigPatch({ features: { vpsComputer: true, boatComputer: false } })).toEqual({ features: { vpsComputer: true, boatComputer: false } });
+    expect(vpsComputerEnabled({})).toBe(false);
+    expect(vpsComputerEnabled({ features: { vpsComputer: true } })).toBe(true);
+    expect(boatComputerEnabled({})).toBe(false);
+    expect(boatComputerEnabled({ features: { boatComputer: true } })).toBe(true);
   });
 
   it("keeps tool-call chips off by default and accepts an explicit opt-in", () => {

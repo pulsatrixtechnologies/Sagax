@@ -301,7 +301,7 @@ export function createLocalVm({
   // is not a test's.
   const current = async runtime => {
     const all = await list(runtime);
-    const named = all.find(entry => entry.name === REAL_CONTAINER) ?? all.find(entry => !/^openmausbot-test-/.test(entry.name)) ?? null;
+    const named = all.find(entry => entry.name === REAL_CONTAINER) ?? all.find(entry => !entry.name.startsWith("openmausbot-test-")) ?? null;
     return { all, vm: named ? await inspect(runtime, named.name) : null };
   };
   const pick = async (runtime, container) => {

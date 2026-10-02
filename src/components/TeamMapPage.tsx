@@ -12,6 +12,7 @@ import {
 } from "@/lib/team-map";
 import { cn } from "@/lib/cn";
 import { placeOffered } from "@/lib/place";
+import { boatComputerEnabled } from "@/lib/feature-flags";
 import { TeamCanvas } from "./TeamCanvas";
 import { TeamDialog } from "./TeamDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -341,7 +342,7 @@ export function TeamMapPage() {
               const details = event.currentTarget.closest("details"); details?.querySelector("summary")?.focus(); details?.removeAttribute("open");
             }}>
               <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover" onClick={() => setTeamEditor({})}><Users size={16} />{t("team.create")}</button>
-              <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover" onClick={() => { setComputersOpen(true); setCreateComputerRequest((value) => value + 1); }}><Box size={16} />Boat computer</button>
+              {boatComputerEnabled(state.config) && <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover" onClick={() => { setComputersOpen(true); setCreateComputerRequest((value) => value + 1); }}><Box size={16} />Boat computer</button>}
               {/* An OMB Cloud home has no Local VM (shared/cloud-home.ts). */}
               {placeOffered("vm", state.config) && <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover" onClick={() => dispatch({ type: "toggleAppSettings", section: "computer", open: true })}><Monitor size={16} />Local VM…</button>}
             </div>

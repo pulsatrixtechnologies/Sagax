@@ -16,11 +16,13 @@ type ViewState = "idle" | "connecting" | "connected" | "stopped" | SandboxViewer
 
 /** `onConnected`: the view is live (opening it may have started the
  * environment, so a power chip next to it should refresh). */
-export function SandboxDesktopView({ onConnected }: { onConnected?: () => void } = {}) {
+/** `embedded`: only the live screen, filling its parent (the Computer
+ * tab's square, which draws the frame and the controls), connecting at once. */
+export function SandboxDesktopView({ onConnected, embedded = false }: { onConnected?: () => void; embedded?: boolean } = {}) {
   const screen = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ViewState>("idle");
   const [control, setControl] = useState(false);
-  const [attempt, setAttempt] = useState(0);
+  const [attempt, setAttempt] = useState(embedded ? 1 : 0);
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
 
@@ -71,6 +73,26 @@ export function SandboxDesktopView({ onConnected }: { onConnected?: () => void }
     : state === "connected" ? t(control ? "sandboxDesktop.controlling" : "sandboxDesktop.watching")
     : t(`sandboxDesktop.${state}`);
   const live = state === "connected";
+
+  if (embedded) {
+    return (
+      <div data-sandbox-desktop={state} className="absolute inset-0">
+        <div ref={screen} role="application" aria-label={t("sandboxDesktop.screen")} className="h-full w-full" />
+        {!live && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-[12px] text-ink-secondary">
+            {state === "connecting" && <Loader2 size={16} aria-hidden="true" className="animate-spin" />}
+            <p role="status">{message}</p>
+            {state !== "connecting" && (
+              <button type="button" onClick={show} className="ui-button flex min-h-[44px] items-center gap-2 md:min-h-0">
+                <RefreshCw size={14} aria-hidden="true" />
+                {t("sandboxDesktop.show")}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <section aria-label={t("sandboxDesktop.title")} data-sandbox-desktop={state} data-control={control ? "1" : "0"} className="mt-2">

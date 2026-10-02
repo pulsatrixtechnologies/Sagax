@@ -6,29 +6,31 @@ import { describe, expect, it } from "vitest";
 
 import { CloudBackendPicker } from "../CloudBackendPicker";
 import { ToolActivity } from "../ToolActivity";
-import { MyServerEnvironment } from "./MyServerEnvironment";
+import { ServerEnvironmentCard } from "./OrgComputerSettings";
 
-describe("Your server environment card", () => {
-  it("shows status, resources, last use and the Reset button", () => {
-    const markup = renderToStaticMarkup(createElement(MyServerEnvironment, {
+describe("Server environment card (Settings > Computer)", () => {
+  it("shows one line, the state, resources, the screen button and Reset only behind the menu", () => {
+    const markup = renderToStaticMarkup(createElement(ServerEnvironmentCard, {
       initial: {
         configured: true, state: "running", lastUsedAt: Date.UTC(2026, 9, 1, 12), workspaceBytes: 50 * 1048576, overQuota: false,
         limits: { memoryMb: 1024, cpus: 1, pids: 256, diskMb: 2048, tmpMb: 256 }, idleMinutes: 15, pendingDeletionAt: null,
       },
     }));
-    expect(markup).toContain("Your server environment");
+    expect(markup).toContain("Server environment");
     expect(markup).toContain('data-server-environment="running"');
     expect(markup).toContain("1 CPU, 1024 MB memory, 2048 MB disk");
-    expect(markup).toContain("50 MB");
-    expect(markup).toContain("after 15 min");
-    expect(markup).toContain(">Reset<");
+    expect(markup).toContain("Show the screen");
+    expect(markup).toContain('aria-label="More actions"');
+    // Reset is in the closed "..." menu, and nothing opens a browser window.
+    expect(markup).not.toContain(">Reset<");
+    expect(markup).not.toContain("desktop-viewer");
   });
 
-  it("says when the server has none, and disables Reset once the person is out", () => {
-    expect(renderToStaticMarkup(createElement(MyServerEnvironment, { initial: { configured: false } }))).toContain("This server has no server environments.");
-    const closed = renderToStaticMarkup(createElement(MyServerEnvironment, { initial: { configured: true, state: "stopped", pendingDeletionAt: 1, limits: null } }));
+  it("says when the server has none, and words a closed environment", () => {
+    expect(renderToStaticMarkup(createElement(ServerEnvironmentCard, { initial: { configured: false } }))).toContain("This server has no server environments.");
+    const closed = renderToStaticMarkup(createElement(ServerEnvironmentCard, { initial: { configured: true, state: "stopped", pendingDeletionAt: 1, limits: null } }));
     expect(closed).toContain("Closed: you were signed out");
-    expect(closed).toMatch(/<button[^>]*disabled=""[^>]*>Reset/);
+    expect(closed).toMatch(/<button[^>]*disabled=""[^>]*>Show the screen/);
   });
 });
 
