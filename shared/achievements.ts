@@ -155,8 +155,59 @@ export interface AchievementDefinition {
   points: AchievementPoints;
   /** Secret: its name and description stay hidden until it unlocks. */
   hidden?: boolean;
+  /** A secret's nudge, shown on what it unlocks (never its answer). */
+  hint?: Localized;
   rule: AchievementRule;
   rewards: readonly AchievementReward[];
+}
+
+/* ------------------------------------------------------------------ */
+/* What the server answers (GET /api/me/achievements)                 */
+/* ------------------------------------------------------------------ */
+
+export interface AchievementSettings {
+  /** The trophy line under the name in the sidebar. */
+  showPoints: boolean;
+  /** The in-app unlock toast. */
+  toasts: boolean;
+  /** A system notification when an unlock lands while the app is in the background. */
+  native: boolean;
+  /** Colleagues may see my points (organization server). */
+  public: boolean;
+  /** The title shown on my achievements page, one I unlocked. */
+  title?: string;
+  /** Minutes east of UTC, for days and streaks (ET in summer: -240). */
+  tzOffset?: number;
+}
+
+export interface AchievementUnlock {
+  id: string;
+  points: number;
+  unlockedAt: number;
+}
+
+export interface AchievementItemState {
+  id: string;
+  unlockedAt?: number;
+  current: number;
+  target: number;
+  /** Share of this server's people who unlocked it, when there are enough people to say it without naming anyone. */
+  percent?: number;
+}
+
+export interface AchievementSnapshot {
+  points: number;
+  maxPoints: number;
+  level: { level: number; from: number; to: number };
+  unlockedCount: number;
+  count: number;
+  streak: number;
+  /** Reward keys this person may use (rewards earned plus grandfathered). */
+  rewards: string[];
+  /** Ids of the last unlocks, newest first. */
+  recent: string[];
+  items: AchievementItemState[];
+  settings: AchievementSettings;
 }
 
 /* ------------------------------------------------------------------ */

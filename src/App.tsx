@@ -32,6 +32,8 @@ import { engineReady } from "@/components/EngineLibrary";
 import { CommandPalette } from "@/components/CommandPalette";
 import { StagedOrgImport } from "@/components/OrgImportDialog";
 import { RetroAssistantHost } from "@/components/RetroAssistantHost";
+import { AchievementToaster } from "@/components/achievements/AchievementToaster";
+import { reportAchievement } from "@/lib/achievements";
 import { FloatingBotsHost } from "@/components/FloatingBotsHost";
 import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
@@ -111,6 +113,13 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     setLocaleEpoch((epoch) => epoch + 1);
   }, [language]);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // the palette and the shortcuts sheet each teach a habit (achievements)
+  useEffect(() => {
+    if (paletteOpen) reportAchievement("palette.opened");
+  }, [paletteOpen]);
+  useEffect(() => {
+    if (state.shortcutsOpen) reportAchievement("shortcuts.opened");
+  }, [state.shortcutsOpen]);
   const [composeOpen, setComposeOpen] = useState(false);
   const [localVmWorkspaceBotId, setLocalVmWorkspaceBotId] = useState<string | null>(null);
   // the Browser tab, expanded into the main column (the small preview in
@@ -406,6 +415,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       <CommandPalette onOpenChange={setPaletteOpen} />
       <StagedOrgImport />
       <RetroAssistantHost />
+      <AchievementToaster />
       <FloatingBotsHost />
       <RetroBootSlot />
       </div>

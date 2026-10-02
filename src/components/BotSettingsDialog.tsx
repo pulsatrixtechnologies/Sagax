@@ -7,6 +7,7 @@ import { Bug, ChevronDown, ChevronLeft, PanelRight, Search } from "lucide-react"
 
 import { api, useStore, visibleMessages, type Bot } from "@/state/store";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
+import { reportAchievement } from "@/lib/achievements";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import type { BotOverview } from "@/lib/bot-overview-types";
 import { cn } from "@/lib/cn";
@@ -89,6 +90,10 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
   // The Computer tab is the store's computer view, so every existing
   // "open the computer" link still lands on it.
   const tab: PanelTab = state.computerOpen ? "computer" : pickedTab;
+  // the Library holds the bot's files (an achievement teaches it)
+  useEffect(() => {
+    if (tab === "library") reportAchievement("files.opened");
+  }, [tab]);
   const chooseTab = (next: PanelTab) => {
     if (next === "computer") {
       dispatch({ type: "toggleComputer", open: true });

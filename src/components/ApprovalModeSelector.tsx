@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Check, FilePen, Hand, ListChecks, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
+import { reportAchievement } from "@/lib/achievements";
 
 import { approvalModeFor, hasNativeAutoReview, supportsApprovalMode, type ApprovalMode } from "../../shared/approval-mode";
 import { cn } from "@/lib/cn";
@@ -128,6 +129,15 @@ export function ApprovalModeSelector({
     ?? allOptions.find((option) => option.mode === mode)
     ?? allOptions[0];
   const visibleOptions = approvalModeOptionsFor(driverKind, trustedModesAvailable, orgFullAccess);
+  // Full access granted, then brought back to Ask (an achievement on using it responsibly)
+  const previousMode = useRef(savedMode);
+  useEffect(() => {
+    const before = previousMode.current;
+    previousMode.current = savedMode;
+    if (before === savedMode) return;
+    if (savedMode === "full") reportAchievement("fullaccess.granted");
+    else if (before === "full" && savedMode === "ask") reportAchievement("fullaccess.revoked");
+  }, [savedMode]);
   const requiresLocalDesktop = approvalModeSelectionRequiresLocalDesktop(
     mode,
     trustedModesAvailable,

@@ -3,6 +3,7 @@
 // on. With the egg off it renders nothing and holds one keydown listener.
 import { lazy, Suspense, useEffect, useState } from "react";
 import { activeLocale } from "@/lib/i18n";
+import { reportAchievement } from "@/lib/achievements";
 import { createKonamiDetector, KONAMI_SEQUENCE, loadRetroAssistant, onRetroToggle, readRetroEnabled, toggleRetro } from "@/lib/retro98";
 
 const RetroAssistant = lazy(loadRetroAssistant);
@@ -26,7 +27,10 @@ export function RetroAssistantHost() {
       // The last two keys of the code are letters: inside a text field, keep
       // them out of the draft once the arrows have already matched.
       if (matched >= KONAMI_SEQUENCE.length - 1 && isEditable(event.target)) event.preventDefault();
-      if (matched === KONAMI_SEQUENCE.length) toggleRetro();
+      if (matched === KONAMI_SEQUENCE.length) {
+        reportAchievement("konami");
+        toggleRetro();
+      }
     };
     window.addEventListener("keydown", onKey, true);
     const stop = onRetroToggle((on) => {

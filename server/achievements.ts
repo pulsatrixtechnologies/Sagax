@@ -35,8 +35,14 @@ import {
   unlocksFor,
   type AchievementDefinition,
   type AchievementEventType,
+  type AchievementItemState,
   type AchievementProgress,
+  type AchievementSettings,
+  type AchievementSnapshot,
+  type AchievementUnlock,
 } from "../shared/achievements.ts";
+
+export type { AchievementItemState, AchievementSettings, AchievementSnapshot, AchievementUnlock };
 import { writeFileAtomic } from "./atomic.ts";
 
 export interface AchievementEvent {
@@ -49,21 +55,6 @@ export interface AchievementEvent {
   id?: string;
 }
 
-export interface AchievementSettings {
-  /** The trophy line under the name in the sidebar. */
-  showPoints: boolean;
-  /** The in-app unlock toast. */
-  toasts: boolean;
-  /** A system notification when an unlock lands while the app is in the background. */
-  native: boolean;
-  /** Colleagues may see my points (organization server). */
-  public: boolean;
-  /** The title shown on my achievements page, one I unlocked. */
-  title?: string;
-  /** Minutes east of UTC, for days and streaks (ET in summer: -240). */
-  tzOffset?: number;
-}
-
 export const DEFAULT_ACHIEVEMENT_SETTINGS: AchievementSettings = Object.freeze({ showPoints: true, toasts: true, native: false, public: false });
 
 interface PersonRecord extends AchievementProgress {
@@ -73,36 +64,6 @@ interface PersonRecord extends AchievementProgress {
   /** Ids of events already counted (bounded). */
   seen: string[];
   updatedAt: number;
-}
-
-export interface AchievementUnlock {
-  id: string;
-  points: number;
-  unlockedAt: number;
-}
-
-export interface AchievementItemState {
-  id: string;
-  unlockedAt?: number;
-  current: number;
-  target: number;
-  /** Share of this server's people who unlocked it, when there are enough people to say it without naming anyone. */
-  percent?: number;
-}
-
-export interface AchievementSnapshot {
-  points: number;
-  maxPoints: number;
-  level: { level: number; from: number; to: number };
-  unlockedCount: number;
-  count: number;
-  streak: number;
-  /** Reward keys this person may use (rewards earned plus grandfathered). */
-  rewards: string[];
-  /** Ids of the last unlocks, newest first. */
-  recent: string[];
-  items: AchievementItemState[];
-  settings: AchievementSettings;
 }
 
 export interface AchievementStore {
