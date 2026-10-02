@@ -623,6 +623,7 @@ import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
@@ -16774,6 +16775,60 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+// What a bot is doing (server/routes/bot-activity.ts): its threads, the
+// work it handed other bots and its routine runs, as the viewer may read them.
+ROUTES.push(createBotActivityRoutes({
+  bot: (id) => store.bot(id),
+  tasks: (botId) => store.tasks(botId),
+  viewerId: (auth) => channelFilterViewerId(auth),
+  threadReadable: (botId, threadId, viewerId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && botThreadReadable(bot!, threadId, viewerId, "thread.read");
+  },
+  threadWritable: (botId, threadId, viewerId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && botThreadReadable(bot!, threadId, viewerId, "thread.post");
+  },
+  runs: (botId) => routines?.listRuns().filter((run) => run.botId === botId && run.target !== "room-goal") ?? [],
+  runSeen: (run, viewerId) => !viewerId || routineSeenBy(run, viewerId),
+  messages: (threadId, limit) => {
+    const page = store.messagesTail(threadId, limit);
+    return { messages: page.messages, hasMore: page.hasMore };
+  },
+  children: (botId, threadId) => activityChildren(botId, threadId),
+  personName: (principalId) => personDisplayName(principals.byId(principalId)) || "",
+  organization: () => IDENTITY.kind === "perspicax",
+}));
+/** The sub-agents a direct thread started: coordinate_bots work (room
+ * handoffs whose parent is this thread) and legacy delegations in flight. */
+function activityChildren(botId: string, threadId: string): ActivityChildRef[] {
+  const out: ActivityChildRef[] = [];
+  const seen = new Set<string>();
+  for (const node of roomHandoffs.nodes.values()) {
+    if (!node.parentId || node.groupId) continue;
+    const parent = roomHandoffs.nodes.get(node.parentId);
+    if (!parent || parent.threadId !== threadId || parent.botId !== botId) continue;
+    seen.add(node.threadId);
+    out.push({
+      botId: node.botId,
+      threadId: node.threadId,
+      title: store.taskByThread(node.botId, node.threadId)?.title || node.text.slice(0, 120),
+      status: node.status === "source" || node.status === "resume" ? "running" : node.status,
+      startedAt: node.startedAt ?? node.createdAt,
+    });
+  }
+  for (const watch of delegationWatch.values()) {
+    if (watch.sourceBotId !== botId || watch.sourceThreadId !== threadId || !watch.taskId || seen.has(watch.taskId)) continue;
+    out.push({
+      botId: watch.toBotId,
+      threadId: watch.taskId,
+      title: store.taskByThread(watch.toBotId, watch.taskId)?.title || watch.toBotName || "",
+      status: "running",
+      startedAt: watch.startedAtMs ?? Date.now(),
+    });
+  }
+  return out;
+}
 // A group's shared memory (server/routes/group-memory.ts): its people read
 // it, its owner edits it or switches it off.
 ROUTES.push(createGroupMemoryRoutes({
