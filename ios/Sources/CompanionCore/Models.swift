@@ -1585,7 +1585,7 @@ public struct ServerEnvironment: Codable, Hashable, Sendable {
     public var identity: ServerIdentity? = nil
 
     /// The server signs people in with Pulsatrix and returns to native apps
-    /// (`/auth/oidc/start?client=phone` ends on an `openmausbot://pair` link).
+    /// (`/auth/oidc/start?client=phone` ends on a `sagax://pair` link).
     public var offersPulsatrixSignIn: Bool {
         identity?.kind == "perspicax" && identity?.nativeReturn == true
     }
@@ -1597,16 +1597,16 @@ public struct ServerIdentity: Codable, Hashable, Sendable {
     public var `protocol`: String?
     public var issuer: String?
     public var loginPath: String?
-    /// The server ends a native sign-in on an `openmausbot://` link.
+    /// The server ends a native sign-in on a `sagax://` link.
     public var nativeReturn: Bool?
 }
 
 /// "Sign in with Pulsatrix" from the phone: the authentication sheet opens
 /// this address on the server, and the server's answer is the pairing
 /// invite link the app already accepts from a QR code
-/// (`openmausbot://pair?address=...&token=omb_pair_...&name=...`).
+/// (`sagax://pair?address=...&token=omb_pair_...&name=...`).
 public enum PulsatrixSignIn {
-    public static let callbackScheme = "openmausbot"
+    public static let callbackScheme = CompanionURLScheme.name
 
     /// `<server origin>/auth/oidc/start?client=phone`, or nil for an address
     /// that is not http(s).

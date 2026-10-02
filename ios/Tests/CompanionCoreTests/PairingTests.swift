@@ -376,7 +376,7 @@ final class PairingTests: XCTestCase {
         XCTAssertTrue(PairingRequestStub.captured().allSatisfy { $0.url?.path == "/api/health" })
     }
 
-    func testRejectsAServiceThatDoesNotIdentifyAsOpenMausBot() async throws {
+    func testRejectsAServiceThatDoesNotIdentifyAsSagax() async throws {
         PairingRequestStub.reset { _ in .response(200, Data(#"{"app":"something-else"}"#.utf8)) }
         let connection = Connection(name: "Mac", host: "192.168.1.42", port: 8810)
 

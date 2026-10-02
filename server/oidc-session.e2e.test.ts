@@ -509,7 +509,7 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
   it("S2-8: the phone return link redeems into a bearer that a back-channel logout ends by principal", async () => {
     const { location } = await walk(BOB, "phone");
     const url = new URL(location);
-    expect(`${url.protocol}//${url.host}`).toBe("openmausbot://pair");
+    expect(`${url.protocol}//${url.host}`).toBe("sagax://pair");
     expect(url.searchParams.get("address")).toBe(BASE);
     const token = url.searchParams.get("token")!;
     expect(token).toMatch(/^omb_pair_[A-Za-z0-9_-]{43}$/);

@@ -452,8 +452,8 @@ pnpm check:electron
 cd ios
 swift test
 xcodegen generate
-xcodebuild -project OpenMausCompanion.xcodeproj \
-  -scheme OpenMausCompanion \
+xcodebuild -project Sagax.xcodeproj \
+  -scheme Sagax \
   -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' \
   CODE_SIGNING_ALLOWED=NO build

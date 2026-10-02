@@ -505,12 +505,15 @@ jobs:
         run: |
           cd ios
           xcodebuild \
-            -project OpenMausCompanion.xcodeproj \
-            -scheme OpenMausCompanion \
+            -project Sagax.xcodeproj \
+            -scheme Sagax \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath build/dd \
             build
+      - name: No upstream name in the app bundle
+        run: scripts/check-ios-bundle-names.sh ios/build/dd/Build/Products/Debug-iphonesimulator/Sagax.app
 
   # Selection includes ios/** as well as android/**: :core's fixtures come
   # from ios/Tests/CompanionCoreTests/Fixtures.

@@ -45,7 +45,7 @@ struct CompanionApp: App {
                 // Settings > App > Appearance: Black or Dim, everywhere.
                 .modifier(ThemeToneRefresh())
                 .onAppear {
-                    OpenMausSharedInbox.removeDirectories(olderThan: 60 * 60)
+                    SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
                     session.connect()
                     liveActivities.attach(to: session)
                     widgetSync.attach(to: session)
@@ -54,7 +54,7 @@ struct CompanionApp: App {
                 .onValueChange(of: scenePhase) { phase in
                     switch phase {
                     case .active:
-                        OpenMausSharedInbox.removeDirectories(olderThan: 60 * 60)
+                        SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
                         session.connect()
                         Task { await session.refreshNotificationAuthorization() }
                     case .background:

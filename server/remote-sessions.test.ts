@@ -410,7 +410,7 @@ describe("pairing", () => {
     // Android's PairingInvite.parse rejects anything that is not this exact
     // scheme and host, which is why the https link in `url` cannot be scanned
     // by the app (android/core Connection.kt).
-    expect(invite.protocol).toBe("openmausbot:");
+    expect(invite.protocol).toBe("sagax:");
     expect(invite.host).toBe("pair");
     expect(invite.searchParams.get("address")).toBe(PUBLIC_URL);
     expect(invite.searchParams.get("token")).toBe(opened.credential);

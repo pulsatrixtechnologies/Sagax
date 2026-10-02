@@ -1,7 +1,7 @@
 // "Sign in with Pulsatrix" on an organization server (slice 2): the server's
 // own sign-in runs in the system authentication sheet, sharing Safari's
 // cookies so a person already signed in to Perspicax is not asked again. The
-// server ends it on `openmausbot://pair?address=...&token=...`, the same
+// server ends it on `sagax://pair?address=...&token=...`, the same
 // invite a pairing QR code carries, and the app redeems it through the
 // existing pairing path (`POST /api/pair`). No Perspicax token reaches the
 // phone: the server is the OpenID Connect client.

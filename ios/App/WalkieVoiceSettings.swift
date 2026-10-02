@@ -15,7 +15,7 @@ enum WalkieVoicePrefs {
 }
 
 enum WalkieVoiceKey {
-    private static let service = "com.openmausbot.walkie.elevenlabs"
+    private static let service = "ca.pulsatrix.sagax.walkie.elevenlabs"
     private static let account = "api-key"
 
     private static var identity: [String: Any] {
@@ -100,7 +100,7 @@ struct WalkieVoiceSheet: View {
                 } header: {
                     Text("ElevenLabs")
                 } footer: {
-                    Text("Replies are spoken by ElevenLabs straight from this phone. The key stays in this phone's Keychain. Get one at elevenlabs.io → Developers → API keys.")
+                    Text("Replies are spoken by ElevenLabs straight from this phone. The key stays in this phone's Keychain. Get one at elevenlabs.io, then Developers, then API keys.")
                 }
 
                 if let problem {

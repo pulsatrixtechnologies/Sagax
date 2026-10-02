@@ -36,7 +36,7 @@ final class WidgetSyncBridge {
     /// the whole bridge a no-op rather than a crash in a development build.
     static func makeAppGroupBridge() -> WidgetSyncBridge {
         let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: OpenMausSharedConfiguration.appGroupIdentifier
+            forSecurityApplicationGroupIdentifier: SagaxSharedConfiguration.appGroupIdentifier
         )
         return WidgetSyncBridge(store: container.map { WidgetSnapshotStore(directory: $0) })
     }

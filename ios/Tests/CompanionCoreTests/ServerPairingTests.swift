@@ -109,7 +109,7 @@ final class ServerPairingTests: XCTestCase {
             XCTAssertNil(PairingInvite.parse(try XCTUnwrap(URL(string: bad))), bad)
         }
         // the companion's own invites still parse
-        XCTAssertNotNil(PairingInvite.parse(try XCTUnwrap(URL(string: "openmausbot://pair?address=192.168.1.9:8810&code=123456"))))
+        XCTAssertNotNil(PairingInvite.parse(try XCTUnwrap(URL(string: "sagax://pair?address=192.168.1.9:8810&code=123456"))))
     }
 
     func testServerCodesAreDistinguishedFromCompanionCredentialsByShape() {

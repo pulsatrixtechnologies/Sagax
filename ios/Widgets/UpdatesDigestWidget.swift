@@ -72,7 +72,7 @@ struct UpdatesDigestView: View {
     private var home: some View {
         switch entry.state {
         case .unpaired:
-            Placeholder(icon: "qrcode", message: "Open MausBot to pair")
+            Placeholder(icon: "qrcode", message: "Open Sagax to pair")
         case .quiet:
             Placeholder(icon: "checkmark.circle", message: "All quiet")
         case .fresh, .stale:
@@ -263,7 +263,7 @@ struct UpdatesDigestView: View {
     private var rectangular: some View {
         switch entry.state {
         case .unpaired:
-            Placeholder(icon: "qrcode", message: "Open MausBot to pair")
+            Placeholder(icon: "qrcode", message: "Open Sagax to pair")
         case .quiet:
             Placeholder(icon: "checkmark.circle", message: "All quiet")
         case .fresh, .stale:
@@ -300,7 +300,7 @@ struct UpdatesDigestView: View {
     private var inline: some View {
         switch entry.state {
         case .unpaired:
-            Text("Open MausBot to pair")
+            Text("Open Sagax to pair")
         case .quiet:
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle")
