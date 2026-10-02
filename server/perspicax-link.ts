@@ -193,6 +193,10 @@ export const PROVIDER_KEY_TIMEOUT_MS = 5_000;
 export const PROVIDER_KEY_MAX_BYTES = 8 * 1024;
 export const PROVIDER_KEY_CACHE_MS = 60_000;
 export type ModelProvider = "anthropic" | "openai";
+/** A key a person keeps in Perspicax: an engine's provider, or `xai`, which
+ * serves voice mode only (server/voice-mode.ts), never an engine. */
+export type KeyProvider = ModelProvider | "xai";
+const MODEL_PROVIDERS: readonly KeyProvider[] = ["anthropic", "openai", "xai"];
 export type ProviderKeyResult =
   | { ok: true; key: string; fingerprint: string }
   | { ok: false; error: "no_key" | "user_inactive" | "unreachable" | "link" };
@@ -460,7 +464,7 @@ export class PerspicaxDirectory {
 
   /** An owner's model key, read through the link (slice 4, contract 3):
    * cached in memory for 60 s at most, never logged, never written. */
-  async resolveProviderKey(sub: string, provider: ModelProvider): Promise<ProviderKeyResult> {
+  async resolveProviderKey(sub: string, provider: KeyProvider): Promise<ProviderKeyResult> {
     const cacheKey = `${sub}\u0000${provider}`;
     const cached = this.keyCache.get(cacheKey);
     if (cached && cached.until > this.now()) return { ok: true, key: cached.key, fingerprint: cached.fingerprint };
@@ -765,11 +769,11 @@ export class PerspicaxDirectory {
     for (const person of directory.people) {
       // A disabled person's keys serve nobody (S4-14): resolve would answer
       // 409, and the cache must not outlive the disable.
-      const names: string[] = person.status === "disabled" ? [] : [...new Set((person.provider_keys ?? []).filter((name) => name === "anthropic" || name === "openai"))].sort();
+      const names: string[] = person.status === "disabled" ? [] : [...new Set((person.provider_keys ?? []).filter((name) => (MODEL_PROVIDERS as readonly string[]).includes(name)))].sort();
       keys.set(person.sub, names);
       if (person.status === "disabled") this.forgetSubject(person.sub);
       // A provider the directory no longer lists for this person: drop its key.
-      for (const name of ["anthropic", "openai"]) if (!names.includes(name)) this.invalidate(person.sub, name);
+      for (const name of MODEL_PROVIDERS) if (!names.includes(name)) this.invalidate(person.sub, name);
     }
     for (const sub of this.keysBySub.keys()) {
       if (!keys.has(sub)) this.forgetSubject(sub);

@@ -36,12 +36,20 @@ function webOrigin(value) {
  * @param {string} requestingUrlOrOrigin The URL or origin requesting the permission
  * @param {string} rendererOrigin The trusted local renderer origin
  * @param {{ mediaTypes?: string[], mediaType?: string }} [details] Optional request details
+ * @param {{ microphoneOrigins?: Array<string | null | undefined> }} [extra] Other origins
+ *   drawn with this app's own UI that may use the microphone only: the
+ *   organization server of server mode (bundled-ui.cjs), for voice mode.
  * @returns {boolean} True if the permission should be granted, false otherwise
  */
-export function appPermissionAllowed(permission, requestingUrlOrOrigin, rendererOrigin, details = {}) {
+export function appPermissionAllowed(permission, requestingUrlOrOrigin, rendererOrigin, details = {}, extra = {}) {
   const requesting = webOrigin(requestingUrlOrOrigin);
   const allowed = webOrigin(rendererOrigin);
-  if (!requesting || !allowed || requesting !== allowed) return false;
+  if (!requesting) return false;
+  if (!allowed || requesting !== allowed) {
+    // the bundled UI on an organization server: audio capture, nothing else
+    const microphone = (extra.microphoneOrigins ?? []).map(webOrigin).filter(Boolean);
+    return permission === "media" && microphone.includes(requesting) && audioOnly(details);
+  }
 
   // Media: audio (microphone) is permitted; video (camera/webcam) is strictly denied.
   // Electron 43 routes getDisplayMedia through permission="media" with mediaTypes: []
@@ -57,6 +65,15 @@ export function appPermissionAllowed(permission, requestingUrlOrOrigin, renderer
   }
 
   return ALLOWED_APP_PERMISSIONS.has(permission);
+}
+
+/** A microphone request, never the camera or the screen (non-empty audio only). */
+function audioOnly(details) {
+  if (details?.mediaType !== undefined && details.mediaType !== "audio") return false;
+  if (details?.mediaTypes !== undefined) {
+    return Array.isArray(details.mediaTypes) && details.mediaTypes.length > 0 && details.mediaTypes.every((type) => type === "audio");
+  }
+  return details?.mediaType === "audio";
 }
 
 // Both explicit IPC links and window.open must use the same web-only policy.

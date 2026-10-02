@@ -142,6 +142,40 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 (org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
 (solo).
 
+## Voice mode (xAI)
+
+The call button on a bot opens the floating voice bar
+(`src/components/voice-mode/`) when `GET /api/bots/<id>/voice/status` says
+xAI voice mode serves the person; otherwise a solo Mac keeps the older call
+(macOS dictation helper). Keep these rules, each covered by
+`server/voice-mode.test.ts`, `src/lib/voice-mode/voice-mode.test.ts`,
+`src/components/voice-mode/VoiceModeSettingsPanel.test.ts` or
+`electron/app-permissions.node-test.mjs`; real Electron in server mode with a
+fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
+
+- The xAI key never reaches a client: the server proxies speech to text
+  (`/voice/transcribe`) and text to speech (`/voice/speak`, `/voice/voices`);
+  no route answers a key or a part of one.
+- Who pays (`resolveVoiceKey`): on an organization server the speaker's own
+  `xai` key in Perspicax, else the organization's (Settings > Connections),
+  else an access card in that person's bar only (the audience rule of every
+  access card, `accessCardAudience`: the speaker; the organization's key hint
+  only for an admin; never stored in a thread or sent as a live frame); a
+  disabled person is refused. Solo: the server's key. Each request is booked
+  with its `access`.
+- Every route names a bot the person may use (and a thread they may post
+  to); the spoken text goes through the normal send route, never a voice
+  route, so attribution and private threads stay those of a typed message.
+- The microphone is the window's own (`getUserMedia`), never the macOS
+  helper in voice mode, so Windows and server mode work. Electron grants the
+  organization server's bundled origin the microphone only
+  (`microphoneOrigins`). The bundled page has no dictation bridge: call
+  `window.ogb?.speechStop?.()`, never assume it.
+- Voice, Speed and Language live in `omb.voiceMode.v1` and travel with the
+  person (`shared/user-preferences.ts`).
+
+A change to `server/voice-mode.ts` needs the server image redeployed.
+
 ## Floating bots and the desktop mascot
 
 A bot put "on the desktop" stands in its own transparent window
