@@ -168,6 +168,8 @@ posixOnly("admin activity log", () => {
     const bot = await api("POST", "/api/bots", { name: "Audit Owl" }, BOSS);
     expect(bot.status).toBe(201);
     const botId = bot.body.bot.id as string;
+    // Ada reaches Boss's bot once he shares it with her (direct grants).
+    expect((await api("POST", `/api/bots/${botId}/direct-grants`, { userId: ADA }, BOSS)).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${botId}`, { visibility: { people: [ADA] } }, BOSS)).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${botId}`, { approvePeerComms: true }, BOSS)).status).toBe(200);
     // display-only and refused changes leave no row

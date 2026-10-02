@@ -32,10 +32,21 @@ helpVerbs.add("help");
 // paths without registering them, so they do not count.
 const ROUTES_DIR = join(ROOT, "server", "routes");
 const routeModules = readdirSync(ROUTES_DIR).filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts")).sort();
-const serverSource = [join(ROOT, "server", "index.ts"), ...routeModules.map((name) => join(ROUTES_DIR, name))]
+// Organization features register theirs from server/*-routes.ts and
+// server/org-export.ts, which server/index.ts mounts.
+const featureRouteModules = readdirSync(join(ROOT, "server"))
+  .filter((name) => name.endsWith("-routes.ts") || name === "org-export.ts").sort()
+  .map((name) => join(ROOT, "server", name));
+const serverSource = [join(ROOT, "server", "index.ts"), ...routeModules.map((name) => join(ROUTES_DIR, name)), ...featureRouteModules]
   .map((file) => readFileSync(file, "utf8")).join("\n");
 const hooksSource = readFileSync(join(ROOT, "server", "webhook-ingress.ts"), "utf8");
-const hostedSource = readFileSync(join(ROOT, "enterprise", "server", "workspace-access.ts"), "utf8");
+// The hosted workspace adapter lives in the private enterprise layer, which
+// this tree stopped shipping with the Sagax 0.1.0 line (8a563e929). When it is
+// absent, the server's delegation prefix is what a doc may cite.
+const HOSTED_LAYER = join(ROOT, "enterprise", "server", "workspace-access.ts");
+const hostedLayerPresent = existsSync(HOSTED_LAYER);
+const hostedSource = hostedLayerPresent ? readFileSync(HOSTED_LAYER, "utf8") : "";
+const HOSTED_PREFIX = "/api/auth/hosted/";
 // Only constants named in the public handler's accepted-path guard are routes.
 // Outbound post("/api/handoff/...") calls belong to the identity service, not us.
 const hostedConstants = new Map([...hostedSource.matchAll(/const ([A-Z_]+) = "(\/api\/[^"\n]+)";/g)].map(match => [match[1]!, match[2]!]));
@@ -76,6 +87,9 @@ describe("docs/verification recipes cite things that exist", () => {
     const registered = (route: string) => {
       const path = route.replace(/[.,;:]+$/, "");
       if (hostedPublicRoutes.has(path)) return true;
+      // /api/v1/ is Perspicax's own API (and other providers'), not this server.
+      if (path.startsWith("/api/v1/")) return true;
+      if (!hostedLayerPresent && path.startsWith(HOSTED_PREFIX) && serverSource.includes(`path.startsWith("${HOSTED_PREFIX}")`)) return true;
       const source = path.startsWith("/hooks/") ? hooksSource : serverSource;
       const segments = path.split("/").slice(1);
       const literal = segments.findIndex((segment) => PLACEHOLDER.test(segment));
@@ -88,7 +102,7 @@ describe("docs/verification recipes cite things that exist", () => {
     expect([...new Set(refs.filter((hit) => !registered(target(hit))))]).toEqual([]);
   });
 
-  it("distinguishes delegated public routes from external identity backchannels", () => {
+  it.skipIf(!hostedLayerPresent)("distinguishes delegated public routes from external identity backchannels", () => {
     expect([...hostedPublicRoutes]).toEqual(["/api/auth/hosted/start", "/api/auth/hosted/callback"]);
     expect(hostedPublicRoutes.has("/api/handoff/consume")).toBe(false);
     expect(hostedPublicRoutes.has("/api/handoff/check")).toBe(false);

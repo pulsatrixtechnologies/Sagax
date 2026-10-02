@@ -15,6 +15,27 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Tests
+
+`pnpm test` runs every vitest file in one serial process (about 45 minutes),
+then the broker, Electron and packaged-server checks. For day-to-day work use
+the sharded runner `scripts/testing/vitest-shards.mjs`, which runs N vitest
+processes at once (default: half the cores, at most 8), prints one summary
+and exits 1 on any failure:
+
+- `pnpm test:unit`: files that never boot the real server (about 2.5 minutes).
+- `pnpm test:e2e`: `*.e2e.test.ts` plus any test that spawns
+  `server/index.ts` or calls `launchVerificationServer(` (about 11 minutes).
+- `pnpm test:shards`: both groups. Options: `--shards N`, `--logs DIR`,
+  `--list`, and vitest flags after `--`.
+
+The groups come from `scripts/testing/test-groups.mjs` (no hand-kept list;
+covered by `test-groups.test.mjs`). The e2e files are slow because each test
+boots its own server and drives fake engines through real turns; keep that
+isolation rather than sharing a server between tests. Suites pick free ports
+with `server/testing/ports.ts` and each vitest process gets its own Local VM
+namespace, so shards do not collide.
+
 ## Mail settings
 
 Settings > Email (`src/components/MailSettings.tsx`, `server/mail-routes.ts`,

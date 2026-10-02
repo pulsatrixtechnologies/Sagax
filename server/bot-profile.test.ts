@@ -168,7 +168,7 @@ describe("mascotLook", () => {
   });
 
   it("refuses an unknown character, shape or skin, or an extra field", () => {
-    for (const mascotLook of [{ character: "dragon" }, { character: "shape", shape: "rocket" }, { character: "shape", skins: { shape: "plasma" } }, { character: "owl", extra: 1 }]) {
+    for (const mascotLook of [{ character: "dragon" }, { character: "shape", shape: "rocket" }, { character: "shape", skins: { shape: "plasma" } }, { character: "shape", skins: { trombi: "galaxy" } }, { character: "owl", extra: 1 }]) {
       expect(parseBotProfilePatch({ mascotLook } as never, true).ok).toBe(false);
     }
   });
