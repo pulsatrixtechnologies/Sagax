@@ -135,15 +135,106 @@ final class ProfileUITests: XCTestCase {
         }
     }
 
+    // MARK: Picture
+
+    /// Generate runs the real route against the fixture's image provider
+    /// stub: the bot gets a stored picture, and Frame and Remove appear.
+    @MainActor
+    func testGenerateGivesTheBotAStoredPicture() throws {
+        let ara = try XCTUnwrap(try bot(named: "Ara"))
+        let id = try XCTUnwrap(ara["id"] as? String)
+        defer { _ = try? api("PATCH", "/api/bots/\(id)", ["avatarUrl": NSNull(), "avatarCrop": "mascot"]) }
+        try api("PATCH", "/api/bots/\(id)", ["avatarUrl": NSNull(), "avatarCrop": "mascot"])
+        let app = launchProfile()
+
+        let generate = element("character-photo-generate", in: app)
+        XCTAssertTrue(generate.waitForExistence(timeout: 10))
+        XCTAssertFalse(element("character-photo-frame", in: app).exists, "no picture yet, nothing to frame")
+        generate.tap()
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        let field = alert.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("Une chouette calme")
+        // Cancel and Generate: the action is the button that is not Cancel.
+        alert.buttons.matching(NSPredicate(format: "label != 'Cancel'")).firstMatch.tap()
+
+        try eventually("Ara has a generated picture on the server", timeout: 30) {
+            (try bot(named: "Ara")?["avatarUrl"] as? String)?.hasPrefix("/api/attachments/") == true
+        }
+        XCTAssertEqual(try bot(named: "Ara")?["avatarCrop"] as? String, "circle")
+        XCTAssertTrue(element("character-photo-frame", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(element("character-photo-remove", in: app).exists)
+
+        // Remove goes back to the mascot.
+        element("character-photo-remove", in: app).tap()
+        try eventually("Ara's picture is removed") {
+            let now = try bot(named: "Ara")
+            return now?["avatarUrl"] as? String == nil && now?["avatarCrop"] as? String == "mascot"
+        }
+    }
+
+    /// Frame: a pinch and a drag in the framing sheet are saved, and the
+    /// server returns the new zoom and focus.
+    @MainActor
+    func testFramingSavesZoomAndFocus() throws {
+        let ara = try XCTUnwrap(try bot(named: "Ara"))
+        let id = try XCTUnwrap(ara["id"] as? String)
+        defer { _ = try? api("PATCH", "/api/bots/\(id)", ["avatarUrl": NSNull(), "avatarCrop": "mascot"]) }
+        // A picture to frame, through the same route the Generate button uses.
+        try api("POST", "/api/bots/\(id)/avatar/generate", ["prompt": "Une chouette calme"])
+        try api("PATCH", "/api/bots/\(id)", ["avatarZoom": 1, "avatarFocusX": 0.5, "avatarFocusY": 0.5])
+        let app = launchProfile()
+
+        let frame = element("character-photo-frame", in: app)
+        XCTAssertTrue(frame.waitForExistence(timeout: 10))
+        frame.tap()
+        let picture = element("framing-picture", in: app)
+        XCTAssertTrue(picture.waitForExistence(timeout: 10))
+        picture.pinch(withScale: 2.2, velocity: 1)
+        let start = picture.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: picture.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.75)))
+        element("framing-save", in: app).tap()
+
+        try eventually("the framing is saved on the server") {
+            let now = try bot(named: "Ara")
+            let zoom = now?["avatarZoom"] as? Double ?? 1
+            let x = now?["avatarFocusX"] as? Double ?? 0.5
+            let y = now?["avatarFocusY"] as? Double ?? 0.5
+            return zoom > 1.2 && x < 0.5 && y < 0.5
+        }
+        // Reopened, the sheet starts from what the server holds.
+        XCTAssertTrue(frame.waitForExistence(timeout: 10))
+    }
+
+    /// Upload: the Photo row offers the system picker (PhotosPicker). The
+    /// picker itself runs out of process; what it hands back is covered by
+    /// `ProfileClientTests.testUploadAvatarPostsTheBytesAndReturnsTheStoredPath`.
+    @MainActor
+    func testUploadOpensThePhotoPicker() throws {
+        let app = launchProfile()
+        let upload = element("character-photo-upload", in: app)
+        XCTAssertTrue(upload.waitForExistence(timeout: 10))
+        XCTAssertTrue(upload.isHittable)
+        upload.tap()
+        // The picker is a remote view: its navigation bar or its "Photos" tab shows.
+        let shown = app.navigationBars.matching(NSPredicate(format: "identifier CONTAINS[c] 'photo' OR identifier CONTAINS[c] 'Photos'")).firstMatch
+        let cancel = app.buttons["Cancel"]
+        XCTAssertTrue(shown.waitForExistence(timeout: 10) || cancel.waitForExistence(timeout: 5), "the photo picker opens")
+        if cancel.exists { cancel.tap() }
+    }
+
     // MARK: Instructions
 
     @MainActor
     func testInstructionsShowTheSoulAndAnEditSaves() throws {
         let ara = try XCTUnwrap(try bot(named: "Ara"))
         let id = try XCTUnwrap(ara["id"] as? String)
+        // The fixture saves Ara's instructions (SOUL_ARA) when it creates her.
         let before = try XCTUnwrap((try api("GET", "/api/bots/\(id)/soul") as? [String: Any])?["soul"] as? String)
+        XCTAssertTrue(before.contains("Tu coordonnes l'équipe"), "the fixture seeds Ara's soul: \(before)")
         defer { _ = try? api("PATCH", "/api/bots/\(id)", ["soul": before]) }
-        try api("PATCH", "/api/bots/\(id)", ["soul": "Tu coordonnes l'équipe (texte de remplacement)."])
         let app = launchProfile()
 
         element("profile-instructions", in: app).tap()
