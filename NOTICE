@@ -59,3 +59,16 @@ work of this project: modeled, rigged and animated from scratch by
 tools/owl3d/build_owl.py, after the project's own 2D owl art. Blender is only
 the tool that runs that script; no third-party model, texture or animation
 is included.
+
+Voice mode's live call runs two models on the person's computer with
+onnxruntime-web, Copyright Microsoft Corporation, used under the MIT License
+(third_party/onnxruntime-web/LICENSE): Silero VAD v5, Copyright (c)
+2020-present Silero Team, used unmodified under the MIT License
+(third_party/silero-vad/LICENSE); and the 3D-Speaker CAM++ speaker
+verification model (iic/speech_campplus_sv_en_voxceleb_16k), Copyright
+Alibaba Group, in the ONNX export published by sherpa-onnx (k2-fsa), both
+under the Apache License 2.0 (third_party/3d-speaker/LICENSE,
+third_party/sherpa-onnx/LICENSE), with its weights quantized to int8 by this
+project. Details and checksums: src/lib/voice-mode/models/NOTICE.txt. The
+test recordings in src/lib/voice-mode/fixtures/ are from sherpa-onnx, under
+the Apache License 2.0.

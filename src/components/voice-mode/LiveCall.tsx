@@ -76,6 +76,13 @@ export function LiveCall({ bot }: { bot: Bot }) {
       settings: readCallSettings,
     });
     setCall(live);
+    // the real-Electron check (scripts/verify-voice-mode.ts) drives the call
+    // through this handle; it exists only when that check turns it on
+    try {
+      if (localStorage.getItem("omb.voiceCall.debug") === "1") (window as unknown as { __sagaxVoiceCall?: VoiceCall }).__sagaxVoiceCall = live;
+    } catch {
+      /* no storage: no handle */
+    }
     const offs = [
       live.on("state", (next) => setState(next)),
       live.on("partial", (text) => setHeard(text)),

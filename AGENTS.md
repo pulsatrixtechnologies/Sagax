@@ -236,7 +236,22 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   (`microphoneOrigins`). The bundled page has no dictation bridge: call
   `window.ogb?.speechStop?.()`, never assume it.
 - Voice, Speed and Language live in `omb.voiceMode.v1` and travel with the
-  person (`shared/user-preferences.ts`).
+  person (`shared/user-preferences.ts`). The call's settings and the "Only my
+  voice" voiceprint stay on the computer (`omb.voiceCall.v1`,
+  `omb.voiceCall.voiceprint.v1`); never add them to the keys that travel.
+- A call is a live, full-duplex call (`LiveCall.tsx`, `src/lib/voice-mode/call.ts`,
+  states in `call-machine.ts`): Silero VAD and CAM++ speaker verification run
+  on the computer (onnxruntime-web, models in `src/lib/voice-mode/models/`,
+  served from the app's bundle, never a CDN); a turn streams over
+  `GET /voice/listen` (WebSocket, same origin only, bridged to xAI streaming
+  speech to text) and the answer is spoken sentence by sentence through
+  `POST /voice/stream` (raw PCM). Barge-in ducks then cancels the bot's voice
+  and interrupts its running turn. Tests: `call-logic.test.ts`, `call.test.ts`,
+  `models.test.ts`, `server/voice-call.e2e.test.ts`.
+- xAI is only ears and a voice: never its realtime agent, responses, chat or
+  function calling. Every turn goes to the bot through the normal send route,
+  and only the bot's text is synthesized. The e2e test and
+  `scripts/verify-voice-mode.ts` fail on any other xAI path.
 - On an organization server (the status says `organization: true`, or the
   viewer is managed by Perspicax) the call button is
   `VoiceModeCallButton`: the server decides (`/voice/status`, asked again at

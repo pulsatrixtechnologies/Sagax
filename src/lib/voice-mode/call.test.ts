@@ -105,6 +105,7 @@ function frame(probability: number, level: number): Float32Array {
 }
 
 interface Setup {
+  language?: { value: string };
   transcripts?: string[];
   settings?: Partial<CallSettings>;
   socketFails?: boolean;
@@ -119,7 +120,7 @@ async function setup(options: Setup = {}) {
   const upload = vi.fn(async () => "uploaded words");
   const transcriber = new LiveTranscriber({
     botId: "b-1",
-    language: () => "fr",
+    language: () => options.language?.value ?? "fr",
     threadId: () => "t-1",
     socket: (url) => new FakeSocket(url, [...(options.transcripts ?? ["hello bot"])], options.socketFails) as unknown as WebSocket,
     transcribe: upload,
@@ -319,6 +320,24 @@ describe("VoiceCall", () => {
     expect(blob.type).toBe("audio/wav");
     expect([language, thread]).toEqual(["fr", "t-1"]);
     expect(t.utterances.map((u) => u.text)).toEqual(["uploaded words"]);
+  });
+
+  it("a language picked during the call opens a socket for it before the next turn", async () => {
+    const language = { value: "auto" };
+    const t = await setup({ language, transcripts: ["bonjour"] });
+    const first = t.socket();
+    expect(first.url).toContain("language=auto");
+    language.value = "fr";
+    await t.feed(0.95, 0.05, 2);
+    await t.settle(); // frames arrive in real time: the new socket opens meanwhile
+    await t.feed(0.95, 0.05, 28);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    const second = t.socket();
+    expect(second).not.toBe(first);
+    expect(second.url).toContain("language=fr");
+    expect(second.audioBytes).toBeGreaterThan(0);
+    expect(t.utterances.map((u) => u.text)).toEqual(["bonjour"]);
   });
 
   it("ending the call releases the microphone and the ears", async () => {

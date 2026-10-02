@@ -23,6 +23,8 @@ export interface LiveTranscriberOptions {
 
 interface Utterance {
   frames: Float32Array[];
+  /** frames already sent on the socket */
+  sent: number;
   text: string;
   discard: boolean;
   finalized: boolean;
@@ -41,6 +43,8 @@ export class LiveTranscriber {
   private readonly options: LiveTranscriberOptions;
   /** the socket failed: whole-turn uploads */
   streaming = false;
+  /** the language the socket was opened with */
+  private language = "";
 
   constructor(options: LiveTranscriberOptions) {
     this.options = options;
@@ -63,7 +67,8 @@ export class LiveTranscriber {
       };
       let socket: WebSocket;
       try {
-        const url = voiceModeListenUrl(this.options.botId, this.options.language(), this.options.threadId());
+        this.language = this.options.language();
+        const url = voiceModeListenUrl(this.options.botId, this.language, this.options.threadId());
         socket = this.options.socket?.(url) ?? new WebSocket(url);
       } catch {
         done(false);
@@ -73,16 +78,19 @@ export class LiveTranscriber {
       this.socket = socket;
       const timer = setTimeout(() => done(false), timeoutMs);
       socket.addEventListener("message", (event: MessageEvent) => {
-        if (typeof event.data !== "string") return;
+        if (typeof event.data !== "string" || socket !== this.socket) return;
         let frame: Frame;
         try { frame = JSON.parse(event.data) as Frame; } catch { return; }
         if (frame.type === "ready") {
           clearTimeout(timer);
           this.open = true;
           done(true);
+          // a turn that began while the socket was (re)opening
+          if (this.current) this.flush(this.current);
         } else if (frame.type === "transcript") this.heard(frame);
       });
       const lost = () => {
+        if (socket !== this.socket) return;
         clearTimeout(timer);
         this.open = false;
         this.streaming = false;
@@ -98,7 +106,9 @@ export class LiveTranscriber {
   /** A turn may be starting: send what was heard just before it too. */
   begin(preroll: Float32Array[]): void {
     if (this.current) return;
-    const utterance: Utterance = { frames: [], text: "", discard: false, finalized: false };
+    // the person changed the language in the panel: a socket for it, between turns
+    if (this.streaming && this.language !== this.options.language() && !this.utterances.length) this.reopen();
+    const utterance: Utterance = { frames: [], sent: 0, text: "", discard: false, finalized: false };
     this.current = utterance;
     this.utterances.push(utterance);
     for (const frame of preroll) this.push(frame);
@@ -109,10 +119,25 @@ export class LiveTranscriber {
     const utterance = this.current;
     if (!utterance) return;
     utterance.frames.push(frame);
-    if (this.open && this.socket?.readyState === 1) {
-      const pcm = toPcm16([frame], TARGET_RATE, TARGET_RATE);
+    this.flush(utterance);
+  }
+
+  private flush(utterance: Utterance): void {
+    if (!this.open || this.socket?.readyState !== 1) return;
+    while (utterance.sent < utterance.frames.length) {
+      const pcm = toPcm16([utterance.frames[utterance.sent]!], TARGET_RATE, TARGET_RATE);
       this.socket.send(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength));
+      utterance.sent += 1;
     }
+  }
+
+  /** A new socket (another language); the old one is let go quietly. */
+  private reopen(): void {
+    const old = this.socket;
+    this.socket = null;
+    this.open = false;
+    try { old?.close(); } catch { /* closed */ }
+    void this.connect();
   }
 
   /** The audio of the current utterance (speaker verification). */
@@ -161,8 +186,9 @@ export class LiveTranscriber {
 
   close(): void {
     this.open = false;
-    try { this.socket?.close(); } catch { /* closed */ }
+    const socket = this.socket;
     this.socket = null;
+    try { socket?.close(); } catch { /* closed */ }
     for (const utterance of this.utterances) {
       if (utterance.timer) clearTimeout(utterance.timer);
       utterance.resolve?.("");

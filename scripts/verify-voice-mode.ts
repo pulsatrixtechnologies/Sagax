@@ -1,9 +1,12 @@
 // Real-Electron check of voice mode in server mode: the desktop draws its
 // own bundled UI on an organization server's origin, signs in, opens the
 // voice bar on a bot, hears a turn through the microphone (Chromium's fake
-// capture device, fed a WAV of a tone then silence), sends it to the
-// server, which transcribes it with "xAI" (a loopback fake), and the words
-// reach the bot's thread as the signed-in person. The settings panel's
+// capture device, fed a recorded sentence then silence, looped), streams it
+// to "xAI" speech to text through the server (a loopback fake), and the words
+// reach the bot's thread as the signed-in person. Then the live call: the
+// answer is spoken sentence by sentence (time to first audio measured), the
+// next sentence on the microphone barges in while the bot talks (duck and
+// cut measured), hold and resume, and xAI is never asked to answer. The settings panel's
 // Voice, Speed and Language go to xAI's speech request and to the person's
 // server preferences. First without any xAI key: the call button shows the
 // speaker's access card (never the legacy "This computer" gate); then the
@@ -14,7 +17,7 @@
 //   pnpm exec vite build
 //   node --experimental-strip-types scripts/verify-voice-mode.ts
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -31,7 +34,8 @@ const RESERVED = [18790, 5199, 8799];
 const FAKE_KEY = "xai-VERIFYfakeKq7Zp2Lw9Rt4Mn6Bv";
 
 const idp = await startFakeOidcProvider({ user: { sub: "01J9VERIFYVOICEMODE0000000", email: "ada@example.test", name: "Ada", preferred_username: "ada", role: "admin" } });
-const xai = await startFakeXaiVoice({ transcript: "Hello Cryptic from voice mode" });
+// each streamed sentence of the answer lasts 4 s: long enough to talk over
+const xai = await startFakeXaiVoice({ transcript: "Hello Cryptic from voice mode", ttsSeconds: 4 });
 const port = await freePortBlock([0, 1]);
 if (RESERVED.includes(port) || RESERVED.includes(port + 1)) throw new Error("reserved port, run again");
 const origin = `http://127.0.0.1:${port}`;
@@ -41,10 +45,14 @@ writeFileSync(join(home, ".openmausbot", "config.json"), "{}");
 const decoy = mkdtempSync(join(tmpdir(), "omb-verify-voice-decoy-"));
 writeFileSync(join(decoy, "index.html"), "<!doctype html><title>SERVER IMAGE UI</title>");
 
-// What the microphone hears: 1.2 s of a 220 Hz tone, then 2.5 s of silence (looped by Chromium).
+// What the microphone hears: a recorded sentence (2.3 s), then 3.5 s of
+// silence, looped by Chromium: the person speaks every 5.8 s.
+const speech = readFileSync(join(ROOT, "src", "lib", "voice-mode", "fixtures", "speaker-a-1.wav"));
+const dataAt = speech.indexOf("data") + 8;
+const voiced = new Int16Array(speech.buffer.slice(speech.byteOffset + dataAt, speech.byteOffset + speech.length));
 const rate = 16_000;
-const samples = new Int16Array(Math.round(rate * 3.7));
-for (let i = 0; i < rate * 1.2; i++) samples[i] = Math.round(Math.sin((2 * Math.PI * 220 * i) / rate) * 0.5 * 0x7fff);
+const samples = new Int16Array(voiced.length + Math.round(rate * 3.5));
+samples.set(voiced, 0);
 const wav = Buffer.alloc(44 + samples.length * 2);
 wav.write("RIFF", 0); wav.writeUInt32LE(36 + samples.length * 2, 4); wav.write("WAVE", 8); wav.write("fmt ", 12);
 wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(rate, 24);
