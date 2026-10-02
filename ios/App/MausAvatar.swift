@@ -26,6 +26,9 @@ enum MausPalette {
         "teal": "#01A492",
         "coral": "#E5634E",
         "black": "#23262B",
+        "brown": "#8B5E3C",
+        "amber": "#F2A51A",
+        "grey": "#8E949E",
     ]
 
     static func color(_ name: String) -> Color {

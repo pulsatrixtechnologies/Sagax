@@ -121,4 +121,16 @@ describe("join a Perspicax server", () => {
     expect(render().html).toContain("That server could not be joined");
     expect(join).not.toHaveBeenCalled();
   });
+
+  it("in a browser, points to the desktop app and not to the hidden import card", () => {
+    vi.stubGlobal("window", {});
+    const html = render().html;
+    expect(html).toContain("Download the copy file");
+    expect(html).toContain("open this Sagax in the Sagax desktop app and use Join and copy");
+    expect(html).not.toContain("Bring bots from a solo Sagax");
+    setLocale("fr");
+    const fr = render().html;
+    expect(fr).toContain("Rejoindre et copier");
+    expect(fr).not.toContain("Apporter des bots");
+  });
 });

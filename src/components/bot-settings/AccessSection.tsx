@@ -5,7 +5,7 @@
 // list, webhooks list, and always-allowed list (the first read-only view of
 // standing grants) are new.
 import { useEffect, useState } from "react";
-import { browserUnavailableReason } from "@/lib/feature-flags";
+import { browserUnavailableReason, connectedAppsEnabled as connectedAppsFeatureEnabled } from "@/lib/feature-flags";
 import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
@@ -537,10 +537,15 @@ export function AccessSection({
     localDisabledReason,
   } = derived;
   const browserInstallable = state.config?.browserEngine?.installable === true;
+  // Connected apps (Composio) is experimental: while Settings > Experimental
+  // features leaves it off, the bot's own switch hides too, like the sidebar
+  // entry and the Settings card.
+  const connectedAppsFeature = connectedAppsFeatureEnabled(state.config);
   const [localAutoWarning, setLocalAutoWarning] = useState<string | null>(null);
   const [inventory, setInventory] = useState<ConnectorInventory | null>(null);
 
   useEffect(() => {
+    if (!connectedAppsFeature) return;
     let cancelled = false;
     void preloadConnectedApps().then((result) => {
       if (!cancelled) setInventory(result);
@@ -548,7 +553,7 @@ export function AccessSection({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [connectedAppsFeature]);
 
   const webhooks = state.webhooks.filter((webhook) => webhook.botId === bot.id);
   const alwaysAllow = bot.alwaysAllow ?? [];
@@ -649,7 +654,7 @@ export function AccessSection({
 
       <WorkingFolder bot={bot} />
 
-      <div className="rounded-xl border border-hairline/40 p-4">
+      {connectedAppsFeature && <div className="rounded-xl border border-hairline/40 p-4">
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-[13px] font-medium text-ink">Connected apps</div>
@@ -700,7 +705,7 @@ export function AccessSection({
             <Plus size={14} /> {t("botAccess.connectApp")}
           </button>
         )}
-      </div>
+      </div>}
 
       <McpServersCard bot={bot} patch={patch} />
 
