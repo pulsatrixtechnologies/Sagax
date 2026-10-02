@@ -306,6 +306,9 @@ const featureConfigSchema = z.object({
   /** Connected apps (Composio) in the sidebar's bottom menu and in
    * Settings. Off unless explicitly enabled (experimental). */
   connectedApps: z.boolean().optional(),
+  /** Templates in the sidebar's bottom menu (the team library). Off unless
+   * explicitly enabled; a package install link still opens the library. */
+  templates: z.boolean().optional(),
   /** Experimental built-in browser. Off until explicitly enabled; each bot
    * also has its own switch. */
   browser: z.boolean().optional(),
@@ -704,7 +707,7 @@ export interface AppConfig {
    * seats shared by all conversations, with per-thread affinity (#1654). */
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number };
   /** Opt-in product experiments. Every flag defaults to disabled. */
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; computerClaimIdleRelease?: boolean; cloudOverflow?: boolean; routinesInConversation?: boolean; connectedApps?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; computerClaimIdleRelease?: boolean; cloudOverflow?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean };
   /** #1655: consented cloud overflow for local computer waits. The cost is
    * the operator's own per-second rate; unset keeps the feature inert. */
   cloudOverflow?: { perSecondCostUsd?: number; idleStopMs?: number; allowlistedThreads?: string[] };
@@ -929,6 +932,11 @@ export function routinesInConversationEnabled(cfg: AppConfig): boolean {
  * (experimental). */
 export function connectedAppsEnabled(cfg: AppConfig): boolean {
   return cfg.features?.connectedApps === true;
+}
+
+/** The sidebar's Templates entry. Off by default (experimental). */
+export function templatesEnabled(cfg: AppConfig): boolean {
+  return cfg.features?.templates === true;
 }
 
 /** Workspace-level gate for the experimental built-in browser. A bot's own

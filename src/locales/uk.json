@@ -183,7 +183,6 @@
   "sidebar.aria": "Боти й навігація",
   "sidebar.search": "Пошук",
   "sidebar.searchAria": "Пошук ботів і повідомлень",
-  "sidebar.searchPlaceholder": "Пошук…",
   "sidebar.noMatch": "Нічого не відповідає «{query}»",
   "sidebar.preview.waiting": "Чекаємо на вас…",
   "sidebar.preview.waitingOnTeammate": "Очікуємо на колегу…",

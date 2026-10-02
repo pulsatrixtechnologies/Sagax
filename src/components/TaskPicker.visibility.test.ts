@@ -64,10 +64,19 @@ describe("optional bot thread picker", () => {
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
 
-  it("does not remove channel history controls", () => {
-    fixture.showThreads = false;
+  it("shows the channel picker only while threads are on, as a round header button", () => {
     const group: Group = { id: "team", name: "Team", threadId: "team-current", memberIds: [], defaultResponder: { kind: "everyone" }, bulletin: "", createdAt: 1, unread: false, messages: [],
       tasks: [{ threadId: "team-current", title: "Channel discussion", createdAt: 1 }] };
-    expect(renderToStaticMarkup(createElement(GroupTaskPicker, { group }))).toContain('aria-label="All threads"');
+    const shown = renderToStaticMarkup(createElement(GroupTaskPicker, { group }));
+    expect(shown).toContain('aria-label="All threads"');
+    expect(shown).toContain("rounded-full border");
+    fixture.showThreads = false;
+    expect(renderToStaticMarkup(createElement(GroupTaskPicker, { group }))).toBe("");
+  });
+
+  it("draws the bot picker as the header's round outlined button", () => {
+    const markup = renderToStaticMarkup(createElement(TaskPicker, { bot }));
+    expect(markup).toContain("rounded-full border");
+    expect(markup).toContain('aria-expanded="false"');
   });
 });

@@ -1,7 +1,7 @@
 import { t } from "./i18n";
 
 export interface FeatureFlagConfig {
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; connectedApps?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; connectedApps?: boolean; templates?: boolean };
   browserEngine?: { kind: "engine" | "unavailable"; reason?: string; installable?: boolean; installing?: boolean; installError?: string };
 }
 
@@ -51,6 +51,13 @@ export function routinesInConversationEnabled(config: FeatureFlagConfig | null |
  * Settings > Model providers. */
 export function connectedAppsEnabled(config: FeatureFlagConfig | null | undefined): boolean {
   return config?.features?.connectedApps === true;
+}
+
+/** The sidebar's Templates entry (the team library). Experimental: off
+ * until switched on in Settings > Experimental features; mirrors the
+ * server's templatesEnabled. */
+export function templatesEnabled(config: FeatureFlagConfig | null | undefined): boolean {
+  return config?.features?.templates === true;
 }
 
 /** Opt-in computer sharing — lending this desktop's folders, terminal or
