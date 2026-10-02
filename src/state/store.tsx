@@ -985,6 +985,9 @@ export interface AppState {
   webhookAttempts: WebhookAttempt[];
   webhookIngress: WebhookIngressStatus | null;
   settingsOpen: boolean;
+  /** The person whose details fill the right panel (principal id), or null.
+   * Shares the right slot with bot settings, the computer and app settings. */
+  personPanelId: string | null;
   pluginsOpen: boolean;
   /** Which tab the Plugins panel opens on; "mcp" when a bot's tools
    * sent the user there to add a server. */
@@ -1287,6 +1290,7 @@ export type Action =
   | { type: "notice"; notice: AppState["notice"] }
   | { type: "revealThread"; threadId: string }
   | { type: "toggleSettings"; open?: boolean; section?: BotSettingsSection; botId?: string }
+  | { type: "openPersonPanel"; personId: string | null }
   /** Open a bot's panel on Details with one Coding activity item shown
    * (`run:<routineRunId>` or `thread:<threadId>`), e.g. from the owner's
    * notification of a routine run refused in another person's thread. */
@@ -1602,6 +1606,7 @@ export function reducer(state: AppState, action: Action): AppState {
         activeView: "routines",
         routinesFocus: { section: action.section, view: action.view, botId: action.botId, routineId: action.routineId, runStatus: action.runStatus, nonce: state.routinesFocus.nonce + 1 },
         settingsOpen: false,
+        personPanelId: null,
         computerOpen: false,
         inspectorOpen: false,
         appSettingsOpen: false,
@@ -2054,6 +2059,11 @@ export function reducer(state: AppState, action: Action): AppState {
         error: action.message,
       };
     // bot settings, the computer panel, and app settings share the right slot
+    case "openPersonPanel": {
+      const personId = action.personId?.trim() || null;
+      if (!personId) return state.personPanelId === null ? state : { ...state, personPanelId: null };
+      return { ...state, personPanelId: personId, settingsOpen: false, computerOpen: false, inspectorOpen: false, appSettingsOpen: false };
+    }
     case "toggleSettings": {
       if (action.botId !== undefined && !state.bots.some((bot) => bot.id === action.botId && !bot.hidden)) return state;
       const selectedId = action.botId ?? state.selectedId;
@@ -2068,6 +2078,7 @@ export function reducer(state: AppState, action: Action): AppState {
         // Mascot / bare open omits `section` → accordion stays fully collapsed.
         // Deep links expand that row even when the panel is already open.
         botSettingsExpandAccordion: open ? action.section !== undefined : false,
+        personPanelId: open ? null : state.personPanelId,
         // Settings and the computer panel share one slot. Opening settings
         // closes the computer view; its gear opens settings again.
         computerOpen: open ? false : state.computerOpen,
@@ -2122,6 +2133,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         computerOpen: open,
+        personPanelId: open ? null : state.personPanelId,
         settingsOpen: open ? false : state.settingsOpen,
         inspectorOpen: open ? false : state.inspectorOpen,
         appSettingsOpen: open ? false : state.appSettingsOpen,
@@ -2132,6 +2144,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         inspectorOpen: open,
+        personPanelId: open ? null : state.personPanelId,
         settingsOpen: open ? false : state.settingsOpen,
         computerOpen: open ? false : state.computerOpen,
         appSettingsOpen: open ? false : state.appSettingsOpen,
@@ -2144,6 +2157,7 @@ export function reducer(state: AppState, action: Action): AppState {
         appSettingsOpen: open,
         appSettingsSection: action.section ?? state.appSettingsSection,
         appSettingsCloudLink: action.cloudLink && open ? state.appSettingsCloudLink + 1 : 0,
+        personPanelId: open ? null : state.personPanelId,
         settingsOpen: open ? false : state.settingsOpen,
         computerOpen: open ? false : state.computerOpen,
         inspectorOpen: open ? false : state.inspectorOpen,
@@ -2479,6 +2493,7 @@ export const initialState: AppState = {
   webhookAttempts: [],
   webhookIngress: null,
   settingsOpen: false,
+  personPanelId: null,
   pluginsOpen: false,
   pluginsSurface: "apps",
   newBotOpen: false,
