@@ -17,6 +17,14 @@
 // and session.json adds `avatarRgb`, the solid colour of the person's
 // Perspicax avatar, for the UI test that samples it (OrgAvatarUITests).
 //
+// PARITY_OWNER=1 is the personal computer whose desktop app is signed in to
+// an organization: the same dataset, plus the owner identity the desktop
+// hands its server (owner-identity.json, server/owner-identity.ts) with a
+// solid-colour avatar, and the phone reaching it the way an iPhone reaches
+// a personal computer: through the companion sidecar (companion/src/proxy.ts)
+// with a device token. session.json then names the sidecar, no environment,
+// and `avatarRgb`.
+//
 // Nothing touches ~/.openmausbot: HOME and OMB_DATA_DIR point into a temp
 // directory removed on exit. The engine is the repository's fake Claude CLI,
 // so no provider is called.
@@ -642,6 +650,14 @@ async function main() {
 
   seedTranscripts(dataDir, seeded);
   seedCommandRules(dataDir, seeded);
+  const ownerMode = process.env.PARITY_OWNER === "1";
+  if (ownerMode) {
+    // What the signed-in desktop leaves its server (server/owner-identity.ts).
+    writeFileSync(join(dataDir, "owner-identity.json"), JSON.stringify({
+      origin: "https://sagax.example.test", principalId: "pr_parity_org_person", name: "Parity Person", email: "parity.person@example.test",
+      avatar: { version: "parityowner01", data: png(96, 96, ORG_AVATAR_RGB, { band: false }).toString("base64") },
+    }), { mode: 0o600 });
+  }
 
   child = startServer(port, webhook);
   await waitHealthy(base, child);
@@ -649,10 +665,10 @@ async function main() {
   await api(base, "PUT", "/api/settings/bot", {
     autoReviewDefault: true, timeZoneAuto: true, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }).catch((error) => console.error(`[parity] bot settings: ${error.message}`));
-  const session = await pair(base);
-  const front = COMPUTER_DOUBLE ? `http://127.0.0.1:${(await startComputerDouble(port)).port}` : base;
-  if (COMPUTER_DOUBLE) console.error(`[parity] computer double ${front} -> ${base}`);
-  const fleet = await fetch(`${base}/api/bots`, { headers: { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
+  const session = ownerMode ? await startSidecar(port) : await pair(base);
+  const front = ownerMode ? session.endpoint : COMPUTER_DOUBLE ? `http://127.0.0.1:${(await startComputerDouble(port)).port}` : base;
+  if (COMPUTER_DOUBLE && !ownerMode) console.error(`[parity] computer double ${front} -> ${base}`);
+  const fleet = await fetch(`${front}/api/bots`, { headers: { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
   const record = {
     endpoint: front,
     server: base,
@@ -660,6 +676,7 @@ async function main() {
     environmentId: session.environmentId,
     scopes: session.scopes,
     bots: (fleet.bots ?? []).length,
+    ...(ownerMode ? { owner: true, avatarRgb: ORG_AVATAR_RGB } : {}),
     pid: process.pid,
     dataDir,
   };
@@ -667,6 +684,24 @@ async function main() {
   console.error(`[parity] ready: ${record.bots} bots, session written to ${join(OUT, "session.json")}`);
   console.log(JSON.stringify({ endpoint: front, environmentId: record.environmentId, bots: record.bots }));
   if (once) await shutdown(0);
+}
+
+// ── the companion sidecar (PARITY_OWNER=1) ─────────────────────────────
+// The real sidecar handler in front of the server, with one paired device.
+const SIDECAR_TOKEN = "parity_owner_device_token_0001";
+async function startSidecar(harnessPort) {
+  const { createProxyHandler } = await import("../../companion/src/proxy.ts");
+  const { createConnectedDeviceTracker } = await import("../../companion/src/connected-devices.ts");
+  const server = createHttpServer(createProxyHandler({
+    harnessPort,
+    authenticate: (token) => (token === SIDECAR_TOKEN ? { id: "parity-phone", cloudDesktopAccess: true } : null),
+    redeem: () => ({ error: "already paired" }),
+    serverName: () => "Parity computer",
+    connected: createConnectedDeviceTracker().open,
+  }));
+  const port = await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
+  console.error(`[parity] companion sidecar http://127.0.0.1:${port} -> ${harnessPort}`);
+  return { endpoint: `http://127.0.0.1:${port}`, token: SIDECAR_TOKEN, environmentId: null, scopes: ["admin", "client"] };
 }
 
 // ── organization mode (PARITY_ORG=1) ───────────────────────────────────

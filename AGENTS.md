@@ -171,8 +171,20 @@ onboarding tests:
   only, with its own bearer (never Perspicax, never the `picture` URL), and
   keeps it per connection keyed by the versioned URL; it reads the session
   again at each foreground (`ios/UITests/OrgAvatarUITests.swift`,
-  `PARITY_ORG=1 node ios/parity/fixture-server.mjs`). A personal computer
-  has no Perspicax link and names no avatar.
+  `PARITY_ORG=1 node ios/parity/fixture-server.mjs`).
+- A personal computer whose desktop app is signed in to an organization
+  server serves its owner's avatar the same way
+  (`server/owner-identity.ts`, `electron/owner-identity.mjs`): main reads
+  `<org>/api/auth/session` and the avatar it names with the app's own
+  organization cookie (nothing new stored), and sends name, address, version
+  and bytes over the private parent port (`openmausbot:owner-identity`; null
+  when signed out or no organization server is saved; an unreachable server
+  changes nothing). The server keeps them in `owner-identity.json`, adds them
+  to `GET /api/auth/session` and serves `/api/people/<operator>/avatar?v=`;
+  the companion sidecar lets that route through. Refreshed at server start,
+  after a sign-in, when saved servers change and every 15 minutes. Tests:
+  `server/owner-identity*.test.ts`, `electron/owner-identity.node-test.mjs`,
+  `PARITY_OWNER=1` with `OrgAvatarUITests`.
 
 ## Group memory and direct messages between people
 

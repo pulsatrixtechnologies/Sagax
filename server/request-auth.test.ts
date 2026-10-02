@@ -680,6 +680,10 @@ describe("organization sharing routes (SAGAX_IDENTITY=perspicax, slice 3)", () =
   it("opens the directory to members only on an organization server", () => {
     expect(requiredScope("GET", "/api/org/directory")).toBe("admin");
     expect(requiredScope("GET", "/api/org/directory", { orgDirectory: true })).toBe("client");
+    // a person's avatar: an organization's people, or a personal computer's owner
+    expect(requiredScope("GET", "/api/people/pr_1/avatar")).toBe("client");
+    expect(requiredScope("GET", "/api/people/pr_1/avatar", { orgDirectory: true })).toBe("client");
+    expect(requiredScope("PUT", "/api/people/pr_1/avatar")).toBe("admin");
     expect(requiredScope("POST", "/api/org/directory", { orgDirectory: true })).toBe("admin");
   });
 

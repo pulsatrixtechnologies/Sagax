@@ -14,6 +14,15 @@ import XCTest
 ///   TEST_RUNNER_PARITY_AVATAR_RGB=236,18,196 xcodebuild test \
 ///     -only-testing:SagaxUITests/OrgAvatarUITests ...
 ///
+/// The personal computer whose desktop app is signed in to an organization
+/// runs the same test through the companion sidecar (its server holds the
+/// owner identity the desktop handed it; no environment id):
+///
+///   PARITY_OWNER=1 node ios/parity/fixture-server.mjs &
+///   TEST_RUNNER_PARITY_OWNER=1 TEST_RUNNER_PARITY_ENDPOINT=<sidecar> \
+///   TEST_RUNNER_PARITY_TOKEN=<device token> \
+///   TEST_RUNNER_PARITY_AVATAR_RGB=236,18,196 xcodebuild test ...
+///
 /// Without those variables the tests skip.
 final class OrgAvatarUITests: XCTestCase {
     private var arguments: [String] = []
@@ -22,10 +31,10 @@ final class OrgAvatarUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
-        guard env["PARITY_ORG"] == "1", let endpoint = env["PARITY_ENDPOINT"], let token = env["PARITY_TOKEN"],
+        guard env["PARITY_ORG"] == "1" || env["PARITY_OWNER"] == "1", let endpoint = env["PARITY_ENDPOINT"], let token = env["PARITY_TOKEN"],
               let rgb = env["PARITY_AVATAR_RGB"]?.split(separator: ",").compactMap({ Int($0) }), rgb.count == 3
         else {
-            throw XCTSkip("no organization fixture: set TEST_RUNNER_PARITY_ORG=1, _ENDPOINT, _TOKEN and _AVATAR_RGB")
+            throw XCTSkip("no avatar fixture: set TEST_RUNNER_PARITY_ORG=1 (or _OWNER=1), _ENDPOINT, _TOKEN and _AVATAR_RGB")
         }
         avatar = (rgb[0], rgb[1], rgb[2])
         arguments = ["-parityEndpoint", endpoint, "-parityToken", token, "-parityScreen", "01-home"]
