@@ -20,7 +20,10 @@ export type NotifyKind =
   | "delegation-settled"
   /** The workspace crossed its monthly spend warning or reached its cap.
    * Sent to admins only, at most once per month for each. */
-  | "spend";
+  | "spend"
+  /** A person wrote to another in a direct conversation between people
+   * (server/people-dms.ts). Sent to the recipient only; `botId` is empty. */
+  | "message";
 
 export interface Notification {
   kind: NotifyKind;
@@ -36,5 +39,7 @@ export interface Notification {
    * already works off `threadId` alone; this is what lets a client say which
    * room, and stack a room's banners together instead of under the bot. */
   groupId?: string;
+  /** Only this principal receives the frame (a person-to-person message). */
+  recipientId?: string;
 }
 

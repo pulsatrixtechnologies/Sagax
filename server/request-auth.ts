@@ -368,6 +368,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/tasks$/ },
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/groups\/[\w-]+\/tasks\/[\w-]+$/ },
   { methods: ["PATCH"], path: /^\/api\/groups\/[\w-]+$/ }, // display fields only: see clientGroupPatchViolation
+  // a group's shared memory: its people read, its owner edits (server/routes/group-memory.ts)
+  { methods: ["GET", "PUT"], path: /^\/api\/groups\/[\w-]+\/memory$/ },
+  // a direct conversation with another person of the organization (server/people-dms.ts)
+  { methods: ["POST"], path: /^\/api\/people-dms$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/ },
   // attachments
   { methods: ["POST"], path: /^\/api\/attachments$/ },

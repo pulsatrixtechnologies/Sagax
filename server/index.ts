@@ -618,6 +618,8 @@ import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
+import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcBindingCookie, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
@@ -2566,6 +2568,13 @@ const phoneProxyPath = SPAWNED_PROXIES.phone;
 // in the packaged app process.execPath is Electron — run the proxy as node
 const AGENTS_NODE_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
 
+/** Whether this bot may write the shared memory of this group: the group's
+ * memory is on, the bot is one of its bots, and the bot keeps notes at all
+ * (its own memory switch). Reading it needs only the group's switch. */
+function groupMemoryWritable(group: GroupRecord | undefined, botId: string): boolean {
+  return Boolean(group) && groupMemoryEnabled(group) && group!.memberIds.includes(botId) && store.bot(botId)?.memoryEnabled !== false;
+}
+
 function agentsIntegration(
   botId: string,
   threadId: string,
@@ -2603,6 +2612,9 @@ function agentsIntegration(
       OMB_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
       OMB_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
       OMB_MEMORY_ENABLED: store.bot(botId)?.memoryEnabled === false ? "0" : "1",
+      // A room turn in a group whose shared memory is on gets
+      // group_memory_update (server/group-memory.ts); the route re-checks.
+      OMB_GROUP_MEMORY: groupMemoryWritable(store.groupByThread(threadId), botId) ? "1" : "0",
       // The shared-computer tools are advertised only while the workspace
       // gate is on; the routes behind them refuse regardless.
       OMB_SHARED_COMPUTERS_ENABLED: lendingEnabled() ? "1" : "0",
@@ -13526,6 +13538,12 @@ async function runGroupMemberTurn(
     // mounted, exactly as the 1:1 path decides it: memory_update is on the
     // agents server, so a room turn with it must be told to use it too.
     { id: "memory", label: "Memory", text: roomMemory ? `\n${roomMemory.trim()}` : "" },
+    // The group's shared memory: every bot of the group reads it here; only
+    // explicit group_memory_update writes reach it (server/group-memory.ts).
+    { id: "group-memory", label: "Group memory", text: (() => {
+      const block = groupMemorySystemPrompt(readyGroup, { writes: Boolean(integrations.agents) && groupMemoryWritable(readyGroup, bot.id) });
+      return block ? `\n${block}` : "";
+    })() },
     { id: "skills", label: "Skills index", text: workspace ? skillsSystemPrompt(bot.id) : "" },
     { id: "skill-instructions", label: "Skill instructions", text: renderSkillInstructions(selectedSkills, { includeRoot: Boolean(workspace) }) },
     { id: "playbooks", label: "Playbooks", text: installedPlaybookInstructions(text, bot.playbooks) },
@@ -16462,6 +16480,27 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+// A group's shared memory (server/routes/group-memory.ts): its people read
+// it, its owner edits it or switches it off.
+ROUTES.push(createGroupMemoryRoutes({
+  group: (id) => store.group(id),
+  canRead: (auth, group) => groupVisible(group as GroupRecord, channelViewerId(auth)),
+  isOwner: (auth, group) => groupOwnerCaller(auth, group as GroupRecord),
+  setEnabled: (groupId, enabled) => {
+    const group = store.patchGroup(groupId, { memoryEnabled: enabled ? undefined : false });
+    if (group) broadcast({ kind: "group", group: publicGroupState(group) });
+  },
+}));
+/** The owner of a group: its creator on an organization server (an
+ * organization admin for a group from before creators were recorded), the
+ * operator at this computer, or an admin session on a solo server. */
+function groupOwnerCaller(auth: RequestAuth, group: Pick<GroupRecord, "createdBy">): boolean {
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  if (IDENTITY.kind !== "perspicax") return auth.scopes.includes("admin");
+  const viewerId = channelViewerId(auth)?.toLowerCase();
+  if (group.createdBy) return Boolean(viewerId) && group.createdBy.toLowerCase() === viewerId;
+  return orgAdminCaller(auth);
+}
 // The people of a solo server: its email sign-in list and the invitations
 // that add to it (server/org-routes.ts). A solo server has no organization
 // (slice 8), so the invitations are issued in the name of this server: the
@@ -18948,6 +18987,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return result.ok
           ? json(res, 201, { messageId: result.messageId })
           : json(res, result.status, { error: result.error });
+      }
+      // A group's shared memory (server/group-memory.ts): only a bot of
+      // that group, speaking in it, while the group's memory is on.
+      if (method === "POST" && path === "/api/internal/group-memory") {
+        const room = store.groupByThread(internalCapability.threadId);
+        if (!room || !groupMemoryWritable(room, internalSender.id)) {
+          return json(res, 403, { error: "This conversation has no group memory you can write: it is not a group you are in, or its memory is off." });
+        }
+        const body = await readInternalBody();
+        const result = updateGroupMemory(room.id, { action: body.action, text: body.text, oldText: body.oldText, ...(body.until !== undefined ? { until: body.until } : {}) }, { source: memorySource() });
+        return json(res, result.ok ? 200 : result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : 400, result);
       }
       // Notes written from a room fewer people can see than this bot would
       // carry that room's words to everyone who can see the bot.
@@ -22756,6 +22806,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       routines!.disableForGroup(group.id);
       store.deleteGroup(group.id);
+      deleteGroupMemory(group.id);
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
       return json(res, 200, { ok: true });
     }

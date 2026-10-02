@@ -677,6 +677,11 @@ export interface WireGroup {
   createdBy?: string;
   /** true for auto-created bot-bot channels. */
   dm?: boolean;
+  /** Organization server: a direct conversation between two people
+   * (`humanIds`), with no bot (server/people-dms.ts). Only those two read it. */
+  peopleDm?: boolean;
+  /** The group's shared memory (server/group-memory.ts); absent = on. */
+  memoryEnabled?: boolean;
   /** transient: the member currently running a turn. */
   busyBotId?: string | null;
   /** transient: when the busy member's turn started, for the elapsed
