@@ -547,9 +547,11 @@ struct BotProfileView: View {
         guard let client = session.profileClient else { return }
         do {
             try await client.deleteBot(botId: bot.id)
-            // the chat under this screen sees its bot gone and pops too
-            session.applyBotDeleted(bot.id)
+            // Pop this screen, then let the chat under it see its bot gone
+            // and pop itself (a screen that is not on top cannot pop).
             dismiss()
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            session.applyBotDeleted(bot.id)
         } catch {
             session.actionError = error.localizedDescription
         }

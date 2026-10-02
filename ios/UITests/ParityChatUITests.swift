@@ -72,9 +72,9 @@ final class ParityChatUITests: XCTestCase {
         let app = try launchChat()
 
         app.buttons["chat-name"].tap()
-        XCTAssertTrue(app.staticTexts["Model"].waitForExistence(timeout: 10), "profile sheet")
+        XCTAssertTrue(app.staticTexts["profile-name"].waitForExistence(timeout: 10), "profile screen")
         attach("Profile from the name capsule", app)
-        app.swipeDown(velocity: .fast)
+        app.buttons["profile-back"].tap()
         XCTAssertTrue(app.buttons["header-computer"].waitForExistence(timeout: 10))
 
         app.buttons["header-computer"].tap()
