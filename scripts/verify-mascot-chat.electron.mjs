@@ -171,8 +171,10 @@ async function drag(win, selector, dx, dy, steps) {
     const gx = sx + (dx * i) / steps;
     const gy = sy + (dy * i) / steps;
     win.webContents.sendInputEvent({ type: "mouseMove", button: "left", ...at(gx, gy) });
+    // where the dragged thing is drawn now, on the screen, against the pointer
+    const now = await js(win, `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     const b = win.getBounds();
-    lag += Math.hypot(b.x + rect.x - gx, b.y + rect.y - gy);
+    lag += Math.hypot(b.x + now.x - gx, b.y + now.y - gy);
   }
   await wait(50);
   const end = at(sx + dx, sy + dy);
