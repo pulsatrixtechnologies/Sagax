@@ -11,7 +11,7 @@ export const SIDEBAR_ATTENTION_PINNED_KEY = "openmausbot.sidebarAttentionPinned.
 export const SIDEBAR_COLLAPSED_SECTIONS_KEY = "openmausbot.sidebarCollapsedSections.v1";
 export const SIDEBAR_SECTION_ORDER_KEY = "openmausbot.sidebarSectionOrder.v1";
 /** The density to return to when the collapsed (icons) sidebar is expanded
- * again from its header button. */
+ * again by dragging or double-clicking its edge. */
 export const SIDEBAR_EXPANDED_DENSITY_KEY = "openmausbot.sidebarExpandedDensity.v1";
 
 export function parseSidebarDensity(value: string | null): SidebarDensity {
@@ -47,8 +47,8 @@ export function saveSidebarDensity(
   }
 }
 
-/** The sidebar's collapse button: icons density is the collapsed rail, like
- * Perspicax's narrow sidebar. Collapsing remembers the density it left so
+/** Collapse or expand the sidebar (its edge's drag and double-click): icons
+ * density is the collapsed rail, like Perspicax's narrow sidebar. Collapsing remembers the density it left so
  * expanding lands back on comfortable or compact, whichever it was. */
 export function toggleSidebarCollapsed(
   storage?: Pick<Storage, "getItem" | "setItem"> | null,
@@ -72,6 +72,29 @@ export function toggleSidebarCollapsed(
   if (storage === undefined) setSidebarDensity(next);
   else saveSidebarDensity(next, target);
   return next;
+}
+
+/** The collapsed sidebar (icons density) is this wide. */
+export const SIDEBAR_RAIL_WIDTH = 80;
+/** Dragging the sidebar's edge narrower than this snaps it to the icons
+ * rail; dragging the rail's edge past it expands the sidebar again. There is
+ * no collapse button: the edge, its double-click and Settings > Appearance
+ * are the ways in and out. */
+export const SIDEBAR_SNAP_WIDTH = 180;
+
+export type SidebarDragTarget = { collapsed: true } | { collapsed: false; width: number };
+
+/** Where a drag of the sidebar's edge lands. `raw` is the width under the
+ * pointer (the width the drag started from plus the pointer's travel, the
+ * rail's 80px when it started collapsed). Below the snap width the sidebar
+ * collapses; at or above it the width is clamped to the expanded range. */
+export function sidebarDragTarget(
+  raw: number,
+  bounds: { min: number; max: number; snap?: number },
+): SidebarDragTarget {
+  const snap = bounds.snap ?? SIDEBAR_SNAP_WIDTH;
+  if (!Number.isFinite(raw) || raw < snap) return { collapsed: true };
+  return { collapsed: false, width: Math.round(Math.min(bounds.max, Math.max(bounds.min, raw))) };
 }
 
 // The sidebar and Settings → Appearance both read and change the density, so

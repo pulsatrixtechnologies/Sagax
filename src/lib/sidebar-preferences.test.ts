@@ -21,6 +21,9 @@ import {
   saveSidebarWidth,
   toggleCollapsedSection,
   toggleSidebarCollapsed,
+  sidebarDragTarget,
+  SIDEBAR_RAIL_WIDTH,
+  SIDEBAR_SNAP_WIDTH,
 } from "./sidebar-preferences";
 import { userSectionId } from "./sidebar-layout";
 
@@ -166,5 +169,34 @@ describe("sidebar collapse button", () => {
 
   it("still toggles when storage is unavailable", () => {
     expect(toggleSidebarCollapsed(null)).toBe("icons");
+  });
+});
+
+describe("sidebar edge drag", () => {
+  const bounds = { min: 240, max: 400 };
+
+  it("snaps to the icons rail below the snap width", () => {
+    expect(SIDEBAR_SNAP_WIDTH).toBe(180);
+    expect(sidebarDragTarget(179, bounds)).toEqual({ collapsed: true });
+    expect(sidebarDragTarget(40, bounds)).toEqual({ collapsed: true });
+    expect(sidebarDragTarget(Number.NaN, bounds)).toEqual({ collapsed: true });
+  });
+
+  it("stays expanded at the snap width and clamps to the expanded range", () => {
+    expect(sidebarDragTarget(180, bounds)).toEqual({ collapsed: false, width: 240 });
+    expect(sidebarDragTarget(210, bounds)).toEqual({ collapsed: false, width: 240 });
+    expect(sidebarDragTarget(301.6, bounds)).toEqual({ collapsed: false, width: 302 });
+    expect(sidebarDragTarget(900, bounds)).toEqual({ collapsed: false, width: 400 });
+  });
+
+  it("expands a drag that starts on the rail once it passes the snap width", () => {
+    // A drag from the rail starts at its 80px; the pointer's travel adds to it.
+    expect(sidebarDragTarget(SIDEBAR_RAIL_WIDTH + 60, bounds)).toEqual({ collapsed: true });
+    expect(sidebarDragTarget(SIDEBAR_RAIL_WIDTH + 100, bounds)).toEqual({ collapsed: false, width: 240 });
+    expect(sidebarDragTarget(SIDEBAR_RAIL_WIDTH + 250, bounds)).toEqual({ collapsed: false, width: 330 });
+  });
+
+  it("takes another snap width", () => {
+    expect(sidebarDragTarget(199, { ...bounds, snap: 200 })).toEqual({ collapsed: true });
   });
 });

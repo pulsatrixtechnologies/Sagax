@@ -19,13 +19,12 @@ import {
   Loader2,
   Network,
   MoreHorizontal,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pencil,
   Pin,
   PinOff,
   Plus,
   Search,
+  SquarePen,
   Puzzle,
   Share2,
   Trash2,
@@ -85,6 +84,8 @@ import {
   toggleCollapsedSection,
   toggleSidebarCollapsed,
   useSidebarDensity,
+  sidebarDragTarget,
+  SIDEBAR_RAIL_WIDTH,
   type SidebarDensity,
 } from "@/lib/sidebar-preferences";
 import {
@@ -132,13 +133,11 @@ const SIDEBAR_WIDTH_KEY = "omb-sidebar-width-v2";
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 400;
 const SIDEBAR_DEFAULT_WIDTH = 280;
-/** The head's icon buttons (New, collapse): Perspicax's 28px ghost square,
- * a touch larger so the 18px glyphs keep the rail's weight. */
-const SIDEBAR_ICON_BUTTON = "flex size-8 items-center justify-center rounded-lg text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
-
-/** The head's round search button: the header's 36px circle (share, panel),
- * in the sidebar's own ink, with the same focus ring as its neighbours. */
-const SIDEBAR_SEARCH_BUTTON = cn(
+/** The head's round buttons (search, New): the header's 36px circle (share,
+ * panel), in the sidebar's own ink, with the same focus ring as its
+ * neighbours. There is no collapse button: dragging the sidebar's edge
+ * narrower than the snap width collapses it (see `sidebarDragTarget`). */
+const SIDEBAR_HEAD_BUTTON = cn(
   CIRCLE_BUTTON,
   "text-sidebar-ink-secondary hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
 );
@@ -1973,16 +1972,39 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   } | null>(null);
   const searchTitle = `${t("sidebar.search")} (${paletteShortcutLabel()})`;
   // null on 404 and on any other failure, so the roster stays.
-  // Chosen in Settings > Appearance or with the collapse button; one store.
+  // Chosen in Settings > Appearance or by dragging the edge; one store.
   const density = useSidebarDensity();
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
-  const sidebarResize = useRef<{ x: number; width: number; current: number } | null>(null);
+  // `collapsed` follows the drag itself: the density store answers a beat
+  // later, and a second crossing in that beat must not toggle twice.
+  const sidebarResize = useRef<{ x: number; width: number; current: number; collapsed: boolean } | null>(null);
+  const [sidebarResizing, setSidebarResizing] = useState(false);
+  // True for the length of the snap animation, so crossing the snap width
+  // mid-drag eases the jump between the rail and the expanded width.
+  const [sidebarSnapping, setSidebarSnapping] = useState(false);
+  const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (snapTimer.current) clearTimeout(snapTimer.current); }, []);
+  // The density as of the last toggle, ahead of the store's re-render.
+  const densityNow = useRef(density);
+  densityNow.current = density;
+  const setSidebarCollapsed = (collapsed: boolean) => {
+    if ((densityNow.current === "icons") === collapsed) return;
+    setSidebarSnapping(true);
+    if (snapTimer.current) clearTimeout(snapTimer.current);
+    snapTimer.current = setTimeout(() => setSidebarSnapping(false), 220);
+    densityNow.current = toggleSidebarCollapsed();
+  };
   const resizeSidebar = (clientX: number) => {
     const from = sidebarResize.current;
     if (!from) return;
-    const next = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, from.width + (clientX - from.x)));
-    sidebarResize.current = { ...from, current: next };
-    setSidebarWidth(next);
+    const target = sidebarDragTarget(from.width + (clientX - from.x), { min: SIDEBAR_MIN_WIDTH, max: SIDEBAR_MAX_WIDTH });
+    if (target.collapsed !== from.collapsed) setSidebarCollapsed(target.collapsed);
+    if (target.collapsed) {
+      sidebarResize.current = { ...from, collapsed: true };
+      return;
+    }
+    sidebarResize.current = { ...from, current: target.width, collapsed: false };
+    setSidebarWidth(target.width);
   };
   // Compact is the quiet sidebar: a row is its name and its status, nothing
   // else (see the `quiet` prop on BotListItem and GroupListItem).
@@ -2285,9 +2307,12 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       aria-label={t("sidebar.aria")}
       data-native-view-overlay
       data-sidebar
-      style={density === "icons" ? { width: 80 } : { width: sidebarWidth }}
+      style={density === "icons" ? { width: SIDEBAR_RAIL_WIDTH } : { width: sidebarWidth }}
       className={cn(
         "relative flex h-full shrink-0 flex-col border-r-[0.5px] border-hairline-weak bg-sidebar",
+        // Ease the width when it snaps (rail in or out, double-click) and
+        // follow the pointer exactly otherwise.
+        (!sidebarResizing || sidebarSnapping) && "md:transition-[width] md:duration-200 md:ease-out",
         // Below md only: the sidebar leaves the flow and slides in over the chat.
         // Scoped with max-md: rather than cancelled with md: on purpose — Tailwind
         // v4 emits the native `translate` property, and any value other than
@@ -2300,8 +2325,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       )}
     >
       {/* The head, like Perspicax's: the brand row (the Pulsatrix mark and the name, then
-          the round search button that opens the command palette, New and the
-          collapse button). macOS owns inset traffic lights above the
+          the round search button that opens the command palette and the
+          round New button; the edge collapses it, see the separator). macOS owns inset traffic lights above the
           brand row; the whole head is the window's drag handle there and on
           Windows, with every control opted out. */}
       <div data-sidebar-head style={windowDragStyle} className="shrink-0">
@@ -2317,17 +2342,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           </div>
         )}
         {density === "icons" ? (
-          <div className="flex flex-col items-center gap-1 px-2 pb-2 pt-1" style={windowNoDragStyle}>
-            <button
-              type="button"
-              onClick={() => toggleSidebarCollapsed()}
-              aria-label={t("sidebar.density.expand")}
-              title={t("sidebar.density.expand")}
-              data-sidebar-collapse
-              className={SIDEBAR_ICON_BUTTON}
-            >
-              <PanelLeftOpen size={18} strokeWidth={1.75} />
-            </button>
+          <div className="flex flex-col items-center gap-2 px-2 pb-2 pt-1" style={windowNoDragStyle}>
             <button
               type="button"
               data-sidebar-search
@@ -2335,7 +2350,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               aria-label={t("sidebar.searchAria")}
               aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
               title={searchTitle}
-              className={SIDEBAR_SEARCH_BUTTON}
+              className={SIDEBAR_HEAD_BUTTON}
             >
               <Search size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
@@ -2346,9 +2361,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               aria-expanded={composeOpen}
               aria-label={t("sidebar.new")}
               title={t("sidebar.new")}
-              className={SIDEBAR_ICON_BUTTON}
+              data-sidebar-new
+              className={SIDEBAR_HEAD_BUTTON}
             >
-              <Plus size={18} strokeWidth={1.75} />
+              <SquarePen size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
           </div>
         ) : (
@@ -2360,7 +2376,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
                 </span>
               )}
-              <span className="ml-auto flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
+              <span className="ml-auto flex shrink-0 items-center gap-2" style={windowNoDragStyle}>
                 <button
                   type="button"
                   data-sidebar-search
@@ -2368,7 +2384,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   aria-label={t("sidebar.searchAria")}
                   aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
                   title={searchTitle}
-                  className={cn(SIDEBAR_SEARCH_BUTTON, "mr-1")}
+                  className={SIDEBAR_HEAD_BUTTON}
                 >
                   <Search size={16} strokeWidth={1.75} aria-hidden="true" />
                 </button>
@@ -2379,19 +2395,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   aria-expanded={composeOpen}
                   aria-label={t("sidebar.new")}
                   title={t("sidebar.new")}
-                  className={SIDEBAR_ICON_BUTTON}
+                  data-sidebar-new
+                  className={SIDEBAR_HEAD_BUTTON}
                 >
-                  <Plus size={18} strokeWidth={1.75} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleSidebarCollapsed()}
-                  aria-label={t("sidebar.density.collapseAria")}
-                  title={t("sidebar.density.collapseAria")}
-                  data-sidebar-collapse
-                  className={SIDEBAR_ICON_BUTTON}
-                >
-                  <PanelLeftClose size={18} strokeWidth={1.75} />
+                  <SquarePen size={16} strokeWidth={1.75} aria-hidden="true" />
                 </button>
               </span>
             </div>
@@ -2816,38 +2823,59 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           </div>,
           document.body,
         )}
-      {density !== "icons" && (
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          aria-valuemin={SIDEBAR_MIN_WIDTH}
-          aria-valuemax={SIDEBAR_MAX_WIDTH}
-          aria-valuenow={sidebarWidth}
-          tabIndex={0}
-          onPointerDown={(event) => {
-            sidebarResize.current = { x: event.clientX, width: sidebarWidth, current: sidebarWidth };
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }}
-          onPointerMove={(event) => resizeSidebar(event.clientX)}
-          onPointerUp={(event) => {
-            if (sidebarResize.current) {
-              try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarResize.current.current)); } catch { /* session only */ }
-            }
-            sidebarResize.current = null;
-            event.currentTarget.releasePointerCapture(event.pointerId);
-          }}
-          onKeyDown={(event) => {
-            const delta = event.key === "ArrowRight" ? 24 : event.key === "ArrowLeft" ? -24 : 0;
-            if (!delta) return;
-            event.preventDefault();
-            const next = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, sidebarWidth + delta));
-            setSidebarWidth(next);
-            try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next)); } catch { /* session only */ }
-          }}
-          className="app-resize-handle absolute inset-y-0 -right-1.5 z-10 w-3 cursor-col-resize focus-visible:bg-accent/40"
-        />
-      )}
+      {/* The edge: drag to resize, narrower than the snap width to collapse
+          to the rail and back out of it to expand; double-click toggles.
+          Invisible at rest (the aside's hairline border is the edge); a 2px
+          line shows on hover, drag and keyboard focus (`.app-resize-handle`). */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        aria-valuemin={SIDEBAR_RAIL_WIDTH}
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
+        aria-valuenow={density === "icons" ? SIDEBAR_RAIL_WIDTH : sidebarWidth}
+        tabIndex={0}
+        data-resizing={sidebarResizing || undefined}
+        onPointerDown={(event) => {
+          const collapsed = density === "icons";
+          const width = collapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidth;
+          sidebarResize.current = { x: event.clientX, width, current: sidebarWidth, collapsed };
+          setSidebarResizing(true);
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => resizeSidebar(event.clientX)}
+        onPointerUp={(event) => {
+          const from = sidebarResize.current;
+          if (from && !from.collapsed) {
+            try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(from.current)); } catch { /* session only */ }
+          }
+          sidebarResize.current = null;
+          setSidebarResizing(false);
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        }}
+        onPointerCancel={() => {
+          sidebarResize.current = null;
+          setSidebarResizing(false);
+        }}
+        onDoubleClick={() => setSidebarCollapsed(density !== "icons")}
+        onKeyDown={(event) => {
+          const delta = event.key === "ArrowRight" ? 24 : event.key === "ArrowLeft" ? -24 : 0;
+          if (!delta) return;
+          event.preventDefault();
+          if (density === "icons") {
+            if (delta > 0) setSidebarCollapsed(false);
+            return;
+          }
+          if (delta < 0 && sidebarWidth <= SIDEBAR_MIN_WIDTH) {
+            setSidebarCollapsed(true);
+            return;
+          }
+          const next = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, sidebarWidth + delta));
+          setSidebarWidth(next);
+          try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next)); } catch { /* session only */ }
+        }}
+        className="app-resize-handle -right-[3px]"
+      />
     </aside>
   );
 }
