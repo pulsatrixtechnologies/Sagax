@@ -617,6 +617,7 @@ import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotLibraryRoutes } from "./routes/bot-library.ts";
+import { createComputerInputRoutes } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
@@ -16495,6 +16496,57 @@ ROUTES.push(createBotLibraryRoutes<BotRecord>({
       skipped: skills.skipped,
     });
     return { document: exported.document, filename: exported.filename, redacted: exported.redacted, skipped: exported.skipped, summary: packageSummary(exported.document) };
+  },
+}));
+// The phone's native remote control of a bot's computer
+// (server/routes/computer-input.ts, server/computer-input.ts): the desktop
+// the computer panel shows, driven through the same command path its own
+// backend already uses; the person must hold control.
+const computerInputAudited = new Map<string, number>();
+ROUTES.push(createComputerInputRoutes<BotRecord>({
+  bot: (id) => store.bot(id) ?? undefined,
+  mayDrive: ownerOrAdminOf,
+  control: (bot, controlLeaseId) => computerControl.leaseState(botComputerControlKey(bot), controlLeaseId),
+  shell: (bot) => {
+    const team = inheritedTeamComputer(bot);
+    if (team) {
+      const key = teamComputerOwner(team.id);
+      return { kind: "team", maxScript: 3_500, run: (script) => boat.runDesktopScript(cfg, key, script) };
+    }
+    if (bot.computer === "vm") {
+      // An organization server never drives a desktop on itself.
+      if (hostComputerRefusal()) return null;
+      const target = localVmTargetForStatus(bot.id, bot.threadId);
+      return {
+        kind: "vm", maxScript: 15_000,
+        run: async (script) => {
+          const out = await containerExec(target, script, { timeoutSeconds: 20 });
+          return { ok: out.exitCode === 0, stdout: out.stdout, stderr: out.stderr };
+        },
+      };
+    }
+    if (bot.computer !== "cloud" && bot.computer !== undefined) return null;
+    if (bot.cloudBackend === "vps") {
+      if (!vpsSshAlias(cfg)) return null;
+      return { kind: "vps", maxScript: 15_000, run: (script) => vps.vpsDesktopScript(cfg, bot.id, script) };
+    }
+    if (!boat.boatConfigured(cfg)) return null;
+    return { kind: "cloud", maxScript: 3_500, run: (script) => boat.runDesktopScript(cfg, bot.id, script) };
+  },
+  audit: (auth, req, bot, action, detail) => {
+    // Input arrives many times a second: one row per person and bot a minute.
+    const actor = adminActorFor(auth, req);
+    if (action === "input") {
+      const key = `${bot.id}\n${JSON.stringify(actor)}`;
+      const last = computerInputAudited.get(key) ?? 0;
+      if (Date.now() - last < 60_000) return;
+      computerInputAudited.set(key, Date.now());
+      if (computerInputAudited.size > 1_000) computerInputAudited.delete(computerInputAudited.keys().next().value!);
+    }
+    console.log(`computer: ${action} on bot ${bot.id} (${String(detail.computer)})`);
+    if (adminActivityRecording()) {
+      appendAdminAction(DATA_DIR, { category: "computer", action: `computer.${action}`, target: { kind: "bot", id: bot.id, name: bot.name }, after: detail, actor });
+    }
   },
 }));
 // The people of a solo server: its email sign-in list and the invitations
