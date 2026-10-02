@@ -23,7 +23,7 @@ and logged in. macOS is the primary release platform and Ubuntu 24.04 x64 is the
 the harness server itself is portable Node and the test suite runs on macOS, Linux, and Windows.
 
 ```sh
-git clone https://github.com/pulsatrixtechnologies/pulsa-bot && cd pulsa-bot
+git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot
 pnpm install
 
 pnpm dev:server    # harness server → 127.0.0.1:8799
@@ -62,7 +62,7 @@ and produces one release artifact containing:
 
 Before publishing, confirm that `package.json` has the release version and dispatch the workflow against the same
 commit used for the other platforms. Attach all five Ubuntu files to the matching release in the separate
-[Sagax releases](https://github.com/pulsatrixtechnologies/pulsa-bot/releases). Then verify the checksum
+[Sagax releases](https://github.com/pulsatrixtechnologies/sagax/releases). Then verify the checksum
 file and install the `.deb` plus launch the AppImage in a clean Ubuntu 24.04 x86_64 GNOME environment. Never combine
 packages built from different commits under one version.
 
@@ -233,7 +233,7 @@ responses or events, no baking them into argv where another local process could 
 ## Where contributions go
 
 Sagax is developed only in `pulsatrixtechnologies` repositories. Open pull requests against
-[pulsatrixtechnologies/pulsa-bot](https://github.com/pulsatrixtechnologies/pulsa-bot). Changes made
+[pulsatrixtechnologies/sagax](https://github.com/pulsatrixtechnologies/sagax). Changes made
 here are not submitted to the original OpenMausBot project or any other upstream: no pull requests,
 issues, or pushes there.
 

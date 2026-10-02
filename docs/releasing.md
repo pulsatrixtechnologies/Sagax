@@ -1,7 +1,7 @@
 # Releasing
 
 > **Sagax updater:** installed apps update only from
-> `pulsatrixtechnologies/pulsa-bot` releases tagged `pulsa-vX.Y.Z`
+> `pulsatrixtechnologies/sagax` releases tagged `pulsa-vX.Y.Z`
 > (`electron/update-feed.mjs`). By default they look at the latest **full**
 > release (`/releases/latest`); a GitHub pre-release is offered only to people
 > who switched on Settings > General > Pre-release versions. Publish a
@@ -18,7 +18,7 @@ reruns and recovery. It
 builds macOS (arm64 + x64, signed, notarized, stapled), Windows, and Ubuntu
 from a single pinned commit, verifies every artifact the way a user would
 receive it, and assembles the canonical draft in
-[Sagax releases](https://github.com/pulsatrixtechnologies/pulsa-bot/releases).
+[Sagax releases](https://github.com/pulsatrixtechnologies/sagax/releases).
 The exact same assets are also staged in the public legacy releases repo so
 installed builds from 0.1.46 and earlier can update across the repository
 migration.
@@ -75,7 +75,7 @@ Sagax releases are built on a Mac, not by the workflows above:
 
 `app-update.yml` is baked into every packaged desktop app. Builds through
 0.1.46 point to `milind-soni/openmausbot-releases`; newer builds point to
-`pulsatrixtechnologies/pulsa-bot`. For that reason:
+`pulsatrixtechnologies/sagax`. For that reason:
 
 1. Every new release is published byte-for-byte to both repositories during
    the bridge period.

@@ -103,7 +103,7 @@ One container for the server plus Caddy for HTTPS at `https://maus.example.com`.
 3. **Get the deploy files and set the name:**
 
    ```sh
-   git clone https://github.com/pulsatrixtechnologies/pulsa-bot && cd pulsa-bot/deploy
+   git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot/deploy
    cp .env.example .env
    nano .env                # DOMAIN=maus.example.com ; ENGINES=@anthropic-ai/claude-code @openai/codex
    ```

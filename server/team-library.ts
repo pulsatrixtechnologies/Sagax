@@ -3,7 +3,7 @@ import { isBlockedUrl } from "../electron/upstream-hosts.mjs";
 import { isBotPackage, parseBotPackage, parsePackageDocument, type PackageDocument, type ParsedBotPackage } from "./bot-package.ts";
 import { parseTeamManifest, type ParsedTeamManifest } from "./team-manifest.ts";
 
-export const TEAM_LIBRARY_REPOSITORY = "https://github.com/pulsatrixtechnologies/pulsa-bot";
+export const TEAM_LIBRARY_REPOSITORY = "https://github.com/pulsatrixtechnologies/sagax";
 /** Where the shared team catalog lives. The original project's catalog (the
  * upstream author's GitHub) is never fetched: empty unless SAGAX_TEAM_LIBRARY_URL
  * names an HTTPS root of ours, and then the library is an empty catalog with

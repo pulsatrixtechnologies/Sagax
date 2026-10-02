@@ -22,22 +22,22 @@ The local preview does **not** give the bot control of this computer by itself. 
 the global **Enable local control** choice and assigning a bot to **This computer**; every action still enters the
 approval flow. On Wayland, local control is disabled and legacy opt-ins are cleared automatically. Automatic Wayland
 helper installation, Linux dictation, and ARM64 remain unavailable and fail closed; follow their
-progress in [issue #29](https://github.com/pulsatrixtechnologies/pulsa-bot/issues/29) and the safety hold in
-[issue #345](https://github.com/pulsatrixtechnologies/pulsa-bot/issues/345). Bundled
-CUA supply-chain work is tracked in [issue #113](https://github.com/pulsatrixtechnologies/pulsa-bot/issues/113). Xorg is tracked in
-[issue #79](https://github.com/pulsatrixtechnologies/pulsa-bot/issues/79), and guarded GNOME/Wayland support in
-[issue #109](https://github.com/pulsatrixtechnologies/pulsa-bot/issues/109).
+progress in [issue #29](https://github.com/pulsatrixtechnologies/sagax/issues/29) and the safety hold in
+[issue #345](https://github.com/pulsatrixtechnologies/sagax/issues/345). Bundled
+CUA supply-chain work is tracked in [issue #113](https://github.com/pulsatrixtechnologies/sagax/issues/113). Xorg is tracked in
+[issue #79](https://github.com/pulsatrixtechnologies/sagax/issues/79), and guarded GNOME/Wayland support in
+[issue #109](https://github.com/pulsatrixtechnologies/sagax/issues/109).
 
 ## Download packages
 
 Choose one Ubuntu 24.04 x86_64 package from the latest release:
 
-- [Debian package (`Pulsa Bot-amd64.deb`)](https://github.com/pulsatrixtechnologies/pulsa-bot/releases/latest/download/Pulsa Bot-amd64.deb) — recommended; APT installs its desktop dependencies and configures the bundled bot browser's sandbox.
-- [Portable AppImage (`Pulsa Bot.AppImage`)](https://github.com/pulsatrixtechnologies/pulsa-bot/releases/latest/download/Pulsa Bot.AppImage) — does not install system files.
-- [SHA-256 checksums](https://github.com/pulsatrixtechnologies/pulsa-bot/releases/latest/download/SHA256SUMS-ubuntu-x64.txt)
+- [Debian package (`Pulsa Bot-amd64.deb`)](https://github.com/pulsatrixtechnologies/sagax/releases/latest/download/Pulsa Bot-amd64.deb) — recommended; APT installs its desktop dependencies and configures the bundled bot browser's sandbox.
+- [Portable AppImage (`Pulsa Bot.AppImage`)](https://github.com/pulsatrixtechnologies/sagax/releases/latest/download/Pulsa Bot.AppImage) — does not install system files.
+- [SHA-256 checksums](https://github.com/pulsatrixtechnologies/sagax/releases/latest/download/SHA256SUMS-ubuntu-x64.txt)
 
 Versioned packages and previous releases remain available on the
-[releases page](https://github.com/pulsatrixtechnologies/pulsa-bot/releases).
+[releases page](https://github.com/pulsatrixtechnologies/sagax/releases).
 
 ## Build packages
 
@@ -48,7 +48,7 @@ Requirements for building from source:
 - pnpm 10.33.0 (Corepack can install the version declared by the project)
 
 ```sh
-git clone https://github.com/pulsatrixtechnologies/pulsa-bot.git
+git clone https://github.com/pulsatrixtechnologies/sagax.git
 cd pulsa-bot
 corepack enable
 pnpm install --frozen-lockfile
