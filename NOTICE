@@ -22,3 +22,12 @@ PolyForm Noncommercial License 1.0.0, not the Apache License 2.0.
 The OpenMausBot name and mascot are trademarks of Milind Soni. This product
 does not use those marks as its name. Apache License 2.0 section 6 does not
 grant trademark rights.
+
+Voice mode bundles on-device models run with onnxruntime-web (Microsoft, MIT
+License): Silero VAD v5 (Silero Team, MIT License, unmodified) and the
+3D-Speaker CAM++ speaker verification model (Alibaba Group) in the ONNX export
+published by sherpa-onnx (k2-fsa), both Apache License 2.0, its weights
+quantized to int8 by Pulsatrix Technologies inc. Licenses are in
+third_party/onnxruntime-web, third_party/silero-vad, third_party/3d-speaker
+and third_party/sherpa-onnx; details and checksums in
+src/lib/voice-mode/models/NOTICE.txt.

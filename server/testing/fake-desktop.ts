@@ -26,6 +26,8 @@ export interface FakeDesktop {
   staged: Map<string, Buffer>;
   /** host:port the tunnel was asked to open */
   opened: string[];
+  /** Progress steps sent for a job, and whether the server took them. */
+  progress: { message: string; ok: boolean }[];
   tunnelOpen: Promise<void>;
   close(): Promise<void>;
 }
@@ -35,7 +37,7 @@ export async function connectFakeDesktop(options: {
   cookie: string;
   name?: string;
   attachmentsDir?: string;
-  handle?: (operation: Operation) => Promise<ToolResult> | ToolResult;
+  handle?: (operation: Operation, progress: (message: string) => Promise<void>) => Promise<ToolResult> | ToolResult;
   /** Where the tunnel connects for a host:port; null refuses (outside-lan). */
   resolve?: (host: string, port: number) => { host: string; port: number } | null;
   tunnel?: boolean;
@@ -56,9 +58,10 @@ export async function connectFakeDesktop(options: {
   const operations: Operation[] = [];
   const staged = new Map<string, Buffer>();
   const opened: string[] = [];
+  const progressSent: { message: string; ok: boolean }[] = [];
   const abort = new AbortController();
   let stopped = false;
-  const handle = async (operation: Operation): Promise<ToolResult> => {
+  const handle = async (operation: Operation, jobId: string): Promise<ToolResult> => {
     if (operation.action === "stage_file") {
       const name = String(operation.name);
       const data = Buffer.from(String(operation.content ?? ""), "base64");
@@ -69,7 +72,11 @@ export async function connectFakeDesktop(options: {
       const wanted = String(operation.path ?? "");
       for (const [name, bytes] of staged) if (wanted.endsWith(`/${name}`)) return { content: [{ type: "text", text: `desktop:${bytes.toString("utf8")}` }] };
     }
-    return options.handle ? options.handle(operation) : { content: [{ type: "text", text: `desktop:${operation.action}` }] };
+    const progress = async (message: string) => {
+      const answer = await post(`/api/desktop-bridge/${id}/progress`, { jobId, message }, abort.signal).catch(() => ({ ok: false }));
+      progressSent.push({ message, ok: answer.ok === true });
+    };
+    return options.handle ? options.handle(operation, progress) : { content: [{ type: "text", text: `desktop:${operation.action}` }] };
   };
   void (async () => {
     while (!stopped) {
@@ -77,7 +84,7 @@ export async function connectFakeDesktop(options: {
         const { job } = await post(`/api/desktop-bridge/${id}/poll`, {}, abort.signal) as { job?: { id: string; operation: Operation } | null };
         if (!job) continue;
         operations.push(job.operation);
-        const result = await handle(job.operation).catch((error: Error) => ({ content: [{ type: "text", text: error.message }], isError: true }));
+        const result = await handle(job.operation, job.id).catch((error: Error) => ({ content: [{ type: "text", text: error.message }], isError: true }));
         await post(`/api/desktop-bridge/${id}/result`, { jobId: job.id, result }, abort.signal);
       } catch {
         if (stopped) break;
@@ -93,7 +100,7 @@ export async function connectFakeDesktop(options: {
   });
   const tunnelOpen = tunnel ? tunnel.ready : Promise.resolve();
   return {
-    id, secret, operations, staged, opened, tunnelOpen,
+    id, secret, operations, staged, opened, progress: progressSent, tunnelOpen,
     async close() {
       stopped = true;
       abort.abort();

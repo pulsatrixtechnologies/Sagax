@@ -55,13 +55,23 @@ export const CLOUDFLARED_ASSETS = Object.freeze({
     binarySha256: "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
     archive: false,
   }),
+  // cloudflared publishes no Windows arm64 build. The arm64 package ships the
+  // same pinned amd64 executable, which Windows 11 on Arm runs under its x64
+  // emulation; `executableTarget` is the architecture its header must show.
+  "win32-arm64": Object.freeze({
+    name: "cloudflared-windows-amd64.exe",
+    sha256: "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
+    binarySha256: "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
+    archive: false,
+    executableTarget: "win32-x64",
+  }),
 });
 
 export function targetsForHost(platform) {
   // Desktop package targets only. Self-hosted installs use --current instead.
   if (platform === "darwin") return ["darwin-arm64", "darwin-x64"];
   if (platform === "linux") return ["linux-x64"];
-  if (platform === "win32") return ["win32-x64"];
+  if (platform === "win32") return ["win32-x64", "win32-arm64"];
   throw new Error(`Cloudflare Tunnel packaging is unsupported on ${platform}`);
 }
 
@@ -160,8 +170,9 @@ export function verifyPinnedBinary(value, target) {
   const asset = CLOUDFLARED_ASSETS[target];
   if (!asset) throw new Error(`No pinned cloudflared asset for ${target}`);
   const actualTarget = executableTarget(value);
-  if (actualTarget !== target) {
-    throw new Error(`cloudflared architecture mismatch (expected ${target}, received ${actualTarget})`);
+  const expectedTarget = asset.executableTarget ?? target;
+  if (actualTarget !== expectedTarget) {
+    throw new Error(`cloudflared architecture mismatch (expected ${expectedTarget}, received ${actualTarget})`);
   }
   return verifySha256(value, asset.binarySha256, `${target} cloudflared executable`);
 }

@@ -76,6 +76,8 @@ export type MausAvatarProps = {
   skin?: MascotSkinId | null;
   /** Play the skin's effects even while `animated` is off (skin pickers). */
   skinAnimated?: boolean;
+  /** A one-shot move's skin effect (the avatar popover's Moves). */
+  move?: FxMoveRequest | null;
 };
 
 function MausAvatarComponent(
@@ -92,6 +94,7 @@ function MausAvatarComponent(
     animated = true,
     skin,
     skinAnimated,
+    move,
   }: MausAvatarProps,
   ref: React.Ref<MausAvatarHandle>,
 ) {
@@ -144,6 +147,7 @@ function MausAvatarComponent(
       gaze={pinned}
       skin={skin}
       skinAnimated={skinAnimated}
+      move={move}
     />
   );
 }
@@ -164,7 +168,7 @@ export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
     /** The bot's character (owl, shape, Trombi); absent means the owl. */
     mascotLook?: MascotLook | null;
   };
-  /** A one-shot move of a shape or Trombi (the avatar popover's Moves): its body motion and its skin's effect. */
+  /** A one-shot move (the avatar popover's Moves): a shape's or Trombi's body motion and skin effect, the owl's skin effect. */
   characterMove?: FxMoveRequest | null;
   /** Mark this avatar as its person's Primary Bot: a small orange circle with
    * a white star at the bottom-right corner. Lists pass it (sidebar,
@@ -288,6 +292,7 @@ function BotAvatarImage({ bot, size = 44, label, characterMove, ...mascotProps }
     return (
       <MausAvatar
         skin={bot.mascotSkin}
+        move={characterMove}
         {...mascotProps}
         showMouth={false}
         color={bot.color}

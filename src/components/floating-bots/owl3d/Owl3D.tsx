@@ -143,6 +143,14 @@ export function skinFinish(skin: string): { metalness: number; roughness: number
       return { metalness: 0.45, roughness: 0.35, emissive: "#000000", glow: 0, pulse: 0 };
     case "lightning":
       return { metalness: 0.2, roughness: 0.45, emissive: "#ffe14a", glow: 0.35, pulse: 0.5 };
+    case "chrome":
+      return { metalness: 0.9, roughness: 0.15, emissive: "#000000", glow: 0, pulse: 0 };
+    case "holo":
+      return { metalness: 0.5, roughness: 0.25, emissive: "#f5a8ff", glow: 0.25, pulse: 0.1 };
+    case "galaxy":
+      return { metalness: 0.2, roughness: 0.4, emissive: "#6b4cff", glow: 0.3, pulse: 0.1 };
+    case "spirit":
+      return { metalness: 0, roughness: 0.6, emissive: "#7ff0ff", glow: 0.45, pulse: 0.15 };
     default:
       return { metalness: 0, roughness: 0.8, emissive: "#000000", glow: 0, pulse: 0 };
   }

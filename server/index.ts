@@ -705,6 +705,9 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
   ".json": "application/json",
   ".woff2": "font/woff2",
+  ".mjs": "text/javascript",
+  ".wasm": "application/wasm",
+  ".onnx": "application/octet-stream",
 };
 
 ensureDirs();
@@ -6333,6 +6336,8 @@ function audienceChanged(): void {
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
+  // voice mode's live call (server/voice-mode.ts GET /voice/listen)
+  acceptsUpgrade: (path) => /^\/api\/bots\/[\w-]+\/voice\/listen$/.test(path),
   target: (id, auth) => {
     if (id === SANDBOX_VIEWER_TARGET) {
       // The caller's own server environment desktop, never anyone else's.
@@ -18621,7 +18626,15 @@ ROUTES.push(createVoiceModeRoutes({
   resolveOwnKey: (sub) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, "xai") : Promise.resolve({ ok: false as const, error: "link" as const }),
   keysUrl: () => perspicaxKeysUrl(),
   isAdmin: (auth) => orgAdminCaller(auth),
-  xai: { listVoices: grokVoice.listVoices, synthesize: grokVoice.synthesize, transcribe: grokVoice.transcribe },
+  xai: {
+    listVoices: grokVoice.listVoices,
+    synthesize: grokVoice.synthesize,
+    transcribe: grokVoice.transcribe,
+    synthesizeStream: grokVoice.synthesizeStream,
+    openTranscription: (key, options, handlers) => grokVoice.openTranscriptionStream(key, options, handlers),
+    warm: (key) => void grokVoice.listVoices(key).catch(() => {}),
+  },
+  upgrade: (req) => desktopViewer.upgradeOf(req),
   utterances: toUtterances,
   recordUsage: (usage) => {
     const bot = store.bot(usage.target.botId);
@@ -20038,8 +20051,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const detail = operation.action === "fetch_url" || operation.action === "browse"
               ? `${operation.action} ${(() => { try { return new URL(operation.url ?? "").host; } catch { return ""; } })()}`
               : operation.action;
+            // Local VM creation on the person's computer reports its steps
+            // once the person said yes there (never before): the conversation
+            // shows the bot's computer being set up, as in solo mode. The
+            // step text itself comes back in the tool's result, not live.
+            let provisioning = false;
+            const onProgress = operation.action === "vm_create" ? () => {
+              if (provisioning || !active()) return;
+              provisioning = true;
+              broadcast({ kind: "computer", botId: internalCapability.botId, state: "provisioning" });
+            } : undefined;
             try {
-              const answer = await desktopBridges.request(person, operation, active);
+              const answer = await desktopBridges.request(person, operation, active, onProgress).finally(() => {
+                if (provisioning) broadcast({ kind: "computer", botId: internalCapability.botId, state: "ready" });
+              });
               bridgeAudit.record({ person, botId: internalCapability.botId, threadId: internalCapability.threadId, target: "user-desktop", kind: "tool", detail, ok: (answer as { isError?: boolean } | null)?.isError !== true });
               return answer;
             } catch (error) {

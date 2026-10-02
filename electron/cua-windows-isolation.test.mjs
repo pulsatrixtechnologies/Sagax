@@ -97,7 +97,7 @@ describe("Windows owned CUA host", () => {
 
   it("resolves the staged development executable without installing a foreign driver", () => {
     vi.stubEnv("CUA_DRIVER_PATH", "");
-    const stage = join(fixture.home, "dist-native", "cua-win32-x64");
+    const stage = join(fixture.home, "dist-native", `cua-win32-${process.arch}`);
     mkdirSync(stage, { recursive: true });
     writeFileSync(join(stage, "cua-driver.exe"), "inert fixture");
     expect(cua.resolveDriverBinary()).toBe(join(stage, "cua-driver.exe"));

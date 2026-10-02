@@ -17,7 +17,7 @@ const BOB = "pr_00000000-0000-4000-8000-0000000000b0";
 describe("Routines in my name (slice 6, allowed by default since 2026-10-01)", () => {
   it("says it is allowed by default, counts paused routines and offers no switch", () => {
     const markup = renderToStaticMarkup(createElement(MyRoutineDelegation, {
-      initial: { state: "none", suspended: 2, manageUrl: "https://px.example.test/console/users/S1?tab=sagax" },
+      initial: { state: "none", suspended: 2, manageUrl: "https://px.example.test/console/me/access#sagax" },
     }));
     expect(markup).toContain("Routines in my name");
     expect(markup).toContain("Allowed by default. Perspicax confirms it after your first routine.");
@@ -26,7 +26,7 @@ describe("Routines in my name (slice 6, allowed by default since 2026-10-01)", (
     expect(markup).not.toContain("Revoke");
     expect(markup).not.toContain("<button");
     expect(markup).toContain("Manage in Perspicax");
-    expect(markup).toContain('href="https://px.example.test/console/users/S1?tab=sagax"');
+    expect(markup).toContain('href="https://px.example.test/console/me/access#sagax"');
     expect(markup).toContain('data-routine-delegation="none"');
   });
 
@@ -46,12 +46,12 @@ describe("Routines in my name (slice 6, allowed by default since 2026-10-01)", (
     const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => { store.set(key, value); } };
     let started = 0;
     const start = async () => { started++; };
-    const none = async () => ({ state: "none" as const, suspended: 0, manageUrl: "https://px.example.test/console/users/S1?tab=sagax" });
+    const none = async () => ({ state: "none" as const, suspended: 0, manageUrl: "https://px.example.test/console/me/access#sagax", principalId: "pr_s1" });
     expect(await ensureRoutineDelegation({ load: none, start, storage })).toBe("started");
     expect(await ensureRoutineDelegation({ load: none, start, storage })).toBe("skipped");
     expect(started).toBe(1);
-    // another person on the same browser is asked once too
-    const other = async () => ({ state: "none" as const, suspended: 0, manageUrl: "https://px.example.test/console/users/S2?tab=sagax" });
+    // another person on the same browser (same console page) is asked once too
+    const other = async () => ({ state: "none" as const, suspended: 0, manageUrl: "https://px.example.test/console/me/access#sagax", principalId: "pr_s2" });
     expect(await ensureRoutineDelegation({ load: other, start, storage })).toBe("started");
     expect(started).toBe(2);
     // already allowed: nothing to ask

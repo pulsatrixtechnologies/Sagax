@@ -13,6 +13,7 @@ import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { TurnDigest } from "./digest.ts";
 import type { BotAvatarCrop } from "./bot-avatar.ts";
 import type { MascotBodyId } from "./mascot-bodies.ts";
+import type { MascotColorName } from "./mascot-colors.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
 import type { MascotLook } from "./mascot-look.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
@@ -60,9 +61,8 @@ export type CloudBackend = "box" | "vps";
  * person's seat they are the same "cloud computer" panel. */
 export type Surface = "cloud" | "vm" | "local" | "browser";
 
-export type MausColor =
-  | "green" | "blue" | "red" | "orange" | "purple" | "cyan" | "pink"
-  | "yellow" | "teal" | "coral" | "white" | "black" | "brown" | "amber" | "grey";
+/** A bot color name: the palettes in shared/mascot-colors.ts. */
+export type MausColor = MascotColorName;
 
 /** The face a bot rests on, as one of the engine's state names. Kept as a
  * plain string rather than a union: bots saved under the app's earlier
@@ -755,7 +755,7 @@ export type ServerFrame =
   | { kind: "webhook.deleted"; webhookId: string }
   | { kind: "runtime"; event: RuntimeEvent }
   | { kind: "screen"; botId: string; threadId: string; png: string; mime?: string }
-  | { kind: "computer"; botId: string; state: "provisioning" | "waking" }
+  | { kind: "computer"; botId: string; state: "provisioning" | "waking" | "ready" }
   | { kind: "computer-control"; botId: string; held: boolean; helpReason: string | null }
   | { kind: "bot.deleted"; botId: string }
   /** The config status object spread flat into the frame; its full typing

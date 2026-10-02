@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeRegistration } from "./desktop-bridge.ts";
+import { localVmDesktopSpec } from "./container-computer.ts";
 import { desktopToolOperation, handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { DEFAULT_BOT_WORKPLACE, parseBotWorkplace, serializeBotWorkplace } from "../shared/bot-workplace.ts";
 
@@ -123,6 +124,33 @@ describe("the bridge relays only for its own signed-in person", () => {
     await expect(bridges.request(ADA, { action: "computer_tools" }, () => true)).rejects.toMatchObject({ code: "capability" });
   });
 
+  it("Local VM creation: the desktop's progress reaches the turn, only for a live job of that desktop, bounded", async () => {
+    const { bridges } = hub();
+    const desktop = registration();
+    bridges.register(desktop, "ada-session", secret);
+    const other = registration("Bob's PC");
+    bridges.register(other, "bob-session", secret);
+    let live = true;
+    const steps: string[] = [];
+    const answer = bridges.request(ADA, { action: "vm_create", timeout_seconds: 600 }, () => live, (message) => steps.push(message));
+    const job = await bridges.poll(desktop.id, "ada-session", secret, 10);
+    expect(job?.operation).toEqual({ action: "vm_create", timeout_seconds: 600 });
+    expect(bridges.progress(desktop.id, "ada-session", secret, job!.id, "Creating the Local VM\u001b[2J")).toBe(true);
+    expect(bridges.progress(desktop.id, "ada-session", secret, job!.id, 42)).toBe(false);
+    expect(bridges.progress(desktop.id, "ada-session", secret, "not-a-job", "x")).toBe(false);
+    expect(() => bridges.progress(desktop.id, "bob-session", secret, job!.id, "spoofed")).toThrow();
+    expect(bridges.progress(other.id, "bob-session", secret, job!.id, "spoofed")).toBe(false);
+    for (let index = 0; index < 60; index++) bridges.progress(desktop.id, "ada-session", secret, job!.id, `step ${index}`);
+    expect(steps[0]).toBe("Creating the Local VM [2J");
+    expect(steps).toHaveLength(50);
+    expect(steps.join()).not.toContain("spoofed");
+    live = false;
+    expect(bridges.progress(desktop.id, "ada-session", secret, job!.id, "after the turn")).toBe(false);
+    live = true;
+    bridges.complete(desktop.id, "ada-session", secret, job!.id, { content: [{ type: "text", text: "ready" }] });
+    await expect(answer).resolves.toEqual({ content: [{ type: "text", text: "ready" }] });
+  });
+
   it("status shows only the person's own desktops, without secrets", () => {
     const { bridges } = hub();
     bridges.register(registration("Ada's Mac"), "ada-session", secret);
@@ -137,6 +165,9 @@ describe("the sagax-desktop tools", () => {
   it("become typed operations, rejecting bad arguments", () => {
     expect(desktopToolOperation("run_command", { command: "ls", timeout_seconds: 9999 })).toMatchObject({ action: "run_command", command: "ls", timeout_seconds: 600 });
     expect(desktopToolOperation("local_vm", { action: "run", command: "uname" })).toMatchObject({ action: "vm_run_command", command: "uname" });
+    // the server's own recipe goes with it; the desktop checks it
+    expect(desktopToolOperation("local_vm", { action: "create" })).toEqual({ action: "vm_create", arguments: { spec: localVmDesktopSpec() }, timeout_seconds: 600 });
+    expect(() => desktopToolOperation("local_vm", { action: "destroy" })).toThrow(/status, start, run or create/);
     expect(desktopToolOperation("fetch_url", { url: "http://intranet.local/x" })).toMatchObject({ action: "fetch_url", url: "http://intranet.local/x" });
     expect(() => desktopToolOperation("fetch_url", { url: "file:///etc/passwd" })).toThrow();
     expect(() => desktopToolOperation("fetch_url", { url: "https://user:pw@x.test/" })).toThrow();
@@ -148,6 +179,10 @@ describe("the sagax-desktop tools", () => {
     expect(listed.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["run_command", "read_file", "write_file", "search_files", "fetch_url", "browse", "computer_use", "local_vm"]));
     const refused = await handleDesktopBridgeMcp("tools/call", { name: "run_command", arguments: { command: "ls" } }, async () => { throw new Error("Your computer is not connected right now."); });
     expect(refused).toEqual({ content: [{ type: "text", text: "Your computer is not connected right now." }], isError: true });
+  });
+  it("an older desktop app that cannot create a Local VM says to update it", async () => {
+    const old = await handleDesktopBridgeMcp("tools/call", { name: "local_vm", arguments: { action: "create" } }, async () => ({ content: [{ type: "text", text: "Invalid request" }], isError: true }));
+    expect(old).toMatchObject({ isError: true, content: [{ type: "text", text: expect.stringMatching(/too old to create a Local VM/) }] });
   });
 });
 

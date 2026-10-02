@@ -77,7 +77,7 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   keys" card, no engine missing from the server, never the server's own
   account (it serves no one's turns there).
 - Routines in my name is read-only: allowed by default, revoked in the
-  Perspicax console (`manageUrl`, the person's Sagax tab). Perspicax has no
+  Perspicax console (`manageUrl`, `/console/me/access#sagax`). Perspicax has no
   silent authorization, so `ensureRoutineDelegation` starts the consent once,
   after the person's first routine.
 - An organization admin force-stops or force-deletes any bot
@@ -285,7 +285,22 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   (`microphoneOrigins`). The bundled page has no dictation bridge: call
   `window.ogb?.speechStop?.()`, never assume it.
 - Voice, Speed and Language live in `omb.voiceMode.v1` and travel with the
-  person (`shared/user-preferences.ts`).
+  person (`shared/user-preferences.ts`). The call's settings and the "Only my
+  voice" voiceprint stay on the computer (`omb.voiceCall.v1`,
+  `omb.voiceCall.voiceprint.v1`); never add them to the keys that travel.
+- A call is a live, full-duplex call (`LiveCall.tsx`, `src/lib/voice-mode/call.ts`,
+  states in `call-machine.ts`): Silero VAD and CAM++ speaker verification run
+  on the computer (onnxruntime-web, models in `src/lib/voice-mode/models/`,
+  served from the app's bundle, never a CDN); a turn streams over
+  `GET /voice/listen` (WebSocket, same origin only, bridged to xAI streaming
+  speech to text) and the answer is spoken sentence by sentence through
+  `POST /voice/stream` (raw PCM). Barge-in ducks then cancels the bot's voice
+  and interrupts its running turn. Tests: `call-logic.test.ts`, `call.test.ts`,
+  `models.test.ts`, `server/voice-call.e2e.test.ts`.
+- xAI is only ears and a voice: never its realtime agent, responses, chat or
+  function calling. Every turn goes to the bot through the normal send route,
+  and only the bot's text is synthesized. The e2e test and
+  `scripts/verify-voice-mode.ts` fail on any other xAI path.
 - On an organization server (the status says `organization: true`, or the
   viewer is managed by Perspicax) the call button is
   `VoiceModeCallButton`: the server decides (`/voice/status`, asked again at
@@ -333,6 +348,20 @@ Electron restart (no HMR); launch-test them before committing.
 - `fit.ts` sizes the stage for the widest pose; `pilot.ts` moves the window
   (flights, walks) through `floating-bots:geometry`, `move-to` and
   `autopilot`; main clamps every move and never saves spots flown to.
+- The chat stays smooth (`window-frame.ts`): while the balloon is open the
+  window holds the balloon's room and only grows, so streaming, resizing or
+  moving the balloon never resizes the window per frame; it fits again when
+  the balloon closes or a gesture ends. Drags move the window once a frame
+  (`setPosition`, one request in flight); main saves a spot once the window
+  stands still and only calls `setIgnoreMouseEvents`, `setFocusable` and
+  `focus` on a change. With the balloon open the mascot stays home (no
+  wander, no flight while its bot works), draws at 30 fps at most and the
+  skin's loops rest. Measure with `node scripts/verify-mascot-chat.mjs`
+  (isolated real Electron: open latency, window moves, clipped and dropped
+  frames, mascot jumps, position writes, theme).
+- The balloon wears the app's theme: the brain sends `theme` (the skin and
+  the brand accent, `theme.ts`, followed live) and the window stamps it;
+  Trombi keeps its Hibou 98 balloon whatever the theme.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
@@ -340,6 +369,12 @@ Electron restart (no HMR); launch-test them before committing.
   (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
   in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
   every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
+- Bot colors live in `shared/mascot-colors.ts` (palettes Vivid, Pastel, Deep,
+  Neon, Neutral; the original fifteen ids keep their values) and every skin,
+  the owl's included (`OWL_SKIN_TIER`, `LEGACY_OWL_SKINS`), has a rarity. The
+  popover shows one palette and one rarity at a time (`editor-tabs.ts`,
+  covered by `editor-tabs.test.ts`); a renamed skin id goes in the legacy
+  table, never removed.
 - Per device:, the mood (`omb.floatingBots.mood.v1`, never punishing),
   and the settings "Fly away during tasks" and "Activity level"
   (`omb.floatingBots.prefs.v1`, Settings > Appearance and the right-click
@@ -413,7 +448,8 @@ server `sagax-desktop` (shell, files, search, fetch, offscreen browser,
 computer use, Local VM), and the engine's own network traffic leaves through
 it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 `server/desktop-egress.test.ts`, `server/attachment-staging.test.ts`,
-`electron/desktop-bridge.node-test.mjs` or `scripts/verify-desktop-bridge.ts`:
+`electron/local-vm.node-test.mjs`, `electron/desktop-bridge.node-test.mjs` or
+`scripts/verify-desktop-bridge.ts`:
 
 - Where tools run is decided once per turn by `resolveBotWorkplace`: the
   speaker's desktop when it is connected and their preference
@@ -435,6 +471,38 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
   and VPN, refuses its own loopback and link-local, and applies "local network
   only". Destinations (host:port only) go to `desktop-bridge-audit.jsonl` and
   the desktop's own activity log.
+- The OS proxy, per destination: `session.resolveProxy` (it evaluates a PAC
+  file the system names) gives the routes, tried in order (`proxyChain`,
+  `openConnection` in `electron/desktop-tunnel.mjs`): HTTP CONNECT, HTTPS
+  proxy, SOCKS4a and SOCKS5. A SOCKS5 user name and password comes from the
+  app's `ALL_PROXY`/`SOCKS_PROXY` (`socks5://user:password@host:port`), else
+  from what the person typed once in the app's own window when the proxy
+  asked (`electron/proxy-credentials.mjs`: kept per proxy host:port with
+  `safeStorage` in `proxy-passwords.bin`, Cancel not asked again until a
+  restart, a refused saved password forgotten). The OS's own proxy passwords
+  (Keychain, Credential Manager) are not read. A proxy that fails never turns
+  into a direct connection unless the answer lists DIRECT after it; a failed
+  system proxy lookup (PAC out of reach, script error) is direct and logged
+  as `direct (system proxy lookup failed)`. Behind a proxy, a name this
+  computer cannot resolve is the proxy's to resolve (never with "local
+  network only", never `localhost`). The activity log records the route
+  (`via`) and the detailed error; the server, the bot and the audit get only
+  a coarse reason (`coarseFailure`), never the proxy's address. Real
+  Electron: `pnpm exec electron scripts/verify-desktop-proxy.electron.mjs`.
+- Local VM creation (`local_vm` action `create`, operation `vm_create`):
+  only after the person's yes in the desktop app's own prompt
+  (`confirmBridgeLocalVm` in `electron/main.mjs`, the Local VM's
+  `confirmCreate`), the same one-click setup as the Computer tab from the
+  server's own recipe (`localVmDesktopSpec`, checked on the desktop by
+  `validLocalVmSpec`) on this app's `vm-home`. An existing VM is reported,
+  never recreated; a stale one is repaired from the Computer tab only. After
+  the yes (never before), steps go
+  to `/api/desktop-bridge/<id>/progress` (that desktop's live job only, 50
+  at most); the first one shows the bot's computer being set up to whoever
+  can see the bot (`computer` `provisioning`, then `ready`). The step text
+  is not shown live: it comes back in the tool's result. A turn that ends
+  does not stop a creation under way; the next `create` or `status` reports
+  it.
 - Attachments of the CURRENT message are the speaker's only when the first
   message naming them is theirs; small text ones are inlined, all are copied
   where the tools run at the first tool call, and the tag names that path.

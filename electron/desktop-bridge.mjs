@@ -69,7 +69,7 @@ const READ_MAX = 1_000_000;
 const WRITE_MAX = 1024 * 1024;
 const FETCH_MAX = 256 * 1024;
 const STAGE_MAX = 25 * 1024 * 1024;
-const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "stage_file"]);
+const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "stage_file"]);
 const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final"]);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
@@ -293,6 +293,7 @@ export async function executeBridgeOperation(operation, deps, signal) {
     case "vm_install": return deps.localVm.install(String(operation.arguments?.choice ?? ""));
     case "vm_screenshot": return deps.localVm.screenshot();
     case "vm_run_command": return deps.localVm.exec(operation.container, operation.command, { timeoutSeconds: operation.timeout_seconds ?? 120, signal });
+    case "vm_create": return deps.localVm.create({ spec: operation.arguments?.spec, signal, progress: deps.progress });
     case "stage_file": {
       const dir = deps.attachmentsDir;
       await fs.mkdir(dir, { recursive: true, mode: 0o700 });
@@ -328,7 +329,7 @@ const describe = operation => {
  * server while the app is in server mode and signed in. */
 export function createDesktopBridge({
   environment, fetch: fetchImpl, cookieHeader, home = os.homedir(), attachmentsDir, protectedPaths = [], activityFile,
-  fetchUrl = globalThis.fetch, browse, cuaConnection, hostControl, resolveProxy, lookup, tunnelConnect, WebSocketImpl = globalThis.WebSocket,
+  fetchUrl = globalThis.fetch, browse, cuaConnection, hostControl, resolveProxy, proxyCredentials, lookup, tunnelConnect, WebSocketImpl = globalThis.WebSocket,
   platform = process.platform, hostname = os.hostname(), onChange = () => {}, localVm = createLocalVm(), retryMs = 5000,
 }) {
   const roots = [...protectedPaths, ...personalSecretPaths(home)];
@@ -405,8 +406,8 @@ export function createDesktopBridge({
               tunnel = openDesktopTunnel({
                 url: `${env.origin.replace(/^http/, "ws")}/api/desktop-bridge/${id}/tunnel`,
                 headers: { cookie: await cookieHeader(env.origin), origin: env.origin, "x-sagax-bridge-secret": secret },
-                network: () => network, resolveProxy, lookup, WebSocketImpl, ...(tunnelConnect ? { connect: tunnelConnect } : {}),
-                record: ({ host, port, ok, error }) => activity.record({ env, action: "network", detail: `${host}:${port}`, ok, error }),
+                network: () => network, resolveProxy, proxyCredentials, lookup, WebSocketImpl, ...(tunnelConnect ? { connect: tunnelConnect } : {}),
+                record: ({ host, port, ok, error, via }) => activity.record({ env, action: "network", detail: `${host}:${port}${via && via !== "direct" ? ` via ${via}` : ""}`, ok, error }),
               });
               live.addEventListener("abort", () => tunnel?.close(), { once: true });
               await tunnel.ready;
@@ -434,9 +435,15 @@ export function createDesktopBridge({
             }, 2000);
             let result;
             let control;
+            // Progress for the turn (Local VM creation): best effort, bounded.
+            let progressSent = 0;
+            const progress = message => {
+              if (progressSent++ >= 50) return;
+              void call("progress", { jobId: job.id, message: String(message).slice(0, 300) }).catch(() => {});
+            };
             try {
               result = await executeBridgeOperation(operation, {
-                home, attachmentsDir, protectedPaths: roots, fetchUrl, browse, localVm,
+                home, attachmentsDir, protectedPaths: roots, fetchUrl, browse, localVm, progress,
                 computer: cuaConnection ? async (op, sig) => {
                   if (hostControl) control = await hostControl(job.id, sig);
                   if (!cua) {

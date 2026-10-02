@@ -9,6 +9,7 @@
 // The keyframes are in skin-fx.css and run only under .skin-fx-live.
 import type { ReactNode } from "react";
 import type { ShapeSkin } from "../../../shared/mascot-look";
+import { EYE_INK, eyeInkOn } from "../../../shared/mascot-colors";
 import { mix, type FxKind } from "./skin-fx";
 
 export interface ShapeSkinBase {
@@ -31,9 +32,9 @@ export const tint = (hex: string, amount: number) => mix(hex, "#ffffff", amount)
 export function shapeSkinBase(skin: ShapeSkin, hex: string): ShapeSkinBase {
   switch (skin) {
     case "glossy":
-      return { fill: hex, stroke: null, strokeWidth: 0, eyes: "#1b1f27", glow: null, shine: true, fx: "plain" };
+      return { fill: hex, stroke: null, strokeWidth: 0, eyes: eyeInkOn(hex), glow: null, shine: true, fx: "plain" };
     case "pastel":
-      return { fill: tint(hex, 0.55), stroke: null, strokeWidth: 0, eyes: "#3a3f4b", glow: null, shine: false, fx: "plain" };
+      return { fill: tint(hex, 0.55), stroke: null, strokeWidth: 0, eyes: eyeInkOn(tint(hex, 0.55)) === EYE_INK.dark ? "#3a3f4b" : EYE_INK.light, glow: null, shine: false, fx: "plain" };
     case "night":
       return { fill: "#1c2236", stroke: hex, strokeWidth: 2.5, eyes: "#f6f1e8", glow: null, shine: false, fx: "plain" };
     case "outline":
@@ -55,7 +56,8 @@ export function shapeSkinBase(skin: ShapeSkin, hex: string): ShapeSkinBase {
     case "galaxy":
       return { fill: "#120a2e", stroke: tint(hex, 0.5), strokeWidth: 1.2, eyes: "#f3efff", glow: null, shine: false, fx: "galaxy" };
     default:
-      return { fill: hex, stroke: null, strokeWidth: 0, eyes: "#1b1f27", glow: null, shine: false, fx: "plain" };
+      // dark eyes, or light ones on a dark body (black, the deep palette): always readable
+      return { fill: hex, stroke: null, strokeWidth: 0, eyes: eyeInkOn(hex), glow: null, shine: false, fx: "plain" };
   }
 }
 
