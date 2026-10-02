@@ -8,7 +8,7 @@ import SwiftUI
 import WidgetKit
 
 @main
-struct OpenMausWidgets: WidgetBundle {
+struct SagaxWidgets: WidgetBundle {
     var body: some Widget {
         BotActivityWidget()
         NeedsYouWidget()
@@ -127,7 +127,7 @@ private struct AnswerButtons: View {
         if #available(iOS 17.0, *) {
             buttons
         } else {
-            Text("Open MausBot to answer")
+            Text("Open Sagax to answer")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
         }

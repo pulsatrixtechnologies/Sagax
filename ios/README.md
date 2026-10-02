@@ -142,7 +142,7 @@ The app needs Xcode. The `.xcodeproj` is generated rather than committed:
 
 ```sh
 brew install xcodegen
-cd ios && xcodegen generate && open OpenMausCompanion.xcodeproj
+cd ios && xcodegen generate && open Sagax.xcodeproj
 ```
 
 **Re-run `xcodegen generate` after pulling any change that adds a file to
@@ -269,3 +269,22 @@ transcript sharing, reactions, and edit/version controls use narrow companion
 routes and the computer remains the source of truth. Tailscale is supported
 through manual MagicDNS entry; it is not a dependency and Sagax does not
 operate a cloud copy of local data.
+
+## Legacy wire identifiers
+
+The app is Sagax everywhere a person can see it (`ca.pulsatrix.sagax`,
+`sagax://` only, display and bundle name "Sagax"). A few upstream spellings
+stay inside the binary because the server protocol requires them; nobody
+sees them:
+
+- `_openmausbot._tcp`: the Bonjour service type the desktop advertises.
+- `/.well-known/openmausbot/environment`: the environment probe every
+  released server answers (`/.well-known/sagax/` exists only from 0.4.0).
+- The health body's `app: "openmausbot"`.
+- `omb_pair_`: the pairing credential prefix.
+- `openmausbot-phone-credential-v1` and `OpenMausBot phone credential v1`:
+  the phone credential encryption labels (#63). Changing them breaks
+  credential entry.
+
+`scripts/check-ios-bundle-names.sh path/to/Sagax.app` fails on any other
+"openmaus" in the built bundle; CI runs it after the simulator build.

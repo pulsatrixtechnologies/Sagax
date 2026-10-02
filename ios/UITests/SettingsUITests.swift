@@ -7,7 +7,7 @@ import XCTest
 ///   node ios/parity/fixture-server.mjs &
 ///   TEST_RUNNER_PARITY_ENDPOINT=... TEST_RUNNER_PARITY_TOKEN=... \
 ///   TEST_RUNNER_PARITY_ENVIRONMENT=... xcodebuild test \
-///     -only-testing:OpenMausCompanionUITests/SettingsUITests ...
+///     -only-testing:SagaxCompanionUITests/SettingsUITests ...
 ///
 /// Without those variables the tests skip. The sign-out test ends the
 /// in-memory session only (the fixture's pairing stays valid), so the

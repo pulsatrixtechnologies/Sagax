@@ -2081,7 +2081,7 @@ struct CredentialRequestCardView: View {
                     Label("Pair again to enter here", systemImage: "qrcode")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(tint)
-                    Text("This pairing predates secure phone entry. Scan a fresh QR from OpenMausBot, or finish this request on your computer.")
+                    Text("This pairing predates secure phone entry. Scan a fresh QR from Sagax, or finish this request on your computer.")
                         .font(.system(size: 13))
                         .foregroundStyle(Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)

@@ -31,7 +31,7 @@ struct PairingScannerSheet: View {
                     EmptyStateView(
                         title: String(localized: "Camera access needed"),
                         systemImage: "camera.fill",
-                        description: Text("Allow camera access to scan the pairing QR code shown by OpenMausBot.")
+                        description: Text("Allow camera access to scan the pairing QR code shown by Sagax.")
                     ) {
                         Button("Open Settings") {
                             guard let url = URL(string: UIApplication.openSettingsURLString) else { return }

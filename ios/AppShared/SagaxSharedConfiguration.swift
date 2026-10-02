@@ -5,10 +5,11 @@ import Foundation
 /// Keep the group identifier in one source file rather than repeating it in
 /// the app and extension. The matching capabilities still live in the Xcode
 /// project, where iOS verifies them against the provisioning profile.
-enum OpenMausSharedConfiguration {
-    static let appGroupIdentifier = "group.com.openmausbot.shared"
-    static let legacyAppBundleIdentifier = "com.openmausbot.app"
-    static let keychainAccessGroupInfoKey = "OpenMausKeychainAccessGroup"
+enum SagaxSharedConfiguration {
+    static let appGroupIdentifier = "group.ca.pulsatrix.sagax"
+    /// The containing app's own default keychain group (its bundle id).
+    static let legacyAppBundleIdentifier = "ca.pulsatrix.sagax"
+    static let keychainAccessGroupInfoKey = "SagaxKeychainAccessGroup"
 
     /// The shared suite can be unavailable in unsigned previews and local
     /// tests. Callers which need compatibility with an already-installed app

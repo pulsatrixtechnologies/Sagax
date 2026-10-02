@@ -3,27 +3,27 @@ import Foundation
 
 /// Where a restored registry was found. This makes the migration decision a
 /// pure value operation which can be unit-tested without mutating defaults.
-enum OpenMausConnectionRegistrySource: Equatable {
+enum SagaxConnectionRegistrySource: Equatable {
     case sharedRegistry
     case fallbackRegistry
     case legacyConnection
     case empty
 }
 
-struct OpenMausConnectionRegistryResolution: Equatable {
+struct SagaxConnectionRegistryResolution: Equatable {
     let registry: CompanionConnectionRegistry
-    let source: OpenMausConnectionRegistrySource
+    let source: SagaxConnectionRegistrySource
 }
 
 /// Non-secret pairing metadata shared with extensions.
 ///
-/// Tokens never enter defaults; they live in `OpenMausSharedKeychain`. The
+/// Tokens never enter defaults; they live in `SagaxSharedKeychain`. The
 /// standard suite is dual-written as a compatibility fallback so an unsigned
 /// preview or a temporary App Group entitlement mistake cannot erase the
 /// non-secret connection list. Pairing tokens intentionally migrate forward
 /// into the shared Keychain group; downgrading across that migration may
 /// require pairing again.
-enum OpenMausSharedConnectionStore {
+enum SagaxSharedConnectionStore {
     static let registryKey = "companion.connections.v1"
     static let legacyConnectionKey = "companion.connection"
 
@@ -31,14 +31,14 @@ enum OpenMausSharedConnectionStore {
         sharedRegistryData: Data?,
         fallbackRegistryData: Data?,
         legacyConnectionData: Data?
-    ) -> OpenMausConnectionRegistryResolution {
+    ) -> SagaxConnectionRegistryResolution {
         let decoder = JSONDecoder()
         if let sharedRegistryData,
            let registry = try? decoder.decode(
                CompanionConnectionRegistry.self,
                from: sharedRegistryData
            ) {
-            return OpenMausConnectionRegistryResolution(
+            return SagaxConnectionRegistryResolution(
                 registry: registry,
                 source: .sharedRegistry
             )
@@ -48,7 +48,7 @@ enum OpenMausSharedConnectionStore {
                CompanionConnectionRegistry.self,
                from: fallbackRegistryData
            ) {
-            return OpenMausConnectionRegistryResolution(
+            return SagaxConnectionRegistryResolution(
                 registry: registry,
                 source: .fallbackRegistry
             )
@@ -57,7 +57,7 @@ enum OpenMausSharedConnectionStore {
             registryData: nil,
             legacyConnectionData: legacyConnectionData
         )
-        return OpenMausConnectionRegistryResolution(
+        return SagaxConnectionRegistryResolution(
             registry: legacy.registry,
             source: legacy.migratedLegacyConnection ? .legacyConnection : .empty
         )
@@ -66,7 +66,7 @@ enum OpenMausSharedConnectionStore {
     /// Load the registry, preferring the app-group copy and migrating older
     /// app-only storage into it on first use.
     static func loadRegistry(
-        sharedDefaults: UserDefaults? = OpenMausSharedConfiguration.sharedDefaults,
+        sharedDefaults: UserDefaults? = SagaxSharedConfiguration.sharedDefaults,
         fallbackDefaults: UserDefaults = .standard
     ) -> CompanionConnectionRegistry {
         let resolution = resolve(
@@ -85,7 +85,7 @@ enum OpenMausSharedConnectionStore {
     }
 
     static func loadActiveConnection(
-        sharedDefaults: UserDefaults? = OpenMausSharedConfiguration.sharedDefaults,
+        sharedDefaults: UserDefaults? = SagaxSharedConfiguration.sharedDefaults,
         fallbackDefaults: UserDefaults = .standard
     ) -> Connection? {
         loadRegistry(
@@ -96,7 +96,7 @@ enum OpenMausSharedConnectionStore {
 
     static func saveRegistry(
         _ registry: CompanionConnectionRegistry,
-        sharedDefaults: UserDefaults? = OpenMausSharedConfiguration.sharedDefaults,
+        sharedDefaults: UserDefaults? = SagaxSharedConfiguration.sharedDefaults,
         fallbackDefaults: UserDefaults = .standard
     ) {
         guard !registry.connections.isEmpty else {

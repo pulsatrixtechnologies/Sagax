@@ -28,11 +28,11 @@ final class PulsatrixSignInTests: XCTestCase {
     func testStartURLAsksForThePhoneReturn() {
         XCTAssertEqual(PulsatrixSignIn.startURL(base: URL(string: "https://bot.acme.test")!)?.absoluteString, "https://bot.acme.test/auth/oidc/start?client=phone")
         XCTAssertEqual(PulsatrixSignIn.startURL(base: URL(string: "http://127.0.0.1:18788/pair?x=1#y")!)?.absoluteString, "http://127.0.0.1:18788/auth/oidc/start?client=phone")
-        XCTAssertNil(PulsatrixSignIn.startURL(base: URL(string: "openmausbot://pair")!))
+        XCTAssertNil(PulsatrixSignIn.startURL(base: URL(string: "sagax://pair")!))
     }
 
     func testTheServersReturnLinkIsAnInvite() throws {
-        let link = URL(string: "openmausbot://pair?address=\("https://bot.acme.test".addingPercentEncoding(withAllowedCharacters: .alphanumerics)!)&token=\(credential)&name=Acme%20%26%20Co")!
+        let link = URL(string: "sagax://pair?address=\("https://bot.acme.test".addingPercentEncoding(withAllowedCharacters: .alphanumerics)!)&token=\(credential)&name=Acme%20%26%20Co")!
         let invite = try XCTUnwrap(PairingInvite.parse(link))
         XCTAssertEqual(invite.credential, credential)
         XCTAssertEqual(invite.connection.name, "Acme & Co")
@@ -40,7 +40,7 @@ final class PulsatrixSignInTests: XCTestCase {
         // an answer naming another server is not taken
         XCTAssertNil(PulsatrixSignIn.invite(from: link, expectedOrigin: URL(string: "https://other.acme.test")!))
         // a six-digit companion code is not a sign-in credential
-        let companion = URL(string: "openmausbot://pair?address=https%3A%2F%2Fbot.acme.test&code=123456")!
+        let companion = URL(string: "sagax://pair?address=https%3A%2F%2Fbot.acme.test&code=123456")!
         XCTAssertNil(PulsatrixSignIn.invite(from: companion, expectedOrigin: URL(string: "https://bot.acme.test")!))
     }
 }

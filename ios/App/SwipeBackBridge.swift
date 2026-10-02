@@ -1,6 +1,6 @@
 //
 //  SwipeBackBridge.swift
-//  OpenMausCompanion
+//  SagaxCompanion
 //
 //  The system's edge-swipe back gesture does not belong to SwiftUI: it is the
 //  interactivePopGestureRecognizer on the UIKit navigation controller that

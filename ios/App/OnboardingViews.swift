@@ -9,13 +9,12 @@ struct CompanionWelcomeView: View {
             VStack(spacing: 28) {
                 Spacer(minLength: 28)
 
-                ZStack {
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .fill(MausPalette.color("blue").opacity(0.12))
-                        .frame(width: 148, height: 148)
-                    OwlMascotView(color: "blue", size: 108, state: .success)
-                        .accessibilityHidden(true)
-                }
+                // The Sagax mark, the same art as the desktop app icon.
+                Image("SagaxMark")
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 148, height: 148)
+                    .accessibilityHidden(true)
 
                 VStack(spacing: 12) {
                     Text("Take your bots with you")
@@ -128,13 +127,13 @@ struct UnpairedHomeView: View {
                     VStack(spacing: 8) {
                         Text("Connect when you're ready")
                             .font(.title2.bold())
-                        Text("Pair this device with OpenMausBot to see your chats and respond to your bots.")
+                        Text("Pair this device with Sagax to see your chats and respond to your bots.")
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Text("On your computer, open OpenMausBot → Settings → Phone.")
+                    Text("On your computer, open Sagax, then Settings, then Phone.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -156,7 +155,7 @@ struct UnpairedHomeView: View {
                 .padding(.vertical, 14)
                 .background(.ultraThinMaterial)
             }
-            .navigationTitle("OpenMausBot")
+            .navigationTitle("Sagax")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
@@ -194,7 +193,7 @@ struct NotificationOnboardingView: View {
                 VStack(spacing: 10) {
                     Text("Stay in the loop")
                         .font(.largeTitle.bold())
-                    Text("Get alerts while OpenMausBot is open or was recently in the background. Alerts stop after iOS fully suspends or closes the app.")
+                    Text("Get alerts while Sagax is open or was recently in the background. Alerts stop after iOS fully suspends or closes the app.")
                         .font(.title3)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

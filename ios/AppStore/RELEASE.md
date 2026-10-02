@@ -5,9 +5,9 @@ The app is native Swift and uses XcodeGen; EAS commands do not apply.
 ## One-time Apple setup
 
 1. Enrol in the Apple Developer Program.
-2. Register the bundle IDs `com.openmausbot.app`, `com.openmausbot.app.widgets`, and `com.openmausbot.app.share` (or change them in `project.yml` before the first upload).
-3. Register the App Group `group.com.openmausbot.shared`. Enable App Groups and Keychain Sharing for the app and Share extension identifiers, then add the group to both. Keep the app's legacy `$(AppIdentifierPrefix)com.openmausbot.app` Keychain group during upgrades so existing pairings can migrate safely.
-4. Create the matching app in App Store Connect with the name **OpenMaus Mobile**, primary category **Productivity**, and a unique SKU.
+2. Team Pulsatrix Technologies (`PP546MZVHZ`). The bundle IDs `ca.pulsatrix.sagax`, `ca.pulsatrix.sagax.widgets`, and `ca.pulsatrix.sagax.share` are registered (ASC app id 6818532985).
+3. App Group `group.ca.pulsatrix.sagax` on the app and both extensions; the shared Keychain group is `$(AppIdentifierPrefix)group.ca.pulsatrix.sagax`, plus the app's own `$(AppIdentifierPrefix)ca.pulsatrix.sagax`. Keychain service names and the credential encryption label keep their `openmausbot` spellings on purpose.
+4. The App Store Connect app is **Sagax**, primary category **Productivity**, and a unique SKU.
 5. Create or select Apple Distribution certificates and App Store provisioning profiles for the containing app and both extensions.
 6. Add the review contact details in App Store Connect; do not commit private contact data or App Store Connect keys.
 

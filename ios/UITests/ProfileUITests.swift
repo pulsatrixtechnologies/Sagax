@@ -9,7 +9,7 @@ import XCTest
 ///   node ios/parity/fixture-server.mjs &
 ///   TEST_RUNNER_PARITY_ENDPOINT=... TEST_RUNNER_PARITY_TOKEN=... \
 ///   TEST_RUNNER_PARITY_ENVIRONMENT=... xcodebuild test \
-///     -only-testing:OpenMausCompanionUITests/ProfileUITests ...
+///     -only-testing:SagaxCompanionUITests/ProfileUITests ...
 ///
 /// Without those variables the tests skip.
 final class ProfileUITests: XCTestCase {

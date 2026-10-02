@@ -17,7 +17,7 @@ import UIKit
 /// Stream lifecycle, in Console.app and the Xcode console. A companion that
 /// is silently not connected looks exactly like one with nothing to say, so
 /// the transitions are worth being able to read.
-private let log = Logger(subsystem: "com.openmausbot.companion", category: "stream")
+private let log = Logger(subsystem: "ca.pulsatrix.sagax", category: "stream")
 
 private final class CachedAttachmentDownload: NSObject {
     let value: DownloadedFile
@@ -322,7 +322,7 @@ final class Session: ObservableObject {
     /// only the first should ever send someone back to the pairing screen.
     private func restore() {
         restorePending = false
-        registry = OpenMausSharedConnectionStore.loadRegistry()
+        registry = SagaxSharedConnectionStore.loadRegistry()
         connections = registry.connections
         // The Share extension can target any saved computer, not only the
         // one active at launch. Move every inactive pre-extension token into
@@ -463,7 +463,7 @@ final class Session: ObservableObject {
                 )
             }
         } saveConnection: {
-            OpenMausSharedConnectionStore.saveRegistry(updatedRegistry)
+            SagaxSharedConnectionStore.saveRegistry(updatedRegistry)
         }
 
         stopActiveRuntime()
@@ -501,7 +501,7 @@ final class Session: ObservableObject {
             _ = try await probe.environment()
         } catch APIError.status(404, _) {
             throw APIError.transport(
-                "\(connection.displayAddress) isn't an OpenMausBot server. Check the address and try again."
+                "\(connection.displayAddress) isn't a Sagax server. Check the address and try again."
             )
         }
     }
@@ -694,7 +694,7 @@ final class Session: ObservableObject {
     }
 
     private func persistRegistry() {
-        OpenMausSharedConnectionStore.saveRegistry(registry)
+        SagaxSharedConnectionStore.saveRegistry(registry)
     }
 
     private func persistActiveConnection(_ updated: Connection) {
@@ -1095,7 +1095,7 @@ final class Session: ObservableObject {
                 do {
                     capable = try await client.imageCapableInstanceIDs()
                 } catch APIError.status(code: 404, message: _) {
-                    actionError = "Update OpenMausBot on this computer before sending images."
+                    actionError = "Update Sagax on this computer before sending images."
                     return false
                 }
                 guard imageSupported(by: chat, capableInstances: capable) else {
@@ -1378,7 +1378,7 @@ final class Session: ObservableObject {
     ) throws -> DownloadedFile {
         let manager = FileManager.default
         let root = manager.temporaryDirectory
-            .appendingPathComponent("OpenMausBotFilePreviews", isDirectory: true)
+            .appendingPathComponent("SagaxFilePreviews", isDirectory: true)
         let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try Task.checkCancellation()
         try manager.createDirectory(
@@ -1412,7 +1412,7 @@ final class Session: ObservableObject {
 
     private static func removeStaleFilePreviews() {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenMausBotFilePreviews", isDirectory: true)
+            .appendingPathComponent("SagaxFilePreviews", isDirectory: true)
         try? FileManager.default.removeItem(at: root)
     }
 

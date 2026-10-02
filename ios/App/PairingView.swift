@@ -84,7 +84,7 @@ struct PairingView: View {
             .fullScreenCover(isPresented: $showingScanner) {
                 PairingScannerSheet { payload in
                     guard let url = URL(string: payload), let invite = PairingInvite.parse(url) else {
-                        return "That isn't an OpenMausBot pairing QR code."
+                        return "That isn't a Sagax pairing QR code."
                     }
                     accept(invite)
                     return nil
@@ -110,7 +110,7 @@ struct PairingView: View {
                 Text("Connect to your computer")
                     .font(.title.bold())
                     .multilineTextAlignment(.center)
-                Text("Scan the QR code in OpenMausBot. We'll securely choose the best way to connect.")
+                Text("Scan the QR code in Sagax. We'll securely choose the best way to connect.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -133,7 +133,7 @@ struct PairingView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
 
-            Text("On your computer, open Settings → Phone → Set up a phone.")
+            Text("On your computer, open Sagax, then Settings, then Phone, then Set up a phone.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -299,7 +299,7 @@ struct PairingView: View {
 
             if let credential = scannedCredential {
                 if !connectionIsProtected(connection) {
-                    Text("Only continue on a network you trust. Local connections are authenticated but are not encrypted by OpenMausBot.")
+                    Text("Only continue on a network you trust. Local connections are authenticated but are not encrypted by Sagax.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
