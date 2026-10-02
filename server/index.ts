@@ -6548,7 +6548,13 @@ function approvalCallerUserId(auth: RequestAuth): string {
 function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: string): string | null {
   const refusal = "Only the bot owner can answer this approval.";
   const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
-  if (!message) return refusal;
+  if (!message) {
+    // A request that is no longer open (or never was): the thread's bot owner
+    // still gets the plain "unavailable" or 404 answer, anyone else the 403.
+    const bot = botForApproval(threadId, {});
+    const audience = bot ? approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) }) : null;
+    return approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403 ? refusal : null;
+  }
   const question = Boolean(message.card && typeof message.card === "object" && message.card.questionRequest);
   if (question) return null;
   if (!isApprovalCardMessage(message)) return refusal;
