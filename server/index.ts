@@ -17888,7 +17888,7 @@ ROUTES.push(createVoiceModeRoutes({
       if (threadId && (!store.taskByThread(bot.id, threadId) || !botThreadReadable(bot, threadId, viewerId, "thread.post"))) {
         return { status: 404, error: "no such conversation" };
       }
-      return { botId: bot.id, botName: bot.name, threadId: threadId ?? viewerThreadOf(bot, viewerId) ?? bot.threadId };
+      return { botId: bot.id, botName: bot.name, threadId: threadId ?? viewerThreadOf(bot, viewerId) ?? bot.threadId, ownerPrincipalId: effectiveBotOwner(bot) };
     }
     return { botId: bot.id, botName: bot.name, threadId: threadId ?? bot.threadId };
   },
@@ -17896,6 +17896,7 @@ ROUTES.push(createVoiceModeRoutes({
   hasOwnKey: (sub) => perspicaxDirectory?.providerKeys(sub).includes("xai") ?? false,
   resolveOwnKey: (sub) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, "xai") : Promise.resolve({ ok: false as const, error: "link" as const }),
   keysUrl: () => perspicaxKeysUrl(),
+  isAdmin: (auth) => orgAdminCaller(auth),
   xai: { listVoices: grokVoice.listVoices, synthesize: grokVoice.synthesize, transcribe: grokVoice.transcribe },
   utterances: toUtterances,
   recordUsage: (usage) => {

@@ -3935,7 +3935,6 @@
   "voiceMode.transcript": "Transcript",
   "voiceMode.transcriptEmpty": "Nothing said yet.",
   "voiceMode.you": "You",
-  "voiceMode.noAccessTitle": "Voice mode is not available for you",
   "voiceMode.addOwnKey": "Add my xAI key",
   "voiceMode.retry": "Try again",
   "voiceMode.interrupt": "Interrupt",
@@ -3950,5 +3949,8 @@
   "voiceMode.language": "Language",
   "voiceMode.autoDetect": "Auto-detect",
   "voiceMode.loadingVoices": "Loading voices",
-  "voiceMode.preview": "Preview {voice}"
+  "voiceMode.preview": "Preview {voice}",
+  "voiceMode.noAccess.mine": "You don't have xAI access for voice mode: add your xAI key in Perspicax.",
+  "voiceMode.noAccess.disabled": "Your account is disabled: voice mode can't run.",
+  "voiceMode.noAccess.unreachable": "Perspicax could not be reached to read your xAI key. Try again in a moment."
 }

@@ -41,7 +41,7 @@ function harness(options: Options = {}) {
   const route = createVoiceModeRoutes({
     organization: true,
     speaker: (auth) => (auth.kind === "session" ? people[auth.session.principalId ?? ""] ?? { principalId: "" } : auth.kind === "loopback" && auth.trust === "service" ? null : { principalId: "p-op" }),
-    target: (_auth, botId, threadId) => (botId === "b-cryptic" ? { botId, botName: "Cryptic", threadId: threadId ?? "t-ada" } : { status: 404, error: "no such bot" }),
+    target: (_auth, botId, threadId) => (botId === "b-cryptic" ? { botId, botName: "Cryptic", threadId: threadId ?? "t-ada", ownerPrincipalId: "p-owner" } : { status: 404, error: "no such bot" }),
     serverKey: () => ORG_KEY,
     hasOwnKey: (sub) => sub in ownKeys,
     resolveOwnKey: async (sub) => (ownKeys[sub] ? { ok: true, key: ownKeys[sub]!, fingerprint: "fp" } : { ok: false, error: "no_key" }),
@@ -148,6 +148,17 @@ describe("voice mode routes", () => {
     expect(speak.status).toBe(403);
     expect(speak.body).toMatchObject({ code: "voice_no_access", cause: "no_credentials", card: { kind: "access", keysUrl: "https://perspicax.example.test/console/keys" } });
     expect(xai.synthesize).not.toHaveBeenCalled();
+    // the audience of every access card: the person it is about, the speaker
+    expect(speak.body.card.payerPrincipalId).toBe("p-ada");
+    expect(speak.body.card.admin).toBeUndefined();
+  });
+
+  it("names the organization's key on the card for an admin only, as every access card", async () => {
+    const { call } = harness({ serverKey: () => undefined, isAdmin: (auth) => auth.kind === "session" && auth.session.principalId === "p-ada" });
+    const speak = await call({ method: "POST", path: "/api/bots/b-cryptic/voice/speak", body: { text: "hello" } });
+    expect(speak.body.card).toMatchObject({ kind: "access", admin: true, payerPrincipalId: "p-ada" });
+    const status = await call({ method: "GET", path: "/api/bots/b-cryptic/voice/status" });
+    expect(status.body.refusal).toMatchObject({ cause: "no_credentials", admin: true });
   });
 
   it("speaks with the picked voice, speed and language, on the speaker's key, and books the usage", async () => {
@@ -156,7 +167,7 @@ describe("voice mode routes", () => {
     expect(out.status).toBe(200);
     expect(out.headers?.["content-type"]).toBe("audio/mpeg");
     expect(xai.synthesize).toHaveBeenCalledWith("Bonjour", "ara", OWN_KEY, { speed: 1.25, language: "fr" });
-    expect(usage).toEqual([expect.objectContaining({ via: "speaker-key", payerPrincipalId: "p-ada", model: "grok-tts", input: 7, target: { botId: "b-cryptic", botName: "Cryptic", threadId: "t-ada" } })]);
+    expect(usage).toEqual([expect.objectContaining({ via: "speaker-key", payerPrincipalId: "p-ada", model: "grok-tts", input: 7, target: { botId: "b-cryptic", botName: "Cryptic", threadId: "t-ada", ownerPrincipalId: "p-owner" } })]);
   });
 
   it("speaks a language xAI TTS lacks as auto, on the organization's key", async () => {

@@ -13,20 +13,23 @@ export interface VoiceOption {
 export class VoiceModeRefused extends Error {
   readonly cause: VoiceModeRefusalCause;
   readonly keysUrl?: string;
+  /** an organization admin: the card also names the organization's key */
+  readonly admin: boolean;
 
-  constructor(message: string, cause: VoiceModeRefusalCause, keysUrl?: string) {
+  constructor(message: string, cause: VoiceModeRefusalCause, keysUrl?: string, admin = false) {
     super(message);
     this.cause = cause;
     this.keysUrl = keysUrl;
+    this.admin = admin;
   }
 }
 
 const base = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/voice`;
 
 async function failure(res: Response): Promise<Error> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; cause?: VoiceModeRefusalCause; card?: { keysUrl?: string } };
+  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; cause?: VoiceModeRefusalCause; card?: { keysUrl?: string; admin?: boolean } };
   if (res.status === 403 && body.code === "voice_no_access" && body.cause) {
-    return new VoiceModeRefused(body.error ?? "Voice mode is not available.", body.cause, body.card?.keysUrl);
+    return new VoiceModeRefused(body.error ?? "Voice mode is not available.", body.cause, body.card?.keysUrl, body.card?.admin === true);
   }
   return new Error(body.error ?? `the voice service returned ${res.status}`);
 }

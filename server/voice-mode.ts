@@ -42,6 +42,7 @@ import {
   type VoiceModeStatus,
   type VoiceModeVia,
 } from "../shared/voice-mode.ts";
+import { accessCardVisibleTo } from "./engine-access.ts";
 import type { ProviderKeyResult } from "./perspicax-link.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
@@ -64,6 +65,8 @@ export interface VoiceTarget {
   botId: string;
   botName: string;
   threadId: string;
+  /** The bot's owner (organization server), for the access card's audience. */
+  ownerPrincipalId?: string;
 }
 
 export type VoiceKey =
@@ -92,6 +95,8 @@ export interface VoiceModeDeps {
   /** The speaker's own keys listed in Perspicax (names only). */
   hasOwnKey(sub: string): boolean;
   resolveOwnKey(sub: string): Promise<ProviderKeyResult>;
+  /** An organization admin: their access card also names the organization's key. */
+  isAdmin?(auth: RequestAuth): boolean;
   /** Where a person adds their own key in Perspicax. */
   keysUrl?(): string | undefined;
   xai: {
@@ -124,13 +129,21 @@ const REFUSAL_TEXT: Record<VoiceModeRefusalCause, string> = {
   perspicax_unreachable: "Perspicax could not be reached to read your xAI key. Try again in a moment.",
 };
 
-/** A refusal: an access card for this person only, never a key or a part of one. */
-function refusalBody(cause: VoiceModeRefusalCause, keysUrl: string | undefined) {
+/** A refusal: an access card, never a key or a part of one. The card follows
+ * the audience rule of every access card (engine-access.ts
+ * accessCardAudience): it is about the person whose credentials the voice
+ * needed, the speaker, and reaches only them. It is answered to their own
+ * request, never stored in a thread nor sent as a live frame. */
+function refusalBody(cause: VoiceModeRefusalCause, keysUrl: string | undefined, target: VoiceTarget, speaker: VoiceSpeaker, admin: boolean) {
+  const access = { reason: "no_access", ownerPrincipalId: target.ownerPrincipalId ?? "", payerPrincipalId: speaker.principalId };
+  const forThem = !speaker.principalId || accessCardVisibleTo({ kind: "access", access }, speaker.principalId);
   return {
     code: "voice_no_access",
     cause,
     error: REFUSAL_TEXT[cause],
-    card: { kind: "access" as const, cause, ...(keysUrl ? { keysUrl } : {}) },
+    ...(forThem
+      ? { card: { kind: "access" as const, cause, ...(speaker.principalId ? { payerPrincipalId: speaker.principalId } : {}), ...(admin ? { admin: true } : {}), ...(keysUrl ? { keysUrl } : {}) } }
+      : {}),
   };
 }
 
@@ -199,14 +212,15 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     if ("status" in target) return json(res, target.status, { error: target.error });
 
     const keysUrl = deps.keysUrl?.();
+    const admin = deps.isAdmin?.(auth) === true;
     const resolved = await resolveVoiceKey(deps, speaker);
     if (action === "status") {
       const status: VoiceModeStatus = resolved.ok
         ? { provider: "xai", available: true, via: resolved.via }
-        : { provider: "xai", available: false, refusal: { cause: resolved.cause, ...(keysUrl ? { keysUrl } : {}) } };
+        : { provider: "xai", available: false, refusal: { cause: resolved.cause, ...(admin ? { admin: true } : {}), ...(keysUrl ? { keysUrl } : {}) } };
       return json(res, 200, status);
     }
-    if (!resolved.ok) return json(res, 403, refusalBody(resolved.cause, keysUrl));
+    if (!resolved.ok) return json(res, 403, refusalBody(resolved.cause, keysUrl, target, speaker, admin));
     const who = speaker.principalId || "operator";
 
     if (action === "prepare") {

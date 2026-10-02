@@ -138,5 +138,7 @@ export interface VoiceModeStatus {
   provider: "xai";
   available: boolean;
   via?: VoiceModeVia;
-  refusal?: { cause: VoiceModeRefusalCause; keysUrl?: string };
+  /** For the speaker only (the access card's audience); `admin` adds the
+   * organization's key hint, as on every access card. */
+  refusal?: { cause: VoiceModeRefusalCause; admin?: true; keysUrl?: string };
 }

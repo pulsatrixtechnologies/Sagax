@@ -11,10 +11,26 @@ import { speaker } from "@/lib/tts";
 import { fetchVoiceModeVoices, type VoiceOption } from "@/lib/voice-mode/api";
 import type { XaiSpeechEngine } from "@/lib/voice-mode/engine";
 import { useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
+import type { VoiceModeRefusalCause } from "../../../shared/voice-mode";
 import { BotAvatar } from "../Avatar";
 import { VoiceModeSettingsPanel, type VoiceModeList } from "./VoiceModeSettingsPanel";
 
 export type VoicePhase = "listening" | "sending" | "working" | "speaking";
+
+/** The access card of a refused voice turn: shown in the speaker's own bar
+ * only (the audience of every access card), never in the thread. */
+export interface VoiceAccessCard {
+  cause: VoiceModeRefusalCause;
+  admin: boolean;
+  keysUrl?: string;
+}
+
+/** What the card says, to the person it is about. Exported for tests. */
+export function voiceAccessCardText(card: VoiceAccessCard): string[] {
+  if (card.cause === "payer_disabled") return [t("voiceMode.noAccess.disabled")];
+  if (card.cause === "perspicax_unreachable") return [t("voiceMode.noAccess.unreachable")];
+  return [t("voiceMode.noAccess.mine"), ...(card.admin ? [t("access.noAccess.mine.admin")] : [])];
+}
 
 export interface VoiceModeBarProps {
   bot: Bot;
@@ -25,7 +41,7 @@ export interface VoiceModeBarProps {
   note: string | null;
   error?: string;
   /** an access card: no xAI key serves this person */
-  refusal: { message: string; keysUrl?: string } | null;
+  refusal: VoiceAccessCard | null;
   transcript: Array<{ id: string; who: "you" | "bot"; text: string }>;
   onRetry(): void;
   onInterrupt(): void;
@@ -170,9 +186,10 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
           )}
           {refusal && (
             <div role="alert" className="mb-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-[12.5px] text-ink" data-voice-access-card>
-              <div className="font-medium">{t("voiceMode.noAccessTitle")}</div>
-              <div className="mt-0.5 text-ink-secondary">{refusal.message}</div>
-              {refusal.keysUrl && (
+              {voiceAccessCardText(refusal).map((line, index) => (
+                <div key={index} className={index === 0 ? "font-medium" : "mt-0.5 text-ink-secondary"}>{line}</div>
+              ))}
+              {refusal.keysUrl && refusal.cause === "no_credentials" && (
                 <button
                   type="button"
                   onClick={() => {

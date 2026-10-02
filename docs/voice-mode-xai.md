@@ -33,7 +33,9 @@ The key never reaches the client. Order for the person who speaks
 
 - Organization server: their own xAI key in Perspicax (provider `xai`), else
   the organization's xAI key (Settings > Connections, `config.xai.key` or
-  `XAI_API_KEY`), else refused with an access card shown in their bar only.
+  `XAI_API_KEY`), else refused with an access card shown in their bar only,
+  under the audience rule of every access card (`accessCardAudience`: the
+  person it is about; the organization's key hint only for an admin).
   A disabled person is refused and never falls back on the organization.
 - Solo server: the server's xAI key.
 

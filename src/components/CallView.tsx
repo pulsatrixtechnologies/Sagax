@@ -38,7 +38,7 @@ import { nativeSpeechEngine, XaiSpeechEngine, type SpeechEngine } from "@/lib/vo
 import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { t } from "@/lib/i18n";
 import type { VoiceModeStatus } from "../../shared/voice-mode";
-import { VoiceModeBar } from "./voice-mode/VoiceModeBar";
+import { VoiceModeBar, type VoiceAccessCard } from "./voice-mode/VoiceModeBar";
 
 /** Spoken answers to a permission card. Anything else is read as a reply
  * to the bot, not as consent — an approval must never be granted by a
@@ -248,7 +248,7 @@ function Call({ bot, xaiVoice }: { bot: Bot; xaiVoice: boolean }) {
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [heard, setHeard] = useState("");
   const [note, setNote] = useState<string | null>(null);
-  const [refusal, setRefusal] = useState<{ message: string; keysUrl?: string } | null>(null);
+  const [refusal, setRefusal] = useState<VoiceAccessCard | null>(null);
   const threadRef = useRef(bot.threadId);
   threadRef.current = bot.threadId;
   // Voice mode: this window's microphone and xAI (server/voice-mode.ts),
@@ -447,7 +447,7 @@ function Call({ bot, xaiVoice }: { bot: Bot; xaiVoice: boolean }) {
       if (!alive.current || currentCall() !== bot.id) return;
       if (xai && code === 1) {
         if (reason === "voice_no_access") {
-          setRefusal({ message: xai.refusal?.message ?? t("voiceMode.unavailableReason"), keysUrl: xai.refusal?.keysUrl });
+          setRefusal({ cause: xai.refusal?.cause ?? "no_credentials", admin: xai.refusal?.admin === true, keysUrl: xai.refusal?.keysUrl });
           return;
         }
         setNote(

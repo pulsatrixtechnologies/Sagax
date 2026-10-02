@@ -158,8 +158,11 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   no route answers a key or a part of one.
 - Who pays (`resolveVoiceKey`): on an organization server the speaker's own
   `xai` key in Perspicax, else the organization's (Settings > Connections),
-  else an access card in that person's bar only; a disabled person is
-  refused. Solo: the server's key. Each request is booked with its `access`.
+  else an access card in that person's bar only (the audience rule of every
+  access card, `accessCardAudience`: the speaker; the organization's key hint
+  only for an admin; never stored in a thread or sent as a live frame); a
+  disabled person is refused. Solo: the server's key. Each request is booked
+  with its `access`.
 - Every route names a bot the person may use (and a thread they may post
   to); the spoken text goes through the normal send route, never a voice
   route, so attribution and private threads stay those of a typed message.
