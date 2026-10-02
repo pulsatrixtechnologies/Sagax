@@ -18,17 +18,25 @@ describe("voice access card", () => {
   });
 });
 
-import { phaseLabel } from "./VoiceModeBar";
+import { formatCallTime, phaseLabel } from "./VoiceModeBar";
 
 describe("the call's states, as on a phone", () => {
   it("names every state; hold wins over mute, mute over the rest", () => {
-    expect(phaseLabel("connecting", "Cryptic", false)).toBe("Connecting");
-    expect(phaseLabel("listening", "Cryptic", false)).toBe("Listening");
-    expect(phaseLabel("hearing", "Cryptic", false)).toBe("Listening to you");
-    expect(phaseLabel("thinking", "Cryptic", false)).toBe("Thinking");
-    expect(phaseLabel("speaking", "Cryptic", false)).toBe("Cryptic");
-    expect(phaseLabel("interrupted", "Cryptic", false)).toBe("Interrupted");
-    expect(phaseLabel("held", "Cryptic", true)).toBe("On hold");
-    expect(phaseLabel("speaking", "Cryptic", true)).toBe("Muted");
+    expect(phaseLabel("connecting", false)).toBe("Connecting");
+    expect(phaseLabel("listening", false)).toBe("Listening");
+    expect(phaseLabel("hearing", false)).toBe("Listening to you");
+    expect(phaseLabel("thinking", false)).toBe("Thinking");
+    expect(phaseLabel("speaking", false)).toBe("Speaking");
+    expect(phaseLabel("interrupted", false)).toBe("Interrupted");
+    expect(phaseLabel("held", true)).toBe("On hold");
+    expect(phaseLabel("speaking", true)).toBe("Muted");
+  });
+
+  it("shows the call's running time like a phone", () => {
+    expect(formatCallTime(0)).toBe("0:00");
+    expect(formatCallTime(-5)).toBe("0:00");
+    expect(formatCallTime(9_999)).toBe("0:09");
+    expect(formatCallTime(83_000)).toBe("1:23");
+    expect(formatCallTime(3_723_000)).toBe("1:02:03");
   });
 });

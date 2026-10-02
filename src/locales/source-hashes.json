@@ -5278,6 +5278,8 @@
       "voiceMode.phase.thinking": "a20d12c5e9c428c398b9d25e4dded1d6d3e599184e38b4d37bcb9d2d595ff8f7",
       "voiceMode.phase.interrupted": "132d124d6bb3d811116f98aa03bc474f5783517d4c82635c031745912e62e1c8",
       "voiceMode.phase.held": "ebe7db36e4959b9bef09afbdf45036543a3c30cd186c7754b26984ee245f95b6",
+      "voiceMode.phase.speaking": "ef98b35ae322faa5f950cf366642f65d4bb5d958d6ed014949da23926137d98d",
+      "voiceMode.callWith": "31111b6d3d5b4da38f65e57b2d4b94915286091e0b4a854539609795af41de16",
       "voiceMode.hold": "17bee748b018ea6307805c6508d4905dd3acb58a909a1155878ac4157aa4da3f",
       "voiceMode.resume": "b1c65e5e7f5bb54ea7ef8661f1630ad0cef44a71bfe9bd3f4bed06f27eba14a5",
       "voiceMode.pushToTalk": "988091e671531b950d226cc84d673665484110dd84c265356b4f8aa86cef0ac6",

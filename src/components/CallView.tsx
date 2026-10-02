@@ -17,7 +17,7 @@
 // every activity chip the harness narrates (`tool.spoken`) is read aloud as
 // it happens, which is why waiting feels like listening to someone work
 // rather than listening to nothing.
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { AudioLines, Loader2, PhoneOff, X } from "lucide-react";
 
 import { useStore, visibleMessages, type Bot } from "@/state/store";
@@ -251,13 +251,58 @@ export function CallTargetButton({
   );
 }
 
+/** The older call's full overlay. Voice mode docks its bar at the top of
+ * the chat column instead (VoiceCallDock). */
 export function CallOverlay({ bot }: { bot: Bot }) {
   const active = useOnCall() === bot.id;
   const voiceMode = useVoiceModeStatus(bot.id);
-  if (!active) return null;
-  // voice mode (xAI): a live, full-duplex call (voice-mode/LiveCall.tsx)
-  if (voiceMode?.available === true) return <LiveCall bot={bot} />;
+  if (!active || voiceMode?.available === true) return null;
   return <Call bot={bot} />;
+}
+
+/** Same length as `--animate-call-dock-out` in styles.css. */
+const CALL_DOCK_EXIT_MS = 180;
+
+/** Voice mode (xAI): a live, full-duplex call (voice-mode/LiveCall.tsx),
+ * docked as a slim in-call banner at the top of the chat column. It sits in
+ * the layout, so the thread moves down while the call is on and back up
+ * when it ends (the bar's height folds away; the call itself is already
+ * over by then). */
+export function VoiceCallDock({ bot }: { bot: Bot }) {
+  const active = useOnCall() === bot.id;
+  const voiceMode = useVoiceModeStatus(bot.id);
+  const live = active && voiceMode?.available === true;
+  const motion = useMenuMotion(live);
+  const dock = useRef<HTMLDivElement>(null);
+  const height = useRef(0);
+  useEffect(() => {
+    const element = dock.current;
+    if (!live || !element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => (height.current = element.offsetHeight));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [live]);
+  if (live) {
+    return (
+      <div ref={dock} className="animate-call-dock-in grid" data-voice-call-dock>
+        <div className="min-h-0 overflow-hidden">
+          <LiveCall bot={bot} />
+        </div>
+      </div>
+    );
+  }
+  if (!motion.shown || height.current === 0) return null;
+  // The call has ended: only the room it took folds away, an empty picture
+  // of the bar (no controls, out of the accessibility tree).
+  return (
+    <div
+      aria-hidden
+      inert
+      data-voice-call-dock-exit
+      className="animate-call-dock-out pointer-events-none mx-3 mb-2 overflow-hidden rounded-2xl border border-hairline/50 bg-panel md:mx-5"
+      style={{ "--call-dock-h": `${Math.max(0, height.current - 8)}px`, animationDuration: `${CALL_DOCK_EXIT_MS}ms` } as CSSProperties}
+    />
+  );
 }
 
 /** The older call: the macOS dictation helper, half duplex. */
