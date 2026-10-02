@@ -15,7 +15,7 @@ describe("approval mode selector", () => {
     const html = renderToStaticMarkup(createElement(FullAccessWarning, {
       open: true, onCancel: () => {}, onConfirm: () => {},
     }));
-    expect(html).toContain("tasks delegated by your Chief or other bots");
+    expect(html).toContain("tasks delegated by your Primary Bot or other bots");
     expect(html).toContain("does not enable Full access on other bots");
     expect(html).not.toContain("Requests that come from another bot still get the usual checks");
   });

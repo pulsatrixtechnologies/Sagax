@@ -1,3 +1,4 @@
+import { viewerActorId } from "@/lib/viewer";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X } from "lucide-react";
@@ -99,7 +100,7 @@ export function TeamDialog({ section, rename = false, onClose, onRenamed }: {
           </button>}
           <fieldset disabled={saving}>
             <legend className="mb-1 text-[12px] font-medium text-ink-secondary">{t("team.existingBots")}</legend>
-            <BotPickerList bots={candidates} picked={picked} emptyHint={t("team.noBots")} onToggle={(id) => setPicked((previous) => {
+            <BotPickerList bots={candidates} viewerId={viewerActorId(state.config)} picked={picked} emptyHint={t("team.noBots")} onToggle={(id) => setPicked((previous) => {
               const next = new Set(previous);
               if (next.has(id)) next.delete(id); else next.add(id);
               return next;

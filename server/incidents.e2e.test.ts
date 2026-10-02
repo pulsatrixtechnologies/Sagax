@@ -92,7 +92,7 @@ it("reports a crashed run to the Chief, who retries it from the incidents thread
     writeFileSync(file(ada.activeTaskId, "gate"), "finish");
     await expect.poll(async () => (await control(["wait", "--bot", ada.id, "--timeout", "30"])).status, { timeout: 40_000 }).toBe("settled");
     const adaMessages = await messages(ada.activeTaskId);
-    const retryLine = adaMessages.find((m) => m.role === "user" && /Retry requested by Clive, your Chief of Staff/.test(m.text ?? ""));
+    const retryLine = adaMessages.find((m) => m.role === "user" && /Retry requested by Clive, your Primary Bot/.test(m.text ?? ""));
     expect(retryLine?.text).toContain("Note from Clive: The service was down; try again.");
     expect(retryLine?.peerAsk).toMatchObject({ botId: chief.id, name: "Clive" });
     expect(adaMessages.filter((m) => m.role === "bot" && m.kind === "text" && m.text).length).toBeGreaterThan(0);

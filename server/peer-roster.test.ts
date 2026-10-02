@@ -94,9 +94,9 @@ describe("owner-granted cross-team coordination", () => {
     expect(blocked).toHaveProperty("error", expect.stringContaining("team membership"));
     const reachable = { ...chief, section: "Work" };
     const prompt = peerRosterSystemPrompt([reachable]);
-    expect(prompt).toContain("[Chief of Staff]");
-    expect(prompt).toContain("send a self-contained request to a reachable Chief");
-    expect(peerRosterSystemPrompt([{ ...reachable, chiefOfStaff: false }])).not.toContain("[Chief of Staff]");
+    expect(prompt).toContain("[Primary Bot]");
+    expect(prompt).toContain("send a self-contained request to a reachable Primary Bot");
+    expect(peerRosterSystemPrompt([{ ...reachable, chiefOfStaff: false }])).not.toContain("[Primary Bot]");
   });
   const chief = { ...self, chiefOfStaff: true, managedSections: ["Personal"] };
   it("lets Clive reach selected teams without elevating their specialists", () => {
@@ -226,7 +226,7 @@ describe("peerRosterSystemPrompt", () => {
     // the authority the Chief has and an ordinary bot must not be handed
     expect(prompt).toContain("peers, not staff");
     expect(prompt).not.toContain("create_bot");
-    expect(prompt).not.toContain("Chief of Staff for the");
+    expect(prompt).not.toContain("You are the user's Primary Bot");
     // it must not name a bot it cannot actually reach
     expect(prompt).not.toContain("Scout");
     expect(prompt).not.toContain("Secret");

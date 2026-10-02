@@ -166,7 +166,7 @@ Secrets are write-only: the UI only sees "configured" flags.
 
 **Also included from the base project:**
 
-- **Teams from one Markdown file.** Import a team package from disk or a public GitHub URL in **Teams → Import**. A review screen shows the bots, Chief of Staff, channels, playbooks, connector checklist, and routines before anything is created. Connections stay off until you approve them and routines arrive paused.
+- **Teams from one Markdown file.** Import a team package from disk or a public GitHub URL in **Teams → Import**. A review screen shows the bots, the Primary Bot, channels, playbooks, connector checklist, and routines before anything is created. Connections stay off until you approve them and routines arrive paused.
 - **Share a team.** Right-click a team and choose **Share team…** to save its bots, instructions, pictures, skills, channels, and routines as one file. Chat history, keys, model choices, and computers never go in. See [docs/team-sharing.md](docs/team-sharing.md) and [docs/presets.md](docs/presets.md).
 - **Voice.** Read replies aloud or call a bot. Voices come from ElevenLabs, Fish Audio, Grok (xAI), built-in Mac voices, or a local Chatterbox server. Calls are macOS only. See [docs/voice-mode.md](docs/voice-mode.md).
 - **Routines and webhooks.** Run work once, on weekdays, or every 5 to 1,440 minutes. A separate webhook receiver listens on `127.0.0.1:8800` by default (`SAGAX_WEBHOOK_PORT` to change it). See [docs/routine-schedules.md](docs/routine-schedules.md).

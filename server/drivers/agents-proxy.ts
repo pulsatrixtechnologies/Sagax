@@ -16,9 +16,9 @@
 //   start_thread(title, msg, bot_id?)    → open a real thread — on yourself for
 //                                          separate work, or on a teammate as a
 //                                          handoff that runs on its own
-//   create_bot(name, role, instructions) → Chiefs can add a specialist to
+//   create_bot(name, role, instructions) → Primary Bots can add a specialist to
 //                                          their own section
-//   create_room / manage_room            → Chiefs manage own-section rooms,
+//   create_room / manage_room            → Primary Bots manage own-section rooms,
 //                                          never move bots or sections
 //   request_credential(id, reason?)       → show a secure, allowlisted key card
 //   list_routines()                       → inspect this bot's scheduled work

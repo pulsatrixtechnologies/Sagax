@@ -8,7 +8,6 @@ import {
   Bug,
   PanelRight,
   Copy,
-  Crown,
   MessageSquareReply,
 
   Pencil,
@@ -90,6 +89,7 @@ import { activeLocale, t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { showPrivateConversationHint } from "@/lib/private-threads";
 import { viewerActorId } from "@/lib/viewer";
+import { isViewersPrimaryBot } from "@/lib/primary-bot";
 import { COMPACT_BUBBLE } from "@/lib/compact-chip";
 import { useFocusMessage } from "@/lib/focus-message";
 import { groupTranscript, isStatusActivity } from "@/lib/activity-runs";
@@ -1327,6 +1327,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           >
             <BotAvatar
               bot={bot}
+              primary={isViewersPrimaryBot(bot, viewerActorId(state.config))}
+              primaryRingClassName="ring-elevated"
               state={stateForBot({ ...bot, messages })}
               size={24}
               motion={mascotMotion?.kind ?? "none"}
@@ -1334,14 +1336,6 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             />
             <span className="truncate text-[14px] font-medium leading-5 text-ink">{bot.name}</span>
           </button>
-          {bot.chiefOfStaff && (
-            // One line, never shrinking with the name (it wrapped "Chief / of /
-            // Staff", #1871); folds to the crown like the chips beside it do,
-            // so the name keeps the room.
-            <span title={t("chat.chiefOfStaff")} className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-accent/12 px-2 py-0.5 text-[11px] font-medium text-accent @max-4xl/chathead:px-1.5">
-              <Crown size={11} aria-hidden="true" /> <span className="@max-4xl/chathead:sr-only">{t("chat.chiefOfStaff")}</span>
-            </span>
-          )}
           {bot.busy && <WorkingDots className="text-ink-secondary" />}
           {!bot.busy && bot.waitingForTeammates && <span className="truncate text-[12px] text-ink-secondary" role="status">Teammates working</span>}
         </div>

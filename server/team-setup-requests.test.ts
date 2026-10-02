@@ -64,8 +64,8 @@ describe("reviewed Chief team setup", () => {
   it("reviews promotion in an authorized team without changing anything on denial", async () => {
     const h = harness(); h.peer.section = "Engineering";
     const before = structuredClone(h.store.bots);
-    const request = h.propose([{ action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } }]);
-    expect(request.detail).toContain("Chief of Staff: No → Yes");
+    const request = h.propose([{ action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } }, { action: "update", botId: h.chief.id, fields: { chiefOfStaff: false } }]);
+    expect(request.detail).toContain("Primary Bot: No → Yes");
     expect(request.detail).toContain("May coordinate and configure bots in this team");
     expect(h.store.bots).toEqual(before);
     expect((await h.resolve(request.requestId, "deny"))?.result.state).toBe("denied");
@@ -90,13 +90,11 @@ describe("reviewed Chief team setup", () => {
     expect(card.detail).not.toContain("peer coordination");
     expect(card.detail).not.toContain("approval levels");
   });
-  it("creates a Chief in a new team and permits explicit replacement regardless of operation order", async () => {
+  it("hands the Primary Bot role over only with the current one's step-down, in any order", async () => {
     const h = harness();
     const next = specialist("Mira", "Research");
-    const card = h.propose([{ ...next, fields: { ...next.fields, chiefOfStaff: true } }], ["Research"]);
-    expect((await h.resolve(card.requestId))?.result.state).toBe("applied");
-    expect(h.store.bots.find(bot => bot.name === "Mira")).toMatchObject({ chiefOfStaff: true, section: "Research" });
-    expect(() => h.propose([{ action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } }])).toThrow(/one Chief/);
+    expect(() => h.propose([{ ...next, fields: { ...next.fields, chiefOfStaff: true } }], ["Research"])).toThrow(/one Primary Bot/);
+    expect(() => h.propose([{ action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } }])).toThrow(/one Primary Bot/);
     const replace = h.propose([
       { action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } },
       { action: "update", botId: h.chief.id, fields: { chiefOfStaff: false } },
@@ -107,9 +105,16 @@ describe("reviewed Chief team setup", () => {
     expect(h.peer.chiefOfStaff).toBe(true);
     expect((await h.resolve(replace.requestId))?.duplicate).toBe(true);
   });
+  it("keeps one Primary Bot per person, not per team: another person's Primary Bot is no conflict", async () => {
+    const h = harness();
+    h.bot("Other", { section: "Engineering", chiefOfStaff: true, ownerUserId: "someone-else" });
+    const card = h.propose([{ action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } }, { action: "update", botId: h.chief.id, fields: { chiefOfStaff: false } }]);
+    expect((await h.resolve(card.requestId))?.result.state).toBe("applied");
+    expect(h.peer.chiefOfStaff).toBe(true);
+  });
   it.each(["conflict", "scope", "busy", "peer", "revision"])("cancels promotion after a %s change without partial mutation", async change => {
     const h = harness(); h.peer.section = "Engineering";
-    const card = h.propose([{ action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } }]);
+    const card = h.propose([{ action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } }, { action: "update", botId: h.chief.id, fields: { chiefOfStaff: false } }]);
     if (change === "conflict") h.bot("New Chief", { section: "Engineering", chiefOfStaff: true });
     if (change === "scope") h.chief.managedSections = [];
     if (change === "busy") h.peer.busy = true;
@@ -128,7 +133,7 @@ describe("reviewed Chief team setup", () => {
     h.peer.section = "Engineering"; h.chief.peers = [];
     expect(() => h.propose([{ action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } }])).toThrow(/peer scope/);
     h.chief.chiefOfStaff = false;
-    expect(() => h.propose([{ action: "update", botId: h.chief.id, fields: { chiefOfStaff: true } }])).toThrow(/Only an active Chief/);
+    expect(() => h.propose([{ action: "update", botId: h.chief.id, fields: { chiefOfStaff: true } }])).toThrow(/Only an active Primary Bot/);
     expect(h.messages).toHaveLength(0);
   });
   it("does not advertise new team access for a Chief being demoted in the same plan", () => {
@@ -250,7 +255,7 @@ describe("reviewed Chief team setup", () => {
     expect((await h.resolve(target.requestId))?.result).toMatchObject({ state: "cancelled", error: "@Ada changed. This setup was cancelled; review a new proposal." });
     const chief = h.propose([{ action: "update", botId: h.chief.id, fields: { title: "Chief of Staff" } }]);
     h.chief.title = "Owner renamed the Chief";
-    expect((await h.resolve(chief.requestId))?.result).toMatchObject({ state: "cancelled", error: "The Chief's settings changed. This setup was cancelled; review a new proposal." });
+    expect((await h.resolve(chief.requestId))?.result).toMatchObject({ state: "cancelled", error: "The Primary Bot's settings changed. This setup was cancelled; review a new proposal." });
     expect(h.apply).not.toHaveBeenCalled();
   });
   it("keeps a plan that never touches the Chief valid across the Chief's own drift", async () => {
@@ -335,9 +340,9 @@ describe("reviewed Chief team setup", () => {
 describe("Full Access team setup", () => {
   it("applies authorized leadership under Full Access with an explicit receipt", async () => {
     const h = harness(); h.autoApply.mockReturnValue(true); h.peer.section = "Engineering";
-    const response = await h.submit([{ action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } }]);
+    const response = await h.submit([{ action: "update", botId: h.peer.id, fields: { chiefOfStaff: true } }, { action: "update", botId: h.chief.id, fields: { chiefOfStaff: false } }]);
     expect(response).toMatchObject({ applied: true, state: "applied" });
-    expect(response.detail).toContain("Chief of Staff: No → Yes");
+    expect(response.detail).toContain("Primary Bot: No → Yes");
     expect(h.peer.chiefOfStaff).toBe(true);
     expect(h.peer.managedSections).toBeUndefined();
   });

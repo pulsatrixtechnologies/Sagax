@@ -497,6 +497,36 @@ PT-4 in `server/org-private-threads.e2e.test.ts`):
   propriétaire du groupe peut modifier ces réglages", a Leave button,
   "Ajouter mon robot" and a remove button on their own bots only.
 
+## Primary Bot (formerly Chief of Staff)
+
+A person's Primary Bot is their main contact among their bots: it gets the
+coordination prompt (`server/chief-of-staff.ts`), team setup, retries and
+peer proposals the Chief of Staff had. Stored and sent under the old field
+name `chiefOfStaff` (`shared/wire.ts`); everything a person reads says
+"Primary Bot" / "Robot principal". Keep these rules, covered by
+`server/store.test.ts`, `server/team-setup-requests.test.ts`,
+`server/team-backup.test.ts`, `src/lib/primary-bot.test.ts` and
+`src/components/PrimaryBot.test.ts`:
+
+- One per person (one on a solo server), never per section:
+  `Store.setPrimaryBot` hands the role over among the bots of one owner
+  (`Store.botOwnerKey`, set by index.ts to `effectiveBotOwner`). Sections
+  never conflict over it.
+- `POST /api/bots/:id/primary` is the owner's own (on a solo server also an
+  admin session); an organization admin has no override. On an organization
+  server a Primary Bot proposes, sets up or deletes only its own person's
+  bots (`primaryBotSameOwner`).
+- Boot runs `enforceOnePrimaryPerOwner` (idempotent): from one Chief per
+  section, each person keeps the General one, else the oldest; the teams the
+  others led join its `managedSections`.
+- Imports are additive (`adoptImportedLeaders`): a person who has a Primary
+  Bot keeps it unchanged; otherwise the first leader becomes it.
+- UI: the orange star (`BotAvatar primary`, `PrimaryBotBadge`) on the
+  viewer's own Primary Bot in lists (sidebar, pickers, team map, chat
+  header), never the old crown chip. The sidebar menu offers "Replace with
+  different Bot" (opens `PrimaryBotPicker`, "Choose a primary Bot") on it and
+  "Make primary bot" on the viewer's other bots.
+
 ## Legacy names kept for compatibility
 
 The product is Sagax and the code reads `SAGAX_*`. These old spellings stay
@@ -529,6 +559,8 @@ it after an upstream merge instead of renaming by hand.
   `_openmausbot._tcp`, MCP server names, systemd units and host paths
   (`/etc/openmausbot`, `/var/lib/openmausbot`), the upstream's hosted
   domains (`*.openmausbot.com`).
+- Stored field names that predate a rename of their own, such as a bot's
+  `chiefOfStaff` (the Primary Bot, see above).
 - The native apps (`ios/`, `android/`): bundle ids, keychain services and
   package names change only with a store release of their own.
 - Legal and history: `LICENSE`, `NOTICE`, `CLA.md`, the README attribution,

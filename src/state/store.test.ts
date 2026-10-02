@@ -1465,7 +1465,7 @@ describe("browser profile announcements", () => {
   });
 });
 
-describe("section Chiefs", () => {
+describe("sections and the Primary Bot", () => {
   const bot = (id: string, section: string, chiefOfStaff = false) => ({
     id,
     threadId: `thread-${id}`,
@@ -1509,13 +1509,14 @@ describe("section Chiefs", () => {
     expect(reducer(state, { type: "groupPatched", group: announcement }).groups[0].section).toBeUndefined();
   });
 
-  it("hands off only within the patched bot's section", () => {
+  it("hands the Primary Bot role over across sections, one per person", () => {
     const workChief = bot("work-a", "Work", true);
     const workCandidate = bot("work-b", "Work");
     const personalChief = bot("personal", "Personal", true);
+    const adasChief = { ...bot("ada", "Work", true), ownerUserId: "ada" };
     const state = {
       ...initialState,
-      bots: [workChief, workCandidate, personalChief].map((candidate) => ({ ...candidate, messages: [] })),
+      bots: [workChief, workCandidate, personalChief, adasChief].map((candidate) => ({ ...candidate, messages: [] })),
     };
 
     const next = reducer(state, {
@@ -1525,16 +1526,18 @@ describe("section Chiefs", () => {
 
     expect(next.bots.find((candidate) => candidate.id === workChief.id)?.chiefOfStaff).toBe(false);
     expect(next.bots.find((candidate) => candidate.id === workCandidate.id)?.chiefOfStaff).toBe(true);
-    expect(next.bots.find((candidate) => candidate.id === personalChief.id)?.chiefOfStaff).toBe(true);
+    expect(next.bots.find((candidate) => candidate.id === personalChief.id)?.chiefOfStaff).toBe(false);
+    expect(next.bots.find((candidate) => candidate.id === adasChief.id)?.chiefOfStaff).toBe(true);
   });
 
-  it("keeps other section Chiefs during an optimistic settings update", () => {
+  it("keeps one Primary Bot per person during an optimistic settings update", () => {
     const workChief = bot("work-a", "Work", true);
     const workCandidate = bot("work-b", "Work");
     const personalChief = bot("personal", "Personal", true);
+    const adasChief = { ...bot("ada", "Work", true), ownerUserId: "ada" };
     const state = {
       ...initialState,
-      bots: [workChief, workCandidate, personalChief].map((candidate) => ({ ...candidate, messages: [] })),
+      bots: [workChief, workCandidate, personalChief, adasChief].map((candidate) => ({ ...candidate, messages: [] })),
     };
 
     const next = reducer(state, {
@@ -1545,7 +1548,8 @@ describe("section Chiefs", () => {
 
     expect(next.bots.find((candidate) => candidate.id === workChief.id)?.chiefOfStaff).toBe(false);
     expect(next.bots.find((candidate) => candidate.id === workCandidate.id)?.chiefOfStaff).toBe(true);
-    expect(next.bots.find((candidate) => candidate.id === personalChief.id)?.chiefOfStaff).toBe(true);
+    expect(next.bots.find((candidate) => candidate.id === personalChief.id)?.chiefOfStaff).toBe(false);
+    expect(next.bots.find((candidate) => candidate.id === adasChief.id)?.chiefOfStaff).toBe(true);
   });
 
   it("optimistically clears an explicit computer when Auto is selected", () => {

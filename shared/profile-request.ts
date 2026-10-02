@@ -18,7 +18,7 @@ export interface ProfileRequestCardData {
   /** The proposing conversation; authority is fixed here. */
   botId: string;
   threadId: string;
-  /** Whose profile changes: the proposer, or a section peer named by a Chief. */
+  /** Whose profile changes: the proposer, or a section peer named by a Primary Bot. */
   targetBotId: string;
   targetName: string;
   createdAt: number;

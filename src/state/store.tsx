@@ -2,6 +2,7 @@
 // it dispatches typed commands over HTTP and folds the one SSE event
 // stream from the harness server into local state. The reducer stays
 // pure; everything async lives in the wrapped dispatch + SSE fold.
+import { withPrimaryBot } from "@/lib/primary-bot";
 import {
   createContext,
   useCallback,
@@ -461,8 +462,9 @@ export interface Bot {
   /** the one message pinned to the top of this bot's active thread */
   pinnedMessageId?: string;
   /** This sidebar section's primary coordinator. */
+  /** The owner's Primary Bot (one per person), under its former wire name. */
   chiefOfStaff?: boolean;
-  /** Additional teams the owner explicitly lets this Chief work with. */
+  /** Additional teams the owner explicitly lets this Primary Bot work with. */
   managedSections?: string[];
   /** When this bot wants to talk to another bot (ask_bot/delegate_bot),
    * pause and ask the user first. Off by default. */
@@ -1767,15 +1769,9 @@ export function reducer(state: AppState, action: Action): AppState {
               ? "celebrate"
               : null;
       const animated = kind ? withMascotMotion(state, action.bot.id, kind) : state;
+      // One Primary Bot per person, not per section.
       const next = action.bot.chiefOfStaff
-        ? {
-            ...animated,
-            bots: animated.bots.map((b) =>
-              b.id === action.bot.id || (b.section?.trim() || "") !== (action.bot.section?.trim() || "")
-                ? b
-                : { ...b, chiefOfStaff: false },
-            ),
-          }
+        ? { ...animated, bots: withPrimaryBot(animated.bots, { ...before, ...action.bot } as Bot) }
         : animated;
       const switchedThread =
         typeof action.bot.threadId === "string" && action.bot.threadId !== before.threadId &&
@@ -2166,16 +2162,9 @@ export function reducer(state: AppState, action: Action): AppState {
           ? withMascotMotion(state, action.botId, "customize")
           : state;
       const target = animated.bots.find((bot) => bot.id === action.botId);
-      const chiefSection = (action.patch.section ?? target?.section)?.trim() || "";
-      const next = action.patch.chiefOfStaff
-        ? {
-            ...animated,
-            bots: animated.bots.map((b) =>
-              b.id === action.botId || (b.section?.trim() || "") !== chiefSection
-                ? b
-                : { ...b, chiefOfStaff: false },
-            ),
-          }
+      // One Primary Bot per person, not per section.
+      const next = action.patch.chiefOfStaff && target
+        ? { ...animated, bots: withPrimaryBot(animated.bots, target) }
         : animated;
       const {
         acknowledgeLocalAuto: _localAck,
