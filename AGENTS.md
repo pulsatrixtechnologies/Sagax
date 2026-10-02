@@ -69,6 +69,34 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   the grants open inline, the force actions sit in an admin-only row menu
   and their result is a toast (`src/components/settings/OrgSharing.test.ts`).
 
+## Full access (organization mode, 2026-10-01)
+
+On a solo server Full access is granted only through the packaged desktop
+app's private channel. On an organization server the bot's owner grants it
+over HTTP (`server/org-full-access.ts`, client `src/lib/full-access.ts`).
+Keep these rules, each covered by `server/org-full-access.test.ts`,
+`server/org-full-access.e2e.test.ts`, `server/org-sharing.e2e.test.ts` (S3-7),
+the driver tests or `src/components/ApprovalModeSelector.fullAccess.test.ts`:
+
+- Only the bot's owner, signed in (a session principal), grants Full:
+  `PATCH /api/bots/<id>/tasks/<thread>` (a thread) or `PATCH /api/bots/<id>`
+  with `{ approvalMode: "full", confirmFullAccess }` alone (the default, for
+  new threads and routines). The first grant needs `confirmFullAccess: true`;
+  the server keeps `fullAccessConsent` on the bot so later grants skip it.
+- Settings > Organization > Allow full access (`organization.allowFullAccess`,
+  admin only, on by default, `PATCH /api/org/settings`). Off: grants answer
+  403 `org_full_access_disabled`, a send to a Full thread is refused with the
+  same code, and stored Full runs as Ask (`approvalModeForTurn`).
+- A turn runs Full only while the policy is on and the consent is the bot's
+  current owner's: a routine (run as the owner) gets Full only when that
+  owner set it on that bot. Custom stays refused for members' bots.
+- Full never lifts a hard limit: host tools stay withheld
+  (`withholdHostTools`: Claude `bypassPermissions` with the host tools in
+  `--disallowedTools`; Codex `never` with a read-only server sandbox),
+  private threads, egress and payer rules are unchanged.
+- Mode changes (`approval.mode`), Full turns (`approval.full_access_turn`)
+  and the policy (`org.settings`) go to the admin activity log.
+
 ## Profile on an organization server
 
 On an organization server (`OMB_IDENTITY=perspicax`) a signed-in person's

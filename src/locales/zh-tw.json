@@ -632,7 +632,6 @@
   "approvalMode.auto.desc": "使用供應商的自動審查來核准例行動作，其餘則會詢問",
   "approvalMode.full.label": "完整存取權",
   "approvalMode.full.chip": "完整存取權",
-  "approvalMode.full.desc": "完整的電腦存取權（風險較高）",
   "approvalMode.custom.label": "自訂（config.toml）",
   "approvalMode.custom.chip": "自訂",
   "approvalMode.custom.desc": "使用 config.toml 中定義的權限",
