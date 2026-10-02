@@ -665,6 +665,9 @@ import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bo
 import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
+import { achievementFrameAllowed, achievementRequestEvents, achievementSendEvents, activityEvents, createAchievementStore, routineRunEvents, type AchievementEvent } from "./achievements.ts";
+import { createAchievementRoutes } from "./routes/achievements.ts";
+import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
@@ -838,6 +841,52 @@ const desktopBridges = new DesktopBridges(liveSessionPerson);
 const desktopTunnels = new DesktopTunnels(liveSessionPerson);
 const bridgeAudit = createBridgeAudit(join(DATA_DIR, "desktop-bridge-audit.jsonl"));
 const userPreferenceStore = createUserPreferenceStore(DATA_DIR);
+// Each person's achievements (server/achievements.ts). On first use a
+// person keeps every character and skin their bots already wear
+// (grandfathering): on a solo server every bot, on an organization server
+// the bots they own.
+const achievementStore = createAchievementStore({
+  dataDir: DATA_DIR,
+  grandfather: (person) => grandfatheredFromBots(
+    IDENTITY.kind === "perspicax" ? store.bots.filter((bot) => effectiveBotOwner(bot) === person) : store.bots,
+  ),
+});
+/** When each voice call was first heard from, for its length (bounded in achievementSendEvents). */
+const achievementCallStarts = new Map<string, number>();
+/** Count server events for a person and tell their streams what unlocked. Never throws. */
+function recordAchievements(person: string | null | undefined, events: readonly AchievementEvent[]): void {
+  if (!person || !events.length) return;
+  try {
+    const result = achievementStore.record(person, events, "server");
+    if (result.unlocked.length) broadcast({ kind: "achievements", audience: person, unlocked: result.unlocked });
+  } catch {
+    /* achievements are a bonus: never fail the request that earned one */
+  }
+}
+/** The person a thread's work counts for: its owner, else the bot's owner. */
+function achievementThreadPerson(threadId: string): string | null {
+  const bot = store.botByThread(threadId);
+  if (!bot) return null;
+  return privateThreadOwner(store.taskByThread(bot.id, threadId), effectiveBotOwner(bot)) || null;
+}
+/** Server events read from live frames: a routine run that completed, a sub-agent, Auto picking a computer. */
+function observeAchievementFrame(payload: Record<string, unknown>): void {
+  if (payload.kind === "routine.run" && payload.run && typeof payload.run === "object") {
+    const run = payload.run as { id?: unknown; status?: unknown; routineId?: unknown };
+    const events = routineRunEvents(run);
+    if (!events.length || typeof run.routineId !== "string") return;
+    const routine = routines?.listRoutines().find((candidate) => candidate.id === run.routineId);
+    const bot = routine ? store.bot(routine.botId) : undefined;
+    const runAs: unknown = routine?.runAs;
+    const runAsPerson = typeof runAs === "string" ? runAs : runAs && typeof runAs === "object" ? (runAs as { principalId?: string }).principalId : undefined;
+    recordAchievements(runAsPerson || (bot ? effectiveBotOwner(bot) : null), events);
+    return;
+  }
+  if ((payload.kind === "message" || payload.kind === "message.patch") && typeof payload.threadId === "string" && payload.message && typeof payload.message === "object") {
+    const events = activityEvents(payload.message as Parameters<typeof activityEvents>[0]);
+    if (events.length) recordAchievements(achievementThreadPerson(payload.threadId), events);
+  }
+}
 /** A person's "where bots work" preference (shared/bot-workplace.ts). */
 function workplacePreference(person: string | null): BotWorkplace {
   if (!person) return parseBotWorkplace(null);
@@ -6626,6 +6675,7 @@ function cursorSeq(raw: string | string[] | undefined): number | null {
 /** `adminOnly` frames (a workspace spend notice) reach admin streams and
  * are withheld from client sessions, live and on replay. */
 function broadcast(payload: Record<string, unknown>, options: { adminOnly?: boolean } = {}) {
+  observeAchievementFrame(payload);
   // Membership may also change through fleet/CLI config writes. Close stale
   // email streams before any further workspace data is delivered.
   sessions.revalidateEmailSessions();
@@ -7092,6 +7142,8 @@ function sseFrameFor(
   clientFrame: string | null,
 ): string | null {
   if (payload && !peopleDmFrameAllowed(payload, client.viewerId)) return null;
+  // a person's unlocks reach that person's streams only
+  if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload) {
     const scoped = scopeChannelApproval(payload, approvalViewerOf(client));
     if (scoped.action === "drop") return null;
@@ -17490,6 +17542,12 @@ ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstal
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
 ROUTES.push(createUserPreferenceRoutes({ store: userPreferenceStore, organization: () => IDENTITY.kind === "perspicax" }));
+// A person's achievements (server/achievements.ts), on every server.
+ROUTES.push(createAchievementRoutes({
+  store: achievementStore,
+  person: (auth) => actorPrincipalId(auth) || null,
+  unlocked: (person, unlocked) => broadcast({ kind: "achievements", audience: person, unlocked }),
+}));
 ROUTES.push(createDesktopBridgeRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   bridges: desktopBridges, tunnels: desktopTunnels, audit: bridgeAudit,
@@ -17783,6 +17841,7 @@ ROUTES.push(createAccountRoutes({
     }
     await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
     userPreferenceStore.remove(principalId);
+    achievementStore.remove(principalId);
     botSettings.forgetPerson(principalId);
     for (const session of sessions.list()) if (session.principalId === principalId) sessions.revoke(session.id);
     return { bots, threads };
@@ -20362,6 +20421,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
     // New routes live in modules registered in server/routes/table.ts and
     // are tried here, behind the gate above; do not add route `if`s below.
+    // What a successful request earns its person (server/achievements.ts).
+    if (method !== "GET" && method !== "HEAD") {
+      const achiever = actorPrincipalId(auth);
+      if (achiever) {
+        res.once("finish", () => recordAchievements(achiever, achievementRequestEvents({ method, path, status: res.statusCode }, {
+          group: (id) => {
+            const group = store.group(id);
+            return group ? { peopleDm: group.peopleDm === true, humans: (group.humanIds?.length ?? 0) || 1, bots: group.memberIds?.length ?? 0 } : null;
+          },
+        })));
+      }
+    }
     if (await dispatchRoutes(ROUTES, { req, res, url, path, method, auth, json, readBody })) return;
 
     // ── sessions: who am I, tickets, pairing and revocation ─────────────
@@ -26801,6 +26872,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall);
         },
       );
+      recordAchievements(actorPrincipalId(auth), achievementSendEvents({ text, parallel: busyMode === "parallel", ...(voiceCall ? { voiceCall } : {}) }, achievementCallStarts, Date.now()));
       return json(res, 202, receipt);
     }
 
