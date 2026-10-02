@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { botLevel, canInChannel, type TeamRef, type Viewer } from "./authz.ts";
-import { createSectionChannelRoutes, type SectionAuditRow, migrationOwner, SectionChannels, validSectionName } from "./section-channels.ts";
+import { createSectionChannelRoutes, type SectionAuditRow, migrationOwner, SectionChannels, sectionShareGrants, validSectionName } from "./section-channels.ts";
 
 const pid = (n: number) => `pr_00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const ALICE = pid(1);
@@ -63,10 +63,7 @@ function harness() {
   let n = 0;
   const channels = new SectionChannels({ path, newId: () => `sec_00000000-0000-4000-8000-${String(++n).padStart(12, "0")}` });
   const sections = new Set<string>(["Support"]);
-  const bots: Record<string, { owner: string; section?: string; manage?: string[] }> = {
-    v: { owner: ALICE }, w: { owner: BOB, manage: [ALICE] }, x: { owner: BOB },
-  };
-  const rooms = new Set<string>();
+  const bots: Record<string, { owner: string; section?: string }> = { v: { owner: ALICE }, w: { owner: BOB }, x: { owner: BOB } };
   let changed = 0;
   const audits: Array<SectionAuditRow & { actor: string }> = [];
   channels.migrate([...sections], () => ALICE);
@@ -78,8 +75,6 @@ function harness() {
     },
     principalId: (auth) => (auth as unknown as { actor: string }).actor,
     teamsOf: (id) => teams[id] ?? [],
-    resolvePerson: (ref) => ([ALICE, BOB, CAROL, DAVE, MIA, ADMIN].includes(ref) ? { ok: true, id: ref } : { ok: false, code: "unknown_person" }),
-    teamKnown: (id) => id === "T" || id === "U",
     sections: () => [...sections],
     createSection: (name) => { sections.add(name); return undefined; },
     renameSection: (name, next) => {
@@ -92,20 +87,6 @@ function harness() {
       for (const bot of Object.values(bots)) if (bot.section === name) delete bot.section;
       return undefined;
     },
-    moveBots: (name, add, remove) => {
-      for (const id of add) bots[id]!.section = name;
-      for (const id of remove) delete bots[id]!.section;
-      return undefined;
-    },
-    botExists: (id) => id in bots,
-    botSection: (id) => bots[id]?.section,
-    botOwner: (id) => bots[id]?.owner ?? "",
-    managesBot: (auth, id) => {
-      const actor = (auth as unknown as { actor: string }).actor;
-      return bots[id]!.owner === actor || Boolean(bots[id]!.manage?.includes(actor));
-    },
-    createRoom: (name) => { const id = `room-${name}`; rooms.add(id); return id; },
-    roomExists: (id) => rooms.has(id),
     onChanged: () => { changed += 1; },
     audit: (auth, row) => { audits.push({ ...row, actor: (auth as unknown as { actor: string }).actor }); },
   });
@@ -123,50 +104,32 @@ function harness() {
     });
     return answer!;
   };
-  return { channels, sections, bots, rooms, call, changed: () => changed, audits };
+  return { channels, sections, bots, call, changed: () => changed, audits, path };
 }
 
-describe("section access follows the bot owner's consent", () => {
-  it("a mixed section shared by one owner gives nothing on another owner's bot", async () => {
+describe("legacy section access (records kept from before sections were personal)", () => {
+  it("a mixed section shared by one owner gives nothing on another owner's bot", () => {
     const h = harness();
-    // before slice 4: carol's bot y sat in Support with alice's v
-    h.bots.v!.section = "Support";
-    h.bots.y = { owner: CAROL, section: "Support" };
     const record = h.channels.byName("Support")!;
     expect(record.ownerPrincipalId).toBe(ALICE);
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${record.id}/members`, { members: [{ target: "team:U", role: "participant" }], defaultLevel: "run" })).status).toBe(200);
+    h.channels.setMembers(record.id, [{ target: "team:U", role: "participant" }], "run");
     const onV = h.channels.accessForBot("Support", { id: "v", ownerPrincipalId: ALICE });
     const onY = h.channels.accessForBot("Support", { id: "y", ownerPrincipalId: CAROL });
     expect(onV).not.toBeNull();
     expect(onY).toBeNull();
-    expect(botLevel({ viewer: viewerOf(DAVE), ownerPrincipalId: ALICE, grants: [], sections: onV ? [onV] : [] })).toBe("run");
-    expect(botLevel({ viewer: viewerOf(DAVE), ownerPrincipalId: CAROL, grants: [], sections: onY ? [onY] : [] })).toBeNull();
+    // a placement recorded for its owner counts, and only for that owner
+    h.channels.recordPlacement("Support", "x", BOB);
+    expect(h.channels.accessForBot("Support", { id: "x", ownerPrincipalId: BOB })).not.toBeNull();
+    expect(h.channels.accessForBot("Support", { id: "x", ownerPrincipalId: CAROL })).toBeNull();
+    h.channels.forgetPlacement("Support", "x");
+    expect(h.channels.accessForBot("Support", { id: "x", ownerPrincipalId: BOB })).toBeNull();
   });
 
-  it("a bot placed through the section route by someone who manages it is shared; taking it out forgets it", async () => {
-    const h = harness();
-    const id = (await h.call(ALICE, "POST", "/api/org/sections", { name: "Ventes" })).body.section.id;
-    await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: `user:${BOB}`, role: "participant" }] });
-    expect((await h.call(BOB, "PUT", `/api/org/sections/${id}/bots`, { add: ["x"] })).status).toBe(200);
-    expect(h.channels.accessForBot("Ventes", { id: "x", ownerPrincipalId: BOB })).not.toBeNull();
-    // the consent is bob's: once x changes hands it no longer counts
-    expect(h.channels.accessForBot("Ventes", { id: "x", ownerPrincipalId: CAROL })).toBeNull();
-    expect((await h.call(BOB, "PUT", `/api/org/sections/${id}/bots`, { remove: ["x"] })).status).toBe(200);
-    expect(h.channels.accessForBot("Ventes", { id: "x", ownerPrincipalId: BOB })).toBeNull();
-    // alice holds manage on bob's w: placing it counts as bob's delegate
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { add: ["w"] })).status).toBe(200);
-    expect(h.channels.accessForBot("Ventes", { id: "w", ownerPrincipalId: BOB })).not.toBeNull();
-    // the consent survives a rename
-    expect((await h.call(ALICE, "PATCH", `/api/org/sections/${id}`, { name: "Ventes QC" })).status).toBe(200);
-    expect(h.channels.accessForBot("Ventes QC", { id: "w", ownerPrincipalId: BOB })).not.toBeNull();
-  });
-});
-
-describe("section access follows consent for rooms", () => {
-  it("opens the section's own room and placed rooms, never a legacy room carrying its name", async () => {
+  it("opens the section's own room and placed rooms, never a legacy room carrying its name", () => {
     const h = harness();
     const record = h.channels.byName("Support")!;
-    await h.call(ALICE, "PUT", `/api/org/sections/${record.id}/members`, { members: [{ target: "team:U", role: "readonly" }] });
+    h.channels.setMembers(record.id, [{ target: "team:U", role: "readonly" }], "use");
+    h.channels.setRoom(record.id, "room-Support");
     expect(h.channels.accessForRoom("Support", "room-Support")).not.toBeNull();
     expect(h.channels.accessForRoom("Support", "legacy")).toBeNull();
     h.channels.recordRoomPlacement("Support", "later");
@@ -175,8 +138,39 @@ describe("section access follows consent for rooms", () => {
     expect(h.channels.accessForRoom("Support", "later")).toBeNull();
     // a private section opens no room at all
     h.channels.recordRoomPlacement("Support", "later");
-    await h.call(ALICE, "PUT", `/api/org/sections/${record.id}/members`, { members: [] });
+    h.channels.setMembers(record.id, [], "use");
     expect(h.channels.accessForRoom("Support", "later")).toBeNull();
+  });
+});
+
+describe("sections are personal: legacy shares become bot grants", () => {
+  it("one grant per member on each consented bot, at the default level; private sections give none", () => {
+    const h = harness();
+    const support = h.channels.byName("Support")!;
+    h.channels.setMembers(support.id, [{ target: "team:U", role: "readonly" }, { target: `user:${DAVE}`, role: "participant" }], "run");
+    h.channels.ensure("Private", ALICE);
+    const grants = sectionShareGrants(h.channels, [
+      { id: "v", section: "Support", ownerPrincipalId: ALICE },
+      // carol never consented to Support: nothing on her bot
+      { id: "y", section: "Support", ownerPrincipalId: CAROL },
+      { id: "p", section: "Private", ownerPrincipalId: ALICE },
+      { id: "z", ownerPrincipalId: ALICE },
+    ]);
+    expect(grants).toEqual([
+      { botId: "v", target: "team:U", level: "run", by: ALICE, section: "Support" },
+      { botId: "v", target: `user:${DAVE}`, level: "run", by: ALICE, section: "Support" },
+    ]);
+  });
+
+  it("runs once: the marker survives a restart and the records stay on disk", () => {
+    const h = harness();
+    const support = h.channels.byName("Support")!;
+    h.channels.setMembers(support.id, [{ target: "team:U", role: "participant" }], "use");
+    expect(h.channels.botSharesMigrated()).toBe(false);
+    h.channels.markBotSharesMigrated();
+    const reopened = new SectionChannels({ path: h.path });
+    expect(reopened.botSharesMigrated()).toBe(true);
+    expect(reopened.byName("Support")?.members).toEqual([{ target: "team:U", role: "participant" }]);
   });
 });
 
@@ -188,34 +182,37 @@ describe("section routes", () => {
     expect((await h.call(ALICE, "POST", "/api/org/sections", { name: "general" })).body.code).toBe("general_is_personal");
     expect((await h.call(ALICE, "POST", "/api/org/sections", { name: "Ventes" })).status).toBe(409);
     expect((await h.call(ALICE, "POST", "/api/org/sections", { name: "" })).status).toBe(400);
-    expect((await h.call(ALICE, "PUT", "/api/org/sections/general/members", { members: [] })).body.code).toBe("general_is_personal");
     expect((await h.call(ALICE, "PATCH", "/api/org/sections/general", { name: "x" })).body.code).toBe("general_is_personal");
   });
 
-  it("shares with a team: the room is created, members see it, readonly and roles validated", async () => {
+  it("members and bot placement are gone: 410 sections_are_personal, nothing changes", async () => {
     const h = harness();
     const id = (await h.call(ALICE, "POST", "/api/org/sections", { name: "Ventes" })).body.section.id;
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "boss" }] })).body.code).toBe("bad_role");
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "bob", role: "participant" }] })).body.code).toBe("bad_target");
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [], defaultLevel: "edit" })).body.code).toBe("bad_level");
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:ZZ", role: "participant" }] })).body.code).toBe("unknown_team");
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: `user:${pid(99)}`, role: "participant" }] })).body.code).toBe("unknown_person");
-    const shared = await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "participant" }], defaultLevel: "use" });
-    expect(shared).toMatchObject({ status: 200, body: { section: { members: [{ target: "team:T", role: "participant" }], roomId: "room-Ventes" } } });
-    expect(h.channels.accessFor("Ventes")).toMatchObject({ members: [{ target: "team:T" }] });
-    // carol (in T) lists it; dave does not
-    expect((await h.call(CAROL, "GET", "/api/org/sections")).body.sections.map((s: { name: string }) => s.name)).toEqual(["Ventes"]);
-    expect((await h.call(CAROL, "GET", "/api/org/sections")).body.sections[0]).toMatchObject({ viewerRole: "participant", canModerate: false });
-    expect((await h.call(DAVE, "GET", "/api/org/sections")).body.sections).toEqual([]);
-    // a participant may not rename or change members
-    expect((await h.call(CAROL, "PATCH", `/api/org/sections/${id}`, { name: "Nope" })).status).toBe(403);
-    expect((await h.call(CAROL, "PUT", `/api/org/sections/${id}/members`, { members: [] })).status).toBe(403);
+    const before = h.changed();
+    for (const [path, body] of [
+      [`/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "participant" }] }],
+      [`/api/org/sections/${id}/bots`, { add: ["v"] }],
+    ] as const) {
+      const answer = await h.call(ALICE, "PUT", path, body);
+      expect(answer.status).toBe(410);
+      expect(answer.body.code).toBe("sections_are_personal");
+    }
+    expect(h.channels.byId(id)?.members).toEqual([]);
+    expect(h.bots.v!.section).toBeUndefined();
+    expect(h.changed()).toBe(before);
+  });
+
+  it("listing no longer forgets a record whose name left the store", async () => {
+    const h = harness();
+    h.sections.delete("Support");
+    await h.call(ALICE, "GET", "/api/org/sections");
+    expect(h.channels.byName("Support")).not.toBeNull();
   });
 
   it("rename and delete need channel.moderate and keep the record in step", async () => {
     const h = harness();
     const id = (await h.call(ALICE, "POST", "/api/org/sections", { name: "Ventes" })).body.section.id;
-    await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: `user:${BOB}`, role: "moderator" }] });
+    h.channels.setMembers(id, [{ target: `user:${BOB}`, role: "moderator" }], "use");
     expect((await h.call(BOB, "PATCH", `/api/org/sections/${id}`, { name: "Ventes QC" })).status).toBe(200);
     expect(h.channels.byId(id)).toMatchObject({ name: "Ventes QC", members: [{ target: `user:${BOB}` }] });
     expect(h.sections.has("Ventes QC")).toBe(true);
@@ -224,72 +221,20 @@ describe("section routes", () => {
     expect(h.channels.byId(id)).toBeNull();
     expect(h.sections.has("Ventes QC")).toBe(false);
   });
-
-  it("moving a bot in needs manage on it and participant or more; out needs manage or moderate", async () => {
-    const h = harness();
-    const id = (await h.call(ALICE, "POST", "/api/org/sections", { name: "Ventes" })).body.section.id;
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { add: ["v"] })).status).toBe(200);
-    expect(h.bots.v!.section).toBe("Ventes");
-    // alice manages w (manage grant) and owns the section
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { add: ["w"] })).status).toBe(200);
-    // x is bob's and alice has no manage on it
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { add: ["x"] })).status).toBe(403);
-    // bob owns x but is not a member of the section
-    expect((await h.call(BOB, "PUT", `/api/org/sections/${id}/bots`, { add: ["x"] })).status).toBe(403);
-    await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: `user:${BOB}`, role: "readonly" }] });
-    expect((await h.call(BOB, "PUT", `/api/org/sections/${id}/bots`, { add: ["x"] })).status).toBe(403);
-    await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: `user:${BOB}`, role: "participant" }] });
-    expect((await h.call(BOB, "PUT", `/api/org/sections/${id}/bots`, { add: ["x"] })).status).toBe(200);
-    // bob takes his own bot out; alice (owner, moderates) takes w out
-    expect((await h.call(BOB, "PUT", `/api/org/sections/${id}/bots`, { remove: ["v"] })).status).toBe(403);
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { remove: ["x"] })).status).toBe(200);
-    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { add: ["nope"] })).status).toBe(404);
-  });
-
-  it("a manager changes entries of their teams only with an anchor", async () => {
-    const h = harness();
-    const id = (await h.call(ALICE, "POST", "/api/org/sections", { name: "Ventes" })).body.section.id;
-    // no anchor: mia cannot add her team
-    expect((await h.call(MIA, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "readonly" }] })).status).toBe(403);
-    await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "participant" }] });
-    // with the anchor: add carol up to participant, never moderator; dave is not hers
-    expect((await h.call(MIA, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "participant" }, { target: `user:${CAROL}`, role: "participant" }] })).status).toBe(200);
-    expect((await h.call(MIA, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "participant" }, { target: `user:${CAROL}`, role: "moderator" }] })).status).toBe(403);
-    expect((await h.call(MIA, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "participant" }, { target: `user:${DAVE}`, role: "readonly" }] })).status).toBe(403);
-    // removing her team is always allowed
-    expect((await h.call(MIA, "PUT", `/api/org/sections/${id}/members`, { members: [] })).status).toBe(200);
-    // the default level is the moderators' call
-    expect((await h.call(MIA, "PUT", `/api/org/sections/${id}/members`, { members: [], defaultLevel: "run" })).status).toBe(403);
-  });
 });
 
 describe("section audit (slice 7)", () => {
   it("writes one row per saved change, none for a refusal", async () => {
     const h = harness();
     const id = (await h.call(ALICE, "POST", "/api/org/sections", { name: "Ventes" })).body.section.id;
-    await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "participant" }, { target: `user:${DAVE}`, role: "readonly" }], defaultLevel: "run" });
-    await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [{ target: "team:T", role: "moderator" }], defaultLevel: "run" });
-    await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { add: ["v"] });
-    await h.call(ALICE, "PUT", `/api/org/sections/${id}/bots`, { remove: ["v"] });
     await h.call(ALICE, "PATCH", `/api/org/sections/${id}`, { name: "Ventes QC" });
-    // refused: nothing written
     const before = h.audits.length;
     expect((await h.call(BOB, "PATCH", `/api/org/sections/${id}`, { name: "Nope" })).status).toBe(403);
-    expect((await h.call(BOB, "PUT", `/api/org/sections/${id}/members`, { members: [] })).status).toBe(403);
+    expect((await h.call(ALICE, "PUT", `/api/org/sections/${id}/members`, { members: [] })).status).toBe(410);
     expect(h.audits.length).toBe(before);
     await h.call(ALICE, "DELETE", `/api/org/sections/${id}`);
-    expect(h.audits.map((row) => row.action)).toEqual([
-      "section.create",
-      "section.member.set", "section.member.set", "section.default_level",
-      "section.member.set", "section.member.remove",
-      "section.bot.place", "section.bot.remove",
-      "section.rename",
-      "section.delete",
-    ]);
+    expect(h.audits.map((row) => row.action)).toEqual(["section.create", "section.rename", "section.delete"]);
     expect(h.audits.every((row) => row.actor === ALICE && row.section.id === id)).toBe(true);
-    expect(h.audits[4]).toMatchObject({ before: { target: "team:T", role: "participant" }, after: { target: "team:T", role: "moderator" } });
-    expect(h.audits[5]).toMatchObject({ before: { target: `user:${DAVE}`, role: "readonly" } });
-    expect(h.audits[3]).toMatchObject({ before: { defaultLevel: "use" }, after: { defaultLevel: "run" } });
-    expect(h.audits[8]).toMatchObject({ before: { name: "Ventes" }, after: { name: "Ventes QC" } });
+    expect(h.audits[1]).toMatchObject({ before: { name: "Ventes" }, after: { name: "Ventes QC" } });
   });
 });
