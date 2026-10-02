@@ -3957,5 +3957,10 @@
   "voiceMode.preview": "Preview {voice}",
   "voiceMode.noAccess.mine": "You don't have xAI access for voice mode: add your xAI key in Perspicax.",
   "voiceMode.noAccess.disabled": "Your account is disabled: voice mode can't run.",
-  "voiceMode.noAccess.unreachable": "Perspicax could not be reached to read your xAI key. Try again in a moment."
+  "voiceMode.noAccess.unreachable": "Perspicax could not be reached to read your xAI key. Try again in a moment.",
+  "voiceMode.unavailableTitle": "Voice mode unavailable",
+  "voiceMode.checking": "Checking voice mode with the server...",
+  "voiceMode.checkFailed": "The server could not say whether voice mode is available: {error}",
+  "voiceMode.groupUnavailable": "On an organization server, voice mode talks with one bot at a time: open a bot's conversation to call it.",
+  "voiceMode.openConnections": "Open Settings > Connections"
 }

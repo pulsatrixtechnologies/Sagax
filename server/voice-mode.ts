@@ -215,9 +215,10 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     const admin = deps.isAdmin?.(auth) === true;
     const resolved = await resolveVoiceKey(deps, speaker);
     if (action === "status") {
+      const org = deps.organization ? { organization: true } : {};
       const status: VoiceModeStatus = resolved.ok
-        ? { provider: "xai", available: true, via: resolved.via }
-        : { provider: "xai", available: false, refusal: { cause: resolved.cause, ...(admin ? { admin: true } : {}), ...(keysUrl ? { keysUrl } : {}) } };
+        ? { provider: "xai", available: true, ...org, via: resolved.via }
+        : { provider: "xai", available: false, ...org, refusal: { cause: resolved.cause, ...(admin ? { admin: true } : {}), ...(keysUrl ? { keysUrl } : {}) } };
       return json(res, 200, status);
     }
     if (!resolved.ok) return json(res, 403, refusalBody(resolved.cause, keysUrl, target, speaker, admin));

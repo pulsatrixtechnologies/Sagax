@@ -173,6 +173,15 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   `window.ogb?.speechStop?.()`, never assume it.
 - Voice, Speed and Language live in `omb.voiceMode.v1` and travel with the
   person (`shared/user-preferences.ts`).
+- On an organization server (the status says `organization: true`, or the
+  viewer is managed by Perspicax) the call button is
+  `VoiceModeCallButton`: the server decides (`/voice/status`, asked again at
+  every click while unavailable), and the legacy call gate ("Choose This
+  computer", macOS dictation) never shows. Unavailable shows the speaker's
+  access card (admin: the organization's key hint and "Open Settings >
+  Connections"), or the server's error with a retry; a room says voice mode
+  talks with one bot at a time. Tests: `VoiceModeCallButton.test.ts`,
+  `scripts/verify-voice-mode.ts` (no key, then the admin's key).
 
 A change to `server/voice-mode.ts` needs the server image redeployed.
 

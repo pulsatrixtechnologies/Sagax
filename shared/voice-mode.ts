@@ -137,6 +137,10 @@ export type VoiceModeVia = "speaker-key" | "org-key" | "server";
 export interface VoiceModeStatus {
   provider: "xai";
   available: boolean;
+  /** An organization server: voice mode is the only call there (no
+   * dictation helper, no "This computer"), so the client never falls back
+   * on the legacy call gate. */
+  organization?: boolean;
   via?: VoiceModeVia;
   /** For the speaker only (the access card's audience); `admin` adds the
    * organization's key hint, as on every access card. */

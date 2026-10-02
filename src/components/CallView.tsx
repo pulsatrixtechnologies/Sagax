@@ -33,7 +33,9 @@ import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPro
 import { track } from "@/lib/analytics";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { callCapabilityHelp } from "@/lib/call-capability";
-import { useVoiceModeStatus } from "@/lib/voice-mode/api";
+import { useVoiceModeCheck, useVoiceModeStatus } from "@/lib/voice-mode/api";
+import { managedProfile } from "@/lib/profile-management";
+import { VoiceModeCallButton } from "./voice-mode/VoiceModeCallButton";
 import { nativeSpeechEngine, XaiSpeechEngine, type SpeechEngine } from "@/lib/voice-mode/engine";
 import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { t } from "@/lib/i18n";
@@ -49,8 +51,28 @@ const NO = /^(no|nope|don'?t|do not|stop|deny|denied|cancel|never|skip it)\b/i;
 type Phase = "listening" | "sending" | "working" | "speaking";
 const CALL_ENDPOINT_MS = 850;
 
+/** An organization server: the server says so in voice mode's status, and
+ * the session's viewer is managed by Perspicax. There, voice mode is the
+ * only call (VoiceModeCallButton) and the legacy gate never shows. */
+export function useOrganizationCall(botId?: string): boolean {
+  const { state } = useStore();
+  const check = useVoiceModeCheck(botId ?? "");
+  return (check.state === "ready" && check.status.organization === true) || managedProfile(state.config?.viewer) !== null;
+}
+
 export function CallButton({ bot }: { bot: Bot }) {
   const voiceMode = useVoiceModeStatus(bot.id);
+  const organization = useOrganizationCall(bot.id);
+  if (organization) {
+    return (
+      <VoiceModeCallButton
+        targetId={bot.id}
+        targetName={bot.name}
+        botId={bot.id}
+        onStart={() => track("call_started", { driver: bot.modelSelection?.instanceId, voice: "xai" })}
+      />
+    );
+  }
   return (
     <CallTargetButton
       targetId={bot.id}

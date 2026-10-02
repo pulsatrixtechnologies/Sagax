@@ -47,6 +47,18 @@ Perspicax does not list `xai` keys yet (its provider keys are `anthropic`
 and `openai`), so today the organization's key serves everyone. Sagax
 already reads an `xai` key from the directory when Perspicax offers one.
 
+## The call button on an organization server
+
+The client never decides alone: it asks `GET /api/bots/<id>/voice/status`
+(again at each click while voice mode is unavailable, so a key just added
+works at once). With a key the button opens the bar. Without one it shows
+the speaker's access card in its popover ("You don't have xAI access for
+voice mode: add your xAI key in Perspicax."; an admin also reads the
+organization's key hint and gets "Open Settings > Connections"). If the
+server cannot answer, the popover says so with the error and a retry. The
+legacy call gate (macOS dictation, "Choose This computer") never shows on an
+organization server.
+
 ## Settings
 
 Voice ("Not set" is xAI's default voice), Speed (0.75x, 1x, 1.25x, 1.5x) and

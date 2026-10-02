@@ -5061,7 +5061,12 @@
       "voiceMode.preview": "c32383017f8a602bbc86042c49195a80f37251cb478ef68c7db03454e85e44b3",
       "voiceMode.noAccess.mine": "af333e7919e044c44ba052d9f87b4755a27abf95c6f2a118c023b375a97bbff5",
       "voiceMode.noAccess.disabled": "34df475005c72b53f16e52b8f4c413739344dca201e25fdd8abbb6163730ae72",
-      "voiceMode.noAccess.unreachable": "5ec03523b44ec0019476f51f4055151d10bfd6657785fff3c1becbeea86cc9d6"
+      "voiceMode.noAccess.unreachable": "5ec03523b44ec0019476f51f4055151d10bfd6657785fff3c1becbeea86cc9d6",
+      "voiceMode.unavailableTitle": "e42a2971f727c895dc8083240d495e4d551bff26a81a88c69b14f8d57725be54",
+      "voiceMode.checking": "cd01924033a6cb46cd898abdce1b77624199e68881972143e05c3b16324bbb47",
+      "voiceMode.checkFailed": "a2052026864e7f7801b1fb63148976d51c97d70a8a3d6fedea274ba1e36599b3",
+      "voiceMode.groupUnavailable": "38833ebd6eca3d09f5c52bd835bb7cecf477ca08ec629f64a3a924025ba8adaf",
+      "voiceMode.openConnections": "7c5f77d4e6a71da1b4ddc28da4b4729944f34a98bf09bc76439c6eb6ea1a7468"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -2306,5 +2306,10 @@
   "voiceMode.preview": "Écouter {voice}",
   "voiceMode.noAccess.mine": "Tu n'as pas d'accès xAI pour le mode vocal : ajoute ta clé xAI dans Perspicax.",
   "voiceMode.noAccess.disabled": "Ton compte est désactivé : le mode vocal ne peut pas s'exécuter.",
-  "voiceMode.noAccess.unreachable": "Perspicax est injoignable pour lire ta clé xAI. Réessaie dans un moment."
+  "voiceMode.noAccess.unreachable": "Perspicax est injoignable pour lire ta clé xAI. Réessaie dans un moment.",
+  "voiceMode.unavailableTitle": "Mode vocal indisponible",
+  "voiceMode.checking": "Vérification du mode vocal auprès du serveur...",
+  "voiceMode.checkFailed": "Le serveur n'a pas pu dire si le mode vocal est disponible : {error}",
+  "voiceMode.groupUnavailable": "Sur un serveur d'organisation, le mode vocal parle à un bot à la fois : ouvre la conversation d'un bot pour l'appeler.",
+  "voiceMode.openConnections": "Ouvrir Réglages > Connexions"
 }
