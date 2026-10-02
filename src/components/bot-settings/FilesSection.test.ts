@@ -45,11 +45,13 @@ const render = (props: Partial<Parameters<typeof FilesBrowser>[0]> = {}) => rend
 }));
 
 describe("FilesBrowser", () => {
-  it("shows every chip with its count, then the files with their origin and size", () => {
+  it("shows a chip only for kinds that have files, then the files with their origin and size", () => {
     const html = render();
-    for (const [label, count] of [["All", 6], ["Images", 2], ["Videos", 1], ["Audio", 0], ["Documents", 1], ["Code", 1], ["Other", 1]] as const) {
+    for (const [label, count] of [["All", 6], ["Images", 2], ["Videos", 1], ["Documents", 1], ["Code", 1], ["Other", 1]] as const) {
       expect(html).toMatch(new RegExp(`aria-pressed="(?:true|false)"[^>]*>${label}<span[^>]*>${count}</span>`));
     }
+    // An empty kind gets no chip.
+    expect(html).not.toMatch(/aria-pressed="(?:true|false)"[^>]*>Audio<span/);
     expect(html).toContain('data-files-view="list"');
     for (const name of ["chart.png", "demo.mp4", "report.pdf", "main.ts", "bundle.zip", "remote.png"]) expect(html).toContain(name);
     expect(html).toContain("Bot attached · 2.0 KB");
