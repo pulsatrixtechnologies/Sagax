@@ -9,7 +9,10 @@ export function channelRosterActions(input: {
   actorRole: "owner" | "admin" | "member" | null;
   actorId: string;
   bots: { id: string; ownerUserId?: string }[];
+  /** Organization server: false when someone else owns the group. */
+  ownsRoom?: boolean;
 }): { canAddHuman: boolean; canAddBot: boolean } {
+  if (input.ownsRoom === false) return { canAddHuman: false, canAddBot: false };
   const actor = input.actorId.trim().toLowerCase();
   const canAddHuman = input.actorRole === "owner" || input.actorRole === "admin";
   const canAddBot = actor !== "" && input.bots.some((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actor);

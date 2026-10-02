@@ -853,6 +853,11 @@ export class Store {
         }
         continue;
       }
+      // A room left with setup pending by an older build counts as set up.
+      if (g.setupCompletedAt === null && g.setupSkippedAt == null) {
+        g.setupCompletedAt = g.createdAt;
+        groupsMigrated = true;
+      }
       if (!g.tasks?.length) {
         const initialTask: GroupTaskRecord = {
           threadId: g.threadId,
@@ -1255,7 +1260,6 @@ export class Store {
     setup?: {
       bulletin?: string;
       defaultResponder?: GroupDefaultResponder;
-      completed?: boolean;
     },
     humanIds?: string[],
   ): GroupRecord {
@@ -1286,7 +1290,9 @@ export class Store {
     if (acceptedHumans !== undefined) group.humanIds = acceptedHumans;
     if (!dm) {
       group.tasks = [{ threadId, title: UNTITLED_TASK, createdAt, updatedAt: createdAt }];
-      group.setupCompletedAt = setup?.completed ? createdAt : null;
+      // Rooms are usable from creation: there is no pending setup step.
+      // Folder, responder and instructions are edited in the side panel.
+      group.setupCompletedAt = createdAt;
       group.setupSkippedAt = null;
     }
     this.groups.unshift(group);

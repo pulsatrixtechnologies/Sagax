@@ -256,13 +256,15 @@ posixOnly("Perspicax organization: a bot and a group shared with someone who own
     });
     expect(room.status, room.text).toBe(201);
     const scoutRoom = room.body.group.id as string;
-    // carol adds her own bot to the room
+    // carol does not own the room: she cannot add a bot to it (owner rule,
+    // server/group-ownership.ts), not even her own
     const joined = await api("PATCH", `/api/groups/${scoutRoom}`, carol, { memberIds: [scoutId, botId, yuki.body.bot.id] });
-    expect(joined.status, joined.text).toBe(200);
+    expect(joined.status, joined.text).toBe(403);
+    expect(joined.body.code).toBe("not_group_owner");
 
     const listed = (await api("GET", "/api/bots", carol)).body;
     const seen = listed.groups.find((group: { id: string }) => group.id === scoutRoom);
-    expect(seen.memberProfiles.map((profile: { name: string }) => profile.name)).toEqual(["Scout", "Xavier", "Yuki"]);
+    expect(seen.memberProfiles.map((profile: { name: string }) => profile.name)).toEqual(["Scout", "Xavier"]);
     const scoutProfile = seen.memberProfiles[0];
     expect(scoutProfile).toMatchObject({ id: scoutId, name: "Scout", title: "Researcher", color: "blue" });
     expect(scoutProfile.mascotLook?.character).toBe("shape");
@@ -273,7 +275,7 @@ posixOnly("Perspicax organization: a bot and a group shared with someone who own
     expect(JSON.stringify(listed)).not.toContain("scout private instructions");
     // the same in GET /api/groups
     const rooms = (await api("GET", "/api/groups", carol)).body.groups as Array<{ id: string; memberProfiles: Array<{ name: string }> }>;
-    expect(rooms.find((group) => group.id === scoutRoom)!.memberProfiles.map((profile) => profile.name)).toEqual(["Scout", "Xavier", "Yuki"]);
+    expect(rooms.find((group) => group.id === scoutRoom)!.memberProfiles.map((profile) => profile.name)).toEqual(["Scout", "Xavier"]);
     // Scout is not carol's to open: not in her bots, its details refused
     expect(listed.bots.map((bot: { id: string }) => bot.id)).not.toContain(scoutId);
     expect(await botOf(carol, scoutId)).toBeUndefined();

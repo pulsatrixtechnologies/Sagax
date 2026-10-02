@@ -69,6 +69,13 @@ describe("ChannelMembers", () => {
       actorId: "jc",
       bots: [{ id: "aurora", ownerUserId: "JC" }],
     })).toEqual({ canAddHuman: true, canAddBot: true });
+    // Organization server: someone else owns the group.
+    expect(channelRosterActions({
+      actorRole: "admin",
+      actorId: "jc",
+      bots: [{ id: "aurora", ownerUserId: "JC" }],
+      ownsRoom: false,
+    })).toEqual({ canAddHuman: false, canAddBot: false });
     expect(channelRosterActions({
       actorRole: "member",
       actorId: "zachary@example.test",

@@ -260,6 +260,47 @@ these rules, each covered by `server/harness-connectors.test.ts` or
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
 
+## Group settings
+
+A group has no setup dialog and no pending setup state. Every group setting
+lives in its side panel (`src/components/GroupPanel.tsx`, the bot panel
+shell): Details holds the name, people and bots; Instructions holds the
+group instructions (`bulletin`); Advanced holds the default responder (a
+specific lead, Auto with Jev, everyone, or only when mentioned) and the
+working folder (empty means each bot's own folder). Keep these rules:
+
+- A new group is usable at once: `store.createGroup` stamps
+  `setupCompletedAt` at creation and the composer is never locked.
+- A group an older build left pending (`setupCompletedAt: null` and no
+  `setupSkippedAt`) is migrated to set up when the store loads.
+- There is no `PATCH /api/groups/:id/setup`; edits go through
+  `PATCH /api/groups/:id`. `POST /api/groups` still takes an optional
+  `setup` (`bulletin`, `defaultResponder`) to create a group in one call.
+- A remote client sees no Advanced tab and the instructions read-only.
+
+### Group owner (organization server)
+
+On an organization server (`OMB_IDENTITY=perspicax`) only a group's owner
+changes its settings (`server/group-ownership.ts`, client
+`src/lib/group-owner.ts`; covered by `server/group-ownership.test.ts` and
+PT-4 in `server/org-private-threads.e2e.test.ts`):
+
+- The owner is `createdBy`, else the first person in `humanIds`, else
+  nobody, and then the organization admins act as owner. The wire group
+  carries it as `ownerId` (absent on a solo server, where nothing changes).
+- Only the owner changes the name, instructions, working folder, default
+  responder, bots and people (`PATCH /api/groups/:id` answers 403
+  `not_group_owner`). Anyone listed may remove only themselves (leave).
+  Marking read, pins and section moves are not settings.
+- An admin has no override on content. `DELETE /api/groups/:id` is the
+  owner's, or an admin's for moderation (`channel.moderate` on a room in
+  `server/authz.ts`). A client-scope session may delete only there.
+- The owner of a client-scope session also picks the default responder.
+  The working folder keeps the admin scope (it touches the host or sandbox
+  filesystem): a non-admin owner sees it read-only with a note.
+- The panel shows the settings read-only to everyone else, with "Seul le
+  propriétaire du groupe peut modifier ces réglages", and a Leave button.
+
 ## Upstream sync
 
 Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at

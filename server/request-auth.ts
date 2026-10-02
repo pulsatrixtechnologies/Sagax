@@ -368,6 +368,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/tasks$/ },
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/groups\/[\w-]+\/tasks\/[\w-]+$/ },
   { methods: ["PATCH"], path: /^\/api\/groups\/[\w-]+$/ }, // display fields only: see clientGroupPatchViolation
+  // Organization server: a group's owner deletes it (server/group-ownership.ts);
+  // the route refuses a client session anywhere else.
+  { methods: ["DELETE"], path: /^\/api\/groups\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/ },
   // attachments
   { methods: ["POST"], path: /^\/api\/attachments$/ },
@@ -476,9 +479,9 @@ export function memberBotFieldViolation(body: unknown): string | null {
 /** Same for a room: name, reading state, and the roster. humanIds and
  * memberIds are not refused here. canEditHumans and canPlaceBot decide them. */
 const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinnedMessageId", "section", "humanIds", "memberIds"]);
-export function clientGroupPatchViolation(body: unknown): string | null {
+export function clientGroupPatchViolation(body: unknown, extra: readonly string[] = []): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
-  for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key)) return key;
+  for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key) && !extra.includes(key)) return key;
   return null;
 }
 

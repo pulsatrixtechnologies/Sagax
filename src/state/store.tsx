@@ -265,7 +265,10 @@ export interface Group {
   pinnedMessageId?: string;
   /** sidebar section heading this room is filed under (shared with bots) */
   section?: string;
-  /** New user-created rooms remain in setup until Save or Skip. */
+  /** Organization server: who owns the settings (null: its admins). Absent
+   * on a solo server (src/lib/group-owner.ts). */
+  ownerId?: string | null;
+  /** Set at creation: rooms have no pending setup step any more. */
   setupCompletedAt?: number | null;
   setupSkippedAt?: number | null;
   /** Separate conversations in this channel. DMs deliberately stay on one

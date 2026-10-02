@@ -148,14 +148,7 @@ function activeRoomMembers(group: Group | undefined, bots: Bot[]): Bot[] {
 }
 
 function roomCanRunGoal(group: Group): boolean {
-  if (group.dm) return false;
-  const hasSetupMarker =
-    Object.prototype.hasOwnProperty.call(group, "setupCompletedAt") ||
-    Object.prototype.hasOwnProperty.call(group, "setupSkippedAt");
-  return !hasSetupMarker ||
-    group.setupCompletedAt != null ||
-    group.setupSkippedAt != null ||
-    (group.messages?.length ?? 0) > 0;
+  return !group.dm;
 }
 
 function preferredRoomLead(group: Group | undefined, bots: Bot[], preferredId?: string): Bot | undefined {
