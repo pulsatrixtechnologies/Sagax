@@ -19,7 +19,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 IOS="$(cd "$HERE/.." && pwd)"
 OUT="$HERE/out"
 BUILD="$HERE/build"
-DEVICE_NAME="parity-17pro"
+DEVICE_NAME="${PARITY_DEVICE:-parity-17pro}"
 BUNDLE_ID="com.openmausbot.app"
 WAIT="${PARITY_WAIT:-7}"
 
