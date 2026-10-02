@@ -81,9 +81,12 @@ const cookiePair = (setCookie: string) => setCookie.split(";")[0]!;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The browser's walk through the provider. Returns where the callback sent it. */
-async function walk(user: FakeOidcUser, client?: "desktop" | "phone"): Promise<{ location: string; cookie: string }> {
+async function walk(user: FakeOidcUser, client?: "desktop" | "phone", returnTo?: string): Promise<{ location: string; cookie: string }> {
   idp.user = { ...user };
-  const start = await fetch(`${BASE}/auth/oidc/start${client ? `?client=${client}` : ""}`, { redirect: "manual" });
+  const query = new URLSearchParams();
+  if (client) query.set("client", client);
+  if (returnTo) query.set("return", returnTo);
+  const start = await fetch(`${BASE}/auth/oidc/start${query.size ? `?${query}` : ""}`, { redirect: "manual" });
   const binding = cookiePair(start.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
   const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
   const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
@@ -529,6 +532,28 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
     expect((await backchannel(idp.logoutToken({ sub: BOB.sub }))).status).toBe(200);
     expect((await api("GET", "/api/auth/session", { bearer })).status).toBe(401);
     expect((await api("GET", "/api/auth/session", { bearer: tablet.body.token })).status).toBe(401);
+  });
+
+  it("S2-8b: a phone that names return=sagax gets sagax://pair and a session bound to its person", async () => {
+    const { location } = await walk(BOB, "phone", "sagax");
+    const url = new URL(location);
+    expect(`${url.protocol}//${url.host}`).toBe("sagax://pair");
+    expect(url.searchParams.get("address")).toBe(BASE);
+    const token = url.searchParams.get("token")!;
+    expect(token).toMatch(/^omb_pair_[A-Za-z0-9_-]{43}$/);
+    const paired = await api("POST", "/api/pair", undefined, { credential: token, deviceName: "Bob's iPhone", pairRequestId: "pair-request-phone-sagax" });
+    expect(paired.status).toBe(200);
+    const bearer = paired.body.token as string;
+    const session = await api("GET", "/api/auth/session", { bearer });
+    expect(session.body).toMatchObject({ identity: "perspicax", scopes: ["client"], role: "employee" });
+    expect(session.body.principalId).toMatch(/^pr_/);
+    // the same person as Bob's web sign-in, never an admin
+    const web = await signIn(BOB);
+    expect((await api("GET", "/api/auth/session", web)).body.principalId).toBe(session.body.principalId);
+    expect((await api("GET", "/api/sidebar-sections", { bearer })).status).toBe(403);
+    // single use
+    expect((await api("POST", "/api/pair", undefined, { credential: token, deviceName: "again" })).status).not.toBe(200);
+    expect(log).not.toContain(token);
   });
 
   it("advertises the native return and refuses an unknown client", async () => {
