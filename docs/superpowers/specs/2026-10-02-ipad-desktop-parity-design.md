@@ -104,9 +104,10 @@ To read one: `jq '.boxes[] | select(.label == "Open agent profile")' refs/deskto
 
 ### Inventory
 
-79 surface ids. 70 of them exist on this fixture and are captured at the four
-viewports, plus the main window in the 10 other skins: **320 references** per full run
-(about 20 minutes, 255 MB with the dumps), and 36 skips, each with its reason (below). `NN` is the order in
+79 surface ids. 78 of them are captured at the four viewports (72 on the solo fixture,
+6 on the organization fixture), plus the main window in the 10 other skins: **352
+references** for both passes (the solo pass about 20 minutes), and 4 skips, each with its
+reason (below). `NN` is the order in
 `surfaces.mjs` (`--list`); the iPad screen id is the name without `NN`.
 
 | NN | Surface (iPad screen id) | What it is |
@@ -149,7 +150,7 @@ viewports, plus the main window in the 10 other skins: **320 references** per fu
 | 36 | `panel-files` | bot panel, Files tab (filters, list) |
 | 37 | `panel-computer` | bot panel, Computer tab (screen off, Allow control) |
 | 38 | `panel-advanced` | bot panel, Advanced tab: searchable section list |
-| 39-52 | `panel-advanced-<section>` | overview, soul, skills, memory, access, model, permissions, voice, history, usage (slack, visibility, sharing, perspicax: skipped, see below) |
+| 39-52 | `panel-advanced-<section>` | overview, soul, skills, memory, access, model, permissions, voice, history, usage; slack, sharing, perspicax (organization fixture), visibility (solo) |
 | 53 | `routines-calendar` | Automations, week calendar, mini month, bots to drag |
 | 54 | `routines-list` | Automations, list |
 | 55 | `routines-logs` | Automations, run logs (empty state) |
@@ -162,14 +163,25 @@ viewports, plus the main window in the 10 other skins: **320 references** per fu
 | 62 | `notice-thread-gone` | in-app notice banner ("That thread is no longer here") |
 | 63-79 | `settings-<section>` | Settings: general, organization, appearance, experimental, connections (API keys), decisionModel, engines (Model providers), companion (Pair devices), computer (Local VM), usage, backups; `settings-general-scrolled` |
 
+**Organization fixture** (`PARITY_ORG=1`, or `--org`:
+`node ios/parity/desktop/capture-desktop.mjs --org [--viewport WxH] [--only <regex>]`).
+`ios/parity/org-fixture.mjs` runs the server in organization mode (`OMB_IDENTITY=perspicax`)
+against the repo's stub identity provider (`server/testing/fake-oidc-provider.ts`:
+discovery, JWKS with an ES256 key made at start, authorize, token, revoke, directory,
+token exchange; six placeholder people, two teams, three MCP profiles), signs in through
+the real `/auth/oidc/start` flow as Alex Martin (admin), seeds Ara's sharing and MCP
+profiles, adds a hosted workspace for Slack and a stub fleet agent with three
+placeholder installations. The page is a served org page (no `remoteClient`). Without
+the flag the fixture is unchanged. The org pass captures `panel-advanced-slack`,
+`-sharing`, `-perspicax`, `settings-people`, `settings-activity`, `settings-workspaces`
+(24 references, tagged `fixture: "org"` in `index.json`); the solo pass now also captures
+`panel-advanced-visibility` (a non-organization server only) and `settings-mail`. After
+both: **352 references**, 4 skips.
+
 **Skipped, with the reason recorded in `index.json`:**
 
-- `panel-advanced-slack`, `-visibility`, `-sharing`, `-perspicax`: listed only for a bot
-  on an organization server (Perspicax) or with Slack; the fixture is a solo server.
-  Make an organization fixture to capture them (follow-on).
 - `settings-cloudAccount`: needs the `cloudAccount` bridge (OMB Cloud, disabled in
-  Sagax). `settings-people`, `-mail`, `-activity`, `-workspaces`: organization or fleet
-  servers only.
+  Sagax).
 - `chat-approval-mode` returns a skip instead of failing when the composer has folded
   that control away (it did once at 834x1194; the final run captured it at all four).
 
@@ -374,46 +386,114 @@ The iPad reaches its server the way the phone does: through the companion sideca
 personal computer (`companion/src/routes.ts` `ALLOWED`, default deny) or with a session
 on a server (`server/request-auth.ts`: `CLIENT_ALLOW` for a client session, anything
 else needs `admin`). A phone paired with admin scope reaches the admin routes on a
-server; the sidecar has no admin notion. Surface by surface:
+server; the sidecar has no admin notion (a companion request reaches the harness as the
+loopback owner, which narrows it further: bot and room `PATCH` to member fields).
 
-| Desktop surface | Renderer calls | iPad reach | Gap |
-|---|---|---|---|
-| Sidebar, fleet, search | `GET /api/bots`, `/api/events`, `/api/search`, `PATCH /api/bots/:id` (pin, unread) | client and sidecar | sections CRUD (`/api/sidebar-sections`: sidecar POST only, admin on a server), folders (`/api/bots/:id/projects*`: admin only, not in the sidecar). Collapsed sections and order are local on both |
-| 1:1 chat | `/api/bots/:id/messages` (+ edit, active-branch, compact, interrupt, read, queue, tasks, respond, cards, always-allow), `/api/threads/:id/messages`, attachments, reactions, export | client and sidecar | **steer** (`.../queue/:q/steer`) is in neither list; find, reply and pin are client-side or `PATCH` |
-| Room chat | `/api/groups*` (messages, read, tasks, interrupt, queue, PATCH) | client and sidecar | `/api/groups/:id/setup` and steer: not exposed. Room call needs the speech bridge |
-| Bot panel: Details, character editor | `PATCH /api/bots/:id`, `/profile`, `POST /avatar/generate`, `/api/attachments` | client and sidecar (member fields; owner for name, soul, model; generate owner-only) | none for the look |
-| Routines tab, Automations list and logs | `/api/routines*`, `/api/routine-runs/*` | client and sidecar | `/api/routine-runs/seen-all` client only |
-| Automations calendar calls | `/api/calendar-calls*` | admin only | calendar events (drag-to-create calls) have no phone route |
-| Files tab | `/api/threads/:id/files*`, `/api/bots/:id/files`, `/links` | client and sidecar | none |
-| Computer tab, computer panel | `/api/bots/:id/computer/{control,join,screenshot,viewer-close,input,clipboard}`, `/api/computer/{status,update,reset}` | sidecar (per-device capability), client for `/api/computer/*` | provision, remove, Local VM, VPS: not exposed (host-only) |
-| Advanced > Overview, Usage | `/api/bots/:id/overview`, `/api/usage` | sidecar; admin on a server | client session cannot |
-| Advanced > Soul | `GET /soul` (client), `/soul/*` writes | read: client and sidecar; write: admin | iPad edits through `PATCH profile` (as the phone) |
-| Advanced > Skills, Memory, History | `/api/bots/:id/skills*`, `/memory*`, `/history*` | admin only, not in the sidecar | not reachable from a personal-computer pairing |
-| Advanced > Access, Permissions | `/api/connectors/tools`, `/api/computers/*`, `PATCH` execution fields, `/command-allowlist` | admin; the field filter refuses execution policy | by design: the phone never changes approval mode, folders, computers, MCP |
-| Advanced > Model | `PATCH modelSelection`, `/api/instances`, `/api/me/engines` | sidecar `/model` + `/api/instances`; client: `PATCH` only | client sessions lack the engine catalogue |
-| Advanced > Slack, Visibility, Sharing, Perspicax | `/slack-management`, `/grants`, `/api/org/directory`, `/direct-grants`, `/perspicax` | client on an organization server (`orgDirectory`) | none on a personal computer |
-| Inspector | thread events and raw transcript | as the transcript | none known (not yet audited per call) |
-| Team map | `GET /api/team-map` (client, sidecar), `/api/section-context`, `/api/team-computers` | read yes; the rest admin | editing the map |
-| New bot | `POST /api/bots` (client, sidecar), `/api/bot-defaults*`, `/api/bot-presets*`, routine drafts | basic create only | presets, defaults, the full New Bot nav (Soul, Skills, Memory, Access, Permissions) |
-| Compose-to, new group | `POST /api/groups` | client and sidecar | none |
-| Templates | `/api/teams*`, packages | sidecar refuses `/api/teams`; admin on a server | not on a personal-computer pairing |
-| Plugins, MCP | `/api/plugins/{search,installed}` (client), `/install`, `/api/mcp/servers*`, `/api/connectors*` | browse: client and sidecar; install: sidecar, admin on a server | MCP server writes: admin |
-| Settings > General | `/api/config` (GET), `/api/settings/bot`, `/api/me/preferences` | GET and bot settings: client and sidecar; config writes refused on the sidecar | profile, threads, cleanup, recovery cards are host-only |
-| Settings > Appearance, Experimental | local storage | local | skins, density, font, show threads: iPad-local preferences |
-| Settings > API keys, Decision model, Model providers | `/api/config`, `/api/keys/test`, `/api/decider/test`, `/api/instances*`, `/api/cli-*` | keys refused ("only on your computer"); decision model admin; engines read via sidecar | host-only (credential entry uses the bridge's `setCredential`) |
-| Settings > Pair devices | bridge `companion`, `/api/auth/pairing`, `/api/auth/sessions` | pairing a new device: client with `orgPairing` only | host-only |
-| Settings > Local VM, Backups, Organization, Cloud account, People, Mail, Activity, Workspaces | `/api/local-computer*`, `/api/workspace-backup/*`, bridges `organization`, `cloudAccount`, `companyBackups`, `/api/org/*`, `/api/mail/*`, `/api/admin-activity`, `/api/fleet*` | not exposed, bridge-only, or admin | host or admin screens |
-| Update banner, dock badge | bridge `updater`, `setUnreadCount` | bridge-only | App Store updates; badge via notifications |
-| Welcome flow, launch screen | `/api/config` (onboarding), bridges `orgJoin`, `serverMode`, `environments` | config writes refused on the sidecar | the iPad keeps its pairing onboarding |
+**The reference for a paired iPad is the desktop's own remote-client mode** (JC,
+2026-10-02). The Electron app can itself pair with another computer
+(`electron/desktop-companion-client.mjs`): a loopback relay injects the device token and
+forwards every `/api/*` call to that computer's sidecar, through the same `ALLOWED`
+list, and the renderer runs with `window.ogb.remoteClient.active`. Whatever that
+renderer shows, the iPad shows and can do through the same routes; whatever it hides,
+the iPad hides. Audit (2026-10-02): every `/api/*` call in `src/` (263 method and path
+pairs), the component that makes it, whether the component is reachable in remote-client
+mode, and the two gates.
 
-`docs/ios-companion.md` ("Intentionally refused") still lists routines and connectors;
-`companion/src/routes.ts` now allows them (`:176-209`). That doc needs a correction.
+What remote-client mode changes in the renderer (every `remoteClient` gate in `src/`):
 
-**Rule for the iPad:** a section whose routes the session cannot reach is shown the way
-the desktop's own "remote client" mode shows it (`window.ogb.remoteClient.active`,
-`SettingsModal.tsx:840,860`: only Pair devices, Appearance and Organization in
-Settings; rename, delete, Templates and People hidden), not as an error. Host-only and
-admin-only rows are left out, never drawn disabled, unless the session has admin scope.
+- **Bot panel:** `RemoteAgentSettingsPanel` replaces the tabbed panel (`App.tsx:376-382`):
+  avatar upload and removal, name, title, description (`PATCH /profile`), voice and
+  speak replies (`VoiceSettings`, workspace configuration locked), notifications, and
+  the open chat's files. No Routines, Computer or Advanced tab; the Computer panel is
+  `RemoteDesktopPanel` (viewer only). No Inspector.
+- **Composer:** no approval-mode menu, no "where this conversation works" menu, no
+  model picker (`Composer.tsx:1033,1045,1172`); no trusted thread access. Steer, queue,
+  attachments, slash commands as on the host.
+- **Chat:** no pin or unpin of a message (`ChatView.tsx:445,587,1437`), no Inspector
+  button; renaming the bot goes through `PATCH /profile`.
+- **Sidebar:** bot menu is Move to team (`POST /api/sidebar-sections`), Edit profile,
+  Copy conversation ID, plus New thread and New folder when threads are shown
+  (`Sidebar.tsx:933-951`); no pin, archive or delete. Room menu is Copy conversation ID
+  only (no rename, move or delete). No section context menu (rename, share, delete
+  team). No Templates, no Archived bots. Renaming a bot inline uses `PATCH /profile`.
+- **Rooms:** no room setup (`setupPending` false, setup button disabled), bulletin
+  read-only, no Manage members, no message pin, no auto-responder banner; the room is
+  created with `setup: { defaultResponder: mentions }`.
+- **New bot:** `CompanionNewBotDialog`, one Create button, no presets, defaults or
+  sections (`NewBotDialog.tsx:69-74`).
+- **Automations:** routines only (`RoutineCalendarPage.tsx:1621`): no calendar calls,
+  no webhooks.
+- **Team map:** read-only canvas (`canManage` false): no team menu, instructions,
+  rename, delete, team computers; moving a bot inside its own team only.
+- **Plugins:** Connected apps without the workspace key setup (`canConfigure` false);
+  MCP servers list. The MCP panel still draws add, edit, test and delete, which the
+  sidecar refuses (see "Remaining differences").
+- **Settings:** Pair devices, Appearance and Organization only (`SettingsModal.tsx:838-861`);
+  Organization shows the remote-computer card (the bridge's connection to the host),
+  not enrollment. Pair devices draws `ServerPairingCard`, whose routes
+  (`/api/auth/sessions`, `/api/auth/pairing`) the sidecar refuses.
+- **Elsewhere:** no welcome flow or tour, no launch screen, no Cloud account, no Local VM
+  workspace, no update banner; the "no engines" screen says to configure the host.
+
+| Surface (remote-client mode) | Renderer calls | Sidecar | Client session | Final status |
+|---|---|---|---|---|
+| Boot, brand, stream | `GET /api/config`, `/api/events`, `/api/instances`, `/api/routines`, `/api/bots`, `/api/auth/session`, `/api/brand`, `/api/me/preferences` | yes (`/api/brand` added) | yes (`/api/instances` added, redacted) | open |
+| Sidebar: fleet, search, bot menu | `GET /api/search`, `PATCH /api/bots/:id` (unread), `PATCH /profile` (rename), `POST /api/sidebar-sections` (move to team) | yes | sidebar-sections: admin | open on the sidecar; filing stays admin on a server (no per-viewer check in the handler) |
+| Sidebar: threads and folders | `POST/PATCH/DELETE /api/bots/:id/tasks*`, `POST .../tasks/:t/title`, `POST /api/bots/:id/projects`, `PATCH/DELETE .../projects/:p`, `PATCH .../projects/order` | yes (title and folders added) | tasks and title yes; folders admin | open on the sidecar; folders stay admin on a server (shared, no per-viewer check) |
+| New bot, compose-to, new room | `POST /api/bots`, `POST /api/groups` | yes | yes | open |
+| 1:1 chat and composer | `/api/bots/:id/messages` (+ edit, active-branch, compact, interrupt, read, queue cancel, **steer**, tasks, respond, cards, always-allow), `/api/threads/:id/messages`, reactions, export, file, attachments, `/api/files`, connector and secret cards, `claude-update` | yes (steer added) | yes (steer added) | open |
+| Room chat | `/api/groups/:id/messages`, interrupt, read, queue cancel, **steer**, tasks, `PATCH /api/groups/:id` | yes (steer added) | yes (steer added) | open; setup, delete, members, bulletin hidden as on the desktop |
+| Remote agent settings | `PATCH /api/bots/:id/profile`, `POST /api/attachments`, `GET /api/tts/voices`, `POST /api/tts/speak`, `GET /api/threads/:id/files*` | yes | yes | open |
+| Remote desktop panel | `POST /api/bots/:id/computer/{control,join,screenshot,viewer-close}` | yes (per-device capability) | admin | open on the sidecar (unchanged) |
+| Automations (routines only) | `/api/routines*`, `/api/routine-runs/:id/{cancel,seen}`, `/api/routine-runs/seen-all` | yes (seen-all added) | yes | open |
+| Team map (read-only) | `GET /api/team-map`, `POST /api/sidebar-sections` (same-team move) | yes | team-map yes | open; editing hidden |
+| Plugins: Connected apps, MCP list | `/api/connectors`, `/catalog`, `/connected`, `POST .../authorize`, `DELETE .../accounts/:id`, `GET /api/mcp/servers`, MCP OAuth start and status | yes | connectors and MCP: admin | open on the sidecar (unchanged) |
+| Settings: Pair devices, Appearance, Organization | bridge `remoteClient`, local storage | n/a | n/a | iPad-local: its own pairing, skins, density |
+| Rooms on a host without an organization | `GET /api/org` (remote role lookup) | no route (404) | yes | same outcome on a personal computer: the harness answers 404 `no_organization` |
+| Hidden in remote-client mode | full bot panel (Overview, Soul, Skills, Memory, Access, Model, Permissions, History, Usage, Slack, Visibility, Sharing, Perspicax), Inspector, approval-mode and where menus, model picker, room setup and delete, team editing, Templates, presets and defaults, calendar calls, webhooks, every other Settings section | refused (as before) | as before (org routes for org members) | hidden on the iPad when paired through a sidecar |
+
+Changed by this audit (`feat/ipad-phone-api`):
+
+- Sidecar `ALLOWED` adds `GET /api/brand`, `POST /api/bots/:id/queue/:q/steer`,
+  `POST /api/groups/:id/queue/:q/steer`, `POST /api/bots/:id/tasks/:t/title`,
+  `POST /api/bots/:id/projects`, `PATCH|DELETE /api/bots/:id/projects/:p` (which also
+  covers `PATCH .../projects/order`), `POST /api/routine-runs/seen-all`.
+- `CLIENT_ALLOW` adds both steer routes (the harness now also refuses a steer to a
+  read-only member of a shared room and, on a Cloud home, to a guest outside a
+  conversation it started, exactly as it refuses their sends) and `GET /api/instances`,
+  answered to a non-admin session through `clientInstanceView()` (names, models,
+  capabilities, availability, billing; never CLI paths, install or sign-in commands,
+  account addresses, update commands). `/api/me/engines` was already a client route on
+  an organization server.
+- Not opened, on purpose: `PATCH /api/groups/:id/setup` (hidden in remote-client mode,
+  and it sets the room's folder), Overview and `/api/usage` for client sessions (not
+  shown in remote-client mode), sidebar sections and folders for client sessions (no
+  per-viewer check in their handlers), team-map editing, Templates, New Bot presets and
+  defaults (all hidden in remote-client mode), and every host-only route (API keys,
+  engines setup, Local VM, backups, pairing, MCP server writes). The phone still never
+  changes approval mode or execution policy: the desktop remote client cannot either.
+- Tests: `companion/test/routes.test.ts` ("desktop remote-client parity"),
+  `companion/test/proxy.test.ts` (the new routes reach a real harness),
+  `server/request-auth.test.ts` (scopes, `clientInstanceView`),
+  `server/claude-account-api.test.ts` (a client session's `/api/instances`).
+- `docs/ios-companion.md`: "Intentionally refused" rewritten (routines and connected
+  apps cross; webhooks do not) and a "Same surface as the desktop remote client" table.
+
+**Remaining differences, intentional:**
+
+- The desktop remote client's MCP servers panel draws add, edit, test, import and delete;
+  the sidecar refuses them (MCP servers run commands on the host). The iPad leaves them
+  out rather than drawing controls that fail.
+- Pair devices: the desktop remote client draws the server pairing card, which the
+  sidecar refuses; the iPad shows its own pairing (forget, re-pair) there.
+- On a server (client session), folders, team filing, Overview and Usage stay admin;
+  an admin-scope pairing reaches them, as on the served web page.
+
+**Rule for the iPad:** paired through a sidecar, the iPad shows exactly the
+remote-client renderer's surfaces listed above (a section it cannot reach is left out,
+never drawn disabled). Paired with a server, it shows what the served renderer shows for
+the session's scope: a client session gets the client routes above (and the organization
+surfaces on an organization server), an admin session everything.
 
 ## Mapping to the SwiftUI building blocks
 
@@ -513,12 +593,13 @@ python3 ios/parity/desktop/diff-ipad.py [--gate] [--viewport WxH] [surface ...]
   viewports), scores 13.6 % to 33.6 % with 4.5 % to 7.9 % masked, as expected for a
   placeholder; sheets render reference, capture and heatmap side by side.
 
-## Open questions for JC
+## Decisions (JC, 2026-10-02)
 
-1. **834 portrait:** the renderer is below its 840 pt minimum there. Keep the docked
-   sidebar as the reference shows, or collapse to the icon rail by default at 834?
-2. **Skins on iPad:** all 11 (including the secret Hibou 98 with its own chrome), or the
-   10 public ones?
-3. **Organization surfaces** (Slack, Visibility, Sharing, Perspicax, People, Mail,
-   Activity): capture them from an organization fixture before the iPad work reaches
-   them?
+1. **834 portrait:** the iPad keeps the docked sidebar, as the reference shows (the
+   renderer is below its 840 pt minimum there).
+2. **Skins:** all 11, including Hibou 98 with its own chrome.
+3. **Organization surfaces** (Slack, Visibility, Sharing, Perspicax; People, Mail,
+   Activity, Workspaces): captured from the organization fixture (`PARITY_ORG=1`, see
+   "Inventory").
+4. **Paired client:** the iPad matches the desktop renderer in remote-client mode (see
+   "What the phone API does not expose").
