@@ -175,6 +175,8 @@ export function CallTargetButton({
         }}
         aria-expanded={unavailable ? helpOpen : undefined}
         aria-controls={unavailable ? helpId : undefined}
+        data-call-target={targetId}
+        data-voice-mode={xaiVoice ? "xai" : undefined}
         aria-label={label}
         title={label}
         className={cn(

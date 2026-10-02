@@ -29,10 +29,10 @@ export interface SpeechEngine {
 
 /** The macOS dictation helper behind window.ogb. */
 export const nativeSpeechEngine: SpeechEngine = {
-  start: (options) => window.ogb?.speechStart(options) ?? Promise.reject(new Error("dictation unavailable")),
-  stop: () => window.ogb?.speechStop() ?? Promise.resolve(),
-  onTranscript: (cb) => window.ogb?.onSpeechTranscript(cb) ?? (() => {}),
-  onEnd: (cb) => window.ogb?.onSpeechEnd(cb) ?? (() => {}),
+  start: (options) => window.ogb?.speechStart?.(options) ?? Promise.reject(new Error("dictation unavailable")),
+  stop: () => window.ogb?.speechStop?.() ?? Promise.resolve(),
+  onTranscript: (cb) => window.ogb?.onSpeechTranscript?.(cb) ?? (() => {}),
+  onEnd: (cb) => window.ogb?.onSpeechEnd?.(cb) ?? (() => {}),
 };
 
 export interface XaiSpeechOptions {
