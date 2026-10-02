@@ -766,6 +766,10 @@ html[data-floating-bot] #root {
   user-select: none;
   -webkit-user-select: none;
 }
+/* Trombi's balloon too: its retro text cap (180px) must not leave a resized balloon half empty */
+.fb-root.r98-root .fb-thread {
+  max-height: none;
+}
 .fb-root .fb-thread {
   flex: 1 1 auto;
   max-height: none;
@@ -885,4 +889,13 @@ html[data-floating-bot] #root {
 .fb-root .r98-balloon .fb-md a,
 .fb-root .r98-balloon .fb-md-link {
   color: #0000ee;
+}
+
+/* ─── while chatting (FloatingBotView data-chatting) ──────────────────────
+   The skin's looping effects rest behind an open balloon: in a transparent
+   window every animated pixel repaints the whole window, now as large as the
+   balloon's room. Only the loops of a premium skin (skin-fx.css) rest; its
+   one-shot bursts finish, and the mascot itself keeps moving (at half rate). */
+.fb-root[data-chatting] .fb-body .skin-fx-live * {
+  animation-play-state: paused !important;
 }

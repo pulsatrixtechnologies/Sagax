@@ -37,7 +37,9 @@ import {
 import { createOwlController, type OwlController } from "@/lib/owl/owl-loop";
 import { owlSkinId, owlSkinLook, owlSkinPalette } from "@/lib/owl/owl-skins";
 import type { MascotSkinId } from "../../shared/mascot-skins";
-import { OwlSkinBack, OwlSkinDefs, OwlSkinEyeGlow, OwlSkinFront, OwlSkinPlumage, OwlSkinWing } from "./OwlSkinFx";
+import { owlFxPalette, OwlSkinBack, OwlSkinDefs, OwlSkinEyeGlow, OwlSkinFront, OwlSkinPlumage, OwlSkinWing } from "./OwlSkinFx";
+import { EquipFx, MoveFx } from "./skin-fx/SkinFx";
+import { FX_FULL_MIN, useEquipBurst, useFxVisibility, useMoveBurst, useReducedMotion, type FxMoveRequest } from "./skin-fx/skin-fx";
 
 export interface OwlAvatarHandle {
   /** Play a state for a moment (success/alert run once), then resume. */
@@ -70,6 +72,8 @@ export interface OwlAvatarProps {
   skin?: MascotSkinId | string | null;
   /** Play the skin's effects even while `animated` is off (skin pickers). */
   skinAnimated?: boolean;
+  /** A one-shot move's skin effect (the avatar popover's Moves): its particles, trails and rings. */
+  move?: FxMoveRequest | null;
   className?: string;
 }
 
@@ -103,6 +107,7 @@ function OwlAvatarComponent(
     wings = 0,
     skin,
     skinAnimated,
+    move,
     className,
   }: OwlAvatarProps,
   ref: React.Ref<OwlAvatarHandle>,
@@ -177,12 +182,20 @@ function OwlAvatarComponent(
   const { eye } = parts;
   // Full skin effects need room; small avatars keep the recolor and aura, still.
   const detail = size >= OWL_DETAIL_MIN_SIZE;
+  const osReduced = useReducedMotion();
   const fxLive = detail && (skinAnimated ?? animated) && reducedMotion !== true;
+  // the equip and move bursts: a large animated owl only, never under reduced motion
+  const bursts = detail && size >= FX_FULL_MIN && animated && reducedMotion !== true && !osReduced;
+  const box = useRef<HTMLSpanElement>(null);
+  useFxVisibility(box, fxLive && skinId !== "none");
+  const equip = useEquipBurst(skinId, bursts);
+  const burst = useMoveBurst(move, bursts);
   const fx = { skin: skinId, look, uid, detail, silhouette: parts.body };
   return (
     <span
+      ref={box}
       className={className ?? "inline-flex shrink-0"}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, position: "relative" }}
       data-owl=""
       onPointerMove={follow ? onPointerMove : undefined}
       onPointerLeave={follow ? onPointerLeave : undefined}
@@ -266,6 +279,8 @@ function OwlAvatarComponent(
           <OwlSkinFront {...fx} />
         </g>
       </svg>
+      {equip && <EquipFx key={equip} palette={owlFxPalette(skinId, hex)} uid={`${uid}-eq`} />}
+      {burst && <MoveFx key={burst.key} move={burst.move} palette={owlFxPalette(skinId, hex)} uid={`${uid}-mv`} />}
     </span>
   );
 }

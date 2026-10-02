@@ -18,6 +18,7 @@
 // free text are a separate problem, handled by redactPackageSecrets (export)
 // and packageSecretFindings (Admin upload).
 import { parse as parseYaml } from "yaml";
+import { MASCOT_COLOR_NAMES } from "./mascot-colors.ts";
 import { z } from "zod";
 
 import { BOT_PROFILE_LIMITS, fitsOnOneLine } from "./bot-profile.ts";
@@ -56,7 +57,7 @@ export class PackageFormatError extends Error {
   }
 }
 
-const COLORS = ["green", "blue", "red", "orange", "purple", "cyan", "pink", "yellow", "teal", "coral", "white", "black", "brown", "amber", "grey"] as const;
+const COLORS = MASCOT_COLOR_NAMES;
 const AVATAR_MIMES = ["image/png", "image/jpeg", "image/webp"] as const;
 const AVATAR_CROPS = ["circle", "rounded", "square"] as const;
 

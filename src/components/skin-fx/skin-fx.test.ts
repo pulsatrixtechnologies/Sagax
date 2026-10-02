@@ -155,13 +155,17 @@ describe("the avatar popover's layout", () => {
     expect(JSON.stringify(fr)).not.toMatch(/Formes originales/i);
   });
 
-  it("shows each skin as a card with its rarity, previewing it animated", () => {
-    const html = render({ character: "shape", skins: { shape: "galaxy" } });
-    for (const skin of SHAPE_SKINS) expect(html).toMatch(new RegExp(`data-tier="${SHAPE_SKIN_TIER[skin]}"[^>]*data-shape-skin-option="${skin}"`));
-    expect(html).toContain(">Legendary<");
-    expect((html.match(/skin-fx-live/g) ?? []).length).toBeGreaterThanOrEqual(SHAPE_SKINS.length);
-    const clip = render({ character: "trombi" });
-    for (const skin of TROMBI_SKINS) expect(clip).toContain(`data-trombi-skin-option="${skin}"`);
+  it("shows each skin as a card with its rarity, previewing it animated, one rarity at a time", () => {
+    for (const skin of SHAPE_SKINS) {
+      const html = render({ character: "shape", skins: { shape: skin } });
+      expect(html).toMatch(new RegExp(`data-tier="${SHAPE_SKIN_TIER[skin]}"[^>]*data-shape-skin-option="${skin}"`));
+      const cards = html.match(/data-shape-skin-option="/g) ?? [];
+      expect(cards.length).toBe(SHAPE_SKINS.filter((other) => SHAPE_SKIN_TIER[other] === SHAPE_SKIN_TIER[skin]).length);
+      // the open tab's cards play their skins (the Shape grid's thumbnails never do)
+      expect((html.match(/skin-fx-live/g) ?? []).length).toBe(cards.length);
+    }
+    expect(render({ character: "shape", skins: { shape: "galaxy" } })).toContain(">Legendary<");
+    for (const skin of TROMBI_SKINS) expect(render({ character: "trombi", skins: { trombi: skin } })).toContain(`data-trombi-skin-option="${skin}"`);
     for (const key of Object.values(SKIN_TIER_LABEL)) {
       expect(en).toHaveProperty([key]);
       expect(fr).toHaveProperty([key]);

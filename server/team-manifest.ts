@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { schemaIssue, type JsonValue } from "./schema.ts";
 import type { MausColor } from "./store.ts";
+import { MASCOT_COLOR_NAMES } from "../shared/mascot-colors.ts";
 import { botMascotBody, type MascotBodyId } from "../shared/mascot-bodies.ts";
 import { takeImportName } from "../shared/import-name.ts";
 import { BOT_PROFILE_LIMITS } from "../shared/bot-profile.ts";
@@ -11,23 +12,7 @@ export const TEAM_MANIFEST_VERSION = 2 as const;
 export const LEGACY_TEAM_MANIFEST_VERSION = 1 as const;
 export const MAX_TEAM_MEMBERS = 200;
 
-const COLORS = [
-  "green",
-  "blue",
-  "red",
-  "orange",
-  "purple",
-  "cyan",
-  "pink",
-  "yellow",
-  "teal",
-  "coral",
-  "white",
-  "black",
-  "brown",
-  "amber",
-  "grey",
-] as const satisfies readonly MausColor[];
+const COLORS = MASCOT_COLOR_NAMES satisfies readonly MausColor[];
 
 const requiredText = (max: number) =>
   z.string({ error: "must be text" }).trim().min(1, { message: "is required" }).max(max, { message: "is too long" });
