@@ -35,6 +35,8 @@ export default defineConfig({
       "scripts/**/*.test.ts",
     ],
     setupFiles: ["server/testing/setup.ts"],
+    // A per-run Local VM namespace: tests never touch openmausbot-computer.
+    globalSetup: ["server/testing/global-setup.ts"],
     // the suite spawns fake provider CLIs and a real harness server;
     // parallel files introduce load-sensitive flakes for no win
     fileParallelism: false,

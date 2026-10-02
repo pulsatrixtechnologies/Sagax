@@ -116,7 +116,7 @@ beforeAll(async () => {
       PATH: process.env.PATH,
       ...(process.env.PATHEXT ? { PATHEXT: process.env.PATHEXT } : {}),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, OMB_DATA_DIR: data, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
+      HOME: home, USERPROFILE: home, OMB_LOCAL_VM_TEST_NAMESPACE: process.env.OMB_LOCAL_VM_TEST_NAMESPACE ?? "", OMB_DATA_DIR: data, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
       OMB_CLOUD_DECIDER_URL: relayUrl,
       OMB_CLOUD_DECIDER_TOKEN: INCLUDED,
     },
