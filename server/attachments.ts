@@ -26,6 +26,10 @@ export const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
  * ceiling. This is a local inbox, not unbounded remote storage. */
 export const FILE_MAX_BYTES = 25 * 1024 * 1024;
 
+/** Archives (zip, tar, tar.gz, 7z) carry whole folders, so they get more
+ * room, still under Cloudflare's 100 MB request ceiling. */
+export const ARCHIVE_MAX_BYTES = 90 * 1024 * 1024;
+
 /** Attachments are durable because prompts refer to their paths. Never
  * silently evict them: once this ceiling is reached, a new upload gets an
  * explicit 507 and the person can decide what to remove. */
@@ -74,11 +78,27 @@ const IMAGE_MIMES: Record<string, string> = {
   "image/webp": ".webp",
 };
 
-/** Useful document and audio formats accepted by the upload endpoint.
- * Generic archives, binaries, HTML, SVG, and executable/script mimes stay
- * out. Office/OpenDocument packages are allowed because they are documents,
- * despite using ZIP internally. The claimed mime determines the extension;
- * an attacker-controlled filename never does. */
+/** Archives a person may attach: the bot gets the archive and, unpacked
+ * where it works, its contents (server/attachment-archives.ts). A gzip
+ * upload is a tar.gz: it is stored as .tgz. */
+const ARCHIVE_MIMES: Readonly<Record<string, string>> = {
+  "application/zip": ".zip",
+  "application/x-zip-compressed": ".zip",
+  "application/x-tar": ".tar",
+  "application/gzip": ".tgz",
+  "application/x-gzip": ".tgz",
+  "application/x-gtar": ".tgz",
+  "application/x-compressed-tar": ".tgz",
+  "application/x-7z-compressed": ".7z",
+};
+
+const ARCHIVE_EXTENSIONS = new Set(Object.values(ARCHIVE_MIMES));
+
+/** Useful document, audio and archive formats accepted by the upload
+ * endpoint. Binaries, HTML, SVG, and executable/script mimes stay out.
+ * Office/OpenDocument packages are documents, despite using ZIP internally.
+ * The claimed mime determines the extension; an attacker-controlled filename
+ * never does. */
 const FILE_MIMES: Readonly<Record<string, string>> = {
   "video/mp4": ".mp4",
   "video/webm": ".webm",
@@ -112,7 +132,24 @@ const FILE_MIMES: Readonly<Record<string, string>> = {
   "application/vnd.oasis.opendocument.text": ".odt",
   "application/vnd.oasis.opendocument.spreadsheet": ".ods",
   "application/vnd.oasis.opendocument.presentation": ".odp",
+  ...ARCHIVE_MIMES,
 };
+
+/** Whether a stored attachment (`<uuid>.<ext>` or its path) is an archive. */
+export function isArchiveAttachment(file: string): boolean {
+  return ARCHIVE_EXTENSIONS.has(extname(file).toLowerCase());
+}
+
+/** The per-file ceiling for a stored attachment, by its extension. */
+export function maxBytesForAttachment(file: string): number {
+  return isArchiveAttachment(file) ? ARCHIVE_MAX_BYTES : FILE_MAX_BYTES;
+}
+
+/** The per-file ceiling for an upload's claimed content type. */
+export function maxBytesForFileMime(mime: string | undefined): number {
+  const value = normalizedMime(mime);
+  return value && ARCHIVE_MIMES[value] ? ARCHIVE_MAX_BYTES : FILE_MAX_BYTES;
+}
 
 export function extensionForMime(mime: string | undefined): string | null {
   if (!mime) return null;
@@ -251,6 +288,11 @@ function cleanupAttachmentPartialsForUpload(uploadId: string): void {
 class AttachmentReservation {
   private held = 0;
   private released = false;
+  private readonly maxFileBytes: number;
+
+  constructor(maxFileBytes = FILE_MAX_BYTES) {
+    this.maxFileBytes = maxFileBytes;
+  }
 
   reserve(bytes: number): void {
     if (this.released || bytes <= 0) return;
@@ -277,7 +319,7 @@ class AttachmentReservation {
   ensure(bytes: number): void {
     if (bytes <= this.held) return;
     const required = bytes - this.held;
-    const remainingPerFileCapacity = FILE_MAX_BYTES - this.held;
+    const remainingPerFileCapacity = this.maxFileBytes - this.held;
     const preferred = Math.min(
       Math.max(required, STREAM_RESERVATION_INCREMENT_BYTES),
       remainingPerFileCapacity,
@@ -383,7 +425,7 @@ export function extensionForFileMime(mime: string | undefined): string | null {
  * remain visible as bad requests. */
 export function sanitizeSharedFileName(name: string, mime: string): string {
   const extension = extensionForFileMime(mime);
-  if (!extension) throw statusError(400, "content-type must be a supported document or audio type");
+  if (!extension) throw statusError(400, "content-type must be a supported document, audio or archive type");
 
   const normalized = name.normalize("NFKC").trim();
   if (!normalized) throw statusError(400, "name is required");
@@ -392,7 +434,9 @@ export function sanitizeSharedFileName(name: string, mime: string): string {
     throw statusError(400, "name must be a filename, not a path");
   }
 
-  const dot = normalized.lastIndexOf(".");
+  // "project.tar.gz" keeps its double extension (stored as .tgz).
+  const tarGz = extension === ".tgz" && /\.tar\.gz$/i.test(normalized);
+  const dot = tarGz ? normalized.length - ".tar.gz".length : normalized.lastIndexOf(".");
   const withoutExtension = dot > 0 ? normalized.slice(0, dot) : normalized;
   const safeCharacters = Array.from(withoutExtension, (character) => {
     const code = character.charCodeAt(0);
@@ -405,7 +449,7 @@ export function sanitizeSharedFileName(name: string, mime: string): string {
     .trim();
   const boundedStem = Array.from(stem).slice(0, 180).join("");
   if (!boundedStem) throw statusError(400, "name must contain visible characters");
-  return `${boundedStem}${extension}`;
+  return `${boundedStem}${tarGz ? ".tar.gz" : extension}`;
 }
 
 /** Stream one shared document to a generated file without ever collecting
@@ -419,8 +463,9 @@ export async function saveFile(
 ): Promise<SavedFile> {
   const normalized = normalizedMime(mime);
   if (!normalized || !extensionForFileMime(normalized)) {
-    throw statusError(400, "content-type must be a supported document or audio type");
+    throw statusError(400, "content-type must be a supported document, audio or archive type");
   }
+  const maxBytes = maxBytesForFileMime(normalized);
   const name = sanitizeSharedFileName(originalName, normalized);
   const extension = extensionForFileMime(normalized)!;
   const uploadId = validateAttachmentUploadId(options.uploadId);
@@ -428,8 +473,8 @@ export async function saveFile(
   if (expectedBytes !== undefined && (!Number.isSafeInteger(expectedBytes) || expectedBytes < 0)) {
     throw statusError(400, "content-length must be a non-negative integer");
   }
-  if (expectedBytes !== undefined && expectedBytes > FILE_MAX_BYTES) {
-    throw statusError(413, `file exceeds ${FILE_MAX_BYTES} bytes`);
+  if (expectedBytes !== undefined && expectedBytes > maxBytes) {
+    throw statusError(413, `file exceeds ${maxBytes} bytes`);
   }
 
   return withUploadLock(uploadId, async () => {
@@ -444,8 +489,8 @@ export async function saveFile(
           ? value
           : Buffer.from(value.buffer, value.byteOffset, value.byteLength);
         if (chunk.byteLength === 0) continue;
-        if (bytes + chunk.byteLength > FILE_MAX_BYTES) {
-          throw statusError(413, `file exceeds ${FILE_MAX_BYTES} bytes`);
+        if (bytes + chunk.byteLength > maxBytes) {
+          throw statusError(413, `file exceeds ${maxBytes} bytes`);
         }
         incomingHash.update(chunk);
         bytes += chunk.byteLength;
@@ -460,7 +505,7 @@ export async function saveFile(
     const id = uploadId ?? randomUUID();
     const path = join(ATTACHMENTS_DIR, `${id}${extension}`);
     const partialPath = join(ATTACHMENTS_DIR, `.openmaus-upload-${id}-${randomUUID()}.partial`);
-    const reservation = new AttachmentReservation();
+    const reservation = new AttachmentReservation(maxBytes);
     if (expectedBytes) reservation.reserve(expectedBytes);
     activePartials.add(partialPath);
     let file: Awaited<ReturnType<typeof open>> | undefined;
@@ -475,8 +520,8 @@ export async function saveFile(
           ? value
           : Buffer.from(value.buffer, value.byteOffset, value.byteLength);
         if (chunk.byteLength === 0) continue;
-        if (bytes + chunk.byteLength > FILE_MAX_BYTES) {
-          throw statusError(413, `file exceeds ${FILE_MAX_BYTES} bytes`);
+        if (bytes + chunk.byteLength > maxBytes) {
+          throw statusError(413, `file exceeds ${maxBytes} bytes`);
         }
         reservation.ensure(bytes + chunk.byteLength);
         let offset = 0;

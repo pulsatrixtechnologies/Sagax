@@ -161,6 +161,7 @@ describe("VisibleSet", () => {
     expect(pathSubject("/api/routine-runs/run1/seen")).toEqual({ kind: "routine-run", id: "run1" });
     expect(pathSubject("/api/routine-runs/seen-all")).toBeNull();
     expect(pathSubject("/api/attachments/a.png")).toEqual({ kind: "attachment", name: "a.png" });
+    expect(pathSubject("/api/attachments/a.zip/manifest")).toEqual({ kind: "attachment", name: "a.zip" });
     expect(pathSubject("/api/attachments")).toBeNull();
     expect(pathSubject("/api/bots")).toBeNull();
     expect(pathSubject("/api/groups")).toBeNull();
