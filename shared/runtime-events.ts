@@ -152,6 +152,9 @@ export type RuntimeEvent = RuntimeEventBase &
          * permission rules, ACP agents through `allow_always` or the
          * driver's per-session memory. Unset when answers are one-shot. */
         allowSession?: boolean;
+        /** A permission ask's full arguments as redacted JSON, for the
+         * card's collapsed technical details (summary stays one line). */
+        input?: string;
       }
     | {
         type: "request.resolved";

@@ -8846,6 +8846,7 @@ bus.subscribe((event: RuntimeEvent) => {
           options: event.choices?.length ? event.choices : permission ? ["Allow", "Deny"] : [],
           requestId: event.requestId,
           tool: permission ? event.tool : undefined,
+          toolInput: permission ? event.input : undefined,
           questionRequest: questions
             ? { version: 1, questions, ...(event.origin === "output" ? { origin: "output" as const } : {}) }
             : undefined,

@@ -156,7 +156,8 @@ describe("ApprovalCard profile proposals", () => {
 
     const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message }));
     expect(html).toContain("wants to update its profile");
-    expect(html).toContain("update_profile");
+    // the internal tool id is not shown on a proposal
+    expect(html).not.toContain("update_profile");
     expect(html).toContain("+Be brief.");
     expect(html).toContain("Nothing runs.");
   });
@@ -190,7 +191,7 @@ describe("ApprovalCard profile proposals", () => {
 
     const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message }));
     expect(html).toContain("Scout wants to update @Peer");
-    expect(html).toContain("profile</div>");
+    expect(html).toContain("profile</span>");
     expect(html).not.toContain("wants to update its profile");
   });
 

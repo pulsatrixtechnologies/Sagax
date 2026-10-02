@@ -108,6 +108,11 @@ export interface OptionCardData {
   /** the narrow grant "always allow" remembers, e.g. "Bash:git" */
   allowKey?: string;
   allowSession?: boolean;
+  /** A permission ask's full arguments as redacted JSON, shown only in
+   * the card's collapsed technical details. */
+  toolInput?: string;
+  /** MCP tool annotations, when the provider passes them on. */
+  toolHints?: { readOnly?: boolean; destructive?: boolean };
   /** Exact provider command eligible for a durable, folder-scoped allow. */
   commandAllowlist?: { command: string; cwd: string; providerInstanceId: string };
   approvalScope?: "local-computer";
