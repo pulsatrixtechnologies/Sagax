@@ -2804,5 +2804,6 @@
   "activity.steer.placeholder": "Ajouter une consigne…",
   "activity.steer.send": "Envoyer",
   "activity.steer.sent": "Envoyé à la tâche",
-  "botPanel.activity.parallel": "Tâche en parallèle"
+  "botPanel.activity.parallel": "Tâche en parallèle",
+  "composer.placeholder.busyChoice": "{name} travaille · Entrée demande quoi faire de votre message"
 }

@@ -4448,5 +4448,6 @@
   "activity.steer.placeholder": "Add an instruction…",
   "activity.steer.send": "Send",
   "activity.steer.sent": "Sent to the task",
-  "botPanel.activity.parallel": "Parallel task"
+  "botPanel.activity.parallel": "Parallel task",
+  "composer.placeholder.busyChoice": "{name} is working · Enter asks what to do with your message"
 }

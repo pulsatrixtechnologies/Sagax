@@ -1222,6 +1222,8 @@ export function Composer({
               ? t("composer.placeholder.attaching")
               : recording
               ? t("composer.placeholder.listening")
+              : offersBusyChoice && busySendPreference === "ask"
+                ? t("composer.placeholder.busyChoice", { name: busyName })
               : busy && canSteer
                 ? pendingCount > 0
                   ? t("composer.placeholder.steerQueued", { name: busyName })

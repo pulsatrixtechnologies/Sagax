@@ -3220,8 +3220,6 @@ function requestedTaskBot(botId: string, rawThreadId: unknown): BotRecord {
 }
 
 async function interruptDirectThread(botId: string, threadId: string): Promise<void> {
-  // A parallel task stopped from its own thread reads as stopped, not failed.
-  if (pendingParallelTask(threadId)) parallelStops.add(threadId);
   const requestOwner = directRequestOwners.get(threadId);
   if (requestOwner) {
     requestOwner.stopped = true;

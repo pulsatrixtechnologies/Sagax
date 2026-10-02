@@ -5521,7 +5521,8 @@
       "activity.steer.placeholder": "7922aa2541a511e947c550d991b5e43c41be8a387f82b6861a001b5d2fe3f48c",
       "activity.steer.send": "f6f4688ff23d50c67053963c251fa0ce64a925cf283537cf066b1f362cb9b778",
       "activity.steer.sent": "4009111bedcfed8413ec538b817cae188e5ce8694781bdb9f44b287b07c27467",
-      "botPanel.activity.parallel": "abb360372ec4df041129c5a9b7dd8e472f4ef72317bc43b6f8eba9c9e3f55a4a"
+      "botPanel.activity.parallel": "abb360372ec4df041129c5a9b7dd8e472f4ef72317bc43b6f8eba9c9e3f55a4a",
+      "composer.placeholder.busyChoice": "9ceb1a2713255709b1173d873df01db922374ff9896c4ee3be746437e802c698"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
