@@ -1391,6 +1391,19 @@ export async function execOnBoat(cfg: AppConfig, botId: string, command: string)
   return { exitCode: out.exitCode, stdout: out.stdout.slice(-4000), stderr: out.stderr.slice(-2000) };
 }
 
+/** One desktop script for the phone's remote input (server/computer-input.ts):
+ * the bot's existing Boat only (never provisioned or woken here), the same
+ * credential-free command path the console uses, a short deadline. */
+export async function runDesktopScript(cfg: AppConfig, botId: string, script: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  cfg = snapshotBoatConfig(cfg);
+  if (script.length > MAX_REMOTE_COMMAND_LENGTH) throw Object.assign(new RangeError("input script is too long"), { status: 400 });
+  const boat = await findBoat(cfg, botId);
+  if (!boat) throw Object.assign(new Error("This bot's cloud computer does not exist yet."), { status: 404 });
+  if (!READY.has(boat.state)) throw Object.assign(new Error("This bot's cloud computer is asleep. Open it first."), { status: 409 });
+  const out = await runCommand(cfg, boat.id, isolatedRemoteCommand(script), { timeoutMs: 20_000 });
+  return { ok: out.ok, stdout: String(out.stdout ?? ""), stderr: String(out.stderr ?? "").slice(-2000) };
+}
+
 // Screenshot for the Computer panel + screen-in-chat. Two hops: capture
 // to a file on the boat (scrot straight to JPEG — no ImageMagick startup
 // unless a downscale is actually needed), then read the bytes back.

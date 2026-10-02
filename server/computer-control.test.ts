@@ -172,4 +172,17 @@ describe("computer control", () => {
     control.forget("ghost");
     expect(changes).toEqual([]);
   });
+
+  it("tells whether a lease may act for the person who holds control", () => {
+    const { control } = tracked();
+    expect(control.leaseState("b1")).toBe("free");
+    control.take("b1");
+    expect(control.leaseState("b1")).toBe("held");
+    expect(control.leaseState("b1", "any-device")).toBe("held");
+    control.release("b1");
+    control.acquireLease("b1", "lease-a");
+    expect(control.leaseState("b1", "lease-a")).toBe("held");
+    expect(control.leaseState("b1", "lease-b")).toBe("other");
+    expect(control.leaseState("b1")).toBe("other");
+  });
 });

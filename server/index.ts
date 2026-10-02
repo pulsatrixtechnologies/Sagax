@@ -9,6 +9,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync } from "node:fs";
 import { writeFileAtomic } from "./atomic.ts";
 import { rm as removeDirectory } from "node:fs/promises";
+import { hostname, userInfo } from "node:os";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
 import { extname, join } from "node:path";
@@ -31,6 +32,7 @@ import { BOT_PROFILE_LIMITS } from "../shared/bot-profile.ts";
 import { CLOUD_COMPUTER_BUSY_ERROR } from "../shared/computer-contention.ts";
 import {
   approvalModeFor,
+  hasNativeAutoReview,
   modelSwitchNeedsAsk,
   isEmergencyApprovalDowngrade,
   isApprovalMode,
@@ -106,6 +108,7 @@ import { groupTurnCwd } from "./room-cwd.ts";
 import { RoomTurnDeadline, RoomTurnStallRegistry, roomTurnTimeoutMessage } from "./room-turn-timeout.ts";
 import * as boat from "./boat.ts";
 import { TeamComputers, teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
+import { instructionsLead } from "../shared/instructions-lead.ts";
 import { isEffortLevel, type BotVisibility, type CardAnswerer, type ResolvedSender, type WireAccessCard, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
 import type { TeamComputersPayload } from "../shared/team-computer.ts";
 import { boatCreateRecoverySnapshot, retireDeletedBoatCreate } from "./boat-create-idempotency.ts";
@@ -234,7 +237,7 @@ import {
   type StoredRemoteMcpServer,
 } from "./mcp-registry.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
-import { callbackPage, McpOAuthError, McpOAuthManager, McpOAuthVault, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
+import { callbackPage, McpOAuthError, McpOAuthManager, McpOAuthVault, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
   GROUP_GOAL_MAX_TURNS,
   groupGoalAssignmentKey,
@@ -313,7 +316,7 @@ import {
 import { CLOUD_PERSONAL_REFUSAL, settleCloudOwnership, type CloudOwnership } from "./cloud-owner.ts";
 import { createCloudMoveRoutes } from "./cloud-move-http.ts";
 import { holdIncludedServices } from "./included-services.ts";
-import type { ProviderInstance } from "./contracts.ts";
+import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { selectDefaultModelSelection, withNewBotEffort } from "./default-model-selection.ts";
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
@@ -437,7 +440,7 @@ import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts
 import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
-import { RoutineManager, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
+import { RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT } from "./browser-engine.ts";
@@ -615,6 +618,17 @@ import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
+import { createBotLibraryRoutes } from "./routes/bot-library.ts";
+import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
+import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
+import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
+import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
+import { createAccountRoutes } from "./routes/account.ts";
+import { createRegistrySearch } from "./plugin-registry.ts";
+import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
+import { diskSpace, folderBytes } from "./disk-usage.ts";
+import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bot-settings.ts";
+import { createComputerInputRoutes } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
@@ -825,6 +839,7 @@ if (CLOUD_HOME && Object.keys(CLOUD_SECRETS).length === 0) {
 // Who each thread is for, when a signed-in person can be named (server-private).
 const threadStarters = new ThreadStarters(join(DATA_DIR, "thread-starters.json"));
 const commandAllowlist = new CommandAllowlistStore(join(DATA_DIR, "command-allowlist.json"));
+const botSettings = createBotSettingsStore(DATA_DIR);
 const SESSION_COOKIE = sessionCookieName(PORT, ENVIRONMENT_ID);
 const HOSTED_WORKSPACE = hostedWorkspaceConfigured();
 let workspaceAccess: WorkspaceAccess | null = null;
@@ -1475,6 +1490,25 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
   const known = [threadStarters.get(threadId), cardRequesterKey(threadId, requestId)].filter((person): person is string => Boolean(person));
   if (!known.length || known.includes(personKey(auth.session)) || known.includes(legacyPersonKey(auth.session))) return null;
   return "Only the person who started this conversation or sent this request, or a workspace admin, can answer this card.";
+}
+
+/** Settings > Bot > Auto-review (server/bot-settings.ts): when the caller
+ * (their own setting on an organization server, the server's elsewhere) has
+ * it on, a conversation they just opened starts in the reviewed level. */
+function applyAutoReviewDefault(auth: RequestAuth, botId: string, threadId: string): void {
+  const principalId = IDENTITY.kind === "perspicax" && auth.kind === "session" ? auth.session.principalId : undefined;
+  const settings = principalId && isPrincipalId(principalId) ? botSettings.person(principalId) : botSettings.server();
+  if (!settings.autoReviewDefault) return;
+  if (CLOUD_HOME && !cloudOwnerSession(auth)) return;
+  const thread = store.projectBotForTask(botId, threadId);
+  if (!thread || thread.approvalGrant) return;
+  const mode = autoReviewThreadMode({
+    current: approvalModeFor(thread),
+    nativeReviewer: hasNativeAutoReview(registry.cliTarget(thread.modelSelection.instanceId)?.driverKind),
+    supportsAuto: supportsApprovalMode(thread.modelSelection, "auto"),
+    thisComputer: thread.computer === "local",
+  });
+  if (mode) store.patchTask(botId, threadId, { approvalMode: mode, autoApprove: mode === "auto" });
 }
 
 function canManageCommandAllowlist(auth: RequestAuth): boolean {
@@ -4085,8 +4119,9 @@ const wireBot = (bot: BotRecord): WireBot => {
   const visible = approvalGrant && !approvalGrant.threadOnly
     ? { ...rest, approvalMode: "ask" as const, autoApprove: false }
     : rest;
+  const lead = instructionsLead(visible.soul);
   return { ...visible, waitingForTeammates: activeCoordinationForThread(bot.threadId) && !threadBusy(bot.id, bot.threadId),
-    avatarUrl: visible.avatarUrl ?? null, ...(tasks ? { tasks: tasks.map(wireTask) } : {}) };
+    avatarUrl: visible.avatarUrl ?? null, ...(lead ? { instructionsLead: lead } : {}), ...(tasks ? { tasks: tasks.map(wireTask) } : {}) };
 };
 
 /** The correlated private response carries the requested value so Electron
@@ -4950,6 +4985,10 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   if (body.unread !== undefined) {
     if (typeof body.unread !== "boolean") throw Object.assign(new Error("unread must be true or false"), { status: 400 });
     patch.unread = body.unread;
+  }
+  if (body.pinned !== undefined) {
+    if (typeof body.pinned !== "boolean") throw Object.assign(new Error("pinned must be true or false"), { status: 400 });
+    patch.pinned = body.pinned || undefined;
   }
   if (body.memberIds !== undefined) {
     // A DM is the pair it was opened for; only real rooms have a roster.
@@ -11683,7 +11722,16 @@ const commsBus: CommsBus = {
 };
 _loadPending();
 
+// Settings > Bot (server/bot-settings.ts): the zone routines read wall
+// clocks in, the server's by default and, on an organization server, each
+// routine's person's own when they chose one.
+setRoutineTimeZone(() => botSettings.server().timeZone ?? undefined);
 routines = new RoutineManager({
+  timeZoneFor: (routine) => {
+    if (IDENTITY.kind !== "perspicax" || !routine.botId) return undefined;
+    const person = effectiveRunAs({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) });
+    return (person && isPrincipalId(person) ? botSettings.person(person).timeZone : null) ?? undefined;
+  },
   emit: (payload) => broadcast(payload.kind === "routine" && payload.routine && typeof payload.routine === "object"
     ? { ...payload, routine: routineOnWire(payload.routine as Routine) }
     : payload),
@@ -12381,7 +12429,7 @@ async function resolveAndSendTeamSetup(res: ServerResponse, args: { botId: strin
   return true;
 }
 const ROUTINE_WEEKDAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
-const routineTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+const routineTimeZone = () => botSettings.server().timeZone ?? hostTimeZone();
 const routineTimestamp = (value: number | undefined) =>
   value !== undefined && Number.isFinite(value) ? new Date(value).toISOString() : null;
 const agentRoutine = (
@@ -15908,7 +15956,56 @@ async function probeMcpOAuth(names?: string[], force = false): Promise<void> {
 const mcpOAuthStartSchema = z.object({
   clientId: z.string().trim().min(1).max(512).regex(/^[\x21-\x7e]+$/, "The client ID has characters that are not allowed.").optional(),
   clientSecret: z.string().trim().max(2_048).regex(/^[\x21-\x7e]*$/, "The client secret has characters that are not allowed.").optional(),
+  // A phone's sign-in sheet: the app address the callback sends it back to
+  // (phoneOAuthReturns, exact match) and, through a paired phone's companion,
+  // the public origin the phone reached this computer on.
+  returnTo: z.string().max(512).optional(),
+  callbackOrigin: z.string().max(512).optional(),
 }).strict();
+
+/** The origin a companion-relayed sign-in may return through: https, or
+ * http on a tailnet name (ts.net), with no path, query or credentials. The
+ * code it carries is useless without the PKCE verifier this server keeps. */
+function phoneCallbackOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.username || url.password || (url.pathname !== "/" && url.pathname !== "") || url.search || url.hash) return null;
+    if (url.protocol === "https:" || (url.protocol === "http:" && url.hostname.endsWith(".ts.net"))) return url.origin;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Start an MCP server's sign-in for this request: the desktop's browser
+ * flow, or a phone's sheet when the body names an app return address. */
+async function startMcpSignIn(req: IncomingMessage, auth: RequestAuth, name: string, server: RemoteMcpSpec, body: unknown):
+  Promise<{ status: number; body: Record<string, unknown> }> {
+  const input = mcpOAuthStartSchema.safeParse(body ?? {});
+  if (!input.success) return { status: 400, body: { error: input.error.issues[0]?.message ?? "Invalid sign-in request." } };
+  const { returnTo, callbackOrigin, ...client } = input.data;
+  if (returnTo !== undefined && !phoneOAuthReturns().includes(returnTo)) {
+    return { status: 400, body: { error: "returnTo is not an app address this server returns to.", code: "return_not_allowed" } };
+  }
+  let redirectUri = mcpOAuthRedirectUri(req);
+  if (callbackOrigin !== undefined) {
+    const origin = companionRequest(req, auth) && returnTo ? phoneCallbackOrigin(callbackOrigin) : null;
+    if (!origin) return { status: 400, body: { error: "callbackOrigin is only for a paired phone's sign-in, as an https origin.", code: "callback_origin" } };
+    redirectUri = `${origin}/api/mcp-oauth/callback`;
+  } else if (companionRequest(req, auth) && returnTo && !publicUrl()) {
+    // The browser on the phone cannot reach this computer's loopback address.
+    return { status: 409, body: { error: "Send the address the phone reaches this computer on (callbackOrigin).", code: "callback_unreachable" } };
+  }
+  try {
+    const started = await mcpOAuth.start(name, server, { redirectUri, ...client, ...(returnTo ? { returnTo } : {}) }, AbortSignal.timeout(15_000));
+    return { status: 200, body: { ...started, redirectUri } };
+  } catch (error) {
+    if (error instanceof McpOAuthError) {
+      return { status: 400, body: { error: error.message, ...(error.code ? { code: error.code } : {}), ...(error.code === "client_required" ? { redirectUri } : {}) } };
+    }
+    return { status: 502, body: { error: "The sign-in could not be started." } };
+  }
+}
 
 /** Where the authorization server sends the browser back: this server on
  * loopback, or its public address when the request came from elsewhere. */
@@ -16431,7 +16528,8 @@ const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
-ROUTES.push(createUserPreferenceRoutes({ store: createUserPreferenceStore(DATA_DIR), organization: () => IDENTITY.kind === "perspicax" }));
+const userPreferences = createUserPreferenceStore(DATA_DIR);
+ROUTES.push(createUserPreferenceRoutes({ store: userPreferences, organization: () => IDENTITY.kind === "perspicax" }));
 // The bot-memory panel's routes (MEMORY.md, memory/ topics, journal); the
 // store lookups — the 404 precheck and journal thread titles — stay explicit.
 ROUTES.push(createBotMemoryRoutes({
@@ -16460,6 +16558,256 @@ ROUTES.push(createBotMemoryRoutes({
     saveConfig({ profile: { ...cfg.profile, aboutMe } });
     Object.assign(cfg, loadConfig());
     broadcast({ kind: "config", ...configStatus() });
+  },
+}));
+// The bot profile's Links, Media and Files tabs and Share as Template
+// (server/routes/bot-library.ts, iOS parity).
+ROUTES.push(createBotLibraryRoutes<BotRecord>({
+  bot: (id) => store.bot(id) ?? undefined,
+  threadsFor: (bot) => {
+    // On an organization server a person reads only their own threads.
+    const viewer = scopedThreadViewer();
+    const shown = threadsShownTo(bot, store.tasks(bot.id), viewer).map((task) => task.threadId);
+    return viewer ? shown : [bot.threadId, ...shown];
+  },
+  messages: (threadId) => activePath(store.messagesFor(threadId), store.activeLeaf(threadId)),
+  files: (threadId) => listThreadFiles(threadFileRefsFor(threadId), (ref) => statMessageFile(ref.path, threadFileRoots(threadId, ref))),
+  mayExport: ownerOrAdminOf,
+  exportBot: (bot) => {
+    const skills = collectTeamSkills([bot], "all");
+    if (!skills.ok) throw new TeamExportError(skills.error);
+    const exported = createTeamPackageExport({
+      team: bot.section?.trim() ?? "",
+      name: bot.name,
+      authorName: cfg.profile?.name?.trim(),
+      bots: [bot],
+      groups: [],
+      routines: routines!.listRoutines().filter((routine) => routine.botId === bot.id),
+      published: null,
+      skillsByBot: skills.skillsByBot,
+      skillSelection: "all",
+      mcpServers: cfg.mcpServers ?? {},
+      skipped: skills.skipped,
+    });
+    return { document: exported.document, filename: exported.filename, redacted: exported.redacted, skipped: exported.skipped, summary: packageSummary(exported.document) };
+  },
+}));
+// The phone's native remote control of a bot's computer
+// (server/routes/computer-input.ts, server/computer-input.ts): the desktop
+// the computer panel shows, driven through the same command path its own
+// backend already uses; the person must hold control.
+const computerInputAudited = new Map<string, number>();
+ROUTES.push(createComputerInputRoutes<BotRecord>({
+  bot: (id) => store.bot(id) ?? undefined,
+  mayDrive: ownerOrAdminOf,
+  control: (bot, controlLeaseId) => computerControl.leaseState(botComputerControlKey(bot), controlLeaseId),
+  shell: (bot) => {
+    const team = inheritedTeamComputer(bot);
+    if (team) {
+      const key = teamComputerOwner(team.id);
+      return { kind: "team", maxScript: 3_500, run: (script) => boat.runDesktopScript(cfg, key, script) };
+    }
+    if (bot.computer === "vm") {
+      // An organization server never drives a desktop on itself.
+      if (hostComputerRefusal()) return null;
+      const target = localVmTargetForStatus(bot.id, bot.threadId);
+      return {
+        kind: "vm", maxScript: 15_000,
+        run: async (script) => {
+          const out = await containerExec(target, script, { timeoutSeconds: 20 });
+          return { ok: out.exitCode === 0, stdout: out.stdout, stderr: out.stderr };
+        },
+      };
+    }
+    if (bot.computer !== "cloud" && bot.computer !== undefined) return null;
+    if (bot.cloudBackend === "vps") {
+      if (!vpsSshAlias(cfg)) return null;
+      return { kind: "vps", maxScript: 15_000, run: (script) => vps.vpsDesktopScript(cfg, bot.id, script) };
+    }
+    if (!boat.boatConfigured(cfg)) return null;
+    return { kind: "cloud", maxScript: 3_500, run: (script) => boat.runDesktopScript(cfg, bot.id, script) };
+  },
+  audit: (auth, req, bot, action, detail) => {
+    // Input arrives many times a second: one row per person and bot a minute.
+    const actor = adminActorFor(auth, req);
+    if (action === "input") {
+      const key = `${bot.id}\n${JSON.stringify(actor)}`;
+      const last = computerInputAudited.get(key) ?? 0;
+      if (Date.now() - last < 60_000) return;
+      computerInputAudited.set(key, Date.now());
+      if (computerInputAudited.size > 1_000) computerInputAudited.delete(computerInputAudited.keys().next().value!);
+    }
+    console.log(`computer: ${action} on bot ${bot.id} (${String(detail.computer)})`);
+    if (adminActivityRecording()) {
+      appendAdminAction(DATA_DIR, { category: "computer", action: `computer.${action}`, target: { kind: "bot", id: bot.id, name: bot.name }, after: detail, actor });
+    }
+  },
+}));
+// Settings > Bot: auto-review default and time zone (server/bot-settings.ts).
+ROUTES.push(createBotSettingsRoutes({
+  store: botSettings,
+  organization: () => IDENTITY.kind === "perspicax",
+  changed: (scope) => {
+    routines?.rescheduleWallClock(scope.kind === "server"
+      ? () => true
+      : (routine) => Boolean(routine.botId) && effectiveRunAs({ botId: routine.botId!, ...(routine.runAs ? { runAs: routine.runAs } : {}) }) === scope.principalId);
+  },
+}));
+// Settings > Bot > Auto-review Rules (server/routes/auto-review-rules.ts).
+ROUTES.push(createAutoReviewRuleRoutes({
+  bots: () => store.bots,
+  rules: (botId) => commandAllowlist.list(botId),
+  remove: (botId, ruleId) => commandAllowlist.remove(botId, ruleId),
+  mayManage: canManageCommandAllowlist,
+}));
+// The phone's Bot Computer screen (server/routes/computer-status.ts): the
+// person's server environment on an organization server, this computer's
+// Local VM container on a personal one, behind one set of routes.
+async function localComputerSummary() {
+  const status = await containerComputerStatus(undefined, undefined, SHARED_LOCAL_VM_TARGET);
+  const [workspaceBytes, disk] = await Promise.all([folderBytes(status.workspace_path), diskSpace(DATA_DIR)]);
+  const version = status.image_ref.split(":").pop();
+  return {
+    configured: Boolean(status.runtime),
+    state: status.container,
+    diskState: diskStateForFree(disk.freeBytes, disk.totalBytes),
+    workspaceBytes,
+    ...(disk.totalBytes ? { limitBytes: disk.totalBytes } : {}),
+    ...(version ? { version } : {}),
+    ...(status.problem ? { problem: status.problem } : {}),
+  };
+}
+/** Pull or rebuild the shared Local VM with the same guards as its own
+ * routes (/api/local-computer/pull, remove, run). */
+async function localComputerLifecycle(kind: "update" | "reset") {
+  const refusal = hostComputerRefusal();
+  if (refusal) throw Object.assign(new Error(refusal), { status: 403, code: "host_computer" });
+  const target = SHARED_LOCAL_VM_TARGET;
+  if (localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(target.key)) {
+    throw Object.assign(new Error("another Local VM setup action is still running"), { status: 409, code: "busy" });
+  }
+  if (kind === "reset") {
+    if (localVmMode(cfg) !== "shared") throw Object.assign(new Error("Each bot's desktop is reset from its own Computer panel in this mode."), { status: 409, code: "per_bot" });
+    if (localVmLeaseFor(target).current(localVmOwnerBusy) || localVmActiveThreads.has(target.key)) {
+      throw Object.assign(new Error("the Local VM is being used by a bot — stop that turn first"), { status: 409, code: "in_use" });
+    }
+    localVmLifecycleBusy.add(target.key);
+    try {
+      await containerComputerAction("remove", undefined, undefined, target);
+      await containerComputerAction("run", undefined, undefined, target);
+      localVmIdleFor(target).touch();
+    } finally { localVmLifecycleBusy.delete(target.key); }
+  } else {
+    localVmImageBusy = true;
+    try { await containerComputerAction("pull", undefined, undefined, target); }
+    finally { localVmImageBusy = false; }
+  }
+  return localComputerSummary();
+}
+ROUTES.push(createComputerStatusRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  sandbox: () => userSandbox,
+  local: { status: localComputerSummary, update: () => localComputerLifecycle("update"), reset: () => localComputerLifecycle("reset") },
+  mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+}));
+// Plugins (server/routes/plugins.ts): the curated catalog and the MCP
+// Registry, what is installed, and adding one with its sign-in.
+const pluginRegistry = createRegistrySearch();
+ROUTES.push(createPluginRoutes({
+  registry: pluginRegistry,
+  installed: async () => {
+    const remote = remoteMcpServers();
+    const plugins: InstalledPlugin[] = listMcpServers(cfg.mcpServers).flatMap((server): InstalledPlugin[] => {
+      if (!("url" in server)) return [];
+      const status = remote[server.name] ? mcpOAuth.status(server.name, remote[server.name]!) : undefined;
+      const entry = PLUGIN_CATALOG.find((candidate) => candidate.url === server.url);
+      let domain = "";
+      try { domain = new URL(server.url).hostname; } catch { /* listed servers have parsed URLs */ }
+      return [{ kind: "mcp", name: server.name, url: server.url, domain, enabled: server.enabled, auth: status?.auth ?? "none",
+        ...(entry ? { icon: entry.icon, catalogId: entry.id } : {}) }];
+    });
+    if (composio.connectorAvailability(cfg) === "configured") {
+      try {
+        const services = await Promise.race([
+          composio.connectedServices(cfg),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 4_000).unref()),
+        ]);
+        const cards = new Map((await Promise.race([
+          composio.listToolkits(cfg).then((listed) => listed.cards),
+          new Promise<[]>((resolve) => setTimeout(() => resolve([]), 2_000).unref()),
+        ]).catch(() => [])).map((card) => [card.slug, card]));
+        for (const [slug, state] of Object.entries(services)) {
+          if (!state.connected) continue;
+          const card = cards.get(slug);
+          plugins.push({ kind: "composio", slug, name: card?.label ?? slug, connected: true,
+            ...(card?.logo ? { logo: card.logo } : {}), ...(card?.domain ? { domain: card.domain } : {}) });
+        }
+      } catch { /* connected apps unreachable: the MCP servers still list */ }
+    }
+    return plugins;
+  },
+  mayInstall: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+  install: async (listing, { req, auth, returnTo, callbackOrigin }) => {
+    const current = cfg.mcpServers ?? {};
+    const existing = listMcpServers(current).find((server) => "url" in server && server.url === listing.url);
+    let name = existing?.name;
+    if (!name) {
+      if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+      mcpConfigBusy = true;
+      try {
+        if (Object.keys(current).length >= MAX_MCP_SERVERS) return { status: 400, body: { error: `You can add at most ${MAX_MCP_SERVERS} MCP servers.`, code: "too_many" } };
+        name = pluginServerName(listing, new Set(Object.keys(current)));
+        // On at once: a server that still needs its sign-in is never mounted
+        // for a turn (engineMcpServers), so nothing runs before it is ready.
+        const parsed = parseMcpServerMutation(name, { type: listing.transport, url: listing.url, enabled: true });
+        if (!parsed.ok) return { status: 400, body: { error: parsed.error } };
+        const refusal = mcpPolicyRefusal(name, parsed.server);
+        if (refusal) return { status: 403, body: { error: refusal, code: "managed_policy" } };
+        persistMcpServers({ ...current, [name]: parsed.server });
+        await mcpOAuth.forget(name).catch(() => undefined);
+      } finally {
+        mcpConfigBusy = false;
+      }
+      await probeMcpOAuth([name]);
+    }
+    const server = remoteMcpServers([name])[name];
+    if (!server) return { status: 500, body: { error: "The plugin could not be added." } };
+    const auth0 = mcpOAuth.status(name, server)?.auth ?? "none";
+    const answer: Record<string, unknown> = { name, alreadyInstalled: Boolean(existing), auth: auth0, servers: mcpServerResponse().servers };
+    if (auth0 === "required" || auth0 === "expired") {
+      const started = await startMcpSignIn(req, auth, name, server, {
+        ...(typeof returnTo === "string" ? { returnTo } : {}), ...(typeof callbackOrigin === "string" ? { callbackOrigin } : {}),
+      });
+      if (started.status === 200) answer.authorizationUrl = started.body.authorizationUrl;
+      else answer.signIn = started.body;
+    }
+    return { status: existing ? 200 : 201, body: answer };
+  },
+}));
+// Account deletion (server/routes/account.ts): Perspicax has no deletion
+// endpoint for a linked server yet, so perspicaxDeletion stays null and the
+// route answers 501 perspicax_deletion_unavailable without deleting anything.
+ROUTES.push(createAccountRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  perspicaxDeletion: null,
+  deletePersonData: async (principalId) => {
+    const person = principalId.trim().toLowerCase();
+    let bots = 0;
+    let threads = 0;
+    for (const bot of store.bots.slice()) { // a copy: deleting changes the list
+      if (recordedBotOwner(bot) === person) {
+        if ((await deleteBotWithLifecycle(bot.id)).status === 200) bots++;
+        continue;
+      }
+      for (const task of store.tasks(bot.id)) {
+        if (task.ownerPrincipalId === person && store.deleteTask(bot.id, task.threadId)) threads++;
+      }
+    }
+    await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
+    userPreferences.remove(principalId);
+    botSettings.forgetPerson(principalId);
+    for (const session of sessions.list()) if (session.principalId === principalId) sessions.revoke(session.id);
+    return { bots, threads };
   },
 }));
 // The people of a solo server: its email sign-in list and the invitations
@@ -17071,6 +17419,21 @@ function memberOwnsBot(auth: RequestAuth, bot: { ownerUserId?: unknown }): boole
   const actor = actorPrincipalId(auth).trim().toLowerCase();
   return Boolean(actor) && effectiveBotOwner(bot) === actor;
 }
+/** The bot's owner (a chat-scoped session owning it, or granted edit on an
+ * organization server), an admin session, or the owner at this computer
+ * (loopback, the paired phone's companion included). Never a local service. */
+function ownerOrAdminOf(auth: RequestAuth, bot: BotRecord): boolean {
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  if (auth.scopes.includes("admin")) return true;
+  if (memberOwnsBot(auth, bot)) return true;
+  return IDENTITY.kind === "perspicax" && atLeast(viewerBotLevel(auth, bot), "edit");
+}
+/** A request the paired phone's companion relayed (request-auth.ts checked
+ * its capability before it became a loopback request). The header alone only
+ * ever narrows what a request may do, so trusting it here is safe. */
+function companionRequest(req: IncomingMessage, auth: RequestAuth): boolean {
+  return auth.kind === "loopback" && req.headers["x-openmausbot-companion"] === "1";
+}
 /** On an organization server, a chat-scoped session who is not the
  * operator changes how a bot looks only on bots they own or may edit. */
 function botEditsNeedOwner(auth: RequestAuth): boolean {
@@ -17080,6 +17443,14 @@ function botEditsNeedOwner(auth: RequestAuth): boolean {
  * an organization server through a session (a browser, the desktop app or a
  * phone signed in with Pulsatrix). The operator at the server's own console
  * (loopback) keeps the local profile, as before. */
+/** A personal computer as its paired phone shows it (the account card): its
+ * owner's name from Settings > General, else the operating system's user,
+ * and the computer's name. Never an email address. */
+function computerOwnerFields(): { name: string; computerName: string } {
+  let osUser = "";
+  try { osUser = userInfo().username; } catch { /* no passwd entry */ }
+  return { name: cfg.profile?.name?.trim() || osUser || "Owner", computerName: hostname() };
+}
 /** The display name and avatar of a signed-in person, for
  * GET /api/auth/session (the id_token name alone may be missing). */
 function sessionPersonFields(principalId: string | undefined): { name?: string; avatarUrl?: string } {
@@ -18196,6 +18567,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // single-use `state` bound to the pending flow is the authorization.
     if (method === "GET" && path === "/api/mcp-oauth/callback") {
       const result = await mcpOAuth.callback(url.searchParams, AbortSignal.timeout(15_000));
+      // A phone's sign-in sheet ends on its app address (phoneOAuthReturns).
+      const phoneReturn = phoneReturnLocation(result);
+      if (phoneReturn) {
+        res.writeHead(302, { location: phoneReturn, "cache-control": "no-store", "referrer-policy": "no-referrer" });
+        res.end();
+        return;
+      }
       const page = callbackPage(result, typeof req.headers["accept-language"] === "string" ? req.headers["accept-language"] : undefined);
       res.writeHead(result.ok ? 200 : 400, {
         "content-type": "text/html; charset=utf-8",
@@ -18531,7 +18909,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         res,
         200,
         auth.kind === "loopback"
-          ? { kind: "loopback", scopes: auth.scopes, environmentId: ENVIRONMENT_ID, ...(auth.trust ? { trust: auth.trust } : {}) }
+          ? { kind: "loopback", scopes: auth.scopes, environmentId: ENVIRONMENT_ID, ...(auth.trust ? { trust: auth.trust } : { ...computerOwnerFields() }) }
           : {
               kind: "session",
               id: auth.session.id,
@@ -18560,6 +18938,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               // Perspicax's, read-only here (the UI asks, never guesses)
               ...(profileManagedFor(auth) ? PROFILE_MANAGEMENT : {}),
               ...sessionPersonFields(auth.session.principalId),
+              // A personal server's own devices (a paired phone): who owns
+              // this computer, by name only (never an address).
+              ...(IDENTITY.kind === "solo" && !auth.session.idp && viewerIsOperator(auth) ? computerOwnerFields() : {}),
             },
       );
     }
@@ -22709,7 +23090,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? []);
       if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
-      if (auth.kind === "session" && !auth.scopes.includes("admin")) {
+      // A paired phone's companion edits a room like a member session does.
+      if ((auth.kind === "session" && !auth.scopes.includes("admin")) || companionRequest(req, auth)) {
         const field = clientGroupPatchViolation(body);
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
       }
@@ -23381,6 +23763,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "POST") {
       const existing = store.bot(m[1]);
       if (!existing) return json(res, 404, { error: "no such bot" });
+      // A chat-scoped session (a phone) generates only for a bot it owns or
+      // may edit; admins and the owner at this computer for any.
+      if (!ownerOrAdminOf(auth, existing)) {
+        return json(res, 403, { error: "forbidden: only the bot owner or an admin can change its picture" });
+      }
       // Generation is slow and both desktop and companion clients may edit or
       // delete this bot while it is in flight. Snapshot the two fields this
       // request owns before the first await so a late result cannot win.
@@ -23556,6 +23943,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         return json(res, 400, { error: "body must be a JSON object" });
       }
+      // A paired phone reaches a personal server through the companion as
+      // its owner, but only with the fields an owner may set from a phone
+      // (look, framing, name, instructions, notifications, model): never
+      // where the bot runs or what it may do unasked.
+      if (companionRequest(req, auth)) {
+        const field = memberBotFieldViolation(body);
+        if (field) return json(res, 403, { error: `forbidden: a phone may change a bot's name, look, instructions, notifications and model, not "${field}"` });
+      }
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
         const target = store.bot(m[1]);
         const own = Boolean(target && memberOwnsBot(auth, target));
@@ -23579,7 +23974,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               : `forbidden: this session may change how a bot looks, not "${field}" (needs the admin scope)`,
           });
         }
-        if (!own && !editor && target && botEditsNeedOwner(auth) && Object.keys(body).some((key) => key === "color" || key.startsWith("mascot"))) {
+        if (!own && !editor && target && botEditsNeedOwner(auth) && Object.keys(body).some((key) => key === "color" || key.startsWith("mascot") || key.startsWith("avatar"))) {
           return json(res, 403, { error: "forbidden: only the bot owner can change how it looks" });
         }
       }
@@ -24262,6 +24657,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "GET") {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      if (!ownerOrAdminOf(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can read its instructions here" });
       const soul = bot.soul ?? "";
       const drift = readSoulDrift(bot.id, soul, bot.soulHash ?? "");
       return json(res, 200, {
@@ -25253,6 +25649,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const ownerCreates = !creator || viewerBotLevel(auth, bot) === "owner";
       const task = store.createTask(bot.id, typeof body.title === "string" ? body.title : undefined, ownerCreates, body.projectId, undefined, body.approvalMode, creator && isPrincipalId(creator) ? creator : undefined);
       if (!task) return json(res, 500, { error: "couldn't create that task" });
+      // Settings > Bot > Auto-review: a new conversation starts reviewed.
+      if (body.approvalMode === undefined) applyAutoReviewDefault(auth, bot.id, task.threadId);
       if (creator) selectViewerThread(bot.id, creator, task.threadId);
       // Who opened it decides who may answer its cards on a shared workspace.
       if (auth.kind === "session") threadStarters.set(task.threadId, actorKey(auth));
@@ -25260,7 +25658,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the bot as seen from that thread.
       const fresh = botWithThread(ownerCreates ? store.bot(bot.id)! : store.projectBotForTask(bot.id, task.threadId) ?? store.bot(bot.id)!);
       broadcast({ kind: "bot", bot: fresh });
-      return json(res, 201, { bot: projectBotTranscript(fresh, viewerForApproval(auth)), task: wireTask(task) });
+      return json(res, 201, { bot: projectBotTranscript(fresh, viewerForApproval(auth)), task: wireTask(store.taskByThread(bot.id, task.threadId) ?? task) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/tasks\/([\w-]+)$/);
     if (m && method === "POST") {
@@ -26342,18 +26740,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!managedPolicy.mcpAllowed(name, server.url)) {
         return json(res, 403, { error: mcpPolicyRefusal(name, server) ?? "Your organization has not approved this server.", code: "managed_policy" });
       }
-      const input = mcpOAuthStartSchema.safeParse(body ?? {});
-      if (!input.success) return json(res, 400, { error: input.error.issues[0]?.message ?? "Invalid sign-in request." });
-      const redirectUri = mcpOAuthRedirectUri(req);
-      try {
-        const started = await mcpOAuth.start(name, server, { redirectUri, ...input.data }, AbortSignal.timeout(15_000));
-        return json(res, 200, started);
-      } catch (error) {
-        if (error instanceof McpOAuthError) {
-          return json(res, 400, { error: error.message, ...(error.code ? { code: error.code } : {}), ...(error.code === "client_required" ? { redirectUri } : {}) });
-        }
-        return json(res, 502, { error: "The sign-in could not be started." });
-      }
+      const started = await startMcpSignIn(req, auth, name, server, body);
+      return json(res, started.status, started.body);
     }
 
     const mcpTest = /^\/api\/mcp\/servers\/([a-z][a-z0-9_-]{0,31})\/test$/.exec(path);

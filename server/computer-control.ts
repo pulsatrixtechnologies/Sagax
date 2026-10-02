@@ -109,6 +109,17 @@ export class ComputerControl {
     return { snapshot: this.changed(botId), owned: true, acquired: true };
   }
 
+  /** Whether a person drives this record, and whether `controlLeaseId` may
+   * act for them: "held" for a hold without a lease (any of the person's
+   * devices) or one owned by that lease, "other" for a hold owned by another
+   * lease, "free" when nobody holds it. The lease itself is never returned. */
+  leaseState(botId: string, controlLeaseId?: string): "held" | "free" | "other" {
+    const entry = this.entries.get(botId);
+    if (entry?.heldSinceMs == null) return "free";
+    if (entry.controlLeaseId === null || entry.controlLeaseId === controlLeaseId) return "held";
+    return "other";
+  }
+
   /** The person hands the wheel back. Also settles any open help request —
    * the waiting bot resumes from this one state change. */
   release(botId: string): ControlSnapshot {

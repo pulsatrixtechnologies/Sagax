@@ -113,7 +113,9 @@ export function resolveBotCreationDefaults(saved: NewBotDefaults | undefined, bo
   if (!checked.success) throw Object.assign(new Error(checked.error.message), { status: 400 });
   const explicit = checked.data;
   const profile = { ...template.profile, ...explicit };
-  for (const key of ["name", "title", "description", "modelSelection", "section"] as const) {
+  // The create sheet sends the look beside the name (iOS parity, 20): the
+  // character (shared/mascot-look.ts) and the owl skin, validated below.
+  for (const key of ["name", "title", "description", "modelSelection", "section", "mascotLook", "mascotSkin"] as const) {
     if (Object.hasOwn(body, key)) Object.assign(profile, { [key]: key === "section" && body[key] === null ? "" : body[key] });
   }
   const resolved = botDefaultsProfileSchema.safeParse(profile);
