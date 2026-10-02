@@ -57,4 +57,16 @@ describe("group ownership", () => {
     expect(mayDeleteGroup(group, admin)).toBe(true);
     expect(mayDeleteGroup(group, member)).toBe(false);
   });
+  it("lets a member bring in or take out their own bots, never another's", () => {
+    const owners: Record<string, string> = { bot_a: "pr_owner", bot_m: "pr_member", bot_m2: "pr_member" };
+    const botOwner = (id: string) => owners[id];
+    const withMine = { ...group, memberIds: ["bot_a", "bot_m"] };
+    expect(groupPatchOwnerRefusal(group, { memberIds: ["bot_a", "bot_m"] }, member, botOwner)).toBeNull();
+    expect(groupPatchOwnerRefusal(withMine, { memberIds: ["bot_a"] }, member, botOwner)).toBeNull();
+    expect(groupPatchOwnerRefusal(withMine, { memberIds: ["bot_a", "bot_m", "bot_m2"] }, member, botOwner)).toBeNull();
+    expect(groupPatchOwnerRefusal(withMine, { memberIds: ["bot_m"] }, member, botOwner)).toMatch(/owner/);
+    expect(groupPatchOwnerRefusal(withMine, { memberIds: ["bot_m", "bot_a"] }, member, botOwner)).toMatch(/owner/);
+    expect(groupPatchOwnerRefusal(withMine, { memberIds: [] }, owner, botOwner)).toBeNull();
+    expect(groupPatchOwnerRefusal(withMine, { memberIds: ["bot_a"], name: "Mine" }, member, botOwner)).toMatch(/owner/);
+  });
 });

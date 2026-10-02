@@ -6,7 +6,8 @@
 //
 // Only the owner changes the name, instructions, working folder, default
 // responder and members, and deletes the group. Anyone else listed may
-// still leave it (remove only themselves from its people). An organization
+// still leave it (remove only themselves from its people) and bring their
+// own bots in or take them out, never another person's. An organization
 // admin gets no override on content; deleting stays open to them for
 // moderation (channel.moderate on a room, server/authz.ts).
 
@@ -81,11 +82,37 @@ export function isSelfLeave(group: Pick<OwnedGroup, "humanIds">, humanIds: unkno
   return removed.length > 0 && removed.every((entry) => mine.includes(entry));
 }
 
+/** A roster change that only adds or removes bots the actor owns. A pure
+ * reorder is not one: the order is the owner's. */
+export function isOwnBotsChange(
+  group: Pick<OwnedGroup, "memberIds">,
+  memberIds: unknown,
+  actor: GroupActor,
+  botOwner: (botId: string) => string | undefined,
+): boolean {
+  if (!Array.isArray(memberIds) || memberIds.some((id) => typeof id !== "string")) return false;
+  const mine = actorIds(actor);
+  if (!mine.length) return false;
+  const before = new Set(group.memberIds ?? []);
+  const after = new Set(memberIds as string[]);
+  const touched = [...[...after].filter((id) => !before.has(id)), ...[...before].filter((id) => !after.has(id))];
+  if (!touched.length) return false;
+  return touched.every((id) => {
+    const owner = botOwner(id);
+    return owner !== undefined && mine.includes(norm(owner));
+  });
+}
+
 export const GROUP_OWNER_ONLY_ERROR = "forbidden: only the group's owner can change its settings";
 
 /** Null when the patch is allowed; else the refusal. Fields outside
  * OWNER_ONLY_GROUP_FIELDS (unread, pin, section) are not judged here. */
-export function groupPatchOwnerRefusal(group: OwnedGroup, body: unknown, actor: GroupActor): string | null {
+export function groupPatchOwnerRefusal(
+  group: OwnedGroup,
+  body: unknown,
+  actor: GroupActor,
+  botOwner: (botId: string) => string | undefined = () => undefined,
+): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   if (ownsGroup(group, actor)) return null;
   const patch = body as Record<string, unknown>;
@@ -93,6 +120,7 @@ export function groupPatchOwnerRefusal(group: OwnedGroup, body: unknown, actor: 
     if (!Object.prototype.hasOwnProperty.call(patch, field)) continue;
     if (!changes(group, field, patch[field])) continue;
     if (field === "humanIds" && isSelfLeave(group, patch.humanIds, actor)) continue;
+    if (field === "memberIds" && isOwnBotsChange(group, patch.memberIds, actor, botOwner)) continue;
     return GROUP_OWNER_ONLY_ERROR;
   }
   return null;

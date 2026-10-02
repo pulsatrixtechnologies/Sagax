@@ -69,12 +69,20 @@ describe("ChannelMembers", () => {
       actorId: "jc",
       bots: [{ id: "aurora", ownerUserId: "JC" }],
     })).toEqual({ canAddHuman: true, canAddBot: true });
-    // Organization server: someone else owns the group.
+    // Organization server: someone else owns the group. You still bring
+    // your own bot, once.
     expect(channelRosterActions({
       actorRole: "admin",
       actorId: "jc",
       bots: [{ id: "aurora", ownerUserId: "JC" }],
       ownsRoom: false,
+    })).toEqual({ canAddHuman: false, canAddBot: true });
+    expect(channelRosterActions({
+      actorRole: "member",
+      actorId: "jc",
+      bots: [{ id: "aurora", ownerUserId: "JC" }],
+      ownsRoom: false,
+      memberIds: ["aurora"],
     })).toEqual({ canAddHuman: false, canAddBot: false });
     expect(channelRosterActions({
       actorRole: "member",
@@ -130,5 +138,20 @@ describe("a room's people on an organization server", () => {
     expect(html).not.toContain("jcproulx<");
     expect(html).not.toContain("tracker.example.test");
     expect(html).toContain(">ST<");
+  });
+  it("shows the remove button only on bots you may take out", () => {
+    const html = renderToStaticMarkup(createElement(ChannelMembers, {
+      humans: [],
+      bots: [{ id: "yuki", name: "Yuki", removable: true }, { id: "scout", name: "Scout", removable: false }],
+      canAddHuman: false,
+      canAddBot: true,
+      addBotLabel: "Ajouter mon robot",
+      onRemoveBot: () => {},
+      onAddBot: () => {},
+      part: "bots",
+    }));
+    expect(html).toContain('aria-label="Retirer Yuki"');
+    expect(html).not.toContain('aria-label="Retirer Scout"');
+    expect(html).toContain("Ajouter mon robot");
   });
 });

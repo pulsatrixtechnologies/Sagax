@@ -9,13 +9,16 @@ export function channelRosterActions(input: {
   actorRole: "owner" | "admin" | "member" | null;
   actorId: string;
   bots: { id: string; ownerUserId?: string }[];
-  /** Organization server: false when someone else owns the group. */
+  /** Organization server: false when someone else owns the group. Such a
+   * member still brings their own bots (server/group-ownership.ts). */
   ownsRoom?: boolean;
+  /** Bots already in the room: one of yours there is not offered again. */
+  memberIds?: readonly string[];
 }): { canAddHuman: boolean; canAddBot: boolean } {
-  if (input.ownsRoom === false) return { canAddHuman: false, canAddBot: false };
   const actor = input.actorId.trim().toLowerCase();
-  const canAddHuman = input.actorRole === "owner" || input.actorRole === "admin";
-  const canAddBot = actor !== "" && input.bots.some((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actor);
+  const canAddHuman = input.ownsRoom !== false && (input.actorRole === "owner" || input.actorRole === "admin");
+  const inRoom = new Set(input.memberIds ?? []);
+  const canAddBot = actor !== "" && input.bots.some((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actor && !inRoom.has(bot.id));
   return { canAddHuman, canAddBot };
 }
 
@@ -28,13 +31,15 @@ function initialsFor(label: string): string {
 export function ChannelMembers(props: {
   humans: { id: string; label?: string; detail?: string; avatarUrl?: string; removable?: boolean }[];
   /** Each bot with its look (BotAvatar's fields), so a bot reads the same here as in the chat. */
-  bots: Array<{ id: string; name: string; title?: string; color?: string } & Omit<BotAvatarProps["bot"], "name" | "color">>;
+  bots: Array<{ id: string; name: string; title?: string; color?: string; removable?: boolean } & Omit<BotAvatarProps["bot"], "name" | "color">>;
   canAddHuman: boolean;
   canAddBot: boolean;
   onAddHuman?: () => void;
   onAddBot?: () => void;
   onRemoveHuman?: (id: string) => void;
   onRemoveBot?: (id: string) => void;
+  /** The add row's label: "Ajouter mon robot" for a member who does not own the room. */
+  addBotLabel?: string;
   part?: "all" | "humans" | "bots";
 }) {
   const part = props.part ?? "all";
@@ -97,7 +102,7 @@ export function ChannelMembers(props: {
                 <div className="truncate text-[14px] font-medium text-ink">{bot.name}</div>
                 {bot.title && <div className="truncate text-[12px] text-ink-secondary">{bot.title}</div>}
               </div>
-              {props.onRemoveBot && (
+              {props.onRemoveBot && bot.removable !== false && (
                 <button
                   type="button"
                   aria-label={`Retirer ${bot.name}`}
@@ -111,9 +116,9 @@ export function ChannelMembers(props: {
           ))}
           {props.canAddBot && (
             <li>
-              <button type="button" aria-label="Ajouter" onClick={() => props.onAddBot?.()} className="flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink hover:bg-control/40">
+              <button type="button" aria-label={props.addBotLabel ?? "Ajouter"} onClick={() => props.onAddBot?.()} className="flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink hover:bg-control/40">
                 <span className="flex size-8 items-center justify-center rounded-full border border-dashed border-hairline text-ink-secondary"><Plus size={14} /></span>
-                Ajouter
+                {props.addBotLabel ?? "Ajouter"}
               </button>
             </li>
           )}

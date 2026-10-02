@@ -760,7 +760,11 @@ export function GroupView({ group }: { group: Group }) {
     actorId,
     bots: state.bots,
     ownsRoom,
+    memberIds: group.memberIds,
   });
+  // Your own bots: a member who does not own the room still brings them in
+  // and takes them out (server/group-ownership.ts).
+  const ownBotIds = new Set(state.bots.filter((bot) => actorId !== "" && (bot.ownerUserId ?? "").trim().toLowerCase() === actorId).map((bot) => bot.id));
   const speaker = members.find((b) => b.id === group.busyBotId);
 
   // Mascot stays while a member works; the finished reply pops in above it.
@@ -1332,10 +1336,13 @@ export function GroupView({ group }: { group: Group }) {
                   humans={[]}
                   bots={group.memberIds.map((id) => {
                     const bot = members.find((item) => item.id === id);
-                    return bot ? { ...botPublicProfile(bot), name: bot.name || id } : { id, name: id };
+                    // The owner removes any bot; anyone else only their own.
+                    const removable = ownsRoom || ownBotIds.has(id);
+                    return bot ? { ...botPublicProfile(bot), name: bot.name || id, removable } : { id, name: id, removable };
                   })}
                   {...roster}
-                  onRemoveBot={!ownsRoom ? undefined : (id) => {
+                  addBotLabel={ownsRoom ? undefined : "Ajouter mon robot"}
+                  onRemoveBot={(id) => {
                     dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
                   }}
                   onAddBot={() => {

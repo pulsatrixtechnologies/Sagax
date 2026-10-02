@@ -256,15 +256,25 @@ posixOnly("Perspicax organization: a bot and a group shared with someone who own
     });
     expect(room.status, room.text).toBe(201);
     const scoutRoom = room.body.group.id as string;
-    // carol does not own the room: she cannot add a bot to it (owner rule,
-    // server/group-ownership.ts), not even her own
+    // carol does not own the room: she brings her own bot in
+    // (server/group-ownership.ts), but cannot take alice's out or change
+    // the room's settings
     const joined = await api("PATCH", `/api/groups/${scoutRoom}`, carol, { memberIds: [scoutId, botId, yuki.body.bot.id] });
-    expect(joined.status, joined.text).toBe(403);
-    expect(joined.body.code).toBe("not_group_owner");
+    expect(joined.status, joined.text).toBe(200);
+    for (const patch of [
+      { memberIds: [botId, yuki.body.bot.id] },
+      { name: "Carol's room" },
+      { bulletin: "carol rules" },
+      { defaultResponder: { kind: "mentions" } },
+    ]) {
+      const refused = await api("PATCH", `/api/groups/${scoutRoom}`, carol, patch);
+      expect(refused.status, JSON.stringify(patch)).toBe(403);
+      expect(refused.body.code).toBe("not_group_owner");
+    }
 
     const listed = (await api("GET", "/api/bots", carol)).body;
     const seen = listed.groups.find((group: { id: string }) => group.id === scoutRoom);
-    expect(seen.memberProfiles.map((profile: { name: string }) => profile.name)).toEqual(["Scout", "Xavier"]);
+    expect(seen.memberProfiles.map((profile: { name: string }) => profile.name)).toEqual(["Scout", "Xavier", "Yuki"]);
     const scoutProfile = seen.memberProfiles[0];
     expect(scoutProfile).toMatchObject({ id: scoutId, name: "Scout", title: "Researcher", color: "blue" });
     expect(scoutProfile.mascotLook?.character).toBe("shape");
@@ -275,7 +285,7 @@ posixOnly("Perspicax organization: a bot and a group shared with someone who own
     expect(JSON.stringify(listed)).not.toContain("scout private instructions");
     // the same in GET /api/groups
     const rooms = (await api("GET", "/api/groups", carol)).body.groups as Array<{ id: string; memberProfiles: Array<{ name: string }> }>;
-    expect(rooms.find((group) => group.id === scoutRoom)!.memberProfiles.map((profile) => profile.name)).toEqual(["Scout", "Xavier"]);
+    expect(rooms.find((group) => group.id === scoutRoom)!.memberProfiles.map((profile) => profile.name)).toEqual(["Scout", "Xavier", "Yuki"]);
     // Scout is not carol's to open: not in her bots, its details refused
     expect(listed.bots.map((bot: { id: string }) => bot.id)).not.toContain(scoutId);
     expect(await botOf(carol, scoutId)).toBeUndefined();
@@ -293,5 +303,9 @@ posixOnly("Perspicax organization: a bot and a group shared with someone who own
       frame.group.memberProfiles?.some((profile: { id: string; name: string }) => profile.id === scoutId && profile.name === "Scout Prime")));
     expect(stream.text()).not.toContain("scout private instructions");
     stream.close();
+
+    // carol takes her own bot back out
+    const left = await api("PATCH", `/api/groups/${scoutRoom}`, carol, { memberIds: [scoutId, botId] });
+    expect(left.status, left.text).toBe(200);
   }, 60_000);
 });

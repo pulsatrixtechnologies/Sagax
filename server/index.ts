@@ -22738,7 +22738,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // anyone listed may still leave it (server/group-ownership.ts).
       const ownerRule = Boolean(existingGroup && !existingGroup.dm && groupOwnerRuleApplies(auth));
       if (existingGroup && ownerRule) {
-        const refusal = groupPatchOwnerRefusal(existingGroup, body, groupActor(auth));
+        const refusal = groupPatchOwnerRefusal(existingGroup, body, groupActor(auth), (botId) => {
+          const bot = store.bot(botId);
+          return bot ? effectiveBotOwner(bot) : undefined;
+        });
         if (refusal) return json(res, 403, { error: refusal, code: "not_group_owner" });
       }
       const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? [], ownerRule);

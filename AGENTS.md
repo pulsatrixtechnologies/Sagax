@@ -290,7 +290,9 @@ PT-4 in `server/org-private-threads.e2e.test.ts`):
   carries it as `ownerId` (absent on a solo server, where nothing changes).
 - Only the owner changes the name, instructions, working folder, default
   responder, bots and people (`PATCH /api/groups/:id` answers 403
-  `not_group_owner`). Anyone listed may remove only themselves (leave).
+  `not_group_owner`). Anyone listed may remove only themselves (leave),
+  and add or remove their own bots (never another person's, never a
+  reorder). The owner removes any bot or person.
   Marking read, pins and section moves are not settings.
 - An admin has no override on content. `DELETE /api/groups/:id` is the
   owner's, or an admin's for moderation (`channel.moderate` on a room in
@@ -299,7 +301,8 @@ PT-4 in `server/org-private-threads.e2e.test.ts`):
   The working folder keeps the admin scope (it touches the host or sandbox
   filesystem): a non-admin owner sees it read-only with a note.
 - The panel shows the settings read-only to everyone else, with "Seul le
-  propriétaire du groupe peut modifier ces réglages", and a Leave button.
+  propriétaire du groupe peut modifier ces réglages", a Leave button,
+  "Ajouter mon robot" and a remove button on their own bots only.
 
 ## Upstream sync
 
