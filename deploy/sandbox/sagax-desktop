@@ -3,7 +3,8 @@
 # (docs/user-sandbox.md, "Desktop"). Nothing runs until a computer-use tool or
 # the person's live view asks for it, so plain shell turns stay light.
 #
-#   sagax-desktop start            start Xvnc, openbox (idempotent); with
+#   sagax-desktop start            start Xvnc, openbox, the background and
+#                                  the launcher bar (idempotent); with
 #                                  SAGAX_VNC_FULL and SAGAX_VNC_VIEW set, also
 #                                  replace the two VNC passwords
 #   sagax-desktop status           "running" or "stopped"
@@ -56,10 +57,11 @@ start() {
     write_passwords "$(random_password)" "$(random_password)"
   fi
   if running; then
+    session
     echo running
     return 0
   fi
-  rm -f /tmp/.X11-unix/X1 /tmp/.X1-lock
+  rm -f /tmp/.X11-unix/X1 /tmp/.X1-lock "$STATE/background"
   setsid Xvnc :1 \
     -geometry "${WIDTH}x${HEIGHT}" -depth 24 \
     -rfbport "$RFB_PORT" -localhost -interface 127.0.0.1 \
@@ -75,9 +77,24 @@ start() {
     tail -n 20 "$STATE/xvnc.log" >&2 || true
     exit 1
   fi
-  setsid openbox --sm-disable >"$STATE/openbox.log" 2>&1 </dev/null &
+  session
   sleep 0.3
   echo running
+}
+
+# The desktop around the windows: openbox, a background and the launcher bar
+# (Chromium, Terminal, Files). Each starts only when missing, so a person
+# watching never sees an empty black screen.
+session() {
+  if ! pgrep -u "$(id -u)" -x openbox >/dev/null 2>&1; then
+    setsid openbox --sm-disable >"$STATE/openbox.log" 2>&1 </dev/null &
+  fi
+  if [ ! -e "$STATE/background" ] && command -v hsetroot >/dev/null 2>&1; then
+    hsetroot -add "#0b1220" -add "#16304f" -add "#1f4b6e" -gradient 160 >/dev/null 2>&1 && : > "$STATE/background"
+  fi
+  if ! pgrep -u "$(id -u)" -x tint2 >/dev/null 2>&1 && command -v tint2 >/dev/null 2>&1; then
+    setsid tint2 -c /etc/xdg/sagax/tint2rc >"$STATE/tint2.log" 2>&1 </dev/null &
+  fi
 }
 
 chromium_running() {

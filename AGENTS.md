@@ -432,7 +432,12 @@ Keep these rules, each covered by `server/user-sandbox*.test.ts`,
   from the caller's own session principal, never an id; read-only by default
   (view-only VNC password), `?control=1` for control; its WebSocket starts
   nothing and reaches the VNC port only through the provisioner's signed
-  upgrade (`/v1/sandboxes/<key>/desktop`). The Computer tab's power and usage
+  upgrade (`/v1/sandboxes/<key>/desktop`). While a control view is open,
+  the bots' `computer_use` there is refused with `SANDBOX_CONTROL_REFUSAL`
+  (`server/sandbox-control.ts`, test `server/sandbox-control.test.ts`). The
+  desktop starts openbox, a background and a tint2 launcher bar (Chromium,
+  Terminal, Files); a change there needs the sandbox image rebuilt. The
+  Computer tab's power and usage
   routes (`/api/me/server-environment/power|stats`) act on the caller's own
   environment only; shutdown and pause under a running turn need `confirm`.
   Tests: `server/user-sandbox-desktop.test.ts`, `server/sandboxd.test.ts`;
@@ -451,11 +456,12 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 `electron/local-vm.node-test.mjs`, `electron/desktop-bridge.node-test.mjs` or
 `scripts/verify-desktop-bridge.ts`:
 
-- Where tools run is decided once per turn by `resolveBotWorkplace`: the
-  speaker's desktop when it is connected and their preference
-  (`sagax.botWorkplace.v1`, Settings > Organization > Where bots work) is
-  "computer" (the default); else their server environment, and the bot and
-  the composer say so. Routines use the owner's desktop only when it is
+- Where tools run is decided once per turn by `resolveBotWorkplace` from
+  the bot's Works on (or the conversation's pin): Local VM or This computer,
+  the speaker's desktop (when it is not connected, nothing runs there and
+  the bot and the composer say so); Auto and Cloud, their server
+  environment. The `place` of `sagax.botWorkplace.v1` no longer decides.
+  Routines use the owner's desktop only when the bot works on it, it is
   connected AND the owner allowed it (off by default). Rooms: the person
   whose message triggered the turn; a follow-up nobody asked for never.
 - A bridge is bound to the person of the session that registered it and to
@@ -610,16 +616,28 @@ of that thread. The owner's notification of such a run names no thread, only
 
 The Computer tab (`src/components/computer/OrgComputerTab.tsx`) draws the
 solo screen: one rounded screen (`ComputerScreen.tsx`) with Play / Pause /
-Stop on it and "<Bot>'s screen" below, the "Where this bot works" selector
-(the person's `sagax.botWorkplace.v1`, with the reason the current computer
-is used) and a usage panel. States are words (Off, Starting, Running, Paused,
-Error); never show the desktop's raw answer. Settings > Computer holds the
-same choice, the Local VM card and the compact server environment card
-(`settings/OrgComputerSettings.tsx`); Settings > Organization no longer has
-the server environment. VPS Computer and Boat Computer are experimental
-flags (`features.vpsComputer`, `features.boatComputer`, off): off hides
-their cards, the Cloud place and backend choices. Tests:
-`OrgComputerTab.test.ts`, `experimental-computers.test.ts`.
+Stop on it and "<Bot>'s screen" below, one line naming the computer the
+bot's Works on uses with a link to change it (no selector there), and a
+usage panel that keeps polling while the environment is off. States are
+words (Off, Starting, Running, Paused, Error); never show the desktop's raw
+answer. The server environment's live view is view-only with "Take control"
+in the middle of the screen and a "Release control" chip while in control.
+
+On an organization server the bot's Works on (or the conversation's pin)
+decides where it runs, never a per-person switch (2026-10-02,
+`resolveBotWorkplace`, `orgComputerFor` in `src/lib/place.ts`): Auto and
+Cloud ("Cloud (server environment)") run in the person's server
+environment, Local VM and This computer on their own computer through the
+desktop app; no Boat, VPS or host computer is claimed there. Settings >
+Computer says so and holds the Local VM card and the compact server
+environment card (`settings/OrgComputerSettings.tsx`). VPS Computer and
+Boat Computer are experimental flags (`features.vpsComputer`,
+`features.boatComputer`, off): off hides their cards and backend choices
+and, on a solo server only, the Cloud place; they never hide the
+organization's Cloud nor the local places (`placeOffered(place, config,
+organization)`). Tests: `OrgComputerTab.test.ts`,
+`experimental-computers.test.ts`, `PlaceChip.test.ts`,
+`AccessSection.test.ts`, `server/desktop-bridge.test.ts`.
 
 The Local VM in server mode lives on the person's computer
 (`electron/local-vm.mjs`, `POST /api/me/desktop-bridge/local-vm`):

@@ -4,7 +4,11 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { Bot, InstanceInfo } from "@/state/store";
 
 vi.stubGlobal("window", {});
-const fixture = vi.hoisted(() => ({ config: null as unknown }));
+const fixture = vi.hoisted(() => ({ config: null as unknown, organization: false }));
+vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/perspicax-org")>(),
+  usePerspicaxOrg: () => (fixture.organization ? { org: { identity: { kind: "perspicax" } } } : null),
+}));
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
   return {
@@ -38,6 +42,11 @@ vi.mock("./DesktopCapabilities", async (importOriginal) => ({
 }));
 
 const { PlaceChip, usePlaceAvailability } = await import("./PlaceChip");
+
+/** The chip with its menu open (static render: no click). */
+function PlaceMenuProbe({ bot: probeBot }: { bot: Bot }) {
+  return createElement(PlaceChip, { bot: probeBot, live: false, onPin: () => {}, initialOpen: true });
+}
 afterAll(() => vi.unstubAllGlobals());
 
 const bot = {
@@ -76,7 +85,7 @@ describe("the places a conversation can be pinned to", () => {
     renderToStaticMarkup(createElement(Probe));
     return seen!;
   };
-  afterEach(() => { fixture.config = null; });
+  afterEach(() => { fixture.config = null; fixture.organization = false; });
 
   it("reaches this computer and a Local VM on a desktop or self-hosted server", () => {
     // Cloud only while Boat Computer (or VPS Computer for a VPS bot) is on.
@@ -88,5 +97,44 @@ describe("the places a conversation can be pinned to", () => {
   it("never reaches them on an OMB Cloud home", () => {
     fixture.config = { cloudHome: true };
     expect(availability()).toMatchObject({ cloud: true, vm: false, local: false });
+  });
+});
+
+describe("the composer's place menu (regression: #54 left only Follow this bot's setting)", () => {
+  afterEach(() => { fixture.config = null; fixture.organization = false; });
+  const menuItems = (overrides: Partial<Bot> = {}) => {
+    const html = renderToStaticMarkup(createElement(PlaceMenuProbe, { bot: { ...bot, computer: undefined, ...overrides } }));
+    return [...html.matchAll(/<span class="block text-\[13px\] leading-\[18px\] text-ink">([^<]+)<\/span>/g)].map((match) => match[1]);
+  };
+  const FLAGS = [
+    { features: {} },
+    { features: { boatComputer: true } },
+    { features: { vpsComputer: true } },
+    { features: { boatComputer: true, vpsComputer: true } },
+  ];
+
+  it("on an organization server lists Cloud (the server environment) and the Local VM, whatever the VPS and Boat flags say", () => {
+    fixture.organization = true;
+    for (const config of FLAGS) {
+      fixture.config = config;
+      expect(menuItems()).toEqual(["Follow this bot&#x27;s setting", "Cloud (server environment)", "Local VM", "This computer"]);
+    }
+  });
+
+  it("on an organization server says Auto means Cloud", () => {
+    fixture.organization = true;
+    const html = renderToStaticMarkup(createElement(PlaceMenuProbe, { bot: { ...bot, computer: undefined } }));
+    expect(html).toContain("Currently Auto (Cloud)");
+    expect(html).toContain("Your own Linux machine on the organization server");
+  });
+
+  it("on a solo server hides only Cloud while both flags are off, never the local places", () => {
+    fixture.config = FLAGS[0];
+    expect(menuItems()).toEqual(["Follow this bot&#x27;s setting", "Local VM", "This computer"]);
+    for (const config of FLAGS.slice(1)) {
+      fixture.config = config;
+      const items = menuItems(config.features.boatComputer ? {} : { cloudBackend: "vps" });
+      expect(items).toEqual(["Follow this bot&#x27;s setting", "Cloud computer", "Local VM", "This computer"]);
+    }
   });
 });

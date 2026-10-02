@@ -1,16 +1,17 @@
-// Above the composer, on an organization server: where this person's bots
-// work right now. On their computer (and its network: traffic goes through
-// it), or, when they want their computer but it is not connected, a plain
-// line saying the server environment is used instead. Nothing on a solo
-// server (src/lib/desktop-bridge.ts).
+// Above the composer, on an organization server, when this conversation's
+// bot works on the person's own computer (Works on Local VM or This
+// computer): on it (and its network: traffic goes through it), or a plain
+// line saying it is not connected. Nothing for Auto and Cloud (the server
+// environment) nor on a solo server (src/lib/desktop-bridge.ts).
 import { Laptop, Server } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { useDesktopBridgeStatus, workplaceNotice } from "@/lib/desktop-bridge";
+import { orgComputerFor, type EffectivePlace } from "@/lib/place";
 
-export function WorkplaceNotice() {
+export function WorkplaceNotice({ place }: { place: EffectivePlace | null }) {
   const status = useDesktopBridgeStatus();
-  const kind = status ? workplaceNotice(status, status.workplace) : null;
+  const kind = status && place ? workplaceNotice(status, orgComputerFor(place)) : null;
   if (!kind) return null;
   if (kind === "fallback") {
     return (

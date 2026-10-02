@@ -1,7 +1,7 @@
 // The Computer tab on an organization server: one screen like the solo panel
-// (Play / Pause / Stop on it, "<Bot>'s screen" below), the source selector
-// with the reason, the usage panel, and words for every state, never the
-// desktop's raw answer.
+// (Play / Pause / Stop on it, "<Bot>'s screen" below), the computer the bot's
+// Works on names (no selector) with a link to change it, the usage panel,
+// and words for every state, never the desktop's raw answer.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -22,27 +22,36 @@ const status = (vm: DesktopLocalVmStatus["vm"], extra: Partial<DesktopLocalVmSta
 const STALE = { name: "openmausbot-computer", state: "exited", managed: true, stale: "missing_folder" as const, folder: "/private/var/folders/5f/T/omb-org-mcp-Em133z/.openmausbot/vm-home", folderExists: false };
 
 describe("Computer tab on an organization server", () => {
-  it("shows the server environment as the screen, with its controls, caption and usage", () => {
-    const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(false, "computer"), computerOff: false, botName: "Luna" }));
-    expect(markup).toContain('data-org-computer="user-sandbox"');
-    expect(markup).toContain('data-computer-source="server"');
-    expect(markup).toContain('aria-label="Screen controls"');
-    expect(markup).toContain("Luna&#x27;s screen");
-    expect(markup).toContain("because your computer is not connected");
-    expect(markup).toContain(">Disk<");
-    expect(markup).toContain(">Memory<");
+  it("shows the server environment for Auto and Cloud, even with the person's computer connected", () => {
+    for (const place of ["auto", "cloud"] as const) {
+      const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place, computerOff: false, botName: "Luna", onChangePlace: () => {} }));
+      expect(markup).toContain('data-org-computer="user-sandbox"');
+      expect(markup).toContain('data-computer-source="server"');
+      expect(markup).toContain('aria-label="Screen controls"');
+      expect(markup).toContain("Luna&#x27;s screen");
+      expect(markup).toContain(place === "auto" ? "Luna works on: Auto (Cloud)." : "Luna works on: Cloud (server environment).");
+      expect(markup).toContain(">Change<");
+      expect(markup).toContain(">Disk<");
+      expect(markup).toContain(">Memory<");
+    }
+  });
+
+  it("has no selector of its own: the bot's Works on decides", () => {
+    const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "auto", computerOff: false, botName: "Luna" }));
+    expect(markup).not.toContain('role="radiogroup"');
+    expect(markup).not.toContain("My computer (Local VM)");
+    expect(markup).not.toContain("Where this bot works");
   });
 
   it("shows the owner's stale Local VM as an error with Repair, never raw JSON", () => {
-    const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), computerOff: false, botName: "Luna", initialLocal: status(STALE) }));
+    const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status(STALE) }));
     expect(markup).toContain('data-org-computer="user-desktop"');
     expect(markup).toContain('data-computer-screen="error"');
     expect(markup).toContain(">Error<");
     expect(markup).toContain(">Repair<");
     expect(markup).toContain("omb-org-mcp-Em133z");
-    expect(markup).toContain("because you chose it and the Sagax app is connected");
-    expect(markup).toContain("My computer (Local VM)");
-    expect(markup).toContain("Server environment");
+    expect(markup).toContain("Luna works on: Local VM.");
+    expect(markup).toContain("Your own computer (JeanChrophesMBP), through the Sagax app.");
     expect(markup).toContain("124.5 GB of 128 GB");
     expect(markup).not.toContain("localVms");
     expect(markup).not.toMatch(/\{&quot;|\{"/);
@@ -50,13 +59,13 @@ describe("Computer tab on an organization server", () => {
   });
 
   it("names each state of the screen", () => {
-    const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), computerOff: true, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
+    const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: true, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
     expect(running).toContain('data-computer-screen="running"');
     expect(running).toContain(">Running<");
     expect(running).toMatch(/<button[^>]*aria-label="Pause"(?![^>]*disabled="")/);
     expect(running).toMatch(/<button[^>]*aria-label="Stop"(?![^>]*disabled="")/);
     expect(running).toContain("This bot&#x27;s computer is off");
-    const missing = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), computerOff: false, botName: "Luna", initialLocal: status(null) }));
+    const missing = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "local", computerOff: false, botName: "Luna", initialLocal: status(null) }));
     expect(missing).toContain(">Off<");
     expect(missing).toContain("Set up in one click");
   });
@@ -90,10 +99,13 @@ describe("the Local VM's view", () => {
     expect(setupProgress([{ id: "runtime", state: "done", detail: "" }, { id: "image", state: "running", detail: "" }, { id: "container", state: "pending", detail: "" }, { id: "start", state: "pending", detail: "" }])).toBe("Step 2 of 4: Desktop image");
   });
 
-  it("says which computer is used and why", () => {
-    expect(activeComputer(bridge(true, "computer"), "computer")).toEqual({ source: "local", reason: "chosenComputer" });
-    expect(activeComputer(bridge(false, "computer"), "computer")).toEqual({ source: "server", reason: "notConnected" });
-    expect(activeComputer(bridge(true, "server"), "server")).toEqual({ source: "server", reason: "chosenServer" });
+  it("says which computer the bot's Works on uses and why", () => {
+    expect(activeComputer(bridge(true, "computer"), "auto")).toEqual({ source: "server", reason: "cloud" });
+    expect(activeComputer(bridge(true, "computer"), "cloud")).toEqual({ source: "server", reason: "cloud" });
+    expect(activeComputer(bridge(true, "server"), "vm")).toEqual({ source: "local", reason: "computer" });
+    expect(activeComputer(bridge(false, "computer"), "local")).toEqual({ source: "local", reason: "notConnected" });
+    expect(activeComputer(bridge(true, "computer"), "off")).toEqual({ source: "server", reason: "none" });
+    expect(activeComputer(bridge(true, "computer"), "browser")).toEqual({ source: "server", reason: "none" });
     expect(powerState("missing", null)).toBe("off");
     expect(powerState("stopped", "start")).toBe("starting");
     expect(formatBytes(1536 * 1024 * 1024)).toBe("1.5 GiB");
@@ -106,7 +118,9 @@ describe("Settings > Computer on an organization server", () => {
       bridge: bridge(true, "computer"), initialLocal: status(STALE),
       initialServer: { configured: true, state: "stopped", limits: { memoryMb: 1024, cpus: 1, pids: 256, diskMb: 2048, tmpMb: 256 }, pendingDeletionAt: null },
     }));
-    expect(markup).toContain("Where this bot works");
+    expect(markup).toContain("Where bots work");
+    expect(markup).toContain("Each bot&#x27;s Works on decides");
+    expect(markup).not.toContain('role="radiogroup"');
     expect(markup).toContain("Docker Desktop found and running");
     expect(markup).not.toContain("Install a supported container runtime first");
     expect(markup).toContain('data-local-vm-problem="stale"');

@@ -33,6 +33,7 @@ import { ComposerAttachments, pathForFile } from "./ComposerAttachments";
 import { splitTranscriptCitations, type CitationAttachment } from "@/lib/citations";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { PlaceChip } from "./PlaceChip";
+import { effectivePlace } from "@/lib/place";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
 import { ModelPicker } from "./ModelPicker";
@@ -859,7 +860,7 @@ export function Composer({
         </div>
       )}
       <div className="pointer-events-auto relative w-full">
-        <WorkplaceNotice />
+        <WorkplaceNotice place={modeBot ? effectivePlace(modeBot, composerTask) : null} />
         {failedSends.map((failed) => (
           <div
             key={failed.id}

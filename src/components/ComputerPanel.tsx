@@ -1522,7 +1522,15 @@ export function ComputerPanel({
   // (src/components/computer/OrgComputerTab.tsx).
   const body = bridgeStatus ? (
     <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
-      <OrgComputerTab bridge={bridgeStatus} computerOff={bot.computer === "off"} botName={bot.name} />
+      <OrgComputerTab
+        bridge={bridgeStatus}
+        // The conversation's own place (its pin, else Works on), not the
+        // server's Auto guess, which knows no server environment.
+        place={livePlace}
+        computerOff={livePlace === "off"}
+        botName={bot.name}
+        onChangePlace={() => dispatch({ type: "toggleSettings", botId: bot.id, section: "access", open: true })}
+      />
       {!embedded && <div className="mt-6">
         <RoutinesSection key={bot.id} bot={bot} routines={botRoutines} runs={state.routineRuns} defaultRunOn={cloudRoutineReady ? "cloud" : "maus"} />
       </div>}

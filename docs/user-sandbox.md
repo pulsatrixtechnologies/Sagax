@@ -9,18 +9,19 @@ on the Sagax host or inside the Sagax container.
 
 | Target | When | Where |
 |---|---|---|
-| `user-desktop` | the person's Sagax desktop app is connected and their preference is "My computer" (default), or the conversation is pinned to it | their own computer, through the desktop bridge (`sagax-desktop`, see AGENTS.md "Desktop bridge") |
+| `user-desktop` | the bot's Works on (or the conversation's pin) is Local VM or This computer | their own computer, through the desktop bridge (`sagax-desktop`, see AGENTS.md "Desktop bridge"), while their Sagax desktop app is connected |
 | `user-sandbox` | organization mode, any other turn | one person's environment (below) |
 | `host` | solo server | this machine, unchanged |
 | `none` | organization mode without a provisioner | nothing is mounted |
 
-The choice between the two is `resolveBotWorkplace` (`server/desktop-bridge.ts`):
-the server environment is used when the person chose it (Settings >
-Organization > Where bots work), when their desktop is not connected (the
-composer then says "Votre ordinateur n'est pas connecté : j'utilise votre
-environnement serveur"), for routines unless the owner allowed them on their
-connected computer, and for room follow-ups no person asked for. Files a
-person attaches in that turn are copied to `/workspace/attachments/`.
+The choice between the two is `resolveBotWorkplace` (`server/desktop-bridge.ts`),
+from the bot's Works on: Auto and Cloud ("Cloud (server environment)") use the
+server environment, the default; Local VM and This computer use the person's
+own computer, and when their desktop app is not connected nothing runs there
+and the bot and the composer say so. Routines use the server environment
+unless the bot works on the owner's computer, it is connected and the owner
+allowed routines on it; room follow-ups no person asked for use it too. Files
+a person attaches in that turn are copied to `/workspace/attachments/`.
 
 Whose environment (`sandboxPrincipalForTurn`, matching private threads and
 "the speaker pays"):
@@ -73,8 +74,11 @@ the Sagax side), `server/sandboxd*.ts` (the provisioner), `server/user-sandbox-s
 ## Desktop
 
 Each environment can show a small Linux desktop (1280x800): Xvnc (an X
-server with its VNC server), openbox, Chromium, xterm and pcmanfm, driven by
-`/usr/local/bin/sagax-desktop` in the image. Nothing of it runs until it is
+server with its VNC server), openbox, a gradient background (hsetroot), a
+launcher bar (tint2: Chromium, Terminal, Files, open windows, clock),
+Chromium, xterm and pcmanfm, driven by `/usr/local/bin/sagax-desktop` in the
+image. Without the background and the bar the screen was black with only a
+cursor. Nothing of it runs until it is
 needed: a plain shell turn starts no X server.
 
 - **Computer use:** bots get the desktop bridge's shape, `computer_list_tools`
@@ -83,7 +87,7 @@ needed: a plain shell turn starts no X server.
   computer's vocabulary). Each call is one exec of a fixed `sagax-desktop`
   argv (xdotool, scrot), never a shell line; text and addresses travel in
   `SAGAX_*` variables. The first call starts the desktop. Where it runs
-  follows "Where bots work" and the routine rules above: the person's own
+  follows the bot's Works on and the routine rules above: the person's own
   computer when that is the target, else this desktop. A bot whose Computer
   setting is off gets no computer use here either.
 - **VNC:** listens on `127.0.0.1:5901` inside the sandbox's own network
@@ -96,7 +100,10 @@ needed: a plain shell turn starts no X server.
   that names another person's desktop, an admin or the server's console has
   none, and a person signed out by Perspicax is refused. Opening the view
   starts the environment and its desktop and hands the view-only password;
-  "Prendre le contrôle" (`?control=1`) hands the full one. The WebSocket never
+  "Prendre le contrôle" (`?control=1`, a button in the middle of the Computer
+  tab's screen) hands the full one; while such a view is open, the bots'
+  `computer_use` there is refused, never queued (`server/sandbox-control.ts`),
+  and "Rendre le contrôle" hands it back. The WebSocket never
   starts anything: the Sagax server frames the RFB bytes itself
   (`server/ws-bridge.ts`) and reaches the VNC port only through the
   provisioner, a signed HTTP upgrade (`/v1/sandboxes/<key>/desktop`) spliced
