@@ -193,12 +193,25 @@ export function LiveCall({ bot }: { bot: Bot }) {
       const language = readVoiceModeSettings().language;
       // one id per utterance: the server delivers it once, whatever retries
       const utteranceId = crypto.randomUUID();
-      dispatch({
+      // a send that failed (a network blip, a turn that ended under it) is
+      // tried again once with the same utterance; then the person is told,
+      // never left waiting on silence
+      let attempts = 0;
+      const onError = () => {
+        attempts += 1;
+        if (attempts > 1 || currentCall() !== current.id) {
+          void call.say(t("voiceMode.sendFailed"));
+          return;
+        }
+        setTimeout(send, 800);
+      };
+      const send = () => dispatch({
         type: "send",
         botId: current.id,
         text: said,
         threadId: current.threadId,
         sendId: utteranceId,
+        onError,
         voiceCall: {
           callId,
           utteranceId,
@@ -209,6 +222,7 @@ export function LiveCall({ bot }: { bot: Bot }) {
           ...(language && language !== "auto" ? { language } : {}),
         },
       });
+      send();
     },
     [call, callId, dispatch],
   );

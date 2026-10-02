@@ -553,6 +553,7 @@ import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
 import { VoiceCallSessions } from "./voice-call-session.ts";
+import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
@@ -3220,7 +3221,36 @@ function requestedTaskBot(botId: string, rawThreadId: unknown): BotRecord {
   return task;
 }
 
+/** Threads whose turn a person is stopping, until it settles: words sent
+ * meanwhile wait for the next turn instead of joining the dying one, where
+ * the stop withdrew them and they got no answer. */
+const stoppingThreads = new Map<string, ReturnType<typeof setTimeout>>();
+/** When a person last stopped each thread's turn (the call watchdog). */
+const threadStoppedAt = new Map<string, number>();
+
+function markThreadStopping(threadId: string): void {
+  const previous = stoppingThreads.get(threadId);
+  if (previous) clearTimeout(previous);
+  threadStoppedAt.set(threadId, Date.now());
+  // a turn that never reports settling must not hold its words forever
+  const timer = setTimeout(() => {
+    if (stoppingThreads.get(threadId) !== timer) return;
+    stoppingThreads.delete(threadId);
+    drainQueuedSends();
+  }, 30_000);
+  timer.unref?.();
+  stoppingThreads.set(threadId, timer);
+}
+
+function clearThreadStopping(threadId: string): void {
+  const timer = stoppingThreads.get(threadId);
+  if (!timer) return;
+  clearTimeout(timer);
+  stoppingThreads.delete(threadId);
+}
+
 async function interruptDirectThread(botId: string, threadId: string): Promise<void> {
+  if (threadBusy(botId, threadId)) markThreadStopping(threadId);
   const requestOwner = directRequestOwners.get(threadId);
   if (requestOwner) {
     requestOwner.stopped = true;
@@ -9173,6 +9203,8 @@ bus.subscribe((event: RuntimeEvent) => {
           }
           releaseTurnResources(resourceOwner);
           if (!isCurrent()) return;
+          clearThreadStopping(event.threadId);
+          scheduleVoiceCallWatchdog(bot.id, event.threadId);
           if (store.taskByThread(bot.id, event.threadId)?.activity !== "dead") {
             store.setTaskActivity(bot.id, event.threadId, "idle");
           }
@@ -10138,6 +10170,39 @@ bus.subscribe((event: RuntimeEvent) => {
   drainQueuedSends();
   drainDelegationWakes();
 });
+
+/** Call words already retried once by the watchdog (message ids). */
+const voiceCallRetried = new Set<string>();
+
+/** A moment after a direct turn settles on a thread on a live call: words
+ * said on the call with no answer after them run once more
+ * (server/voice-call-watchdog.ts). */
+function scheduleVoiceCallWatchdog(botId: string, threadId: string): void {
+  if (!voiceCalls.active(threadId)) return;
+  const timer = setTimeout(() => {
+    try {
+      if (!voiceCalls.active(threadId) || threadBusy(botId, threadId) || hasQueuedSteeredMessages(botId, threadId)) return;
+      if (stoppingThreads.has(threadId) || activeGroupTurnForBot(botId) || botAtThreadCapacity(botId)) return;
+      const bot = store.projectBotForTask(botId, threadId);
+      if (!bot || !store.taskByThread(botId, threadId)) return;
+      const words = unansweredCallMessage(store.activePath(threadId), { stoppedAt: threadStoppedAt.get(threadId), retried: voiceCallRetried });
+      if (!words) return;
+      voiceCallRetried.add(words.id);
+      if (voiceCallRetried.size > 5_000) voiceCallRetried.delete(voiceCallRetried.values().next().value!);
+      console.warn(`[voice-call] thread ${threadId}: no answer to the words said on the call; running the turn again`);
+      void startTurn(botId, voiceCallRecoveryPrompt(words.text ?? ""), {
+        threadId,
+        userMessage: words,
+        // the words ride in the prompt: not twice through the replay
+        excludeMessageIds: [words.id],
+        ...(words.sender ? { sender: words.sender } : {}),
+      }).catch((error) => console.warn(`[voice-call] thread ${threadId}: the retry could not start: ${error instanceof Error ? error.message : String(error)}`));
+    } catch (error) {
+      console.warn("[voice-call] watchdog failed", error);
+    }
+  }, VOICE_CALL_WATCHDOG_MS);
+  timer.unref?.();
+}
 
 function drainQueuedSends() {
   if (!followupsReady) return;
@@ -26681,7 +26746,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               engineCanSteer: Boolean(instance?.adapter.capabilities.queueing && instance.adapter.steer)
                 // someone else's words never join a running turn on an
                 // organization server: they wait and get the gate
-                && orgJoinsRunningTurn(currentAtStart, threadId, speakerFor(auth)),
+                && orgJoinsRunningTurn(currentAtStart, threadId, speakerFor(auth))
+                // a turn being stopped takes no new words: they would be
+                // withdrawn with it and never answered; they wait instead
+                && !stoppingThreads.has(threadId),
             });
             // steer was offered only when a live instance could take it;
             // the second check carries that fact to the type system.
@@ -26705,6 +26773,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const delivered = steered !== "refused";
             if (delivered) {
               if (steered === "steered" && !current.busy) {
+                // Said on a call, the words must get an answer: the turn
+                // they were written into ended first, so they start the
+                // next one (a phone has no composer to resend from).
+                if (voiceCall) {
+                  return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall);
+                }
                 throw Object.assign(
                   new Error("the running turn ended before the steered message could be recorded"),
                   { status: 409 },

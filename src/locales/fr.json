@@ -2703,6 +2703,7 @@
   "voiceMode.pushHint": "Maintenez Espace ou ce bouton pendant que vous parlez",
   "voiceMode.interruptedMark": "interrompu",
   "voiceMode.unheardMark": "Non entendu :",
+  "voiceMode.sendFailed": "Ça n'a pas passé. Pouvez-vous le redire?",
   "voiceMode.otherVoice": "Une autre voix a été ignorée (Seulement ma voix).",
   "voiceMode.yesOrNo": "Pardon, est-ce un oui ou un non?",
   "voiceMode.approvalFailed": "Je n'ai pas pu enregistrer cette décision. Réessayez.",

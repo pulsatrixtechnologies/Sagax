@@ -5528,7 +5528,8 @@
       "voiceMode.call.pause.short": "f5d61ead3eefbf5c0bfff31493eaa7af16b17479511bcf8ba4f73d4fc1e05f26",
       "voiceMode.call.pause.normal": "a7248eeb45eb1ce247f81693283e22e8b39e8a50890cecd22d02e75025547d90",
       "voiceMode.call.pause.patient": "835043ec8e6b792147ef928d14b2222534bfaeb36c321f991df59390116a6bc7",
-      "voiceMode.call.pauseHelp": "54f021f651e3c1030347d6f34302d2d02ebdd3de60f7e9730deb7c6f7c5fc42b"
+      "voiceMode.call.pauseHelp": "54f021f651e3c1030347d6f34302d2d02ebdd3de60f7e9730deb7c6f7c5fc42b",
+      "voiceMode.sendFailed": "108e3312eebcf6a9a07890165b32065dae9717bc2a31d2b19c7cc06caf906f41"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

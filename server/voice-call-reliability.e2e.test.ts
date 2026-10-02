@@ -43,7 +43,8 @@ async function callFixture(env: Record<string, string> = {}) {
     `const home = ${JSON.stringify(dataDir)};`,
     'process.env.FAKE_CLAUDE_PROMPTS = join(home, "received.jsonl");',
     `process.env.FAKE_CLAUDE_GATE_DIR = ${JSON.stringify(gates)};`,
-    ...Object.entries(env).map(([key, value]) => `process.env[${JSON.stringify(key)}] = ${JSON.stringify(value)};`),
+    // "$DATA" in a value is this fixture's data folder
+    ...Object.entries(env).map(([key, value]) => `process.env[${JSON.stringify(key)}] = ${JSON.stringify(value)}.replaceAll("$DATA", home);`),
     'process.stdin.on("end", () => process.exit(0));',
     `await import(${JSON.stringify(pathToFileURL(fileURLToPath(new URL("./testing/fake-claude-cli.ts", import.meta.url))).href)});`,
   ].join("\n"), { mode: 0o700 });
@@ -142,6 +143,53 @@ it("tells the bot how much of its cut answer the person heard, and keeps the res
     const cut = (await t.messages()).filter((m) => m.role === "user").at(-1);
     expect(cut.voiceCall).toEqual({ callId: CALL_ID, interrupted: true, heard: "It is sunny in Montreal", unheard: "and it will rain tonight." });
     expect(cut.text).toBe("no, in Quebec City");
+  } finally {
+    await t.fixture.close();
+  }
+}, 120_000);
+
+it("never leaves a call turn unanswered: a turn that said nothing runs again once", async () => {
+  const t = await callFixture({ FAKE_CLAUDE_REPLIES: JSON.stringify([[], "Here is your llama."]), FAKE_CLAUDE_REPLY_STATE: "$DATA/reply-state" });
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    await t.send({ text: "can you draw me a llama", voiceCall: { callId: CALL_ID } });
+    const answers = async () => {
+      const all = await t.messages();
+      const asked = all.findIndex((m) => m.role === "user");
+      return all.slice(asked + 1).filter((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").trim());
+    };
+    await expect.poll(async () => (await answers()).map((m) => m.text), { timeout: 20_000 }).toEqual(["Here is your llama."]);
+    const sent = t.prompts();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toContain("ended without saying anything back to them on the call");
+    expect(sent[1]).toContain("can you draw me a llama");
+    // the person said it once: the retry adds no message of theirs
+    expect((await t.messages()).filter((m) => m.role === "user")).toHaveLength(1);
+  } finally {
+    await t.fixture.close();
+  }
+}, 120_000);
+
+it("words said while a turn is being stopped wait for the next turn and get an answer", async () => {
+  const t = await callFixture({ FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_EXIT_DELAY_MS: "1500" });
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    await t.send({ text: "[gate:never] tell me a long story", voiceCall: { callId: CALL_ID } });
+    await expect.poll(t.busy, { timeout: 15_000 }).toBe(true);
+    // the barge-in stops the turn; the new words arrive while it stops
+    const stopping = t.api("POST", `/api/bots/${t.bot.id}/interrupt`, { threadId: t.thread });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const sent = await t.send({ text: "what about the weather", voiceCall: { callId: CALL_ID, interrupted: true } });
+    // never folded into the turn being stopped (it would be withdrawn with it)
+    expect(sent.steered).toBeUndefined();
+    await stopping;
+    const answered = async () => {
+      const all = await t.messages();
+      const asked = all.findIndex((m) => m.role === "user" && m.text === "what about the weather");
+      return asked >= 0 && all.slice(asked + 1).some((m) => m.role === "bot" && m.kind === "text" && String(m.text ?? "").trim());
+    };
+    await expect.poll(answered, { timeout: 20_000 }).toBe(true);
+    expect((await t.messages()).filter((m) => m.text === "what about the weather")).toHaveLength(1);
   } finally {
     await t.fixture.close();
   }
