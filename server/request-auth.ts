@@ -291,7 +291,7 @@ export function clearSessionCookie(name: string): string {
  * deliberately listed here. Two client-allowed PATCH routes carry a body
  * filter in the handler (bot and room edits: display fields only). Loopback
  * holds both scopes. */
-export type ClientFeature = "sharedComputers" | "orgPairing" | "orgDirectory";
+export type ClientFeature = "sharedComputers" | "orgPairing" | "orgDirectory" | "serverCatalogue";
 export type ClientFeatures = Partial<Record<ClientFeature, boolean>>;
 
 export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: RegExp; feature?: ClientFeature }> = [
@@ -339,7 +339,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // non-admin session gets clientInstanceView(): engine names, models,
   // capabilities and availability, never the host's CLI paths, install
   // commands, sign-in state or account addresses. Changing engines stays admin.
-  { methods: ["GET"], path: /^\/api\/instances$/ },
+  // Not on an organization server, where a member's engines are their own
+  // (GET /api/me/engines below) and the server's catalogue stays admin.
+  { methods: ["GET"], path: /^\/api\/instances$/, feature: "serverCatalogue" },
   // a link into the organisation's Admin: identifiers only, and Admin authorizes its own visitor
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/slack-management$/ },
   { methods: ["GET"], path: /^\/api\/search$/ },

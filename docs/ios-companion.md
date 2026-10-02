@@ -366,7 +366,9 @@ request the remote-client renderer makes crosses, what it hides does not) and
 For a phone or tablet paired with a server (a client session), `CLIENT_ALLOW`
 in `server/request-auth.ts` adds the two steer routes (the harness applies the
 cancel's guards plus the send's: the viewer's own thread, a read-only member
-of a shared room may not steer) and `GET /api/instances`, which a non-admin
+of a shared room may not steer) and, on a solo or hosted server (not an
+organization server, where a member's engines are `/api/me/engines`),
+`GET /api/instances`, which a non-admin
 session receives through `clientInstanceView()`: engine names, models,
 capabilities, availability and billing, never CLI paths, install or sign-in
 commands, account addresses or update commands. Folders, team filing

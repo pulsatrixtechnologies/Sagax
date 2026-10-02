@@ -112,7 +112,7 @@ describe("scopes", () => {
       ["GET", "/api/attachments/a.png"], ["POST", "/api/routines"], ["POST", "/api/routines/r/run"],
       ["POST", "/api/routine-runs/seen-all"],
       // desktop remote-client parity: steer (bot and room) and the engines catalogue (redacted)
-      ["POST", "/api/bots/x/queue/q/steer"], ["POST", "/api/groups/g/queue/q/steer"], ["GET", "/api/instances"],
+      ["POST", "/api/bots/x/queue/q/steer"], ["POST", "/api/groups/g/queue/q/steer"],
       ["GET", "/api/bots"], ["GET", "/api/groups"], ["GET", "/api/threads/t/messages"], ["GET", "/api/search"], ["GET", "/api/events"],
       ["GET", "/api/config"], ["GET", "/api/webhooks"], ["POST", "/api/tts/speak"],
       ["GET", "/api/auth/session"], ["POST", "/api/auth/stream-ticket"], ["POST", "/api/auth/logout"],
@@ -148,6 +148,14 @@ describe("scopes", () => {
       ["GET", "/api/mail/settings"], ["PUT", "/api/mail/settings"], ["POST", "/api/mail/test"], // mail transport: admin only
       ["GET", "/api/something-new"], // anything unlisted is admin until listed
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
+  });
+
+  it("opens the engines catalogue to client sessions on a solo or hosted server only", () => {
+    expect(requiredScope("GET", "/api/instances", { serverCatalogue: true })).toBe("client");
+    expect(requiredScope("GET", "/api/instances")).toBe("admin");
+    expect(requiredScope("GET", "/api/instances", { orgDirectory: true })).toBe("admin");
+    expect(requiredScope("PATCH", "/api/instances/claude", { serverCatalogue: true })).toBe("admin");
+    expect(requiredScope("GET", "/api/instances/claude", { serverCatalogue: true })).toBe("admin");
   });
 
   it("gives a client session the engines catalogue without how the host is set up", () => {

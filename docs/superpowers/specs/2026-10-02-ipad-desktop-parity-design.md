@@ -437,7 +437,7 @@ What remote-client mode changes in the renderer (every `remoteClient` gate in `s
 
 | Surface (remote-client mode) | Renderer calls | Sidecar | Client session | Final status |
 |---|---|---|---|---|
-| Boot, brand, stream | `GET /api/config`, `/api/events`, `/api/instances`, `/api/routines`, `/api/bots`, `/api/auth/session`, `/api/brand`, `/api/me/preferences` | yes (`/api/brand` added) | yes (`/api/instances` added, redacted) | open |
+| Boot, brand, stream | `GET /api/config`, `/api/events`, `/api/instances`, `/api/routines`, `/api/bots`, `/api/auth/session`, `/api/brand`, `/api/me/preferences` | yes (`/api/brand` added) | yes (`/api/instances` added, redacted; not on an organization server) | open |
 | Sidebar: fleet, search, bot menu | `GET /api/search`, `PATCH /api/bots/:id` (unread), `PATCH /profile` (rename), `POST /api/sidebar-sections` (move to team) | yes | sidebar-sections: admin | open on the sidecar; filing stays admin on a server (no per-viewer check in the handler) |
 | Sidebar: threads and folders | `POST/PATCH/DELETE /api/bots/:id/tasks*`, `POST .../tasks/:t/title`, `POST /api/bots/:id/projects`, `PATCH/DELETE .../projects/:p`, `PATCH .../projects/order` | yes (title and folders added) | tasks and title yes; folders admin | open on the sidecar; folders stay admin on a server (shared, no per-viewer check) |
 | New bot, compose-to, new room | `POST /api/bots`, `POST /api/groups` | yes | yes | open |
@@ -460,7 +460,8 @@ Changed by this audit (`feat/ipad-phone-api`):
   covers `PATCH .../projects/order`), `POST /api/routine-runs/seen-all`.
 - `CLIENT_ALLOW` adds both steer routes (the harness now also refuses a steer to a
   read-only member of a shared room and, on a Cloud home, to a guest outside a
-  conversation it started, exactly as it refuses their sends) and `GET /api/instances`,
+  conversation it started, exactly as it refuses their sends) and, except on an
+  organization server (feature `serverCatalogue`), `GET /api/instances`,
   answered to a non-admin session through `clientInstanceView()` (names, models,
   capabilities, availability, billing; never CLI paths, install or sign-in commands,
   account addresses, update commands). `/api/me/engines` was already a client route on
