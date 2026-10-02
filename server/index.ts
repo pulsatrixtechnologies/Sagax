@@ -521,6 +521,8 @@ import { EmailOtpStore } from "./email-otp.ts";
 import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
+import { createVoiceModeRoutes } from "./voice-mode.ts";
+import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
@@ -17799,6 +17801,62 @@ ROUTES.push(createMailSettingsRoutes({
   env: () => process.env,
   mailer,
   callerEmail: actorEmail,
+}));
+
+// Voice mode (server/voice-mode.ts): xAI speech to text and text to speech
+// for the floating voice bar, with the speaker's own xAI key (Perspicax),
+// else the organization's (Settings > Connections). The key never leaves
+// the server; the spoken turn itself goes through the normal send route.
+ROUTES.push(createVoiceModeRoutes({
+  organization: IDENTITY.kind === "perspicax",
+  speaker: (auth) => {
+    if (auth.kind === "loopback" && auth.trust === "service") return null;
+    const principalId = actorPrincipalId(auth);
+    if (IDENTITY.kind !== "perspicax") return { principalId };
+    const person = principalId && isPrincipalId(principalId) ? principals.byId(principalId) : null;
+    if (!person) return { principalId: "" };
+    const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+    return { principalId, ...(sub ? { sub } : {}), ...(person.disabledAt !== undefined && person.disabledAt !== null ? { disabled: true } : {}) };
+  },
+  target: (auth, botId, threadId) => {
+    const bot = store.bot(botId);
+    if (!bot) return { status: 404, error: "no such bot" };
+    if (IDENTITY.kind === "perspicax") {
+      const viewerId = actorPrincipalId(auth);
+      const viewer = authzViewerFromId(viewerId);
+      if (!viewer || !canOnBot(viewer, "bot.use", botFacts(bot))) return { status: 404, error: "no such bot" };
+      if (threadId && (!store.taskByThread(bot.id, threadId) || !botThreadReadable(bot, threadId, viewerId, "thread.post"))) {
+        return { status: 404, error: "no such conversation" };
+      }
+      return { botId: bot.id, botName: bot.name, threadId: threadId ?? viewerThreadOf(bot, viewerId) ?? bot.threadId };
+    }
+    return { botId: bot.id, botName: bot.name, threadId: threadId ?? bot.threadId };
+  },
+  serverKey: () => cfg.xai?.key,
+  hasOwnKey: (sub) => perspicaxDirectory?.providerKeys(sub).includes("xai") ?? false,
+  resolveOwnKey: (sub) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, "xai") : Promise.resolve({ ok: false as const, error: "link" as const }),
+  keysUrl: () => perspicaxKeysUrl(),
+  xai: { listVoices: grokVoice.listVoices, synthesize: grokVoice.synthesize, transcribe: grokVoice.transcribe },
+  utterances: toUtterances,
+  recordUsage: (usage) => {
+    const bot = store.bot(usage.target.botId);
+    const row: UsageRow = {
+      at: new Date().toISOString(),
+      botId: usage.target.botId,
+      botName: usage.target.botName,
+      threadId: usage.target.threadId,
+      instanceId: "xaiVoice",
+      driverKind: "xai-voice",
+      model: usage.model,
+      input: usage.input,
+      output: 0,
+      costUsd: null,
+      trigger: usage.speaker.principalId && IDENTITY.kind === "perspicax" ? { kind: "user", principalId: usage.speaker.principalId } : { kind: "owner" },
+      ...(IDENTITY.kind === "perspicax" ? { access: usage.via, ...(bot ? { ownerPrincipalId: effectiveBotOwner(bot) } : {}) } : {}),
+      ...(usage.payerPrincipalId ? { payerPrincipalId: usage.payerPrincipalId } : {}),
+    };
+    noteSpend(DATA_DIR, row, appendUsage(DATA_DIR, row));
+  },
 }));
 
 // The caller's own claude.ai connectors, read through their own Claude
