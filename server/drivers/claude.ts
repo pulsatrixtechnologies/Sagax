@@ -1280,6 +1280,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       systemPromptPath: string | null;
       /** the spawn contract — a different one means a fresh process */
       argsKey: string;
+      /** the MCP servers it was launched with (names), for the relaunch log */
+      mcpNames?: string[];
       /** the volatile half of the system prompt this process was launched
        * with (see SendTurnInput.systemVolatile). A later turn whose volatile
        * text differs delivers the difference in-turn rather than relaunching. */
@@ -1776,7 +1778,19 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         }
         return { turnId };
       }
-      if (live) closeSession(threadId, turn.sessionReset ? "context reset" : "spawn contract changed");
+      if (live) {
+        // A relaunch reconnects every MCP server: say which ones changed, so
+        // tools that come and go between turns can be traced.
+        if (!turn.sessionReset && live.mcpNames) {
+          const now = Object.keys(mcpServers);
+          const added = now.filter((name) => !live.mcpNames!.includes(name));
+          const removed = live.mcpNames.filter((name) => !now.includes(name));
+          if (added.length || removed.length) {
+            console.warn(`claude (${instanceId}): thread ${threadId} relaunched; MCP servers${added.length ? ` added ${added.join(", ")}` : ""}${removed.length ? ` removed ${removed.join(", ")}` : ""}`);
+          }
+        }
+        closeSession(threadId, turn.sessionReset ? "context reset" : "spawn contract changed");
+      }
 
       // Until sessions.set() below, this turn owns every launch resource.
       // Any bind, private-config or synchronous spawn failure must release
@@ -1917,6 +1931,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         mcpConfigPath,
         systemPromptPath,
         argsKey,
+        mcpNames: Object.keys(mcpServers),
         volatile: turn.systemVolatile ?? "",
         sessionId: sessionId ?? newSessionId,
         sawInit: false,

@@ -10,8 +10,9 @@
 //
 // The state is memory only: a restart ends every call, and a call the page
 // never closed (a crash, a lost network) expires after VOICE_CALL_IDLE_MS
-// without a turn. It also holds the per-call caches that keep a call's
-// tools stable (server/perspicax-mcp.ts keepWarm, the custom MCP set).
+// without a turn. A call's tools stay stable through it: Perspicax keeps
+// the call's tokens between turns (server/perspicax-mcp.ts keepWarm), and
+// every change of a call turn's MCP set is logged (noteMcp).
 import type { VoiceCallMeta } from "./voice-call-prompt.ts";
 
 /** A call with no turn and no keep-alive for this long has ended. */
@@ -26,8 +27,8 @@ interface CallRecord {
   lastAt: number;
   /** utterance ids already accepted on this call (exactly once) */
   utterances: Map<string, string>;
-  /** the MCP server set resolved on the call's first turn, by server name */
-  mcp?: Record<string, unknown>;
+  /** the MCP servers the call's last turn mounted (names) */
+  mcp?: string[];
 }
 
 export class VoiceCallSessions {
@@ -107,18 +108,19 @@ export class VoiceCallSessions {
     return { first: true };
   }
 
-  /** The MCP servers this call's turns get: the first turn's set is kept,
-   * a server a later turn lost (a failed refresh, a transient miss) comes
-   * back from it, and each one put back is reported for the log. */
-  stableMcp<T>(threadId: string, resolved: Record<string, T>): { servers: Record<string, T>; restored: string[] } {
+  /** The MCP servers a call turn mounts, against the call's previous
+   * turn: what was added and what went missing, for the log. A server is
+   * never put back here: one that left was removed or refused on purpose
+   * (a person, a policy); the call's flapping tools came from per-turn
+   * token exchanges, which keep their tokens through the call instead
+   * (server/perspicax-mcp.ts keepWarm). */
+  noteMcp(threadId: string, names: readonly string[]): { added: string[]; removed: string[] } {
     const record = this.live(threadId);
-    if (!record) return { servers: resolved, restored: [] };
-    const kept = (record.mcp ?? {}) as Record<string, T>;
-    const restored = Object.keys(kept).filter((name) => !Object.hasOwn(resolved, name));
-    const servers = { ...resolved };
-    for (const name of restored) servers[name] = kept[name]!;
-    record.mcp = { ...kept, ...resolved };
-    return { servers, restored };
+    if (!record) return { added: [], removed: [] };
+    const before = record.mcp;
+    record.mcp = [...names];
+    if (!before) return { added: [], removed: [] };
+    return { added: names.filter((name) => !before.includes(name)), removed: before.filter((name) => !names.includes(name)) };
   }
 
   /** Threads with a live call (tests, health). */

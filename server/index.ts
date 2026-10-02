@@ -11400,6 +11400,11 @@ async function startTurn(
         if (Object.keys(perspicax.custom).length) integrations.custom = { ...integrations.custom, ...perspicax.custom };
         perspicaxPrompt = perspicax.prompt;
       }
+      // a call's tools should not come and go between its turns: say so when they do
+      const callMcp = voiceCalls.noteMcp(threadId, Object.keys(integrations.custom ?? {}));
+      if (callMcp.added.length || callMcp.removed.length) {
+        console.warn(`[voice-call] thread ${threadId}: MCP servers changed between call turns${callMcp.added.length ? `; added ${callMcp.added.join(", ")}` : ""}${callMcp.removed.length ? `; missing ${callMcp.removed.join(", ")}` : ""}`);
+      }
       // CLI engines work inside the bot's own workspace directory rather
       // than the user's home: a bot with file tools and acceptEdits gets a
       // desk, not the whole house — and the workspace is where its
@@ -19505,7 +19510,9 @@ ROUTES.push(createVoiceModeRoutes({
   utterances: toUtterances,
   callSession: {
     start: (target, callId, language) => voiceCalls.start(target.threadId, callId, language),
-    end: (target, callId) => { voiceCalls.end(target.threadId, callId); },
+    end: (target, callId) => {
+      if (voiceCalls.end(target.threadId, callId)) void perspicaxMcp?.endWarm(target.threadId);
+    },
   },
   recordUsage: (usage) => {
     const bot = store.bot(usage.target.botId);
@@ -19830,6 +19837,8 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
   perspicaxMcp = new PerspicaxMcp({
     issuer,
     link: () => directory,
+    // a live call keeps its Perspicax tools mounted from turn to turn
+    keepWarm: (threadId) => Boolean(voiceCalls.active(threadId)),
     subjectOf: (principalId) => {
       const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;
       return person?.subject ? { iss: person.subject.iss, sub: person.subject.sub, disabled: person.disabledAt !== undefined } : null;

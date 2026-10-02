@@ -42,13 +42,12 @@ describe("VoiceCallSessions", () => {
     expect(calls.claimUtterance("t1", "call-0123456789", "utt-00000002", "send-c")).toEqual({ first: true });
   });
 
-  it("keeps a call's MCP servers from turn to turn", () => {
+  it("reports a call turn's MCP servers that changed since its last turn", () => {
     const calls = new VoiceCallSessions();
-    // no call: what the turn resolved, untouched
-    expect(calls.stableMcp("t1", { a: 1 })).toEqual({ servers: { a: 1 }, restored: [] });
+    expect(calls.noteMcp("t1", ["a"])).toEqual({ added: [], removed: [] });
     calls.start("t1", "call-0123456789");
-    expect(calls.stableMcp("t1", { a: 1, b: 2 })).toEqual({ servers: { a: 1, b: 2 }, restored: [] });
-    // b failed to refresh for this turn: it comes back from the call's set
-    expect(calls.stableMcp("t1", { a: 3 })).toEqual({ servers: { a: 3, b: 2 }, restored: ["b"] });
+    expect(calls.noteMcp("t1", ["a", "b"])).toEqual({ added: [], removed: [] });
+    expect(calls.noteMcp("t1", ["a", "b"])).toEqual({ added: [], removed: [] });
+    expect(calls.noteMcp("t1", ["a", "c"])).toEqual({ added: ["c"], removed: ["b"] });
   });
 });
