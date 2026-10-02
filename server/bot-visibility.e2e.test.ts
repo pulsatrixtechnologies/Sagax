@@ -3,7 +3,8 @@
 // Bob); their sessions are issued before boot. Boss restricts "Payroll" to
 // Ada and "Board" to admins, then every read path a member has is checked as
 // Bob (who may see neither), as Ada (who may see Payroll), as Boss and as
-// the owner on this machine:
+// the owner on this machine. Boss shares every bot with both members (direct
+// grants) and lists them in the rooms, so the audience is what narrows:
 //
 //   lists (bots, rooms, teams, queues, computer state), transcripts and
 //   their pages, images and exports, sends and card routes, room creation,
@@ -31,6 +32,8 @@ const posixOnly = describe.skipIf(process.platform === "win32");
 const BOSS = "boss@example.test";
 const ADA = "ada@example.test";
 const BOB = "bob@example.test";
+// The people a room lists: a signed-in person sees a room only when listed.
+const EVERYONE = [BOSS, ADA, BOB];
 const CAPABILITY_KEY = "bot-visibility-fixture-capability";
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 
@@ -133,6 +136,12 @@ async function makeBot(name: string, section?: string) {
   expect(created.status, JSON.stringify(created.body)).toBe(201);
   const patched = await api("PATCH", `/api/bots/${created.body.bot.id}`, { modelSelection: { instanceId: "grok", model: "fake-model" } }, BOSS);
   expect(patched.status).toBe(200);
+  // A member reaches another person's bot only once its owner shares it
+  // (direct grants); the audience below is what narrows it further.
+  for (const email of [ADA, BOB]) {
+    const granted = await api("POST", `/api/bots/${created.body.bot.id}/direct-grants`, { userId: email }, BOSS);
+    expect(granted.status, JSON.stringify(granted.body)).toBe(200);
+  }
   return created.body.bot as { id: string; threadId: string };
 }
 
@@ -174,8 +183,8 @@ posixOnly("per-bot visibility on a shared workspace", () => {
     const hr = await makeBot("Payroll Zebra", "People");
     const board = await makeBot("Board Heron", "People");
     Object.assign(ids, { pub: pub.id, pubThread: pub.threadId, hr: hr.id, hrThread: hr.threadId, board: board.id });
-    const roomPub = await api("POST", "/api/groups", { memberIds: [pub.id], name: "Front desk" }, BOSS);
-    const roomMixed = await api("POST", "/api/groups", { memberIds: [pub.id, hr.id], name: "Pay questions",
+    const roomPub = await api("POST", "/api/groups", { memberIds: [pub.id], name: "Front desk", humanIds: EVERYONE }, BOSS);
+    const roomMixed = await api("POST", "/api/groups", { memberIds: [pub.id, hr.id], name: "Pay questions", humanIds: EVERYONE,
       setup: { bulletin: "", defaultResponder: { kind: "everyone" } } }, BOSS);
     expect(roomPub.status).toBe(201);
     expect(roomMixed.status).toBe(201);
@@ -201,7 +210,8 @@ posixOnly("per-bot visibility on a shared workspace", () => {
     expect((await api("PATCH", `/api/bots/${hr.id}`, { avatarUrl: `/api/attachments/${ids.avatar}` }, BOSS)).status).toBe(200);
     ids.fresh = nameOf(await upload());
     // The helpdesk and Payroll talk in their shared room before Payroll is restricted.
-    expect((await api("POST", `/api/groups/${ids.roomMixed}/messages`, { text: "SECRET-ROOM-42 layoffs list" }, BOSS)).status).toBe(202);
+    const roomSent = await api("POST", `/api/groups/${ids.roomMixed}/messages`, { text: "SECRET-ROOM-42 layoffs list" }, BOSS);
+    expect(roomSent.status, JSON.stringify(roomSent.body)).toBe(202);
     expect(await waitFor(async () => {
       const { body } = await api("GET", `/api/threads/${roomMixed.body.group.threadId}/messages`, undefined, BOSS);
       return (body.messages ?? []).some((m: any) => m.role === "bot" && m.from?.botId === pub.id && m.text);
@@ -222,7 +232,7 @@ posixOnly("per-bot visibility on a shared workspace", () => {
 
   it("lists only what a member may see, and never who else may", async () => {
     const bob = (await api("GET", "/api/bots?messages=5", undefined, BOB)).body;
-    // (the workspace's own starter bot is visible to everyone, like the helpdesk)
+    // (a member sees only the bots shared with them: not the operator's starter bot)
     const bobBots = bob.bots.map((bot: any) => bot.id);
     expect(bobBots).toContain(ids.pub);
     expect(bobBots).not.toContain(ids.hr);
@@ -243,8 +253,10 @@ posixOnly("per-bot visibility on a shared workspace", () => {
     const boss = (await api("GET", "/api/bots?messages=0", undefined, BOSS)).body;
     expect(boss.bots.map((bot: any) => bot.id).sort()).toEqual([...bobBots, ids.hr, ids.board].sort());
     expect(boss.bots.find((bot: any) => bot.id === ids.board).visibility).toBe("admins");
-    // The owner on this machine sees everything too.
-    expect((await api("GET", "/api/bots?messages=0")).body.bots).toHaveLength(bobBots.length + 2);
+    // The owner on this machine sees everything too, its own starter bot included.
+    const everything = (await api("GET", "/api/bots?messages=0")).body.bots.map((bot: any) => bot.id);
+    expect(everything).toEqual(expect.arrayContaining([...bobBots, ids.hr, ids.board]));
+    expect(everything).toHaveLength(bobBots.length + 3);
   });
 
   it("answers a member's every route to a hidden bot, thread or room as not found", async () => {
@@ -282,7 +294,8 @@ posixOnly("per-bot visibility on a shared workspace", () => {
     }
     // A hidden bot can't be scheduled or put in a room by that member either.
     expect(await status("POST", "/api/routines", BOB, { name: "Mine", botId: ids.hr, prompt: "x", schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } })).toBe(404);
-    expect(await status("POST", "/api/groups", BOB, { memberIds: [ids.pub, ids.hr], name: "Sneaky" })).toBe(400);
+    // (only a bot's owner places it in a room, so a member never gets that far)
+    expect(await status("POST", "/api/groups", BOB, { memberIds: [ids.pub, ids.hr], name: "Sneaky" })).toBe(403);
     // Nothing changed behind the refusals.
     expect((await api("GET", "/api/routines", undefined, BOSS)).body.routines.find((r: any) => r.id === ids.hrRoutine).enabled).toBe(false);
     expect((await api("GET", `/api/bots?messages=0`, undefined, BOSS)).body.groups.find((g: any) => g.id === ids.roomMixed).name).toBe("Pay questions");
@@ -445,8 +458,9 @@ posixOnly("per-bot visibility on a shared workspace", () => {
       expect(imported.status, JSON.stringify(importedBody)).toBe(201);
       const importedIds = importedBody.bots.map((bot) => bot.id);
       expect(importedIds.length).toBeGreaterThan(0);
-      const boss = (await api("GET", "/api/bots?messages=0", undefined, BOSS)).body.bots;
-      for (const id of importedIds) expect(boss.find((bot: any) => bot.id === id).visibility).toEqual({ people: [ADA] });
+      // An import on a solo server is ownerless, so the operator's: read it there.
+      const owner = (await api("GET", "/api/bots?messages=0")).body.bots;
+      for (const id of importedIds) expect(owner.find((bot: any) => bot.id === id).visibility).toEqual({ people: [ADA] });
       expect((await fetch(`${BASE}/api/teams/import?visibility=nobody`, { method: "POST", headers: headers(BOSS), body: JSON.stringify(manifest.body) })).status).toBe(400);
       await new Promise((r) => setTimeout(r, 500));
       const seen = JSON.stringify(bob.frames);
@@ -593,7 +607,8 @@ posixOnly("per-bot visibility on a shared workspace", () => {
       });
       const made = await created.json() as { id: string };
       expect(created.status, JSON.stringify(made)).toBe(201);
-      const admin = (await api("GET", "/api/bots?messages=0", undefined, BOSS)).body.bots.find((b: any) => b.id === made.id);
+      // A bot a Chief creates is ownerless on a solo server: the operator's.
+      const admin = (await api("GET", "/api/bots?messages=0")).body.bots.find((b: any) => b.id === made.id);
       expect(admin.visibility).toBe("admins");
       await new Promise((r) => setTimeout(r, 500));
       const list = (await api("GET", "/api/bots?messages=0", undefined, BOB)).body;

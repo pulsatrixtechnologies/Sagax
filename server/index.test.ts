@@ -6590,7 +6590,7 @@ describe("harness HTTP API", () => {
       requestId: "gone",
       behavior: "allow",
     });
-    expect(unavailable.status).toBe(200);
+    expect(unavailable.status, JSON.stringify(unavailable.body)).toBe(200);
     expect(unavailable.body).toEqual({ ok: true, outcome: "unavailable" });
 
     const reread = (await api("GET", "/api/bots")).body.bots.find((candidate: { id: string }) => candidate.id === bot.id);
@@ -6621,7 +6621,7 @@ describe("harness HTTP API", () => {
       requestId: "never-existed",
       behavior: "allow",
     });
-    expect(nothing.status).toBe(404);
+    expect(nothing.status, JSON.stringify(nothing.body)).toBe(404);
   });
 
   it("closes the approvals a cancelled turn can no longer answer", async () => {
@@ -8584,7 +8584,10 @@ describe("harness HTTP API", () => {
       const immediate = (await api("GET", "/api/bots?messages=0")).body;
       expect(immediate.groups.find((group: { id: string }) => group.id === room.id)?.working).toBe(true);
       expect((await api("POST", `/api/groups/${room.id}/tasks`, { title: "Too soon" })).status).toBe(409);
-      expect((await api("PATCH", `/api/groups/${room.id}`, { memberIds: [first.id] })).status).toBe(409);
+      // A bot leaving mid-turn is applied (b809e0570); a member change that
+      // removes nobody, and a bulletin edit, still wait for the turn.
+      expect((await api("PATCH", `/api/groups/${room.id}`, { memberIds: [second.id, first.id] })).status).toBe(409);
+      expect((await api("PATCH", `/api/groups/${room.id}`, { bulletin: "Not now" })).status).toBe(409);
 
       const interrupted = await api("POST", `/api/groups/${room.id}/interrupt`, {
         threadId: room.threadId,
@@ -9911,7 +9914,7 @@ describe("harness HTTP API", () => {
     expect(saved.status).toBe(200);
     expect(saved.body.composio).toEqual({ configured: true, mode: "self-hosted" });
     expect(saved.body.opencodeGo).toEqual({ configured: true });
-    expect(saved.body.profile).toEqual({ name: "External Store", email: "", aboutMe: "" });
+    expect(saved.body.profile).toEqual({ name: "External Store", email: "", aboutMe: "", avatarUrl: "" });
     expect(JSON.stringify(saved.body)).not.toContain("ak_good");
 
     const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
@@ -10310,10 +10313,10 @@ describe("harness HTTP API", () => {
   it("stores and echoes the user profile (not write-only, unlike keys)", async () => {
     const put = await api("PUT", "/api/config", { profile: { name: "Ada Lovelace", email: "Ada@Example.com" } });
     expect(put.status).toBe(200);
-    expect(put.body.profile).toEqual({ name: "Ada Lovelace", email: "Ada@Example.com", aboutMe: "" });
+    expect(put.body.profile).toEqual({ name: "Ada Lovelace", email: "Ada@Example.com", aboutMe: "", avatarUrl: "" });
 
     const after = await api("GET", "/api/config");
-    expect(after.body.profile).toEqual({ name: "Ada Lovelace", email: "Ada@Example.com", aboutMe: "" });
+    expect(after.body.profile).toEqual({ name: "Ada Lovelace", email: "Ada@Example.com", aboutMe: "", avatarUrl: "" });
   });
 
   it("creates an independent webhook, accepts a delivery, deduplicates it, and rotates its secret", async () => {
@@ -11337,7 +11340,7 @@ describe("bot memory API", () => {
         id: "persona",
         label: "Identity",
         text: "You are Kiwi, a personal bot in Sagax. Role: Tracker. About: Files bugs.",
-        bytes: 78,
+        bytes: 72,
       });
       expect(before.body.sections.map((s: { id: string }) => s.id)).not.toContain("soul");
       expect(before.body.sections.map((s: { id: string }) => s.id)).toContain("memory");
