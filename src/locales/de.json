@@ -103,7 +103,6 @@
   "settings.section.experimental": "Experimentell",
   "settings.section.connections": "API-Schlüssel",
   "settings.section.engines": "Modellanbieter",
-  "settings.section.computer": "Lokale VM",
   "settings.section.usage": "Nutzung",
   "settings.profile.title": "Profil",
   "settings.profile.subtitle": "Wird in der Seitenleiste gezeigt. Wird beim Tippen gespeichert.",

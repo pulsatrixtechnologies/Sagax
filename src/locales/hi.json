@@ -24,7 +24,6 @@
   "settings.section.experimental": "प्रयोगात्मक",
   "settings.section.connections": "API कुंजियाँ",
   "settings.section.engines": "मॉडल प्रदाता",
-  "settings.section.computer": "लोकल VM",
   "settings.section.usage": "उपयोग",
   "settings.profile.title": "प्रोफ़ाइल",
   "settings.profile.subtitle": "साइडबार में दिखता है। लिखते ही सहेजा जाता है।",

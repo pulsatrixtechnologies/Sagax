@@ -38,7 +38,7 @@ import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { liveActivityLabel } from "@/lib/live-activity";
-import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { connectedAppsEnabled, llmThreadTitlesEnabled } from "@/lib/feature-flags";
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
 import { stateForBot } from "@/lib/mascot";
@@ -2124,13 +2124,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       attention: routineAttention,
       onSelect: () => dispatch({ type: "showRoutines" }),
     },
-    {
+    // Connected apps is experimental (Settings > Experimental features).
+    ...(connectedAppsEnabled(state.config) ? [{
       key: "plugins",
       tourId: "nav-apps",
       label: t("sidebar.nav.connectedApps"),
       icon: Puzzle,
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
-    },
+    }] : []),
     ...(!remoteClient ? [{
       key: "templates",
       label: t("sidebar.teamLibrary"),

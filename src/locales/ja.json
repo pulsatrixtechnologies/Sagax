@@ -24,7 +24,6 @@
   "settings.section.experimental": "実験的機能",
   "settings.section.connections": "API キー",
   "settings.section.engines": "モデルプロバイダー",
-  "settings.section.computer": "ローカル VM",
   "settings.section.usage": "使用状況",
   "settings.profile.title": "プロフィール",
   "settings.profile.subtitle": "サイドバーに表示されます。入力するそばから保存されます。",

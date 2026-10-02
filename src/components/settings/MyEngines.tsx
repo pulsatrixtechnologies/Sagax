@@ -1,5 +1,6 @@
-// Settings > Organization > My engines, on a server signed in with Perspicax
-// (slice 4): for each engine, whether it is installed, what my own turns on
+// Settings > Model providers > My subscriptions and keys, on a server signed
+// in with Perspicax (slice 4; it was Settings > Organization > My engines
+// until 2026-10-01): for each engine, whether it is installed, what my own turns on
 // it run with (my subscription, my key, the organization's key: on my bots
 // and on bots shared with me, 2026-10-01), my own subscription sign-in
 // (Claude, Codex) and the link to my model keys in Perspicax. Keys are

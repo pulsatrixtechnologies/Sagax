@@ -3108,7 +3108,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (action.notice) setTimeout(() => rawDispatch({ type: "notice", notice: null }), 6000);
           break;
         case "createRoutine":
-          api("/api/routines", { method: "POST", body: JSON.stringify(action.input) }).catch(showError);
+          api("/api/routines", { method: "POST", body: JSON.stringify(action.input) })
+            // loaded on use: routine-delegation.ts imports this module
+            .then(() => void import("@/lib/routine-delegation").then((module) => module.ensureRoutineDelegation()).catch(() => {}))
+            .catch(showError);
           break;
         case "updateRoutine":
           api(`/api/routines/${action.routineId}`, {

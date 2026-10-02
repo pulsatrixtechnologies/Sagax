@@ -162,6 +162,7 @@ import {
   saveConfig,
   showToolCallsEnabled,
   routinesInConversationEnabled,
+  connectedAppsEnabled,
   claudeUserMcpEnabled,
   claudeAiConnectorsEnabled,
   skillAuthoringEnabled,
@@ -16124,6 +16125,7 @@ function configStatus() {
       skillAuthoring: skillAuthoringEnabled(cfg),
       showToolCalls: showToolCallsEnabled(cfg),
       routinesInConversation: routinesInConversationEnabled(cfg),
+      connectedApps: connectedAppsEnabled(cfg),
       browser: builtInBrowserEnabled(cfg),
       // Maintainer-only escape hatch, not a Settings toggle: the desktop
       // shell and the Settings UI read it so they offer nothing this server

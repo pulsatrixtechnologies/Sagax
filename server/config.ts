@@ -303,6 +303,9 @@ const featureConfigSchema = z.object({
    * thread. Off unless explicitly enabled. The run still starts from its own
    * instructions, but the messages stay in that chat. */
   routinesInConversation: z.boolean().optional(),
+  /** Connected apps (Composio) in the sidebar's bottom menu and in
+   * Settings. Off unless explicitly enabled (experimental). */
+  connectedApps: z.boolean().optional(),
   /** Experimental built-in browser. Off until explicitly enabled; each bot
    * also has its own switch. */
   browser: z.boolean().optional(),
@@ -701,7 +704,7 @@ export interface AppConfig {
    * seats shared by all conversations, with per-thread affinity (#1654). */
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number };
   /** Opt-in product experiments. Every flag defaults to disabled. */
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; computerClaimIdleRelease?: boolean; cloudOverflow?: boolean; routinesInConversation?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; computerClaimIdleRelease?: boolean; cloudOverflow?: boolean; routinesInConversation?: boolean; connectedApps?: boolean };
   /** #1655: consented cloud overflow for local computer waits. The cost is
    * the operator's own per-second rate; unset keeps the feature inert. */
   cloudOverflow?: { perSecondCostUsd?: number; idleStopMs?: number; allowlistedThreads?: string[] };
@@ -920,6 +923,12 @@ export function showToolCallsEnabled(cfg: AppConfig): boolean {
  * Off by default, so scheduled work stays in a hidden thread. */
 export function routinesInConversationEnabled(cfg: AppConfig): boolean {
   return cfg.features?.routinesInConversation === true;
+}
+
+/** Connected apps (Composio) in the sidebar and Settings. Off by default
+ * (experimental). */
+export function connectedAppsEnabled(cfg: AppConfig): boolean {
+  return cfg.features?.connectedApps === true;
 }
 
 /** Workspace-level gate for the experimental built-in browser. A bot's own
