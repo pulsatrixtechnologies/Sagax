@@ -3249,8 +3249,15 @@ function clearThreadStopping(threadId: string): void {
   stoppingThreads.delete(threadId);
 }
 
-async function interruptDirectThread(botId: string, threadId: string): Promise<void> {
+/** A person stops a thread's turn: what they sent into it is withdrawn,
+ * and words sent while it stops wait for the next turn. */
+async function stopDirectThreadByPerson(botId: string, threadId: string): Promise<void> {
   if (threadBusy(botId, threadId)) markThreadStopping(threadId);
+  handoffs.stoppedByPerson(threadId);
+  await interruptDirectThread(botId, threadId);
+}
+
+async function interruptDirectThread(botId: string, threadId: string): Promise<void> {
   const requestOwner = directRequestOwners.get(threadId);
   if (requestOwner) {
     requestOwner.stopped = true;
@@ -27258,10 +27265,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const own = routeThreadId(bot, body.threadId);
         const run = routines!.activeBotRunForBot(bot.id);
         if (run?.threadId === own) await routines!.cancelRun(run.id);
-        else {
-          handoffs.stoppedByPerson(own);
-          await interruptDirectThread(bot.id, own);
-        }
+        else await stopDirectThreadByPerson(bot.id, own);
         return json(res, 200, { ok: true });
       }
       if (stopper && body.threadId !== undefined) routeThreadId(bot, body.threadId);
@@ -27274,10 +27278,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (typeof expectedThreadId === "string" && store.taskByThread(bot.id, expectedThreadId)) {
         const routine = routines!.activeBotRunForBot(bot.id);
         if (routine?.threadId === expectedThreadId) await routines!.cancelRun(routine.id);
-        else {
-          handoffs.stoppedByPerson(expectedThreadId);
-          await interruptDirectThread(bot.id, expectedThreadId);
-        }
+        else await stopDirectThreadByPerson(bot.id, expectedThreadId);
         return json(res, 200, { ok: true });
       }
       const directClaim = directTurnDispatchClaims.get(bot.threadId);
@@ -27315,8 +27316,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       ) {
         return json(res, 409, { error: "the bot switched tasks before it could be interrupted" });
       }
-      handoffs.stoppedByPerson(expectedThreadId ?? bot.threadId);
-      await interruptDirectThread(bot.id, expectedThreadId ?? bot.threadId);
+      await stopDirectThreadByPerson(bot.id, expectedThreadId ?? bot.threadId);
       return json(res, 200, { ok: true });
     }
 
