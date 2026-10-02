@@ -2145,6 +2145,13 @@ final class Session: ObservableObject {
 
     // MARK: - Routines
 
+    /// The bot profile's own calls (`App/Profile/`, `ClientProfile.swift`).
+    var profileClient: CompanionClient? { client }
+
+    /// Fold a bot the profile just saved, or drop one it deleted.
+    func applyProfileBot(_ bot: Bot) { state.apply(.bot(bot)) }
+    func applyBotDeleted(_ botId: String) { state.apply(.botDeleted(botId: botId)) }
+
     func loadRoutines() async -> (routines: [Routine], runs: [RoutineRun]) {
         guard let client else { return ([], []) }
         do { return try await client.routines() }

@@ -62,6 +62,10 @@ struct CharacterEditor: View {
         /// Skin row centre to first colour row centre.
         var skinToColours: CGFloat
         var topPadding: CGFloat
+        /// The skin row's height when it differs from `pitch`.
+        var skinRowHeight: CGFloat? = nil
+        /// Space above the photo row.
+        var photoTopPadding: CGFloat = 20
 
         /// Reference 20: 34 pt cells on a 57.67 pitch, 25 pt swatches on
         /// 53.33, colour rows 42.1 apart.
@@ -71,9 +75,12 @@ struct CharacterEditor: View {
         )
 
         /// Reference 03: 35 pt cells on a 60 pt pitch, 26 pt swatches on 53.
+        /// The first row is centred 44 pt into the card, and the owl's rows
+        /// plus the photo row end where the reference's divider is (252 pt).
         static let profileCard = Metrics(
             cell: 35, pitch: 60, skinCell: 27, skinPitch: 36,
-            swatch: 26, swatchPitch: 53, swatchRowPitch: 42, skinToColours: 62, topPadding: 20
+            swatch: 26, swatchPitch: 53, swatchRowPitch: 40, skinToColours: 50, topPadding: 14,
+            skinRowHeight: 50, photoTopPadding: 6
         )
     }
 
@@ -86,6 +93,10 @@ struct CharacterEditor: View {
     var hasPhoto = false
     var onPhotoPicked: ((Data) -> Void)?
     var onRemovePhoto: (() -> Void)?
+    /// "Generate": the owner asks for the art direction, then generates.
+    var onGeneratePhoto: (() -> Void)?
+    /// "Frame": pinch and drag the picture in its frame.
+    var onFramePhoto: (() -> Void)?
     /// Called after the draft is reset, so the owner also clears the picture
     /// (`avatarCrop: mascot`).
     var onReset: (() -> Void)?
@@ -127,10 +138,10 @@ struct CharacterEditor: View {
 
             if draft.character != .trombi {
                 colourRows
-                    .padding(.top, metrics.skinToColours - metrics.pitch / 2 - metrics.swatch / 2)
+                    .padding(.top, metrics.skinToColours - (metrics.skinRowHeight ?? metrics.pitch) / 2 - metrics.swatch / 2)
             }
 
-            if showsPhotoRow { photoRow.padding(.top, 20) }
+            if showsPhotoRow { photoRow.padding(.top, metrics.photoTopPadding) }
             if showsReset { resetRow.padding(.top, 12) }
         }
         .padding(.top, metrics.topPadding)
@@ -144,14 +155,14 @@ struct CharacterEditor: View {
         switch draft.character {
         case .owl:
             let skins = MascotSkin.allCases
-            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.pitch) { index in
+            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
                 thumbnail(look: MascotLook.owl.complete, skin: skins[index], size: metrics.skinCell, selected: draft.skin == skins[index], label: Text(verbatim: skins[index].rawValue)) {
                     draft.skin = skins[index]
                 }
             }
         case .shape:
             let skins = ShapeSkin.allCases
-            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.pitch) { index in
+            row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
                 thumbnail(look: edited { $0.shapeSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.shapeSkin == skins[index], label: Text(verbatim: skins[index].rawValue)) {
                     var next = draft.complete
                     next.shapeSkin = skins[index]
@@ -218,13 +229,33 @@ struct CharacterEditor: View {
             PhotosPicker(selection: $photoItem, matching: .images) {
                 Text("Upload").font(Theme.Font.rowTitle).foregroundStyle(Theme.blue)
             }
+            .accessibilityIdentifier("character-photo-upload")
+            if let onGeneratePhoto {
+                Button {
+                    onGeneratePhoto()
+                } label: {
+                    Text("Generate").font(Theme.Font.rowTitle).foregroundStyle(Theme.blue)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("character-photo-generate")
+            }
             if hasPhoto {
+                if let onFramePhoto {
+                    Button {
+                        onFramePhoto()
+                    } label: {
+                        Text("Frame").font(Theme.Font.rowTitle).foregroundStyle(Theme.blue)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("character-photo-frame")
+                }
                 Button {
                     onRemovePhoto?()
                 } label: {
                     Text("Remove").font(Theme.Font.rowTitle).foregroundStyle(Theme.destructive)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("character-photo-remove")
             }
         }
         .padding(.horizontal, Theme.Metric.rowInset)

@@ -191,7 +191,7 @@ private struct RoutineRunRow: View {
     }
 }
 
-private struct RoutineEditorView: View {
+struct RoutineEditorView: View {
     let routine: Routine?
     let onSaved: () async -> Void
 
@@ -216,12 +216,13 @@ private struct RoutineEditorView: View {
     @State private var advancedExpanded: Bool
     @State private var saving = false
 
-    init(routine: Routine?, onSaved: @escaping () async -> Void) {
+    /// `presetBotId`: a new routine made from a bot's profile starts on that bot.
+    init(routine: Routine?, presetBotId: String? = nil, onSaved: @escaping () async -> Void) {
         self.routine = routine
         self.onSaved = onSaved
         _name = State(initialValue: routine?.name ?? "")
         _prompt = State(initialValue: routine?.prompt ?? "")
-        _botId = State(initialValue: routine?.botId ?? "")
+        _botId = State(initialValue: routine?.botId ?? presetBotId ?? "")
         _runOn = State(initialValue: routine?.runLocation ?? .maus)
         _runAvailability = State(initialValue: nil)
         _availabilityLoaded = State(initialValue: false)

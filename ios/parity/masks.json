@@ -538,16 +538,16 @@
           102,
           100
         ],
-        "why": "profile mascot 84 + glow"
+        "why": "profile mascot 84 + glow (our character by design)"
       },
       {
         "rect": [
-          24,
-          441,
-          354,
-          252
+          26,
+          443,
+          350,
+          248
         ],
-        "why": "character editor (ours by design)"
+        "why": "Character card picker contents (our editor by design); the card frame, divider, Reset row and footer stay compared"
       }
     ]
   },
@@ -555,21 +555,30 @@
     "rects": [
       {
         "rect": [
-          150,
-          125,
-          102,
-          100
+          26,
+          112,
+          350,
+          193
         ],
-        "why": "profile mascot 84 + glow"
+        "why": "Character card picker contents, scrolled (our editor by design)"
       },
       {
         "rect": [
-          24,
-          441,
-          354,
-          252
+          62,
+          54,
+          270,
+          58
         ],
-        "why": "character editor (ours by design)"
+        "why": "Character card picker contents seen through the top fade and under the share circle's glass"
+      },
+      {
+        "rect": [
+          143.7,
+          107,
+          250.3,
+          122
+        ],
+        "why": "menu rows 2 to 4: the spec adds Threads and Advanced to the reference's Copy ID and Delete Bot"
       }
     ]
   },
@@ -577,21 +586,30 @@
     "rects": [
       {
         "rect": [
-          76,
-          500,
-          280,
-          20
+          26,
+          112,
+          350,
+          193
         ],
-        "why": "routine subtitle 1"
+        "why": "Character card picker contents, scrolled (our editor by design)"
       },
       {
         "rect": [
-          76,
-          563,
-          280,
-          20
+          62,
+          54,
+          270,
+          58
         ],
-        "why": "routine subtitle 2"
+        "why": "Character card picker contents seen through the top fade and under the share circle's glass"
+      },
+      {
+        "rect": [
+          394,
+          280,
+          8,
+          540
+        ],
+        "why": "the system scroll indicator the reference caught mid-scroll (transient, like the status bar)"
       }
     ]
   },

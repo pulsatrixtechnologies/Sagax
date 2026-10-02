@@ -172,6 +172,64 @@ enum Theme {
     static func continuous(_ fitted: CGFloat) -> CGFloat { fitted * 0.88 }
 }
 
+// MARK: - Profile (measure-chat-profile.md §3, §4)
+
+extension Theme {
+    /// The bot profile (03, 04, 07 to 10) and the routine screens (05, 06),
+    /// in points. Card-relative x values are measured from the card edge.
+    enum Profile {
+        /// Cards sit 24 pt from the screen edges on the profile, 16 on the
+        /// routine screens.
+        static let cardMargin: CGFloat = 24
+        static let routineMargin: CGFloat = 16
+        /// Text starts 18 pt into a card.
+        static let textInset: CGFloat = 18
+        /// Leading icons are centred 30 pt into the card; the text column
+        /// beside them starts 52.7 pt in.
+        static let iconCentre: CGFloat = 30
+        static let iconColumn: CGFloat = 52
+        /// The chevron's ink ends 22.3 pt from the card's trailing edge.
+        static let chevronTrailing: CGFloat = 22.3
+        /// Rows without the 1 pt divider.
+        static let row: CGFloat = 45.3
+        static let singleRow: CGFloat = 46.3
+        static let routineRow: CGFloat = 63.3
+        static let linkRow: CGFloat = 77
+        static let fileRow: CGFloat = 45.67
+        static let toggleRow: CGFloat = 56
+        static let mascot: CGFloat = 84
+        static let mascotTop: CGFloat = 133.3
+        static let nameRow: CGFloat = 49.7
+        static let roleRow: CGFloat = 42.6
+        static let tabUnderline: CGFloat = 64.7
+        static let mediaTile: CGFloat = 173
+        static let mediaGap: CGFloat = 8
+        /// Space between a card and the next element, and from a label's
+        /// line box to its card.
+        static let cardGap: CGFloat = 16
+        static let labelToCard: CGFloat = 8.7
+        static let footerTop: CGFloat = 8
+        /// "Show more" sits about 29 pt under its card (cap top 32.7).
+        static let showMoreTop: CGFloat = 29.3
+        static let toggle = CGSize(width: 63, height: 28)
+        /// The "..." glass menu: 250 pt wide, radius 32, 36 pt row pitch.
+        static let menuWidth: CGFloat = 250
+        static let menuRadius: CGFloat = 32
+        static let menuRowPitch: CGFloat = 36.2
+        static let menuIconColumn: CGFloat = 30.3
+        static let menuTextColumn: CGFloat = 59.3
+        /// Section labels, footers and subtitles: "12 pt" measures 11.53 by ink width.
+        static let labelFont = SwiftUI.Font.system(size: 11.53)
+    }
+
+    /// Links, "Reset to default", "Add routine", "Share as Template".
+    static let accentText = Color(hex: 0x2F6CE7)
+    /// "Show more" under a profile list.
+    static let showMore = Color(hex: 0x97959C)
+    /// The "..." glass menu body over the dark card.
+    static let menuGlass = Color(hex: 0x3B3A3B)
+}
+
 // MARK: - Preferences
 
 /// Settings > App > Appearance. Stored per device.

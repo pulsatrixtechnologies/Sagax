@@ -386,7 +386,11 @@ struct ChatView: View {
             if ProcessInfo.processInfo.arguments.contains("-open-profile") { openProfile() }
             if let screen = ParityLaunch.current?.screen {
                 if screen.opensComputer { showingComputer = true }
-                if screen.opensProfile { openProfile() }
+                if screen.opensProfile {
+                    // a push while the chat's own push still animates is dropped
+                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    openProfile()
+                }
             }
 #endif
         }

@@ -11,17 +11,16 @@ import CompanionCore
 
 /// What tapping the name capsule opens, and how.
 ///
-/// The single hook for the profile: today the existing `AgentProfileView` as
-/// a sheet. The profile phase swaps `presentation` to `.push` and returns its
-/// `BotProfileView` from `destination`; `ChatView` handles both.
+/// The single hook for the profile: `BotProfileView`, pushed (reference 03).
+/// Today's `AgentProfileView` form stays reachable from its "..." > Advanced.
 enum ChatProfileRoute {
     enum Presentation { case sheet, push }
 
-    static let presentation: Presentation = .sheet
+    static let presentation: Presentation = .push
 
     @ViewBuilder
     static func destination(for bot: Bot) -> some View {
-        AgentProfileView(bot: bot)
+        BotProfileView(bot: bot)
     }
 }
 

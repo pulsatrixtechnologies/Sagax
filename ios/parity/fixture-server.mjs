@@ -180,6 +180,35 @@ const ARA_REPLY = [
   "Veux-tu que je refasse cette sauvegarde automatiquement chaque semaine, par exemple le dimanche soir?",
 ].join("\n");
 
+// The monthly routine's instruction (06): placeholder words on the
+// reference's 23 lines (two, a blank line, then six numbered items of 4, 4,
+// 4, 2, 4 and 2 lines), each short enough not to wrap at 328 pt.
+const ROUTINE_PROMPT = [
+  "Texte de remplacement pour la routine du",
+  "mois, court et neutre, sans contenu réel.",
+  "",
+  "1. Première étape de remplacement, avec",
+  "quelques mots pour remplir la ligne, puis",
+  "une suite de mots sans importance aucune,",
+  "et une fin de phrase pour cette étape.",
+  "2. Deuxième étape de remplacement, avec",
+  "des mots choisis pour la longueur, puis",
+  "une liste d'exemples sans aucun sens réel,",
+  "et quelques mots de plus pour terminer.",
+  "3. Troisième étape de remplacement, avec",
+  "trois idées au plus, toutes inventées pour",
+  "ce gabarit : un écart, un nom suggéré et",
+  "une raison courte pour chacune d'entre elles.",
+  "4. Si rien ne convient, aucune réponse",
+  "n'est envoyée pour cette étape factice.",
+  "5. Sinon, un message court en français",
+  "avec les propositions et une demande de",
+  "confirmation avant tout changement, sans",
+  "rien créer ni modifier dans cette passe.",
+  "6. Aucun avis pour les échanges entre bots",
+  "et aucun réveil des sièges en pause.",
+].join("\n");
+
 // The bot's earlier answer, scrolled under the top bar in the reference.
 const ARA_EARLIER = "Je m'en occupe. Je vérifie d'abord qu'il n'y a aucun secret dans les fichiers, ensuite je pousse tout dans `fixture-workspace`.";
 
@@ -291,6 +320,8 @@ async function seedThroughAPI(base) {
   });
   const weeklyId = (weekly.routine ?? weekly).id;
   await api(base, "PATCH", `/api/routines/${weeklyId}`, { enabled: false });
+  // The monthly routine's instruction has the reference's line count (06).
+  await api(base, "PATCH", `/api/routines/${(cron.routine ?? cron).id}`, { prompt: ROUTINE_PROMPT });
 
   return { ids, groupId: group.id, groupThreadId: group.threadId, routines: [(cron.routine ?? cron).id, weeklyId] };
 }
@@ -345,6 +376,15 @@ function seedTranscripts(dataDir, seeded) {
       file("plan-de-projet.pdf", "application/pdf", "%PDF-1.4\n% placeholder\n"),
       file("budget-trimestre.csv", "text/csv", "poste,montant\nexemple,0\n"),
       file("notes-reunion.txt", "text/plain", "Notes de remplacement.\n"),
+    ] },
+    // The profile's Media and Files tabs (09, 10) show one page, then "Show more".
+    { role: "bot", at: now - 2 * DAY, text: "Une troisième capture de remplacement.", attachments: [image("parity-media-3", [60, 130, 90])] },
+    { role: "bot", at: now - 2 * DAY + 60_000, text: "Les fichiers de la semaine sont joints.", attachments: [
+      file("EXEC_BRIEF.md", "text/markdown", "# Résumé de remplacement\n"),
+      file("report.md", "text/markdown", "# Rapport de remplacement\n"),
+    ] },
+    { role: "bot", at: now - 2 * DAY + 120_000, text: "L'archive de remplacement est prête.", attachments: [
+      file("skills-export-2026-09-28.zip", "application/zip", "PK placeholder"),
     ] },
     { role: "user", at: today(16, 4), text: "Fais une sauvegarde du dossier de travail." },
     { role: "bot", at: today(16, 5), text: ARA_EARLIER },

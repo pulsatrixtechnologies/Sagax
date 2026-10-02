@@ -55,7 +55,7 @@ enum ParityScreen: String, CaseIterable {
     var opensAraChat: Bool {
         switch self {
         case .chat, .profileInfo, .profileInfoScrolled, .profileMoreMenu, .profileLinks, .profileMedia,
-             .profileFiles, .computer, .computerTrackpadToast:
+             .profileFiles, .computer, .computerTrackpadToast, .routineDetail, .routineInstruction:
             true
         default:
             false
@@ -72,10 +72,12 @@ enum ParityScreen: String, CaseIterable {
         }
     }
 
-    /// Today's profile sheet stands in for the profile screens until P4.
+    /// Screens on Ara's profile (pushed from the chat); 05 and 06 go on to
+    /// her first routine.
     var opensProfile: Bool {
         switch self {
-        case .profileInfo, .profileInfoScrolled, .profileMoreMenu, .profileLinks, .profileMedia, .profileFiles:
+        case .profileInfo, .profileInfoScrolled, .profileMoreMenu, .profileLinks, .profileMedia, .profileFiles,
+             .routineDetail, .routineInstruction:
             true
         default:
             false
