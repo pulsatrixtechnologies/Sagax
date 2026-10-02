@@ -46,5 +46,11 @@ export interface Notification {
    * (a refused turn's access card is private to its person). Absent: everyone
    * who sees the bot. */
   audience?: string[];
+  /** Organization server: a routine run whose access card sits in another
+   * person's private thread (the person it runs as) while this audience is
+   * the bot's owner, who cannot read that thread. `threadId` is then empty
+   * and the click opens this run in the bot's Coding activity, which shows
+   * the same card to its audience only (server/routes/bot-activity.ts). */
+  routineRunId?: string;
 }
 

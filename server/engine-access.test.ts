@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, serverCommandApproval, speakerPrincipal } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -156,6 +156,21 @@ describe("the key_refused card", () => {
     expect(accessCardForViewer(message, { principalId: BOB, admin: true }).access.detail).toBe("quota");
     expect(accessCardForViewer(message, { principalId: BOB, admin: false }).access).not.toHaveProperty("detail");
     expect(message.access.detail).toBe("quota");
+  });
+});
+
+describe("the notifications of a refused routine run (owner's card)", () => {
+  const note = { kind: "turn-failed", botId: "x", threadId: "t-bob" };
+  it("sends a reader the thread and the owner, who cannot read it, the run", () => {
+    expect(routineAccessNotifications(note, ["pr_owner"], { routineRunId: "run-9", readable: () => false }))
+      .toEqual([{ ...note, threadId: "", routineRunId: "run-9", audience: ["pr_owner"] }]);
+    expect(routineAccessNotifications(note, [BOB, "pr_owner"], { routineRunId: "run-9", readable: (id) => id === BOB }))
+      .toEqual([{ ...note, audience: [BOB] }, { ...note, threadId: "", routineRunId: "run-9", audience: ["pr_owner"] }]);
+  });
+  it("keeps one notification for a reader, a shared card, or no run", () => {
+    expect(routineAccessNotifications(note, ["pr_owner"], { routineRunId: "run-9", readable: () => true })).toEqual([{ ...note, audience: ["pr_owner"] }]);
+    expect(routineAccessNotifications(note, null, { routineRunId: "run-9", readable: () => false })).toEqual([note]);
+    expect(routineAccessNotifications(note, ["pr_owner"], { readable: () => false })).toEqual([{ ...note, audience: ["pr_owner"] }]);
   });
 });
 

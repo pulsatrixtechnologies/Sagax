@@ -812,6 +812,23 @@ describe("notification routing", () => {
     ]);
   });
 
+  it("opens the bot's Coding activity on the run when the owner's notification names no thread", () => {
+    // a routine run refused on the owner's credentials in another person's
+    // private thread: the owner gets the run, never that thread
+    const dispatch = vi.fn();
+    openNotificationTarget(dispatch, { botId: "bot-1", threadId: "", routineRunId: "run-9" }, { bots, groups });
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      { type: "openBotActivity", botId: "bot-1", itemId: "run:run-9" },
+    ]);
+    const bot = { ...initialState.bots[0], id: "bot-1", name: "Pepper", threadId: "main-thread" } as AppState["bots"][number];
+    const opened = reducer({ ...initialState, bots: [bot] }, { type: "openBotActivity", botId: "bot-1", itemId: "run:run-9" });
+    expect(opened).toMatchObject({ selectedId: "bot-1", settingsOpen: true, botSettingsSection: "routines", botSettingsExpandAccordion: true, botActivityTarget: { botId: "bot-1", itemId: "run:run-9" } });
+    expect(reducer(opened, { type: "botActivityOpened" }).botActivityTarget).toBeNull();
+    // a bot this person does not have stays closed
+    const unknown = { ...initialState, bots: [bot] };
+    expect(reducer(unknown, { type: "openBotActivity", botId: "gone", itemId: "run:run-9" })).toBe(unknown);
+  });
+
   it("opens the room and restores the exact inactive channel task", () => {
     const dispatch = vi.fn();
 

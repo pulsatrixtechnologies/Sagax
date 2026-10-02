@@ -1004,6 +1004,9 @@ export interface AppState {
   botSettingsSection: BotSettingsSection;
   /** True only when the open action named a section — accordion expands that row. */
   botSettingsExpandAccordion: boolean;
+  /** A Coding activity item the bot panel opens once (openBotActivity);
+   * cleared by the panel when it shows it. */
+  botActivityTarget: { botId: string; itemId: string } | null;
   /** latest live frame of a bot's computer, per botId */
   screens: Record<string, { png: string; mime: string; threadId?: string }>;
   /** bots whose cloud computer is being provisioned */
@@ -1271,6 +1274,11 @@ export type Action =
   | { type: "notice"; notice: AppState["notice"] }
   | { type: "revealThread"; threadId: string }
   | { type: "toggleSettings"; open?: boolean; section?: BotSettingsSection; botId?: string }
+  /** Open a bot's panel on Details with one Coding activity item shown
+   * (`run:<routineRunId>` or `thread:<threadId>`), e.g. from the owner's
+   * notification of a routine run refused in another person's thread. */
+  | { type: "openBotActivity"; botId: string; itemId: string }
+  | { type: "botActivityOpened" }
   | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp" }
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "toggleComputer"; open?: boolean }
@@ -1337,6 +1345,13 @@ export function openNotificationTarget(
   target: NotificationTarget,
   state: NotificationRoutingState,
 ) {
+  // A routine run refused in another person's private thread: the owner's
+  // notification names no thread, only the run, which the bot's Coding
+  // activity shows with its access card (shared/notification.ts).
+  if (!target.threadId && target.routineRunId) {
+    dispatch({ type: "openBotActivity", botId: target.botId, itemId: `run:${target.routineRunId}` });
+    return;
+  }
   // A room's approval/question notification carries the asker bot with the
   // GROUP's thread id; asking the bot to switch to that thread would 404.
   // Open the room itself. Cross-bot routine receipts carry the executing
@@ -2053,6 +2068,13 @@ export function reducer(state: AppState, action: Action): AppState {
         appSettingsOpen: open ? false : state.appSettingsOpen,
       };
     }
+    case "openBotActivity": {
+      const opened = reducer(state, { type: "toggleSettings", open: true, section: "routines", botId: action.botId });
+      if (opened === state) return state;
+      return { ...opened, botActivityTarget: { botId: action.botId, itemId: action.itemId } };
+    }
+    case "botActivityOpened":
+      return state.botActivityTarget ? { ...state, botActivityTarget: null } : state;
     case "togglePlugins": {
       const open = action.open ?? !state.pluginsOpen;
       return {
@@ -2472,6 +2494,7 @@ export const initialState: AppState = {
   tourOpen: false,
   botSettingsSection: "overview",
   botSettingsExpandAccordion: false,
+  botActivityTarget: null,
   screens: {},
   provisioning: {},
   deletingBots: {},
