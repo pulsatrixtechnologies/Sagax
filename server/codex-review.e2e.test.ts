@@ -6,10 +6,11 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const fake = join(root, "server", "testing", "fake-codex-app-server.ts");
-const port = 18800 + Math.floor(Math.random() * 10_000);
+const port = await freePortBlock([0, 1]);
 const base = `http://127.0.0.1:${port}`;
 let home: string;
 let child: ChildProcess;
