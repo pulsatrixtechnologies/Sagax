@@ -3816,7 +3816,7 @@
   "orgJoin.copyOptional": "Copying bots is optional. Choose none to join without them.",
   "orgJoin.working": "Working...",
   "orgJoin.download": "Download the copy file",
-  "orgJoin.downloadHelp": "In your organization's Sagax, open Settings > Organization > Bring bots from a solo Sagax and choose this file.",
+  "orgJoin.downloadHelp": "Keep this file as a copy or backup of these bots. Copying bots into an organization is only done from the local Sagax of a Sagax desktop app, in Settings > Organization > Join and copy.",
   "orgJoin.exportFailed": "The copy could not be prepared.",
   "orgJoin.badAddress": "Enter an https address, or http://localhost on this computer.",
   "orgJoin.joinFailed": "That server could not be joined. Check the address: it must be a Sagax signed in with Pulsatrix.",

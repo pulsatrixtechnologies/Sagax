@@ -96,7 +96,20 @@ describe("AccessSection always-allowed list", () => {
     expect(idle).not.toContain("finishes all active tasks");
   });
 
+  it("hides the bot's Connected apps switch while the experimental feature is off", () => {
+    const off = render(makeBot());
+    expect(off).not.toContain('aria-label="Allow this bot to use connected apps"');
+    expect(off).not.toContain("Connect an app");
+    fixture.config = { features: { connectedApps: false } };
+    expect(render(makeBot())).not.toContain('aria-label="Allow this bot to use connected apps"');
+    fixture.config = { features: { connectedApps: true }, composio: { configured: true } };
+    const on = render(makeBot());
+    expect(on).toContain('aria-label="Allow this bot to use connected apps"');
+    expect(on).toContain("Connect an app");
+  });
+
   it("opens the established app connection flow without authorizing a second way", () => {
+    fixture.config = { features: { connectedApps: true }, composio: { configured: true } };
     let tree!: ReturnType<typeof AccessSection>;
     function Capture() { tree = AccessSection({ bot: makeBot(), derived: makeDerived() }); return tree; }
     renderToStaticMarkup(createElement(StoreProvider, null, createElement(Capture)));
