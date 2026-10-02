@@ -53,8 +53,8 @@ client:
    ```json
    "env": {
      "ELECTRON_RUN_AS_NODE": "1",
-     "OMB_PORT": "8799",
-     "OPENMAUSBOT_TOKEN": "omb_sess_..."
+     "SAGAX_PORT": "8799",
+     "SAGAX_TOKEN": "omb_sess_..."
    }
    ```
 
@@ -93,12 +93,12 @@ With no configuration, the MCP process probes Sagax's three desktop ports (`8799
 and accepts only a health response that identifies itself as Sagax. This handles the desktop's normal
 fallback when another local process already owns port 8799.
 
-Set `OMB_PORT` to force one local port, or `OPENMAUSBOT_URL` to use an explicit HTTP(S) origin. Cleartext remote
+Set `SAGAX_PORT` to force one local port, or `SAGAX_URL` to use an explicit HTTP(S) origin. Cleartext remote
 HTTP is rejected unless `ALLOW_INSECURE_HTTP=true`; HTTPS should be used outside loopback. An optional
-`OPENMAUSBOT_TOKEN` is sent as a bearer token for authenticated reverse proxies. When a token is set, an
-explicit `OPENMAUSBOT_URL` or `OMB_PORT` is required so the credential is never sent while probing unrelated
-local ports. `OPENMAUSBOT_MCP_TIMEOUT_MS` can set an HTTP timeout between 1,000 and 120,000 milliseconds.
-In packaged builds, `OPENMAUSBOT_TOKEN` is required for mutating tools as
+`SAGAX_TOKEN` is sent as a bearer token for authenticated reverse proxies. When a token is set, an
+explicit `SAGAX_URL` or `SAGAX_PORT` is required so the credential is never sent while probing unrelated
+local ports. `SAGAX_MCP_TIMEOUT_MS` can set an HTTP timeout between 1,000 and 120,000 milliseconds.
+In packaged builds, `SAGAX_TOKEN` is required for mutating tools as
 described above; it is not a generic reverse-proxy secret.
 
 ## Tools

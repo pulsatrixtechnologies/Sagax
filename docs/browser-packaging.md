@@ -14,8 +14,8 @@ archives and stages `dist-native/browser/PLATFORM-ARCH`, copied as
 Each package includes only its target architecture: macOS ARM64/x64,
 Windows x64, or Linux x64.
 
-The server receives `OMB_RESOURCES_PATH` from Electron. It resolves an explicit
-`OMB_AGENT_BROWSER_PATH` override first, then the complete bundled engine and
+The server receives `SAGAX_RESOURCES_PATH` from Electron. It resolves an explicit
+`SAGAX_AGENT_BROWSER_PATH` override first, then the complete bundled engine and
 browser, then a separately installed engine or PATH. An incomplete bundle
 fails closed with a reinstall/update message. An explicit
 `AGENT_BROWSER_EXECUTABLE_PATH` still overrides the browser executable.

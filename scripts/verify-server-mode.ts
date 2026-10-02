@@ -39,8 +39,8 @@ let serverLog = "";
 const server: ChildProcess = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "server", "index.ts")], {
   cwd: ROOT,
   env: {
-    PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
-    OMB_STATIC_DIR: decoy, OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: origin,
+    PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
+    SAGAX_STATIC_DIR: decoy, SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: idp.issuer, SAGAX_PUBLIC_URL: origin,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });

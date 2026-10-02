@@ -29,14 +29,14 @@ the mail of a solo server. Keep these rules, each covered by a test in
 - `POST /api/mail/test` takes no fields, sends only to the caller's own
   address and is rate limited.
 - Saved values live in `config.json`'s `mail` block through `saveConfig`
-  (never a generic `PUT /api/config` patch) and win over `OMB_MAIL_*`, which
+  (never a generic `PUT /api/config` patch) and win over `SAGAX_MAIL_*`, which
   only provides defaults.
 - A sender always has a name (default `Sagax`); Twilio refuses one without.
 - Tests and fixtures use fake credentials only.
 
 ## Profile on an organization server
 
-On an organization server (`OMB_IDENTITY=perspicax`) a signed-in person's
+On an organization server (`SAGAX_IDENTITY=perspicax`) a signed-in person's
 name and email belong to Perspicax. Keep these rules, each covered by a test
 in `server/member-identity.e2e.test.ts`, `server/org-identity.e2e.test.ts`,
 `server/org-profile.e2e.test.ts`, `server/oidc-login.test.ts` or the
@@ -102,7 +102,7 @@ anything touching this computer stays `localOnly`. Tests:
 `electron/bundled-ui.node-test.mjs`; real Electron:
 `scripts/verify-server-mode.ts`.
 
-On an organization server (`OMB_IDENTITY=perspicax`) bots never use the
+On an organization server (`SAGAX_IDENTITY=perspicax`) bots never use the
 server's own machine: `ManagedDesktopPolicy` refuses `thisComputer` and
 `localVm` there (`HOST_COMPUTER_REFUSAL`, every claim passes
 `bindTurnComputer`), and the Local VM create/start routes refuse with
@@ -198,7 +198,7 @@ window of its own (passkeys and password managers live in the browser).
 `electron/oidc-system-sign-in.cjs` own it; there is no in-app sign-in
 window, do not add one back. Return paths, in order: a one-shot loopback
 listener on `127.0.0.1` (ephemeral port, random state path, exact Host and
-Origin, ten-minute timeout, closed after use), then `openmausbot://auth` only
+Origin, ten-minute timeout, closed after use), then `sagax://auth` (or `openmausbot://auth`) only
 when this exact running copy owns the scheme and the server advertises
 `nativeReturn`, else an error on `/pair`. The server side is
 `validLoopbackReturn` in `server/oidc-login.ts` (loopback IP literals with a
@@ -260,6 +260,43 @@ these rules, each covered by `server/harness-connectors.test.ts` or
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
 
+## Legacy names kept for compatibility
+
+The product is Sagax and the code reads `SAGAX_*`. These old spellings stay
+on purpose; `scripts/rebrand-upstream.mjs` (PROTECT, SKIP) knows them, so run
+it after an upstream merge instead of renaming by hand.
+
+- Environment: an old `OMB_*`, `OPENMAUSBOT_*` or `OPENMAUS_*` variable is
+  moved onto `SAGAX_*` at start for one release (`bridgeLegacyEnv`; names
+  saved as data go through `currentEnvName`/`readEnvName`). The fleet unit
+  template and instance env files (`server/fleet.ts`), `cloud-home-start.ts`,
+  the `Dockerfile`, the compose files, `.env.example` and `deploy/` still
+  write `OMB_*`: installed units and operators' `.env` files use them.
+- Data: `~/.sagax` (an old `~/.openmausbot` moves there once), but the lease
+  `openmausbot-server.lease`, `.openmausbot-server-child`, the container path
+  `/data/.openmausbot` and `~/.openmausbot-companion` keep their names.
+- Identity: `appId` `com.openmausbot.app` and `desktopName` (auto-update
+  signature, Windows install id), the package.json `name` and the
+  `openmausbot` command (`server/openmausbot.ts`, `dist-server/openmausbot.js`,
+  named by installed service units).
+- Links: both schemes `sagax://` and `openmausbot://`, both
+  `/.well-known/sagax/` and `/.well-known/openmausbot/`, and the health body's
+  `app: "openmausbot"` beside `product: "sagax"`.
+- Tokens: `sgx_` is issued and `omb_` still accepted; pairing codes stay
+  `omb_pair_` (released phone apps check it); other `omb_*` prefixes (cookies,
+  relay tokens) are wire values.
+- Wire and stored names: `x-openmausbot-*`/`x-omb-*` headers, storage keys and
+  IPC channels (`openmausbot:`, `openmausbot.`, `omb.`, `omb-`), file formats
+  (`openmaus.*`, `.openmaus.json`, `.ombbackup`, `OMB-WORKSPACE-1`), the
+  `omb-ask` block, `com.openmausbot.*` container and launchd labels,
+  `_openmausbot._tcp`, MCP server names, systemd units and host paths
+  (`/etc/openmausbot`, `/var/lib/openmausbot`), the upstream's hosted
+  domains (`*.openmausbot.com`).
+- The native apps (`ios/`, `android/`): bundle ids, keychain services and
+  package names change only with a store release of their own.
+- Legal and history: `LICENSE`, `NOTICE`, `CLA.md`, the README attribution,
+  About's "Based on OpenMausBot", "Where work goes" and "Upstream sync" below.
+
 ## Upstream sync
 
 Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
@@ -273,6 +310,8 @@ Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
 - On conflict our behavior wins and upstream improvements are layered in.
   Merge `src/locales/*.json` and `source-hashes.json` as a union of keys and
   run `pnpm i18n:check`.
+- Run `node scripts/rebrand-upstream.mjs` (a report), then `--write`, and
+  review the diff: upstream code comes back with the old names.
 - Run `pnpm install --frozen-lockfile`, typecheck, lint, the unit suites and
   `pnpm build`; compare failures with `origin/main` before pushing to
   `origin` only.

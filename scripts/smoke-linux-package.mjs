@@ -14,11 +14,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const wayland = process.env.OMB_SMOKE_WAYLAND === "1";
-const hardDeath = process.env.OMB_SMOKE_HARD_DEATH === "1";
-const bundled = process.env.OMB_SMOKE_BUNDLED_CUA === "1";
-const sessionBlocked = process.env.OMB_SMOKE_LINUX_CUA_BLOCKED === "1";
-const signalShutdown = process.env.OMB_SMOKE_SIGNAL_SHUTDOWN === "1";
+const wayland = process.env.SAGAX_SMOKE_WAYLAND === "1";
+const hardDeath = process.env.SAGAX_SMOKE_HARD_DEATH === "1";
+const bundled = process.env.SAGAX_SMOKE_BUNDLED_CUA === "1";
+const sessionBlocked = process.env.SAGAX_SMOKE_LINUX_CUA_BLOCKED === "1";
+const signalShutdown = process.env.SAGAX_SMOKE_SIGNAL_SHUTDOWN === "1";
 if ([hardDeath, bundled, sessionBlocked].filter(Boolean).length > 1) {
   throw new Error("hard-death, bundled, and release-safety smoke modes are mutually exclusive");
 }
@@ -26,7 +26,7 @@ if (signalShutdown && !bundled) {
   throw new Error("signal-shutdown smoke requires the bundled runtime mode");
 }
 const executable = path.resolve(
-  process.env.OMB_SMOKE_EXECUTABLE ?? path.join(root, "release", "linux-unpacked", "openmausbot"),
+  process.env.SAGAX_SMOKE_EXECUTABLE ?? path.join(root, "release", "linux-unpacked", "openmausbot"),
 );
 if (!existsSync(executable)) throw new Error(`[smoke-linux-package] missing executable: ${executable}`);
 
@@ -193,12 +193,12 @@ const desktopEnv = {
   XDG_SESSION_TYPE: wayland ? "wayland" : "x11",
   XDG_CURRENT_DESKTOP: "GNOME",
   CUA_DRIVER_PATH: sentinel,
-  OMB_COMPOSIO_BROKER_URL: `http://127.0.0.1:${brokerAddress.port}`,
-  OMB_SMOKE_TEST: "1",
-  OMB_SMOKE_CUA: hardDeath || bundled || sessionBlocked ? "0" : "1",
-  OMB_SMOKE_BUNDLED_CUA: bundled ? "1" : "0",
+  SAGAX_COMPOSIO_BROKER_URL: `http://127.0.0.1:${brokerAddress.port}`,
+  SAGAX_SMOKE_TEST: "1",
+  SAGAX_SMOKE_CUA: hardDeath || bundled || sessionBlocked ? "0" : "1",
+  SAGAX_SMOKE_BUNDLED_CUA: bundled ? "1" : "0",
 };
-if (hardDeath || signalShutdown) desktopEnv.OMB_SMOKE_KEEP_OPEN = "1";
+if (hardDeath || signalShutdown) desktopEnv.SAGAX_SMOKE_KEEP_OPEN = "1";
 if (bundled) delete desktopEnv.CUA_DRIVER_PATH;
 if (wayland) desktopEnv.WAYLAND_DISPLAY = "wayland-smoke";
 else delete desktopEnv.WAYLAND_DISPLAY;
@@ -494,7 +494,7 @@ try {
     const restart = spawn(executable, wayland ? ["--ozone-platform=x11"] : [], {
       cwd: root,
       detached: true,
-      env: { ...desktopEnv, OMB_SMOKE_KEEP_OPEN: "0" },
+      env: { ...desktopEnv, SAGAX_SMOKE_KEEP_OPEN: "0" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     try {
@@ -591,6 +591,6 @@ try {
   await stopProcess();
   for (const socket of brokerSockets) socket.destroy();
   await new Promise((resolve) => slowBroker.close(resolve));
-  if (process.env.OMB_KEEP_SMOKE_DIR !== "1") rmSync(sandbox, { recursive: true, force: true });
+  if (process.env.SAGAX_KEEP_SMOKE_DIR !== "1") rmSync(sandbox, { recursive: true, force: true });
   else console.log(`[smoke-linux-package] kept ${sandbox}`);
 }

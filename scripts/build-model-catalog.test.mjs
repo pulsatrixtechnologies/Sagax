@@ -15,7 +15,7 @@ const raw = {
     id: "good", name: "Good", env: ["GOOD_API_KEY"], api: "https://api.good.example/v1/", doc: "https://good.example",
     models: {
       "m-1": { id: "m-1", name: "M 1", tool_call: true, reasoning: false, attachment: false, modalities: { input: ["text"] }, cost: { input: 1, output: 2, cache_read: 0.1 } },
-      "m-{env:OMB_MP_KEY_OTHER}": { id: "m-{env:OMB_MP_KEY_OTHER}", name: "x", tool_call: true, modalities: { input: ["text"] } },
+      "m-{env:SAGAX_MP_KEY_OTHER}": { id: "m-{env:SAGAX_MP_KEY_OTHER}", name: "x", tool_call: true, modalities: { input: ["text"] } },
     },
   },
   templated: { id: "templated", name: "T", env: [], api: "https://${ACCOUNT}.example/v1", models: {} },
@@ -59,7 +59,7 @@ describe("buildCatalogDocument", () => {
     expect(doc.providers.good.api).toBe("https://api.good.example/v1");
     expect(doc.providers.good.models).toEqual({ "m-1": { name: "M 1", reasoning: false, attachment: false, modalities: { input: ["text"] }, cost: { input: 1, output: 2 } } });
     expect(drops).toEqual([
-      { provider: "good", model: "m-{env:OMB_MP_KEY_OTHER}", reason: "brace" },
+      { provider: "good", model: "m-{env:SAGAX_MP_KEY_OTHER}", reason: "brace" },
       { provider: "templated", reason: "brace" },
     ]);
     const text = serializeCatalog(doc);

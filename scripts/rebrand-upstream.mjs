@@ -37,6 +37,7 @@ const SKIP_EXACT = new Set([
   "LICENSE",
   "NOTICE",
   "LICENSING.md",
+  "CLA.md",
   "AGENTS.md",
   "pnpm-lock.yaml",
   "scripts/rebrand-upstream.mjs",
@@ -78,7 +79,8 @@ const PROTECT = [
   // live endpoints of the upstream's hosted services (not run by this project)
   re(`(?:[A-Za-z0-9-]+\\.)*${OLD_SHORT}(?:bot)?\\.com\\b`),
   // the upstream repositories (named only where the merge note needs them)
-  re(`milind-soni/[A-Za-z0-9_.-]+`),
+  re(`milind-soni/[^\\s)"'\\]>]*`),
+  re(`cd ${"Open"}MausBot\\b`),
   // wire contracts of the upstream's hosted services
   re(`\\b[Xx]-[Oo]mb-(?:[Cc]loud|[Hh]osted)-[A-Za-z-]+`),
   // file magic and key-derivation labels of data people already have
@@ -111,6 +113,15 @@ const PROTECT = [
   // the data folder lease capability and the migration breadcrumb (legacy-names)
   re(`${OLD.toUpperCase()}_INTERNAL_DATA_DIR_LEASE`),
   re(`MOVED_FROM_${OLD.toUpperCase()}`),
+  // the upstream project itself (attribution, merge notes)
+  re(`(?:[Uu]pstream|[Oo]riginal|[Oo]fficial|retained) OpenMausBot`),
+  re(`(?:starts from|[Ff]ork of|forked from|[Bb]ased on) OpenMausBot`),
+  re(`OpenMausBot(?: project| contributors| releases?\\b| version| Enterprise License|\\. The original)`),
+  re(`Milind Soni and OpenMausBot`),
+  re(`base stays OpenMausBot`),
+  re(`(?:originally published as|Not use the) OpenMausBot`),
+  // lines that name the old spellings on purpose (where a value came from)
+  re(`[^\\n]*(?:\\b[Oo]ld names?\\b|\\bor an old\\b|\\bthe old\\b|\\(or OMB_|moves? (?:from )?~/\\.${OLD}|Based on OpenMausBot|OpenMausBot \\(upstream\\)|"old-name")[^\\n]*`),
   // the native projects, not renamed with the rest (ios/, android/)
   re(`OpenMausCompanion[A-Za-z]*`),
 ];

@@ -40,10 +40,10 @@ const staging = mkdtempSync(join(tmpdir(), "omb-smoke-"));
 const home = mkdtempSync(join(tmpdir(), "omb-smoke-home-"));
 const port = 21000 + Math.floor(Math.random() * 9000);
 
-// OMB_SMOKE_DIST lets the release workflow aim this at a packaged app's
+// SAGAX_SMOKE_DIST lets the release workflow aim this at a packaged app's
 // Resources/server tree instead of the repo build.
 try {
-  cpSync(process.env.OMB_SMOKE_DIST ?? join(root, "dist-server"), join(staging, "server"), { recursive: true });
+  cpSync(process.env.SAGAX_SMOKE_DIST ?? join(root, "dist-server"), join(staging, "server"), { recursive: true });
   if (browserBundle) cpSync(resolve(browserBundle), join(staging, "browser-engine"), { recursive: true });
 } catch (error) {
   for (const directory of [staging, home]) rmSync(directory, { recursive: true, force: true });
@@ -60,14 +60,14 @@ const fixtureEnv = {
   XDG_CONFIG_HOME: join(home, ".config"),
   XDG_CACHE_HOME: join(home, ".cache"),
   XDG_DATA_HOME: join(home, ".local", "share"),
-  OMB_DATA_DIR: join(home, ".sagax"),
-  OMB_PORT: String(port),
+  SAGAX_DATA_DIR: join(home, ".sagax"),
+  SAGAX_PORT: String(port),
   // Not a genuine key: enough to make the server look for its enterprise
   // layer and say whether it found one (checked below), never enough to
   // unlock anything.
-  OMB_LICENSE_KEY: "omb1.not.real",
+  SAGAX_LICENSE_KEY: "omb1.not.real",
   ...(browserBundle ? {
-    OMB_RESOURCES_PATH: staging,
+    SAGAX_RESOURCES_PATH: staging,
     // A global engine on the developer's PATH must not make this test pass.
     PATH: process.platform === "win32" ? join(process.env.SystemRoot ?? "C:\\Windows", "System32") : "/usr/bin:/bin",
   } : {}),

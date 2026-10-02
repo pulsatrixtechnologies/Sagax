@@ -28,7 +28,7 @@ Cloud/VPS file transfer and mobile file rendering are outside this change.
 
 Captured on 2026-09-19 against upstream `main` (v0.1.84) with a real Claude Code CLI
 (2.1.251) running Z.ai `glm-5.3`, a per-bot Podman Local VM desktop, and the
-production build served by the real `server/index.ts` (`OMB_STATIC_DIR`) on a
+production build served by the real `server/index.ts` (`SAGAX_STATIC_DIR`) on a
 disposable data directory. Every assistant message in the session transcript records
 `glm-5.3`.
 

@@ -33,7 +33,7 @@ Set the key in the server environment:
 COMPOSIO_API_KEY=ak_your_project_key pnpm dev:server
 ```
 
-The browser-only development UI can also save a key to the owner-only `~/.openmausbot/config.json` file. Using the environment variable is preferred for headless and shared development machines.
+The browser-only development UI can also save a key to the owner-only `~/.sagax/config.json` file. Using the environment variable is preferred for headless and shared development machines.
 
 Sagax creates a stable random user identifier for the installation, stores the returned Session identifier, and reuses that Session across launches. No Gmail, GitHub, Slack, or other provider tokens are stored by Sagax; Composio owns their connection lifecycle.
 

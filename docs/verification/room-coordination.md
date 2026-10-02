@@ -13,7 +13,7 @@ Regression checks (all use disposable fixtures):
 
 ```sh
 pnpm exec vitest run server/room-handoffs.test.ts server/direct-coordination.e2e.test.ts server/room-coordination.e2e.test.ts
-OMB_UI_E2E=1 pnpm exec vitest run scripts/testing/direct-coordination-ui.e2e.test.ts
+SAGAX_UI_E2E=1 pnpm exec vitest run scripts/testing/direct-coordination-ui.e2e.test.ts
 ```
 
 Gated fake-model turns prove a teammate starts before the Chief settles,
@@ -125,7 +125,7 @@ pnpm exec vitest run server/room-recovery.e2e.test.ts server/testing/room-handof
 pnpm exec vitest run server/direct-coordination.e2e.test.ts --maxWorkers=1
 pnpm exec vitest run server/turn-dispatch-guard.test.ts
 pnpm exec vitest run server/comms.test.ts server/thread-aware-bots.e2e.test.ts server/routine-delegation.e2e.test.ts server/independent-threads-api.test.ts server/peer-allowlist.e2e.test.ts server/steer-queue.test.ts
-OMB_UI_E2E=1 pnpm exec vitest run scripts/testing/direct-coordination-ui.e2e.test.ts
+SAGAX_UI_E2E=1 pnpm exec vitest run scripts/testing/direct-coordination-ui.e2e.test.ts
 ```
 
 The integration suite launches the disposable control fixture and drives the

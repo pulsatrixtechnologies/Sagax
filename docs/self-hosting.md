@@ -54,7 +54,7 @@ Codex also offers device-code login for SSH. API-key connections currently
 support chat, not agent tools or computer use. The [setup guide](cli-onboarding.md)
 explains the choices, key storage, and how to run setup again safely.
 
-It then starts the server and keeps your data in `~/.openmausbot`. If you
+It then starts the server and keeps your data in `~/.sagax`. If you
 choose phone access, it prints a pairing link and QR code only after checking
 the HTTPS connection. Choosing **Skip for now** keeps the workspace local-only
 and creates no pairing invitation. Use `npx openmausbot setup` to configure without starting, or
@@ -93,9 +93,9 @@ is present. Three ways to make the server reachable from elsewhere:
   server, and it still has to pair: the tunnel lands on a separate listener
   the server treats as "through a proxy", never as the owner. `npx openmausbot
   logout` releases the address. The account credentials live in
-  `~/.openmausbot/tunnel-account.json` (mode 0600).
+  `~/.sagax/tunnel-account.json` (mode 0600).
   Starting it from a fleet or a container, where nobody can type an emailed
-  code? Set `OMB_INSTALLATION_CREDENTIAL` to the installation credential the
+  code? Set `SAGAX_INSTALLATION_CREDENTIAL` to the installation credential the
   fleet issued and skip `login`: the address and connector token are fetched
   at every start and nothing is written to disk. A rejected credential stops
   the start with a clear message rather than serving locally.
@@ -162,7 +162,7 @@ relative name (or `@` at the zone root). Server/proxy instructions are under
 The IP comes from this server's network interfaces, never the browser, tunnel
 hostname or an IP-echo service. Only a single unambiguous public IPv4 is shown.
 For containers/NAT or hosts with multiple public addresses, an administrator can
-set `OMB_PUBLIC_IPV4` to the public IPv4 of the HTTPS proxy and restart OMB.
+set `SAGAX_PUBLIC_IPV4` to the public IPv4 of the HTTPS proxy and restart OMB.
 This is a display hint, not proof of reachability; verification still checks
 HTTPS and the workspace identity. If the IP is missing or invalid, the UI asks
 for administrator help instead of inventing a DNS value.
@@ -187,7 +187,7 @@ address for **new server pairing links**. Removing it restores that fallback
 address, if any; neither action changes DNS, the proxy, bots, conversations, or
 existing sessions. A different browser origin needs its own pairing, so keep
 your original tab open until the new one works. The setting does not change
-`OMB_WEBHOOK_PUBLIC_URL`, existing webhook URLs, or the desktop companion's
+`SAGAX_WEBHOOK_PUBLIC_URL`, existing webhook URLs, or the desktop companion's
 managed connection. This feature is for self-hosted servers, not the desktop
 app's managed phone endpoint.
 
@@ -228,7 +228,7 @@ Open the link (`https://<DOMAIN>/pair#code=…`) in a browser and it is
 paired; see "Using it from your computer" for what a session is. Webhook
 URLs (`https://<DOMAIN>/hooks/wh_…`) work without a session, and that is the
 base the app prints on new hooks because the stack sets
-`OMB_WEBHOOK_PUBLIC_URL`.
+`SAGAX_WEBHOOK_PUBLIC_URL`.
 
 What the stack does, so you can adapt it:
 
@@ -258,7 +258,7 @@ git clone https://github.com/pulsatrixtechnologies/pulsa-bot && cd pulsa-bot
 pnpm install
 
 # choose where data lives and start the server
-OMB_DATA_DIR="$HOME/.openmausbot" OMB_PORT=8799 \
+SAGAX_DATA_DIR="$HOME/.openmausbot" SAGAX_PORT=8799 \
   node --experimental-strip-types server/index.ts
 ```
 
@@ -304,7 +304,7 @@ that makes one read-only request to the provider from the server.
   to sign in, and Settings → Engines shows "workspace API key" instead of a
   person. Remove the key to go back to personal logins. The server's own
   `ANTHROPIC_API_KEY` environment variable is deliberately ignored; use the
-  page, `config.json`, or `OMB_ANTHROPIC_API_KEY`.
+  page, `config.json`, or `SAGAX_ANTHROPIC_API_KEY`.
 - **OpenAI-compatible API key and base URL**: OpenRouter by default, or Groq,
   Together, a gateway, or `https://api.openai.com/v1` for OpenAI itself. This
   powers the OpenAI-compatible engine. Codex has no key path by design and
@@ -367,7 +367,7 @@ all, and see each one's spend this month. Every action goes through the
 agent's audit log at `/var/log/openmausbot/fleet.jsonl`.
 
 `https://acme.example.com` is up when `create` returns; the first admin signs
-in with an emailed code. `OMB_LICENSE_KEY` in the environment (or
+in with an emailed code. `SAGAX_LICENSE_KEY` in the environment (or
 `--license-key`) is carried into every workspace so a partner's white-label
 key covers them all. Not root? Every command prints the exact steps to run as
 root instead, and `--dry-run` always prints.
@@ -403,7 +403,7 @@ docker compose exec omb node dist-server/openmausbot.js pair   # Docker
 ```
 
 It prints a 12-character code (single use, five minutes) and, when the
-server knows its public address (`OMB_PUBLIC_URL`, set by the Docker stack),
+server knows its public address (`SAGAX_PUBLIC_URL`, set by the Docker stack),
 a link like `https://maus.example.com/pair#code=XXXX-XXXX-XXXX`. Open the
 link, or open `/pair` on the address you use and type the code. The browser
 gets a session cookie (30 days, renewed on use up to 180 days from pairing, revocable) and the app loads. Sessions are
@@ -478,7 +478,7 @@ ssh -L 8799:localhost:8799 you@your-server
 # then open http://localhost:8799 — loopback, so no pairing needed
 ```
 
-(With `OMB_LOOPBACK_TRUST=service`, below, a tunnel is loopback without a
+(With `SAGAX_LOOPBACK_TRUST=service`, below, a tunnel is loopback without a
 session: the page asks you to sign in or pair first, because it no longer
 makes you the owner.)
 
@@ -499,7 +499,7 @@ local requests: service trust (hosted workspace); without a session, loopback ma
 | Trust | Default for | A session-less loopback request may |
 |---|---|---|
 | `owner` | a self-hosted server, the desktop app | do everything, as today |
-| `service` | a hosted workspace: any of `OMB_ADMIN_URL`, `OMB_ADMIN_WORKSPACE` or `OMB_ADMIN_MEMBERSHIP` set (shared-workspace Full access only works there, so it is covered too) | read health, who-am-I, the bot list, a thread's messages and a bot's picture; open a thread; send through the guarded route; watch and stop its exact request; withdraw a queued line; **decline** a card; use the bots' own capability routes (`/api/internal/*`, which check their own per-turn token) |
+| `service` | a hosted workspace: any of `SAGAX_ADMIN_URL`, `SAGAX_ADMIN_WORKSPACE` or `SAGAX_ADMIN_MEMBERSHIP` set (shared-workspace Full access only works there, so it is covered too) | read health, who-am-I, the bot list, a thread's messages and a bot's picture; open a thread; send through the guarded route; watch and stop its exact request; withdraw a queued line; **decline** a card; use the bots' own capability routes (`/api/internal/*`, which check their own per-turn token) |
 
 Under `service`, everything else from loopback needs a real session and
 answers 403: settings and keys (`/api/config`), instances, MCP servers,
@@ -510,8 +510,8 @@ local caller a hosted workspace has) needs nothing more and keeps working
 unchanged. Sessions — a portal sign-in, an email sign-in or a pairing — work
 exactly as before, with their own scopes.
 
-Set `OMB_LOOPBACK_TRUST=service` on a self-hosted server people share (with
-an email sign-in list, say), or `OMB_LOOPBACK_TRUST=owner` to opt a hosted
+Set `SAGAX_LOOPBACK_TRUST=service` on a self-hosted server people share (with
+an email sign-in list, say), or `SAGAX_LOOPBACK_TRUST=owner` to opt a hosted
 workspace back into the old behaviour (the log then warns). Any other value
 means `service`. The desktop app ignores the setting: its local changes
 already need the app's own per-launch capability. An OMB Cloud home ignores
@@ -530,7 +530,7 @@ With `service` on a self-hosted server:
   in with their email (`openmausbot access add you@example.com`, which edits
   the sign-in list on disk).
 - A browser on an SSH tunnel gets the sign-in page instead of the app.
-- The MCP server script works with `OPENMAUSBOT_TOKEN` set to a paired session.
+- The MCP server script works with `SAGAX_TOKEN` set to a paired session.
 
 **What `service` does not close yet.** Any bot's shell can still do
 everything the Slack worker does, and on a shared workspace that is a real
@@ -556,19 +556,19 @@ Perspicax; Sagax is an OpenID Connect client of it (spec:
 `docs/superpowers/specs/2026-09-29-perspicax-multiuser-design.md`).
 
 ```sh
-OMB_IDENTITY=perspicax
-OMB_PERSPICAX_ISSUER=https://px.yourcompany.com   # the Perspicax public origin
-OMB_PUBLIC_URL=https://bot.yourcompany.com        # this server, no path
-# OMB_OIDC_CLIENT_ID=pulsa-bot                    # the default
-# OMB_OIDC_REFRESH_AFTER_SECONDS=3000             # 1 to 3000: refresh a used grant after this long
-# OMB_IDP_VAULT_KEY=<64 hex>                      # or OMB_IDP_VAULT_KEY_FILE=/path/to/key
+SAGAX_IDENTITY=perspicax
+SAGAX_PERSPICAX_ISSUER=https://px.yourcompany.com   # the Perspicax public origin
+SAGAX_PUBLIC_URL=https://bot.yourcompany.com        # this server, no path
+# SAGAX_OIDC_CLIENT_ID=pulsa-bot                    # the default
+# SAGAX_OIDC_REFRESH_AFTER_SECONDS=3000             # 1 to 3000: refresh a used grant after this long
+# SAGAX_IDP_VAULT_KEY=<64 hex>                      # or SAGAX_IDP_VAULT_KEY_FILE=/path/to/key
 ```
 
 On the Perspicax side, set `PXC_PULSABOT_ORIGIN` to exactly the value of
-`OMB_PUBLIC_URL`: that registers the first-party client `pulsa-bot` with the
-redirect URI `<OMB_PUBLIC_URL>/auth/oidc/callback`. Both addresses must be
+`SAGAX_PUBLIC_URL`: that registers the first-party client `pulsa-bot` with the
+redirect URI `<SAGAX_PUBLIC_URL>/auth/oidc/callback`. Both addresses must be
 https (plain http is accepted only on this machine, for a local test). A
-server with `OMB_IDENTITY=perspicax` and a missing or unsafe address refuses
+server with `SAGAX_IDENTITY=perspicax` and a missing or unsafe address refuses
 to start rather than fall back to email codes.
 
 What changes:
@@ -581,14 +581,14 @@ What changes:
   token reaches the browser, the desktop app, a phone or an engine.
 - The server keeps each sign-in's Perspicax refresh token (the grant) in a
   sealed file, `<data>/idp-grants.enc` (AES-256-GCM). Its key comes from
-  `OMB_IDP_VAULT_KEY` (64 hex characters), else the file named by
-  `OMB_IDP_VAULT_KEY_FILE`, else `<data>/idp-grants.key`, created 0600 on
+  `SAGAX_IDP_VAULT_KEY` (64 hex characters), else the file named by
+  `SAGAX_IDP_VAULT_KEY_FILE`, else `<data>/idp-grants.key`, created 0600 on
   first start. Both files stay out of workspace backups. If the key cannot be
   read, sign-in is refused (`signin_error=unavailable`) rather than hand out a
   session without its grant.
 - A session lives as long as Perspicax keeps refreshing its grant. When a
   session is used and its grant was last refreshed more than
-  `OMB_OIDC_REFRESH_AFTER_SECONDS` ago (default 3000, at most 3000), the
+  `SAGAX_OIDC_REFRESH_AFTER_SECONDS` ago (default 3000, at most 3000), the
   server refreshes it in the background. Perspicax refusing the refresh (the
   person was disabled or deleted, the grant revoked) puts the person out as a
   back-channel logout would, in case that push was lost: every session of
@@ -604,7 +604,7 @@ What changes:
 - Perspicax tells the server at once when a person is disabled, deleted,
   has their password or TOTP reset, or has their sessions revoked: it posts
   an OpenID Connect back-channel logout token to
-  `<OMB_PUBLIC_URL>/api/auth/oidc/backchannel-logout`. Every session and
+  `<SAGAX_PUBLIC_URL>/api/auth/oidc/backchannel-logout`. Every session and
   open stream of that person ends, their pairing codes are cancelled, and
   their requests answer `401 {code: "principal_disabled"}` until they sign in
   again. When Perspicax reaches this server by another address than its
@@ -625,7 +625,7 @@ What changes:
   their screens are hidden. New people are created by an admin in
   Perspicax.
 - Loopback without a session is a service, not the owner
-  (`OMB_LOOPBACK_TRUST=service`), unless you set `OMB_LOOPBACK_TRUST`
+  (`SAGAX_LOOPBACK_TRUST=service`), unless you set `SAGAX_LOOPBACK_TRUST`
   yourself: every bot's shell on a shared server is a loopback caller.
 - The desktop app, connected to this server as a saved server, always runs
   the sign-in in the person's own default browser, where their password
@@ -648,7 +648,7 @@ What changes:
   app is the system's handler for `openmausbot://` (another installed copy
   would otherwise get the return), and otherwise says the server must be
   updated. Perspicax is unchanged: its redirect stays
-  `<OMB_PUBLIC_URL>/auth/oidc/callback`. Only the app redeems that
+  `<SAGAX_PUBLIC_URL>/auth/oidc/callback`. Only the app redeems that
   credential without a click: `/pair#code=...&auto=1` opened in an ordinary
   browser shows the code form. The phone apps offer **Sign in with Pulsatrix**
   for such a server: `?client=phone` ends on the same
@@ -674,17 +674,17 @@ origin and a link token that opens only the Perspicax directory). Point the
 server at it:
 
 ```sh
-OMB_PERSPICAX_LINK_FILE=/link/pulsabot.json    # written by Perspicax (PXC_PULSABOT_LINK_FILE)
-# OMB_PERSPICAX_INTERNAL_URL=http://perspicax:8787  # where this server reaches Perspicax inside the deployment
-# OMB_PERSPICAX_DIRECTORY_SECONDS=300              # 5 to 3600: how often the directory is read
-# OMB_PERSPICAX_TOKEN_BUDGET=45                    # 1 to 60: token and revocation calls to Perspicax per minute
-# OMB_ORG_NAME=Acme                                # shown in Settings > Organization (default Pulsatrix)
-# OMB_ENVIRONMENT_LABEL="Acme bots"                # the server's name on /pair and in the apps
+SAGAX_PERSPICAX_LINK_FILE=/link/pulsabot.json    # written by Perspicax (PXC_PULSABOT_LINK_FILE)
+# SAGAX_PERSPICAX_INTERNAL_URL=http://perspicax:8787  # where this server reaches Perspicax inside the deployment
+# SAGAX_PERSPICAX_DIRECTORY_SECONDS=300              # 5 to 3600: how often the directory is read
+# SAGAX_PERSPICAX_TOKEN_BUDGET=45                    # 1 to 60: token and revocation calls to Perspicax per minute
+# SAGAX_ORG_NAME=Acme                                # shown in Settings > Organization (default Pulsatrix)
+# SAGAX_ENVIRONMENT_LABEL="Acme bots"                # the server's name on /pair and in the apps
 ```
 
 The server's name on `/pair` ("Sign in to ...") and in the apps is
-`OMB_ENVIRONMENT_LABEL`, else `OMB_ORG_NAME`, else the host of
-`OMB_PUBLIC_URL`, and only then the machine's host name (in a container, its
+`SAGAX_ENVIRONMENT_LABEL`, else `SAGAX_ORG_NAME`, else the host of
+`SAGAX_PUBLIC_URL`, and only then the machine's host name (in a container, its
 id).
 
 - The link file must match this server (issuer, client id, public origin),
@@ -693,19 +693,19 @@ id).
   token is never logged. When Perspicax rotates the link, the file is
   rewritten and the next directory call picks the new token up (a 401
   re-reads the file and retries once).
-- `OMB_PERSPICAX_INTERNAL_URL` (an origin, http or https, any host): the
+- `SAGAX_PERSPICAX_INTERNAL_URL` (an origin, http or https, any host): the
   discovery document, the JWKS, the token and revocation endpoints and the
   directory are reached there; the issuer is still checked against
-  `OMB_PERSPICAX_ISSUER`, and the browser is still sent to the public
+  `SAGAX_PERSPICAX_ISSUER`, and the browser is still sent to the public
   authorization endpoint.
-- `OMB_PERSPICAX_TOKEN_BUDGET` (a whole number from 1 to 60, default 45):
+- `SAGAX_PERSPICAX_TOKEN_BUDGET` (a whole number from 1 to 60, default 45):
   how many sign-in, refresh and revocation calls this server makes to
   Perspicax per rolling minute. Perspicax allows 60 a minute per client
   address; lower it when several servers reach Perspicax from one address
   (their budgets add up). Revocations always leave 10 calls free for
   sign-ins and refreshes, and wait in a sealed queue (`idp-revocations.enc`)
   until they go through.
-- The directory is read at start, every `OMB_PERSPICAX_DIRECTORY_SECONDS`,
+- The directory is read at start, every `SAGAX_PERSPICAX_DIRECTORY_SECONDS`,
   and after each sign-in. Everyone it lists becomes a person here (so a bot
   can be shared with someone before their first sign-in), with their name,
   login, address and role. Someone disabled or deleted in Perspicax is
@@ -871,7 +871,7 @@ refusal. The server must have computer sharing on in its `config.json`
 Another organization's build sets `SAGAX_DEFAULT_SERVER=https://...` when it
 runs `vite build` (vite.config.ts); the address is only a prefill.
 
-The tour's engines beat no longer offers the inherited OpenMausBot Admin
+The tour's engines beat no longer offers the inherited Sagax Admin
 sign-in (`admin.openmausbot.com`); its row now opens Server mode.
 Settings > Organization keeps that managed-desktop sign-in for now.
 
@@ -931,7 +931,7 @@ computer are unchanged.
 
 For several people on one server, run Sagax with Perspicax (the compose in
 `pulsatrix-v3/deploy`, `docker-compose.pulsabot.yml`): Perspicax owns the
-accounts there, so an organization server (`OMB_IDENTITY=perspicax`) offers
+accounts there, so an organization server (`SAGAX_IDENTITY=perspicax`) offers
 no emailed sign-in codes, invitation links or sign-in list, and an old
 `config.json` `org` key is ignored. A solo server keeps them, as below: its
 own sign-in list, emailed codes and invitations.
@@ -943,8 +943,8 @@ people use every day, let them sign in with an emailed code instead: set an
 allow-list, and `/pair` on your server offers "Sign in with your email" first.
 
 ```sh
-OMB_SIGNIN_EMAILS="her@yourcompany.com, @yourcompany.com"   # full access
-OMB_SIGNIN_MEMBER_EMAILS="freelancer@example.com"          # chat and approvals only
+SAGAX_SIGNIN_EMAILS="her@yourcompany.com, @yourcompany.com"   # full access
+SAGAX_SIGNIN_MEMBER_EMAILS="freelancer@example.com"          # chat and approvals only
 ```
 
 Signed in as an admin? Settings → Remote access → **Who can sign in with an
@@ -984,28 +984,31 @@ so a container can be bootstrapped before anyone signs in. Settings marks a
 field the server provides with "Default value provided by the server", and
 **Revert to the server's value** removes the saved value of one field.
 Before Settings > Email existed the environment won instead; a server that
-has both a hand-edited `mail` block and `OMB_MAIL_*` now uses the saved
+has both a hand-edited `mail` block and `SAGAX_MAIL_*` now uses the saved
 block for every field it names.
 
 ```sh
-OMB_MAIL_PROVIDER=twilio                 # smtp | sendgrid | twilio
-OMB_MAIL_FROM=bot@yourcompany.com
-OMB_MAIL_FROM_NAME=Sagax                 # the sender's name; Sagax when none is set
+SAGAX_MAIL_PROVIDER=twilio                 # smtp | sendgrid | twilio
+SAGAX_MAIL_FROM=bot@yourcompany.com
+SAGAX_MAIL_FROM_NAME=Sagax                 # the sender's name; Sagax when none is set
 
 # smtp
-OMB_SMTP_HOST=smtp.yourcompany.com
-OMB_SMTP_PORT=587                        # default 465 with tls, 587 otherwise
-OMB_SMTP_SECURE=starttls                 # tls | starttls | none
-OMB_SMTP_USER=bot@yourcompany.com
-OMB_SMTP_PASSWORD=...                    # or OMB_SMTP_PASSWORD_FILE=/run/secrets/smtp
+SAGAX_SMTP_HOST=smtp.yourcompany.com
+SAGAX_SMTP_PORT=587                        # default 465 with tls, 587 otherwise
+SAGAX_SMTP_SECURE=starttls                 # tls | starttls | none
+SAGAX_SMTP_USER=bot@yourcompany.com
+SAGAX_SMTP_PASSWORD=...                    # or SAGAX_SMTP_PASSWORD_FILE=/run/secrets/smtp
 
 # sendgrid
-OMB_SENDGRID_API_KEY=...                 # or OMB_SENDGRID_API_KEY_FILE=/run/secrets/sendgrid
+SAGAX_SENDGRID_API_KEY=...                 # or SAGAX_SENDGRID_API_KEY_FILE=/run/secrets/sendgrid
 
 # twilio
-OMB_TWILIO_API_KEY_SID=SK...
-OMB_TWILIO_API_KEY_SECRET=...            # or OMB_TWILIO_API_KEY_SECRET_FILE=/run/secrets/twilio
+SAGAX_TWILIO_API_KEY_SID=SK...
+SAGAX_TWILIO_API_KEY_SECRET=...            # or SAGAX_TWILIO_API_KEY_SECRET_FILE=/run/secrets/twilio
 ```
+
+The compose files under `deploy/` still forward these from `deploy/.env` under
+their old names (`OMB_MAIL_*`, `OMB_SMTP_*`, ...); the server accepts both.
 
 Each secret also reads from a `_FILE` path (a Docker secret); when both are
 set, the direct value wins. Mail is ready once the provider, `from` and that
@@ -1043,7 +1046,7 @@ valid or authorized."), never the credential.
 
 The routes are admin only: `GET` and `PUT /api/mail/settings` (a field set
 to `null` goes back to the server's value) and `POST /api/mail/test`, which
-takes no fields. An organization server (`OMB_IDENTITY=perspicax`) answers
+takes no fields. An organization server (`SAGAX_IDENTITY=perspicax`) answers
 them with 403 `identity_perspicax`, and Settings > Email says that
 Perspicax manages its mail.
 
@@ -1066,7 +1069,7 @@ server refuses the email and invitation routes (403 `identity_perspicax`)
 and sends `/join` to `/pair`.
 
 On a hosted workspace whose members your organization's Admin manages
-(`OMB_ADMIN_MEMBERSHIP=portal`), this list decides nothing, so Settings →
+(`SAGAX_ADMIN_MEMBERSHIP=portal`), this list decides nothing, so Settings →
 People shows, read-only, who has signed in and what they spent, with a
 **Manage people in Admin** link to that workspace in Admin → People. Remote
 access there lists signed-in devices and offers no pairing codes, since a
@@ -1186,11 +1189,11 @@ and one link.
 Claude Code runs with `--setting-sources project`: the server's own
 `~/.claude/settings.json` is not read, so a rule placed there never applies.
 To let every bot of the server run one command without a card, set
-`OMB_CLAUDE_ALLOW` on the server, as a JSON list or one rule per line, in
+`SAGAX_CLAUDE_ALLOW` on the server, as a JSON list or one rule per line, in
 Claude Code's rule syntax:
 
 ```sh
-OMB_CLAUDE_ALLOW='["Bash(claude plugin marketplace add acme/marketplace)"]'
+SAGAX_CLAUDE_ALLOW='["Bash(claude plugin marketplace add acme/marketplace)"]'
 ```
 
 The rules go into each turn's private settings file (`permissions.allow`).
@@ -1222,15 +1225,15 @@ Any reverse proxy works, given three things:
 3. **Do not buffer** the event stream (`flush_interval -1` in Caddy,
    `proxy_buffering off` in nginx); the UI streams events over SSE.
 
-Plus one convenience: set `OMB_PUBLIC_URL=https://your.domain` so pairing
-links, and `OMB_WEBHOOK_PUBLIC_URL=https://your.domain` so hook URLs, are
+Plus one convenience: set `SAGAX_PUBLIC_URL=https://your.domain` so pairing
+links, and `SAGAX_WEBHOOK_PUBLIC_URL=https://your.domain` so hook URLs, are
 printed with the public address. [`deploy/Caddyfile`](../deploy/Caddyfile)
 is the reference implementation.
 
 ## Opening a desktop from another device
 
 In a paired admin browser, **Open live desktop** uses the same address as
-OpenMausBot for Local VMs and your own VPS. Shared, per-bot and pool Local VMs
+Sagax for Local VMs and your own VPS. Shared, per-bot and pool Local VMs
 connect through their managed container's loopback port. VPS desktops connect
 through an SSH tunnel opened by the server. Neither needs an additional public
 port or viewer origin setting. Keep Local VM VNC ports bound to loopback and
@@ -1327,7 +1330,7 @@ device label, `loopback` for the owner, `worker` for a session-less local
 service) — is appended to `<data dir>/decisions/YYYY-MM.ndjson` (0600,
 credentials redacted). Month files are kept for at least 180 days; set
 `decisions.retentionDays` in `config.json` (or through `PUT /api/config`),
-or `OMB_DECISION_RETENTION_DAYS`, to keep them longer or shorter (1–3650
+or `SAGAX_DECISION_RETENTION_DAYS`, to keep them longer or shorter (1–3650
 days; the environment wins). A month is deleted only once all of it is older
 than the window. An older server's `decisions.ndjson` and `.1` are still read
 and age out the same way. Admins can read it back:
@@ -1349,7 +1352,7 @@ list that names more than one person or a whole `@domain`, or a device paired
 (or a pairing code open) with chat-only access, whether before or after the
 change — every admin change is recorded beside the decision
 log, in `<data dir>/admin-activity/YYYY-MM.ndjson` (0600), and kept for the
-same window (`decisions.retentionDays` / `OMB_DECISION_RETENTION_DAYS`; a
+same window (`decisions.retentionDays` / `SAGAX_DECISION_RETENTION_DAYS`; a
 quiet server prunes on a timer, and pending rows are written out at
 shutdown): settings
 (which keys changed), sign-in lists and people, pairing codes and revoked
@@ -1436,8 +1439,8 @@ umask 077
 BOT_ID=your-bot-id
 THREAD_ID=your-existing-thread-id
 TOKEN=$(openssl rand -hex 32)
-printf '{ "%s": {"token":"%s","threadId":"%s"} }\n' "$BOT_ID" "$TOKEN" "$THREAD_ID" > ~/.openmausbot/external-runtimes.json
-chmod 600 ~/.openmausbot/external-runtimes.json
+printf '{ "%s": {"token":"%s","threadId":"%s"} }\n' "$BOT_ID" "$TOKEN" "$THREAD_ID" > ~/.sagax/external-runtimes.json
+chmod 600 ~/.sagax/external-runtimes.json
 ```
 
 Keep the file private (`600` on Unix; restrict its Windows file permissions).
@@ -1452,8 +1455,8 @@ The runtime runs the bundled MCP bridge from the source checkout with the same
 bot, thread and token (replace the port with your server's actual address):
 
 ```sh
-OMB_HARNESS_URL=http://127.0.0.1:8799 OMB_BOT_ID=$BOT_ID OMB_THREAD_ID=$THREAD_ID \
-  OMB_COMMS_TOKEN=$TOKEN OMB_EXTERNAL_RUNTIME=1 \
+SAGAX_HARNESS_URL=http://127.0.0.1:8799 SAGAX_BOT_ID=$BOT_ID SAGAX_THREAD_ID=$THREAD_ID \
+  SAGAX_COMMS_TOKEN=$TOKEN SAGAX_EXTERNAL_RUNTIME=1 \
   node --experimental-strip-types server/drivers/agents-proxy.ts
 ```
 

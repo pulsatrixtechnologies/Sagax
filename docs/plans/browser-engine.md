@@ -52,7 +52,7 @@ capability. Native session identity and encryption keys stay in the server.
 ### 1. Headless engine (servers, and the fallback everywhere) — shipped
 
 - `server/browser-engine.ts`: resolve the pinned agent-browser binary
-  (`OMB_AGENT_BROWSER_PATH` → `$OMB_DATA_DIR/tools/agent-browser/<version>/` →
+  (`SAGAX_AGENT_BROWSER_PATH` → `$SAGAX_DATA_DIR/tools/agent-browser/<version>/` →
   PATH); download from the GitHub release with per-platform SHA-256 pinned in
   `server/browser-engine-release.ts` (same pattern as `antigravity-release.ts`
   and `prepare-cloudflared.mjs`); ensure Chrome with `agent-browser install`;
@@ -62,7 +62,7 @@ capability. Native session identity and encryption keys stay in the server.
   "--no-webmcp"], env: {AGENT_BROWSER_SESSION, AGENT_BROWSER_RESTORE: <stable-key>,
   AGENT_BROWSER_ENCRYPTION_KEY, AGENT_BROWSER_HEADLESS: "1"}}`. Session id =
   the bot's browser profile partition, or the bot id (own session).
-- Encryption key: generated once into `$OMB_DATA_DIR/browser-engine-key`
+- Encryption key: generated once into `$SAGAX_DATA_DIR/browser-engine-key`
   (0600), like the tunnel credentials.
 - Capability: the environment descriptor gains `capabilities.browser:
   "desktop" | "headless" | "unavailable"` (+ reason), and the Settings toggle

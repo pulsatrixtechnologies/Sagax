@@ -50,7 +50,7 @@ export default defineConfig({
     // IPv4 explicitly — a bare ::1 bind makes localhost a coin-flip for
     // clients that resolve IPv4 first
     host: "127.0.0.1",
-    port: Number(process.env.OMB_UI_PORT) || 5199,
+    port: Number(process.env.SAGAX_UI_PORT) || 5199,
     // packager output lands inside the repo — its HTML files must never
     // trigger dev full-page reloads
     watch: {
@@ -61,10 +61,10 @@ export default defineConfig({
     proxy: {
       "/api": {
         ws: true,
-        target: `http://127.0.0.1:${process.env.OMB_PORT || process.env.OGB_PORT || 8799}`,
+        target: `http://127.0.0.1:${process.env.SAGAX_PORT || process.env.OGB_PORT || 8799}`,
       },
       "/.well-known/openmausbot/environment": {
-        target: `http://127.0.0.1:${process.env.OMB_PORT || process.env.OGB_PORT || 8799}`,
+        target: `http://127.0.0.1:${process.env.SAGAX_PORT || process.env.OGB_PORT || 8799}`,
       },
     },
   },

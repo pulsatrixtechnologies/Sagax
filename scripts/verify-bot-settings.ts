@@ -26,7 +26,7 @@ try {
     const result = installSkill(${JSON.stringify(atlas.id)}, 'fixture:settings', [{path:'SKILL.md',content:'---\\nname: fixture-check\\ndescription: Check fixture settings reliably\\n---\\nRead the fixture state and summarize it.\\n'}]);
     if ('error' in result) throw new Error(result.error);
     setSkillEnabled(${JSON.stringify(atlas.id)}, 'fixture-check', true);
-  `], { cwd: REPO_ROOT, env: { ...process.env, OMB_DATA_DIR: fixture.info.dataDir } });
+  `], { cwd: REPO_ROOT, env: { ...process.env, SAGAX_DATA_DIR: fixture.info.dataDir } });
 
   ui = await mountPreview(fixture, {
     entry: "/src/testing/bot-settings.tsx", route: "/__bot-settings.html", title: "Isolated Bot Settings",

@@ -9,9 +9,9 @@ description is in [self-hosting](../self-hosting.md#loopback-trust-owner-or-serv
 
 - **Loopback trust.** At start-up the server logs `local requests: owner
   trust (…)` or `local requests: service trust (…)`. A hosted workspace (any
-  `OMB_ADMIN_*` setting; shared-workspace Full access only works there)
+  `SAGAX_ADMIN_*` setting; shared-workspace Full access only works there)
   defaults to `service`; a self-hosted server keeps `owner`;
-  `OMB_LOOPBACK_TRUST=owner|service` overrides (anything else means
+  `SAGAX_LOOPBACK_TRUST=owner|service` overrides (anything else means
   `service`); the desktop app always keeps `owner` behind its per-launch
   capability. Under `service` a session-less loopback request may use only
   `SERVICE_ALLOW` (`server/request-auth.ts`): health, who-am-I, edition,
@@ -47,7 +47,7 @@ description is in [self-hosting](../self-hosting.md#loopback-trust-owner-or-serv
   not a portal grant).
 - **Decision log retention.** Rows go to `<data>/decisions/YYYY-MM.ndjson`. A
   month file is deleted once all of it is older than the window (180 days by
-  default; `decisions.retentionDays` or `OMB_DECISION_RETENTION_DAYS`). An
+  default; `decisions.retentionDays` or `SAGAX_DECISION_RETENTION_DAYS`). An
   older server's `decisions.ndjson` and `.1` are still read and age out by
   their last write. `GET /api/decisions?limit=` is unchanged; `GET
   /api/decisions.csv?from=&to=` (admin) exports a date range with formula
@@ -55,7 +55,7 @@ description is in [self-hosting](../self-hosting.md#loopback-trust-owner-or-serv
 - **Settings on a portal-membership workspace.** `GET /api/config` reports
   `membership {authority, pairingCodes, peopleUrl}`. Settings → People turns
   read-only (who signed in, their spend, "Manage people in Admin" linking to
-  `<OMB_ADMIN_URL>/people?workspace=<slug>`); Remote access offers no pairing
+  `<SAGAX_ADMIN_URL>/people?workspace=<slug>`); Remote access offers no pairing
   code and says people sign in through the organization's portal.
 
 ## Driving it
@@ -79,7 +79,7 @@ pnpm exec vitest run server/request-auth.test.ts server/decision-log.test.ts \
   list and revocation, bot creation and loosening, and an unguarded send,
   with nothing changed afterwards; then an admin portal session saves the
   retention window and reads `membership`. The other cases in that file keep
-  `OMB_LOOPBACK_TRUST=owner` because they set fixtures up over loopback.
+  `SAGAX_LOOPBACK_TRUST=owner` because they set fixtures up over loopback.
 - `server/card-answerers.e2e.test.ts` boots a server with one admin and two
   members on the sign-in list and the fake ACP engine asking permission every
   turn: another member is refused on both respond routes, the requester
@@ -87,12 +87,12 @@ pnpm exec vitest run server/request-auth.test.ts server/decision-log.test.ts \
   bot opened mid-way through a member's request (through the real
   `/api/internal/threads` handoff) leads back to that member, a card that
   names nobody is answered by any member, an admin and the owner answer
-  anyone's card, and under `OMB_LOOPBACK_TRUST=service` a session-less caller
+  anyone's card, and under `SAGAX_LOOPBACK_TRUST=service` a session-less caller
   cannot approve (or use the bot-scoped route or always-allow) but can
   decline, while a Slack-shaped guarded request stays answerable by any
   member. Each answer's decision row and card name who answered.
 - `server/cli-service-trust.e2e.test.ts` runs the real `openmausbot serve`
-  with `OMB_LOOPBACK_TRUST=service`: it prints a pairing code and keeps
+  with `SAGAX_LOOPBACK_TRUST=service`: it prints a pairing code and keeps
   running, the pairing route refuses every other local caller, and later
   `pair` and `sessions` commands exit with the explanation.
 

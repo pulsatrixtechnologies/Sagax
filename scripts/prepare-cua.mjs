@@ -180,7 +180,7 @@ await writeFile(
   bundle,
   bundledSource.replace(
     resolverPattern,
-    `${resolvers[0]}\n      if (process.env.OPENMAUSBOT_CUA_SDK_LIBRARY) return resolveOverride(opts.crateName, process.env.OPENMAUSBOT_CUA_SDK_LIBRARY);`,
+    `${resolvers[0]}\n      if (process.env.SAGAX_CUA_SDK_LIBRARY) return resolveOverride(opts.crateName, process.env.SAGAX_CUA_SDK_LIBRARY);`,
   ),
 );
 

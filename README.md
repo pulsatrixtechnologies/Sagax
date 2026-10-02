@@ -169,7 +169,7 @@ Secrets are write-only: the UI only sees "configured" flags.
 - **Teams from one Markdown file.** Import a team package from disk or a public GitHub URL in **Teams → Import**. A review screen shows the bots, Chief of Staff, channels, playbooks, connector checklist, and routines before anything is created. Connections stay off until you approve them and routines arrive paused.
 - **Share a team.** Right-click a team and choose **Share team…** to save its bots, instructions, pictures, skills, channels, and routines as one file. Chat history, keys, model choices, and computers never go in. See [docs/team-sharing.md](docs/team-sharing.md) and [docs/presets.md](docs/presets.md).
 - **Voice.** Read replies aloud or call a bot. Voices come from ElevenLabs, Fish Audio, Grok (xAI), built-in Mac voices, or a local Chatterbox server. Calls are macOS only. See [docs/voice-mode.md](docs/voice-mode.md).
-- **Routines and webhooks.** Run work once, on weekdays, or every 5 to 1,440 minutes. A separate webhook receiver listens on `127.0.0.1:8800` by default (`OMB_WEBHOOK_PORT` to change it). See [docs/routine-schedules.md](docs/routine-schedules.md).
+- **Routines and webhooks.** Run work once, on weekdays, or every 5 to 1,440 minutes. A separate webhook receiver listens on `127.0.0.1:8800` by default (`SAGAX_WEBHOOK_PORT` to change it). See [docs/routine-schedules.md](docs/routine-schedules.md).
 - **MCP control plane.** A stdio MCP server lets Claude Desktop, Cursor, and other clients inspect bots and channels, send work, and wait for results. It does not expose approvals, deletion, credentials, or computer lifecycle. See [docs/mcp-server.md](docs/mcp-server.md).
 - **Bot memory.** Each bot keeps plain markdown notes in its workspace. **Bot Settings → Memory** shows how much of them loads, edits them without overwriting the bot's own writes, and keeps a journal of every change with one-click undo. See [docs/memory.md](docs/memory.md).
 - **Custom engines and tools.** Any ACP-speaking CLI or OpenAI-compatible endpoint plugs in through config ([docs/custom-engines.md](docs/custom-engines.md)), and so do your own MCP servers ([docs/custom-mcp-servers.md](docs/custom-mcp-servers.md)).
@@ -232,9 +232,10 @@ pnpm dev:desktop   # Electron shell; keep the two commands above running
 Requirements: **macOS or Windows** (Ubuntu 24.04 x64 builds from source but is not packaged by this fork),
 **Node 24+**, **pnpm**, and at least one agent CLI installed and signed in.
 
-To keep existing fleets working, some internal names did not change: the data directory is still
-`~/.openmausbot`, the command line is still `openmausbot`, and environment variables still start with `OMB_`.
-None of those is the product name.
+The data directory is `~/.sagax` (an existing `~/.openmausbot` moves there on first start) and
+environment variables start with `SAGAX_` (the old `OMB_*` names are still read for one release).
+To keep existing fleets working, some internal names did not change: the command line is still
+`openmausbot`. AGENTS.md ("Legacy names kept for compatibility") lists the others.
 
 Run the terminal launcher from the checkout:
 

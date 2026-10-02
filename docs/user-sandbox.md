@@ -1,6 +1,6 @@
 # Server environments (organization mode)
 
-On an organization server (`OMB_IDENTITY=perspicax`), each **person** gets one
+On an organization server (`SAGAX_IDENTITY=perspicax`), each **person** gets one
 isolated Linux environment on the server: their "server environment"
 (`user-sandbox`). Shell, file and browser tools run there whenever the turn
 does not target the person's own computer (`user-desktop`). There is never

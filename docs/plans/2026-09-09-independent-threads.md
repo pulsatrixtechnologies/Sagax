@@ -94,7 +94,7 @@ Pulsa Bot's store, provider adapters, MCP bridge and UI components; no new
 orchestration framework or database is needed.
 
 Sidebar reference: [T3 Code at 5e6cc2b895](https://github.com/pingdotgg/t3code/tree/5e6cc2b89534a8e01772bf647b79a1f2da2f9664/apps/web/src/components).
-Adapt the interaction patterns to existing OpenMaus components. If copying
+Adapt the interaction patterns to existing Sagax components. If copying
 source, retain its MIT copyright/license notice instead of changing its license.
 
 See [chat verification](../verification/chat-turns.md),
