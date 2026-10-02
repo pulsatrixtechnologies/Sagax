@@ -3614,7 +3614,7 @@ describe("harness HTTP API", () => {
       // asynchronous, so the Chief can still be busy here, and while a token
       // is configured a busy bot's delete is refused with 409 (index.ts:6673).
       // That refusal was swallowed by the catch below, leaving this Chief in
-      // the store for the rest of the file — and because setChiefOfStaff is
+      // the store for the rest of the file — and because setPrimaryBot is
       // per-section (store.ts:2020), electing a Chief in the default section
       // never cleared it, so the team-import test's store-wide count saw two.
       await api("PUT", "/api/config", { box: { token: "" } }).catch(() => undefined);
