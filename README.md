@@ -1,5 +1,5 @@
 > Sagax has no token and no affiliation with any cryptocurrency.
-> It is a modified distribution of the Apache-2.0 project originally published as OpenMausBot.
+> It is based on the Apache-2.0 project originally published as OpenMausBot. Sagax itself is licensed for noncommercial use only (PolyForm Noncommercial 1.0.0).
 > It is not affiliated with xAI. "Grok" is a trademark of its owner.
 
 <div align="center">
@@ -21,7 +21,7 @@ channels, and let everyone work with them. Approvals always stay with the bot's 
 ![Electron](https://img.shields.io/badge/Electron-macOS%20%C2%B7%20Windows-2B2E3A?logo=electron&logoColor=9FEAF9)
 ![Agents](https://img.shields.io/badge/agents-Claude%20·%20Codex%20·%20Grok-d97757)
 [![Release](https://img.shields.io/github/v/release/pulsatrixtechnologies/pulsa-bot?include_prereleases&label=trial&color=1084fe&cacheSeconds=300)](https://github.com/pulsatrixtechnologies/pulsa-bot/releases)
-![License](https://img.shields.io/badge/license-Apache%202.0-38d591)
+![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-38d591)
 
 <br>
 
@@ -279,39 +279,31 @@ what you find in [Issues](https://github.com/pulsatrixtechnologies/pulsa-bot/iss
 
 Contributions are welcome. The driver SPI in [`server/contracts.ts`](server/contracts.ts) is small: a new
 provider is one file in [`server/drivers/`](server/drivers/) plus a one-line registration. See
-[CONTRIBUTING.md](CONTRIBUTING.md) and [CLA.md](CLA.md).
+[CONTRIBUTING.md](CONTRIBUTING.md) and [CLA.md](CLA.md) (a signed contributor agreement is required).
 
 ## License
 
-Sagax is a modified distribution of the work originally published as
-OpenMausBot. The original work and this distribution are under the
-[Apache License 2.0](LICENSE). Copyright 2026 Milind Soni and OpenMausBot
-contributors. Those notices are kept in [NOTICE](NOTICE). Details are in
+Sagax is owned by Pulsatrix Technologies inc. and licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE-POLYFORM-NC.md): free for
+personal, research, educational and other noncommercial use. Commercial use
+needs a license from Pulsatrix Technologies inc. See [LICENSE](LICENSE) and
 [LICENSING.md](LICENSING.md).
 
-What this distribution changes:
+Sagax is based on OpenMausBot, Copyright 2026 Milind Soni and OpenMausBot
+contributors, under the [Apache License 2.0](LICENSE-APACHE). The parts that
+come unchanged from OpenMausBot stay under Apache 2.0; the changes made by
+Pulsatrix Technologies inc. are under the PolyForm Noncommercial License
+only. The OpenMausBot notices are kept in [NOTICE](NOTICE). The OpenMausBot
+name and mascot belong to Milind Soni and are not this product's name.
+
+What Sagax changes from OpenMausBot:
 
 - The product name is Sagax.
 - Organizations, people in channels, bot ownership, owner-only approvals, and workers were added.
 - The interface was restyled.
-- The source-available `enterprise/` directory was removed. It was not
-  Apache 2.0, and its license forbade redistribution. That source is not
-  included, and its license check was not copied here. With the directory
-  gone, the server reports `{"edition":"oss"}`.
-
-If you redistribute Sagax, Apache 2.0 requires you to:
-
-1. Give recipients a copy of the Apache License 2.0 (`LICENSE`).
-2. State that you changed the files. [NOTICE](NOTICE) records the changes
-   in this distribution. Add your own changes the same way.
-3. Keep all copyright, patent, trademark, and attribution notices from
-   the source, including `NOTICE` and `third_party/`.
-4. Keep a readable copy of `NOTICE` in any distribution that includes one
-   (Apache 2.0 section 4(d)).
-5. Not use the OpenMausBot name or mascot as your product name. Those
-   marks belong to Milind Soni. Apache 2.0 section 6 does not grant
-   trademark rights. Naming the original project, to say where the work
-   came from, is the use the license allows.
+- The source-available `enterprise/` directory was removed. That source is
+  not included, and its license check was not copied here. With the
+  directory gone, the server reports `{"edition":"oss"}`.
 
 Packaged Cua Driver components keep their upstream MIT, SIL OFL 1.1, MPL-2.0, and other dependency terms.
 The notices, license texts, source locations, and SBOM are in

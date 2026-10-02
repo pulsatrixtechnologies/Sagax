@@ -13,7 +13,7 @@
   "author": {
     "name": "Pulsatrix Technologies Inc."
   },
-  "license": "Apache-2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "desktopName": "com.openmausbot.app.desktop",
   "type": "module",
   "main": "electron/main.mjs",
