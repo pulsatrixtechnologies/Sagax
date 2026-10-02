@@ -375,36 +375,36 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
   origin = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
   base = `${origin}/api/v3.1`;
-  process.env.OMB_COMPOSIO_API = base;
-  process.env.OMB_COMPOSIO_TOOLKITS_API = `${origin}/api/v3`;
+  process.env.SAGAX_COMPOSIO_API = base;
+  process.env.SAGAX_COMPOSIO_TOOLKITS_API = `${origin}/api/v3`;
 });
 
 afterAll(async () => {
   setManagedBrokerAccess(null);
-  delete process.env.OMB_COMPOSIO_API;
-  delete process.env.OMB_COMPOSIO_TOOLKITS_API;
+  delete process.env.SAGAX_COMPOSIO_API;
+  delete process.env.SAGAX_COMPOSIO_TOOLKITS_API;
   await new Promise<void>((resolve) => api.close(() => resolve()));
 });
 
 describe.sequential("Composio Sessions", () => {
   it("rejects broker URL components and invalid tokens from the environment", () => {
-    process.env.OMB_COMPOSIO_BROKER_TOKEN = "a".repeat(64);
+    process.env.SAGAX_COMPOSIO_BROKER_TOKEN = "a".repeat(64);
     try {
       for (const url of [
         "https://user:secret@broker.example/root",
         "https://broker.example/root?redirect=evil",
         "https://broker.example/root#fragment",
       ]) {
-        process.env.OMB_COMPOSIO_BROKER_URL = url;
+        process.env.SAGAX_COMPOSIO_BROKER_URL = url;
         expect(() => connectionMode({})).toThrow(/must not include/);
       }
-      process.env.OMB_COMPOSIO_BROKER_URL = "http://[::1]:3210/root/";
+      process.env.SAGAX_COMPOSIO_BROKER_URL = "http://[::1]:3210/root/";
       expect(connectionMode({})).toBe("managed");
-      process.env.OMB_COMPOSIO_BROKER_TOKEN = "short";
+      process.env.SAGAX_COMPOSIO_BROKER_TOKEN = "short";
       expect(() => connectionMode({})).toThrow(/token is invalid/);
     } finally {
-      delete process.env.OMB_COMPOSIO_BROKER_URL;
-      delete process.env.OMB_COMPOSIO_BROKER_TOKEN;
+      delete process.env.SAGAX_COMPOSIO_BROKER_URL;
+      delete process.env.SAGAX_COMPOSIO_BROKER_TOKEN;
     }
   });
   it("accepts a private desktop credential update and rejects unsafe broker URLs", () => {
@@ -868,12 +868,12 @@ describe.sequential("Composio Sessions", () => {
       command: process.execPath,
       args: [expect.stringContaining("connector-proxy")],
       env: {
-        OMB_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp",
-        OMB_CONNECTOR_UPSTREAM_HEADERS: JSON.stringify({ authorization: "Bearer secret" }),
-        OMB_HARNESS_URL: "http://127.0.0.1:8799",
-        OMB_CONNECTOR_TOKEN: "secret",
-        OMB_BOT_ID: "bot-1",
-        OMB_THREAD_ID: "thread-1",
+        SAGAX_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp",
+        SAGAX_CONNECTOR_UPSTREAM_HEADERS: JSON.stringify({ authorization: "Bearer secret" }),
+        SAGAX_HARNESS_URL: "http://127.0.0.1:8799",
+        SAGAX_CONNECTOR_TOKEN: "secret",
+        SAGAX_BOT_ID: "bot-1",
+        SAGAX_THREAD_ID: "thread-1",
       },
     });
   });

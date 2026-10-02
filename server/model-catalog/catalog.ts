@@ -31,7 +31,7 @@
 // forced refresh skips the freshness check; failures are logged and never
 // surface; one switch turns fetching off.
 //
-// Changed for OpenMausBot:
+// Changed for Sagax:
 // - plain Node instead of Effect; one server process owns DATA_DIR, so a
 //   single in-flight promise stands in for OpenCode's cross-process flock;
 // - data counts as fresh for 24 hours, and a refresh runs only when asked
@@ -41,7 +41,7 @@
 // - the source is the newest of: our cache, OpenCode's own cache
 //   (~/.cache/opencode/models.json, read only), the bundled snapshot. On a tie
 //   that order decides, so a newer snapshot beats an older cache;
-// - switched off by OMB_DISABLE_MODEL_CATALOG_FETCH=1, and by the caller on
+// - switched off by SAGAX_DISABLE_MODEL_CATALOG_FETCH=1, and by the caller on
 //   managed or hosted installs.
 //
 // This list is never the last word on what a key can use: the provider's own
@@ -67,7 +67,7 @@ export const MODELS_DEV_URL = "https://models.dev/api.json";
 export const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const CATALOG_FETCH_TIMEOUT_MS = 10_000;
 export const CATALOG_MAX_BYTES = 20 * 1024 * 1024;
-export const CATALOG_DISABLE_ENV = "OMB_DISABLE_MODEL_CATALOG_FETCH";
+export const CATALOG_DISABLE_ENV = "SAGAX_DISABLE_MODEL_CATALOG_FETCH";
 export const SNAPSHOT_FILE = "models-dev.snapshot.json";
 
 export type CatalogOrigin = "cache" | "opencode" | "snapshot" | "empty";
@@ -296,7 +296,7 @@ export class ModelCatalogStore {
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? CATALOG_FETCH_TIMEOUT_MS);
     try {
       const response = await (this.options.fetch ?? fetch)(MODELS_DEV_URL, {
-        headers: { accept: "application/json", "user-agent": "OpenMausBot", ...(etag ? { "if-none-match": etag } : {}) },
+        headers: { accept: "application/json", "user-agent": "Sagax", ...(etag ? { "if-none-match": etag } : {}) },
         // Nothing secret is sent, but the catalog comes from models.dev only.
         redirect: "error",
         signal: controller.signal,

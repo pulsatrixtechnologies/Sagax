@@ -23,7 +23,7 @@ import { newEventId, newId } from "../contracts.ts";
 import { boatCredential, boatProviderApi } from "../included-services.ts";
 import { appendNative } from "./native.ts";
 import {
-  OMB_ASK_TOOL,
+  SAGAX_ASK_TOOL,
   answerWithoutPreamble,
   askQuestionSummary,
   capAnswerEcho,
@@ -146,7 +146,7 @@ export const BoatAgentDriver: ProviderDriver<BoatAgentConfig> = {
       const { threadId } = turn;
       const computer = turn.integrations?.computer;
       const boxId = computer && (!computer.kind || computer.kind === "box") ? computer.boxId : undefined;
-      if (!account()) throw new Error('box not configured — add {"box":{"token":"…"}} to ~/.openmausbot/config.json');
+      if (!account()) throw new Error('box not configured — add {"box":{"token":"…"}} to ~/.sagax/config.json');
       if (!boxId) {
         throw new Error("this bot has no computer yet — open the Computer panel and provision one");
       }
@@ -272,7 +272,7 @@ export const BoatAgentDriver: ProviderDriver<BoatAgentConfig> = {
             requestId,
             type: "request.opened",
             requestType: "question",
-            tool: OMB_ASK_TOOL,
+            tool: SAGAX_ASK_TOOL,
             summary: askQuestionSummary(questions),
             questions,
             ...(choices?.length ? { choices } : {}),
@@ -405,7 +405,7 @@ export const BoatAgentDriver: ProviderDriver<BoatAgentConfig> = {
 
     const snapshot = async (): Promise<ProviderSnapshot> => {
       if (!account()) {
-        return { state: "unavailable", reason: 'no Boat token — add {"box":{"token":"…"}} to ~/.openmausbot/config.json' };
+        return { state: "unavailable", reason: 'no Boat token — add {"box":{"token":"…"}} to ~/.sagax/config.json' };
       }
       try {
         await api("/me");

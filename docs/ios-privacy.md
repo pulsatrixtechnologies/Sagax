@@ -1,6 +1,6 @@
-# OpenMausMobile privacy
+# SagaxMobile privacy
 
-OpenMausMobile is a companion for a Sagax service chosen and operated
+SagaxMobile is a companion for a Sagax service chosen and operated
 by the user. Local Wi-Fi and Tailscale connections work without a Sagax
 account. A user may separately sign in on the desktop to enable the optional
 **Use your phone anywhere** HTTPS connection.
@@ -29,7 +29,7 @@ account. A user may separately sign in on the desktop to enable the optional
   passes the value over Electron's private process channel to commit through
   the same operating-system-encrypted store used by Settings. The value is not
   written to
-  iOS preferences or Keychain by OpenMausMobile, chat, SQLite, logs, or the
+  iOS preferences or Keychain by SagaxMobile, chat, SQLite, logs, or the
   hosted control-plane database. The user's chosen Password AutoFill provider
   may separately store it under that provider's own settings and privacy terms.
 - On a local Wi-Fi or Tailscale connection, phone traffic goes directly to the
@@ -64,7 +64,7 @@ account. A user may separately sign in on the desktop to enable the optional
   In-chat selections remain in memory until the message succeeds or the draft
   is discarded. Temporary Share-extension copies are removed after a completed
   send or cancellation. If iOS terminates the extension mid-transfer, the next
-  Share sheet session removes the abandoned copy immediately; an OpenMausMobile
+  Share sheet session removes the abandoned copy immediately; a SagaxMobile
   foreground launch removes it once it is at least 60 minutes old.
 - Opening a file link sent by a bot requests that exact file from the paired
   computer over the selected authenticated companion connection. The app keeps

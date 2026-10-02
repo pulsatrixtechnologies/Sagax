@@ -4,9 +4,9 @@
 // `pnpm omb` (a checkout) — because scripts/bundle-server.mjs bundles this
 // file next to the server.
 //
-//   openmausbot setup [--data-dir ~/.openmausbot]
+//   openmausbot setup [--data-dir ~/.sagax]
 //   openmausbot start [serve options]
-//   openmausbot serve [--port 8799] [--data-dir ~/.openmausbot] [--label "cab mini"]
+//   openmausbot serve [--port 8799] [--data-dir ~/.sagax] [--label "cab mini"]
 //                     [--public-url https://host] [--tailscale | --tunnel | --domain HOST] [--no-pair]
 //   openmausbot pair  [--label "My MacBook"] [--client] [--public-url https://host]
 //   openmausbot sessions [revoke <id>]
@@ -17,8 +17,8 @@
 // `serve` starts the server, waits for it, and prints a pairing link with a
 // QR code: scan it with the phone or open it on a laptop. `--tailscale` asks
 // Tailscale to terminate HTTPS for it and uses the MagicDNS name in the link.
-// `--tunnel` (after `login`) serves at a public https://….openmausbot.com
-// address through a Cloudflare tunnel: no domain, no proxy, no open port.
+// `--tunnel` (after `login`) serves at a public https address from the
+// control plane set in SAGAX_CONTROL_PLANE_URL, through a Cloudflare tunnel: no domain, no proxy, no open port.
 //
 // This module only exports; openmausbot.ts is the entry that runs main(), so
 // bundling this file into other entries (pair-cli.ts) never runs it twice.
@@ -46,6 +46,7 @@ import { explainTailscaleFailure, tailscaleServe, tailscaleServeOff, tailscaleSt
 import { defaultSetupIo, SetupCancelled, type SetupIo } from "./cli-prompts.ts";
 import { normalizePhoneOrigin, phonePairingInstructions, runPhoneSetup } from "./cli-phone-setup.ts";
 import type { AppConfig } from "./config.ts";
+import { defaultDataDir, ENVIRONMENT_PATH, fetchEnvironmentDescriptor, isOwnHealth, LEGACY_ENVIRONMENT_PATH } from "../electron/legacy-names.mjs";
 import {
   cleanupTunnelOrigin,
   createTunnelAccount,
@@ -67,6 +68,8 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 export interface CliOptions {
+  /** No --data-dir and no SAGAX_DATA_DIR (or OMB_DATA_DIR): ~/.sagax (or an old ~/.openmausbot). */
+  dataDirIsDefault?: boolean;
   command: "setup" | "start" | "serve" | "pair" | "sessions" | "status" | "login" | "logout" | "access" | "service" | "browser" | "fleet" | "help";
   port: number;
   dataDir: string;
@@ -124,8 +127,9 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   }
   const options: CliOptions = {
     command: command === "--help" || command === "-h" ? "help" : (command as CliOptions["command"]),
-    port: Number(env.OMB_PORT || 8799),
-    dataDir: env.OMB_DATA_DIR || join(homedir(), ".openmausbot"),
+    port: Number(env.SAGAX_PORT || 8799),
+    dataDir: env.SAGAX_DATA_DIR || defaultDataDir({ home: homedir(), migrate: false }),
+    ...(env.SAGAX_DATA_DIR ? {} : { dataDirIsDefault: true }),
     tailscale: false,
     tunnel: false,
     client: false,
@@ -144,7 +148,10 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     };
     try {
       if (arg === "--port") options.port = Number(value());
-      else if (arg === "--data-dir") options.dataDir = resolve(value());
+      else if (arg === "--data-dir") {
+        options.dataDir = resolve(value());
+        delete options.dataDirIsDefault;
+      }
       else if (arg === "--label") options.label = value();
       else if (arg === "--public-url") options.publicUrl = value().replace(/\/+$/, "");
       else if (arg === "--tailscale") options.tailscale = true;
@@ -271,8 +278,9 @@ fleet   many client workspaces on one Linux server, each its own account,
 --tailscale  serve over your tailnet: Tailscale terminates HTTPS and the
              link uses this machine's MagicDNS name (needs Tailscale signed in
              and HTTPS certificates enabled for the tailnet)
---tunnel     serve at a public https://….openmausbot.com address through a
-             Cloudflare tunnel: no domain, no proxy, no open port. Run
+--tunnel     serve at a public https address from your control plane
+             (SAGAX_CONTROL_PLANE_URL) through a Cloudflare tunnel: no
+             domain, no proxy, no open port. Run
              \`openmausbot login\` once on this machine first.
 --domain     serve at https://HOST on your own domain: a pinned Caddy is
              downloaded once and run alongside the server, and gets the
@@ -338,17 +346,24 @@ async function api(port: number, path: string, init: { method?: string; body?: s
 }
 
 /** What to do when a server treats this command as a local service rather
- * than its owner (OMB_LOOPBACK_TRUST=service, or a hosted workspace). */
-export const SERVICE_TRUST_HELP = "This server does not treat commands on this computer as its owner (OMB_LOOPBACK_TRUST=service, or a hosted workspace), so it will not pair devices or list sessions for them. Sign in as an admin and use Settings → Remote access, let people sign in with their email (openmausbot access add you@example.com), or restart the server with OMB_LOOPBACK_TRUST=owner.";
+ * than its owner (SAGAX_LOOPBACK_TRUST=service, or a hosted workspace). */
+export const SERVICE_TRUST_HELP = "This server does not treat commands on this computer as its owner (SAGAX_LOOPBACK_TRUST=service, or a hosted workspace), so it will not pair devices or list sessions for them. Sign in as an admin and use Settings → Remote access, let people sign in with their email (openmausbot access add you@example.com), or restart the server with SAGAX_LOOPBACK_TRUST=owner.";
 
 function refusedAsService(status: number, body: any): boolean {
   return status === 403 && typeof body?.error === "string" && /shared server|Sign in through the workspace portal/.test(body.error);
 }
 
+/** The local server's environment descriptor: the new path, then the old one
+ * for a server started before Sagax (legacy-names.mjs). */
+async function apiEnvironment(port: number): Promise<{ status: number; body: any }> {
+  const current = await api(port, ENVIRONMENT_PATH);
+  return current.status === 404 ? api(port, LEGACY_ENVIRONMENT_PATH) : current;
+}
+
 async function serverUp(port: number, pid?: number): Promise<boolean> {
   try {
     const { status, body } = await api(port, "/api/health");
-    return status === 200 && body?.app === "openmausbot" && (pid === undefined || body.pid === pid);
+    return status === 200 && isOwnHealth(body) && (pid === undefined || body.pid === pid);
   } catch {
     return false;
   }
@@ -359,9 +374,9 @@ async function serverUp(port: number, pid?: number): Promise<boolean> {
 export async function isWorkspaceRunning(options: CliOptions): Promise<boolean> {
   try {
     const { status, body } = await api(options.port, "/api/health");
-    if (status !== 200 || body?.app !== "openmausbot") return false;
+    if (status !== 200 || !isOwnHealth(body)) return false;
     const expected = readFileSync(join(options.dataDir, "environment-id"), "utf8").trim();
-    const descriptor = await api(options.port, "/.well-known/openmausbot/environment");
+    const descriptor = await apiEnvironment(options.port);
     return /^[0-9a-f-]{36}$/i.test(expected) && descriptor.status === 200 && descriptor.body?.environmentId === expected;
   } catch { return false; }
 }
@@ -385,8 +400,8 @@ export async function openDashboard(port: number, env = process.env): Promise<bo
 export async function verifyPhoneEndpoint(port: number, origin: string): Promise<boolean> {
   if (!normalizePhoneOrigin(origin)) return false;
   try {
-    const local = await api(port, "/.well-known/openmausbot/environment");
-    const remote = await fetch(`${origin}/.well-known/openmausbot/environment`, { signal: AbortSignal.timeout(5000), redirect: "error" });
+    const local = await apiEnvironment(port);
+    const remote = await fetchEnvironmentDescriptor(origin, { signal: AbortSignal.timeout(5000), redirect: "error" });
     if (local.status !== 200 || !remote.ok) return false;
     const descriptor = await remote.json() as { environmentId?: unknown };
     return typeof local.body?.environmentId === "string" && local.body.environmentId.length > 0
@@ -480,7 +495,7 @@ export function pairingBlock(input: {
       // telling someone to scan it.
       lines.push(`That QR opens the web app. The Android app needs the phone-app link,`);
       lines.push(`which this server cannot build without a public address: set`);
-      lines.push(`OMB_PUBLIC_URL, or open the web address above and type the code.`);
+      lines.push(`SAGAX_PUBLIC_URL, or open the web address above and type the code.`);
     } else if (input.inviteUrl) {
       lines.push(`Scan that with Camera for the browser, or paste the phone-app link`);
       lines.push(`above into the Sagax app.`);
@@ -520,7 +535,7 @@ async function mintPairing(port: number, options: { label?: string; client?: boo
   // for the web link above: a server behind someone else's proxy often does
   // not know its own public name, which is what that flag is for. Gate on the
   // credential, never on the server's own invite — a server started without
-  // OMB_PUBLIC_URL returns a credential and no invite, and gating on the
+  // SAGAX_PUBLIC_URL returns a credential and no invite, and gating on the
   // invite would throw away a secret the CLI has every part it needs to use.
   const address = options.publicUrl ?? (typeof body.url === "string" ? originOf(body.url) : null);
   // A server too old to mint a credential simply has no invite: the web link
@@ -534,7 +549,7 @@ async function mintPairing(port: number, options: { label?: string; client?: boo
 // ── commands ───────────────────────────────────────────────────────────
 export async function runPair(options: CliOptions): Promise<number> {
   if (!(await serverUp(options.port))) {
-    console.error(`no Sagax server on http://127.0.0.1:${options.port}; start one with \`openmausbot serve\` or set OMB_PORT`);
+    console.error(`no Sagax server on http://127.0.0.1:${options.port}; start one with \`openmausbot serve\` or set SAGAX_PORT`);
     return 1;
   }
   if (process.stdin.isTTY && process.stdout.isTTY && !options.label && !options.client) {
@@ -630,7 +645,7 @@ export function formatSessions(sessions: Array<{ id: string; label: string; scop
 export async function runStatus(options: CliOptions, io: CliIo = defaultIo()): Promise<number> {
   let code = 0;
   try {
-    const res = await fetch(`http://127.0.0.1:${options.port}/.well-known/openmausbot/environment`);
+    const res = await fetchEnvironmentDescriptor(`http://127.0.0.1:${options.port}`);
     const body: any = await res.json();
     io.log(options.json ? JSON.stringify(body, null, 2) : `${body.label} · Sagax ${body.version} on ${body.platform} · id ${body.environmentId}`);
   } catch {
@@ -647,7 +662,7 @@ export async function runStatus(options: CliOptions, io: CliIo = defaultIo()): P
 
 /** The sign-in allow-list, edited straight in config.json: the server reads
  * it per request, so this works with the server running or stopped and
- * needs no restart. Environment variables (OMB_SIGNIN_EMAILS) win when set.
+ * needs no restart. Environment variables (SAGAX_SIGNIN_EMAILS) win when set.
  * Written the way the server writes it (atomic, 0600), touching only the
  * one key, so nothing else in the file moves. */
 export async function runAccess(options: CliOptions, io: CliIo = defaultIo()): Promise<number> {
@@ -667,7 +682,7 @@ export async function runAccess(options: CliOptions, io: CliIo = defaultIo()): P
   const list = (value: unknown) => parseAllowList(Array.isArray(value) ? value.map(String).join(",") : "");
   const admins = list(Reflect.get(current, "admins"));
   const members = list(Reflect.get(current, "members"));
-  const overridden = process.env.OMB_SIGNIN_EMAILS !== undefined || process.env.OMB_SIGNIN_MEMBER_EMAILS !== undefined;
+  const overridden = process.env.SAGAX_SIGNIN_EMAILS !== undefined || process.env.SAGAX_SIGNIN_MEMBER_EMAILS !== undefined;
   const write = async (next: { admins: string[]; members: string[] }) => {
     mkdirSync(options.dataDir, { recursive: true, mode: 0o700 });
     writeFileAtomic(file, `${JSON.stringify({ ...raw, signIn: next }, null, 2)}\n`, { mode: 0o600 });
@@ -693,7 +708,7 @@ export async function runAccess(options: CliOptions, io: CliIo = defaultIo()): P
     }
     for (const entry of admins) io.log(`${entry.padEnd(40)} full access`);
     for (const entry of members) io.log(`${entry.padEnd(40)} chat and approvals`);
-    if (overridden) io.log("(OMB_SIGNIN_EMAILS / OMB_SIGNIN_MEMBER_EMAILS are set in the environment and win over this list while the server runs)");
+    if (overridden) io.log("(SAGAX_SIGNIN_EMAILS / SAGAX_SIGNIN_MEMBER_EMAILS are set in the environment and win over this list while the server runs)");
     return 0;
   }
   const entry = (options.email ?? "").trim().toLowerCase();
@@ -713,7 +728,7 @@ export async function runAccess(options: CliOptions, io: CliIo = defaultIo()): P
   }
   await write(options.chatOnly ? { admins: without(admins), members: [...without(members), entry] } : { admins: [...without(admins), entry], members: without(members) });
   io.log(`${entry} can sign in at /pair with an emailed code (${options.chatOnly ? "chat and approvals" : "full access"})`);
-  if (overridden) io.log("note: OMB_SIGNIN_EMAILS / OMB_SIGNIN_MEMBER_EMAILS are set in the environment and win over this list while the server runs");
+  if (overridden) io.log("note: SAGAX_SIGNIN_EMAILS / SAGAX_SIGNIN_MEMBER_EMAILS are set in the environment and win over this list while the server runs");
   return 0;
 }
 
@@ -725,7 +740,7 @@ export async function runLogin(options: CliOptions, io: CliIo = defaultIo()): Pr
     return 1;
   }
   if (!account.controlPlane) {
-    io.error("OMB_CONTROL_PLANE_URL is set but is not an https address");
+    io.error("Set SAGAX_CONTROL_PLANE_URL to your control plane's https address (Sagax has no hosted default)");
     return 1;
   }
   const existing = describeTunnelAccount(account.credentials.read());
@@ -923,23 +938,23 @@ export async function runServe(options: CliOptions, log: (line: string) => void 
   if (!entry.staticDir) log("note: no built UI found next to the server; the API runs but browsers get no page (build with `pnpm exec vite build`)");
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    OMB_DATA_DIR: options.dataDir,
-    OMB_PORT: String(options.port),
-    OMB_WEBHOOK_PORT: process.env.OMB_WEBHOOK_PORT || String(options.port + 1),
+    SAGAX_DATA_DIR: options.dataDir,
+    SAGAX_PORT: String(options.port),
+    SAGAX_WEBHOOK_PORT: process.env.SAGAX_WEBHOOK_PORT || String(options.port + 1),
   };
-  if (options.local) delete env.OMB_PUBLIC_URL;
+  if (options.local) delete env.SAGAX_PUBLIC_URL;
   // A service-trust server refuses session-less local admin requests, this
   // CLI's included. Hand the server we start a per-launch secret over its
   // stdin (not its environment, which every engine it starts inherits) so
   // this process alone can still print the pairing code.
   const serviceTrust = resolveLoopbackTrust({ env, desktopManaged: false, hostedWorkspace: hostedWorkspaceConfigured(env) }).trust === "service";
   const ownerToken = serviceTrust ? randomBytes(32).toString("base64url") : undefined;
-  if (ownerToken) env.OMB_CLI_OWNER_STDIN = "1";
-  else delete env.OMB_CLI_OWNER_STDIN;
-  if (entry.staticDir) env.OMB_STATIC_DIR = entry.staticDir;
-  if (entry.skillsDir && !process.env.OMB_SKILLS_DIR) env.OMB_SKILLS_DIR = entry.skillsDir;
-  if (options.label && !process.env.OMB_ENVIRONMENT_LABEL) env.OMB_ENVIRONMENT_LABEL = options.label;
-  if (plan) env.OMB_TUNNEL_SOCKET = plan.origin.socketPath;
+  if (ownerToken) env.SAGAX_CLI_OWNER_STDIN = "1";
+  else delete env.SAGAX_CLI_OWNER_STDIN;
+  if (entry.staticDir) env.SAGAX_STATIC_DIR = entry.staticDir;
+  if (entry.skillsDir && !process.env.SAGAX_SKILLS_DIR) env.SAGAX_SKILLS_DIR = entry.skillsDir;
+  if (options.label && !process.env.SAGAX_ENVIRONMENT_LABEL) env.SAGAX_ENVIRONMENT_LABEL = options.label;
+  if (plan) env.SAGAX_TUNNEL_SOCKET = plan.origin.socketPath;
   let logPath: string | undefined;
   let logFd: number | undefined;
   let tailscaleServing = false;
@@ -969,7 +984,7 @@ export async function runServe(options: CliOptions, log: (line: string) => void 
       log(`tailscale: serving https://${tailscale.dnsName} → http://127.0.0.1:${options.port} (only your tailnet can reach it)`);
     }
     if (startupCancelled) throw new SetupCancelled();
-    if (publicUrl) env.OMB_PUBLIC_URL = publicUrl;
+    if (publicUrl) env.SAGAX_PUBLIC_URL = publicUrl;
     child = spawn(entry.command, entry.args, { env, stdio: [ownerToken ? "pipe" : "ignore", logFd ?? "inherit", logFd ?? "inherit"] });
     if (ownerToken) {
       child.stdin?.on("error", () => { /* the server exited first; startup reports it */ });
@@ -1037,7 +1052,7 @@ export async function runServe(options: CliOptions, log: (line: string) => void 
     if (stopping || exited !== null) return await childExit;
     if (options.domain && caddyBinary) {
       try {
-        caddy = await startCaddy({ binary: caddyBinary, dataDir: options.dataDir, domain: options.domain, appPort: options.port, webhookPort: Number(env.OMB_WEBHOOK_PORT), log });
+        caddy = await startCaddy({ binary: caddyBinary, dataDir: options.dataDir, domain: options.domain, appPort: options.port, webhookPort: Number(env.SAGAX_WEBHOOK_PORT), log });
         log(`https: Caddy serves ${publicUrl} → http://127.0.0.1:${options.port}; it gets the certificate from Let's Encrypt once DNS for ${options.domain} points at this machine`);
         void caddy.exited.then((code) => {
           if (!stopping) log(`caddy: stopped (exit ${code ?? "signal"}); ${publicUrl} is no longer served. Stop and start the server again.`);
@@ -1117,7 +1132,10 @@ export async function runOnboardingCommand(
     io.error("Setup needs an interactive terminal. Run `npx openmausbot setup` in a terminal, then use `npx openmausbot serve` for unattended starts.");
     return 1;
   }
-  process.env.OMB_DATA_DIR = options.dataDir;
+  // The default folder moves from ~/.openmausbot to ~/.sagax here, once,
+  // unless a running copy holds it; a folder named on purpose never moves.
+  if (options.dataDirIsDefault) options.dataDir = defaultDataDir({ home: homedir() });
+  process.env.SAGAX_DATA_DIR = options.dataDir;
   if (options.command !== "setup" && await (flow.running ?? isWorkspaceRunning)(options)) {
     if (options.local || options.tunnel || options.tailscale || options.publicUrl) {
       io.error("This workspace is already running. Stop it before changing local or remote access; the current connection was not changed.");
@@ -1159,7 +1177,7 @@ export async function runOnboardingCommand(
     }
     if (options.command === "setup") {
       io.log("\nAll set. Start with: openmausbot (or npx openmausbot without a global install).");
-      if (options.dataDir !== join(homedir(), ".openmausbot") || options.port !== 8799) {
+      if (!options.dataDirIsDefault || options.port !== 8799) {
         io.log(`Use the same --data-dir (${options.dataDir}) and --port (${options.port}) options when starting.`);
       }
       return 0;
@@ -1179,7 +1197,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     console.error(`${options.error}\n\n${USAGE}`);
     return 2;
   }
-  process.env.OMB_DATA_DIR = options.dataDir;
+  process.env.SAGAX_DATA_DIR = options.dataDir;
   switch (options.command) {
     case "setup":
     case "start":
@@ -1216,7 +1234,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           group: options.group,
           node: process.execPath,
           script: process.argv[1] ?? "",
-          licenseKey: options.licenseKey ?? process.env.OMB_LICENSE_KEY,
+          licenseKey: options.licenseKey ?? process.env.SAGAX_LICENSE_KEY,
         }, { log: (line) => console.log(line) });
         // A service: stay up until systemd stops it.
         await new Promise<void>((resolveStop) => {
@@ -1235,7 +1253,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         brandFile: options.brandFile,
         anthropicKeyFile: options.anthropicKeyFile,
         cap: options.cap,
-        licenseKey: options.licenseKey ?? process.env.OMB_LICENSE_KEY,
+        licenseKey: options.licenseKey ?? process.env.SAGAX_LICENSE_KEY,
         memory: options.memory,
         dryRun: options.dryRun ?? false,
         yes: options.yes ?? false,

@@ -1,0 +1,93 @@
+// A user upgrading from ~/.openmausbot (before Sagax) must find everything in
+// ~/.sagax after the first boot, with a breadcrumb and the old path linking
+// to the new folder (electron/legacy-names.mjs defaultDataDir).
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { MIGRATION_BREADCRUMB } from "../electron/legacy-names.mjs";
+import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+
+const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(SERVER_DIR, "..");
+const PORT = 18800 + Math.floor(Math.random() * 10_000);
+const WEBHOOK_PORT = 39000 + Math.floor(Math.random() * 10_000);
+
+let home: string;
+let child: ChildProcess;
+let stderr = "";
+
+beforeAll(async () => {
+  home = mkdtempSync(join(tmpdir(), "sagax-openmausbot-migration-"));
+  const legacy = join(home, ".openmausbot");
+  mkdirSync(legacy, { recursive: true });
+  // A non-product shadow keeps startup deterministic: an empty map selects
+  // the user's full default engine fleet, whose installed CLI probes are not
+  // part of this migration test.
+  writeFileSync(join(legacy, "config.json"), JSON.stringify({
+    instances: { fixture: { driver: "migration-test-shadow" } },
+  }));
+  writeFileSync(join(legacy, "keep-me.txt"), "carried over");
+  child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+    cwd: ROOT,
+    env: {
+      ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+      ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
+      HOME: home,
+      USERPROFILE: home,
+      OMB_PORT: String(PORT),
+      OMB_WEBHOOK_PORT: String(WEBHOOK_PORT),
+      OMB_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stderr?.on("data", (chunk) => (stderr += String(chunk)));
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${PORT}/api/health`);
+      if (res.ok) return;
+    } catch {
+      /* not up yet */
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`server did not start:\n${stderr}`);
+}, 30_000);
+
+afterAll(async () => {
+  await waitForExit(child, { signal: "SIGTERM" });
+  await removeTempDir(home);
+});
+
+describe("openmausbot data dir", () => {
+  it("is moved to ~/.sagax on first boot, with its contents, a breadcrumb and a link back", () => {
+    const fresh = join(home, ".sagax");
+    expect(readFileSync(join(fresh, "keep-me.txt"), "utf8")).toBe("carried over");
+    expect(readFileSync(join(fresh, "environment-id"), "utf8").trim()).toMatch(/^[0-9a-f-]{36}$/);
+    const crumb = JSON.parse(readFileSync(join(fresh, MIGRATION_BREADCRUMB), "utf8"));
+    expect(crumb).toMatchObject({ from: join(home, ".openmausbot"), to: fresh });
+    expect(lstatSync(join(home, ".openmausbot")).isSymbolicLink()).toBe(true);
+    expect(readFileSync(join(home, ".openmausbot", "keep-me.txt"), "utf8")).toBe("carried over");
+    expect(existsSync(`${fresh}.migrating.lock`)).toBe(false);
+  });
+});
+
+describe("the same server under both names", () => {
+  it("serves its descriptor at the new well-known path and the old one", async () => {
+    const fresh = await (await fetch(`http://127.0.0.1:${PORT}/.well-known/sagax/environment`)).json() as { environmentId: string };
+    const old = await (await fetch(`http://127.0.0.1:${PORT}/.well-known/openmausbot/environment`)).json();
+    expect(fresh.environmentId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(old).toEqual(fresh);
+  });
+
+  it("answers health with the word deployed checks grep for and the new name", async () => {
+    const text = await (await fetch(`http://127.0.0.1:${PORT}/api/health`)).text();
+    expect(text).toContain("openmausbot");
+    expect(text).toContain("sagax");
+    expect(JSON.parse(text)).toMatchObject({ app: "openmausbot", product: "sagax" });
+  });
+});

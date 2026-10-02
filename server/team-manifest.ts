@@ -79,7 +79,7 @@ const membersSchema = z
 
 const manifestSchema = z.discriminatedUnion("version", [
   z.object({
-    format: z.literal(TEAM_MANIFEST_FORMAT, { error: "This is not an OpenMaus team file" }),
+    format: z.literal(TEAM_MANIFEST_FORMAT, { error: "This is not a Sagax team file" }),
     version: z.literal(LEGACY_TEAM_MANIFEST_VERSION),
     team: z.object({
       name: requiredText(100),
@@ -93,7 +93,7 @@ const manifestSchema = z.discriminatedUnion("version", [
     }),
   }),
   z.object({
-    format: z.literal(TEAM_MANIFEST_FORMAT, { error: "This is not an OpenMaus team file" }),
+    format: z.literal(TEAM_MANIFEST_FORMAT, { error: "This is not a Sagax team file" }),
     version: z.literal(TEAM_MANIFEST_VERSION),
     team: z.object({
       name: requiredText(100),
@@ -257,7 +257,7 @@ export interface ImportedMemberProfile {
  *    leaving it unset is not safe.
  *
  * 2. No name captures. Display names are identity wherever bots address
- *    each other — @mention resolution in rooms, the Chief of Staff roster,
+ *    each other — @mention resolution in rooms, the Primary Bot roster,
  *    peer-approval prompts — so an imported member wearing an existing
  *    bot's name could be mentioned, granted, or listed as if it were that
  *    bot. A colliding name is therefore visibly numbered ("Scout" →

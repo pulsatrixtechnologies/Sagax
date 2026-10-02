@@ -35,7 +35,7 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Expected TCP fixture");
-  vi.stubEnv("OMB_XAI_TTS_API", `http://127.0.0.1:${address.port}/v1`);
+  vi.stubEnv("SAGAX_XAI_TTS_API", `http://127.0.0.1:${address.port}/v1`);
 });
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));

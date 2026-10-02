@@ -1,9 +1,15 @@
 // Sagax server — the harness host. Clients hold no transports
 // (upstream rule): the React app dispatches typed commands over HTTP and
 // folds one SSE event stream; every provider process runs here.
+// First of all, SAGAX_* settings onto the names the code reads (step 1 of
+// the rename, electron/legacy-names.mjs).
+import "../electron/legacy-env-boot.mjs";
+import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
 // First, before any module that could start a process: a Cloud home's
 // secrets off the launcher's pipe (cloud-secrets-boot.ts).
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
+// Then the upstream/analytics network block (network-guard.ts).
+import "./network-guard.ts";
 import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type GroupActor } from "./group-ownership.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
@@ -124,7 +130,7 @@ import { buildRecall } from "./recall.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
 import { canAccessTeam, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerStatusWords, reachablePeers, resolveTeammate, roomPeerRosterSystemPrompt, roomRosterLine, PEER_ACCESS_HELP } from "./peer-roster.ts";
-import { openMausStatusSystemPrompt } from "./openmaus-status-capsule.ts";
+import { sagaxStatusSystemPrompt } from "./openmaus-status-capsule.ts";
 import {
   containerComputerAction,
   containerComputerExists,
@@ -164,6 +170,8 @@ import {
   routinesInConversationEnabled,
   connectedAppsEnabled,
   templatesEnabled,
+  vpsComputerEnabled,
+  boatComputerEnabled,
   claudeUserMcpEnabled,
   claudeAiConnectorsEnabled,
   skillAuthoringEnabled,
@@ -528,7 +536,8 @@ import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
-import { createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
+import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
+import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
 import type { HarnessCommandScope } from "./contracts.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
@@ -643,6 +652,7 @@ import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type PendingAdminApproval } from "./perspicax-org-routes.ts";
+import { orgFullAccessAllowed, orgFullAccessGrantRefusal, orgFullAccessHolds, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgBotForceRoutes } from "./org-bot-force.ts";
@@ -675,16 +685,16 @@ import {
   type Worker,
 } from "./workers.ts";
 import { createDeciderRoutes } from "./routes/decider.ts";
-import { createDesktopViewer, desktopViewerUrl } from "./routes/desktop-viewer.ts";
-import { localDesktopTarget, localVmViewerStatus, viewerTargetId } from "./desktop-viewer-targets.ts";
+import { createDesktopViewer, desktopViewerUrl, SANDBOX_VIEWER_TARGET } from "./routes/desktop-viewer.ts";
+import { localDesktopTarget, localVmViewerStatus, sandboxDesktopTarget, viewerTargetId } from "./desktop-viewer-targets.ts";
 import { createAntigravityLeftoverRoutes } from "./routes/antigravity-leftovers.ts";
 import { findAntigravityLeftovers, removeAntigravityLeftovers } from "./drivers/antigravity-temp.ts";
 
-const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
-const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
+const PORT = Number(process.env.SAGAX_PORT || process.env.OGB_PORT || 8799);
+const WEBHOOK_PORT = Number(process.env.SAGAX_WEBHOOK_PORT || PORT + 1);
 // Behind a proxy or tunnel, the base URL senders should use (docs/self-hosting.md).
-const WEBHOOK_PUBLIC_URL = process.env.OMB_WEBHOOK_PUBLIC_URL || undefined;
-const STATIC_DIR = process.env.OMB_STATIC_DIR || null;
+const WEBHOOK_PUBLIC_URL = process.env.SAGAX_WEBHOOK_PUBLIC_URL || undefined;
+const STATIC_DIR = process.env.SAGAX_STATIC_DIR || null;
 const MIME: Record<string, string> = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -729,11 +739,11 @@ if (existsSync(join(DATA_DIR, ".backups"))) {
 }
 const workspaceMaintenance = new WorkspaceBackupMaintenance();
 // Only after ensureDirs(): it performs the one-time rename of the legacy data
-// dir, which must not find a freshly created ~/.openmausbot already there.
+// dir, which must not find a freshly created ~/.sagax already there.
 // Remote clients (server/request-auth.ts, server/sessions.ts): a stable identity
 // for this server, the paired sessions, and the cookie the served UI uses.
 const ENVIRONMENT_ID = loadEnvironmentId(DATA_DIR);
-// Who signs people in here (OMB_IDENTITY): a solo server keeps its email
+// Who signs people in here (SAGAX_IDENTITY): a solo server keeps its email
 // sign-in list, invitations and mailer; an organization server signs people
 // in with Pulsatrix only (Perspicax owns accounts), so the list is empty
 // there and a legacy email session ends at its next request.
@@ -868,7 +878,7 @@ if (CLOUD_HOME) {
   // The signing secret is held in memory from here on, and a platform
   // gateway's settings are dropped: no engine or tool this server starts
   // inherits either. The person's own engines are the only way to a model.
-  delete process.env.OMB_CLOUD_BOOTSTRAP_SECRET;
+  delete process.env.SAGAX_CLOUD_BOOTSTRAP_SECRET;
   for (const key of CLOUD_IGNORED_KEYS) delete process.env[key];
   console.log(`cloud home ${CLOUD_HOME.machineId}: bots run on the engines the person signs in to here`);
   for (const warning of CLOUD_HOME.warnings) console.warn(`cloud home: ${warning}`);
@@ -886,26 +896,26 @@ const commandAllowlist = new CommandAllowlistStore(join(DATA_DIR, "command-allow
 const SESSION_COOKIE = sessionCookieName(PORT, ENVIRONMENT_ID);
 const HOSTED_WORKSPACE = hostedWorkspaceConfigured();
 let workspaceAccess: WorkspaceAccess | null = null;
-const DESKTOP_MANAGED = process.env.OMB_DESKTOP_PARENT === "1";
+const DESKTOP_MANAGED = process.env.SAGAX_DESKTOP_PARENT === "1";
 const SHARED_WORKSPACE_FULL_ACCESS = sharedWorkspaceFullAccessConfigured();
 const sharedWorkspaceFullAccessEnabled = () => SHARED_WORKSPACE_FULL_ACCESS && Boolean(workspaceAccess) && entitled("admin");
 // Who a loopback request without a session is (server/request-auth.ts
 // LoopbackTrust): the owner on a desktop or a one-person server; a service on
 // a shared workspace, where every bot's shell is a loopback caller too.
-// Organization sign-in (server/oidc-login.ts): OMB_IDENTITY=perspicax. A
+// Organization sign-in (server/oidc-login.ts): SAGAX_IDENTITY=perspicax. A
 // half-configured organization server stops here rather than fall back to
 // email codes.
 // An organization server is shared: loopback is a bot's shell, not an owner,
 // unless the operator says otherwise (spec section 8, request-auth.ts).
-const LOOPBACK = IDENTITY.kind === "perspicax" && !DESKTOP_MANAGED && process.env.OMB_LOOPBACK_TRUST === undefined
-  ? { trust: "service" as const, reason: "organization server (OMB_IDENTITY=perspicax)" as string, warning: undefined as string | undefined }
+const LOOPBACK = IDENTITY.kind === "perspicax" && !DESKTOP_MANAGED && process.env.SAGAX_LOOPBACK_TRUST === undefined
+  ? { trust: "service" as const, reason: "organization server (SAGAX_IDENTITY=perspicax)" as string, warning: undefined as string | undefined }
   : resolveLoopbackTrust({ desktopManaged: DESKTOP_MANAGED, hostedWorkspace: HOSTED_WORKSPACE, cloudHome: Boolean(CLOUD_HOME) });
 // `openmausbot serve` on a service-trust server hands the server it starts a
 // per-launch secret on stdin, then closes it (server/cli.ts). It opens only
 // the pairing route, for that CLI. Never an environment variable: every
 // engine this server starts inherits its environment.
 let cliOwnerToken: string | undefined;
-if (process.env.OMB_CLI_OWNER_STDIN === "1" && LOOPBACK.trust === "service" && process.stdin) {
+if (process.env.SAGAX_CLI_OWNER_STDIN === "1" && LOOPBACK.trust === "service" && process.stdin) {
   let received = "";
   process.stdin.setEncoding("utf8");
   process.stdin.on("error", () => { /* the CLI went away; no pairing through it */ });
@@ -916,13 +926,13 @@ if (process.env.OMB_CLI_OWNER_STDIN === "1" && LOOPBACK.trust === "service" && p
     if (received.includes("\n") && /^[A-Za-z0-9_-]{43}$/.test(line)) cliOwnerToken = line;
   });
 }
-delete process.env.OMB_CLI_OWNER_STDIN;
+delete process.env.SAGAX_CLI_OWNER_STDIN;
 // Empty is deliberately a deny-all bootstrap state. Only Electron's private
 // utility-process port can replace it with the per-launch owner capability.
 let desktopMutationToken: string | undefined = DESKTOP_MANAGED ? "" : undefined;
 let companionMutationToken: string | undefined = DESKTOP_MANAGED ? "" : undefined;
 // Where remote clients reach this server (a proxy's public address); pairing URLs use it.
-const FALLBACK_PUBLIC_URL = process.env.OMB_PUBLIC_URL?.trim().replace(/\/+$/, "") || null;
+const FALLBACK_PUBLIC_URL = process.env.SAGAX_PUBLIC_URL?.trim().replace(/\/+$/, "") || null;
 // 2026-10-01: the organization key switch is retired (engine-credentials.ts).
 dropRetiredOrganizationKeys();
 const cfg = loadConfig();
@@ -953,19 +963,19 @@ const customDomainVerifier = createCustomDomainVerifier({ environmentId: ENVIRON
 // as a plain cache key).
 const emailOtp = new EmailOtpStore();
 const mailResolved = () => resolveMailSettings({ file: cfg.mail, env: process.env });
-// OMB_MAIL_CAPTURE_FILE (test/e2e seam only): instead of sending, append
+// SAGAX_MAIL_CAPTURE_FILE (test/e2e seam only): instead of sending, append
 // each message as one JSON line to this file. Requires an explicit test
-// marker (VITEST, set by the test runner itself, or OMB_TEST_SEAMS=1 for a
+// marker (VITEST, set by the test runner itself, or SAGAX_TEST_SEAMS=1 for a
 // harness that does not inherit it) on top of a non-production NODE_ENV, so
 // a misconfigured deploy cannot silently stop sending real mail.
-const MAIL_CAPTURE_FILE = process.env.OMB_MAIL_CAPTURE_FILE;
-const mailCaptureFile = MAIL_CAPTURE_FILE && process.env.NODE_ENV !== "production" && (process.env.VITEST || process.env.OMB_TEST_SEAMS === "1")
+const MAIL_CAPTURE_FILE = process.env.SAGAX_MAIL_CAPTURE_FILE;
+const mailCaptureFile = MAIL_CAPTURE_FILE && process.env.NODE_ENV !== "production" && (process.env.VITEST || process.env.SAGAX_TEST_SEAMS === "1")
   ? MAIL_CAPTURE_FILE
   : undefined;
 if (MAIL_CAPTURE_FILE && !mailCaptureFile) {
-  console.warn("OMB_MAIL_CAPTURE_FILE is set but ignored (needs VITEST or OMB_TEST_SEAMS=1, and NODE_ENV other than production)");
+  console.warn("SAGAX_MAIL_CAPTURE_FILE is set but ignored (needs VITEST or SAGAX_TEST_SEAMS=1, and NODE_ENV other than production)");
 } else if (mailCaptureFile) {
-  console.warn(`OMB_MAIL_CAPTURE_FILE seam is active: mail is captured to ${mailCaptureFile} instead of being sent`);
+  console.warn(`SAGAX_MAIL_CAPTURE_FILE seam is active: mail is captured to ${mailCaptureFile} instead of being sent`);
 }
 let cachedMailerKey: string | null = null;
 let cachedMailer: Mailer | null = null;
@@ -2664,27 +2674,27 @@ function agentsIntegration(
     args: [agentsProxyPath],
     env: {
       ...AGENTS_NODE_FLAG,
-      OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
-      OMB_BOT_ID: botId,
-      OMB_THREAD_ID: threadId,
-      OMB_COMMS_TOKEN: token,
-      OMB_TURN_DEPTH: String(depth),
-      OMB_ROOM_TURN: roomCoordination ? "1" : "0",
-      OMB_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
-      OMB_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
-      OMB_MEMORY_ENABLED: store.bot(botId)?.memoryEnabled === false ? "0" : "1",
+      SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+      SAGAX_BOT_ID: botId,
+      SAGAX_THREAD_ID: threadId,
+      SAGAX_COMMS_TOKEN: token,
+      SAGAX_TURN_DEPTH: String(depth),
+      SAGAX_ROOM_TURN: roomCoordination ? "1" : "0",
+      SAGAX_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
+      SAGAX_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
+      SAGAX_MEMORY_ENABLED: store.bot(botId)?.memoryEnabled === false ? "0" : "1",
       // A room turn in a group whose shared memory is on gets
       // group_memory_update (server/group-memory.ts); the route re-checks.
-      OMB_GROUP_MEMORY: groupMemoryWritable(store.groupByThread(threadId), botId) ? "1" : "0",
+      SAGAX_GROUP_MEMORY: groupMemoryWritable(store.groupByThread(threadId), botId) ? "1" : "0",
       // The shared-computer tools are advertised only while the workspace
       // gate is on; the routes behind them refuse regardless.
-      OMB_SHARED_COMPUTERS_ENABLED: lendingEnabled() ? "1" : "0",
+      SAGAX_SHARED_COMPUTERS_ENABLED: lendingEnabled() ? "1" : "0",
       // A Cloud home offers no this computer and no Local VM (cloud-home.ts),
       // so select_computer lists neither and vm_exec is not shown.
-      OMB_CLOUD_HOME: CLOUD_HOME ? "1" : "0",
+      SAGAX_CLOUD_HOME: CLOUD_HOME ? "1" : "0",
       // Same capability rule for voice: the tool is offered only when this
       // bot can actually speak, and the route re-checks on every call.
-      OMB_VOICE_NOTES: (() => {
+      SAGAX_VOICE_NOTES: (() => {
         const speaking = botForThread(botId, threadId) ?? store.bot(botId);
         return tts.voiceReady(cfg, speaking?.voice) && speaking?.voiceNotes !== false ? "1" : "0";
       })(),
@@ -2694,8 +2704,8 @@ function agentsIntegration(
 
 
 /** Engine lifecycle hooks (item 0.2): a turn-scoped bearer the engine's hook
- * helper presents on /api/internal/hook. OMB_HOOKS=0 turns the channel off. */
-const hooksEnabled = () => process.env.OMB_HOOKS !== "0";
+ * helper presents on /api/internal/hook. SAGAX_HOOKS=0 turns the channel off. */
+const hooksEnabled = () => process.env.SAGAX_HOOKS !== "0";
 function hooksIntegration(botId: string, threadId: string, generation: string): { url: string; token: string } {
   const token = mintInternalCapability({
     botId,
@@ -3380,7 +3390,7 @@ async function browserIntegration(botId: string, profile: string | undefined, tu
     kind: "browser", depth: 0, skillAuthoring: false, createdBots: 0, openedThreads: 0 });
   return { profile: partitionId, session, spec, integration: {
     command: process.execPath, args: [SPAWNED_PROXIES.browser], env: {
-      ...AGENTS_NODE_FLAG, OMB_BROWSER_TOKEN: token, OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+      ...AGENTS_NODE_FLAG, SAGAX_BROWSER_TOKEN: token, SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`,
     },
   } };
 }
@@ -3406,7 +3416,7 @@ function userSandboxIntegration(botId: string, threadId: string, generation: str
   return {
     command: process.execPath,
     args: [SPAWNED_PROXIES.userSandbox],
-    env: { ...AGENTS_NODE_FLAG, OMB_SANDBOX_TOKEN: token, OMB_HARNESS_URL: `http://127.0.0.1:${PORT}` },
+    env: { ...AGENTS_NODE_FLAG, SAGAX_SANDBOX_TOKEN: token, SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}` },
   };
 }
 
@@ -3420,7 +3430,7 @@ function userDesktopIntegration(botId: string, threadId: string, generation: str
   return {
     command: process.execPath,
     args: [SPAWNED_PROXIES.userSandbox],
-    env: { ...AGENTS_NODE_FLAG, OMB_SANDBOX_TOKEN: token, OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`, OMB_TOOL_SERVER: DESKTOP_BRIDGE_MCP_NAME },
+    env: { ...AGENTS_NODE_FLAG, SAGAX_SANDBOX_TOKEN: token, SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`, SAGAX_TOOL_SERVER: DESKTOP_BRIDGE_MCP_NAME },
   };
 }
 
@@ -3499,7 +3509,7 @@ function turnNetworkProxy(threadId: string, botId: string, decision: WorkplaceDe
     },
     network: () => workplacePreference(person).network,
   });
-  const hosts = [process.env.OMB_PERSPICAX_ISSUER, process.env.ANTHROPIC_BASE_URL, process.env.OPENAI_BASE_URL]
+  const hosts = [process.env.SAGAX_PERSPICAX_ISSUER, process.env.ANTHROPIC_BASE_URL, process.env.OPENAI_BASE_URL]
     .map((value) => { try { return value ? new URL(value).hostname : ""; } catch { return ""; } });
   return { url, noProxy: hosts.filter(Boolean) };
 }
@@ -3588,11 +3598,11 @@ function phoneIntegration(botId: string, threadId: string, generation: string) {
   });
   const env: Record<string, string> = {
     ...AGENTS_NODE_FLAG,
-    OMB_PHONE_TOKEN: token,
-    OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+    SAGAX_PHONE_TOKEN: token,
+    SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`,
   };
-  if (process.env.OMB_ADB_PATH) env.OMB_ADB_PATH = process.env.OMB_ADB_PATH;
-  if (process.env.OMB_RESOURCES_PATH) env.OMB_RESOURCES_PATH = process.env.OMB_RESOURCES_PATH;
+  if (process.env.SAGAX_ADB_PATH) env.SAGAX_ADB_PATH = process.env.SAGAX_ADB_PATH;
+  if (process.env.SAGAX_RESOURCES_PATH) env.SAGAX_RESOURCES_PATH = process.env.SAGAX_RESOURCES_PATH;
   if (process.env.PH_ANDROID_SERIAL) env.PH_ANDROID_SERIAL = process.env.PH_ANDROID_SERIAL;
   return { command: process.execPath, args: [phoneProxyPath], env };
 }
@@ -3670,11 +3680,11 @@ async function perspicaxTurnIntegration(input: {
       args: [perspicaxBridgePath],
       env: {
         ...AGENTS_NODE_FLAG,
-        OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
-        OMB_PERSPICAX_TOKEN: token,
-        OMB_PERSPICAX_PROFILE: profile.profileId,
-        OMB_BOT_ID: live.id,
-        OMB_THREAD_ID: input.threadId,
+        SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+        SAGAX_PERSPICAX_TOKEN: token,
+        SAGAX_PERSPICAX_PROFILE: profile.profileId,
+        SAGAX_BOT_ID: live.id,
+        SAGAX_THREAD_ID: input.threadId,
       },
     };
   }
@@ -4208,6 +4218,14 @@ principals.onDisabledChanged((person, disabled) => orgAudit({
   actor: { kind: "worker" },
 }));
 principals.localOperator(cfg.profile?.email);
+// One Primary Bot per person: the store learns who owns each bot (an
+// unrecorded owner is the operator), then the one-time migration from one
+// Chief of Staff per section runs (idempotent, so at every boot).
+store.botOwnerKey = (bot) => effectiveBotOwner(bot);
+{
+  const steppedDown = store.enforceOnePrimaryPerOwner();
+  if (steppedDown.length) console.log(`[primary-bot] one Primary Bot per person: ${steppedDown.length} former Chief(s) of Staff stepped down`);
+}
 // The per-person server environments (server/user-sandbox-manager.ts):
 // organization mode with a provisioner only. A person signed out by
 // Perspicax has theirs stopped now and deleted after the grace period.
@@ -4231,7 +4249,17 @@ if (userSandbox) {
     else userSandbox.personBack(person.id);
   });
 }
-ROUTES.push(createUserSandboxRoutes({ manager: () => userSandbox, organization: IDENTITY.kind === "perspicax" }));
+ROUTES.push(createUserSandboxRoutes({
+  manager: () => userSandbox,
+  organization: IDENTITY.kind === "perspicax",
+  turnRunning: (principalId) => {
+    const person = principalId.trim().toLowerCase();
+    for (const workplace of turnWorkplaces.values()) {
+      if (workplace.decision.target === "user-sandbox" && workplace.decision.principal === person) return true;
+    }
+    return false;
+  },
+}));
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
 const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
 /** Slice 4 (D10): each person's own engine sign-ins, organization mode. */
@@ -4329,7 +4357,7 @@ function previewSystemPrompt(bot: BotRecord) {
   });
   const peers = reachablePeers(store.bots, bot);
   const coordination = bot.chiefOfStaff
-    ? chiefOfStaffSystemPrompt(bot.id, store.bots, true, openMausStatusSystemPrompt())
+    ? chiefOfStaffSystemPrompt(bot.id, store.bots, true, sagaxStatusSystemPrompt())
     : peers.length > 0
       ? peerRosterSystemPrompt(peers)
       : "";
@@ -4466,13 +4494,18 @@ async function botOverview(bot: BotRecord): Promise<BotOverview> {
  * this too, but no provider dispatch or later permission callback relies on
  * persistence having been produced exclusively by that route. Delegation
  * uses the receiving bot's grant, never the sender's (approvalModeForOrigin) —
- * with one deliberate exception: a Chief of Staff with Full access makes the
+ * with one deliberate exception: a Primary Bot with Full access makes the
  * threads it delegates Full too (delegatedFullAccess), so the grant the
- * person gave the Chief covers the work the Chief hands out. */
+ * person gave the Primary Bot covers the work the Primary Bot hands out. */
 const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = bot.threadId): ApprovalMode => {
-  // A member's bot on an organization server never runs unasked (JC rule
-  // until per-owner containers): its tasks' Custom or Full are Ask here.
-  if (memberOwnedInOrg(bot)) return "ask";
+  // Organization server: Full runs as Full only while the organization
+  // allows it and the bot's current owner confirmed it (org-full-access.ts);
+  // otherwise Ask. Host tools stay withheld either way (withholdHostTools).
+  const stored = approvalModeFor(bot);
+  if (stored === "full" && orgDeniesFull(bot)) return "ask";
+  // A member's bot on an organization server never runs unasked otherwise
+  // (JC rule until per-owner containers): its Custom or Auto are Ask here.
+  if (memberOwnedInOrg(bot) && stored !== "full") return "ask";
   // On a Cloud home a turn a guest drives runs in Ask, whatever the bot's
   // own level. Judged by the conversation the turn runs in (a room's, for a
   // room turn), never by whichever of the bot's conversations is active.
@@ -4498,14 +4531,14 @@ function peerReviewRequired(bot: BotRecord, threadId: string): boolean {
   return Boolean(bot.approvePeerComms && !fullAccessForSource(bot.id, threadId));
 }
 
-/** Full access flows down a Chief of Staff's delegation. The person gave the
- * Chief Full access so its work runs without prompts; a teammate stopping
+/** Full access flows down a Primary Bot's delegation. The person gave the
+ * Primary Bot Full access so its work runs without prompts; a teammate stopping
  * that same work to ask defeats the grant — and in practice the person was
  * answering every one of those cards, all day, for the whole team. So a
- * teammate a Full-access Chief delegates to runs Full for that work: the
+ * teammate a Full-access Primary Bot delegates to runs Full for that work: the
  * recipient switches, whatever its own level says. The recipient's engine
  * has to implement Full (supportsApprovalMode); otherwise the work keeps the
- * recipient's own level, as before. Only a Chief passes access on — an
+ * recipient's own level, as before. Only a Primary Bot passes access on — an
  * ordinary bot's delegation still uses the recipient's setting. */
 function delegatedFullAccess(from: BotRecord, fromThreadId: string, target: BotRecord): boolean {
   return delegationInheritsFullAccess({
@@ -4513,7 +4546,9 @@ function delegatedFullAccess(from: BotRecord, fromThreadId: string, target: BotR
     senderHasFullAccess: fullAccessForSource(from.id, fromThreadId),
     sameBot: from.id === target.id,
     recipientDriverKind: registry.cliTarget(target.modelSelection.instanceId)?.driverKind,
-    recipientMemberOwned: memberOwnedInOrg(target),
+    // Organization server: only a bot whose owner allowed Full access (and
+    // while the organization allows it) inherits a Primary Bot's Full.
+    recipientMemberOwned: orgDeniesFull(target),
   });
 }
 
@@ -4526,11 +4561,11 @@ function grantDelegatedFullAccess(from: BotRecord, target: BotRecord, threadId: 
   store.appendMessage(threadId, {
     role: "bot",
     kind: "activity",
-    tool: { name: `Full access — delegated by ${from.name}, a Chief of Staff with Full access`, ok: true },
+    tool: { name: `Full access — delegated by ${from.name}, a Primary Bot with Full access`, ok: true },
   });
 }
 
-/** A room member's level for one turn. Work a Full-access Chief hands out
+/** A room member's level for one turn. Work a Full-access Primary Bot hands out
  * in a room runs Full for that turn: the room thread is shared, so the
  * level is not stored on it — it rides the handoff. */
 function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: GroupTurnOrchestration): ApprovalMode {
@@ -4539,9 +4574,9 @@ function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: 
   const handoff = orchestration?.roomHandoffId ? roomHandoffs.nodes.get(orchestration.roomHandoffId) : undefined;
   const source = handoff?.parentId ? roomHandoffs.nodes.get(handoff.parentId) : undefined;
   const from = source ? store.bot(source.botId) : undefined;
-  // A member's bot on an organization server never runs Full, not even for
-  // a Full Chief's handoff (JC rule until per-owner containers).
-  if (memberOwnedInOrg(bot)) return "ask";
+  // On an organization server a bot runs Full, even for a Full Primary
+  // Bot's handoff, only when its owner allowed it and the organization does.
+  if (memberOwnedInOrg(bot) && orgDeniesFull(bot)) return "ask";
   if (from && source && delegatedFullAccess(from, source.threadId, bot)) return "full";
   return approvalModeForTurn(bot, Boolean(orchestration?.roomHandoffId), threadId);
 }
@@ -4598,7 +4633,12 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
       } else if (bot.approvalGrant.threadId) {
         store.patchTask(botId, bot.approvalGrant.threadId, { approvalMode: mode, autoApprove: false });
       }
-      if (bot.approvalGrant) store.patchBot(botId, { approvalGrant: undefined });
+      const committedThread = bot.approvalGrant.threadId;
+      // The person confirmed the warning in the desktop app: remember it for
+      // this bot, so the next grant asks no more (org-full-access.ts).
+      store.patchBot(botId, { approvalGrant: undefined,
+        ...(mode === "full" ? { fullAccessConsent: { principalId: localPrincipalId().trim().toLowerCase(), at: Date.now() } } : {}) });
+      auditApprovalModeChange(null, botId, "ask", mode, committedThread);
       postDesktopPrivateMessage({ type: "approval-trusted-mode-commit-result", requestId, ok: true, bot: wireBot(store.bot(botId)!) });
     } else if (bot?.approvalGrant?.requestId === requestId) {
       clearGrant(bot);
@@ -5048,7 +5088,7 @@ function groupIsWorking(group: GroupRecord): boolean {
   return Boolean(group.busyBotId) || Boolean(groupTurnOperations.get(group.id)?.size);
 }
 
-// The public and Chief room tools use the same synchronous validation and write.
+// The public and Primary Bot room tools use the same synchronous validation and write.
 // Keep authorization at each ingress; no internal caller gains public admin scope.
 function createChannel(value: unknown): GroupRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -5230,7 +5270,7 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   }
   // An admin's explicit "show this room to everyone its current bots allow":
   // the only way a room's floor widens (settleRoomFloor). Admin-only: a
-  // member's PATCH is limited to display fields, and a Chief's never has it.
+  // member's PATCH is limited to display fields, and a Primary Bot's never has it.
   const resetAudience = body.resetAudience !== undefined;
   if (resetAudience) {
     if (body.resetAudience !== true) throw Object.assign(new Error("resetAudience must be true"), { status: 400 });
@@ -6206,7 +6246,7 @@ function guardedRequestSnapshot(botId: string, threadId: string, sendId: string)
 }
 
 /** A durable completion fence, not a replay queue. If the process dies while
- * a Chief is awaiting results, its earlier handoff must not become a final. */
+ * a Primary Bot is awaiting results, its earlier handoff must not become a final. */
 function settleTrackedRequest(threadId: string): void {
   const owner = directRequestOwners.get(threadId);
   const bot = store.botByThread(threadId);
@@ -6293,7 +6333,13 @@ function audienceChanged(): void {
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
-  target: (id) => {
+  target: (id, auth) => {
+    if (id === SANDBOX_VIEWER_TARGET) {
+      // The caller's own server environment desktop, never anyone else's.
+      const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : "";
+      if (IDENTITY.kind !== "perspicax" || !userSandbox || !principalId) return;
+      return sandboxDesktopTarget(userSandbox, principalId);
+    }
     if (id.startsWith("vps/")) {
       const botId = id.slice(4);
       if (store.bot(botId)?.cloudBackend !== "vps") return;
@@ -6369,7 +6415,7 @@ if (lendingMemory) {
  * correctly through its own Last-Event-ID with no client code at all. */
 const STREAM_ID = randomUUID().slice(0, 8);
 const REPLAY_MAX = 500;
-const configuredSseHeartbeatMs = Number(process.env.OMB_SSE_HEARTBEAT_MS);
+const configuredSseHeartbeatMs = Number(process.env.SAGAX_SSE_HEARTBEAT_MS);
 const SSE_HEARTBEAT_MS =
   Number.isFinite(configuredSseHeartbeatMs) && configuredSseHeartbeatMs > 0
     ? configuredSseHeartbeatMs
@@ -7111,16 +7157,16 @@ const repeats = new RepeatDetector({ thresholds: [5, 10, 20], maxKeysPerThread: 
 // left its bot busy forever. The watchdog stops a turn whose thread has emitted NOTHING for stallMs —
 // activity-based, so an hour-long turn that keeps streaming is never
 // touched, and turns parked on a human approval are exempt.
-const TURN_STALL_MS = Math.max(60_000, Number(process.env.OMB_TURN_STALL_MS) || 20 * 60_000);
+const TURN_STALL_MS = Math.max(60_000, Number(process.env.SAGAX_TURN_STALL_MS) || 20 * 60_000);
 /** How long ask_bot waits synchronously before the ask is converted into a
  * delegation claim ticket (the peer's turn keeps running either way). */
-const ASK_BOT_TIMEOUT_MS = Math.max(5_000, Number(process.env.OMB_ASK_BOT_TIMEOUT_MS) || 15_000);
+const ASK_BOT_TIMEOUT_MS = Math.max(5_000, Number(process.env.SAGAX_ASK_BOT_TIMEOUT_MS) || 15_000);
 // A room waits for a busy teammate instead of dropping them, but never
 // forever: a bot parked on a permission card in another chat is "busy" until
 // a human returns. Past this cap a goal's lead is told the teammate could not
 // free up and reassigns, and a chat round moves on with a chip that says so —
 // the wait ends as data, not as a dead room. Tests shrink it.
-const GROUP_GOAL_WAIT_MAX_MS = Math.max(1_000, Number(process.env.OMB_GOAL_WAIT_MAX_MS) || 30 * 60_000);
+const GROUP_GOAL_WAIT_MAX_MS = Math.max(1_000, Number(process.env.SAGAX_GOAL_WAIT_MAX_MS) || 30 * 60_000);
 // Reassigning around a busy teammate is bounded too: after this many
 // exhausted waits in one run the team is blocked on availability, not stuck.
 const GROUP_GOAL_MAX_WAIT_EXHAUSTIONS = 3;
@@ -7911,7 +7957,7 @@ async function mountBotVps(
   return {
     integration: {
       ...vpsMcp,
-      env: { ...vpsMcp.env, OMB_CONTROL_URL: vpsControl.url, OMB_CONTROL_TOKEN: vpsControl.token },
+      env: { ...vpsMcp.env, SAGAX_CONTROL_URL: vpsControl.url, SAGAX_CONTROL_TOKEN: vpsControl.token },
     },
   };
 }
@@ -8949,7 +8995,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const reply = lastReply.get(event.threadId) ?? "";
       lastReply.delete(event.threadId);
       // A run that broke — not one the person stopped, and not a routine's,
-      // which reports through its own failure path — is the Chief's to see.
+      // which reports through its own failure path — is the Primary Bot's to see.
       // A lazy computer-claim rejection already reported its failure and
       // interrupted the turn; Claude settles that interrupt as
       // exit_before_result, not "interrupted", so this generation's marker
@@ -9388,12 +9434,12 @@ function wakeDelegationSource(source: BotRecord, threadId: string, targetName: s
   dispatchDelegationWake(source.id, threadId, targetName, failureReason, routineRunId);
 }
 
-// ── incidents: a broken run reaches the Chief of Staff ──────────────────
+// ── incidents: a broken run reaches the Primary Bot ──────────────────
 // A failed, stalled or unstartable run used to leave one chip in the thread
 // it died in and nothing anywhere else; the person found it hours later,
 // from a phone, by opening the desktop and reading every thread. The team
-// already has a role for this — the Chief coordinates the section — so the
-// incident becomes a turn of the Chief's, in its "Team incidents" thread,
+// already has a role for this — the Primary Bot coordinates the section — so the
+// incident becomes a turn of the Primary Bot's, in its "Team incidents" thread,
 // with a link to the broken thread and retry_thread to act on it. The person
 // reads one place. Policy in server/incidents.ts.
 const incidentLedger = new IncidentLedger();
@@ -9439,7 +9485,7 @@ function reportIncident(input: { kind: IncidentKind; bot: BotRecord; threadId: s
       ...(group ? { group: { id: group.id, name: group.name } } : {}),
     }));
   };
-  // no Chief on duty, or the Chief itself broke: the person is next
+  // no Primary Bot on duty, or the Primary Bot itself broke: the person is next
   if (!chief) {
     tellThePerson();
     return;
@@ -10909,7 +10955,7 @@ async function startTurn(
         throw Object.assign(new Error("another thread is working in this project folder — wait for it to finish or choose a separate folder"), { status: 409, code: "workspace_busy" });
       }
       // Checkpoint explicit project folders, where a bot can overwrite the
-      // user's work. Its private OpenMaus workspace is app-owned and changes
+      // user's work. Its private Sagax workspace is app-owned and changes
       // on nearly every ordinary chat; snapshotting it would add hidden disk
       // and process overhead without a user project to restore.
       const checkpointCwd = cwd && cwd !== privateWorkspace ? cwd : undefined;
@@ -11369,7 +11415,7 @@ async function startTurn(
             bot.id,
             store.bots,
             Boolean(integrations.agents),
-            openMausStatusSystemPrompt(),
+            sagaxStatusSystemPrompt(),
             boundedCoordination,
           )
         : integrations.agents && sectionPeers.length > 0
@@ -11565,10 +11611,14 @@ async function startTurn(
       // or a card continuation never runs one.
       const typedCommand = !opts?.cardContinuation && commsDepth === 0
         ? await typedCommandForTurn(resolvedImages.text, harnessCommandSource(bot, threadId, {
-          botId: bot.id,
-          ...(cwd ? { cwd } : {}),
-          ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
-          mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+          scope: {
+            botId: bot.id,
+            ...(cwd ? { cwd } : {}),
+            ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+            mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+          },
+          speaker,
+          ...(turnAccess ? { access: turnAccess } : {}),
         }), harnessCommands)
         : { kind: "none" as const };
       if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped during command lookup");
@@ -11587,7 +11637,7 @@ async function startTurn(
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         refreshSystemPrompt: true,
         images: turnImages,
-        approvalMode: approvalModeForTurn(bot, commsDepth > 0, threadId),
+        approvalMode: auditFullAccessTurn(bot, threadId, approvalModeForTurn(bot, commsDepth > 0, threadId)),
         ...(guestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         model,
         effort,
@@ -12010,6 +12060,17 @@ async function stopBotForEmergencyApprovalDowngrade(botId: string): Promise<void
   }
 
   await directStop;
+}
+
+/** Whether the bot is working now: what forceStopBot would interrupt (a
+ * turn in one of its threads, its routine run, a room turn). */
+function botRunning(botId: string): boolean {
+  const bot = store.bot(botId);
+  if (!bot) return false;
+  if (store.tasks(botId).some((task) => task.busy || directTurnDispatchClaims.has(task.threadId) || roomHandoffs.activeDirect(task.threadId))) return true;
+  if (threadBusy(botId, bot.threadId)) return true;
+  if (routines?.activeBotRunForBot(botId) || routines?.activeRunForBot(botId)) return true;
+  return activeGroupTurnForBot(botId) !== null;
 }
 
 /** An organization admin's "Forcer l'arrêt" (server/org-bot-force.ts):
@@ -12452,7 +12513,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
         }
         const ownedBoatComputers = cloudInventory.instances.filter((instance) => instance.ownerBotId === bot.id);
 
-        // Revalidate a reviewed Chief-of-Staff request and establish the
+        // Revalidate a reviewed Primary Bot-of-Staff request and establish the
         // browser cleanup intent before the first irreversible provider
         // mutation. A stale review or damaged journal therefore leaves every
         // computer intact. Cross-provider rollback is impossible, so every
@@ -12523,7 +12584,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           localVmIdles.get(target.key)?.cancel();
           localVmIdles.delete(target.key);
           // Provider and local-computer teardown above can await for an
-          // arbitrary amount of time. A reviewed Chief deletion is bound to
+          // arbitrary amount of time. A reviewed Primary Bot deletion is bound to
           // the exact target profile it presented; re-check that receipt at
           // the final durable mutation boundary so a concurrent profile edit
           // cannot be erased under a stale approval.
@@ -12566,14 +12627,21 @@ const driverCapabilitiesFor = (instanceId: string) => {
   const instance = registry.get(instanceId);
   return instance ? { driverKind: instance.driverKind, agentsMcp: instance.adapter.capabilities.agentsMcp === true } : undefined;
 };
-/** A Chief may target one section peer; anyone else only itself. Shared by
+/** On an organization server a Primary Bot acts for its own person: it
+ * changes, sets up or deletes only bots of the same owner. A solo server has
+ * one owner. */
+function primaryBotSameOwner(from: { ownerUserId?: unknown }, target: { ownerUserId?: unknown }): boolean {
+  return IDENTITY.kind !== "perspicax" || effectiveBotOwner(from) === effectiveBotOwner(target);
+}
+/** A Primary Bot may target one section peer; anyone else only itself. Shared by
  * profile and default-model proposals, and re-checked at confirm. */
 const chiefPeerTargetRule = (noun: string) => (proposerBotId: string, targetBotId: string): string | null => {
   const proposer = store.bot(proposerBotId);
   const target = store.bot(targetBotId);
   if (!target) return "that bot no longer exists";
-  if (!proposer?.chiefOfStaff) return "only a section's Chief of Staff can change another bot's " + noun;
-  if (!canReachPeer(proposer, target)) return "that bot is not in a team this Chief is allowed to manage";
+  if (!proposer?.chiefOfStaff) return "only a Primary Bot can change another bot's " + noun;
+  if (!canReachPeer(proposer, target)) return "that bot is not in a team this Primary Bot is allowed to manage";
+  if (!primaryBotSameOwner(proposer, target)) return "that bot belongs to someone else; a Primary Bot changes only its own person's bots";
   return null;
 };
 /** Shared model validation for team-setup cards and propose_model: the
@@ -12596,14 +12664,14 @@ const profileRequests = new ProfileRequestService({
   store,
   autoApply: fullAccessForSource,
   canPersist: proposalPersistence,
-  // A Chief may change a section peer; anyone else only itself. Re-checked at confirm.
+  // A Primary Bot may change a section peer; anyone else only itself. Re-checked at confirm.
   validateTarget: chiefPeerTargetRule("profile"),
 });
 const modelRequests = new ModelRequestService({
   store,
   autoApply: fullAccessForSource,
   canPersist: proposalPersistence,
-  // Same authority rule as profile proposals: a Chief may name one section peer.
+  // Same authority rule as profile proposals: a Primary Bot may name one section peer.
   validateTarget: chiefPeerTargetRule("default model"),
   validateModel: validateModelProposal,
   driverCapabilities: driverCapabilitiesFor,
@@ -12612,14 +12680,15 @@ const tighteningRequests = new TighteningRequestService({
   store,
   autoApply: fullAccessForSource,
   canPersist: proposalPersistence,
-  // Same reach as a profile change: a Chief may tighten a section peer;
+  // Same reach as a profile change: a Primary Bot may tighten a section peer;
   // anyone else only itself. Re-checked at confirm.
   validateTarget: (proposerBotId, targetBotId) => {
     const proposer = store.bot(proposerBotId);
     const target = store.bot(targetBotId);
     if (!target) return "that bot no longer exists";
-    if (!proposer?.chiefOfStaff) return "only a section's Chief of Staff can change another bot's permissions";
-    if (!canReachPeer(proposer, target)) return "that bot is not in a team this Chief is allowed to manage";
+    if (!proposer?.chiefOfStaff) return "only a Primary Bot can change another bot's permissions";
+    if (!canReachPeer(proposer, target)) return "that bot is not in a team this Primary Bot is allowed to manage";
+    if (!primaryBotSameOwner(proposer, target)) return "that bot belongs to someone else; a Primary Bot changes only its own person's bots";
     return null;
   },
   // The card judges the effective mounts, so the snapshot resolves the same
@@ -12637,7 +12706,7 @@ const tighteningRequests = new TighteningRequestService({
 });
 const teamSetupTeams = () => [...new Set(["", ...readSections(), ...store.bots.map((bot) => sectionKey(bot.section)), ...store.groups.map((group) => sectionKey(group.section))])];
 const teamSetupRequests = new TeamSetupRequestService({
-  store, teams: teamSetupTeams, canAccessTeam, canPersist: proposalPersistence, maxBots: MAX_WORKSPACE_BOTS,
+  store, teams: teamSetupTeams, canAccessTeam, sameOwner: primaryBotSameOwner, canPersist: proposalPersistence, maxBots: MAX_WORKSPACE_BOTS,
   autoApply: fullAccessForSource,
   validateChange: (before, fields) => assertTeamComputerChangeIdle(before, { ...before, ...fields }),
   ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
@@ -12686,7 +12755,7 @@ function dispatchTeamSetupResume(entry: TeamSetupResumeEntry): void {
   const failed = (error: string) => {
     if (cancelled()) return;
     const current = store.messagesFor(request.threadId).find((item) => item.id === messageId);
-    if (current?.card) store.patchMessage(request.threadId, messageId, { card: { ...current.card, held: `The decision was recorded, but the Chief could not continue: ${redactSecretsInText(error).slice(0, 300)}` } });
+    if (current?.card) store.patchMessage(request.threadId, messageId, { card: { ...current.card, held: `The decision was recorded, but the Primary Bot could not continue: ${redactSecretsInText(error).slice(0, 300)}` } });
   };
   if (owner.group) {
     const groupId = owner.group.id;
@@ -12723,7 +12792,7 @@ async function resolveAndSendTeamSetup(res: ServerResponse, args: { botId: strin
   if (!card) return false;
   if (args.behavior === "allow" && !ownerReview) { json(res, 403, { error: "Approve team setup or deletion from the desktop app or a paired owner device. In a local browser, wait until every bot is idle." }); return true; }
   if (args.behavior === "allow" && !card.answered && !card.dismissed && !card.expired) {
-    // Confirmed Chief setup can move bots without the ordinary PATCH route.
+    // Confirmed Primary Bot setup can move bots without the ordinary PATCH route.
     // Keep that atomic Store operation behind the same shared-machine fence.
     for (const operation of card.teamSetupRequest!.operations) {
       const before = store.bot(operation.botId);
@@ -12998,7 +13067,7 @@ const webhooks = new WebhookManager({
   // delivery:"post" webhooks land in a dedicated "Updates" task, never
   // bot.threadId (the bot's currently-selected task) -- see
   // resolvePostThread below. Fixes
-  // https://github.com/milind-soni/OpenMausBot/issues/2071: a post used to
+  // upstream issue #2071: a post used to
   // land wherever the owner (or another automation) had last switched
   // that bot's selection, including a live conversation.
   post: (botId, threadId, text) => {
@@ -13264,7 +13333,7 @@ async function runGroupMemberTurn(
   }
   revokeInternalCapabilitiesForThread(threadId);
   spoken.add(botId);
-  // Must be the SAME resolver the readiness re-check uses below, or a Chief's
+  // Must be the SAME resolver the readiness re-check uses below, or a Primary Bot's
   // delegated Full elevation makes the two disagree by construction: every
   // such room turn then reads as "settings changed", retries once, and
   // settles as busy without ever dispatching.
@@ -14023,14 +14092,39 @@ async function runGroupMemberTurn(
     // explicit, disclosed session_search, never automatically
     const roomRecalled = cardContinuation ? "" : autoRecallPrompt(bot, threadId, resolvedLatestImages.text, { conversations: false, userName });
     const roomSpeaker: TurnSpeaker = roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" };
-    const sendRoomTurn = (roomTurnAccess: TurnAccess | undefined) => instance.adapter.sendTurn({
+    // The person's engine command for this member (shared/harness-commands.ts
+    // groupCommandTarget): it reaches the engine verbatim, like in a 1:1.
+    const roomCommandRoute = hop === 0 && !cardContinuation && !orchestration && latestUser?.text
+      ? groupEngineCommandRoute(readyGroup, latestUser.text, readyGroup.memberIds.map((id) => store.bot(id)).filter((member): member is BotRecord => Boolean(member && !member.hidden)), latestUser.channelMode, operation?.queuedQueueIds?.length ?? 0)
+      : null;
+    const roomCommandFor = async (roomTurnAccess: TurnAccess | undefined): Promise<CommandResolution> => {
+      if (roomCommandRoute?.botId !== readyBot.id) return { kind: "none" };
+      const typed = await typedCommandForTurn(extractTurnImages(roomCommandRoute.commandText).text, harnessCommandSource(readyBot, threadId, {
+        scope: {
+          botId: readyBot.id,
+          ...(cwd ? { cwd } : {}),
+          ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+          mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        },
+        speaker: roomSpeaker,
+        ...(roomTurnAccess ? { access: roomTurnAccess } : {}),
+        group: readyGroup,
+      }), harnessCommands);
+      if (typed.kind === "unavailable") throw new Error(unavailableCommandError(typed).error);
+      return typed;
+    };
+    const sendRoomTurn = async (roomTurnAccess: TurnAccess | undefined) => {
+      const roomCommand = await roomCommandFor(roomTurnAccess);
+      const engineCommand = roomCommand.kind === "engine" ? roomCommand : null;
+      return instance.adapter.sendTurn({
         threadId,
         botId: readyBot.id,
         ...(roomTurnAccess ? { access: roomTurnAccess } : {}),
-        text: withRecalled(roomRecalled, text),
+        text: engineCommand ? engineCommand.engineText : withRecalled(roomRecalled, text),
+        ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         refreshSystemPrompt: true,
         images: turnImages,
-        approvalMode: roomTurnApprovalMode(readyBot, threadId, orchestration),
+        approvalMode: auditFullAccessTurn(readyBot, threadId, roomTurnApprovalMode(readyBot, threadId, orchestration)),
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         system: roomSystem.text,
         systemStable: roomSystem.stable,
@@ -14045,6 +14139,7 @@ async function runGroupMemberTurn(
           ? memberTurnSelection(readyBot.modelSelection)
           : { model: instance.models.default }),
       });
+    };
     guardTurnDispatch(IDENTITY.kind === "perspicax" ? orgTurnAccess(threadId, readyBot, instance, roomSpeaker).then(sendRoomTurn) : sendRoomTurn(undefined), () => abandoned || Boolean(isCancelled?.()), async () => {
         // Stop may have landed while the adapter was authenticating, before
         // it had an active process for the first interrupt to reach. Now that
@@ -14638,6 +14733,9 @@ async function runGroupGoalOperation(args: {
 type StartGroupTurnOptions = {
   /** Run against an existing background room task instead of the active UI task. */
   threadId?: string;
+  /** The engine command this message is, as the send resolved it (null: it
+   * is none). Left out, the cached list of the target bot decides. */
+  commandRoute?: GroupCommandRoute | null;
   /** Internal routine goals choose their lead explicitly rather than by @mention/default. */
   goalCoordinatorBotId?: string;
   /** Correlates a room goal card with its durable RoutineRun receipt. */
@@ -14655,6 +14753,46 @@ type StartGroupTurnOptions = {
    * responders are routed and titled on. */
   queuedGroup?: ChannelQueueItem[];
 };
+
+/** A group message that is an engine command for ONE member
+ * (shared/harness-commands.ts groupCommandTarget): its leading mention, else
+ * the group's lead, and only when that bot's engine lists commands. A goal,
+ * a bot-to-bot channel or a burst of several queued lines is never one. */
+function groupEngineCommandRoute(
+  group: Pick<GroupRecord, "dm" | "defaultResponder">,
+  text: string,
+  members: readonly BotRecord[],
+  channelMode: "chat" | "goal" | undefined,
+  burstLines = 0,
+): GroupCommandRoute | null {
+  if (group.dm || channelMode === "goal" || burstLines > 1) return null;
+  const route = groupCommandTarget(text, members, group.defaultResponder);
+  const target = route ? members.find((member) => member.id === route.botId) : undefined;
+  const instance = target ? turnInstance(target) : null;
+  if (!route || !instance?.listCommands || !harnessEngineFor(instance.driverKind)) return null;
+  return route;
+}
+
+/** groupEngineCommandRoute, kept only when the target bot's engine lists the
+ * name (its last list for this speaker, without reading it again): a
+ * `/word` the engine does not know is an ordinary room message, routed by
+ * its mentions like any other. */
+function cachedGroupEngineCommandRoute(
+  group: GroupRecord,
+  threadId: string,
+  text: string,
+  members: readonly BotRecord[],
+  channelMode: "chat" | "goal" | undefined,
+  burstLines: number,
+  speaker: TurnSpeaker,
+): GroupCommandRoute | null {
+  const route = groupEngineCommandRoute(group, text, members, channelMode, burstLines);
+  const target = route ? members.find((member) => member.id === route.botId) : undefined;
+  if (!route || !target) return null;
+  const source = harnessCommandSource(target, threadId, { group, speaker });
+  const commands = source ? harnessCommands.cached(source)?.commands ?? [] : [];
+  return resolveTypedCommand(extractTurnImages(route.commandText).text, commands).kind === "engine" ? route : null;
+}
 
 function startGroupTurn(
   groupId: string,
@@ -14754,6 +14892,13 @@ function startGroupTurn(
     });
   }
   let responders = roomResponders(text, members, group.defaultResponder);
+  // An engine command reaches one bot only: the one it starts by naming,
+  // else the lead (never everyone named in its arguments). Only a name that
+  // bot's engine lists is one; any other `/word` is routed like any message.
+  const commandRoute = options.commandRoute !== undefined
+    ? options.commandRoute
+    : cachedGroupEngineCommandRoute(group, threadId, text, availableMembers, channelMode, queuedGroup?.length ?? 0, options.sender?.id ? { origin: "person", principalId: options.sender.id } : { origin: "operator" });
+  if (commandRoute) responders = availableMembers.filter((member) => member.id === commandRoute.botId);
   const explicitlyMentionedLead = roomResponders(text, availableMembers, { kind: "mentions" })[0];
   const goalCoordinator = channelMode === "goal"
     ? requestedGoalCoordinator ?? explicitlyMentionedLead ?? selectGroupGoalCoordinator(availableMembers, group.defaultResponder)
@@ -14813,7 +14958,7 @@ function startGroupTurn(
   // Auto with nobody addressed: the responders above are only the fallback
   // until the decision model answers, in the async round below. The append
   // and this function's return stay synchronous either way.
-  const autoRoute = autoCandidate && !goalCoordinator && availableMembers.length > 1 &&
+  const autoRoute = autoCandidate && !goalCoordinator && !commandRoute && availableMembers.length > 1 &&
     roomResponders(text, availableMembers, { kind: "mentions" }).length === 0;
 
   // The snippet is only the fallback name here too. The member about to
@@ -16156,6 +16301,8 @@ function configStatus() {
       routinesInConversation: routinesInConversationEnabled(cfg),
       connectedApps: connectedAppsEnabled(cfg),
       templates: templatesEnabled(cfg),
+      vpsComputer: vpsComputerEnabled(cfg),
+      boatComputer: boatComputerEnabled(cfg),
       browser: builtInBrowserEnabled(cfg),
       // Maintainer-only escape hatch, not a Settings toggle: the desktop
       // shell and the Settings UI read it so they offer nothing this server
@@ -16425,6 +16572,10 @@ class EngineAccessLost extends Error {
     if (detail) this.detail = detail;
   }
 }
+/** A person's own engine login directory (their subscription). */
+function principalLoginDir(principalId: string, driver: "claudeAgent" | "codex"): string {
+  return engineLogins?.loginDir(principalId, driver) ?? join(DATA_DIR, "principals", principalId, driver === "claudeAgent" ? "claude" : "codex");
+}
 /** Slice 4: the credentials of one turn on an organization server, fetched
  * at dispatch; undefined in solo mode. Throws EngineAccessLost. */
 async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): Promise<TurnAccess | undefined> {
@@ -16434,7 +16585,7 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
     dataDir: DATA_DIR,
     resolveKey: (sub, provider) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, provider) : Promise.resolve({ ok: false as const, error: "link" as const }),
     invalidate: (sub, provider) => perspicaxDirectory?.invalidate(sub, provider),
-    loginDir: (principalId, driver) => engineLogins?.loginDir(principalId, driver) ?? join(DATA_DIR, "principals", principalId, driver === "claudeAgent" ? "claude" : "codex"),
+    loginDir: principalLoginDir,
   });
   if (!outcome.ok) throw new EngineAccessLost(outcome.plan ? orgRefusalOf(outcome.plan) : { reason: outcome.reason }, outcome.detail);
   const provider = providerOfDriver(instance.driverKind) ?? undefined;
@@ -16696,7 +16847,7 @@ const claudeUpdatesInFlight = new Set<string>();
  * Nothing frames the web UI: the desktop app shows it in its own window. */
 const PAGE_HEADERS = { "content-security-policy": "frame-ancestors 'none'", "x-frame-options": "DENY", "referrer-policy": "no-referrer" } as const;
 
-/** The built UI, when this process serves it (OMB_STATIC_DIR: set by the
+/** The built UI, when this process serves it (SAGAX_STATIC_DIR: set by the
  * desktop app and by the container image). Public by design: it is the same
  * bundle anyone can download, holds no secrets, and a remote browser must be
  * able to load /pair before it has a session. Returns false when there is
@@ -17068,6 +17219,60 @@ function botOwnerOrgRole(bot: { ownerUserId?: unknown }): "admin" | "member" | u
 function memberOwnedInOrg(bot: { ownerUserId?: unknown }): boolean {
   return memberOwnedBot({ identity: IDENTITY.kind, ownerOrgRole: botOwnerOrgRole(bot) });
 }
+/** Organization server (org-full-access.ts): the admin policy, on unless
+ * an admin turned it off in Settings > Organization. */
+function orgFullAccessPolicy(): boolean {
+  return orgFullAccessAllowed(cfg.organization);
+}
+/** Organization server: a stored Full that may not run as Full now (the
+ * policy is off, or the bot's current owner never confirmed it). Never on
+ * a solo server, where the desktop's private channel grants Full. */
+function orgDeniesFull(bot: { ownerUserId?: unknown; fullAccessConsent?: unknown }): boolean {
+  return IDENTITY.kind === "perspicax" &&
+    !orgFullAccessHolds({ policyAllowed: orgFullAccessPolicy(), ownerPrincipalId: effectiveBotOwner(bot), consent: bot.fullAccessConsent });
+}
+/** The signed-in person making a request; null for loopback or a service. */
+function sessionPrincipal(auth: RequestAuth): string | null {
+  return auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null;
+}
+/** Organization server: why this request may not turn Full on for a bot,
+ * or null. The caller must be the bot's owner, signed in. */
+function orgFullAccessRefusalFor(auth: RequestAuth, bot: BotRecord, confirmed: boolean) {
+  return orgFullAccessGrantRefusal({
+    policyAllowed: orgFullAccessPolicy(),
+    callerPrincipalId: sessionPrincipal(auth),
+    ownerPrincipalId: effectiveBotOwner(bot),
+    confirmed,
+    consent: bot.fullAccessConsent,
+  });
+}
+/** Audit: a bot's or thread's approval level changed (visible to admins in
+ * the activity log). */
+function auditApprovalModeChange(auth: RequestAuth | null, botId: string, before: ApprovalMode, after: ApprovalMode, threadId?: string): void {
+  if (before === after) return;
+  appendAdminAction(DATA_DIR, {
+    category: "approval",
+    action: "approval.mode",
+    target: auditBotTarget(botId),
+    changed: ["approvalMode"],
+    before: { approvalMode: before },
+    after: { approvalMode: after, ...(threadId ? { threadId } : {}) },
+    actor: auth ? (IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth)) : { kind: "loopback" },
+  });
+}
+/** Audit: one turn ran with Full access. */
+function auditFullAccessTurn(bot: BotRecord, threadId: string, mode: ApprovalMode): ApprovalMode {
+  if (mode === "full") {
+    appendAdminAction(DATA_DIR, {
+      category: "approval",
+      action: "approval.full_access_turn",
+      target: auditBotTarget(bot.id),
+      after: { threadId, ...(IDENTITY.kind === "perspicax" ? { owner: effectiveBotOwner(bot) } : {}) },
+      actor: { kind: "worker" },
+    });
+  }
+  return mode;
+}
 /** An organization admin: the operator at this computer, or a person
  * signed in with Perspicax whose role is admin (their session holds admin). */
 function orgAdminCaller(auth: RequestAuth): boolean {
@@ -17081,9 +17286,10 @@ function orgAdminCaller(auth: RequestAuth): boolean {
 function orgKeyConfigured(): boolean {
   return Object.entries(instanceConfigs(cfg)).some(([instanceId, entry]) => driverKeyBacked(cfg, entry.driver, instanceId));
 }
-function orgSettings(): { orgKeyConfigured: boolean; interimAttach?: { until: number | null; people: number } } {
+function orgSettings(): { orgKeyConfigured: boolean; interimAttach?: { until: number | null; people: number }; allowFullAccess: boolean } {
   return {
     orgKeyConfigured: orgKeyConfigured(),
+    allowFullAccess: orgFullAccessPolicy(),
     ...(IDENTITY.kind === "perspicax"
       ? { interimAttach: { until: interimWindowUntil(cfg.organization?.interimAttach, Date.now()), people: principals.listInterim().length } }
       : {}),
@@ -17829,6 +18035,10 @@ if (IDENTITY.kind === "perspicax") {
         ...(bot.section ? { section: bot.section } : {}),
         engine: engineOfBot(bot),
         grants: wireGrants(shown ?? facts.grants, describeGrantTarget),
+        // Its public look (as a group shows it) and whether it is working
+        // now, so the list draws the avatar and the force-stop state.
+        look: botPublicProfile(bot),
+        running: botRunning(bot.id),
       }];
     });
     res.setHeader("cache-control", "no-store");
@@ -17965,7 +18175,7 @@ if (sectionChannels) {
     deleteSection: (name) => (teamComputers.forSection(name) ? "Unassign this section's computer before deleting it" : store.deleteSection(name)),
     moveBots: (name, add, remove) => {
       const result = store.updateTeamMembers(name, add, remove);
-      return result.ok ? undefined : result.reason === "chief-conflict" ? "A section can have only one Chief of Staff." : "One or more bots are unavailable";
+      return result.ok ? undefined : "One or more bots are unavailable";
     },
     botExists: (id) => Boolean(store.bot(id)),
     botSection: (id) => sectionKey(store.bot(id)?.section) || undefined,
@@ -18178,7 +18388,7 @@ if (IDENTITY.kind === "perspicax") {
   }));
   ROUTES.push(createPerspicaxOrgRoutes({
     issuer,
-    orgName: process.env.OMB_ORG_NAME?.trim().slice(0, 120) || "Pulsatrix",
+    orgName: process.env.SAGAX_ORG_NAME?.trim().slice(0, 120) || "Pulsatrix",
     directory: () => perspicaxDirectory,
     bySubject: (iss, sub) => principals.bySubject(iss, sub),
     viewerRole: (auth) => (orgAdminCaller(auth) ? "admin" : "member"),
@@ -18193,6 +18403,19 @@ if (IDENTITY.kind === "perspicax") {
       orgAudit({
         category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["interimAttachDays"],
         before: { interimAttachDays: before?.days ?? null }, after: { interimAttachDays: days },
+        actor: orgAuditActor(auth),
+      });
+    },
+    // Allow or refuse Full access for every bot of the organization
+    // (org-full-access.ts). Turning it off makes stored Full run as Ask and
+    // refuses new turns asking Full; nothing is rewritten.
+    saveAllowFullAccess: (allowed, auth) => {
+      const before = orgFullAccessPolicy();
+      saveConfig({ organization: { ...cfg.organization, allowFullAccess: allowed } });
+      cfg.organization = { ...cfg.organization, allowFullAccess: allowed };
+      orgAudit({
+        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowFullAccess"],
+        before: { allowFullAccess: before }, after: { allowFullAccess: allowed },
         actor: orgAuditActor(auth),
       });
     },
@@ -18344,7 +18567,7 @@ if (IDENTITY.kind !== "perspicax") ROUTES.push(createSoloOrgRoutes({
 
 // Settings > Email (server/mail-routes.ts): the mail transport of a solo
 // server, admin only. Saved fields go to config.json's `mail` block and win
-// over the OMB_MAIL_* environment; an organization server answers 403
+// over the SAGAX_MAIL_* environment; an organization server answers 403
 // identity_perspicax (Perspicax sends its mail).
 ROUTES.push(createMailSettingsRoutes({
   organization: IDENTITY.kind === "perspicax",
@@ -18466,41 +18689,115 @@ ROUTES.push(createHarnessConnectorRoutes({
 // listed by the engine itself in the folder and isolation the bot's turns
 // get, passed through verbatim when typed.
 const harnessCommands = new HarnessCommandCatalog();
-function harnessCommandSource(bot: BotRecord, threadId: string | undefined, scope?: HarnessCommandScope): HarnessCommandSource | null {
-  const instance = turnInstance(bot, undefined, threadId);
+/** What makes the list the SPEAKER's (server/harness-commands.ts): on an
+ * organization server their own subscription (from the turn's access, else
+ * the planned one, never a key read), and whether the turn keeps the
+ * claude.ai connectors of that account. */
+function harnessCommandAccount(
+  bot: BotRecord,
+  instance: { instanceId: string; driverKind: string },
+  speaker: TurnSpeaker,
+  access?: TurnAccess,
+): Pick<HarnessCommandScope, "access" | "claudeAiConnectors"> {
+  let listing = commandListAccess(access);
+  let via = access?.via;
+  if (IDENTITY.kind === "perspicax" && !access) {
+    const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+    if (plan.ok) {
+      via = plan.via;
+      const payer = plan.payerPrincipalId;
+      if (plan.via === "subscription" && payer && subscriptionDriver(instance.driverKind)) {
+        const dir = principalLoginDir(payer, instance.driverKind);
+        listing = { via: "subscription", identity: `subscription:${payer}`, ...(instance.driverKind === "claudeAgent" ? { claudeConfigDir: dir } : { codexHome: dir }) };
+      }
+    }
+  }
+  const connectors = claudeAiConnectorsFor(bot, instance, speaker, via);
+  return { ...(listing ? { access: listing } : {}), ...(connectors ? { claudeAiConnectors: true } : {}) };
+}
+/** The folder a group's turn runs in for this member, without pinning it
+ * (the pin happens at the first turn, see runGroupMemberTurn). */
+function groupCommandCwd(bot: BotRecord, instance: { driverKind: string }, group: GroupRecord, threadId: string): string | undefined {
+  if (!supportsWorkspaceFiles(instance.driverKind)) return undefined;
+  const pinned = group.dm ? group.pinnedCwd : store.groupTaskByThread(group.id, threadId)?.pinnedCwd;
+  return (pinned !== undefined ? pinned : group.cwd) ?? ensureWorkspace(bot.id);
+}
+interface HarnessCommandSourceOptions {
+  /** A turn's own scope (its folder and isolation). */
+  scope?: HarnessCommandScope;
+  /** Whose list it is: their subscription and connectors (organization). */
+  speaker?: TurnSpeaker;
+  /** The turn's materialized access, when there is one already. */
+  access?: TurnAccess;
+  /** The bot as a member of this group (`threadId` is the group's). */
+  group?: GroupRecord;
+}
+function harnessCommandSource(bot: BotRecord, threadId: string | undefined, options: HarnessCommandSourceOptions = {}): HarnessCommandSource | null {
+  const instance = options.group ? turnInstance(bot) : turnInstance(bot, undefined, threadId);
   const engine = instance ? harnessEngineFor(instance.driverKind) : null;
   if (!instance?.listCommands || !engine) return null;
-  const task = threadId ? store.taskByThread(bot.id, threadId) : undefined;
-  // the folder the thread's next turn runs in (see the pin in runTurn)
-  const cwd = task && task.cwd !== undefined ? task.cwd ?? undefined
-    : bot.cwd ?? (task && threadId && supportsWorkspaceFiles(instance.driverKind) ? ensureTaskWorkspace(bot.id, threadId) : undefined);
+  let cwd: string | undefined;
+  if (options.group) cwd = threadId ? groupCommandCwd(bot, instance, options.group, threadId) : undefined;
+  else {
+    const task = threadId ? store.taskByThread(bot.id, threadId) : undefined;
+    // the folder the thread's next turn runs in (see the pin in runTurn)
+    cwd = task && task.cwd !== undefined ? task.cwd ?? undefined
+      : bot.cwd ?? (task && threadId && supportsWorkspaceFiles(instance.driverKind) ? ensureTaskWorkspace(bot.id, threadId) : undefined);
+  }
   const list = instance.listCommands.bind(instance);
+  const account = options.speaker ? harnessCommandAccount(bot, instance, options.speaker, options.access) : {};
   return {
     botId: bot.id,
     instanceId: instance.instanceId,
     engine,
-    scope: scope ?? {
-      botId: bot.id,
-      ...(cwd ? { cwd } : {}),
-      ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
-      mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+    scope: {
+      ...(options.scope ?? {
+        botId: bot.id,
+        ...(cwd ? { cwd } : {}),
+        ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+        mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+      }),
+      ...account,
     },
     list,
   };
 }
+/** Whose command list a request reads: the signed-in person, else the
+ * operator at this computer. */
+function harnessCommandSpeaker(auth: RequestAuth): TurnSpeaker {
+  const viewerId = actorPrincipalId(auth);
+  return viewerId ? { origin: "person", principalId: viewerId } : { origin: "operator" };
+}
 ROUTES.push(createHarnessCommandRoutes({
   catalog: harnessCommands,
-  sourceFor: (auth, botId, threadId) => {
+  sourceFor: (auth, botId, threadId, groupId) => {
     const bot = store.bot(botId);
     if (!bot) return { status: 404, error: "no such bot" };
     const viewerId = actorPrincipalId(auth);
+    const speaker = harnessCommandSpeaker(auth);
+    if (groupId) {
+      // A member of a group the caller posts in: its commands for that group.
+      // Listing starts the engine (a CLI run on the caller's subscription),
+      // so it takes channel.post like the send does, not only channel.read.
+      const group = store.group(groupId);
+      if (!group || group.peopleDm || !group.memberIds.includes(bot.id)) return { status: 404, error: "no such group" };
+      if (IDENTITY.kind === "perspicax") {
+        const channelViewer = channelViewerId(auth);
+        if (!groupVisible(group, channelViewer)) return { status: 404, error: "no such group" };
+        if (!groupPostAllowed(group, channelViewer)) return { status: 403, error: "you may read this channel, not post in it" };
+      }
+      const groupThread = threadId ?? group.threadId;
+      const ownsThread = group.dm ? group.threadId === groupThread : Boolean(store.groupTaskByThread(group.id, groupThread));
+      if (!ownsThread) return { status: 404, error: "no such conversation" };
+      return harnessCommandSource(bot, groupThread, { group, speaker });
+    }
     if (threadId && !store.taskByThread(bot.id, threadId)) return { status: 404, error: "no such conversation" };
     if (IDENTITY.kind === "perspicax") {
       const viewer = authzViewerFromId(viewerId);
       if (!viewer || !canOnBot(viewer, "bot.use", botFacts(bot))) return { status: 404, error: "no such bot" };
       if (threadId && !botThreadReadable(bot, threadId, viewerId, "thread.post")) return { status: 404, error: "no such conversation" };
     }
-    return harnessCommandSource(bot, threadId ?? (IDENTITY.kind === "perspicax" ? viewerThreadOf(bot, viewerId) : bot.threadId));
+    return harnessCommandSource(bot, threadId ?? (IDENTITY.kind === "perspicax" ? viewerThreadOf(bot, viewerId) : bot.threadId), { speaker });
   },
 }));
 
@@ -18536,7 +18833,7 @@ let idpVaultKey: ReturnType<typeof resolveIdpVaultKey> | null = null;
 // One vault holds the sign-in grants and the routine delegations (slice 6).
 const idpVault = oidcRp ? new IdpGrantVault(DATA_DIR, () => (idpVaultKey ??= resolveIdpVaultKey(DATA_DIR))) : null;
 // Slice 6, fix 2: every revocation at Perspicax is durable and paced by the
-// relying party's budget (OMB_PERSPICAX_TOKEN_BUDGET); pending ones resume here.
+// relying party's budget (SAGAX_PERSPICAX_TOKEN_BUDGET); pending ones resume here.
 const idpRevocations = oidcRp
   ? new RevocationQueue({
     dataDir: DATA_DIR,
@@ -18555,7 +18852,7 @@ const idpSessions = oidcRp && idpVault
     rp: oidcRp,
     sessions,
     principals,
-    refreshAfterMs: refreshAfterMs(process.env.OMB_OIDC_REFRESH_AFTER_SECONDS),
+    refreshAfterMs: refreshAfterMs(process.env.SAGAX_OIDC_REFRESH_AFTER_SECONDS),
     teamNames: (teams) => { orgTeams.mergeFromClaims(teams); },
     ...(idpRevocations ? { revocations: idpRevocations } : {}),
   })
@@ -18565,7 +18862,7 @@ if (oidcRp && idpVault) {
     vault: idpVault,
     rp: oidcRp,
     principals,
-    renewMs: routineRenewMs(process.env.OMB_ROUTINE_RENEW_SECONDS),
+    renewMs: routineRenewMs(process.env.SAGAX_ROUTINE_RENEW_SECONDS),
     ...(idpRevocations ? { revocations: idpRevocations } : {}),
     onEnded: routineConsentEnded,
     onActive: (principalId) => { routines?.resumeFor(principalId, (routine) => effectiveRunAs({ botId: routine.botId })); },
@@ -18593,11 +18890,11 @@ if (idpSessions) {
   }, IDP_SWEEP_INTERVAL_MS).unref();
 }
 // The Perspicax directory (slice 3): read with the link token Perspicax
-// writes to OMB_PERSPICAX_LINK_FILE. Keeps the principals current and logs
+// writes to SAGAX_PERSPICAX_LINK_FILE. Keeps the principals current and logs
 // out people Perspicax disabled or deleted, even when no back-channel push
 // arrived. Without the file, sign-in works and the share picker is empty.
-if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PERSPICAX_LINK_FILE?.trim()) {
-  const intervalMs = directoryIntervalMs(process.env.OMB_PERSPICAX_DIRECTORY_SECONDS);
+if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_PERSPICAX_LINK_FILE?.trim()) {
+  const intervalMs = directoryIntervalMs(process.env.SAGAX_PERSPICAX_DIRECTORY_SECONDS);
   let version = "0.0.0";
   try {
     version = String((JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown }).version ?? version);
@@ -18608,7 +18905,7 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PE
   perspicaxDirectory = new PerspicaxDirectory({
     issuer: IDENTITY.issuer,
     serverBase: oidcRp.serverOrigin(),
-    linkFile: process.env.OMB_PERSPICAX_LINK_FILE.trim(),
+    linkFile: process.env.SAGAX_PERSPICAX_LINK_FILE.trim(),
     expect: { issuer: IDENTITY.issuer, publicOrigin: IDENTITY.publicOrigin, clientId: IDENTITY.clientId },
     principals,
     teamNames: orgTeams,
@@ -18845,7 +19142,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // code into a session. Everything else needs the loopback owner or a
     // paired session with the right scope.
     if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
-    if (method === "GET" && path === "/.well-known/openmausbot/environment") {
+    // The new path and the old one (kept for one release, legacy-names.mjs).
+    if (method === "GET" && ENVIRONMENT_PATHS.includes(path)) {
       return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && !CLOUD_HOME && IDENTITY.kind === "solo" && emailSignIn.enabled(), sharedComputers: lendingEnabled(), identity: identityDescriptor(IDENTITY) }));
     }
     // The browser lands here after an MCP server's sign-in. Public: the
@@ -18863,7 +19161,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.end(page.html);
       return;
     }
-    const domainCheck = /^\/\.well-known\/openmausbot\/domain-check\/([a-f0-9]{64})$/.exec(path);
+    const domainCheck = /^\/\.well-known\/(?:sagax|openmausbot)\/domain-check\/([a-f0-9]{64})$/.exec(path);
     if (method === "GET" && domainCheck) {
       res.setHeader("cache-control", "no-store");
       const challenge = customDomainVerifier.challenge(domainCheck[1]);
@@ -19042,7 +19340,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // A stranger learns only the app name; pid (the desktop boot probe keys
     // on it) and the static flag stay behind the gate below.
     if (method === "GET" && path === "/api/health" && !gate.auth) {
-      return json(res, 200, { app: "openmausbot" });
+      return json(res, 200, { ...HEALTH_IDENTITY });
     }
     // The brand is public too: the sign-in page must carry the deployment's
     // name and icon before anyone has a session, and it holds nothing secret.
@@ -19303,7 +19601,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         serverName,
         hint: base
           ? null
-          : "this server has no public address to put in a link: set OMB_PUBLIC_URL, or open /pair on the address you use and type the code",
+          : "this server has no public address to put in a link: set SAGAX_PUBLIC_URL, or open /pair on the address you use and type the code",
       });
     }
     if (method === "GET" && path === "/api/auth/pairing") return json(res, 200, { pairings: sessions.openPairings(), publicUrl: publicUrl() });
@@ -19422,7 +19720,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // library, so a test relays one here instead. Like the capability route
     // below, it exists only when the launcher sets its high-entropy key.
     if (method === "POST" && path === "/api/testing/org-library") {
-      const expected = Buffer.from(process.env.OMB_TEST_ORG_LIBRARY_KEY ?? "");
+      const expected = Buffer.from(process.env.SAGAX_TEST_ORG_LIBRARY_KEY ?? "");
       const header = req.headers["x-openmausbot-test-org-library"];
       const actual = Buffer.from(Array.isArray(header) ? "" : String(header ?? ""));
       if (expected.length < 32 || actual.length !== expected.length || !timingSafeEqual(actual, expected) || !orgLibrary) {
@@ -19434,7 +19732,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, applied.ok ? 200 : 400, { ...applied, report: orgLibrary.lastReport() });
     }
     if (method === "POST" && path === "/api/testing/internal-capability") {
-      const expected = process.env.OMB_TEST_INTERNAL_CAPABILITY_KEY ?? "";
+      const expected = process.env.SAGAX_TEST_INTERNAL_CAPABILITY_KEY ?? "";
       const actual = Array.isArray(req.headers["x-openmausbot-test-capability"])
         ? ""
         : String(req.headers["x-openmausbot-test-capability"] ?? "");
@@ -19697,6 +19995,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!ownerId) return json(res, 403, { error: "this capability has no server environment" });
         try {
           if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          // The bot's own "no computer" setting holds on the environment's desktop too.
+          const toolName = (frame?.params as { name?: unknown } | undefined)?.name;
+          if (rpcMethod === "tools/call" && (toolName === "computer_use" || toolName === "computer_list_tools") && store.bot(internalCapability.botId)?.computer === "off") {
+            return json(res, 200, { result: { content: [{ type: "text", text: "This bot has no computer. Change its Computer setting to use the screen." }], isError: true } });
+          }
           const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
             exec: (input) => userSandbox.exec(ownerId, input),
             overQuota: () => userSandbox.workspaceOverQuota(ownerId),
@@ -19797,7 +20100,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const sender = internalSender;
         // title/description included so the caller can judge the team (who
         // does what, who has no job description yet). Every bot reads this
-        // now, not just the Chief, so it answers the same reachability
+        // now, not just the Primary Bot, so it answers the same reachability
         // question the roster does — same peers, same order.
         const bots = reachablePeers(store.bots, sender)
           .map((b) => {
@@ -20211,18 +20514,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (method === "GET" && path === "/api/internal/team-setup-catalog") {
         let chief = store.bot(internalCapability.botId)!;
-        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Chief may plan team setup" });
+        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Primary Bot may plan team setup" });
         const instances = await registry.describe();
         requireActiveInternalCapability();
         chief = store.bot(internalCapability.botId)!;
-        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Chief may plan team setup" });
+        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Primary Bot may plan team setup" });
         return json(res, 200, {
           teams: teamSetupTeams().filter((name) => canAccessTeam(chief, name)),
           bots: store.bots.filter((bot) => !bot.hidden && canAccessTeam(chief, bot.section) && (bot.id === chief.id || peerAllowed(chief, bot)))
             .map((bot) => ({ id: bot.id, name: bot.name, title: bot.title, section: bot.section ?? "", modelSelection: bot.modelSelection, chiefOfStaff: Boolean(bot.chiefOfStaff) })),
           instances: instances.map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
             state: instance.snapshot.state, models: instance.models, effortLevels: instance.capabilities?.effortLevels ?? [] })),
-          scope: "Bot model defaults apply to groups and new threads; existing threads retain their models. Full Access applies requested team setup immediately; other modes return a review card. Existing unauthorized teams remain outside this Chief's scope.",
+          scope: "Bot model defaults apply to groups and new threads; existing threads retain their models. Full Access applies requested team setup immediately; other modes return a review card. Existing unauthorized teams remain outside this Primary Bot's scope.",
         });
       }
       if (method === "POST" && path === "/api/internal/team-setup-requests") {
@@ -20230,7 +20533,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!parsed.success) return json(res, 400, { error: "Invalid team setup request" });
         const chief = store.bot(internalCapability.botId)!;
         const owner = connectorThread(chief.id, internalCapability.threadId);
-        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Chief" });
+        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Primary Bot" });
         const proposed = await teamSetupRequests.submit({ botId: chief.id, threadId: internalCapability.threadId, plan: parsed.data.plan,
           canCommit: () => internalCapabilityIsActive(internalCapability),
           ...(owner.group ? { from: { botId: chief.id, name: chief.name, color: chief.color } } : {}) });
@@ -20244,7 +20547,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!parsed.success) return json(res, 400, { error: "An exact bot id and deletion reason are required" });
         const chief = store.bot(internalCapability.botId)!;
         const owner = connectorThread(chief.id, internalCapability.threadId);
-        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Chief" });
+        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Primary Bot" });
         const proposed = await teamSetupRequests.submitDeletion({ botId: chief.id, threadId: internalCapability.threadId, targetBotId: parsed.data.targetBotId, reason: parsed.data.reason,
           canCommit: () => internalCapabilityIsActive(internalCapability),
           ...(owner.group ? { from: { botId: chief.id, name: chief.name, color: chief.color } } : {}) });
@@ -20812,15 +21115,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           await new Promise((wake) => setTimeout(wake, 500));
         }
       }
-      // A Chief resumes a teammate's broken thread (server/incidents.ts): the
+      // A Primary Bot resumes a teammate's broken thread (server/incidents.ts): the
       // same thread, its conversation and files, one more turn, with a line
-      // saying who asked and why. Chief-only, for a teammate it can reach,
+      // saying who asked and why. Primary Bot-only, for a teammate it can reach,
       // never a room (coordinate there) and never a thread still running.
       if (method === "POST" && path === "/api/internal/retry-thread") {
         const body = await readInternalBody();
         const from = internalSender;
         const fromThreadId = internalCapability.threadId;
-        if (!from.chiefOfStaff || from.hidden) return json(res, 403, { error: "only a Chief of Staff can retry a teammate's thread" });
+        if (!from.chiefOfStaff || from.hidden) return json(res, 403, { error: "only a Primary Bot can retry a teammate's thread" });
         // `toBotId`/`toThreadId`: the guard above reads bare botId/threadId as
         // the caller's own identity, the way every internal route does.
         const botId = typeof body.toBotId === "string" ? body.toBotId : "";
@@ -20829,7 +21132,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const target = store.bot(botId);
         if (!target || target.id === from.id) return json(res, 404, { error: "no such teammate" });
         if (target.hidden || !canAccessTeam(from, target.section) || !peerAllowed(from, target)) {
-          return json(res, 403, { error: "that bot is not on this Chief's team — call list_bots for the ones you can reach" });
+          return json(res, 403, { error: "that bot is not on this Primary Bot's team — call list_bots for the ones you can reach" });
         }
         if (store.groupByThread(threadId)) return json(res, 400, { error: "that is a room thread — use coordinate_bots in the room instead" });
         const task = store.taskByThread(target.id, threadId);
@@ -20839,7 +21142,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         requireActiveInternalCapability();
         const unattended = isUnattended(from.id, fromThreadId);
-        const text = `[Retry requested by ${from.name}, your Chief of Staff, after this thread's last run stopped.${note ? ` Note from ${from.name}: ${note}` : ""} Continue the request above from where it stopped and finish it. If the same problem comes back, say exactly what is blocking and stop.]`;
+        const text = `[Retry requested by ${from.name}, your Primary Bot, after this thread's last run stopped.${note ? ` Note from ${from.name}: ${note}` : ""} Continue the request above from where it stopped and finish it. If the same problem comes back, say exactly what is blocking and stop.]`;
         try {
           await startTurn(target.id, text, { threadId, unattended, peerAsk: { botId: from.id, name: from.name, ...(unattended ? { unattended: true } : {}) }, speaker: peerSpeaker(from.id, fromThreadId) });
         } catch (error) {
@@ -20975,7 +21278,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const destination = groupId ? store.group(groupId) : undefined;
           if (groupId && !destination) return json(res, 404, { error: "No such room; use list_room_targets." });
           // A slot may carry a teammate's name instead of its id — the
-          // roster shows both, list_bots shows both, and a Chief reading its
+          // roster shows both, list_bots shows both, and a Primary Bot reading its
           // prompt reaches for the name. A unique reachable name resolves;
           // anything else is refused with the id or name the caller sent
           // and the way to the real ids (peer-roster.ts).
@@ -21429,7 +21732,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "source conversation does not belong to sender" });
         }
         if (!chief.chiefOfStaff) {
-          return json(res, 403, { error: "only a section's Chief of Staff can create operator bots" });
+          return json(res, 403, { error: "only a Primary Bot can create operator bots" });
         }
         if (internalCapability.createdBots >= 4) {
           return json(res, 429, { error: "you can create at most 4 bots in one turn" });
@@ -21471,7 +21774,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         // Discovery can yield; check current authority and capacity again before writing.
         if (store.bot(chief.id) !== chief || chief.hidden || !chief.chiefOfStaff || !connectorThread(chief.id, fromThreadId)) {
-          return json(res, 403, { error: "only an active Chief of Staff can create operator bots" });
+          return json(res, 403, { error: "only an active Primary Bot can create operator bots" });
         }
         if (internalCapability.createdBots >= 4) return json(res, 429, { error: "you can create at most 4 bots in one turn" });
         if (store.bots.length >= MAX_WORKSPACE_BOTS) return json(res, 409, { error: `this workspace is limited to ${MAX_WORKSPACE_BOTS} bots` });
@@ -21493,7 +21796,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             section: chief.section,
             ownerUserId: creatingBotOwnerId(auth),
             ...(cwd !== undefined ? { cwd } : {}),
-            // exactly the Chief's audience: a restricted Chief never makes a bot everyone sees
+            // exactly the Primary Bot's audience: a restricted Primary Bot never makes a bot everyone sees
             ...(chief.visibility ? { visibility: chief.visibility } : {}),
           },
           { seedMessages: false },
@@ -21518,7 +21821,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const body = await readInternalBody();
         const chief = store.bot(internalCapability.botId)!;
         if (chief.hidden || !chief.chiefOfStaff || !connectorThread(chief.id, internalCapability.threadId)) {
-          return json(res, 403, { error: "only an active section Chief of Staff can manage rooms" });
+          return json(res, 403, { error: "only an active Primary Bot can manage rooms" });
         }
         if (!body || typeof body !== "object" || Array.isArray(body)) {
           return json(res, 400, { error: "room request must be a JSON object" });
@@ -21529,7 +21832,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "peer approval is required; ask the user to make this room change" });
         }
         // Section labels are a permission boundary, not bot-owned organization.
-        // A Chief may not recruit excluded peers or acquire a foreign transcript.
+        // A Primary Bot may not recruit excluded peers or acquire a foreign transcript.
         const allowedIds = new Set([chief.id, ...reachablePeers(store.bots, chief).map((bot) => bot.id)]);
         const allowedRoster = (ids: string[]) => ids.includes(chief.id) && ids.every((id) => allowedIds.has(id));
         if (body.section !== undefined && (typeof body.section !== "string" || sectionKey(body.section) !== sectionKey(chief.section))) {
@@ -21553,7 +21856,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             name: redactSecretsInText(parsed.data.name), memberIds, section: chief.section,
             setup: {
               bulletin: redactSecretsInText(parsed.data.bulletin ?? ""),
-              // The Chief leads; on Auto it is the fallback when the decision model is unsure.
+              // The Primary Bot leads; on Auto it is the fallback when the decision model is unsure.
               defaultResponder: deciderReady(cfg, "roomRouting") ? { kind: "auto", fallbackBotId: chief.id } : { kind: "member", botId: chief.id },
             },
           });
@@ -21585,7 +21888,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }
           const next = action === "add_members" ? [...new Set([...room.memberIds, ...memberIds])]
             : action === "remove_members" ? room.memberIds.filter((id) => !memberIds.includes(id)) : memberIds;
-          if (!allowedRoster(next)) return json(res, 403, { error: "keep yourself in the room; only the user can remove its managing Chief" });
+          if (!allowedRoster(next)) return json(res, 403, { error: "keep yourself in the room; only the user can remove its managing Primary Bot" });
           patch.memberIds = next;
         }
         const updated = updateChannel(room.id, patch);
@@ -22958,7 +23261,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ? body.name.trim()
           : profileName
             ? `${profileName}'s Team`
-            : "My OpenMaus Team";
+            : "My Sagax Team";
       const memberIds = store.bots.filter((bot) => !bot.hidden).map((bot) => bot.id);
       if ((body.format === "backup" ? store.bots.length : memberIds.length) === 0) return json(res, 400, { error: "Create a bot before exporting your team" });
       try {
@@ -23503,6 +23806,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!ownsThread) {
         return json(res, 409, { error: "the channel switched tasks before it could receive the message" });
       }
+      // An engine command for one member that the chat cannot run is refused
+      // before it is recorded, like in a 1:1 (server/harness-commands.ts).
+      const commandRoute = groupEngineCommandRoute(group, text, group.memberIds.map((id) => store.bot(id)).filter((member): member is BotRecord => Boolean(member && !member.hidden)), channelMode);
+      const commandBot = commandRoute ? store.bot(commandRoute.botId) : undefined;
+      // Only a command that bot's engine lists narrows the responders.
+      let engineCommandRoute: GroupCommandRoute | null = null;
+      if (commandRoute && commandBot) {
+        const typed = await typedCommandForTurn(extractTurnImages(commandRoute.commandText).text, harnessCommandSource(commandBot, threadId, { group, speaker: harnessCommandSpeaker(auth) }), harnessCommands);
+        if (typed.kind === "unavailable") return json(res, 409, unavailableCommandError(typed));
+        if (typed.kind === "engine") engineCommandRoute = commandRoute;
+      }
       const sendId = parseSendId(body.sendId);
       const replyTo = resolveReplyTarget(threadId, body.replyToId);
       // Who is this "user"? On a headless server loopback is the owner by
@@ -23565,7 +23879,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             });
             return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
           }
-          const message = startGroupTurn(current.id, text, replyTo, sendId, channelMode, undefined, { via, sender: messageSender(auth), trigger });
+          const message = startGroupTurn(current.id, text, replyTo, sendId, channelMode, undefined, { via, sender: messageSender(auth), trigger, commandRoute: engineCommandRoute });
           return { ok: true as const, threadId, message };
         },
       );
@@ -23836,8 +24150,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const result = store.updateTeamMembers(section, parsed.data.addBotIds, parsed.data.removeBotIds);
       if (!result.ok) return json(res, result.reason === "unavailable" ? 404 : 409, { error:
-        result.reason === "chief-conflict" ? "A team can have only one Chief of Staff. Change the Chief before moving this bot."
-          : result.reason === "membership-changed" ? "Team membership changed. Reopen the dialog and try again."
+        result.reason === "membership-changed" ? "Team membership changed. Reopen the dialog and try again."
           : "One or more bots are unavailable" });
       return json(res, 200, { sections: store.sections, bots: result.bots.map(wireBot) });
     }
@@ -23858,11 +24171,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const result = store.setBotsSection(botIds, name);
       if (!result.ok) {
-        if (result.reason === "chief-conflict") {
-          return json(res, 409, {
-            error: "A team can have only one Chief of Staff. Choose one Chief or use a team without one.",
-          });
-        }
         return json(res, 404, { error: "one or more bots are unavailable" });
       }
       return json(res, 200, { section: name, sections: store.sections, bots: result.bots.map(wireBot) });
@@ -23957,7 +24265,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (settings.managedSections?.length) {
         if (!settings.chiefOfStaff || settings.managedSections.some(name => name !== "" && !store.sections.includes(name))) {
-          return json(res, 400, { error: "Only a Chief may manage existing additional teams" });
+          return json(res, 400, { error: "Only a Primary Bot may manage existing additional teams" });
         }
         if (body.acknowledgePeerScope !== true) return json(res, 400, { error: "Confirm additional team access (acknowledgePeerScope)" });
         if (auth.kind === "loopback" && !DESKTOP_MANAGED && store.bots.some(bot => bot.busy)) {
@@ -24066,9 +24374,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (settings.chiefOfStaff) {
         try {
           store.patchBot(bot.id, { managedSections: settings.managedSections ?? [] });
-          store.setChiefOfStaff(bot.id);
+          store.setPrimaryBot(bot.id);
         } catch {
-          warnings.push("Bot created; review its Chief of Staff setting before delegating work.");
+          warnings.push("Bot created; review its Primary Bot setting before delegating work.");
         }
       }
       for (const routine of createdRoutines) if (routine.enabled) {
@@ -24257,11 +24565,55 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       broadcast({ kind: "bot", bot: visible });
       return json(res, 200, { bot: visible });
     }
+    // Make a bot its owner's Primary Bot (the star in the sidebar). One per
+    // person: the store hands the role over from the person's previous one.
+    // Only the owner chooses theirs; on a solo server the operator's admin
+    // sessions too. An organization admin has no override on someone else's.
+    m = path.match(/^\/api\/bots\/([\w-]+)\/primary$/);
+    if (m && method === "POST") {
+      const target = store.bot(m[1]);
+      if (!target) return json(res, 404, { error: "no such bot" });
+      const actor = actorPrincipalId(auth).trim().toLowerCase();
+      const owner = effectiveBotOwner(target);
+      const soloAdmin = IDENTITY.kind !== "perspicax" && (auth.kind !== "session" || auth.scopes.includes("admin"));
+      if (!soloAdmin && (!actor || owner !== actor)) {
+        return json(res, 403, { error: "Only this bot's owner can make it their Primary Bot", code: "not_bot_owner" });
+      }
+      const changed = store.setPrimaryBot(target.id);
+      if (changed === null) return json(res, 404, { error: "no such bot" });
+      return json(res, 200, { bot: wireBot(store.bot(target.id)!), changed: changed.map((bot) => bot.id) });
+    }
     m = path.match(/^\/api\/bots\/([\w-]+)$/);
     if (m && method === "PATCH") {
       const body = await readBody(req);
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         return json(res, 400, { error: "body must be a JSON object" });
+      }
+      // Organization server: the bot's owner, signed in, turns Full on as
+      // the bot's default (its new threads and routines) while the
+      // organization allows it (org-full-access.ts). A request of its own:
+      // nothing else rides along.
+      if (IDENTITY.kind === "perspicax" && body.approvalMode === "full") {
+        const target = store.bot(m[1]);
+        if (!target) return json(res, 404, { error: "no such bot" });
+        if (Object.keys(body).some((key) => key !== "approvalMode" && key !== "confirmFullAccess") ||
+          (body.confirmFullAccess !== undefined && typeof body.confirmFullAccess !== "boolean")) {
+          return json(res, 400, { error: "send { approvalMode: \"full\", confirmFullAccess } alone" });
+        }
+        const refusal = orgFullAccessRefusalFor(auth, target, body.confirmFullAccess === true);
+        if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code });
+        if (target.busy) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
+        if (target.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
+        if (!supportsApprovalMode(target.modelSelection, "full")) return json(res, 400, { error: "This provider does not support Full access" });
+        const before = approvalModeFor(target);
+        const updated = store.patchBot(target.id, {
+          approvalMode: "full", autoApprove: false, alwaysAllow: [],
+          fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() },
+        })!;
+        auditApprovalModeChange(auth, target.id, before, "full");
+        const visible = wireBot(updated);
+        broadcast({ kind: "bot", bot: visible });
+        return json(res, 200, { bot: visible });
       }
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
         const target = store.bot(m[1]);
@@ -24507,7 +24859,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         patch.cwd = checked.cwd ?? undefined;
       }
       if (body.hidden === true && existingBot?.chiefOfStaff && body.chiefOfStaff !== false) {
-        return json(res, 400, { error: "choose another Chief of Staff before hiding this bot" });
+        return json(res, 400, { error: "choose another Primary Bot before hiding this bot" });
       }
       // the permission fields decide what runs unattended, so they are
       // type-checked rather than copied through: a string alwaysAllow would
@@ -24639,18 +24991,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const sections = [...new Set(parsed.data)];
         const newSections = sections.filter(section => !(existingBot?.managedSections ?? []).includes(section));
         if (newSections.some(section => section !== "" && !store.sections.includes(section))) {
-          return json(res, 400, { error: "Create the named team before giving a Chief access to it" });
+          return json(res, 400, { error: "Create the named team before giving a Primary Bot access to it" });
         }
         if (sections.length && !(body.chiefOfStaff === true || (existingBot?.chiefOfStaff && body.chiefOfStaff !== false))) {
-          return json(res, 400, { error: "Only a Chief of Staff can be given access to additional teams" });
+          return json(res, 400, { error: "Only a Primary Bot can be given access to additional teams" });
         }
         if (newSections.length && body.acknowledgePeerScope !== true) {
-          return json(res, 400, { error: "Confirm which additional teams this Chief may work with (acknowledgePeerScope)" });
+          return json(res, 400, { error: "Confirm which additional teams this Primary Bot may work with (acknowledgePeerScope)" });
         }
         patch.managedSections = sections;
       }
       // Removing the role revokes its grants, rather than leaving dormant
-      // authority to return if this bot is elected Chief again later.
+      // authority to return if this bot is elected Primary Bot again later.
       if (body.chiefOfStaff === false) patch.managedSections = [];
       // Who may see this bot on a workspace several people share
       // (bot-visibility.ts): "everyone" (the default), "admins", or
@@ -24729,11 +25081,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           closeOpenApprovals(groupTurn.threadId);
         }
       }
-      const chiefMovedSections =
-        Boolean(existingBot?.chiefOfStaff) &&
-        body.chiefOfStaff !== false &&
-        section !== undefined &&
-        sectionKey(existingBot?.section) !== sectionKey(section);
       let bot: BotRecord | null;
       const freshBrowserBot = store.bot(m[1]);
       // Connector validation and runtime revocation can yield after the first
@@ -24803,10 +25150,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           void forgetTemporaryBrowser(bot.id).catch((error) => console.warn("temporary browser cleanup failed", error));
         }
       }
-      const chiefChanges =
-        body.chiefOfStaff === true || chiefMovedSections
-          ? store.setChiefOfStaff(bot.id)
-          : [];
+      // A Primary Bot is one per person, not per section: moving it to
+      // another team keeps the role.
+      const chiefChanges = body.chiefOfStaff === true ? store.setPrimaryBot(bot.id) : [];
       if (chiefChanges === null) return json(res, 404, { error: "no such bot" });
       if (beforeProfile) {
         const now = store.bot(bot.id)!;
@@ -25238,7 +25584,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // An engine command the chat cannot run is refused before it is
       // recorded (server/harness-commands.ts).
       if (text.startsWith("/")) {
-        const typed = await typedCommandForTurn(extractTurnImages(text).text, harnessCommandSource(bot, threadId), harnessCommands);
+        const typed = await typedCommandForTurn(extractTurnImages(text).text, harnessCommandSource(bot, threadId, { speaker: harnessCommandSpeaker(auth) }), harnessCommands);
         if (typed.kind === "unavailable") return json(res, 409, unavailableCommandError(typed));
       }
       // Who this message is from, for the ledger. It is captured here and
@@ -25298,6 +25644,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (!currentAtStart) throw Object.assign(new Error("no such bot"), { status: 404 });
           if (!store.taskByThread(currentAtStart.id, threadId)) {
             throw Object.assign(new Error("the target task no longer exists"), { status: 409 });
+          }
+          // Organization server: a turn asking Full access is refused while
+          // the organization does not allow it (org-full-access.ts). The
+          // person picks another level; the turn never runs elevated.
+          if (IDENTITY.kind === "perspicax" && approvalModeFor(currentAtStart) === "full" && !orgFullAccessPolicy()) {
+            throw Object.assign(new Error(ORG_FULL_ACCESS_DISABLED.error), { status: ORG_FULL_ACCESS_DISABLED.status, code: ORG_FULL_ACCESS_DISABLED.code });
           }
 
           if (guarded) {
@@ -26015,7 +26367,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
       const current = store.projectBotForTask(m[1], m[2]);
       if (!current) return json(res, 404, { error: "no such task" });
-      const allowed = new Set(["title", "projectId", "modelSelection", "updateBotDefault", "resetApprovalToAsk", "approvalMode", "autoApprove", "requireAvailableModel", "pinnedMessageId", "acknowledgeLocalAuto", "archivedAt", "pinned", "snoozedUntil", "surface"]);
+      const allowed = new Set(["title", "projectId", "modelSelection", "updateBotDefault", "resetApprovalToAsk", "approvalMode", "autoApprove", "requireAvailableModel", "pinnedMessageId", "acknowledgeLocalAuto", "confirmFullAccess", "archivedAt", "pinned", "snoozedUntil", "surface"]);
       if (Object.keys(body).some((key) => !allowed.has(key))) return json(res, 400, { error: "unsupported thread setting" });
       const notYours = cloudThreadRefusal(auth, m[2]);
       if (notYours) return json(res, 403, { error: notYours });
@@ -26026,7 +26378,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         (body.approvalMode !== undefined || body.autoApprove !== undefined || body.acknowledgeLocalAuto !== undefined || body.updateBotDefault === true)) {
         return json(res, 403, { error: "On this Cloud only its owner can change how a bot asks for approval, or its default model." });
       }
-      for (const key of ["requireAvailableModel", "acknowledgeLocalAuto", "updateBotDefault", "resetApprovalToAsk"] as const) {
+      for (const key of ["requireAvailableModel", "acknowledgeLocalAuto", "confirmFullAccess", "updateBotDefault", "resetApprovalToAsk"] as const) {
         if (body[key] !== undefined && typeof body[key] !== "boolean") return json(res, 400, { error: `${key} must be a boolean` });
       }
       if (body.requireAvailableModel === true && body.modelSelection === undefined) return json(res, 400, { error: "requireAvailableModel requires modelSelection" });
@@ -26036,6 +26388,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "resetApprovalToAsk requires a model selection and cannot be combined with another approval mode" });
       }
       const patch: Parameters<typeof store.patchTask>[2] = {};
+      let orgFullGrant = false;
       if (body.projectId !== undefined) {
         if (body.projectId === null) patch.projectId = undefined;
         else if (typeof body.projectId === "string" && store.project(current.id, body.projectId)) patch.projectId = body.projectId;
@@ -26086,10 +26439,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.approvalMode !== undefined || body.autoApprove !== undefined) {
         if (body.autoApprove !== undefined && typeof body.autoApprove !== "boolean") return json(res, 400, { error: "autoApprove must be a boolean" });
         const mode = body.approvalMode ?? (body.autoApprove ? "auto" : "ask");
-        if ((mode === "full" || mode === "custom") && memberOwnedInOrg(current)) return json(res, 409, MEMBER_BOT_FULL_ACCESS);
+        // Organization server: the bot's owner, signed in, turns Full on
+        // over HTTP while the organization allows it (org-full-access.ts).
+        if (mode === "full" && IDENTITY.kind === "perspicax") {
+          const refusal = orgFullAccessRefusalFor(auth, current, body.confirmFullAccess === true);
+          if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code });
+          orgFullGrant = true;
+        }
+        if (!orgFullGrant && (mode === "full" || mode === "custom") && memberOwnedInOrg(current)) return json(res, 409, MEMBER_BOT_FULL_ACCESS);
         // Elevated modes still require the trusted desktop transition. A
         // thread settings PATCH cannot manufacture that grant.
-        if (mode !== "ask" && mode !== "auto" && mode !== "edits") return json(res, 403, { error: "Full and Custom access require trusted desktop confirmation" });
+        if (!orgFullGrant && mode !== "ask" && mode !== "auto" && mode !== "edits") return json(res, 403, { error: "Full and Custom access require trusted desktop confirmation" });
         if (approvalModeFor(current) === "custom") return json(res, 403, { error: "Leaving Custom approval requires confirmation in the packaged desktop app" });
         if (!supportsApprovalMode(patch.modelSelection ?? current.modelSelection, mode)) {
           return json(res, 400, { error: "This provider does not support the selected approval level" });
@@ -26104,6 +26464,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         patch.approvalMode = mode;
         patch.autoApprove = mode === "auto";
+        if (orgFullGrant) patch.alwaysAllow = [];
       }
       if (patch.modelSelection) {
         const checked = checkedTaskModelSwitch({ ...current,
@@ -26111,10 +26472,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }, patch.modelSelection, body.updateBotDefault === true, body.resetApprovalToAsk === true, body.requireAvailableModel === true);
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
       }
+      const modeBefore = approvalModeFor(current);
+      if (orgFullGrant) store.patchBot(m[1], { fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() } });
       const task = patch.modelSelection
         ? store.switchTaskModel(m[1], m[2], patch.modelSelection, body.updateBotDefault === true, body.resetApprovalToAsk === true,
           { ...patch, ...hostedModels?.resetTask(current.modelSelection, patch.modelSelection) })!
         : store.patchTask(m[1], m[2], patch)!;
+      if (patch.approvalMode) auditApprovalModeChange(auth, m[1], modeBefore, patch.approvalMode, m[2]);
       const fresh = botWithThread(store.bot(m[1])!);
       broadcast({ kind: "bot", bot: fresh });
       return json(res, 200, { task: wireTask(task), bot: projectBotTranscript(fresh, viewerForApproval(auth)) });
@@ -26519,8 +26883,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Slice 7: /api/org/admin/* answers the Perspicax console.
         ...(IDENTITY.kind === "perspicax" ? { orgAdminApi: 1 } : {}),
       };
-      if (detail === "app") return json(res, 200, { app: "openmausbot" });
-      if (detail === "capabilities") return json(res, 200, { app: "openmausbot", capabilities });
+      if (detail === "app") return json(res, 200, { ...HEALTH_IDENTITY });
+      if (detail === "capabilities") return json(res, 200, { ...HEALTH_IDENTITY, capabilities });
       // The engines installed on this server (slice 3, D16), from the CLI
       // probes: refreshed here when stale, within a bounded wait.
       const stale = !engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS)
@@ -26531,7 +26895,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const engines = [...engineProbes.values()]
         .map(({ instanceId, driver, installed, version }) => ({ instanceId, driver, installed, ...(version ? { version } : {}) }))
         .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
-      return json(res, 200, { app: "openmausbot", pid: process.pid, static: Boolean(STATIC_DIR), capabilities, engines });
+      // app: "openmausbot" stays one release beside product: "sagax" (deployed
+      // health checks grep the body for it; legacy-names.mjs HEALTH_IDENTITY).
+      return json(res, 200, { ...HEALTH_IDENTITY, pid: process.pid, static: Boolean(STATIC_DIR), capabilities, engines });
     }
     // The bots' browser engine: install it on this machine (agent-browser +
     // a Chrome for Testing, a one-time download), or ask how that is going.
@@ -26831,7 +27197,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // The official local OAuth callback terminates on this machine,
           // not a phone or the browser visiting a remotely hosted workspace.
           if (instance.authenticationMethod === "browser-pkce" && (isProxied(req) || !isLoopbackHost(req.socket.remoteAddress))) {
-            return json(res, 403, { error: "Continue with ChatGPT on the computer running OpenMausBot. Hosted Pro sign-in requires OpenAI's hosted-app approval." });
+            return json(res, 403, { error: "Continue with ChatGPT on the computer running Sagax. Hosted Pro sign-in requires OpenAI's hosted-app approval." });
           }
           const started = await providerAuthSessions.start(instance, owner);
           // Revocation can arrive while the CLI is obtaining a device code.
@@ -28224,7 +28590,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   } catch (e) {
     const status = (e as any)?.status ?? 500;
     const candidateCode = (e as { code?: unknown })?.code;
-    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked"].includes(candidateCode)
+    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "org_full_access_disabled"].includes(candidateCode)
       ? candidateCode : undefined;
     return json(res, status, { error: e instanceof Error ? e.message : String(e), ...(code ? { code } : {}) });
   } finally {
@@ -28429,7 +28795,7 @@ server.listen(PORT, "127.0.0.1", () => {
 // Nothing changes about the loopback bind above. Requests arriving here have
 // no peer address, which request-auth treats as "through a proxy": a session
 // is required, never loopback trust, whatever headers the request carries.
-const TUNNEL_SOCKET = process.env.OMB_TUNNEL_SOCKET?.trim() || null;
+const TUNNEL_SOCKET = process.env.SAGAX_TUNNEL_SOCKET?.trim() || null;
 let tunnelListener: ReturnType<typeof createServer> | null = null;
 if (TUNNEL_SOCKET) {
   if (process.platform !== "win32") rmSync(TUNNEL_SOCKET, { force: true });

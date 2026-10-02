@@ -16,13 +16,13 @@
 
 /** Calls Perspicax allows one address per rolling minute. */
 export const TOKEN_BUDGET_MAX = 60;
-/** OMB_PERSPICAX_TOKEN_BUDGET's default: 15 slots of headroom. */
+/** SAGAX_PERSPICAX_TOKEN_BUDGET's default: 15 slots of headroom. */
 export const TOKEN_BUDGET_DEFAULT = 45;
 export const TOKEN_WINDOW_MS = 60_000;
 /** How long a refresh waits for a slot. */
 export const TOKEN_REFRESH_WAIT_MS = 5_000;
 
-/** OMB_PERSPICAX_TOKEN_BUDGET: a whole number from 1 to 60, else 45. */
+/** SAGAX_PERSPICAX_TOKEN_BUDGET: a whole number from 1 to 60, else 45. */
 export function tokenBudget(value: string | undefined): number {
   const n = Number(value);
   const ok = value !== undefined && value.trim() !== "" && Number.isInteger(n) && n >= 1 && n <= TOKEN_BUDGET_MAX;

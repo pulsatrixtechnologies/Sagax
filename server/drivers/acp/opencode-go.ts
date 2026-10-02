@@ -1,6 +1,6 @@
 // The maintained OpenCode CLI through its ACP stdio interface. OpenCode is
 // the harness; Zen, Go, OpenRouter, and user-configured/local providers are
-// models discovered from that harness rather than separate OpenMaus drivers.
+// models discovered from that harness rather than separate Sagax drivers.
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -75,7 +75,7 @@ export function isFreeOpenCodeModel(id: string): boolean {
   return /(?:^|[-_/])free$/iu.test(id);
 }
 
-/** The model OpenMaus runs when nobody chose one, or when the chosen one is
+/** The model Sagax runs when nobody chose one, or when the chosen one is
  * gone. OpenCode's own pick (`current`) wins when it is free. Otherwise a
  * free model does: OpenCode 2 with a key picks a paid model on its own, and
  * a silent switch to per-token billing is not ours to make. Only an
@@ -254,7 +254,7 @@ function runGit(directory: string, args: string[]): Promise<void> {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
   return new Promise((resolveRun, rejectRun) => {
     execFile("git", [
-      "-c", "user.name=OpenMaus", "-c", "user.email=model-discovery@openmaus.invalid",
+      "-c", "user.name=Sagax", "-c", "user.email=model-discovery@openmaus.invalid",
       "-c", "commit.gpgsign=false", "-c", `core.hooksPath=${join(directory, ".git", "no-hooks")}`,
       ...args,
     ], { cwd: directory, env: { ...env, GIT_TERMINAL_PROMPT: "0" }, timeout: 10_000, windowsHide: true }, (error) => {
@@ -266,10 +266,10 @@ function runGit(directory: string, args: string[]): Promise<void> {
 
 let discoveryFolder: Promise<string> | null = null;
 
-/** A folder OpenMaus owns for catalog probes, made its own git project once.
+/** A folder Sagax owns for catalog probes, made its own git project once.
  * OpenCode records every session, empty ones included, under the project of
  * its working folder, and every folder outside git shares one global project:
- * `opencode run --continue` in any of them would resume OpenMaus's empty probe
+ * `opencode run --continue` in any of them would resume Sagax's empty probe
  * instead of the person's last session. Without git the probe still works and
  * its session lands in the global list, as before. */
 function discoveryDirectory(): Promise<string> {
@@ -280,7 +280,7 @@ function discoveryDirectory(): Promise<string> {
     if (!existsSync(marker)) {
       try {
         await runGit(directory, ["init", "-q"]);
-        await runGit(directory, ["commit", "-q", "--allow-empty", "--no-verify", "-m", "OpenMaus model discovery"]);
+        await runGit(directory, ["commit", "-q", "--allow-empty", "--no-verify", "-m", "Sagax model discovery"]);
         writeFileSync(marker, "OpenCode files this folder's sessions under its own project.\n");
       } catch {
         // No git: probes run here all the same.
@@ -460,7 +460,7 @@ export const resetOpenCodeGoModelCache = resetOpenCodeModelCache;
 
 /** Provider keys OpenCode reads from its environment, as it does in a
  * terminal: with ANTHROPIC_API_KEY set, `opencode` lists Anthropic's models.
- * Keys OpenMaus saves for another engine (xAI, Mistral, the workspace
+ * Keys Sagax saves for another engine (xAI, Mistral, the workspace
  * Anthropic key) are workspace credentials under other names and never
  * ride along. */
 export const OPENCODE_PROVIDER_ENV = [
@@ -628,15 +628,15 @@ function withinFolder(path: string, folder: string): boolean {
   return rest === "" || (rest !== ".." && !rest.startsWith(`..${sep}`) && !isAbsolute(rest));
 }
 
-/** Whether a turn works in one of OpenMaus's own folders: a bot's shared
+/** Whether a turn works in one of Sagax's own folders: a bot's shared
  * folder or a conversation's private one (server/workspace.ts). Everything in
  * them was written by bots, so none of it may become OpenCode configuration. */
-export function openMausOwnsWorkingFolder(cwd: string): boolean {
+export function sagaxOwnsWorkingFolder(cwd: string): boolean {
   return [join(DATA_DIR, "workspaces"), join(DATA_DIR, "task-workspaces")].some((root) =>
     withinFolder(cwd, root) && resolvePath(cwd) !== resolvePath(root));
 }
 
-/** Folders OpenMaus owns that an OpenCode bot may use outside its working
+/** Folders Sagax owns that an OpenCode bot may use outside its working
  * folder without an approval card: the attachments people send (every turn
  * that read one stalled on a card) and this bot's own shared folder, which
  * holds the memory its prompt points at.
@@ -700,7 +700,7 @@ function readText(path: string): string | undefined {
 /** The folder rule the person's own OpenCode config ends with, when it is a
  * single action ("deny", "ask" or "allow") rather than a folder map.
  * OPENCODE_PERMISSION is merged over the config and an object replaces a
- * string, so without this OpenMaus's folder list would quietly turn a "deny"
+ * string, so without this Sagax's folder list would quietly turn a "deny"
  * into OpenCode's default "ask". A folder map needs nothing: the two maps
  * merge. Sources in OpenCode's own order: global config, OPENCODE_CONFIG,
  * project files from the root down (unless project config is off), the
@@ -752,7 +752,7 @@ export function configuredOpenCodeFolderAction(
 /** OpenCode asks before a tool touches a folder outside the session's
  * working folder (its `external_directory` permission), which stalled every
  * turn that read an attachment on an approval card. Allow exactly the
- * folders OpenMaus owns for this bot; every other folder keeps the person's
+ * folders Sagax owns for this bot; every other folder keeps the person's
  * rule, or OpenCode's default "ask". The rules depend only on the bot and the
  * working folder, so a conversation keeps one process. */
 function allowOwnedDirectories(env: Record<string, string | undefined>, botId: string | undefined, cwd: string): void {
@@ -772,7 +772,7 @@ function allowOwnedDirectories(env: Record<string, string | undefined>, botId: s
   const existing = permission.external_directory;
   // OpenCode evaluates rules in order and the last match wins, so these go
   // after anything already there: the person's single action first as "*",
-  // then OpenMaus's folders.
+  // then Sagax's folders.
   let rules: Record<string, unknown>;
   if (typeof existing === "string") rules = { "*": existing };
   else if (existing && typeof existing === "object" && !Array.isArray(existing)) rules = { ...(existing as Record<string, unknown>) };
@@ -865,9 +865,9 @@ const support = (loadCatalog: OpenCodeCatalogLoader): AcpSupport => ({
   transformEnv: withholdProviderKeysWhenManaged,
   spawnFingerprint: openCodeLoginsFingerprint,
   applyTurnEnv: (env, { fullAuto, botId, cwd }) => {
-    // In OpenMaus's own folders nothing is the person's project: a bot wrote
+    // In Sagax's own folders nothing is the person's project: a bot wrote
     // it, and OpenCode would otherwise take it as configuration.
-    if (openMausOwnsWorkingFolder(cwd)) env.OPENCODE_DISABLE_PROJECT_CONFIG = "1";
+    if (sagaxOwnsWorkingFolder(cwd)) env.OPENCODE_DISABLE_PROJECT_CONFIG = "1";
     if (!fullAuto) {
       allowOwnedDirectories(env, botId, cwd);
       return;

@@ -7,8 +7,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
-import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled } from "@/lib/feature-flags";
+import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -62,6 +61,7 @@ import { setNotificationSounds, useNotificationSounds } from "@/lib/notification
 import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
+import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
 
 // `labelKey`, not a label: t() reads the active pack when it is called, so a
@@ -74,7 +74,7 @@ export const SECTIONS: Array<{
   icon: typeof User;
   keywords: string[];
 }> = [
-  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "analytics", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
+  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "cloudAccount", labelKey: "settings.section.cloudAccount", icon: User, keywords: ["cloud", "account", "personal", "sign in", "pro", "subscription", "billing"] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating"] },
@@ -328,10 +328,28 @@ function UpdatesRow() {
   );
 }
 
-/** Usage analytics, on by default and switchable here. Naming what is sent
- * matters more than the switch: people who cannot see the scope assume the
- * worst, and the worst — conversation text — is exactly what this never
- * sends (autocapture is off; see lib/analytics.ts). */
+/** Opt-in to pre-release versions. Updates only ever come from Sagax's own
+ * GitHub releases (electron/update-feed.mjs); this only widens the channel. */
+function PrereleaseRow() {
+  const s = useUpdaterState();
+  const setPrereleases = window.ogb?.updater?.setPrereleases;
+  if (!setPrereleases) return null;
+  const on = s?.allowPrerelease === true;
+  return (
+    <SettingRow
+      title={t("settings.updates.prerelease.title")}
+      subtitle={t("settings.updates.prerelease.short")}
+      help={t("settings.updates.prerelease.subtitle")}
+    >
+      <Switch
+        checked={on}
+        aria-label={t("settings.updates.prerelease.aria")}
+        onClick={() => void setPrereleases(!on)}
+      />
+    </SettingRow>
+  );
+}
+
 /** The effort every new bot starts with. The server skips a level the new
  * bot's engine does not offer, and a bot's own choice always wins. */
 function NewBotEffortRow() {
@@ -378,23 +396,6 @@ function NewBotEffortRow() {
           </option>
         ))}
       </select>
-    </SettingRow>
-  );
-}
-
-function AnalyticsRow() {
-  const [on, setOn] = useState(analyticsEnabled);
-  return (
-    <SettingRow title={t("settings.analytics.title")} subtitle={t("settings.analytics.short")} help={t("settings.analytics.subtitle")}>
-      <Switch
-        checked={on}
-        aria-label={t("settings.analytics.aria")}
-        onClick={() => {
-          const next = !on;
-          setAnalyticsEnabled(next);
-          setOn(next);
-        }}
-      />
     </SettingRow>
   );
 }
@@ -600,6 +601,19 @@ function ShowThreadsRow() {
   );
 }
 
+function SidebarLogoRow() {
+  const enabled = useShowSidebarLogo();
+  return (
+    <SettingRow title={t("settings.sidebarLogo.title")} subtitle={t("settings.sidebarLogo.subtitle")}>
+      <Switch
+        checked={enabled}
+        aria-label={t("settings.sidebarLogo.show")}
+        onClick={() => setShowSidebarLogo(!enabled)}
+      />
+    </SettingRow>
+  );
+}
+
 function RunCardRow() {
   const enabled = useShowRunCard();
   return (
@@ -695,19 +709,23 @@ function ToolCallsRow() {
   );
 }
 
+type ExperimentalFeature = "skillAuthoring" | "browser" | "templates" | "connectedApps" | "vpsComputer" | "boatComputer";
+
 function ExperimentalFeaturesRow() {
   const { state, dispatch } = useStore();
   const skillAuthoring = skillAuthoringEnabled(state.config);
   const browser = builtInBrowserEnabled(state.config);
   const templates = templatesEnabled(state.config);
   const connectedApps = connectedAppsEnabled(state.config);
+  const vpsComputer = vpsComputerEnabled(state.config);
+  const boatComputer = boatComputerEnabled(state.config);
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
-  const [saving, setSaving] = useState<"skillAuthoring" | "browser" | "templates" | "connectedApps" | null>(null);
+  const [saving, setSaving] = useState<ExperimentalFeature | null>(null);
   const [error, setError] = useState("");
 
-  const toggle = async (feature: "skillAuthoring" | "browser" | "templates" | "connectedApps", next: boolean) => {
+  const toggle = async (feature: ExperimentalFeature, next: boolean) => {
     if (saving) return;
     setSaving(feature);
     setError("");
@@ -730,7 +748,7 @@ function ExperimentalFeaturesRow() {
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates) + Number(connectedApps), total: 4 })}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates) + Number(connectedApps) + Number(vpsComputer) + Number(boatComputer), total: 6 })}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
@@ -798,6 +816,21 @@ function ExperimentalFeaturesRow() {
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
+      {([["vpsComputer", vpsComputer], ["boatComputer", boatComputer]] as const).map(([feature, on]) => (
+        <div key={feature} className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-feature={feature}>
+          <div className="min-w-0">
+            <div className="text-[14px] font-medium text-ink">{t(`settings.experimental.${feature}`)}</div>
+            <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">{t(`settings.experimental.${feature}Detail`)}</div>
+          </div>
+          <Switch
+            checked={on}
+            aria-label={t(`settings.experimental.${feature}`)}
+            disabled={saving !== null}
+            onClick={() => void toggle(feature, !on)}
+            className="disabled:cursor-wait disabled:opacity-50"
+          />
+        </div>
+      ))}
       {error ? <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p> : null}
     </Card>
   );
@@ -1098,7 +1131,6 @@ export function SettingsModal() {
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <LanguageRow />
                   <NewBotEffortRow />
-                  <AnalyticsRow />
                   <DefaultBotSettings />
                 </div>
                 {!remoteActive && (
@@ -1122,6 +1154,7 @@ export function SettingsModal() {
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
+                  <PrereleaseRow />
                   <DiagnosticsRow />
                 </div>
               </>
@@ -1141,6 +1174,7 @@ export function SettingsModal() {
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <FontRow />
                   <SidebarDensityRow />
+                  <SidebarLogoRow />
                   <ShowThreadsRow />
                   <NotificationSoundsRow />
                   <FloatingFlyAwayRow />
@@ -1212,8 +1246,8 @@ export function SettingsModal() {
                   summary={configuredSummary(state.config, ["box", "vps", "opencodeGo"])}
                 >
                   <div className="flex flex-col gap-4">
-                    <ApiKeyRow section="box" />
-                    <VpsConnection />
+                    {(state.config?.cloudHome === true || boatComputerEnabled(state.config)) && <ApiKeyRow section="box" />}
+                    {vpsComputerEnabled(state.config) && <VpsConnection />}
                     <ApiKeyRow section="opencodeGo" />
                     <p className="-mt-2 text-[11.5px] leading-relaxed text-ink-secondary">
                       {/* {command} marks where the code chip goes, so a translator can move it */}

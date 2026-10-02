@@ -23,7 +23,7 @@ export interface BoatCreateRequest {
   idempotencyKey: string;
   createdAt: number;
   boxId?: string;
-  /** The provider Boat has its deterministic OpenMaus name. Until this is
+  /** The provider Boat has its deterministic Sagax name. Until this is
    * true, deleting the bot would make an ambiguous or unnamed Boat orphaned. */
   resolved?: true;
 }

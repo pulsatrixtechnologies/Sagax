@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Model Context Protocol (MCP) Server for Sagax
 // Standard JSON-RPC 2.0 stdio transport for external agent orchestration (Hermes, Claude Desktop, Cursor, etc.).
+// Old names set in an MCP client config (OPENMAUSBOT_URL) become SAGAX_* first.
+import "../electron/legacy-env-boot.mjs";
 import readline from "node:readline";
 
 export function validateBaseUrl(url: string): string {
@@ -15,7 +17,7 @@ export function validateBaseUrl(url: string): string {
     throw new Error("Sagax URL must use http:// or https://");
   }
   if (parsed.username || parsed.password) {
-    throw new Error("Sagax URL must not contain credentials; use OPENMAUSBOT_TOKEN instead");
+    throw new Error("Sagax URL must not contain credentials; use SAGAX_TOKEN instead");
   }
   if ((parsed.pathname !== "/" && parsed.pathname !== "") || parsed.search || parsed.hash) {
     throw new Error("Sagax URL must be an origin without a path, query, or fragment");
@@ -30,12 +32,12 @@ export function validateBaseUrl(url: string): string {
   return parsed.origin;
 }
 
-const configuredUrl = process.env.OPENMAUSBOT_URL ||
-  (process.env.OMB_PORT ? `http://127.0.0.1:${process.env.OMB_PORT}` : undefined);
+const configuredUrl = process.env.SAGAX_URL ||
+  (process.env.SAGAX_PORT ? `http://127.0.0.1:${process.env.SAGAX_PORT}` : undefined);
 
-export const OMB_BASE_URL = validateBaseUrl(configuredUrl || "http://127.0.0.1:8799");
+export const SAGAX_BASE_URL = validateBaseUrl(configuredUrl || "http://127.0.0.1:8799");
 const DISCOVERY_URLS = configuredUrl
-  ? [OMB_BASE_URL]
+  ? [SAGAX_BASE_URL]
   : [8799, 18799, 28799].map((port) => `http://127.0.0.1:${port}`);
 let discoveredBaseUrl: string | undefined;
 
@@ -46,12 +48,12 @@ export function log(msg: string) {
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 function requestTimeoutMs(): number {
-  const raw = Number(process.env.OPENMAUSBOT_MCP_TIMEOUT_MS);
+  const raw = Number(process.env.SAGAX_MCP_TIMEOUT_MS);
   return Number.isFinite(raw) && raw >= 1_000 && raw <= 120_000 ? Math.floor(raw) : DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
 function requestHeaders(options: RequestInit): NonNullable<RequestInit["headers"]> {
-  const token = process.env.OPENMAUSBOT_TOKEN?.trim();
+  const token = process.env.SAGAX_TOKEN?.trim();
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
@@ -68,10 +70,10 @@ async function fetchJson(url: string, options: RequestInit = {}): Promise<any> {
   });
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    if (response.status === 403 && !process.env.OPENMAUSBOT_TOKEN?.trim()) {
+    if (response.status === 403 && !process.env.SAGAX_TOKEN?.trim()) {
       throw new Error(
         "Sagax refused this write because the installed desktop app requires a paired session token. " +
-        "Set OPENMAUSBOT_TOKEN as described in docs/mcp-server.md.",
+        "Set SAGAX_TOKEN as described in docs/mcp-server.md.",
       );
     }
     throw new Error(`Sagax API error (${response.status}): ${text || response.statusText}`);
@@ -105,8 +107,8 @@ export async function probeBaseUrls(candidates: string[]): Promise<string> {
 
 export async function resolveBaseUrl(): Promise<string> {
   if (discoveredBaseUrl) return discoveredBaseUrl;
-  if (process.env.OPENMAUSBOT_TOKEN?.trim() && !configuredUrl) {
-    throw new Error("Set OPENMAUSBOT_URL or OMB_PORT when using OPENMAUSBOT_TOKEN so credentials are never sent during port discovery");
+  if (process.env.SAGAX_TOKEN?.trim() && !configuredUrl) {
+    throw new Error("Set SAGAX_URL or SAGAX_PORT when using SAGAX_TOKEN so credentials are never sent during port discovery");
   }
   discoveredBaseUrl = await probeBaseUrls(DISCOVERY_URLS);
   return discoveredBaseUrl;
@@ -800,7 +802,7 @@ export async function handleToolCall(
       if (res?.app !== "openmausbot") throw new Error("The configured endpoint is not a Sagax server");
       return {
         status: "connected",
-        endpoint: discoveredBaseUrl ?? OMB_BASE_URL,
+        endpoint: discoveredBaseUrl ?? SAGAX_BASE_URL,
         app: "openmausbot",
         packaged: Boolean(res.static),
       };

@@ -3,7 +3,7 @@
 // Pi core deliberately ships no MCP client (see pi's docs: "does not include
 // built-in MCP"). This extension is that client: loaded into the per-turn
 // `pi --mode rpc --no-session` process via `-e`, it reads a JSON file whose
-// path is handed in through OMB_MCP_CONFIG and mounts every server described
+// path is handed in through SAGAX_MCP_CONFIG and mounts every server described
 // there as first-class pi tools (pi.registerTool). Sagax ships this file
 // and the pi driver spawns it — the pi repo itself is never touched.
 //
@@ -536,7 +536,7 @@ function summarizeParams(params: unknown): string {
 }
 
 export default async function (pi: PiExtensionApi): Promise<void> {
-  const configPath = process.env.OMB_MCP_CONFIG;
+  const configPath = process.env.SAGAX_MCP_CONFIG;
   if (!configPath) return;
 
   let config: McpConfig;

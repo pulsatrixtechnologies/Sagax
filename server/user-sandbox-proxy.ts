@@ -63,9 +63,9 @@ export async function userSandboxProxyRequest(frame: unknown, connection: { url:
 }
 
 function run(): void {
-  const named = process.env.OMB_TOOL_SERVER;
+  const named = process.env.SAGAX_TOOL_SERVER;
   const connection = {
-    url: process.env.OMB_HARNESS_URL ?? "", token: process.env.OMB_SANDBOX_TOKEN ?? "",
+    url: process.env.SAGAX_HARNESS_URL ?? "", token: process.env.SAGAX_SANDBOX_TOKEN ?? "",
     server: named && Object.hasOwn(PROXIED_TOOL_SERVERS, named) ? named as ProxiedToolServer : "sagax-environment" as const,
   };
   let input = Buffer.alloc(0);

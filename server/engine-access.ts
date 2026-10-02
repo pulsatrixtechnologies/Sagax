@@ -19,7 +19,7 @@ export type EngineAccessRefusal = "engine_missing" | "no_access";
  *   - owner-routine: a routine, webhook or other automation; `principalId`
  *     is the person it runs as (slice 6: its runAs), absent the owner;
  *   - peer: another bot's hop (ask_bot, delegation, an opened thread, an
- *     aside, a Chief's retry). `principalId` is whoever the source turn spoke
+ *     aside, a Primary Bot's retry). `principalId` is whoever the source turn spoke
  *     for ("" when that was an unknown person); absent, the requesting bot's
  *     owner speaks. `routinePayer` (2026-10-01): on a routine's hop, whose
  *     credentials the routine runs on (its bot's owner), carried along the

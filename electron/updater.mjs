@@ -19,6 +19,7 @@ import {
 } from "./package-install-command.mjs";
 import { openBlankTerminal } from "./terminal-launch.mjs";
 import { createUpdaterCoordinator } from "./updater-coordinator.mjs";
+import { configureUpdateFeed, readUpdatePrefs, writeUpdatePrefs } from "./update-feed.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -81,6 +82,21 @@ export function registerUpdaterIpc() {
   ipcMain.handle("update:check", localOnly("update:check", () => updaterCoordinator?.check(true)));
   ipcMain.handle("update:download", localOnly("update:download", () => updaterCoordinator?.download()));
   ipcMain.handle("update:install", localOnly("update:install", () => updaterCoordinator?.install()));
+  ipcMain.handle("update:set-prereleases", localOnly("update:set-prereleases", (_event, enabled) => setPrereleases(enabled)));
+}
+
+// Pre-releases are opt-in. The choice is this computer's, stored next to the
+// app's data, and applies from the next check.
+function setPrereleases(enabled) {
+  let prefs = { allowPrerelease: enabled === true };
+  try {
+    prefs = writeUpdatePrefs(app.getPath("userData"), prefs);
+  } catch {
+    /* holds for this session even if it cannot be saved */
+  }
+  if (autoUpdater) autoUpdater.allowPrerelease = prefs.allowPrerelease;
+  setState({ allowPrerelease: prefs.allowPrerelease });
+  return state;
 }
 
 // macOS keeps the process (and updater) alive after its window closes.
@@ -91,6 +107,8 @@ export function attachUpdaterWindow(mainWindow) {
 }
 
 export function startUpdater() {
+  const prefs = readUpdatePrefs(app.getPath("userData"));
+  setState({ allowPrerelease: prefs.allowPrerelease });
   // dev / unsigned builds can't auto-update — leave the banner dormant
   if (!app.isPackaged) {
     updaterCoordinator = null;
@@ -104,6 +122,8 @@ export function startUpdater() {
     setState({ status: "error", message: "updater unavailable" });
     return;
   }
+  // Our GitHub releases only, whatever app-update.yml says.
+  configureUpdateFeed(autoUpdater, prefs);
   autoUpdater.autoDownload = false; // button-driven download
   // Squirrel.Mac has a second, native staging pass after the ZIP download.
   // Start it immediately so "Restart to update" never has to begin that slow

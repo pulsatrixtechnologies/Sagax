@@ -37,7 +37,7 @@ emulator-5554 device product:sdk model:Emulator transport_id:6
 });
 
 describe("phone MCP lazy claim gate", () => {
-  const harnessEnv = { OMB_HARNESS_URL: "http://127.0.0.1:8799", OMB_PHONE_TOKEN: "tok" };
+  const harnessEnv = { SAGAX_HARNESS_URL: "http://127.0.0.1:8799", SAGAX_PHONE_TOKEN: "tok" };
   const stub = (handler: (request: Request) => Promise<{ ok: boolean; status: number }>) => {
     const calls: Request[] = [];
     const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {

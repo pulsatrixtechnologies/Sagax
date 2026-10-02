@@ -76,12 +76,12 @@ it("applies requested Full Access workflows through MCP without duplicate approv
       if (["SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "LANG", "LC_ALL", "TZ"].includes(key.toUpperCase()) && value) env[key.toUpperCase()] = value;
     }
     Object.assign(env, {
-      HOME: dataDir, USERPROFILE: dataDir, OMB_DATA_DIR: dataDir,
+      HOME: dataDir, USERPROFILE: dataDir, SAGAX_DATA_DIR: dataDir,
       APPDATA: join(dataDir, "AppData", "Roaming"), LOCALAPPDATA: join(dataDir, "AppData", "Local"),
       XDG_CONFIG_HOME: join(dataDir, ".config"), XDG_CACHE_HOME: join(dataDir, ".cache"),
       XDG_DATA_HOME: join(dataDir, ".local", "share"), HERMES_HOME: join(dataDir, ".hermes"),
       TEMP: join(dataDir, "tmp"), TMP: join(dataDir, "tmp"), TMPDIR: join(dataDir, "tmp"),
-      OMB_PORT: new URL(url).port, OMB_WEBHOOK_PORT: String(Number(new URL(url).port) + 1), PATH: dirname(process.execPath),
+      SAGAX_PORT: new URL(url).port, SAGAX_WEBHOOK_PORT: String(Number(new URL(url).port) + 1), PATH: dirname(process.execPath),
       FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_DUMP: fixture.fixtureDumpPath,
     });
     const log = openSync(logPath, "a", 0o600);
@@ -162,7 +162,7 @@ it("applies requested Full Access workflows through MCP without duplicate approv
     expect((await api("GET", `/api/bots/${chief.id}/skills`)).skills).toEqual(expect.arrayContaining([expect.objectContaining({ name: "monthly-fixture-review", enabled: true })]));
 
     const dump = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8"));
-    const lateToken = dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+    const lateToken = dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
     await api("POST", "/api/internal/team-setup-requests", { plan: { reason: "Late fixture token", operations: [specialist("Must not exist", "Operations")] } }, 401, lateToken);
 
     await run(chief, chief.activeTaskId, "Update the named monthly skill, pause the report, update Mira, then delete Mira as requested.", [
@@ -193,7 +193,7 @@ it("applies requested Full Access workflows through MCP without duplicate approv
     expect(peerTurn.permissionMode).toBe("bypassPermissions");
     expect((await bots()).find(bot => bot.id === peer.id).approvalMode ?? "ask").toBe("ask");
     expect(await unanswered(peerTurn.threadId)).toHaveLength(0);
-    expect((await messages(peerTurn.threadId)).some(message => message.kind === "activity" && /^Full access — delegated by Clive, a Chief of Staff with Full access$/.test(message.tool?.name ?? ""))).toBe(true);
+    expect((await messages(peerTurn.threadId)).some(message => message.kind === "activity" && /^Full access — delegated by Clive, a Primary Bot with Full access$/.test(message.tool?.name ?? ""))).toBe(true);
     evidence.push({ delegatedFullAccess: { peerThreadId: peerTurn.threadId, permissionMode: peerTurn.permissionMode } });
 
     const askTurn = await run(chief, ask.threadId, "Prepare a profile change, routine, named skill, and specialist for review in this Ask task.", [

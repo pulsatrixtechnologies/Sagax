@@ -1,7 +1,7 @@
 // End to end: a hosted server with a sign-in allow-list lets a remote browser
 // sign in with a code the server emails itself (server/account-signin.ts,
 // server/email-otp.ts) and ends up with the same cookie session a pairing
-// code would give. OMB_MAIL_CAPTURE_FILE (server/index.ts) stands in for a
+// code would give. SAGAX_MAIL_CAPTURE_FILE (server/index.ts) stands in for a
 // real mail provider: the spawned server appends each message it would have
 // sent as a JSON line instead, and this file reads the code back from there.
 import { spawn, type ChildProcess } from "node:child_process";
@@ -113,10 +113,10 @@ beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-email-signin-"));
   captureFile = join(home, "mail-capture.jsonl");
   const staticDir = join(home, "static");
-  mkdirSync(join(home, ".openmausbot"), { recursive: true });
+  mkdirSync(join(home, ".sagax"), { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });
   writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>Served UI</title>");
-  writeFileSync(join(home, ".openmausbot", "config.json"), JSON.stringify({
+  writeFileSync(join(home, ".sagax", "config.json"), JSON.stringify({
     instances: { fixture: { driver: "email-signin-test-shadow" } },
     signIn: { admins: ["her@example.test", "@agentada.test"], members: ["staff@example.test"] },
   }));
@@ -127,15 +127,15 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
-      OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_STATIC_DIR: staticDir,
-      OMB_PUBLIC_URL: `https://${HOST}`,
-      OMB_ENVIRONMENT_LABEL: "agentada",
-      OMB_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
-      OMB_MAIL_CAPTURE_FILE: captureFile,
-      OMB_TEST_SEAMS: "1",
-      OMB_SSE_HEARTBEAT_MS: "50",
+      SAGAX_PORT: String(PORT),
+      SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_STATIC_DIR: staticDir,
+      SAGAX_PUBLIC_URL: `https://${HOST}`,
+      SAGAX_ENVIRONMENT_LABEL: "agentada",
+      SAGAX_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
+      SAGAX_MAIL_CAPTURE_FILE: captureFile,
+      SAGAX_TEST_SEAMS: "1",
+      SAGAX_SSE_HEARTBEAT_MS: "50",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -294,7 +294,7 @@ describe("sign in with your email on a hosted server", () => {
   it("ends an idle email stream after an external allow-list removal and never revives the old cookie", async () => {
     const cookie = await signIn("staff@example.test");
     const stream = await openEvents(cookie);
-    const configPath = join(home, ".openmausbot", "config.json");
+    const configPath = join(home, ".sagax", "config.json");
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     try {
       // The fleet agent and CLI update this file outside the running server.

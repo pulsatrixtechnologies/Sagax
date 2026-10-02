@@ -7,6 +7,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { isOwnHealth } from "./legacy-names.mjs";
 
 export const MANAGED_COMPANION_ORIGIN_HOST = "127.0.0.1";
 export const MANAGED_COMPANION_ORIGIN_PORT = 8812;
@@ -158,7 +159,7 @@ export function companionOriginHealth(
         response.on("end", () => {
           if (response.statusCode !== 200) return finish(false);
           try {
-            finish(JSON.parse(Buffer.concat(chunks).toString("utf8"))?.app === "openmausbot");
+            finish(isOwnHealth(JSON.parse(Buffer.concat(chunks).toString("utf8"))));
           } catch {
             finish(false);
           }

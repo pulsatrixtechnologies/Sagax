@@ -18,16 +18,16 @@
 ## Global Constraints
 
 - **Variables d'environnement:**
-  - `OMB_MAIL_PROVIDER` (`smtp` | `sendgrid`), `OMB_MAIL_FROM`.
-  - SMTP: `OMB_SMTP_HOST`, `OMB_SMTP_PORT`, `OMB_SMTP_SECURE` (`tls` | `starttls` | `none`), `OMB_SMTP_USER`, `OMB_SMTP_PASSWORD`.
-  - SendGrid: `OMB_SENDGRID_API_KEY`.
-  - Les secrets (`OMB_SMTP_PASSWORD`, `OMB_SENDGRID_API_KEY`) acceptent aussi une variante `_FILE` (chemin d'un Docker secret). Si les deux sont présentes, la valeur directe gagne.
+  - `SAGAX_MAIL_PROVIDER` (`smtp` | `sendgrid`), `SAGAX_MAIL_FROM`.
+  - SMTP: `SAGAX_SMTP_HOST`, `SAGAX_SMTP_PORT`, `SAGAX_SMTP_SECURE` (`tls` | `starttls` | `none`), `SAGAX_SMTP_USER`, `SAGAX_SMTP_PASSWORD`.
+  - SendGrid: `SAGAX_SENDGRID_API_KEY`.
+  - Les secrets (`SAGAX_SMTP_PASSWORD`, `SAGAX_SENDGRID_API_KEY`) acceptent aussi une variante `_FILE` (chemin d'un Docker secret). Si les deux sont présentes, la valeur directe gagne.
 - **Priorité:** une valeur venue de l'environnement gagne. Le web la montre en lecture seule (« configuré par Docker »). Un PATCH qui tente de la changer reçoit 409 `{ error: "managed by the server environment", fields: [...] }` au lieu d'être écrasé en silence.
 - **Secrets:** écriture seule. Les réponses GET ne renvoient jamais un mot de passe ni une clé, seulement `configured: boolean`.
 - **Code de connexion:** 8 chiffres, valide 10 minutes, 5 essais au plus. Au plus 3 envois par adresse par 15 minutes, et au plus 10 par source par 15 minutes. Seul le haché sha256 est gardé en mémoire.
 - **Sans fournisseur configuré:** `emailSignIn.enabled()` est faux, il n'y a ni connexion ni invitation par courriel, et l'appairage par code reste possible.
-- **Premier admin:** le code n'est émis que si toutes ces conditions tiennent: aucune session vivante, `cfg.signIn.admins` vide, et `OMB_DESKTOP_PARENT !== "1"`. Scopes `["admin", "client"]`, principal = opérateur local, TTL 60 minutes. Une seule ligne de journal, préfixée `[first-admin]`, avec le lien `<publicUrl>/pair#code=<code>`. Nouveau code à chaque démarrage tant que la condition tient.
-- **Redémarrage et journal:** seulement quand `OMB_DESKTOP_PARENT !== "1"`, sinon 404. Réservés au scope `admin`. Le redémarrage répond 202 puis envoie `SIGTERM` à soi-même après 300 ms: `createGracefulShutdown` sort proprement et Docker relance (`restart: unless-stopped`).
+- **Premier admin:** le code n'est émis que si toutes ces conditions tiennent: aucune session vivante, `cfg.signIn.admins` vide, et `SAGAX_DESKTOP_PARENT !== "1"`. Scopes `["admin", "client"]`, principal = opérateur local, TTL 60 minutes. Une seule ligne de journal, préfixée `[first-admin]`, avec le lien `<publicUrl>/pair#code=<code>`. Nouveau code à chaque démarrage tant que la condition tient.
+- **Redémarrage et journal:** seulement quand `SAGAX_DESKTOP_PARENT !== "1"`, sinon 404. Réservés au scope `admin`. Le redémarrage répond 202 puis envoie `SIGTERM` à soi-même après 300 ms: `createGracefulShutdown` sort proprement et Docker relance (`restart: unless-stopped`).
 - **Journal en anneau:** 2000 lignes au plus, chaque ligne coupée à 2000 caractères.
 - **Texte d'interface:** anglais dans `en.json`, français (Québec) dans `fr.json`, puis `node scripts/generate-locale.mjs fr --accept`. Pas de tiret cadratin ni de en-dash.
 - **Tests et vérifications:** `npx vitest run <fichier>`, `pnpm -s typecheck`, `pnpm -s i18n:check`. La suite serveur a des échecs anciens; comparer avec une liste « avant » prise au début.
@@ -228,7 +228,7 @@ describe("mail settings", () => {
   it("lets the environment win and reports which fields it manages", () => {
     const r = resolveMailSettings({
       file: { provider: "sendgrid", from: "web@gox.ca", sendgrid: { apiKey: "SG.file" } },
-      env: { OMB_MAIL_PROVIDER: "smtp", OMB_SMTP_HOST: "smtp.gox.ca", OMB_SMTP_PORT: "587", OMB_SMTP_SECURE: "starttls", OMB_SMTP_PASSWORD: "pw" },
+      env: { SAGAX_MAIL_PROVIDER: "smtp", SAGAX_SMTP_HOST: "smtp.gox.ca", SAGAX_SMTP_PORT: "587", SAGAX_SMTP_SECURE: "starttls", SAGAX_SMTP_PASSWORD: "pw" },
     });
     expect(r.settings.provider).toBe("smtp");
     expect(r.settings.from).toBe("web@gox.ca");
@@ -239,8 +239,8 @@ describe("mail settings", () => {
   it("reads a secret from a _FILE path, and the direct value wins", () => {
     const files: Record<string, string> = { "/run/secrets/sg": "SG.fromfile\n" };
     const read = (p: string) => files[p]!;
-    expect(resolveMailSettings({ file: undefined, env: { OMB_SENDGRID_API_KEY_FILE: "/run/secrets/sg" }, readFile: read }).settings.sendgrid?.apiKey).toBe("SG.fromfile");
-    expect(resolveMailSettings({ file: undefined, env: { OMB_SENDGRID_API_KEY_FILE: "/run/secrets/sg", OMB_SENDGRID_API_KEY: "SG.direct" }, readFile: read }).settings.sendgrid?.apiKey).toBe("SG.direct");
+    expect(resolveMailSettings({ file: undefined, env: { SAGAX_SENDGRID_API_KEY_FILE: "/run/secrets/sg" }, readFile: read }).settings.sendgrid?.apiKey).toBe("SG.fromfile");
+    expect(resolveMailSettings({ file: undefined, env: { SAGAX_SENDGRID_API_KEY_FILE: "/run/secrets/sg", SAGAX_SENDGRID_API_KEY: "SG.direct" }, readFile: read }).settings.sendgrid?.apiKey).toBe("SG.direct");
   });
 
   it("is ready only with a provider, a sender and that provider's fields", () => {
@@ -303,7 +303,7 @@ describe("mailer", () => {
 - [ ] **Step 2: Run to verify they fail.** `npx vitest run server/mail-config.test.ts server/mailer.test.ts`
 - [ ] **Step 3: Implement**
   - **`server/mail-config.ts`:**
-    - Env fields map to settings fields as follows: `OMB_MAIL_PROVIDER` → `provider` (only `smtp` | `sendgrid`; anything else is ignored), `OMB_MAIL_FROM` → `from`, `OMB_SMTP_HOST` → `smtp.host`, `OMB_SMTP_PORT` → `smtp.port` (integer 1-65535), `OMB_SMTP_SECURE` → `smtp.secure` (`tls` | `starttls` | `none`), `OMB_SMTP_USER` → `smtp.user`, `OMB_SMTP_PASSWORD` (or `_FILE`) → `smtp.password`, `OMB_SENDGRID_API_KEY` (or `_FILE`) → `sendgrid.apiKey`.
+    - Env fields map to settings fields as follows: `SAGAX_MAIL_PROVIDER` → `provider` (only `smtp` | `sendgrid`; anything else is ignored), `SAGAX_MAIL_FROM` → `from`, `SAGAX_SMTP_HOST` → `smtp.host`, `SAGAX_SMTP_PORT` → `smtp.port` (integer 1-65535), `SAGAX_SMTP_SECURE` → `smtp.secure` (`tls` | `starttls` | `none`), `SAGAX_SMTP_USER` → `smtp.user`, `SAGAX_SMTP_PASSWORD` (or `_FILE`) → `smtp.password`, `SAGAX_SENDGRID_API_KEY` (or `_FILE`) → `sendgrid.apiKey`.
     - A `_FILE` value is read with `readFile` (default `fs.readFileSync(path, "utf8")`) and `.trim()`. An unreadable file is ignored with a `console.warn` that names the variable, never the content.
     - Start from a copy of `file`, apply each env field that is set and non-empty, and push its dotted name into `envManaged`.
     - `publicMailStatus` follows the Interfaces above. `mailReady` follows the test.
@@ -382,7 +382,7 @@ For the last test: when sending fails, `start` voids the issued code. Call `otp.
     - text: `<inviter> invited you. Sign in with this address at <publicUrl>/pair within 7 days.`
     - A send failure does not undo the invite. The route's JSON gains `mailed: boolean`.
   - **`AppConfig` (`server/config.ts`):** add `mail?: MailSettings` to the type and the Zod schema. It must round-trip through `saveConfig` (the save/patch logic belongs to Task 4).
-- Append an e2e case to `server/org-identity.e2e.test.ts`: boot with `OMB_MAIL_PROVIDER=sendgrid`, `OMB_MAIL_FROM`, `OMB_SENDGRID_API_KEY`, and `OMB_SIGNIN_EMAILS=jc@gox.ca`. Stub `globalThis.fetch` for `api.sendgrid.com` if the harness runs in-process. If it runs as a child process, add a `mailer` test seam the harness can set, e.g. env `OMB_MAIL_CAPTURE_FILE` that writes messages to a file instead of sending; name it in the report. Then:
+- Append an e2e case to `server/org-identity.e2e.test.ts`: boot with `SAGAX_MAIL_PROVIDER=sendgrid`, `SAGAX_MAIL_FROM`, `SAGAX_SENDGRID_API_KEY`, and `SAGAX_SIGNIN_EMAILS=jc@gox.ca`. Stub `globalThis.fetch` for `api.sendgrid.com` if the harness runs in-process. If it runs as a child process, add a `mailer` test seam the harness can set, e.g. env `SAGAX_MAIL_CAPTURE_FILE` that writes messages to a file instead of sending; name it in the report. Then:
   - `POST /api/auth/email/start` for jc@gox.ca;
   - read the code from the captured message;
   - `POST /api/auth/email/verify`;
@@ -405,7 +405,7 @@ For the last test: when sending fails, `start` voids the issued code. Call `otp.
   - `POST /api/mail/test` takes `{ to?: string }` (default: the admin's own session email, else the profile email). It sends `Pulsa Bot test email` / `Mail from this server works.` and returns `{ ok: true }`, or `{ ok: false, error }` with status 502. Rate limit: 5 per 15 minutes per session.
 
 - [ ] **Step 1: Write the failing e2e test**. It must check:
-  - (a) with env `OMB_SMTP_HOST=smtp.env`, `GET /api/mail` shows `envManaged` containing `smtp.host` and no secret;
+  - (a) with env `SAGAX_SMTP_HOST=smtp.env`, `GET /api/mail` shows `envManaged` containing `smtp.host` and no secret;
   - (b) `PUT` with `smtp.host` gets 409 and the config file is unchanged;
   - (c) `PUT` with `{ provider: "sendgrid", from: "p@g.ca", sendgrid: { apiKey: "SG.x" } }`, when not env-managed, gets 200. The response and a later GET contain `apiKeyConfigured: true` and never the text `SG.x`;
   - (d) a client-scope session gets 403 on all three routes;
@@ -457,7 +457,7 @@ describe("first admin", () => {
     - if `shouldIssueFirstAdminCode({ desktopManaged: DESKTOP_MANAGED, liveSessions: sessions.list().length, admins: cfg.signIn?.admins ?? [] })`;
     - call `sessions.openPairing({ scopes: ["admin", "client"], label: "First admin", principalId: localPrincipalId(), ttlMs: 60 * 60_000 })`;
     - log `firstAdminLine(...)` with `console.log`, the code formatted with `formatPairingCode`.
-- E2e: boot a fresh DATA_DIR as a served server, with `OMB_DESKTOP_PARENT` unset and the harness's stdout captured.
+- E2e: boot a fresh DATA_DIR as a served server, with `SAGAX_DESKTOP_PARENT` unset and the harness's stdout captured.
   - Find the `[first-admin]` line.
   - Exchange its code on `POST /api/pair`.
   - Expect a session with scopes including `admin` and `principalId` equal to the org-less local operator.
@@ -508,9 +508,9 @@ describe("log buffer", () => {
 - an admin session gets `GET /api/server/status` → `{ restartable: true, logs: true }`;
 - `GET /api/server/logs` contains a line the server printed at boot;
 - a client session gets 403 on all three;
-- with `OMB_DESKTOP_PARENT=1` all three return 404;
+- with `SAGAX_DESKTOP_PARENT=1` all three return 404;
 - `POST /api/server/restart` returns 202 and the child process exits with code 0 within 5 s. Only if the harness can observe the exit: spawn the server as a child and assert its exit.
-- A secret must not reach the logs: set `OMB_SENDGRID_API_KEY=SG.canary` and assert no log line contains `SG.canary`. No code path should log it; this guards against a regression.
+- A secret must not reach the logs: set `SAGAX_SENDGRID_API_KEY=SG.canary` and assert no log line contains `SG.canary`. No code path should log it; this guards against a regression.
 
 - [ ] **Step 2: Run to verify it fails.**
 - [ ] **Step 3: Implement.**
@@ -585,8 +585,8 @@ describe("log buffer", () => {
 - Test: none (docs and config). Verify with `docker compose config` that the file parses (Docker is running on the operator's Mac).
 
 **Changes:**
-- **`compose.yaml`:** pass through, with empty defaults so that absent means unset: `OMB_MAIL_PROVIDER`, `OMB_MAIL_FROM`, `OMB_SMTP_HOST`, `OMB_SMTP_PORT`, `OMB_SMTP_SECURE`, `OMB_SMTP_USER`, `OMB_SMTP_PASSWORD`, `OMB_SMTP_PASSWORD_FILE`, `OMB_SENDGRID_API_KEY`, `OMB_SENDGRID_API_KEY_FILE`, `OMB_SIGNIN_EMAILS`, `OMB_SIGNIN_MEMBER_EMAILS`, each as `${VAR:-}`.
-  - Check that an empty string counts as unset in `resolveMailSettings` (Task 2: « set and non-empty ») and in `config.ts` for `OMB_SIGNIN_*`. `loadConfig` treats `OMB_SIGNIN_EMAILS=""` as « set to empty », which would erase a list saved on the web. Fix it in `config.ts` so an empty value counts as unset, and add a unit test in the existing config tests.
+- **`compose.yaml`:** pass through, with empty defaults so that absent means unset: `SAGAX_MAIL_PROVIDER`, `SAGAX_MAIL_FROM`, `SAGAX_SMTP_HOST`, `SAGAX_SMTP_PORT`, `SAGAX_SMTP_SECURE`, `SAGAX_SMTP_USER`, `SAGAX_SMTP_PASSWORD`, `SAGAX_SMTP_PASSWORD_FILE`, `SAGAX_SENDGRID_API_KEY`, `SAGAX_SENDGRID_API_KEY_FILE`, `SAGAX_SIGNIN_EMAILS`, `SAGAX_SIGNIN_MEMBER_EMAILS`, each as `${VAR:-}`.
+  - Check that an empty string counts as unset in `resolveMailSettings` (Task 2: « set and non-empty ») and in `config.ts` for `SAGAX_SIGNIN_*`. `loadConfig` treats `SAGAX_SIGNIN_EMAILS=""` as « set to empty », which would erase a list saved on the web. Fix it in `config.ts` so an empty value counts as unset, and add a unit test in the existing config tests.
 - **`.env.example`:** the same variables, empty, with one comment line per group.
 - **`deploy/local/README.md`:** rewrite around the web.
   1. Start: `docker compose up -d --build`.
@@ -596,6 +596,6 @@ describe("log buffer", () => {
   5. People: Settings → People, and the organization.
   6. Restart and logs: Settings → Server.
   7. Updating: `docker compose up -d --build` (host side).
-  8. Exposure: bound to `127.0.0.1:8080`; put your proxy, tunnel or Tailscale Serve in front and set `OMB_PUBLIC_URL`.
+  8. Exposure: bound to `127.0.0.1:8080`; put your proxy, tunnel or Tailscale Serve in front and set `SAGAX_PUBLIC_URL`.
   - Keep one short « CLI fallback » paragraph with the two old `docker compose exec` commands, for recovery only.
 - **Commit** `docs: run the Docker server from the web`, followed by the Co-Authored-By line.

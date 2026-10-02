@@ -606,7 +606,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
                 // Full access is the person's explicit grant to answer every
                 // prompt. This runtime has no provider reviewer to hand it to,
                 // so it is honoured here: without it every single tool call on
-                // an OpenAI-compatible engine stops for a card, and a Chief's
+                // an OpenAI-compatible engine stops for a card, and a Primary Bot's
                 // delegated Full access cannot help either.
                 const allowed = turn.approvalMode === "full"
                   || await approval.ask(call.function.name, inputPreview ?? "This tool has no arguments.");

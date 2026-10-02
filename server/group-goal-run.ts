@@ -89,7 +89,7 @@ export function parseGroupGoalDecision(text: string): ParsedGroupGoalDecision {
 }
 
 /** Explicit room lead (or an Auto room's fallback) wins. Otherwise prefer
- * an in-room Chief, then the first active member. A goal run never recruits
+ * an in-room Primary Bot, then the first active member. A goal run never recruits
  * somebody outside the room. */
 export function selectGroupGoalCoordinator<Member extends GoalRunMember>(
   members: Member[],

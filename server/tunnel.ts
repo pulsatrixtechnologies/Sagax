@@ -1,5 +1,6 @@
 // Rung three of the hosting ladder: `openmausbot serve --tunnel` gives a
-// server a public HTTPS address (https://c-<id>.openmausbot.com) with no
+// server a public HTTPS address (from the control plane in
+// SAGAX_CONTROL_PLANE_URL; Sagax has no hosted default) with no
 // domain, no proxy and no open port, through the same control plane and
 // Cloudflare tunnel the desktop app already uses. Headless, so:
 //
@@ -11,7 +12,7 @@
 //     version + digest script the release build uses, when nothing usable is
 //     on the machine;
 //   - the tunnel's loopback gateway forwards to an IPC listener the harness
-//     opens for it (OMB_TUNNEL_SOCKET), so to request-auth every public
+//     opens for it (SAGAX_TUNNEL_SOCKET), so to request-auth every public
 //     request is "through a proxy" by construction and needs a paired
 //     session — the loopback bind and its owner trust are untouched.
 //
@@ -139,11 +140,11 @@ export function platformName(platform: NodeJS.Platform = process.platform): "dar
 export interface TunnelAccount {
   service: CompanionAccountService;
   credentials: TunnelCredentials;
-  /** "" when OMB_CONTROL_PLANE_URL is set to something unusable. */
+  /** "" when SAGAX_CONTROL_PLANE_URL is unset (Sagax has no hosted default) or unusable. */
   controlPlane: string;
 }
 
-/** The desktop honours OMB_CONTROL_PLANE_URL only in development builds; a
+/** The desktop honours SAGAX_CONTROL_PLANE_URL only in development builds; a
  * server's operator owns its environment, so it is honoured here always and
  * the caller says so in its output. */
 export function createTunnelAccount(options: {
@@ -168,7 +169,7 @@ export function createTunnelAccount(options: {
 }
 
 // ── a fleet's credential: no account file, no emailed code ───────────────
-export const FLEET_CREDENTIAL_ENV = "OMB_INSTALLATION_CREDENTIAL";
+export const FLEET_CREDENTIAL_ENV = "SAGAX_INSTALLATION_CREDENTIAL";
 
 /** A container the fleet starts carries its installation credential in the
  * environment. Nothing is written to disk and nobody types a code; the
@@ -181,7 +182,7 @@ export function fleetCredential(env: NodeJS.ProcessEnv = process.env): string | 
 export async function fleetAccess(options: { credential: string; env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch }): Promise<ManagedTunnelAccess> {
   const env = options.env ?? process.env;
   const controlPlane = resolveCompanionControlPlaneURL({ isPackaged: true, environment: env });
-  if (!controlPlane) throw new Error("OMB_CONTROL_PLANE_URL is set but is not an https address");
+  if (!controlPlane) throw new Error("Set SAGAX_CONTROL_PLANE_URL to your control plane's https address (Sagax has no hosted default)");
   const client = createControlPlaneClient({ baseURL: controlPlane, fetchImpl: options.fetchImpl });
   try {
     const { endpoint, connectorToken } = await client.ensureEndpoint(options.credential);
@@ -195,7 +196,7 @@ export async function fleetAccess(options: { credential: string; env?: NodeJS.Pr
 }
 
 // ── cloudflared and the guardian: where they are, or how to get them ──────
-/** OMB_CLOUDFLARED_PATH, then the copy this command downloaded into the data
+/** SAGAX_CLOUDFLARED_PATH, then the copy this command downloaded into the data
  * dir, then PATH. */
 export function cloudflaredPath(dataDir: string, env: NodeJS.ProcessEnv = process.env): string | null {
   return resolveCloudflaredBinary({ isPackaged: false, appPath: dataDir, environment: env });
@@ -259,7 +260,7 @@ export interface RunningTunnel {
 }
 
 /** The gateway listens on 127.0.0.1:<originPort> (the control plane points
- * the tunnel at 8812; OMB_TUNNEL_ORIGIN_PORT exists for tests) and forwards
+ * the tunnel at 8812; SAGAX_TUNNEL_ORIGIN_PORT exists for tests) and forwards
  * to the harness's IPC socket. Verification polls the public address until
  * it answers as this app, then retries with backoff forever if it never does. */
 export function startTunnel(options: {
@@ -273,7 +274,7 @@ export function startTunnel(options: {
   onState?: (state: ManagedTunnelState) => void;
 }): RunningTunnel {
   const env = options.env ?? process.env;
-  const originPort = Number(env.OMB_TUNNEL_ORIGIN_PORT || MANAGED_COMPANION_ORIGIN_PORT);
+  const originPort = Number(env.SAGAX_TUNNEL_ORIGIN_PORT || MANAGED_COMPANION_ORIGIN_PORT);
   let current: ManagedTunnelState = { status: "stopped", ready: false };
   const tunnel = createManagedCompanionTunnel({
     binaryPath: options.binaryPath,

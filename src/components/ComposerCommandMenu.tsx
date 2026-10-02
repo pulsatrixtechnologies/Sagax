@@ -1,11 +1,11 @@
 // The composer's "/" menu: Sagax's own commands and the engine's (Claude
-// Code, Codex), grouped Sagax, Engine, Plugins, MCP, each with its argument
-// hint. What the chat cannot run stays listed, dimmed, with the reason.
+// Code, Codex), grouped Sagax, Engine, Plugins, MCP (in a group: under each
+// bot's name), each with its argument hint. What the chat cannot run stays listed, dimmed, with the reason.
 import type { RefObject } from "react";
 import { BookOpen, Plug, Puzzle, RefreshCw, Target, Terminal } from "lucide-react";
 
 import { cn } from "@/lib/cn";
-import type { ComposerMenuItem } from "@/lib/composer-commands";
+import { composerMenuSection, type ComposerMenuItem } from "@/lib/composer-commands";
 import { t } from "@/lib/i18n";
 
 export interface ComposerCommandMenuProps {
@@ -58,12 +58,16 @@ export function ComposerCommandMenu({ items, highlight, loading, onPick, onHighl
       {items.map((item, index) => {
         const unavailable = item.kind === "engine" ? item.unavailable : undefined;
         const reason = unavailable ? t(`composer.commands.unavailable.${unavailable}`) : undefined;
-        const startsGroup = index === 0 || items[index - 1]?.group !== item.group;
+        const section = composerMenuSection(item);
+        const previous = items[index - 1];
+        const startsGroup = !previous || composerMenuSection(previous) !== section;
+        // in a group the engine's commands are listed under their bot
+        const bot = item.kind === "engine" ? item.bot : undefined;
         return (
           <div key={item.key}>
             {startsGroup && (
-              <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-tertiary">
-                {t(`composer.commands.group.${item.group}`)}
+              <div className="truncate px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-tertiary">
+                {bot ? bot.name : t(`composer.commands.group.${item.group}`)}
               </div>
             )}
             <button

@@ -13,7 +13,7 @@ it("bounds a real roster, retrieves its tail, isolates owners and expires stoppe
   const proxies: ChildProcess[] = [];
   const evidence: unknown[] = [];
   const cli = async (...args: string[]) => {
-    const result = await runControlOmb(args, { env: { OPENMAUSBOT_URL: fixture.info.url } }) as any;
+    const result = await runControlOmb(args, { env: { SAGAX_URL: fixture.info.url } }) as any;
     evidence.push({ args: args.map(arg => arg.length > 200 ? `${arg.slice(0, 200)}…` : arg), result });
     return result;
   };
@@ -29,7 +29,7 @@ it("bounds a real roster, retrieves its tail, isolates owners and expires stoppe
     await cli("send", "--bot", bot.id, "--task", threadId, "--text", "Hold this isolated verification turn open.");
     await expect.poll(() => existsSync(dumpFile), { timeout: 15_000 }).toBe(true);
     const mounted = JSON.parse(readFileSync(dumpFile, "utf8")).mcpConfig.mcpServers.agents;
-    expect(mounted.env.OMB_THREAD_ID).toBe(threadId);
+    expect(mounted.env.SAGAX_THREAD_ID).toBe(threadId);
     const proxy = spawn(mounted.command, mounted.args, { cwd: process.cwd(),
       env: { ...mounted.env, PATH: process.env.PATH, HOME: fixture.info.dataDir }, stdio: ["pipe", "pipe", "pipe"] });
     proxies.push(proxy);
@@ -48,7 +48,7 @@ it("bounds a real roster, retrieves its tail, isolates owners and expires stoppe
       proxy.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
     await rpc("initialize", { protocolVersion: "2024-11-05" });
-    return { token: mounted.env.OMB_COMMS_TOKEN as string,
+    return { token: mounted.env.SAGAX_COMMS_TOKEN as string,
       tool: async (name: string, args = {}) => (await rpc("tools/call", { name, arguments: args })).result };
   };
   try {

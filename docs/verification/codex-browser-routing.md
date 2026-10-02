@@ -15,12 +15,12 @@ Check navigation errors stay errors, failed navigation is not replayed, and succ
 
 These checks spend real model quota. Each script launches a temporary server and bot; never point it at a live workspace. Provide absolute paths through these environment variables:
 
-- `OMB_VERIFY_CODEX_CLI`: installed Codex executable.
-- `OMB_VERIFY_CODEX_AUTH`: existing Codex sign-in file. Copied into the temporary fixture only, removed on cleanup, never included in the report.
-- `OMB_VERIFY_OUTPUT`: local evidence directory; do not commit raw transcripts or screenshots containing private data.
-- `OMB_VERIFY_MODELS`: optional comma-separated models (default `gpt-5.6-luna`).
+- `SAGAX_VERIFY_CODEX_CLI`: installed Codex executable.
+- `SAGAX_VERIFY_CODEX_AUTH`: existing Codex sign-in file. Copied into the temporary fixture only, removed on cleanup, never included in the report.
+- `SAGAX_VERIFY_OUTPUT`: local evidence directory; do not commit raw transcripts or screenshots containing private data.
+- `SAGAX_VERIFY_MODELS`: optional comma-separated models (default `gpt-5.6-luna`).
 
-For browser acceptance, also set `OMB_VERIFY_BROWSER_BINARY` to the installed pinned agent-browser executable and `OMB_VERIFY_BROWSER_CHROME` to Chrome. Run:
+For browser acceptance, also set `SAGAX_VERIFY_BROWSER_BINARY` to the installed pinned agent-browser executable and `SAGAX_VERIFY_BROWSER_CHROME` to Chrome. Run:
 
 ```sh
 node --experimental-strip-types scripts/verify-codex-browser-acceptance.ts

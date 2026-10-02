@@ -57,12 +57,15 @@ export type BotUpdatePatch = Partial<
   confirmFullAccess?: boolean;
   /** Private desktop grant scope, never an HTTP patch or bot field. */
   applyToAllThreads?: boolean;
+  /** Organization server: Full is granted over HTTP (the server checks the
+   * policy, the owner and the one-time confirmation). Never a bot field. */
+  organizationFullAccess?: boolean;
 };
 
 /** A wire patch after clear-only values have been normalized for Bot state. */
 export type BotStatePatch = Omit<
   BotUpdatePatch,
-  "computer" | "connectorTools" | "acknowledgeLocalAuto" | "confirmFullAccess" | "applyToAllThreads"
+  "computer" | "connectorTools" | "acknowledgeLocalAuto" | "confirmFullAccess" | "applyToAllThreads" | "organizationFullAccess"
 > & {
   computer?: Bot["computer"];
   connectorTools?: Bot["connectorTools"];
@@ -121,6 +124,7 @@ const stateOverlay = (patch: BotUpdatePatch): BotStatePatch => {
     acknowledgeLocalAuto: _localAck,
     confirmFullAccess: _fullConfirmation,
     applyToAllThreads: _allThreads,
+    organizationFullAccess: _orgFull,
     computer,
     connectorTools,
     ...fields

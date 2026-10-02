@@ -4,7 +4,8 @@
 //                             viewer's role and the settings (no people, no
 //                             invitations: Perspicax owns both)
 //   GET   /api/org/directory  the people a bot owner may share with (client)
-//   PATCH /api/org/settings   { interimAttachDays } (organization admin)
+//   PATCH /api/org/settings   { interimAttachDays?, allowFullAccess? }
+//                             (organization admin)
 //   GET   /api/org/approvals  approvals waiting for an organization admin
 //                             (server commands of members' bots)
 //   GET, POST, DELETE /api/org/routine-delegation
@@ -27,6 +28,9 @@ export interface OrgSettings {
   /** Slice 8: the window to attach people from before Perspicax. `until`
    * is null when it never opened or is closed; `people` still waiting. */
   interimAttach?: { until: number | null; people: number };
+  /** Whether bots may run with Full access (server/org-full-access.ts):
+   * on by default, an admin turns it off. */
+  allowFullAccess: boolean;
 }
 
 export interface OrgDirectoryEntry {
@@ -81,6 +85,9 @@ export interface PerspicaxOrgRouteDeps {
   /** Slice 8: set the interim attach window (0..90 days from when it
    * opened; 0 closes it now); throws when it could not be written. */
   saveInterimAttachDays?(days: number, auth: RequestAuth): void;
+  /** Allow or refuse Full access for the organization's bots; throws when
+   * it could not be written. */
+  saveAllowFullAccess?(allowed: boolean, auth: RequestAuth): void;
   pendingAdminApprovals(): PendingAdminApproval[];
   /** Slice 4: the teams with their people (principal ids). */
   teams?(): OrgDirectoryTeam[];
@@ -159,12 +166,16 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       const keys = body && typeof body === "object" && !Array.isArray(body) ? Object.keys(body) : null;
       // memberBotsUseOrgKey is gone (2026-10-01): the organization's key
       // serves whenever an admin set one, so it is refused like any other.
-      if (!keys || !keys.length || keys.some((key) => key !== "interimAttachDays") ||
-        !deps.saveInterimAttachDays || !Number.isInteger(body.interimAttachDays) || body.interimAttachDays < 0 || body.interimAttachDays > 90) {
-        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 }" });
+      const days = keys?.includes("interimAttachDays");
+      const fullAccess = keys?.includes("allowFullAccess");
+      if (!keys || !keys.length || keys.some((key) => key !== "interimAttachDays" && key !== "allowFullAccess") ||
+        (days && (!deps.saveInterimAttachDays || !Number.isInteger(body.interimAttachDays) || body.interimAttachDays < 0 || body.interimAttachDays > 90)) ||
+        (fullAccess && (!deps.saveAllowFullAccess || typeof body.allowFullAccess !== "boolean"))) {
+        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 } or { allowFullAccess: true | false }" });
       }
       try {
-        deps.saveInterimAttachDays(body.interimAttachDays, auth);
+        if (days) deps.saveInterimAttachDays!(body.interimAttachDays, auth);
+        if (fullAccess) deps.saveAllowFullAccess!(body.allowFullAccess, auth);
       } catch (error) {
         return json(res, 500, { error: `the organization settings could not be saved: ${error instanceof Error ? error.message : String(error)}` });
       }

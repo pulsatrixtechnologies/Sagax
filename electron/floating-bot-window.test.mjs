@@ -12,7 +12,9 @@ import {
   sanitizeFloatingEvent,
   sanitizeFloatingSnapshot,
   sanitizePositions,
+  mascotLook,
 } from "./floating-bot-window.mjs";
+import { LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS, SHAPE_SKINS, TROMBI_SKINS } from "../shared/mascot-look.ts";
 import { displaySignature } from "./retro-assistant-window.mjs";
 
 const PRIMARY = { id: 1, bounds: { x: 0, y: 0, width: 1440, height: 900 }, workArea: { x: 0, y: 25, width: 1440, height: 850 } };
@@ -540,5 +542,15 @@ describe("floating bots: payload validation", () => {
     expect(sanitizeFloatingEvent({ type: "send", text: 1 })).toBeNull();
     expect(sanitizeFloatingEvent({ type: "eval", code: "x" })).toBeNull();
     expect(sanitizeFloatingEvent("click")).toBeNull();
+  });
+});
+
+describe("the desktop window's mascot look", () => {
+  it("knows every shape and Trombi skin, and maps older names like the app", () => {
+    for (const skin of SHAPE_SKINS) expect(mascotLook({ character: "shape", skins: { shape: skin } }).skins.shape).toBe(skin);
+    for (const skin of TROMBI_SKINS) expect(mascotLook({ character: "trombi", skins: { trombi: skin } }).skins.trombi).toBe(skin);
+    for (const [old, current] of Object.entries(LEGACY_SHAPE_SKINS)) expect(mascotLook({ character: "shape", skins: { shape: old } }).skins.shape).toBe(current);
+    for (const [old, current] of Object.entries(LEGACY_TROMBI_SKINS)) expect(mascotLook({ character: "trombi", skins: { trombi: old } }).skins.trombi).toBe(current);
+    expect(mascotLook({ character: "shape", skins: { shape: "plasma" } })).toEqual({ character: "shape" });
   });
 });

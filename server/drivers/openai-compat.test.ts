@@ -62,7 +62,7 @@ describe("OpenAICompatDriver", () => {
     const before = process.env.OPENAI_COMPAT_MODEL;
     process.env.OPENAI_COMPAT_MODEL = "meta-llama/llama-3.3-70b-instruct";
     try {
-      const config = OpenAICompatDriver.decodeConfig({ url: "https://api.openai.com/v1", apiKeyEnv: "OMB_OPENAI_API_KEY", catalog: "openai" });
+      const config = OpenAICompatDriver.decodeConfig({ url: "https://api.openai.com/v1", apiKeyEnv: "SAGAX_OPENAI_API_KEY", catalog: "openai" });
       expect(config).toMatchObject({ url: "https://api.openai.com/v1", catalog: "openai" });
       expect(config.model).toBeUndefined();
       const inst = await OpenAICompatDriver.create({
@@ -93,8 +93,8 @@ describe("OpenAICompatDriver", () => {
     ] }), { status: 200 })));
     const inst = await OpenAICompatDriver.create({
       instanceId: "openai", displayName: "OpenAI", enabled: true,
-      config: OpenAICompatDriver.decodeConfig({ url: "https://api.openai.com/v1", apiKeyEnv: "OMB_OPENAI_API_KEY", catalog: "openai" }),
-      environment: { OMB_OPENAI_API_KEY: "sk-fixture" },
+      config: OpenAICompatDriver.decodeConfig({ url: "https://api.openai.com/v1", apiKeyEnv: "SAGAX_OPENAI_API_KEY", catalog: "openai" }),
+      environment: { SAGAX_OPENAI_API_KEY: "sk-fixture" },
     });
     await vi.waitFor(() => expect(inst.models.options.map((option) => option.id)).toEqual(["gpt-5", "o3", "gpt-4.1"]));
     // A provider's own list is its official catalog, not custom models.

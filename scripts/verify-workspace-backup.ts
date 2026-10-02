@@ -32,8 +32,8 @@ async function restartFixture(fixture: VerificationServer): Promise<ChildProcess
     LOCALAPPDATA: join(home, "AppData", "Local"), XDG_CONFIG_HOME: join(home, ".config"),
     XDG_CACHE_HOME: join(home, ".cache"), XDG_DATA_HOME: join(home, ".local", "share"),
     TEMP: temp, TMP: temp, TMPDIR: temp, HERMES_HOME: join(home, ".hermes"),
-    OMB_DATA_DIR: dataDir, OMB_PORT: new URL(fixture.info.url).port,
-    OMB_WEBHOOK_PORT: String(Number(new URL(fixture.info.url).port) + 1),
+    SAGAX_DATA_DIR: dataDir, SAGAX_PORT: new URL(fixture.info.url).port,
+    SAGAX_WEBHOOK_PORT: String(Number(new URL(fixture.info.url).port) + 1),
     FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_DUMP: fixture.fixtureDumpPath,
     PATH: dirname(process.execPath),
   });

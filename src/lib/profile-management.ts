@@ -1,5 +1,5 @@
 // Who owns the signed-in person's name and email. On an organization server
-// (OMB_IDENTITY=perspicax) Pulsatrix Perspicax does: the server says so in
+// (SAGAX_IDENTITY=perspicax) Pulsatrix Perspicax does: the server says so in
 // GET /api/auth/session and in the config's `viewer` block
 // (`profileManagedBy: "perspicax"`, `profileManageUrl`), refuses to change
 // them (403 identity_perspicax) and refreshes them at every sign-in. The UI

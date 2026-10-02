@@ -29,13 +29,13 @@ function nvmBinDirs(): string[] {
 }
 
 /** A sealed test fixture finds CLIs only where it was granted them: its own
- * PATH, OMB_EXTRA_PATH, app-managed dirs, and install dirs under its own
+ * PATH, SAGAX_EXTRA_PATH, app-managed dirs, and install dirs under its own
  * temporary home. The machine-wide install dirs and the login shell's PATH
  * would hand it this computer's real CLIs — a Homebrew `codex` made the
  * fixture's ChatGPT plan engine "available" on a developer Mac (#2035).
  * Only the verification launcher (scripts/control-omb.ts) sets it. */
 function sealedFixture(): boolean {
-  return process.env.OMB_TEST_SEALED_PATH === "1";
+  return process.env.SAGAX_TEST_SEALED_PATH === "1";
 }
 
 function knownDirs(): string[] {
@@ -119,7 +119,7 @@ export function augmentedPath(): string {
   if (cached === null) {
     cached = mergePaths([
       ...registeredDirs.filter((d) => existsSync(d)),
-      ...(process.env.OMB_EXTRA_PATH ? process.env.OMB_EXTRA_PATH.split(delimiter) : []),
+      ...(process.env.SAGAX_EXTRA_PATH ? process.env.SAGAX_EXTRA_PATH.split(delimiter) : []),
       ...(process.env.PATH ? process.env.PATH.split(delimiter) : []),
       // Keep the last successful login-shell result while a rescan starts a
       // fresh asynchronous probe. Otherwise resetPathCache() would make

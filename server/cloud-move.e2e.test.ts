@@ -64,7 +64,7 @@ async function boot(fixture: Fixture): Promise<void> {
 
 async function launch(name: "desktop" | "cloud"): Promise<Fixture> {
   const home = mkdtempSync(join(tmpdir(), `omb-move-${name}-`));
-  const dataDir = join(home, ".openmausbot");
+  const dataDir = join(home, ".sagax");
   mkdirSync(dataDir, { recursive: true });
   const cli = join(home, "fixture-claude.mjs");
   writeFileSync(cli, `#!/usr/bin/env node
@@ -91,10 +91,10 @@ await import(${JSON.stringify(pathToFileURL(join(SERVER_DIR, "testing", "fake-cl
     PATH: process.env.PATH,
     ...(process.env.PATHEXT ? { PATHEXT: process.env.PATHEXT } : {}),
     ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-    HOME: home, USERPROFILE: home, OMB_DATA_DIR: dataDir, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
+    HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_DATA_DIR: dataDir, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
     ...(name === "cloud" ? {
-      OMB_CLOUD_ROLE: "home", OMB_CLOUD_MACHINE_ID: "3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93", OMB_CLOUD_ADMIN_URL: "https://cloud.example.test",
-      OMB_CLOUD_BOOTSTRAP_SECRET: bootstrapSecret, OMB_PUBLIC_URL: ORIGIN,
+      SAGAX_CLOUD_ROLE: "home", SAGAX_CLOUD_MACHINE_ID: "3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93", SAGAX_CLOUD_ADMIN_URL: "https://cloud.example.test",
+      SAGAX_CLOUD_BOOTSTRAP_SECRET: bootstrapSecret, SAGAX_PUBLIC_URL: ORIGIN,
     } : {}),
   };
   const fixture: Fixture = { name, home, dataDir, base: `http://127.0.0.1:${port}`, env, log: "", closing: false, boots: 0 };
@@ -120,7 +120,7 @@ async function api(fixture: Fixture, method: string, path: string, options: { bo
 
 /** The Admin's signed request: one single-use pairing window on the Cloud. */
 async function cloudGrant(): Promise<{ origin: string; code: string; expiresAt: number }> {
-  const body = JSON.stringify({ label: "OpenMausBot app (Cloud)", ttlSeconds: 300 });
+  const body = JSON.stringify({ label: "Sagax app (Cloud)", ttlSeconds: 300 });
   const timestamp = String(Math.floor(Date.now() / 1000)), nonce = randomBytes(16).toString("base64url");
   const response = await fetch(`${cloud.base}/api/cloud/pairing`, { method: "POST", body, headers: {
     ...forwarded, "content-type": "application/json", "x-omb-cloud-timestamp": timestamp, "x-omb-cloud-nonce": nonce,

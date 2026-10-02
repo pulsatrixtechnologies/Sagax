@@ -83,7 +83,7 @@ async function installation(from?: string) {
   vi.resetModules();
   vi.stubEnv("HOME", home);
   vi.stubEnv("USERPROFILE", home);
-  vi.stubEnv("OMB_DATA_DIR", join(home, ".openmausbot"));
+  vi.stubEnv("SAGAX_DATA_DIR", join(home, ".sagax"));
   const { Store } = await import("./store.ts");
   const { RoutineManager } = await import("./routines.ts");
   const skills = await import("./skills.ts");
@@ -615,8 +615,8 @@ describe("adding from the shelf", () => {
     // The leader is the importer's last write; the app stops right after it,
     // before the index is saved.
     let crash: string | null = null;
-    const setChief = app.store.setChiefOfStaff.bind(app.store);
-    vi.spyOn(app.store, "setChiefOfStaff").mockImplementation((...args) => {
+    const setChief = app.store.setPrimaryBot.bind(app.store);
+    vi.spyOn(app.store, "setPrimaryBot").mockImplementation((...args) => {
       const changed = setChief(...args);
       crash ??= snapshot();
       return changed;

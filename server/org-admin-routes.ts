@@ -106,7 +106,7 @@ export interface OrgAdminRouteDeps {
   /** Solo servers answer 403 identity_perspicax to everything here. */
   identity: "solo" | "perspicax";
   issuer: string;
-  /** This server's public origin (OMB_PUBLIC_URL), the assertion audience. */
+  /** This server's public origin (SAGAX_PUBLIC_URL), the assertion audience. */
   publicOrigin(): string | null;
   /** The link file's server id, when a link is loaded. */
   linkServerId(): string | null;

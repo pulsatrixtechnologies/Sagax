@@ -73,7 +73,7 @@ describe("readLinkFile", () => {
   });
 });
 
-describe("OMB_PERSPICAX_DIRECTORY_SECONDS", () => {
+describe("SAGAX_PERSPICAX_DIRECTORY_SECONDS", () => {
   it("defaults to 300 s and takes 5 to 3600", () => {
     expect(directoryIntervalMs(undefined)).toBe(300_000);
     expect(directoryIntervalMs("5")).toBe(5_000);

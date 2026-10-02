@@ -38,7 +38,7 @@ function trimWithDrops(raw: unknown) {
 
 describe("brace detection", () => {
   it("finds braces in strings, object keys and nested arrays", () => {
-    expect(hasBrace("m-{env:OMB_MP_KEY_VICTIM}")).toBe(true);
+    expect(hasBrace("m-{env:SAGAX_MP_KEY_VICTIM}")).toBe(true);
     expect(hasBrace("closing } only")).toBe(true);
     expect(hasBrace("plain-model/v1")).toBe(false);
     expect(containsBrace({ a: [{ b: "ok" }, { c: ["x{file:~/secret.txt}"] }] })).toBe(true);
@@ -58,7 +58,7 @@ describe("trimModelsDevCatalog brace filter", () => {
     const { providers, drops } = trimWithDrops({
       good: provider("good", { m1: model("m1") }),
       "tmpl-api": provider("tmpl-api", { m1: model("m1") }, { api: "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1" }),
-      "tmpl-name": provider("tmpl-name", { m1: model("m1") }, { name: "Evil {env:OMB_MP_KEY_OTHER}" }),
+      "tmpl-name": provider("tmpl-name", { m1: model("m1") }, { name: "Evil {env:SAGAX_MP_KEY_OTHER}" }),
       "tmpl-env": provider("tmpl-env", { m1: model("m1") }, { env: ["{file:~/.ssh/id_rsa}"] }),
       "tmpl-npm": provider("tmpl-npm", { m1: model("m1") }, { npm: "@evil/{env:HOME}" }),
       "tmpl-doc": provider("tmpl-doc", { m1: model("m1") }, { doc: "https://docs.example/{file:x}" }),
@@ -73,7 +73,7 @@ describe("trimModelsDevCatalog brace filter", () => {
     const { providers, drops } = trimWithDrops({
       router: provider("router", {
         safe: model("safe"),
-        "x{env:OMB_MP_KEY_OTHER}": model("x{env:OMB_MP_KEY_OTHER}"),
+        "x{env:SAGAX_MP_KEY_OTHER}": model("x{env:SAGAX_MP_KEY_OTHER}"),
         "y-file": model("y-file", { name: "y{file:~/.ssh/id_rsa}" }),
         "z-override": model("z-override", { provider: { api: "https://${AZURE_RESOURCE_NAME}.services.ai.azure.com/anthropic/v1" } }),
         "w-description": model("w-description", { description: "uses {json} mode" }),
@@ -81,7 +81,7 @@ describe("trimModelsDevCatalog brace filter", () => {
     });
     expect(Object.keys(providers.router!.models)).toEqual(["safe"]);
     expect(drops).toEqual(expect.arrayContaining([
-      { provider: "router", model: "x{env:OMB_MP_KEY_OTHER}", reason: "brace" },
+      { provider: "router", model: "x{env:SAGAX_MP_KEY_OTHER}", reason: "brace" },
       { provider: "router", model: "y-file", reason: "brace" },
       { provider: "router", model: "z-override", reason: "brace" },
       { provider: "router", model: "w-description", reason: "brace" },
@@ -90,7 +90,7 @@ describe("trimModelsDevCatalog brace filter", () => {
   });
 
   it("catches a brace written as a JSON \\u007b escape", () => {
-    const text = '{"p":{"id":"p","name":"P","env":[],"models":{"m":{"id":"m","name":"m-\\u007benv:OMB_MP_KEY_VICTIM\\u007d","tool_call":true,"modalities":{"input":["text"]}}}}}';
+    const text = '{"p":{"id":"p","name":"P","env":[],"models":{"m":{"id":"m","name":"m-\\u007benv:SAGAX_MP_KEY_VICTIM\\u007d","tool_call":true,"modalities":{"input":["text"]}}}}}';
     const { providers, drops } = trimWithDrops(JSON.parse(text));
     expect(providers.p!.models).toEqual({});
     expect(drops).toEqual([{ provider: "p", model: "m", reason: "brace" }]);
@@ -99,11 +99,11 @@ describe("trimModelsDevCatalog brace filter", () => {
   it("drops a model whose key alone holds a brace", () => {
     // No `id` and a clean name: only the key carries the substitution.
     const text = '{"p":{"id":"p","name":"P","env":[],"models":{' +
-      '"x{env:OMB_MP_KEY_OTHER}":{"name":"clean","tool_call":true,"modalities":{"input":["text"]}},' +
+      '"x{env:SAGAX_MP_KEY_OTHER}":{"name":"clean","tool_call":true,"modalities":{"input":["text"]}},' +
       '"ok":{"name":"ok","tool_call":true,"modalities":{"input":["text"]}}}}}';
     const { providers, drops } = trimWithDrops(JSON.parse(text));
     expect(Object.keys(providers.p!.models)).toEqual(["ok"]);
-    expect(drops).toEqual([{ provider: "p", model: "x{env:OMB_MP_KEY_OTHER}", reason: "brace" }]);
+    expect(drops).toEqual([{ provider: "p", model: "x{env:SAGAX_MP_KEY_OTHER}", reason: "brace" }]);
   });
 
   it("never lets a brace through, whatever the input", () => {

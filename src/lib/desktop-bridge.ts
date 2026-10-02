@@ -17,10 +17,34 @@ export interface DesktopBridgeActivity {
   error?: string;
 }
 
+/** Coarse facts the desktop app reports about itself (server/desktop-bridge.ts). */
+export interface DesktopSystemInfo {
+  os: string;
+  arch: string;
+  cpuModel?: string;
+  cpus: number;
+  cpuPercent?: number;
+  memoryGb: number;
+  memoryUsedGb?: number;
+  diskGb?: number;
+  diskFreeGb?: number;
+}
+
+export interface DesktopBridgeDesktop {
+  id: string;
+  name: string;
+  platform: string;
+  online: boolean;
+  busy: boolean;
+  lastSeenAt: number;
+  capabilities?: { localVm?: boolean };
+  system?: DesktopSystemInfo;
+}
+
 export interface DesktopBridgeStatus {
   connected: boolean;
   tunnel: boolean;
-  desktops: { id: string; name: string; platform: string; online: boolean; busy: boolean; lastSeenAt: number }[];
+  desktops: DesktopBridgeDesktop[];
   workplace: BotWorkplace;
   activity: DesktopBridgeActivity[];
 }
@@ -70,4 +94,21 @@ export function useDesktopBridgeStatus(refreshMs = 20_000): DesktopBridgeStatus 
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [refreshMs]);
   return status;
+}
+
+/** The desktop bots use now: the most recently seen online one. */
+export function currentDesktop(status: DesktopBridgeStatus | null): DesktopBridgeDesktop | null {
+  const online = (status?.desktops ?? []).filter((desktop) => desktop.online);
+  return online.sort((a, b) => b.lastSeenAt - a.lastSeenAt)[0] ?? null;
+}
+
+/** The person's own Local VM through their connected desktop app. Returns
+ * the desktop's answer as plain text. */
+export async function localVmThroughDesktop(action: "status" | "start", fetchImpl: typeof fetch = fetch): Promise<string> {
+  const response = await fetchImpl("/api/me/desktop-bridge/local-vm", {
+    method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
+  });
+  const body = await response.json().catch(() => ({})) as { result?: { content?: { type?: string; text?: string }[] }; error?: string };
+  if (!response.ok) throw new Error(body.error ?? `local VM ${response.status}`);
+  return (body.result?.content ?? []).filter((item) => item.type === "text").map((item) => item.text ?? "").join("\n").slice(0, 2000);
 }

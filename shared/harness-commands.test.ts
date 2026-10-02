@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import {
   claudeInitializeCommands,
   engineCommandLabel,
+  groupCommandTarget,
+  leadingMention,
   normalizeClaudeCommands,
   normalizeCodexSkills,
   parseTypedCommand,
@@ -110,5 +112,48 @@ describe("resolveTypedCommand", () => {
     expect(resolveTypedCommand("/usr/bin is a path", commands)).toEqual({ kind: "none" });
     expect(resolveTypedCommand("/unknown thing", commands)).toEqual({ kind: "none" });
     expect(resolveTypedCommand("hello", commands)).toEqual({ kind: "none" });
+  });
+});
+
+describe("a group's command", () => {
+  const members = [
+    { id: "scout", name: "Scout" },
+    { id: "scout2", name: "Scout 2" },
+    { id: "pixel", name: "Pixel" },
+    { id: "old", name: "Old", hidden: true },
+  ];
+
+  it("finds the leading mention, longest name first", () => {
+    expect(leadingMention("@Scout /compact", members)).toEqual({ member: members[0], rest: 7 });
+    expect(leadingMention("  @scout 2 /x", members)?.member.id).toBe("scout2");
+    expect(leadingMention("@Scouting /x", members)).toBeNull();
+    expect(leadingMention("hi @Scout /x", members)).toBeNull();
+    expect(leadingMention("@Old /x", members)).toBeNull();
+  });
+
+  it("sends a command to the bot the message starts by naming, else the lead", () => {
+    const everyone = { kind: "everyone" };
+    expect(groupCommandTarget("@Pixel /compact keep the plan", members, everyone))
+      .toEqual({ botId: "pixel", commandText: "/compact keep the plan", mentioned: true });
+    // a mention in its arguments does not add a responder
+    expect(groupCommandTarget("@Pixel /review ask @Scout", members, everyone)?.botId).toBe("pixel");
+    expect(groupCommandTarget("/compact", members, { kind: "member", botId: "scout" }))
+      .toEqual({ botId: "scout", commandText: "/compact", mentioned: false });
+    // no single bot: everyone, Auto, mentions only, or a lead that left
+    for (const responder of [everyone, { kind: "auto" }, { kind: "mentions" }, { kind: "member", botId: "gone" }]) {
+      expect(groupCommandTarget("/compact", members, responder)).toBeNull();
+    }
+  });
+
+  it("is never a Sagax command, an ordinary line, or a mention alone", () => {
+    const lead = { kind: "member", botId: "scout" };
+    expect(groupCommandTarget("/goal ship it", members, lead)).toBeNull();
+    expect(groupCommandTarget("@Pixel /learn this", members, lead)).toBeNull();
+    expect(groupCommandTarget("@Pixel /engine:goal ship", members, lead)?.commandText).toBe("/engine:goal ship");
+    expect(groupCommandTarget("hello /compact", members, lead)).toBeNull();
+    expect(groupCommandTarget("@Pixel", members, lead)).toBeNull();
+    expect(groupCommandTarget("@Pixel/compact", members, lead)).toBeNull();
+    expect(groupCommandTarget("@Pixel please /compact", members, lead)).toBeNull();
+    expect(groupCommandTarget("@everyone /compact", members, lead)).toBeNull();
   });
 });

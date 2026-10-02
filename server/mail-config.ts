@@ -1,7 +1,7 @@
 // Mail settings: the values saved in Settings > Email (config.json's
-// `mail` block, ~/.openmausbot/config.json, owner-only like every other
+// `mail` block, ~/.sagax/config.json, owner-only like every other
 // config secret) merged over the server's environment. A saved field wins;
-// OMB_MAIL_* (and the *_FILE secret variants) give each field its default,
+// SAGAX_MAIL_* (and the *_FILE secret variants) give each field its default,
 // so a Docker or headless server can be bootstrapped before anyone reaches
 // Settings and an admin can still override it there, or revert a field to
 // the server's value. `publicMailStatus` and `mailSettingsView` are what a
@@ -138,72 +138,72 @@ export function resolveMailSettings(input: {
   const settings: MailSettings = {};
   const envManaged: MailField[] = [];
 
-  const setProvider = env.OMB_MAIL_PROVIDER;
+  const setProvider = env.SAGAX_MAIL_PROVIDER;
   if (setProvider !== undefined && setProvider !== "" && MAIL_PROVIDERS.has(setProvider as MailProvider)) {
     settings.provider = setProvider as MailProvider;
     envManaged.push("provider");
   }
 
-  const from = env.OMB_MAIL_FROM;
+  const from = env.SAGAX_MAIL_FROM;
   if (from !== undefined && from !== "") {
     settings.from = from;
     envManaged.push("from");
   }
 
-  const fromName = env.OMB_MAIL_FROM_NAME;
+  const fromName = env.SAGAX_MAIL_FROM_NAME;
   if (fromName !== undefined && fromName.trim() !== "") {
     settings.fromName = fromName.trim();
     envManaged.push("fromName");
   }
 
-  const smtpHost = env.OMB_SMTP_HOST;
+  const smtpHost = env.SAGAX_SMTP_HOST;
   if (smtpHost !== undefined && smtpHost !== "") {
     settings.smtp = { ...settings.smtp, host: smtpHost };
     envManaged.push("smtp.host");
   }
 
-  const smtpPortRaw = env.OMB_SMTP_PORT;
+  const smtpPortRaw = env.SAGAX_SMTP_PORT;
   if (smtpPortRaw !== undefined && smtpPortRaw !== "") {
     const port = SMTP_PORT_PATTERN.test(smtpPortRaw) ? Number.parseInt(smtpPortRaw, 10) : NaN;
     if (port >= 1 && port <= 65535) {
       settings.smtp = { ...settings.smtp, port };
       envManaged.push("smtp.port");
     } else {
-      console.warn("mail-config: ignoring malformed OMB_SMTP_PORT");
+      console.warn("mail-config: ignoring malformed SAGAX_SMTP_PORT");
     }
   }
 
-  const smtpSecure = env.OMB_SMTP_SECURE;
+  const smtpSecure = env.SAGAX_SMTP_SECURE;
   if (smtpSecure !== undefined && smtpSecure !== "" && SMTP_SECURE_MODES.has(smtpSecure)) {
     settings.smtp = { ...settings.smtp, secure: smtpSecure as "tls" | "starttls" | "none" };
     envManaged.push("smtp.secure");
   }
 
-  const smtpUser = env.OMB_SMTP_USER;
+  const smtpUser = env.SAGAX_SMTP_USER;
   if (smtpUser !== undefined && smtpUser !== "") {
     settings.smtp = { ...settings.smtp, user: smtpUser };
     envManaged.push("smtp.user");
   }
 
-  const smtpPassword = readSecret(env, "OMB_SMTP_PASSWORD", readFile);
+  const smtpPassword = readSecret(env, "SAGAX_SMTP_PASSWORD", readFile);
   if (smtpPassword !== undefined) {
     settings.smtp = { ...settings.smtp, password: smtpPassword };
     envManaged.push("smtp.password");
   }
 
-  const sendgridApiKey = readSecret(env, "OMB_SENDGRID_API_KEY", readFile);
+  const sendgridApiKey = readSecret(env, "SAGAX_SENDGRID_API_KEY", readFile);
   if (sendgridApiKey !== undefined) {
     settings.sendgrid = { ...settings.sendgrid, apiKey: sendgridApiKey };
     envManaged.push("sendgrid.apiKey");
   }
 
-  const twilioApiKeySid = env.OMB_TWILIO_API_KEY_SID;
+  const twilioApiKeySid = env.SAGAX_TWILIO_API_KEY_SID;
   if (twilioApiKeySid !== undefined && twilioApiKeySid !== "") {
     settings.twilio = { ...settings.twilio, apiKeySid: twilioApiKeySid };
     envManaged.push("twilio.apiKeySid");
   }
 
-  const twilioApiKeySecret = readSecret(env, "OMB_TWILIO_API_KEY_SECRET", readFile);
+  const twilioApiKeySecret = readSecret(env, "SAGAX_TWILIO_API_KEY_SECRET", readFile);
   if (twilioApiKeySecret !== undefined) {
     settings.twilio = { ...settings.twilio, apiKeySecret: twilioApiKeySecret };
     envManaged.push("twilio.apiKeySecret");

@@ -407,8 +407,8 @@ if (process.versions.electron && process.argv.includes(flag)) {
     mkdirSync(home, { recursive: true }); mkdirSync(temporary, { recursive: true });
     const env = { PATH: dirname(process.execPath), HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, ".config"),
       XDG_CACHE_HOME: join(home, ".cache"), XDG_DATA_HOME: join(home, ".local/share"), APPDATA: join(home, "AppData/Roaming"), LOCALAPPDATA: join(home, "AppData/Local"),
-      TEMP: temporary, TMP: temporary, TMPDIR: temporary, HERMES_HOME: join(home, ".hermes"), OMB_DATA_DIR: fixture.info.dataDir,
-      OMB_PORT: new URL(fixture.info.url).port, OMB_WEBHOOK_PORT: String(Number(new URL(fixture.info.url).port) + 1),
+      TEMP: temporary, TMP: temporary, TMPDIR: temporary, HERMES_HOME: join(home, ".hermes"), SAGAX_DATA_DIR: fixture.info.dataDir,
+      SAGAX_PORT: new URL(fixture.info.url).port, SAGAX_WEBHOOK_PORT: String(Number(new URL(fixture.info.url).port) + 1),
       FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_DUMP: fixture.fixtureDumpPath };
     for (const key of ["SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "LANG", "LC_ALL", "TZ"]) if (process.env[key]) env[key] = process.env[key];
     const log = openSync(fixture.info.logPath, "a", 0o600);

@@ -16,6 +16,7 @@ import { ProviderRegistry } from "./harness/registry.ts";
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 import { defaultSetupIo, SetupCancelled, type SetupIo } from "./cli-prompts.ts";
 import { API_ENDPOINTS, fetchSetupModels, normalizeApiUrl, verifySetupCompletion } from "./cli-api-setup.ts";
+import { readEnvName } from "../electron/legacy-names.mjs";
 
 type Inspection = { snapshot: ProviderSnapshot; models: ModelCatalog };
 interface SetupDependencies {
@@ -221,9 +222,9 @@ export async function runSetup(
             const config = rawObject(prior[1].config);
             const decoded = BUILT_IN_DRIVERS.find((d) => d.driverKind === "openai-compat")!.decodeConfig(config);
             url = normalizeApiUrl(decoded.url);
-            key = decoded.key ?? prior[1].environment?.[decoded.apiKeyEnv]
+            key = decoded.key ?? readEnvName(decoded.apiKeyEnv, prior[1].environment ?? {})
               ?? prior[1].environment?.OPENAI_COMPAT_API_KEY
-              ?? process.env[decoded.apiKeyEnv] ?? process.env.OPENAI_COMPAT_API_KEY ?? "";
+              ?? readEnvName(decoded.apiKeyEnv) ?? process.env.OPENAI_COMPAT_API_KEY ?? "";
             routingProvider = decoded.provider;
             label = prior[1].displayName ?? prior[0];
             reuse = !!key;

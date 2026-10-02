@@ -2,7 +2,7 @@ import { peerName, renderRoster, reachablePeers, type RosterMember } from "./pee
 
 export type ChiefTeamMember = RosterMember;
 
-// The Chief's roster stays wider than an ordinary bot's (peer-roster.ts caps
+// The Primary Bot's roster stays wider than an ordinary bot's (peer-roster.ts caps
 // that one at a dozen): staffing the section is this bot's whole job, so it
 // reads the team as a directory rather than as a nudge. The field-level caps
 // and the one-line flattening are shared, so the widest roster in the app is
@@ -11,28 +11,28 @@ const ROSTER_MAX_BOTS = 40;
 
 const sectionKey = (section?: string): string => section?.trim() || "";
 
-/** Dynamic system context for a section's Chief of Staff.
+/** Dynamic system context for a Primary Bot.
  * It names the current team on every turn, while list_bots remains the
  * authoritative tool for IDs and live availability at delegation time. */
 export function chiefOfStaffSystemPrompt(
   chiefId: string,
   bots: ChiefTeamMember[],
   canDelegate: boolean,
-  trustedOpenMausStatus = "",
+  trustedSagaxStatus = "",
   boundedCoordination = false,
 ): string {
   const chief = bots.find((bot) => bot.id === chiefId);
   const chiefSection = sectionKey(chief?.section);
   const sectionName = peerName(chiefSection) || "General";
-  // A Chief with its own allow-list is bound by it here too: the roster and
+  // A Primary Bot with its own allow-list is bound by it here too: the roster and
   // the endpoints must agree, or the prompt names teammates the tools will
   // then refuse to reach.
   const team = reachablePeers(bots, chief ?? { id: chiefId, name: "" });
-  // `about: true` keeps the blurb the Chief staffs from — and keeps this
-  // prompt byte-identical to what Chiefs have always been given. The
-  // ordinary-bot roster drops it (peer-roster.ts); widening the Chief's
+  // `about: true` keeps the blurb the Primary Bot staffs from — and keeps this
+  // prompt byte-identical to what Primary Bots have always been given. The
+  // ordinary-bot roster drops it (peer-roster.ts); widening the Primary Bot's
   // existing exposure was never in scope, and narrowing it here would
-  // silently change how a Chief picks a specialist.
+  // silently change how a Primary Bot picks a specialist.
   const roster = renderRoster(team, {
     max: ROSTER_MAX_BOTS,
     empty: "- No other visible bots are available yet.",
@@ -52,7 +52,7 @@ export function chiefOfStaffSystemPrompt(
     : "Your current engine cannot contact teammates. Be honest about that limitation and ask the user to choose a delegation-compatible engine before promising coordinated work.";
 
   return [
-    `You are the Chief of Staff for the ${sectionName} section. You are the user's primary contact for this section's team of bots.`,
+    `You are the user's Primary Bot: their main contact among their bots, who coordinates the others. Your home team is the ${sectionName} section.`,
     chief?.managedSections?.length
       ? `The owner also allows you to coordinate and propose setup changes for these teams: ${chief.managedSections.map(s => peerName(s) || "General").join(", ")}. You remain the user's single point of contact. This does not grant other bots your access, change their tool permissions, or expose unrelated conversation history. Use list_bots for the actual reachable roster.`
       : "",
@@ -65,6 +65,6 @@ export function chiefOfStaffSystemPrompt(
     canDelegate ? "When the user asks you to assemble or configure a team, use list_team_setup for the exact authorized teams, bot IDs and model catalog, then propose_team_setup once with all named specialists and their profile/model changes. Include new teams explicitly; the plan covers their creation and your access. Existing thread models and other bots' execution permissions stay unchanged. Follow the tool result: granted Full Access may apply the plan immediately; after an applied result, continue already-requested work without another confirmation. Only if review is pending, end your turn: the user's decision automatically resumes you once with a structured result. Report failed or cancelled results honestly. Do not ask for another yes, poll, or repeat the proposal. After successful setup, use the available coordination tools for already requested work. Use create_bot only for a single specialist when no combined setup was requested. For explicitly requested bot deletion, use propose_bot_deletion separately and follow its applied or pending result too. Do not create duplicate or unnecessary bots." : "",
     chief?.managedSections?.length ? "Reachable teammates in your allowed teams:" : `Current ${sectionName} section team:`,
     roster,
-    trustedOpenMausStatus,
+    trustedSagaxStatus,
   ].filter(Boolean).join("\n");
 }

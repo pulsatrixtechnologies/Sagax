@@ -551,7 +551,7 @@ function refuseSkillConflicts(bots: readonly BotRecord[], skillsByBot: ReadonlyM
 
 /** One team, whole, except its chat history: bots with their standing
  * instructions, looks and pictures, playbooks, skills (SKILL.md only),
- * group chats, routines and group chat goals, the team brief and its Chief,
+ * group chats, routines and group chat goals, the team brief and its Primary Bot,
  * connection slots (addresses and value names, never values) and, when
  * asked, starter notes. Every text part passes through secret redaction and
  * the result through the same parser every import uses. */

@@ -67,8 +67,8 @@ const promptsOf = (threadId: string): any[] => {
 /** The live per-turn token of a held turn — the only credential the
  * internal endpoints accept, and the one a real tool call would carry. */
 const liveToken = async (threadId: string): Promise<Record<string, string>> => {
-  await expect.poll(() => dumpOf(threadId)?.mcpConfig?.mcpServers?.agents?.env?.OMB_COMMS_TOKEN, { timeout: 15_000 }).toBeTruthy();
-  return { authorization: `Bearer ${dumpOf(threadId)!.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN}` };
+  await expect.poll(() => dumpOf(threadId)?.mcpConfig?.mcpServers?.agents?.env?.SAGAX_COMMS_TOKEN, { timeout: 15_000 }).toBeTruthy();
+  return { authorization: `Bearer ${dumpOf(threadId)!.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN}` };
 };
 /** Hold a fresh turn open on a bot's own thread and hand back its live
  * token. A wake that lands on that thread cannot start while this turn
@@ -133,7 +133,7 @@ const bots = async () => (await api("GET", "/api/bots?messages=0")).body.bots as
 const botState = async (botId: string) => (await bots()).find((bot) => bot.id === botId);
 const taskOf = async (botId: string, threadId: string) => (await botState(botId))?.tasks.find((task: any) => task.threadId === threadId);
 const messages = async (threadId: string) => (await api("GET", `/api/threads/${threadId}/messages?limit=100`)).body.messages as any[];
-const handoffs = (): any[] => JSON.parse(readFileSync(join(home, ".openmausbot", "room-handoffs.json"), "utf8"));
+const handoffs = (): any[] => JSON.parse(readFileSync(join(home, ".sagax", "room-handoffs.json"), "utf8"));
 const coordinated = async (headers: Record<string, string>, botId: string, message: string, requestKey: string) => {
   const response = await api("POST", "/api/internal/coordinate-bots", { botIds: [botId], message, requestKey }, headers);
   expect(response.status, JSON.stringify(response.body)).toBe(200);
@@ -158,7 +158,7 @@ beforeAll(async () => {
   chmodSync(FAKE_ACP, 0o755);
   home = mkdtempSync(join(tmpdir(), "omb-thread-aware-"));
   gates = join(home, "gates");
-  const data = join(home, ".openmausbot");
+  const data = join(home, ".sagax");
   mkdirSync(data, { recursive: true });
   mkdirSync(gates, { recursive: true });
   // Every turn holds until its gate exists, and dumps its argv/env/prompt
@@ -179,7 +179,7 @@ beforeAll(async () => {
     "if (at >= 0) {",
     "  try {",
     '    const servers = JSON.parse(readFileSync(process.argv[at + 1], "utf8")).mcpServers ?? {};',
-    "    for (const server of Object.values(servers)) thread ??= server?.env?.OMB_THREAD_ID ?? null;",
+    "    for (const server of Object.values(servers)) thread ??= server?.env?.SAGAX_THREAD_ID ?? null;",
     "  } catch {}",
     "}",
     "const relay = new PassThrough();",
@@ -232,9 +232,9 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(port),
-      OMB_WEBHOOK_PORT: String(port + 1),
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      SAGAX_PORT: String(port),
+      SAGAX_WEBHOOK_PORT: String(port + 1),
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

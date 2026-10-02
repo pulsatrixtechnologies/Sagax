@@ -11,8 +11,8 @@ import { closeSync, readFileSync } from "node:fs";
  * /proc/<pid>/environ keeps a process's starting environment for anything
  * running as the same user to read. It hands them to the server over an
  * inherited pipe instead (CLOUD_SECRETS_FD_ENV names its descriptor). */
-export const CLOUD_HOME_SECRET_KEYS = ["OMB_CLOUD_BOOTSTRAP_SECRET", "OMB_CLOUD_BOAT_TOKEN", "OMB_CLOUD_VOICE_TOKEN", "OMB_CLOUD_DECIDER_TOKEN"] as const;
-export const CLOUD_SECRETS_FD_ENV = "OMB_CLOUD_SECRETS_FD";
+export const CLOUD_HOME_SECRET_KEYS = ["SAGAX_CLOUD_BOOTSTRAP_SECRET", "SAGAX_CLOUD_BOAT_TOKEN", "SAGAX_CLOUD_VOICE_TOKEN", "SAGAX_CLOUD_DECIDER_TOKEN"] as const;
+export const CLOUD_SECRETS_FD_ENV = "SAGAX_CLOUD_SECRETS_FD";
 
 /** The secrets present in an environment (the launcher's). */
 export function cloudHomeSecrets(env: NodeJS.ProcessEnv): Record<string, string> {

@@ -99,7 +99,7 @@ export async function createConfiguredBot(
       });
       bot = { ...bot, ...result.bot };
     } catch (error) {
-      warnings.push(`Review this bot's Chief of Staff setting: ${error instanceof Error ? error.message : String(error)}`);
+      warnings.push(`Review this bot's Primary Bot setting: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   for (const routine of routines.filter(routine => routine.enabled)) {

@@ -86,7 +86,8 @@ it("shares one team whole (minus chat history) and imports it back as new, inert
     expect(imported.body.connections).toEqual([{ key: "crm", name: "crm-2", label: "crm" }]);
     const copies = imported.body.bots as Array<{ id: string; name: string; installedPackage: Record<string, unknown>; approvalMode?: string; avatarUrl: string | null; mcpServers?: string[]; chiefOfStaff?: boolean }>;
     const copyLead = copies.find((bot) => bot.name === "Morgan 2")!;
-    expect(copyLead).toMatchObject({ chiefOfStaff: true, mcpServers: ["crm-2"], installedPackage: { id: "sales-desk", source: "file", agentKey: "morgan" } });
+    expect(copyLead.chiefOfStaff).toBeFalsy(); // the person keeps their Primary Bot: an import is additive
+    expect(copyLead).toMatchObject({ mcpServers: ["crm-2"], installedPackage: { id: "sales-desk", source: "file", agentKey: "morgan" } });
     expect(copyLead.installedPackage).not.toHaveProperty("publisher");
     expect(copyLead.avatarUrl).toMatch(/^\/api\/attachments\//);
     for (const bot of copies) {
