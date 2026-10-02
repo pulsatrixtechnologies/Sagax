@@ -222,8 +222,13 @@ interface BrowserLookupOptions {
 function packagedBrowser(options: BrowserLookupOptions) {
   const resources = (options.env ?? process.env).SAGAX_RESOURCES_PATH;
   if (!resources) return null;
+  const platform = options.platform ?? process.platform;
+  const arch = options.arch ?? process.arch;
+  // There is no Windows arm64 browser bundle: the arm64 installer ships the
+  // x64 one, which Windows on Arm runs under its x64 emulation.
+  const target = platform === "win32" && arch === "arm64" ? "win32-x64" : `${platform}-${arch}`;
   try {
-    return browserBundlePaths(join(resolve(resources), "browser-engine"), `${options.platform ?? process.platform}-${options.arch ?? process.arch}`);
+    return browserBundlePaths(join(resolve(resources), "browser-engine"), target);
   } catch {
     return null; // No desktop bundle for this platform/architecture.
   }
