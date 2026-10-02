@@ -2,10 +2,9 @@
 // carry the personality; avatars inside the room stay still so a busy group
 // does not become a wall of competing motion. Plain messages go to the room's
 // default responder; @mentions override that routing.
-import { createPortal } from "react-dom";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { activeLocale, t } from "@/lib/i18n";
-import { ArrowDown, Check, ChevronDown, ChevronRight, FolderOpen, Loader2, MessageSquareReply, PanelRight, Pin, PinOff, Settings2, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronRight, FolderOpen, MessageSquareReply, PanelRight, Pin, PinOff, X } from "lucide-react";
 import {
   api,
   useStore,
@@ -66,7 +65,6 @@ import { groupActivityRuns, isStatusActivity } from "@/lib/activity-runs";
 import { ActivityRun } from "./ActivityRun";
 import { useDesktopCapabilities, useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { cn } from "@/lib/cn";
-import { useMenuMotion } from "./MenuMotion";
 import { useFocusMessage } from "@/lib/focus-message";
 import { shortPath } from "@/lib/short-path";
 import { BOTTOM_FOLLOW_THRESHOLD, shouldResumeBottomFollow, useBottomFollowResize } from "@/lib/bottom-follow";
@@ -637,506 +635,6 @@ function RoomWorkingFolder({ group }: { group: Group }) {
   );
 }
 
-type RoomSetupFields = {
-  setupPending?: boolean;
-  setupRequired?: boolean;
-  setupState?: "required" | "completed" | "skipped";
-  setupCompletedAt?: number | string | null;
-  setupSkippedAt?: number | string | null;
-};
-
-type RoomResponderMode = "lead" | "everyone" | "mentions" | "auto";
-
-function setupResponderMode(responder: GroupDefaultResponder): RoomResponderMode {
-  return responder.kind === "member" ? "lead" : responder.kind;
-}
-
-export function roomNeedsSetup(group: Group): boolean {
-  if (group.dm || group.messages.length > 0) return false;
-  // SAFETY: setup fields are additive server metadata; the existing Group shape remains valid when absent.
-  const marker = group as Group & RoomSetupFields;
-  const hasSetupMarker =
-    Object.prototype.hasOwnProperty.call(marker, "setupCompletedAt") ||
-    Object.prototype.hasOwnProperty.call(marker, "setupSkippedAt");
-  // Legacy empty rooms omit both keys and remain immediately usable.
-  if (!hasSetupMarker) return false;
-  if (
-    marker.setupPending === false ||
-    marker.setupRequired === false ||
-    marker.setupState === "completed" ||
-    marker.setupState === "skipped" ||
-    marker.setupCompletedAt != null ||
-    marker.setupSkippedAt != null
-  ) {
-    return false;
-  }
-  return true;
-}
-
-/** Group setup as a modal dialog. `first` is the pending setup of a new
- * group: Skip and Escape record a skip so the group is usable right away.
- * `edit` reopens the same fields later: Escape and Cancel only close. */
-export function RoomSetupDialog({
-  group,
-  members,
-  mode,
-  onClose,
-}: {
-  group: Group;
-  members: Bot[];
-  mode: "first" | "edit";
-  onClose: () => void;
-}) {
-  const { state, dispatch } = useStore();
-  const jevOn = jevRoomRoutingOn(state.config);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const [folder, setFolder] = useState(group.cwd ?? "");
-  const [behavior, setBehavior] = useState<RoomResponderMode>(setupResponderMode(group.defaultResponder));
-  const [leadId, setLeadId] = useState(
-    group.defaultResponder.kind === "member" ? group.defaultResponder.botId
-      : group.defaultResponder.kind === "auto" && group.defaultResponder.fallbackBotId ? group.defaultResponder.fallbackBotId
-        : members[0]?.id ?? "",
-  );
-  const [instructions, setInstructions] = useState(group.bulletin);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [leadPickerOpen, setLeadPickerOpen] = useState(false);
-  const leadMotion = useMenuMotion(behavior === "lead" && leadPickerOpen);
-  const leadPickerRef = useRef<HTMLDivElement>(null);
-  const selectedLead = members.find((member) => member.id === leadId) ?? members[0];
-
-  useEffect(() => {
-    if (!leadPickerOpen) return;
-    const closeOnOutsideClick = (event: PointerEvent) => {
-      if (!leadPickerRef.current?.contains(event.target as Node)) setLeadPickerOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setLeadPickerOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [leadPickerOpen]);
-
-  const responder = (): GroupDefaultResponder => {
-    if (behavior === "everyone") return { kind: "everyone" };
-    if (behavior === "mentions") return { kind: "mentions" };
-    // The lead picked above stays on as Auto's fallback.
-    if (behavior === "auto") return members.some((member) => member.id === leadId) ? { kind: "auto", fallbackBotId: leadId } : { kind: "auto" };
-    return members.some((member) => member.id === leadId)
-      ? { kind: "member", botId: leadId }
-      : group.defaultResponder;
-  };
-
-  const finish = async (action: "complete" | "skip") => {
-    setLeadPickerOpen(false);
-    if (mode === "edit") {
-      if (action === "skip") return onClose();
-      return saveEdits();
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const payload =
-        action === "skip"
-          ? { action }
-          : {
-              action,
-              cwd: folder.trim() || null,
-              defaultResponder: responder(),
-              bulletin: instructions,
-            };
-      const result = await api(`/api/groups/${group.id}/setup`, {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-      });
-      const now = Date.now();
-      const nextGroup = {
-        ...(result.group ?? group),
-        id: group.id,
-        setupPending: false,
-        ...(action === "skip" ? { setupSkippedAt: now } : { setupCompletedAt: now }),
-      };
-      dispatch({ type: "groupPatched", group: nextGroup });
-      onClose();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Reopened after setup: send only what changed through the ordinary group
-  // patch (the setup endpoint is one-shot and ignores a second call).
-  const saveEdits = async () => {
-    const patch: Record<string, unknown> = {};
-    const cwd = folder.trim() || null;
-    if (cwd !== (group.cwd ?? null)) patch.cwd = cwd;
-    const nextResponder = responder();
-    if (JSON.stringify(nextResponder) !== JSON.stringify(group.defaultResponder)) patch.defaultResponder = nextResponder;
-    if (instructions !== group.bulletin) patch.bulletin = instructions;
-    if (Object.keys(patch).length === 0) return onClose();
-    setSaving(true);
-    setError(null);
-    try {
-      const result = await api(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify(patch) });
-      dispatch({ type: "groupPatched", group: { ...(result.group ?? { ...group, ...patch }), id: group.id } });
-      onClose();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const dismiss = () => {
-    if (saving) return;
-    void finish("skip");
-  };
-  const dismissRef = useRef(dismiss);
-  dismissRef.current = dismiss;
-  const leadPickerOpenRef = useRef(leadPickerOpen);
-  leadPickerOpenRef.current = leadPickerOpen;
-
-  useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const first = dialogRef.current?.querySelector<HTMLElement>("form input, form textarea");
-    (first ?? dialogRef.current)?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        // The lead picker owns the first Escape.
-        if (leadPickerOpenRef.current) return;
-        event.preventDefault();
-        dismissRef.current();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-      ) ?? [])];
-      if (focusable.length === 0) {
-        event.preventDefault();
-        dialogRef.current?.focus();
-        return;
-      }
-      const head = focusable[0];
-      const tail = focusable[focusable.length - 1];
-      if (event.shiftKey && (document.activeElement === head || !dialogRef.current?.contains(document.activeElement))) {
-        event.preventDefault();
-        tail.focus();
-      } else if (!event.shiftKey && (document.activeElement === tail || !dialogRef.current?.contains(document.activeElement))) {
-        event.preventDefault();
-        head.focus();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus();
-    };
-  }, []);
-
-  const pickFolder = async () => {
-    const chosen = await window.ogb?.pickFolder?.(folder || group.cwd);
-    if (chosen) setFolder(chosen);
-  };
-
-  const content = (
-    <div
-      data-testid="room-setup-overlay"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-6"
-      onMouseDown={(event) => {
-        // A stray click must not skip a pending setup; only reopened edits close.
-        if (event.target === event.currentTarget && mode === "edit") dismiss();
-      }}
-    >
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      data-testid="room-setup"
-      aria-labelledby="room-setup-title"
-      aria-describedby="room-setup-detail"
-      tabIndex={-1}
-      className="animate-pop-in flex max-h-[calc(100dvh-1rem)] w-full flex-col overflow-hidden rounded-t-[20px] border border-border bg-elevated outline-none sm:max-h-[min(820px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-[14px]"
-    >
-      <header className="flex items-start justify-between gap-3 border-b border-hairline/40 px-5 pb-4 pt-5 sm:px-7 sm:pt-6">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink" aria-hidden="true"><Settings2 size={17} /></span>
-          <div className="min-w-0">
-            <h2 id="room-setup-title" className="truncate text-[17px] font-semibold tracking-tight text-ink">{t("room.setup.title", { name: group.name })}</h2>
-            <p id="room-setup-detail" className="mt-1 max-w-[560px] text-[13px] leading-relaxed text-ink-secondary">
-              {t("room.setup.detail")}
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={dismiss}
-          disabled={saving}
-          aria-label={t("common.close")}
-          className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary disabled:opacity-50"
-        >
-          <X size={18} />
-        </button>
-      </header>
-      <form
-        className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void finish("complete");
-        }}
-      >
-        <label className="block">
-          <span className="text-[13px] font-semibold text-ink">{t("room.folder.title")}</span>
-          <span className="mt-1 block text-[12px] text-ink-secondary">{t("room.setup.folderDetail")}</span>
-          <div className="mt-2 flex gap-2">
-            <input
-              value={folder}
-              onChange={(event) => setFolder(event.target.value)}
-              placeholder={t("room.folder.own")}
-              className="min-w-0 flex-1 rounded-xl border border-hairline/50 bg-inset px-3 py-2.5 font-mono text-[12.5px] text-ink placeholder:text-ink-secondary focus:border-accent focus:outline-none"
-            />
-            {window.ogb?.pickFolder && (
-              <button
-                type="button"
-                onClick={() => void pickFolder()}
-                disabled={saving}
-                className="flex shrink-0 items-center gap-1.5 rounded-xl border border-hairline/50 bg-raised px-3 py-2 text-[13px] font-medium text-ink hover:bg-raised-hover disabled:opacity-50"
-              >
-                <FolderOpen size={14} /> Choose
-              </button>
-            )}
-          </div>
-        </label>
-
-        <fieldset className="block">
-          <legend className="text-[13px] font-semibold text-ink">{t("room.responder.aria")}</legend>
-          <p className="mt-1 text-[12px] text-ink-secondary">{t("room.setup.responderDetail")}</p>
-          <div role="radiogroup" aria-label={t("room.responder.aria")} className="mt-2 grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={behavior === "auto"}
-              onClick={() => {
-                setBehavior("auto");
-                setLeadPickerOpen(false);
-              }}
-              disabled={saving}
-              className={cn(
-                "flex min-h-[72px] w-full cursor-pointer flex-col items-start justify-between rounded-2xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50",
-                behavior === "auto"
-                  ? "border-accent bg-accent/10 text-ink ring-1 ring-accent/30"
-                  : "border-hairline/50 bg-inset text-ink-secondary hover:border-hairline hover:bg-raised",
-              )}
-            >
-              <span className="flex items-center gap-2 text-[13px] font-semibold">
-                <span
-                  className={cn(
-                    "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                    behavior === "auto" ? "border-accent bg-accent" : "border-ink-secondary/60",
-                  )}
-                >
-                  {behavior === "auto" && <span className="size-1.5 rounded-full bg-white" />}
-                </span>
-                {jevOn ? t("room.responder.autoOption") : t("room.responder.autoOptionOff")}
-              </span>
-              <span className="ml-6 mt-2 text-[11.5px] text-ink-secondary">
-                {jevOn ? t("room.setup.autoDetail") : t("room.setup.autoDetailOff")}
-              </span>
-            </button>
-
-            <div ref={leadPickerRef} className="relative min-w-0">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={behavior === "lead"}
-                aria-haspopup="listbox"
-                aria-expanded={behavior === "lead" && leadPickerOpen}
-                onClick={() => {
-                  setBehavior("lead");
-                  setLeadPickerOpen((open) => !open);
-                }}
-                disabled={saving}
-                className={cn(
-                  "flex min-h-[72px] w-full flex-col items-start justify-between rounded-2xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50",
-                  behavior === "lead"
-                    ? "border-accent bg-accent/10 text-ink ring-1 ring-accent/30"
-                    : "border-hairline/50 bg-inset text-ink-secondary hover:border-hairline hover:bg-raised",
-                )}
-              >
-                <span className="flex w-full items-center justify-between gap-2">
-                  <span className="flex items-center gap-2 text-[13px] font-semibold">
-                    <span
-                      className={cn(
-                        "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                        behavior === "lead" ? "border-accent bg-accent" : "border-ink-secondary/60",
-                      )}
-                    >
-                      {behavior === "lead" && <span className="size-1.5 rounded-full bg-white" />}
-                    </span>
-                    {t("room.behavior.lead")}
-                  </span>
-                  <ChevronDown
-                    size={14}
-                    aria-hidden="true"
-                    className={cn("shrink-0 text-ink-secondary transition-transform", leadPickerOpen && "rotate-180")}
-                  />
-                </span>
-                <span className="ml-6 mt-2 truncate text-[11.5px] text-ink-secondary">
-                  {selectedLead?.name ?? t("room.behavior.chooseTeammate")}
-                </span>
-              </button>
-              {leadMotion.shown && (
-                <div
-                  role="listbox"
-                  aria-label={t("room.behavior.chooseLead")}
-                  className={cn("absolute left-0 top-full z-30 mt-2 w-72 max-w-[calc(100vw-3rem)] overflow-hidden rounded-2xl border border-hairline/60 bg-panel shadow-2xl shadow-black/20", leadMotion.className)} {...leadMotion.exitProps}
-                >
-                  <div className="border-b border-hairline/40 px-3 py-2.5">
-                    <div className="text-[12.5px] font-semibold text-ink">{t("room.behavior.chooseLead")}</div>
-                    <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("room.behavior.chooseLeadDetail")}</div>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto p-1.5">
-                    {members.map((member) => {
-                      const selected = member.id === leadId;
-                      return (
-                        <button
-                          key={member.id}
-                          type="button"
-                          role="option"
-                          aria-selected={selected}
-                          onClick={() => {
-                            setLeadId(member.id);
-                            setLeadPickerOpen(false);
-                          }}
-                          className={cn(
-                            "flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition",
-                            selected ? "bg-accent/10" : "hover:bg-raised",
-                          )}
-                        >
-                          <BotAvatar
-                            bot={member}
-                            state={normalizeState(member.mascotExpression) ?? "happy"}
-                            size={24}
-                            animated={false}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-medium text-ink">{member.name}</span>
-                            <span className="block truncate text-[11px] text-ink-secondary">{member.title}</span>
-                          </span>
-                          {selected && <Check size={15} className="shrink-0 text-accent" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              role="radio"
-              aria-checked={behavior === "everyone"}
-              onClick={() => {
-                setBehavior("everyone");
-                setLeadPickerOpen(false);
-              }}
-              disabled={saving}
-              className={cn(
-                "flex min-h-[72px] w-full flex-col items-start justify-between rounded-2xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50",
-                behavior === "everyone"
-                  ? "border-accent bg-accent/10 text-ink ring-1 ring-accent/30"
-                  : "border-hairline/50 bg-inset text-ink-secondary hover:border-hairline hover:bg-raised",
-              )}
-            >
-              <span className="flex items-center gap-2 text-[13px] font-semibold">
-                <span
-                  className={cn(
-                    "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                    behavior === "everyone" ? "border-accent bg-accent" : "border-ink-secondary/60",
-                  )}
-                >
-                  {behavior === "everyone" && <span className="size-1.5 rounded-full bg-white" />}
-                </span>
-                {t("room.responder.everyoneOption")}
-              </span>
-              <span className="ml-6 mt-2 text-[11.5px] text-ink-secondary">{t("room.setup.allMembers")}</span>
-            </button>
-
-            <button
-              type="button"
-              role="radio"
-              aria-checked={behavior === "mentions"}
-              onClick={() => {
-                setBehavior("mentions");
-                setLeadPickerOpen(false);
-              }}
-              disabled={saving}
-              className={cn(
-                "flex min-h-[72px] w-full flex-col items-start justify-between rounded-2xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50",
-                behavior === "mentions"
-                  ? "border-accent bg-accent/10 text-ink ring-1 ring-accent/30"
-                  : "border-hairline/50 bg-inset text-ink-secondary hover:border-hairline hover:bg-raised",
-              )}
-            >
-              <span className="flex items-center gap-2 text-[13px] font-semibold">
-                <span
-                  className={cn(
-                    "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                    behavior === "mentions" ? "border-accent bg-accent" : "border-ink-secondary/60",
-                  )}
-                >
-                  {behavior === "mentions" && <span className="size-1.5 rounded-full bg-white" />}
-                </span>
-                {t("room.responder.mentionsOption")}
-              </span>
-              <span className="ml-6 mt-2 text-[11.5px] text-ink-secondary">{t("room.setup.onlyMentioned")}</span>
-            </button>
-          </div>
-        </fieldset>
-
-        <label className="block">
-          <span className="text-[13px] font-semibold text-ink">{t("room.setup.instructions")}</span>
-          <span className="mt-1 block text-[12px] text-ink-secondary">{t("room.setup.instructionsDetail")}</span>
-          <textarea
-            value={instructions}
-            onChange={(event) => setInstructions(event.target.value)}
-            rows={5}
-            placeholder={t("room.setup.instructionsPlaceholder")}
-            className="mt-2 w-full resize-y rounded-xl border border-hairline/50 bg-inset px-3 py-2.5 text-[13px] leading-relaxed text-ink placeholder:text-ink-secondary focus:border-accent focus:outline-none"
-          />
-        </label>
-
-        {error && <div role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[12.5px] text-danger">{error}</div>}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
-            onClick={() => void finish("skip")}
-            disabled={saving}
-            className="rounded-xl px-3 py-2 text-left text-[13px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
-          >
-            {mode === "first" ? t("room.setup.skip") : t("common.cancel")}
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
-          >
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            {mode === "first" ? t("room.setup.save") : t("common.save")}
-          </button>
-        </div>
-      </form>
-    </div>
-    </div>
-  );
-  return createPortal(content, document.body);
-}
-
 export function GroupView({ group }: { group: Group }) {
   const { state, dispatch } = useStore();
   const remoteClient = window.ogb?.remoteClient?.active === true;
@@ -1238,11 +736,6 @@ export function GroupView({ group }: { group: Group }) {
     bots: state.bots,
   });
   const speaker = members.find((b) => b.id === group.busyBotId);
-  const setupPending = !remoteClient && roomNeedsSetup(group);
-  // Reopened from the header after the first setup; a pending setup is
-  // always shown and closes by saving or skipping.
-  const [setupOpen, setSetupOpen] = useState(false);
-  useEffect(() => setSetupOpen(false), [group.id]);
 
   // Mascot stays while a member works; the finished reply pops in above it.
   const lastGroupMessage = group.messages.at(-1);
@@ -1334,7 +827,7 @@ export function GroupView({ group }: { group: Group }) {
     followRef.current = next;
     setFollow(next);
   }, []);
-  useBottomFollowResize(scrollRef, transcriptRef, followRef, setupPending ? null : transcriptKey);
+  useBottomFollowResize(scrollRef, transcriptRef, followRef, transcriptKey);
 
   useEffect(() => setBottomFollow(true), [group.id, setBottomFollow]);
 
@@ -1453,15 +946,6 @@ export function GroupView({ group }: { group: Group }) {
     <main className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
       <div className="flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
-      {(setupPending || setupOpen) && (
-        <RoomSetupDialog
-          key={group.id}
-          group={group}
-          members={members}
-          mode={setupPending ? "first" : "edit"}
-          onClose={() => setSetupOpen(false)}
-        />
-      )}
       {membersOpen && !remoteClient && !group.dm && (
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
       )}
@@ -1508,7 +992,7 @@ export function GroupView({ group }: { group: Group }) {
             messages={group.messages}
             isGroup
           />}
-          {!setupPending && !group.dm && <GroupTaskPicker group={group} />}
+          {!group.dm && <GroupTaskPicker group={group} />}
           <GroupUsageChip usage={group.usage} />
           {group.dm && memberMauses}
           {!group.dm && !panelOpen && <button
@@ -1527,7 +1011,7 @@ export function GroupView({ group }: { group: Group }) {
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
 
       {/* An Auto room answers like lead mode while the decision model is off: say so, once. */}
-      {!setupPending && !group.dm && !remoteClient && state.config && group.defaultResponder.kind === "auto" && !jevRoomRoutingOn(state.config) && (
+      {!group.dm && !remoteClient && state.config && group.defaultResponder.kind === "auto" && !jevRoomRoutingOn(state.config) && (
         <div className="w-full px-5">
           <p data-testid="room-jev-off" className="mb-1 px-2 text-[12px] text-ink-secondary">
             {t("room.responder.jevOffHint", { name: defaultResponderName(group, members) ?? t("room.responder.leadFallback") })}{" "}
@@ -1543,7 +1027,7 @@ export function GroupView({ group }: { group: Group }) {
       )}
 
       {/* Bulletin: one pinned line; click to edit */}
-      {!setupPending && <div className="w-full px-5">
+      <div className="w-full px-5">
         {bulletinOpen ? (
           <div className="mb-1 rounded-lg border border-hairline/40 bg-panel p-2">
             <textarea
@@ -1576,7 +1060,7 @@ export function GroupView({ group }: { group: Group }) {
             </span>
           </button>
         )}
-      </div>}
+      </div>
 
       {/* Pinned message banner — resolves against the room's full transcript */}
       {(() => {
@@ -1755,7 +1239,6 @@ export function GroupView({ group }: { group: Group }) {
         key={group.threadId}
         group={group}
         members={members}
-        locked={setupPending}
         replyTo={replyTo}
         onClearReply={clearReply}
         onConsumeReply={consumeReply}
@@ -1776,7 +1259,6 @@ export function GroupView({ group }: { group: Group }) {
           group={group}
           members={members}
           canEdit={!remoteClient}
-          onOpenSetup={() => setSetupOpen(true)}
           details={
             <>
               <section>
@@ -1838,7 +1320,7 @@ export function GroupView({ group }: { group: Group }) {
                     });
                   }}
                 />
-                {!remoteClient && !setupPending && (
+                {!remoteClient && (
                   <button
                     ref={membersTriggerRef}
                     type="button"
@@ -1849,19 +1331,21 @@ export function GroupView({ group }: { group: Group }) {
                   </button>
                 )}
               </section>
-              {!remoteClient && !setupPending && (
+            </>
+          }
+          advanced={
+            remoteClient ? null : (
+              <>
                 <section>
                   <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.responder.aria")}</h3>
                   <DefaultResponderSelect group={group} members={members} />
                 </section>
-              )}
-              {!remoteClient && !setupPending && (
                 <section>
                   <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.folder.title")}</h3>
                   <RoomWorkingFolder group={group} />
                 </section>
-              )}
-            </>
+              </>
+            )
           }
         />
       )}

@@ -1,9 +1,11 @@
 // The group's right side panel. It is the bot panel (BotSettingsDialog)
 // adapted to a group: the same docked shell, top bar, big avatar, name and
 // tab strip, so a group and a bot read as one design. Group-specific bodies
-// (members, responder, folder) come from GroupView, which owns their state.
+// (members on Details; responder and folder on Advanced, like a bot's own
+// folder) come from GroupView, which owns their state. Every group setting
+// lives here: there is no separate setup dialog.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { PanelRight, Settings2 } from "lucide-react";
+import { PanelRight } from "lucide-react";
 
 import { useStore, type Bot, type Group } from "@/state/store";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
@@ -64,22 +66,25 @@ export function GroupPanel({
   group,
   members,
   details,
+  advanced,
   canEdit,
-  onOpenSetup,
 }: {
   group: Group;
   members: Bot[];
-  /** Members, default responder and working folder, rendered by GroupView. */
+  /** People and bots, rendered by GroupView. */
   details: ReactNode;
-  /** Rename, instructions and setup need the owner's (admin) session. */
+  /** Default responder and working folder, rendered by GroupView; null for a remote client. */
+  advanced: ReactNode;
+  /** Rename and instructions need the owner's (admin) session. */
   canEdit: boolean;
-  onOpenSetup: () => void;
 }) {
   const { dispatch } = useStore();
   const { padClass } = useCaptionChrome();
   const { macInset, browser } = useMacInsetChrome();
   const dialogRef = useRef<HTMLElement | null>(null);
   const [tab, setTab] = useState<GroupPanelTab>("details");
+  // A remote client edits neither the responder nor the folder: no Advanced tab.
+  const tabs: readonly GroupPanelTab[] = advanced == null ? GROUP_PANEL_TABS.filter((id) => id !== "advanced") : GROUP_PANEL_TABS;
   const [settingsWidth, setSettingsWidth] = useState(readSettingsWidth);
   const settingsResize = useRef<{ x: number; width: number; current: number } | null>(null);
   const [name, setName] = useState(group.name);
@@ -193,13 +198,13 @@ export function GroupPanel({
               const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
               if (!step) return;
               event.preventDefault();
-              const next = GROUP_PANEL_TABS[(GROUP_PANEL_TABS.indexOf(tab) + step + GROUP_PANEL_TABS.length) % GROUP_PANEL_TABS.length]!;
+              const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]!;
               setTab(next);
               event.currentTarget.querySelector<HTMLElement>(`[data-panel-tab="${next}"]`)?.focus();
             }}
             className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-0.5"
           >
-            {GROUP_PANEL_TABS.map((id) => (
+            {tabs.map((id) => (
               <button
                 key={id}
                 type="button"
@@ -247,8 +252,8 @@ export function GroupPanel({
 
         {tab === "instructions" && (
           <div className="flex flex-col gap-2 px-4 pb-6 pt-2">
-            <label htmlFor={`group-bulletin-${group.id}`} className="text-[13px] text-ink-secondary">{t("room.setup.instructions")}</label>
-            <p className="text-[12px] text-ink-secondary">{t("room.setup.instructionsDetail")}</p>
+            <label htmlFor={`group-bulletin-${group.id}`} className="text-[13px] text-ink-secondary">{t("groupPanel.instructions")}</label>
+            <p className="text-[12px] text-ink-secondary">{t("groupPanel.instructionsDetail")}</p>
             <textarea
               id={`group-bulletin-${group.id}`}
               value={bulletin}
@@ -256,24 +261,15 @@ export function GroupPanel({
               onChange={(event) => setBulletin(event.target.value)}
               onBlur={saveBulletin}
               rows={10}
-              placeholder={t("room.setup.instructionsPlaceholder")}
+              placeholder={t("groupPanel.instructionsPlaceholder")}
               className={cn(inputCls, "resize-y leading-relaxed")}
             />
           </div>
         )}
 
-        {tab === "advanced" && (
-          <div className="mx-4 mb-6 overflow-hidden rounded-xl border border-hairline-weak">
-            <button
-              type="button"
-              onClick={onOpenSetup}
-              disabled={!canEdit}
-              aria-haspopup="dialog"
-              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-hover disabled:opacity-50"
-            >
-              <Settings2 size={15} className="shrink-0 text-ink-secondary" />
-              <span className="min-w-0 flex-1 truncate">{t("room.setup.open")}</span>
-            </button>
+        {tab === "advanced" && advanced != null && (
+          <div className="flex flex-col gap-4 px-4 pb-6 pt-2">
+            {advanced}
           </div>
         )}
       </div>

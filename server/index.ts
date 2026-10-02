@@ -4868,7 +4868,7 @@ function createChannel(value: unknown): GroupRecord {
     }
   }
   let setup:
-    | { bulletin: string; defaultResponder: GroupDefaultResponder; completed: true }
+    | { bulletin: string; defaultResponder: GroupDefaultResponder }
     | undefined;
   if (body.setup !== undefined) {
     if (!body.setup || typeof body.setup !== "object" || Array.isArray(body.setup)) {
@@ -4883,7 +4883,7 @@ function createChannel(value: unknown): GroupRecord {
     }
     const responder = checkedGroupResponder(requested.defaultResponder, memberIds);
     if (!responder) throw Object.assign(new Error("invalid setup.defaultResponder"), { status: 400 });
-    setup = { bulletin: requested.bulletin, defaultResponder: responder, completed: true };
+    setup = { bulletin: requested.bulletin, defaultResponder: responder };
   }
   let humanIds: string[] | undefined;
   if (body.humanIds !== undefined) {
@@ -5239,7 +5239,6 @@ function roomHandoffProblem(node: Pick<RoomHandoff, "groupId" | "threadId" | "bo
     return member && !canAccessTeam(speaker, member.section) && !coordinatorSupervises(member, speaker);
   });
   if (group && outsideSection(group, bot)) return "Destination room includes a member outside the agent's section";
-  if (group && roomSetupPending(group)) return "Destination room setup is unfinished";
   if (parent) {
     const from = store.bot(parent.botId);
     const source = parent.groupId ? store.group(parent.groupId) : undefined;
@@ -11702,7 +11701,6 @@ routines = new RoutineManager({
     if (
       !group ||
       group.dm ||
-      roomSetupPending(group) ||
       !coordinator ||
       coordinator.hidden ||
       !group.memberIds.includes(coordinator.id)
@@ -14280,9 +14278,6 @@ function startGroupTurn(
 ) {
   const group = store.group(groupId);
   if (!group) throw Object.assign(new Error("no such group"), { status: 404 });
-  if (roomSetupPending(group)) {
-    throw Object.assign(new Error("finish room setup before sending the first message"), { status: 409 });
-  }
   // Capture the chosen thread once. Manual sends use the active task; a
   // scheduled team goal supplies its detached background task explicitly.
   const threadId = options.threadId ?? group.threadId;
@@ -14640,7 +14635,7 @@ function sameCalendarRoster(group: GroupRecord, botIds: readonly string[]): bool
 
 function ensureCalendarCallRoom(call: CalendarCall): GroupRecord {
   const linked = call.roomId ? store.group(call.roomId) : undefined;
-  let group = linked && sameCalendarRoster(linked, call.botIds) && !roomSetupPending(linked)
+  let group = linked && sameCalendarRoster(linked, call.botIds)
     ? linked
     : undefined;
   // A call's room is a room like any other: one audience.
@@ -14649,7 +14644,6 @@ function ensureCalendarCallRoom(call: CalendarCall): GroupRecord {
   group ??= store.createGroup(call.name, call.botIds, false, undefined, {
     bulletin: "",
     defaultResponder: { kind: "everyone" },
-    completed: true,
   });
   if (call.roomId !== group.id) calendarCalls!.linkRoom(call.id, group.id);
   return group;
@@ -14677,19 +14671,6 @@ function deliverCalendarCall(call: CalendarCall, scheduledFor: number): void {
   const messages = [...threadIds].flatMap((threadId) => store.messagesFor(threadId));
   if (messages.some((message) => message.sendId === sendId)) return;
   startGroupTurn(group.id, text, undefined, sendId);
-}
-
-function roomSetupPending(group: GroupRecord): boolean {
-  const hasMarker =
-    Object.prototype.hasOwnProperty.call(group, "setupCompletedAt") ||
-    Object.prototype.hasOwnProperty.call(group, "setupSkippedAt");
-  return (
-    !group.dm &&
-    hasMarker &&
-    group.setupCompletedAt == null &&
-    group.setupSkippedAt == null &&
-    store.messagesFor(group.threadId).length === 0
-  );
 }
 
 function resolveReplyTarget(threadId: string, value: unknown): Message | undefined {
@@ -14831,12 +14812,6 @@ function roomPostEligibility(
       status: 403,
       error: `that room includes @${outsider.name}, who is outside your section — tell the user what you wanted to post there instead`,
     };
-  }
-  // A room whose setup the person has not finished has never been opened
-  // for business, and its first message decides whether setup still counts
-  // as pending. A bot must not be the one to settle that.
-  if (roomSetupPending(group)) {
-    return { ok: false, status: 409, error: "that room is still being set up — it cannot receive messages yet" };
   }
   return { ok: true };
 }
@@ -17452,7 +17427,7 @@ if (sectionChannels) {
         const botIds = store.bots
           .filter((bot) => sectionKey(bot.section) === name && !bot.hidden && channels.accessForBot(name, { id: bot.id, ownerPrincipalId: effectiveBotOwner(bot) }))
           .map((bot) => bot.id);
-        return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" }, completed: true }, []).id;
+        return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" } }, []).id;
       } catch (error) {
         console.error(`sections: the conversation of a shared section could not be created: ${error instanceof Error ? error.message : String(error)}`);
         return null;
@@ -22507,42 +22482,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         presets: imported.presets ?? [],
       });
     }
-    m = path.match(/^\/api\/groups\/([\w-]+)\/setup$/);
-    if (m && method === "PATCH") {
-      const group = store.group(m[1]);
-      if (!group) return json(res, 404, { error: "no such room" });
-      if (group.dm) return json(res, 400, { error: "direct-message channels do not have room setup" });
-      const body = await readBody(req);
-      if (body.action !== "complete" && body.action !== "skip") {
-        return json(res, 400, { error: "action must be complete or skip" });
-      }
-      if (group.setupCompletedAt != null || group.setupSkippedAt != null) {
-        return json(res, 200, { group: publicGroupState(group) });
-      }
-      if (store.messagesFor(group.threadId).length > 0) {
-        return json(res, 409, { error: "room setup must be finished before the first message" });
-      }
-
-      const patch: Partial<Pick<GroupRecord, "cwd" | "defaultResponder" | "bulletin" | "setupCompletedAt" | "setupSkippedAt">> = {};
-      if (body.action === "complete") {
-        const checked = validateBotCwd(body.cwd ?? null);
-        if (!checked.ok) return json(res, 400, { error: checked.error });
-        if (typeof body.bulletin !== "string") return json(res, 400, { error: "bulletin must be a string" });
-        if (body.bulletin.length > 12_000) return json(res, 400, { error: "bulletin must be at most 12000 characters" });
-        const responder = checkedGroupResponder(body.defaultResponder, group.memberIds);
-        if (!responder) return json(res, 400, { error: "invalid default responder" });
-        patch.cwd = checked.cwd ?? undefined;
-        patch.defaultResponder = responder;
-        patch.bulletin = body.bulletin;
-        patch.setupCompletedAt = Date.now();
-      } else {
-        patch.setupSkippedAt = Date.now();
-      }
-      const updated = store.patchGroup(m[1], patch);
-      if (!updated) return json(res, 404, { error: "no such room" });
-      return json(res, 200, { group: publicGroupState(updated) });
-    }
-
     // ── channel tasks: separate conversations for the same team ────────
 
 
