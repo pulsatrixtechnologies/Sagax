@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeRegistration } from "./desktop-bridge.ts";
+import { localVmDesktopSpec } from "./container-computer.ts";
 import { desktopToolOperation, handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { DEFAULT_BOT_WORKPLACE, parseBotWorkplace, serializeBotWorkplace } from "../shared/bot-workplace.ts";
 
@@ -164,7 +165,8 @@ describe("the sagax-desktop tools", () => {
   it("become typed operations, rejecting bad arguments", () => {
     expect(desktopToolOperation("run_command", { command: "ls", timeout_seconds: 9999 })).toMatchObject({ action: "run_command", command: "ls", timeout_seconds: 600 });
     expect(desktopToolOperation("local_vm", { action: "run", command: "uname" })).toMatchObject({ action: "vm_run_command", command: "uname" });
-    expect(desktopToolOperation("local_vm", { action: "create" })).toEqual({ action: "vm_create", timeout_seconds: 600 });
+    // the server's own recipe goes with it; the desktop checks it
+    expect(desktopToolOperation("local_vm", { action: "create" })).toEqual({ action: "vm_create", arguments: { spec: localVmDesktopSpec() }, timeout_seconds: 600 });
     expect(() => desktopToolOperation("local_vm", { action: "destroy" })).toThrow(/status, start, run or create/);
     expect(desktopToolOperation("fetch_url", { url: "http://intranet.local/x" })).toMatchObject({ action: "fetch_url", url: "http://intranet.local/x" });
     expect(() => desktopToolOperation("fetch_url", { url: "file:///etc/passwd" })).toThrow();

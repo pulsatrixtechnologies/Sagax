@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { localVmDesktopSpec } from "./container-computer.ts";
 import { SandboxdVerifier } from "./sandboxd-auth.ts";
 import { SandboxService } from "./sandboxd-core.ts";
 import { createSandboxdHandler } from "./sandboxd.ts";
@@ -125,7 +126,7 @@ async function upload(auth: Auth, name: string, body: string): Promise<{ path: s
 /** An open /api/events stream (as the browser opens it): what it received. */
 async function openStream(auth: Auth): Promise<{ frames: () => Array<Record<string, any>>; close: () => void }> {
   const { body } = await api("POST", "/api/auth/stream-ticket", auth);
-  expect(body.ticket).toMatch(/^omb_tick_/);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
   return new Promise((resolve, reject) => {
     let received = "";
     const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
@@ -300,7 +301,7 @@ posixOnly("organization server: the desktop bridge", () => {
     bobStream.close();
     expect(reply).toContain("mcp:local_vm:ok");
     expect(dump().calls.find((call) => call.tool === "local_vm")?.text).toBe("desktop:vm created");
-    expect(desktop.operations.at(-1)).toEqual({ action: "vm_create", timeout_seconds: 600 });
+    expect(desktop.operations.at(-1)).toEqual({ action: "vm_create", arguments: { spec: localVmDesktopSpec() }, timeout_seconds: 600 });
     expect(desktop.progress).toEqual([
       { message: "Downloading the Local VM desktop image", ok: true },
       { message: "Creating the Local VM", ok: true },
