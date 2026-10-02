@@ -170,11 +170,10 @@ public enum CallMachine {
                 if state.botBusy { effects.append(.interruptBot) }
                 return next { $0.phase = .interrupted; $0.botAudible = false; $0.ducked = false }
             }
-            if state.botBusy {
-                // talking while the bot works: the new words replace its running turn
-                effects.append(.interruptBot)
-                return next { $0.phase = .interrupted }
-            }
+            // Talking while the bot works (not speaking): the words join its
+            // running turn when they are sent (a steer), like a message typed
+            // while it works. Stopping the turn dropped the request it was
+            // working on (the desktop's call-machine.ts, PR #103).
             return next { $0.phase = .hearing }
         case .speechEnd:
             guard state.phase == .hearing || state.phase == .interrupted else { return same }

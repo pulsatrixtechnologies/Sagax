@@ -59,12 +59,12 @@ final class CallMachineTests: XCTestCase {
         XCTAssertTrue(effects.contains(.unduck))
     }
 
-    func testTalkingWhileTheBotWorksReplacesItsTurn() {
+    func testTalkingWhileTheBotWorksJoinsItsTurnInsteadOfStoppingIt() {
         let step = CallMachine.step(CallMachine.step(.initial, .connected).state, .botBusy(true))
         XCTAssertEqual(step.state.phase, .thinking)
         let talk = CallMachine.step(step.state, .speechStart)
-        XCTAssertEqual(talk.effects, [.interruptBot])
-        XCTAssertEqual(talk.state.phase, .interrupted)
+        XCTAssertEqual(talk.effects, [], "the words will join the running turn (a steer), never stop it")
+        XCTAssertEqual(talk.state.phase, .hearing)
     }
 
     func testTheInterruptButtonStopsTheVoiceButNotTheTurn() {
@@ -270,6 +270,10 @@ private final class FakePlayer: CallSpeaking {
     func cancel() { cancels += 1; queued = []; playing = false }
     func tone(_ earcon: CallEarcon) { tones.append(earcon) }
     func close() {}
+    var played = PlaybackCut()
+    var ledgerResets = 0
+    func playback(speed: Double) -> PlaybackCut { played }
+    func resetLedger() { ledgerResets += 1 }
 }
 
 @MainActor
@@ -279,24 +283,33 @@ final class LiveCallEngineTests: XCTestCase {
     private var engine: LiveCallEngine!
     private var input = CallSettings.Input.auto
     private var sent: [(String, Bool)] = []
+    private var turns: [CallTurn] = []
+    private var clock: TimeInterval = 1_000
+    private var cuts: [PlaybackCut] = []
     private var interrupts = 0
     private var cancelled = 0
 
     override func setUp() async throws {
         transcriber = FakeTranscriber()
         player = FakePlayer()
-        engine = LiveCallEngine(transcriber: transcriber, player: player, settings: { [unowned self] in CallSettings(input: input) })
-        engine.events.utterance = { [unowned self] text, interrupted in sent.append((text, interrupted)) }
+        engine = LiveCallEngine(transcriber: transcriber, player: player, settings: { [unowned self] in CallSettings(input: input) }, now: { [unowned self] in clock })
+        engine.events.utterance = { [unowned self] turn in
+            sent.append((turn.text, turn.interrupted))
+            turns.append(turn)
+        }
         engine.events.interruptBot = { [unowned self] in interrupts += 1 }
-        engine.events.speechCancelled = { [unowned self] in cancelled += 1 }
+        engine.events.speechCancelled = { [unowned self] cut in
+            cancelled += 1
+            cuts.append(cut)
+        }
         engine.connected()
     }
 
     private let speech = [Float](repeating: 0.15, count: 512).enumerated().map { $0.offset % 2 == 0 ? $0.element : -$0.element }
     private let quiet = [Float](repeating: 0.0005, count: 512)
 
-    private func say(_ frames: Int) { for _ in 0..<frames { engine.frame(speech) } }
-    private func silence(_ frames: Int) { for _ in 0..<frames { engine.frame(quiet) } }
+    private func say(_ frames: Int) { for _ in 0..<frames { clock += 0.032; engine.frame(speech) } }
+    private func silence(_ frames: Int) { for _ in 0..<frames { clock += 0.032; engine.frame(quiet) } }
 
     private func settle() async {
         for _ in 0..<5 { await Task.yield() }
@@ -307,7 +320,7 @@ final class LiveCallEngineTests: XCTestCase {
         transcriber.words = "What's on my calendar?"
         say(15)
         XCTAssertEqual(engine.state.phase, .hearing)
-        silence(20)
+        silence(30) // Normal: a 700 ms pause ends the turn
         await settle()
         XCTAssertEqual(sent.map(\.0), ["What's on my calendar?"])
         XCTAssertEqual(sent.first?.1, false)
@@ -334,11 +347,57 @@ final class LiveCallEngineTests: XCTestCase {
         XCTAssertTrue(heard)
     }
 
+    func testAPauseMidSentenceIsOneUtteranceSentWhole() async {
+        silence(20)
+        transcriber.words = "Give me a good prompt"
+        say(15)
+        silence(30)
+        await settle()
+        XCTAssertEqual(sent.map(\.0), ["Give me a good prompt"])
+        engine.setBotBusy(true)
+        // the person goes on 1 s later, before the bot said anything
+        transcriber.words = "for a cover letter."
+        say(15)
+        silence(30)
+        await settle()
+        XCTAssertEqual(turns.last?.text, "Give me a good prompt for a cover letter.", "sent whole")
+        XCTAssertEqual(turns.last?.continues, true)
+        XCTAssertEqual(interrupts, 1, "the fragment's turn is stopped")
+    }
+
+    func testAnUnfinishedClauseWaitsLongerThanTheNormalPause() async {
+        silence(20)
+        transcriber.words = "I want to"
+        say(15)
+        engine.partial("I want to")
+        silence(24) // 768 ms: past Normal's 700, inside 700 + 750
+        await settle()
+        XCTAssertTrue(sent.isEmpty, "\"to\" does not end a sentence")
+        silence(30)
+        await settle()
+        XCTAssertEqual(sent.map(\.0), ["I want to"])
+    }
+
+    func testASoundTheRecognizerSpelledIsNeverATurn() async {
+        silence(20)
+        transcriber.words = "dwad"
+        say(15)
+        silence(30)
+        await settle()
+        XCTAssertTrue(sent.isEmpty)
+        transcriber.words = "oui"
+        say(15)
+        silence(30)
+        await settle()
+        XCTAssertEqual(sent.map(\.0), ["oui"], "a real one-word answer passes")
+    }
+
     func testTalkingOverTheBotCutsItAndTheNextTurnSaysSo() async {
         silence(20)
         engine.setBotBusy(true)
-        engine.replyProgress("A long answer that goes on. And on. ")
+        engine.replyProgress("A long answer that goes on. And then it keeps going without")
         player.playing = true
+        player.played = PlaybackCut(heard: "A long answer", unheard: "that goes on.")
         engine.playerSentenceStarted("A long answer that goes on.")
         transcriber.words = "Stop, actually do something else"
         say(1)
@@ -349,10 +408,12 @@ final class LiveCallEngineTests: XCTestCase {
         XCTAssertEqual(interrupts, 1, "the bot's running turn is interrupted")
         XCTAssertEqual(engine.state.phase, .interrupted)
         say(5)
-        silence(20)
+        silence(30)
         await settle()
         XCTAssertEqual(sent.count, 1)
         XCTAssertEqual(sent.first?.1, true, "the turn is marked interrupted")
+        XCTAssertEqual(turns.first?.cut?.heard, "A long answer", "the bot is told what was heard")
+        XCTAssertEqual(turns.first?.cut?.unheard, "that goes on. And then it keeps going without", "and what was not, written but unsaid included")
     }
 
     /// A real recording (a French question said by a voice): one turn,
@@ -411,6 +472,44 @@ final class LiveCallEngineTests: XCTestCase {
 
 // MARK: - The conversation around the call
 
+final class PlaybackCutTests: XCTestCase {
+    func testTheCutLandsOnAWordByTheAudioClock() {
+        let ledger: [(text: String, start: Double?, end: Double?, complete: Bool)] = [
+            ("First sentence here.", 0, 2, true),
+            ("Second one is cut halfway through.", 2, 6, true),
+            ("Third never started.", nil, nil, false),
+        ]
+        let cut = PlaybackCut.measure(ledger, now: 4)
+        XCTAssertEqual(cut.heard, "First sentence here. Second one is cut")
+        XCTAssertEqual(cut.unheard, "halfway through. Third never started.")
+        XCTAssertEqual(PlaybackCut.split("one", at: 0.2).1, "one")
+        XCTAssertEqual(PlaybackCut.split("one", at: 0.8).0, "one")
+    }
+
+    func testUnfinishedClausesAndPausePresets() {
+        XCTAssertTrue(ClauseCheck.incomplete("give me a good prompt to"))
+        XCTAssertTrue(ClauseCheck.incomplete("je voudrais un rendez-vous pour"))
+        XCTAssertTrue(ClauseCheck.incomplete("well,"))
+        XCTAssertTrue(ClauseCheck.incomplete("so"))
+        XCTAssertFalse(ClauseCheck.incomplete("What time is it?"))
+        XCTAssertFalse(ClauseCheck.incomplete("book the meeting room tomorrow morning"))
+        XCTAssertFalse(ClauseCheck.incomplete(""))
+        let detector = TurnDetector()
+        detector.setPause(.patient)
+        XCTAssertEqual(detector.endpointMs, 800 + (600 - 480) / Double(900 - 480) * 700, accuracy: 1)
+        XCTAssertEqual(CallSettings.decode(CallSettings(pause: .short).encoded).pause, .short)
+        XCTAssertEqual(CallSettings.decode(#"{"input":"auto"}"#).pause, .normal)
+    }
+
+    func testNoiseFragments() {
+        XCTAssertTrue(CallNoise.isFragment("dwad"))
+        XCTAssertTrue(CallNoise.isFragment("a"))
+        XCTAssertFalse(CallNoise.isFragment("Merci"))
+        XCTAssertFalse(CallNoise.isFragment("42"))
+        XCTAssertFalse(CallNoise.isFragment("What about tomorrow"))
+    }
+}
+
 final class CallConversationTests: XCTestCase {
     private func text(_ id: String, _ body: String, role: Message.Role = .bot, from: String? = nil) -> Message {
         var message = Message(id: id, role: role, kind: .text, at: 0)
@@ -444,11 +543,12 @@ final class CallConversationTests: XCTestCase {
     func testABargeInDropsTheRestOfThatAnswerUntilTheNextTurn() {
         var conversation = CallConversation(existing: [])
         XCTAssertNotNil(conversation.stream("A long answer"))
-        conversation.speechCancelled(currentStream: "A long answer")
+        conversation.speechCancelled(currentStream: "A long answer", cut: PlaybackCut(heard: "A long", unheard: "answer"))
         XCTAssertNil(conversation.stream("A long answer that keeps going"), "the cut block is not spoken")
         let settled = conversation.settle(messages: [text("u", "Q", role: .user), text("b", "A long answer that keeps going.")], botName: "Ara", thinking: true, playerBusy: false)
         XCTAssertEqual(settled, [])
         XCTAssertEqual(conversation.interrupted, ["b"])
+        XCTAssertEqual(conversation.unheard["b"], "answer", "the words not heard stay on the cut answer")
         XCTAssertEqual(conversation.utterance("Something else"), .send("Something else"))
         XCTAssertEqual(conversation.stream("New"), "New", "a new answer streams again")
     }
@@ -536,6 +636,18 @@ final class VoiceModeWireTests: XCTestCase {
         XCTAssertEqual(CallVoiceSource.route(voiceMode: nil, config: nil, agentVoice: "v", phoneKey: false), [.device])
     }
 
+    func testACutTurnCarriesItsUtteranceAndWhatWasHeard() {
+        let meta = VoiceCallMeta(callId: "call-12345678", interrupted: true, language: "fr", utteranceId: "utt-1234567890abcdef", cut: PlaybackCut(heard: "Bonjour  tout", unheard: "le monde"), continues: true)
+        XCTAssertEqual(meta.json["utteranceId"] as? String, "utt-1234567890abcdef")
+        XCTAssertEqual(meta.json["heard"] as? String, "Bonjour tout")
+        XCTAssertEqual(meta.json["unheard"] as? String, "le monde")
+        XCTAssertEqual(meta.json["continues"] as? Bool, true)
+        let plain = VoiceCallMeta(callId: "call-12345678", cut: PlaybackCut(heard: "x", unheard: "y"))
+        XCTAssertNil(plain.json["heard"], "heard only means something for words that cut the bot")
+        let long = VoiceCallMeta(callId: "call-12345678", interrupted: true, cut: PlaybackCut(heard: String(repeating: "a ", count: 1_000)))
+        XCTAssertEqual((long.json["heard"] as? String)?.count, VoiceCallMeta.excerptMax)
+    }
+
     func testTheCallMetaNeverSendsAuto() {
         XCTAssertNil(VoiceCallMeta(callId: "call-12345678", language: "auto").language)
         XCTAssertEqual(VoiceCallMeta(callId: "call-12345678", interrupted: true, language: "fr").json["language"] as? String, "fr")
@@ -599,7 +711,7 @@ final class VoiceModeClientTests: XCTestCase {
 
     func testACallTurnIsAnOrdinarySendMarkedAsSaidOnTheCall() async throws {
         VoiceStub.body = Data(#"{"ok":true}"#.utf8)
-        try await client.send(text: "Bonjour", toBot: "ara", threadId: "th-1", voiceCall: VoiceCallMeta(callId: "c-12345678", interrupted: true, language: "fr"))
+        try await client.send(text: "Bonjour", toBot: "ara", threadId: "th-1", voiceCall: VoiceCallMeta(callId: "c-12345678", interrupted: true, language: "fr", utteranceId: "utt-0123456789abcdef"))
         let (request, body) = try XCTUnwrap(VoiceStub.requests.first)
         XCTAssertEqual(request.url?.path, "/api/bots/ara/messages")
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(body)) as? [String: Any])
@@ -609,6 +721,25 @@ final class VoiceModeClientTests: XCTestCase {
         XCTAssertEqual(call["callId"] as? String, "c-12345678")
         XCTAssertEqual(call["interrupted"] as? Bool, true)
         XCTAssertEqual(call["language"] as? String, "fr")
+        XCTAssertEqual(call["utteranceId"] as? String, "utt-0123456789abcdef")
+        XCTAssertEqual(json["sendId"] as? String, "utt-0123456789abcdef", "the utterance is the send: delivered once")
+    }
+
+    func testTheCallTellsTheServerItStartsAndEnds() async throws {
+        VoiceStub.body = Data(#"{"ok":true}"#.utf8)
+        let ok = await client.voiceCallSession(botId: "ara", state: .start, callId: "call-12345678", threadId: "th-1", language: "auto")
+        XCTAssertTrue(ok)
+        let (request, body) = try XCTUnwrap(VoiceStub.requests.last)
+        XCTAssertEqual(request.url?.path, "/api/bots/ara/voice/call")
+        XCTAssertEqual(request.httpMethod, "POST")
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(body)) as? [String: Any])
+        XCTAssertEqual(json["state"] as? String, "start")
+        XCTAssertEqual(json["callId"] as? String, "call-12345678")
+        XCTAssertEqual(json["threadId"] as? String, "th-1")
+        XCTAssertNil(json["language"], "auto is never sent")
+        VoiceStub.status = 404
+        let old = await client.voiceCallSession(botId: "ara", state: .end, callId: "call-12345678", threadId: nil, language: nil)
+        XCTAssertFalse(old, "an older server without the route: best effort")
     }
 
     func testStatusAndStreamSpeakTheServersContract() async throws {

@@ -148,7 +148,7 @@ describe("scopes", () => {
     for (const [method, path] of [
       ["GET", "/api/bots/x/voice/status"], ["GET", "/api/bots/x/voice/voices"],
       ["POST", "/api/bots/x/voice/stream"], ["POST", "/api/bots/x/voice/transcribe"],
-      ["POST", "/api/bots/x/voice/speak"], ["POST", "/api/bots/x/voice/prepare"],
+      ["POST", "/api/bots/x/voice/speak"], ["POST", "/api/bots/x/voice/prepare"], ["POST", "/api/bots/x/voice/call"],
       ["POST", "/api/bots/x/messages"], ["POST", "/api/bots/x/interrupt"], ["POST", "/api/groups/g/interrupt"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [

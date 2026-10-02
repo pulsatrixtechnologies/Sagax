@@ -7412,7 +7412,7 @@ const providerLabel = (provider: string): string => {
  * desktop notification now, a push to a paired phone later. */
 function notify(notification: Notification | null) {
   // the conversation on a live voice call is heard, not buzzed (notify.ts)
-  if (notification && quietForCall(notification, lastPersonMessage(notification.threadId), Date.now())) return;
+  if (notification && quietForCall(notification, lastPersonMessage(notification.threadId), Date.now(), Boolean(voiceCalls.active(notification.threadId)))) return;
   // nested rather than spread — the frame's own `kind` names the frame,
   // exactly like {kind:"message", message} and {kind:"bot", bot}
   if (notification) broadcast({ kind: "notify", notification });

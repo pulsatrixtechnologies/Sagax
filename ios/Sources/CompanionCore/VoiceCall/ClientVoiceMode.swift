@@ -40,21 +40,55 @@ public struct VoiceCallMeta: Codable, Equatable, Sendable {
     public var callId: String
     public var interrupted: Bool?
     public var language: String?
+    /// One id per utterance (also the send's `sendId`): the server delivers
+    /// it once, and answers a second send of it with the first receipt.
+    public var utteranceId: String?
+    /// A barge-in: what the person heard of the cut answer, and what not.
+    public var heard: String?
+    public var unheard: String?
+    /// It completes the fragment sent just before (cut by a pause).
+    public var continues: Bool?
 
-    public init(callId: String, interrupted: Bool = false, language: String? = nil) {
+    /// The longest heard or unheard excerpt kept (server VOICE_CALL_EXCERPT_MAX).
+    public static let excerptMax = 1_200
+
+    public init(callId: String, interrupted: Bool = false, language: String? = nil, utteranceId: String? = nil, cut: PlaybackCut? = nil, continues: Bool = false) {
         self.callId = callId
         self.interrupted = interrupted ? true : nil
         // "auto" is never sent: the server takes only a picked language
         self.language = language.flatMap { $0 == "auto" || !VoiceModeSettings.isLanguage($0) ? nil : $0 }
+        self.utteranceId = utteranceId
+        // what was heard only means something for words that cut the bot
+        if interrupted, let cut {
+            heard = Self.excerpt(cut.heard)
+            unheard = Self.excerpt(cut.unheard)
+        }
+        self.continues = continues ? true : nil
+    }
+
+    private static func excerpt(_ text: String) -> String? {
+        let folded = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !folded.isEmpty else { return nil }
+        return folded.count > excerptMax ? String(folded.prefix(excerptMax - 1)) + "\u{2026}" : folded
     }
 
     var json: [String: Any] {
         var out: [String: Any] = ["callId": callId]
-        if interrupted == true { out["interrupted"] = true }
+        if let utteranceId { out["utteranceId"] = utteranceId }
+        if continues == true { out["continues"] = true }
+        if interrupted == true {
+            out["interrupted"] = true
+            if let heard { out["heard"] = heard }
+            if let unheard { out["unheard"] = unheard }
+        }
         if let language { out["language"] = language }
         return out
     }
 }
+
+/// The call's life on the server (POST /voice/call): every send to the
+/// thread while it lasts is a call turn, whatever path it takes.
+public enum VoiceCallSessionState: String, Sendable { case start, alive, end }
 
 /// One sentence of the bot's voice, as the server streams it: raw 16-bit
 /// little-endian PCM at `sampleRate`, in chunks as xAI makes it.
@@ -183,9 +217,24 @@ extension CompanionClient {
         guard Self.validRouteID(botId) else { throw APIError.badURL }
         var body: [String: Any] = ["text": text, "voiceCall": voiceCall.json]
         if let threadId { body["threadId"] = threadId }
+        // the utterance id is the send's id: delivered once, whatever retries
+        if let utteranceId = voiceCall.utteranceId { body["sendId"] = utteranceId }
         let (data, response) = try await perform(try makeRequest("POST", "/api/bots/\(botId)/messages", body: body))
         try Self.check(response, data)
         return (try? JSONDecoder().decode(SendReceipt.self, from: data)) ?? SendReceipt()
+    }
+
+    /// Tell the server the thread is on a call (start, alive every few
+    /// minutes, end). Best effort: an old server without the route still
+    /// gets each turn's mark. True when the server took it.
+    @discardableResult
+    public func voiceCallSession(botId: String, state: VoiceCallSessionState, callId: String, threadId: String?, language: String?) async -> Bool {
+        var body: [String: Any] = ["state": state.rawValue, "callId": callId]
+        if let threadId, Self.validRouteID(threadId) { body["threadId"] = threadId }
+        if let language, language != "auto", VoiceModeSettings.isLanguage(language) { body["language"] = language }
+        guard let request = try? makeRequest("POST", "\(Self.voiceBase(botId))/call", body: body),
+              let (data, response) = try? await perform(request) else { return false }
+        return (try? Self.check(response, data)) != nil
     }
 
     public func interrupt(roomId: String) async throws {

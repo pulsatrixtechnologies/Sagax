@@ -368,6 +368,23 @@ struct CallSettingsPanel: View {
                 .accessibilityIdentifier("call-input")
             }
             .padding(.vertical, 6)
+            HStack {
+                Text(String(localized: "End of turn")).font(.system(size: 13)).foregroundStyle(CallTheme.inkSecondary)
+                Spacer()
+                Picker(String(localized: "End of turn"), selection: $call.callSettings.pause) {
+                    Text(String(localized: "Short")).tag(CallPause.short)
+                    Text(String(localized: "Normal")).tag(CallPause.normal)
+                    Text(String(localized: "Patient")).tag(CallPause.patient)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 200)
+                .accessibilityIdentifier("call-pause")
+            }
+            .padding(.top, 2)
+            Text(String(localized: "How long a pause ends what you say. An unfinished sentence always gets more time."))
+                .font(.system(size: 11.5))
+                .foregroundStyle(CallTheme.inkTertiary)
+                .padding(.bottom, 4)
             Toggle(isOn: $call.callSettings.earcons) {
                 Text(String(localized: "Call sounds")).font(.system(size: 13)).foregroundStyle(CallTheme.inkSecondary)
             }
@@ -500,13 +517,14 @@ struct CallTranscriptPanel: View {
         let you: Bool
         let text: String
         let interrupted: Bool
+        let unheard: String?
     }
 
     private var entries: [Entry] {
         session.state.visibleTranscript(forThread: call.threadId)
             .filter { $0.kind == .text && !($0.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .suffix(8)
-            .map { Entry(id: $0.id, you: $0.role == .user, text: ($0.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines), interrupted: call.interrupted.contains($0.id)) }
+            .map { Entry(id: $0.id, you: $0.role == .user, text: ($0.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines), interrupted: call.interrupted.contains($0.id), unheard: call.unheard[$0.id]) }
     }
 
     var body: some View {
@@ -528,7 +546,7 @@ struct CallTranscriptPanel: View {
             } else {
                 VStack(spacing: 6) {
                     ForEach(entries) { entry in
-                        bubble(entry.text, you: entry.you, interrupted: entry.interrupted)
+                        bubble(entry.text, you: entry.you, interrupted: entry.interrupted, unheard: entry.unheard)
                             .accessibilityIdentifier(entry.you ? "call-line-you" : "call-line-bot")
                     }
                     if !line.isEmpty {
@@ -543,9 +561,10 @@ struct CallTranscriptPanel: View {
         .accessibilityIdentifier("call-transcript")
     }
 
-    private func bubble(_ text: String, you: Bool, interrupted: Bool) -> some View {
+    private func bubble(_ text: String, you: Bool, interrupted: Bool, unheard: String? = nil) -> some View {
         HStack {
             if you { Spacer(minLength: 40) }
+            VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(text).font(.system(size: 13)).foregroundStyle(CallTheme.ink)
                 if interrupted {
@@ -555,6 +574,14 @@ struct CallTranscriptPanel: View {
                         .padding(.horizontal, 4)
                         .background(CallTheme.elevated.opacity(0.6), in: RoundedRectangle(cornerRadius: 4))
                 }
+            }
+            // the cut answer's words the person never heard, marked
+            if let unheard, !unheard.isEmpty {
+                (Text(String(localized: "Not heard:")) + Text(verbatim: " ") + Text(unheard).italic())
+                    .font(.system(size: 12))
+                    .foregroundStyle(CallTheme.inkTertiary)
+                    .accessibilityIdentifier("call-unheard")
+            }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)

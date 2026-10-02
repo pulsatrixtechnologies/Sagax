@@ -125,8 +125,9 @@ export function buildNotification(
  * bot answer, ask and finish on the call itself (the phone and the desktop
  * stand their own alerts down for the thread on a call; this keeps the
  * server's frame, and any push a relay would make of it, quiet too). The
- * server knows a call by its turns (Message.voiceCall); one counts as live
- * while the thread's latest message from the person is a call turn sent
+ * server knows a call from the page (POST /voice/call, start to end) and by
+ * its turns (Message.voiceCall): one counts as live while the page says so,
+ * or while the thread's latest message from the person is a call turn sent
  * within CALL_QUIET_MS. A written message after the call, or a call long
  * over, makes the thread notify again. Workspace spend notices always go. */
 export const CALL_QUIET_MS = 30 * 60_000;
@@ -135,8 +136,11 @@ export function quietForCall(
   notification: Pick<Notification, "kind"> | null,
   lastPersonMessage: { at?: number; voiceCall?: unknown } | undefined,
   now: number,
+  /** the thread is on a call the page started (server/voice-call-session.ts) */
+  callLive = false,
 ): boolean {
   if (!notification || notification.kind === "spend") return false;
+  if (callLive) return true;
   if (!lastPersonMessage?.voiceCall) return false;
   return now - (lastPersonMessage.at ?? 0) < CALL_QUIET_MS;
 }

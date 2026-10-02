@@ -99,6 +99,7 @@ describe("what the app may do", () => {
     ["POST", "/api/bots/bot_123/voice/speak"],
     ["POST", "/api/bots/bot_123/voice/stream"],
     ["POST", "/api/bots/bot_123/voice/transcribe"],
+    ["POST", "/api/bots/bot_123/voice/call"],
     ["GET", "/api/routines"],
     ["POST", "/api/routines"],
     ["PATCH", "/api/routines/routine_1"],
@@ -130,6 +131,7 @@ describe("what it may not", () => {
     expect(ask("POST", "/api/bots/bot_123/voice/status")?.status).toBe(404);
     expect(ask("GET", "/api/bots/bot_123/voice/stream")?.status).toBe(404);
     expect(ask("POST", "/api/bots/bot_123/voice/other")?.status).toBe(404);
+    expect(ask("GET", "/api/bots/bot_123/voice/call")?.status).toBe(404);
     expect(ask("POST", "/api/bots/bot_123/voice/stream", false)?.status).toBe(401);
   });
 

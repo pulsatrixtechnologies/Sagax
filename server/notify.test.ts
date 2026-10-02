@@ -139,6 +139,11 @@ describe("a conversation on a live voice call", () => {
     expect(quietForCall(done, { at: now - 60_000, voiceCall: { callId: "call-12345678" } }, now)).toBe(true);
     expect(quietForCall({ kind: "approval" }, { at: now - 5_000, voiceCall: { callId: "call-12345678", interrupted: true } }, now)).toBe(true);
   });
+  it("stays quiet while the page says the thread is on a call, whatever was sent", () => {
+    expect(quietForCall(done, { at: now - 60_000 }, now, true)).toBe(true);
+    expect(quietForCall(done, undefined, now, true)).toBe(true);
+    expect(quietForCall({ kind: "spend" }, undefined, now, true)).toBe(false);
+  });
   it("buzzes again after a written message, a call long over, or for spend", () => {
     expect(quietForCall(done, { at: now - 60_000 }, now)).toBe(false);
     expect(quietForCall(done, { at: now - CALL_QUIET_MS - 1, voiceCall: { callId: "call-12345678" } }, now)).toBe(false);

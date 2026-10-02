@@ -30,6 +30,56 @@ public enum CallAudio {
     }
 }
 
+/// How long a pause ends a turn (the call's "End of turn" setting): the
+/// endpoint's range, and how much longer an unfinished clause waits. The
+/// desktop's PAUSE_PRESETS (turns.ts).
+public enum CallPause: String, Codable, CaseIterable, Sendable {
+    case short, normal, patient
+
+    public var range: (min: Double, start: Double, max: Double, incomplete: Double) {
+        switch self {
+        case .short: (420, 520, 800, 500)
+        case .normal: (560, 700, 1_100, 750)
+        case .patient: (800, 1_000, 1_500, 1_000)
+        }
+    }
+}
+
+/// The words so far do not finish a sentence: the turn waits longer. A
+/// clause that stops on "and", "to", "the", "de", "pour"..., a trailing
+/// comma or filler, or a fragment of one or two words (turns.ts
+/// incompleteClause). No words yet is not judged.
+public enum ClauseCheck {
+    private static let continuing: Set<String> = [
+        "and", "or", "but", "so", "because", "to", "the", "a", "an", "of", "in", "on", "at", "for", "with", "from", "about",
+        "my", "your", "our", "their", "his", "her", "its", "if", "that", "when", "which", "who", "is", "are", "was", "be",
+        "into", "like", "than", "then", "as", "by", "me", "uh", "um", "erm", "hmm", "please",
+        "et", "ou", "mais", "donc", "parce", "que", "qu", "qui", "de", "du", "des", "le", "la", "les", "l", "un", "une",
+        "au", "aux", "pour", "avec", "dans", "sur", "en", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
+        "notre", "votre", "leur", "si", "quand", "est", "c", "ce", "cette", "comme", "euh", "ben", "puis",
+    ]
+
+    /// Lowercased ASCII words, accents folded.
+    static func words(_ text: String) -> [String] {
+        let folded = text.lowercased().folding(options: .diacriticInsensitive, locale: nil)
+        return folded.split { !($0.isASCII && ($0.isLetter || $0.isNumber)) }.map(String.init)
+    }
+
+    public static func incomplete(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        var core = trimmed
+        while let last = core.last, "\"')]".contains(last) { core.removeLast() }
+        if let last = core.last, ".!?\u{2026}".contains(last) { return false }
+        if let last = trimmed.last, ",;:\u{2013}-".contains(last) { return true }
+        let words = words(trimmed)
+        guard let last = words.last else { return false }
+        if continuing.contains(last) { return true }
+        // one or two words with no closing punctuation: a fragment
+        return words.count <= 2
+    }
+}
+
 public struct TurnOptions: Sendable {
     public var positive: Float = 0.5
     public var negative: Float = 0.35
@@ -47,6 +97,8 @@ public struct TurnOptions: Sendable {
     public var nearLevel: Float?
     /// share of nearLevel a voiced frame needs (far-field rejection)
     public var nearShare: Float = 0.22
+    /// added to the endpoint while the words so far are an unfinished clause
+    public var incompleteMs: Double = 0
 
     public init() {}
 }
@@ -93,6 +145,8 @@ public final class TurnDetector {
     private var bargeIn = false
     private var floor: Float = 0.002
     private var endpoint: Double
+    /// the current turn's words so far do not finish a sentence
+    private var unfinished = false
 
     public init(options: TurnOptions = TurnOptions()) {
         o = options
@@ -101,6 +155,27 @@ public final class TurnDetector {
 
     /// The current silence that ends a turn (adaptive).
     public var endpointMs: Double { endpoint }
+
+    /// The silence that ends the current turn: the endpoint, longer while
+    /// the words so far are an unfinished clause.
+    public var effectiveEndpointMs: Double { endpoint + (unfinished ? o.incompleteMs : 0) }
+
+    /// The pause preference changed: a new range, the learned place kept in it.
+    public func setPause(_ pause: CallPause) {
+        let range = pause.range
+        guard o.minEndpointMs != range.min || o.maxEndpointMs != range.max else { return }
+        let share = (endpoint - o.minEndpointMs) / max(1, o.maxEndpointMs - o.minEndpointMs)
+        o.minEndpointMs = range.min
+        o.endpointMs = range.start
+        o.maxEndpointMs = range.max
+        o.incompleteMs = range.incomplete
+        endpoint = (range.min + min(1, max(0, share)) * (range.max - range.min)).rounded()
+    }
+
+    /// The words recognized so far in this turn (the streaming transcript).
+    public func hint(_ text: String) {
+        unfinished = stage == .idle ? false : ClauseCheck.incomplete(text)
+    }
     public var speaking: Bool { stage == .speaking }
     public var active: Bool { stage != .idle }
 
@@ -119,6 +194,7 @@ public final class TurnDetector {
         turnMs = 0
         longestPauseMs = 0
         bargeIn = false
+        unfinished = false
     }
 
     private func voiced(_ frame: TurnFrame) -> Bool {
@@ -173,9 +249,9 @@ public final class TurnDetector {
             } else {
                 silenceMs += frameMs
             }
-            if silenceMs >= endpoint || turnMs >= o.maxTurnMs {
+            if silenceMs >= effectiveEndpointMs || turnMs >= o.maxTurnMs {
                 let spoke = speechMs
-                let usedEndpoint = endpoint
+                let usedEndpoint = effectiveEndpointMs
                 let longest = longestPauseMs
                 reset()
                 if spoke < o.minTurnMs { return .cancel }

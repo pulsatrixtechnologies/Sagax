@@ -103,10 +103,13 @@ public struct CallSettings: Codable, Equatable, Sendable {
     public var input: Input
     /// subtle tones for connect, interrupt, hold and end
     public var earcons: Bool
+    /// how long a pause ends a turn (short, normal, patient)
+    public var pause: CallPause
 
-    public init(input: Input = .auto, earcons: Bool = true) {
+    public init(input: Input = .auto, earcons: Bool = true, pause: CallPause = .normal) {
         self.input = input
         self.earcons = earcons
+        self.pause = pause
     }
 
     public static let storageKey = "omb.voiceCall.v1"
@@ -117,12 +120,13 @@ public struct CallSettings: Codable, Equatable, Sendable {
               let record = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return .default }
         return CallSettings(
             input: (record["input"] as? String) == "push" ? .push : .auto,
-            earcons: record["earcons"] as? Bool ?? true
+            earcons: record["earcons"] as? Bool ?? true,
+            pause: (record["pause"] as? String).flatMap(CallPause.init(rawValue:)) ?? .normal
         )
     }
 
     public var encoded: String {
-        let data = (try? JSONSerialization.data(withJSONObject: ["input": input.rawValue, "earcons": earcons], options: [.sortedKeys])) ?? Data()
+        let data = (try? JSONSerialization.data(withJSONObject: ["input": input.rawValue, "earcons": earcons, "pause": pause.rawValue] as [String: Any], options: [.sortedKeys])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
 }

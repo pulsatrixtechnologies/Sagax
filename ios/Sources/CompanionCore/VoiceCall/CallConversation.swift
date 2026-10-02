@@ -65,6 +65,10 @@ public struct CallConversation: Sendable {
     private var dropStream: String?
     /// answers cut by the person (the transcript marks them)
     public private(set) var interrupted: Set<String> = []
+    /// the cut answers' words the person never heard, by reply id
+    public private(set) var unheard: [String: String] = [:]
+    /// the last cut's unheard words: they go on the reply it cut, once settled
+    private var lastCutUnheard: String?
     /// a room: every member's reply is spoken in turn, nothing streams
     public let room: Bool
 
@@ -113,8 +117,15 @@ public struct CallConversation: Sendable {
     }
 
     /// The bot's speech was cut: the rest of that answer is not spoken.
-    public mutating func speechCancelled(currentStream: String?) {
+    public mutating func speechCancelled(currentStream: String?, cut: PlaybackCut? = nil) {
+        if let unheard = cut?.unheard, !unheard.isEmpty { lastCutUnheard = unheard }
         dropOldReply = true
+        dropStream = currentStream ?? ""
+    }
+
+    /// The bot's running turn is being stopped: what it still streams is
+    /// never spoken.
+    public mutating func botInterrupted(currentStream: String?) {
         dropStream = currentStream ?? ""
     }
 
@@ -191,6 +202,11 @@ public struct CallConversation: Sendable {
             let index = messages.firstIndex { $0.id == reply.id } ?? 0
             if dropOldReply || index < lastUser {
                 interrupted.insert(reply.id)
+                // the words of it the person never heard stay in the transcript, marked
+                if let words = lastCutUnheard {
+                    unheard[reply.id] = words
+                    lastCutUnheard = nil
+                }
                 continue
             }
             out.append(.replyDone(reply.text ?? "", speakerId: reply.from?.botId))

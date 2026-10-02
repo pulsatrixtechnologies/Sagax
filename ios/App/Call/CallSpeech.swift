@@ -186,6 +186,12 @@ final class CallSpeechPlayer: CallSpeaking {
     private var starts: [(index: Int, text: String, speaker: CallSpeaker?)] = []
     private var active = false
     private var current: Task<Void, Never>?
+    private var currentSentenceId: UUID?
+    /// The sentences of the current answer, in order, with when they play
+    /// (seconds on the voice node's clock): what a barge-in reports heard.
+    private var ledger: [(id: UUID, text: String, start: Double?, end: Double?, complete: Bool)] = []
+    /// where the next scheduled buffer starts on the voice node's clock
+    private var cursor: Double = 0
     /// The speaker of the next sentences queued (a room's member).
     var speaker: CallSpeaker?
     var onSentenceStart: (String, CallSpeaker?) -> Void = { _, _ in }
@@ -203,7 +209,9 @@ final class CallSpeechPlayer: CallSpeaking {
 
     func enqueue(_ sentence: String) {
         // the fetch starts now: the stream buffers while earlier sentences play
-        queue.append(Sentence(text: sentence, speaker: speaker, audio: source.audio(for: sentence, speaker: speaker)))
+        let entry = Sentence(text: sentence, speaker: speaker, audio: source.audio(for: sentence, speaker: speaker))
+        queue.append(entry)
+        ledger.append((entry.id, sentence, nil, nil, false))
         active = true
         if !pumping { Task { await pump() } }
     }
@@ -219,6 +227,7 @@ final class CallSpeechPlayer: CallSpeaking {
         starts = []
         scheduled = 0
         completed = 0
+        cursor = 0
         if io.running {
             io.voice.stop()
             io.voice.play()
@@ -232,6 +241,19 @@ final class CallSpeechPlayer: CallSpeaking {
 
     func tone(_ earcon: CallEarcon) { io.tone(earcon) }
 
+    /// The voice node's clock now (seconds since it last started playing).
+    private var clock: Double {
+        guard io.running, let nodeTime = io.voice.lastRenderTime,
+              let time = io.voice.playerTime(forNodeTime: nodeTime) else { return 0 }
+        return Double(time.sampleTime) / time.sampleRate
+    }
+
+    func playback(speed: Double) -> PlaybackCut {
+        PlaybackCut.measure(ledger.map { ($0.text, $0.start, $0.end, $0.complete) }, now: clock, speed: speed)
+    }
+
+    func resetLedger() { ledger = [] }
+
     func close() { cancel() }
 
     private func pump() async {
@@ -239,6 +261,7 @@ final class CallSpeechPlayer: CallSpeaking {
         pumping = true
         while let sentence = queue.first {
             let mine = generation
+            currentSentenceId = sentence.id
             // its own task, so a cut stops waiting on a slow download at once
             let consumer = Task { @MainActor [weak self] in
                 var first = true
@@ -252,6 +275,10 @@ final class CallSpeechPlayer: CallSpeaking {
                     }
                 } catch {
                     if let self, mine == self.generation, !(error is CancellationError) { self.onError(error) }
+                }
+                // all its audio arrived (or there was none: it takes no time)
+                if let self, mine == self.generation, let index = self.ledger.firstIndex(where: { $0.id == sentence.id }) {
+                    self.ledger[index].complete = true
                 }
             }
             current = consumer
@@ -267,6 +294,14 @@ final class CallSpeechPlayer: CallSpeaking {
         guard io.running else { return }
         let index = scheduled
         scheduled += 1
+        let at = max(cursor, clock)
+        cursor = at + Double(buffer.frameLength) / buffer.format.sampleRate
+        if let start, let entry = ledger.firstIndex(where: { $0.id == start.id }) {
+            ledger[entry].start = at
+        }
+        if let owner = currentSentenceId, let entry = ledger.firstIndex(where: { $0.id == owner }) {
+            ledger[entry].end = cursor
+        }
         if let start {
             if completed >= index {
                 let text = start.text

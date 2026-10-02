@@ -41,6 +41,8 @@ final class CallController: ObservableObject {
     @Published private(set) var notice: String?
     @Published private(set) var startedAt = Date()
     @Published private(set) var interrupted: Set<String> = []
+    /// The cut answers' words the person never heard, by reply id.
+    @Published private(set) var unheard: [String: String] = [:]
     /// A room: the member whose voice is audible.
     @Published private(set) var speakingMemberId: String?
     @Published var unavailable: Unavailable?
@@ -78,6 +80,8 @@ final class CallController: ObservableObject {
     private var members: [Bot] = []
     private var organization = false
     private var previewVoice: String?
+    private var callAlive: Timer?
+    private var callEnd: (() -> Void)?
 
     private init() {
         voiceSettings = VoiceModeSettings.decode(UserDefaults.standard.string(forKey: VoiceModeSettings.storageKey))
@@ -141,6 +145,7 @@ final class CallController: ObservableObject {
         note = nil
         notice = nil
         interrupted = []
+        unheard = [:]
         speakingMemberId = nil
         voices = nil
         voicesError = nil
@@ -157,7 +162,11 @@ final class CallController: ObservableObject {
 
         // the ears
         let recognizer = CallRecognizer()
-        recognizer.onPartial = { [weak self] text in self?.heard = text }
+        recognizer.onPartial = { [weak self] text in
+            self?.heard = text
+            // the words so far move the endpoint: an unfinished clause waits longer
+            self?.engine?.partial(text)
+        }
         #if DEBUG
         if injecting { recognizer.useScript { CallDebug.shared.currentScript } }
         #endif
@@ -202,7 +211,12 @@ final class CallController: ObservableObject {
         let player = CallSpeechPlayer(io: io, source: source)
         if case let .bot(bot) = chat { player.speaker = CallSpeaker(id: bot.id, name: bot.name, voice: bot.voice) }
 
-        let engine = LiveCallEngine(transcriber: recognizer, player: player, settings: { [weak self] in self?.callSettings ?? .default })
+        let engine = LiveCallEngine(
+            transcriber: recognizer,
+            player: player,
+            settings: { [weak self] in self?.callSettings ?? .default },
+            speed: { [weak self] in self?.voiceSettings.speed ?? 1 }
+        )
         wire(engine)
         player.onSentenceStart = { [weak self, weak engine] text, speaker in
             engine?.playerSentenceStarted(text)
@@ -226,6 +240,17 @@ final class CallController: ObservableObject {
         stateSink = session.$state.sink { [weak self] state in
             // @Published sends the new value before it is stored: read this one
             DispatchQueue.main.async { self?.observe(state) }
+        }
+
+        // the server knows the thread is on a call: every send to it while
+        // the call lasts is a call turn (typed words, a queued line, a retry)
+        if case let .bot(bot) = chat {
+            let call = (callId: callId, threadId: threadId, language: voiceSettings.language)
+            Task { await client.voiceCallSession(botId: bot.id, state: .start, callId: call.callId, threadId: call.threadId, language: call.language) }
+            callAlive = Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { _ in
+                Task { await client.voiceCallSession(botId: bot.id, state: .alive, callId: call.callId, threadId: call.threadId, language: call.language) }
+            }
+            callEnd = { Task { await client.voiceCallSession(botId: bot.id, state: .end, callId: call.callId, threadId: call.threadId, language: call.language) } }
         }
 
         // the call itself: CallKit, or the audio session directly
@@ -296,6 +321,10 @@ final class CallController: ObservableObject {
     func end(fromSystem: Bool = false) {
         guard target != nil else { return }
         CallQuiet.shared.set(threadId, live: false)
+        callAlive?.invalidate()
+        callAlive = nil
+        callEnd?()
+        callEnd = nil
         engine?.end()
         if !fromSystem { callKit?.end() }
         callKit = nil
@@ -398,10 +427,10 @@ final class CallController: ObservableObject {
         engine.events.caption = { [weak self] text in self?.caption = text }
         engine.events.microphone = { [weak self] open in self?.io?.micOpen = open }
         engine.events.rejected = { _ in }
-        engine.events.speechCancelled = { [weak self] in
+        engine.events.speechCancelled = { [weak self] cut in
             guard let self else { return }
             self.caption = ""
-            self.conversation.speechCancelled(currentStream: self.session?.state.streaming[self.threadId])
+            self.conversation.speechCancelled(currentStream: self.session?.state.streaming[self.threadId], cut: cut)
             #if DEBUG
             CallDebug.shared.count("cancelled")
             #endif
@@ -413,6 +442,8 @@ final class CallController: ObservableObject {
             CallDebug.shared.count("interruptBot")
             #endif
             let threadId = self.threadId
+            // what the stopped turn still streams is never spoken
+            self.conversation.botInterrupted(currentStream: session.state.streaming[threadId])
             Task {
                 switch target {
                 case let .bot(bot): await session.interruptQuietly(botId: bot.id, threadId: threadId)
@@ -420,10 +451,11 @@ final class CallController: ObservableObject {
                 }
             }
         }
-        engine.events.utterance = { [weak self] text, interrupted in self?.utterance(text, interrupted: interrupted) }
+        engine.events.utterance = { [weak self] turn in self?.utterance(turn) }
     }
 
-    private func utterance(_ text: String, interrupted: Bool) {
+    private func utterance(_ turn: CallTurn) {
+        let text = turn.text
         guard let session, let target, let engine, let client = session.callClient else { return }
         heard = ""
         notice = nil
@@ -455,19 +487,36 @@ final class CallController: ObservableObject {
             CallDebug.shared.count("sent")
             #endif
             Task {
-                let sent: Bool
                 switch target {
                 case let .bot(bot):
-                    let language = voiceSettings.language
-                    sent = await session.sendCallTurn(words, to: bot, threadId: threadId, voiceCall: VoiceCallMeta(callId: callId, interrupted: interrupted, language: language))
+                    // one id per utterance (also the send's id): the server
+                    // delivers it once, whatever retries (desktop LiveCall)
+                    let meta = VoiceCallMeta(
+                        callId: callId, interrupted: turn.interrupted, language: voiceSettings.language,
+                        utteranceId: "utt-" + UUID().uuidString.lowercased(), cut: turn.cut, continues: turn.continues
+                    )
+                    var sent = await session.sendCallTurn(words, to: bot, threadId: threadId, voiceCall: meta)
+                    if !sent, self.target?.id == target.id {
+                        // a blip, or a turn that ended under it: once more, same utterance
+                        session.actionError = nil
+                        try? await Task.sleep(nanoseconds: 800_000_000)
+                        if self.target?.id == target.id {
+                            sent = await session.sendCallTurn(words, to: bot, threadId: threadId, voiceCall: meta)
+                        }
+                    }
+                    if !sent, self.target?.id == target.id {
+                        session.actionError = nil
+                        self.resync()
+                        // never left waiting on silence
+                        await engine.say(String(localized: "That did not get through. Could you say it again?"))
+                    }
                 case let .room(room):
                     await session.send(words, to: .room(room))
-                    sent = session.actionError == nil
-                }
-                if !sent, self.target?.id == target.id {
-                    self.note = session.actionError ?? String(localized: "That didn't come through. Try again.")
-                    session.actionError = nil
-                    self.resync()
+                    if session.actionError != nil, self.target?.id == target.id {
+                        self.note = session.actionError
+                        session.actionError = nil
+                        self.resync()
+                    }
                 }
             }
         }
@@ -504,6 +553,7 @@ final class CallController: ObservableObject {
         }
         let actions = conversation.settle(messages: messages, botName: name, thinking: engine.state.phase == .thinking, playerBusy: player.busy)
         interrupted = conversation.interrupted
+        unheard = conversation.unheard
         for action in actions {
             switch action {
             case let .say(prompt, speakerId):
