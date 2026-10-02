@@ -110,8 +110,12 @@ final class ThreadNavigationUITests: XCTestCase {
         XCTAssertEqual(alpha.frame.midY, beta.frame.midY, accuracy: 1)
         XCTAssertEqual(one.frame.midY, token.frame.midY, accuracy: 1)
         XCTAssertGreaterThan(one.frame.midY, alpha.frame.midY)
-        XCTAssertEqual(alpha.frame.width, one.frame.width, accuracy: 1)
-        XCTAssertEqual(beta.frame.width, token.frame.width, accuracy: 1)
+        // iOS 27 pads a small element's accessibility frame by an amount that
+        // depends on its text, so widths no longer describe the cell. A grid
+        // column shows as a shared leading edge.
+        XCTAssertEqual(alpha.frame.minX, one.frame.minX, accuracy: 1)
+        XCTAssertEqual(beta.frame.minX, token.frame.minX, accuracy: 1)
+        XCTAssertGreaterThan(beta.frame.minX, alpha.frame.minX)
         XCTAssertEqual(token.frame.height, one.frame.height, accuracy: 1)
         let cellIds = [
             "message-preview-gmail-grid-scroll-cell-0-0",
