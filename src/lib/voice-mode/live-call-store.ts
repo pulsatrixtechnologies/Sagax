@@ -14,6 +14,8 @@ export interface LiveCallTranscriptLine {
   who: "you" | "bot";
   text: string;
   interrupted?: boolean;
+  /** the words of a cut answer the person never heard */
+  unheard?: string;
 }
 
 export interface LiveCallMetrics {

@@ -108,7 +108,7 @@ describe("VoiceModeSettingsPanel", () => {
 });
 
 describe("the live call's settings in the panel", () => {
-  const call = { input: "auto" as const, onlyMyVoice: true, earcons: true };
+  const call = { input: "auto" as const, onlyMyVoice: true, earcons: true, pause: "normal" as const };
 
   it("offers hands-free or push to talk, Only my voice with its enrollment, and call sounds", () => {
     const markup = html(props({ call, enrollment: { state: "none" }, onCallChange: vi.fn(), onEnroll: vi.fn(), onForget: vi.fn() }));
@@ -134,6 +134,17 @@ describe("the live call's settings in the panel", () => {
     const enrolled = html(props({ call, enrollment: { state: "enrolled" }, onCallChange, onEnroll, onForget: vi.fn() }));
     expect(enrolled).toContain("Forget my voice");
     expect(enrolled).toContain("Record again");
+  });
+
+  it("offers the pause that ends a turn: short, normal or patient", () => {
+    const onCallChange = vi.fn();
+    const markup = html(props({ call, enrollment: { state: "none" }, onCallChange, onEnroll: vi.fn(), onForget: vi.fn() }));
+    for (const pause of ["short", "normal", "patient"]) expect(markup).toContain(`data-voice-pause="${pause}"`);
+    expect(markup).toContain("End of turn");
+    expect(markup).toMatch(/aria-checked="true"[^>]*data-voice-pause="normal"/);
+    const tree = elements(VoiceModeSettingsPanel(props({ call, enrollment: { state: "none" }, onCallChange, onEnroll: vi.fn(), onForget: vi.fn() })));
+    (tree.find((el) => el.props["data-voice-pause"] === "patient")!.props.onClick as () => void)();
+    expect(onCallChange).toHaveBeenCalledWith({ pause: "patient" });
   });
 
   it("shows the enrollment's progress while recording", () => {

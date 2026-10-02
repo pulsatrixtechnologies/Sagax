@@ -6,7 +6,7 @@
 import type { ReactNode } from "react";
 import { Check, ChevronDown, Loader2, Play, Square } from "lucide-react";
 
-import type { CallSettings } from "@/lib/voice-mode/call-settings";
+import { CALL_PAUSES, type CallSettings } from "@/lib/voice-mode/call-settings";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -69,6 +69,25 @@ function CallSection({ call, enrollment, onCallChange, onEnroll, onForget }: Req
           ))}
         </div>
       </div>
+      <div className="flex items-center justify-between gap-3 py-1.5">
+        <span className="text-[13px] text-ink-secondary">{t("voiceMode.call.pause")}</span>
+        <div className="flex rounded-lg bg-raised p-0.5 text-[12.5px]" role="radiogroup" aria-label={t("voiceMode.call.pause")}>
+          {CALL_PAUSES.map((pause) => (
+            <button
+              key={pause}
+              type="button"
+              role="radio"
+              aria-checked={call.pause === pause}
+              data-voice-pause={pause}
+              onClick={() => onCallChange({ pause })}
+              className={cn("rounded-md px-2.5 py-1", call.pause === pause ? "bg-panel text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}
+            >
+              {t(`voiceMode.call.pause.${pause}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="pb-1 text-[11.5px] leading-snug text-ink-tertiary">{t("voiceMode.call.pauseHelp")}</p>
       <Toggle label={t("voiceMode.call.onlyMyVoice")} checked={call.onlyMyVoice && enrollment.state === "enrolled"} data="only-my-voice" onChange={(onlyMyVoice) => {
         if (onlyMyVoice && enrollment.state !== "enrolled") onEnroll();
         else onCallChange({ onlyMyVoice });

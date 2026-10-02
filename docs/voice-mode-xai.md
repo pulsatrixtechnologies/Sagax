@@ -45,6 +45,40 @@ that join a running turn are marked as said on the call. Tests:
 `server/voice-call-prompt.test.ts`, `server/voice-call-prompt.e2e.test.ts`,
 the per-driver cases in `server/drivers/{claude,codex,openai-compat}.test.ts`.
 
+A live session gets the volatile section only when it changed, so every call
+turn's own words also carry a short bracketed call mark
+(`voiceCallTurnPrompt`, never stored). The server keeps the call's state
+per thread (`server/voice-call-session.ts`): LiveCall says when its call
+starts, stays alive and ends (`POST /api/bots/<id>/voice/call`
+`{threadId, callId, state}`), and every send to that thread while the call
+lasts is a call turn, whatever path it takes (typed words, a queued line
+steered with the Steer button, a retry). A call never closed expires after
+20 minutes without a turn. On a call, words sent while the bot works always
+join its turn (no parallel or after chooser).
+
+Each utterance has an `utteranceId` (also its `sendId`): the server
+delivers it once, and answers a second send of it with the first receipt.
+Words steered into a running turn are counted as received once the engine
+says a model call took them in (Claude's `--replay-user-messages` echo,
+`steer.received`), so the next turn never offers them again as a message
+"you may already have".
+
+On a barge-in the player reports what played by its audio clock: the
+sentences heard, the share of the one cut (at a word), and the rest, plus
+what the bot wrote but had not yet handed to the voice. The turn that cut
+the bot carries `voiceCall.heard` and `voiceCall.unheard`; the bot reads
+"They heard up to: '...'. They did not hear: '...'", the person's message
+keeps both, and the call transcript shows the unheard words, marked.
+
+A call turn is never left unanswered (`server/voice-call-watchdog.ts`):
+2.5 s after a direct turn settles on a thread on a call, the person's
+newest call words with no written answer after them (nothing running or
+queued, no open question, not words they cut on purpose) run once more,
+told to answer briefly or ask. Words sent while a turn is being stopped
+wait for the next turn; words whose steer raced the turn's end start the
+next one. A send that fails is retried once with the same utterance, then
+the call says it did not get through.
+
 Before synthesis the call strips any markdown, emoji, URL or HTML the bot
 still wrote, and stops at the follow-up rule (`src/lib/voice-mode/spoken.ts`,
 then the server's `server/tts/speech-text.ts`).
@@ -68,12 +102,25 @@ the configured TTS provider, half duplex).
   only ducks it for a moment.
 - **Turns.** Silero VAD v5 (on this computer, `models/silero-vad-v5.onnx`)
   gives a voice probability per 32 ms frame; `turns.ts` starts a turn after
-  about 190 ms of voice and ends it after an adaptive silence (600 ms to start,
-  480 to 900 ms as it learns the person's pauses).
+  about 190 ms of voice and ends it after an adaptive silence. Settings >
+  End of turn picks the range: Short (420 to 800 ms), Normal (560 to
+  1100 ms, 700 to start) or Patient (800 to 1500 ms). The streaming words
+  move it: an unfinished clause (no final punctuation and a trailing "and",
+  "to", "the", "de", "pour"..., a trailing comma or filler, or one or two
+  words) waits 500 to 1000 ms longer. A turn that starts within 1.5 s of
+  the last one, before the bot said anything, is the same utterance: it is
+  sent whole (`voiceCall.continues`) and the fragment's turn is stopped. A
+  lone short token no one says alone ("dwad"), under two letters, or a word
+  or two xAI itself doubts (its confidence, passed through the listen
+  socket) is never a turn. Talking while the bot works silently joins its
+  turn; only talking over its voice stops it.
 - **Streaming speech to text.** While a turn is spoken its 16 kHz PCM streams
   over one WebSocket per call, `GET /api/bots/<id>/voice/listen`, which the
   server bridges to `wss://api.x.ai/v1/stt` with the key; the moment the turn
-  ends the page sends `{"type":"finalize"}` and the words come back. Silence
+  ends the page sends `{"type":"finalize"}` and the words come back. A final
+  chunk is one xAI will not revise, not the end of the utterance: only
+  `speech_final` closes it, and late words of an utterance the timeout
+  settled are kept out of the next one. Silence
   and room noise are never sent. Without the socket (an old server, a proxy
   without WebSockets) each turn is uploaded whole to `/voice/transcribe`.
 - **The answer while it is written.** The bot's streaming text is cut into
@@ -111,6 +158,18 @@ the configured TTS provider, half duplex).
 Models run with onnxruntime-web (MIT) from this app's own bundle; no CDN.
 Sizes: Silero VAD 2.3 MB, CAM++ int8 8.9 MB, the runtime's WebAssembly
 14 MB, loaded when a call starts. Licenses: `src/lib/voice-mode/models/NOTICE.txt`.
+
+## Stable tools during a call
+
+On an organization server each turn used to exchange the speaker's sign-in
+for a fresh Perspicax MCP token per profile and revoke it after the turn; a
+call's quick turns hit the rate limit and a refused exchange left the
+profile out of that turn. While the thread is on a call, a turn's tokens
+(and their Perspicax MCP session) are kept for the call's next turn and
+reused without an exchange (`PerspicaxMcp` `keepWarm`), then revoked when
+the call ends. An exchange refused for now is retried once. A call turn
+whose MCP set changed is logged (`[voice-call]`), and so are the servers
+added or removed when the Claude CLI relaunches.
 
 ## Who pays, and the key
 
@@ -206,6 +265,13 @@ the server's own voice routes.
 - `src/lib/voice-mode/call-logic.test.ts`: the call's state machine (barge-in,
   cancellation, hold, mute), endpointing and its adaptation, the echo guard,
   the sentence splitter.
+- `server/voice-call-reliability.e2e.test.ts`: every call turn marked on
+  every path, no duplicate steer, heard and unheard, the unanswered
+  watchdog, words sent while a turn stops; `server/org-mcp.e2e.test.ts`:
+  one Perspicax exchange for a whole call; `server/delta-context.e2e.test.ts`:
+  a steer the engine echoed is never offered again.
+- `src/lib/voice-mode/player.test.ts`, `stt-stream.test.ts`: what was heard
+  at a cut, xAI finalize semantics.
 - `src/lib/voice-mode/call.test.ts`: the call with fake devices (one turn,
   barge-in under 160 ms, a cough, the streamed answer, Only my voice, push to
   talk, mute, hold, a language change, the upload fallback).

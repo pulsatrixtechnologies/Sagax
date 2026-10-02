@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { INITIAL_CALL, step, type CallEffect, type CallEvent, type CallState } from "./call-machine";
 import { EchoGuard } from "./echo";
 import { SentenceStream } from "./sentences";
-import { FRAME_MS, TurnDetector, type TurnEvent } from "./turns";
+import { FRAME_MS, incompleteClause, PAUSE_PRESETS, TurnDetector, type TurnEvent } from "./turns";
 
 function run(events: CallEvent[], from: CallState = INITIAL_CALL) {
   let state = from;
@@ -73,12 +73,15 @@ describe("call state machine", () => {
     expect(out.state).toMatchObject({ phase: "speaking", ducked: false, botAudible: true });
   });
 
-  it("talking while the bot works interrupts its turn", () => {
+  it("talking while the bot works (silent) does not stop its turn: the words join it", () => {
     const working = run([{ type: "bot-busy", busy: true }], connected).state;
     expect(working.phase).toBe("thinking");
     const out = run([{ type: "speech-candidate" }, { type: "speech-start" }], working);
-    expect(out.types).toEqual(["interrupt-bot"]);
-    expect(out.state.phase).toBe("interrupted");
+    expect(out.types).toEqual([]);
+    expect(out.state.phase).toBe("hearing");
+    // and they are sent when the person stops
+    const said = run([{ type: "speech-end" }, { type: "utterance", text: "and also the llama" }], out.state);
+    expect(said.types).toEqual(["finalize-stt", "send"]);
   });
 
   it("another voice (Only my voice) is dropped with a soft earcon and the bot resumes", () => {
@@ -192,10 +195,45 @@ describe("turn detection (endpointing)", () => {
     expect(barge[1]!.at).toBeLessThanOrEqual(FRAME_MS * 5);
   });
 
+  it("an unfinished clause waits longer before the turn ends", () => {
+    const run = (said: string) => {
+      const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
+      feed(detector, [{ p: 0.9, n: frames(900) }]);
+      detector.hint(said);
+      const events = feed(detector, [{ p: 0.05, n: frames(2500) }]);
+      return events.find((e) => e.type === "end")!.at;
+    };
+    const done = run("What is the weather in Montreal?");
+    const cut = run("give me a good prompt to");
+    expect(done).toBeLessThan(PAUSE_PRESETS.normal.endpointMs + FRAME_MS * 2);
+    expect(cut - done).toBeGreaterThanOrEqual(PAUSE_PRESETS.normal.incompleteMs - FRAME_MS);
+  });
+
+  it("the pause preference sets the endpoint's range", () => {
+    const detector = new TurnDetector({ ...PAUSE_PRESETS.normal });
+    detector.setPause("patient");
+    expect(detector.endpointMs).toBeGreaterThanOrEqual(PAUSE_PRESETS.patient.minEndpointMs);
+    detector.setPause("short");
+    expect(detector.endpointMs).toBeLessThanOrEqual(PAUSE_PRESETS.short.maxEndpointMs);
+    expect(PAUSE_PRESETS.short.endpointMs).toBeLessThan(PAUSE_PRESETS.normal.endpointMs);
+    expect(PAUSE_PRESETS.normal.endpointMs).toBeLessThan(PAUSE_PRESETS.patient.endpointMs);
+  });
+
   it("far-field voice under the person's level is ignored once known", () => {
     const detector = new TurnDetector({ nearLevel: 0.08 });
     expect(feed(detector, [{ p: 0.95, n: 30, level: 0.01 }])).toEqual([]);
     expect(feed(detector, [{ p: 0.95, n: 10, level: 0.06 }]).map((e) => e.type)).toEqual(["candidate", "start"]);
+  });
+});
+
+describe("an unfinished clause", () => {
+  it("is one that stops on a conjunction, a preposition, a comma or after a word or two", () => {
+    for (const text of ["give me a good prompt to", "the weather right now in", "and", "je voudrais que", "envoie-le à", "so I was thinking,", "the weather", "um"]) {
+      expect(incompleteClause(text), text).toBe(true);
+    }
+    for (const text of ["What is the weather in Montreal?", "Give me a good prompt.", "send it to Max right away", "quelle heure est-il", ""]) {
+      expect(incompleteClause(text), text).toBe(false);
+    }
   });
 });
 

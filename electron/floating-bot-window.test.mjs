@@ -560,7 +560,7 @@ describe("floating bots: a voice call with the mascot", () => {
       phase: "speaking", muted: true, botAudible: true, push: false, startedAt: 5, line: "x".repeat(5000), token: "secret",
       transcript: Array.from({ length: 20 }, (_, i) => ({ id: `m${i}`, who: i % 2 ? "bot" : "you", text: "hi", html: "<b>" })),
       settings: { voice: "eve", speed: 9, language: "fr", key: "sk" },
-      callSettings: { input: "push", onlyMyVoice: true, earcons: false },
+      callSettings: { input: "push", onlyMyVoice: true, earcons: false, pause: "patient" },
       voices: [{ id: "eve", label: "Eve" }, { id: "bad id!", label: "X" }],
       enrollment: { state: "recording", share: 3 },
       previewing: { id: "eve", loading: true },
@@ -570,7 +570,7 @@ describe("floating bots: a voice call with the mascot", () => {
     expect(call.transcript).toHaveLength(8);
     expect(call.transcript[0]).not.toHaveProperty("html");
     expect(call.settings).toEqual({ voice: "eve", speed: 2, language: "fr" });
-    expect(call.callSettings).toEqual({ input: "push", onlyMyVoice: true, earcons: false });
+    expect(call.callSettings).toEqual({ input: "push", onlyMyVoice: true, earcons: false, pause: "patient" });
     expect(call.voices).toEqual([{ id: "eve", label: "Eve" }]);
     expect(call.enrollment).toEqual({ state: "recording", share: 1 });
     expect(sanitizeCall({ phase: "ringing" })).toBeNull();
@@ -583,6 +583,9 @@ describe("floating bots: a voice call with the mascot", () => {
     expect(sanitizeFloatingEvent({ type: "call", action: "preview", voice: "eve" })).toEqual({ type: "call", action: "preview", voice: "eve" });
     expect(sanitizeFloatingEvent({ type: "call", action: "settings", patch: { voice: "eve", speed: 1.5, xai: "key" } })).toEqual({ type: "call", action: "settings", patch: { voice: "eve", speed: 1.5 } });
     expect(sanitizeFloatingEvent({ type: "call", action: "call-settings", patch: { input: "shout" } })).toBeNull();
+    // the end-of-turn pause (Short / Normal / Patient) travels too
+    expect(sanitizeFloatingEvent({ type: "call", action: "call-settings", patch: { pause: "short" } })).toMatchObject({ patch: { pause: "short" } });
+    expect(sanitizeFloatingEvent({ type: "call", action: "call-settings", patch: { pause: "forever" } })).toBeNull();
   });
 
   it("relays the call's levels from the app page to that bot's window only", () => {

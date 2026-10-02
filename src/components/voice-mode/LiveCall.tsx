@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore, useStreaming, visibleMessages, type Bot } from "@/state/store";
 import { clearVoiceCallId, currentCall, endCall, setVoiceCallId } from "@/lib/call";
 import { NO, YES } from "@/lib/voice-mode/answers";
+import { voiceCallSession } from "@/lib/voice-mode/api";
 import { VoiceCall, type BargeInMetrics, type TurnMetrics } from "@/lib/voice-mode/call";
 import { readCallSettings } from "@/lib/voice-mode/call-settings";
 import type { CallState } from "@/lib/voice-mode/call-machine";
@@ -44,6 +45,10 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<CallMetrics>({});
   const [interrupted, setInterrupted] = useState<Set<string>>(() => new Set());
+  /** the cut answers' words the person never heard, by reply id (transcript) */
+  const [unheard, setUnheard] = useState<Map<string, string>>(() => new Map());
+  /** the last cut: its unheard words go on the reply it cut, once settled */
+  const lastCut = useRef<{ unheard: string } | null>(null);
   const threadRef = useRef(bot.threadId);
   threadRef.current = bot.threadId;
   const botRef = useRef(bot);
@@ -55,6 +60,20 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
     setVoiceCallId(bot.id, callId);
     return () => clearVoiceCallId(bot.id, callId);
   }, [bot.id, callId]);
+  // the server knows the thread is on a call: any send to it while the call
+  // lasts is a call turn (typed words, a queued line, a retry), and the
+  // call's tools stay the same from turn to turn
+  const callThread = bot.threadId;
+  useEffect(() => {
+    const language = readVoiceModeSettings().language;
+    const call = { callId, threadId: callThread, ...(language && language !== "auto" ? { language } : {}) };
+    void voiceCallSession(bot.id, "start", call);
+    const alive = setInterval(() => void voiceCallSession(bot.id, "alive", call), 5 * 60_000);
+    return () => {
+      clearInterval(alive);
+      void voiceCallSession(bot.id, "end", call);
+    };
+  }, [bot.id, callThread, callId]);
 
   const messages = visibleMessages(bot);
   const approval = pendingApprovals(messages)[0];
@@ -110,8 +129,9 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
           ...(barge?.cancelledAt !== undefined ? { bargeInMs: Math.round(barge.cancelledAt - barge.candidateAt) } : {}),
         });
       }),
-      live.on("speech-cancelled", () => {
+      live.on("speech-cancelled", (cut) => {
         setCaption("");
+        if (cut.unheard) lastCut.current = { unheard: cut.unheard };
         // what was being said is cut: the rest of that answer is not spoken
         dropOldReply.current = true;
         dropStream.current = streamingRef.current ?? "";
@@ -120,6 +140,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
         const current = botRef.current;
         // an approval being answered by voice keeps its turn
         if (askedApproval.current || !current.busy) return;
+        // what the stopped turn still streams is never spoken
+        dropStream.current = streamingRef.current ?? "";
         dispatch({ type: "interrupt", botId: current.id, threadId: current.threadId });
       }),
     ];
@@ -132,7 +154,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
 
   // ── what the person said ───────────────────────────────────────────────
   const onUtterance = useCallback(
-    (said: string, interrupted = false) => {
+    (said: string, interrupted = false, cut?: { heard: string; unheard: string }, continues = false) => {
       const current = botRef.current;
       if (!call || currentCall() !== current.id) return;
       setHeard("");
@@ -171,20 +193,45 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       // a new turn: what the interrupted answer had left is never spoken
       dropOldReply.current = false;
       const language = readVoiceModeSettings().language;
-      dispatch({
+      // one id per utterance: the server delivers it once, whatever retries
+      const utteranceId = crypto.randomUUID();
+      // a send that failed (a network blip, a turn that ended under it) is
+      // tried again once with the same utterance; then the person is told,
+      // never left waiting on silence
+      let attempts = 0;
+      const onError = () => {
+        attempts += 1;
+        if (attempts > 1 || currentCall() !== current.id) {
+          void call.say(t("voiceMode.sendFailed"));
+          return;
+        }
+        setTimeout(send, 800);
+      };
+      const send = () => dispatch({
         type: "send",
         botId: current.id,
         text: said,
         threadId: current.threadId,
-        voiceCall: { callId, ...(interrupted ? { interrupted: true } : {}), ...(language && language !== "auto" ? { language } : {}) },
+        sendId: utteranceId,
+        onError,
+        voiceCall: {
+          callId,
+          utteranceId,
+          // it completes the fragment sent just before (cut by a pause)
+          ...(continues ? { continues: true } : {}),
+          // a barge-in says how much of the cut answer the person heard
+          ...(interrupted ? { interrupted: true, ...(cut ? { heard: cut.heard, unheard: cut.unheard } : {}) } : {}),
+          ...(language && language !== "auto" ? { language } : {}),
+        },
       });
+      send();
     },
     [call, callId, dispatch],
   );
 
   useEffect(() => {
     if (!call) return;
-    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted));
+    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted, turn.cut, turn.continues === true));
   }, [call, onUtterance]);
 
   useEffect(() => {
@@ -238,6 +285,10 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       // an answer from before the person's latest words (the turn they cut)
       if (dropOldReply.current || messages.indexOf(reply) < lastUser) {
         setInterrupted((previous) => new Set(previous).add(reply.id));
+        // the words of it the person never heard stay in the transcript, marked
+        const cut = lastCut.current;
+        lastCut.current = null;
+        if (cut?.unheard) setUnheard((previous) => new Map(previous).set(reply.id, cut.unheard));
         continue;
       }
       void call.replyDone(reply.text!);
@@ -251,9 +302,16 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   // ── what every surface shows ─────────────────────────────────────────
   const [startedAt] = useState(() => Date.now());
   const lines = messages.filter((m) => m.kind === "text" && m.text?.trim()).slice(-8);
-  const transcriptKey = lines.map((m) => `${m.id}:${m.text!.length}:${interrupted.has(m.id) ? 1 : 0}`).join("|");
+  const transcriptKey = lines.map((m) => `${m.id}:${m.text!.length}:${interrupted.has(m.id) ? 1 : 0}:${unheard.get(m.id)?.length ?? 0}`).join("|");
   const transcript = useMemo(
-    () => lines.map((m) => ({ id: m.id, who: m.role === "user" ? ("you" as const) : ("bot" as const), text: m.text!.trim(), interrupted: interrupted.has(m.id) })),
+    () => lines.map((m) => ({
+      id: m.id,
+      who: m.role === "user" ? ("you" as const) : ("bot" as const),
+      text: m.text!.trim(),
+      interrupted: interrupted.has(m.id),
+      // the cut answer's words the person never heard, marked
+      ...(unheard.has(m.id) ? { unheard: unheard.get(m.id) } : {}),
+    })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [transcriptKey],
   );

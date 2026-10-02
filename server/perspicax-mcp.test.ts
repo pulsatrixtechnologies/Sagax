@@ -14,7 +14,7 @@ const CATALOG = [
   { id: "P2", slug: "billing", name: "Billing", description: "" },
 ];
 
-function harness(options: { held?: Record<string, string[]>; mcp?: (request: { headers: Record<string, string>; body: any; method: string }) => Response | Promise<Response> } = {}) {
+function harness(options: { held?: Record<string, string[]>; mcp?: (request: { headers: Record<string, string>; body: any; method: string }) => Response | Promise<Response>; onCall?: Set<string> } = {}) {
   let clock = 1_000_000;
   const held = options.held ?? { A: ["P1", "P2"], B: ["P1"], C: [] };
   const subjects: Record<string, { iss: string; sub: string; disabled: boolean }> = {
@@ -30,6 +30,7 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
   const subjectCalls: string[] = [];
   let signInFails: SubjectTokenOutcome | null = null;
   let exchangeFails: ExchangeResult | null = null;
+  let exchangeFailsOnce: ExchangeResult | null = null;
   /** Slice 6: who allowed routines to act in their name. */
   const delegations = new Set<string>();
   const delegationCalls: string[] = [];
@@ -39,6 +40,11 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
     exchangeToken: async (subjectToken, profileId): Promise<ExchangeResult> => {
       exchanges.push({ subject: subjectToken, profile: profileId });
       if (exchangeFails) return exchangeFails;
+      if (exchangeFailsOnce) {
+        const once = exchangeFailsOnce;
+        exchangeFailsOnce = null;
+        return once;
+      }
       const sub = subjectToken.split(".")[1]!;
       if (subjects[`pr_${{ A: "alice", B: "bob", C: "carol" }[sub]}`]?.disabled) return { ok: false, error: "subject" };
       if (!(held[sub] ?? []).includes(profileId)) return { ok: false, error: "not_held" };
@@ -79,6 +85,7 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
     },
     delegationRefused: (principalId) => refusedDelegations.push(principalId),
     botProfiles: (id) => botProfiles[id],
+    ...(options.onCall ? { keepWarm: (threadId: string) => options.onCall!.has(threadId) } : {}),
     version: "0.1.89",
     fetch: fetcher,
     now: () => clock,
@@ -89,6 +96,7 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
     advance: (ms: number) => { clock += ms; },
     failSignIn: (outcome: SubjectTokenOutcome | null) => { signInFails = outcome; },
     failExchange: (outcome: ExchangeResult | null) => { exchangeFails = outcome; },
+    failExchangeOnce: (outcome: ExchangeResult) => { exchangeFailsOnce = outcome; },
   };
 }
 
@@ -222,6 +230,46 @@ describe("PerspicaxMcp", () => {
     h.failSignIn({ ok: false, error: "rate_limited", retryAfterMs: 60_000 });
     expect(await h.mcp.prepareTurn({ threadId: "t9", generation: "g", bot, speakerPrincipalId: BOB, speakerOrigin: "person" })).toMatchObject({ unavailable: [{ reason: "rate_limited" }] });
     expect(h.logs.join("\n")).not.toMatch(/could not be reached/);
+  });
+
+  it("on a live call, keeps a turn's token for the next turn: no new exchange, tools stay mounted", async () => {
+    const onCall = new Set(["t1"]);
+    const h = harness({ onCall });
+    expect((await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" })).mounted).toHaveLength(1);
+    await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
+    await h.mcp.endGeneration("t1", "g1");
+    // kept, not revoked
+    expect(h.revoked).toEqual([]);
+    const next = await h.mcp.prepareTurn({ threadId: "t1", generation: "g2", bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    expect(next).toEqual({ mounted: [{ profileId: "P1", slug: "dispatch", name: "Dispatch" }], unavailable: [] });
+    expect(h.exchanges).toHaveLength(1);
+    await h.mcp.relay({ threadId: "t1", generation: "g2", botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 2, method: "tools/list" } });
+    // the same token and the same Perspicax session serve the next turn
+    expect(h.mcpCalls.map((call) => call.headers.authorization)).toEqual(["Bearer pxlo1.B.mcp-P1-1", "Bearer pxlo1.B.mcp-P1-1"]);
+    expect(h.mcpCalls[1]!.headers["mcp-session-id"]).toBe("sess-1");
+    // the old turn's key no longer answers
+    expect(await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 3, method: "tools/list" } })).toMatchObject({ status: 403 });
+    // the call ends: the kept token is revoked
+    await h.mcp.endGeneration("t1", "g2");
+    expect(h.revoked).toEqual([]);
+    await h.mcp.endWarm("t1");
+    expect(h.revoked).toEqual(["pxlo1.B.mcp-P1-1"]);
+  });
+
+  it("off a call, a turn's token is revoked when its generation ends", async () => {
+    const h = harness({ onCall: new Set() });
+    await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    await h.mcp.endGeneration("t1", "g1");
+    expect(h.revoked).toEqual(["pxlo1.B.mcp-P1-1"]);
+  });
+
+  it("tries a refused-for-now exchange once more before leaving the profile out", async () => {
+    const h = harness();
+    h.failExchangeOnce({ ok: false, error: "rate_limited" });
+    const plan = await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    expect(plan).toEqual({ mounted: [{ profileId: "P1", slug: "dispatch", name: "Dispatch" }], unavailable: [] });
+    expect(h.exchanges).toHaveLength(2);
+    expect(h.logs.join("\n")).toContain("retrying once");
   });
 
   it("rewrites clientInfo on initialize, carries the session id, and a notification answers 202", async () => {

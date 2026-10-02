@@ -17,7 +17,52 @@
 //   level is known (`nearLevel`, from enrollment or past turns), over a share
 //   of it.
 
+// - What was said so far moves the endpoint too (`hint`, the streaming
+//   transcript's words): a clause that is not finished (no final
+//   punctuation and a trailing "and", "to", "the", "de", "pour"..., a
+//   trailing comma or filler, or a fragment of one or two words) waits
+//   `incompleteMs` longer, so "give me a good prompt to" is not sent as is.
+// - The person's pace preference (`pause`: short, normal, patient) sets the
+//   range; the adaptation works inside it.
+
 export const FRAME_MS = 32;
+
+/** The endpoint range for each pause preference (the call's settings). */
+export const PAUSE_PRESETS = {
+  short: { minEndpointMs: 420, endpointMs: 520, maxEndpointMs: 800, incompleteMs: 500 },
+  normal: { minEndpointMs: 560, endpointMs: 700, maxEndpointMs: 1_100, incompleteMs: 750 },
+  patient: { minEndpointMs: 800, endpointMs: 1_000, maxEndpointMs: 1_500, incompleteMs: 1_000 },
+} as const;
+
+export type PausePreset = keyof typeof PAUSE_PRESETS;
+
+/** Words a sentence does not end on (English and French): a clause that
+ * stops on one is still going. */
+const CONTINUING_WORDS = new Set([
+  // English
+  "and", "or", "but", "so", "because", "to", "the", "a", "an", "of", "in", "on", "at", "for", "with", "from", "about",
+  "my", "your", "our", "their", "his", "her", "its", "if", "that", "when", "which", "who", "is", "are", "was", "be",
+  "into", "like", "than", "then", "as", "by", "me", "uh", "um", "erm", "hmm", "please",
+  // French
+  "et", "ou", "mais", "donc", "parce", "que", "qu", "qui", "de", "du", "des", "le", "la", "les", "l", "un", "une",
+  "au", "aux", "pour", "avec", "dans", "sur", "en", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
+  "notre", "votre", "leur", "si", "quand", "est", "c", "ce", "cette", "comme", "euh", "ben", "puis",
+]);
+
+/** The words so far do not finish a sentence: wait longer before ending
+ * the turn. Unknown words (no transcript yet) are not judged. */
+export function incompleteClause(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  // a sentence the recognizer closed is complete
+  if (/[.!?\u2026]["')\]]*$/.test(trimmed)) return false;
+  if (/[,;:\u2013-]$/.test(trimmed)) return true;
+  const words = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]+/g) ?? [];
+  if (!words.length) return false;
+  if (CONTINUING_WORDS.has(words.at(-1)!)) return true;
+  // one or two words with no closing punctuation: a fragment
+  return words.length <= 2;
+}
 
 export interface TurnOptions {
   positive?: number;
@@ -34,6 +79,8 @@ export interface TurnOptions {
   maxTurnMs?: number;
   /** the person's usual speaking level (RMS), when known */
   nearLevel?: number;
+  /** added to the endpoint while the words so far are an unfinished clause */
+  incompleteMs?: number;
   /** share of nearLevel a voiced frame needs (far-field rejection) */
   nearShare?: number;
 }
@@ -72,6 +119,8 @@ export class TurnDetector {
   private bargeIn = false;
   private floor = 0.002;
   private endpoint: number;
+  /** the current turn's words so far do not finish a sentence */
+  private unfinished = false;
 
   constructor(options: TurnOptions = {}) {
     this.o = {
@@ -86,6 +135,7 @@ export class TurnDetector {
       minTurnMs: 250,
       maxTurnMs: 45_000,
       nearShare: 0.22,
+      incompleteMs: 0,
       ...options,
     };
     this.endpoint = this.o.endpointMs;
@@ -94,6 +144,26 @@ export class TurnDetector {
   /** The current silence that ends a turn (adaptive). */
   get endpointMs(): number {
     return this.endpoint;
+  }
+
+  /** The silence that ends the current turn: the endpoint, longer while
+   * the words so far are an unfinished clause. */
+  get effectiveEndpointMs(): number {
+    return this.endpoint + (this.unfinished ? this.o.incompleteMs : 0);
+  }
+
+  /** The pause preference changed: a new range, the learned place kept in it. */
+  setPause(preset: PausePreset): void {
+    const range = PAUSE_PRESETS[preset];
+    if (this.o.minEndpointMs === range.minEndpointMs && this.o.maxEndpointMs === range.maxEndpointMs) return;
+    const share = (this.endpoint - this.o.minEndpointMs) / Math.max(1, this.o.maxEndpointMs - this.o.minEndpointMs);
+    Object.assign(this.o, range);
+    this.endpoint = Math.round(range.minEndpointMs + Math.min(1, Math.max(0, share)) * (range.maxEndpointMs - range.minEndpointMs));
+  }
+
+  /** The words recognized so far in this turn (the streaming transcript). */
+  hint(text: string): void {
+    this.unfinished = this.state === "idle" ? false : incompleteClause(text);
   }
 
   get speaking(): boolean {
@@ -122,6 +192,7 @@ export class TurnDetector {
     this.turnMs = 0;
     this.longestPauseMs = 0;
     this.bargeIn = false;
+    this.unfinished = false;
   }
 
   private voiced(frame: FrameInput): boolean {
@@ -177,9 +248,9 @@ export class TurnDetector {
     } else {
       this.silenceMs += frameMs;
     }
-    if (this.silenceMs >= this.endpoint || this.turnMs >= this.o.maxTurnMs) {
+    if (this.silenceMs >= this.effectiveEndpointMs || this.turnMs >= this.o.maxTurnMs) {
       const speechMs = this.speechMs;
-      const endpointMs = this.endpoint;
+      const endpointMs = this.effectiveEndpointMs;
       const longest = this.longestPauseMs;
       this.reset();
       if (speechMs < this.o.minTurnMs) return { type: "cancel" };
