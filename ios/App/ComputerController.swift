@@ -317,11 +317,11 @@ final class ComputerController: ObservableObject {
             if phase == .held { stopLoops() }
             phase = .idle
             noComputer = true
-            notice = ComputerError.noComputer.errorDescription
+            notice = ComputerError.noComputer.errorDescription.map(AppStrings.localized)
         case let .offline(detail)?:
             notice = detail
         case let other?:
-            notice = other.errorDescription
+            notice = other.errorDescription.map(AppStrings.localized)
         case nil:
             notice = error.localizedDescription
         }

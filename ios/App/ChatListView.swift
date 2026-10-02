@@ -1119,7 +1119,7 @@ enum RelativeStamp {
         if calendar.isDateInToday(date) {
             return date.formatted(date: .omitted, time: .shortened)
         }
-        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        if calendar.isDateInYesterday(date) { return String(localized: "Yesterday") }
         if let week = calendar.date(byAdding: .day, value: -6, to: Date()), date > week {
             return date.formatted(.dateTime.weekday(.wide))
         }
@@ -1130,8 +1130,8 @@ enum RelativeStamp {
     static func separator(_ date: Date) -> String {
         let calendar = Calendar.current
         let time = date.formatted(date: .omitted, time: .shortened)
-        if calendar.isDateInToday(date) { return "Today \(time)" }
-        if calendar.isDateInYesterday(date) { return "Yesterday \(time)" }
+        if calendar.isDateInToday(date) { return String(localized: "Today \(time)") }
+        if calendar.isDateInYesterday(date) { return String(localized: "Yesterday \(time)") }
         return "\(date.formatted(.dateTime.day().month(.abbreviated))) \(time)"
     }
 }
