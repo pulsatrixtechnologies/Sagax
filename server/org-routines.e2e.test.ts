@@ -305,7 +305,7 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
       expect(anonymous.status, anonymous.text).toBe(403);
       expect(anonymous.body.error).toMatch(/^forbidden: on this shared server a local request without a session may only use the service routes; /);
     }
-    expect((await api("GET", "/api/org/routine-delegation", alice)).body).toEqual({ state: "none", suspended: 0, manageUrl: expect.stringMatching(/\/console\/users\/[^/?]+\?tab=sagax$/) });
+    expect((await api("GET", "/api/org/routine-delegation", alice)).body).toEqual({ state: "none", suspended: 0, manageUrl: `${idp.issuer.replace(/\/+$/, "")}/console/me/access#sagax`, principalId: expect.any(String) });
     expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
     const status = (await api("GET", "/api/org/routine-delegation", alice)).body;
     expect(status).toMatchObject({ state: "active", suspended: 0, consentedAt: expect.any(Number), renewedAt: expect.any(Number) });

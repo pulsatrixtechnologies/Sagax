@@ -56,7 +56,7 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   keys" card, no engine missing from the server, never the server's own
   account (it serves no one's turns there).
 - Routines in my name is read-only: allowed by default, revoked in the
-  Perspicax console (`manageUrl`, the person's Sagax tab). Perspicax has no
+  Perspicax console (`manageUrl`, `/console/me/access#sagax`). Perspicax has no
   silent authorization, so `ensureRoutineDelegation` starts the consent once,
   after the person's first routine.
 - An organization admin force-stops or force-deletes any bot

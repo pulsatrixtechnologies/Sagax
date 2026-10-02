@@ -107,10 +107,11 @@ export interface RoutineDelegationRouteDeps {
   revoke(principalId: string): boolean;
 }
 
-/** `<issuer>/console/users/<sub>?tab=sagax`: the person's Sagax tab in the
- * Perspicax console, where their routine delegation is revoked. */
-export function routineDelegationManageUrl(issuer: string, sub: string): string {
-  return `${issuer.replace(/\/+$/, "")}/console/users/${encodeURIComponent(sub)}?tab=sagax`;
+/** `<issuer>/console/me/access#sagax`: the person's own access page in the
+ * Perspicax console (self-service, no admin rights needed), where they revoke
+ * their routine delegation. */
+export function routineDelegationManageUrl(issuer: string): string {
+  return `${issuer.replace(/\/+$/, "")}/console/me/access#sagax`;
 }
 
 /** The directory as principals, sorted by name then login. Only people the
@@ -198,9 +199,11 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
         return json(res, 200, {
           ...routines.status(principalId),
           suspended: routines.suspendedCount(principalId),
-          // Where the delegation is revoked: the person's Sagax tab in the
-          // Perspicax console (Members), keyed by their Perspicax id.
-          manageUrl: routineDelegationManageUrl(deps.issuer, auth.session.idp.sub),
+          // Where the delegation is revoked: the person's own access page
+          // in the Perspicax console, the same address for everyone.
+          manageUrl: routineDelegationManageUrl(deps.issuer),
+          // Whose status this is: the browser asks each person once.
+          principalId,
         });
       }
       if (method === "DELETE") return json(res, 200, { revoked: routines.revoke(principalId) });
