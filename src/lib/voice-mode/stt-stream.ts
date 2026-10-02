@@ -28,11 +28,21 @@ interface Utterance {
   text: string;
   discard: boolean;
   finalized: boolean;
-  resolve?: (text: string) => void;
+  /** xAI said the speaker stopped (speech_final) and no audio was sent since */
+  ended: boolean;
+  /** the lowest confidence xAI gave a final chunk of it, when it gives one */
+  confidence?: number;
+  resolve?: (words: Heard) => void;
   timer?: ReturnType<typeof setTimeout>;
 }
 
-type Frame = { type: "ready" } | { type: "transcript"; text: string; final: boolean; speechFinal: boolean } | { type: "error"; message: string };
+/** The words of one utterance, with xAI's confidence when it reports one. */
+export interface Heard {
+  text: string;
+  confidence?: number;
+}
+
+type Frame = { type: "ready" } | { type: "transcript"; text: string; final: boolean; speechFinal: boolean; confidence?: number } | { type: "error"; message: string };
 
 export class LiveTranscriber {
   private socket: WebSocket | null = null;
@@ -45,6 +55,9 @@ export class LiveTranscriber {
   streaming = false;
   /** the language the socket was opened with */
   private language = "";
+  /** utterances settled by the timeout before xAI's final words came: the
+   * frames that still arrive for them are theirs, never the next turn's */
+  private draining = 0;
 
   constructor(options: LiveTranscriberOptions) {
     this.options = options;
@@ -108,7 +121,7 @@ export class LiveTranscriber {
     if (this.current) return;
     // the person changed the language in the panel: a socket for it, between turns
     if (this.streaming && this.language !== this.options.language() && !this.utterances.length) this.reopen();
-    const utterance: Utterance = { frames: [], sent: 0, text: "", discard: false, finalized: false };
+    const utterance: Utterance = { frames: [], sent: 0, text: "", discard: false, finalized: false, ended: false };
     this.current = utterance;
     this.utterances.push(utterance);
     for (const frame of preroll) this.push(frame);
@@ -128,6 +141,7 @@ export class LiveTranscriber {
       const pcm = toPcm16([utterance.frames[utterance.sent]!], TARGET_RATE, TARGET_RATE);
       this.socket.send(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength));
       utterance.sent += 1;
+      utterance.ended = false;
     }
   }
 
@@ -154,9 +168,14 @@ export class LiveTranscriber {
 
   /** The turn ended: its words. */
   finish(): Promise<string> {
+    return this.finishHeard().then((heard) => heard.text);
+  }
+
+  /** The turn ended: its words and xAI's confidence in them. */
+  finishHeard(): Promise<Heard> {
     const utterance = this.current;
     this.current = null;
-    if (!utterance) return Promise.resolve("");
+    if (!utterance) return Promise.resolve({ text: "" });
     utterance.finalized = true;
     return new Promise((resolve) => {
       utterance.resolve = resolve;
@@ -164,12 +183,21 @@ export class LiveTranscriber {
         void this.upload(utterance);
         return;
       }
+      // xAI already closed it (speech_final) and nothing was sent since:
+      // a finalize would have nothing new to say
+      if (utterance.ended && utterance.text.trim()) {
+        this.settle(utterance);
+        return;
+      }
       this.socket!.send(JSON.stringify({ type: "finalize" }));
       utterance.timer = setTimeout(() => {
         // no final words in time: what we have, else an upload of the turn
-        if (utterance.text.trim()) this.settle(utterance);
-        else void this.upload(utterance);
-      }, this.options.finalTimeoutMs ?? 1500);
+        if (utterance.text.trim()) {
+          // its last words may still come: they belong to it, not the next turn
+          this.draining += 1;
+          this.settle(utterance);
+        } else void this.upload(utterance);
+      }, this.options.finalTimeoutMs ?? 2500);
     });
   }
 
@@ -181,7 +209,10 @@ export class LiveTranscriber {
     utterance.discard = true;
     utterance.finalized = true;
     if (this.open && this.socket?.readyState === 1) this.socket.send(JSON.stringify({ type: "finalize" }));
-    utterance.timer = setTimeout(() => this.settle(utterance), this.options.finalTimeoutMs ?? 1500);
+    utterance.timer = setTimeout(() => {
+      if (this.utterances.includes(utterance)) this.draining += 1;
+      this.settle(utterance);
+    }, this.options.finalTimeoutMs ?? 2500);
   }
 
   close(): void {
@@ -191,13 +222,19 @@ export class LiveTranscriber {
     try { socket?.close(); } catch { /* closed */ }
     for (const utterance of this.utterances) {
       if (utterance.timer) clearTimeout(utterance.timer);
-      utterance.resolve?.("");
+      utterance.resolve?.({ text: "" });
     }
+    this.draining = 0;
     this.utterances = [];
     this.current = null;
   }
 
   private heard(frame: Extract<Frame, { type: "transcript" }>): void {
+    // the late words of an utterance the timeout already settled: theirs
+    if (this.draining > 0) {
+      if (frame.final && frame.speechFinal) this.draining -= 1;
+      return;
+    }
     // events belong to the oldest utterance still waiting for its words
     const utterance = this.utterances[0];
     if (!utterance) return;
@@ -205,10 +242,20 @@ export class LiveTranscriber {
       if (!utterance.discard) for (const fn of Array.from(this.partialWatchers)) fn(`${utterance.text} ${frame.text}`.trim());
       return;
     }
-    if (frame.text.trim()) utterance.text = `${utterance.text} ${frame.text.trim()}`.trim();
+    if (frame.text.trim()) {
+      utterance.text = `${utterance.text} ${frame.text.trim()}`.trim();
+      if (typeof frame.confidence === "number") utterance.confidence = Math.min(utterance.confidence ?? 1, frame.confidence);
+    }
     if (!utterance.discard) for (const fn of Array.from(this.partialWatchers)) fn(utterance.text);
-    // after finalize, the first final event closes the utterance
+    // A final chunk is one xAI will not revise, not the end of the
+    // utterance: after a finalize, xAI can still send the chunk it had
+    // already closed, then the rest. Only speech_final (the answer to the
+    // finalize, or its own endpointing) closes it. Closing on the first
+    // final chunk cut sentences short ("give me a good prompt to") and
+    // handed their last words to the next turn.
+    if (!frame.speechFinal) return;
     if (utterance.finalized) this.settle(utterance);
+    else utterance.ended = true;
   }
 
   private settle(utterance: Utterance): void {
@@ -216,7 +263,7 @@ export class LiveTranscriber {
     const index = this.utterances.indexOf(utterance);
     if (index < 0) return;
     this.utterances.splice(index, 1);
-    utterance.resolve?.(utterance.discard ? "" : utterance.text.trim());
+    utterance.resolve?.(utterance.discard ? { text: "" } : { text: utterance.text.trim(), ...(utterance.confidence !== undefined ? { confidence: utterance.confidence } : {}) });
     utterance.resolve = undefined;
   }
 

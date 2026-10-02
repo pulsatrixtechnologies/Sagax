@@ -138,6 +138,8 @@ export function LiveCall({ bot }: { bot: Bot }) {
         const current = botRef.current;
         // an approval being answered by voice keeps its turn
         if (askedApproval.current || !current.busy) return;
+        // what the stopped turn still streams is never spoken
+        dropStream.current = streamingRef.current ?? "";
         dispatch({ type: "interrupt", botId: current.id, threadId: current.threadId });
       }),
     ];
@@ -150,7 +152,7 @@ export function LiveCall({ bot }: { bot: Bot }) {
 
   // ── what the person said ───────────────────────────────────────────────
   const onUtterance = useCallback(
-    (said: string, interrupted = false, cut?: { heard: string; unheard: string }) => {
+    (said: string, interrupted = false, cut?: { heard: string; unheard: string }, continues = false) => {
       const current = botRef.current;
       if (!call || currentCall() !== current.id) return;
       setHeard("");
@@ -200,6 +202,8 @@ export function LiveCall({ bot }: { bot: Bot }) {
         voiceCall: {
           callId,
           utteranceId,
+          // it completes the fragment sent just before (cut by a pause)
+          ...(continues ? { continues: true } : {}),
           // a barge-in says how much of the cut answer the person heard
           ...(interrupted ? { interrupted: true, ...(cut ? { heard: cut.heard, unheard: cut.unheard } : {}) } : {}),
           ...(language && language !== "auto" ? { language } : {}),
@@ -211,7 +215,7 @@ export function LiveCall({ bot }: { bot: Bot }) {
 
   useEffect(() => {
     if (!call) return;
-    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted, turn.cut));
+    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted, turn.cut, turn.continues === true));
   }, [call, onUtterance]);
 
   useEffect(() => {
