@@ -61,8 +61,10 @@ const SKIP_EXACT = new Set([
   "Dockerfile",
   "server/fleet.ts",
   "server/fleet.test.ts",
-  "server/cloud-home-start.ts",
-  "server/cloud-home-start.test.ts",
+  "server/fleet-cli.ts",
+  "server/fleet-cli.test.ts",
+  "server/fleet-cli-filesystem.test.ts",
+  "server/fleet-agent.test.ts",
   // compose files read an operator's own .env (OMB_* interpolation)
   "compose.yaml",
   "compose.mail-test.yaml",
@@ -70,7 +72,9 @@ const SKIP_EXACT = new Set([
 ]);
 /** Vendored code, deployed configuration and the native apps (renamed with a
  * store release of their own). */
-const SKIP_PREFIX = ["third_party/", ".git/", "node_modules/", "deploy/", "ios/", "android/"];
+const SKIP_PREFIX = ["third_party/", ".git/", "node_modules/", "deploy/", "ios/", "android/",
+  // versioned judge prompts pinned by checksum: a new wording is a new version
+  "evals/live/judge/prompts/"];
 
 const re = (source, flags = "g") => new RegExp(source, flags);
 
@@ -110,6 +114,8 @@ const PROTECT = [
   re(`\\bapp\\b[^\\n]{0,8}"${OLD}"`),
   // an engine's own environment variable
   re(`HERMES_${OLD_SHORT.toUpperCase()}_[A-Z_]+`),
+  // read by deploy/fly/Caddyfile, which no bridge reaches
+  re(`OMB_CLOUD_PUBLIC_HOST`),
   // the data folder lease capability and the migration breadcrumb (legacy-names)
   re(`${OLD.toUpperCase()}_INTERNAL_DATA_DIR_LEASE`),
   re(`MOVED_FROM_${OLD.toUpperCase()}`),

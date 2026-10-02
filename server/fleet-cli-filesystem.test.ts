@@ -35,7 +35,7 @@ describe.skipIf(process.platform === "win32" || process.getuid?.() === 0)("fleet
     fixture.account = "";
     fixture.calls = [];
     mkdirSync(fixture.home, { mode: 0o700 });
-    data = join(fixture.home, ".sagax");
+    data = join(fixture.home, ".openmausbot");
     file = join(data, "config.json");
   });
   afterEach(async () => { await removeTempDir(root); });
@@ -126,7 +126,7 @@ describe.skipIf(process.platform === "win32" || process.getuid?.() === 0)("fleet
     writeFileSync(path, JSON.stringify({ provider: { [MANAGED_OPENROUTER]: managed, other: { keep: true } }, model: "keep/default" }), { mode: 0o600 });
     const layout = fleetLayout(root);
     const registry = { ...emptyRegistry("example.test"), workspaces: { acme: { slug: "acme", host: "acme.example.test", port: 8810, webhookPort: 8811, status: "running", createdAt: "" } } };
-    const files = new Map([[layout.registryFile, JSON.stringify(registry)], [join(layout.instancesDir, "acme.env"), "SAGAX_ADMIN_URL=https://admin.example.test\nSAGAX_ADMIN_WORKSPACE=acme\n"]]);
+    const files = new Map([[layout.registryFile, JSON.stringify(registry)], [join(layout.instancesDir, "acme.env"), "OMB_ADMIN_URL=https://admin.example.test\nOMB_ADMIN_WORKSPACE=acme\n"]]);
     const fixtureDeps = { ...deps, isRoot: () => true, readText: (name: string, owner?: string) => owner ? deps.readText(name, owner) : files.get(name) ?? null };
     const input: FleetInput = { action: "providers", slug: "acme", openrouterModels: ["provider/model"], admins: [], members: [], dryRun: false, yes: true, keepData: false, node: process.execPath, script: "/fixture/cli.js", root };
     const messages: string[] = [];

@@ -308,7 +308,7 @@ it("gives the edge only its routing name and the server the contract, never a ga
     expect(JSON.stringify(server)).not.toContain(value);
     expect(JSON.stringify(edge)).not.toContain(value);
   }
-  expect(edge.SAGAX_CLOUD_PUBLIC_HOST).toBe(cloudHomeHost(config));
+  expect(edge.OMB_CLOUD_PUBLIC_HOST).toBe(cloudHomeHost(config));
   expect(JSON.stringify(edge)).not.toContain(token);
   expect(JSON.stringify(edge)).not.toContain(secret);
   expect(passwdIds("root:x:0:0::/root:/bin/sh\nmaus:x:1001:1002::/data:/bin/bash\n", "maus")).toEqual({ uid: 1001, gid: 1002 });

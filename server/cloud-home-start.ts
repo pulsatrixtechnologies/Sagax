@@ -20,6 +20,8 @@
 // root, so its own environment and memory are out of `maus`'s reach, and it
 // runs and trusts only code `maus` cannot change: the image's, never the
 // volume's (codeTrustProblem).
+// The Fly machine's settings (OMB_*) become SAGAX_* before anything reads them.
+import "../electron/legacy-env-boot.mjs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { chownSync, readFileSync, statSync, type Stats } from "node:fs";
 import { dirname, join, posix, resolve } from "node:path";
@@ -48,9 +50,9 @@ export function passwdIds(passwd: string, name: string): { uid: number; gid: num
  * later, a test's key, a platform gateway's settings) is left out. */
 const SERVER_ENV_NAMES = new Set([
   "PATH", "SHELL", "HOSTNAME", "LANG", "LANGUAGE", "TZ", "TERM", "TMPDIR", "NO_COLOR", "NODE_ENV", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
-  "AGENT_BROWSER_EXECUTABLE_PATH", "OMB_STATIC_DIR", "OMB_DATA_DIR",
-  "OMB_CLOUD_ROLE", "OMB_CLOUD_MACHINE_ID", "OMB_CLOUD_ADMIN_URL", "OMB_CLOUD_IMAGE", "OMB_PUBLIC_URL", "OMB_WEBHOOK_PUBLIC_URL",
-  "OMB_CLOUD_BOAT_URL", "OMB_CLOUD_VOICE_URL", "OMB_CLOUD_DECIDER_URL", "OMB_TTS_DEFAULT_VOICE",
+  "AGENT_BROWSER_EXECUTABLE_PATH", "SAGAX_STATIC_DIR", "SAGAX_DATA_DIR",
+  "SAGAX_CLOUD_ROLE", "SAGAX_CLOUD_MACHINE_ID", "SAGAX_CLOUD_ADMIN_URL", "SAGAX_CLOUD_IMAGE", "SAGAX_PUBLIC_URL", "SAGAX_WEBHOOK_PUBLIC_URL",
+  "SAGAX_CLOUD_BOAT_URL", "SAGAX_CLOUD_VOICE_URL", "SAGAX_CLOUD_DECIDER_URL", "SAGAX_TTS_DEFAULT_VOICE",
 ]);
 export function serverEnvironmentAllowed(name: string): boolean {
   return SERVER_ENV_NAMES.has(name) || name.startsWith("LC_");
@@ -67,14 +69,15 @@ export function cloudHomeChildEnvironments(config: CloudHomeConfig, env: NodeJS.
   const allowed = Object.fromEntries(Object.entries(offered).filter(([name, value]) => value !== undefined && serverEnvironmentAllowed(name)));
   const dropped = Object.keys(offered).filter((name) => !serverEnvironmentAllowed(name) && name !== "HOME").sort();
   const server: NodeJS.ProcessEnv = {
-    ...allowed, HOME: home, OMB_DATA_DIR: env.OMB_DATA_DIR || posix.join(home, ".openmausbot"),
-    OMB_PORT: "8799", OMB_WEBHOOK_PORT: "8800", OMB_PUBLIC_URL: config.publicOrigin,
-    OMB_WEBHOOK_PUBLIC_URL: env.OMB_WEBHOOK_PUBLIC_URL || config.publicOrigin,
+    ...allowed, HOME: home, SAGAX_DATA_DIR: env.SAGAX_DATA_DIR || posix.join(home, ".openmausbot"),
+    SAGAX_PORT: "8799", SAGAX_WEBHOOK_PORT: "8800", SAGAX_PUBLIC_URL: config.publicOrigin,
+    SAGAX_WEBHOOK_PUBLIC_URL: env.SAGAX_WEBHOOK_PUBLIC_URL || config.publicOrigin,
     [CLOUD_SECRETS_FD_ENV]: String(SECRETS_FD),
   };
   const edge: NodeJS.ProcessEnv = {
     PATH: env.PATH ?? "/usr/local/bin:/usr/bin:/bin", HOME: "/tmp/omb-edge",
     XDG_DATA_HOME: "/tmp/omb-edge/data", XDG_CONFIG_HOME: "/tmp/omb-edge/config",
+    // deploy/fly/Caddyfile reads this name (Caddy is not bridged)
     OMB_CLOUD_PUBLIC_HOST: cloudHomeHost(config),
   };
   return { server, edge, secrets: cloudHomeSecrets(env), dropped };
@@ -148,8 +151,8 @@ export function startCloudHome(env: NodeJS.ProcessEnv = process.env) {
     prepareCloudHomeVolume(home, config.machineId);
   }
   const here = dirname(fileURLToPath(import.meta.url));
-  const edgeBin = env.OMB_CLOUD_EDGE_BIN || "/usr/local/bin/caddy";
-  const edgeConfig = env.OMB_CLOUD_EDGE_CONFIG || "/app/cloud/Caddyfile";
+  const edgeBin = env.SAGAX_CLOUD_EDGE_BIN || "/usr/local/bin/caddy";
+  const edgeConfig = env.SAGAX_CLOUD_EDGE_CONFIG || "/app/cloud/Caddyfile";
   if (ids) {
     const problem = codeTrustProblem([process.execPath, fileURLToPath(import.meta.url), join(here, "index.js"), edgeBin, edgeConfig], home);
     if (problem) throw new Error(`This image's code is not safe to run as root: ${problem}. Rebuild it from deploy/fly/Dockerfile.`);

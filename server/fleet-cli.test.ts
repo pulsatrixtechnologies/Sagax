@@ -48,7 +48,7 @@ describe("openmausbot fleet", () => {
     const config = { model: "my-own-default", provider: { unrelated: { models: { keep: {} } }, [MANAGED_OPENROUTER]: {
       npm: "@ai-sdk/openai-compatible", name: "Keep this name", options: { baseURL: "https://admin.example.test/api/gateway/acme/openrouter/v1", apiKey: "scoped-secret" }, models: { "old/model": { name: "Old" } },
     } } };
-    const initialFiles = { ...withRegistry({ acme: workspace }), [path]: JSON.stringify(config), [cfgPath]: '{"defaultModelSelection":{"instanceId":"claude","model":"keep"}}', "/etc/openmausbot/instances/acme.env": "SAGAX_ADMIN_URL=https://admin.example.test\nSAGAX_ADMIN_WORKSPACE=acme\n" };
+    const initialFiles = { ...withRegistry({ acme: workspace }), [path]: JSON.stringify(config), [cfgPath]: '{"defaultModelSelection":{"instanceId":"claude","model":"keep"}}', "/etc/openmausbot/instances/acme.env": "OMB_ADMIN_URL=https://admin.example.test\nOMB_ADMIN_WORKSPACE=acme\n" };
     const m = machine({ root: true, files: initialFiles });
     const output = io();
     const input: FleetInput = { ...base, action: "providers", slug: "acme", openrouterModels: ["next/model", "next/model"] };
@@ -75,7 +75,7 @@ describe("openmausbot fleet", () => {
     const { io: log, out } = io();
     expect(await runFleetCommand({ ...base, action: "init", domain: "agentada.cc" }, log, deps)).toBe(0);
     expect(out[0]).toBe("not running as root; inspect this plan, then rerun the fleet command as root without --dry-run (with --yes where required):");
-    expect(out.join("\n")).toContain("cat > /etc/systemd/system/openmausbot@.service <<'SAGAX_EOF'");
+    expect(out.join("\n")).toContain("cat > /etc/systemd/system/openmausbot@.service <<'OMB_EOF'");
     expect(out.join("\n")).toContain("systemctl enable --now openmausbot-fence.service");
     expect(calls).toEqual([]);
 
@@ -113,7 +113,7 @@ describe("openmausbot fleet", () => {
       signIn: { admins: ["ada@example.test"], members: ["@acme.test"] }, anthropic: { key: "sk-ant-fixture" }, budgets: { monthlyUsd: 40 },
     });
     expect(files.get("/var/lib/openmausbot/acme/.openmausbot/brand.json")).toBe('{"name":"Acme"}');
-    expect(files.get("/etc/openmausbot/instances/acme.env")).toContain("SAGAX_LICENSE_KEY=omb1.k");
+    expect(files.get("/etc/openmausbot/instances/acme.env")).toContain("OMB_LICENSE_KEY=omb1.k");
     expect(calls).toContain("health http://127.0.0.1:8810/api/health");
     expect(calls.at(-1)).toBe(`write ${registryFile} 600`);
     expect(JSON.parse(files.get(registryFile)!).workspaces.acme).toMatchObject({ port: 8810, host: "acme.agentada.cc" });
