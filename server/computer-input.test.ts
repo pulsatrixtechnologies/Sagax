@@ -52,8 +52,8 @@ describe("computer input events", () => {
     expect(built.ok).toBe(true);
     const commands = built.ok ? built.commands : [];
     expect(commands).toEqual([
-      "xdotool mousemove_relative --sync -- 3 -4",
-      'eval "$(xdotool getdisplaygeometry --shell)" && xdotool mousemove --sync $((WIDTH*99999/100000)) $((HEIGHT*25000/100000))',
+      "xdotool mousemove_relative -- 3 -4",
+      'eval "$(xdotool getdisplaygeometry --shell)" && xdotool mousemove $((WIDTH*99999/100000)) $((HEIGHT*25000/100000))',
       "xdotool mousedown 1",
       "xdotool click --repeat 1 --delay 30 4",
       "xdotool click --repeat 2 --delay 30 7",

@@ -56,7 +56,7 @@ describe("computer input routes", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, applied: 2 });
     expect(scripts).toHaveLength(1);
-    expect(scripts[0]).toContain("xdotool mousemove_relative --sync -- 1 2 && xdotool type");
+    expect(scripts[0]).toContain("xdotool mousemove_relative -- 1 2 && xdotool type");
     expect(JSON.stringify(audits)).not.toContain("password123");
     expect(audits).toEqual([{ action: "input", detail: { computer: "cloud", events: { move: 1, text: 1 } } }]);
   });
