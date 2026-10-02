@@ -323,3 +323,74 @@ describe("iOS parity routes", () => {
     expect(denyReason({ method: "GET", path: "/api/plugins/installed", authenticated: false })?.status).toBe(401);
   });
 });
+
+// The Electron app in remote-client mode (window.ogb.remoteClient.active)
+// talks to this same sidecar, and the iPad must match it. Every request that
+// renderer makes from a surface it shows in that mode crosses; what it hides
+// in that mode, and what belongs to the host, does not. The surface-by-surface
+// table is in docs/superpowers/specs/2026-10-02-ipad-desktop-parity-design.md.
+describe("desktop remote-client parity", () => {
+  it("crosses every request the remote-client renderer makes", () => {
+    for (const [method, path] of [
+      // boot, sidebar, search
+      ["GET", "/api/brand"], ["GET", "/api/config"], ["GET", "/api/events"], ["GET", "/api/instances"],
+      ["GET", "/api/bots"], ["GET", "/api/routines"], ["GET", "/api/auth/session"], ["GET", "/api/search"],
+      ["GET", "/api/me/preferences"], ["PUT", "/api/me/preferences"],
+      ["POST", "/api/sidebar-sections"], ["PATCH", "/api/bots/bot_1"], ["PATCH", "/api/bots/bot_1/profile"],
+      ["POST", "/api/bots"], ["POST", "/api/groups"],
+      // threads and folders in the sidebar (Appearance > Show threads)
+      ["POST", "/api/bots/bot_1/tasks"], ["POST", "/api/bots/bot_1/tasks/th_2"], ["PATCH", "/api/bots/bot_1/tasks/th_2"],
+      ["DELETE", "/api/bots/bot_1/tasks/th_2"], ["POST", "/api/bots/bot_1/tasks/th_2/title"],
+      ["POST", "/api/bots/bot_1/projects"], ["PATCH", "/api/bots/bot_1/projects/pr_1"],
+      ["DELETE", "/api/bots/bot_1/projects/pr_1"], ["PATCH", "/api/bots/bot_1/projects/order"],
+      // 1:1 chat and composer
+      ["GET", "/api/threads/th_1/messages"], ["POST", "/api/bots/bot_1/messages"], ["POST", "/api/bots/bot_1/messages/m_1/edit"],
+      ["POST", "/api/bots/bot_1/active-branch"], ["POST", "/api/bots/bot_1/compact"], ["POST", "/api/bots/bot_1/interrupt"],
+      ["POST", "/api/bots/bot_1/read"], ["DELETE", "/api/bots/bot_1/queue/q_1"], ["POST", "/api/bots/bot_1/queue/q_1/steer"],
+      ["POST", "/api/bots/bot_1/respond"], ["POST", "/api/threads/th_1/respond"], ["PATCH", "/api/bots/bot_1/cards/m_1"],
+      ["POST", "/api/bots/bot_1/always-allow"], ["POST", "/api/threads/th_1/messages/m_1/reactions"],
+      ["GET", "/api/threads/th_1/export"], ["POST", "/api/threads/th_1/messages/m_1/file"],
+      ["POST", "/api/attachments"], ["GET", "/api/attachments/a1b2.png"], ["POST", "/api/files"],
+      ["GET", "/api/bots/bot_1/connector-cards/m_1/status"], ["POST", "/api/bots/bot_1/connector-cards/m_1/authorize"],
+      ["POST", "/api/bots/bot_1/secret-cards/m_1/dismiss"], ["POST", "/api/instances/claude/claude-update"],
+      // rooms
+      ["POST", "/api/groups/room_1/messages"], ["POST", "/api/groups/room_1/interrupt"], ["POST", "/api/groups/room_1/read"],
+      ["DELETE", "/api/groups/room_1/queue/q_1"], ["POST", "/api/groups/room_1/queue/q_1/steer"],
+      ["POST", "/api/groups/room_1/tasks"], ["PATCH", "/api/groups/room_1/tasks/th_2"], ["PATCH", "/api/groups/room_1"],
+      // Remote agent settings panel, Computer panel
+      ["GET", "/api/tts/voices"], ["POST", "/api/tts/speak"], ["GET", "/api/threads/th_1/files"],
+      ["POST", "/api/bots/bot_1/computer/control"], ["POST", "/api/bots/bot_1/computer/join"],
+      ["POST", "/api/bots/bot_1/computer/screenshot"], ["POST", "/api/bots/bot_1/computer/viewer-close"],
+      // Automations (routines only), Team map, Plugins
+      ["POST", "/api/routines"], ["PATCH", "/api/routines/r_1"], ["DELETE", "/api/routines/r_1"], ["POST", "/api/routines/r_1/run"],
+      ["POST", "/api/routine-runs/run_1/cancel"], ["POST", "/api/routine-runs/run_1/seen"], ["POST", "/api/routine-runs/seen-all"],
+      ["GET", "/api/team-map"],
+      ["GET", "/api/connectors"], ["GET", "/api/connectors/catalog"], ["GET", "/api/connectors/connected"],
+      ["POST", "/api/connectors/gmail/authorize"], ["DELETE", "/api/connectors/gmail/accounts/ca_1"],
+      ["GET", "/api/mcp/servers"], ["POST", "/api/mcp/servers/notion/oauth/start"], ["GET", "/api/mcp/servers/notion/oauth/status"],
+    ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(true);
+  });
+
+  it("keeps out what the remote-client renderer hides and what belongs to the host", () => {
+    for (const [method, path] of [
+      // hidden in remote-client mode: room setup and delete, the full bot panel, Inspector,
+      // team-map editing, Templates, New Bot presets and defaults, the approval-mode menu
+      ["PATCH", "/api/groups/room_1/setup"], ["DELETE", "/api/groups/room_1"],
+      ["GET", "/api/bots/bot_1/skills"], ["GET", "/api/bots/bot_1/memory"], ["GET", "/api/bots/bot_1/history"],
+      ["GET", "/api/threads/th_1/events"], ["GET", "/api/section-context"], ["PUT", "/api/section-context"],
+      ["DELETE", "/api/sidebar-sections"], ["GET", "/api/sidebar-sections"], ["PUT", "/api/sidebar-sections"],
+      ["GET", "/api/team-computers"], ["GET", "/api/teams/scout"], ["POST", "/api/teams/import"],
+      ["GET", "/api/bot-defaults"], ["GET", "/api/bot-presets"], ["GET", "/api/connectors/tools"],
+      ["GET", "/api/calendar-calls"], ["GET", "/api/webhooks"],
+      // host-only: keys, engines setup, Local VM, backups, pairing, MCP server writes, people
+      ["PUT", "/api/config"], ["PATCH", "/api/config"], ["POST", "/api/keys/test"], ["PATCH", "/api/instances/claude"],
+      ["POST", "/api/instances/claude/refresh-models"], ["GET", "/api/local-computer"], ["GET", "/api/workspace-backup/status"],
+      ["POST", "/api/auth/pairing"], ["GET", "/api/auth/sessions"], ["POST", "/api/mcp/servers"], ["DELETE", "/api/mcp/servers/notion"],
+      ["GET", "/api/mail/settings"], ["GET", "/api/admin-activity"], ["GET", "/api/fleet"],
+      // nothing beside the new routes
+      ["GET", "/api/bots/bot_1/queue/q_1/steer"], ["POST", "/api/bots/bot_1/queue/q_1/steer/extra"],
+      ["GET", "/api/bots/bot_1/projects"], ["PUT", "/api/bots/bot_1/projects/pr_1"], ["POST", "/api/bots/bot_1/projects/pr_1/extra"],
+      ["GET", "/api/bots/bot_1/tasks/th_2/title"], ["POST", "/api/brand"], ["GET", "/api/routine-runs/seen-all"],
+    ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(false);
+  });
+});
