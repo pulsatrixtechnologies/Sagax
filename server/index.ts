@@ -223,7 +223,7 @@ import { fleetAvailable, fleetRequest, fleetSocketPath } from "./fleet-client.ts
 import { entitled } from "./enterprise.ts";
 import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSION } from "./hosted-contract.ts";
 import { describeSpawnFailure, execCli } from "./procs.ts";
-import { blockedTarget, buildNotification, buildSpendNotification, summarize, type Notification } from "./notify.ts";
+import { blockedTarget, buildNotification, buildSpendNotification, quietForCall, summarize, type Notification } from "./notify.ts";
 import {
   isModelVariant,
   TurnNotStartedError,
@@ -7251,9 +7251,18 @@ const providerLabel = (provider: string): string => {
 /** Put a notification on the wire. Clients decide what to do with it — a
  * desktop notification now, a push to a paired phone later. */
 function notify(notification: Notification | null) {
+  // the conversation on a live voice call is heard, not buzzed (notify.ts)
+  if (notification && quietForCall(notification, lastPersonMessage(notification.threadId), Date.now())) return;
   // nested rather than spread — the frame's own `kind` names the frame,
   // exactly like {kind:"message", message} and {kind:"bot", bot}
   if (notification) broadcast({ kind: "notify", notification });
+}
+
+/** The person's latest message in a thread (a call turn carries voiceCall). */
+function lastPersonMessage(threadId: string): Message | undefined {
+  const messages = store.messagesFor(threadId);
+  for (let index = messages.length - 1; index >= 0; index--) if (messages[index]!.role === "user") return messages[index];
+  return undefined;
 }
 
 type RoutedBy = NonNullable<Message["routedBy"]>;

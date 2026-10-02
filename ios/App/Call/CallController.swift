@@ -134,6 +134,7 @@ final class CallController: ObservableObject {
 
         target = chat
         threadId = chat.threadId
+        CallQuiet.shared.set(threadId, live: true)
         state = .initial
         heard = ""
         caption = ""
@@ -163,6 +164,7 @@ final class CallController: ObservableObject {
         if !injecting {
             guard await MicrophonePermission.request() else {
                 unavailable = Unavailable(title: String(localized: "Call unavailable"), lines: [String(localized: "Allow microphone access for Sagax in Settings, then try again.")], keysUrl: nil)
+                CallQuiet.shared.set(threadId, live: false)
                 target = nil
                 return
             }
@@ -293,6 +295,7 @@ final class CallController: ObservableObject {
     /// Hang up (the red X, CallKit's end button, or another call).
     func end(fromSystem: Bool = false) {
         guard target != nil else { return }
+        CallQuiet.shared.set(threadId, live: false)
         engine?.end()
         if !fromSystem { callKit?.end() }
         callKit = nil

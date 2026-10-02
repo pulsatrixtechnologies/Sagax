@@ -99,8 +99,17 @@ final class CallUITests: XCTestCase {
     }
 
     private func get<T: Decodable>(_ session: FixtureSession, _ path: String, as type: T.Type) throws -> T {
+        try call(session, "GET", path, as: type)
+    }
+
+    private func call<T: Decodable>(_ session: FixtureSession, _ method: String, _ path: String, body json: [String: Any]? = nil, as type: T.Type) throws -> T {
         var request = URLRequest(url: URL(string: session.endpoint + path)!)
+        request.httpMethod = method
         request.setValue("Bearer \(session.token)", forHTTPHeaderField: "Authorization")
+        if let json {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: json)
+        }
         let done = expectation(description: path)
         var body: Data?
         URLSession.shared.dataTask(with: request) { data, _, _ in
@@ -122,6 +131,62 @@ final class CallUITests: XCTestCase {
         return try get(session, "/api/threads/\(bot.threadId)/messages?limit=40", as: Page.self).messages
     }
 
+    // MARK: - A cast of its own
+
+    /// The calls run with bots (and a room) made for this test and deleted
+    /// after it, so the fixture's own conversations (Ara's thread, Peer
+    /// Managers) are exactly as the other suites expect, in any order.
+    private struct Created: Decodable {
+        struct Bot: Decodable { let id: String; let name: String; let threadId: String }
+        struct Group: Decodable { let id: String }
+        let bot: Bot?
+        let group: Group?
+    }
+
+    private var cleanup: [(String, String)] = []
+    private var cleanupSession: FixtureSession?
+
+    private func makeBot(_ session: FixtureSession, _ name: String) throws -> Created.Bot {
+        let bot = try XCTUnwrap(try call(session, "POST", "/api/bots", body: ["name": name, "title": "Call test"], as: Created.self).bot)
+        cleanup.append(("DELETE", "/api/bots/\(bot.id)"))
+        cleanupSession = session
+        _ = try? call(session, "PATCH", "/api/bots/\(bot.id)", body: ["color": "purple", "mascotLook": ["character": "owl"]], as: Created.self)
+        return bot
+    }
+
+    private func makeRoom(_ session: FixtureSession, _ name: String, members: [Created.Bot]) throws {
+        let group = try XCTUnwrap(try call(session, "POST", "/api/groups", body: ["name": name, "memberIds": members.map(\.id)], as: Created.self).group)
+        cleanup.insert(("DELETE", "/api/groups/\(group.id)"), at: 0)
+    }
+
+    override func tearDown() {
+        if let session = cleanupSession {
+            for (method, path) in cleanup {
+                struct Ignored: Decodable {}
+                _ = try? call(session, method, path, as: Ignored.self)
+            }
+        }
+        cleanup = []
+        cleanupSession = nil
+        super.tearDown()
+    }
+
+    /// Open a chat from the home's search.
+    @MainActor
+    private func open(_ name: String, in app: XCUIApplication) {
+        let search = app.buttons["home-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 20))
+        search.tap()
+        let field = app.textFields["search-field"]
+        if field.waitForExistence(timeout: 5) { field.typeText(name) }
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'search-row.' AND label CONTAINS %@", name)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "\(name) in search")
+        row.tap()
+        XCTAssertTrue(app.buttons["composer-voice"].waitForExistence(timeout: 15))
+    }
+
+    private static func unique(_ name: String) -> String { "\(name) \(Int.random(in: 1000...9999))" }
+
     // MARK: - One to one
 
     /// A real conversation: the person's words land in the thread as call
@@ -129,8 +194,11 @@ final class CallUITests: XCTestCase {
     /// (and the next turn says so), and hanging up leaves the transcript.
     @MainActor
     func testACallIsAConversationWithBargeIn() throws {
-        let (app, session) = try launch(screen: "02-chat", audio: "bot", plan: "listening,speaking")
-        XCTAssertTrue(app.buttons["chat-name"].waitForExistence(timeout: 20))
+        let session = try fixtureSession()
+        let name = Self.unique("Callie")
+        _ = try makeBot(session, name)
+        let (app, _) = try launch(screen: "01-home", audio: "bot", plan: "listening,speaking")
+        open(name, in: app)
 
         app.buttons["composer-voice"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["call-pill"].waitForExistence(timeout: 15), "the call pill under the name")
@@ -147,7 +215,7 @@ final class CallUITests: XCTestCase {
         // the bot's answer is spoken
         wait(45, "the reply spoken") { spoken(app).contains { $0.hasSuffix("hello from fake claude") } }
         let route = spoken(app).first { $0.hasSuffix("hello from fake claude") }?.split(separator: "|")
-        XCTAssertEqual(route?.first.map(String.init), "Ara", "spoken as the bot")
+        XCTAssertEqual(route?.first.map(String.init), name, "spoken as the bot")
         XCTAssertEqual(route?.dropFirst().first.map(String.init), "device", "no voice mode or provider on the fixture: the phone's own voice")
         attach("The bot speaking", app)
 
@@ -159,9 +227,9 @@ final class CallUITests: XCTestCase {
 
         // the server got call turns, the second marked interrupted
         wait(20, "both turns on the server") {
-            ((try? self.threadMessages(session, bot: "Ara")) ?? []).filter { $0.role == "user" && $0.voiceCall != nil }.count >= 2
+            ((try? self.threadMessages(session, bot: name)) ?? []).filter { $0.role == "user" && $0.voiceCall != nil }.count >= 2
         }
-        let turns = try threadMessages(session, bot: "Ara").filter { $0.role == "user" && $0.voiceCall != nil }
+        let turns = try threadMessages(session, bot: name).filter { $0.role == "user" && $0.voiceCall != nil }
         let first = try XCTUnwrap(turns.first { $0.text?.contains("où en est le projet") == true })
         let second = try XCTUnwrap(turns.first { $0.text?.contains("parle-moi plutôt de demain") == true })
         XCTAssertEqual(first.voiceCall?.callId, second.voiceCall?.callId, "one call")
@@ -188,15 +256,12 @@ final class CallUITests: XCTestCase {
     /// spoken in turn, in its own voice.
     @MainActor
     func testARoomCallTakesTurns() throws {
+        let session = try fixtureSession()
+        let members = try ["Echo", "Nova", "Rhea"].map { try makeBot(session, Self.unique($0)) }
+        let room = Self.unique("Call Room")
+        try makeRoom(session, room, members: members)
         let (app, _) = try launch(screen: "01-home", audio: "room", plan: "listening")
-        // the room from search (Peer Managers: Ara, Helios, Liora)
-        let search = app.buttons["home-search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 20))
-        search.tap()
-        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'search-row.' AND label CONTAINS 'Peer Managers'")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "the room in search")
-        row.tap()
-        XCTAssertTrue(app.buttons["composer-voice"].waitForExistence(timeout: 15))
+        open(room, in: app)
         app.buttons["composer-voice"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["group-call"].waitForExistence(timeout: 15), "the room's call screen")
         wait(15, "connected") { !["", "connecting"].contains(label(app, "call-debug-phase")) }
@@ -206,7 +271,7 @@ final class CallUITests: XCTestCase {
             spoken(app).filter { $0.hasSuffix("hello from fake claude") }.count >= 3
         }
         let speakers = spoken(app).filter { $0.hasSuffix("hello from fake claude") }.map { String($0.split(separator: "|")[0]) }
-        XCTAssertEqual(Set(speakers.prefix(3)), ["Ara", "Helios", "Liora"], "every member speaks, one after the other")
+        XCTAssertEqual(Set(speakers.prefix(3)), Set(members.map(\.name)), "every member speaks, one after the other")
         XCTAssertEqual(speakers.count, Set(speakers).count, "each answer once")
         wait(30, "a member in focus while speaking") {
             app.descendants(matching: .any)["call-member-focused"].exists || label(app, "call-debug-phase") == "listening"

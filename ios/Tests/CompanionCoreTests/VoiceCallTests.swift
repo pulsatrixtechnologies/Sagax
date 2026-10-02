@@ -637,3 +637,16 @@ final class VoiceModeClientTests: XCTestCase {
         XCTAssertNil(nothing)
     }
 }
+
+final class CallQuietTests: XCTestCase {
+    func testOnlyTheThreadOnTheCallIsQuietAndOnlyWhileItLasts() {
+        let quiet = CallQuiet()
+        XCTAssertFalse(quiet.silences(threadId: "th-ara"))
+        quiet.set("th-ara", live: true)
+        XCTAssertTrue(quiet.silences(threadId: "th-ara"), "the conversation on the call does not buzz")
+        XCTAssertFalse(quiet.silences(threadId: "th-helios"), "another conversation still does")
+        XCTAssertFalse(quiet.silences(threadId: nil))
+        quiet.set("th-ara", live: false)
+        XCTAssertFalse(quiet.silences(threadId: "th-ara"), "hung up: it notifies again")
+    }
+}

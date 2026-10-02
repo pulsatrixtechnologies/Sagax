@@ -2,7 +2,7 @@
 // tests are mostly about the cases where the answer is "stay quiet".
 import { describe, expect, it } from "vitest";
 
-import { blockedTarget, buildNotification, buildSpendNotification, summarize } from "./notify.ts";
+import { blockedTarget, buildNotification, buildSpendNotification, CALL_QUIET_MS, quietForCall, summarize } from "./notify.ts";
 
 const bot = { id: "bot-1", name: "Scout", threadId: "thread-1" };
 
@@ -129,5 +129,21 @@ describe("buildSpendNotification", () => {
       kind: "spend", botId: "bot-1", botName: "Scout", threadId: "thread-9",
       title: "Monthly spend limit reached", body: "$100.00 of $100.00 spent this month (2026-09).",
     });
+  });
+});
+
+describe("a conversation on a live voice call", () => {
+  const now = 1_800_000_000_000;
+  const done = { kind: "done" as const };
+  it("does not buzz while the person's latest words were said on the call", () => {
+    expect(quietForCall(done, { at: now - 60_000, voiceCall: { callId: "call-12345678" } }, now)).toBe(true);
+    expect(quietForCall({ kind: "approval" }, { at: now - 5_000, voiceCall: { callId: "call-12345678", interrupted: true } }, now)).toBe(true);
+  });
+  it("buzzes again after a written message, a call long over, or for spend", () => {
+    expect(quietForCall(done, { at: now - 60_000 }, now)).toBe(false);
+    expect(quietForCall(done, { at: now - CALL_QUIET_MS - 1, voiceCall: { callId: "call-12345678" } }, now)).toBe(false);
+    expect(quietForCall({ kind: "spend" }, { at: now, voiceCall: { callId: "call-12345678" } }, now)).toBe(false);
+    expect(quietForCall(done, undefined, now)).toBe(false);
+    expect(quietForCall(null, { at: now, voiceCall: { callId: "call-12345678" } }, now)).toBe(false);
   });
 });
