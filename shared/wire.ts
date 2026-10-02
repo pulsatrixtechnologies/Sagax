@@ -799,6 +799,8 @@ export type ServerFrame =
   | { kind: "computer"; botId: string; state: "provisioning" | "waking" | "ready" }
   | { kind: "computer-control"; botId: string; held: boolean; helpReason: string | null }
   | { kind: "bot.deleted"; botId: string }
+  /** A person's own unlocks (server/achievements.ts), to their streams only. */
+  | { kind: "achievements"; audience: string; unlocked: Array<{ id: string; points: number; unlockedAt: number }> }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */
   | ({ kind: "config" } & Record<string, unknown>);

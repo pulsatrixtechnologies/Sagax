@@ -25,6 +25,7 @@ import {
   RefreshCw,
   Settings as SettingsIcon,
   Smartphone,
+  Trophy,
 } from "lucide-react";
 
 import { InitialsAvatar } from "./Avatar";
@@ -37,6 +38,8 @@ import { useUpdaterState, type UpdaterState } from "@/lib/updater";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { HELP_CENTER_URL, openExternalLink } from "@/lib/app-links";
+import { useAchievements } from "@/lib/achievements";
+import { Gamertag, gamertagText } from "./achievements/Gamertag";
 
 /** "Milind Soni" → "MS", "milind" → "M", "you@x.dev" → "Y", unset → "?" */
 export function profileInitials(profile?: { name?: string; email?: string }): string {
@@ -214,6 +217,10 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const update = useUpdateItem();
   const [aboutOpen, setAboutOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
+  const achievements = useAchievements();
+  const openAchievements = () => dispatch({ type: "toggleAppSettings", open: true, section: "achievements" });
+  // the gamertag line under the name (points, like a console's gamertag)
+  const gamertag = gamertagText({ status: achievements.status, points: achievements.snapshot?.points, showPoints: achievements.snapshot?.settings.showPoints }) !== null;
 
   const profile = state.config?.profile;
   const viewer = state.config?.viewer;
@@ -245,6 +252,14 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
       icon: <SettingsIcon size={18} />,
       onSelect: () => dispatch({ type: "toggleAppSettings" }),
     },
+    ...(achievements.status === "ready"
+      ? [{
+          key: "achievements",
+          label: t("achievements.menu"),
+          icon: <Trophy size={18} />,
+          onSelect: openAchievements,
+        }]
+      : []),
     {
       key: "shortcuts",
       label: "Keyboard shortcuts",
@@ -288,7 +303,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   );
 
   return (
-    <>
+    <div className="relative">
       <SidebarPopoverMenu
         items={items}
         ariaLabel={name}
@@ -321,12 +336,17 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
             ref={triggerRef}
             data-sidebar-account
             className={cn(
-              "flex h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left transition-colors",
+              "flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left transition-colors",
+              gamertag ? "h-12" : "h-10",
               open ? "bg-sidebar-hover" : "hover:bg-sidebar-hover",
             )}
           >
             {avatar(28)}
-            <span title={name} className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5 text-sidebar-ink">{name}</span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span title={name} className="min-w-0 truncate text-[13px] font-medium leading-5 text-sidebar-ink">{name}</span>
+              {/* room for the gamertag, drawn over it below (a button cannot hold a button) */}
+              {gamertag && <span aria-hidden="true" className="h-4" />}
+            </span>
             {/* an update is the one thing worth interrupting the name for, so
               * it sits on the row rather than waiting to be found in the menu */}
             {noteworthy && (
@@ -347,7 +367,8 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
           </span>
         )}
       />
+      {gamertag && !avatarOnly && <Gamertag onOpen={openAchievements} className="absolute bottom-[6px] left-[46px]" />}
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
-    </>
+    </div>
   );
 }

@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
 import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
+import { reportAchievement } from "@/lib/achievements";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import {
   draftRevision,
@@ -680,6 +681,8 @@ export function Composer({
     // The Hibou 98 easter egg: the secret command toggles the retro owl and
     // is never sent to anyone.
     if (consumeRetroCommand(text, attachments.length)) {
+      // using the command unlocks Trombi for good (shared/achievements-catalog.ts)
+      reportAchievement("trombi.summoned");
       setText("");
       return;
     }

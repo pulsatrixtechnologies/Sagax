@@ -47,6 +47,7 @@ import { t } from "@/lib/i18n";
 import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents } from "@/lib/live-events";
+import { receiveAchievementsFrame } from "@/lib/achievements";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -946,7 +947,8 @@ export type AppSettingsSection =
   | "mail"
   | "activity"
   | "backups"
-  | "workspaces";
+  | "workspaces"
+  | "achievements";
 
 export type BotSettingsSection =
   | "overview"
@@ -4053,6 +4055,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "routine.deleted":
           rawDispatch({ type: "routineDeleted", routineId: frame.routineId });
+          break;
+        // a person's own unlocks (server/achievements.ts sends them to their streams only)
+        case "achievements":
+          receiveAchievementsFrame(frame);
           break;
         case "routine.run":
           rawDispatch({ type: "routineRunPatched", run: frame.run });
