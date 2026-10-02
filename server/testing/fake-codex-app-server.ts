@@ -284,6 +284,15 @@ process.stdin.on("data", (chunk) => {
         experimentalApi = msg.params?.capabilities?.experimentalApi === true;
         out({ jsonrpc: "2.0", id: msg.id, result: { ok: true } });
         break;
+      // FAKE_CODEX_SKILLS: path of a skills/list result to answer with.
+      case "skills/list": {
+        dump();
+        const result = process.env.FAKE_CODEX_SKILLS
+          ? JSON.parse(readFileSync(process.env.FAKE_CODEX_SKILLS, "utf8"))
+          : { data: [{ cwd: msg.params?.cwds?.[0] ?? process.cwd(), errors: [], skills: [] }] };
+        out({ jsonrpc: "2.0", id: msg.id, result });
+        break;
+      }
       case "account/read": {
         dump();
         const accountMode = process.env.FAKE_CODEX_ACCOUNT_MODE;
