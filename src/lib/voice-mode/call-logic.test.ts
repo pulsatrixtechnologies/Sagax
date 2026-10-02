@@ -262,7 +262,9 @@ describe("sentences while the bot writes", () => {
     const text = "Run this:\n```sh\nnpm test\n```\nThen check\n- the first result\n- the second result\n\nDone";
     const out = [...stream.feed(text), ...stream.finish(text)];
     expect(out.join(" | ")).not.toContain("npm test");
-    expect(out).toContain("- the first result");
+    // the list marker is for the eye: only the item is spoken
+    expect(out).toContain("the first result");
+    expect(out.join(" | ")).not.toContain("- ");
     expect(out.at(-1)).toBe("Done");
   });
 

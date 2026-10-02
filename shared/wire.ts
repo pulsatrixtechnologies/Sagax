@@ -530,6 +530,11 @@ export interface WireMessage {
   sendId?: string;
   /** Per-send channel behavior. Absent is legacy quick chat. */
   channelMode?: "chat" | "goal";
+  /** A user message said on a voice call (src/components/voice-mode/LiveCall.tsx):
+   * which call, whether the person cut the bot's previous answer to say it,
+   * and the call's language when one is set. The turn it starts gets the
+   * hidden phone-call instruction (server/voice-call-prompt.ts). */
+  voiceCall?: { callId: string; interrupted?: boolean; language?: string };
   /** group threads: which member said this (sender attribution). */
   from?: { botId: string; name: string; color: string };
   /** Set on a room message a bot pushed in with post_to_room. */

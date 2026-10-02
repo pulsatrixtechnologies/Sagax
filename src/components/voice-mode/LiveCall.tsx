@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore, useStreaming, visibleMessages, type Bot } from "@/state/store";
-import { currentCall, endCall } from "@/lib/call";
+import { clearVoiceCallId, currentCall, endCall, setVoiceCallId } from "@/lib/call";
 import { NO, YES } from "@/lib/voice-mode/answers";
 import { VoiceCall, type BargeInMetrics, type TurnMetrics } from "@/lib/voice-mode/call";
 import { readCallSettings } from "@/lib/voice-mode/call-settings";
@@ -46,6 +46,13 @@ export function LiveCall({ bot }: { bot: Bot }) {
   threadRef.current = bot.threadId;
   const botRef = useRef(bot);
   botRef.current = bot;
+  // this call, for the server: every turn said on it is a phone turn
+  // (Message.voiceCall), which gets the hidden phone-call instruction
+  const callId = useRef(crypto.randomUUID()).current;
+  useEffect(() => {
+    setVoiceCallId(bot.id, callId);
+    return () => clearVoiceCallId(bot.id, callId);
+  }, [bot.id, callId]);
 
   const messages = visibleMessages(bot);
   const approval = pendingApprovals(messages)[0];
@@ -123,7 +130,7 @@ export function LiveCall({ bot }: { bot: Bot }) {
 
   // ── what the person said ───────────────────────────────────────────────
   const onUtterance = useCallback(
-    (said: string) => {
+    (said: string, interrupted = false) => {
       const current = botRef.current;
       if (!call || currentCall() !== current.id) return;
       setHeard("");
@@ -161,14 +168,21 @@ export function LiveCall({ bot }: { bot: Bot }) {
       }
       // a new turn: what the interrupted answer had left is never spoken
       dropOldReply.current = false;
-      dispatch({ type: "send", botId: current.id, text: said, threadId: current.threadId });
+      const language = readVoiceModeSettings().language;
+      dispatch({
+        type: "send",
+        botId: current.id,
+        text: said,
+        threadId: current.threadId,
+        voiceCall: { callId, ...(interrupted ? { interrupted: true } : {}), ...(language && language !== "auto" ? { language } : {}) },
+      });
     },
-    [call, dispatch],
+    [call, callId, dispatch],
   );
 
   useEffect(() => {
     if (!call) return;
-    return call.on("utterance", (text) => onUtterance(text));
+    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted));
   }, [call, onUtterance]);
 
   useEffect(() => {

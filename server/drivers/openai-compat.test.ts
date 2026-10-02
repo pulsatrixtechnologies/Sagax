@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CALL_MARK, ENDED_MARK, INTERRUPTED_MARK, voiceCallTurn } from "../testing/voice-call-turns.ts";
 import { recordEvents } from "../testing/events.ts";
 import { buildTurnContext, NATIVELY_REPLAYING_DRIVER_KINDS } from "../turn-context.ts";
 import { instanceConfigs } from "../config.ts";
@@ -605,6 +606,53 @@ describe("OpenAICompatDriver", () => {
     const legacy: any[] = sentBody?.messages ?? [];
     expect(legacy[0]).toEqual({ role: "system", content: "Whole block." });
     expect(legacy.at(-1)).toEqual({ role: "user", content: "bare" });
+    recorder.stop();
+    await inst.dispose();
+  });
+
+  it("puts the phone-call instruction in the newest user message of call turns only", async () => {
+    let sentBody: any = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+        sentBody = JSON.parse(String(init?.body));
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"hi"}}]}\n' + "data: [DONE]\n",
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+    const inst = await OpenAICompatDriver.create({
+      instanceId: "test-voice-call",
+      displayName: "Voice call",
+      enabled: true,
+      config: { url: "http://localhost:9/v1", apiKeyEnv: "TEST_KEY" },
+      environment: { TEST_KEY: "secret" },
+    });
+    const recorder = recordEvents(inst.adapter);
+    const send = async (index: number, kind: Parameters<typeof voiceCallTurn>[0]) => {
+      await inst.adapter.sendTurn({
+        threadId: `thread-voice-call-${index}`,
+        text: `words ${index}`,
+        ...voiceCallTurn(kind),
+        transcript: [{ role: "user" as const, text: "earlier" }, { role: "assistant" as const, text: "answer" }],
+      });
+      await recorder.until((e) => e.type === "turn.completed" && e.threadId === `thread-voice-call-${index}`);
+      const messages: any[] = sentBody?.messages ?? [];
+      // the cached prefix never carries it, and neither does the transcript
+      for (const message of messages.slice(0, -1)) expect(String(message.content)).not.toContain(CALL_MARK);
+      return String(messages.at(-1)?.content ?? "");
+    };
+    expect(await send(0, "written")).not.toContain(CALL_MARK);
+    const call = await send(1, "call");
+    expect(call).toContain(CALL_MARK);
+    expect(call.endsWith("words 1")).toBe(true);
+    expect(await send(2, "interrupted")).toContain(INTERRUPTED_MARK);
+    const after = await send(3, "after");
+    expect(after).toContain(ENDED_MARK);
+    expect(after).not.toContain(CALL_MARK);
     recorder.stop();
     await inst.dispose();
   });

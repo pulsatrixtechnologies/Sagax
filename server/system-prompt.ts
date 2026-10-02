@@ -29,8 +29,10 @@ export function userProfileSystemPrompt(profile?: { aboutMe?: string }): string 
  * contract, which relaunched the CLI — and the provider then re-uploaded the
  * entire conversation at the cache-write rate. Mentions did the same on any
  * turn that tagged a bot, and recent work did it on every turn of an active
- * bot, because its "2h ago" labels drift even when nothing else changed. */
-const VOLATILE_SECTIONS = new Set(["memory", "mentions", "outstanding", "recent"]);
+ * bot, because its "2h ago" labels drift even when nothing else changed.
+ * The phone-call section (server/voice-call-prompt.ts) rides only on the
+ * turns of a voice call and the first written turn after it. */
+const VOLATILE_SECTIONS = new Set(["memory", "mentions", "outstanding", "recent", "voice-call"]);
 
 export function buildSystemPrompt(
   persona: string,

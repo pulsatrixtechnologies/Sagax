@@ -11,6 +11,8 @@
 // sooner; later short sentences are joined to the next one, so a reply of
 // many short lines is not many requests.
 
+import { speakableSentence } from "./spoken";
+
 const ABBREVIATIONS = new Set([
   "e.g", "i.e", "etc", "vs", "mr", "mrs", "ms", "dr", "st", "no", "p", "pp", "fig", "approx", "cf",
   "m", "mme", "mlle", "env", "ex", "art", "av", "bd", "ste",
@@ -86,9 +88,9 @@ export class SentenceStream {
     out.push(joined);
   }
 
-  /** Code fences out, whitespace folded. */
+  /** Code fences, markdown, emoji and URLs out, whitespace folded (spoken.ts). */
   private speakable(piece: string): string {
-    return piece.replace(/```[\s\S]*?(```|$)/g, " ").replace(/\s+/g, " ").trim();
+    return speakableSentence(piece);
   }
 
   /** Index just after the first sentence boundary in `rest`, or -1. */

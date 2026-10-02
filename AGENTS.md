@@ -300,6 +300,11 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   `POST /voice/stream` (raw PCM). Barge-in ducks then cancels the bot's voice
   and interrupts its running turn. Tests: `call-logic.test.ts`, `call.test.ts`,
   `models.test.ts`, `server/voice-call.e2e.test.ts`.
+- Call turns carry `voiceCall` (Message.voiceCall); the server adds the
+  hidden "Phone call" volatile section (`server/voice-call-prompt.ts`), never
+  stored as the person's text. The call speaks only `spokenPart` of an answer,
+  cleaned by `src/lib/voice-mode/spoken.ts`. Tests:
+  `server/voice-call-prompt.test.ts`, `server/voice-call-prompt.e2e.test.ts`.
 - xAI is only ears and a voice: never its realtime agent, responses, chat or
   function calling. Every turn goes to the bot through the normal send route,
   and only the bot's text is synthesized. The e2e test and

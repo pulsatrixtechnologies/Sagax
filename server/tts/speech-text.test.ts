@@ -35,6 +35,11 @@ describe("speakable", () => {
     );
   });
 
+  it("turns a www address into a noun too, and drops emoji joiners", () => {
+    expect(speakable("Go to www.example.org/x now")).toBe("Go to a link now");
+    expect(speakable("Team \u{1F468}\u200D\u{1F469} ready")).toBe("Team ready");
+  });
+
   it("says the file, not the path to it", () => {
     expect(speakable("I changed server/drivers/acp/core.ts today")).toBe("I changed core.ts today");
   });

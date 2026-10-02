@@ -69,6 +69,7 @@ export function speakable(input: string): string {
   text = text.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
   text = text.replace(/<https?:\/\/[^>\s]+>/g, " a link ");
   text = text.replace(/\bhttps?:\/\/\S+/g, " a link ");
+  text = text.replace(/\bwww\.[^\s<>()]+/gi, " a link ");
 
   // tables: a grid is hopeless aloud, and the separator row is pure noise
   text = text.replace(/^\s*\|?[\s:-]*\|[\s|:-]*$/gm, "");
@@ -108,7 +109,7 @@ export function speakable(input: string): string {
   // worse, announces them by name
   text = text.replace(
     // oxlint-disable-next-line no-misleading-character-class -- variation selectors are stripped on their own, not as part of a grapheme
-    /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu,
+    /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u200D\u20E3]/gu,
     "",
   );
 
