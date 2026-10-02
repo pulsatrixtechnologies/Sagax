@@ -296,6 +296,12 @@ final class Session: ObservableObject {
                 // earlier run on the same simulator may have saved a choice.
                 UserDefaults.standard.removeObject(forKey: PrefKey.rosterDensity)
             }
+            if let index = arguments.firstIndex(of: "-set-list-density"), index + 1 < arguments.count {
+                // Saved like a choice made in Settings, so Settings can still
+                // change it (a `-companion.prefs.rosterDensity` argument would
+                // pin the value for the whole launch).
+                UserDefaults.standard.set(arguments[index + 1], forKey: PrefKey.rosterDensity)
+            }
             status = .live
             return
         }

@@ -102,9 +102,10 @@ final class SwipeBackUITests: XCTestCase {
             "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
-            // Home starts from the install default (compact), whatever an
-            // earlier run saved; Pepper's threads open from its "› 3".
-            "-reset-list-density"
+            // The compact list, whatever an earlier run saved (the install
+            // default is now the standard home); Pepper's threads open from
+            // its "› 3".
+            "-companion.prefs.rosterDensity", "compact"
         ]
         app.launch()
         // Simulator installation can restore an unpaired, prewarmed scene

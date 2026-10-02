@@ -343,6 +343,16 @@ struct ChatView: View {
                         return false
                     }
                     proxy.scrollTo(folded?.id ?? messageId, anchor: .center)
+                    // The expanded turn's bubbles (long markdown) finish laying
+                    // out after the first pass and push the target down; land
+                    // on it again once they have, as the newest-message settle
+                    // above does. Focus is consumed after, since consuming it
+                    // changes this task's id and would cancel the settle.
+                    for delay in [150, 450] {
+                        try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
+                        guard !Task.isCancelled else { return }
+                        proxy.scrollTo(messageId, anchor: .center)
+                    }
                     session.consumeFocus(messageId)
                 }
             }

@@ -333,8 +333,9 @@ final class ThreadNavigationUITests: XCTestCase {
         // Xcode may prelaunch the app after installing an updated build.
         // Restart it so Session initializes with the offline fixture flags.
         app.terminate()
-        let densityArguments = density.map { ["-companion.prefs.rosterDensity", $0] }
-            ?? ["-reset-list-density"]
+        // `nil` is the compact list, whose rows carry the threads toggle;
+        // the install default is the standard home (HomeUITests).
+        let densityArguments = ["-companion.prefs.rosterDensity", density ?? "compact"]
         app.launchArguments = [
             "-store-preview", "-threads-preview",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",

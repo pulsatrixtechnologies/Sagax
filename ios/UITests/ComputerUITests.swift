@@ -6,8 +6,10 @@ import XCTest
 /// batch and clipboard write, which these tests read back from
 /// `GET /__parity/computer`.
 ///
-/// Start the fixture first (`node ios/parity/fixture-server.mjs`); without
-/// `ios/parity/out/session.json` the tests skip. Two-finger scrolling has no
+/// Start the fixture first (`node ios/parity/fixture-server.mjs`) and pass
+/// its session as TEST_RUNNER_PARITY_ENDPOINT / _TOKEN / _ENVIRONMENT, or
+/// leave `ios/parity/out/session.json` in place; without either the tests
+/// skip. Two-finger scrolling has no
 /// XCUITest gesture; its translation is covered in CompanionCore
 /// (`ComputerInputTests`).
 final class ComputerUITests: XCTestCase {
@@ -42,6 +44,14 @@ final class ComputerUITests: XCTestCase {
     private var session: FixtureSession!
 
     private func fixtureSession() throws -> FixtureSession {
+        // The runner's environment first (TEST_RUNNER_PARITY_*, as the other
+        // parity suites read it), so a fixture started elsewhere, or a stale
+        // session file from an earlier run, cannot point the tests at the
+        // wrong server.
+        let env = ProcessInfo.processInfo.environment
+        if let endpoint = env["PARITY_ENDPOINT"], let token = env["PARITY_TOKEN"] {
+            return FixtureSession(endpoint: endpoint, token: token, environmentId: env["PARITY_ENVIRONMENT"].flatMap { $0.isEmpty ? nil : $0 })
+        }
         let file = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()

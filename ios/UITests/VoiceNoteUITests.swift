@@ -9,7 +9,9 @@ final class VoiceNoteUITests: XCTestCase {
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
             "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
-            "-companion.onboarding.notificationsSeen", "YES"]
+            "-companion.onboarding.notificationsSeen", "YES",
+            // The compact list carries the threads toggle (the default is the standard home).
+            "-companion.prefs.rosterDensity", "compact"]
         app.launch()
         let toggle = app.buttons["threads-toggle.preview-pepper"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 10))

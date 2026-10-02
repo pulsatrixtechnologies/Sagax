@@ -4,9 +4,10 @@ import XCTest
 /// server on throwaway data with the repository's fake engine, so a send
 /// gets a real streamed reply and nothing reaches a provider.
 ///
-/// Start the fixture first (`node ios/parity/fixture-server.mjs`); it writes
-/// `ios/parity/out/session.json`, which this test reads from the host. Without
-/// that file the test is skipped.
+/// Start the fixture first (`node ios/parity/fixture-server.mjs`) and pass its
+/// session as TEST_RUNNER_PARITY_ENDPOINT / _TOKEN / _ENVIRONMENT, or leave the
+/// `ios/parity/out/session.json` it writes in place; without either the test
+/// is skipped.
 final class ParityChatUITests: XCTestCase {
     private struct FixtureSession: Decodable {
         let endpoint: String
@@ -15,6 +16,13 @@ final class ParityChatUITests: XCTestCase {
     }
 
     private func fixtureSession() throws -> FixtureSession {
+        // The runner's environment first (TEST_RUNNER_PARITY_*, as the other
+        // parity suites read it), so a stale session file from an earlier
+        // run cannot point the test at a server that is gone.
+        let env = ProcessInfo.processInfo.environment
+        if let endpoint = env["PARITY_ENDPOINT"], let token = env["PARITY_TOKEN"] {
+            return FixtureSession(endpoint: endpoint, token: token, environmentId: env["PARITY_ENVIRONMENT"].flatMap { $0.isEmpty ? nil : $0 })
+        }
         let file = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -78,10 +86,11 @@ final class ParityChatUITests: XCTestCase {
         XCTAssertTrue(app.buttons["header-computer"].waitForExistence(timeout: 10))
 
         app.buttons["header-computer"].tap()
-        // the computer view's own bar, titled with the bot (no frame yet on the fixture)
-        XCTAssertTrue(app.navigationBars["Ara"].waitForExistence(timeout: 10), "computer view")
+        // the computer view (13): its own glass back button over the screen
+        let back = app.buttons["computer-back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "computer view")
         attach("Computer view", app)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        back.tap()
         XCTAssertTrue(app.buttons["composer-voice"].waitForExistence(timeout: 10))
 
         app.buttons["composer-voice"].tap()
