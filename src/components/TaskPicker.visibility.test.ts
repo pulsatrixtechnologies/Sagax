@@ -10,7 +10,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
   useStore: () => ({ state: { bots: fixture.bots, pendingQueued: fixture.queued }, dispatch: fixture.dispatch }),
 }));
 
-const { TaskPicker, BotActivityPicker, GroupTaskPicker } = await import("./TaskPicker");
+const { TaskPicker, BotActivityPicker, GroupTaskPicker, ThreadsOffReturnLink } = await import("./TaskPicker");
 const bot: Bot = {
   id: "pepper", name: "Pepper", color: "green", threadId: "current", title: "", description: "",
   notifications: true, unread: false, busy: true, messages: [], modelSelection: { instanceId: "fake", model: "fake" },
@@ -78,5 +78,42 @@ describe("optional bot thread picker", () => {
     const markup = renderToStaticMarkup(createElement(TaskPicker, { bot }));
     expect(markup).toContain("rounded-full border");
     expect(markup).toContain('aria-expanded="false"');
+  });
+});
+
+describe("way back to the conversation while threads are hidden", () => {
+  const trapped: Bot = {
+    ...bot, busy: false, threadId: "extra",
+    tasks: [
+      { threadId: "main", title: "Weekly report", createdAt: 1, updatedAt: 50 },
+      { threadId: "extra", title: "Untitled", createdAt: 60, updatedAt: 60 },
+    ],
+  };
+
+  it("offers a link back to the latest conversation and switches to it", async () => {
+    fixture.showThreads = false;
+    const markup = renderToStaticMarkup(createElement(ThreadsOffReturnLink, { bot: trapped }));
+    expect(markup).toContain("data-threads-off-return");
+    expect(markup).toContain("Back to conversation");
+    expect(markup).toContain('title="Weekly report"');
+    const { Children, isValidElement } = await import("react");
+    type El = { props: { onClick?: () => void; children?: unknown } };
+    const find = (node: unknown): El | undefined => {
+      if (!isValidElement(node)) return undefined;
+      const el = node as unknown as El;
+      if (el.props.onClick) return el;
+      for (const child of Children.toArray(el.props.children as never)) { const hit = find(child); if (hit) return hit; }
+    };
+    let tree: unknown;
+    renderToStaticMarkup(createElement(() => { tree = ThreadsOffReturnLink({ bot: trapped }); return tree as never; }));
+    find(tree)?.props.onClick?.();
+    expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "switchTask", botId: "pepper", threadId: "main" });
+  });
+
+  it("stays out of the way at home and when threads are shown", () => {
+    fixture.showThreads = false;
+    expect(renderToStaticMarkup(createElement(ThreadsOffReturnLink, { bot: { ...trapped, threadId: "main" } }))).toBe("");
+    fixture.showThreads = true;
+    expect(renderToStaticMarkup(createElement(ThreadsOffReturnLink, { bot: trapped }))).toBe("");
   });
 });

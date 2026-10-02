@@ -119,6 +119,7 @@ import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 import { profileInitials, SidebarProfileMenu } from "./SidebarProfileMenu";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads } from "@/lib/thread-preferences";
+import { openBotConversationActions } from "./thread-home";
 import { useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
@@ -1480,12 +1481,15 @@ export function BotListItem({
     event.preventDefault();
     onMenu({ botId: bot.id, x: event.clientX, y: event.clientY });
   };
+  // Threads off: an untouched extra thread never strands the person; the row
+  // lands back on their latest conversation (see thread-home.ts).
+  const openConversation = () => {
+    for (const action of openBotConversationActions(bot, showThreads)) dispatch(action);
+  };
   const onSelect = (event: React.MouseEvent) => {
     if (renaming) return;
     const insideRenameInput = event.target instanceof HTMLInputElement;
-    if (botListItemPointerIntent(event.type, insideRenameInput) === "select") {
-      dispatch({ type: "select", id: bot.id });
-    }
+    if (botListItemPointerIntent(event.type, insideRenameInput) === "select") openConversation();
   };
 
   return (
@@ -1514,7 +1518,7 @@ export function BotListItem({
           if (renaming) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            dispatch({ type: "select", id: bot.id });
+            openConversation();
           }
         }}
         onContextMenu={onContextMenu}
@@ -2421,7 +2425,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                 <button
                   key={bot.id}
                   type="button"
-                  onClick={() => dispatch({ type: "select", id: bot.id })}
+                  onClick={() => { for (const action of openBotConversationActions(bot, showThreads)) dispatch(action); }}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     event.stopPropagation();

@@ -13,6 +13,8 @@ import { BotAvatar } from "./Avatar";
 import { PersonAvatar } from "./MessageAuthor";
 import { personInitials } from "@/lib/people-dm";
 import { useCaptionChrome } from "./DesktopCapabilities";
+import { useShowThreads } from "@/lib/thread-preferences";
+import { openBotConversationActions } from "./thread-home";
 
 type ComposeMode = "browse" | "group";
 type ComposeRow = { kind: "create-bot" } | { kind: "create-group" } | { kind: "bot"; bot: Bot } | { kind: "person"; person: OrgDirectoryPerson };
@@ -62,12 +64,16 @@ function KeyHint({ n }: { n: number }) {
 
 /**
  * Inline "To:" picker in the main column. Creating a bot or a group stays
- * here: no centered dialog. A bot row starts a new thread. Group mode
- * collects members in the same list, then creates the channel.
+ * here: no centered dialog. With threads on, a bot row starts a new thread
+ * (the previous one stays in the thread list). With threads off there is one
+ * conversation per bot, so a bot row opens it exactly like the sidebar row
+ * and never creates a thread. Group mode collects members in the same list,
+ * then creates the channel.
  */
 export function ComposeToPicker({ onClose }: { onClose: () => void }) {
   const { state, dispatch } = useStore();
   const { dragStyle, noDragStyle, controlsShiftStyle } = useCaptionChrome();
+  const showThreads = useShowThreads();
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<ComposeMode>("browse");
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
@@ -132,7 +138,8 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
       setCursor(0);
       return;
     }
-    dispatch({ type: "newTask", botId: row.bot.id });
+    if (showThreads) dispatch({ type: "newTask", botId: row.bot.id });
+    else for (const action of openBotConversationActions(row.bot, false)) dispatch(action);
     onCloseRef.current();
   };
 
@@ -333,7 +340,7 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
             const member = picked.has(bot.id);
             const hint = mode === "group"
               ? (member ? t("compose.remove") : t("compose.add"))
-              : t("compose.newChat");
+              : showThreads ? t("task.newShort") : t("compose.openChat");
             return (
               <button
                 key={bot.id}
