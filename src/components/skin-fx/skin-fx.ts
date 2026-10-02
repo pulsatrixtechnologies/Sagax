@@ -3,7 +3,7 @@
 // the hooks that pause effects off screen, honor reduced motion and play the
 // equip and move bursts. Pure data and tiny hooks; the drawing lives in
 // ShapeMascot.tsx, Trombi.tsx and SkinFx.tsx, the keyframes in skin-fx.css.
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { MascotActivity } from "../floating-bots/behavior";
 
 /** The family of effects a skin plays: its particles, its trails, its glow. */
@@ -169,4 +169,24 @@ export function useMoveBurst(request: FxMoveRequest | null | undefined, enabled:
     return () => clearTimeout(timer);
   }, [move, key, enabled]);
   return enabled ? shown : null;
+}
+
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+/**
+ * Replays the body's own move (fx-body-*) each time a new move starts,
+ * without remounting the drawing. A remount (a changing React key) restarts
+ * every idle loop under it too: the holographic foil and the sweeps jumped
+ * back to their start at every move. Only the element's own animations
+ * replay, never its children's.
+ */
+export function useReplayMove(ref: RefObject<Element | null>, key: number | null | undefined): void {
+  useIsoLayoutEffect(() => {
+    const node = ref.current;
+    if (!node || !key || typeof node.getAnimations !== "function") return;
+    for (const animation of node.getAnimations()) {
+      animation.cancel();
+      animation.play();
+    }
+  }, [ref, key]);
 }

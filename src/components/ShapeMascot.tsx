@@ -14,7 +14,7 @@ import { MASCOT_SHAPES, SHAPE_SKIN_TIER, SHAPE_SKINS, type MascotShape, type Sha
 import { EYES, SHAPE_ART } from "./shape-art";
 import { shapeSkinBase, shapeSkinLayers, tint, type ShapeSkinBase } from "./skin-fx/shape-skins";
 import { EquipFx, MoveFx } from "./skin-fx/SkinFx";
-import { fxDetail, fxPalette, useEquipBurst, useFxVisibility, useMoveBurst, useReducedMotion, type FxDetail, type FxMoveRequest } from "./skin-fx/skin-fx";
+import { fxDetail, fxPalette, useEquipBurst, useFxVisibility, useMoveBurst, useReducedMotion, useReplayMove, type FxDetail, type FxMoveRequest } from "./skin-fx/skin-fx";
 
 export { SHAPE_ART, EYES } from "./shape-art";
 
@@ -85,6 +85,8 @@ export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44
   useFxVisibility(root, live);
   const equip = useEquipBurst(known, live);
   const burst = useMoveBurst(move, live);
+  const body = useRef<SVGSVGElement>(null);
+  useReplayMove(body, burst && moveBody ? burst.key : null);
   const look = mood === "thinking" ? -3 : 0;
   const palette = fxPalette(paint.fx, hex);
   return (
@@ -104,8 +106,8 @@ export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44
         viewBox="0 0 100 100"
         width={size}
         height={size}
+        ref={body}
         className={cn(burst && moveBody && `fx-body-move fx-body-${burst.move}`, equip && "fx-equip-pop")}
-        key={burst && moveBody ? burst.key : undefined}
         style={{ overflow: "visible", display: "block" }}
       >
         <defs>
