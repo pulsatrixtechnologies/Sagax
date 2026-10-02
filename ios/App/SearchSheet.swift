@@ -211,6 +211,9 @@ struct SearchSheet: View {
         }
         return list.sorted { left, right in
             if left.pinned != right.pinned { return left.pinned }
+            // Pinned entries come in the home's pinned-row order: bots, then
+            // group chats (reference 19 under 01).
+            if left.pinned, left.chat.isBot != right.chat.isBot { return left.chat.isBot }
             return left.at > right.at
         }.map(\.chat)
     }

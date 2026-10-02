@@ -364,7 +364,7 @@ struct HomeChatRow: View {
 // MARK: - "+" popover
 
 /// The glass popover that grows out of the "+" button: New Bot and New
-/// Group Chat, 14 pt, on a 35.3 pt pitch with 10 pt of padding.
+/// Group Chat, 14 pt, on a 35.8 pt pitch with about 10 pt of padding.
 struct HomePlusMenu: View {
     var canCreateBot: Bool
     let newBot: () -> Void
@@ -384,11 +384,13 @@ struct HomePlusMenu: View {
                 item(Text("New Group Chat"), action: newGroup)
                     .accessibilityIdentifier("plus-menu.new-group")
             }
-            .padding(.top, 10.67)
-            .padding(.bottom, 10)
+            // item centres 28 and 63.8 pt down (reference 18, measured on
+            // the text)
+            .padding(.top, 10.08)
+            .padding(.bottom, 9.59)
             .frame(width: 250.67, height: 91.33, alignment: .topLeading)
             .background(alignment: .topLeading) { searchUnderGlass }
-            .themeGlass(RoundedRectangle(cornerRadius: Theme.continuous(31.5), style: .continuous), fill: Color(hex: 0x323232))
+            .themeGlass(RoundedRectangle(cornerRadius: Theme.continuous(31.5), style: .continuous), fill: Color(hex: 0x323232), interactive: false)
             .padding(.trailing, 7.7)
             .transition(.scale(scale: 0.4, anchor: .topTrailing).combined(with: .opacity))
         }
@@ -401,11 +403,12 @@ struct HomePlusMenu: View {
             Circle().fill(Color.white.opacity(0.11)).frame(width: 46, height: 46).blur(radius: 4)
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 19, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.22))
-                .blur(radius: 1.2)
+                .foregroundStyle(Color.white.opacity(0.17))
+                .blur(radius: 1.4)
         }
         .frame(width: 44, height: 44)
-        .offset(x: 166.3 - 22, y: 28 - 22)
+        // the glyph peaks 1.6 pt higher than the circle's centre in the reference
+        .offset(x: 166.3 - 22, y: 28 - 22 - 1.6)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -420,7 +423,7 @@ struct HomePlusMenu: View {
                 .foregroundStyle(Color(hex: 0xF9F9F9))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 28.4)
-                .frame(height: 35.33)
+                .frame(height: 35.83)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
