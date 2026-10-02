@@ -422,7 +422,7 @@ export function PendingApprovalBox({
   return (
     <div className="mb-2 overflow-hidden rounded-2xl border border-accent/40 bg-card">
       {/* locale: the panel is memoized and its other props do not
-          change with the language — see MessagesList in ChatView */}
+          change with the language (see MessagesList in ChatView) */}
       <PendingApprovalPanel
         pending={pending}
         count={approvals.length}
