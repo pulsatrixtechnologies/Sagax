@@ -97,17 +97,21 @@ Take control at any time. A bot can work in:
 <tr>
 <td width="50%" valign="top">
 
-<img src="docs/images/readme/voice-mode.webp" alt="Voice mode: a floating voice bar under the chat with Atlas speaking its answer, a waveform and buttons for settings, transcript, microphone and hang up" width="100%">
+<img src="docs/images/readme/voice-mode.webp" alt="Voice mode: a live call with Atlas in a floating bar above the composer, listening, with a waveform and buttons for settings, transcript, hold, mute and hang up" width="100%">
 
 </td>
 <td width="50%" valign="top">
 
-### Voice mode
+### Voice calls
 
-Press the call button on a bot and talk. Speech to text and text to speech go
-through xAI on the server, so the key never reaches the app. Pick the voice,
-speed and language once; they follow you. Works on macOS and Windows, solo or
-on an organization server ([docs/voice-mode-xai.md](docs/voice-mode-xai.md)).
+Press the call button on a bot and talk, like a phone call. The microphone
+stays open: interrupt the bot at any time and it stops talking. Hold, mute
+and push to talk are one click away. The bot is still the one answering:
+every sentence you say becomes an ordinary message in the thread, and xAI is
+used only for speech to text and text to speech, on the server, so the key
+never reaches the app. Voice detection runs on your computer. Works on macOS
+and Windows, solo or on an organization server
+([docs/voice-mode-xai.md](docs/voice-mode-xai.md)).
 
 </td>
 </tr>
