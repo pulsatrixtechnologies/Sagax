@@ -243,7 +243,9 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     };
     const send = (frame: ListenFrame) => session?.sendText(JSON.stringify(frame));
     deps.xai.warm?.(key);
-    const upstream = deps.xai.openTranscription(key, { language: sttLanguage(language) }, {
+    // the page's own detector ends turns (and sends finalize); xAI's
+    // endpointing is only a backstop for a very long pause
+    const upstream = deps.xai.openTranscription(key, { language: sttLanguage(language), endpointingMs: 1500 }, {
       onTranscript: (event: TranscriptEvent) => send({ type: "transcript", text: event.text, final: event.final, speechFinal: event.speechFinal }),
       onError: (message) => send({ type: "error", message: scrub(message, key) }),
       onClose: () => { book(); session?.close(1011); },

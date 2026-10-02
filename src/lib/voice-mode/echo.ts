@@ -30,7 +30,7 @@ export class EchoGuard {
   private ratios: number[] = [];
 
   constructor(options: EchoGuardOptions = {}) {
-    this.prior = options.coupling ?? 0.25;
+    this.prior = options.coupling ?? 0.1;
     this.margin = 10 ** ((options.marginDb ?? 9) / 20);
     this.playbackFloor = options.playbackFloor ?? 0.004;
   }
