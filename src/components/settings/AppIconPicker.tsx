@@ -1,5 +1,5 @@
 // Settings > Appearance > App icon: the Sagax owl, the owl in its skins, a
-// shape, Trombi, the person's Primary Bot or an uploaded picture, each drawn
+// shape, Trombi, Bunbu, the person's Primary Bot or an uploaded picture, each drawn
 // through the system's icon template so it sits in the Dock (or the taskbar)
 // like the other apps' icons. The desktop app keeps and shows the result
 // (electron/app-icon.mjs); a browser has no app icon, so no picker.
@@ -39,6 +39,8 @@ function stageBot(art: AppIconArt, bots: readonly (BotLike & { id: string })[]):
       return { name: "Sagax", color: art.color, mascotLook: { character: "shape", shape: art.shape, skins: { shape: art.skin } } };
     case "trombi":
       return { name: "Trombi", color: "blue", mascotLook: { character: "trombi", skins: { trombi: art.skin } } };
+    case "bunbu":
+      return { name: "Bunbu", color: art.color, mascotLook: { character: "bunbu", skins: { bunbu: art.skin } } };
     case "primary":
       return bots.find((bot) => bot.id === art.botId) ?? null;
     default:

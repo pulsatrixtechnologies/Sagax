@@ -69,7 +69,7 @@ const STARS: [number, number, number, number][] = [
   [66, 44, 0.5, -1], [44, 40, 0.7, 2.1], [28, 58, 1.2, 1.7], [18, 74, 0.6, -1], [40, 72, 0.9, 0.3],
   [56, 64, 0.6, -1], [70, 70, 1.1, 2.6], [84, 66, 0.6, -1], [50, 86, 0.8, 1], [32, 88, 0.5, -1], [64, 88, 0.7, 2.3],
 ];
-const STAR4 = "M0 -3.4L0.8 -0.8L3.4 0L0.8 0.8L0 3.4L-0.8 0.8L-3.4 0L-0.8 -0.8Z";
+export const STAR4 = "M0 -3.4L0.8 -0.8L3.4 0L0.8 0.8L0 3.4L-0.8 0.8L-3.4 0L-0.8 -0.8Z";
 
 /** Circuit traces (orthogonal, with a pad at the end). */
 const TRACES = [
@@ -115,7 +115,7 @@ function Rainbow({ id, period = 50, angle = 45 }: { id: string; period?: number;
 }
 
 /** A soft light band that sweeps across the body (gold glints, chrome specular, holo sheen). */
-function Sweep({ id, strength, className = "fx-sweep" }: { id: string; strength: number; className?: string }) {
+export function Sweep({ id, strength, className = "fx-sweep" }: { id: string; strength: number; className?: string }) {
   return (
     <>
       <defs>
@@ -133,7 +133,7 @@ function Sweep({ id, strength, className = "fx-sweep" }: { id: string; strength:
   );
 }
 
-function Blur({ id, deviation }: { id: string; deviation: number }) {
+export function Blur({ id, deviation }: { id: string; deviation: number }) {
   return (
     <filter id={id} x="-40%" y="-40%" width="180%" height="180%">
       <feGaussianBlur stdDeviation={deviation} />
