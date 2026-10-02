@@ -43,6 +43,7 @@ import { requestEnterpriseEntry } from "@/lib/enterprise-entry";
 import { takeRoutineDelegationReturn } from "@/lib/routine-delegation";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
 import { botShowsUnread } from "@/lib/bot-unread";
+import { viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
 
 function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   const { state, dispatch } = useStore();
@@ -344,10 +345,14 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
               <div className="text-[15px] text-ink">{t("app.empty.title")}</div>
               <div className="mt-1 text-[13px]">{t("app.empty.body")}</div>
             </div>
-            <button type="button" className="ui-button mt-1 inline-flex items-center gap-1.5" onClick={() => dispatch({ type: "toggleNewBot", open: true })}>
-              <Plus size={14} aria-hidden />
-              {t("app.empty.create")}
-            </button>
+            {viewerCanCreateBots(state.config) ? (
+              <button type="button" className="ui-button mt-1 inline-flex items-center gap-1.5" onClick={() => dispatch({ type: "toggleNewBot", open: true })}>
+                <Plus size={14} aria-hidden />
+                {t("app.empty.create")}
+              </button>
+            ) : viewerBotsReadOnly(state.config) && (
+              <p role="note" data-bots-read-only className="max-w-sm text-center text-[13px]">{t("bots.readOnly.notice")}</p>
+            )}
           </main>
         ) : (
         <main className="flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-app text-ink-secondary">

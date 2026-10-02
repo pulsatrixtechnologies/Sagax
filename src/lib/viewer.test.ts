@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConfigStatus } from "@/state/store";
-import { otherAuthorName, viewerActorId, viewerCanCreateBots } from "./viewer";
+import { otherAuthorName, viewerActorId, viewerBotsReadOnly, viewerCanCreateBots, viewerIsOrgMember } from "./viewer";
 
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
 const member = { viewer: { operator: false, principalId: ZARA, email: "zara@example.test", name: "zara", role: "member", canCreateBots: true, operatorName: "JC" } } as ConfigStatus;
@@ -12,6 +12,15 @@ describe("viewer", () => {
     expect(viewerActorId(member)).toBe(ZARA);
     expect(viewerActorId({ profile: { name: "JC", email: "JC@gox.ca" } } as ConfigStatus)).toBe("jc@gox.ca");
     expect(viewerActorId(null)).toBe("local-owner");
+  });
+
+  it("reads a read-only person and an organization member from the server's viewer", () => {
+    expect(viewerBotsReadOnly(member)).toBe(false);
+    expect(viewerBotsReadOnly({ viewer: { ...member.viewer!, canCreateBots: false, botsReadOnly: true } } as ConfigStatus)).toBe(true);
+    expect(viewerBotsReadOnly(undefined)).toBe(false);
+    expect(viewerIsOrgMember(member)).toBe(true);
+    expect(viewerIsOrgMember(operator)).toBe(false);
+    expect(viewerIsOrgMember(null)).toBe(false);
   });
 
   it("offers New bot on the server's word, and by default for older servers", () => {

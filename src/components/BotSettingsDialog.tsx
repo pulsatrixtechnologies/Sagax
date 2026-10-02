@@ -45,6 +45,7 @@ import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import type { PromptPreviewData } from "./bot-settings/PromptPreview";
 import { servedPage } from "@/lib/desktop";
+import { viewerBotsReadOnly } from "@/lib/viewer";
 
 const sectionLabel = (entry: (typeof BOT_SECTIONS)[number]) => (entry.labelKey ? t(entry.labelKey) : entry.label);
 
@@ -455,6 +456,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
         </div>
 
         <div className="content-card-body flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {viewerBotsReadOnly(state.config) && (
+            <p role="note" data-bots-read-only className="mx-4 mb-2 rounded-lg bg-raised/60 px-3 py-2 text-center text-[12.5px] leading-snug text-ink-secondary">{t("bots.readOnly.notice")}</p>
+          )}
           {/* Who this is, then the tabs */}
           <div className="flex shrink-0 flex-col items-center px-4 pb-3">
             <BotProfileAvatarCard bot={bot} activeState={derived.activeState} mascotMotion={derived.mascotMotion} onPatch={derived.patch} />

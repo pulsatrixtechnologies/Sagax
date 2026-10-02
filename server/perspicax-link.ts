@@ -120,6 +120,10 @@ const personSchema = z.object({
    * null when they have none; absent from a Perspicax that does not send
    * avatars yet. The image is GET AVATAR_PATH with the link token. */
   avatar: z.string().regex(/^[0-9A-Za-z_-]{1,64}$/).nullable().optional().catch(undefined),
+  /** Perspicax 1.8.6: whether an admin lets this person create and manage
+   * their own Sagax bots (`manage`, the default) or only use the bots
+   * shared with them (`use`). Absent from an older Perspicax: manage. */
+  sagax_bots: z.enum(["manage", "use"]).optional().catch(undefined),
   routine_delegation: z.object({
     consented_at: z.string().max(40),
     renewed_at: z.string().max(40),
@@ -338,6 +342,14 @@ export class PerspicaxDirectory {
    * from the last directory; [] when unknown. */
   providerKeys(sub: string): string[] {
     return [...(this.keysBySub.get(sub) ?? [])];
+  }
+
+  /** What this subject may do with bots (Perspicax `sagax_bots`): `use`
+   * only when the last directory says so, else `manage` (the default, an
+   * older Perspicax, or before the first directory). */
+  botRights(sub: string): "manage" | "use" {
+    const person = this.data?.people.find((entry) => entry.sub === sub);
+    return person?.sagax_bots === "use" ? "use" : "manage";
   }
 
   /** Slice 5: every MCP profile Perspicax lists, sorted by id ([] before the

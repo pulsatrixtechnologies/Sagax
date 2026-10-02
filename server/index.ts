@@ -16826,6 +16826,16 @@ async function describeInstances() {
   });
 }
 
+/** An organization member's copy of one engine (GET /api/instances on a
+ * client-scope session): what Model providers and the model picker draw,
+ * never the server's own account, sign-in, CLI paths or install details.
+ * A member's own access to it is GET /api/me/engines. */
+function memberInstanceView(instance: Awaited<ReturnType<typeof describeInstances>>[number]) {
+  const { cli: _cli, cliDefault: _cliDefault, cliCandidates: _cliCandidates, install: _install, authentication: _authentication, claudeAccount: _claudeAccount, freeUpSpace: _freeUpSpace, managed: _managed, ...rest } = instance as typeof instance & Record<string, unknown>;
+  const { account: _account, authenticated: _authenticated, chatgptPlan: _chatgptPlan, authenticationUnavailableReason: _reason, update: _update, ...snapshot } = (instance.snapshot ?? {}) as Record<string, unknown>;
+  return { ...rest, snapshot };
+}
+
 /** Set once graceful shutdown begins: quitting disposes Company instances
  * without writing "connection changed" cards or failing routine runs. */
 let companyShutdown = false;
@@ -17741,6 +17751,7 @@ function authzViewerFromId(viewerId: string | undefined): AuthzViewer | undefine
     orgAdmin: person?.local === true || person?.orgRole === "admin",
     teams: IDENTITY.kind === "perspicax" ? person?.teams ?? [] : [],
     disabled: person?.disabledAt !== undefined && person?.disabledAt !== null,
+    ...(personBotsReadOnly(viewerId) ? { botsReadOnly: true } : {}),
   };
 }
 /** The authz viewer of a request (undefined: the operator at this computer). */
@@ -18194,8 +18205,20 @@ function botCreationAllowed(auth: RequestAuth): boolean {
   if (auth.kind === "loopback") return auth.trust !== "service";
   if (auth.scopes.includes("admin")) return true;
   const role = channelActorRole(auth);
-  return role === "member" || role === "admin";
+  return (role === "member" || role === "admin") && !personBotsReadOnly(auth.session.principalId);
 }
+/** Organization server: a Perspicax admin let this person use shared bots
+ * only (`sagax_bots: use` in the directory, Perspicax 1.8.6). Never an
+ * organization admin, the operator, or anyone on a solo server. */
+function personBotsReadOnly(principalId: string | undefined | null): boolean {
+  if (IDENTITY.kind !== "perspicax" || !principalId || !isPrincipalId(principalId)) return false;
+  const person = principals.byId(principalId);
+  if (!person || person.local === true || person.orgRole === "admin") return false;
+  const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+  return Boolean(sub) && perspicaxDirectory?.botRights(sub!) === "use";
+}
+/** The refusal a read-only person gets on anything that creates or changes a bot. */
+const BOTS_READ_ONLY = { error: "org_bots_read_only", message: "Your administrator lets you use shared bots only." } as const;
 /** A chat-scoped session acting on a bot it owns (and may still create
  * bots): the only non-admin case that edits or deletes a bot. */
 function memberOwnsBot(auth: RequestAuth, bot: { ownerUserId?: unknown }): boolean {
@@ -18268,6 +18291,7 @@ function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
     // the name Perspicax sent (refreshed on each sign-in and directory
     // sync), else the address, else the login
     operator: false, principalId, email, name: personDisplayName({ ...person, email }), role, canCreateBots,
+    ...(personBotsReadOnly(principalId) ? { botsReadOnly: true as const } : {}),
     operatorName: cfg.profile?.name?.trim() || "",
     ...managed,
     ...(avatarUrl ? { avatarUrl } : {}),
@@ -24705,6 +24729,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // fields memberBotFieldViolation allows, and it is theirs.
       const memberCreate = auth.kind === "session" && !auth.scopes.includes("admin");
       if (memberCreate && !botCreationAllowed(auth)) {
+        if (personBotsReadOnly(auth.session.principalId)) return json(res, 403, BOTS_READ_ONLY);
         return json(res, 403, { error: "forbidden: only a member of the organization can create bots" });
       }
       const template = memberCreate
@@ -27599,7 +27624,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Windows never pushes PATH changes into a live process, so without
       // this the answer is frozen at boot and "check again" is a no-op.
       resetPathCache();
-      return json(res, 200, { instances: await describeInstances() });
+      const instances = await describeInstances();
+      return json(res, 200, { instances: auth.scopes.includes("admin") ? instances : instances.map(memberInstanceView) });
     }
     const companyMutation = /^\/api\/instances\/(company\.[\w.-]+)(?:\/|$)/.exec(path);
     if (hostedModels && path.startsWith("/api/instances/") && method !== "GET") return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });

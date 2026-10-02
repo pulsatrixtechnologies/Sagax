@@ -275,7 +275,7 @@ posixOnly("an organization member's identity and bots", () => {
       ["GET", "/api/auth/sessions", undefined],
       ["POST", "/api/auth/pairing", { label: "x", scopes: ["admin"] }],
       ["POST", "/api/org/invites", { email: "eve@example.test" }],
-      ["GET", "/api/instances", undefined],
+      ["PATCH", "/api/instances/claude", { cli: "" }],
       ["GET", "/api/mcp/servers", undefined],
       ["POST", "/api/teams/import", {}],
     ] as const) {
@@ -283,6 +283,13 @@ posixOnly("an organization member's identity and bots", () => {
       expect(res.status, `${method} ${path}: ${res.text}`).toBe(403);
     }
     expect((await api("GET", "/api/config")).body.profile.name).toBe(OWNER_NAME);
+    // the engines list is theirs to read (Model providers, the model
+    // picker) without anything of the server's own account or install
+    const engines = await api("GET", "/api/instances", { as: "zara" });
+    expect(engines.status, engines.text).toBe(200);
+    for (const row of engines.body.instances as Array<Record<string, any>>) {
+      expect(row.cli ?? row.cliCandidates ?? row.claudeAccount ?? row.install ?? row.snapshot.account).toBeUndefined();
+    }
   });
 
   // Perspicax owns a signed-in person's name and email: the UI shows them

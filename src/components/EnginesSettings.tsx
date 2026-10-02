@@ -20,6 +20,7 @@ import { AntigravityFreeSpace } from "./AntigravityFreeSpace";
 import { ManageMyKeysLink, MyEngineAccess } from "./settings/MyEngines";
 import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
 import { myTurnsText, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
+import { viewerIsOrgMember } from "@/lib/viewer";
 import { connectedAppsEnabled } from "@/lib/feature-flags";
 
 interface ProbeResult {
@@ -215,7 +216,7 @@ export function orgEngineRows(instances: InstanceInfo[], mine: readonly MyEngine
  * this engine. The card then shows who pays for their turns and their own
  * subscription sign-in, never the server's account (which serves no one's
  * turns there: server/engine-credentials.ts). */
-function EngineRow({ instance, mine }: { instance: InstanceInfo; mine?: MyEngine }) {
+function EngineRow({ instance, mine, member = false }: { instance: InstanceInfo; mine?: MyEngine; member?: boolean }) {
   const { refreshInstances } = useStore();
   const [open, setOpen] = useState(false);
   const cliMotion = useMenuMotion(open);
@@ -271,6 +272,14 @@ function EngineRow({ instance, mine }: { instance: InstanceInfo; mine?: MyEngine
   const policyNote = instance.policy && <p className="mb-2 text-[12px] leading-relaxed text-ink-secondary">
     <span className="font-medium text-ink">{t("policy.managedBy", { organization: instance.policy.organizationName })}</span> · {instance.policy.reason}
   </p>;
+  // An organization member: their own access only. The server's engine
+  // (its CLI, its updates, its icon) is the admins' to change.
+  if (member && mine) return (
+    <EngineCard instance={instance} personal={{ ready: mine.myTurns !== "none", line: myTurnsText(mine), turns: mine.myTurns }}>
+      {policyNote}
+      <div data-member-engine={instance.instanceId}><MyEngineAccess engine={mine} /></div>
+    </EngineCard>
+  );
   if (instance.readOnly) return <EngineCard instance={instance}>
     {policyNote}
     <p className="text-[13px] leading-relaxed text-ink-secondary">{t("organization.managedEngine")}</p>
@@ -369,25 +378,29 @@ export function EnginesSettings() {
   // every KNOWN-driver instance has cliDefault; unknown-driver shadows have
   // neither unless an override was set. Including them keeps a Reset-able row
   // (and a Set CLI… path) for engines the running build doesn't recognize.
-  const rows = state.instances.filter((i) => i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable");
+  // An organization member's copy of the engines carries no CLI fields
+  // (server memberInstanceView): their rows are the engines the server
+  // reports to them (orgEngineRows keeps the installed ones).
+  const member = viewerIsOrgMember(state.config);
+  const rows = state.instances.filter((i) => member || i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable");
   // On an organization server each person signs in their own subscription
   // here, on each engine's card (it was a separate "My subscriptions and
   // keys" card until 2026-10-02), never the server's.
   const org = usePerspicaxOrg();
   const myEngines = useMyEngines();
   const mineOf = (instance: InstanceInfo) => (org ? myEngines?.find((engine) => engine.instanceId === instance.instanceId) : undefined);
-  const shown = org ? orgEngineRows(rows, myEngines) : rows;
+  const shown = org ? orgEngineRows(rows, myEngines).filter((instance) => !member || mineOf(instance)) : rows;
 
   return (
     <div className="flex min-w-0 flex-col gap-6 pb-2">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 basis-60">
           <h1 className="text-[22px] font-semibold tracking-tight text-ink">{t("settings.engines.title")}</h1>
-          <p className="mt-2 max-w-lg text-[13px] leading-relaxed text-ink-secondary">{t("engines.library.intro")}</p>
+          <p className="mt-2 max-w-lg text-[13px] leading-relaxed text-ink-secondary">{t(member ? "myEngines.memberIntro" : "engines.library.intro")}</p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-1">
           {org && <ManageMyKeysLink issuer={org.org.identity.issuer} />}
-          <RefreshEngines />
+          {!member && <RefreshEngines />}
         </div>
       </div>
       {/* The claude.ai connectors of the person's own Claude account live in
@@ -396,13 +409,18 @@ export function EnginesSettings() {
       {!connectedAppsEnabled(state.config) && <HarnessConnectorsSection placement="settings" />}
       <EngineSections
         instances={shown}
-        renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} />}
+        renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} />}
         isReady={(instance) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); }}
       />
-      <div className="space-y-3 border-t border-hairline/40 pt-4">
-        <AddClaudeAccount />
-        {state.instances.some((instance) => instance.snapshot.chatgptPlan && !instance.readOnly && !instance.snapshot.authenticationUnavailableReason) && <AddChatGptAccount />}
-      </div>
+      {member && org && myEngines !== null && shown.length === 0 && (
+        <p className="text-[13px] text-ink-secondary" data-member-no-engines>{t("myEngines.noneOnServer")}</p>
+      )}
+      {!member && (
+        <div className="space-y-3 border-t border-hairline/40 pt-4">
+          <AddClaudeAccount />
+          {state.instances.some((instance) => instance.snapshot.chatgptPlan && !instance.readOnly && !instance.snapshot.authenticationUnavailableReason) && <AddChatGptAccount />}
+        </div>
+      )}
     </div>
   );
 }
