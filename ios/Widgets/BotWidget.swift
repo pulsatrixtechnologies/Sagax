@@ -287,7 +287,8 @@ struct BotWidgetView: View {
     private func content(for entity: ChatEntity) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                MausFaceStill(
+                MascotStill(
+                    chat: entry.row?.chat,
                     color: entry.row?.chat.color ?? entity.color,
                     state: MausState(rawValue: entry.row?.face ?? entity.face) ?? .idle,
                     size: 28

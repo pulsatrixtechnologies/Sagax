@@ -358,7 +358,7 @@ struct WalkieAgentRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            BotAvatarView(bot: agent.bot, size: 34, state: agent.status == .working ? .working : .idle)
+            BotMascotView(bot: agent.bot, size: 34, state: agent.status == .working ? .working : .idle)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(verbatim: agent.bot.name)

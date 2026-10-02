@@ -159,7 +159,8 @@ struct UpdatesDigestView: View {
     ) -> some View {
         rowLink(row) {
             HStack(spacing: 8) {
-                MausFaceStill(
+                MascotStill(
+                    chat: row.chat,
                     color: row.chat.color,
                     state: MausState(rawValue: row.face) ?? .idle,
                     size: faceSize
@@ -234,11 +235,12 @@ struct UpdatesDigestView: View {
         case .quiet:
             // No chat to take a colour from, so the face wears the
             // palette's own fallback grey.
-            MausFaceStill(color: "", state: .idle, size: 44)
+            MascotStill(color: "#8E8E93", state: .idle, size: 44)
         case .fresh, .stale:
             ZStack(alignment: .bottom) {
-                MausFaceStill(
-                    color: faceRow?.chat.color ?? "",
+                MascotStill(
+                    chat: faceRow?.chat,
+                    color: faceRow?.chat.color ?? "#8E8E93",
                     state: faceRow.map { MausState(rawValue: $0.face) ?? .idle } ?? .idle,
                     size: 44
                 )
@@ -267,7 +269,8 @@ struct UpdatesDigestView: View {
         case .fresh, .stale:
             if let row = rows.first {
                 HStack(spacing: 8) {
-                    MausFaceStill(
+                    MascotStill(
+                        chat: row.chat,
                         color: row.chat.color,
                         state: MausState(rawValue: row.face) ?? .idle,
                         size: 20

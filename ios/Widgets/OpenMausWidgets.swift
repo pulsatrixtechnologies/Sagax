@@ -55,11 +55,11 @@ struct BotActivityWidget: Widget {
                     }
                 }
             } compactLeading: {
-                MausFaceStill(color: context.attributes.color, state: MausState(rawValue: context.state.face) ?? .idle, size: 24)
+                MascotStill(color: context.attributes.color, look: context.attributes.look, skin: context.attributes.mascotSkin ?? .none, state: MausState(rawValue: context.state.face) ?? .idle, size: 24)
             } compactTrailing: {
                 compactTrailing(context)
             } minimal: {
-                MausFaceStill(color: context.attributes.color, state: MausState(rawValue: context.state.face) ?? .idle, size: 22)
+                MascotStill(color: context.attributes.color, look: context.attributes.look, skin: context.attributes.mascotSkin ?? .none, state: MausState(rawValue: context.state.face) ?? .idle, size: 22)
             }
             .keylineTint(MausPalette.color(context.attributes.color))
         }
@@ -179,7 +179,7 @@ private struct OrbitingFace: View {
                     Color(hex: "#FACC15"), Color(hex: "#FB923C"), Color(hex: "#F43F5E"), Color(hex: "#A855F7"),
                 ], center: .center))
                 .frame(width: size + 4, height: size + 4)
-            MausFaceStill(color: context.attributes.color, state: MausState(rawValue: context.state.face) ?? .idle, size: size, comets: true, at: Date())
+            MascotStill(color: context.attributes.color, look: context.attributes.look, skin: context.attributes.mascotSkin ?? .none, state: MausState(rawValue: context.state.face) ?? .idle, size: size, comets: true, at: Date())
         }
     }
 }

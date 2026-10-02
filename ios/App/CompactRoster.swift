@@ -94,7 +94,7 @@ struct CompactBotEntry: View {
             Button(action: openRow) {
                 HStack(spacing: 0) {
                     UnreadDot(visible: row.showsUnreadDot, color: bot.color)
-                    BotAvatarView(
+                    BotMascotView(
                         bot: bot, size: face,
                         state: MausState.forChat(.bot(bot), in: session.state),
                         animated: false
@@ -571,22 +571,7 @@ private struct RoomFaces: View {
     let size: CGFloat
 
     var body: some View {
-        ZStack {
-            if let first = members.first {
-                BotAvatarView(bot: first, size: size * 0.74, state: .happy, animated: false)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            } else {
-                MausAvatar(color: "blue", size: size, state: .happy, animated: false)
-            }
-            if members.count > 1 {
-                BotAvatarView(bot: members[1], size: size * 0.62, state: .happy, animated: false)
-                    .padding(1.5)
-                    .background(Circle().fill(Color(uiColor: .systemBackground)))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .offset(x: 3, y: 3)
-            }
-        }
-        .frame(width: size, height: size)
+        GroupMascotView(members: members, size: size)
     }
 }
 

@@ -20,7 +20,7 @@ struct CompanionApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            MascotGalleryGate { RootView() }
                 .environmentObject(session)
                 // One modifier is the whole language seam. SwiftUI resolves a
                 // `LocalizedStringKey` against the environment's locale, so

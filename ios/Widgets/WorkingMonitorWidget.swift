@@ -181,7 +181,8 @@ struct WorkingMonitorView: View {
     private func rowView(_ row: WidgetSnapshot.Row) -> some View {
         rowLink(row) {
             HStack(spacing: 8) {
-                MausFaceStill(
+                MascotStill(
+                    chat: row.chat,
                     color: row.chat.color,
                     state: MausState(rawValue: row.face) ?? .idle,
                     size: 22

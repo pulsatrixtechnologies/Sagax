@@ -16,6 +16,8 @@ struct AgentProfileView: View {
     @State private var description: String
     @State private var notifications: Bool
     @State private var crop: AvatarCrop
+    @StateObject private var owlHandle = OwlMascotHandle()
+    @State private var nextWingMove = 0
     @State private var voice: String
     @State private var speakReplies: Bool
     @State private var photo: PhotosPickerItem?
@@ -191,7 +193,14 @@ struct AgentProfileView: View {
                 Section {
                     HStack {
                         Spacer()
-                        BotAvatarView(bot: current, size: 112, state: .happy, animated: true)
+                        // a tap plays the owl's next wing move, as the desktop's preview does
+                        BotMascotView(bot: current, size: 112, state: .happy, animated: true, owlHandle: owlHandle)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                let moves = OwlWingMove.allCases
+                                owlHandle.flourish(moves[nextWingMove % moves.count])
+                                nextWingMove += 1
+                            }
                         Spacer()
                     }
                     .listRowBackground(Color.clear)
