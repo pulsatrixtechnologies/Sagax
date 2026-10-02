@@ -489,7 +489,7 @@ describe("floating bots: payload validation", () => {
     });
     expect(clean.mascot).toEqual({ character: "shape", shape: "cloud", style: "3d", skins: { shape: "neon", trombi: "gold" } });
     expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "dragon" } }).mascot).toEqual({ character: "owl" });
-    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "shape", shape: "star" } }).mascot).toEqual({ character: "shape" });
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "shape", shape: "rocket" } }).mascot).toEqual({ character: "shape" });
   });
 
   it("keeps the bot's id, a few earlier exchanges and the pin label, bounded", () => {

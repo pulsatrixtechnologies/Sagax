@@ -22,10 +22,13 @@ function memoryStorage(): FloatingStorage & { removeItem(key: string): void } {
 }
 
 describe("a bot's character and its look", () => {
-  it("is one of the owl, the eight original shapes or Trombi, the owl when absent or malformed", () => {
-    expect(MASCOT_SHAPES).toEqual(["circle", "blob", "squircle", "pill", "triangle", "hexagon", "cloud", "drop"]);
+  it("is one of the owl, the thirteen original shapes or Trombi, the owl when absent or malformed", () => {
+    expect(MASCOT_SHAPES).toEqual(["circle", "cloud", "squircle", "sparkle", "clover", "bean", "flower", "drop", "pill", "pick", "house", "star", "hexagon"]);
+    // a look stored with a shape of the first set keeps working
+    expect(botMascotLook({ character: "shape", shape: "blob" })).toEqual({ character: "shape", shape: "bean" });
+    expect(botMascotLook({ character: "shape", shape: "triangle" })).toEqual({ character: "shape", shape: "pick" });
     expect(botMascotLook(undefined)).toEqual({ character: "owl" });
-    expect(botMascotLook({ character: "shape", shape: "star" })).toEqual({ character: "owl" });
+    expect(botMascotLook({ character: "shape", shape: "rocket" })).toEqual({ character: "owl" });
     expect(botMascotLook({ character: "trombi", skins: { trombi: "gold" } })).toEqual({ character: "trombi", skins: { trombi: "gold" } });
     expect(completeMascotLook({ character: "shape" })).toEqual({ character: "shape", style: "2d", shape: "circle", skins: { shape: "plain", trombi: "classic" } });
   });
@@ -47,6 +50,20 @@ describe("a bot's character and its look", () => {
         expect(shapeSkinPaint(skin, "#377FE6").fill).toMatch(/^#/);
       }
     }
+  });
+
+  it("gives every shape exactly the same eyes: same ovals, same tilt, same spacing, only the anchor moves", () => {
+    const faces = MASCOT_SHAPES.map((shape) => {
+      const html = renderToStaticMarkup(createElement(BotAvatar, { bot: { color: "white", mascotLook: { character: "shape", shape } }, size: 60, animated: false }));
+      const eyes = [...html.matchAll(/<ellipse class="shape-eye" cx="([\d.-]+)" cy="([\d.-]+)" rx="([\d.]+)" ry="([\d.]+)" transform="rotate\(([\d.]+)/g)].map((m) => m.slice(1).map(Number));
+      expect(eyes, shape).toHaveLength(2);
+      const [[lx, ly, lrx, lry, lt], [rx, ry, rrx, rry, rt]] = eyes;
+      return { size: [lrx, lry, rrx, rry], tilt: [lt, rt], gap: [rx - lx, ry - ly] };
+    });
+    for (const face of faces) expect(face).toEqual(faces[0]);
+    expect(faces[0].size[1] / faces[0].size[0]).toBeCloseTo(2.2, 1);
+    // the right eye sits a little higher
+    expect(faces[0].gap[1]).toBeLessThan(0);
   });
 
   it("is what every bot avatar in the app shows: the owl, a shape, or Trombi", () => {
