@@ -1,0 +1,378 @@
+/* The premium skins' motion (shapes and Trombi): idle effects, the equip
+   animation, move effects and the skin picker's cards. Transform and opacity
+   only (plus stroke-dashoffset on a few short paths), so nothing reflows.
+   Idle effects run only under .skin-fx-live (full detail, motion allowed),
+   pause under [data-fx-paused] (off screen, hidden page) and stop under
+   prefers-reduced-motion, which keeps every skin's still look. Nothing
+   flashes: the neon flicker dips twice every five seconds, the ink boil and
+   the glitch swap equally bright frames, never more than 4 a second. */
+
+.skin-fx-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.skin-fx-overlay * {
+  transform-box: view-box;
+}
+
+[data-fx-paused],
+[data-fx-paused] * {
+  animation-play-state: paused !important;
+}
+
+/* ----------------------------------------------------------- idle effects */
+
+.skin-fx-live :is(.fx-sweep, .fx-foil, .fx-foil-diag, .fx-foil-rev, .fx-nebula, .fx-drift, .fx-caustic, .fx-glitch-r, .fx-glitch-b, .fx-glitch-slice) {
+  transform-box: view-box;
+}
+.skin-fx-live :is(.fx-twinkle, .fx-glint, .fx-ember, .fx-heat) {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+.skin-fx-live .fx-sweep { animation: fx-sweep 3.4s ease-in-out infinite; }
+.skin-fx-live .fx-sweep-slow { animation-duration: 4.6s; }
+.skin-fx-live .fx-glint { animation: fx-glint 3.4s ease-in-out infinite; }
+.skin-fx-live .fx-twinkle { animation: fx-twinkle 2.8s ease-in-out infinite; }
+.skin-fx-live .fx-foil { animation: fx-foil 4s linear infinite; }
+.skin-fx-live .fx-foil-diag { animation: fx-foil-diag 6s linear infinite; }
+.skin-fx-live .fx-foil-rev { animation: fx-foil-rev 9s linear infinite; }
+.skin-fx-live .fx-neon-flicker { animation: fx-flicker 5s linear infinite; }
+.skin-fx-live .fx-neon-bloom { animation: fx-breathe-glow 3.2s ease-in-out infinite; }
+.skin-fx-live .fx-current { animation: fx-current 2.6s linear infinite; }
+.skin-fx-live .fx-pulse { animation: fx-current 2.2s linear infinite; }
+.skin-fx-live .fx-boil { animation: fx-boil 0.75s steps(1, end) infinite; }
+.skin-fx-live .fx-boil-2 { animation-delay: -0.25s; }
+.skin-fx-live .fx-boil-3 { animation-delay: -0.5s; }
+.skin-fx-live .fx-caustic { animation: fx-caustic 5s ease-in-out infinite alternate; }
+.skin-fx-live .fx-crack { animation: fx-breathe-glow 2.8s ease-in-out infinite; }
+.skin-fx-live .fx-heat-halo { animation: fx-breathe-glow 2.2s ease-in-out infinite; }
+.skin-fx-live .fx-heat { animation: fx-heat 2.4s ease-out infinite; }
+.skin-fx-live .fx-ember { animation: fx-ember 3s ease-out infinite; }
+.skin-fx-live .fx-nebula { transform-origin: 50px 55px; animation: fx-spin 40s linear infinite; }
+.skin-fx-live .fx-drift { animation: fx-drift 14s ease-in-out infinite alternate; }
+.skin-fx-live .fx-glitch-r { animation: fx-glitch-r 2.4s steps(1, end) infinite; }
+.skin-fx-live .fx-glitch-b { animation: fx-glitch-b 2.4s steps(1, end) infinite; }
+.skin-fx-live .fx-glitch-slice { animation: fx-glitch-slice 3.2s steps(1, end) infinite; }
+.skin-fx-live .fx-scan { animation: fx-scan 6s linear infinite; }
+/* Trombi's larger drawing (viewBox 310 x 380) */
+.skin-fx-live .fx-current-slow { animation-duration: 3.6s; }
+.skin-fx-live .fx-sweep-lg { animation-name: fx-sweep-lg; }
+.skin-fx-live .fx-foil-diag-lg { animation-name: fx-foil-diag-lg; animation-duration: 8s; }
+.skin-fx-live .fx-ember-lg { animation-name: fx-ember-lg; }
+
+/* still look: one boil take, no flicker */
+.fx-boil-2,
+.fx-boil-3 { opacity: 0; }
+.skin-fx-live .fx-boil-1,
+.skin-fx-live .fx-boil-2,
+.skin-fx-live .fx-boil-3 { opacity: 1; }
+
+@keyframes fx-sweep {
+  0% { transform: translateX(0); }
+  55%, 100% { transform: translateX(160px); }
+}
+@keyframes fx-glint {
+  0%, 40% { transform: scale(0) rotate(0deg); opacity: 0; }
+  50% { transform: scale(1) rotate(45deg); opacity: 1; }
+  62%, 100% { transform: scale(0) rotate(90deg); opacity: 0; }
+}
+@keyframes fx-twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.6); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+@keyframes fx-foil {
+  from { transform: translateX(0); }
+  to { transform: translateX(60px); }
+}
+@keyframes fx-foil-diag {
+  from { transform: translate(0, 0); }
+  to { transform: translate(35.36px, 35.36px); }
+}
+@keyframes fx-foil-rev {
+  from { transform: translate(0, 0); }
+  to { transform: translate(-60.62px, 35px); }
+}
+/* two soft dips every five seconds: a tube warming, never a strobe */
+@keyframes fx-flicker {
+  0%, 86%, 88.5%, 92%, 94.5%, 100% { opacity: 1; }
+  87% { opacity: 0.6; }
+  93% { opacity: 0.75; }
+}
+@keyframes fx-breathe-glow {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@keyframes fx-current {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes fx-boil {
+  0% { opacity: 1; }
+  33.33% { opacity: 0; }
+}
+@keyframes fx-caustic {
+  from { transform: translate(-12px, 2px); }
+  to { transform: translate(12px, -4px); }
+}
+@keyframes fx-heat {
+  0% { transform: translateY(4px); opacity: 0; }
+  30% { opacity: 0.7; }
+  100% { transform: translateY(-10px); opacity: 0; }
+}
+@keyframes fx-ember {
+  0% { transform: translate(0, 0) scale(1); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translate(var(--fx-dx, 0px), -22px) scale(0.3); opacity: 0; }
+}
+@keyframes fx-sweep-lg {
+  0% { transform: translateX(0); }
+  55%, 100% { transform: translateX(460px); }
+}
+@keyframes fx-foil-diag-lg {
+  from { transform: translate(0, 0); }
+  to { transform: translate(50px, 50px); }
+}
+@keyframes fx-ember-lg {
+  0% { transform: translate(0, 0) scale(1); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translate(var(--fx-dx, 0px), -70px) scale(0.3); opacity: 0; }
+}
+@keyframes fx-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes fx-drift {
+  from { transform: translate(-2px, 1px); }
+  to { transform: translate(2px, -2px); }
+}
+/* the glitch: color ghosts jump between three offsets, twice a second, same brightness */
+@keyframes fx-glitch-r {
+  0% { transform: translate(-3px, 0); }
+  25% { transform: translate(-1px, 1px); }
+  50% { transform: translate(-4px, -1px); }
+  75% { transform: translate(-2px, 0); }
+}
+@keyframes fx-glitch-b {
+  0% { transform: translate(3px, 0); }
+  25% { transform: translate(1px, -1px); }
+  50% { transform: translate(4px, 1px); }
+  75% { transform: translate(2px, 0); }
+}
+@keyframes fx-glitch-slice {
+  0%, 100% { transform: translateX(0); }
+  92% { transform: translateX(5px); }
+  95% { transform: translateX(0); }
+}
+@keyframes fx-scan {
+  from { transform: translateY(0); }
+  to { transform: translateY(12px); }
+}
+
+/* ------------------------------------------------- equip and move bursts */
+
+.fx-equip-pop { animation: fx-equip-pop 0.6s cubic-bezier(0.3, 1.6, 0.5, 1); }
+@keyframes fx-equip-pop {
+  0% { transform: scale(0.82); }
+  60% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+.fx-ring { transform-origin: 50px 56px; animation: fx-ring 0.9s ease-out both; }
+.fx-ring-late { animation-delay: 0.15s; }
+@keyframes fx-ring {
+  0% { transform: scale(0.3); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+.fx-burst,
+.fx-land { animation: fx-burst 0.9s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+.fx-land { animation-delay: 0.62s; }
+.fx-burst-soft { animation-duration: 1.4s; }
+@keyframes fx-burst {
+  0% { transform: translate(0, 0) scale(0.4); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translate(var(--fx-dx), var(--fx-dy)) scale(1); opacity: 0; }
+}
+
+.fx-streak { animation: fx-streak 0.7s ease-out 2 both; }
+@keyframes fx-streak {
+  0% { transform: translateY(-14px); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateY(6px); opacity: 0; }
+}
+
+.fx-shock { transform-origin: 50px 96px; animation: fx-shock 0.7s ease-out 0.6s both; }
+.fx-shock-late { animation-delay: 0.72s; }
+.fx-shock-small { animation-delay: 0.2s; animation-iteration-count: 2; animation-duration: 0.76s; }
+@keyframes fx-shock {
+  0% { transform: scale(0.2); opacity: 0.9; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+.fx-dust { animation: fx-dust 0.7s ease-out both; }
+@keyframes fx-dust {
+  0% { transform: translate(0, 0) scale(0.4); opacity: 0.9; }
+  100% { transform: translate(var(--fx-dx), -6px) scale(1.4); opacity: 0; }
+}
+
+.fx-swoosh { stroke-dasharray: 100; animation: fx-swoosh 0.8s ease-out 2 both; }
+.fx-swoosh-late { animation-delay: 0.12s; }
+@keyframes fx-swoosh {
+  0% { stroke-dashoffset: 100; opacity: 1; }
+  70% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+.fx-pop { animation: fx-pop 0.8s ease-out 2 both; }
+@keyframes fx-pop {
+  0% { transform: scale(0); opacity: 0; }
+  40% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.6) translateY(-6px); opacity: 0; }
+}
+
+.fx-floor { transform-origin: 50px 96px; animation: fx-floor 0.4s ease-in-out 4 alternate both; opacity: 0.25; }
+@keyframes fx-floor {
+  from { transform: scaleX(0.7); opacity: 0.12; }
+  to { transform: scaleX(1.1); opacity: 0.38; }
+}
+.fx-orbit { transform-origin: 50px 56px; animation: fx-orbit 1.6s cubic-bezier(0.4, 0, 0.6, 1) both; }
+@keyframes fx-orbit {
+  0% { transform: rotate(0deg) scale(0.6); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: rotate(540deg) scale(1); opacity: 0; }
+}
+
+.fx-heart { animation: fx-heart 1.3s ease-out both; }
+@keyframes fx-heart {
+  0% { transform: translate(0, 10px) scale(0.3); opacity: 0; }
+  25% { transform: translate(-2px, 0) scale(1.1); opacity: 1; }
+  100% { transform: translate(3px, -16px) scale(0.8); opacity: 0; }
+}
+
+.fx-sound { transform-origin: 50px 24px; animation: fx-sound 1s ease-out both; }
+@keyframes fx-sound {
+  0% { transform: scale(0.3); opacity: 0.9; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.fx-ghost { opacity: 0; }
+.fx-trail-y .fx-ghost { animation: fx-ghost-y 0.75s ease-out 2 both; }
+.fx-trail-x .fx-ghost { animation: fx-ghost-x 0.8s ease-in-out 2 alternate both; }
+.fx-ghost-2 { animation-delay: 0.06s !important; }
+.fx-ghost-3 { animation-delay: 0.12s !important; }
+@keyframes fx-ghost-y {
+  0% { transform: translateY(0); opacity: 0; }
+  30% { transform: translateY(-14px); opacity: 0.55; }
+  100% { transform: translateY(4px); opacity: 0; }
+}
+@keyframes fx-ghost-x {
+  0% { transform: translateX(-9px); opacity: 0.5; }
+  100% { transform: translateX(9px); opacity: 0.1; }
+}
+
+/* the body's own move, for app avatars (the desktop mascot moves itself) */
+.fx-body-move { transform-origin: 50% 90%; }
+.fx-body-jump { animation: fx-body-jump 0.85s cubic-bezier(0.3, 0.7, 0.4, 1) 2; }
+.fx-body-hop { animation: fx-body-hop 0.76s ease-in-out 2; }
+.fx-body-wave { animation: fx-body-wave 0.8s ease-in-out 2; }
+.fx-body-dance { animation: fx-body-dance 0.8s ease-in-out 2; }
+.fx-body-love { animation: fx-body-love 0.8s ease-in-out 2; }
+.fx-body-hoot { animation: fx-body-hoot 0.6s ease-in-out 2; }
+@keyframes fx-body-jump {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  15% { transform: translateY(0) scale(1.08, 0.9); }
+  45% { transform: translateY(-24%) scale(0.95, 1.06); }
+  80% { transform: translateY(0) scale(1.06, 0.94); }
+}
+@keyframes fx-body-hop {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-10%); }
+  70% { transform: translateY(0) scale(1.04, 0.96); }
+}
+@keyframes fx-body-wave {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-9deg); }
+  75% { transform: rotate(9deg); }
+}
+@keyframes fx-body-dance {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  25% { transform: translateX(-6%) rotate(-8deg) scale(1.03, 0.97); }
+  75% { transform: translateX(6%) rotate(8deg) scale(1.03, 0.97); }
+}
+@keyframes fx-body-love {
+  0%, 100% { transform: scale(1, 1); }
+  40% { transform: scale(1.1, 0.92); }
+  70% { transform: scale(0.96, 1.05); }
+}
+@keyframes fx-body-hoot {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06, 1.1); }
+}
+
+/* -------------------------------------------------- the skin picker cards */
+
+.skin-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.skin-card[data-tier="rare"] {
+  background: linear-gradient(160deg, rgb(59 130 246 / 0.22), rgb(59 130 246 / 0.06) 60%);
+  box-shadow: inset 0 0 0 1px rgb(96 165 250 / 0.45);
+}
+.skin-card[data-tier="epic"] {
+  background: linear-gradient(160deg, rgb(168 85 247 / 0.26), rgb(168 85 247 / 0.06) 60%);
+  box-shadow: inset 0 0 0 1px rgb(192 132 252 / 0.5);
+}
+.skin-card[data-tier="legendary"] {
+  background: linear-gradient(160deg, rgb(245 158 11 / 0.3), rgb(239 68 68 / 0.08) 65%);
+  box-shadow: inset 0 0 0 1px rgb(251 191 36 / 0.6), 0 0 10px -2px rgb(251 191 36 / 0.35);
+}
+.skin-card:not([data-tier="common"])::after {
+  content: "";
+  position: absolute;
+  inset: -40% -60%;
+  z-index: -1;
+  background: linear-gradient(105deg, transparent 42%, rgb(255 255 255 / 0.16) 50%, transparent 58%);
+  transform: translateX(-60%);
+  animation: skin-card-shimmer 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+.skin-card[data-tier="legendary"]::after {
+  background: linear-gradient(105deg, transparent 40%, rgb(255 236 179 / 0.28) 50%, transparent 60%);
+  animation-duration: 2.8s;
+}
+@keyframes skin-card-shimmer {
+  0% { transform: translateX(-60%); }
+  60%, 100% { transform: translateX(60%); }
+}
+.skin-tier {
+  font-size: 8.5px;
+  line-height: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.skin-tier[data-tier="common"] { color: var(--color-ink-tertiary, #8a8f98); }
+.skin-tier[data-tier="rare"] { color: #60a5fa; }
+.skin-tier[data-tier="epic"] { color: #c084fc; }
+.skin-tier[data-tier="legendary"] { color: #fbbf24; }
+
+@media (prefers-reduced-motion: reduce) {
+  .skin-fx-live *,
+  .skin-fx-overlay,
+  .skin-fx-overlay *,
+  .fx-equip-pop,
+  .fx-body-move,
+  .skin-card::after {
+    animation: none !important;
+  }
+  .skin-fx-overlay { display: none; }
+  .skin-fx-live .fx-boil-2,
+  .skin-fx-live .fx-boil-3 { opacity: 0; }
+}

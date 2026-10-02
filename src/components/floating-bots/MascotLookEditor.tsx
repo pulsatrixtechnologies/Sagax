@@ -2,25 +2,31 @@
 // stored with the bot (bot.mascotLook, bot.color, bot.mascotSkin), so the
 // change shows everywhere the bot appears and on its desktop mascot.
 //
-//   Character: Owl, Original shapes, Trombi (the registry, mascots.tsx), beside
-//   a small live preview that plays the move picked below
-//   that character's own options:
+//   Character: Owl, Shapes, Trombi (the registry, mascots.tsx), full width:
+//   the bot's avatar above the popover (the bot panel's header) is the
+//   preview, and plays the moves and the equip animation. Then that
+//   character's own options:
 //     Owl: color, skin, style 2D / 3D (preview)
-//     Original shapes: shape, color, shape skin
+//     Shapes: shape, color, shape skin
 //     Trombi: Trombi skin
+//   Skins show as cards with their rarity (Common, Rare, Epic, Legendary),
+//   each previewing the skin animated.
 //   Moves: that character's moves only
 //
 // Each character keeps its own skin, so switching and back finds it again.
 // Loaded lazily with the popover.
-import { useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { MAUS_COLOR_NAMES, MAUS_WING_MOTIONS, swatchStyle, type MausColor, type MausMotion } from "@/lib/mascot";
 import { MausAvatar } from "@/components/Avatar";
 import { MASCOT_SKIN_IDS, botMascotSkin, type MascotSkinId } from "../../../shared/mascot-skins";
-import { completeMascotLook, SHAPE_SKINS, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
-import { mascotMotion, type MascotActivity } from "./behavior";
+import { completeMascotLook, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape, type SkinTier } from "../../../shared/mascot-look";
+import { ShapeMascot } from "@/components/ShapeMascot";
+import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
+import "@/components/skin-fx/skin-fx.css";
+import type { MascotActivity } from "./behavior";
 import { MASCOTS, mascotFor, SHAPE_CHOICES } from "./mascots";
 
 export interface MascotLookPatch {
@@ -35,6 +41,8 @@ export interface MascotLookEditorProps {
   onPatch: (patch: MascotLookPatch) => void;
   /** The owl's wing moves also play on the bot's avatars across the app. */
   onOwlMove?: (move: Exclude<MausMotion, "none">) => void;
+  /** A shape's or Trombi's move, played by the bot's avatar above (the preview). */
+  onMove?: (clip: MascotActivity) => void;
 }
 
 export const CHARACTER_LABEL = {
@@ -61,19 +69,37 @@ export const SHAPE_LABEL = {
 
 export const SHAPE_SKIN_LABEL = {
   plain: "mascot.shapeSkin.plain",
-  glossy: "mascot.shapeSkin.glossy",
-  outline: "mascot.shapeSkin.outline",
-  neon: "mascot.shapeSkin.neon",
   pastel: "mascot.shapeSkin.pastel",
+  glossy: "mascot.shapeSkin.glossy",
   night: "mascot.shapeSkin.night",
+  outline: "mascot.shapeSkin.outline",
+  gold: "mascot.shapeSkin.gold",
+  neon: "mascot.shapeSkin.neon",
+  chrome: "mascot.shapeSkin.chrome",
+  crystal: "mascot.shapeSkin.crystal",
+  circuit: "mascot.shapeSkin.circuit",
+  holo: "mascot.shapeSkin.holo",
+  molten: "mascot.shapeSkin.molten",
+  galaxy: "mascot.shapeSkin.galaxy",
 } satisfies Record<(typeof SHAPE_SKINS)[number], LocaleKey>;
 
 export const TROMBI_SKIN_LABEL = {
   classic: "mascot.trombiSkin.classic",
+  retro98: "mascot.trombiSkin.retro98",
   gold: "mascot.trombiSkin.gold",
   neon: "mascot.trombiSkin.neon",
-  retro98: "mascot.trombiSkin.retro98",
+  chrome: "mascot.trombiSkin.chrome",
+  glitch: "mascot.trombiSkin.glitch",
+  holo: "mascot.trombiSkin.holo",
+  molten: "mascot.trombiSkin.molten",
 } satisfies Record<(typeof TROMBI_SKINS)[number], LocaleKey>;
+
+export const SKIN_TIER_LABEL = {
+  common: "mascot.tier.common",
+  rare: "mascot.tier.rare",
+  epic: "mascot.tier.epic",
+  legendary: "mascot.tier.legendary",
+} satisfies Record<SkinTier, LocaleKey>;
 
 const OWL_SKIN_LABEL = {
   none: "mascot.skin.none",
@@ -111,20 +137,42 @@ const MOVE_LABEL: Partial<Record<MascotActivity, LocaleKey>> = {
   hoot: "floatingBots.move.hoot",
 };
 
-const PREVIEW = 60;
 const heading = "mb-1.5 mt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary";
 const card = "flex flex-col items-center justify-center gap-0.5 rounded-lg bg-inset p-1 transition-colors hover:bg-control disabled:opacity-50";
 const on = "ring-2 ring-accent-border";
 
-export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: MascotLookEditorProps) {
+/** A skin's card: its animated preview, its name and its rarity, shimmering above Common. */
+function SkinCard({ tier, label, checked, disabled, onSelect, data, children }: { tier: SkinTier; label: string; checked: boolean; disabled?: boolean; onSelect: () => void; data: Record<string, string>; children: ReactNode }) {
+  const tierLabel = t(SKIN_TIER_LABEL[tier]);
+  return (
+    <button
+      type="button"
+      role="radio"
+      disabled={disabled}
+      aria-checked={checked}
+      aria-label={`${label}, ${tierLabel}`}
+      title={`${label} (${tierLabel})`}
+      data-tier={tier}
+      {...data}
+      onClick={onSelect}
+      className={cn(card, "skin-card h-[78px] gap-0 pt-1.5", checked && on)}
+    >
+      <span className="grid size-[44px] place-items-center" aria-hidden="true">
+        {children}
+      </span>
+      <span className="w-full truncate text-center text-[10.5px] leading-[13px] text-ink">{label}</span>
+      <span className="skin-tier" data-tier={tier} aria-hidden="true">
+        {tierLabel}
+      </span>
+    </button>
+  );
+}
+
+export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove, onMove }: MascotLookEditorProps) {
   const look = completeMascotLook(bot.mascotLook);
   const entry = mascotFor(look);
   const owlSkin = botMascotSkin(bot.mascotSkin);
-  const [move, setMove] = useState<{ clip: MascotActivity; at: number } | null>(null);
-  const moveRef = useRef(move);
-  moveRef.current = move;
   const setLook = (next: Partial<MascotLook>) => onPatch({ mascotLook: { ...look, ...next, skins: { ...look.skins, ...next.skins } } });
-  const play = (clip: MascotActivity) => setMove({ clip, at: performance.now() });
 
   const colors = (
     <>
@@ -155,25 +203,9 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
 
   return (
     <div data-mascot-look-editor="">
-      {/* the character row, with a small live preview of the chosen one (it plays the moves below) */}
-      <div className="flex items-center gap-3">
-        <span className="grid size-[64px] shrink-0 place-items-end overflow-visible rounded-xl bg-inset" aria-hidden="true">
-          <entry.Render
-            key={`${entry.id}-${move?.at ?? 0}`}
-            color={bot.color}
-            skin={owlSkin}
-            look={look}
-            size={PREVIEW}
-            activity={move?.clip ?? "idle"}
-            pose="idle"
-            frame={(now) => mascotMotion({ activity: moveRef.current?.clip ?? "idle", since: moveRef.current?.at ?? 0, facing: 1, moveMs: 1600 }, { now, pose: "idle", reduced: false, gaze: null })}
-            fps={() => 30}
-            onHitTest={() => undefined}
-          />
-        </span>
-        <div className="min-w-0 flex-1">
+      {/* the character row, full width: the bot's avatar above is the preview */}
       <div className={cn(heading, "mt-0")}>{t("mascot.character.title")}</div>
-      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label={t("mascot.character.title")}>
+      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label={t("mascot.character.title")} data-character-row="">
         {MASCOTS.map((option) => (
           <button
             key={option.id}
@@ -191,8 +223,6 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
             <span className="truncate text-[11px] leading-4 text-ink">{t(CHARACTER_LABEL[option.id])}</span>
           </button>
         ))}
-      </div>
-        </div>
       </div>
 
       {look.character === "owl" && (
@@ -261,21 +291,19 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
           </div>
           {colors}
           <div className={heading}>{t("mascot.skin.title")}</div>
-          <div className="grid grid-cols-6 gap-1" role="radiogroup" aria-label={t("mascot.skin.title")}>
+          <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label={t("mascot.skin.title")}>
             {SHAPE_SKINS.map((skin) => (
-              <button
+              <SkinCard
                 key={skin}
-                type="button"
-                role="radio"
+                tier={SHAPE_SKIN_TIER[skin]}
+                label={t(SHAPE_SKIN_LABEL[skin])}
+                checked={look.skins.shape === skin}
                 disabled={disabled}
-                aria-checked={look.skins.shape === skin}
-                data-shape-skin-option={skin}
-                onClick={() => setLook({ skins: { ...look.skins, shape: skin } })}
-                className={cn(card, "h-[58px]", look.skins.shape === skin && on)}
+                data={{ "data-shape-skin-option": skin }}
+                onSelect={() => setLook({ skins: { ...look.skins, shape: skin } })}
               >
-                <entry.Thumb color={bot.color} skin={owlSkin} look={{ ...look, skins: { ...look.skins, shape: skin } }} size={30} />
-                <span className="w-full truncate text-center text-[10px] leading-3 text-ink-secondary">{t(SHAPE_SKIN_LABEL[skin])}</span>
-              </button>
+                <ShapeMascot shape={look.shape} skin={skin} color={bot.color} size={40} detail="full" label={null} />
+              </SkinCard>
             ))}
           </div>
         </div>
@@ -286,19 +314,17 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
           <div className={heading}>{t("mascot.skin.title")}</div>
           <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label={t("mascot.skin.title")}>
             {TROMBI_SKINS.map((skin) => (
-              <button
+              <SkinCard
                 key={skin}
-                type="button"
-                role="radio"
+                tier={TROMBI_SKIN_TIER[skin]}
+                label={t(TROMBI_SKIN_LABEL[skin])}
+                checked={look.skins.trombi === skin}
                 disabled={disabled}
-                aria-checked={look.skins.trombi === skin}
-                data-trombi-skin-option={skin}
-                onClick={() => setLook({ skins: { ...look.skins, trombi: skin } })}
-                className={cn(card, "h-[64px]", look.skins.trombi === skin && on)}
+                data={{ "data-trombi-skin-option": skin }}
+                onSelect={() => setLook({ skins: { ...look.skins, trombi: skin } })}
               >
-                <entry.Thumb color={bot.color} skin={owlSkin} look={{ ...look, skins: { ...look.skins, trombi: skin } }} size={40} />
-                <span className="text-[11px] leading-4 text-ink-secondary">{t(TROMBI_SKIN_LABEL[skin])}</span>
-              </button>
+                <SkinnedTrombi skin={skin} pose="idle" size={44} width={34} detail="full" label={null} />
+              </SkinCard>
             ))}
           </div>
         </div>
@@ -314,8 +340,8 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
             data-character-move={item.id}
             aria-label={t("mascot.moves.play", { move: item.label })}
             onClick={() => {
-              play(item.clip);
               if (item.owl) onOwlMove?.(item.owl);
+              else onMove?.(item.clip);
             }}
             className="rounded-lg bg-control px-2.5 py-1 text-[12px] text-ink hover:bg-raised-hover disabled:opacity-50"
           >

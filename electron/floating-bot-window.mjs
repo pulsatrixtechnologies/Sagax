@@ -94,16 +94,20 @@ const CHARACTERS = new Set(["owl", "shape", "trombi"]);
 const SHAPES = new Set(["circle", "cloud", "squircle", "sparkle", "clover", "bean", "flower", "drop", "pill", "pick", "house", "star", "hexagon"]);
 /** Shapes from the first set, renamed or replaced (shared/mascot-look.ts LEGACY_SHAPES). */
 const LEGACY_SHAPES = { blob: "bean", triangle: "pick" };
-const SHAPE_SKINS = new Set(["plain", "glossy", "outline", "neon", "pastel", "night"]);
-const TROMBI_SKINS = new Set(["classic", "gold", "neon", "retro98"]);
+const SHAPE_SKINS = new Set(["plain", "pastel", "glossy", "night", "outline", "gold", "neon", "chrome", "crystal", "circuit", "holo", "molten", "galaxy"]);
+const TROMBI_SKINS = new Set(["classic", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
+/** Other names a stored skin may carry (shared/mascot-look.ts LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS). */
+const LEGACY_SHAPE_SKINS = { ink: "outline", royal: "gold", metal: "chrome", "liquid-metal": "chrome", glass: "crystal", cyber: "circuit", iridescent: "holo", holographic: "holo", lava: "molten", nebula: "galaxy" };
+const LEGACY_TROMBI_SKINS = { retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
+const skinOf = (value, legacy) => (typeof value === "string" && Object.hasOwn(legacy, value) ? legacy[value] : value);
 
 /** The bot's character and its look (shared/mascot-look.ts): known values only. */
 export function mascotLook(value) {
   if (!value || typeof value !== "object" || !CHARACTERS.has(value.character)) return null;
   const skins = value.skins && typeof value.skins === "object" ? value.skins : {};
   const cleanSkins = {
-    ...(SHAPE_SKINS.has(skins.shape) ? { shape: skins.shape } : {}),
-    ...(TROMBI_SKINS.has(skins.trombi) ? { trombi: skins.trombi } : {}),
+    ...(SHAPE_SKINS.has(skinOf(skins.shape, LEGACY_SHAPE_SKINS)) ? { shape: skinOf(skins.shape, LEGACY_SHAPE_SKINS) } : {}),
+    ...(TROMBI_SKINS.has(skinOf(skins.trombi, LEGACY_TROMBI_SKINS)) ? { trombi: skinOf(skins.trombi, LEGACY_TROMBI_SKINS) } : {}),
   };
   return {
     character: value.character,
