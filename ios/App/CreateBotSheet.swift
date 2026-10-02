@@ -83,7 +83,7 @@ struct CreateBotSheet: View {
             if name.isEmpty {
                 Text("Name your Bot")
                     .font(.system(size: 17.5, weight: .medium))
-                    .foregroundStyle(Color(hex: 0x5E5E60))
+                    .foregroundStyle(Theme.parity(Color(hex: 0x5E5E60), Theme.placeholder))
                     .allowsHitTesting(false)
             }
             TextField("", text: $name)
@@ -112,15 +112,15 @@ struct CreateBotSheet: View {
                 } else {
                     Text("Create")
                         .font(.system(size: 13.5, weight: .semibold))
-                        .foregroundStyle(canCreate ? Color.black : Theme.disabledCapsuleText)
+                        .foregroundStyle(canCreate ? Theme.primaryInk : Theme.disabledCapsuleText)
                 }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 42.67)
-            .background(canCreate ? Color.white : Color(hex: 0x9A9A9A), in: Capsule())
+            .background(canCreate ? Theme.primaryFill : Theme.parity(Color(hex: 0x9A9A9A), Theme.disabledCapsule), in: Capsule())
             .overlay(
                 Capsule().strokeBorder(
-                    LinearGradient(colors: [Color(hex: 0xD7D7D7), Color(hex: 0x9A9A9A), Color(hex: 0xCECECE)], startPoint: .top, endPoint: .bottom),
+                    LinearGradient(colors: [Theme.parity(Color(hex: 0xD7D7D7), Theme.hairline), Theme.parity(Color(hex: 0x9A9A9A), Theme.disabledCapsule), Theme.parity(Color(hex: 0xCECECE), Theme.hairline)], startPoint: .top, endPoint: .bottom),
                     lineWidth: 1
                 )
             )

@@ -14,11 +14,11 @@ struct BotThreadRow: View {
     private var runtime: (title: String, icon: String, color: Color)? {
         // Ordered as the desktop orders its row: the person first, then a
         // teammate wait as a quiet clock (never a spinner), then work.
-        if task.activity == "waiting-on-you" { return ("Waiting on you", "hand.raised.fill", .orange) }
-        if task.isWaitingOnTeammate { return ("Waiting on teammate", "clock", .secondary) }
-        if task.isWorking { return ("Working", "arrow.triangle.2.circlepath", .accentColor) }
+        if task.activity == "waiting-on-you" { return ("Waiting on you", "hand.raised.fill", Theme.parity(Color.orange, Theme.warning)) }
+        if task.isWaitingOnTeammate { return ("Waiting on teammate", "clock", Theme.parity(Color.secondary, Theme.textSecondary)) }
+        if task.isWorking { return ("Working", "arrow.triangle.2.circlepath", Theme.parity(Color.accentColor, Theme.accentText)) }
         // The queued flag is client state the harness reports out-of-band.
-        if task.activity == "queued" || queued { return ("Queued", "clock", .secondary) }
+        if task.activity == "queued" || queued { return ("Queued", "clock", Theme.parity(Color.secondary, Theme.textSecondary)) }
         return nil
     }
 
@@ -33,7 +33,7 @@ struct BotThreadRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(verbatim: task.displayTitle)
                     .font(.body.weight(task.unread == true ? .semibold : .regular))
-                    .foregroundStyle(dimmed ? Color.secondary : Color.primary)
+                    .foregroundStyle(dimmed ? Theme.parity(Color.secondary, Theme.textSecondary) : Theme.textPrimary)
                     .lineLimit(2)
 
                 if runtime != nil || task.unread == true {
@@ -44,7 +44,7 @@ struct BotThreadRow: View {
                         }
                         if task.unread == true {
                             Label("Unread", systemImage: "circle.fill")
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(Theme.parity(Color.accentColor, Theme.accentText))
                         }
                     }
                     .font(.caption.weight(.medium))
@@ -65,14 +65,14 @@ struct BotThreadRow: View {
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if selected {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Theme.parity(Color.accentColor, Theme.accentText))
                     .accessibilityHidden(true)
             }
         }

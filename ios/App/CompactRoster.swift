@@ -171,7 +171,7 @@ struct CompactBotEntry: View {
                 if !bot.title.isEmpty {
                     Text(verbatim: bot.title)
                         .font(.subheadline)
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         .lineLimit(1)
                         // Measured at its minimum, so this line is chosen
                         // whenever the name fits with room for a word of role.
@@ -186,7 +186,7 @@ struct CompactBotEntry: View {
         HStack(spacing: 6) {
             Text(verbatim: bot.name)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(Theme.textPrimary)
                 .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                 .fixedSize(horizontal: false, vertical: true)
             if row.showsChiefBadge {
@@ -210,7 +210,7 @@ struct CompactBotEntry: View {
                     .font(.subheadline.weight(.medium))
                     .monospacedDigit()
             }
-            .foregroundStyle(Color.secondary)
+            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             .padding(.horizontal, 10)
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
@@ -276,7 +276,7 @@ struct CompactBotEntry: View {
                 Spacer(minLength: 0)
             }
             .font(.footnote.weight(.medium))
-            .foregroundStyle(Color.secondary)
+            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
@@ -292,7 +292,7 @@ struct CompactBotEntry: View {
     private func unfiledLabel(_ bot: Bot) -> some View {
         Text("Threads")
             .font(.footnote.weight(.medium))
-            .foregroundStyle(Color.secondary)
+            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             .padding(.top, 10)
             .padding(.bottom, 2)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -335,7 +335,7 @@ struct CompactBotEntry: View {
                 Spacer(minLength: 0)
             }
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Theme.parity(Color.accentColor, Theme.accentText))
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
@@ -423,11 +423,11 @@ struct CompactThreadLine: View {
         HStack(spacing: 6) {
             Text(verbatim: task.displayTitle)
                 .font(.subheadline.weight(task.unread == true ? .semibold : .regular))
-                .foregroundStyle(dimmed ? Color.secondary : Color.primary)
+                .foregroundStyle(dimmed ? Theme.parity(Color.secondary, Theme.textSecondary) : Theme.textPrimary)
             if task.pinned == true {
                 Image(systemName: "pin.fill")
                     .font(.caption2)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
         }
     }
@@ -437,18 +437,18 @@ struct CompactThreadLine: View {
         HStack(spacing: 6) {
             if task.unread == true {
                 Circle()
-                    .fill(Color.accentColor)
+                    .fill(Theme.parity(Color.accentColor, Theme.accent))
                     .frame(width: 7, height: 7)
             }
             switch mark {
             case .waitingOnYou:
                 Image(systemName: "hand.raised.fill")
                     .font(.caption)
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
             case .waitingOnTeammate, .queued:
                 Image(systemName: "clock")
                     .font(.caption)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             case .working, nil:
                 EmptyView()
             }
@@ -458,7 +458,7 @@ struct CompactThreadLine: View {
             } else if !stamp.isEmpty {
                 Text(verbatim: stamp)
                     .font(.footnote)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
         }
         .fixedSize()
@@ -497,7 +497,7 @@ struct CompactRoomRow: View {
                 .padding(.trailing, CompactRosterMetrics.faceSpacing)
             let name = Text(verbatim: room.name)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(Theme.textPrimary)
             let status = RowStatus(
                 waiting: waiting, working: busy,
                 stamp: busy ? "" : RelativeStamp.list(lastActivity),
@@ -561,7 +561,7 @@ private struct SecondLine: View {
             if !line.words.isEmpty {
                 Text(verbatim: line.text)
                     .font(CompactRosterMetrics.stackedDetail)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .lineLimit(1)
                     .accessibilityLabel(Text(verbatim: line.spokenText))
             }
@@ -630,7 +630,7 @@ private struct RowStatus: View {
             } else if !stamp.isEmpty {
                 Text(verbatim: stamp)
                     .font(stampFont)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
         }
         .fixedSize()
@@ -648,7 +648,7 @@ struct ChiefBadge: View {
     var body: some View {
         Image(systemName: "crown.fill")
             .font(.system(size: size))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Theme.parity(Color.accentColor, Theme.accentText))
             .accessibilityLabel("Chief of Staff")
             .accessibilityIdentifier("chief-badge")
     }

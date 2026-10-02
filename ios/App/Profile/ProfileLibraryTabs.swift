@@ -155,9 +155,10 @@ struct MediaViewer: View {
                         })
                         .accessibilityIdentifier("media-viewer-image")
                 } else if failed {
-                    Text("This image could not be loaded.").foregroundStyle(Theme.textSecondary)
+                    // the viewer is a black stage in every skin
+                    Text("This image could not be loaded.").foregroundStyle(Color.white.opacity(0.7))
                 } else {
-                    ProgressView()
+                    ProgressView().tint(.white)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

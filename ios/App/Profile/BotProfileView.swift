@@ -240,7 +240,7 @@ struct BotProfileView: View {
                 ProfileDivider(leading: Theme.Profile.textInset)
                 Text(role)
                     .font(.system(size: 13))
-                    .foregroundStyle(Color(hex: 0x9B9BA2))
+                    .foregroundStyle(Theme.parity(Color(hex: 0x9B9BA2), Theme.textSecondary))
                     .lineLimit(1)
                     .padding(.horizontal, Theme.Profile.textInset)
                     .frame(maxWidth: .infinity)
@@ -266,7 +266,7 @@ struct BotProfileView: View {
                             .foregroundStyle(tab == item ? Theme.textPrimary : Theme.textTertiary)
                             .frame(height: 30)
                         Rectangle()
-                            .fill(tab == item ? Color.white : Color.clear)
+                            .fill(tab == item ? Theme.textPrimary : Color.clear)
                             .frame(width: Theme.Profile.tabUnderline, height: 2)
                     }
                     .frame(maxWidth: .infinity)

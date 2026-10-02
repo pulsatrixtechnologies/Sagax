@@ -11,7 +11,7 @@ struct TasksRoutinesView: View {
     @State private var loading = true
 
     var body: some View {
-        List {
+        ThemedList {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Thread = one conversation and result", systemImage: "bubble.left.and.text.bubble.right")
@@ -59,7 +59,7 @@ struct TasksRoutinesView: View {
             Section("Run receipts") {
                 if runs.isEmpty && !loading {
                     Text("Completed, waiting, failed, and manually started runs appear here.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 ForEach(runs.sorted(by: { $0.scheduledFor > $1.scheduledFor }).prefix(50)) { run in
                     RoutineRunRow(run: run, bot: session.state.bot(run.botId))
@@ -68,7 +68,7 @@ struct TasksRoutinesView: View {
 
             Section {
                 Label("Computer only", systemImage: "lock.desktopcomputer")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             } header: {
                 Text("Webhooks")
             } footer: {
@@ -145,12 +145,12 @@ private struct RoutineRow: View {
                 ((bot.map { Text(verbatim: $0.name) } ?? Text("Deleted agent"))
                     + Text(verbatim: " · \(routine.schedule.summary) · ")
                     + Text(LocalizedStringKey(routine.runLocation.label)))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(2)
             }
             Spacer()
             if !routine.enabled {
                 Image(systemName: canToggle ? "pause.circle.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(canToggle ? .orange : .secondary)
+                    .foregroundStyle(canToggle ? Theme.warning : Theme.textSecondary)
                     .accessibilityLabel(canToggle ? "Paused" : "Completed")
             }
         }
@@ -167,8 +167,8 @@ private struct RoutineRunRow: View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 8) {
                 if let output = run.output, !output.isEmpty { Text(output).textSelection(.enabled) }
-                if let error = run.error, !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-                if run.status == "waiting" { Text("This thread is waiting for your answer.").foregroundStyle(.orange) }
+                if let error = run.error, !error.isEmpty { Text(error).foregroundStyle(Theme.danger).textSelection(.enabled) }
+                if run.status == "waiting" { Text("This thread is waiting for your answer.").foregroundStyle(Theme.warning) }
                 if let threadId = run.threadId,
                    let target = NotificationTarget(botId: run.botId, threadId: threadId) {
                     Button("Open thread", systemImage: "arrow.up.right.square") {
@@ -184,7 +184,7 @@ private struct RoutineRunRow: View {
                     Text(run.routineName)
                     ((bot.map { Text(verbatim: $0.name) } ?? Text("Deleted agent"))
                         + Text(verbatim: " · \(Date(timeIntervalSince1970: run.scheduledFor / 1_000).formatted(date: .abbreviated, time: .shortened))"))
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(Theme.textSecondary)
                 }
                 Spacer()
                 Text(run.status == "waiting" ? "Needs you" : run.status.capitalized)
@@ -250,7 +250,7 @@ struct RoutineEditorView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ThemedForm {
                 Section("Work") {
                     TextField("Routine name", text: $name)
                     Picker("Agent", selection: $botId) {
@@ -274,7 +274,7 @@ struct RoutineEditorView: View {
                         ProgressView("Checking Cloud VM availability…")
                     } else if runAvailability == nil {
                         Label("Cloud VM status is unavailable", systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 } header: {
                     Text("Where does it run?")
@@ -312,7 +312,7 @@ struct RoutineEditorView: View {
                                     if weekdays.contains(day) { weekdays.remove(day) } else { weekdays.insert(day) }
                                 }
                                 .buttonStyle(.bordered)
-                                .tint(weekdays.contains(day) ? .accentColor : .secondary)
+                                .tint(weekdays.contains(day) ? Theme.accent : Theme.textSecondary)
                                 .accessibilityLabel(Self.dayNames[day])
                             }
                         }
@@ -353,12 +353,12 @@ struct RoutineEditorView: View {
                                     .frame(minWidth: 72)
                                     .accessibilityLabel("Custom interval in minutes")
                                 Text("minutes")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                             if selectedIntervalMinutes == nil {
                                 Text("Enter a whole number from 5 to 1,440 minutes.")
                                     .font(.footnote)
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(Theme.danger)
                             }
                         }
                         DatePicker("Starting", selection: $intervalAnchor)
@@ -368,7 +368,7 @@ struct RoutineEditorView: View {
                             systemImage: "exclamationmark.triangle"
                         )
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                     }
                 } header: {
                     Text("Schedule")
@@ -554,10 +554,10 @@ private extension String {
     }
     var tint: Color {
         switch self {
-        case "completed": .green
-        case "waiting": .orange
-        case "failed", "missed": .red
-        default: .secondary
+        case "completed": Theme.success
+        case "waiting": Theme.warning
+        case "failed", "missed": Theme.danger
+        default: Theme.textSecondary
         }
     }
 }

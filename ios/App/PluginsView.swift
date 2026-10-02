@@ -397,7 +397,7 @@ private struct PluginsSectionHeader: View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
                 .font(Theme.Font.label)
-                .foregroundStyle(Color(hex: 0x575658))
+                .foregroundStyle(Theme.parity(Color(hex: 0x575658), Theme.placeholder))
             Spacer()
             if let viewAll {
                 Button("View all") {
@@ -405,7 +405,7 @@ private struct PluginsSectionHeader: View {
                     viewAll()
                 }
                 .font(Theme.Font.label)
-                .foregroundStyle(Color(hex: 0x97969C))
+                .foregroundStyle(Theme.parity(Color(hex: 0x97969C), Theme.textSecondary))
                 .buttonStyle(.plain)
             }
         }

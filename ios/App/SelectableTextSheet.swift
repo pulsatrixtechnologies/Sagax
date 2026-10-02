@@ -45,7 +45,7 @@ struct SelectableTextSheet: View {
             .safeAreaInset(edge: .bottom) {
                 Text("Touch and hold the text to select part of it.")
                     .font(.footnote)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
                     .background(.bar)

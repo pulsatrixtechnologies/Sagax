@@ -74,6 +74,7 @@ struct SettingsView: View {
         case .plugins?: return .plugins
         case .account?: return .account
         case .botComputer?: return .botComputer
+        case .appearance?: return .appearance
         default: return nil
         }
 #else
@@ -471,7 +472,7 @@ struct AdvancedSettingsView: View {
     @State private var showingWalkieVoice = false
 
     var body: some View {
-        Form {
+        ThemedForm {
             Section("Computer") {
                 if let connection = session.connection {
                     NavigationLink {
@@ -543,7 +544,7 @@ struct AdvancedSettingsView: View {
                 } label: {
                     Label { Text("Walkie voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
                 }
-                .foregroundStyle(.primary)
+                .foregroundStyle(Theme.textPrimary)
             }
 
             if session.connection != nil {
@@ -553,7 +554,7 @@ struct AdvancedSettingsView: View {
                     } label: {
                         Label { Text("Updates") } icon: { SettingsIcon(symbol: "bell.badge.fill", color: .red) }
                     }
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Theme.textPrimary)
 
                     NavigationLink {
                         TasksRoutinesView()
@@ -614,15 +615,15 @@ private struct ComputerSettingsRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 name
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(connected ? Color.green : Color.secondary)
+                        .fill(connected ? Theme.success : Theme.textSecondary)
                         .frame(width: 7, height: 7)
                     status
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
             }
@@ -665,7 +666,7 @@ struct ConnectedComputersView: View {
     }
 
     var body: some View {
-        List {
+        ThemedList {
             if let active = session.connection {
                 Section("Current computer") {
                     NavigationLink {
@@ -691,11 +692,11 @@ struct ConnectedComputersView: View {
                                 ProfileAvatar(name: computer.name, size: 38)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(computer.name)
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(Theme.textPrimary)
                                         .lineLimit(1)
                                     Text("Tap to switch")
                                         .font(.footnote)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(Theme.textSecondary)
                                 }
                                 Spacer()
                                 Text("Use")
@@ -760,7 +761,7 @@ struct ConnectionSecurityView: View {
     @State private var refreshing = false
 
     var body: some View {
-        Form {
+        ThemedForm {
             if let connection = session.connection {
                 Section {
                     HStack(spacing: 14) {
@@ -774,7 +775,7 @@ struct ConnectionSecurityView: View {
                                 Image(systemName: session.status == .live ? "checkmark.circle.fill" : "circle.dotted")
                             }
                                 .font(.subheadline)
-                                .foregroundStyle(session.status == .live ? Color.green : Color.secondary)
+                                .foregroundStyle(session.status == .live ? Theme.success : Theme.textSecondary)
                         }
                     }
                     .padding(.vertical, 4)
@@ -795,7 +796,7 @@ struct ConnectionSecurityView: View {
                                 }
                             }
                             .font(.footnote.monospaced())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
 
                             HStack(spacing: 16) {
                                 Button(showingFullAddress ? "Hide full address" : "Show full address") {
@@ -824,7 +825,7 @@ struct ConnectionSecurityView: View {
                 Section("Troubleshooting") {
                     troubleshootingText
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
 
                     Button {
                         refreshing = true

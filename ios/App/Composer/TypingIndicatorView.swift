@@ -22,7 +22,7 @@ public struct TypingIndicatorView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.secondary.opacity(0.12))
+        .background(Theme.bubbleAssistant)
         .clipShape(Capsule())
     }
 

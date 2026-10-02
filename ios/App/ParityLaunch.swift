@@ -15,7 +15,7 @@
 import SwiftUI
 import CompanionCore
 
-/// The 21 reference screens, plus the theme gallery.
+/// The 21 reference screens, plus Settings > Appearance and the theme gallery.
 enum ParityScreen: String, CaseIterable {
     case home = "01-home"
     case chat = "02-chat"
@@ -38,6 +38,8 @@ enum ParityScreen: String, CaseIterable {
     case search = "19-search"
     case createBot = "20-create-bot"
     case botComputer = "21-bot-computer"
+    /// Not a reference: Settings > Appearance, for the theme captures.
+    case appearance = "22-appearance"
     case themeGallery = "theme-gallery"
 
     /// Accepts the full name, the number ("02") or the name ("chat").
@@ -68,7 +70,7 @@ enum ParityScreen: String, CaseIterable {
     var opensFromHome: Bool {
         switch self {
         case .home, .homePlusMenu, .search, .newGroupChat, .createBot,
-             .settingsTop, .settingsBottom, .plugins, .account, .botComputer: true
+             .settingsTop, .settingsBottom, .plugins, .account, .botComputer, .appearance: true
         default: false
         }
     }

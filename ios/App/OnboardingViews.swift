@@ -24,7 +24,7 @@ struct CompanionWelcomeView: View {
                         .multilineTextAlignment(.center)
                     Text("Open chats, approve actions, and send new work from this device.")
                         .font(.title3)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                 }
 
@@ -53,6 +53,7 @@ struct CompanionWelcomeView: View {
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
         }
+        .foregroundStyle(Theme.textPrimary)
         .background {
             LinearGradient(
                 colors: [MausPalette.color("blue").opacity(0.10), Color.clear],
@@ -65,12 +66,13 @@ struct CompanionWelcomeView: View {
             VStack(spacing: 10) {
                 Button(action: onConnect) {
                     Text("Connect my computer")
+                        .foregroundStyle(Theme.accentInk)
                         .frame(maxWidth: .infinity)
                 }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 Button("Not now", action: onSkip)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
             }
@@ -100,7 +102,7 @@ private struct WelcomeBenefit: View {
                     .font(.headline)
                 Text(detail)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -132,14 +134,14 @@ struct UnpairedHomeView: View {
                         Text("Connect when you're ready")
                             .font(.title2.bold())
                         Text("Pair this device with OpenMausBot to see your chats and respond to your bots.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Text("On your computer, open OpenMausBot → Settings → Phone.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
 
                     Spacer(minLength: 30)
@@ -148,9 +150,12 @@ struct UnpairedHomeView: View {
                 .frame(maxWidth: 520)
                 .frame(maxWidth: .infinity)
             }
+            .foregroundStyle(Theme.textPrimary)
+            .background(Theme.bg.ignoresSafeArea())
             .safeAreaInset(edge: .bottom) {
                 Button(action: onConnect) {
                     Text("Connect computer")
+                        .foregroundStyle(Theme.accentInk)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -200,7 +205,7 @@ struct NotificationOnboardingView: View {
                         .font(.largeTitle.bold())
                     Text("Get alerts while OpenMausBot is open or was recently in the background. Alerts stop after iOS fully suspends or closes the app.")
                         .font(.title3)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -219,6 +224,7 @@ struct NotificationOnboardingView: View {
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
         }
+        .foregroundStyle(Theme.textPrimary)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
                 Button {
@@ -230,9 +236,10 @@ struct NotificationOnboardingView: View {
                     }
                 } label: {
                     HStack {
-                        if enabling { ProgressView().tint(.white) }
+                        if enabling { ProgressView().tint(Theme.accentInk) }
                         Text("Enable notifications")
                     }
+                    .foregroundStyle(Theme.accentInk)
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -240,7 +247,7 @@ struct NotificationOnboardingView: View {
                 .disabled(enabling)
 
                 Button("Not now", action: onContinue)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
                     .disabled(enabling)

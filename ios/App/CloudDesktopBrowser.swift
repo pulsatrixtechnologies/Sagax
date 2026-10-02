@@ -15,7 +15,10 @@ struct CloudDesktopBrowser: UIViewControllerRepresentable {
         configuration.barCollapsingEnabled = true
         let browser = SFSafariViewController(url: url, configuration: configuration)
         browser.dismissButtonStyle = .close
-        browser.preferredControlTintColor = .systemBlue
+        // Black and Dim keep the system blue; other skins tint with their accent.
+        let palette = Theme.palette
+        browser.preferredControlTintColor = palette.id == .black || palette.id == .dim ? .systemBlue : palette.accentText.uiColor
+        browser.preferredBarTintColor = palette.id == .black || palette.id == .dim ? nil : palette.bg.uiColor
         return browser
     }
 

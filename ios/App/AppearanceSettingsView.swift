@@ -10,7 +10,8 @@ struct AppearanceSettingsView: View {
     @EnvironmentObject private var session: Session
     @ObservedObject private var themes = ThemeStore.shared
 
-    private var selection: ThemeSelection { themes.selection }
+    /// The skin in effect (a DEBUG launch override included).
+    private var selection: ThemeSelection { themes.effective }
     private var client: CompanionClient? { session.settingsClient }
 
     var body: some View {

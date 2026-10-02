@@ -8,7 +8,6 @@ public struct AgentThoughtChamberView: View {
     public let mascotColor: Color
     public let isStreaming: Bool
     
-    @Environment(\.colorScheme) private var colorScheme
     @State private var isExpanded: Bool = false
     
     public init(
@@ -24,7 +23,7 @@ public struct AgentThoughtChamberView: View {
     }
     
     public var body: some View {
-        let isDark = colorScheme == .dark
+        let isDark = Theme.palette.isDark
         let window = ReasoningWindow(reasoning)
         
         VStack(alignment: .leading, spacing: 6) {
@@ -35,24 +34,11 @@ public struct AgentThoughtChamberView: View {
             }
         }
         .padding(6)
-        .background(
-            LinearGradient(
-                colors: isDark ? [
-                    Color(hex: "#18181B").opacity(0.92),
-                    Color(hex: "#0F172A").opacity(0.88)
-                ] : [
-                    Color.white.opacity(0.94),
-                    Color(hex: "#F8FAFC").opacity(0.88)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .background(.ultraThinMaterial)
+        .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(isDark ? mascotColor.opacity(0.3) : Color.black.opacity(0.08), lineWidth: 0.65)
+                .stroke(isDark ? mascotColor.opacity(0.3) : Theme.hairline, lineWidth: 0.65)
         )
         .shadow(color: Color.black.opacity(isDark ? 0.25 : 0.04), radius: 3, y: 1)
     }
@@ -72,7 +58,7 @@ public struct AgentThoughtChamberView: View {
                 
                 Text(isStreaming ? "Thinking…" : "Thought Process")
                     .font(.caption2.weight(.bold))
-                    .foregroundColor(isDark ? Color(hex: "#F8FAFC") : Color(hex: "#334155"))
+                    .foregroundColor(Theme.textPrimary)
                 
                 if isStreaming {
                     Circle()
@@ -85,15 +71,15 @@ public struct AgentThoughtChamberView: View {
                 
                 Text("\(total) \(total == 1 ? "step" : "steps")")
                     .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                    .foregroundColor(isDark ? Color(hex: "#94A3B8") : Color(hex: "#64748B"))
+                    .foregroundColor(Theme.textSecondary)
                 
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(isDark ? Color(hex: "#94A3B8") : Color(hex: "#64748B"))
+                    .foregroundColor(Theme.textSecondary)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.04))
+            .background(Theme.cardRaised)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -122,11 +108,11 @@ public struct AgentThoughtChamberView: View {
             }
         }
         .padding(10)
-        .background(isDark ? Color.black.opacity(0.35) : Color.white.opacity(0.85))
+        .background(Theme.inset)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.06), lineWidth: 0.5)
+                .stroke(Theme.hairline, lineWidth: 0.5)
         )
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
@@ -140,7 +126,7 @@ public struct AgentThoughtChamberView: View {
             
             Text(step)
                 .font(.caption2)
-                .foregroundColor(isDark ? Color(hex: "#E2E8F0") : Color(hex: "#1E293B"))
+                .foregroundColor(Theme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

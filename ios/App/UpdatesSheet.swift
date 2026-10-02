@@ -23,7 +23,7 @@ struct UpdatesSheet: View {
                     Spacer()
                     Text(updates.isEmpty ? "All quiet" : "\(updates.count) active")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 22)
@@ -44,6 +44,7 @@ struct UpdatesSheet: View {
             }
             .padding(.bottom, 24)
         }
+        .background(Theme.parity(Color(uiColor: .systemBackground), Theme.bg).ignoresSafeArea())
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .sheetChromeCompat()
@@ -53,7 +54,7 @@ struct UpdatesSheet: View {
     private func section(_ title: LocalizedStringKey, tint: Color?, kind: ChatUpdate.Kind) -> some View {
         let items = updates.filter { $0.kind == kind }
         if !items.isEmpty {
-            let color = kind == .needsYou ? MausPalette.color(items[0].chat.color) : Color.secondary
+            let color = kind == .needsYou ? MausPalette.color(items[0].chat.color) : Theme.parity(Color.secondary, Theme.textSecondary)
             Text(title)
                 .textCase(.uppercase)
                 .font(.system(size: 12, weight: .bold))
@@ -85,14 +86,14 @@ private struct UpdateRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(update.chat.name)
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Theme.textPrimary)
                     Text(update.chat.threadTitle)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         .lineLimit(1)
                     Text(update.line.isEmpty ? " " : update.line)
                         .font(.system(size: 14))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         .lineLimit(update.kind == .needsYou ? 3 : 1)
                         .multilineTextAlignment(.leading)
 
@@ -100,7 +101,7 @@ private struct UpdateRow: View {
                         if card.skillRequest != nil {
                             Label("Open the chat to review SKILL.md", systemImage: "doc.text.magnifyingglass")
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                                 .padding(.top, 6)
                         } else {
                             // The answers, as pills, from the one rule every
@@ -118,13 +119,13 @@ private struct UpdateRow: View {
                                     } label: {
                                         Text(option)
                                             .font(.system(size: 13, weight: .semibold))
-                                            .foregroundStyle(CardStyle.isRefusal(option) ? Color.primary : .white)
+                                            .foregroundStyle(CardStyle.isRefusal(option) ? Theme.textPrimary : .white)
                                             .padding(.horizontal, 14)
                                             .frame(height: 32)
                                             .background(
                                                 Capsule().fill(
                                                     CardStyle.isRefusal(option)
-                                                        ? Color.secondary.opacity(0.18)
+                                                        ? Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.18)
                                                         : MausPalette.color(update.chat.color)
                                                 )
                                             )
@@ -150,7 +151,7 @@ private struct UpdateRow: View {
                         Circle().fill(MausPalette.color(update.chat.color)).frame(width: 10, height: 10)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.secondary.opacity(0.5))
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.5))
                     }
                     .padding(.top, 12)
                 }

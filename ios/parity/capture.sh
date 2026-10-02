@@ -5,6 +5,13 @@
 #   ios/parity/capture.sh --skip-build          reuse the last build
 #   ios/parity/capture.sh 02-chat 13-computer   only these screens
 #   PARITY_WAIT=10 ios/parity/capture.sh         seconds to wait per screen
+#   PARITY_SKIN=lagoon ios/parity/capture.sh     wear a skin (DEBUG -paritySkin;
+#                                                "system" follows the simulator)
+#   PARITY_APPEARANCE=light ios/parity/capture.sh  the simulator's appearance
+#   PARITY_OUT=/tmp/shots ios/parity/capture.sh  where the PNGs go
+#   ios/parity/capture.sh cards 22-appearance    extra screens: a chat with every
+#                                                card type (store preview), and
+#                                                Settings > Appearance
 #
 # Then: python3 ios/parity/diff.py [--gate]
 #
@@ -17,7 +24,9 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 IOS="$(cd "$HERE/.." && pwd)"
-OUT="$HERE/out"
+OUT="${PARITY_OUT:-$HERE/out}"
+SKIN="${PARITY_SKIN:-}"
+APPEARANCE="${PARITY_APPEARANCE:-dark}"
 BUILD="$HERE/build"
 DEVICE_NAME="${PARITY_DEVICE:-parity-17pro}"
 BUNDLE_ID="com.openmausbot.app"
@@ -28,7 +37,7 @@ SCREENS=()
 for arg in "$@"; do
   case "$arg" in
     --skip-build) SKIP_BUILD=1 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     *) SCREENS+=("$arg") ;;
   esac
 done
@@ -78,7 +87,7 @@ fi
 log "simulator $DEVICE_NAME ($UDID)"
 xcrun simctl boot "$UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$UDID" -b >/dev/null
-xcrun simctl ui "$UDID" appearance dark
+xcrun simctl ui "$UDID" appearance "$APPEARANCE"
 # The references' keyboard: French (Canada) with English, no swipe-typing
 # introduction, no dictation key.
 xcrun simctl spawn "$UDID" defaults write -g AppleKeyboards -array \
@@ -120,9 +129,12 @@ for screen in "${SCREENS[@]}"; do
   ARGS=(-parityEndpoint "$ENDPOINT" -parityToken "$TOKEN" -parityScreen "$screen"
     -companion.prefs.rosterDensity standard)
   [ -n "$ENVIRONMENT" ] && ARGS+=(-parityEnvironment "$ENVIRONMENT")
+  # "cards": the store preview's Scout chat with every card type, no fixture.
+  [ "$screen" = "cards" ] && ARGS=(-store-preview -cards-preview -open-first -companion.prefs.rosterDensity standard)
+  [ -n "$SKIN" ] && ARGS+=(-paritySkin "$SKIN")
   xcrun simctl launch "$UDID" "$BUNDLE_ID" "${ARGS[@]}" >/dev/null
   sleep "$WAIT"
   xcrun simctl io "$UDID" screenshot --type=png "$OUT/$screen.png" >/dev/null 2>&1
-  log "$screen -> out/$screen.png"
+  log "$screen -> $OUT/$screen.png"
 done
 log "done; compare with: python3 $HERE/diff.py"

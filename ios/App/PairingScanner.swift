@@ -62,15 +62,17 @@ struct PairingScannerSheet: View {
                             Text(validationError ?? "Point the camera at the QR code on your computer")
                                 .font(.subheadline.weight(.medium))
                                 .multilineTextAlignment(.center)
-                                .foregroundStyle(validationError == nil ? Color.primary : Color.red)
+                                .foregroundStyle(validationError == nil ? Theme.textPrimary : Theme.danger)
                         }
                         .padding(.horizontal, 18)
                         .padding(.vertical, 14)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+                        .background(Theme.card.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
                         .padding()
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Scan QR Code")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

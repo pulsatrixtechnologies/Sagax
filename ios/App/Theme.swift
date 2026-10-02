@@ -53,6 +53,13 @@ enum Theme {
     /// The active skin's tokens.
     static var palette: SkinPalette { ThemeRuntime.palette }
 
+    /// A value measured on the references, kept as is on Black and Dim (the
+    /// phone's own skins), and the skin's token everywhere else. For the few
+    /// parity surfaces whose measured colour is not one of the tokens.
+    static func parity(_ reference: Color, _ themed: @autoclosure () -> Color) -> Color {
+        palette.id == .black || palette.id == .dim ? reference : themed()
+    }
+
     /// The app background: #141414 in Black (the parity value).
     static var bg: Color { palette.bg.color }
     /// The computer view draws on pure black, whatever the skin.
@@ -434,6 +441,9 @@ struct GlassCircleButton: View {
     var glyphOffset: CGSize = .zero
     /// The references draw the X lighter than the other glyphs.
     var weight: Font.Weight?
+    /// The glyph's ink; the skin's text colour unless a stage has its own
+    /// (the computer's black stage keeps white).
+    var glyphColor: Color?
     let action: () -> Void
 
     var body: some View {
@@ -443,7 +453,7 @@ struct GlassCircleButton: View {
         } label: {
             Image(systemName: systemImage)
                 .font(.system(size: glyphSize ?? size.glyph, weight: weight ?? (systemImage == "xmark" ? .regular : .medium)))
-                .foregroundStyle(Theme.textPrimary)
+                .foregroundStyle(glyphColor ?? Theme.textPrimary)
                 .offset(glyphOffset)
                 .frame(width: size.rawValue, height: size.rawValue)
                 .contentShape(Circle())

@@ -15,7 +15,6 @@ struct ActivityRunChip: View {
     let items: [Message]
     /// Where an "Opened thread" chip inside the run goes once unfolded.
     var openThread: ((ThreadRef) -> Void)? = nil
-    @Environment(\.colorScheme) private var colorScheme
     @State private var expanded = false
 
     private var running: Bool { items.contains { $0.tool?.ok == nil } }
@@ -25,7 +24,6 @@ struct ActivityRunChip: View {
     }
 
     var body: some View {
-        let isDark = colorScheme == .dark
 
         VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -35,24 +33,24 @@ struct ActivityRunChip: View {
                 HStack(spacing: 6) {
                     Image(systemName: running ? "ellipsis.circle" : "checkmark.seal.fill")
                         .font(.system(size: 11))
-                        .foregroundColor(running ? Color.secondary : Color(hex: "#22C55E"))
+                        .foregroundColor(running ? Theme.textSecondary : Theme.success)
 
                     Text(summary)
                         .font(.caption2.weight(.bold))
-                        .foregroundColor(isDark ? Color(hex: "#E2E8F0") : Color(hex: "#334155"))
+                        .foregroundColor(Theme.textPrimary)
 
                     Image(systemName: "chevron.right")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(Color.secondary)
+                        .foregroundColor(Theme.textSecondary)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4.5)
-                .background(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
+                .background(Theme.cardRaised)
                 .clipShape(Capsule())
                 .overlay(
                     Capsule()
-                        .stroke(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 0.5)
+                        .stroke(Theme.hairline, lineWidth: 0.5)
                 )
             }
             .buttonStyle(.plain)

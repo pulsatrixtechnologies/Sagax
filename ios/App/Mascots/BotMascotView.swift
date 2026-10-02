@@ -93,7 +93,7 @@ struct FramedPicture: View {
     var body: some View {
         let rect = AvatarFraming.imageRect(imageSize: image.size, box: size, zoom: zoom, focusX: focusX, focusY: focusY)
         ZStack(alignment: .topLeading) {
-            Color(uiColor: .secondarySystemBackground)
+            Theme.parity(Color(uiColor: .secondarySystemBackground), Theme.card)
             Group {
                 // SwiftUI's `Image` draws only a still; an animated attachment plays in UIKit
                 if image.images == nil {
@@ -144,7 +144,7 @@ struct ChatAvatarView: View {
     var animated = false
     var comets = false
     /// The surface a room's cut-outs are painted in.
-    var background: Color = Color(uiColor: .systemBackground)
+    var background: Color = Theme.parity(Color(uiColor: .systemBackground), Theme.bg)
 
     @EnvironmentObject private var session: Session
 

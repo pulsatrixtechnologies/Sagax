@@ -26,7 +26,6 @@ public struct CommandSkillHUDView: View {
     public let accentColor: Color
     public let onSelectCommand: (CommandSkillItem) -> Void
     
-    @Environment(\.colorScheme) private var colorScheme
     
     public static let defaultCommands: [CommandSkillItem] = [
         CommandSkillItem(
@@ -96,7 +95,7 @@ public struct CommandSkillHUDView: View {
     }
     
     public var body: some View {
-        let isDark = colorScheme == .dark
+        let isDark = Theme.palette.isDark
         
         VStack(alignment: .leading, spacing: 8) {
             headerBar(isDark: isDark)
@@ -115,24 +114,11 @@ public struct CommandSkillHUDView: View {
                 .padding(.bottom, 8)
             }
         }
-        .background(
-            LinearGradient(
-                colors: isDark ? [
-                    Color(hex: "#0F172A").opacity(0.96),
-                    Color(hex: "#1E293B").opacity(0.94)
-                ] : [
-                    Color.white.opacity(0.96),
-                    Color(hex: "#F8FAFC").opacity(0.94)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .background(.ultraThinMaterial)
+        .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.08), lineWidth: 0.8)
+                .stroke(Theme.hairline, lineWidth: 0.8)
         )
         .shadow(color: Color.black.opacity(isDark ? 0.25 : 0.08), radius: 8, y: 3)
         .padding(.horizontal, 10)
@@ -148,7 +134,7 @@ public struct CommandSkillHUDView: View {
                     .foregroundColor(accentColor)
                 Text("SLASH COMMANDS")
                     .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
-                    .foregroundColor(isDark ? Color(hex: "#94A3B8") : Color(hex: "#64748B"))
+                    .foregroundColor(Theme.textSecondary)
             }
             
             Spacer()
@@ -162,7 +148,7 @@ public struct CommandSkillHUDView: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 15))
-                    .foregroundColor(isDark ? Color(hex: "#64748B") : Color(hex: "#94A3B8"))
+                    .foregroundColor(Theme.textTertiary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close slash commands")
@@ -187,18 +173,18 @@ private struct CommandCardView: View {
                         .foregroundColor(cmd.brandColor)
                     Text(cmd.title)
                         .font(.system(size: 11.5, weight: .bold))
-                        .foregroundColor(isDark ? .white : Color(hex: "#0F172A"))
+                        .foregroundColor(Theme.textPrimary)
                 }
                 
                 Text(LocalizedStringKey(cmd.description))
                     .font(.system(size: 9.5))
-                    .foregroundColor(isDark ? Color(hex: "#94A3B8") : Color(hex: "#64748B"))
+                    .foregroundColor(Theme.textSecondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
             .padding(8)
             .frame(width: 145, height: 60, alignment: .topLeading)
-            .background(isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
+            .background(Theme.cardRaised)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)

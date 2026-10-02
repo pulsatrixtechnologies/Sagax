@@ -4,6 +4,7 @@
 // the system renders a snapshot, so it cannot move here, but it changes
 // with every update.
 import ActivityKit
+import CompanionCore
 import SwiftUI
 import WidgetKit
 
@@ -23,9 +24,12 @@ struct OpenMausWidgets: WidgetBundle {
 struct BotActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: BotActivityAttributes.self) { context in
+            // The lock-screen banner wears the app's skin (app group,
+            // SharedTheme); the Dynamic Island below is always black.
+            let palette = SharedTheme.palette(for: SharedTheme.pinnedScheme ?? .dark)
             LockScreenView(context: context)
-                .activityBackgroundTint(.black)
-                .activitySystemActionForegroundColor(.white)
+                .activityBackgroundTint(palette.bg.color)
+                .activitySystemActionForegroundColor(palette.textPrimary.color)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -84,8 +88,10 @@ struct BotActivityWidget: Widget {
 
 private struct LockScreenView: View {
     let context: ActivityViewContext<BotActivityAttributes>
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        let palette = SharedTheme.palette(for: SharedTheme.pinnedScheme ?? scheme)
         HStack(alignment: .top, spacing: 12) {
             OrbitingFace(context: context, size: 60)
             VStack(alignment: .leading, spacing: 4) {
@@ -97,14 +103,18 @@ private struct LockScreenView: View {
                     }
                     Text(context.state.headline)
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(palette.textPrimary.color)
                 }
                 Text(context.state.line)
                     .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(palette.textSecondary.color)
                     .lineLimit(2)
                 if let threadId = context.state.approvalThreadId, let requestId = context.state.requestId {
-                    AnswerButtons(context: context, threadId: threadId, requestId: requestId)
+                    AnswerButtons(
+                        context: context, threadId: threadId, requestId: requestId,
+                        refusalInk: palette.textPrimary.color, refusalFill: palette.cardRaised.color,
+                        hintInk: palette.textSecondary.color
+                    )
                         .padding(.top, 4)
                 }
             }
@@ -119,6 +129,11 @@ private struct AnswerButtons: View {
     let context: ActivityViewContext<BotActivityAttributes>
     let threadId: String
     let requestId: String
+    /// The island is black: white ink and a faint white refusal pill. The
+    /// lock-screen banner passes its skin's.
+    var refusalInk: Color = .white
+    var refusalFill: Color = .white.opacity(0.16)
+    var hintInk: Color = .white.opacity(0.7)
 
     var body: some View {
         // Answering from the activity itself is an interactive-widget feature,
@@ -129,7 +144,7 @@ private struct AnswerButtons: View {
         } else {
             Text("Open MausBot to answer")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(hintInk)
         }
     }
 
@@ -143,15 +158,16 @@ private struct AnswerButtons: View {
                     choice: option,
                     isPermission: context.state.isPermission
                 )) {
+                    let refusal = option.caseInsensitiveCompare("Deny") == .orderedSame
                     Text(option)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(refusal ? refusalInk : .white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 34)
                         .background(
                             Capsule().fill(
-                                option.caseInsensitiveCompare("Deny") == .orderedSame
-                                    ? Color.white.opacity(0.16)
+                                refusal
+                                    ? refusalFill
                                     : MausPalette.color(context.attributes.color)
                             )
                         )

@@ -270,7 +270,9 @@ extension View {
 
 /// The UIKit chrome SwiftUI does not reach: navigation and tab bars in the
 /// legacy screens, switches, the window tint. Status bar and keyboard follow
-/// the window's light or dark, which `ThemeRoot` pins to the skin.
+/// the window's light or dark, which `ThemeRoot` pins to the skin (the
+/// keyboard's appearance is not an appearance-proxy property: setting it on
+/// UITextView.appearance() aborts).
 enum ThemeUIKit {
     @MainActor
     static func apply(_ palette: SkinPalette) {
@@ -296,8 +298,6 @@ enum ThemeUIKit {
         // Black and Dim keep the measured #68CE67; other skins use their accent.
         UISwitch.appearance().onTintColor = palette.toggleOn.uiColor
         UITableView.appearance().backgroundColor = background
-        UITextField.appearance().keyboardAppearance = palette.isDark ? .dark : .light
-        UITextView.appearance().keyboardAppearance = palette.isDark ? .dark : .light
 
         let tint: UIColor? = (palette.id == .black || palette.id == .dim) ? nil : palette.accent.uiColor
         for scene in UIApplication.shared.connectedScenes {

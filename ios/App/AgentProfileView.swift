@@ -135,7 +135,7 @@ struct AgentProfileView: View {
                             }
                         } else if instanceChoices.isEmpty {
                             Label("No model providers are available", systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         } else {
                             Picker("Provider", selection: $selectedInstanceID) {
                                 if !instances.contains(where: { $0.instanceId == selectedInstanceID }) {
@@ -172,11 +172,11 @@ struct AgentProfileView: View {
                             if current.busy == true {
                                 Label("Stop this bot before changing its model.", systemImage: "hourglass")
                                     .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             } else if selectedInstance?.snapshot.isAvailable != true {
                                 Label("Choose an available provider to change this bot's model.", systemImage: "info.circle")
                                     .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             }
 
                             Button("Apply model", systemImage: "checkmark") {
@@ -189,6 +189,7 @@ struct AgentProfileView: View {
                     } footer: {
                         Text("Provider accounts and API keys stay on your computer. Default sends no reasoning level and lets the provider decide.")
                     }
+                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
 
                 Section {
@@ -229,6 +230,7 @@ struct AgentProfileView: View {
                 } footer: {
                     Text("PNG, JPEG, GIF, or WebP, up to 10 MB. Images are stored on your paired computer and loaded with this device's pairing token.")
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 if session.canAdminister {
                     Section {
@@ -245,6 +247,7 @@ struct AgentProfileView: View {
                              ? "Generation uses the shared image provider configured on your computer. No provider key is sent to or stored on this device."
                              : "To generate images, configure the shared image provider in OpenMausBot on your computer. Provider keys cannot be added from this device.")
                     }
+                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
 
                 Section("Identity") {
@@ -260,6 +263,7 @@ struct AgentProfileView: View {
                         .lineLimit(3...8)
                     Toggle("Agent notifications", isOn: $notifications)
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 Section {
                     Picker("Voice engine", selection: $engine) {
@@ -299,7 +303,7 @@ struct AgentProfileView: View {
                         .disabled(savingServer || chatterboxURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         if let serverProblem {
                             Label(serverProblem, systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(Color.orange)
+                                .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
                         }
                     }
 
@@ -331,17 +335,17 @@ struct AgentProfileView: View {
                         if !hasWorkspaceDefaultVoice, voice.isEmpty {
                             Label("Pick a voice for this agent before enabling speech.", systemImage: "info.circle")
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         }
                     } else if usesSystemVoices {
                         Label("Built-in Mac voices are unavailable", systemImage: "speaker.slash")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     } else if !usesChatterbox {
                         Label(
                             usesFishAudio ? "Fish Audio is not configured" : "ElevenLabs is not configured",
                             systemImage: "speaker.slash"
                         )
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     }
                 } header: {
                     Text("Voice")
@@ -375,12 +379,16 @@ struct AgentProfileView: View {
                         Text("The voice choice belongs to this agent. Workspace default uses the shared voice selected on your computer.")
                     }
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 Section {
                     Button("Save profile changes") { Task { await save() } }
                         .disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.parity(Color(uiColor: .systemGroupedBackground), Theme.bg))
             .navigationTitle("Bot settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

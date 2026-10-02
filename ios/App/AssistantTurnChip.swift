@@ -26,10 +26,10 @@ struct AssistantTurnChip: View {
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 6)
-                .background(Color.secondary.opacity(0.08), in: Capsule())
+                .background(Theme.cardRaised, in: Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(turn.label)

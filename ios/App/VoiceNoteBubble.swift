@@ -251,7 +251,7 @@ struct VoiceNoteBubble: View {
                 Text(timeText)
                     .font(.system(size: 11))
                     .monospacedDigit()
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("voice-note-time")
             }
         }
@@ -259,7 +259,7 @@ struct VoiceNoteBubble: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color.secondary.opacity(0.13))
+                .fill(Theme.inset)
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("voice-note")
@@ -305,7 +305,7 @@ struct VoiceNoteBubble: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(tint)
         }
-        .foregroundStyle(Color.secondary)
+        .foregroundStyle(Theme.textSecondary)
     }
 
     private static func clock(_ seconds: Double) -> String {

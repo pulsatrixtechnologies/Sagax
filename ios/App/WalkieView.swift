@@ -40,7 +40,7 @@ struct WalkieView: View {
         .padding(.bottom, 12)
         .frame(maxWidth: CompanionLayout.rosterWidth)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.parity(Color.black, Theme.bg).ignoresSafeArea())
         .animation(.snappy(duration: 0.2), value: reviewing)
         .sheet(isPresented: $showingVoice) {
             WalkieVoiceSheet {
@@ -76,11 +76,11 @@ struct WalkieView: View {
                     .font(.system(size: 30, weight: .bold))
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(session.status == .live ? Color.green : Color.orange)
+                        .fill(session.status == .live ? Theme.parity(Color.green, Theme.success) : Theme.parity(Color.orange, Theme.warning))
                         .frame(width: 7, height: 7)
                     Text(verbatim: connectionText)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         .lineLimit(1)
                 }
             }
@@ -141,10 +141,10 @@ struct WalkieView: View {
             HStack(spacing: 8) {
                 liveIcon
                     .frame(width: 20, height: 18)
-                    .foregroundStyle(walkie.phase == .listening ? Color.red : Color.accentColor)
+                    .foregroundStyle(walkie.phase == .listening ? Theme.parity(Color.red, Theme.danger) : Theme.parity(Color.accentColor, Theme.accent))
                 Text(verbatim: liveTitle)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .lineLimit(1)
                 Spacer()
             }
@@ -157,12 +157,12 @@ struct WalkieView: View {
                 if let note = walkie.note {
                     Text(verbatim: note)
                         .font(.footnote)
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
                 }
             } else {
                 Text(verbatim: liveBody)
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(walkie.note == nil ? Color.primary : Color.orange)
+                    .foregroundStyle(walkie.note == nil ? Theme.textPrimary : Theme.parity(Color.orange, Theme.warning))
                     .lineLimit(5)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -248,13 +248,13 @@ struct WalkieView: View {
     private var talkBar: some View {
         let listening = walkie.phase == .listening
         return ZStack {
-            Capsule().fill(listening ? Color.red : Color.accentColor)
+            Capsule().fill(listening ? Theme.parity(Color.red, Theme.danger) : Theme.parity(Color.accentColor, Theme.accent))
             HStack(spacing: 10) {
                 if listening {
                     WalkieWave(active: true).frame(width: 30, height: 18)
                     Text("Listening… let go when you're done")
                 } else if walkie.phase == .transcribing {
-                    ProgressView().tint(.white)
+                    ProgressView().tint(Theme.parity(.white, Theme.accentInk))
                     Text("Writing it down…")
                 } else {
                     Image(systemName: "mic.fill")
@@ -263,7 +263,7 @@ struct WalkieView: View {
                 }
             }
             .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(listening ? Theme.parity(.white, Theme.dangerInk) : Theme.parity(.white, Theme.accentInk))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
             .padding(.horizontal, 20)
@@ -310,9 +310,9 @@ struct WalkieView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.textPrimary)
                     .frame(width: 76, height: 76)
-                    .background(Circle().fill(Color(white: 0.2)))
+                    .background(Circle().fill(Theme.parity(Color(white: 0.2), Theme.glassFill)))
             }
             .buttonStyle(.plain)
             .disabled(sending)
@@ -324,19 +324,19 @@ struct WalkieView: View {
             } label: {
                 HStack(spacing: 10) {
                     if sending {
-                        ProgressView().tint(.white)
+                        ProgressView().tint(Theme.parity(.white, Theme.accentInk))
                     } else {
                         Image(systemName: "arrow.up.circle.fill")
                     }
                     Text(verbatim: String(localized: "Send to \(targetName)"))
                 }
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.parity(.white, Theme.accentInk))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity)
                 .frame(height: 76)
-                .background(Capsule().fill(Color.accentColor))
+                .background(Capsule().fill(Theme.parity(Color.accentColor, Theme.accent)))
             }
             .buttonStyle(.plain)
             .disabled(sending || empty || target == nil)
@@ -346,7 +346,7 @@ struct WalkieView: View {
     }
 
     private static let panelShape = RoundedRectangle(cornerRadius: 22, style: .continuous)
-    private static var panel: some View { panelShape.fill(Color(white: 0.11)) }
+    private static var panel: some View { panelShape.fill(Theme.parity(Color(white: 0.11), Theme.card)) }
 }
 
 // MARK: - Pieces
@@ -367,16 +367,16 @@ struct WalkieAgentRow: View {
                     if !agent.bot.title.isEmpty {
                         Text(verbatim: agent.bot.title)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             .lineLimit(1)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(Color(white: 0.2)))
+                            .background(Capsule().fill(Theme.parity(Color(white: 0.2), Theme.chip)))
                     }
                 }
                 Text(verbatim: agent.line)
                     .font(.system(size: 13))
-                    .foregroundStyle(agent.status == .needsYou ? Color(red: 1, green: 0.55, blue: 0.6) : Color.secondary)
+                    .foregroundStyle(agent.status == .needsYou ? Theme.parity(Color(red: 1, green: 0.55, blue: 0.6), Theme.danger) : Theme.parity(Color.secondary, Theme.textSecondary))
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
@@ -386,11 +386,11 @@ struct WalkieAgentRow: View {
         .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(selected ? Color.accentColor.opacity(0.14) : Color.clear)
+                .fill(selected ? Theme.parity(Color.accentColor, Theme.accent).opacity(0.14) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(selected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                .strokeBorder(selected ? Theme.parity(Color.accentColor, Theme.accent) : Color.clear, lineWidth: 1.5)
         )
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -408,11 +408,11 @@ struct WalkieStatusMark: View {
         Group {
             switch status {
             case .needsYou:
-                Circle().fill(Color.red).frame(width: 11, height: 11)
+                Circle().fill(Theme.parity(Color.red, Theme.danger)).frame(width: 11, height: 11)
             case .working:
                 Circle()
                     .trim(from: 0, to: 0.72)
-                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                    .stroke(Theme.parity(Color.accentColor, Theme.accent), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
                     .frame(width: 14, height: 14)
                     .rotationEffect(.degrees(turning ? 360 : 0))
                     .onAppear {
@@ -422,10 +422,10 @@ struct WalkieStatusMark: View {
             case .done:
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 16))
-                    .foregroundStyle(Color.green)
+                    .foregroundStyle(Theme.parity(Color.green, Theme.success))
             case .idle:
                 Circle()
-                    .strokeBorder(Color.secondary.opacity(0.6), lineWidth: 1.5)
+                    .strokeBorder(Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.6), lineWidth: 1.5)
                     .frame(width: 12, height: 12)
             }
         }
@@ -449,20 +449,20 @@ struct WalkieKey: View {
             VStack(spacing: 6) {
                 Image(systemName: systemImage)
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Theme.textPrimary)
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(LinearGradient(colors: [Color(white: 0.17), Color(white: 0.11)], startPoint: .top, endPoint: .bottom))
+                            .fill(LinearGradient(colors: [Theme.parity(Color(white: 0.17), Theme.cardRaised), Theme.parity(Color(white: 0.11), Theme.card)], startPoint: .top, endPoint: .bottom))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.08))
+                            .strokeBorder(Theme.parity(Color.white.opacity(0.08), Theme.hairline))
                     )
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .lineLimit(1)
             }
         }

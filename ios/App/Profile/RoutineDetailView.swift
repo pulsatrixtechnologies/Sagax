@@ -105,7 +105,7 @@ struct RoutineDetailView: View {
                 ProfileRow(title: Text("Next run"), height: Theme.Profile.row) {
                     Text(verbatim: RoutineWording.nextRun(routine))
                         .font(Theme.Font.body)
-                        .foregroundStyle(Color(hex: 0x9C9BA0))
+                        .foregroundStyle(Theme.parity(Color(hex: 0x9C9BA0), Theme.textSecondary))
                         .padding(.trailing, 18.7)
                         .accessibilityIdentifier("routine-next-run")
                 }

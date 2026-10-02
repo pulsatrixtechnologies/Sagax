@@ -57,13 +57,14 @@ struct EmptyStateView<Actions: View>: View {
             VStack(spacing: 10) {
                 Image(systemName: systemImage)
                     .font(.system(size: 44, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                 Text(LocalizedStringKey(title))
                     .font(.title3.weight(.semibold))
+                    .foregroundStyle(Theme.textPrimary)
                     .multilineTextAlignment(.center)
                 description?
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
                 actions()
                     .padding(.top, 4)

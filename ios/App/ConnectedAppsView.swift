@@ -42,17 +42,18 @@ struct ConnectedAppsView: View {
             if credentialStoreUnreadable {
                 Section {
                     Label("Accounts could not be re-checked", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
                     if statuses == nil {
                         Text("Your computer could not open its credential store, so it cannot say which accounts are connected. Nothing has been disconnected — restarting OpenMausBot on your computer usually clears this.")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     } else {
                         Text("Showing what was connected last time. Your computer could not open its credential store just now, so these could not be re-checked. Nothing has been disconnected — restarting OpenMausBot on your computer usually clears this.")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     }
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
             }
 
             // Two notices about one fact is one too many, and only the banner
@@ -69,12 +70,15 @@ struct ConnectedAppsView: View {
                         description: Text("Configure Composio on your computer first. Provider credentials are never returned to this device.")
                     )
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
             }
 
             ForEach(cards) { card in
                 connectorSection(card)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Theme.parity(Color(uiColor: .systemGroupedBackground), Theme.bg))
         .navigationTitle("Connected Apps")
         .searchable(text: $query, prompt: "Search apps")
         .toolbar {
@@ -123,7 +127,7 @@ struct ConnectedAppsView: View {
                 // not known. "Connect" would assert that it is disconnected —
                 // the one claim we are in no position to make.
                 Label("Connection unknown", systemImage: "questionmark.circle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             } else if accounts.isEmpty, !isConnected, !isPending {
                 Button("Connect \(card.label)", systemImage: "plus.circle") {
                     Task { await authorize(card, alias: nil) }
@@ -133,10 +137,10 @@ struct ConnectedAppsView: View {
                 let statusLabel: LocalizedStringKey = isPending ? "Connecting…" : "Connected"
                 let statusSymbol = isPending ? "clock" : "checkmark.circle.fill"
                 Label(statusLabel, systemImage: statusSymbol)
-                    .foregroundStyle(isPending ? Color.secondary : Color.green)
+                    .foregroundStyle(isPending ? Theme.parity(Color.secondary, Theme.textSecondary) : Theme.parity(Color.green, Theme.success))
                 Text("Account details are unavailable from this provider. Refresh after authorization finishes.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             } else {
                 ForEach(accounts) { account in
                     HStack {
@@ -144,16 +148,16 @@ struct ConnectedAppsView: View {
                             account.nonemptyAlias.map { Text(verbatim: $0) } ?? Text("Primary account")
                             Text(account.status.replacingOccurrences(of: "_", with: " ").capitalized)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             Text(account.id)
                                 .font(.caption2.monospaced())
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(Theme.parity(Color(uiColor: .tertiaryLabel), Theme.textTertiary))
                                 .lineLimit(1)
                                 .textSelection(.enabled)
                         }
                         Spacer()
                         Image(systemName: account.isActive ? "checkmark.circle.fill" : "clock")
-                            .foregroundStyle(account.isActive ? .green : .secondary)
+                            .foregroundStyle(account.isActive ? Theme.parity(Color.green, Theme.success) : Theme.parity(Color.secondary, Theme.textSecondary))
                     }
                 }
 
@@ -172,6 +176,7 @@ struct ConnectedAppsView: View {
         } footer: {
             Text(card.blurb)
         }
+        .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
     }
 
     private func load() async {

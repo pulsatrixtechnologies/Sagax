@@ -150,13 +150,11 @@ enum WidgetChatLink {
 /// 17 requires a widget to opt in to its container background or render
 /// with none at all; below 17 the system draws it for us.
 extension View {
-    @ViewBuilder
+    /// The app's skin (SharedTheme): its ground, its ink, and — when the app
+    /// pins one skin — that skin's own light or dark, so `.secondary` text
+    /// never lands on a ground of the other appearance.
     func widgetContainerBackground() -> some View {
-        if #available(iOS 17.0, *) {
-            containerBackground(for: .widget) { Color(uiColor: .systemBackground) }
-        } else {
-            self
-        }
+        modifier(WidgetSkin())
     }
 
     /// The background a lock-screen accessory draws: nothing of its own, so
@@ -169,6 +167,25 @@ extension View {
             containerBackground(for: .widget) { Color.clear }
         } else {
             self
+        }
+    }
+}
+
+private struct WidgetSkin: ViewModifier {
+    @Environment(\.colorScheme) private var systemScheme
+
+    func body(content: Content) -> some View {
+        let scheme = SharedTheme.pinnedScheme ?? systemScheme
+        let palette = SharedTheme.palette(for: scheme)
+        let skinned = content
+            .foregroundStyle(palette.textPrimary.color)
+            .environment(\.colorScheme, scheme)
+        if #available(iOS 17.0, *) {
+            skinned.containerBackground(for: .widget) { palette.bg.color }
+        } else {
+            skinned
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(palette.bg.color)
         }
     }
 }

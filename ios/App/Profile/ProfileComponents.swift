@@ -249,12 +249,12 @@ struct GlassMenuPanel: View {
                     HStack(spacing: 0) {
                         Image(systemName: item.systemImage)
                             .font(.system(size: 16, weight: .regular))
-                            .foregroundStyle(item.destructive ? Theme.destructiveMenu : Color(hex: 0xFAF9FC))
+                            .foregroundStyle(item.destructive ? Theme.destructiveMenu : Theme.parity(Color(hex: 0xFAF9FC), Theme.textPrimary))
                             .frame(width: 20)
                             .padding(.leading, Theme.Profile.menuIconColumn - 3)
                         item.title
                             .font(Theme.Font.body)
-                            .foregroundStyle(item.destructive ? Theme.destructiveMenu : Color(hex: 0xFAF9FC))
+                            .foregroundStyle(item.destructive ? Theme.destructiveMenu : Theme.parity(Color(hex: 0xFAF9FC), Theme.textPrimary))
                             .padding(.leading, Theme.Profile.menuTextColumn - Theme.Profile.menuIconColumn - 17)
                         Spacer(minLength: 8)
                     }
@@ -273,12 +273,12 @@ struct GlassMenuPanel: View {
                 shape.fill(.ultraThinMaterial)
                 shape.fill(Theme.menuGlass.opacity(0.82))
                 shape.strokeBorder(
-                    LinearGradient(colors: [Color(hex: 0x767676), Color(hex: 0x3A3A3A).opacity(0.4)], startPoint: .top, endPoint: .bottom),
+                    LinearGradient(colors: [Theme.parity(Color(hex: 0x767676), Theme.hairline), Theme.parity(Color(hex: 0x3A3A3A).opacity(0.4), Theme.hairline.opacity(0.4))], startPoint: .top, endPoint: .bottom),
                     lineWidth: 0.8
                 )
             }
         }
-        .shadow(color: .black.opacity(0.25), radius: 18, y: 6)
+        .shadow(color: .black.opacity(Theme.palette.isDark ? 0.25 : 0.12), radius: 18, y: 6)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("profile-menu")
     }

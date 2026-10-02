@@ -409,8 +409,8 @@ struct SettingsSearchField: View {
         HStack(spacing: 7.67) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15.3, weight: .medium))
-                .foregroundStyle(Color(hex: 0x6B6B6D))
-            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Color(hex: 0x6C6B6F)).tracking(SettingsMetrics.tracking135))
+                .foregroundStyle(Theme.parity(Color(hex: 0x6B6B6D), Theme.placeholder))
+            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Theme.parity(Color(hex: 0x6C6B6F), Theme.placeholder)).tracking(SettingsMetrics.tracking135))
                 .font(Theme.Font.rowTitle)
                 .foregroundStyle(Theme.textPrimary)
                 .textInputAutocapitalization(.never)

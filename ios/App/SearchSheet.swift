@@ -299,7 +299,7 @@ struct SearchResultRow: View {
                     Spacer(minLength: 8)
                     Text(verbatim: label)
                         .font(HomeMetrics.font12)
-                        .foregroundStyle(Color(hex: 0x575759))
+                        .foregroundStyle(Theme.parity(Color(hex: 0x575759), Theme.placeholder))
                         .lineLimit(1)
                         .fixedSize()
                 }

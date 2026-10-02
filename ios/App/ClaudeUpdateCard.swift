@@ -33,7 +33,7 @@ struct ClaudeUpdateCard: View {
             case .ask:
                 Text("This model needs a newer Claude Code. I can update Claude for you.")
                     .font(.system(size: 15))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Theme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
                     Button(action: update) {
@@ -51,10 +51,10 @@ struct ClaudeUpdateCard: View {
                     } label: {
                         Text("I'll do it myself")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.primary)
+                            .foregroundStyle(Theme.textPrimary)
                             .frame(maxWidth: .infinity)
                             .frame(height: 40)
-                            .background(Capsule().fill(Color.secondary.opacity(0.18)))
+                            .background(Capsule().fill(Theme.cardRaised))
                     }
                     .buttonStyle(.plain)
                 }
@@ -64,31 +64,31 @@ struct ClaudeUpdateCard: View {
                     ProgressView()
                     Text("Updating Claude Code… this can take a minute.")
                         .font(.system(size: 14))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .accessibilityElement(children: .combine)
             case let .updated(version):
                 Label("Claude updated — \(version). Send your message again.", systemImage: "checkmark.circle")
                     .font(.system(size: 14))
-                    .foregroundStyle(Color.green)
+                    .foregroundStyle(Theme.success)
                     .fixedSize(horizontal: false, vertical: true)
             case .manual:
                 manualBlock
             case let .failed(error):
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.system(size: 14))
-                    .foregroundStyle(Color.red)
+                    .foregroundStyle(Theme.danger)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 manualBlock
                 Button(action: update) {
                     Text("Try updating again")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Theme.textPrimary)
                         .padding(.horizontal, 14)
                         .frame(height: 34)
-                        .background(Capsule().fill(Color.secondary.opacity(0.18)))
+                        .background(Capsule().fill(Theme.cardRaised))
                 }
                 .buttonStyle(.plain)
             }
@@ -97,7 +97,7 @@ struct ClaudeUpdateCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.secondary.opacity(0.13))
+                .fill(Theme.card)
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Update Claude Code")
@@ -107,12 +107,12 @@ struct ClaudeUpdateCard: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Run this in Terminal on your computer, then send your message again:")
                 .font(.system(size: 14))
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Text(Self.updateCommand)
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Theme.textPrimary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button {
@@ -126,7 +126,7 @@ struct ClaudeUpdateCard: View {
                 } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .frame(height: 30)
                         .contentShape(Rectangle())
                 }
@@ -135,7 +135,7 @@ struct ClaudeUpdateCard: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .background(Theme.inset, in: RoundedRectangle(cornerRadius: 10))
         }
     }
 

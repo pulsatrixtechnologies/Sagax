@@ -58,7 +58,7 @@ struct PairingView: View {
                 .frame(maxWidth: 560)
                 .frame(maxWidth: .infinity)
             }
-            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+            .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Connect computer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -113,7 +113,7 @@ struct PairingView: View {
                     .multilineTextAlignment(.center)
                 Text("Scan the QR code in OpenMausBot. We'll securely choose the best way to connect.")
                     .font(.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -129,6 +129,7 @@ struct PairingView: View {
             } label: {
                 Label("Scan QR code", systemImage: "qrcode.viewfinder")
                     .font(.headline)
+                    .foregroundStyle(Theme.accentInk)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -136,7 +137,7 @@ struct PairingView: View {
 
             Text("On your computer, open Settings → Phone → Set up a phone.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
         }
     }
@@ -164,7 +165,7 @@ struct PairingView: View {
             }
         }
         .padding(18)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
@@ -185,12 +186,12 @@ struct PairingView: View {
             if let discoveryFailure = discovery.failure {
                 Text(discoveryFailure)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if discovery.found.isEmpty {
                 Text("Computers ready to pair will appear here.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             } else {
                 ForEach(discovery.found) { service in
                     Button {
@@ -203,11 +204,11 @@ struct PairingView: View {
                                 .frame(width: 30, height: 30)
                             Text(service.name)
                                 .font(.body.weight(.medium))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(Theme.textPrimary)
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(Theme.chevron)
                         }
                         .contentShape(Rectangle())
                     }
@@ -226,12 +227,12 @@ struct PairingView: View {
                 .keyboardType(.URL)
                 .textContentType(.URL)
                 .padding(12)
-                .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                .background(Theme.inset)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             Text("Use the address shown in Phone settings on your computer.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
 
             Button("Continue") {
                 Haptics.selection()
@@ -285,16 +286,16 @@ struct PairingView: View {
                     .font(.subheadline.weight(.semibold))
                 Text(connection.pairingConsentOrigin)
                     .font(.footnote.monospaced())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Make sure this is the computer you expect before connecting.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
-            .background(Color(uiColor: .tertiarySystemGroupedBackground))
+            .background(Theme.inset)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .accessibilityElement(children: .combine)
 
@@ -302,7 +303,7 @@ struct PairingView: View {
                 if !connectionIsProtected(connection) {
                     Text("Only continue on a network you trust. Local connections are authenticated but are not encrypted by OpenMausBot.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -312,9 +313,10 @@ struct PairingView: View {
                     beginSubmission(connection, credential: credential)
                 } label: {
                     HStack {
-                        if pairing { ProgressView().tint(.white) }
+                        if pairing { ProgressView().tint(Theme.accentInk) }
                         Text(pairing ? "Connecting…" : "Connect")
                     }
+                    .foregroundStyle(Theme.accentInk)
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -328,9 +330,10 @@ struct PairingView: View {
                             startPulsatrixSignIn(origin)
                         } label: {
                             HStack {
-                                if pulsatrixSignIn.running { ProgressView().tint(.white) }
+                                if pulsatrixSignIn.running { ProgressView().tint(Theme.accentInk) }
                                 Text("Sign in with Pulsatrix")
                             }
+                            .foregroundStyle(Theme.accentInk)
                             .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
@@ -339,7 +342,7 @@ struct PairingView: View {
 
                         Text("Your organization signs you in with Pulsatrix. You can also enter a pairing code.")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -347,7 +350,7 @@ struct PairingView: View {
                 VStack(spacing: 12) {
                     Text("Enter the code shown on your computer")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
 
                     TextField("000000", text: $code)
                         .keyboardType(.asciiCapable)
@@ -357,7 +360,7 @@ struct PairingView: View {
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .multilineTextAlignment(.center)
                         .padding(.vertical, 12)
-                        .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                        .background(Theme.inset)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .onValueChange(of: code) { value in
                             // six digits for a computer, ABCD-EFGH-JKLM for a server
@@ -367,7 +370,7 @@ struct PairingView: View {
                     if code.count >= 12, !Self.codeLooksComplete(code) {
                         Text("A server's code is 12 letters and digits, never 0, O, 1 or I.")
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                             .multilineTextAlignment(.center)
                     }
 
@@ -376,9 +379,10 @@ struct PairingView: View {
                         beginSubmission(connection, credential: code)
                     } label: {
                         HStack {
-                            if pairing { ProgressView().tint(.white) }
+                            if pairing { ProgressView().tint(Theme.accentInk) }
                             Text(pairing ? "Connecting…" : "Connect")
                         }
+                        .foregroundStyle(Theme.accentInk)
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
@@ -395,11 +399,11 @@ struct PairingView: View {
                 pairRequestId = nil
                 failure = nil
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.textSecondary)
             .disabled(!submission.allowsNavigation)
         }
         .padding(22)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .task(id: connection.pairingConsentOrigin) {
             await probePulsatrixSignIn(connection)
@@ -441,10 +445,10 @@ struct PairingView: View {
             Image(systemName: "exclamationmark.triangle.fill")
         }
         .font(.footnote)
-        .foregroundStyle(.red)
+        .foregroundStyle(Theme.danger)
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.08))
+        .background(Theme.danger.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
     }

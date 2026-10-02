@@ -23,7 +23,7 @@ struct GlassSurface<S: InsettableShape>: ViewModifier {
             content
                 .background(.ultraThinMaterial, in: shape)
                 .background(tint?.opacity(0.18) ?? .clear, in: shape)
-                .overlay(shape.strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+                .overlay(shape.strokeBorder(Theme.textPrimary.opacity(0.10), lineWidth: 0.5))
         }
     }
 }
@@ -73,7 +73,7 @@ struct GlassButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: size * 0.42, weight: weight))
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(Theme.textPrimary)
                 .frame(width: size, height: size)
                 .contentShape(Circle())
         }

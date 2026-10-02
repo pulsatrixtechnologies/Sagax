@@ -43,7 +43,7 @@ struct BotThreadTree: View {
                             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                                 .font(.system(size: 10, weight: .semibold))
                             Text("Threads")
-                            Text("\(count)").foregroundStyle(.secondary)
+                            Text("\(count)").foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             Spacer(minLength: 0)
                         }
                         .font(.system(size: 13, weight: .medium))
@@ -68,7 +68,7 @@ struct BotThreadTree: View {
                         .accessibilityLabel("Manage \(bot.name)'s threads")
                     }
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
 
                 if isExpanded {
                     ForEach(groups) { group in
@@ -89,7 +89,7 @@ struct BotThreadTree: View {
                                     Text(folder.name).lineLimit(1)
                                 }
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                                 .frame(minHeight: 40)
                             }
                         } else {

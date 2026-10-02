@@ -20,7 +20,7 @@ struct QuickRepliesEditor: View {
     }
 
     var body: some View {
-        List {
+        ThemedList {
             Section {
                 ForEach(replies) { reply in
                     Button {
@@ -29,20 +29,20 @@ struct QuickRepliesEditor: View {
                         HStack(spacing: 12) {
                             Image(systemName: reply.icon)
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(Theme.accentText)
                                 .frame(width: 22)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(reply.title)
                                     .font(.body)
                                 Text(reply.prompt)
                                     .font(.caption)
-                                    .foregroundStyle(Color.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
                                     .lineLimit(1)
                             }
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                     }
                     .buttonStyle(.plain)
@@ -120,7 +120,7 @@ private struct QuickReplyForm: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ThemedForm {
                 Section("Label") {
                     TextField("Run tests", text: $reply.title)
                 }
@@ -142,10 +142,10 @@ private struct QuickReplyForm: View {
                                 Image(systemName: icon)
                                     .font(.system(size: 16, weight: .semibold))
                                     .frame(width: 38, height: 34)
-                                    .foregroundStyle(reply.icon == icon ? Color.white : Color.accentColor)
+                                    .foregroundStyle(reply.icon == icon ? Theme.accentInk : Theme.accentText)
                                     .background(
                                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                            .fill(reply.icon == icon ? Color.accentColor : Color.secondary.opacity(0.12))
+                                            .fill(reply.icon == icon ? Theme.accentText : Theme.textSecondary.opacity(0.12))
                                     )
                             }
                             .buttonStyle(.plain)

@@ -356,7 +356,7 @@ struct SettingsRowButtonStyle: ButtonStyle {
     @Environment(\.themePalette) var themePalette
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(configuration.isPressed ? Color.white.opacity(0.06) : Color.clear)
+            .background(configuration.isPressed ? Theme.parity(Color.white.opacity(0.06), Theme.textPrimary.opacity(0.06)) : Color.clear)
     }
 }
 
@@ -436,7 +436,7 @@ struct SafariSheet: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> SFSafariViewController {
         let controller = SFSafariViewController(url: url)
-        controller.preferredControlTintColor = .white
+        controller.preferredControlTintColor = UIColor(Theme.textPrimary)
         controller.preferredBarTintColor = UIColor(Theme.bg)
         return controller
     }
@@ -568,5 +568,52 @@ struct WrappingLabel: UIViewRepresentable {
         let width = proposal.width ?? 300
         let fitted = label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         return CGSize(width: width, height: ceil(fitted.height * 3) / 3)
+    }
+}
+
+// MARK: - Legacy grouped screens
+
+/// The earlier Form and List screens in the active skin: the skin's ground
+/// behind the groups, its card under every row, its ink as the default text.
+/// A later pass restyles these screens; until then they stay token-based.
+struct ThemedListChrome: ViewModifier {
+    @Environment(\.themePalette) var themePalette
+
+    func body(content: Content) -> some View {
+        content
+            .scrollContentBackground(.hidden)
+            .background(Theme.bg.ignoresSafeArea())
+            .foregroundStyle(Theme.textPrimary)
+    }
+}
+
+extension View {
+    func themedListChrome() -> some View { modifier(ThemedListChrome()) }
+}
+
+/// `Form { }` with the skin's row background on every row (a Group hands
+/// its modifiers to each section it holds).
+struct ThemedForm<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        Form {
+            Group(content: content).listRowBackground(Theme.card)
+        }
+        .themedListChrome()
+    }
+}
+
+/// `List { }` with the skin's row background on every row.
+struct ThemedList<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        List {
+            Group(content: content).listRowBackground(Theme.card)
+        }
+        .themedListChrome()
     }
 }
