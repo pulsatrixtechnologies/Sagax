@@ -39,7 +39,7 @@ import type {
 } from "../contracts.ts";
 import { gateServer, resultBudget } from "../mcp-gate-config.ts";
 import { newEventId, newId, type TurnAccessInput } from "../contracts.ts";
-import { askInputSummary, commandSummary, toolDetailPreview } from "../tool-summary.ts";
+import { askInputDetail, askInputSummary, commandSummary, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
@@ -1833,6 +1833,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                 requestType: ask.kind,
                 tool: ask.tool,
                 summary: askSummary(ask),
+                input: ask.kind === "permission" ? askInputDetail(ask.input) : undefined,
                 command: ask.kind === "permission" && ask.tool === "Bash"
                   ? permissionCommand(ask.input.command, commandCwd) : undefined,
                 paths: ask.kind === "permission" ? permissionPaths(ask.tool, ask.input, cwd) : undefined,

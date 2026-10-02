@@ -61,7 +61,7 @@ import {
 } from "@/lib/composer-attachments";
 import { normalizeState } from "@/lib/mascot";
 import { goalCoordinatorForComposer, groupComposerHint, jevRoomRoutingOn, roomRespondersForComposer } from "@/lib/group-routing";
-import { PendingApprovalActions, PendingApprovalPanel, pendingApprovals } from "./PendingApproval";
+import { PendingApprovalBox, pendingApprovals, type Pending } from "./PendingApproval";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { ReplyQuote } from "./ReplyQuote";
 import { useThreadRefs } from "./ThreadRefs";
@@ -158,8 +158,8 @@ export function Composer({
   // from must not keep blocking the composer
   const approvals = pendingApprovals(group ? group.messages : bot ? visibleMessages(bot) : []);
   const approval = approvals[0];
-  const approvalBot = group
-    ? members?.find((member) => member.id === approval?.message.from?.botId) ??
+  const approvalBotFor = (pending: Pending) => group
+    ? members?.find((member) => member.id === pending.message.from?.botId) ??
       members?.find((member) => member.id === group.busyBotId)
     : bot;
   const busyName = group
@@ -945,22 +945,13 @@ export function Composer({
         {/* An approval takes over the composer: you answer it before you
             can type again, so a waiting bot is impossible to miss. */}
         {approval && (
-          <div className="mb-2 overflow-hidden rounded-2xl border border-accent/40 bg-card">
-            {/* locale: the panel is memoized and its other props do not
-                change with the language — see MessagesList in ChatView */}
-            <PendingApprovalPanel
-              pending={approval}
-              count={approvals.length}
-              index={0}
-              locale={activeLocale()}
-            />
-            <PendingApprovalActions
-              pending={approval}
-              threadId={threadId}
-              bot={approvalBot}
-              onCancelTurn={interruptTurn}
-            />
-          </div>
+          <PendingApprovalBox
+            approvals={approvals}
+            threadId={threadId}
+            botFor={approvalBotFor}
+            onCancelTurn={interruptTurn}
+            locale={activeLocale()}
+          />
         )}
         {replyTo && (
           <div className="mb-2 px-1">

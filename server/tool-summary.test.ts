@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { askInputSummary, commandSummary, toolDetailPreview } from "./tool-summary.ts";
+import { askInputDetail, askInputSummary, commandSummary, toolDetailPreview } from "./tool-summary.ts";
 
 describe("toolDetailPreview", () => {
   it("keeps useful input and results while removing nested credentials and binary data", () => {
@@ -97,5 +97,22 @@ describe("askInputSummary", () => {
 
   it("redacts a key in a url", () => {
     expect(askInputSummary({ url: `https://h/?api_key=${"k".repeat(24)}` })).toBe("https://h/?api_key=«redacted 24 chars»");
+  });
+});
+
+describe("askInputDetail", () => {
+  it("keeps the full arguments as valid, redacted JSON for the card's technical details", () => {
+    const conditions = `member/identifier='jcproulx' and dateStart >= [2026-10-02T04:00:00Z] ${"x".repeat(300)}`;
+    const text = askInputDetail({ conditions, apiKey: "sk-live-secret-value", pageSize: 100 });
+    const parsed = JSON.parse(text!);
+    expect(parsed.conditions).toBe(conditions);
+    expect(parsed.pageSize).toBe(100);
+    expect(text).not.toContain("sk-live-secret-value");
+  });
+
+  it("is undefined when there is nothing to show", () => {
+    expect(askInputDetail({})).toBeUndefined();
+    expect(askInputDetail(undefined)).toBeUndefined();
+    expect(askInputDetail("text")).toBeUndefined();
   });
 });
