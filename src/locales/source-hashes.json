@@ -5356,7 +5356,8 @@
       "botPanel.list.window": "2e5983e1b637dbd882e1004bed9f0f1e104d0b4ebd82708be4848cdbd837d4d3",
       "botPanel.list.filter.coding": "a18b4be8e3181ff4e601779cb8744c00304e1531cc5671248199f94085aad765",
       "botPanel.list.filter.other": "a5af69edbe2fbac76a9106be3f40f79bbb55886ce4d505bb2ac2e61707abf3fe",
-      "botPanel.list.empty": "00e6ff2f166205fbd18ddd15f3daced651c2f6ffd097c2d77488ff17fac24309"
+      "botPanel.list.empty": "00e6ff2f166205fbd18ddd15f3daced651c2f6ffd097c2d77488ff17fac24309",
+      "newBot.quickCreate": "2edb827c6d150fe3980949b0ea8e9af5de6b6e8350a967672bfe8931c8844dd8"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

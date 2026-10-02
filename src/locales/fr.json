@@ -2639,5 +2639,6 @@
   "place.autoOrg": "Auto (infonuagique)",
   "bots.readOnly.notice": "Votre administrateur vous permet d'utiliser les robots partagés seulement.",
   "myEngines.memberIntro": "Connectez votre propre abonnement Claude ou Codex, ou ajoutez vos clés dans Perspicax. Vos échanges avec chaque robot, le vôtre ou un robot partagé avec vous, les utilisent ; personne d'autre ne les voit.",
-  "myEngines.noneOnServer": "Aucun fournisseur de modèles n'est encore installé sur ce serveur. Demandez à votre administrateur."
+  "myEngines.noneOnServer": "Aucun fournisseur de modèles n'est encore installé sur ce serveur. Demandez à votre administrateur.",
+  "newBot.quickCreate": "Sagax crée le robot avec les réglages par défaut de ce serveur. Vous pourrez tout changer ensuite."
 }

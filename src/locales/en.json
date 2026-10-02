@@ -3179,6 +3179,7 @@
   "newBot.sections": "Bot settings",
   "newBot.saveDefaults": "Save defaults",
   "newBot.create": "Create bot",
+  "newBot.quickCreate": "Sagax creates the bot with this server's defaults. You can change everything afterwards.",
   "newBot.startingRole": "Starting role",
   "newBot.presetsFromOrganization": "From {name}",
   "newBot.presetsImported": "Imported presets",
