@@ -37,6 +37,8 @@ describe("room authors", () => {
   it("names other people from the directory, with their avatar", () => {
     expect(roomAuthor({ role: "user", sender: { name: "Zack (old)", id: ZACK } }, member, people)).toEqual({
       kind: "person", key: `person:${ZACK}`, name: "Zachary Sellam", initials: "ZS", avatarUrl: "/api/people/pr_zack/avatar?v=3",
+      // a person of the directory: their name opens the person panel
+      personId: people.get(ZACK.toLowerCase())!.principalId,
     });
     expect(roomAuthor({ role: "user", sender: { name: "mlogin", id: "PR_LOGIN" } }, member, people)).toMatchObject({ name: "marie.l", initials: "ML" });
     expect(roomAuthor({ role: "user", sender: { name: "guest@example.test", id: "g1" } }, operator, people)).toMatchObject({ kind: "person", name: "guest", key: "person:g1" });
