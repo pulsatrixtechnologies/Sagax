@@ -3,6 +3,7 @@
 // The floating window fetches nothing and navigates nowhere, so an image
 // shows as its description and a link as its text (its address on hover);
 // "Open in Sagax" opens the whole thread.
+import { memo } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -20,7 +21,8 @@ const components: Components = {
   ),
 };
 
-export function BalloonMarkdown({ text }: { text: string }) {
+/** Parsed again only when its text changes (the balloon redraws for every streamed word). */
+export const BalloonMarkdown = memo(function BalloonMarkdown({ text }: { text: string }) {
   return (
     <div className="fb-md">
       <Markdown remarkPlugins={[remarkGfm]} components={components} skipHtml>
@@ -28,4 +30,4 @@ export function BalloonMarkdown({ text }: { text: string }) {
       </Markdown>
     </div>
   );
-}
+});

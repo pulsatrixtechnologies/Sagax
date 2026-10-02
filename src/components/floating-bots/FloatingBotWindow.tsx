@@ -12,6 +12,14 @@ import { FloatingBotView, MASCOT_SIZE, type FloatingMover } from "./FloatingBotV
 import { createWindowPilot } from "./pilot";
 import type { BalloonSide } from "./Balloon";
 import { isFloatingSnapshot, mascotFields, type FloatingEvent, type FloatingSnapshot, type FloatingWindowBridge } from "./protocol";
+import { applyFloatingTheme, cleanTheme } from "./theme";
+import { createMoveCoalescer, nextWindowSize, type Size } from "./window-frame";
+
+/**
+ * Linux cannot let clicks through a window's transparent part (main keeps it
+ * clickable), so there the window never reserves room it does not draw in.
+ */
+const RESERVES_ROOM = typeof navigator === "undefined" || !/Linux/.test(navigator.userAgent) || /Android/.test(navigator.userAgent);
 
 /** With nothing to draw this long, the window shows the plain owl rather than nothing. */
 export const BLANK_FALLBACK_MS = 2000;
@@ -117,7 +125,11 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   useEffect(() => {
     if (!bridge) return;
     const off = bridge.onState((value) => {
-      if (isFloatingSnapshot(value)) setSnapshot({ ...value, ...mascotFields(value) });
+      if (isFloatingSnapshot(value)) {
+        // the app's theme first, so the balloon never draws a frame in the old one
+        applyFloatingTheme(cleanTheme(value.theme));
+        setSnapshot({ ...value, ...mascotFields(value) });
+      }
       // main's log shows it (console errors of this page are forwarded)
       else console.error(`floating mascot: refused a state with keys ${value && typeof value === "object" ? Object.keys(value).join(",") : typeof value}`);
     });
@@ -126,28 +138,86 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   }, [bridge]);
 
   // Size the window to what is drawn: the balloon and menu grow it upward.
+  // While the balloon is open the window holds the room it may take and only
+  // grows (window-frame.ts): a streaming reply, a resize or a move of the
+  // balloon then happen inside it, with no window resize per frame. Reports
+  // are coalesced to one per frame, and never sent while the mascot is dragged.
+  const frame = useRef({ size: null as Size | null, reserve: null as Size | null, exact: false, scheduled: false, dragging: false, report: () => undefined as void });
   useLayoutEffect(() => {
     const node = root.current;
     if (!node || !bridge || typeof ResizeObserver === "undefined") return;
-    // the window keeps the mascot's corner in place: bottom-right, or the corner the balloon opened away from
-    const report = () => void bridge.resize(Math.ceil(node.scrollWidth), Math.ceil(node.scrollHeight), anchor.current);
-    const observer = new ResizeObserver(report);
+    const state = frame.current;
+    const send = () => {
+      state.scheduled = false;
+      if (state.dragging) return;
+      const content = { width: Math.ceil(node.scrollWidth), height: Math.ceil(node.scrollHeight) };
+      const exact = state.exact || !state.reserve;
+      state.exact = false;
+      const next = nextWindowSize({ content, current: state.size, reserve: state.reserve, exact });
+      if (!next) return;
+      state.size = next;
+      // the window keeps the mascot's corner in place: bottom-right, or the corner the balloon opened away from
+      void bridge.resize(next.width, next.height, anchor.current).then((placed) => {
+        const bounds = placed as Partial<Size> | null;
+        // main may clamp it to the screen: remember what the window really is
+        if (bounds && typeof bounds.width === "number" && typeof bounds.height === "number") state.size = { width: bounds.width, height: bounds.height };
+      }, () => undefined);
+    };
+    state.report = () => {
+      if (state.scheduled) return;
+      state.scheduled = true;
+      requestAnimationFrame(send);
+    };
+    const observer = new ResizeObserver(() => state.report());
     observer.observe(node);
-    report();
-    return () => observer.disconnect();
+    // the first size goes at once: the window must not show a frame of the wrong size
+    send();
+    return () => {
+      observer.disconnect();
+      state.report = () => undefined;
+    };
   }, [bridge, snapshot === null, blank, failed]);
+  /** The room the open balloon may take (null once closed); `exact` fits the window to it now. */
+  const onReserve = useCallback((reserve: Size | null, exact: boolean) => {
+    const state = frame.current;
+    state.reserve = RESERVES_ROOM ? reserve : null;
+    if (exact || !reserve) state.exact = true;
+    state.report();
+  }, []);
 
   const onEvent = useCallback((event: FloatingEvent) => bridge?.send(event), [bridge]);
-  const interactive = useCallback((on: boolean) => bridge?.setInteractive(on), [bridge]);
-  const wantsKeyboard = useCallback((on: boolean) => bridge?.setFocusable(on), [bridge]);
-  const mover = useMemo<FloatingMover>(
-    () => ({
+  const pointer = useRef<boolean | null>(null);
+  const interactive = useCallback((on: boolean) => {
+    if (pointer.current === on) return;
+    pointer.current = on;
+    bridge?.setInteractive(on);
+  }, [bridge]);
+  // the window only hears of a change: hovering in and out of the art and the balloon asks many times
+  const keyboard = useRef<boolean | null>(null);
+  const wantsKeyboard = useCallback((on: boolean) => {
+    // "on" goes again on every press (the window may have lost the focus meanwhile); main skips what changes nothing
+    if (!on && keyboard.current === false) return;
+    keyboard.current = on;
+    bridge?.setFocusable(on);
+  }, [bridge]);
+  // a drag moves the window at most once a frame, one request in flight, and the size waits for its end
+  const mover = useMemo<FloatingMover>(() => {
+    const moves = createMoveCoalescer((dx, dy) => bridge?.moveBy(dx, dy));
+    return {
       coords: "screen",
-      moveBy: (dx, dy) => void bridge?.moveBy(dx, dy),
-      moved: () => bridge?.moved(),
-    }),
-    [bridge],
-  );
+      moveBy: (dx, dy) => {
+        frame.current.dragging = true;
+        moves.add(dx, dy);
+      },
+      moved: () => {
+        void moves.flush().then(() => {
+          frame.current.dragging = false;
+          frame.current.report();
+          bridge?.moved();
+        });
+      },
+    };
+  }, [bridge]);
   // the mascot flies its own window off while its bot works, and back
   const pilot = useMemo(() => createWindowPilot(bridge), [bridge]);
 
@@ -164,6 +234,7 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
       wantsKeyboard={wantsKeyboard}
       pilot={pilot}
       onSide={onSide}
+      onReserve={onReserve}
     />
     </Fallback>
   );

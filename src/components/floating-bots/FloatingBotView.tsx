@@ -7,7 +7,7 @@
 // (FloatingBots.tsx) decides everything else. The same view runs in a
 // desktop window (FloatingBotWindow.tsx) and in the in-app overlay.
 import "./floating-bots.css";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type Ref } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type Ref } from "react";
 import { cn } from "@/lib/cn";
 import type { OwlState } from "@/lib/owl/owl-art";
 import { MAUS_COLORS } from "@/lib/mascot";
@@ -28,6 +28,8 @@ import { Balloon, BALLOON_MAX_W, type BalloonSide } from "./Balloon";
 import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
 import { mascotFields, type FloatingEvent, type FloatingPose, type FloatingSnapshot } from "./protocol";
+import type { Size } from "./window-frame";
+import type { MascotLook } from "../../../shared/mascot-look";
 
 // The Hibou 98 extras (retro balloon stylesheet, Trombi's sparkle) load only
 // while that skin is worn, so a device that never found the egg never fetches them.
@@ -101,10 +103,20 @@ export interface FloatingBotViewProps {
   pilot?: FloatingPilot | null;
   /** Desktop: which way the balloon opened, so the window keeps the mascot's corner in place. */
   onSide?: (side: BalloonSide) => void;
+  /** Desktop: the room the open balloon may take, so the window is sized once rather than per frame. */
+  onReserve?: (reserve: Size | null, exact: boolean) => void;
 }
 
 interface CharacterProps {
-  snapshot: FloatingSnapshot;
+  color: string;
+  skin: string;
+  /** The bot's picture and its focus: plain values, so a new snapshot with the same picture changes nothing. */
+  avatarSrc: string | null;
+  avatarX: number;
+  avatarY: number;
+  /** The look, as JSON: the same look is the same string, whatever object carried it. */
+  look: string;
+  pose: FloatingPose;
   activity: MascotActivity;
   mascot: {
     frame: (at: number) => ReturnType<typeof mascotMotion>;
@@ -113,26 +125,31 @@ interface CharacterProps {
   };
 }
 
-function Character({ snapshot, activity, mascot }: CharacterProps) {
-  const { avatar } = snapshot;
+/**
+ * The character redraws only when its own looks change: a streaming reply
+ * sends a new snapshot many times a second, and none of them concern it.
+ */
+const Character = memo(function Character({ color, skin, avatarSrc, avatarX, avatarY, look: lookJson, pose, activity, mascot }: CharacterProps) {
+  const look = useMemo(() => (lookJson ? (JSON.parse(lookJson) as MascotLook) : undefined), [lookJson]);
+  const complete = useMemo(() => completeMascotLook(look), [look]);
   // the character the bot wears (mascots.tsx); the owl unless chosen otherwise
-  const entry = mascotFor(snapshot.mascot);
+  const entry = mascotFor(look);
   return (
     <>
-      {avatar && (
+      {avatarSrc && (
         // the bot's picture rides along as a small medallion; the body is always the owl
         <span className="fb-medallion" aria-hidden="true">
-          <img src={avatar.src} alt="" draggable={false} style={{ objectPosition: `${avatar.focusX * 100}% ${avatar.focusY * 100}%` }} />
+          <img src={avatarSrc} alt="" draggable={false} style={{ objectPosition: `${avatarX * 100}% ${avatarY * 100}%` }} />
         </span>
       )}
       <entry.Render
         key={entry.id}
-        color={snapshot.color}
-        skin={snapshot.skin}
-        look={completeMascotLook(snapshot.mascot)}
+        color={color}
+        skin={skin}
+        look={complete}
         size={OWL_SIZE}
         activity={activity}
-        pose={snapshot.pose}
+        pose={pose}
         frame={mascot.frame}
         fps={mascot.fps}
         onHitTest={mascot.onHitTest}
@@ -140,7 +157,7 @@ function Character({ snapshot, activity, mascot }: CharacterProps) {
       />
     </>
   );
-}
+});
 
 /**
  * Which way the balloon opens and how much room it has: on the desktop from
@@ -169,6 +186,21 @@ export function balloonSide(where: "desktop" | "overlay", below: boolean, stageH
     side: { below: openBelow, right: openRight },
     room: { x: Math.max(0, horizontal - 300), y: Math.max(0, vertical - 220), w: Math.max(280, horizontal - 16), h: Math.max(160, Math.min(maxH, vertical - 24)) },
   };
+}
+
+/**
+ * The bot's work as the mascot takes it: while its balloon is open (the
+ * person is chatting, the reply streams in it) it stays home rather than fly
+ * off to the screen's edge, which would hide the balloon mid-reply; it flies
+ * off once the balloon closes if the work goes on.
+ */
+export function mascotTaskFor(task: FloatingSnapshot["task"], chatOpen: boolean): FloatingSnapshot["task"] {
+  return chatOpen && task === "working" ? "idle" : task;
+}
+
+/** The mascot's frame rate while its balloon is open: at most 30 fps (it keeps its life, at half the repaints). */
+export function chatFrameRate(fps: number, chatting: boolean): number {
+  return chatting ? Math.min(fps, 30) : fps;
 }
 
 /** A small sign over the owl for some clips: a question mark, a hoot, a surprise, a temper, confetti. */
@@ -248,7 +280,7 @@ function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnap
   );
 }
 
-export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide }: FloatingBotViewProps) {
+export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve }: FloatingBotViewProps) {
   // an older brain may not send the mascot's fields yet
   const snapshot: FloatingSnapshot = given.hints ? given : { ...given, ...mascotFields(given) };
   const [menuOpen, setMenuOpen] = useState(false);
@@ -271,10 +303,13 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const gaze = useRef<{ x: number; y: number } | null>(null);
   const pet = useRef(newStroke());
   const lastClick = useRef<number | null>(null);
+  // a chat in progress keeps the mascot home: it neither wanders nor flies off with the balloon
+  const chatOpen = Boolean(snapshot.balloon);
+  const task = mascotTaskFor(snapshot.task, chatOpen);
   const mascotOptions = () => ({
     reduced,
     flyAway: snapshot.flyAway,
-    canMove: Boolean(pilot),
+    canMove: Boolean(pilot) && !chatOpen,
     random: Math.random,
     liveliness: snapshot.liveliness ?? "normal",
     mood: snapshot.mood,
@@ -332,8 +367,13 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
 
   // the bot's work, from the brain: fly off, come back
   useEffect(() => {
-    dispatch({ type: "task", now: now(), task: snapshot.task });
-  }, [dispatch, snapshot.task]);
+    dispatch({ type: "task", now: now(), task });
+  }, [dispatch, task]);
+
+  // a walk under way stops where it is when the balloon opens
+  useEffect(() => {
+    if (chatOpen) pilotRef.current?.halt();
+  }, [chatOpen]);
 
   // the mascot's clock: idle actions, naps, timed reactions ending
   useEffect(() => {
@@ -400,9 +440,12 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     return () => window.removeEventListener("pointermove", onMove);
   }, [pilot, reduced]);
 
+  // While the balloon is open the mascot lives at half rate: the eye is on the chat, and every
+  // frame it draws repaints the whole (larger) transparent window
+  const chattingRef = useRef(false);
   const mascot = useRef({
     frame: (at: number) => mascotMotion(mascotRef.current, { now: at, pose: poseRef.current, reduced: options.current.reduced, gaze: gaze.current, mood: moodRef.current }),
-    fps: () => mascotFrameRate(mascotRef.current.activity, owlHoverRef.current, options.current.reduced),
+    fps: () => chatFrameRate(mascotFrameRate(mascotRef.current.activity, owlHoverRef.current, options.current.reduced), chattingRef.current && !drag.current?.moved),
     onHitTest: (test: ((x: number, y: number) => boolean) | null) => {
       hitTest.current = test;
     },
@@ -414,6 +457,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const [side, setSide] = useState<BalloonSide>({ below: Boolean(below), right: false });
   const [room, setRoom] = useState({ x: 0, y: 0, w: BALLOON_MAX_W, h: 420 });
   const balloonOpen = Boolean(balloon);
+  chattingRef.current = balloonOpen;
   useLayoutEffect(() => {
     if (!balloonOpen) return;
     const next = balloonSide(pilot ? "desktop" : "overlay", Boolean(below), STAGE.height);
@@ -529,6 +573,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       style={{ ...style, ...(balloon && side.right ? { alignItems: "flex-start" } : {}), "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px` } as React.CSSProperties}
       data-reduced={snapshot.reduced ? "" : undefined}
       data-retro={retro ? "" : undefined}
+      data-chatting={balloon ? "" : undefined}
       lang={snapshot.locale}
     >
       {balloon && (
@@ -539,6 +584,8 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           retro={retro}
           side={side}
           room={room}
+          stage={STAGE}
+          onReserve={onReserve}
           onEvent={onEvent}
           hover={hover}
           wantsKeyboard={wantsKeyboard}
@@ -635,7 +682,17 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           }}
         >
           <span className="fb-body" style={{ position: "absolute", left: STAGE.left, top: STAGE.top, width: OWL_SIZE, height: OWL_SIZE }}>
-            <Character snapshot={snapshot} activity={activity} mascot={mascot} />
+            <Character
+              color={snapshot.color}
+              skin={snapshot.skin}
+              avatarSrc={snapshot.avatar?.src ?? null}
+              avatarX={snapshot.avatar?.focusX ?? 0.5}
+              avatarY={snapshot.avatar?.focusY ?? 0.5}
+              look={snapshot.mascot ? JSON.stringify(snapshot.mascot) : ""}
+              pose={snapshot.pose}
+              activity={activity}
+              mascot={mascot}
+            />
           </span>
         </button>
         </>
