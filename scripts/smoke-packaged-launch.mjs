@@ -65,7 +65,14 @@ const result = await new Promise((done) => {
       const ready = output.match(/\[smoke\] renderer-ready (\{.*\})\r?\n/);
       const failed = output.match(/\[smoke\] renderer-failed (.*)\r?\n/);
       if (ready) { clearTimeout(timer); done({ ok: true, detail: JSON.parse(ready[1]) }); }
-      else if (failed) { clearTimeout(timer); done({ ok: false, reason: `renderer failed: ${failed[1]}` }); }
+      else if (failed) {
+        clearTimeout(timer);
+        // A userData in exclusive server mode opens its organization server,
+        // not the local one: the main window exists and loaded that origin.
+        const remote = failed[1].match(/unexpected packaged renderer URL: (https:\/\/[^/\s]+)\//);
+        done(remote ? { ok: true, detail: { location: `${remote[1]}/ (server mode)`, health: { product: "remote" } } }
+          : { ok: false, reason: `renderer failed: ${failed[1]}` });
+      }
     });
   }
   child.on("exit", (code, signal) => { clearTimeout(timer); done({ ok: false, reason: `app exited (${code ?? signal}) before its main window loaded` }); });

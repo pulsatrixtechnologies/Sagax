@@ -49,6 +49,34 @@ describe("sandbox lifecycle", () => {
     expect(new Set(subnets).size).toBe(2);
   });
 
+  it("starts a stopped sandbox from an older image again from the current one, keeping /workspace", async () => {
+    const { docker, service } = setup();
+    await service.installEgressPolicy();
+    await service.ensure(alice);
+    const names = sandboxNames(alice);
+    // Created before a deploy: the image it was made from is not the current one.
+    docker.containers.get(names.container)!.spec.Image = "sagax-sandbox:before-the-desktop";
+    await service.stop(alice);
+    await service.ensure(alice);
+    expect(docker.containers.get(names.container)!.spec.Image).toBe("sagax-sandbox:test");
+    expect(docker.containers.get(names.container)!.running).toBe(true);
+    expect(docker.calls.filter((call) => call.startsWith("create "))).toHaveLength(2);
+    expect(docker.calls).toContain(`rm ${names.container}`);
+    expect(docker.volumes.has(names.volume)).toBe(true);
+    expect(sandboxIsolationProblems(docker.containers.get(names.container)!.spec, alice)).toEqual([]);
+  });
+
+  it("never replaces a running sandbox from an older image behind its owner's back", async () => {
+    const { docker, service } = setup();
+    await service.installEgressPolicy();
+    await service.ensure(alice);
+    const names = sandboxNames(alice);
+    docker.containers.get(names.container)!.spec.Image = "sagax-sandbox:before-the-desktop";
+    await service.ensure(alice);
+    expect(docker.calls).not.toContain(`rm ${names.container}`);
+    expect(docker.containers.get(names.container)!.spec.Image).toBe("sagax-sandbox:before-the-desktop");
+  });
+
   it("stops a sandbox idle past the idle period and starts it again on demand", async () => {
     const { docker, service, advance } = setup({ SAGAX_SANDBOX_IDLE_MINUTES: "15" });
     await service.installEgressPolicy();
@@ -61,6 +89,17 @@ describe("sandbox lifecycle", () => {
     await service.exec(alice, { argv: ["true"] });
     expect((await service.status(alice)).state).toBe("running");
     expect(docker.calls.filter((call) => call.startsWith("create"))).toHaveLength(1);
+  });
+
+  it("stops an unused sandbox after the 10 minute default", async () => {
+    const { service, advance } = setup();
+    await service.installEgressPolicy();
+    await service.exec(alice, { argv: ["true"] });
+    advance(10 * 60_000 - 1);
+    expect(await service.sweepIdle()).toEqual([]);
+    advance(2);
+    expect(await service.sweepIdle()).toEqual([alice]);
+    expect((await service.status(alice)).state).toBe("stopped");
   });
 
   it("counts a sandbox first seen running after a provisioner restart from now", async () => {

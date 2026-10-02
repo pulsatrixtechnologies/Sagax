@@ -27,6 +27,8 @@ export interface ContainerSummary {
   labels: Record<string, string>;
   /** Docker's own State.StartedAt, ms. */
   startedAt?: number;
+  /** The image it was created from, as named at create (Config.Image). */
+  image?: string;
 }
 
 export interface ContainerStats {
@@ -222,7 +224,7 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
     }
   };
   const summary = (raw: Record<string, unknown>): ContainerSummary => {
-    const config = (raw.Config ?? {}) as { Labels?: Record<string, string> };
+    const config = (raw.Config ?? {}) as { Labels?: Record<string, string>; Image?: string };
     const state = (raw.State ?? {}) as { Running?: boolean; Paused?: boolean; StartedAt?: string };
     const started = state.StartedAt ? Date.parse(state.StartedAt) : NaN;
     return {
@@ -231,6 +233,7 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
       ...(state.Paused === true ? { paused: true } : {}),
       labels: config.Labels ?? {},
       ...(Number.isFinite(started) && started > 0 ? { startedAt: started } : {}),
+      ...(typeof config.Image === "string" && config.Image ? { image: config.Image } : {}),
     };
   };
   const subnetsOf = (raw: Record<string, unknown>) =>

@@ -10,14 +10,14 @@
 //   (src/lib/desktop-local-vm.ts, electron/local-vm.mjs), set up, repaired or
 //   started from the screen itself.
 //
-// Above it, one line naming that computer with a link to the bot's Works on
-// (no selector here: the bot's setting decides); below it, a light usage
-// panel (disk, CPU, memory, OS) for that computer.
+// Under it, only the usage of that computer (disk, CPU, memory, OS) behind
+// a small Details toggle. The bot's Works on is an item of the panel's More
+// tab (WorksOnSetting).
 //
 // Every action is the signed-in person's own (the server takes the person
 // from the session); nothing here names a bot or another person.
 import { useCallback, useEffect, useState } from "react";
-import { Cpu, HardDrive, Laptop, MemoryStick, Server } from "lucide-react";
+import { ChevronDown, Cpu, HardDrive, Info, Laptop, MemoryStick, Server } from "lucide-react";
 
 import { currentDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import {
@@ -25,13 +25,14 @@ import {
   type DesktopLocalVmStatus, type InstallChoice, type LocalVmAction, type ScreenState, type SetupStep,
 } from "@/lib/desktop-local-vm";
 import { t } from "@/lib/i18n";
-import { orgComputerFor, placeLabelKey, type EffectivePlace } from "@/lib/place";
+import { orgComputerFor, type EffectivePlace } from "@/lib/place";
 import {
   formatBytes, loadServerEnvironment, loadServerEnvironmentStats, powerServerEnvironment, powerState,
   type PowerAction, type ServerEnvironmentStats, type ServerEnvironmentStatus,
 } from "@/lib/server-environment";
 import { SandboxDesktopView } from "../SandboxDesktopView";
 import { ComputerScreen, type ScreenAction } from "./ComputerScreen";
+import { SandboxDesktopModal } from "./SandboxDesktopModal";
 
 const STATS_REFRESH_MS = 5_000;
 const STATS_IDLE_REFRESH_MS = 15_000;
@@ -55,48 +56,32 @@ export function activeComputer(bridge: DesktopBridgeStatus, place: EffectivePlac
   return { source: "server", reason: "none" };
 }
 
-export function OrgComputerTab({ bridge, place, computerOff, botName, onChangePlace, initialLocal = null }: {
+export function OrgComputerTab({ bridge, place, computerOff, botName, initialLocal = null }: {
   bridge: DesktopBridgeStatus;
   /** The bot's Works on (Auto when unset). */
   place: EffectivePlace;
   computerOff: boolean; botName: string;
-  /** Opens the bot's Works on setting. */
-  onChangePlace?: () => void;
   /** Tests: the desktop's Local VM status to start from. */
   initialLocal?: DesktopLocalVmStatus | null;
 }) {
   const active = activeComputer(bridge, place);
   const desktop = currentDesktop(bridge);
+  const [details, setDetails] = useState(false);
   return (
-    <div className="flex flex-col gap-3" data-org-computer={active.source === "server" ? "user-sandbox" : "user-desktop"}>
-      <ActiveComputerLine place={place} bridge={bridge} botName={botName} onChange={onChangePlace} />
+    <div className="flex flex-col gap-3" data-org-computer={active.source === "server" ? "user-sandbox" : "user-desktop"} data-works-on={place}>
       {active.source === "server"
         ? <ServerComputerScreen caption={t("computer.screenOf", { name: botName })} />
         : <LocalComputerScreen bridge={bridge} caption={t("computer.screenOf", { name: botName })} initial={initialLocal} />}
       {computerOff && <p role="note" className="-mt-1 text-center text-[12px] text-ink-secondary">{t("computer.phase.off")}</p>}
-      {active.source === "server" ? <UsagePanel /> : <DesktopUsage bridge={bridge} name={desktop?.name} />}
-    </div>
-  );
-}
-
-/** "Luna works on: Cloud (server environment). Change", and one sentence
- * saying what that computer is. */
-export function ActiveComputerLine({ place, bridge, botName, onChange }: { place: EffectivePlace; bridge: DesktopBridgeStatus; botName: string; onChange?: (() => void) | undefined }) {
-  const active = activeComputer(bridge, place);
-  const name = currentDesktop(bridge)?.name ?? "";
-  const Icon = active.source === "server" ? Server : Laptop;
-  return (
-    <div className="flex flex-col gap-0.5 text-[12px]" data-works-on={place} data-active-computer={active.source}>
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-ink">
-        <Icon size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
-        <span>{t("orgComputer.worksOn", { name: botName, place: t(placeLabelKey(place, true)) })}</span>
-        {onChange && (
-          <button type="button" onClick={onChange} className="text-accent underline-offset-2 hover:underline">
-            {t("orgComputer.change")}
-          </button>
-        )}
+      <div className="flex flex-col gap-1.5">
+        <button type="button" onClick={() => setDetails((open) => !open)} aria-expanded={details} data-usage-toggle
+          className="flex items-center gap-1 self-start text-[12px] text-ink-secondary hover:text-ink">
+          <Info size={12} aria-hidden="true" />
+          {t("orgComputer.details")}
+          <ChevronDown size={12} aria-hidden="true" className={details ? "rotate-180" : undefined} />
+        </button>
+        {details && (active.source === "server" ? <UsagePanel /> : <DesktopUsage bridge={bridge} name={desktop?.name} />)}
       </div>
-      <p className="text-[11.5px] leading-relaxed text-ink-secondary">{t(`orgComputer.why.${active.reason}`, { name })}</p>
     </div>
   );
 }
@@ -116,6 +101,8 @@ export function ServerComputerScreen({ caption, initial = null }: { caption: str
   const [status, setStatus] = useState<ServerEnvironmentStatus | null>(initial);
   const [pending, setPending] = useState<PowerAction | null>(null);
   const [error, setError] = useState("");
+  // "Take control" opens the large window; the square stays view-only.
+  const [takeover, setTakeover] = useState(false);
   const load = useCallback(async () => {
     try { setStatus(await loadServerEnvironment()); } catch { setStatus({ configured: true, state: "unavailable" }); }
     announceServerEnvironment();
@@ -149,23 +136,35 @@ export function ServerComputerScreen({ caption, initial = null }: { caption: str
     : power === "unavailable" ? t("computerScreen.serverUnavailable")
     : state === "off" ? t("computerScreen.serverOff")
     : undefined;
+  const controls = {
+    play: status?.configured && power === "off" ? () => void act("start") : undefined,
+    resume: power === "paused" ? () => void act("resume") : undefined,
+    pause: power === "running" ? () => void act("pause") : undefined,
+    stop: power === "running" || power === "paused" ? () => void act("shutdown") : undefined,
+  };
+  // While the large window has control, the square shows no second live
+  // view (one VNC stream, and the window's passwords stay the valid ones).
+  const live = takeover
+    ? <div data-sandbox-takeover-open className="flex h-full w-full items-center justify-center p-4 text-center text-[12px] text-ink-secondary">{t("sandboxDesktop.inWindow")}</div>
+    : <SandboxDesktopView embedded onConnected={() => void load()} onTakeControl={() => setTakeover(true)} />;
   return (
-    <ComputerScreen
-      source="server"
-      state={state}
-      caption={caption}
-      message={message}
-      busy={busy}
-      error={error || undefined}
-      live={<SandboxDesktopView embedded onConnected={() => void load()} />}
-      actions={state === "error" ? [{ label: t("computerScreen.retry"), onClick: () => void load() }] : []}
-      controls={{
-        play: status?.configured && power === "off" ? () => void act("start") : undefined,
-        resume: power === "paused" ? () => void act("resume") : undefined,
-        pause: power === "running" ? () => void act("pause") : undefined,
-        stop: power === "running" || power === "paused" ? () => void act("shutdown") : undefined,
-      }}
-    />
+    <>
+      <ComputerScreen
+        source="server"
+        state={state}
+        caption={caption}
+        message={message}
+        busy={busy}
+        error={error || undefined}
+        live={live}
+        actions={state === "error" ? [{ label: t("computerScreen.retry"), onClick: () => void load() }] : []}
+        controls={controls}
+      />
+      {takeover && (
+        <SandboxDesktopModal title={caption} state={state} controls={controls} busy={busy}
+          onClose={() => setTakeover(false)} onConnected={() => void load()} />
+      )}
+    </>
   );
 }
 

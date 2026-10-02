@@ -255,4 +255,38 @@ describe("bot activity API", () => {
     expect((await fetch(`${base}/api/bots/pepper/activity`, { method: "POST" })).status).toBe(405);
     expect((await get(base, "/api/bots/pepper/activity/item")).status).toBe(400);
   });
+
+  it("nests a sub-agent's calls under its Agent step, with its request and report, and lists parallel tasks once", async () => {
+    const parallelTasks: ActivityTask[] = [
+      ...tasks,
+      { threadId: "t-par", title: "Draft the email", createdAt: NOW - 8_000, updatedAt: NOW - 1_000, busy: true, activity: "working", turnStartedAt: NOW - 7_000, ownerPrincipalId: "alice", parallelOf: { threadId: "t-alice" } },
+    ];
+    const agentInput = JSON.stringify({ description: "check the logs", prompt: "Read the server logs and list errors", subagent_type: "general-purpose" });
+    const base = await serve(deps({
+      tasks: (botId) => (botId === "pepper" ? parallelTasks : []),
+      threadReadable: (_botId, threadId, viewerId) => !viewerId || parallelTasks.find((task) => task.threadId === threadId)?.ownerPrincipalId === viewerId,
+      threadWritable: (_botId, threadId, viewerId) => !viewerId || parallelTasks.find((task) => task.threadId === threadId)?.ownerPrincipalId === viewerId,
+      messages: (threadId, limit) => ({ hasMore: false, messages: (threadId === "t-alice" ? [
+        { id: "s1", role: "bot", kind: "activity", at: NOW - 20_000, tool: { name: "Agent", itemId: "tu-agent", input: agentInput, output: "Two errors found", ok: true } },
+        { id: "s2", role: "bot", kind: "activity", at: NOW - 19_000, tool: { name: "Read", itemId: "tu-read", parentItemId: "tu-agent", input: "{\"file_path\":\"/var/log/app.log\"}", ok: true } },
+        { id: "s3", role: "bot", kind: "activity", at: NOW - 18_000, tool: { name: "Bash", itemId: "tu-bash", summary: "ls" } },
+      ] as ActivityMessage[] : messages[threadId] ?? []).slice(-limit) }),
+      children: (_botId, threadId) => threadId === "t-alice"
+        ? [{ botId: "pepper", threadId: "t-par", title: "Draft the email", status: "running", startedAt: NOW - 8_000, parallel: true }]
+        : [],
+    }));
+    const list = await get(base, "/api/bots/pepper/activity", "alice");
+    expect(list.body.items!.find((item) => item.id === "thread:t-par")).toMatchObject({ parallel: true, status: "running", canStop: true });
+    // listed once, as its own entry, not again among the sub-agents
+    expect(list.body.subagents!.some((item) => item.threadId === "t-par")).toBe(false);
+    const detail = await get(base, "/api/bots/pepper/activity/item?threadId=t-alice", "alice");
+    const steps = detail.body.item!.steps;
+    expect(steps.find((step) => step.id === "s1")).toMatchObject({
+      name: "Agent",
+      subagent: { description: "check the logs", prompt: "Read the server logs and list errors", type: "general-purpose", result: "Two errors found" },
+    });
+    expect(steps.find((step) => step.id === "s2")).toMatchObject({ parentId: "s1", input: "{\"file_path\":\"/var/log/app.log\"}" });
+    expect(steps.find((step) => step.id === "s3")).not.toHaveProperty("parentId");
+    expect(detail.body.item!.children).toEqual([expect.objectContaining({ threadId: "t-par", parallel: true, canStop: true })]);
+  });
 });

@@ -22,6 +22,40 @@ export interface PlayerEvents {
   onError?(error: unknown): void;
 }
 
+/** What the person heard of the answer that was playing when it was cut. */
+export interface PlaybackCut {
+  /** the words heard: whole sentences, then the start of the one cut */
+  heard: string;
+  /** the words not heard: the rest of the cut sentence and every queued one */
+  unheard: string;
+}
+
+/** About how fast the voice speaks at 1x (characters per second), to place
+ * the cut inside a sentence whose audio is still arriving. */
+const SPOKEN_CHARS_PER_SECOND = 14;
+
+/** The first `share` of a sentence, cut at a word boundary. */
+export function splitAtShare(text: string, share: number): [string, string] {
+  if (share <= 0) return ["", text.trim()];
+  if (share >= 1) return [text.trim(), ""];
+  const target = Math.round(text.length * share);
+  // the nearest word boundary at or before the point reached
+  let cut = text.lastIndexOf(" ", target);
+  if (cut <= 0) cut = text.indexOf(" ", target);
+  if (cut <= 0) return share >= 0.5 ? [text.trim(), ""] : ["", text.trim()];
+  return [text.slice(0, cut).trim(), text.slice(cut).trim()];
+}
+
+interface LedgerEntry {
+  text: string;
+  /** context time its first sample plays, once scheduled */
+  start?: number;
+  /** context time its last scheduled sample ends */
+  end?: number;
+  /** all its audio has arrived */
+  complete: boolean;
+}
+
 const DUCK_LEVEL = 0.12;
 const DUCK_MS = 30;
 const FADE_MS = 60;
@@ -38,6 +72,8 @@ export class PcmPlayer {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly samples = new Float32Array(1024);
   private ducked = false;
+  /** the sentences of the current answer, in order, with when they play */
+  private ledger: LedgerEntry[] = [];
   private readonly createContext: () => AudioContext;
   events: PlayerEvents = {};
 
@@ -83,9 +119,42 @@ export class PcmPlayer {
   enqueue(sentence: Sentence): void {
     this.open();
     this.queue.push(sentence);
+    this.ledger.push({ text: sentence.text, complete: false });
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;
     if (!this.pumping) void this.pump();
+  }
+
+  /** A new answer begins: forget what the last one played. */
+  resetLedger(): void {
+    this.ledger = [];
+  }
+
+  /** What has been heard of the current answer so far, from what played
+   * by the audio clock: whole sentences, and the share of the one playing
+   * (by its scheduled audio, or by speaking rate while it still arrives). */
+  playback(speed = 1): PlaybackCut {
+    const now = this.context?.currentTime ?? 0;
+    const heard: string[] = [];
+    const unheard: string[] = [];
+    for (const entry of this.ledger) {
+      if (entry.start === undefined || entry.start > now) {
+        unheard.push(entry.text);
+        continue;
+      }
+      const played = now - entry.start;
+      const known = (entry.end ?? entry.start) - entry.start;
+      const estimate = entry.text.length / (SPOKEN_CHARS_PER_SECOND * Math.max(0.5, speed));
+      const length = entry.complete ? known : Math.max(known, estimate);
+      if (length <= 0 || played >= length) {
+        heard.push(entry.text);
+        continue;
+      }
+      const [said, rest] = splitAtShare(entry.text, played / length);
+      if (said) heard.push(said);
+      if (rest) unheard.push(rest);
+    }
+    return { heard: heard.join(" ").trim(), unheard: unheard.join(" ").trim() };
   }
 
   /** Lower the bot at once (the person may be talking). */
@@ -209,13 +278,19 @@ export class PcmPlayer {
       if (mine === this.generation) this.events.onError?.(error);
       return;
     }
-    if (!audio || mine !== this.generation) return;
+    const entry = this.ledger.find((candidate) => candidate.text === sentence.text && candidate.start === undefined && !candidate.complete);
+    if (!audio || mine !== this.generation) {
+      // nothing to say (a code block, a link): it takes no time
+      if (entry && mine === this.generation) entry.complete = true;
+      return;
+    }
     const reader = audio.body.getReader();
     let carry: number | null = null;
     let first = true;
     try {
       for (;;) {
         const { done, value } = await reader.read();
+        if (done && entry && mine === this.generation) entry.complete = true;
         if (done || mine !== this.generation) break;
         if (!value?.byteLength) continue;
         // 16-bit little-endian; a chunk may end mid-sample
@@ -243,6 +318,10 @@ export class PcmPlayer {
         const start = Math.max(context.currentTime + 0.015, this.nextTime);
         source.start(start);
         this.nextTime = start + buffer.duration;
+        if (entry) {
+          entry.start ??= start;
+          entry.end = this.nextTime;
+        }
         this.sources.add(source);
         source.onended = () => this.sources.delete(source);
         if (first) {

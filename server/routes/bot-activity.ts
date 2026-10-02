@@ -60,6 +60,8 @@ export interface ActivityTask {
   modelSelection?: { instanceId: string; model: string } | null;
   /** The folder its turns run in, pinned on its first turn. */
   cwd?: string | null;
+  /** A parallel task of a conversation (shared/parallel-tasks.ts). */
+  parallelOf?: { threadId: string };
 }
 
 export interface ActivityMessage {
@@ -71,7 +73,7 @@ export interface ActivityMessage {
   status?: string;
   turnSucceeded?: boolean;
   requestCancelled?: boolean;
-  tool?: { name: string; ok?: boolean; summary?: string; itemId?: string; files?: string[]; setup?: boolean; input?: unknown };
+  tool?: { name: string; ok?: boolean; summary?: string; itemId?: string; files?: string[]; setup?: boolean; input?: unknown; output?: unknown; parentItemId?: string };
   digest?: { access?: { via: BotActivityDetail["via"] & string; payer: BotActivityDetail["payer"] & string } };
   sender?: { name?: string } | null;
 }
@@ -83,6 +85,8 @@ export interface ActivityChildRef {
   title: string;
   status: "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled";
   startedAt: number;
+  /** A parallel task of this conversation, not another bot's work. */
+  parallel?: boolean;
 }
 
 export interface BotActivityRouteDeps {
@@ -116,6 +120,29 @@ const SUBAGENT_LIMIT = 20;
 const LIST_MAX = 50;
 
 const ACTIVE_RUN = new Set(["queued", "running", "waiting"]);
+/** Claude's sub-agent tool (Task before it was renamed Agent). */
+const SUBAGENT_TOOLS = new Set(["Agent", "Task"]);
+const STEP_INPUT_CHARS = 2_000;
+const SUBAGENT_RESULT_CHARS = 4_000;
+
+/** A sub-agent call's request and report, from the call's arguments (JSON
+ * as the chat previews it) and its result. */
+export function subagentOf(input: string | undefined, output: unknown): BotActivityStep["subagent"] {
+  let args: Record<string, unknown> = {};
+  try {
+    const parsed = input ? JSON.parse(input) : undefined;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) args = parsed as Record<string, unknown>;
+  } catch {
+    // a preview cut short is not JSON: show it as the prompt
+    if (input) args = { prompt: input };
+  }
+  const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : undefined;
+  const description = text(args.description);
+  const prompt = text(args.prompt);
+  const type = text(args.subagent_type);
+  const result = text(output)?.slice(0, SUBAGENT_RESULT_CHARS);
+  return { ...(description ? { description } : {}), ...(prompt ? { prompt } : {}), ...(type ? { type } : {}), ...(result ? { result } : {}) };
+}
 
 function newestRunningFirst(a: BotActivityItem, b: BotActivityItem): number {
   return Number(activityStatusActive(b.status)) - Number(activityStatusActive(a.status)) || b.updatedAt - a.updatedAt;
@@ -192,6 +219,7 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       ...(codingThread(task) ? { coding: true } : {}),
       ...(current ? { currentStep: current } : {}),
       ...(active && deps.threadWritable(bot.id, task.threadId, viewerId) ? { canStop: true } : {}),
+      ...(task.parallelOf ? { parallel: true } : {}),
     };
   }
 
@@ -294,6 +322,8 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     for (const parent of threads) {
       if (!parent.threadId || parent.kind === "subagent") continue;
       for (const child of childItems(bot, parent.threadId, viewerId)) {
+        // a parallel task is listed as its own entry already
+        if (child.parallel) continue;
         if (activityStatusActive(child.status) || child.startedAt >= since) out.push({ ...child, parentId: parent.id });
       }
     }
@@ -319,6 +349,7 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
         ...(readable && child.threadId ? { threadId: child.threadId } : {}),
         ...(readable && child.threadId && activityStatusActive(status) && deps.threadWritable(child.botId, child.threadId, viewerId) ? { canStop: true } : {}),
         startedBy: { kind: "bot", name: bot.name },
+        ...(child.parallel ? { parallel: true } : {}),
       } satisfies BotActivityItem;
     });
   }
@@ -331,12 +362,17 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     const steps: BotActivityStep[] = [];
     const files = new Set<string>();
     let access: NonNullable<ActivityMessage["digest"]>["access"];
+    const stepByItem = new Map<string, string>();
     for (const message of page.messages) {
       if (message.digest?.access) access = message.digest.access;
       const tool = message.tool;
       if (!tool || tool.setup) continue;
       for (const file of tool.files ?? []) files.add(file);
       const where = stepWhere(tool.name, organization);
+      if (tool.itemId) stepByItem.set(tool.itemId, message.id);
+      const parentId = tool.parentItemId ? stepByItem.get(tool.parentItemId) : undefined;
+      const input = typeof tool.input === "string" && tool.input.trim() ? tool.input.slice(0, STEP_INPUT_CHARS) : undefined;
+      const subagent = SUBAGENT_TOOLS.has(tool.name) ? subagentOf(input, tool.output) : undefined;
       steps.push({
         id: message.id,
         name: tool.name,
@@ -345,6 +381,9 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
         at: message.at,
         ...(where ? { where } : {}),
         ...(tool.files?.length ? { files: tool.files } : {}),
+        ...(input ? { input } : {}),
+        ...(parentId ? { parentId } : {}),
+        ...(subagent ? { subagent } : {}),
       });
     }
     // the run asked for by id: its thread no longer names it once it ended

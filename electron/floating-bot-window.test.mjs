@@ -10,6 +10,8 @@ import {
   READY_TIMEOUT_MS,
   REMEMBER_DELAY_MS,
   waitForPage,
+  sanitizeCall,
+  menuPopupPoint,
   sanitizeFloatingEvent,
   sanitizeFloatingSnapshot,
   sanitizePositions,
@@ -17,7 +19,7 @@ import {
   APP_SKINS,
   appTheme,
 } from "./floating-bot-window.mjs";
-import { LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS, SHAPE_SKINS, TROMBI_SKINS } from "../shared/mascot-look.ts";
+import { BUNBU_SKINS, LEGACY_BUNBU_SKINS, LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS, SHAPE_SKINS, TROMBI_SKINS } from "../shared/mascot-look.ts";
 import { displaySignature } from "./retro-assistant-window.mjs";
 import { SKIN_IDS } from "../src/lib/skins.ts";
 
@@ -98,6 +100,7 @@ function setup(extra = {}) {
     readPositions: () => saved.positions ?? {},
     writePositions: (positions) => { saved.positions = JSON.parse(JSON.stringify(positions)); },
     focusMain,
+    Menu: extra.Menu,
     log: (line) => logs.push(line),
   });
   const logs = [];
@@ -551,6 +554,94 @@ describe("floating bots: payload validation", () => {
   });
 });
 
+describe("floating bots: a voice call with the mascot", () => {
+  it("passes the call's states, short texts and settings only, bounded", () => {
+    const call = sanitizeCall({
+      phase: "speaking", muted: true, botAudible: true, push: false, startedAt: 5, line: "x".repeat(5000), token: "secret",
+      transcript: Array.from({ length: 20 }, (_, i) => ({ id: `m${i}`, who: i % 2 ? "bot" : "you", text: "hi", html: "<b>" })),
+      settings: { voice: "eve", speed: 9, language: "fr", key: "sk" },
+      callSettings: { input: "push", onlyMyVoice: true, earcons: false, pause: "patient" },
+      voices: [{ id: "eve", label: "Eve" }, { id: "bad id!", label: "X" }],
+      enrollment: { state: "recording", share: 3 },
+      previewing: { id: "eve", loading: true },
+    });
+    expect(call).not.toHaveProperty("token");
+    expect(call.line).toHaveLength(1200);
+    expect(call.transcript).toHaveLength(8);
+    expect(call.transcript[0]).not.toHaveProperty("html");
+    expect(call.settings).toEqual({ voice: "eve", speed: 2, language: "fr" });
+    expect(call.callSettings).toEqual({ input: "push", onlyMyVoice: true, earcons: false, pause: "patient" });
+    expect(call.voices).toEqual([{ id: "eve", label: "Eve" }]);
+    expect(call.enrollment).toEqual({ state: "recording", share: 1 });
+    expect(sanitizeCall({ phase: "ringing" })).toBeNull();
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, call: { phase: "listening" }, hints: { call: "Call Sagax" } })).toMatchObject({ call: { phase: "listening" }, hints: { call: "Call Sagax" } });
+  });
+
+  it("takes back only known call actions, with checked settings", () => {
+    expect(sanitizeFloatingEvent({ type: "call", action: "start", botId: "other" })).toEqual({ type: "call", action: "start" });
+    expect(sanitizeFloatingEvent({ type: "call", action: "dial" })).toBeNull();
+    expect(sanitizeFloatingEvent({ type: "call", action: "preview", voice: "eve" })).toEqual({ type: "call", action: "preview", voice: "eve" });
+    expect(sanitizeFloatingEvent({ type: "call", action: "settings", patch: { voice: "eve", speed: 1.5, xai: "key" } })).toEqual({ type: "call", action: "settings", patch: { voice: "eve", speed: 1.5 } });
+    expect(sanitizeFloatingEvent({ type: "call", action: "call-settings", patch: { input: "shout" } })).toBeNull();
+    // the end-of-turn pause (Short / Normal / Patient) travels too
+    expect(sanitizeFloatingEvent({ type: "call", action: "call-settings", patch: { pause: "short" } })).toMatchObject({ patch: { pause: "short" } });
+    expect(sanitizeFloatingEvent({ type: "call", action: "call-settings", patch: { pause: "forever" } })).toBeNull();
+  });
+
+  it("relays the call's levels from the app page to that bot's window only", () => {
+    const { emit, open, fromMain } = setup();
+    const a = open("bot_a");
+    const b = open("bot_b").win;
+    emit("floating-bots:level", fromMain, { botId: "bot_a", levels: { bot: 2, mic: 0.2 } });
+    expect(a.win.webContents.sent.at(-1)).toEqual(["floating-bot:level", { bot: 1, mic: 0.2 }]);
+    expect(b.webContents.sent).toHaveLength(0);
+    // a mascot window cannot speak for the app page
+    emit("floating-bots:level", a.from, { botId: "bot_b", levels: { bot: 1, mic: 1 } });
+    expect(b.webContents.sent).toHaveLength(0);
+  });
+});
+
+describe("floating bots: the menu opens at the pointer", () => {
+  const areas = [PRIMARY.workArea, SECOND.workArea];
+  it("puts it exactly where the click was, in the window's coordinates", () => {
+    expect(menuPopupPoint({ x: 120, y: 80 }, 1, { x: 600, y: 400, width: 240, height: 260 }, areas)).toEqual({ x: 120, y: 80 });
+    // a zoomed page reports CSS pixels: times the zoom gives the window's (DIP) coordinates
+    expect(menuPopupPoint({ x: 100, y: 50 }, 1.25, { x: 600, y: 400, width: 300, height: 300 }, areas)).toEqual({ x: 125, y: 63 });
+    // on the second display (left of it at x 1440)
+    expect(menuPopupPoint({ x: 30, y: 40 }, 1, { x: 2000, y: 500, width: 240, height: 260 }, areas)).toEqual({ x: 30, y: 40 });
+  });
+
+  it("keeps it inside the work area of the display under the click", () => {
+    // a window partly above the primary's menu bar (work area starts at y 25)
+    expect(menuPopupPoint({ x: 50, y: 5 }, 1, { x: 100, y: 0, width: 240, height: 260 }, areas)).toEqual({ x: 50, y: 25 });
+    // off the bottom of the primary (work area ends at 875): back inside
+    expect(menuPopupPoint({ x: 10, y: 250 }, 1, { x: 100, y: 700, width: 240, height: 260 }, areas)).toEqual({ x: 10, y: 174 });
+    // past the right edge of the second display: the nearest area's last pixel
+    expect(menuPopupPoint({ x: 300, y: 10 }, 1, { x: 3300, y: 100, width: 240, height: 260 }, areas)).toEqual({ x: 59, y: 10 });
+  });
+
+  it("pops main's native menu over the asking window only, with the snapshot's items", () => {
+    const popup = vi.fn();
+    let template = null;
+    const Menu = { buildFromTemplate: vi.fn((items) => { template = items; return { popup }; }) };
+    const { emit, open, fromMain, fake } = setup({ Menu });
+    const a = open("bot_a");
+    emit("floating-bots:update", fromMain, { botId: "bot_a", snapshot: { ...SNAPSHOT, menu: [{ id: "call", label: "Appeler" }, { id: "top", label: "Always on top", checked: true }] } });
+    a.win.setBounds?.({ x: 600, y: 400, width: 240, height: 260 });
+    emit("floating-bots:menu", a.from, { x: 33, y: 44 });
+    expect(popup).toHaveBeenCalledOnce();
+    const [options] = popup.mock.calls[0];
+    expect(options.window).toBe(a.win);
+    expect(template.map((item) => item.label)).toEqual(["Appeler", "Always on top"]);
+    expect(template[1]).toMatchObject({ type: "checkbox", checked: true });
+    template[0].click();
+    expect(fake.main.webContents.sent.at(-1)).toEqual(["floating-bots:event", { botId: "bot_a", event: { type: "menu", id: "call" } }]);
+    // the app page cannot pop a mascot's menu
+    emit("floating-bots:menu", fromMain, { x: 1, y: 1 });
+    expect(popup).toHaveBeenCalledOnce();
+  });
+});
+
 describe("the desktop window's mascot look", () => {
   it("knows every shape and Trombi skin, and maps older names like the app", () => {
     for (const skin of SHAPE_SKINS) expect(mascotLook({ character: "shape", skins: { shape: skin } }).skins.shape).toBe(skin);
@@ -558,6 +649,12 @@ describe("the desktop window's mascot look", () => {
     for (const [old, current] of Object.entries(LEGACY_SHAPE_SKINS)) expect(mascotLook({ character: "shape", skins: { shape: old } }).skins.shape).toBe(current);
     for (const [old, current] of Object.entries(LEGACY_TROMBI_SKINS)) expect(mascotLook({ character: "trombi", skins: { trombi: old } }).skins.trombi).toBe(current);
     expect(mascotLook({ character: "shape", skins: { shape: "plasma" } })).toEqual({ character: "shape" });
+  });
+
+  it("knows Bunbu and its twelve skins, legacy names included, and drops a skin it does not know", () => {
+    for (const skin of BUNBU_SKINS) expect(mascotLook({ character: "bunbu", skins: { bunbu: skin } })).toEqual({ character: "bunbu", skins: { bunbu: skin } });
+    for (const [old, current] of Object.entries(LEGACY_BUNBU_SKINS)) expect(mascotLook({ character: "bunbu", skins: { bunbu: old } }).skins.bunbu).toBe(current);
+    expect(mascotLook({ character: "bunbu", skins: { bunbu: "junk" } })).toEqual({ character: "bunbu" });
   });
 });
 

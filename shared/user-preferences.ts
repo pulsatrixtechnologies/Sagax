@@ -35,6 +35,8 @@ export const USER_PREFERENCE_KEYS = [
   "openmausbot.sidebarAttentionPinned.v1",
   // what the person hid from their sidebar (src/lib/sidebar-hidden.ts)
   "sagax.sidebarHidden.v1",
+  // the person's own sidebar sections (src/lib/personal-sections.ts)
+  "sagax.sidebarSections.v1",
   // privacy
   "omb-analytics-opt-out",
   // where bots work for this person (organization server: their computer
@@ -42,6 +44,8 @@ export const USER_PREFERENCE_KEYS = [
   "sagax.botWorkplace.v1",
   // voice mode: the xAI voice, speed and language (shared/voice-mode.ts)
   "omb.voiceMode.v1",
+  // what a message sent to a busy conversation does (shared/parallel-tasks.ts)
+  "sagax.busySend.v1",
 ] as const;
 
 export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number];

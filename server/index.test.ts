@@ -4320,9 +4320,9 @@ describe("harness HTTP API", () => {
       expect(statSync(result.path).mode & 0o777).toBe(0o600);
     }
 
-    const unsupported = await fetch(`${BASE}/api/files?name=payload.zip`, {
+    const unsupported = await fetch(`${BASE}/api/files?name=payload.exe`, {
       method: "POST",
-      headers: { "content-type": "application/zip" },
+      headers: { "content-type": "application/x-msdownload" },
       body: Buffer.from("archive"),
     });
     expect(unsupported.status).toBe(400);
@@ -8324,7 +8324,7 @@ describe("harness HTTP API", () => {
     const first = (await api("POST", "/api/bots")).body.bot;
     const second = (await api("POST", "/api/bots")).body.bot;
     const before = await api("GET", "/api/config");
-    expect(before.body.localVm).toEqual({ mode: "shared", maxInstances: 2, idleTimeoutMinutes: 480 });
+    expect(before.body.localVm).toEqual({ mode: "shared", maxInstances: 2, idleTimeoutMinutes: 10 });
 
     const shared = await api("GET", `/api/bots/${first.id}/local-computer`);
     expect(shared.status).toBe(200);
@@ -8334,7 +8334,7 @@ describe("harness HTTP API", () => {
       localVm: { mode: "per-bot", maxInstances: 5 },
     });
     expect(saved.status).toBe(200);
-    expect(saved.body.localVm).toEqual({ mode: "per-bot", maxInstances: 5, idleTimeoutMinutes: 480 });
+    expect(saved.body.localVm).toEqual({ mode: "per-bot", maxInstances: 5, idleTimeoutMinutes: 10 });
 
     const [firstStatus, secondStatus] = await Promise.all([
       api("GET", `/api/bots/${first.id}/local-computer`),
@@ -8383,7 +8383,7 @@ describe("harness HTTP API", () => {
     try {
       const shared = await api("GET", `/api/bots/${bot.id}/local-computer`);
       expect(shared.status).toBe(200);
-      expect(shared.body).toMatchObject({ mode: "shared", idle_timeout_ms: 480 * 60_000 });
+      expect(shared.body).toMatchObject({ mode: "shared", idle_timeout_ms: 10 * 60_000 });
 
       for (const idleTimeoutMinutes of [0, 4, 1.5, 1441, "30", null]) {
         const invalid = await api("PATCH", "/api/config", { localVm: { idleTimeoutMinutes } });
@@ -8405,7 +8405,7 @@ describe("harness HTTP API", () => {
       const perBot = await api("GET", `/api/bots/${bot.id}/local-computer`);
       expect(perBot.body).toMatchObject({ mode: "per-bot", idle_timeout_ms: 30 * 60_000 });
     } finally {
-      await api("PATCH", "/api/config", { localVm: { mode: "shared", maxInstances: 2, idleTimeoutMinutes: 480 } }).catch(() => undefined);
+      await api("PATCH", "/api/config", { localVm: { mode: "shared", maxInstances: 2, idleTimeoutMinutes: 10 } }).catch(() => undefined);
       await api("DELETE", `/api/bots/${bot.id}`).catch(() => undefined);
     }
   });

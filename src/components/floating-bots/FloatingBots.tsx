@@ -7,6 +7,7 @@
 // here, through the store, exactly as if the message had been typed in the
 // app: the floating windows never hold a session.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { reportAchievement } from "@/lib/achievements";
 import { openThread, useStore, useStreaming, type Bot } from "@/state/store";
 import { activeLocale, t } from "@/lib/i18n";
 import { brand } from "@/lib/brand";
@@ -40,7 +41,15 @@ import { FloatingBotView, MASCOT_SIZE, type FloatingMover } from "./FloatingBotV
 import { floatingContext } from "./context";
 import { useAppTheme } from "./theme";
 import { moodNow, raiseMood, readMoods, writeMoods, type MoodGain, type MoodRecord } from "./mood";
-import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type FloatingEvent, type FloatingSnapshot } from "./protocol";
+import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type FloatingCallLevels, type FloatingEvent, type FloatingSnapshot } from "./protocol";
+import { currentCall, endCall, startCall, useOnCall } from "@/lib/call";
+import { speaker } from "@/lib/tts";
+import { fetchVoiceModeVoices, useVoiceModeAvailable } from "@/lib/voice-mode/api";
+import { notifyCallSettings, useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
+import { liveCallNow, useLiveCall } from "@/lib/voice-mode/live-call-store";
+import { readVoiceModeSettings, useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
+import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
+import { callLevels, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps, type MascotCallPanel } from "./mascot-call";
 
 /** A picture bigger than this stays in the app; the window shows the owl instead. */
 const AVATAR_BYTES_MAX = 280_000;
@@ -133,6 +142,15 @@ function useAvatarData(urls: string[], enabled: boolean): Record<string, string>
   return data;
 }
 
+/** The call's levels for a mascot drawn in this page (the browser overlay); a desktop window gets them through main. */
+const pageLevels = new Set<(levels: FloatingCallLevels) => void>();
+const onPageLevels = (listener: (levels: FloatingCallLevels) => void) => {
+  pageLevels.add(listener);
+  return () => void pageLevels.delete(listener);
+};
+/** How often the call's levels reach the mascot (its waveform and its bounce). */
+const LEVEL_MS = 50;
+
 function desktopBridge(): FloatingBotsBridge | null {
   if (typeof window === "undefined") return null;
   return (window.ogb?.floatingBots as FloatingBotsBridge | undefined) ?? null;
@@ -169,6 +187,19 @@ export function FloatingBots() {
   sessionsRef.current = sessions;
   const locale = activeLocale();
 
+  /* ------------------------------------------------------- voice calls */
+
+  // the app's call (voice mode), whoever started it: the mascot of that bot shows it
+  const live = useLiveCall();
+  const onCall = useOnCall();
+  const voiceSettings = useVoiceModeSettings();
+  const callSettings = useCallSettings();
+  const [callPanel, setCallPanel] = useState<MascotCallPanel>(NO_PANEL);
+  const callPanelRef = useRef(callPanel);
+  callPanelRef.current = callPanel;
+  // a new call (or none) starts with a closed settings card
+  useEffect(() => setCallPanel(NO_PANEL), [live?.call]);
+
   const floated = entries
     .map((entry) => ({ entry, bot: state.bots.find((candidate) => candidate.id === entry.id) }))
     .filter((item): item is { entry: FloatingBotEntry; bot: Bot } => Boolean(item.bot));
@@ -189,6 +220,32 @@ export function FloatingBots() {
       return { ...current, [botId]: { ...session, ...next } };
     });
   }, []);
+
+  const callable = useVoiceModeAvailable(floated.map(({ bot }) => bot.id));
+  const callableRef = useRef(callable);
+  callableRef.current = callable;
+  const callOnMascot = live && floated.some(({ bot }) => bot.id === live.botId) ? live.botId : null;
+  // the call's levels, a few times a frame-second, to the mascot on the line (its waveform and bounce)
+  useEffect(() => {
+    if (!callOnMascot) return;
+    const data = new Uint8Array(1024);
+    let last = "";
+    const send = (levels: FloatingCallLevels) => {
+      bridge?.level?.(callOnMascot, levels);
+      for (const listener of Array.from(pageLevels)) listener(levels);
+    };
+    const timer = setInterval(() => {
+      const levels = callLevels(liveCallNow(), data);
+      const key = `${levels.bot}:${levels.mic}`;
+      if (key === last) return;
+      last = key;
+      send(levels);
+    }, LEVEL_MS);
+    return () => {
+      clearInterval(timer);
+      send({ bot: 0, mic: 0 });
+    };
+  }, [bridge, callOnMascot]);
 
   const statuses = floated.map(({ bot }) => {
     const session = sessions[bot.id] ?? newFloatingSession();
@@ -230,9 +287,70 @@ export function FloatingBots() {
     dispatch({ type: "send", botId: bot.id, text, threadId, sendId, onError: () => patch(bot.id, { error: true, open: true }) });
   }, [dispatch, patch]);
 
+  /** What the mascot's call controls do: on the app's call (mascot-call.ts). */
+  const callDeps = useCallback((botId: string): MascotCallDeps => {
+    const live = liveCallNow();
+    const setPanel = (change: Partial<MascotCallPanel>) => setCallPanel((current) => ({ ...current, ...change }));
+    return {
+      available: callableRef.current[botId] === true,
+      live,
+      current: currentCall,
+      start: startCall,
+      end: endCall,
+      closeBalloon: () => patch(botId, { open: false }),
+      voices: () => {
+        if (callPanelRef.current.voices) return;
+        fetchVoiceModeVoices(botId).then(
+          (voices) => setPanel({ voices, voicesError: null }),
+          (error: unknown) => setPanel({ voicesError: error instanceof Error ? error.message : String(error) }),
+        );
+      },
+      preview: (voiceId) => {
+        if (callPanelRef.current.previewing?.id === voiceId) {
+          speaker.stop();
+          setPanel({ previewing: null });
+          return;
+        }
+        live?.call.interrupt();
+        setPanel({ previewing: { id: voiceId, loading: true } });
+        const label = callPanelRef.current.voices?.find((voice) => voice.id === voiceId)?.label ?? voiceId;
+        const unsubscribe = speaker.subscribe((snapshot) => {
+          if (snapshot.status === "speaking") setCallPanel((current) => (current.previewing?.id === voiceId ? { ...current, previewing: { id: voiceId, loading: false } } : current));
+        });
+        void speaker
+          .speak(t("voiceMode.previewLine", { voice: label }), { botId, voiceMode: { settings: { ...readVoiceModeSettings(), voice: voiceId } } })
+          .finally(() => {
+            unsubscribe();
+            setCallPanel((current) => (current.previewing?.id === voiceId ? { ...current, previewing: null } : current));
+          });
+      },
+      enroll: () => {
+        if (!live) return;
+        setPanel({ enrollment: { state: "recording", share: 0 } });
+        void live.call.enroll((share) => setPanel({ enrollment: { state: "recording", share } })).then((ok) => {
+          setPanel({ enrollment: ok ? { state: "enrolled" } : { state: "failed" } });
+          if (ok) writeCallSettings({ onlyMyVoice: true });
+          notifyCallSettings();
+        });
+      },
+      forget: () => {
+        forgetVoiceprint();
+        live?.call.forgetVoice();
+        setPanel({ enrollment: { state: "none" } });
+        notifyCallSettings();
+      },
+      writeSettings: (change) => void writeVoiceModeSettings(change),
+      writeCallSettings: (change) => void writeCallSettings(change),
+    };
+  }, [patch]);
+
   const handle = useCallback((botId: string, event: FloatingEvent) => {
     const bot = stateRef.current.bots.find((candidate) => candidate.id === botId);
     if (!bot) return;
+    if (event.type === "call") {
+      runMascotCallEvent(botId, event.action, event, callDeps(botId));
+      return;
+    }
     const session = sessionsRef.current[botId] ?? newFloatingSession();
     const openInApp = () => openThread(dispatch, { botId, threadId: session.threadId ?? bot.threadId }, stateRef.current);
     switch (event.type) {
@@ -244,6 +362,7 @@ export function FloatingBots() {
         break;
       case "pet":
         cheer(botId, "pet");
+        reportAchievement("mascot.pet");
         break;
       case "dismiss":
         patch(botId, { open: false });
@@ -253,9 +372,12 @@ export function FloatingBots() {
         break;
       case "send":
         send(bot, event.text);
+        // a word to the mascot between midnight and 1 a.m. (a secret)
+        if (new Date().getHours() === 0) reportAchievement("mascot.midnight");
         break;
       case "menu": {
-        if (event.id === "open") openInApp();
+        if (event.id === "call") runMascotCallEvent(botId, currentCall() === botId ? "end" : "start", {}, callDeps(botId));
+        else if (event.id === "open") openInApp();
         else if (event.id === "balloon") patch(botId, { open: !session.open });
         else if (event.id === "dock") unfloatBot(botId);
         else if (event.id === "fly") setFloatingFlyAway(!floatingBotPrefs().flyAway);
@@ -271,7 +393,7 @@ export function FloatingBots() {
       default:
         break;
     }
-  }, [bridge, cheer, dispatch, patch, send]);
+  }, [bridge, callDeps, cheer, dispatch, patch, send]);
 
   /* ------------------------------------------------------------ desktop */
 
@@ -304,6 +426,16 @@ export function FloatingBots() {
       }),
     };
     if (theme) item.snapshot.theme = theme;
+    // voice calls: the button where voice mode serves this bot, and the call itself when it is this bot's
+    const canCall = callable[bot.id] === true;
+    const thisCall = live && live.botId === bot.id && onCall === bot.id ? live : null;
+    if (canCall) item.snapshot.hints = { ...item.snapshot.hints, call: t("floatingBots.call", { name: bot.name }) };
+    if (canCall || thisCall) item.snapshot.menu = [{ id: "call", label: thisCall ? t("floatingBots.menu.hangUp") : t("floatingBots.menu.call") }, ...item.snapshot.menu];
+    if (thisCall) {
+      item.snapshot.call = mascotCallSnapshot(thisCall, callPanel, voiceSettings, callSettings);
+      // the mascot talks while its bot's voice does, and thinks while it writes
+      item.snapshot.pose = thisCall.state.phase === "speaking" ? "speak" : thisCall.state.phase === "thinking" ? "think" : item.snapshot.pose === "celebrate" || item.snapshot.pose === "alert" ? item.snapshot.pose : "idle";
+    }
     return item;
   });
 
@@ -383,7 +515,7 @@ export function FloatingBots() {
   return (
     <>
       {snapshots.map(({ bot, entry, snapshot }, index) => (
-        <FloatingOverlay key={bot.id} botId={bot.id} index={index} saved={entry?.pos} snapshot={snapshot} onEvent={(event) => handle(bot.id, event)} />
+        <FloatingOverlay key={bot.id} botId={bot.id} index={index} saved={entry?.pos} snapshot={snapshot} onEvent={(event) => handle(bot.id, event)} onLevels={onPageLevels} />
       ))}
     </>
   );
@@ -396,12 +528,13 @@ function viewport() {
 }
 
 /** Browser and phone: the bot floats inside the app window, dragged with the pointer. */
-function FloatingOverlay({ botId, index, saved, snapshot, onEvent }: {
+function FloatingOverlay({ botId, index, saved, snapshot, onEvent, onLevels }: {
   botId: string;
   index: number;
   saved?: { right: number; bottom: number };
   snapshot: FloatingSnapshot;
   onEvent: (event: FloatingEvent) => void;
+  onLevels: (listener: (levels: FloatingCallLevels) => void) => () => void;
 }) {
   const [pos, setPos] = useState(() => clampOverlayPosition(saved ?? defaultOverlayPosition(index, STAGE), viewport(), STAGE));
   const [view, setView] = useState(viewport);
@@ -440,6 +573,7 @@ function FloatingOverlay({ botId, index, saved, snapshot, onEvent }: {
       snapshot={snapshot}
       onEvent={onEvent}
       mover={mover}
+      onLevels={onLevels}
     />
   );
 }

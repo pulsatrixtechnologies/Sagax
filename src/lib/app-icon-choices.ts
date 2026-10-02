@@ -1,10 +1,10 @@
 // The icons Settings > Appearance > App icon offers: the Sagax owl, the
-// owl in its skins, a shape, Trombi, the person's Primary Bot, or a picture
+// owl in its skins, a shape, Trombi, Bunbu, the person's Primary Bot, or a picture
 // they upload. Pure data: the picker (src/components/settings/AppIconPicker)
 // draws each character with the app's own components and paints the result
 // through the system template (shared/app-icon-template.ts).
 import type { MascotSkinId } from "../../shared/mascot-skins";
-import type { MascotShape, ShapeSkin, TrombiSkin } from "../../shared/mascot-look";
+import type { BunbuSkin, MascotShape, ShapeSkin, TrombiSkin } from "../../shared/mascot-look";
 import type { MascotColorName } from "../../shared/mascot-colors";
 import type { LocaleKey } from "@/locales";
 import type { AppIconGlyph } from "./app-icon-glyphs";
@@ -15,6 +15,7 @@ export type AppIconArt =
   | { kind: "owl"; color: MascotColorName; skin: MascotSkinId }
   | { kind: "shape"; shape: MascotShape; skin: ShapeSkin; color: MascotColorName }
   | { kind: "trombi"; skin: TrombiSkin }
+  | { kind: "bunbu"; skin: BunbuSkin; color: MascotColorName }
   | { kind: "glyph"; glyph: AppIconGlyph }
   | { kind: "primary"; botId: string }
   | { kind: "upload" };
@@ -64,6 +65,8 @@ export const APP_ICON_CHOICES: readonly AppIconChoice[] = [
   { id: "glyph:spark", labelKey: "settings.appIcon.glyph.spark", background: ["#22305A", "#0A1024"], art: { kind: "glyph", glyph: "spark" }, fit: "contain" },
   { id: "glyph:cube", labelKey: "settings.appIcon.glyph.cube", background: ["#34353A", "#0E0F11"], art: { kind: "glyph", glyph: "cube" }, fit: "contain" },
   { id: "trombi:classic", labelKey: "floatingBots.mascot.trombi", background: ["#13A0A0", "#006666"], art: { kind: "trombi", skin: "classic" }, fit: "contain" },
+  { id: "bunbu:plain", labelKey: "floatingBots.mascot.bunbu", background: ["#FFF6EC", "#F6D9C4"], art: { kind: "bunbu", skin: "plain", color: "mint" }, fit: "contain" },
+  { id: "bunbu:holo", labelKey: "mascot.bunbuSkin.holo", background: ["#2A2250", "#0E0A22"], art: { kind: "bunbu", skin: "holo", color: "mint" }, fit: "contain" },
 ];
 
 /** The Primary Bot's look, when the person has one. */

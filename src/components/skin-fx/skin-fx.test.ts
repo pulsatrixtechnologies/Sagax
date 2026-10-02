@@ -115,6 +115,97 @@ describe("reduced motion and flashing", () => {
   });
 });
 
+describe("the holographic foil glides without a seam", () => {
+  const appCss = readFileSync(join(here, "../../styles.css"), "utf8");
+  const owlFx = readFileSync(join(here, "../OwlSkinFx.tsx"), "utf8");
+  const rule = (source: string, selector: string) => {
+    const start = source.indexOf(`${selector} {`);
+    expect(start, selector).toBeGreaterThan(-1);
+    return source.slice(start, source.indexOf("}", start));
+  };
+  const seconds = (text: string) => Number(/(\d+(?:\.\d+)?)s\b/.exec(text)?.[1]);
+
+  it("plays every foil (shapes, Trombi) as a slow eased ping-pong, never a linear loop that snaps back", () => {
+    for (const name of ["fx-foil", "fx-foil-diag", "fx-foil-rev"]) {
+      const body = rule(css, `.skin-fx-live .${name}`);
+      expect(body, name).toContain("ease-in-out");
+      expect(body, name).toContain("alternate");
+      expect(body, name).not.toContain("linear");
+      expect(seconds(body), name).toBeGreaterThanOrEqual(6);
+      expect(seconds(body), name).toBeLessThanOrEqual(10);
+    }
+    const large = rule(css, ".skin-fx-live .fx-foil-diag-lg");
+    expect(seconds(large)).toBeGreaterThanOrEqual(6);
+    expect(seconds(large)).toBeLessThanOrEqual(10);
+  });
+
+  it("glides the owl's foil the same way, over 6 to 10 seconds", () => {
+    const body = rule(appCss, '[data-owl-fx="live"] .owl-fx-foil');
+    expect(body).toContain("ease-in-out");
+    expect(body).toContain("alternate");
+    expect(body).not.toContain("linear");
+    const duration = Number(/className="owl-fx-foil" style=\{anim\((\d+(?:\.\d+)?)\)/.exec(owlFx)?.[1]);
+    expect(duration).toBeGreaterThanOrEqual(6);
+    expect(duration).toBeLessThanOrEqual(10);
+  });
+
+  it("never animates a filter (hue-rotate repaints every frame and flickers)", () => {
+    expect(css).not.toMatch(/hue-rotate/);
+    expect(rule(appCss, "@keyframes owl-fx-foil")).not.toContain("filter");
+    for (const name of ["fx-foil", "fx-foil-diag", "fx-foil-rev", "fx-foil-diag-lg", "fx-sweep"]) {
+      expect(rule(css, `@keyframes ${name}`), name).not.toMatch(/filter|background-position/);
+    }
+  });
+
+  it("keeps the drawing mounted through a move, so the idle loops never restart", () => {
+    const shapeSource = readFileSync(join(here, "../ShapeMascot.tsx"), "utf8");
+    const trombiSource = readFileSync(join(here, "SkinnedTrombi.tsx"), "utf8");
+    for (const source of [shapeSource, trombiSource]) {
+      expect(source).not.toMatch(/key=\{burst && moveBody/);
+      expect(source).toContain("useReplayMove(body");
+    }
+  });
+
+  it("renders the same markup twice (stable ids and classes, nothing that remounts the foil)", () => {
+    const a = renderToStaticMarkup(createElement(ShapeMascot, { shape: "star", skin: "holo", color: "blue", size: 112 }));
+    const b = renderToStaticMarkup(createElement(ShapeMascot, { shape: "star", skin: "holo", color: "blue", size: 112 }));
+    expect(a).toBe(b);
+    expect(a).toContain('class="fx-foil-diag"');
+    expect(a).toContain('class="fx-foil-rev"');
+  });
+});
+
+describe("no layer edges and no flash", () => {
+  const appShape = (skin: (typeof SHAPE_SKINS)[number], size = 112) => renderToStaticMarkup(createElement(ShapeMascot, { shape: "star", skin, color: "blue", size }));
+  const keyframe = (name: string) => css.slice(css.indexOf(`@keyframes ${name} {`), css.indexOf("}\n}", css.indexOf(`@keyframes ${name} {`)));
+
+  it("never masks a moving rectangle: the iridescent rims are the outline stroked in the foil", () => {
+    for (const skin of SHAPE_SKINS) {
+      for (const html of [appShape(skin), appShape(skin, 24)]) {
+        expect(html, skin).not.toContain("<mask");
+        expect(html, skin).not.toContain("mask=");
+      }
+    }
+    expect(appShape("holo")).toMatch(/<path d="[^"]+" fill="none" stroke="url\(#[^)]+-foil\)" stroke-width="3.2"/);
+  });
+
+  it("crossfades into a new skin: no pop past full size, no bright frame", () => {
+    const pop = keyframe("fx-equip-pop");
+    expect(pop).toMatch(/0% \{ transform: scale\(0\.9\d\); opacity: 0\.\d+; \}/);
+    expect(pop).not.toMatch(/scale\(1\.\d/);
+    expect(keyframe("fx-ring")).toMatch(/0% \{[^}]*opacity: 0\.[0-7]/);
+    for (const name of ["fx-ghost-y", "fx-ghost-x"]) {
+      const peak = Math.max(...[...keyframe(name).matchAll(/opacity: ([\d.]+)/g)].map((m) => Number(m[1])));
+      expect(peak, name).toBeLessThanOrEqual(0.35);
+    }
+  });
+
+  it("keeps an app avatar's jump inside its own headroom", () => {
+    const lift = Math.max(...[...keyframe("fx-body-jump").matchAll(/translateY\(-(\d+)%\)/g)].map((m) => Number(m[1])));
+    expect(lift).toBeLessThanOrEqual(12);
+  });
+});
+
 describe("skin ids persist and migrate", () => {
   it("maps older skin names to the current ids (the desktop window: electron/floating-bot-window.test.mjs)", () => {
     for (const [old, current] of Object.entries(LEGACY_SHAPE_SKINS)) {

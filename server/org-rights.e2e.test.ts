@@ -283,15 +283,9 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect(Object.keys(shownX.look ?? {}).every((key) => ["id", "name", "title", "color", "avatarUrl", "avatarCrop", "avatarZoom", "avatarFocusX", "avatarFocusY", "mascotBody", "mascotSkin", "mascotLook"].includes(key))).toBe(true);
     expect((await api("PUT", `/api/bots/${x.id}/grants`, mia, { target: `team:${TEAM_T}`, level: "run" })).status).toBe(403);
     // she never opens what she administers: no entry for herself, on a bot,
-    // a section or a room that lists her team
+    // or a room that lists her team (sections share nothing any more)
     expect((await api("PUT", `/api/bots/${x.id}/grants`, mia, { target: `user:${ids.mia}`, level: "use" })).status).toBe(403);
     expect([403, 404]).toContain((await api("GET", `/api/threads/${x.threadId}/messages`, mia)).status);
-    const sec = await api("POST", "/api/org/sections", alice, { name: "Mia check" });
-    expect(sec.status, sec.text).toBe(201);
-    const secId = sec.body.section.id as string;
-    expect((await api("PUT", `/api/org/sections/${secId}/members`, alice, { members: [{ target: `team:${TEAM_T}`, role: "participant" }] })).status).toBe(200);
-    expect((await api("PUT", `/api/org/sections/${secId}/members`, mia, { members: [{ target: `team:${TEAM_T}`, role: "participant" }, { target: `user:${ids.mia}`, role: "participant" }] })).status).toBe(403);
-    await waitFor(async () => (await api("DELETE", `/api/org/sections/${secId}`, alice)).status === 200, 30_000);
     const tRoom = await api("POST", "/api/groups", alice, { name: "Team T room", memberIds: [x.id], humanIds: [`team:${TEAM_T}`], setup: { bulletin: "", defaultResponder: { kind: "everyone" } } });
     expect(tRoom.status, tRoom.text).toBe(201);
     expect([403, 404]).toContain((await api("PATCH", `/api/groups/${tRoom.body.group.id}`, mia, { humanIds: [`team:${TEAM_T}`, ids.mia] })).status);
@@ -379,37 +373,22 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect(existsSync(join(dir, ".pulsabot-login.json"))).toBe(false);
   }, 60_000);
 
-  it("S4-10 and S4-11: a section shared with a team, and a room with a team", async () => {
+  it("S4-10 and S4-11: sections are personal (no members, no placement), and a room with a team", async () => {
     const v = await createBot(alice, "Vera", "claude");
     const created = await api("POST", "/api/org/sections", alice, { name: "Ventes" });
     expect(created.status, created.text).toBe(201);
     const id = created.body.section.id as string;
-    expect((await api("PUT", `/api/org/sections/${id}/bots`, alice, { add: [v.id] })).status).toBe(200);
     const dave = await signIn(DAVE);
     const carol = await signIn(CAROL);
-    expect(await botIds(dave)).not.toContain(v.id);
-    const shared = await api("PUT", `/api/org/sections/${id}/members`, alice, { members: [{ target: `team:${TEAM_U}`, role: "participant" }], defaultLevel: "use" });
-    expect(shared.status, shared.text).toBe(200);
-    const roomId = shared.body.section.roomId as string;
-    expect(roomId).toBeTruthy();
-    expect(await botIds(dave)).toContain(v.id);
-    expect(await botIds(carol)).not.toContain(v.id);
     const groups = async (auth: Auth) => ((await api("GET", "/api/bots", auth)).body.groups as Array<{ id: string }>).map((g) => g.id);
-    expect(await groups(dave)).toContain(roomId);
-    expect((await api("GET", "/api/bots", dave)).body.sections).toContain("Ventes");
-    expect((await api("GET", "/api/bots", carol)).body.sections ?? []).not.toContain("Ventes");
-    const posted = await api("POST", `/api/groups/${roomId}/messages`, dave, { text: "room hello" });
-    expect(posted.status, posted.text).toBe(202);
-    await api("PUT", `/api/org/sections/${id}/members`, alice, { members: [{ target: `team:${TEAM_U}`, role: "readonly" }] });
-    expect((await api("POST", `/api/groups/${roomId}/messages`, dave, { text: "read only now" })).status).toBe(403);
-    // the room's turn must settle before a rename (the store refuses busy sections)
-    const renamed = await waitFor(async () => {
-      const got = await api("PATCH", `/api/org/sections/${id}`, alice, { name: "Ventes QC" });
-      return got.status === 200 ? got : null;
-    }, 30_000);
-    expect(renamed.body.section).toMatchObject({ name: "Ventes QC", members: [{ target: `team:${TEAM_U}` }] });
-    expect((await api("PUT", "/api/org/sections/general/members", alice, { members: [] })).body.code).toBe("general_is_personal");
-    await api("PUT", `/api/org/sections/${id}/members`, alice, { members: [] });
+    const placed = await api("PUT", `/api/org/sections/${id}/bots`, alice, { add: [v.id] });
+    expect(placed.status, placed.text).toBe(410);
+    const shared = await api("PUT", `/api/org/sections/${id}/members`, alice, { members: [{ target: `team:${TEAM_U}`, role: "participant" }], defaultLevel: "use" });
+    expect(shared.status, shared.text).toBe(410);
+    expect(shared.body.code).toBe("sections_are_personal");
+    expect(await botIds(dave)).not.toContain(v.id);
+    // even filed under a section name, a bot reaches a team only by its own grant
+    expect((await api("POST", "/api/sidebar-sections", alice, { name: "Ventes", botIds: [v.id] })).status).toBe(200);
     expect(await botIds(dave)).not.toContain(v.id);
     await waitFor(async () => (await api("DELETE", `/api/org/sections/${id}`, alice)).status === 200, 30_000);
 
@@ -422,69 +401,20 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect((await api("POST", "/api/groups", alice, { name: "Bad", memberIds: [u.id], humanIds: ["team:NOPE"] })).status).toBe(400);
   }, 60_000);
 
-  it("S4-12: sharing a section opens only what its owners consented to; read-only changes nothing; moves need moderators", async () => {
+  it("S4-12: a bot filed in someone's section never opens to anyone else", async () => {
     alice = await signIn(ALICE);
     const bob = await signIn(BOB);
-    const setup = { bulletin: "", defaultResponder: { kind: "everyone" } };
-    const created = await api("POST", "/api/org/sections", alice, { name: "Ops" });
-    expect(created.status, created.text).toBe(201);
-    const opsId = created.body.section.id as string;
     const a1 = await createBot(alice, "Ada", "claude");
-    expect((await api("PUT", `/api/org/sections/${opsId}/bots`, alice, { add: [a1.id] })).status).toBe(200);
-    // bob's bot sits in Ops without bob placing it there (as before slice 4)
     const bx = await createBot(bob, "Bex", "claude");
-    const moved = await api("POST", "/api/sidebar-sections", alice, { name: "Ops", botIds: [bx.id] });
-    expect(moved.status, moved.text).toBe(200);
-    // a legacy room carrying the section's name, made by someone outside it
-    const legacy = await api("POST", "/api/groups", bob, { name: "Bob ops", memberIds: [bx.id], section: "Ops", setup });
-    expect(legacy.status, legacy.text).toBe(201);
-    await api("POST", `/api/groups/${legacy.body.group.id}/messages`, bob, { text: "legacy secret" });
-    const shared = await api("PUT", `/api/org/sections/${opsId}/members`, alice, { members: [{ target: `team:${TEAM_U}`, role: "readonly" }], defaultLevel: "use" });
-    expect(shared.status, shared.text).toBe(200);
-    const roomId = shared.body.section.roomId as string;
+    expect((await api("POST", "/api/sidebar-sections", alice, { name: "Ops", botIds: [a1.id] })).status).toBe(200);
     const dave = await signIn(DAVE);
-    const listed = (await api("GET", "/api/bots", dave)).body as { bots: Array<{ id: string }>; groups: Array<{ id: string; threadId: string; memberIds: string[] }> };
-    expect(listed.bots.map((b) => b.id)).toContain(a1.id);
+    const created = await api("POST", "/api/org/sections", dave, { name: "Dave sec" });
+    expect(created.status, created.text).toBe(201);
+    expect((await api("PUT", `/api/org/sections/${created.body.section.id}/members`, dave, { members: [{ target: `user:${ids.erin}`, role: "participant" }] })).status).toBe(410);
+    const listed = (await api("GET", "/api/bots", dave)).body as { bots: Array<{ id: string }> };
+    expect(listed.bots.map((b) => b.id)).not.toContain(a1.id);
     expect(listed.bots.map((b) => b.id)).not.toContain(bx.id);
-    expect(listed.groups.find((g) => g.id === roomId)?.memberIds).toEqual([a1.id]);
-    expect(listed.groups.map((g) => g.id)).not.toContain(legacy.body.group.id);
-    expect((await api("GET", `/api/threads/${bx.threadId}/messages`, dave)).status).toBe(404);
-    expect((await api("POST", `/api/bots/${bx.id}/messages`, dave, { text: "on bob's key?" })).status).toBe(404);
-    expect((await api("GET", `/api/threads/${legacy.body.group.threadId}/messages`, dave)).status).toBe(404);
-    expect((await api("GET", `/api/search?q=${encodeURIComponent("legacy secret")}`, dave)).text).not.toContain(legacy.body.group.id);
-
-    // read-only: reads the room, changes nothing in it
-    const roomThread = listed.groups.find((g) => g.id === roomId)?.threadId;
-    expect((await api("GET", `/api/threads/${roomThread}/messages`, dave)).status).toBe(200);
-    for (const [method, path, body] of [
-      ["PATCH", `/api/groups/${roomId}`, { name: "Mine now" }],
-      ["PATCH", `/api/groups/${roomId}`, { section: "" }],
-      ["POST", `/api/groups/${roomId}/tasks`, { title: "side task" }],
-      ["POST", `/api/groups/${roomId}/interrupt`, {}],
-    ] as const) {
-      const answer = await api(method, path, dave, body);
-      expect(answer.status, `${method} ${path} ${answer.text}`).toBe(403);
-    }
-
-    // a room in someone else's conversation never moves into a section
-    // its mover shares, and a participant does not move a section's room
-    await api("PUT", `/api/org/sections/${opsId}/members`, alice, { members: [{ target: `team:${TEAM_U}`, role: "participant" }] });
-    const mine = await api("POST", "/api/org/sections", dave, { name: "Dave sec" });
-    expect(mine.status, mine.text).toBe(201);
-    expect((await api("PUT", `/api/org/sections/${mine.body.section.id}/members`, dave, { members: [{ target: `user:${ids.erin}`, role: "participant" }] })).status).toBe(200);
-    expect((await api("PATCH", `/api/groups/${roomId}`, dave, { section: "Dave sec" })).status).toBe(403);
-    const withBob = await api("POST", "/api/groups", alice, { name: "Dave and Bob", memberIds: [a1.id], humanIds: [ids.dave, ids.bob], setup });
-    expect(withBob.status, withBob.text).toBe(201);
-    expect((await api("PATCH", `/api/groups/${withBob.body.group.id}`, dave, { section: "Dave sec" })).status).toBe(403);
-    const erin = await signIn(ERIN);
-    expect(((await api("GET", "/api/bots", erin)).body.groups as Array<{ id: string }>).map((g) => g.id)).not.toContain(withBob.body.group.id);
-    // bob, a person of that room, still opens none of alice's bot in Direct
+    expect((await api("GET", `/api/threads/${a1.threadId}/messages`, dave)).status).toBe(404);
     expect((await api("GET", `/api/threads/${a1.threadId}/messages`, bob)).status).toBe(404);
-    // his own room: dave moves it into his section, and erin reads it
-    const solo = await api("POST", "/api/groups", alice, { name: "Dave alone", memberIds: [a1.id], humanIds: [ids.dave], setup });
-    expect(solo.status, solo.text).toBe(201);
-    const soloMove = await api("PATCH", `/api/groups/${solo.body.group.id}`, dave, { section: "Dave sec" });
-    expect(soloMove.status, soloMove.text).toBe(200);
-    expect(((await api("GET", "/api/bots", erin)).body.groups as Array<{ id: string }>).map((g) => g.id)).toContain(solo.body.group.id);
-  }, 90_000);
+  }, 60_000);
 });

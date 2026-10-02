@@ -14,8 +14,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, ServerFrame, GroupThreadUsage, SteerQueueReason } from "../../shared/wire";
+import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark } from "../../shared/wire";
 import type { TurnDigest } from "../../shared/digest";
+import type { BusySendMode, ParallelTaskRef, TaskParallelOf } from "../../shared/parallel-tasks";
 import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-events";
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
@@ -46,6 +47,7 @@ import { t } from "@/lib/i18n";
 import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents } from "@/lib/live-events";
+import { receiveAchievementsFrame } from "@/lib/achievements";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -108,6 +110,11 @@ export interface OptionCardData {
   /** the narrow grant "always allow" remembers, e.g. "Bash:git" */
   allowKey?: string;
   allowSession?: boolean;
+  /** A permission ask's full arguments as redacted JSON, shown only in
+   * the card's collapsed technical details. */
+  toolInput?: string;
+  /** MCP tool annotations, when the provider passes them on. */
+  toolHints?: { readOnly?: boolean; destructive?: boolean };
   /** Exact provider command eligible for a durable, folder-scoped allow. */
   commandAllowlist?: { command: string; cwd: string; providerInstanceId: string };
   approvalScope?: "local-computer";
@@ -214,6 +221,8 @@ export interface Message {
   comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: MausColor };
   /** thread chips: "Opened thread #Title on Bot" linking to that thread */
   threadRef?: { botId: string; threadId: string; title: string };
+  /** A parallel task this line belongs to (shared/parallel-tasks.ts). */
+  parallelTask?: ParallelTaskRef;
   /** sent while the bot was mid-turn; auto-sends when the turn settles.
    * Rendered only while the bot is busy, so a flag stranded by a server
    * restart never shows a promise nothing will keep. */
@@ -343,6 +352,8 @@ export interface Task {
   /** set when a bot (not the person) started this thread — its own or a
    * teammate's; the sidebar shows a quiet "opened by <name>" under the title */
   openedBy?: ThreadOpener;
+  /** A parallel task: the conversation and request it answers. */
+  parallelOf?: TaskParallelOf;
   /** set when a bot closed this thread with close_thread; the sidebar folds
    * it out of the default list (still under "show all", never deleted) and
    * the server clears it when a new turn starts there */
@@ -669,7 +680,7 @@ export interface ConfigStatus {
   rooms: { turnTimeoutMinutes: number };
   /** Workspace defaults for new bots; absent effort = no level is sent. */
   newBots?: { effort?: EffortLevel };
-  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
+  threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
   localVm: { mode: "shared" | "per-bot" | "pool"; maxInstances: number; idleTimeoutMinutes?: number };
   opencodeGo?: { configured: boolean };
@@ -936,7 +947,8 @@ export type AppSettingsSection =
   | "mail"
   | "activity"
   | "backups"
-  | "workspaces";
+  | "workspaces"
+  | "achievements";
 
 export type BotSettingsSection =
   | "overview"
@@ -947,6 +959,7 @@ export type BotSettingsSection =
   | "memory"
   | "routines"
   | "access"
+  | "worksOn"
   | "model"
   | "permissions"
   | "voice"
@@ -1005,6 +1018,10 @@ export interface AppState {
    * openmausbot://cloud link; each link counts up. Any other
    * toggleAppSettings (another section, the same one by hand, closing) sets 0. */
   appSettingsCloudLink: number;
+  /** A settings sub-page pushed inside the section (src/components/
+   * SettingsSubPage.tsx), e.g. General > About me; null shows the section.
+   * Any toggleAppSettings that names none (another section, closing) clears it. */
+  appSettingsSubPage: string | null;
   shortcutsOpen: boolean;
   /** the first-run welcome tour, also replayable from Settings → General */
   welcomeOpen: boolean;
@@ -1213,9 +1230,13 @@ export type Action =
       replyToId?: string;
       threadId?: string;
       /** said on a voice call (Message.voiceCall): the turn is a phone turn */
-      voiceCall?: { callId: string; interrupted?: boolean; language?: string };
+      voiceCall?: VoiceCallMark;
+      /** while the conversation works: join, run in parallel or wait
+       * (shared/parallel-tasks.ts); absent = join (the server default) */
+      busyMode?: BusySendMode;
       onError?: () => void;
     }
+  | { type: "stopParallelTask"; botId: string; threadId: string }
   | { type: "pendingQueued"; threadId: string; queueId: string; text: string; reason?: SteerQueueReason }
   | { type: "consumePendingQueued"; threadId: string; queueId: string }
   | { type: "cancelQueued"; botId: string; queueId: string; threadId?: string; onCancelled?: () => void }
@@ -1302,7 +1323,7 @@ export type Action =
   | { type: "toggleInspector"; open?: boolean }
   | { type: "focusMessage"; threadId: string; messageId: string }
   | { type: "focusMessageConsumed"; nonce: number }
-  | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; cloudLink?: boolean }
+  | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; cloudLink?: boolean; subPage?: string }
   | { type: "toggleShortcuts"; open?: boolean }
   | { type: "toggleWelcome"; open?: boolean }
   | { type: "toggleLaunch"; open?: boolean; mode?: "solo" | "server" }
@@ -2174,6 +2195,7 @@ export function reducer(state: AppState, action: Action): AppState {
         appSettingsOpen: open,
         appSettingsSection: action.section ?? state.appSettingsSection,
         appSettingsCloudLink: action.cloudLink && open ? state.appSettingsCloudLink + 1 : 0,
+        appSettingsSubPage: open ? action.subPage ?? null : null,
         personPanelId: open ? null : state.personPanelId,
         settingsOpen: open ? false : state.settingsOpen,
         computerOpen: open ? false : state.computerOpen,
@@ -2307,6 +2329,8 @@ export function reducer(state: AppState, action: Action): AppState {
       else delete pendingQueued[action.threadId];
       return { ...state, pendingQueued, consumedQueueIds: rememberConsumedQueueId(state.consumedQueueIds, action.queueId) };
     }
+    case "stopParallelTask":
+      return state;
     case "cancelQueued": {
       const bot = state.bots.find((candidate) => candidate.id === action.botId);
       if (!bot) return state;
@@ -2520,6 +2544,7 @@ export const initialState: AppState = {
   appSettingsOpen: false,
   appSettingsSection: "general",
   appSettingsCloudLink: 0,
+  appSettingsSubPage: null,
   shortcutsOpen: false,
   welcomeOpen: false,
   launchOpen: false,
@@ -3281,10 +3306,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // its answer is read aloud like the rest of the call
           const liveCallId = voiceCallId(action.botId);
           const voiceCall = action.voiceCall ?? (liveCallId ? { callId: liveCallId } : undefined);
+          // on a call, words said or typed while the bot works join its turn
+          const busyMode = voiceCall ? undefined : action.busyMode;
           void waitForExecutionSettings(botBeforeSend ? [botBeforeSend] : [], threadId)
             .then(() => api(`/api/bots/${action.botId}/messages`, {
                 method: "POST",
-                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}) }),
+                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}), ...(busyMode ? { busyMode } : {}) }),
               }))
             .then((body) => {
               if (body?.message && typeof body.threadId === "string") {
@@ -3318,6 +3345,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             });
           break;
         }
+        case "stopParallelTask":
+          api(`/api/bots/${action.botId}/parallel/${action.threadId}/stop`, { method: "POST", body: "{}" }).catch(showError);
+          break;
         case "editMessage": {
           const threadId =
             action.threadId ?? stateRef.current.bots.find((bot) => bot.id === action.botId)?.threadId;
@@ -4025,6 +4055,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "routine.deleted":
           rawDispatch({ type: "routineDeleted", routineId: frame.routineId });
+          break;
+        // a person's own unlocks (server/achievements.ts sends them to their streams only)
+        case "achievements":
+          receiveAchievementsFrame(frame);
           break;
         case "routine.run":
           rawDispatch({ type: "routineRunPatched", run: frame.run });

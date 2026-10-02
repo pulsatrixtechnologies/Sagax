@@ -8,6 +8,7 @@
  * server/store.ts; the wire projection is typed so a new server field
  * fails compilation until it is either declared here or explicitly listed
  * as server-private. */
+import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { ApprovalMode } from "./approval-mode.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { TurnDigest } from "./digest.ts";
@@ -130,6 +131,8 @@ export interface WireTask {
   routineRunId?: string;
   /** Set when a bot, not a person, opened this thread. */
   openedBy?: TaskOpenedBy;
+  /** A parallel task: the conversation and request it answers. */
+  parallelOf?: TaskParallelOf;
   /** Organization server: the person this 1:1 thread belongs to (who
    * started it; a routine's runAs; else the bot owner when absent). Only
    * they read or write it (server/thread-privacy.ts). */
@@ -435,6 +438,23 @@ export interface WireAccessCard {
 
 /** One transcript line. Serialized as stored — the durable delivery
  * identity (roomRequest) rides the wire unchanged. */
+/** WireMessage.voiceCall: a person's words said on a voice call. */
+export interface VoiceCallMark {
+  callId: string;
+  /** the person cut the bot's previous answer to say this */
+  interrupted?: boolean;
+  /** the call's language when one is set */
+  language?: string;
+  /** one spoken utterance (idempotency across retries and the steer queue) */
+  utteranceId?: string;
+  /** on a barge-in: what the person actually heard of the cut answer */
+  heard?: string;
+  /** on a barge-in: what they did not hear (kept for the transcript) */
+  unheard?: string;
+  /** these words complete the previous utterance, which was cut short */
+  continues?: boolean;
+}
+
 export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
@@ -483,6 +503,8 @@ export interface WireMessage {
     fullResult?: boolean;
     /** Files the call wrote, as the tool named them (see thread-files.ts). */
     files?: string[];
+    /** A call a sub-agent made: the item id of the call that started it. */
+    parentItemId?: string;
   };
   /** user messages sent INTO a running turn (capabilities.queueing). */
   steered?: boolean;
@@ -534,7 +556,7 @@ export interface WireMessage {
    * which call, whether the person cut the bot's previous answer to say it,
    * and the call's language when one is set. The turn it starts gets the
    * hidden phone-call instruction (server/voice-call-prompt.ts). */
-  voiceCall?: { callId: string; interrupted?: boolean; language?: string };
+  voiceCall?: VoiceCallMark;
   /** group threads: which member said this (sender attribution). */
   from?: { botId: string; name: string; color: string };
   /** Set on a room message a bot pushed in with post_to_room. */
@@ -554,6 +576,9 @@ export interface WireMessage {
   threadRef?: { botId: string; threadId: string; title: string };
   /** user messages waiting in the steer-queue while the bot is mid-turn. */
   queued?: boolean;
+  /** A parallel task this line belongs to (shared/parallel-tasks.ts): the
+   * person's request, its live card, or its result. */
+  parallelTask?: ParallelTaskRef;
   /** steer-queue entry this drained user line came from. */
   queueId?: string;
 }
@@ -585,6 +610,11 @@ export interface OptionCardData {
   allowKey?: string;
   /** the provider can remember an allow for the rest of its session. */
   allowSession?: boolean;
+  /** A permission ask's full arguments as redacted JSON, shown only in
+   * the card's collapsed technical details. */
+  toolInput?: string;
+  /** MCP tool annotations, when the provider passes them on. */
+  toolHints?: { readOnly?: boolean; destructive?: boolean };
   /** Exact native command offered for an owner/admin to remember. */
   commandAllowlist?: CommandAllowlistCandidate;
   /** Local actions never share remembered grants with cloud/tool approvals. */
@@ -769,6 +799,8 @@ export type ServerFrame =
   | { kind: "computer"; botId: string; state: "provisioning" | "waking" | "ready" }
   | { kind: "computer-control"; botId: string; held: boolean; helpReason: string | null }
   | { kind: "bot.deleted"; botId: string }
+  /** A person's own unlocks (server/achievements.ts), to their streams only. */
+  | { kind: "achievements"; audience: string; unlocked: Array<{ id: string; points: number; unlockedAt: number }> }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */
   | ({ kind: "config" } & Record<string, unknown>);

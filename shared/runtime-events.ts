@@ -49,6 +49,9 @@ export type RuntimeEvent = RuntimeEventBase &
       }
     | { type: "session.model-variants"; model: string; variants: ModelVariantState }
     | { type: "session.exited"; reason?: string }
+    /** A model call took in input steered into the running turn (the
+     * `steerId` the harness gave Adapter.steer). */
+    | { type: "steer.received"; steerId: string }
     | { type: "turn.started" }
     | {
         type: "turn.retrying";
@@ -101,6 +104,9 @@ export type RuntimeEvent = RuntimeEventBase &
          * edit), as the tool named them. Recorded on the activity message so
          * the conversation's Files tab can list them once the call succeeds. */
         files?: string[];
+        /** A call a sub-agent made: the item id of the call that started
+         * that sub-agent (Claude's Agent tool), so its steps nest under it. */
+        parentItemId?: string;
       }
     | { type: "item.updated"; itemType: "tool" | "reasoning"; tokens?: number | null }
     | { type: "item.completed"; itemType: "tool"; ok: boolean; output?: string }
@@ -152,6 +158,9 @@ export type RuntimeEvent = RuntimeEventBase &
          * permission rules, ACP agents through `allow_always` or the
          * driver's per-session memory. Unset when answers are one-shot. */
         allowSession?: boolean;
+        /** A permission ask's full arguments as redacted JSON, for the
+         * card's collapsed technical details (summary stays one line). */
+        input?: string;
       }
     | {
         type: "request.resolved";

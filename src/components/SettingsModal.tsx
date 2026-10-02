@@ -3,9 +3,10 @@
 // is the stuff shared by every bot: who you are, your keys, and the
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
-import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
+import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
+import { AchievementsPage } from "./achievements/AchievementsPage";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -46,7 +47,8 @@ import { SidebarHiddenSettings } from "./SidebarHiddenSettings";
 import { SKINS, readSkin } from "@/lib/skins";
 import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
-import { AboutMeSettings } from "./AboutMeSettings";
+import { AboutMeEditor, aboutMeFirstLine } from "./AboutMeSettings";
+import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { InitialsAvatar } from "./Avatar";
 import { profileInitials, profileLabel } from "./SidebarProfileMenu";
 import { ManagedProfileIdentity } from "./ManagedProfileIdentity";
@@ -64,6 +66,7 @@ import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
+import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
 
 // `labelKey`, not a label: t() reads the active pack when it is called, so a
@@ -80,6 +83,7 @@ export const SECTIONS: Array<{
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "cloudAccount", labelKey: "settings.section.cloudAccount", icon: User, keywords: ["cloud", "account", "personal", "sign in", "pro", "subscription", "billing"] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
+  { id: "achievements", labelKey: "settings.section.achievements", icon: Trophy, keywords: ["achievements", "trophies", "trophy", "points", "gamerscore", "level", "unlock", "succès", "trophées"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
   { id: "decisionModel", labelKey: "settings.section.decisionModel", icon: Zap, keywords: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"] },
@@ -164,14 +168,14 @@ function ProfileFields() {
   const { state } = useStore();
   const viewer = state.config?.viewer;
   const managed = managedProfile(viewer);
-  if (managed) return <ManagedProfileIdentity profile={managed} />;
+  if (managed) return <ManagedProfileIdentity profile={managed} flat />;
   if (viewer && !viewer.operator) return <SignedInIdentity name={viewer.name} email={viewer.email} />;
   return <OperatorProfileFields />;
 }
 
 function SignedInIdentity({ name, email }: { name: string; email: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-[14px] border-[0.5px] border-border px-3.5 py-2.5">
+    <div className="flex items-center gap-3">
       <InitialsAvatar initials={profileInitials({ name, email })} size={36} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] font-semibold text-ink">{profileLabel({ name, email })}</div>
@@ -260,12 +264,11 @@ export function configuredSummary(config: ConfigStatus | null | undefined, keys:
   return t("settings.card.countSet", { count: set, total: keys.length });
 }
 
-/** "3 lines" or "Not set": enough to know whether About me needs a look. */
-export function aboutMeSummary(aboutMe: string | undefined): string {
-  const lines = (aboutMe ?? "").split("\n").filter((line) => line.trim()).length;
-  if (!lines) return t("settings.card.notSet");
-  return lines === 1 ? t("settings.card.lineOne") : t("settings.card.lineMany", { count: lines });
-}
+/** Sub-pages pushed inside a section (src/components/SettingsSubPage.tsx):
+ * the section they belong to, their title and their page. */
+const SUB_PAGES: Record<string, { section: AppSettingsSection; titleKey: LocaleKey; render: () => React.ReactNode }> = {
+  "general.aboutMe": { section: "general", titleKey: "settings.profile.aboutMe", render: () => <AboutMeEditor /> },
+};
 
 function UpdatesRow() {
   const s = useUpdaterState();
@@ -598,6 +601,19 @@ function ShowThreadsRow() {
         checked={enabled}
         aria-label={t("settings.threadDisplay.show")}
         onClick={() => setShowThreads(!enabled)}
+      />
+    </SettingRow>
+  );
+}
+
+function InspectorButtonRow() {
+  const enabled = useShowInspectorButton();
+  return (
+    <SettingRow title={t("settings.inspectorButton.title")} subtitle={t("settings.inspectorButton.subtitle")}>
+      <Switch
+        checked={enabled}
+        aria-label={t("settings.inspectorButton.show")}
+        onClick={() => setShowInspectorButton(!enabled)}
       />
     </SettingRow>
   );
@@ -959,11 +975,30 @@ export function SettingsModal() {
     .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
   const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
+  const subPageId = state.appSettingsSubPage;
+  const subPage = subPageId && SUB_PAGES[subPageId]?.section === section ? SUB_PAGES[subPageId] : null;
+  const openSubPage = (id: string) => dispatch({ type: "toggleAppSettings", open: true, section: SUB_PAGES[id].section, subPage: id });
+  const closeSubPage = useCallback(() => {
+    const from = state.appSettingsSubPage;
+    dispatch({ type: "toggleAppSettings", open: true, section });
+    // Back where the person left: the row that opened the page.
+    if (from && typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        const row = [...document.querySelectorAll<HTMLElement>("[data-settings-card]")].find((node) => node.dataset.settingsCard === from);
+        row?.querySelector<HTMLElement>("button")?.focus();
+      });
+    }
+  }, [dispatch, section, state.appSettingsSubPage]);
   const nextVisibleSection = visibleSections.some((entry) => entry.id === section) ? undefined : visibleSections[0]?.id;
 
   useEffect(() => {
     for (const id of cardsMatching(q)) requestSettingsCard(id);
   }, [q]);
+
+  // Searching shows the matching sections, not the page that was open.
+  useEffect(() => {
+    if (q && subPage) dispatch({ type: "toggleAppSettings", open: true, section });
+  }, [q, subPage, section, dispatch]);
 
   useEffect(() => {
     // Translated matches can change without the query changing. Follow the
@@ -1101,6 +1136,16 @@ export function SettingsModal() {
             </select>
           </div>
 
+          {subPage && subPageId ? (
+            <SettingsSubPage
+              pageId={subPageId}
+              sectionLabel={sectionLabelKey ? t(sectionLabelKey) : ""}
+              title={t(subPage.titleKey)}
+              onBack={closeSubPage}
+            >
+              {subPage.render()}
+            </SettingsSubPage>
+          ) : (
           <div className="flex flex-1 flex-col overflow-y-auto">
             <h2 className="hidden px-8 pb-1 pt-6 text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink sm:block">
               {sectionLabelKey ? t(sectionLabelKey) : null}
@@ -1120,16 +1165,13 @@ export function SettingsModal() {
                 >
                   <ProfileFields />
                 </Card>
-                <Card
-                  collapsible
+                <SettingsSubPageRow
                   cardId="general.aboutMe"
-                  defaultOpen={false}
                   title={t("settings.profile.aboutMe")}
-                  subtitle={t("settings.profile.aboutMeHelp")}
-                  summary={aboutMeSummary(state.config?.profile?.aboutMe)}
-                >
-                  <AboutMeSettings inCard />
-                </Card>
+                  summary={aboutMeFirstLine(state.config?.profile?.aboutMe)}
+                  actionLabel={t("settings.aboutMe.edit")}
+                  onOpen={() => openSubPage("general.aboutMe")}
+                />
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <LanguageRow />
                   <NewBotEffortRow />
@@ -1187,6 +1229,7 @@ export function SettingsModal() {
                   <FontRow />
                   <SidebarDensityRow />
                   <SidebarLogoRow />
+                  <InspectorButtonRow />
                   <ShowThreadsRow />
                   <SidebarHiddenSettings />
                   <NotificationSoundsRow />
@@ -1303,8 +1346,10 @@ export function SettingsModal() {
             {section === "mail" && <MailSettings />}
             {section === "activity" && <ActivitySection />}
             {section === "workspaces" && <WorkspacesSection />}
+            {section === "achievements" && <AchievementsPage />}
             </div>
           </div>
+          )}
           {/* Hibou 98 only: the era's dialog footer. Settings save as you go,
               so OK simply closes, like the other skins' close box. */}
           {retroSkin && (

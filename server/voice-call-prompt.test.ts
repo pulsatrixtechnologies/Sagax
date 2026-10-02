@@ -8,6 +8,9 @@ import {
   voiceCallInstruction,
   voiceCallSection,
   voiceCallSteerPrompt,
+  voiceCallTurnPrompt,
+  VOICE_CALL_CONTINUES_NOTE,
+  VOICE_CALL_TURN_MARK,
 } from "./voice-call-prompt.ts";
 
 describe("parseVoiceCallMeta", () => {
@@ -19,8 +22,17 @@ describe("parseVoiceCallMeta", () => {
     expect(parseVoiceCallMeta({ callId: "call-0123456789", interrupted: false })).toEqual({ callId: "call-0123456789" });
   });
 
+  it("keeps an utterance id, and what was heard only on an interruption", () => {
+    expect(parseVoiceCallMeta({ callId: "call-0123456789", utteranceId: "utt-00000001", heard: "  It is  sunny ", unheard: "and warm", continues: true }))
+      .toEqual({ callId: "call-0123456789", utteranceId: "utt-00000001", continues: true });
+    expect(parseVoiceCallMeta({ callId: "call-0123456789", interrupted: true, heard: "  It is  sunny ", unheard: "and warm" }))
+      .toEqual({ callId: "call-0123456789", interrupted: true, heard: "It is sunny", unheard: "and warm" });
+    const long = parseVoiceCallMeta({ callId: "call-0123456789", interrupted: true, unheard: "x".repeat(5_000) }) as { unheard: string };
+    expect(long.unheard.length).toBeLessThanOrEqual(1_200);
+  });
+
   it("refuses a malformed mark", () => {
-    for (const bad of ["call", [], { callId: "no" }, { callId: "call-0123456789", interrupted: "yes" }, { callId: "call-0123456789", language: "auto" }, { callId: "call-0123456789", language: "xx" }]) {
+    for (const bad of ["call", [], { callId: "no" }, { callId: "call-0123456789", interrupted: "yes" }, { callId: "call-0123456789", language: "auto" }, { callId: "call-0123456789", language: "xx" }, { callId: "call-0123456789", utteranceId: "x" }, { callId: "call-0123456789", heard: 3 }, { callId: "call-0123456789", continues: "yes" }]) {
       expect(parseVoiceCallMeta(bad)).toHaveProperty("error");
     }
   });
@@ -56,6 +68,25 @@ describe("the phone-call instruction", () => {
     expect(voiceCallSection({}, call, "Ada")).toContain(ENDED_MARK);
     expect(voiceCallSection({}, {}, "Ada")).toBe("");
     expect(voiceCallSection(undefined, undefined, "Ada")).toBe("");
+  });
+
+  it("marks every call turn's own words, since a live session gets the section only once", () => {
+    expect(voiceCallTurnPrompt("hi", undefined)).toBe("hi");
+    const marked = voiceCallTurnPrompt("hi", { callId: "call-0123456789" });
+    expect(marked.startsWith(VOICE_CALL_TURN_MARK)).toBe(true);
+    expect(marked.endsWith("\n\nhi")).toBe(true);
+    // an engine command stays a command
+    expect(voiceCallTurnPrompt("/compact", { callId: "call-0123456789" })).toBe("/compact");
+    expect(voiceCallTurnPrompt("x", { callId: "call-0123456789", continues: true })).toContain(VOICE_CALL_CONTINUES_NOTE);
+  });
+
+  it("tells the bot how much of a cut answer the person heard", () => {
+    const text = voiceCallTurnPrompt("wait", { callId: "call-0123456789", interrupted: true, heard: "It is sunny in Montreal", unheard: "and it will rain tonight." });
+    expect(text).toContain(VOICE_CALL_INTERRUPTED_NOTE);
+    expect(text).toContain('They heard up to: "It is sunny in Montreal".');
+    expect(text).toContain('They did not hear: "and it will rain tonight."');
+    expect(voiceCallInstruction("Ada", { callId: "call-0123456789", interrupted: true, heard: "" , unheard: "all of it" })).toContain("They heard none of it.");
+    expect(text).not.toMatch(/[\u2013\u2014]/);
   });
 
   it("marks words steered into a running turn without storing anything", () => {

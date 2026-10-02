@@ -9,7 +9,7 @@ import { Trombi, type TrombiPose } from "../retro-assistant/Trombi";
 import { TROMBI_SKIN_TIER, TROMBI_SKINS, type TrombiSkin } from "../../../shared/mascot-look";
 import { EquipFx, MoveFx } from "./SkinFx";
 import { trombiPaint } from "./trombi-skins";
-import { fxDetail, fxPalette, useEquipBurst, useFxVisibility, useMoveBurst, useReducedMotion, type FxDetail, type FxMoveRequest } from "./skin-fx";
+import { fxDetail, fxPalette, useEquipBurst, useFxVisibility, useMoveBurst, useReducedMotion, useReplayMove, type FxDetail, type FxMoveRequest } from "./skin-fx";
 
 export interface SkinnedTrombiProps {
   skin: TrombiSkin | string;
@@ -35,6 +35,8 @@ export function SkinnedTrombi({ skin, pose, size, width, animated = true, detail
   useFxVisibility(root, live);
   const equip = useEquipBurst(known, live);
   const burst = useMoveBurst(move, live);
+  const body = useRef<HTMLSpanElement>(null);
+  useReplayMove(body, burst && moveBody ? burst.key : null);
   const uid = `trombi-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const palette = fxPalette(trombiPaint(known, uid).fx, "#5fd4ff");
   return (
@@ -49,7 +51,7 @@ export function SkinnedTrombi({ skin, pose, size, width, animated = true, detail
       aria-label={label ?? undefined}
       aria-hidden={label ? undefined : true}
     >
-      <span key={burst && moveBody ? burst.key : undefined} className={cn("inline-flex", burst && moveBody && `fx-body-move fx-body-${burst.move}`, equip && "fx-equip-pop")}>
+      <span ref={body} className={cn("inline-flex", burst && moveBody && `fx-body-move fx-body-${burst.move}`, equip && "fx-equip-pop")}>
         <Trombi pose={pose} size={width} still={!animated} label={null} skin={known} fxFull={full} />
       </span>
       {equip && <EquipFx key={equip} palette={palette} uid={`${uid}-eq`} />}

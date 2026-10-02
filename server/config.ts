@@ -1,6 +1,7 @@
 // Config + data dirs. One file, ~/.sagax/config.json, env fallbacks:
 //   { "xai": {"key":"xai-…"}, "composio": {"apiKey":"ak_…"}, "box": {"token":"…"},
 //     "instances": { "<instanceId>": {"driver":"grok", …} } }
+import { DEFAULT_MAX_PARALLEL_PER_PERSON, MAX_PARALLEL_PER_PERSON } from "../shared/parallel-tasks.ts";
 import { readFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -47,9 +48,11 @@ export const DEFAULT_LOCAL_VM_MODE = "shared" as const;
 export const DEFAULT_LOCAL_VM_MAX_INSTANCES = 2;
 export const MIN_LOCAL_VM_MAX_INSTANCES = 1;
 export const MAX_LOCAL_VM_MAX_INSTANCES = 8;
-/** Idle window before a Local VM's disposable container is recycled. The
- * default keeps the historical 8-hour window for existing configs. */
-export const DEFAULT_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 480;
+/** Idle window before an unused Local VM is stopped: no turn on it, no
+ * open viewer, no running command. Stopping removes only the disposable
+ * container (this desktop image cannot safely resume); the durable folder
+ * is kept and the next use starts it again. */
+export const DEFAULT_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 10;
 export const MIN_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 5;
 export const MAX_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 1_440;
 
@@ -395,6 +398,9 @@ const automaticRecoverySchema = z.object({
   { message: "Choose a backup model before enabling automatic recovery", path: ["backup"] });
 const threadsConfigSchema = z.object({
   maxConcurrentPerBot: z.number().int().min(1).max(MAX_CONCURRENT_BOT_THREADS),
+  /** Parallel tasks (shared/parallel-tasks.ts) one person may have running on
+   * one bot at once; more wait for one of theirs to finish. Absent: 3. */
+  maxParallelPerPerson: z.number().int().min(1).max(MAX_PARALLEL_PER_PERSON).optional(),
   /** Cap each per-thread events/ and native/ NDJSON log at this many
    * bytes; absent (the default) keeps today's unbounded growth (#1280). */
   eventLogMaxBytes: z.number().int().min(MIN_THREAD_EVENT_LOG_BYTES).max(MAX_THREAD_EVENT_LOG_BYTES).optional(),
@@ -415,6 +421,7 @@ const newBotsPatchSchema = z.object({
  * event-log knob back to its absent (off) default. */
 const threadsPatchSchema = threadsConfigSchema.extend({
   maxConcurrentPerBot: threadsConfigSchema.shape.maxConcurrentPerBot.optional(),
+  maxParallelPerPerson: z.number().int().min(1).max(MAX_PARALLEL_PER_PERSON).nullable().optional(),
   eventLogMaxBytes: threadsConfigSchema.shape.eventLogMaxBytes.nullable(),
   eventLogRetentionDays: threadsConfigSchema.shape.eventLogRetentionDays.nullable(),
 });
@@ -710,7 +717,7 @@ export interface AppConfig {
   imageGen?: ImageGenerationConfig;
   profile?: { name?: string; email?: string; aboutMe?: string; avatarUrl?: string };
   rooms?: { turnTimeoutMinutes: number; handoffLifetimeMinutes?: number; handoffMinRunwayMinutes?: number; handoffHardCapMinutes?: number };
-  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
+  threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean };
   memory?: { captureQuietMs?: number; tidyHour?: number };
   /** Shared preserves the historical singleton. Per-bot gives every bot a
@@ -875,6 +882,11 @@ export function roomHandoffLimits(cfg: AppConfig): RoomHandoffLimitsMs {
  * read from either, and a patch may legitimately omit it. */
 export function maxConcurrentBotThreads(cfg: { threads?: { maxConcurrentPerBot?: number } }): number {
   return cfg.threads?.maxConcurrentPerBot ?? DEFAULT_MAX_CONCURRENT_BOT_THREADS;
+}
+
+/** Parallel tasks one person may have running on one bot at once. */
+export function maxParallelTasksPerPerson(cfg: { threads?: { maxParallelPerPerson?: number } }): number {
+  return cfg.threads?.maxParallelPerPerson ?? DEFAULT_MAX_PARALLEL_PER_PERSON;
 }
 
 /** Size cap for each per-thread events/ and native/ NDJSON log. Null (the

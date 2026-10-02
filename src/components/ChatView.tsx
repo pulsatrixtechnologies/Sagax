@@ -53,6 +53,7 @@ import { liveActivityLabel } from "@/lib/live-activity";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
+import { ParallelResultLabel, ParallelTaskCard } from "./ParallelTaskCard";
 import { ThreadChip } from "./ThreadChip";
 import { VerifyCard } from "./VerifyCard";
 import { askText, runSteps, runSummary, showRun, skillPrompt, skillStaged } from "@/lib/verify-steps";
@@ -75,7 +76,7 @@ import { prefersWideBubble } from "@/lib/rich-blocks";
 import { ScreenFrame } from "./ScreenFrame";
 import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
-import { BotActivityPicker, TaskPicker } from "./TaskPicker";
+import { BotActivityPicker, TaskPicker, ThreadsOffReturnLink } from "./TaskPicker";
 
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
@@ -85,6 +86,7 @@ import { CallOverlay, VoiceCallDock } from "./CallView";
 import { effectivePlace, toolPlace, type EffectivePlace } from "@/lib/place";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
+import { useShowInspectorButton } from "@/lib/inspector-preferences";
 import { activeLocale, t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { showPrivateConversationHint } from "@/lib/private-threads";
@@ -886,6 +888,7 @@ const MessagesList = memo(function MessagesList({
                   />
                 );
               }
+              if (m.parallelTask?.role === "card") return <ParallelTaskCard message={m} botId={bot.id} />;
               if (!showToolCalls && !m.comm && !m.threadRef) return null;
               return <ActivityChip message={m} place={place} />;
             }
@@ -901,6 +904,8 @@ const MessagesList = memo(function MessagesList({
               return m.png ? <ScreenFrame png={m.png} mime={m.mime} /> : null;
             default:
               return (
+                <>
+                {m.parallelTask?.role === "result" && <ParallelResultLabel message={m} />}
                 <Bubble
                   bot={bot}
                   message={m}
@@ -915,6 +920,7 @@ const MessagesList = memo(function MessagesList({
                   replyTarget={m.replyToId ? bot.messages.find((candidate) => candidate.id === m.replyToId) : undefined}
                   onReply={() => onReply(m)}
                 />
+                </>
               );
           }
         })();
@@ -979,6 +985,7 @@ function PinnedBanner({
 }
 
 export function ChatView({ bot: profile }: { bot: Bot }) {
+  const showInspector = useShowInspectorButton();
   const bot = useMemo(() => currentTaskBot(profile), [profile]);
   const { state, dispatch } = useStore();
   const remoteClient = window.ogb?.remoteClient?.active === true;
@@ -1369,7 +1376,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           <TaskPicker bot={bot} />
           {/* Share, Inspector and the panel toggle move into the bot panel's
               top bar while it is open, the way Grok Bot's do. */}
-          {!remoteClient && !panelOpen && <button
+          {!remoteClient && !panelOpen && showInspector && <button
             onClick={() => dispatch({ type: "toggleInspector" })}
             aria-label={t("chat.inspector")}
             aria-pressed={state.inspectorOpen}
@@ -1399,6 +1406,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           card hangs over the thread */}
       <VoiceCallDock bot={bot} />
       <BotActivityPicker bot={bot} />
+      <ThreadsOffReturnLink bot={bot} />
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {routineExecution && <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[11.5px] text-ink-secondary">
         <span className="min-w-0 flex-1 truncate">{t("routines.executionDetails", { name: routineExecution.routineName })}</span>
@@ -1569,7 +1577,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           onClick={jumpToLatest}
           aria-label={t("chat.jumpToLatestAria")}
           className="animate-pop-in absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-hairline/40 bg-raised px-3 py-1.5 text-[12.5px] text-ink shadow-lg hover:bg-raised-hover"
-          style={{ bottom: composerDock.height }}
+          style={{ bottom: composerDock.height + 16 }}
         >
           <ArrowDown size={13} /> {t("chat.jumpToLatest")}
         </button>

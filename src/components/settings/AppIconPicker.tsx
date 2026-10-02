@@ -1,10 +1,12 @@
 // Settings > Appearance > App icon: the Sagax owl, the owl in its skins, a
-// shape, Trombi, the person's Primary Bot or an uploaded picture, each drawn
+// shape, Trombi, Bunbu, the person's Primary Bot or an uploaded picture, each drawn
 // through the system's icon template so it sits in the Dock (or the taskbar)
 // like the other apps' icons. The desktop app keeps and shows the result
 // (electron/app-icon.mjs); a browser has no app icon, so no picker.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Loader2, Upload } from "lucide-react";
+import { Check, Loader2, Lock, Upload } from "lucide-react";
+import { appIconLock, lockHint, reportAchievement, useUnlocks } from "@/lib/achievements";
+import "@/components/achievements/achievements.css";
 import { BotAvatar } from "@/components/Avatar";
 import { useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -39,6 +41,8 @@ function stageBot(art: AppIconArt, bots: readonly (BotLike & { id: string })[]):
       return { name: "Sagax", color: art.color, mascotLook: { character: "shape", shape: art.shape, skins: { shape: art.skin } } };
     case "trombi":
       return { name: "Trombi", color: "blue", mascotLook: { character: "trombi", skins: { trombi: art.skin } } };
+    case "bunbu":
+      return { name: "Bunbu", color: art.color, mascotLook: { character: "bunbu", skins: { bunbu: art.skin } } };
     case "primary":
       return bots.find((bot) => bot.id === art.botId) ?? null;
     default:
@@ -62,6 +66,8 @@ export function AppIconPicker() {
   const arts = useRef<Record<string, IconArt | null>>({});
   const upload = useRef<HTMLInputElement>(null);
 
+  // icons drawing a locked mascot, or rewarded by an achievement, wait for it
+  const unlocks = useUnlocks();
   const viewer = viewerActorId(state.config);
   const primary = state.bots.find((bot) => isViewersPrimaryBot(bot, viewer)) ?? null;
   const choices = useMemo(() => {
@@ -129,6 +135,7 @@ export function AppIconPicker() {
       const images = sizes.map((size) => ({ size, png: renderAppIcon(template, size, art, choice).toDataURL("image/png") }));
       const saved = await bridge.set({ id: choice.id, images });
       setCurrent(saved.id ?? DEFAULT_APP_ICON_ID);
+      reportAchievement("appicon.changed");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -155,6 +162,9 @@ export function AppIconPicker() {
       <div role="radiogroup" aria-label={t("settings.appIcon.title")} className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-2">
         {tiles.map((choice) => {
           const selected = current === choice.id;
+          // the icon in use stays usable even when it would be locked now
+          const lock = selected ? { locked: false } : appIconLock(unlocks, choice.id, choice.art as { kind: string; skin?: string });
+          const hint = lockHint(lock);
           return (
             <button
               key={choice.id}
@@ -162,7 +172,10 @@ export function AppIconPicker() {
               role="radio"
               aria-checked={selected}
               data-app-icon={choice.id}
-              disabled={busy !== null || !previews[choice.id]}
+              data-locked={lock.locked ? "" : undefined}
+              title={hint || undefined}
+              aria-description={hint || undefined}
+              disabled={busy !== null || !previews[choice.id] || lock.locked}
               onClick={() => void apply(choice, arts.current[choice.id] ?? null)}
               className={cn(
                 "relative flex flex-col items-center gap-1 rounded-xl p-2 text-[12px] leading-tight text-ink-secondary hover:bg-control/60 disabled:cursor-default",
@@ -174,6 +187,7 @@ export function AppIconPicker() {
               </span>
               <span className="max-w-full truncate">{t(choice.labelKey)}</span>
               {selected && <Check size={13} className="absolute right-1.5 top-1.5 text-accent" aria-hidden="true" />}
+              {lock.locked && <span className="unlock-lock" aria-hidden="true"><Lock size={9} strokeWidth={2.6} /></span>}
               {busy === choice.id && <Loader2 size={13} className="absolute left-1.5 top-1.5 animate-spin" aria-hidden="true" />}
             </button>
           );

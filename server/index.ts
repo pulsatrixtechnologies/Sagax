@@ -82,8 +82,9 @@ import {
   cleanupStaleAttachmentPartials,
   deleteAttachment,
   extensionForMime,
-  FILE_MAX_BYTES,
   IMAGE_MAX_BYTES,
+  isArchiveAttachment,
+  maxBytesForFileMime,
   parseAudioRange,
   readAttachment,
   saveAudio,
@@ -167,6 +168,7 @@ import {
   roomTurnTimeoutMinutes,
   threadEventLogMaxBytes,
   maxConcurrentBotThreads,
+  maxParallelTasksPerPerson,
   threadEventLogRetentionDays,
   saveConfig,
   showToolCallsEnabled,
@@ -286,6 +288,7 @@ import { _loadPending, buildDelegationFailurePrompt, buildDelegationRevivalPromp
 import {
   cancelSteeredMessage,
   drainSteeredMessages,
+  cancelThreadQueue,
   hasQueuedSteeredMessages,
   holdSteeredQueue,
   onSteeredQueueChange,
@@ -297,6 +300,18 @@ import {
   restoreSteeredMessages,
   settleHeldSteeredQueue,
 } from "./steer-queue.ts";
+import {
+  parallelAdmission,
+  parallelBlocked,
+  parallelBrief,
+  parallelOutcome,
+  parallelPending,
+  parallelResultText,
+  parallelTaskTitle,
+  prepareParallelWorkspace,
+  type BriefLine,
+} from "./parallel-tasks.ts";
+import { isBusySendMode, type BusySendMode, type ParallelTaskRef, type ParallelTaskState } from "../shared/parallel-tasks.ts";
 import {
   cancelChannelMessage,
   drainChannelMessages,
@@ -537,7 +552,9 @@ import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
-import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt } from "./voice-call-prompt.ts";
+import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
+import { VoiceCallSessions } from "./voice-call-session.ts";
+import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
@@ -568,7 +585,7 @@ import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.t
 import { OrgTeams } from "./org-teams.ts";
 import { keyVia, materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
-import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels } from "./section-channels.ts";
+import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { createBotPerspicaxRoutes } from "./bot-perspicax.ts";
 import { applyIdentityMigration, principalIdFor, rewritePeopleForAttach } from "./identity-migration.ts";
@@ -625,7 +642,7 @@ import {
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
-import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
+import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, levelRank, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
@@ -650,6 +667,9 @@ import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bo
 import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
+import { achievementFrameAllowed, achievementRequestEvents, achievementSendEvents, activityEvents, createAchievementStore, routineRunEvents, type AchievementEvent } from "./achievements.ts";
+import { createAchievementRoutes } from "./routes/achievements.ts";
+import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
@@ -686,6 +706,7 @@ import { AUTO_COMPUTER_MCP_NAME, COMPUTER_SELECT_TOOL, autoComputerGuidance, aut
 import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
 import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
 import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAttachments, stagedName, SANDBOX_ATTACHMENTS_DIR, type StagingTarget, type TurnAttachedFile } from "./attachment-staging.ts";
+import { archiveNote, archiveSummary, extractedFolderName, localExtractedPath, prepareArchiveUpload, sandboxArchiveArgv, storedArchiveManifest } from "./attachment-archives.ts";
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
 import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
@@ -822,6 +843,52 @@ const desktopBridges = new DesktopBridges(liveSessionPerson);
 const desktopTunnels = new DesktopTunnels(liveSessionPerson);
 const bridgeAudit = createBridgeAudit(join(DATA_DIR, "desktop-bridge-audit.jsonl"));
 const userPreferenceStore = createUserPreferenceStore(DATA_DIR);
+// Each person's achievements (server/achievements.ts). On first use a
+// person keeps every character and skin their bots already wear
+// (grandfathering): on a solo server every bot, on an organization server
+// the bots they own.
+const achievementStore = createAchievementStore({
+  dataDir: DATA_DIR,
+  grandfather: (person) => grandfatheredFromBots(
+    IDENTITY.kind === "perspicax" ? store.bots.filter((bot) => effectiveBotOwner(bot) === person) : store.bots,
+  ),
+});
+/** When each voice call was first heard from, for its length (bounded in achievementSendEvents). */
+const achievementCallStarts = new Map<string, number>();
+/** Count server events for a person and tell their streams what unlocked. Never throws. */
+function recordAchievements(person: string | null | undefined, events: readonly AchievementEvent[]): void {
+  if (!person || !events.length) return;
+  try {
+    const result = achievementStore.record(person, events, "server");
+    if (result.unlocked.length) broadcast({ kind: "achievements", audience: person, unlocked: result.unlocked });
+  } catch {
+    /* achievements are a bonus: never fail the request that earned one */
+  }
+}
+/** The person a thread's work counts for: its owner, else the bot's owner. */
+function achievementThreadPerson(threadId: string): string | null {
+  const bot = store.botByThread(threadId);
+  if (!bot) return null;
+  return privateThreadOwner(store.taskByThread(bot.id, threadId), effectiveBotOwner(bot)) || null;
+}
+/** Server events read from live frames: a routine run that completed, a sub-agent, Auto picking a computer. */
+function observeAchievementFrame(payload: Record<string, unknown>): void {
+  if (payload.kind === "routine.run" && payload.run && typeof payload.run === "object") {
+    const run = payload.run as { id?: unknown; status?: unknown; routineId?: unknown };
+    const events = routineRunEvents(run);
+    if (!events.length || typeof run.routineId !== "string") return;
+    const routine = routines?.listRoutines().find((candidate) => candidate.id === run.routineId);
+    const bot = routine ? store.bot(routine.botId) : undefined;
+    const runAs: unknown = routine?.runAs;
+    const runAsPerson = typeof runAs === "string" ? runAs : runAs && typeof runAs === "object" ? (runAs as { principalId?: string }).principalId : undefined;
+    recordAchievements(runAsPerson || (bot ? effectiveBotOwner(bot) : null), events);
+    return;
+  }
+  if ((payload.kind === "message" || payload.kind === "message.patch") && typeof payload.threadId === "string" && payload.message && typeof payload.message === "object") {
+    const events = activityEvents(payload.message as Parameters<typeof activityEvents>[0]);
+    if (events.length) recordAchievements(achievementThreadPerson(payload.threadId), events);
+  }
+}
 /** A person's "where bots work" preference (shared/bot-workplace.ts). */
 function workplacePreference(person: string | null): BotWorkplace {
   if (!person) return parseBotWorkplace(null);
@@ -3205,6 +3272,42 @@ function requestedTaskBot(botId: string, rawThreadId: unknown): BotRecord {
   return task;
 }
 
+/** Threads whose turn a person is stopping, until it settles: words sent
+ * meanwhile wait for the next turn instead of joining the dying one, where
+ * the stop withdrew them and they got no answer. */
+const stoppingThreads = new Map<string, ReturnType<typeof setTimeout>>();
+/** When a person last stopped each thread's turn (the call watchdog). */
+const threadStoppedAt = new Map<string, number>();
+
+function markThreadStopping(threadId: string): void {
+  const previous = stoppingThreads.get(threadId);
+  if (previous) clearTimeout(previous);
+  threadStoppedAt.set(threadId, Date.now());
+  // a turn that never reports settling must not hold its words forever
+  const timer = setTimeout(() => {
+    if (stoppingThreads.get(threadId) !== timer) return;
+    stoppingThreads.delete(threadId);
+    drainQueuedSends();
+  }, 30_000);
+  timer.unref?.();
+  stoppingThreads.set(threadId, timer);
+}
+
+function clearThreadStopping(threadId: string): void {
+  const timer = stoppingThreads.get(threadId);
+  if (!timer) return;
+  clearTimeout(timer);
+  stoppingThreads.delete(threadId);
+}
+
+/** A person stops a thread's turn: what they sent into it is withdrawn,
+ * and words sent while it stops wait for the next turn. */
+async function stopDirectThreadByPerson(botId: string, threadId: string): Promise<void> {
+  if (threadBusy(botId, threadId)) markThreadStopping(threadId);
+  handoffs.stoppedByPerson(threadId);
+  await interruptDirectThread(botId, threadId);
+}
+
 async function interruptDirectThread(botId: string, threadId: string): Promise<void> {
   const requestOwner = directRequestOwners.get(threadId);
   if (requestOwner) {
@@ -3541,17 +3644,38 @@ function decideWorkplace(input: { desktopTargeted: boolean; routine: boolean; pr
 /** The provider text for this turn with the speaker's own attachments
  * pointed where the tools run (server/attachment-staging.ts). Another
  * person's upload is left as is and never copied. */
-function workplaceTurnText(text: string, decision: WorkplaceDecision): { text: string; staging: TurnWorkplace["staging"] } {
-  if (IDENTITY.kind !== "perspicax") return { text, staging: null };
+function workplaceTurnText(text: string, decision: WorkplaceDecision): { text: string; staging: TurnWorkplace["staging"]; annotated: boolean } {
+  if (IDENTITY.kind !== "perspicax") return { ...soloArchiveText(text), staging: null };
   const person = decision.principal;
   const files = attachedFilesInText(text, ATTACHMENTS_DIR).filter((file) => person && attachmentIsTheirs(person, attachmentReferences(file.file)));
-  if (!files.length) return { text, staging: null };
+  if (!files.length) return { text, staging: null, annotated: false };
   const desktop = decision.target === "user-desktop" ? desktopBridges.current(person) : null;
   const target: StagingTarget | null = desktop
     ? { kind: "user-desktop", attachmentsDir: desktop.attachmentsDir, platform: desktop.platform }
     : decision.target === "user-sandbox" ? { kind: "user-sandbox" } : null;
-  const staged = stageTurnAttachments(text, files, target);
-  return { text: staged.text, staging: target && staged.staged.length ? { target, files: staged.staged } : null };
+  let annotated = false;
+  // An archive also gets its manifest, and the folder it is unpacked into
+  // next to its copy at the first tool call (server/attachment-archives.ts).
+  const staged = stageTurnAttachments(text, files, target, (file, where) => {
+    if (!isArchiveAttachment(file.file)) return null;
+    annotated = true;
+    const folder = where ? where.slice(0, where.length - stagedName(file).length) + extractedFolderName(stagedName(file)) : null;
+    return archiveNote({ name: file.name, manifest: storedArchiveManifest(file.file), extractedPath: folder, when: "first-tool" });
+  });
+  return { text: staged.text, staging: target && staged.staged.length ? { target, files: staged.staged } : null, annotated };
+}
+
+/** Solo: an attached archive was unpacked next to its upload on this
+ * machine; the bot gets its manifest and that folder after the tag. */
+function soloArchiveText(text: string): { text: string; annotated: boolean } {
+  const archives = attachedFilesInText(text, ATTACHMENTS_DIR).filter((file) => isArchiveAttachment(file.file));
+  if (!archives.length) return { text, annotated: false };
+  let out = text;
+  for (const file of [...archives].sort((a, b) => b.start - a.start)) {
+    const note = archiveNote({ name: file.name, manifest: storedArchiveManifest(file.file), extractedPath: localExtractedPath(file.serverPath), when: "ready" });
+    out = `${out.slice(0, file.end)}\n${note}${out.slice(file.end)}`;
+  }
+  return { text: out, annotated: true };
 }
 
 /** What the bot is told about where its tools run, when it matters: on the
@@ -3637,6 +3761,16 @@ function autoComputerSelectionFor(capability: { threadId: string; generation: st
   return workplace?.generation === capability.generation && workplace.auto?.auto ? workplace.auto : null;
 }
 
+/** The unpacker's one JSON line (sandboxArchiveArgv). */
+function parseArchiveOutcome(stdout: string): { extracted: boolean; reason?: string } | null {
+  try {
+    const value = JSON.parse(stdout.trim().split("\n").at(-1) ?? "") as { extracted?: unknown; reason?: unknown };
+    return { extracted: value.extracted === true, ...(typeof value.reason === "string" ? { reason: value.reason } : {}) };
+  } catch {
+    return null;
+  }
+}
+
 /** Copy the turn's pending attachments where its tools run, once, at its
  * first tool call (nothing is created for a turn that never uses a tool). */
 async function stagePendingAttachments(threadId: string, generation: string): Promise<void> {
@@ -3649,16 +3783,32 @@ async function stagePendingAttachments(threadId: string, generation: string): Pr
     try {
       if (target.kind === "user-sandbox" && userSandbox) {
         const path = `${SANDBOX_ATTACHMENTS_DIR}/${stagedName(file)}`;
-        // Linux keeps each environment string under 128 KiB: chunks of 48 KiB.
-        for (const chunk of attachmentChunks(file, 48 * 1024)) {
+        // Linux keeps each environment string under 128 KiB: chunks of 48 KiB
+        // (a multiple of 3, so their base64 pieces concatenate), up to 8 per
+        // call so an archive of tens of MB does not take thousands of calls.
+        const chunks = [...attachmentChunks(file, 48 * 1024)];
+        for (let first = 0; first < chunks.length; first += 8) {
+          const group = chunks.slice(first, first + 8);
+          const names = group.map((_, index) => `SAGAX_CONTENT_B64_${index}`);
+          const pieces = names.map((name) => `"$${name}"`).join(" ");
+          const env: Record<string, string> = { SAGAX_PATH: path };
+          group.forEach((chunk, index) => { env[names[index]!] = chunk.data.toString("base64"); });
           const result = await userSandbox.exec(person, {
-            argv: ["sh", "-c", chunk.offset === 0
-              ? 'mkdir -p -- "$(dirname -- "$SAGAX_PATH")" && printf %s "$SAGAX_CONTENT_B64" | base64 -d > "$SAGAX_PATH"'
-              : 'printf %s "$SAGAX_CONTENT_B64" | base64 -d >> "$SAGAX_PATH"'],
-            env: { SAGAX_PATH: path, SAGAX_CONTENT_B64: chunk.data.toString("base64") },
+            argv: ["sh", "-c", first === 0
+              ? `mkdir -p -- "$(dirname -- "$SAGAX_PATH")" && printf %s ${pieces} | base64 -d > "$SAGAX_PATH"`
+              : `printf %s ${pieces} | base64 -d >> "$SAGAX_PATH"`],
+            env,
             timeoutSec: 30,
           });
           if (result.exitCode !== 0) throw new Error(result.stderr.trim() || "copy failed");
+        }
+        const argv = isArchiveAttachment(file.file) && storedArchiveManifest(file.file)?.status === "ok"
+          ? sandboxArchiveArgv(path, `${SANDBOX_ATTACHMENTS_DIR}/${extractedFolderName(stagedName(file))}`)
+          : null;
+        if (argv) {
+          const result = await userSandbox.exec(person, { argv, timeoutSec: 300 });
+          const outcome = parseArchiveOutcome(result.stdout);
+          if (result.exitCode !== 0 || !outcome?.extracted) throw new Error(`unpack failed: ${outcome?.reason ?? (result.stderr.trim().slice(0, 200) || "no result")}`);
         }
       } else if (target.kind === "user-desktop") {
         const active = () => activeInternalGenerationByThread.get(threadId) === generation;
@@ -3667,6 +3817,13 @@ async function stagePendingAttachments(threadId: string, generation: string): Pr
             action: "stage_file", name: stagedName(file), content: chunk.data.toString("base64"), encoding: "base64", offset: chunk.offset, final: chunk.final,
           }, active) as { isError?: boolean; content?: { text?: string }[] } | null;
           if (result?.isError) throw new Error(result.content?.[0]?.text ?? "copy failed");
+        }
+        if (isArchiveAttachment(file.file) && storedArchiveManifest(file.file)?.status === "ok") {
+          // The desktop app unpacks it next to its copy with the same rules
+          // (electron/archive-extract.mjs); an older app answers that it does
+          // not know the action, and the bot was told to unpack it then.
+          const result = await desktopBridges.request(person, { action: "extract_archive", name: stagedName(file), timeout_seconds: 300 }, active) as { isError?: boolean; content?: { text?: string }[] } | null;
+          if (result?.isError) throw new Error(`unpack failed: ${result.content?.[0]?.text ?? "no result"}`);
         }
       }
       bridgeAudit.record({ person, botId: workplace.botId, threadId, target: target.kind, kind: "tool", detail: `attachment ${stagedName(file)}`, ok: true });
@@ -6556,6 +6713,7 @@ function cursorSeq(raw: string | string[] | undefined): number | null {
 /** `adminOnly` frames (a workspace spend notice) reach admin streams and
  * are withheld from client sessions, live and on replay. */
 function broadcast(payload: Record<string, unknown>, options: { adminOnly?: boolean } = {}) {
+  observeAchievementFrame(payload);
   // Membership may also change through fleet/CLI config writes. Close stale
   // email streams before any further workspace data is delivered.
   sessions.revalidateEmailSessions();
@@ -7022,6 +7180,8 @@ function sseFrameFor(
   clientFrame: string | null,
 ): string | null {
   if (payload && !peopleDmFrameAllowed(payload, client.viewerId)) return null;
+  // a person's unlocks reach that person's streams only
+  if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload) {
     const scoped = scopeChannelApproval(payload, approvalViewerOf(client));
     if (scoped.action === "drop") return null;
@@ -8779,7 +8939,8 @@ bus.subscribe((event: RuntimeEvent) => {
         const message = pushMessage({
           role: "bot",
           kind: "activity",
-          tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}) },
+          tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}),
+            ...(event.parentItemId ? { parentItemId: event.parentItemId } : {}) },
           // attributed to its turn so the digest can count it
           turnId: liveTurnId,
         });
@@ -8919,6 +9080,7 @@ bus.subscribe((event: RuntimeEvent) => {
           options: event.choices?.length ? event.choices : permission ? ["Allow", "Deny"] : [],
           requestId: event.requestId,
           tool: permission ? event.tool : undefined,
+          toolInput: permission ? event.input : undefined,
           questionRequest: questions
             ? { version: 1, questions, ...(event.origin === "output" ? { origin: "output" as const } : {}) }
             : undefined,
@@ -9128,6 +9290,8 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       const reply = lastReply.get(event.threadId) ?? "";
       lastReply.delete(event.threadId);
+      // A parallel task's first turn answers in the conversation it came from.
+      settleParallelTask(event.threadId, { ok: event.ok, reply, why: event.stopReason ?? undefined });
       // A run that broke — not one the person stopped, and not a routine's,
       // which reports through its own failure path — is the Primary Bot's to see.
       // A lazy computer-claim rejection already reported its failure and
@@ -9163,6 +9327,8 @@ bus.subscribe((event: RuntimeEvent) => {
           }
           releaseTurnResources(resourceOwner);
           if (!isCurrent()) return;
+          clearThreadStopping(event.threadId);
+          scheduleVoiceCallWatchdog(bot.id, event.threadId);
           if (store.taskByThread(bot.id, event.threadId)?.activity !== "dead") {
             store.setTaskActivity(bot.id, event.threadId, "idle");
           }
@@ -9735,6 +9901,7 @@ function directContext(bot: BotRecord, threadId: string, messages: Message[]): C
               : transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"),
     keep: m.roomRequest?.phase === "result" || Boolean(m.peerAsk) || (m.role !== "user" && Boolean(m.from)),
     ...(m.steered ? { steered: true } : {}),
+    ...(m.role === "user" && m.voiceCall ? { spoken: true } : {}),
   }));
 }
 
@@ -9802,6 +9969,9 @@ async function compactConversation(input: {
     if (compactionControllers.get(threadId)?.generation === generation) compactionControllers.delete(threadId);
   }
 }
+
+/** Threads on a live voice call (server/voice-call-session.ts). */
+const voiceCalls = new VoiceCallSessions();
 
 const handoffs = new Handoffs({
   order: (threadId) => store.activePath(threadId).filter(isContextMessage).map((m) => m.id),
@@ -10125,6 +10295,39 @@ bus.subscribe((event: RuntimeEvent) => {
   drainDelegationWakes();
 });
 
+/** Call words already retried once by the watchdog (message ids). */
+const voiceCallRetried = new Set<string>();
+
+/** A moment after a direct turn settles on a thread on a live call: words
+ * said on the call with no answer after them run once more
+ * (server/voice-call-watchdog.ts). */
+function scheduleVoiceCallWatchdog(botId: string, threadId: string): void {
+  if (!voiceCalls.active(threadId)) return;
+  const timer = setTimeout(() => {
+    try {
+      if (!voiceCalls.active(threadId) || threadBusy(botId, threadId) || hasQueuedSteeredMessages(botId, threadId)) return;
+      if (stoppingThreads.has(threadId) || activeGroupTurnForBot(botId) || botAtThreadCapacity(botId)) return;
+      const bot = store.projectBotForTask(botId, threadId);
+      if (!bot || !store.taskByThread(botId, threadId)) return;
+      const words = unansweredCallMessage(store.activePath(threadId), { stoppedAt: threadStoppedAt.get(threadId), retried: voiceCallRetried });
+      if (!words) return;
+      voiceCallRetried.add(words.id);
+      if (voiceCallRetried.size > 5_000) voiceCallRetried.delete(voiceCallRetried.values().next().value!);
+      console.warn(`[voice-call] thread ${threadId}: no answer to the words said on the call; running the turn again`);
+      void startTurn(botId, voiceCallRecoveryPrompt(words.text ?? ""), {
+        threadId,
+        userMessage: words,
+        // the words ride in the prompt: not twice through the replay
+        excludeMessageIds: [words.id],
+        ...(words.sender ? { sender: words.sender } : {}),
+      }).catch((error) => console.warn(`[voice-call] thread ${threadId}: the retry could not start: ${error instanceof Error ? error.message : String(error)}`));
+    } catch (error) {
+      console.warn("[voice-call] watchdog failed", error);
+    }
+  }, VOICE_CALL_WATCHDOG_MS);
+  timer.unref?.();
+}
+
 function drainQueuedSends() {
   if (!followupsReady) return;
   drainSteeredMessages(store, (botId, threadId, prompt, userMessage, excludeIds, unattended, head) =>
@@ -10138,7 +10341,8 @@ function drainQueuedSends() {
     new Promise<void>((resolve, reject) => {
       // The drained turn is booked to whoever sent the first waiting line.
       void startTurn(botId, prompt, {
-        threadId, userMessage, excludeMessageIds: excludeIds, unattended, onTurnSettled: resolve,
+        threadId, userMessage, excludeMessageIds: excludeIds, unattended,
+        onTurnSettled: () => { resolve(); settleParallelFallback(threadId); },
         trigger: queuedTurnTrigger(head),
         // the first waiting line's speaker, as it was when queued; rows
         // queued before speakers were kept read from their provenance
@@ -10151,6 +10355,7 @@ function drainQueuedSends() {
             ok: false,
           },
         });
+        settleParallelTask(threadId, { ok: false, reply: "", why: err instanceof Error ? err.message : String(err) });
         resolve();
         // M2: only this group left the queue, and a turn that never
         // started publishes no completion to wake the groups behind it.
@@ -10160,7 +10365,7 @@ function drainQueuedSends() {
     // Provider completion can precede its dispatch promise: keep the queue
     // intact until that exact handshake releases its runtime-only claim.
     (botId, threadId) => threadBusy(botId, threadId) || botAtThreadCapacity(botId) || Boolean(activeGroupTurnForBot(botId))
-      || parksBehindCoordination(botId, threadId),
+      || parksBehindCoordination(botId, threadId) || parallelTaskBlocked(botId, threadId),
   );
   // Asides always drain after person follow-ups (see drainAsideLane): the
   // steer drain above can make a thread busy again, deferring its asides
@@ -10248,6 +10453,252 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
   }
   const message = await startTurn(botId, text, { threadId, replyTo, sendId, sender, trigger, speaker, ...(voiceCall ? { voiceCall } : {}) });
   return { ok: true as const, threadId, message };
+}
+
+// ── parallel tasks (shared/parallel-tasks.ts, server/parallel-tasks.ts) ──
+// A request sent while the conversation is busy can run as its own task: a
+// thread of the same bot, linked to the conversation, whose first turn's
+// result is posted back there as a reply to the request.
+
+/** Parallel tasks stopped by a person before their result was posted. */
+const parallelStops = new Set<string>();
+
+/** The parallel task of a thread still owed a result, with its bot. */
+function pendingParallelTask(threadId: string): { bot: BotRecord; task: TaskRecord } | null {
+  const bot = store.botByThread(threadId);
+  const task = bot ? store.taskByThread(bot.id, threadId) : undefined;
+  return bot && task && parallelPending(task) ? { bot, task } : null;
+}
+
+/** A waiting parallel task holds its slot until its person has one free. */
+function parallelTaskBlocked(botId: string, threadId: string): boolean {
+  const task = store.taskByThread(botId, threadId);
+  if (!task?.parallelOf) return false;
+  return parallelBlocked({ task, tasks: store.tasks(botId), limit: maxParallelTasksPerPerson(cfg), busy: (id) => threadBusy(botId, id) });
+}
+
+function patchParallelCard(parentThreadId: string, cardId: string | undefined, patch: Partial<ParallelTaskRef>) {
+  if (!cardId) return;
+  const card = store.messagesFor(parentThreadId).find((message) => message.id === cardId);
+  if (!card?.parallelTask) return;
+  store.patchMessage(parentThreadId, cardId, { parallelTask: { ...card.parallelTask, ...patch } });
+}
+
+/** Start (or queue) a parallel task for `text`, asked in `threadId`. */
+async function startParallelTask(input: {
+  botId: string;
+  threadId: string;
+  text: string;
+  replyTo?: Message;
+  sendId?: string;
+  sender?: ResolvedSender;
+  trigger?: UsageTrigger;
+  speaker?: TurnSpeaker;
+  /** The asker's key for the per-person limit (absent: the operator). */
+  principalId?: string;
+  /** The bot itself opened it (start_thread with report_back). */
+  byBot?: boolean;
+  /** The task's name, when the bot gave one. */
+  title?: string;
+  /** Org audit actor. */
+  auth?: RequestAuth;
+}): Promise<{ ok: true; threadId: string; message: Message; parallel: { threadId: string; title: string; state: ParallelTaskState; cardMessageId: string } }> {
+  const bot = store.bot(input.botId);
+  const parentTask = bot ? store.taskByThread(bot.id, input.threadId) : undefined;
+  if (!bot || !parentTask) throw Object.assign(new Error("the target task no longer exists"), { status: 409 });
+  if (parentTask.parallelOf && !input.byBot) {
+    // A task of a task would answer into a conversation nobody is reading.
+    throw Object.assign(new Error("this conversation is already a parallel task; send it here or in the main conversation"), { status: 409, code: "parallel_nested" });
+  }
+  const limit = maxParallelTasksPerPerson(cfg);
+  const admission = parallelAdmission({
+    tasks: store.tasks(bot.id),
+    principalId: input.principalId,
+    limit,
+    queued: (id) => !threadBusy(bot.id, id) && hasQueuedSteeredMessages(bot.id, id),
+  });
+  if (admission.action === "refuse") {
+    throw Object.assign(new Error(`you already have ${admission.running} parallel tasks running and ${admission.waiting} waiting on this bot; wait for one to finish`), { status: 409, code: "parallel_limit" });
+  }
+  const title = input.title?.trim() || parallelTaskTitle(input.text);
+  const inherited = parentThreadModel(bot.id, input.threadId);
+  const child = store.createTask(bot.id, title, false, parentTask.projectId, undefined,
+    inherited.approvalMode ?? (approvalModeFor(parentTask) === "full" ? "full" : undefined),
+    parentTask.ownerPrincipalId, inherited.modelSelection ?? parentTask.modelSelection);
+  if (!child) throw Object.assign(new Error("couldn't create the parallel task"), { status: 500 });
+  // Where it works: a worktree of the conversation's repository, else the
+  // same folder (the brief says it is shared), else its own task folder.
+  const parentProjected = store.projectBotForTask(bot.id, input.threadId) ?? bot;
+  const parentCwd = parentTask.cwd !== undefined ? parentTask.cwd : parentProjected.cwd;
+  const workspace = prepareParallelWorkspace({
+    parentCwd, privateRoot: join(DATA_DIR, "task-workspaces"), root: join(DATA_DIR, "parallel-worktrees"), botId: bot.id, threadId: child.threadId,
+  });
+  // A worktree is the task's folder; otherwise it keeps its own private one
+  // (never the conversation's: two turns never share a working folder).
+  store.patchTask(bot.id, child.threadId, { cwd: workspace.kind === "worktree" ? workspace.cwd : ensureTaskWorkspace(bot.id, child.threadId) });
+  const now = Date.now();
+  // The request line, in the conversation the person is reading. A task the
+  // bot opened has no person's words to show: its card is the anchor.
+  const request = input.byBot ? null : store.appendMessage(input.threadId, {
+    role: "user",
+    kind: "text",
+    text: input.text,
+    replyToId: input.replyTo?.id,
+    sendId: input.sendId,
+    ...(input.sender ? { sender: input.sender } : {}),
+    parallelTask: { threadId: child.threadId, title, requestMessageId: "", role: "request" },
+  });
+  if (request) {
+    store.patchMessage(input.threadId, request.id, {
+      parallelTask: { threadId: child.threadId, title, requestMessageId: request.id, role: "request" },
+    });
+  }
+  const card = store.appendMessage(input.threadId, {
+    role: "bot",
+    kind: "activity",
+    tool: { name: `Parallel task #${title}`, ok: true },
+    threadRef: { botId: bot.id, threadId: child.threadId, title },
+    parallelTask: { threadId: child.threadId, title, requestMessageId: request?.id ?? "", role: "card", state: "queued", startedAt: now },
+  });
+  const anchorId = request?.id ?? card.id;
+  if (!request) patchParallelCard(input.threadId, card.id, { requestMessageId: card.id });
+  store.setTaskParallelOf(bot.id, child.threadId, {
+    threadId: input.threadId, messageId: anchorId, cardMessageId: card.id, at: now,
+    ...(input.principalId ? { principalId: input.principalId } : {}),
+    ...(input.byBot ? { byBot: true } : {}),
+  });
+  if (IDENTITY.kind === "perspicax") {
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      action: "task.parallel_start",
+      target: auditBotTarget(bot.id),
+      after: { threadId: child.threadId, conversation: input.threadId, ...(input.byBot ? { byBot: true } : {}) },
+      actor: input.auth ? orgAuditActor(input.auth) : { kind: "worker" },
+    });
+  }
+  const recent: BriefLine[] = store.activePath(input.threadId)
+    .filter((message) => message.id !== anchorId && message.kind === "text" && message.text?.trim()
+      && (message.role === "user" || message.role === "bot") && !message.parallelTask)
+    .slice(-6)
+    .map((message) => ({ role: message.role === "user" ? "user" as const : "bot" as const, text: message.text!, ...(message.sender?.name ? { name: message.sender.name } : {}) }));
+  const brief = parallelBrief({
+    request: promptWithReply(input.text, input.replyTo, input.sender?.name || cfg.profile?.name?.trim() || "User"),
+    conversationTitle: parentTask.title,
+    recent,
+    workspace,
+    personName: input.sender?.name || cfg.profile?.name?.trim() || "The person",
+    byBot: input.byBot,
+  });
+  const reply = (state: ParallelTaskState) => ({
+    ok: true as const, threadId: input.threadId, message: store.messagesFor(input.threadId).find((m) => m.id === anchorId) ?? request ?? card,
+    parallel: { threadId: child.threadId, title, state, cardMessageId: card.id },
+  });
+  const mustQueue = admission.action === "queue" || botAtThreadCapacity(bot.id) || Boolean(activeGroupTurnForBot(bot.id));
+  if (mustQueue) {
+    queueSteeredMessage(bot.id, child.threadId, input.text, {
+      prompt: brief, reason: "capacity", sender: input.sender, trigger: input.trigger, speaker: input.speaker,
+      ...(input.byBot ? { unattended: isUnattended(bot.id, input.threadId) } : {}),
+    });
+    return reply("queued");
+  }
+  const userMessage = store.appendMessage(child.threadId, {
+    role: "user", kind: "text", text: input.text, ...(input.sender ? { sender: input.sender } : {}),
+  });
+  try {
+    await startTurn(bot.id, brief, {
+      threadId: child.threadId, userMessage, excludeMessageIds: [userMessage.id],
+      sender: input.sender, trigger: input.trigger, speaker: input.speaker,
+      ...(input.byBot ? { unattended: isUnattended(bot.id, input.threadId) } : {}),
+      onTurnSettled: () => settleParallelFallback(child.threadId),
+    });
+  } catch (error) {
+    settleParallelTask(child.threadId, { ok: false, reply: "", why: error instanceof Error ? error.message : String(error) });
+    return reply("failed");
+  }
+  patchParallelCard(input.threadId, card.id, { state: "running" });
+  return reply("running");
+}
+
+/** A parallel task's first turn settled: post its result into the
+ * conversation it answers, as a reply to the request, once. */
+function settleParallelTask(threadId: string, outcome: { ok: boolean; reply: string; why?: string }) {
+  const pending = pendingParallelTask(threadId);
+  if (!pending) return;
+  const { bot, task } = pending;
+  const link = task.parallelOf!;
+  const stopped = parallelStops.delete(threadId) || outcome.why === "interrupted";
+  const state = parallelOutcome({ ok: outcome.ok, stopped });
+  const endedAt = Date.now();
+  store.setTaskParallelOf(bot.id, threadId, { ...link, reportedAt: endedAt, outcome: state });
+  const parent = store.taskByThread(bot.id, link.threadId);
+  if (!parent) return;
+  const request = store.messagesFor(link.threadId).find((message) => message.id === link.messageId);
+  const ref: ParallelTaskRef = {
+    threadId, title: task.title, requestMessageId: link.messageId, role: "result", state, endedAt,
+  };
+  store.appendMessage(link.threadId, {
+    role: "bot",
+    kind: "text",
+    text: redactSecretsInText(parallelResultText({ state, reply: outcome.reply, why: outcome.why })),
+    ...(request?.kind === "text" ? { replyToId: request.id } : {}),
+    parallelTask: ref,
+  });
+  patchParallelCard(link.threadId, link.cardMessageId, { state, endedAt });
+  // The conversation's next turn reads what its session has not seen: the
+  // request and this result.
+  markTaskContextExternallyUpdated(bot, link.threadId);
+  // A finished task folds out of the default sidebar list (never deleted);
+  // a failed or stopped one stays where the person can see it.
+  if (state === "done" && !task.closedBy) {
+    store.setTaskClosedBy(bot.id, threadId, { botId: bot.id, name: bot.name, at: endedAt });
+  }
+  if (IDENTITY.kind === "perspicax") {
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      action: "task.parallel_settle",
+      target: auditBotTarget(bot.id),
+      after: { threadId, conversation: link.threadId, state },
+      actor: { kind: "worker" },
+    });
+  }
+  // A person's freed slot may let one of their waiting tasks start.
+  queueMicrotask(drainQueuedSends);
+}
+
+/** A turn that settled without turn.completed (refused before it ran, for
+ * one) leaves its parallel task owed a result: settle it as not finished. */
+function settleParallelFallback(threadId: string) {
+  setTimeout(() => {
+    const pending = pendingParallelTask(threadId);
+    if (!pending || threadBusy(pending.bot.id, threadId) || hasQueuedSteeredMessages(pending.bot.id, threadId)) return;
+    const said = [...store.messagesFor(threadId)].reverse().find((message) => message.kind === "access" || message.tool?.name.startsWith("error:"));
+    settleParallelTask(threadId, { ok: false, reply: "", why: said?.tool?.name.replace(/^error:\s*/, "") ?? "the task could not start" });
+  }, 0).unref?.();
+}
+
+/** Stop one parallel task: its running turn, or its place in line. */
+async function stopParallelTask(botId: string, threadId: string): Promise<"stopped" | "not_pending"> {
+  const pending = pendingParallelTask(threadId);
+  if (!pending || pending.bot.id !== botId) return "not_pending";
+  parallelStops.add(threadId);
+  if (threadBusy(botId, threadId)) {
+    await interruptDirectThread(botId, threadId);
+    return "stopped";
+  }
+  cancelThreadQueue(botId, threadId);
+  settleParallelTask(threadId, { ok: false, reply: "" });
+  return "stopped";
+}
+
+/** After a restart: a parallel task whose turn was cut off and is not
+ * waiting in line will never settle on its own. */
+function settleOrphanedParallelTasks() {
+  for (const bot of store.bots) {
+    for (const task of store.tasks(bot.id)) {
+      if (!parallelPending(task) || threadBusy(bot.id, task.threadId) || hasQueuedSteeredMessages(bot.id, task.threadId)) continue;
+      settleParallelTask(task.threadId, { ok: false, reply: "", why: "the server restarted while it ran" });
+    }
+  }
 }
 
 /** How many start_thread calls one turn may make. Same spirit as the
@@ -10745,6 +11196,12 @@ async function startTurn(
     personAsked: !routineLineage(speaker) && Boolean(orgSpeakerPrincipal(bot, speaker)),
   });
   const turnAuto = autoComputerStateFor(turnPlace, turnWorksOn(plan, opts?.runOn === "cloud" || Boolean(inheritedTeamComputer(bot))), routineLineage(speaker));
+  // Each call turn's words carry the call mark themselves: a live session
+  // gets the volatile call section only when it changed, so from the second
+  // call turn on the section alone never reached the engine.
+  if (userMessage.voiceCall && !opts.cardContinuation && !opts.commsDepth && !userMessage.peerAsk) {
+    providerText = voiceCallTurnPrompt(providerText, userMessage.voiceCall);
+  }
   const placedText = opts.cardContinuation ? { text: providerText, staging: null } : workplaceTurnText(providerText, turnPlace);
   providerText = withWorkplaceNote(placedText.text, turnPlace, turnAuto);
   // A compaction summarizes with the bot's engine too, so it is gated like
@@ -11066,6 +11523,11 @@ async function startTurn(
         const perspicax = await perspicaxTurnIntegration({ bot, threadId, generation: dispatchClaimId, speaker, taken: Object.keys(integrations.custom ?? {}) });
         if (Object.keys(perspicax.custom).length) integrations.custom = { ...integrations.custom, ...perspicax.custom };
         perspicaxPrompt = perspicax.prompt;
+      }
+      // a call's tools should not come and go between its turns: say so when they do
+      const callMcp = voiceCalls.noteMcp(threadId, Object.keys(integrations.custom ?? {}));
+      if (callMcp.added.length || callMcp.removed.length) {
+        console.warn(`[voice-call] thread ${threadId}: MCP servers changed between call turns${callMcp.added.length ? `; added ${callMcp.added.join(", ")}` : ""}${callMcp.removed.length ? `; missing ${callMcp.removed.join(", ")}` : ""}`);
       }
       // CLI engines work inside the bot's own workspace directory rather
       // than the user's home: a bot with file tools and acceptEdits gets a
@@ -13674,10 +14136,11 @@ async function runGroupMemberTurn(
     roomCreatorPrincipalId: group.createdBy ?? group.humanIds?.[0],
   });
   let roomPlace = decideWorkplace({ desktopTargeted: false, routine: roomRoutine, principal: roomPrincipal, personAsked: Boolean(roomSpeakerId) });
-  const roomPlaced = latestUser && !cardContinuation && !latestInBurst && latestUser.sender?.id?.trim().toLowerCase() === roomPlace.principal
+  // (solo: no principal; an attached archive still gets its manifest)
+  const roomPlaced = latestUser && !cardContinuation && !latestInBurst && (IDENTITY.kind !== "perspicax" || latestUser.sender?.id?.trim().toLowerCase() === roomPlace.principal)
     ? workplaceTurnText(usesNativeImageInput ? resolvedLatestImages.text : latestUser.text ?? "", roomPlace)
-    : { text: null, staging: null };
-  const latestOverride = roomPlaced.text !== null && roomPlaced.staging !== null
+    : { text: null, staging: null, annotated: false };
+  const latestOverride = roomPlaced.text !== null && (roomPlaced.staging !== null || roomPlaced.annotated)
     ? roomPlaced.text
     : usesNativeImageInput ? resolvedLatestImages.text : null;
   const roomContext = serializeRoomContext(
@@ -16454,6 +16917,7 @@ function configStatus() {
     newBots: cfg.newBots?.effort ? { effort: cfg.newBots.effort } : {},
     threads: {
       maxConcurrentPerBot: maxConcurrentBotThreads(cfg),
+      maxParallelPerPerson: maxParallelTasksPerPerson(cfg),
       ...(eventLogMaxBytes !== null ? { eventLogMaxBytes } : {}),
       ...(eventLogRetentionDays !== null ? { eventLogRetentionDays } : {}),
     },
@@ -17175,6 +17639,12 @@ ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstal
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
 ROUTES.push(createUserPreferenceRoutes({ store: userPreferenceStore, organization: () => IDENTITY.kind === "perspicax" }));
+// A person's achievements (server/achievements.ts), on every server.
+ROUTES.push(createAchievementRoutes({
+  store: achievementStore,
+  person: (auth) => actorPrincipalId(auth) || null,
+  unlocked: (person, unlocked) => broadcast({ kind: "achievements", audience: person, unlocked }),
+}));
 ROUTES.push(createDesktopBridgeRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   bridges: desktopBridges, tunnels: desktopTunnels, audit: bridgeAudit,
@@ -17468,6 +17938,7 @@ ROUTES.push(createAccountRoutes({
     }
     await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
     userPreferenceStore.remove(principalId);
+    achievementStore.remove(principalId);
     botSettings.forgetPerson(principalId);
     for (const session of sessions.list()) if (session.principalId === principalId) sessions.revoke(session.id);
     return { bots, threads };
@@ -17544,6 +18015,23 @@ function activityChildren(botId: string, threadId: string): ActivityChildRef[] {
       title: store.taskByThread(node.botId, node.threadId)?.title || node.text.slice(0, 120),
       status: node.status === "source" || node.status === "resume" ? "running" : node.status,
       startedAt: node.startedAt ?? node.createdAt,
+    });
+  }
+  // its parallel tasks (shared/parallel-tasks.ts)
+  for (const task of store.tasks(botId)) {
+    if (task.parallelOf?.threadId !== threadId || seen.has(task.threadId)) continue;
+    seen.add(task.threadId);
+    const outcome = task.parallelOf.outcome;
+    out.push({
+      botId,
+      threadId: task.threadId,
+      title: task.title,
+      status: threadBusy(botId, task.threadId)
+        ? task.activity === "waiting-on-you" ? "waiting" : "running"
+        : outcome === "done" ? "completed" : outcome === "failed" ? "failed" : outcome === "stopped" ? "cancelled"
+        : hasQueuedSteeredMessages(botId, task.threadId) ? "queued" : "running",
+      startedAt: task.parallelOf.at,
+      parallel: true,
     });
   }
   for (const watch of delegationWatch.values()) {
@@ -17803,14 +18291,11 @@ function roomSectionAccess(group: { id?: unknown; section?: unknown }): SectionA
   if (IDENTITY.kind !== "perspicax" || typeof group.section !== "string" || !group.section || typeof group.id !== "string") return null;
   return sectionChannels?.accessForRoom(group.section, group.id) ?? null;
 }
-/** Owner, grants and shared section of a bot, for server/authz.ts. */
+/** Owner and grants of a bot, for server/authz.ts. Sections are personal:
+ * a bot takes no access from one (the legacy shared sections became bot
+ * grants at boot, section-channels.ts header). */
 function botFacts(bot: { id?: unknown; ownerUserId?: unknown; grants?: unknown; directGrants?: unknown; section?: unknown; createdAt?: unknown }): BotFacts {
-  const ownerPrincipalId = effectiveBotOwner(bot);
-  // Only with the bot owner's consent (section-channels.ts header).
-  const section = IDENTITY.kind === "perspicax" && typeof bot.section === "string" && bot.section && typeof bot.id === "string"
-    ? sectionChannels?.accessForBot(bot.section, { id: bot.id, ownerPrincipalId }) ?? null
-    : null;
-  return { ownerPrincipalId, grants: botGrants(bot), sections: section ? [section] : [] };
+  return { ownerPrincipalId: effectiveBotOwner(bot), grants: botGrants(bot), sections: [] };
 }
 /** A person's teams, for the manager rules. */
 function principalTeams(principalId: string): TeamRef[] {
@@ -18662,6 +19147,39 @@ function sectionMigrationOwner(name: string): string {
   const firstAdmin = principals.list().filter((person) => person.orgRole === "admin" && person.subject && person.disabledAt === undefined).sort((a, b) => a.createdAt - b.createdAt)[0]?.id ?? localPrincipalId();
   return migrationOwner(bots, firstAdmin);
 }
+/** Sections are personal (section-channels.ts header): once, every legacy
+ * shared section becomes the bot grants it stood for, so nobody loses a bot
+ * they opened through it. A grant already as high is kept as it is; the
+ * records stay on disk. */
+function migrateSectionSharesToBotGrants(channels: SectionChannels): void {
+  if (channels.botSharesMigrated()) return;
+  const wanted = sectionShareGrants(channels, store.bots.map((bot) => ({ id: bot.id, section: sectionKey(bot.section) || undefined, ownerPrincipalId: effectiveBotOwner(bot) })));
+  const sections = new Set(wanted.map((grant) => grant.section));
+  const botIds = new Set(wanted.map((grant) => grant.botId));
+  let added = 0;
+  let raised = 0;
+  for (const botId of botIds) {
+    const bot = store.bot(botId);
+    if (!bot) continue;
+    const next = [...botGrants(bot)];
+    let changed = false;
+    for (const grant of wanted.filter((entry) => entry.botId === botId)) {
+      const index = next.findIndex((entry) => entry.target === grant.target);
+      if (index < 0) {
+        next.push({ target: grant.target, level: grant.level, by: grant.by, at: Date.now() });
+        added += 1;
+        changed = true;
+      } else if (levelRank(next[index]!.level) < levelRank(grant.level)) {
+        next[index] = { ...next[index]!, level: grant.level };
+        raised += 1;
+        changed = true;
+      }
+    }
+    if (changed) store.setBotGrants(botId, next);
+  }
+  channels.markBotSharesMigrated();
+  console.log(`sections: sections are personal; ${sections.size} shared section(s) became bot shares on ${botIds.size} bot(s) (${added} added, ${raised} raised)`);
+}
 /** The store's section names, every one with its record. */
 function orgSectionNames(): string[] {
   const names = store.sections;
@@ -18685,14 +19203,13 @@ if (sectionChannels) {
   // private record (no member): nothing is shared without someone's action.
   const created = sectionChannels.migrate(store.sections, sectionMigrationOwner);
   if (created) console.log(`sections: ${created} existing section(s) became private channels`);
+  migrateSectionSharesToBotGrants(sectionChannels);
   const channels = sectionChannels;
   ROUTES.push(createSectionChannelRoutes({
     channels,
     viewer: authzViewerFor,
     principalId: (auth) => (auth.kind === "session" ? auth.session.principalId?.trim() || "" : localPrincipalId()),
     teamsOf: principalTeams,
-    resolvePerson: resolveOrgGrantee,
-    teamKnown: (id) => orgTeams.has(id) || principals.membersOfTeam(id).length > 0,
     sections: orgSectionNames,
     createSection: (name) => {
       const result = store.setBotsSection([], name);
@@ -18700,33 +19217,6 @@ if (sectionChannels) {
     },
     renameSection: (name, nextName) => store.renameSection(name, nextName, teamComputers),
     deleteSection: (name) => (teamComputers.forSection(name) ? "Unassign this section's computer before deleting it" : store.deleteSection(name)),
-    moveBots: (name, add, remove) => {
-      const result = store.updateTeamMembers(name, add, remove);
-      return result.ok ? undefined : "One or more bots are unavailable";
-    },
-    botExists: (id) => Boolean(store.bot(id)),
-    botSection: (id) => sectionKey(store.bot(id)?.section) || undefined,
-    botOwner: (id) => {
-      const bot = store.bot(id);
-      return bot ? effectiveBotOwner(bot) : "";
-    },
-    managesBot: (auth, id) => {
-      const bot = store.bot(id);
-      return Boolean(bot) && atLeast(viewerBotLevel(auth, bot!), "manage");
-    },
-    createRoom: (name) => {
-      try {
-        // Only the bots the section opens: their owner consented.
-        const botIds = store.bots
-          .filter((bot) => sectionKey(bot.section) === name && !bot.hidden && channels.accessForBot(name, { id: bot.id, ownerPrincipalId: effectiveBotOwner(bot) }))
-          .map((bot) => bot.id);
-        return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" } }, []).id;
-      } catch (error) {
-        console.error(`sections: the conversation of a shared section could not be created: ${error instanceof Error ? error.message : String(error)}`);
-        return null;
-      }
-    },
-    roomExists: (id) => Boolean(store.group(id)),
     onChanged: () => {
       broadcast({ kind: "sections", sections: store.sections });
       audienceChanged();
@@ -19152,6 +19642,12 @@ ROUTES.push(createVoiceModeRoutes({
   },
   upgrade: (req) => desktopViewer.upgradeOf(req),
   utterances: toUtterances,
+  callSession: {
+    start: (target, callId, language) => voiceCalls.start(target.threadId, callId, language),
+    end: (target, callId) => {
+      if (voiceCalls.end(target.threadId, callId)) void perspicaxMcp?.endWarm(target.threadId);
+    },
+  },
   recordUsage: (usage) => {
     const bot = store.bot(usage.target.botId);
     const row: UsageRow = {
@@ -19475,6 +19971,8 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
   perspicaxMcp = new PerspicaxMcp({
     issuer,
     link: () => directory,
+    // a live call keeps its Perspicax tools mounted from turn to turn
+    keepWarm: (threadId) => Boolean(voiceCalls.active(threadId)),
     subjectOf: (principalId) => {
       const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;
       return person?.subject ? { iss: person.subject.iss, sub: person.subject.sub, disabled: person.disabledAt !== undefined } : null;
@@ -20030,6 +20528,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
     // New routes live in modules registered in server/routes/table.ts and
     // are tried here, behind the gate above; do not add route `if`s below.
+    // What a successful request earns its person (server/achievements.ts).
+    if (method !== "GET" && method !== "HEAD") {
+      const achiever = actorPrincipalId(auth);
+      if (achiever) {
+        res.once("finish", () => recordAchievements(achiever, achievementRequestEvents({ method, path, status: res.statusCode }, {
+          group: (id) => {
+            const group = store.group(id);
+            return group ? { peopleDm: group.peopleDm === true, humans: (group.humanIds?.length ?? 0) || 1, bots: group.memberIds?.length ?? 0 } : null;
+          },
+        })));
+      }
+    }
     if (await dispatchRoutes(ROUTES, { req, res, url, path, method, auth, json, readBody })) return;
 
     // ── sessions: who am I, tickets, pairing and revocation ─────────────
@@ -22239,6 +22749,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           projectId = project.id;
         }
         const sourceTitle = owner.group ? owner.group.name : (store.taskByThread(from.id, fromThreadId)?.title ?? "");
+        // report_back: a parallel task of this conversation, whose card shows
+        // here and whose result is posted back here (shared/parallel-tasks.ts).
+        if (target.id === from.id && body.reportBack === true && !owner.group && store.taskByThread(from.id, fromThreadId)) {
+          internalCapability.openedThreads += 1;
+          const speaker = peerSpeaker(from.id, fromThreadId);
+          try {
+            const started = await startParallelTask({
+              botId: from.id, threadId: fromThreadId, text: message, title, byBot: true,
+              speaker, principalId: "principalId" in speaker ? speaker.principalId : undefined,
+            });
+            return json(res, 201, {
+              threadId: started.parallel.threadId, title: started.parallel.title, botId: from.id, botName: from.name,
+              self: true, parallel: true, state: started.parallel.state, limit: maxParallelTasksPerPerson(cfg),
+            });
+          } catch (error) {
+            return json(res, (error as { status?: number }).status ?? 409, { error: error instanceof Error ? error.message : String(error) });
+          }
+        }
         if (target.id === from.id) {
           const inherited = parentThreadModel(from.id, fromThreadId);
           const task = store.createTask(from.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() },
@@ -23589,9 +24117,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         req.resume();
         return json(res, 400, { error: "content-length must be a non-negative integer" });
       }
-      if (declaredLength !== undefined && declaredLength > FILE_MAX_BYTES) {
+      const maxBytes = maxBytesForFileMime(rawType);
+      if (declaredLength !== undefined && declaredLength > maxBytes) {
         req.resume();
-        return json(res, 413, { error: `file exceeds ${FILE_MAX_BYTES} bytes` });
+        return json(res, 413, { error: `file exceeds ${maxBytes} bytes` });
       }
       try {
         // Returning from this iterator must not destroy the request socket:
@@ -23599,11 +24128,28 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // streamed byte count crosses the limit.
         const chunks = req.iterator({ destroyOnReturn: false }) as AsyncIterable<Buffer>;
         const saved = await saveFile(chunks, name, rawType ?? "", { uploadId, expectedBytes: declaredLength });
+        // An archive is listed here; solo also unpacks it next to the upload
+        // (this machine is where the bot works). An organization server never
+        // unpacks on its own host (server/attachment-archives.ts).
+        if (isArchiveAttachment(saved.path)) {
+          const manifest = await prepareArchiveUpload(saved.path, { extractHere: IDENTITY.kind !== "perspicax" });
+          return json(res, 201, { ...saved, archive: archiveSummary(manifest) });
+        }
         return json(res, 201, saved);
       } catch (error) {
         req.resume();
         throw error;
       }
+    }
+
+    // What an attached archive holds, for its chip ("Voir le contenu"). The
+    // visibility check above covers this sub-path like the file itself.
+    m = path.match(/^\/api\/attachments\/([\w.-]+)\/manifest$/);
+    if (m && method === "GET") {
+      const manifest = storedArchiveManifest(m[1]!);
+      if (!manifest) return json(res, 404, { error: "no such archive" });
+      res.setHeader("cache-control", "private, no-store");
+      return json(res, 200, archiveSummary(manifest));
     }
 
     // serving is name-locked to the attachments dir — readAttachment
@@ -26204,8 +26750,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const text = String(body.text ?? "").trim();
       if (!text) return json(res, 400, { error: "text required" });
       // words said on a voice call: the turn gets the phone-call instruction
-      const voiceCall = parseVoiceCallMeta(body.voiceCall);
-      if (voiceCall && "error" in voiceCall) return json(res, 400, { error: voiceCall.error });
+      const sentVoiceCall = parseVoiceCallMeta(body.voiceCall);
+      if (sentVoiceCall && "error" in sentVoiceCall) return json(res, 400, { error: sentVoiceCall.error });
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
       requirePinnedClientThread(bot.id, body.threadId);
@@ -26219,6 +26765,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const threadId = routeThreadId(bot, body.threadId);
       const notYours = cloudGuestSendRefusal(auth, threadId);
       if (notYours) return json(res, 403, { error: notYours });
+      // While the thread is on a live call, every send to it is a call turn,
+      // marked or not (typed words, a retry, an old page): server state,
+      // not only the page's mark (server/voice-call-session.ts).
+      const voiceCall = guarded ? sentVoiceCall : voiceCalls.markFor(threadId, sentVoiceCall);
       // An engine command the chat cannot run is refused before it is
       // recorded (server/harness-commands.ts).
       if (text.startsWith("/")) {
@@ -26245,8 +26795,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!store.taskByThread(bot.id, threadId)) {
         return json(res, 409, { error: "the bot switched tasks before it could receive the message" });
       }
-      const sendId = parseSendId(body.sendId);
+      let sendId = parseSendId(body.sendId);
+      // One spoken utterance is delivered once: a second send of it (a retry
+      // with a new send id) answers with the first one's receipt.
+      if (voiceCall?.utteranceId && sendId) {
+        const claim = voiceCalls.claimUtterance(threadId, voiceCall.callId, voiceCall.utteranceId, sendId);
+        if (!claim.first) sendId = claim.sendId;
+      }
       const replyTo = resolveReplyTarget(threadId, body.replyToId);
+      // What a send to a busy conversation does (shared/parallel-tasks.ts):
+      // join the running turn (steer, the default), run as its own task in
+      // parallel, or wait for the running turn (after).
+      if (body.busyMode !== undefined && !isBusySendMode(body.busyMode)) {
+        return json(res, 400, { error: "busyMode must be steer, parallel or after" });
+      }
+      // On a call, words said while the bot works always join its turn: a
+      // phone has no "run this in parallel" (and no chooser asks).
+      const busyMode: BusySendMode = guardedBody || voiceCall ? "steer" : (body.busyMode ?? "steer");
       const receipt = await sendSequencer.run(
         sendId ? `bot:${bot.id}:${threadId}:${sendId}` : undefined,
         sendFingerprint(text, replyTo?.id),
@@ -26316,6 +26881,27 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             return { ok: true as const, threadId, message };
           }
 
+          // A new request while this conversation works: its own task, which
+          // runs now (or when a slot frees) and answers here.
+          if (currentAtStart.busy && busyMode === "parallel") {
+            return startParallelTask({
+              botId: bot.id, threadId, text, replyTo, sendId, sender: messageSender(auth), trigger,
+              speaker: speakerFor(auth), principalId: auth.kind === "session" ? personKey(auth.session) : undefined, auth,
+            });
+          }
+          // After this one: wait in the queue, never joining the running turn.
+          if (currentAtStart.busy && busyMode === "after") {
+            const queued = queueSteeredMessage(currentAtStart.id, threadId, text, {
+              replyToId: replyTo?.id,
+              sendId,
+              prompt: promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"),
+              sender: messageSender(auth),
+              trigger,
+              speaker: speakerFor(auth),
+              ...(voiceCall ? { voiceCall } : {}),
+            });
+            return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
+          }
           // Claude can accept the message inside its live turn. If the write
           // loses a race with turn settlement, or the engine cannot steer, the
           // existing server-side queue records it atomically for the next turn.
@@ -26333,13 +26919,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               engineCanSteer: Boolean(instance?.adapter.capabilities.queueing && instance.adapter.steer)
                 // someone else's words never join a running turn on an
                 // organization server: they wait and get the gate
-                && orgJoinsRunningTurn(currentAtStart, threadId, speakerFor(auth)),
+                && orgJoinsRunningTurn(currentAtStart, threadId, speakerFor(auth))
+                // a turn being stopped takes no new words: they would be
+                // withdrawn with it and never answered; they wait instead
+                && !stoppingThreads.has(threadId),
             });
             // steer was offered only when a live instance could take it;
             // the second check carries that fact to the type system.
+            const steerId = randomUUID();
             if (busyAdmission.action === "steer" && instance?.adapter.steer) {
               steered = await instance.adapter
-                .steer(threadId, voiceCallSteerPrompt(promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"), voiceCall))
+                .steer(threadId, voiceCallSteerPrompt(promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"), voiceCall), { steerId })
                 .catch((): SteerOutcome => "indeterminate");
             }
             // steer() is awaited adapter work. The turn can settle, the task can
@@ -26356,6 +26946,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const delivered = steered !== "refused";
             if (delivered) {
               if (steered === "steered" && !current.busy) {
+                // Said on a call, the words must get an answer: the turn
+                // they were written into ended first, so they start the
+                // next one (a phone has no composer to resend from).
+                if (voiceCall) {
+                  return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall);
+                }
                 throw Object.assign(
                   new Error("the running turn ended before the steered message could be recorded"),
                   { status: 409 },
@@ -26385,7 +26981,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                 ...(voiceCall ? { voiceCall } : {}),
               });
               // Offered to the next turn again unless the person stops this one.
-              handoffs.steered(threadId, steerTarget, instance?.instanceId, message.id);
+              handoffs.steered(threadId, steerTarget, instance?.instanceId, message.id, steerId);
               return { ok: true as const, steered: true as const, threadId, message };
             }
             if (!current.busy) {
@@ -26405,6 +27001,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall);
         },
       );
+      recordAchievements(actorPrincipalId(auth), achievementSendEvents({ text, parallel: busyMode === "parallel", ...(voiceCall ? { voiceCall } : {}) }, achievementCallStarts, Date.now()));
       return json(res, 202, receipt);
     }
 
@@ -26418,6 +27015,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 404, { error: "no such queued message" });
       }
       return json(res, 200, { ok: true });
+    }
+
+    // Stop one parallel task (shared/parallel-tasks.ts): its running turn,
+    // or its place in line. The conversation it answers gets the outcome.
+    m = path.match(/^\/api\/bots\/([\w-]+)\/parallel\/([\w-]+)\/stop$/);
+    if (m && method === "POST") {
+      const bot = store.bot(m[1]);
+      if (!bot) return json(res, 404, { error: "no such bot" });
+      const taskThreadId = routeThreadId(bot, m[2], "thread.post");
+      const notYours = cloudThreadRefusal(auth, taskThreadId);
+      if (notYours) return json(res, 403, { error: notYours });
+      const outcome = await stopParallelTask(bot.id, taskThreadId);
+      if (outcome === "not_pending") return json(res, 404, { error: "no running or waiting parallel task there" });
+      return json(res, 200, { ok: true, outcome });
     }
 
     // Steer a queued message into the RUNNING turn (no interrupt). Engines
@@ -26443,12 +27054,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const currentAtStart = store.projectBotForTask(bot.id, bot.threadId);
       const instance = currentAtStart?.busy ? runningTurnInstance(currentAtStart, bot.threadId) : undefined;
-      const prompt = held.items.map((item) => item.prompt).join("\n\n");
+      // words said on a call keep their call mark when they join the turn
+      const prompt = held.items.map((item) => voiceCallSteerPrompt(item.prompt, item.voiceCall)).join("\n\n");
       const steerTarget = handoffs.current(bot.threadId);
       let steered: SteerOutcome = "refused";
+      const steerId = randomUUID();
       if (currentAtStart?.busy && instance?.adapter.capabilities.queueing && instance.adapter.steer) {
         steered = await instance.adapter
-          .steer(bot.threadId, prompt)
+          .steer(bot.threadId, prompt, { steerId })
           .catch((): SteerOutcome => "indeterminate");
       }
       // The steer was awaited adapter work: re-read every ownership
@@ -26474,9 +27087,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           peerAsk: item.peerAsk,
           steered: true,
           sender: item.sender,
+          ...(item.voiceCall ? { voiceCall: item.voiceCall } : {}),
         }));
         // Offered to the next turn again unless the person stops this one.
-        for (const message of messages) handoffs.steered(bot.threadId, steerTarget, instance?.instanceId, message.id);
+        // one steer carried them all: the engine taking it in takes them all
+        for (const message of messages) handoffs.steered(bot.threadId, steerTarget, instance?.instanceId, message.id, steerId);
         const queueIds = held.items.map((item) => item.messageId);
         settleHeldSteeredQueue(held);
         return json(res, 200, { ok: true, steered: true, threadId: bot.threadId, messages, queueIds });
@@ -26808,10 +27423,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const own = routeThreadId(bot, body.threadId);
         const run = routines!.activeBotRunForBot(bot.id);
         if (run?.threadId === own) await routines!.cancelRun(run.id);
-        else {
-          handoffs.stoppedByPerson(own);
-          await interruptDirectThread(bot.id, own);
-        }
+        else await stopDirectThreadByPerson(bot.id, own);
         return json(res, 200, { ok: true });
       }
       if (stopper && body.threadId !== undefined) routeThreadId(bot, body.threadId);
@@ -26824,10 +27436,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (typeof expectedThreadId === "string" && store.taskByThread(bot.id, expectedThreadId)) {
         const routine = routines!.activeBotRunForBot(bot.id);
         if (routine?.threadId === expectedThreadId) await routines!.cancelRun(routine.id);
-        else {
-          handoffs.stoppedByPerson(expectedThreadId);
-          await interruptDirectThread(bot.id, expectedThreadId);
-        }
+        else await stopDirectThreadByPerson(bot.id, expectedThreadId);
         return json(res, 200, { ok: true });
       }
       const directClaim = directTurnDispatchClaims.get(bot.threadId);
@@ -26865,8 +27474,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       ) {
         return json(res, 409, { error: "the bot switched tasks before it could be interrupted" });
       }
-      handoffs.stoppedByPerson(expectedThreadId ?? bot.threadId);
-      await interruptDirectThread(bot.id, expectedThreadId ?? bot.threadId);
+      await stopDirectThreadByPerson(bot.id, expectedThreadId ?? bot.threadId);
       return json(res, 200, { ok: true });
     }
 
@@ -29223,7 +29831,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   } catch (e) {
     const status = (e as any)?.status ?? 500;
     const candidateCode = (e as { code?: unknown })?.code;
-    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "org_full_access_disabled"].includes(candidateCode)
+    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "org_full_access_disabled", "parallel_limit", "parallel_nested"].includes(candidateCode)
       ? candidateCode : undefined;
     return json(res, status, { error: e instanceof Error ? e.message : String(e), ...(code ? { code } : {}) });
   } finally {
@@ -29401,6 +30009,7 @@ server.listen(PORT, "127.0.0.1", () => {
   followupsReady = true;
   drainQueuedSends();
   drainQueuedChannelSends();
+  settleOrphanedParallelTasks();
   // Startup work uses the same turn dispatcher and local tool endpoint as
   // ordinary chat. Start only once every registry is initialized and the
   // endpoint is listening; earlier dispatch can hit uninitialized bindings.

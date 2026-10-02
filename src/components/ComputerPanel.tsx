@@ -1529,7 +1529,6 @@ export function ComputerPanel({
         place={livePlace}
         computerOff={livePlace === "off"}
         botName={bot.name}
-        onChangePlace={() => dispatch({ type: "toggleSettings", botId: bot.id, section: "access", open: true })}
       />
       {!embedded && <div className="mt-6">
         <RoutinesSection key={bot.id} bot={bot} routines={botRoutines} runs={state.routineRuns} defaultRunOn={cloudRoutineReady ? "cloud" : "maus"} />

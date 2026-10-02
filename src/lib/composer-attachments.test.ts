@@ -13,6 +13,10 @@ import {
   documentMime,
   fileAttachment,
   fileAttachmentFromFile,
+  archiveMime,
+  isArchiveName,
+  clipboardOtherFiles,
+  ARCHIVE_MAX_BYTES,
   handoffAttachmentImagePreview,
   imageAttachmentFromFile,
   isImageFile,
@@ -516,6 +520,52 @@ describe("private document intake", () => {
     } finally {
       fetch.mockRestore();
     }
+  });
+
+  it("uploads archives with their listing, and refuses one over 90 MB with a clear error", async () => {
+    const archive = { kind: "zip", status: "ok", files: 2, totalBytes: 12, entries: [{ path: "a.txt", size: 6 }, { path: "b/c.txt", size: 6 }], truncated: false, skippedCount: 0 };
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({
+      path: "/private/attachments/0b5a3c1e-1111-4222-8333-444455556666.zip", name: "project.zip", bytes: 3, archive,
+    }), { status: 201, headers: { "content-type": "application/json" } }));
+    try {
+      const file = new File([new Uint8Array([80, 75, 3])], "project.zip", { type: "" });
+      await expect(fileAttachmentFromFile(file)).resolves.toMatchObject({ kind: "file", name: "project.zip", archive });
+      expect(fetch).toHaveBeenLastCalledWith(expect.stringMatching(/^\/api\/files\?/),
+        expect.objectContaining({ headers: { "content-type": "application/zip" } }));
+      await fileAttachmentFromFile(new File([new Uint8Array([1])], "src.tar.gz", { type: "application/x-gzip" }));
+      expect(fetch).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ headers: { "content-type": "application/gzip" } }));
+      fetch.mockClear();
+      // 30 MB is fine for an archive, over the 25 MB document ceiling
+      const big = { name: "big.zip", type: "application/zip", size: 30 * 1024 * 1024 } as File;
+      const huge = { name: "huge.zip", type: "application/zip", size: 91 * 1024 * 1024 } as File;
+      await expect(fileAttachmentFromFile(huge)).rejects.toThrow("huge.zip is 91.0 MB; archives can be at most 90 MB");
+      expect(fetch).not.toHaveBeenCalled();
+      expect(huge.size).toBeGreaterThan(ARCHIVE_MAX_BYTES);
+      await fileAttachmentFromFile(big);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it("knows which names are archives", () => {
+    expect(archiveMime({ name: "Project.ZIP", type: "" })).toBe("application/zip");
+    expect(archiveMime({ name: "x", type: "application/x-zip-compressed" })).toBe("application/zip");
+    expect(archiveMime({ name: "a.tar", type: "" })).toBe("application/x-tar");
+    expect(archiveMime({ name: "a.tgz", type: "" })).toBe("application/gzip");
+    expect(archiveMime({ name: "a.7z", type: "" })).toBe("application/x-7z-compressed");
+    expect(archiveMime({ name: "log.gz", type: "application/gzip" })).toBeNull();
+    expect(archiveMime({ name: "a.rar", type: "" })).toBeNull();
+    expect(archiveMime({ name: "report.docx", type: "" })).toBeNull();
+    expect(isArchiveName("src.tar.gz")).toBe(true);
+    expect(isArchiveName("notes.md")).toBe(false);
+  });
+
+  it("takes non-image files from a paste, leaving images to the image path", () => {
+    const zip = new File(["PK"], "project.zip", { type: "application/zip" });
+    const png = new File(["x"], "shot.png", { type: "image/png" });
+    expect(clipboardOtherFiles({ files: [zip, png] })).toEqual([zip]);
+    expect(clipboardOtherFiles(null)).toEqual([]);
   });
 
   it("recognises supported documents by declared mime or filename", () => {

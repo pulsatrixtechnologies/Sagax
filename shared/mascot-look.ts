@@ -10,13 +10,15 @@
  * - shape: one of the shapes (a body with two small eyes), in the
  *   bot's color, with a shape skin.
  * - trombi: the Hibou 98 paperclip, with a Trombi skin.
+ * - bunbu: Bunbu, our own collectible-vinyl little monster (long upright
+ *   ears, plush body, a toothy grin), in the bot's color, with a Bunbu skin.
  *
  * Each character keeps its own skin, so switching character and back finds
  * the choice made before. Absent means the owl, as every bot had before.
  */
 import { z } from "zod";
 
-export const MASCOT_CHARACTERS = ["owl", "shape", "trombi"] as const;
+export const MASCOT_CHARACTERS = ["owl", "shape", "trombi", "bunbu"] as const;
 export type MascotCharacter = (typeof MASCOT_CHARACTERS)[number];
 
 /** The shapes, in the picker's order (the owner's reference grid, read left to right). */
@@ -37,6 +39,14 @@ export type ShapeSkin = (typeof SHAPE_SKINS)[number];
 /** Skins for Trombi. */
 export const TROMBI_SKINS = ["classic", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"] as const;
 export type TrombiSkin = (typeof TROMBI_SKINS)[number];
+
+/**
+ * Skins for Bunbu, by rarity: everyday finishes (Plain, Pastel, Night,
+ * Plush), then premium editions with their own idle effect, equip animation
+ * and move effects (src/components/skin-fx/bunbu-skins.tsx).
+ */
+export const BUNBU_SKINS = ["plain", "pastel", "night", "plush", "velvet", "gold", "neon", "chrome", "crystal", "holo", "galaxy", "molten"] as const;
+export type BunbuSkin = (typeof BUNBU_SKINS)[number];
 
 /** How rare a skin is: the picker's label and card. */
 export type SkinTier = "common" | "rare" | "epic" | "legendary";
@@ -68,6 +78,21 @@ export const TROMBI_SKIN_TIER: Readonly<Record<TrombiSkin, SkinTier>> = {
   molten: "legendary",
 };
 
+export const BUNBU_SKIN_TIER: Readonly<Record<BunbuSkin, SkinTier>> = {
+  plain: "common",
+  pastel: "common",
+  night: "common",
+  plush: "common",
+  velvet: "rare",
+  gold: "rare",
+  neon: "epic",
+  chrome: "epic",
+  crystal: "epic",
+  holo: "legendary",
+  galaxy: "legendary",
+  molten: "legendary",
+};
+
 /**
  * Other names a stored skin may carry (drafts of the premium set, older
  * builds): a stored look keeps working and is saved back under the current id.
@@ -94,6 +119,17 @@ export const LEGACY_TROMBI_SKINS: Readonly<Record<string, TrombiSkin>> = {
   holographic: "holo",
   lava: "molten",
 };
+export const LEGACY_BUNBU_SKINS: Readonly<Record<string, BunbuSkin>> = {
+  fur: "plush",
+  fuzzy: "plush",
+  royal: "gold",
+  metal: "chrome",
+  glass: "crystal",
+  iridescent: "holo",
+  holographic: "holo",
+  nebula: "galaxy",
+  lava: "molten",
+};
 
 const legacy = (table: Readonly<Record<string, string>>) => (value: unknown) => (typeof value === "string" && Object.hasOwn(table, value) ? table[value] : value);
 
@@ -106,6 +142,7 @@ export const mascotLookSchema = z
       .object({
         shape: z.preprocess(legacy(LEGACY_SHAPE_SKINS), z.enum(SHAPE_SKINS)).optional(),
         trombi: z.preprocess(legacy(LEGACY_TROMBI_SKINS), z.enum(TROMBI_SKINS)).optional(),
+        bunbu: z.preprocess(legacy(LEGACY_BUNBU_SKINS), z.enum(BUNBU_SKINS)).optional(),
       })
       .strict()
       .optional(),
@@ -128,23 +165,25 @@ export function botMascotLook(value: unknown): MascotLook {
   const { skins, ...rest } = value as { skins?: unknown };
   const known: Record<string, string> = {};
   if (skins && typeof skins === "object") {
-    const { shape, trombi } = skins as { shape?: unknown; trombi?: unknown };
+    const { shape, trombi, bunbu } = skins as { shape?: unknown; trombi?: unknown; bunbu?: unknown };
     const shapeSkin = legacy(LEGACY_SHAPE_SKINS)(shape);
     const trombiSkin = legacy(LEGACY_TROMBI_SKINS)(trombi);
+    const bunbuSkin = legacy(LEGACY_BUNBU_SKINS)(bunbu);
     if ((SHAPE_SKINS as readonly unknown[]).includes(shapeSkin)) known.shape = shapeSkin as string;
     if ((TROMBI_SKINS as readonly unknown[]).includes(trombiSkin)) known.trombi = trombiSkin as string;
+    if ((BUNBU_SKINS as readonly unknown[]).includes(bunbuSkin)) known.bunbu = bunbuSkin as string;
   }
   return mascotLookSchema.safeParse(Object.keys(known).length ? { ...rest, skins: known } : rest).data ?? DEFAULT_MASCOT_LOOK;
 }
 
 /** The look with every choice filled in. */
-export function completeMascotLook(value: unknown): Required<Omit<MascotLook, "skins">> & { skins: { shape: ShapeSkin; trombi: TrombiSkin } } {
+export function completeMascotLook(value: unknown): Required<Omit<MascotLook, "skins">> & { skins: { shape: ShapeSkin; trombi: TrombiSkin; bunbu: BunbuSkin } } {
   const look = botMascotLook(value);
   return {
     character: look.character,
     style: look.style ?? "2d",
     shape: look.shape ?? "circle",
-    skins: { shape: look.skins?.shape ?? "plain", trombi: look.skins?.trombi ?? "classic" },
+    skins: { shape: look.skins?.shape ?? "plain", trombi: look.skins?.trombi ?? "classic", bunbu: look.skins?.bunbu ?? "plain" },
   };
 }
 
@@ -153,4 +192,8 @@ export const CHARACTER_PAINT: Readonly<Record<MascotCharacter, { colors: boolean
   owl: { colors: true, skins: [], wingMoves: true },
   shape: { colors: true, skins: SHAPE_SKINS, wingMoves: false },
   trombi: { colors: false, skins: TROMBI_SKINS, wingMoves: false },
+  bunbu: { colors: true, skins: BUNBU_SKINS, wingMoves: false },
 };
+
+/** The color Bunbu shows where no bot gives one (the app icon, the gallery): mint, our own. */
+export const BUNBU_DEFAULT_COLOR = "mint";

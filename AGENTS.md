@@ -168,6 +168,24 @@ onboarding tests:
   it at `/api/people/<principalId>/avatar?v=<version>`. Without those
   Perspicax fields everyone keeps their initials.
 
+## Settings layout: one card level, sub-pages for long settings
+
+Settings draws one level of card: what sits inside a card is flat (no
+bordered box in a bordered box; `ManagedProfileIdentity flat` in General).
+A setting too long for a card gets a sub-page instead of a growing card
+(`src/components/SettingsSubPage.tsx`): the section shows a
+`SettingsSubPageRow` (title, one-line summary, Edit) and the page replaces
+the section with a back arrow and the breadcrumb "General > About me".
+Back, the breadcrumb and Escape return to the section (Escape is taken in
+the capture phase, so it never closes Settings from a sub-page). The open
+page is `appSettingsSubPage` in the store (`toggleAppSettings` with
+`subPage`; any other navigation clears it); register a page in `SUB_PAGES`
+in `SettingsModal.tsx`. About me is the first: a full-height editor that
+saves as you type, a character count (24,000 max, `server/config.ts`), a
+short guide with an outline, and the block bots read
+(`userProfileSystemPrompt`). Tests: `src/components/SettingsSubPage.test.ts`,
+`src/components/SettingsModal.serverMode.test.ts`.
+
 ## Group memory and direct messages between people
 
 A user-created group keeps one shared memory (`server/group-memory.ts`,
@@ -217,8 +235,11 @@ Server mode (the launch screen's Server) is exclusive: `serverModeId` in
 organization server. While it is set nothing switches to Local or another
 server (`withActive`, `switchEnvironment`, `requireNotServerMode`), the
 packaged app starts no local server, and the only way out is `leaveServerMode`
-in `electron/main.mjs` (Settings > General > Server > Change, Server > Change
-server…), which signs out and returns to the launch screen. Tests:
+in `electron/main.mjs` (Settings > General > Server > Sign out, Server > Change
+server…), which asks in a native dialog ("Sign out of <name>?"), signs out
+and returns to the launch screen. That Server card names the server's
+address in bold, the organization and the signed-in person
+(`ServerModeCard`, test `src/components/SettingsModal.serverMode.test.ts`). Tests:
 `electron/server-mode.node-test.mjs`, `electron/environments.node-test.mjs`.
 
 An organization server (`org: true`, set by org-join after its probe) is
@@ -386,17 +407,53 @@ Electron restart (no HMR); launch-test them before committing.
   wander, no flight while its bot works), draws at 30 fps at most and the
   skin's loops rest. Measure with `node scripts/verify-mascot-chat.mjs`
   (isolated real Electron: open latency, window moves, clipped and dropped
-  frames, mascot jumps, position writes, theme).
+  frames, mascot jumps, position writes, the balloon's gap to the
+  character and click-through of the transparent parts, theme).
+- The balloon has no shield: dragged by its header it comes right up to
+  the character from any side (over the stage's empty room, touching its
+  box), never over its face (`clampBalloon` in `Balloon.tsx`). Only the part
+  of its offset away from the mascot grows the window; the part toward it is
+  a `translate` inside the window it has. It sits above the art (z-index 2),
+  under the effects (z-index 3).
+- Voice calls with the mascot reuse the app's call, never a second one: the
+  engine (`LiveCallEngine`) runs once in the app page (`CallEngineHost` in
+  App, for the bot `useOnCall()` names) and publishes the call
+  (`src/lib/voice-mode/live-call-store.ts`); the app's pill (`LiveCall`) and
+  the mascot only show and drive it. The mascot's call button (balloon header,
+  `hints.call`, and the menu's "call") starts that same call for its bot
+  (`mascot-call.ts`, `runMascotCallEvent`): one call at a time across app and
+  mascots (`lib/call.ts`). The brain sends `snapshot.call` (`FloatingCall`)
+  and the levels on their own channel (`floating-bots:level`, 20 Hz, rounded);
+  the window draws `MascotCall.tsx` (the pill under the mascot's feet, inside
+  the stage's room; the card where the balloon goes) and the mascot bounces
+  (`--fb-voice`) and leans in (`data-call`), never under reduced motion. The
+  microphone is the app page's (its permission), never the mascot window's.
+  Main sanitizes `call`, its events and their settings patches. Measured in
+  `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
+- The desktop mascot's menu (right click, long press, the menu key) is main's
+  native menu, popped exactly at the pointer (`floating-bots:menu`,
+  `menuPopupPoint`: the page's CSS pixels times its zoom, kept inside the work
+  area of the display under it); the drawn `.fb-menu` stays for the in-app
+  overlay and an older preload.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
-- The character (owl, original shape, Trombi) and its look live with the bot
+- The character (owl, original shape, Trombi, Bunbu) and its look live with the bot
   (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
   in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
   every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
+- Bunbu is an original character of ours (a collectible-vinyl little monster:
+  long paddle ears, gumdrop body, five small teeth, a tummy heart). It is
+  inspired by the designer-toy genre, never a copy of an existing one: keep
+  its silhouette, name and palette our own (no Labubu or Pop Mart design,
+  name, logo or packaging). Its parts are SVG paths in `bunbu-art.ts`
+  (`BunbuMascot.tsx`), its skins in `skin-fx/bunbu-skins.tsx` (shared
+  finishes from `shape-skins.tsx` plus Plush and Velvet); its signature ear
+  flop is the `ruffle` clip (the registry's `moveLabels`). iOS shows the owl
+  for it until ported (`ios/README.md`).
 - Bot colors live in `shared/mascot-colors.ts` (palettes Vivid, Pastel, Deep,
   Neon, Neutral; the original fifteen ids keep their values) and every skin,
   the owl's included (`OWL_SKIN_TIER`, `LEGACY_OWL_SKINS`), has a rarity. The
@@ -554,6 +611,15 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 - Attachments of the CURRENT message are the speaker's only when the first
   message naming them is theirs; small text ones are inlined, all are copied
   where the tools run at the first tool call, and the tag names that path.
+- Archives (zip, tar, tar.gz, 7z; 90 MB per file): the server only LISTS
+  them (`server/attachment-archives.ts`); they are unpacked where the bot
+  works, next to the copy, at the first tool call (python3 in the server
+  environment, `extract_archive` on the desktop, `electron/archive-extract.mjs`;
+  solo: next to the upload). No links, nothing outside the folder, bomb limits
+  (5000 files, 512 MB, ratio 200, depth 24), an encrypted zip kept as is. The
+  message carries an `<attached-archive>` manifest. Tests:
+  `electron/archive-extract.node-test.mjs`, `server/attachment-archives.test.ts`,
+  `server/archive-attachments.e2e.test.ts`, `server/desktop-bridge.e2e.test.ts`.
 - The desktop never reads or writes the app's own data, its cookies or the
   person's credential stores through the bridge.
 
@@ -642,11 +708,15 @@ Routines (`ActivitySection`, `ActivityListModal`, `ActivityDetailModal`).
 Coding shows coding jobs only: the server marks an entry `coding` from its
 tool calls and folder (`server/activity-coding.ts`: source edits, git
 commit/push/worktree, pull requests, file changes inside a repository;
-never the title, and never the bot's own SOUL.md/MEMORY.md), the newest
-few of 7 days, See all opening the list filtered to coding. Activity holds
-everything else plus the sub-agents the listed threads started: running
-first (elapsed time, current step, Stop when `canStop`), then the last
-day's finished work, hidden when empty. A thread with no user turn is not
+never the title, never the bot's own SOUL.md/MEMORY.md or its folder, never
+a sub-agent's request or a heredoc's text quoting git; a sub-agent's own
+calls count like any other). Activity holds everything else plus the
+sub-agents the listed threads started. Both show live work only: running
+(elapsed time, current step, Stop when `canStop`), and an entry seen
+running that settled reads Finished for 5 s, fades and leaves
+(`LiveActivity`); with nothing running a section is its header and a quiet
+line. The section title opens the history (`ActivityListModal`: coding or
+other, newest first, running/finished/failed, search). A thread with no user turn is not
 listed. Both read
 `GET /api/bots/:id/activity` and `/activity/item`
 (`server/routes/bot-activity.ts`, types in `shared/bot-activity.ts`): every
@@ -662,6 +732,55 @@ of that thread. The owner's notification of such a run names no thread, only
 `server/routes/bot-activity.test.ts`, `server/activity-coding.test.ts`, `ActivitySection.test.ts`,
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
+
+## Parallel tasks (sending while the bot works, 2026-10-02)
+
+A message sent to a busy 1:1 conversation carries `busyMode`
+(`shared/parallel-tasks.ts`): `steer` joins the running turn (the default,
+live steer or the queue), `after` waits in the queue, `parallel` runs it as
+its own task. The composer offers the three (`BusySendChooser`, suggested
+choice by `suggestBusySendMode`, Enter picks) unless the person set a
+default in Settings > Parallel threads (`sagax.busySend.v1`, synced per
+person). Keep these rules, each covered by `server/parallel-tasks.test.ts`,
+`server/parallel-tasks.e2e.test.ts` or `src/components/parallel-tasks.ui.test.ts`:
+
+- A parallel task is a thread of the same bot (`TaskRecord.parallelOf`,
+  never a TASK_PATCH_FIELD): its own engine session, the conversation's
+  model, approval level and owner (private threads), the asker's payer
+  (trigger and speaker of the send). Its first prompt is a brief
+  (`parallelBrief`): who asked, recent lines of the conversation as context,
+  never another parallel request.
+- Working folder: a worktree of the conversation's git repository on
+  `sagax/parallel-<id>` (`prepareParallelWorkspace`, under
+  `DATA_DIR/parallel-worktrees`); otherwise its own private task folder,
+  reading the conversation's project folder only. Two turns never share a
+  folder (the workspace resource refuses the second).
+- The conversation shows the request line (`parallelTask.role: request`),
+  a live card (`card`: state from the task's busy/activity, Stop, Open) and,
+  when the first turn settles, the answer as a reply to the request
+  (`result`, `settleParallelTask`, once: `reportedAt`). Later turns in the
+  task's own thread stay there. A done task closes (`closedBy`), a failed
+  or stopped one stays.
+- Limits: `threads.maxParallelPerPerson` (default 3) running per person per
+  bot; more queue (`parallelTaskBlocked` in the drain), past twice the
+  limit waiting a send answers 409 `parallel_limit`. The bot's thread limit
+  still applies. A task of a task is refused (`parallel_nested`).
+- Stop one: `POST /api/bots/:id/parallel/:threadId/stop` (client scope,
+  thread.post), or Stop in its thread; either reads as stopped.
+- Approvals stay in the task's thread and are answered there; the
+  conversation's approval stepper lists them tagged with the task
+  (`useParallelApprovals`, `Pending.threadId`), and its cancel stops that
+  task only.
+- The bot may fork itself: `start_thread` with `report_back: true` on itself.
+- Org: `task.parallel_start` and `task.parallel_settle` in the admin
+  activity log. Routines are unaffected (no busyMode).
+- Activity lists a parallel task once (its own entry, `parallel: true`) and
+  as a child of its conversation. The detail names steps in words
+  (`src/lib/activity-steps.ts`, reusing the approval naming), keeps the raw
+  id under Technical details, nests a Claude sub-agent's calls under its
+  Agent step (`tool.parentItemId` from `parent_tool_use_id`) with its
+  request and report, and a running task takes a message (steer). Claude's
+  own sub-agents cannot be steered or stopped apart from their turn.
 
 ## Person panel and hidden sidebar entries
 
@@ -683,6 +802,29 @@ and groups by default, bots only when the person turns it on. Archive stays
 the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `src/lib/person-panel.test.ts`, `PersonPanel.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
+
+## Sidebar sections are personal
+
+On an organization server a sidebar section is one person's folder and
+shares nothing (JC, 2026-10-02). Keep these rules, covered by
+`src/lib/personal-sections.test.ts`, `server/section-channels.test.ts` and
+`src/components/bot-settings/SharingSection.test.ts`:
+
+- The sections live in the person's preference `sagax.sidebarSections.v1`
+  (`src/lib/personal-sections.ts`, synced per person through
+  `/api/me/preferences`); the sidebar overlays them on `bot.section` and
+  `group.section`, which it never writes in organization mode. A solo
+  server keeps the server's sections (one person).
+- The menu creates, renames, moves, folds and deletes; no members or
+  sharing item. A bot is shared from its own panel; a group has its people.
+- General (what is in none of my sections: my bots, bots shared with me,
+  groups, conversations with people) is always shown, on top. Deleting a
+  section puts its items back in General and never deletes anything.
+- Server: bots take no access from a section. At boot each legacy shared
+  section became bot grants once (`sectionShareGrants`, marker
+  `botSharesMigratedAt` in `section-channels.json`); the records stay and
+  rooms keep reading them. `PUT /api/org/sections/:id/members|bots` answers
+  410 `sections_are_personal`.
 
 ## Computer tab and Local VM on an organization server
 
@@ -774,6 +916,38 @@ PT-4 in `server/org-private-threads.e2e.test.ts`):
 - The panel shows the settings read-only to everyone else, with "Seul le
   propriétaire du groupe peut modifier ces réglages", a Leave button,
   "Ajouter mon robot" and a remove button on their own bots only.
+
+## Achievements (2026-10-02)
+
+Catalog `shared/achievements-catalog.ts` (pure data, ids never renamed),
+engine `shared/achievements.ts`, store `server/achievements.ts` (one
+`achievements.json`, per person on an organization server, the local
+operator on a solo server), routes `server/routes/achievements.ts`, app
+`src/lib/achievements.ts` and `src/components/achievements/`. Keep these
+rules, each covered by `shared/achievements-catalog.test.ts`,
+`server/achievements.test.ts`, `src/lib/achievements.test.ts`,
+`src/lib/achievement-toasts.test.ts` or `achievements-ui.test.ts`:
+
+- Server events come from the server's own hooks only (a request's method
+  and path in `achievementRequestEvents`, a send in `achievementSendEvents`,
+  live frames in `observeAchievementFrame`); `POST /api/me/achievements/events`
+  takes client events only. Events are rate limited, an event id counts
+  once, an achievement unlocks once.
+- By default only the owl and the shapes with their Common skins are
+  usable. Trombi unlocks only from its command (`/hibou98`, or a device that
+  already found it). Every skin above Common and Bunbu is the reward of
+  exactly one achievement. On first use a person keeps every character and
+  skin their bots wear (`grandfatheredFromBots`); what a bot wears now is
+  never shown locked. Locks are in the editor and app icon picker only; the
+  server never refuses a look.
+- A server without the routes (404) locks nothing.
+- The unlock frame (`kind: "achievements"`, `audience`) reaches that
+  person's streams only (`achievementFrameAllowed`). Nobody reads another
+  person's record; `/api/achievements/public` lists only the points of people
+  who turned on "Show my points to colleagues". Unlock percentages show only
+  with five people or more.
+- The toast never shows while the person types, one at a time, its chime
+  follows Notification sounds, and reduced motion stills it.
 
 ## Primary Bot (formerly Chief of Staff)
 

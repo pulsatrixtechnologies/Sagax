@@ -11,19 +11,27 @@ import { useEffect, useRef, useState } from "react";
 import type RFB from "@novnc/novnc";
 import { ExternalLink, Eye, Hand, Loader2, Monitor, RefreshCw } from "lucide-react";
 
+import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { sandboxViewerPath, sandboxViewerProblem, type SandboxViewerProblem } from "@/lib/sandbox-desktop";
+import { REVEALED_CONTROL } from "./computer/ComputerScreen";
 
 type ViewState = "idle" | "connecting" | "connected" | "stopped" | SandboxViewerProblem;
 
 /** `onConnected`: the view is live (opening it may have started the
  * environment, so a power chip next to it should refresh). */
 /** `embedded`: only the live screen, filling its parent (the Computer
- * tab's square, which draws the frame and the controls), connecting at once. */
-export function SandboxDesktopView({ onConnected, embedded = false }: { onConnected?: () => void; embedded?: boolean } = {}) {
+ * tab's square, which draws the frame and the controls), connecting at once.
+ * `onTakeControl`: the embedded square stays view-only and its "Take
+ * control" opens the large window instead (SandboxDesktopModal).
+ * `control`: set by that window, which owns taking and releasing control. */
+export function SandboxDesktopView({ onConnected, embedded = false, onTakeControl, control: controlled }: {
+  onConnected?: () => void; embedded?: boolean; onTakeControl?: () => void; control?: boolean;
+} = {}) {
   const screen = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ViewState>("idle");
-  const [control, setControl] = useState(false);
+  const [ownControl, setControl] = useState(false);
+  const control = controlled ?? ownControl;
   const [attempt, setAttempt] = useState(embedded ? 1 : 0);
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
@@ -37,7 +45,11 @@ export function SandboxDesktopView({ onConnected, embedded = false }: { onConnec
       try {
         const path = sandboxViewerPath(control);
         const response = await fetch(path, { credentials: "same-origin", cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(45_000)]) });
-        if (!response.ok) { setState(sandboxViewerProblem(response.status)); return; }
+        if (!response.ok) {
+          const reason = await response.json().catch(() => ({})) as { code?: unknown };
+          setState(sandboxViewerProblem(response.status, reason.code));
+          return;
+        }
         const config = await response.json() as { password?: string; viewOnly?: boolean };
         // noVNC loads only when the person asks to see the desktop.
         const { default: Rfb } = await import("@novnc/novnc");
@@ -78,20 +90,20 @@ export function SandboxDesktopView({ onConnected, embedded = false }: { onConnec
 
   if (embedded) {
     return (
-      <div data-sandbox-desktop={state} data-control={control ? "1" : "0"} className="group/desk absolute inset-0">
+      <div data-sandbox-desktop={state} data-control={control ? "1" : "0"} className="absolute inset-0">
         <div ref={screen} role="application" aria-label={t("sandboxDesktop.screen")} className="h-full w-full" />
-        {live && !control && (
+        {live && !control && controlled === undefined && (
           // View-only: one button in the middle of the screen to take the
           // wheel (the server then refuses the bots' clicks there).
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <button type="button" onClick={toggleControl} data-take-control
-              className="pointer-events-auto flex min-h-[44px] items-center gap-2 rounded-full bg-black/65 px-4 py-2 text-[13px] font-medium text-white shadow-md backdrop-blur-sm transition-opacity hover:bg-black/80 md:min-h-0 md:opacity-80 md:group-hover/desk:opacity-100 focus-visible:opacity-100 touch:opacity-100">
+            <button type="button" onClick={onTakeControl ?? toggleControl} data-take-control
+              className={cn("flex min-h-[44px] items-center gap-2 rounded-full bg-black/65 px-4 py-2 text-[13px] font-medium text-white shadow-md backdrop-blur-sm hover:bg-black/80 md:min-h-0", REVEALED_CONTROL)}>
               <Hand size={15} aria-hidden="true" />
               {t("sandboxDesktop.takeControl")}
             </button>
           </div>
         )}
-        {live && control && (
+        {live && control && controlled === undefined && (
           <button type="button" onClick={toggleControl} data-release-control title={t("sandboxDesktop.controlHint")}
             className="absolute right-2 top-2 flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[11.5px] font-medium text-accent-ink shadow-sm hover:brightness-110">
             <Hand size={12} aria-hidden="true" />

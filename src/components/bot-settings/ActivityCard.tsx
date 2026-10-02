@@ -47,7 +47,7 @@ export function ActivityCard({ item, onOpen, now, onStop, stopping = false }: {
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] leading-[18px] text-ink">{item.title}</span>
           <span data-activity-subtitle className="block truncate text-[12px] leading-[17px] text-ink-secondary">
-            {activitySubtitle(item, now)}
+            {item.parallel ? `${t("botPanel.activity.parallel")} · ` : ""}{activitySubtitle(item, now)}
             {item.childCount ? ` · ${t("botPanel.coding.subagents", { count: item.childCount })}` : ""}
           </span>
         </span>

@@ -852,7 +852,7 @@ function ActionButton({
 // authority and rejects anything outside these bounds.
 const MIN_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 5;
 const MAX_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 1_440;
-const DEFAULT_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 480;
+const DEFAULT_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 10;
 
 /** A whole number of minutes within the server's bounds, or null. */
 export function parseLocalVmIdleTimeoutMinutes(value: string): number | null {

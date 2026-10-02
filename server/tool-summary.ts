@@ -78,3 +78,15 @@ export function askInputSummary(input: unknown): string | undefined {
   const text = JSON.stringify(fields);
   return text === "{}" ? undefined : cut(text, LIMIT);
 }
+
+/** The permission card's full arguments, for its collapsed "technical
+ * details": the same redacted, bounded JSON a tool detail shows, or
+ * undefined when there are none or they were too long to stay valid JSON
+ * (the card then falls back to its one-line subtitle). */
+export function askInputDetail(input: unknown): string | undefined {
+  const fields = fieldsOf(input);
+  if (!fields || Object.keys(fields).length === 0) return undefined;
+  const text = toolDetailPreview(fields);
+  if (!text || !text.startsWith("{") || text.endsWith("[… preview shortened]")) return undefined;
+  return text;
+}

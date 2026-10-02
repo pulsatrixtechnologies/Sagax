@@ -39,7 +39,7 @@ import type {
 } from "../contracts.ts";
 import { gateServer, resultBudget } from "../mcp-gate-config.ts";
 import { newEventId, newId, type TurnAccessInput } from "../contracts.ts";
-import { askInputSummary, commandSummary, toolDetailPreview } from "../tool-summary.ts";
+import { askInputDetail, askInputSummary, commandSummary, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
@@ -1280,6 +1280,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       systemPromptPath: string | null;
       /** the spawn contract — a different one means a fresh process */
       argsKey: string;
+      /** the MCP servers it was launched with (names), for the relaunch log */
+      mcpNames?: string[];
       /** the volatile half of the system prompt this process was launched
        * with (see SendTurnInput.systemVolatile). A later turn whose volatile
        * text differs delivers the difference in-turn rather than relaunching. */
@@ -1776,7 +1778,19 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         }
         return { turnId };
       }
-      if (live) closeSession(threadId, turn.sessionReset ? "context reset" : "spawn contract changed");
+      if (live) {
+        // A relaunch reconnects every MCP server: say which ones changed, so
+        // tools that come and go between turns can be traced.
+        if (!turn.sessionReset && live.mcpNames) {
+          const now = Object.keys(mcpServers);
+          const added = now.filter((name) => !live.mcpNames!.includes(name));
+          const removed = live.mcpNames.filter((name) => !now.includes(name));
+          if (added.length || removed.length) {
+            console.warn(`claude (${instanceId}): thread ${threadId} relaunched; MCP servers${added.length ? ` added ${added.join(", ")}` : ""}${removed.length ? ` removed ${removed.join(", ")}` : ""}`);
+          }
+        }
+        closeSession(threadId, turn.sessionReset ? "context reset" : "spawn contract changed");
+      }
 
       // Until sessions.set() below, this turn owns every launch resource.
       // Any bind, private-config or synchronous spawn failure must release
@@ -1833,6 +1847,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                 requestType: ask.kind,
                 tool: ask.tool,
                 summary: askSummary(ask),
+                input: ask.kind === "permission" ? askInputDetail(ask.input) : undefined,
                 command: ask.kind === "permission" && ask.tool === "Bash"
                   ? permissionCommand(ask.input.command, commandCwd) : undefined,
                 paths: ask.kind === "permission" ? permissionPaths(ask.tool, ask.input, cwd) : undefined,
@@ -1916,6 +1931,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         mcpConfigPath,
         systemPromptPath,
         argsKey,
+        mcpNames: Object.keys(mcpServers),
         volatile: turn.systemVolatile ?? "",
         sessionId: sessionId ?? newSessionId,
         sawInit: false,
@@ -2121,6 +2137,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                   summary: commandSummary(b.input),
                   input: toolDetailPreview(b.input),
                   ...filesField(writtenFilesFromToolInput(b.name, b.input)),
+                  // a sub-agent's call: nested under the Agent call that started it
+                  ...(typeof o.parent_tool_use_id === "string" && o.parent_tool_use_id ? { parentItemId: o.parent_tool_use_id } : {}),
                 });
               }
             }
@@ -2144,7 +2162,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             // --replay-user-messages: a model call took this stdin message in.
             // A steer echoed before its turn's `result` was folded into it.
             if (o.isReplay === true) {
-              if (typeof o.uuid === "string") session.turn?.pendingSteers.delete(o.uuid);
+              // a steer's words were taken in: the harness counts them received
+              // (the turn's own prompt is echoed too, and is not a steer)
+              if (typeof o.uuid === "string" && session.turn?.pendingSteers.delete(o.uuid)) {
+                emit({ ...base(threadId, currentTurnId()), type: "steer.received", steerId: o.uuid });
+              }
               break;
             }
             for (const b of Array.isArray(o.message?.content) ? o.message.content : []) {
@@ -2515,14 +2537,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
      * native turn, which this driver keeps inside the same logical turn.
      * "refused" when nothing is running here to steer or the stdin write
      * provably failed; the caller queues those words. */
-    const steer = async (threadId: string, text: string): Promise<SteerOutcome> => {
+    const steer = async (threadId: string, text: string, options?: { steerId?: string }): Promise<SteerOutcome> => {
       const s = sessions.get(threadId);
       if (!s || !s.turn || s.turn.settled || s.closing || s.child.exitCode !== null) return "refused";
       const turn = s.turn;
       // Counted before the write: a `result` read while the words are still
       // on their way must hold for them too. A failed write takes it back.
       // The uuid is what the CLI's echo names when a model call takes it in.
-      const id = randomUUID();
+      const id = options?.steerId && /^[\w-]{8,80}$/.test(options.steerId) ? options.steerId : randomUUID();
       turn.pendingSteers.add(id);
       if (!(await writeUser(s, threadId, { ...claudeUserMessage(text, undefined), uuid: id }))) {
         turn.pendingSteers.delete(id);

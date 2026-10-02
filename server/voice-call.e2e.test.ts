@@ -29,7 +29,7 @@ let origin = "";
 const usage: VoiceUsage[] = [];
 
 beforeAll(async () => {
-  xai = await startFakeXaiVoice({ transcripts: ["first turn", "second turn"], sttFinalizeMs: 30, ttsFirstChunkMs: 40, ttsSeconds: 0.3 });
+  xai = await startFakeXaiVoice({ transcripts: ["first turn", "second turn"], sttFinalizeMs: 30, ttsFirstChunkMs: 40, ttsSeconds: 0.3, sttConfidence: 0.92 });
   process.env.SAGAX_XAI_TTS_API = `${xai.url}/v1`;
   const grok = await import("./tts/grok.ts");
   const { createVoiceModeRoutes } = await import("./voice-mode.ts");
@@ -107,7 +107,8 @@ describe("voice mode live call (streaming)", () => {
     const started = Date.now();
     ws.send(JSON.stringify({ type: "finalize" }));
     const first = await until("first transcript", () => frames.find((f) => f.type === "transcript" && f.text === "first turn"));
-    expect(first).toMatchObject({ final: true, speechFinal: true });
+    // xAI's confidence reaches the page (noise fragments are dropped by it)
+    expect(first).toMatchObject({ final: true, speechFinal: true, confidence: 0.92 });
     expect(Date.now() - started).toBeLessThan(1000);
     ws.send(pcm);
     ws.send(JSON.stringify({ type: "finalize" }));
