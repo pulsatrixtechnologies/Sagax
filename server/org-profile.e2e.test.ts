@@ -32,6 +32,7 @@ let log = "";
 let idp: FakeOidcProvider;
 let jc = "";
 let noname = "";
+let phoneBearer = "";
 
 // What Caddy adds in front of the server: the request is remote, so it gets
 // no loopback trust and needs its own session.
@@ -45,6 +46,37 @@ async function api(path: string, cookie: string): Promise<{ status: number; body
   let body: any = {};
   try { body = JSON.parse(text); } catch { /* not JSON */ }
   return { status: res.status, body, text };
+}
+
+/** A phone's bearer and what GET /api/auth/session tells it. */
+async function bearerSession(bearer: string): Promise<{ bearer: string; session: any }> {
+  const res = await fetch(`${BASE}/api/auth/session`, { headers: { ...REMOTE, authorization: `Bearer ${bearer}` } });
+  expect(res.status).toBe(200);
+  return { bearer, session: await res.json() };
+}
+
+/** What the phone does with the session's avatarUrl: the versioned route on
+ * this server, with its own bearer (never Perspicax). The current version is
+ * cacheable for a day; an old version still answers the current image but
+ * must not be cached under the old URL. */
+async function expectPhoneAvatar(phone: { bearer: string; session: any }, image: Buffer): Promise<void> {
+  const url = phone.session.avatarUrl as string;
+  expect(url).toMatch(new RegExp(`^/api/people/${phone.session.principalId}/avatar\\?v=[0-9a-f]{16}$`));
+  const before = idp.avatarRequests.length;
+  const res = await fetch(`${BASE}${url}`, { headers: { ...REMOTE, authorization: `Bearer ${phone.bearer}` } });
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toBe("image/png");
+  expect(res.headers.get("cache-control")).toBe("private, max-age=86400");
+  expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(Buffer.from(await res.arrayBuffer()).equals(image)).toBe(true);
+  // read through the link (or this server's own cache of that version)
+  expect(idp.avatarRequests.slice(before).every((request) => request.authorized)).toBe(true);
+  const stale = await fetch(`${BASE}${url.replace(/v=[^&]+/, "v=0000000000000000")}`, { headers: { ...REMOTE, authorization: `Bearer ${phone.bearer}` } });
+  expect(stale.status).toBe(200);
+  expect(stale.headers.get("cache-control")).toBe("no-store");
+  await stale.arrayBuffer();
+  // another bearer, or none, reads nothing
+  expect([401, 403]).toContain((await fetch(`${BASE}${url}`, { headers: { ...REMOTE, authorization: "Bearer omb_sess_not-a-real-token-0000000000000000000000" } })).status);
 }
 
 async function signIn(user: FakeOidcUser): Promise<string> {
@@ -158,6 +190,45 @@ posixOnly("a person's name and avatar on an organization server", () => {
     expect([401, 403]).toContain((await fetch(`${BASE}${url}`, { headers: REMOTE })).status);
   });
 
+  it("gives a phone signed in with Pulsatrix its person's avatar, through this server with its own bearer", async () => {
+    // The phone's sheet: /auth/oidc/start?client=phone ends on sagax://pair,
+    // whose credential POST /api/pair redeems for a client-scoped bearer.
+    idp.user = { ...JC };
+    const start = await fetch(`${BASE}/auth/oidc/start?client=phone&return=sagax`, { redirect: "manual" });
+    const binding = cookiePair(start.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
+    const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
+    const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
+    const invite = new URL(callback.headers.get("location") ?? "");
+    expect(`${invite.protocol}//${invite.host}`, log.slice(-2000)).toBe("sagax://pair");
+    const paired = await fetch(`${BASE}/api/pair`, {
+      method: "POST", headers: { ...REMOTE, "content-type": "application/json" },
+      body: JSON.stringify({ credential: invite.searchParams.get("token"), deviceName: "JC's iPhone", pairRequestId: "pair-request-avatar-1" }),
+    });
+    expect(paired.status).toBe(200);
+    const phone = await bearerSession(((await paired.json()) as { token: string }).token);
+    // an organization admin's phone carries their scopes
+    expect(phone.session).toMatchObject({ kind: "session", identity: "perspicax", scopes: ["admin", "client"] });
+    await expectPhoneAvatar(phone, PNG);
+  });
+
+  it("gives a phone paired by code from a signed-in session the same avatar", async () => {
+    const opened = await fetch(`${BASE}/api/auth/pairing`, {
+      method: "POST", headers: { ...REMOTE, cookie: jc, "content-type": "application/json" },
+      body: JSON.stringify({ scopes: ["client"], label: "JC's iPhone" }),
+    });
+    expect(opened.status).toBe(200);
+    const { credential } = (await opened.json()) as { credential: string };
+    const paired = await fetch(`${BASE}/api/pair`, {
+      method: "POST", headers: { ...REMOTE, "content-type": "application/json" },
+      body: JSON.stringify({ credential, deviceName: "JC's iPhone", pairRequestId: "pair-request-avatar-2" }),
+    });
+    expect(paired.status).toBe(200);
+    const phone = await bearerSession(((await paired.json()) as { token: string }).token);
+    expect(phone.session.scopes).toEqual(["client"]);
+    await expectPhoneAvatar(phone, PNG);
+    phoneBearer = phone.bearer;
+  });
+
   it("takes a new name and avatar from the directory sync, and a removed avatar too", async () => {
     idp.avatars.set(JC.sub, PNG2);
     const version = idp.avatarVersion(JC.sub)!;
@@ -169,6 +240,11 @@ posixOnly("a person's name and avatar on an organization server", () => {
     expect(updated, log.slice(-2000)).toBeTruthy();
     const res = await fetch(`${BASE}${updated.avatarUrl}`, { headers: { ...REMOTE, cookie: jc } });
     expect(Buffer.from(await res.arrayBuffer()).equals(PNG2)).toBe(true);
+    // the paired phone reads the new version at its next session read: a
+    // new URL, so its cache (keyed by that URL) takes the new image
+    const phone = await bearerSession(phoneBearer);
+    expect(phone.session.avatarUrl).toBe(updated.avatarUrl);
+    await expectPhoneAvatar(phone, PNG2);
     idp.avatars.delete(JC.sub);
     const removed = await until(async () => {
       const viewer = (await api("/api/config", jc)).body.viewer;
@@ -176,6 +252,8 @@ posixOnly("a person's name and avatar on an organization server", () => {
     });
     expect(removed).toBeTruthy();
     expect((await api("/api/config", jc)).body.profile.avatarUrl).toBe("");
+    // the phone falls back to the initial: no URL, nothing to fetch
+    expect((await bearerSession(phoneBearer)).session.avatarUrl).toBeUndefined();
   }, 40_000);
 
   it("takes the picture claim at the next sign-in", async () => {

@@ -57,6 +57,8 @@ struct CompanionApp: App {
                         SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
                         session.connect()
                         Task { await session.refreshNotificationAuthorization() }
+                        // A photo changed in Perspicax shows on the way back.
+                        Task { await session.loadAccount() }
                     case .background:
                         session.linger()
                         if !session.isDemo { widgetSync.flush(session.state, connectionID: session.connection?.id) }

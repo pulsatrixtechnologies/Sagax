@@ -213,7 +213,7 @@ private struct SettingsRootPage: View {
 
     private var accountCard: some View {
         SettingsCard {
-            AccountCardRow(name: model.displayName, detail: model.detail, photo: model.photo, chevron: true) { push(.account) }
+            AccountCardRow(name: model.displayName, detail: model.detail, photo: session.accountPhoto, chevron: true) { push(.account) }
             if let percent = model.usagePercent {
                 CardHairline(leadingInset: SettingsMetrics.rowInset)
                 SettingsRow(title: "Usage", accessory: .valueChevron("\(percent)%"), height: 43.5, identifier: "settings-usage") { push(.usage) }

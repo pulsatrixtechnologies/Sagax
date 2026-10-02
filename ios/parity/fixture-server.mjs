@@ -6,6 +6,24 @@
 //
 //   node ios/parity/fixture-server.mjs            # seed, pair, keep serving
 //   node ios/parity/fixture-server.mjs --once     # seed, pair, print, stop
+//   PARITY_ORG=1 node ios/parity/fixture-server.mjs   # an organization server
+//
+// PARITY_ORG=1 runs the server as an organization server
+// (SAGAX_IDENTITY=perspicax) behind the repository's fake Perspicax
+// (server/testing/fake-oidc-provider.ts): an OIDC provider whose id_token
+// carries a `picture` claim, a directory that names each person's avatar
+// version, and the link route that serves the image. The phone is paired by
+// code from that person's signed-in session, exactly as from the desktop,
+// and session.json adds `avatarRgb`, the solid colour of the person's
+// Perspicax avatar, for the UI test that samples it (OrgAvatarUITests).
+//
+// PARITY_OWNER=1 is the personal computer whose desktop app is signed in to
+// an organization: the same dataset, plus the owner identity the desktop
+// hands its server (owner-identity.json, server/owner-identity.ts) with a
+// solid-colour avatar, and the phone reaching it the way an iPhone reaches
+// a personal computer: through the companion sidecar (companion/src/proxy.ts)
+// with a device token. session.json then names the sidecar, no environment,
+// and `avatarRgb`.
 //
 // Nothing touches ~/.openmausbot: HOME and OMB_DATA_DIR point into a temp
 // directory removed on exit. The engine is the repository's fake Claude CLI,
@@ -66,6 +84,8 @@ let home = "";
 let child = null;
 let enterpriseStub = "";
 
+let orgEnv = null;
+
 function startServer(port, webhook) {
   const log = join(OUT, "server.log");
   const proc = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "server", "index.ts")], {
@@ -84,6 +104,7 @@ function startServer(port, webhook) {
       // stub layer (written by main()) grants "budgets" and nothing else.
       ...(enterpriseStub ? { OMB_ENTERPRISE_DIR: enterpriseStub, OMB_LICENSE_KEY: "parity-fixture" } : {}),
       TZ: process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      ...orgEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -272,13 +293,13 @@ function writeEnterpriseStub(dir) {
 }
 
 // ── tiny PNG writer (solid colour with a diagonal band) ─────────────────
-function png(width, height, [r, g, b]) {
+function png(width, height, [r, g, b], { band: banded = true } = {}) {
   const raw = Buffer.alloc((width * 3 + 1) * height);
   for (let y = 0; y < height; y++) {
     const row = y * (width * 3 + 1);
     raw[row] = 0;
     for (let x = 0; x < width; x++) {
-      const band = Math.abs(x - y) < width / 6 ? 40 : 0;
+      const band = banded && Math.abs(x - y) < width / 6 ? 40 : 0;
       raw[row + 1 + x * 3] = Math.min(255, r + band);
       raw[row + 2 + x * 3] = Math.min(255, g + band);
       raw[row + 3 + x * 3] = Math.min(255, b + band);
@@ -600,6 +621,7 @@ async function main() {
   home = mkdtempSync(join(tmpdir(), "omb-parity-"));
   const dataDir = join(home, ".openmausbot");
   mkdirSync(dataDir, { recursive: true });
+  if (process.env.PARITY_ORG === "1") return mainOrg();
   enterpriseStub = join(home, "enterprise-stub");
   writeEnterpriseStub(enterpriseStub);
   writeFileSync(join(dataDir, "config.json"), JSON.stringify({
@@ -628,6 +650,14 @@ async function main() {
 
   seedTranscripts(dataDir, seeded);
   seedCommandRules(dataDir, seeded);
+  const ownerMode = process.env.PARITY_OWNER === "1";
+  if (ownerMode) {
+    // What the signed-in desktop leaves its server (server/owner-identity.ts).
+    writeFileSync(join(dataDir, "owner-identity.json"), JSON.stringify({
+      origin: "https://sagax.example.test", principalId: "pr_parity_org_person", name: "Parity Person", email: "parity.person@example.test",
+      avatar: { version: "parityowner01", data: png(96, 96, ORG_AVATAR_RGB, { band: false }).toString("base64") },
+    }), { mode: 0o600 });
+  }
 
   child = startServer(port, webhook);
   await waitHealthy(base, child);
@@ -635,10 +665,10 @@ async function main() {
   await api(base, "PUT", "/api/settings/bot", {
     autoReviewDefault: true, timeZoneAuto: true, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }).catch((error) => console.error(`[parity] bot settings: ${error.message}`));
-  const session = await pair(base);
-  const front = COMPUTER_DOUBLE ? `http://127.0.0.1:${(await startComputerDouble(port)).port}` : base;
-  if (COMPUTER_DOUBLE) console.error(`[parity] computer double ${front} -> ${base}`);
-  const fleet = await fetch(`${base}/api/bots`, { headers: { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
+  const session = ownerMode ? await startSidecar(port) : await pair(base);
+  const front = ownerMode ? session.endpoint : COMPUTER_DOUBLE ? `http://127.0.0.1:${(await startComputerDouble(port)).port}` : base;
+  if (COMPUTER_DOUBLE && !ownerMode) console.error(`[parity] computer double ${front} -> ${base}`);
+  const fleet = await fetch(`${front}/api/bots`, { headers: { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
   const record = {
     endpoint: front,
     server: base,
@@ -646,6 +676,7 @@ async function main() {
     environmentId: session.environmentId,
     scopes: session.scopes,
     bots: (fleet.bots ?? []).length,
+    ...(ownerMode ? { owner: true, avatarRgb: ORG_AVATAR_RGB } : {}),
     pid: process.pid,
     dataDir,
   };
@@ -655,8 +686,110 @@ async function main() {
   if (once) await shutdown(0);
 }
 
+// ── the companion sidecar (PARITY_OWNER=1) ─────────────────────────────
+// The real sidecar handler in front of the server, with one paired device.
+const SIDECAR_TOKEN = "parity_owner_device_token_0001";
+async function startSidecar(harnessPort) {
+  const { createProxyHandler } = await import("../../companion/src/proxy.ts");
+  const { createConnectedDeviceTracker } = await import("../../companion/src/connected-devices.ts");
+  const server = createHttpServer(createProxyHandler({
+    harnessPort,
+    authenticate: (token) => (token === SIDECAR_TOKEN ? { id: "parity-phone", cloudDesktopAccess: true } : null),
+    redeem: () => ({ error: "already paired" }),
+    serverName: () => "Parity computer",
+    connected: createConnectedDeviceTracker().open,
+  }));
+  const port = await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
+  console.error(`[parity] companion sidecar http://127.0.0.1:${port} -> ${harnessPort}`);
+  return { endpoint: `http://127.0.0.1:${port}`, token: SIDECAR_TOKEN, environmentId: null, scopes: ["admin", "client"] };
+}
+
+// ── organization mode (PARITY_ORG=1) ───────────────────────────────────
+// The person's Perspicax avatar: one solid, unmistakable colour, so a test
+// can tell it from the initial, a mascot or the glass around it.
+const ORG_AVATAR_RGB = [236, 18, 196];
+const ORG_PERSON = { sub: "01J9S8PARITYORG000000000JC", email: "parity.person@example.test", name: "Parity Person", preferred_username: "parity", role: "admin" };
+let idp = null;
+
+async function mainOrg() {
+  const { startFakeOidcProvider } = await import("../../server/testing/fake-oidc-provider.ts");
+  idp = await startFakeOidcProvider({ user: ORG_PERSON });
+  idp.avatarsEnabled = true;
+  idp.avatars.set(ORG_PERSON.sub, png(96, 96, ORG_AVATAR_RGB, { band: false }));
+  idp.directoryPeople = [idp.personOf(ORG_PERSON)];
+
+  const dataDir = join(home, ".openmausbot");
+  writeFileSync(join(dataDir, "config.json"), JSON.stringify({
+    instances: {
+      claude: {
+        driver: "claudeAgent",
+        displayName: "Fixture engine",
+        config: { cli: join(ROOT, "server", "testing", "fake-claude-cli.ts") },
+      },
+    },
+  }));
+  const { port, webhook } = await freePair();
+  const base = `http://127.0.0.1:${port}`;
+  const linkDir = join(home, "link");
+  mkdirSync(linkDir, { recursive: true, mode: 0o750 });
+  writeFileSync(join(linkDir, "pulsabot.json"), JSON.stringify({
+    version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: base, link_token: idp.linkToken,
+  }), { mode: 0o640 });
+  orgEnv = {
+    SAGAX_IDENTITY: "perspicax",
+    SAGAX_PERSPICAX_ISSUER: idp.issuer,
+    SAGAX_PUBLIC_URL: base,
+    SAGAX_PERSPICAX_LINK_FILE: join(linkDir, "pulsabot.json"),
+    SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
+  };
+  console.error(`[parity] organization server ${base}, Perspicax ${idp.issuer}`);
+  child = startServer(port, webhook);
+  await waitHealthy(base, child);
+
+  // The person signs in on the web (the provider signs them in at once),
+  // then pairs this phone by code, as from the desktop. A proxy's headers
+  // make the server treat these calls as remote, as a browser's would be.
+  const remote = { "x-forwarded-for": "198.51.100.23", "x-forwarded-proto": "https" };
+  const cookieOf = (setCookie) => setCookie.split(";")[0];
+  const start = await fetch(`${base}/auth/oidc/start`, { redirect: "manual" });
+  const binding = cookieOf(start.headers.getSetCookie().find((c) => c.includes("_oidc=")));
+  const authorize = await fetch(start.headers.get("location"), { redirect: "manual" });
+  const callback = await fetch(authorize.headers.get("location"), { redirect: "manual", headers: { cookie: binding } });
+  const signedIn = callback.headers.getSetCookie().find((c) => c.startsWith("omb_session_") && !c.includes("_oidc="));
+  if (!signedIn) throw new Error(`sign-in failed (${callback.status} ${callback.headers.get("location")})`);
+  const cookie = cookieOf(signedIn);
+  const opened = await fetch(`${base}/api/auth/pairing`, {
+    method: "POST", headers: { ...remote, cookie, "content-type": "application/json" },
+    body: JSON.stringify({ scopes: ["admin", "client"], label: "parity-harness" }),
+  }).then(async (r) => (r.ok ? r.json() : Promise.reject(new Error(`pairing ${r.status}: ${await r.text()}`))));
+  const paired = await fetch(`${base}/api/pair`, {
+    method: "POST", headers: { ...remote, "content-type": "application/json" },
+    body: JSON.stringify({ credential: opened.credential, deviceName: "Parity iPhone", pairRequestId: "parity-org-1" }),
+  }).then(async (r) => (r.ok ? r.json() : Promise.reject(new Error(`pair ${r.status}: ${await r.text()}`))));
+  const session = await fetch(`${base}/api/auth/session`, { headers: { authorization: `Bearer ${paired.token}` } }).then((r) => r.json());
+  if (!session.avatarUrl) throw new Error(`the paired session names no avatar: ${JSON.stringify(session)}`);
+  const record = {
+    endpoint: base,
+    server: base,
+    token: paired.token,
+    environmentId: paired.environment?.environmentId ?? session.environmentId ?? null,
+    scopes: session.scopes ?? [],
+    organization: true,
+    issuer: idp.issuer,
+    avatarUrl: session.avatarUrl,
+    avatarRgb: ORG_AVATAR_RGB,
+    pid: process.pid,
+    dataDir,
+  };
+  writeFileSync(join(OUT, "session.json"), `${JSON.stringify(record, null, 2)}\n`);
+  console.error(`[parity] ready (organization): ${session.name} with avatar ${session.avatarUrl}, session written to ${join(OUT, "session.json")}`);
+  console.log(JSON.stringify({ endpoint: base, environmentId: record.environmentId, avatarUrl: record.avatarUrl }));
+  if (once) await shutdown(0);
+}
+
 async function shutdown(code) {
   await stopServer(child);
+  await idp?.close().catch(() => {});
   if (home) rmSync(home, { recursive: true, force: true });
   try { rmSync(join(OUT, "session.json")); } catch { /* already gone */ }
   process.exit(code);
