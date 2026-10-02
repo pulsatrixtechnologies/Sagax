@@ -908,6 +908,17 @@ process.stdin.on("data", (c) => {
     } catch {
       continue;
     }
+    // The control request `initialize` lists the slash commands and starts
+    // no turn (server/drivers/harness-command-probe.ts).
+    // FAKE_CLAUDE_COMMANDS: path of a JSON array of commands to answer with.
+    // FAKE_CLAUDE_COMMANDS_DUMP: path to write {argv, cwd} of that launch.
+    const control = prompt && typeof prompt === "object" && !Array.isArray(prompt) ? prompt as Record<string, any> : null;
+    if (control?.type === "control_request" && control.request?.subtype === "initialize") {
+      if (process.env.FAKE_CLAUDE_COMMANDS_DUMP) writeFileSync(process.env.FAKE_CLAUDE_COMMANDS_DUMP, JSON.stringify({ argv, cwd: process.cwd() }));
+      const commands = process.env.FAKE_CLAUDE_COMMANDS ? JSON.parse(readFileSync(process.env.FAKE_CLAUDE_COMMANDS, "utf8")) : [{ name: "compact", description: "Compact", argumentHint: "", builtin: true }];
+      out({ type: "control_response", response: { subtype: "success", request_id: control.request_id, response: { commands } } });
+      continue;
+    }
     if (turnRunning || lateTurnWaiting) {
       // folded into the running turn, unless it landed after that turn's
       // last model call — then the real CLI queues it for the next turn,

@@ -527,6 +527,8 @@ import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
+import { createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
+import type { HarnessCommandScope } from "./contracts.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
@@ -11550,12 +11552,31 @@ async function startTurn(
       // Slice 4: this turn's credentials (an owner key is read now).
       // (solo mode takes no extra await: its dispatch timing is unchanged)
       const turnAccess = IDENTITY.kind === "perspicax" ? await orgTurnAccess(threadId, bot, instance, speaker) : undefined;
+      // An engine slash command typed by a person (or set in a routine)
+      // reaches the engine verbatim (server/harness-commands.ts); a peer hop
+      // or a card continuation never runs one.
+      const typedCommand = !opts?.cardContinuation && commsDepth === 0
+        ? await typedCommandForTurn(resolvedImages.text, harnessCommandSource(bot, threadId, {
+          botId: bot.id,
+          ...(cwd ? { cwd } : {}),
+          ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+          mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        }), harnessCommands)
+        : { kind: "none" as const };
+      if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped during command lookup");
+      const engineCommand = typedCommand.kind === "engine" ? typedCommand : null;
+      // With no session to resume, the command runs in a new one that never
+      // saw the conversation: the next turn must still rebuild it, so the
+      // bookkeeping that would mark the context delivered is left for it.
+      const contextStillPending = Boolean(engineCommand && dispatchContext.sessionReset && transcript.length > 0 &&
+        !NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind));
       const dispatch = await guardTurnDispatch(instance.adapter.sendTurn({
         threadId,
         botId: bot.id,
         ...(turnAccess ? { access: turnAccess } : {}),
         startupRecovery: cfg.automaticRecovery?.enabled === true && !opts?.automaticRecoveryAttempted,
-        text: withRecalled(recalled, dispatchContext.turnText),
+        text: engineCommand ? engineCommand.engineText : withRecalled(recalled, dispatchContext.turnText),
+        ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         refreshSystemPrompt: true,
         images: turnImages,
         approvalMode: approvalModeForTurn(bot, commsDepth > 0, threadId),
@@ -11568,8 +11589,8 @@ async function startTurn(
         // resume the wrong conversation and defeat the context bubble
         resumeCursor: dispatchContext.resumeCursor,
         sessionReset: dispatchContext.sessionReset,
-        ...(dispatchContext.recoveryText !== undefined ? { recoveryText: dispatchContext.recoveryText } : {}),
-        ...(dispatchContext.recoveryIsReplay ? { recoveryIsReplay: true } : {}),
+        ...(dispatchContext.recoveryText !== undefined && !engineCommand ? { recoveryText: dispatchContext.recoveryText } : {}),
+        ...(dispatchContext.recoveryIsReplay && !engineCommand ? { recoveryIsReplay: true } : {}),
         transcript,
         system: prompt.text,
         systemStable: prompt.stable,
@@ -11606,13 +11627,13 @@ async function startTurn(
       }
       clearDirectTurnDispatch(threadId, dispatchClaimId);
       // dispatched: the rewind is spent, and the old cursors are dead
-      if (rewound) store.patchTask(bot.id, threadId, { rewound: false, resumeCursors: {} });
-      if (contextReset && record) store.patchTask(bot.id, threadId, { appliedCompactionId: record.id, contextFloor: undefined });
+      if (rewound && !contextStillPending) store.patchTask(bot.id, threadId, { rewound: false, resumeCursors: {} });
+      if (contextReset && record && !contextStillPending) store.patchTask(bot.id, threadId, { appliedCompactionId: record.id, contextFloor: undefined });
       // and this engine now owns the thread's most recent turn
       // Consume exactly the external-update generation this turn replayed.
       // If a newer delegated result landed during setup, its unique marker
       // differs and must survive so the next turn also receives that update.
-      if (!isExternalContextMarker(task.lastInstanceId) || task.lastInstanceId === externalContextMarker) {
+      if (!contextStillPending && (!isExternalContextMarker(task.lastInstanceId) || task.lastInstanceId === externalContextMarker)) {
         store.markTaskDispatched(bot.id, threadId, instanceId);
       }
       // a turn can settle before dispatch returns, and a poller started
@@ -18350,6 +18371,48 @@ ROUTES.push(createHarnessConnectorRoutes({
   inventory: claudeAiInventory,
 }));
 
+// The engines' own slash commands in the chat (server/harness-commands.ts):
+// listed by the engine itself in the folder and isolation the bot's turns
+// get, passed through verbatim when typed.
+const harnessCommands = new HarnessCommandCatalog();
+function harnessCommandSource(bot: BotRecord, threadId: string | undefined, scope?: HarnessCommandScope): HarnessCommandSource | null {
+  const instance = turnInstance(bot, undefined, threadId);
+  const engine = instance ? harnessEngineFor(instance.driverKind) : null;
+  if (!instance?.listCommands || !engine) return null;
+  const task = threadId ? store.taskByThread(bot.id, threadId) : undefined;
+  // the folder the thread's next turn runs in (see the pin in runTurn)
+  const cwd = task && task.cwd !== undefined ? task.cwd ?? undefined
+    : bot.cwd ?? (task && threadId && supportsWorkspaceFiles(instance.driverKind) ? ensureTaskWorkspace(bot.id, threadId) : undefined);
+  const list = instance.listCommands.bind(instance);
+  return {
+    botId: bot.id,
+    instanceId: instance.instanceId,
+    engine,
+    scope: scope ?? {
+      botId: bot.id,
+      ...(cwd ? { cwd } : {}),
+      ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+      mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+    },
+    list,
+  };
+}
+ROUTES.push(createHarnessCommandRoutes({
+  catalog: harnessCommands,
+  sourceFor: (auth, botId, threadId) => {
+    const bot = store.bot(botId);
+    if (!bot) return { status: 404, error: "no such bot" };
+    const viewerId = actorPrincipalId(auth);
+    if (threadId && !store.taskByThread(bot.id, threadId)) return { status: 404, error: "no such conversation" };
+    if (IDENTITY.kind === "perspicax") {
+      const viewer = authzViewerFromId(viewerId);
+      if (!viewer || !canOnBot(viewer, "bot.use", botFacts(bot))) return { status: 404, error: "no such bot" };
+      if (threadId && !botThreadReadable(bot, threadId, viewerId, "thread.post")) return { status: 404, error: "no such conversation" };
+    }
+    return harnessCommandSource(bot, threadId ?? (IDENTITY.kind === "perspicax" ? viewerThreadOf(bot, viewerId) : bot.threadId));
+  },
+}));
+
 // Invite links (/join#token=...): public like /api/auth/email/start, and
 // counted against the same per-source lockout as pairing. Security model:
 // server/org-routes.ts `joinInviteRoute`.
@@ -25081,6 +25144,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const threadId = routeThreadId(bot, body.threadId);
       const notYours = cloudGuestSendRefusal(auth, threadId);
       if (notYours) return json(res, 403, { error: notYours });
+      // An engine command the chat cannot run is refused before it is
+      // recorded (server/harness-commands.ts).
+      if (text.startsWith("/")) {
+        const typed = await typedCommandForTurn(extractTurnImages(text).text, harnessCommandSource(bot, threadId), harnessCommands);
+        if (typed.kind === "unavailable") return json(res, 409, unavailableCommandError(typed));
+      }
       // Who this message is from, for the ledger. It is captured here and
       // travels with the message: into the turn it starts, or into the queue
       // until it drains. A message steered into someone else's running turn

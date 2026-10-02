@@ -1,0 +1,124 @@
+{
+ "type": "control_response",
+ "response": {
+  "subtype": "success",
+  "request_id": "sagax-commands",
+  "response": {
+   "commands": [
+    {
+     "name": "superpowers:brainstorming",
+     "description": "(superpowers) Explore intent and design before building.",
+     "argumentHint": "",
+     "aliases": [
+      "brainstorming"
+     ]
+    },
+    {
+     "name": "pulsatrix-flow:using-px-flow",
+     "description": "(Pulsatrix Flow) Entry point of Pulsatrix Flow.",
+     "argumentHint": "",
+     "aliases": [
+      "using-px-flow"
+     ]
+    },
+    {
+     "name": "debug",
+     "description": "Enable debug logging for this session and help diagnose issues",
+     "argumentHint": "[issue description]",
+     "builtin": true
+    },
+    {
+     "name": "code-review",
+     "description": "Review the current diff, or a PR number/branch/path target, for correctness bugs (plus reuse/simplification/efficiency cleanups where the model's review reci...",
+     "argumentHint": "[low|medium|high|xhigh|max|ultra] [--fix] [--comment] [<pr#>|<branch>|<path>]",
+     "aliases": [
+      "review"
+     ],
+     "builtin": true
+    },
+    {
+     "name": "clear",
+     "description": "Start a new session with empty context; previous session stays on disk (resumable with /resume)",
+     "argumentHint": "[name]",
+     "aliases": [
+      "reset",
+      "new"
+     ],
+     "builtin": true
+    },
+    {
+     "name": "color",
+     "description": "Set the prompt bar color for this session",
+     "argumentHint": "[red|blue|green|yellow|purple|orange|pink|cyan|default]",
+     "builtin": true
+    },
+    {
+     "name": "compact",
+     "description": "Free up context by summarizing the conversation so far",
+     "argumentHint": "<optional custom summarization instructions>",
+     "builtin": true
+    },
+    {
+     "name": "context",
+     "description": "Show current context usage",
+     "argumentHint": "",
+     "builtin": true
+    },
+    {
+     "name": "init",
+     "description": "Initialize a new CLAUDE.md file with codebase documentation",
+     "argumentHint": "",
+     "builtin": true
+    },
+    {
+     "name": "model",
+     "description": "Set the AI model for Claude Code",
+     "argumentHint": "<model>",
+     "builtin": true
+    },
+    {
+     "name": "__remote-workflow",
+     "description": "Run the workflow script delivered in this session environment (server-launched sessions only)",
+     "argumentHint": "",
+     "builtin": true
+    },
+    {
+     "name": "usage",
+     "description": "Show session cost, plan usage, and what's contributing to your limits",
+     "argumentHint": "",
+     "aliases": [
+      "cost",
+      "stats"
+     ],
+     "builtin": true
+    },
+    {
+     "name": "goal",
+     "description": "Set a goal: keep working until the condition is met",
+     "argumentHint": "",
+     "builtin": true
+    },
+    {
+     "name": "docx",
+     "description": "Create and edit Word documents.",
+     "argumentHint": "",
+     "aliases": [
+      "anthropic-skills:docx"
+     ]
+    },
+    {
+     "name": "deploy-notes",
+     "description": "Write deploy notes for this repository (project)",
+     "argumentHint": "<version>"
+    },
+    {
+     "name": "mcp__github__review_pr",
+     "description": "Review a pull request (MCP)",
+     "argumentHint": "<pr>"
+    }
+   ],
+   "models": [],
+   "agents": []
+  }
+ }
+}

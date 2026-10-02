@@ -298,6 +298,37 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(await instance.snapshot()).not.toHaveProperty("account");
   });
 
+  it("lists its skills for the turn's folder and hands a picked one to the turn with its file", async () => {
+    await create();
+    const skills = join(scratch, "skills.json");
+    writeFileSync(skills, JSON.stringify({ data: [{ cwd: scratch, errors: [], skills: [
+      { name: "release-notes", description: "Write release notes", path: join(scratch, "SKILL.md"), scope: "repo", enabled: true, pluginId: null },
+    ] }] }));
+    process.env.FAKE_CODEX_SKILLS = skills;
+    const dump = join(scratch, "dump.json");
+    process.env.FAKE_CODEX_DUMP = dump;
+    try {
+      expect(await instance.listCommands?.({ cwd: scratch })).toEqual([
+        { name: "release-notes", description: "Write release notes", group: "engine", path: join(scratch, "SKILL.md") },
+      ]);
+      const listed = JSON.parse(readFileSync(dump, "utf8")) as { calls: Array<{ method: string; params: any }> };
+      expect(listed.calls.find((call) => call.method === "skills/list")?.params).toEqual({ cwds: [scratch] });
+      expect(listed.calls.some((call) => call.method === "turn/start")).toBe(false);
+      await instance.adapter.sendTurn({
+        threadId: "t-skill", text: "/release-notes 1.2.0", system: "You are Testy.", model: "gpt-5.6-sol", approvalMode: "ask",
+        harnessCommand: { name: "release-notes", args: "1.2.0", path: join(scratch, "SKILL.md") },
+      });
+      await recorder.until((e) => e.type === "turn.completed");
+      const seen = JSON.parse(readFileSync(dump, "utf8")) as { calls: Array<{ method: string; params: any }> };
+      expect(seen.calls.find((call) => call.method === "turn/start")?.params.input).toEqual([
+        { type: "skill", name: "release-notes", path: join(scratch, "SKILL.md") },
+        { type: "text", text: "$release-notes 1.2.0" },
+      ]);
+    } finally {
+      delete process.env.FAKE_CODEX_SKILLS;
+    }
+  });
+
   it("runs a guest's turn with no environment and the shell off, proven before the turn starts", async () => {
     await create();
     expect(instance.adapter.capabilities.guestTurns).toBe("confined");

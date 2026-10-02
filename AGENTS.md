@@ -373,6 +373,30 @@ these rules, each covered by `server/harness-connectors.test.ts` or
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
 
+## Engine slash commands in the chat
+
+Typing "/" in a 1:1 conversation lists Sagax's own commands and the bot
+engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
+`src/components/ComposerCommandMenu.tsx`). Keep these rules, each covered by
+`shared/harness-commands.test.ts`, `server/harness-commands.test.ts`,
+`server/harness-commands.e2e.test.ts` or the driver tests:
+
+- The engine lists them itself, without a model call, in the folder and
+  isolation the bot's turns get (`ProviderInstance.listCommands`): Claude
+  Code answers the stream-json `initialize` control request (built-ins,
+  project commands and skills, plugin commands and skills, MCP prompts);
+  Codex answers `skills/list`. `GET /api/bots/:id/harness-commands`
+  (`?threadId`, `?refresh=1`) caches them per bot, engine and scope.
+- A message whose first word is an engine command reaches the engine
+  verbatim (no recall, reply or replay wrapper); Codex gets the skill's file
+  with `$name`. Without a session to resume, the next turn still gets the
+  replay. Peer hops and card continuations never run one.
+- Sagax's commands (`goal`, `learn`, `setup`) win a name collision; the
+  engine's is `/engine:<name>`. What the chat cannot run (terminal-only, or
+  managed by Sagax: model, effort, sessions, approvals, MCP) is listed dimmed
+  with its reason and refused at send (409).
+- `scripts/smoke-harness-commands.ts` checks the real CLIs.
+
 ## Bot panel
 
 The bot's side panel (`src/components/BotSettingsDialog.tsx`, tabs in
