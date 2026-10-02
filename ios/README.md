@@ -110,7 +110,8 @@ ios/
     Session.swift                connection, lifecycle, actions
     Discovery.swift              NWBrowser for _openmausbot._tcp
     Keychain.swift               the device token
-    MausAvatar.swift             the mascot face, in the desktop's palette
+    Mascots/                     the Sagax characters (owl, shapes, Trombi), the picture crop,
+                                 group faces, and a DEBUG gallery (-mascotGallery owl|shape|trombi|group)
     PairingView.swift            QR handoff, discovery, address and code fallback
     PairingScanner.swift         native QR camera, permission and recovery UI
     Glass.swift                  the one material the chrome is made of (Liquid Glass on 26+)
@@ -227,7 +228,7 @@ the host computer remain unreachable through the companion.
   the bot's role beside its name (quiet text in compact, a chip in
   comfortable), timestamps that say "Yesterday"
   rather than a date, and a gap-based separator in the transcript instead of a
-  stamp on every message. The palette in `MausAvatar.swift` is copied verbatim
+  stamp on every message. The palette in `CompanionCore/MascotLook.swift` is copied verbatim
   from `src/lib/mascot.ts`: a bot the user knows as "the orange one" should be
   the same orange on both screens.
 - **Return sends, Shift+Return breaks the line**, via `.onKeyPress`. Returning

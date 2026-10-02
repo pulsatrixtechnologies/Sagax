@@ -769,17 +769,7 @@ struct GroupTile: View {
             ZStack {
                 if let room {
                     Circle().fill(Color.secondary.opacity(0.14))
-                    let bots = memberBots(room)
-                    if let first = bots.first {
-                        BotAvatarView(bot: first, size: 34, state: .happy, animated: false)
-                            .offset(x: -9, y: -6)
-                    }
-                    if bots.count > 1 {
-                        BotAvatarView(bot: bots[1], size: 30, state: .happy, animated: false)
-                            .padding(2)
-                            .background(Circle().fill(Color(uiColor: .systemBackground)))
-                            .offset(x: 11, y: 9)
-                    }
+                    GroupMascotView(members: memberBots(room), size: 52)
                     if room.unread {
                         Circle()
                             .fill(MausPalette.color("blue"))
@@ -982,7 +972,7 @@ struct UpdatesPill: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if !updates.isEmpty {
-                    MascotStack(colors: Array(updates.prefix(3).map(\.chat.color)))
+                    MascotStack(chats: Array(updates.prefix(3).map(\.chat)))
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
@@ -1037,14 +1027,14 @@ struct UpdatesPill: View {
 
 /// Up to three mascots overlapping, the way a group of faces reads at a glance.
 struct MascotStack: View {
-    let colors: [String]
+    let chats: [Chat]
     var size: CGFloat = 28
     var overlap: CGFloat = 12
 
     var body: some View {
         HStack(spacing: -overlap) {
-            ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
-                MausAvatar(color: color, size: size, state: .idle, animated: false)
+            ForEach(Array(chats.enumerated()), id: \.offset) { _, chat in
+                ChatAvatarView(chat: chat, size: size)
                     .padding(2)
                     .background(Circle().fill(Color(uiColor: .systemBackground)))
             }

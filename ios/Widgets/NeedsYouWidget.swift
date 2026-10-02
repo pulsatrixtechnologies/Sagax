@@ -78,7 +78,8 @@ private struct NeedsYouView: View {
     private func smallRow(_ row: WidgetSnapshot.Row) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                MausFaceStill(
+                MascotStill(
+                    chat: row.chat,
                     color: row.chat.color,
                     state: MausState(rawValue: row.face) ?? .idle,
                     size: 30
@@ -110,7 +111,8 @@ private struct NeedsYouView: View {
             }
             ForEach(asks.prefix(3), id: \.chat) { row in
                 HStack(spacing: 8) {
-                    MausFaceStill(
+                    MascotStill(
+                        chat: row.chat,
                         color: row.chat.color,
                         state: MausState(rawValue: row.face) ?? .idle,
                         size: 26

@@ -274,7 +274,7 @@ struct NewSectionSheet: View {
         } label: {
             VStack(spacing: 9) {
                 ZStack(alignment: .topTrailing) {
-                    BotAvatarView(bot: bot, size: 52, animated: false)
+                    BotMascotView(bot: bot, size: 52, animated: false)
                     if let order {
                         Text("\(order)")
                             .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -544,7 +544,7 @@ struct NewSectionSheet: View {
             ForEach(Array(selection.selectedIDs.enumerated()), id: \.element) { index, id in
                 if let bot = bots.first(where: { $0.id == id }) {
                     HStack(spacing: 7) {
-                        BotAvatarView(bot: bot, size: 26, animated: false)
+                        BotMascotView(bot: bot, size: 26, animated: false)
                         Text("\(index + 1). \(bot.name)")
                             .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)

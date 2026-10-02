@@ -13,7 +13,7 @@ struct CompanionWelcomeView: View {
                     RoundedRectangle(cornerRadius: 32, style: .continuous)
                         .fill(MausPalette.color("blue").opacity(0.12))
                         .frame(width: 148, height: 148)
-                    MausAvatar(color: "blue", size: 108, state: .happy, animated: false)
+                    OwlMascotView(color: "blue", size: 108, state: .success)
                         .accessibilityHidden(true)
                 }
 

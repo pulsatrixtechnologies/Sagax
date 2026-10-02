@@ -223,15 +223,23 @@ targets:
       # answer intent resolves tokens through the same shared connection
       # store the Share extension uses.
       - path: AppShared
-      - path: App/MausAvatar.swift
-      - path: App/MausFaceData.swift
+      # The Sagax characters, drawn still: everything in App/Mascots except
+      # BotMascotView, which loads pictures through the app's Session.
+      - path: App/Mascots/MascotPaint.swift
+      - path: App/Mascots/MausState.swift
+      - path: App/Mascots/MascotCharacterView.swift
+      - path: App/Mascots/MascotComets.swift
+      - path: App/Mascots/OwlMascotView.swift
+      - path: App/Mascots/OwlSkinFx.swift
+      - path: App/Mascots/ShapeMascotView.swift
+      - path: App/Mascots/TrombiMascotView.swift
       # MascotState resolves the face for the post-answer refresh a widget
       # performs; it is self-contained above Core, so it rides along.
       - path: App/MascotState.swift
     dependencies:
-      # MausAvatar draws whichever body a bot wears, and the body catalog and
-      # its path parser live in CompanionCore. The extension shares the
-      # drawing with the app, so it has to share the catalog too.
+      # The mascots' art, its path parser and the bot's look live in
+      # CompanionCore. The extension shares the drawing with the app, so it
+      # has to share the art too.
       - package: CompanionCore
         product: CompanionCore
     settings:
