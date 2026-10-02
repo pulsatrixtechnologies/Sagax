@@ -140,6 +140,158 @@ struct ChatView: View {
     }
 
     var body: some View {
+        // Type-erased at two seams (layout, lifecycle, presentations): the
+        // whole chain as one opaque type made the optimizer abort ("Possible
+        // non-terminating type substitution") when archiving Release.
+        AnyView(screen)
+        .sheet(isPresented: $showingTasks) {
+            if current.supportsTasks {
+                TaskManagerView(chat: current) { selectedThreadId = $0 }
+            }
+        }
+        .sheet(isPresented: $showingProfile) {
+            if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
+        }
+        .fullScreenCover(isPresented: $showingWalkie) {
+            WalkieView { chat in
+                showingWalkie = false
+                // Walkie hands back the chat it wants open: this one stays,
+                // another one is pushed from the home the way a deep link is.
+                if chat.threadId != threadId { session.openChat(threadId: chat.threadId) }
+            }
+            .environmentObject(session)
+        }
+        .sheet(item: $shareFile) { file in
+            ActivityShareSheet(items: [file.url])
+        }
+        .photosPicker(
+            isPresented: $showingPhotoPicker,
+            selection: $selectedPhotos,
+            maxSelectionCount: max(1, AttachmentPolicy.maximumItems - attachments.count),
+            matching: .images,
+            preferredItemEncoding: .current
+        )
+        .onValueChange(of: selectedPhotos) { items in
+            guard !items.isEmpty else { return }
+            Task { await importPhotos(items) }
+        }
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: [.content],
+            allowsMultipleSelection: true,
+            onCompletion: importFiles
+        )
+        .fullScreenCover(item: $filePreview) { preview in
+            FilePreviewView(item: preview) {
+                filePreview = nil
+            }
+        }
+    }
+
+    private var screen: some View {
+        AnyView(arrival)
+        .onDisappear {
+            dictation.stop()
+            resetFilePreview()
+            cancelThreadOpen()
+        }
+        .onValueChange(of: scenePhase) { phase in
+            if phase != .active { dictation.stop() }
+        }
+        .onValueChange(of: showingComputer) { shown in
+            if shown { dictation.stop() }
+        }
+        .onValueChange(of: showingTasks) { shown in
+            if shown { dictation.stop() }
+        }
+        .onValueChange(of: showingProfile || pushingProfile) { shown in
+            if shown { dictation.stop() }
+        }
+        .onValueChange(of: showingWalkie) { shown in
+            if shown { dictation.stop() }
+        }
+        .onValueChange(of: showingPlus) { shown in
+            if shown { dictation.stop() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
+            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey]
+            let value = (raw as? NSNumber)?.uintValue ?? (raw as? UInt)
+            if value == AVAudioSession.InterruptionType.began.rawValue {
+                dictation.stop()
+            }
+        }
+        .onValueChange(of: dictation.transcript) { spoken in
+            // Always join against the text frozen at capture start. A newer
+            // partial then replaces the older partial instead of duplicating it.
+            draft = Dictation.draft(base: dictation.base, transcript: spoken)
+        }
+        .onValueChange(of: dictation.isListening) { listening in
+            if listening { composerFocused = false }
+        }
+    }
+
+    private var arrival: some View {
+        AnyView(layout)
+        .task(id: threadId) {
+            if selectedThreadWasRemoved { dismiss(); return }
+            let openedChat = current
+            session.threadSelection.rememberThread(openedChat, connectionID: session.connection?.id)
+            await session.loadThreadIfNeeded(openedChat.threadId)
+            // opening a chat is what marks it read, exactly as on the desktop
+            if openedChat.unread { await session.markRead(openedChat) }
+#if DEBUG
+            // `-open-plus`: the + sheet up, for the screenshot harness
+            if ProcessInfo.processInfo.arguments.contains("-open-plus") { showingPlus = true }
+            // Profile parity screenshots without automating a tap through the
+            // animated island/header transition.
+            if ProcessInfo.processInfo.arguments.contains("-open-profile") { openProfile() }
+            if let screen = ParityLaunch.current?.screen {
+                if screen.opensComputer { showingComputer = true }
+                if screen.opensProfile {
+                    // a push while the chat's own push still animates is dropped
+                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    openProfile()
+                }
+            }
+#endif
+        }
+        .onValueChange(of: selectedThreadWasRemoved) { removed in
+            if removed { dismiss() }
+        }
+        .onValueChange(of: session.state.hasLoadedPage(forThread: threadId)) { loaded in
+            let requestedThread = threadId
+            if !loaded { Task { await session.loadThreadIfNeeded(requestedThread) } }
+        }
+        .onValueChange(of: current.unread) { unread in
+            // A message can arrive while this chat is already on screen. The
+            // initial task above will not run again, so clear that new unread
+            // bit here rather than leaving a badge on an open conversation.
+            let readChat = current
+            if unread { Task { await session.markRead(readChat) } }
+        }
+        .onValueChangePair(of: threadId) { previous, next in
+            dictation.stop()
+            threadDrafts[previous] = ComposerSnapshot(text: draft, attachments: attachments, error: attachmentError)
+            let restored = threadDrafts.removeValue(forKey: next) ?? ComposerSnapshot()
+            draft = restored.text
+            attachments = restored.attachments
+            attachmentError = restored.error
+            selectedPhotos = []
+            showCommandHUD = false
+            showingPlus = false
+            // The local task picker changed threads. A download
+            // started in the previous task must not open a sheet (or surface
+            // its error) in the new one when the network reply arrives late.
+            resetFilePreview()
+            cancelThreadOpen()
+        }
+        .onValueChange(of: session.connection?.id) { _ in
+            cancelThreadOpen()
+        }
+    }
+
+    @ViewBuilder
+    private var layout: some View {
         // Read the transcript once for this render. Pagination changes the
         // array as a unit; repeatedly reaching through ObservableObject for
         // every row only recomputes the same value.
@@ -380,142 +532,6 @@ struct ChatView: View {
         }
         .navigationDestination(isPresented: $pushingProfile) {
             if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
-        }
-        .task(id: threadId) {
-            if selectedThreadWasRemoved { dismiss(); return }
-            let openedChat = current
-            session.threadSelection.rememberThread(openedChat, connectionID: session.connection?.id)
-            await session.loadThreadIfNeeded(openedChat.threadId)
-            // opening a chat is what marks it read, exactly as on the desktop
-            if openedChat.unread { await session.markRead(openedChat) }
-#if DEBUG
-            // `-open-plus`: the + sheet up, for the screenshot harness
-            if ProcessInfo.processInfo.arguments.contains("-open-plus") { showingPlus = true }
-            // Profile parity screenshots without automating a tap through the
-            // animated island/header transition.
-            if ProcessInfo.processInfo.arguments.contains("-open-profile") { openProfile() }
-            if let screen = ParityLaunch.current?.screen {
-                if screen.opensComputer { showingComputer = true }
-                if screen.opensProfile {
-                    // a push while the chat's own push still animates is dropped
-                    try? await Task.sleep(nanoseconds: 900_000_000)
-                    openProfile()
-                }
-            }
-#endif
-        }
-        .onValueChange(of: selectedThreadWasRemoved) { removed in
-            if removed { dismiss() }
-        }
-        .onValueChange(of: session.state.hasLoadedPage(forThread: threadId)) { loaded in
-            let requestedThread = threadId
-            if !loaded { Task { await session.loadThreadIfNeeded(requestedThread) } }
-        }
-        .onValueChange(of: current.unread) { unread in
-            // A message can arrive while this chat is already on screen. The
-            // initial task above will not run again, so clear that new unread
-            // bit here rather than leaving a badge on an open conversation.
-            let readChat = current
-            if unread { Task { await session.markRead(readChat) } }
-        }
-        .onValueChangePair(of: threadId) { previous, next in
-            dictation.stop()
-            threadDrafts[previous] = ComposerSnapshot(text: draft, attachments: attachments, error: attachmentError)
-            let restored = threadDrafts.removeValue(forKey: next) ?? ComposerSnapshot()
-            draft = restored.text
-            attachments = restored.attachments
-            attachmentError = restored.error
-            selectedPhotos = []
-            showCommandHUD = false
-            showingPlus = false
-            // The local task picker changed threads. A download
-            // started in the previous task must not open a sheet (or surface
-            // its error) in the new one when the network reply arrives late.
-            resetFilePreview()
-            cancelThreadOpen()
-        }
-        .onValueChange(of: session.connection?.id) { _ in
-            cancelThreadOpen()
-        }
-        .onDisappear {
-            dictation.stop()
-            resetFilePreview()
-            cancelThreadOpen()
-        }
-        .onValueChange(of: scenePhase) { phase in
-            if phase != .active { dictation.stop() }
-        }
-        .onValueChange(of: showingComputer) { shown in
-            if shown { dictation.stop() }
-        }
-        .onValueChange(of: showingTasks) { shown in
-            if shown { dictation.stop() }
-        }
-        .onValueChange(of: showingProfile || pushingProfile) { shown in
-            if shown { dictation.stop() }
-        }
-        .onValueChange(of: showingWalkie) { shown in
-            if shown { dictation.stop() }
-        }
-        .onValueChange(of: showingPlus) { shown in
-            if shown { dictation.stop() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
-            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey]
-            let value = (raw as? NSNumber)?.uintValue ?? (raw as? UInt)
-            if value == AVAudioSession.InterruptionType.began.rawValue {
-                dictation.stop()
-            }
-        }
-        .onValueChange(of: dictation.transcript) { spoken in
-            // Always join against the text frozen at capture start. A newer
-            // partial then replaces the older partial instead of duplicating it.
-            draft = Dictation.draft(base: dictation.base, transcript: spoken)
-        }
-        .onValueChange(of: dictation.isListening) { listening in
-            if listening { composerFocused = false }
-        }
-        .sheet(isPresented: $showingTasks) {
-            if current.supportsTasks {
-                TaskManagerView(chat: current) { selectedThreadId = $0 }
-            }
-        }
-        .sheet(isPresented: $showingProfile) {
-            if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
-        }
-        .fullScreenCover(isPresented: $showingWalkie) {
-            WalkieView { chat in
-                showingWalkie = false
-                // Walkie hands back the chat it wants open: this one stays,
-                // another one is pushed from the home the way a deep link is.
-                if chat.threadId != threadId { session.openChat(threadId: chat.threadId) }
-            }
-            .environmentObject(session)
-        }
-        .sheet(item: $shareFile) { file in
-            ActivityShareSheet(items: [file.url])
-        }
-        .photosPicker(
-            isPresented: $showingPhotoPicker,
-            selection: $selectedPhotos,
-            maxSelectionCount: max(1, AttachmentPolicy.maximumItems - attachments.count),
-            matching: .images,
-            preferredItemEncoding: .current
-        )
-        .onValueChange(of: selectedPhotos) { items in
-            guard !items.isEmpty else { return }
-            Task { await importPhotos(items) }
-        }
-        .fileImporter(
-            isPresented: $showingFileImporter,
-            allowedContentTypes: [.content],
-            allowsMultipleSelection: true,
-            onCompletion: importFiles
-        )
-        .fullScreenCover(item: $filePreview) { preview in
-            FilePreviewView(item: preview) {
-                filePreview = nil
-            }
         }
     }
 
