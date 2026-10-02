@@ -215,6 +215,7 @@ export function sanitizeCall(value) {
       input: callSettings.input === "push" ? "push" : "auto",
       onlyMyVoice: flag(callSettings.onlyMyVoice),
       earcons: callSettings.earcons !== false,
+      pause: callSettings.pause === "short" || callSettings.pause === "patient" ? callSettings.pause : "normal",
     },
     voices: Array.isArray(value.voices)
       ? value.voices.slice(0, 64).filter((voice) => voice && typeof voice.id === "string" && VOICE_ID_RE.test(voice.id) && typeof voice.label === "string").map((voice) => ({ id: voice.id, label: voice.label.slice(0, 80) }))
@@ -331,7 +332,7 @@ const CALL_ACTIONS = new Set(["start", "end", "mute", "unmute", "hold", "resume"
 /** The settings a mascot's call may change, and how each is checked. */
 const CALL_PATCH = {
   settings: { voice: (v) => typeof v === "string" && VOICE_ID_RE.test(v), speed: (v) => isFiniteNumber(v) && v >= 0.5 && v <= 2, language: (v) => typeof v === "string" && (v === "auto" || LANGUAGE_RE.test(v)) },
-  "call-settings": { input: (v) => v === "auto" || v === "push", onlyMyVoice: (v) => typeof v === "boolean", earcons: (v) => typeof v === "boolean" },
+  "call-settings": { input: (v) => v === "auto" || v === "push", onlyMyVoice: (v) => typeof v === "boolean", earcons: (v) => typeof v === "boolean", pause: (v) => v === "short" || v === "normal" || v === "patient" },
 };
 export const SEND_MAX = 4000;
 

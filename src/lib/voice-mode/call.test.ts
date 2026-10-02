@@ -5,7 +5,7 @@
 // socket cannot open.
 import { describe, expect, it, vi } from "vitest";
 
-import { VoiceCall, callAudioConstraints, resampler, type BargeInMetrics, type TurnMetrics } from "./call";
+import { VoiceCall, callAudioConstraints, isNoiseFragment, resampler, type BargeInMetrics, type TurnMetrics } from "./call";
 import { DEFAULT_CALL_SETTINGS, type CallSettings } from "./call-settings";
 import type { PcmPlayer, Sentence } from "./player";
 import type { SpeakerEmbedder } from "./speaker-id";
@@ -92,6 +92,13 @@ class FakePlayer {
   }
   tone() { this.tones += 1; }
   async close() {}
+  /** what the person heard when the answer is cut (set by a test) */
+  heard = "";
+  resetLedger() {}
+  playback() {
+    const all = this.queued.map((s) => s.text).join(" ");
+    return { heard: this.heard, unheard: all.startsWith(this.heard) ? all.slice(this.heard.length).trim() : all };
+  }
 }
 
 /** VAD from a script: the frame's first sample carries its probability
@@ -152,11 +159,11 @@ async function setup(options: Setup = {}) {
     voiceprint: options.voiceprint ?? null,
     now: () => clock,
   });
-  const utterances: Array<{ text: string; metrics: TurnMetrics; interrupted: boolean }> = [];
+  const utterances: Array<{ text: string; metrics: TurnMetrics; interrupted: boolean; cut?: { heard: string; unheard: string } }> = [];
   const interrupts: number[] = [];
   const metrics: Array<{ turn: TurnMetrics | null; bargeIn: BargeInMetrics | null }> = [];
   const rejected: string[] = [];
-  call.on("utterance", (text, m, turn) => utterances.push({ text, metrics: { ...m }, interrupted: turn.interrupted }));
+  call.on("utterance", (text, m, turn) => utterances.push({ text, metrics: { ...m }, interrupted: turn.interrupted, ...(turn.cut ? { cut: turn.cut } : {}) }));
   call.on("interrupt-bot", () => interrupts.push(clock));
   call.on("metrics", (turn, bargeIn) => metrics.push({ turn: turn && { ...turn }, bargeIn: bargeIn && { ...bargeIn } }));
   call.on("rejected", (reason) => rejected.push(reason));
@@ -171,6 +178,16 @@ async function setup(options: Setup = {}) {
   const settle = () => new Promise((r) => setTimeout(r, 30));
   return { call, player, feed, settle, utterances, interrupts, metrics, rejected, speech, track, upload, clock: () => clock, socket: () => FakeSocket.last! };
 }
+
+describe("noise fragments", () => {
+  it("drops a lone short token no one says alone, keeps real short answers and numbers", () => {
+    for (const text of ["dwad", "Hm.", "a", "...", "zz"]) expect(isNoiseFragment(text), text).toBe(true);
+    for (const text of ["yes", "Non.", "OK", "42", "merci", "stop", "call Max", "Trois-Rivieres"]) expect(isNoiseFragment(text), text).toBe(false);
+    // a word or two xAI itself doubts
+    expect(isNoiseFragment("call Max", 0.2)).toBe(true);
+    expect(isNoiseFragment("call Max now please", 0.2)).toBe(false);
+  });
+});
 
 describe("VoiceCall", () => {
   it("asks the microphone for echo cancellation, noise suppression, auto gain, and voice isolation when offered", () => {
@@ -196,9 +213,9 @@ describe("VoiceCall", () => {
     // (the endpoint's silence is streamed too: xAI hears the turn end)
     expect(t.socket().audioBytes).toBeLessThan(72 * VAD_FRAME * 2);
     const turn = t.utterances[0]!.metrics;
-    // ended about one endpoint after the last voiced frame
-    expect(turn.endedAt - turn.stoppedAt).toBeGreaterThanOrEqual(600);
-    expect(turn.endedAt - turn.stoppedAt).toBeLessThan(700);
+    // ended about one endpoint (the normal pause) after the last voiced frame
+    expect(turn.endedAt - turn.stoppedAt).toBeGreaterThanOrEqual(700);
+    expect(turn.endedAt - turn.stoppedAt).toBeLessThan(800);
     expect(t.call.current.phase).toBe("thinking");
   });
 
@@ -229,6 +246,63 @@ describe("VoiceCall", () => {
     expect(t.utterances[0]!.interrupted).toBe(true);
   });
 
+  it("barge-in: the turn that cut the bot says what the person heard and what they did not", async () => {
+    const t = await setup({ transcripts: ["no, the other one"] });
+    t.call.setBotBusy(true);
+    t.call.replyProgress("It is sunny in Montreal today. Tomorrow it will rain all day. ");
+    // the first sentence played, then the person talked over the second
+    t.player.heard = "It is sunny in Montreal today.";
+    t.call.replyProgress("It is sunny in Montreal today. Tomorrow it will rain all day. Bring an umbrella");
+    const cuts: Array<{ heard: string; unheard: string }> = [];
+    t.call.on("speech-cancelled", (cut) => cuts.push(cut));
+    await t.feed(0.95, 0.06, 20);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(cuts[0]).toEqual({ heard: "It is sunny in Montreal today.", unheard: "Tomorrow it will rain all day. Bring an umbrella" });
+    expect(t.utterances[0]).toMatchObject({ text: "no, the other one", interrupted: true, cut: cuts[0] });
+    // the next turn cut nothing
+    t.call.setBotBusy(false);
+  });
+
+  it("a turn that starts right after the last one, before the bot spoke, is the same utterance", async () => {
+    const t = await setup({ transcripts: ["the weather right now in", "Trois-Rivieres please"] });
+    await t.feed(0.95, 0.06, 30);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(t.utterances.map((u) => u.text)).toEqual(["the weather right now in"]);
+    t.call.setBotBusy(true);
+    // the person goes on 600 ms later: the fragment's turn is cancelled
+    await t.feed(0.02, 0.001, 18);
+    await t.feed(0.95, 0.06, 30);
+    expect(t.interrupts).toHaveLength(1);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(t.utterances.map((u) => u.text)).toEqual(["the weather right now in", "the weather right now in Trois-Rivieres please"]);
+    const utterances: Array<{ continues?: boolean }> = [];
+    t.call.on("utterance", (_text, _m, turn) => utterances.push(turn));
+    // once the bot has spoken, the next turn is a new one
+    void t.call.say("It is sunny.");
+    t.player.drain();
+    await t.feed(0.95, 0.06, 30);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(utterances.at(-1)?.continues).toBeUndefined();
+  });
+
+  it("a sound the recognizer spelled is no turn", async () => {
+    const t = await setup({ transcripts: ["dwad", "yes"] });
+    await t.feed(0.95, 0.06, 20);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(t.utterances).toEqual([]);
+    expect(t.call.current.phase).toBe("listening");
+    await t.feed(0.02, 0.001, 50);
+    await t.feed(0.95, 0.06, 20);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(t.utterances.map((u) => u.text)).toEqual(["yes"]);
+  });
+
   it("only the turn that cut the bot is marked interrupted", async () => {
     const t = await setup({ transcripts: ["wait, stop", "and another thing"] });
     void t.call.say("Here is a long answer. It goes on and on for a while.");
@@ -236,6 +310,8 @@ describe("VoiceCall", () => {
     await t.feed(0.02, 0.001, 25);
     await t.settle();
     t.call.setBotBusy(false);
+    // a real pause first: a turn right after the last one would continue it
+    await t.feed(0.02, 0.001, 50);
     await t.feed(0.95, 0.06, 20);
     await t.feed(0.02, 0.001, 25);
     await t.settle();

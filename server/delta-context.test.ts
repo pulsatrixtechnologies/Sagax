@@ -241,6 +241,43 @@ describe("Handoffs", () => {
     expect(unseenIds(order, f.records.get("claude")!)).toEqual(["m4"]);
   });
 
+  it("counts a steer the engine took in as received: it is never offered again", () => {
+    const order = ids(6);
+    const f = setup(order, { session: "s", through: "m2", ids: [] });
+    f.start({ resumeCursor: "s", carried: ["m3"], own: ["m3"] });
+    f.event(output);
+    f.handoffs.steered("t", f.handoffs.current("t"), "claude", "m4", "steer-0001");
+    f.event({ type: "steer.received", steerId: "steer-0001" });
+    f.event(output);
+    f.event({ type: "turn.completed", ok: true });
+    expect(unseenIds(order, f.records.get("claude")!)).toEqual(["m5"]);
+  });
+
+  it("counts a steer whose echo beat its own acknowledgement, and several messages carried by one steer", () => {
+    const order = ids(7);
+    const f = setup(order, { session: "s", through: "m2", ids: [] });
+    f.start({ resumeCursor: "s", carried: ["m3"], own: ["m3"] });
+    f.event(output);
+    f.event({ type: "steer.received", steerId: "steer-0002" });
+    f.handoffs.steered("t", f.handoffs.current("t"), "claude", "m4", "steer-0002");
+    f.handoffs.steered("t", f.handoffs.current("t"), "claude", "m5", "steer-0003");
+    f.handoffs.steered("t", f.handoffs.current("t"), "claude", "m6", "steer-0003");
+    f.event({ type: "steer.received", steerId: "steer-0003" });
+    f.event({ type: "turn.completed", ok: true });
+    expect(unseenIds(order, f.records.get("claude")!)).toEqual([]);
+  });
+
+  it("still offers a steer the engine never said it took in", () => {
+    const order = ids(6);
+    const f = setup(order, { session: "s", through: "m2", ids: [] });
+    f.start({ resumeCursor: "s", carried: ["m3"], own: ["m3"] });
+    f.event(output);
+    f.handoffs.steered("t", f.handoffs.current("t"), "claude", "m4", "steer-0004");
+    f.event({ type: "steer.received", steerId: "steer-other" });
+    f.event({ type: "turn.completed", ok: true });
+    expect(unseenIds(order, f.records.get("claude")!)).toEqual(["m4", "m5"]);
+  });
+
   it("takes the handoff of a turn decided again at dispatch, not the one it planned", () => {
     const order = ids(5);
     const f = setup(order, { session: "s", config: "c", through: "m2", ids: [] });

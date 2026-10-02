@@ -1,0 +1,228 @@
+/* Achievements: the unlock toast, the gamertag line and the trophy page.
+ * Rarity colors match the skins' (skin-fx.css .skin-tier). */
+.achievement-toaster {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  z-index: 90;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.achievement-toast {
+  --tier: #9aa3ad;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 300px;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 8px 14px 8px 8px;
+  border-radius: 999px;
+  color: #f4f6fa;
+  background: linear-gradient(180deg, rgb(28 30 38 / 0.94), rgb(14 15 20 / 0.96));
+  border: 1px solid rgb(255 255 255 / 0.08);
+  box-shadow:
+    0 10px 30px rgb(0 0 0 / 0.35),
+    0 0 0 1px rgb(0 0 0 / 0.25),
+    0 0 24px -6px var(--tier);
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
+  overflow: hidden;
+  animation: achievement-toast-in 420ms cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+}
+.achievement-toast[data-tier="rare"] { --tier: #60a5fa; }
+.achievement-toast[data-tier="epic"] { --tier: #c084fc; }
+.achievement-toast[data-tier="legendary"] { --tier: #fbbf24; }
+.achievement-toast[data-leaving] { animation: achievement-toast-out 300ms ease-in both; }
+
+/* a light sweep across the pill once it lands */
+.achievement-toast::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 35%, rgb(255 255 255 / 0.12) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: achievement-toast-sweep 1100ms 380ms ease-out both;
+  pointer-events: none;
+}
+
+.achievement-toast-badge {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  color: #10121a;
+  background: radial-gradient(circle at 35% 30%, #ffffff, var(--tier) 70%);
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 0.12), 0 0 14px var(--tier);
+  animation: achievement-badge-pop 620ms 120ms cubic-bezier(0.3, 1.6, 0.4, 1) both;
+}
+
+.achievement-toast-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.achievement-toast-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(244 246 250 / 0.66);
+}
+.achievement-toast-points {
+  margin-left: 2px;
+  color: var(--tier);
+  font-variant-numeric: tabular-nums;
+}
+.achievement-toast-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.achievement-toast-reward {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: rgb(244 246 250 / 0.72);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.achievement-toast-preview {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.06);
+}
+.achievement-toast-close {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: rgb(244 246 250 / 0.55);
+}
+.achievement-toast-close:hover { color: #fff; background: rgb(255 255 255 / 0.1); }
+
+@keyframes achievement-toast-in {
+  from { opacity: 0; transform: translateY(-24px) scale(0.92); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes achievement-toast-out {
+  to { opacity: 0; transform: translateY(-16px) scale(0.96); }
+}
+@keyframes achievement-toast-sweep {
+  to { transform: translateX(100%); }
+}
+@keyframes achievement-badge-pop {
+  0% { transform: scale(0.4) rotate(-25deg); }
+  100% { transform: none; }
+}
+
+/* the gamertag under the name in the sidebar */
+.achievement-gamertag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  border-radius: 6px;
+  padding: 0 4px;
+  margin-left: -4px;
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-sidebar-ink-secondary, #8a8f98);
+}
+.achievement-gamertag:hover { color: var(--color-sidebar-ink); background: var(--color-sidebar-hover); }
+.achievement-gamertag svg { color: #e0a82e; }
+.achievement-gamertag[data-bump] svg { animation: achievement-badge-pop 620ms cubic-bezier(0.3, 1.6, 0.4, 1); }
+
+/* the page */
+.achievement-card {
+  --tier: #9aa3ad;
+  position: relative;
+}
+.achievement-card[data-tier="rare"] { --tier: #60a5fa; }
+.achievement-card[data-tier="epic"] { --tier: #c084fc; }
+.achievement-card[data-tier="legendary"] { --tier: #fbbf24; }
+.achievement-card-badge {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+}
+.achievement-card[data-unlocked] .achievement-card-badge {
+  color: #10121a;
+  background: radial-gradient(circle at 35% 30%, #ffffff, var(--tier) 72%);
+  box-shadow: 0 0 10px -2px var(--tier);
+}
+.achievement-card:not([data-unlocked]) .achievement-card-badge {
+  color: var(--color-ink-tertiary);
+  background: var(--color-inset);
+}
+.achievement-card-tier { color: var(--tier); }
+.achievement-progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-inset);
+}
+.achievement-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tier, var(--color-accent));
+}
+
+/* a locked skin or character in the editor and the app icon picker */
+.unlock-lock {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgb(15 16 20 / 0.72);
+}
+[data-locked] > [aria-hidden="true"]:first-child { filter: grayscale(0.85) brightness(0.8); opacity: 0.6; }
+.unlock-progress {
+  position: absolute;
+  right: 6px;
+  bottom: 3px;
+  left: 6px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(127 127 127 / 0.25);
+}
+.unlock-progress > span { display: block; height: 100%; background: var(--color-accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .achievement-toast,
+  .achievement-toast[data-leaving],
+  .achievement-toast::after,
+  .achievement-toast-badge,
+  .achievement-gamertag[data-bump] svg {
+    animation: none !important;
+  }
+  .achievement-toast[data-leaving] { opacity: 0; }
+}
+[data-app-icon][data-locked] img { filter: grayscale(0.85) brightness(0.8); opacity: 0.55; }

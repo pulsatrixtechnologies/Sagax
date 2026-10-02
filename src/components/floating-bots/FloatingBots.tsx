@@ -7,6 +7,7 @@
 // here, through the store, exactly as if the message had been typed in the
 // app: the floating windows never hold a session.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { reportAchievement } from "@/lib/achievements";
 import { openThread, useStore, useStreaming, type Bot } from "@/state/store";
 import { activeLocale, t } from "@/lib/i18n";
 import { brand } from "@/lib/brand";
@@ -361,6 +362,7 @@ export function FloatingBots() {
         break;
       case "pet":
         cheer(botId, "pet");
+        reportAchievement("mascot.pet");
         break;
       case "dismiss":
         patch(botId, { open: false });
@@ -370,6 +372,8 @@ export function FloatingBots() {
         break;
       case "send":
         send(bot, event.text);
+        // a word to the mascot between midnight and 1 a.m. (a secret)
+        if (new Date().getHours() === 0) reportAchievement("mascot.midnight");
         break;
       case "menu": {
         if (event.id === "call") runMascotCallEvent(botId, currentCall() === botId ? "end" : "start", {}, callDeps(botId));

@@ -14,7 +14,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, ServerFrame, GroupThreadUsage, SteerQueueReason } from "../../shared/wire";
+import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark } from "../../shared/wire";
 import type { TurnDigest } from "../../shared/digest";
 import type { BusySendMode, ParallelTaskRef, TaskParallelOf } from "../../shared/parallel-tasks";
 import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-events";
@@ -47,6 +47,7 @@ import { t } from "@/lib/i18n";
 import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents } from "@/lib/live-events";
+import { receiveAchievementsFrame } from "@/lib/achievements";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -946,7 +947,8 @@ export type AppSettingsSection =
   | "mail"
   | "activity"
   | "backups"
-  | "workspaces";
+  | "workspaces"
+  | "achievements";
 
 export type BotSettingsSection =
   | "overview"
@@ -1228,7 +1230,7 @@ export type Action =
       replyToId?: string;
       threadId?: string;
       /** said on a voice call (Message.voiceCall): the turn is a phone turn */
-      voiceCall?: { callId: string; interrupted?: boolean; language?: string };
+      voiceCall?: VoiceCallMark;
       /** while the conversation works: join, run in parallel or wait
        * (shared/parallel-tasks.ts); absent = join (the server default) */
       busyMode?: BusySendMode;
@@ -3304,10 +3306,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // its answer is read aloud like the rest of the call
           const liveCallId = voiceCallId(action.botId);
           const voiceCall = action.voiceCall ?? (liveCallId ? { callId: liveCallId } : undefined);
+          // on a call, words said or typed while the bot works join its turn
+          const busyMode = voiceCall ? undefined : action.busyMode;
           void waitForExecutionSettings(botBeforeSend ? [botBeforeSend] : [], threadId)
             .then(() => api(`/api/bots/${action.botId}/messages`, {
                 method: "POST",
-                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}), ...(action.busyMode ? { busyMode: action.busyMode } : {}) }),
+                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}), ...(busyMode ? { busyMode } : {}) }),
               }))
             .then((body) => {
               if (body?.message && typeof body.threadId === "string") {
@@ -4051,6 +4055,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "routine.deleted":
           rawDispatch({ type: "routineDeleted", routineId: frame.routineId });
+          break;
+        // a person's own unlocks (server/achievements.ts sends them to their streams only)
+        case "achievements":
+          receiveAchievementsFrame(frame);
           break;
         case "routine.run":
           rawDispatch({ type: "routineRunPatched", run: frame.run });

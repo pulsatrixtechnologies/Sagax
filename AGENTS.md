@@ -917,6 +917,38 @@ PT-4 in `server/org-private-threads.e2e.test.ts`):
   propriétaire du groupe peut modifier ces réglages", a Leave button,
   "Ajouter mon robot" and a remove button on their own bots only.
 
+## Achievements (2026-10-02)
+
+Catalog `shared/achievements-catalog.ts` (pure data, ids never renamed),
+engine `shared/achievements.ts`, store `server/achievements.ts` (one
+`achievements.json`, per person on an organization server, the local
+operator on a solo server), routes `server/routes/achievements.ts`, app
+`src/lib/achievements.ts` and `src/components/achievements/`. Keep these
+rules, each covered by `shared/achievements-catalog.test.ts`,
+`server/achievements.test.ts`, `src/lib/achievements.test.ts`,
+`src/lib/achievement-toasts.test.ts` or `achievements-ui.test.ts`:
+
+- Server events come from the server's own hooks only (a request's method
+  and path in `achievementRequestEvents`, a send in `achievementSendEvents`,
+  live frames in `observeAchievementFrame`); `POST /api/me/achievements/events`
+  takes client events only. Events are rate limited, an event id counts
+  once, an achievement unlocks once.
+- By default only the owl and the shapes with their Common skins are
+  usable. Trombi unlocks only from its command (`/hibou98`, or a device that
+  already found it). Every skin above Common and Bunbu is the reward of
+  exactly one achievement. On first use a person keeps every character and
+  skin their bots wear (`grandfatheredFromBots`); what a bot wears now is
+  never shown locked. Locks are in the editor and app icon picker only; the
+  server never refuses a look.
+- A server without the routes (404) locks nothing.
+- The unlock frame (`kind: "achievements"`, `audience`) reaches that
+  person's streams only (`achievementFrameAllowed`). Nobody reads another
+  person's record; `/api/achievements/public` lists only the points of people
+  who turned on "Show my points to colleagues". Unlock percentages show only
+  with five people or more.
+- The toast never shows while the person types, one at a time, its chime
+  follows Notification sounds, and reduced motion stills it.
+
 ## Primary Bot (formerly Chief of Staff)
 
 A person's Primary Bot is their main contact among their bots: it gets the
