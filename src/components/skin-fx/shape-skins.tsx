@@ -126,7 +126,8 @@ function Sweep({ id, strength, className = "fx-sweep" }: { id: string; strength:
         </linearGradient>
       </defs>
       <g className={className}>
-        <rect x={-40} y={-20} width={26} height={140} fill={`url(#${id})`} transform="rotate(18 50 50)" />
+        {/* tall enough that its tilted ends never cross the body (a cut corner flickered at the bottom) */}
+        <rect x={-40} y={-60} width={26} height={220} fill={`url(#${id})`} transform="rotate(18 50 50)" />
       </g>
     </>
   );

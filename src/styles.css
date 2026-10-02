@@ -2113,12 +2113,14 @@ button:disabled.bg-danger {
 [data-owl-fx="live"] .owl-fx-glow-spirit {
   animation: owl-fx-pulse 3.6s ease-in-out infinite;
 }
-/* the holographic foil slides across the plumage; the galaxy's nebula drifts;
+/* the holographic foil glides back and forth across the plumage (a ping-pong:
+   no seam, so it never snaps back to its start); the galaxy's nebula drifts;
    the spirit's wisps rise and fade. Slow, soft and never flashing. */
 [data-owl-fx="live"] .owl-fx-foil {
   animation-name: owl-fx-foil;
-  animation-timing-function: linear;
+  animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
+  animation-direction: alternate;
 }
 [data-owl-fx="live"] .owl-fx-drift {
   animation-name: owl-fx-drift;
