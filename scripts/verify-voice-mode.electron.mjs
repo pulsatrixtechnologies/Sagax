@@ -141,8 +141,6 @@ app.whenReady().then(async () => {
     body: JSON.stringify({ name: "Cryptic" }) }).then(async r => ({ status: r.status, body: await r.json() }))`);
   const bot = created.body?.bot ?? created.body;
   check("a bot is created on the server", created.status < 300 && typeof bot?.id === "string", `HTTP ${created.status}`);
-  const status = await win.webContents.executeJavaScript(`fetch("/api/bots/${bot.id}/voice/status").then(r => r.text())`);
-  check("voice mode is available with the organization's xAI key, and the status carries no key", status.includes('"available":true') && status.includes('"via":"org-key"') && !status.includes(fakeKey.slice(8, 20)), status);
   await win.webContents.executeJavaScript(`location.href = "/#thread=${bot.threadId}&bot=${bot.id}"; location.reload(); true`);
   win.show();
   // the welcome tour of a first sign-in covers the app: skip it
@@ -151,17 +149,44 @@ app.whenReady().then(async () => {
     if (skip) skip.click();
     return Boolean(skip) || Boolean(document.querySelector('[data-call-target]'));
   })()`), 15_000).catch(() => null);
-  const button = await until("the voice mode call button", async () => win.webContents.executeJavaScript(`(() => {
+  const callButton = () => win.webContents.executeJavaScript(`(() => {
     const el = document.querySelector('[data-call-target="${bot.id}"]');
     return el ? { voiceMode: el.dataset.voiceMode ?? null, label: el.getAttribute("aria-label") } : null;
-  })()`), 20_000).catch(() => null);
-  check("the call button offers voice mode with xAI, with no macOS dictation on this device", button?.voiceMode === "xai", JSON.stringify(button));
+  })()`);
+
+  // 1. No xAI key anywhere: the server says so, and the button shows the speaker's access card.
+  const refused = await win.webContents.executeJavaScript(`fetch("/api/bots/${bot.id}/voice/status").then(r => r.json())`);
+  check("without any xAI key the server answers: organization, unavailable, no credentials, admin", refused.organization === true && refused.available === false && refused.refusal?.cause === "no_credentials" && refused.refusal?.admin === true, JSON.stringify(refused));
+  await until("the call button", async () => (await callButton())?.voiceMode === "unavailable", 20_000).catch(() => null);
+  await win.webContents.executeJavaScript(`document.querySelector('[data-call-target="${bot.id}"]').click(); true`);
+  const card = await until("the access card popover", async () => win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector("[data-voice-unavailable]");
+    return el ? { cause: el.dataset.voiceUnavailable, text: el.innerText, actions: [...el.querySelectorAll("[data-voice-action]")].map((b) => b.dataset.voiceAction) } : null;
+  })()`), 10_000).catch(() => null);
+  check("the popover is the speaker's access card, never the legacy This computer gate", card?.cause === "no_credentials" && /xAI access for voice mode/.test(card.text) && !/This computer|on-device|your Mac/i.test(card.text), JSON.stringify(card));
+  check("an admin also reads the organization's key hint and gets Open Settings > Connections", /As an admin/.test(card?.text ?? "") && (card?.actions ?? []).includes("open-connections"), JSON.stringify(card?.actions));
+  const noBar = await win.webContents.executeJavaScript(`!document.querySelector("[data-voice-bar]")`);
+  check("no voice bar opens without a key", noBar);
+  await win.webContents.executeJavaScript(`document.querySelector('[data-voice-action="open-connections"]').click(); true`);
+  const settingsOpen = await until("Settings > Connections", async () => win.webContents.executeJavaScript(`/Connections|Connexions/.test(document.body.innerText) && Boolean(document.querySelector('[role=dialog]'))`), 5_000).catch(() => false);
+  check("Open Settings > Connections opens the settings", settingsOpen);
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+  await wait(500);
+
+  // 2. The admin adds the organization's xAI key (what Settings > Connections saves).
+  const put = await win.webContents.executeJavaScript(`fetch("/api/config", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ xai: { key: ${JSON.stringify(fakeKey)} } }) }).then(r => r.status)`);
+  check("the admin saves the organization's xAI key", put < 300, `HTTP ${put}`);
+  const status = await win.webContents.executeJavaScript(`fetch("/api/bots/${bot.id}/voice/status").then(r => r.text())`);
+  check("voice mode is available with the organization's xAI key, and the status carries no key", status.includes('"available":true') && status.includes('"via":"org-key"') && !status.includes(fakeKey.slice(8, 20)), status);
+  const button = await callButton();
+  check("the call button asks the server again on click (it still shows the old answer)", button?.voiceMode === "unavailable", JSON.stringify(button));
 
   // Open the bar, muted first, then choose Voice, Speed and Language in its panel.
   await win.webContents.executeJavaScript(`document.querySelector('[data-call-target="${bot.id}"]').click(); true`);
   await until("the voice bar", async () => win.webContents.executeJavaScript(`Boolean(document.querySelector("[data-voice-bar]"))`));
   await win.webContents.executeJavaScript(`document.querySelector("[data-voice-mute]").click(); true`);
-  check("the voice bar opens above the composer", true);
+  check("the same button, asking the server again, opens the voice bar above the composer", true);
   const micGranted = await until("the microphone permission", async () => asked.find((entry) => entry.permission === "media") ?? null, 10_000).catch(() => null);
   check("the page asked for the microphone and main's policy granted audio only", Boolean(micGranted?.granted) && (micGranted.mediaTypes ?? ["audio"]).every((type) => type === "audio"), JSON.stringify(micGranted));
   const click = (selector) => win.webContents.executeJavaScript(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);

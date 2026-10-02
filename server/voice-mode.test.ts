@@ -136,14 +136,14 @@ describe("voice mode routes", () => {
   it("reports who pays without the key", async () => {
     const { call } = harness({ ownKeys: { "sub-ada": OWN_KEY } });
     const out = await call({ method: "GET", path: "/api/bots/b-cryptic/voice/status" });
-    expect(out.body).toEqual({ provider: "xai", available: true, via: "speaker-key" });
+    expect(out.body).toEqual({ provider: "xai", available: true, organization: true, via: "speaker-key" });
     expect(leaks(out.body)).toBe(false);
   });
 
   it("refuses with an access card for that person when no key serves them", async () => {
     const { call, xai } = harness({ serverKey: () => undefined });
     const status = await call({ method: "GET", path: "/api/bots/b-cryptic/voice/status" });
-    expect(status.body).toEqual({ provider: "xai", available: false, refusal: { cause: "no_credentials", keysUrl: "https://perspicax.example.test/console/keys" } });
+    expect(status.body).toEqual({ provider: "xai", available: false, organization: true, refusal: { cause: "no_credentials", keysUrl: "https://perspicax.example.test/console/keys" } });
     const speak = await call({ method: "POST", path: "/api/bots/b-cryptic/voice/speak", body: { text: "hello" } });
     expect(speak.status).toBe(403);
     expect(speak.body).toMatchObject({ code: "voice_no_access", cause: "no_credentials", card: { kind: "access", keysUrl: "https://perspicax.example.test/console/keys" } });

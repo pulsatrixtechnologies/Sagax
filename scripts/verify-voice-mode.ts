@@ -5,8 +5,10 @@
 // server, which transcribes it with "xAI" (a loopback fake), and the words
 // reach the bot's thread as the signed-in person. The settings panel's
 // Voice, Speed and Language go to xAI's speech request and to the person's
-// server preferences. The xAI key (a fake) is the organization's (Settings >
-// Connections, here XAI_API_KEY) and must never reach the page.
+// server preferences. First without any xAI key: the call button shows the
+// speaker's access card (never the legacy "This computer" gate); then the
+// admin adds the organization's key (Settings > Connections) and the same
+// button opens the bar. The key (a fake) must never reach the page.
 // Isolated: temporary home and Electron profile, free ports.
 //
 //   pnpm exec vite build
@@ -57,8 +59,8 @@ const server: ChildProcess = spawn(process.execPath, ["--experimental-strip-type
   env: {
     PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
     OMB_STATIC_DIR: decoy, OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: origin,
-    // the organization's xAI key (Settings > Connections) and the fake xAI
-    XAI_API_KEY: FAKE_KEY, OMB_XAI_TTS_API: `${xai.url}/v1`,
+    // the fake xAI; the organization's key is added in Settings > Connections during the run
+    OMB_XAI_TTS_API: `${xai.url}/v1`,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });

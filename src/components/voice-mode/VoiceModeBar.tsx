@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageSquare, Mic, MicOff, Settings2, X } from "lucide-react";
 
-import type { Bot } from "@/state/store";
+import { useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { speaker } from "@/lib/tts";
@@ -13,6 +13,7 @@ import type { XaiSpeechEngine } from "@/lib/voice-mode/engine";
 import { useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
 import type { VoiceModeRefusalCause } from "../../../shared/voice-mode";
 import { BotAvatar } from "../Avatar";
+import { requestSettingsCard } from "../SettingsPrimitives";
 import { VoiceModeSettingsPanel, type VoiceModeList } from "./VoiceModeSettingsPanel";
 
 export type VoicePhase = "listening" | "sending" | "working" | "speaking";
@@ -92,6 +93,7 @@ function Waveform({ engine, phase, muted }: { engine: XaiSpeechEngine; phase: Vo
 
 export function VoiceModeBar(props: VoiceModeBarProps) {
   const { bot, engine, phase, heard, caption, note, error, refusal, transcript, onRetry, onInterrupt, onEnd } = props;
+  const { dispatch } = useStore();
   const settings = useVoiceModeSettings();
   const [muted, setMuted] = useState(engine.muted);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -189,6 +191,19 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
               {voiceAccessCardText(refusal).map((line, index) => (
                 <div key={index} className={index === 0 ? "font-medium" : "mt-0.5 text-ink-secondary"}>{line}</div>
               ))}
+              {refusal.admin && refusal.cause === "no_credentials" && (
+                <button
+                  type="button"
+                  data-voice-action="open-connections"
+                  onClick={() => {
+                    requestSettingsCard("connections.providers");
+                    dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
+                  }}
+                  className="mr-1.5 mt-1.5 rounded-lg bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-ink hover:brightness-110"
+                >
+                  {t("voiceMode.openConnections")}
+                </button>
+              )}
               {refusal.keysUrl && refusal.cause === "no_credentials" && (
                 <button
                   type="button"
