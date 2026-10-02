@@ -21,6 +21,25 @@ function memoryStorage(): FloatingStorage & { removeItem(key: string): void } {
   return { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => void data.set(key, value), removeItem: (key) => void data.delete(key) };
 }
 
+describe("the heart and the triangle (stored ids bean and pick)", () => {
+  const coords = (d: string) => [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
+  it("draws the heart symmetric, lobes on top and its point at the bottom", () => {
+    const points = coords(SHAPE_ART.bean.d);
+    const xs = points.map(([x]) => x);
+    const ys = points.map(([, y]) => y);
+    expect(Math.abs(Math.min(...xs) + Math.max(...xs) - 100)).toBeLessThan(1);
+    const bottom = points.reduce((low, p) => (p[1] > low[1] ? p : low));
+    expect(Math.abs(bottom[0] - 50)).toBeLessThan(2);
+    expect(Math.min(...ys)).toBeLessThan(15);
+    expect(SHAPE_ART.bean.face[0]).toBe(50);
+  });
+  it("draws the triangle with three rounded corners and its face in the upper middle", () => {
+    expect((SHAPE_ART.pick.d.match(/Q/g) ?? []).length).toBe(3);
+    expect(SHAPE_ART.pick.face[1]).toBeLessThan(62);
+    expect(SHAPE_ART.pick.face[1]).toBeGreaterThan(48);
+  });
+});
+
 describe("a bot's character and its look", () => {
   it("is one of the owl, the thirteen original shapes or Trombi, the owl when absent or malformed", () => {
     expect(MASCOT_SHAPES).toEqual(["circle", "cloud", "squircle", "sparkle", "clover", "bean", "flower", "drop", "pill", "pick", "house", "star", "hexagon"]);
