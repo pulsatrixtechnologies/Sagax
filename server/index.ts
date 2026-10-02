@@ -16794,7 +16794,7 @@ ROUTES.push(createAccountRoutes({
     const person = principalId.trim().toLowerCase();
     let bots = 0;
     let threads = 0;
-    for (const bot of [...store.bots]) {
+    for (const bot of store.bots.slice()) { // a copy: deleting changes the list
       if (recordedBotOwner(bot) === person) {
         if ((await deleteBotWithLifecycle(bot.id)).status === 200) bots++;
         continue;

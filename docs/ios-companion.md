@@ -289,7 +289,11 @@ Allowed in the first release:
   relay, chat transcript, and SQLite store see ciphertext or status only.
 
 The write surface uses purpose-built `read` and `always-allow` endpoints. The
-general bot and room `PATCH` endpoints are not reachable through the sidecar.
+general bot and room `PATCH` endpoints reach the harness through the sidecar
+since the visual parity work, but the harness holds a companion request to
+the member fields (look, framing, name, instructions, notifications, model;
+a room's name, reading state, pin and roster), never execution policy,
+folders, computers or MCP servers (see "Visual parity routes" below).
 An always-allow request succeeds only when its server-issued key is still on a
 pending approval for that bot, so possession of a device token is not enough
 to invent a broad execution grant.
@@ -305,6 +309,93 @@ Intentionally refused:
 - Cloud computer provisioning, sleep, shell execution, and screenshot APIs.
   The phone receives only the fresh `join` viewer URL, never the provider key.
 - New harness routes that have not been reviewed for device access.
+
+## Visual parity routes (2026-10)
+
+The parity screens (`docs/superpowers/specs/2026-10-01-ios-visual-parity-design.md`)
+use the routes below. Each one is reachable both through the companion
+sidecar (a personal computer: the phone acts as its owner) and for a phone
+paired with a server (`request-auth.ts` `CLIENT_ALLOW` for member reads and
+owner actions, admin scope otherwise). The harness applies the same owner or
+admin rule to both: a companion request is a loopback owner, but the harness
+holds its bot and room `PATCH` to the member fields (`memberBotFieldViolation`,
+`clientGroupPatchViolation`). Tests: `companion/test/routes.test.ts`
+("iOS parity routes"), `server/ios-parity.e2e.test.ts` and each route
+module's own test under `server/routes/`.
+
+| Route | Payload / answer | Who |
+|---|---|---|
+| `POST /api/bots` | `{ name, settings: { color }, mascotLook, mascotSkin, ... }` | as before (member's own bot on an organization server) |
+| `PATCH /api/bots/:id` | look and framing (`color`, `mascot*`, `avatarCrop`, `avatarZoom`, `avatarFocusX/Y`, `pinned`); owner adds `name`, `soul`, `notifications`, `avatarUrl`, `modelSelection` | any member for look; owner or admin for the rest |
+| `GET /api/bots` | each bot carries `instructionsLead` (first non-empty line of `soul`, no heading marks, at most 140 characters) | member |
+| `GET /api/bots/:id/soul`, `POST /api/bots/:id/avatar/generate`, `DELETE /api/bots/:id` | as before | owner or admin |
+| `GET /api/bots/:id/links?cursor=&limit=` | `{ links: [{ url, domain, title?, messageId, threadId, at }], nextCursor, total }`, newest first, one per URL, the viewer's threads only | member |
+| `GET /api/bots/:id/files?kind=media\|file&cursor=&limit=` | `{ files: [{ id, threadId, messageId, name, mime?, size, available, source, at, kind, url, previewUrl? }], nextCursor, total }`; `url` and `previewUrl` are the existing `/api/threads/:id/files/:fileId[?preview=1]` | member |
+| `POST /api/bots/:id/export` | `{ document, filename, redacted, skipped, summary }`: the bot as a team package v2, without chats, header values or keys | owner or admin |
+| `POST /api/bots/:id/computer/input` | `{ events: [{ type: "move", dx, dy } \| { type: "moveTo", x, y } \| { type: "button", button, action, count? } \| { type: "scroll", dx, dy } \| { type: "key", key, modifiers? } \| { type: "text", text }], controlLeaseId? }` (at most 64) -> `{ ok, applied }` | owner or admin holding control |
+| `GET/PUT /api/bots/:id/computer/clipboard` | `{ text }` (16 KiB) | owner or admin holding control |
+| `GET/PUT /api/settings/bot` | `{ settings: { autoReviewDefault, timeZone, timeZoneAuto }, scope, hostTimeZone, effectiveTimeZone }` | read: member; change: the person (organization) or the owner (personal) |
+| `GET /api/auto-review/rules`, `DELETE /api/auto-review/rules/:id` | `{ rules: [{ id, scope, botId, botName, command, cwd, providerInstanceId }], global: [], total }` | owner or admin |
+| `GET /api/computer/status`, `POST /api/computer/update`, `POST /api/computer/reset` (`{ confirm: true }`) | `{ kind: "org-sandbox" \| "local", configured, state, diskState: "normal" \| "almostFull" \| "full", workspaceBytes, limitBytes?, version?, problem? }` | the person (organization) or the owner (personal) |
+| `POST /api/me/server-environment/update` | rebuilds the person's server environment from the current image, keeping `/workspace` | the person (organization) |
+| `GET /api/plugins/search?q=&cursor=` | `{ featured, results, nextCursor, registryAvailable }` | member |
+| `GET /api/plugins/installed` | `{ plugins: [{ kind: "mcp", name, url, domain, enabled, auth, icon?, catalogId? } \| { kind: "composio", slug, name, connected, logo?, domain? }], count }` | member |
+| `POST /api/plugins/install` | `{ id, trust?, returnTo?, callbackOrigin? }` -> `{ name, alreadyInstalled, auth, authorizationUrl? }` | admin or owner |
+| `POST /api/mcp/servers/:name/oauth/start` | adds `returnTo` and `callbackOrigin` | admin or owner |
+| `PATCH /api/groups/:id` | adds `pinned` | member |
+| `GET /api/auth/session` | personal computer: `name` (Settings > General, else the OS user) and `computerName`, never an email | anyone signed in |
+| `DELETE /api/me` | `{ confirm: true }` | the person (organization) |
+
+Also through the companion: `GET /api/usage`, `GET /api/mcp/servers`,
+`GET /api/bots/:id/command-allowlist` and deleting a rule there,
+`GET/PUT /api/me/preferences`, `GET /api/me/server-environment` and its
+reset/update, and `GET /api/threads/:id/files` with one file by id. On a
+personal computer the preferences and server-environment routes answer 404
+(they belong to an organization server); the phone uses
+`/api/settings/bot` and `/api/computer/*` there.
+
+**Remote input.** The phone takes control first (`POST /api/bots/:id/computer/control`
+`{ action: "take" }`, optionally with a `controlLeaseId`). Input without the
+hold answers 409 `no_control` (or `control_lease` when another lease holds
+it); a bot with no desktop answers 404 `no_computer`. Events become
+`xdotool`/`xclip` lines run through the backend's own command path (the
+Boat, a team Boat, the VPS container, the Local VM), the same tools the bot
+itself drives. Typed text is base64 inside the command, never interpolated.
+Each batch is audited as counts by event type (`computer.input`, at most one
+admin-activity row per person and bot a minute); clipboard reads and writes
+as byte counts. Through the companion these routes ride the per-phone desktop
+capability, like the viewer.
+
+**Auto-review default.** On: a conversation opened afterwards starts in the
+engine's own reviewer level (`auto`, for Codex, Claude, Cursor, Grok and Qwen)
+or, without a reviewer, Ask (Full and Auto tighten to Ask; Ask and Edits
+stay). It never changes an existing conversation, never leaves Custom, and
+never turns Auto on for a bot that works on this computer. Off: a new
+conversation takes its bot's level, as before (`server/bot-settings.ts`).
+
+**Time zone.** Routines read daily times, interval windows and weekdays in
+the configured zone (the person's own on an organization server, else the
+server's), else the host's; cron keeps the zone saved with it. Changing it
+reschedules the affected routines. With `timeZoneAuto` on, the phone sends
+`TimeZone.current.identifier`.
+
+**Plugin sign-in from the phone.** `returnTo` must be an app address the
+server lists (`sagax://oauth-done`, plus `SAGAX_PHONE_OAUTH_RETURNS`, comma
+separated). The sign-in returns to the server's callback, which then
+redirects the sheet to `returnTo?status=ok|error&server=<name>[&error=...]`
+(never a code or token). An organization server uses its public address;
+through the companion the phone passes `callbackOrigin`, the https (or
+`*.ts.net`) origin it reached the computer on, and the companion forwards
+the callback without a device token (its single-use state is the
+authorization, and the code is useless without the server's PKCE verifier).
+Without either, a companion start answers 409 `callback_unreachable`.
+
+**Account deletion.** Perspicax has no account-deletion endpoint for a linked
+server yet, so `DELETE /api/me` answers 501 `perspicax_deletion_unavailable`
+on an organization server and deletes nothing. The Sagax cleanup (owned bots,
+own threads, server environment, saved settings, sessions) is wired behind
+it for when Perspicax adds one. A personal computer answers 400
+`personal_server`: the phone forgets the pairing and erases its own data.
 
 ## Stream and state model
 
