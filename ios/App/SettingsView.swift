@@ -380,11 +380,6 @@ struct SettingsSpacer: View {
     var body: some View { Color.clear.frame(height: height) }
 }
 
-struct IdentifiedURL: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
-}
-
 // MARK: - Usage
 
 struct UsageSettingsView: View {
