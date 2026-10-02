@@ -492,6 +492,20 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
   Routines use the owner's desktop only when the bot works on it, it is
   connected AND the owner allowed it (off by default). Rooms: the person
   whose message triggered the turn; a follow-up nobody asked for never.
+- Auto picks per step (2026-10-02, `server/auto-computer.ts`): an Auto turn
+  starts in the server environment as above, and also mounts
+  `sagax-computer` (`computer_select`, target `cloud`, `this_computer` or
+  `local_vm`, plus a reason) and, when the person's app is connected now (a
+  routine: and the owner allowed routines on it), `sagax-desktop` beside
+  `sagax-environment`. The selection (`TurnWorkplace.auto`) gates every
+  later call of the turn (`autoComputerToolRefusal`: Local VM allows only the
+  `local_vm` tool) and resets with each message; the egress proxy still
+  follows the turn's start. A fixed Works on gets the tool too and it
+  answers that the setting is fixed. Each switch is `computer.switch` in the
+  admin activity log (person, bot, from, to, reason); the transcript shows a
+  "Working on" chip. Claude pre-allows only `mcp__sagax-computer`. Rooms are
+  unchanged. Tests: `server/auto-computer.test.ts`,
+  `server/desktop-bridge.e2e.test.ts`.
 - A bridge is bound to the person of the session that registered it and to
   a secret only the desktop's main process holds; every poll, result and the
   tunnel re-check that the session is live and still that person. A turn's
