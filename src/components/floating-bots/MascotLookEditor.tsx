@@ -157,8 +157,9 @@ const MOVE_LABEL: Partial<Record<MascotActivity, LocaleKey>> = {
 };
 
 // A section's title row stays on top while its options scroll under it, so a
-// long popover keeps its bearings; it spans the popover's padding to cover them.
-const sectionHead = "sticky top-0 z-10 -mx-3.5 mb-1 mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 bg-card px-3.5 py-1";
+// long popover keeps its bearings; it spans the popover's padding (p-3.5, so it
+// sticks 14px up, flush with the popover's edge) and covers what scrolls under it.
+const sectionHead = "sticky top-[-14px] z-10 -mx-3.5 mb-1 mt-0.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 bg-card px-3.5 pb-1 pt-2";
 const heading = "text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary";
 const card = "flex flex-col items-center justify-center gap-0.5 rounded-lg bg-inset p-1 transition-colors hover:bg-control disabled:opacity-50";
 const on = "ring-2 ring-accent-border";
