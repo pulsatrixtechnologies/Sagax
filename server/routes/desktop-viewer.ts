@@ -7,6 +7,7 @@ import { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { isSameOrigin, type RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
+import { isDesktopTunnelPath } from "../desktop-bridge-routes.ts";
 
 const ROUTE = /^\/api\/desktop-viewer\/(local\/(?:shared|bot-[a-f0-9]{64}|pool-\d+)|vps\/[\w-]+)(\/websockify)?$/;
 const HANDSHAKE_MS = 10_000;
@@ -45,6 +46,9 @@ export function createDesktopViewer(deps: {
    * maintenance gates as HTTP. Only this route can detach the response socket. */
   function attach(server: Server, handle: (req: IncomingMessage, res: ServerResponse) => Promise<unknown>): void {
     server.on("upgrade", (req, socket, head) => {
+      // The desktop bridge's tunnel answers its own upgrades
+      // (server/desktop-bridge-routes.ts attachDesktopTunnel).
+      try { if (isDesktopTunnelPath(new URL(req.url ?? "", "http://localhost").pathname)) return; } catch { /* answered below */ }
       if (stopped || !(socket instanceof Socket)) { socket.destroy(); return; }
       const res = new ServerResponse(req);
       res.assignSocket(socket);

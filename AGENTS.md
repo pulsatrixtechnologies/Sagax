@@ -307,6 +307,47 @@ Keep these rules, each covered by `server/user-sandbox*.test.ts`,
 - `scripts/smoke-user-sandbox.ts` proves isolation on a real Docker host and
   removes everything it creates.
 
+## Desktop bridge (organization mode)
+
+In server mode the desktop app is the bridge between the organization server
+and the person's PC (`electron/desktop-bridge.mjs`, `electron/desktop-tunnel.mjs`,
+`server/desktop-bridge*.ts`, `server/desktop-egress.ts`). Bots working for a
+person run the solo-mode tools on that person's own computer, as the MCP
+server `sagax-desktop` (shell, files, search, fetch, offscreen browser,
+computer use, Local VM), and the engine's own network traffic leaves through
+it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
+`server/desktop-egress.test.ts`, `server/attachment-staging.test.ts`,
+`electron/desktop-bridge.node-test.mjs` or `scripts/verify-desktop-bridge.ts`:
+
+- Where tools run is decided once per turn by `resolveBotWorkplace`: the
+  speaker's desktop when it is connected and their preference
+  (`sagax.botWorkplace.v1`, Settings > Organization > Where bots work) is
+  "computer" (the default); else their server environment, and the bot and
+  the composer say so. Routines use the owner's desktop only when it is
+  connected AND the owner allowed it (off by default). Rooms: the person
+  whose message triggered the turn; a follow-up nobody asked for never.
+- A bridge is bound to the person of the session that registered it and to
+  a secret only the desktop's main process holds; every poll, result and the
+  tunnel re-check that the session is live and still that person. A turn's
+  capability names the person at mount; the hub reaches only that person's
+  own desktop. The server host is never a target; engine host tools stay
+  denied (`withholdHostTools`); `sagax-desktop` tools are never pre-allowed.
+- Egress: an HTTP(S) proxy on 127.0.0.1 with a per-thread credential, valid
+  only while that thread runs a turn for that person on their computer
+  (`turnNetworkProxy`); the drivers set HTTP(S)_PROXY with NO_PROXY for the
+  model hosts. The desktop opens each connection itself, through the OS proxy
+  and VPN, refuses its own loopback and link-local, and applies "local network
+  only". Destinations (host:port only) go to `desktop-bridge-audit.jsonl` and
+  the desktop's own activity log.
+- Attachments of the CURRENT message are the speaker's only when the first
+  message naming them is theirs; small text ones are inlined, all are copied
+  where the tools run at the first tool call, and the tag names that path.
+- The desktop never reads or writes the app's own data, its cookies or the
+  person's credential stores through the bridge.
+
+A change under `server/` needs the server image redeployed; under `electron/`
+a desktop rebuild.
+
 ## Connectors from the person's own Claude account
 
 Sagax builds no GitHub, Outlook or Calendar integration of its own: a Claude

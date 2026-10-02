@@ -265,6 +265,12 @@ export interface SendTurnInput {
    * (integrations.custom["sagax-environment"]). Only a driver declaring
    * capabilities.withholdsHostTools may receive such a turn. */
   withholdHostTools?: boolean;
+  /** Organization server, desktop bridge: the engine's own network traffic
+   * (remote MCP servers, tool HTTP calls) leaves through the person's
+   * computer for this turn (server/desktop-egress.ts). The driver sets
+   * HTTP(S)_PROXY to `url` and NO_PROXY to its own model hosts plus
+   * `noProxy`, so the engine's model traffic never goes through it. */
+  networkProxy?: { url: string; noProxy: string[] };
   /** Keep the claude.ai connectors of the account this turn runs on (the
    * speaker's own Claude subscription, server/harness-connectors.ts). The
    * Claude driver then drops --strict-mcp-config only; other drivers ignore

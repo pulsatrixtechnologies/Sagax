@@ -9,6 +9,7 @@
 //   - the bot's cloud computer (boat.dev) via server/computer-proxy.ts
 //     — screenshot/exec/open_url, the CUA-on-the-boat bridge
 import { claudeDisallowedTools } from "./host-tools.ts";
+import { networkProxyEnvironment } from "./network-proxy.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
@@ -1665,6 +1666,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // boundary. Native background workers cannot outlive that boundary;
       // parallel bot work must use the harness's durable delegate_bot path.
       env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
+      // Desktop bridge: this turn's own network traffic leaves through the
+      // person's computer (never the model traffic: NO_PROXY).
+      if (turn.networkProxy) Object.assign(env, networkProxyEnvironment(turn.networkProxy, env));
       const cwd = turn.cwd ?? homedir();
       const commandCwd = permissionLaunchCwd(cwd);
       // Everything that shapes the process, minus session/turn-specific temp
@@ -1681,6 +1685,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         model: injected.model ?? null,
         base: env.ANTHROPIC_BASE_URL ?? null,
         configDir: env.CLAUDE_CONFIG_DIR ?? null,
+        // another person's computer (or none) never reuses this process
+        proxy: turn.networkProxy?.url ?? null,
         // hooks on/off changes the settings file the process was launched with
         hooks: Boolean(hooks),
         // Slice 4: another person's credentials never reuse this process.

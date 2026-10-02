@@ -118,6 +118,10 @@
 //                      mcp:<tool>:ok, mcp:<tool>:error or mcp:absent.
 //                      A call with `when` runs only on a turn whose prompt
 //                      contains that text.
+//                      An argument "$ATTACHED_FILE" becomes the path the
+//                      prompt's first <attached-file> tag names.
+//   FAKE_CLAUDE_PROXY_FETCH an http URL each such turn GETs through
+//                      HTTP_PROXY first; the reply carries proxy:<status>:<body>.
 //   FAKE_CLAUDE_MCP_PAUSE_MS a pause between two calls (a test can change
 //                      the world in between).
 //   FAKE_CLAUDE_MCP_DUMP path to write {servers, calls:[{server, tool, listed,
@@ -637,7 +641,15 @@ const playTurn = (prompt: JsonValue, late = false) => {
 
   if (fakeMcpCalls) {
     const promptText = JSON.stringify(prompt);
-    void runFakeMcpCalls(fakeMcpCalls.filter((call) => !call.when || promptText.includes(call.when)), argAfter("--mcp-config")).then(
+    // "$ATTACHED_FILE" in an argument: the path the prompt's first
+    // <attached-file> tag names (where the harness said the file is).
+    const attached = /<attached-file path=\\"(.*?)\\"/.exec(promptText);
+    const attachedPath = attached ? JSON.parse(`"${attached[1]}"`) as string : "";
+    const withAttached = (call: FakeMcpCall): FakeMcpCall => ({
+      ...call,
+      arguments: Object.fromEntries(Object.entries(call.arguments).map(([key, value]) => [key, value === "$ATTACHED_FILE" ? attachedPath : value])),
+    });
+    void runFakeMcpCalls(fakeMcpCalls.filter((call) => !call.when || promptText.includes(call.when)).map(withAttached), argAfter("--mcp-config")).then(
       (note) => playReply(prompt, note),
       (error: unknown) => playReply(prompt, `mcp:error:${error instanceof Error ? error.message : String(error)}`),
     );
@@ -697,6 +709,25 @@ function fakeMcpSession(server: { command: string; args?: string[]; env?: Record
   return { request, notify, close };
 }
 
+async function proxyFetch(target: string): Promise<string> {
+  const proxy = process.env.HTTP_PROXY;
+  if (!proxy) return "proxy:none";
+  const { request } = await import("node:http");
+  const parsed = new URL(proxy);
+  return new Promise((resolve) => {
+    const req = request({
+      host: parsed.hostname, port: parsed.port, path: target, method: "GET",
+      headers: { host: new URL(target).host, "proxy-authorization": `Basic ${Buffer.from(`${decodeURIComponent(parsed.username)}:${decodeURIComponent(parsed.password)}`).toString("base64")}` },
+    }, (res) => {
+      let body = "";
+      res.on("data", (chunk) => (body += chunk));
+      res.on("end", () => resolve(`proxy:${res.statusCode}:${body.slice(0, 200)}`));
+    });
+    req.on("error", (error) => resolve(`proxy:error:${error.message}`));
+    req.end();
+  });
+}
+
 async function runFakeMcpCalls(calls: FakeMcpCall[], configPath: string | null): Promise<string> {
   let servers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> = {};
   if (configPath) {
@@ -710,6 +741,9 @@ async function runFakeMcpCalls(calls: FakeMcpCall[], configPath: string | null):
   const notes: string[] = [];
   const pauseMs = Number(process.env.FAKE_CLAUDE_MCP_PAUSE_MS) || 0;
   let first = true;
+  // FAKE_CLAUDE_PROXY_FETCH: an http URL this turn GETs through HTTP_PROXY,
+  // as a tool's own HTTP call would; the reply carries proxy:<status>:<body>.
+  if (process.env.FAKE_CLAUDE_PROXY_FETCH) notes.push(await proxyFetch(process.env.FAKE_CLAUDE_PROXY_FETCH));
   for (const call of calls) {
     const names = Object.keys(servers).filter((name) => matches(call.server, name) && typeof servers[name]?.command === "string");
     if (!names.length) {

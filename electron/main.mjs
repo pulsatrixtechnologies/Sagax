@@ -83,6 +83,7 @@ import oidcSignInModule from "./oidc-system-sign-in.cjs";
 import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
+import { createDesktopBridge } from "./desktop-bridge.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
@@ -2016,6 +2017,59 @@ function sharingController() {
   return computerSharing;
 }
 
+// ── desktop bridge (server mode) ────────────────────────────────────────
+// The organization server's bots, working for the person signed in here,
+// run their tools on this computer and their traffic leaves through it
+// (electron/desktop-bridge.mjs, server/desktop-bridge.ts). Only while this
+// app is locked to that server and signed in; the cookie and the bridge
+// secret never leave the main process.
+let desktopBridgeConnector = null;
+let bridgeBrowseSession = null;
+async function bridgeBrowse(url, screenshot, signal) {
+  // Its own in-memory session: no cookie of the person's own browsing, and
+  // never this app's own session with the server.
+  bridgeBrowseSession ??= session.fromPartition("sagax-bridge-browse");
+  const win = new BrowserWindow({ show: false, width: 1280, height: 900, webPreferences: { session: bridgeBrowseSession, offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: true } });
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  const stop = () => { if (!win.isDestroyed()) win.destroy(); };
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    await Promise.race([win.loadURL(url), new Promise((_, reject) => setTimeout(() => reject(new Error("The page took too long to load")), 30_000))]);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (screenshot) {
+      const image = await win.webContents.capturePage();
+      return { content: [{ type: "image", data: image.toPNG().toString("base64"), mimeType: "image/png" }, { type: "text", text: `screenshot of ${url}` }] };
+    }
+    const html = String(await win.webContents.executeJavaScript("document.documentElement.outerHTML"));
+    return { content: [{ type: "text", text: html.length > 512 * 1024 ? `${html.slice(0, 512 * 1024)}\n[page shortened]` : html }] };
+  } finally {
+    signal?.removeEventListener("abort", stop);
+    stop();
+  }
+}
+function desktopBridge() {
+  desktopBridgeConnector ??= createDesktopBridge({
+    environment: () => serverModeEnvironment(environmentsState),
+    // main's own calls never go through the bundled-UI handler (bundled-ui.cjs)
+    fetch: (url, init) => session.defaultSession.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
+    cookieHeader: async (origin) => (await session.defaultSession.cookies.get({ url: origin })).map((cookie) => `${cookie.name}=${cookie.value}`).join("; "),
+    attachmentsDir: path.join(app.getPath("temp"), "Sagax", "attachments"),
+    // The app's own data (its cookies and grants) and the harness data dir
+    // never pass through the bridge; the person's credential stores neither.
+    protectedPaths: [app.getPath("userData"), desktopDataDir()],
+    activityFile: path.join(app.getPath("userData"), "desktop-bridge-activity.jsonl"),
+    // The person's own network: Chromium's stack, the OS proxy and the VPN.
+    fetchUrl: (url, init) => session.fromPartition("sagax-bridge-net").fetch(url, init),
+    resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+    browse: bridgeBrowse,
+    cuaConnection: async () => {
+      const connection = await cuaReady.catch(() => null);
+      return connection?.mcpCommand ? connection : null;
+    },
+  });
+  return desktopBridgeConnector;
+}
+
 /** The verified Cloud sign-in, as lending needs it: never a renderer's word.
  * The machine's address is remembered for that account across the minute-by-
  * minute re-verification, so the lending controls do not blink out. */
@@ -2209,6 +2263,7 @@ function persistEnvironments(next) {
   writeEnvironments(next);
   environmentsState = next;
   syncBundledUi();
+  desktopBridge().sync();
   refreshApplicationMenu();
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(workspaceWindowTitle(environmentsState, desktopRemoteAccess));
 }
@@ -4048,6 +4103,9 @@ app.whenReady().then(async () => {
   });
   environmentsState = readEnvironments();
   syncBundledUi();
+  // Server mode: this app bridges the organization's bots to this computer
+  // for the signed-in person (electron/desktop-bridge.mjs).
+  desktopBridge().sync();
   // Maintainer grants never start while computer sharing is off: no poll
   // loop, no registration, no grant replay from disk. Lending to the person's
   // own Cloud is gated by their Cloud sign-in instead, so its saved grant
@@ -4140,6 +4198,7 @@ app.on("before-quit", (e) => {
   void cloudMove?.close();
   companyBackupController?.abort();
   computerSharing?.close();
+  desktopBridgeConnector?.close();
   lendingTray?.destroy();
   if (cuaCleanedUp) return;
   e.preventDefault();

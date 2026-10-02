@@ -9,10 +9,18 @@ on the Sagax host or inside the Sagax container.
 
 | Target | When | Where |
 |---|---|---|
-| `user-desktop` | the turn's place is the person's computer | their desktop (desktop routing) |
+| `user-desktop` | the person's Sagax desktop app is connected and their preference is "My computer" (default), or the conversation is pinned to it | their own computer, through the desktop bridge (`sagax-desktop`, see AGENTS.md "Desktop bridge") |
 | `user-sandbox` | organization mode, any other turn | one person's environment (below) |
 | `host` | solo server | this machine, unchanged |
 | `none` | organization mode without a provisioner | nothing is mounted |
+
+The choice between the two is `resolveBotWorkplace` (`server/desktop-bridge.ts`):
+the server environment is used when the person chose it (Settings >
+Organization > Where bots work), when their desktop is not connected (the
+composer then says "Votre ordinateur n'est pas connecté : j'utilise votre
+environnement serveur"), for routines unless the owner allowed them on their
+connected computer, and for room follow-ups no person asked for. Files a
+person attaches in that turn are copied to `/workspace/attachments/`.
 
 Whose environment (`sandboxPrincipalForTurn`, matching private threads and
 "the speaker pays"):

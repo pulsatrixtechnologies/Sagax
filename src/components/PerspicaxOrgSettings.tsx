@@ -21,6 +21,7 @@ import { MyServerEnvironment } from "./settings/MyServerEnvironment";
 import { OrgSharing } from "./settings/OrgSharing";
 import { OrgImportDialog } from "./OrgImportDialog";
 import { InterimPeople } from "./settings/InterimPeople";
+import { BotWorkplaceSettings } from "./settings/BotWorkplaceSettings";
 
 interface PendingAdminApproval {
   botId: string;
@@ -130,6 +131,7 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
       {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
       <MyEngines issuer={org.org.identity.issuer} />
       <MyRoutineDelegation />
+      <BotWorkplaceSettings />
       <MyServerEnvironment />
       <OrgSharing />
       {admin && (

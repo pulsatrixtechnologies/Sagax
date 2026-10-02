@@ -16,7 +16,17 @@ function failure(id: RpcId, method: unknown, message: string, code = -32603): un
     : { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-export async function userSandboxProxyRequest(frame: unknown, connection: { url: string; token: string }, fetchImpl: typeof fetch = fetch): Promise<unknown | undefined> {
+/** Which tool server this proxy is: the person's server environment, or their
+ * own computer through the desktop bridge (server/desktop-bridge.ts). */
+export const PROXIED_TOOL_SERVERS = {
+  "sagax-environment": { endpoint: "/api/internal/sandbox/mcp", unavailable: "The server environment is not connected. Start a new bot turn from Sagax.", interrupted: "The connection to the server environment was interrupted. Check the result before repeating the action." },
+  "sagax-desktop": { endpoint: "/api/internal/desktop/mcp", unavailable: "Your computer is not connected through Sagax. Start a new bot turn from Sagax.", interrupted: "The connection to your computer was interrupted. Check the result before repeating the action." },
+} as const;
+export type ProxiedToolServer = keyof typeof PROXIED_TOOL_SERVERS;
+
+export async function userSandboxProxyRequest(frame: unknown, connection: { url: string; token: string; server?: ProxiedToolServer }, fetchImpl: typeof fetch = fetch): Promise<unknown | undefined> {
+  const serverName: ProxiedToolServer = connection.server ?? "sagax-environment";
+  const server = PROXIED_TOOL_SERVERS[serverName];
   if (!frame || typeof frame !== "object" || Array.isArray(frame)) return failure(null, null, "Invalid request.", -32600);
   const message = frame as { id?: RpcId; jsonrpc?: unknown; method?: unknown; params?: unknown };
   const id = message.id ?? null;
@@ -24,18 +34,18 @@ export async function userSandboxProxyRequest(frame: unknown, connection: { url:
   if (!Object.hasOwn(message, "id")) return undefined;
   if (message.method === "initialize") return {
     jsonrpc: "2.0", id,
-    result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "sagax-environment", version: "1" } },
+    result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: serverName, version: "1" } },
   };
   if (message.method === "ping") return { jsonrpc: "2.0", id, result: {} };
   if (message.method !== "tools/list" && message.method !== "tools/call") return failure(id, message.method, "Method not found.", -32601);
   try {
     const url = new URL(connection.url);
     if (!connection.token || url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
-      throw new Error("The server environment is not connected. Start a new bot turn from Sagax.");
+      throw new Error(server.unavailable);
     }
     const body = JSON.stringify({ method: message.method, params: message.params ?? {} });
     if (Buffer.byteLength(body) > MAX_INPUT_BYTES) throw new Error("The request exceeded the size limit.");
-    const response = await fetchImpl(new URL("/api/internal/sandbox/mcp", url), {
+    const response = await fetchImpl(new URL(server.endpoint, url), {
       method: "POST", redirect: "error",
       headers: { "content-type": "application/json", authorization: `Bearer ${connection.token}` },
       body, signal: AbortSignal.timeout(720_000),
@@ -53,7 +63,11 @@ export async function userSandboxProxyRequest(frame: unknown, connection: { url:
 }
 
 function run(): void {
-  const connection = { url: process.env.OMB_HARNESS_URL ?? "", token: process.env.OMB_SANDBOX_TOKEN ?? "" };
+  const named = process.env.OMB_TOOL_SERVER;
+  const connection = {
+    url: process.env.OMB_HARNESS_URL ?? "", token: process.env.OMB_SANDBOX_TOKEN ?? "",
+    server: named && Object.hasOwn(PROXIED_TOOL_SERVERS, named) ? named as ProxiedToolServer : "sagax-environment" as const,
+  };
   let input = Buffer.alloc(0);
   let pending = 0;
   const output = (message: unknown) => {

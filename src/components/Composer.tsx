@@ -78,6 +78,7 @@ import {
   replaceComposerSlashTrigger,
   type ComposerSlashCommand,
 } from "@/lib/composer-commands";
+import { WorkplaceNotice } from "./WorkplaceNotice";
 
 /** The active @mention query at the caret: the text between an `@` that
  * starts a word and the caret. null = no mention being typed. */
@@ -800,6 +801,7 @@ export function Composer({
         </div>
       )}
       <div className="pointer-events-auto relative w-full">
+        <WorkplaceNotice />
         {failedSends.map((failed) => (
           <div
             key={failed.id}
