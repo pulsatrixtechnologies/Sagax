@@ -19693,9 +19693,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const detail = operation.action === "fetch_url" || operation.action === "browse"
               ? `${operation.action} ${(() => { try { return new URL(operation.url ?? "").host; } catch { return ""; } })()}`
               : operation.action;
-            // Local VM creation on the person's computer reports its steps:
-            // the conversation shows the bot's computer being set up, as in
-            // solo mode.
+            // Local VM creation on the person's computer reports its steps
+            // once the person said yes there (never before): the conversation
+            // shows the bot's computer being set up, as in solo mode. The
+            // step text itself comes back in the tool's result, not live.
             let provisioning = false;
             const onProgress = operation.action === "vm_create" ? () => {
               if (provisioning || !active()) return;

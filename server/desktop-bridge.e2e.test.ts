@@ -15,7 +15,7 @@
 //              told why; the person's status says not connected
 //   authz      Bob's session cannot poll or tunnel for Alice's desktop
 import { spawn, type ChildProcess } from "node:child_process";
-import { createServer, type Server } from "node:http";
+import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -120,6 +120,27 @@ async function upload(auth: Auth, name: string, body: string): Promise<{ path: s
   const res = await fetch(`${BASE}/api/files?name=${encodeURIComponent(name)}`, { method: "POST", headers: { "content-type": "text/markdown", cookie: auth.cookie! }, body });
   expect(res.status).toBe(201);
   return await res.json() as { path: string; name: string };
+}
+
+/** An open /api/events stream (as the browser opens it): what it received. */
+async function openStream(auth: Auth): Promise<{ frames: () => Array<Record<string, any>>; close: () => void }> {
+  const { body } = await api("POST", "/api/auth/stream-ticket", auth);
+  expect(body.ticket).toMatch(/^omb_tick_/);
+  return new Promise((resolve, reject) => {
+    let received = "";
+    const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
+      expect(res.statusCode).toBe(200);
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => { received += chunk; });
+      res.on("error", () => {});
+      resolve({
+        frames: () => received.split("\n").filter((line) => line.startsWith("data: ")).map((line) => { try { return JSON.parse(line.slice(6)) as Record<string, any>; } catch { return {}; } }),
+        close: () => req.destroy(),
+      });
+    });
+    req.on("error", reject);
+    req.end();
+  });
 }
 
 const lastPrompt = () => readFileSync(prompts, "utf8").trimEnd().split("\n").at(-1) ?? "";
@@ -265,7 +286,18 @@ posixOnly("organization server: the desktop bridge", () => {
   }, 120_000);
 
   it("creates the Local VM on the speaker's own computer, its progress taken for the turn", async () => {
+    // Alice sees her bot's computer being set up, then ready; Bob, who
+    // cannot see her bot, receives neither.
+    const aliceStream = await openStream(alice);
+    const bobStream = await openStream(bob);
+    const computerFrames = (stream: { frames: () => Array<Record<string, any>> }) => stream.frames().filter((frame) => frame.kind === "computer" && frame.botId === aliceBot.id).map((frame) => frame.state);
     const reply = await turn(alice, aliceBot, "create the local vm");
+    await waitFor(async () => computerFrames(aliceStream).includes("ready"));
+    expect(computerFrames(aliceStream)).toEqual(["provisioning", "ready"]);
+    expect(computerFrames(bobStream)).toEqual([]);
+    expect(bobStream.frames().some((frame) => frame.botId === aliceBot.id)).toBe(false);
+    aliceStream.close();
+    bobStream.close();
     expect(reply).toContain("mcp:local_vm:ok");
     expect(dump().calls.find((call) => call.tool === "local_vm")?.text).toBe("desktop:vm created");
     expect(desktop.operations.at(-1)).toEqual({ action: "vm_create", timeout_seconds: 600 });

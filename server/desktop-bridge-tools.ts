@@ -91,7 +91,7 @@ export const DESKTOP_BRIDGE_TOOLS = [
   },
   {
     name: "local_vm",
-    description: "The person's Local VM (the Sagax Linux desktop container on their computer): action status lists it, start starts it, run runs a bash command inside it, create makes one when none exists (the person confirms it on their computer; the first time downloads and builds the desktop image, which takes several minutes, and progress shows in the conversation).",
+    description: "The person's Local VM (the Sagax Linux desktop container on their computer): action status lists it, start starts it, run runs a bash command inside it, create makes one when none exists (the person confirms it on their computer; the first time downloads and builds the desktop image, which takes several minutes; while it runs the conversation shows the bot's computer being set up, and the steps come back in this tool's result).",
     inputSchema: {
       type: "object",
       properties: {

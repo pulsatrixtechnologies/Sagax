@@ -260,8 +260,8 @@ export function createLocalVm({
       return run([tool, "exec", "-u", "cua", chosen.name, "bash", "-lc", command], options);
     },
     /** Create the Local VM here, after the person's yes on this computer.
-     * Progress goes to `progress` (the turn); a turn that ends does not stop
-     * a creation already under way. */
+     * Progress goes to `progress` (the turn), only once the person said yes;
+     * a turn that ends does not stop a creation already under way. */
     async create({ signal, progress = () => {} } = {}) {
       const report = message => { try { progress(message); } catch { /* best effort */ } };
       if (creating) { report(`Already being created on this computer: ${creating.step}`); return until(creating.promise, signal); }
@@ -275,7 +275,8 @@ export function createLocalVm({
       }
       if (confirming) throw new Error("A Local VM creation is already waiting for the person's answer on this computer.");
       const needsImage = !(await imageReady(tool));
-      report("Asking on the computer for permission to create the Local VM");
+      // Nothing is reported before the person's yes: the server starts showing
+      // the bot's computer being set up at the first step it receives.
       confirming = true;
       let allowed;
       try { allowed = await confirm({ runtime: tool, needsImage, signal }); } finally { confirming = false; }

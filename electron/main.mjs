@@ -84,7 +84,7 @@ import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
 import { createDesktopBridge } from "./desktop-bridge.mjs";
-import { proxyCredentialsFromEnv } from "./desktop-tunnel.mjs";
+import { createProxyCredentialStore, createProxyCredentials, proxyPasswordAnswerScript, proxyPasswordPage } from "./proxy-credentials.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
@@ -2076,6 +2076,49 @@ async function confirmBridgeLocalVm({ runtime, needsImage, signal }) {
   return response === 0 && !signal?.aborted;
 }
 
+/** The person's SOCKS5 user name and password for the system proxy, asked
+ * once in a small window of the app when the proxy asks and none is known
+ * (proxy-credentials.mjs). Resolves { username, password } or null. */
+async function askProxyPassword({ host, port }) {
+  const french = /^fr\b/i.test(app.getLocale());
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const win = new BrowserWindow({
+    parent, modal: Boolean(parent), width: 440, height: 330, resizable: false, minimizable: false, maximizable: false, show: false,
+    title: french ? "Mot de passe du proxy" : "Proxy password",
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: true, partition: "sagax-proxy-password" },
+  });
+  win.setMenuBarVisibility?.(false);
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event) => event.preventDefault());
+  const closed = new Promise((resolve) => win.once("closed", () => resolve(null)));
+  try {
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(proxyPasswordPage({ host, port, french }))}`);
+    win.show();
+    return await Promise.race([win.webContents.executeJavaScript(proxyPasswordAnswerScript, true), closed]);
+  } catch {
+    return null;
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+}
+
+let bridgeProxyCredentials = null;
+function desktopBridgeProxyCredentials() {
+  bridgeProxyCredentials ??= createProxyCredentials({
+    store: createProxyCredentialStore({
+      file: path.join(app.getPath("userData"), "proxy-passwords.bin"), fs, log: (message) => slog(message),
+      encryption: {
+        available: async () => (await safeStorage.isAsyncEncryptionAvailable()) &&
+          (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text"),
+        encrypt: (value) => safeStorage.encryptStringAsync(value),
+        decrypt: (buffer) => safeStorage.decryptStringAsync(buffer),
+      },
+    }),
+    prompt: askProxyPassword,
+  });
+  return bridgeProxyCredentials;
+}
+
 function desktopBridge() {
   desktopBridgeConnector ??= createDesktopBridge({
     environment: () => serverModeEnvironment(environmentsState),
@@ -2090,9 +2133,10 @@ function desktopBridge() {
     // The person's own network: Chromium's stack, the OS proxy and the VPN.
     fetchUrl: (url, init) => session.fromPartition("sagax-bridge-net").fetch(url, init),
     // The system proxy for each destination (a PAC file included), and the
-    // SOCKS5 password from this app's environment when the proxy asks.
+    // SOCKS5 password when the proxy asks: this app's environment, else what
+    // the person typed once here (kept encrypted by the OS).
     resolveProxy: (url) => session.defaultSession.resolveProxy(url),
-    proxyCredentials: proxyCredentialsFromEnv(),
+    proxyCredentials: desktopBridgeProxyCredentials(),
     // The Local VM is the one solo mode uses (same container, same folder).
     localVmWorkspace: path.join(desktopDataDir(), "vm-home"),
     confirmLocalVm: confirmBridgeLocalVm,

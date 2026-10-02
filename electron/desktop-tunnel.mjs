@@ -5,7 +5,11 @@
 // for, THIS computer decides and connects: through the operating system's
 // proxy settings (resolveProxy, which also evaluates a PAC file the system
 // names; HTTP, HTTPS, SOCKS4a and SOCKS5 proxies, SOCKS5 with a user name and
-// password) and its routes, so a VPN applies.
+// password) and its routes, so a VPN applies. The SOCKS5 user name and
+// password come from the app's environment, else from what the person typed
+// once in the app (electron/proxy-credentials.mjs). The server and the bot
+// get a coarse reason for a failure; the detail stays in the local activity
+// log.
 //
 // Never reachable from elsewhere: no port is opened here. The person's own
 // option "local network only" is applied on this side too.
@@ -102,7 +106,9 @@ export function proxyChain(answer) {
 
 /** The proxy credentials named in the environment (ALL_PROXY, SOCKS_PROXY,
  * ... as socks5://user:password@host:port), for the SOCKS proxy the system
- * settings name. The operating system's own proxy passwords are not read. */
+ * settings name. The operating system's own proxy passwords are not read:
+ * an app started from Finder, the Dock or the Start menu has no such
+ * variables, and the person is asked instead (proxy-credentials.mjs). */
 export function proxyCredentialsFromEnv(env = process.env) {
   const entries = [];
   for (const key of ["SOCKS5_PROXY", "socks5_proxy", "SOCKS_PROXY", "socks_proxy", "ALL_PROXY", "all_proxy"]) {
@@ -116,7 +122,7 @@ export function proxyCredentialsFromEnv(env = process.env) {
   }
   return ({ host, port }) => {
     const found = entries.find(entry => entry.host === String(host).toLowerCase() && entry.port === port);
-    return found ? { username: found.username, password: found.password } : null;
+    return found ? { username: found.username, password: found.password, source: "env" } : null;
   };
 }
 
@@ -176,26 +182,31 @@ function socksAddress(host) {
   return Buffer.concat([Buffer.from([3, name.length]), name]);
 }
 
+/** An error that says why, in a code the tunnel turns into a coarse reason. */
+const proxyError = (message, code) => Object.assign(new Error(message), { code });
+
 const SOCKS5_REPLIES = { 1: "general failure", 2: "not allowed by its rules", 3: "network unreachable", 4: "host unreachable", 5: "connection refused", 6: "time out", 7: "command not supported", 8: "address type not supported" };
 
 /** SOCKS5 (RFC 1928) CONNECT, with user name and password (RFC 1929) when
- * the proxy asks and credentials are known. */
+ * the proxy asks. Both methods are always offered, so a proxy that wants a
+ * password says so (code "proxy-auth") even when none is known yet. */
 export async function socks5Connect(socket, host, port, credentials) {
   const reader = proxyReader(socket);
   try {
-    const methods = credentials ? [0x00, 0x02] : [0x00];
-    socket.write(Buffer.from([5, methods.length, ...methods]));
+    socket.write(Buffer.from([5, 2, 0x00, 0x02]));
     const [version, method] = await reader.read(2);
     if (version !== 5) throw new Error("the system proxy is not a SOCKS5 proxy");
-    if (method === 0x02 && credentials) {
+    if (method === 0x02 && !credentials) {
+      throw proxyError("the system SOCKS proxy asks for a user name and password", "proxy-auth");
+    } else if (method === 0x02) {
       const user = Buffer.from(credentials.username ?? "", "utf8");
       const pass = Buffer.from(credentials.password ?? "", "utf8");
       if (user.length > 255 || pass.length > 255) throw new Error("SOCKS user name or password too long");
       socket.write(Buffer.concat([Buffer.from([1, user.length]), user, Buffer.from([pass.length]), pass]));
       const [, status] = await reader.read(2);
-      if (status !== 0) throw new Error("the system SOCKS proxy refused the user name and password");
-    } else if (method === 0x02 || method === 0xff) {
-      throw new Error(credentials ? "the system SOCKS proxy accepts none of the offered sign-in methods" : "the system SOCKS proxy asks for a user name and password (set ALL_PROXY=socks5://user:password@host:port for the desktop app)");
+      if (status !== 0) throw proxyError("the system SOCKS proxy refused the user name and password", "proxy-auth-refused");
+    } else if (method === 0xff) {
+      throw new Error("the system SOCKS proxy accepts none of the offered sign-in methods");
     } else if (method !== 0x00) {
       throw new Error("the system SOCKS proxy asks for an unsupported sign-in method");
     }
@@ -241,8 +252,15 @@ export async function httpConnect(socket, host, port) {
  * of the proxy chain in order (HTTP, HTTPS, SOCKS4a or SOCKS5 proxy, or
  * direct to the verified `address`), the first one that connects wins. A
  * proxy that fails never silently turns into a direct connection unless the
- * chain itself lists DIRECT after it. */
-export async function openConnection(host, port, address, chain, { connect = defaultConnect, connectTls = defaultConnectTls, credentials = () => null } = {}) {
+ * chain itself lists DIRECT after it.
+ *
+ * SOCKS5 sign-in: `credentials(route)` gives what is already known (the
+ * environment, or what the person saved). When the proxy asks and nothing
+ * is known, or a saved password is refused, `askCredentials(route)` asks
+ * the person once and the route is tried again on a fresh connection;
+ * `credentialsRefused(route, given)` forgets a saved password the proxy
+ * refused. Errors from a proxy route carry `proxy: true`. */
+export async function openConnection(host, port, address, chain, { connect = defaultConnect, connectTls = defaultConnectTls, credentials = () => null, askCredentials = null, credentialsRefused = () => {} } = {}) {
   let last = null;
   for (const route of chain) {
     let socket = null;
@@ -251,10 +269,29 @@ export async function openConnection(host, port, address, chain, { connect = def
         if (!address) throw new Error(`${host} could not be resolved on this computer`);
         return { socket: await connect({ host: address, port }), via: "direct" };
       }
-      socket = route.type === "https" ? await connectTls({ host: route.host, port: route.port }) : await connect({ host: route.host, port: route.port });
-      if (route.type === "socks5") await socks5Connect(socket, host, port, await credentials({ type: route.type, host: route.host, port: route.port }));
-      else if (route.type === "socks4") await socks4Connect(socket, host, port);
-      else await httpConnect(socket, host, port);
+      const proxy = { type: route.type, host: route.host, port: route.port };
+      const open = () => route.type === "https" ? connectTls({ host: route.host, port: route.port }) : connect({ host: route.host, port: route.port });
+      try {
+        socket = await open();
+        if (route.type === "socks5") {
+          const known = await credentials(proxy);
+          try { await socks5Connect(socket, host, port, known); }
+          catch (error) {
+            if (error.code === "proxy-auth-refused") await credentialsRefused(proxy, known);
+            const ask = askCredentials && (error.code === "proxy-auth" || (error.code === "proxy-auth-refused" && known?.source === "saved"));
+            if (!ask) throw error;
+            socket.destroy(); socket = null;
+            const given = await askCredentials(proxy);
+            if (!given) throw error;
+            socket = await open();
+            try { await socks5Connect(socket, host, port, given); }
+            catch (again) { if (again.code === "proxy-auth-refused") await credentialsRefused(proxy, given); throw again; }
+          }
+        } else if (route.type === "socks4") await socks4Connect(socket, host, port);
+        else await httpConnect(socket, host, port);
+      } catch (error) {
+        throw Object.assign(error instanceof Error ? error : new Error(String(error)), { proxy: true });
+      }
       return { socket, via: `${route.type} ${route.host}:${route.port}` };
     } catch (error) {
       socket?.destroy();
@@ -262,6 +299,16 @@ export async function openConnection(host, port, address, chain, { connect = def
     }
   }
   throw last ?? new Error("No route to the destination");
+}
+
+/** What the server, the bot and the audit learn about a failed connection:
+ * a coarse reason, never the proxy's address or the local error text (those
+ * stay in this computer's activity log). */
+export function coarseFailure(error) {
+  if (error?.code === "proxy-auth") return "the system proxy needs a user name and password";
+  if (error?.code === "proxy-auth-refused") return "the system proxy refused the user name and password";
+  if (error?.proxy) return "the system proxy refused the connection or could not be reached";
+  return "the destination refused the connection or could not be reached";
 }
 
 /** The URL the system's proxy settings (and a PAC file) are asked about. */
@@ -316,22 +363,33 @@ export function openDesktopTunnel({ url, headers, network = () => "all", resolve
         const valid = typeof target?.host === "string" && Number.isInteger(target?.port);
         // The system's settings for this destination (proxy, PAC file, or
         // direct), asked before anything else.
-        const chain = valid && resolveProxy ? proxyChain(await resolveProxy(proxyQueryUrl(target.host, target.port)).catch(() => "DIRECT")) : [{ type: "direct" }];
+        // A failed lookup (a PAC file out of reach, a script error) is
+        // direct, and the activity log says so.
+        let lookupFailed = false;
+        const answer = valid && resolveProxy
+          ? await Promise.resolve().then(() => resolveProxy(proxyQueryUrl(target.host, target.port))).catch(() => { lookupFailed = true; return "DIRECT"; })
+          : "DIRECT";
+        const chain = proxyChain(answer);
+        const routeNote = via => lookupFailed && via === "direct" ? "direct (system proxy lookup failed)" : via;
         const verdict = await tunnelVerdict(target?.host, target?.port, network(), lookup, { proxied: chain.some(route => route.type !== "direct") });
         if (!verdict.ok) {
-          record({ host: String(target?.host ?? ""), port: Number(target?.port) || 0, ok: false, error: verdict.message });
+          record({ host: String(target?.host ?? ""), port: Number(target?.port) || 0, ok: false, error: verdict.message, ...(lookupFailed ? { via: routeNote("direct") } : {}) });
           fail(stream, verdict.code, verdict.message);
           return;
         }
         let upstream;
         let via;
-        try { ({ socket: upstream, via } = await openConnection(target.host, target.port, verdict.address, chain, { connect, connectTls, credentials: proxyCredentials })); }
-        catch (error) {
-          record({ host: target.host, port: target.port, ok: false, error: error.message, via: chain.map(route => route.type).join(",") });
-          fail(stream, "refused", `Could not connect to ${target.host}:${target.port} from this computer (${error.message})`);
+        try {
+          ({ socket: upstream, via } = await openConnection(target.host, target.port, verdict.address, chain, {
+            connect, connectTls, credentials: proxyCredentials,
+            askCredentials: proxyCredentials?.ask ?? null, credentialsRefused: proxyCredentials?.refused ?? (() => {}),
+          }));
+        } catch (error) {
+          record({ host: target.host, port: target.port, ok: false, error: error.message, via: routeNote(chain.map(route => route.type).join(",")) });
+          fail(stream, "refused", `Could not connect to ${target.host}:${target.port} from this computer (${coarseFailure(error)})`);
           return;
         }
-        record({ host: target.host, port: target.port, ok: true, via });
+        record({ host: target.host, port: target.port, ok: true, via: routeNote(via) });
         streams.set(stream, upstream);
         upstream.on("data", chunk => {
           send(TUNNEL.DATA, stream, chunk);

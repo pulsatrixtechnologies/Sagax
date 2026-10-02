@@ -11,7 +11,8 @@ import http from "node:http";
 import { attachmentName, commandEnvironment, createDesktopBridge, createLocalVm, executeBridgeOperation, localPath, validBridgeOperation } from "./desktop-bridge.mjs";
 import net from "node:net";
 
-import { isBlockedAddress, isLanAddress, openConnection, openDesktopTunnel, proxyChain, proxyCredentialsFromEnv, tunnelVerdict, TUNNEL, tunnelMessage } from "./desktop-tunnel.mjs";
+import { coarseFailure, isBlockedAddress, isLanAddress, openConnection, openDesktopTunnel, proxyChain, proxyCredentialsFromEnv, tunnelVerdict, TUNNEL, tunnelMessage } from "./desktop-tunnel.mjs";
+import { createProxyCredentialStore, createProxyCredentials, proxyPasswordPage } from "./proxy-credentials.mjs";
 import { CONTAINER, IMAGE, IMAGE_LABELS } from "./local-vm-recipe.mjs";
 
 const posix = process.platform !== "win32";
@@ -195,7 +196,7 @@ test("the system's proxy answer (PAC result) becomes the routes to try, in order
 
 test("SOCKS credentials come from the desktop's environment, for that proxy only", () => {
   const find = proxyCredentialsFromEnv({ ALL_PROXY: "socks5h://ada:p%40ss@Socks.Corp:1081", HTTP_PROXY: "http://x:y@h:1" });
-  assert.deepEqual(find({ host: "socks.corp", port: 1081 }), { username: "ada", password: "p@ss" });
+  assert.deepEqual(find({ host: "socks.corp", port: 1081 }), { username: "ada", password: "p@ss", source: "env" });
   assert.equal(find({ host: "socks.corp", port: 1080 }), null);
   assert.equal(find({ host: "h", port: 1 }), null);
   assert.equal(proxyCredentialsFromEnv({ ALL_PROXY: "socks5://s:1080" })({ host: "s", port: 1080 }), null);
@@ -203,7 +204,9 @@ test("SOCKS credentials come from the desktop's environment, for that proxy only
 
 /** An echo server that answers "hello" first, then echoes. */
 async function echoServer() {
-  const server = net.createServer(socket => { socket.write("hello:"); socket.pipe(socket); });
+  // A client that resets its side (a test that ends, a refused route) must
+  // not surface as an unhandled ECONNRESET after the test.
+  const server = net.createServer(socket => { socket.on("error", () => {}); socket.write("hello:"); socket.pipe(socket); });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   return server;
 }
@@ -232,6 +235,7 @@ async function fakeSocks5({ upstreamPort, credentials = null, version = 5 }) {
             socket.write(Buffer.from([0, 0x5a, 0, 0, 0, 0, 0, 0]));
             socket.removeAllListeners("data"); if (buffer.length) upstream.write(buffer); socket.pipe(upstream); upstream.pipe(socket);
           });
+          upstream.on("error", () => socket.destroy());
           return;
         }
         if (stage === "greeting") {
@@ -324,7 +328,7 @@ test("SOCKS4a (the PAC keyword SOCKS)", async () => {
 });
 
 test("HTTP CONNECT keeps bytes that arrive with the proxy's answer", async () => {
-  const proxy = net.createServer(socket => socket.once("data", () => socket.write("HTTP/1.1 200 Connection established\r\n\r\nhello:")));
+  const proxy = net.createServer(socket => socket.on("error", () => {}).once("data", () => socket.write("HTTP/1.1 200 Connection established\r\n\r\nhello:")));
   await new Promise(resolve => proxy.listen(0, "127.0.0.1", resolve));
   const { socket } = await openConnection("example.test", 443, null, proxyChain(`PROXY 127.0.0.1:${proxy.address().port}`));
   const first = await new Promise(resolve => { socket.once("data", chunk => resolve(String(chunk))); socket.resume(); });
@@ -369,6 +373,127 @@ test("the tunnel asks the system (PAC) per destination and records the route", a
   tunnel.close(); socks.server.close(); echo.close();
 });
 
+/** A proxy password store on a temp file, "encrypted" by base64 so the test
+ * can see nothing is stored in clear. */
+function testStore(dir) {
+  const file = path.join(dir, "proxy-passwords.bin");
+  const encryption = { available: async () => true, encrypt: async value => Buffer.from(Buffer.from(value).toString("base64")), decrypt: async buffer => ({ result: Buffer.from(buffer.toString(), "base64").toString() }) };
+  return { file, store: createProxyCredentialStore({ file, encryption, fs }) };
+}
+
+test("SOCKS5 with a password set in the system settings only: the person is asked once, the answer kept encrypted per proxy", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "omb-proxy-pw-"));
+  const echo = await echoServer();
+  const socks = await fakeSocks5({ upstreamPort: echo.address().port, credentials: { username: "ada", password: "s3cret" } });
+  const asked = [];
+  const { file, store } = testStore(dir);
+  // No ALL_PROXY: an app started from Finder, the Dock or the Start menu.
+  const credentials = createProxyCredentials({ env: {}, store, prompt: async proxy => { asked.push(proxy); await new Promise(resolve => setTimeout(resolve, 20)); return { username: "ada", password: "s3cret" }; } });
+  const chain = proxyChain(`SOCKS5 127.0.0.1:${socks.port}`);
+  const options = { credentials, askCredentials: credentials.ask, credentialsRefused: credentials.refused };
+  // two connections at once: one question
+  const [first, second] = await Promise.all([openConnection("a.test", 80, null, chain, options), openConnection("b.test", 80, null, chain, options)]);
+  assert.equal(await exchange(first.socket, "1"), "hello:1");
+  assert.equal(await exchange(second.socket, "2"), "hello:2");
+  assert.deepEqual(asked, [{ host: "127.0.0.1", port: socks.port }]);
+  assert.equal(fs.readFileSync(file, "utf8").includes("s3cret"), false, "never stored in clear");
+  // a later launch: the saved answer, no question
+  const later = createProxyCredentials({ env: {}, store: testStore(dir).store, prompt: async () => { throw new Error("asked again"); } });
+  const third = await openConnection("c.test", 80, null, chain, { credentials: later, askCredentials: later.ask, credentialsRefused: later.refused });
+  assert.equal(await exchange(third.socket, "3"), "hello:3");
+  socks.server.close(); echo.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("SOCKS5 password questions: Cancel is not asked again, a refused saved password is forgotten and asked again", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "omb-proxy-pw-"));
+  const echo = await echoServer();
+  const socks = await fakeSocks5({ upstreamPort: echo.address().port, credentials: { username: "ada", password: "new" } });
+  const chain = proxyChain(`SOCKS5 127.0.0.1:${socks.port}`);
+  const proxy = { host: "127.0.0.1", port: socks.port };
+  let asked = 0;
+  const declining = createProxyCredentials({ env: {}, store: testStore(dir).store, prompt: async () => { asked++; return null; } });
+  const decline = { credentials: declining, askCredentials: declining.ask, credentialsRefused: declining.refused };
+  await assert.rejects(openConnection("a.test", 80, null, chain, decline), error => error.code === "proxy-auth" && error.proxy === true);
+  await assert.rejects(openConnection("a.test", 80, null, chain, decline), /asks for a user name and password/);
+  assert.equal(asked, 1);
+  // an old saved password: refused, forgotten, the person asked, the new one kept
+  const { store } = testStore(dir);
+  await store.set(proxy, { username: "ada", password: "old" });
+  const answers = [];
+  const changed = createProxyCredentials({ env: {}, store, prompt: async () => { answers.push("asked"); return { username: "ada", password: "new" }; } });
+  const { socket } = await openConnection("a.test", 80, null, chain, { credentials: changed, askCredentials: changed.ask, credentialsRefused: changed.refused });
+  assert.equal(await exchange(socket, "z"), "hello:z");
+  assert.deepEqual(answers, ["asked"]);
+  assert.deepEqual(await testStore(dir).store.get(proxy), { username: "ada", password: "new" });
+  // the environment wins, and a refused environment password is not replaced by a question
+  const fromEnv = createProxyCredentials({ env: { ALL_PROXY: `socks5://ada:wrong@127.0.0.1:${socks.port}` }, store, prompt: async () => { throw new Error("asked"); } });
+  await assert.rejects(openConnection("a.test", 80, null, chain, { credentials: fromEnv, askCredentials: fromEnv.ask, credentialsRefused: fromEnv.refused }), /refused the user name and password/);
+  assert.deepEqual(await store.get(proxy), { username: "ada", password: "new" });
+  socks.server.close(); echo.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("the proxy password question names the proxy, in French or English, with nothing to load", () => {
+  const en = proxyPasswordPage({ host: "socks.corp", port: 1080 });
+  assert.match(en, /socks\.corp:1080/);
+  assert.match(en, /type="password"/);
+  assert.match(en, /default-src 'none'/);
+  assert.match(proxyPasswordPage({ host: "s", port: 1, french: true }), /Mot de passe/);
+  assert.doesNotMatch(proxyPasswordPage({ host: "<img src=x>", port: 1 }), /<img/);
+});
+
+test("the server learns a coarse reason; the proxy's address and the local error stay in the activity log", async () => {
+  const dead = net.createServer(); await new Promise(resolve => dead.listen(0, "127.0.0.1", resolve));
+  const port = dead.address().port; dead.close();
+  const records = [];
+  const frames = [];
+  class FakeSocket {
+    constructor() { this.bufferedAmount = 0; this.readyState = 1; FakeSocket.last = this; queueMicrotask(() => this.onopen?.()); }
+    send(data) { frames.push(Buffer.from(data)); }
+    close() { this.onclose?.(); }
+  }
+  const tunnel = openDesktopTunnel({
+    url: "ws://server.test/tunnel", headers: {}, WebSocketImpl: FakeSocket,
+    resolveProxy: async () => `SOCKS5 127.0.0.1:${port}`,
+    lookup: async () => [{ address: "93.184.216.34" }],
+    record: entry => records.push(entry),
+  });
+  await tunnel.ready;
+  FakeSocket.last.onmessage({ data: tunnelMessage(TUNNEL.OPEN, 3, Buffer.from(JSON.stringify({ host: "example.test", port: 443 }))) });
+  for (let tries = 0; tries < 100 && !frames.some(frame => frame[0] === TUNNEL.FAILED); tries++) await new Promise(resolve => setTimeout(resolve, 20));
+  const failed = JSON.parse(frames.find(frame => frame[0] === TUNNEL.FAILED).subarray(5).toString());
+  assert.equal(failed.message, "Could not connect to example.test:443 from this computer (the system proxy refused the connection or could not be reached)");
+  assert.doesNotMatch(failed.message, new RegExp(String(port)));
+  assert.match(records[0].error, /ECONNREFUSED/);
+  assert.equal(coarseFailure(Object.assign(new Error("x"), { code: "proxy-auth" })), "the system proxy needs a user name and password");
+  assert.equal(coarseFailure(new Error("connect ECONNREFUSED 10.1.2.3:443")), "the destination refused the connection or could not be reached");
+  tunnel.close();
+});
+
+test("a system proxy lookup that fails (PAC out of reach) goes direct, and the activity log says why", async () => {
+  const echo = await echoServer();
+  const records = [];
+  const frames = [];
+  class FakeSocket {
+    constructor() { this.bufferedAmount = 0; this.readyState = 1; FakeSocket.last = this; queueMicrotask(() => this.onopen?.()); }
+    send(data) { frames.push(Buffer.from(data)); }
+    close() { this.onclose?.(); }
+  }
+  const tunnel = openDesktopTunnel({
+    url: "ws://server.test/tunnel", headers: {}, WebSocketImpl: FakeSocket,
+    resolveProxy: async () => { throw new Error("PAC script failed"); },
+    lookup: async () => [{ address: "93.184.216.34" }],
+    connect: () => new Promise((resolve, reject) => { const s = net.connect({ host: "127.0.0.1", port: echo.address().port }, () => resolve(s)); s.once("error", reject); }),
+    record: entry => records.push(entry),
+  });
+  await tunnel.ready;
+  FakeSocket.last.onmessage({ data: tunnelMessage(TUNNEL.OPEN, 5, Buffer.from(JSON.stringify({ host: "example.test", port: 443 }))) });
+  for (let tries = 0; tries < 100 && !records.length; tries++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(records, [{ host: "example.test", port: 443, ok: true, via: "direct (system proxy lookup failed)" }]);
+  tunnel.close(); echo.close();
+});
+
 // ── Local VM creation on this computer, after the person's yes ──
 
 function fakeRuntime({ image = false, containers = "", fail = {} } = {}) {
@@ -397,9 +522,12 @@ test("Local VM create: the person declines on this computer, nothing is created"
   const runtime = fakeRuntime();
   const asked = [];
   const vm = createLocalVm({ run: runtime.run, workspaceDir: path.join(home, "vm-home"), confirm: async question => { asked.push(question); return false; } });
-  const result = await vm.create({ progress: () => {} });
+  const progress = [];
+  const result = await vm.create({ progress: message => progress.push(message) });
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /declined/);
+  // nothing reported before (or without) the yes: the turn never shows set up
+  assert.deepEqual(progress, []);
   assert.equal(asked[0].runtime, "docker");
   assert.equal(asked[0].needsImage, true);
   assert.equal(runtime.calls.some(argv => ["pull", "build", "run"].includes(argv[1])), false);
@@ -423,7 +551,6 @@ test("Local VM create: yes on this computer, the image is prepared and the VM cr
   assert.ok(runArgv.includes("ALL"), "capabilities dropped");
   assert.equal(fs.statSync(workspaceDir).isDirectory(), true);
   assert.deepEqual(progress.map(message => message.split(" (")[0]), [
-    "Asking on the computer for permission to create the Local VM",
     "Downloading the Local VM desktop image",
     "Building the Local VM desktop image",
     "Creating the Local VM",
