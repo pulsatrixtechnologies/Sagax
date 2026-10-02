@@ -1,0 +1,50 @@
+// Every column resize handle shares `.app-resize-handle`: invisible at rest
+// (the column's hairline border is the edge), a 6px hit area, and a 2px
+// accent line only on hover, drag or keyboard focus.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const css = readFileSync(join(here, "..", "styles.css"), "utf8");
+const rule = (selector: string) => {
+  const start = css.indexOf(`${selector} {`);
+  expect(start, selector).toBeGreaterThanOrEqual(0);
+  return css.slice(start, css.indexOf("}", start));
+};
+
+describe("resize handles", () => {
+  it("are a transparent 6px col-resize hit area with no display of their own", () => {
+    const base = rule(".app-resize-handle");
+    expect(base).toContain("width: 6px");
+    expect(base).toContain("cursor: col-resize");
+    expect(base).toContain("background-color: transparent");
+    expect(base).not.toMatch(/display:/);
+  });
+
+  it("draw a 2px line, transparent at rest, accent on hover, drag and focus", () => {
+    const line = rule(".app-resize-handle::after");
+    expect(line).toContain("width: 2px");
+    expect(line).toContain("background-color: transparent");
+    for (const state of [":hover::after", ":active::after", "[data-resizing]::after", ":focus-visible::after"]) {
+      expect(css).toContain(`.app-resize-handle${state}`);
+    }
+    expect(css).toMatch(/\.app-resize-handle:focus-visible::after \{\s*background-color: color-mix\(in srgb, var\(--color-accent\)/);
+    expect(rule(".app-resize-handle:focus-visible")).toContain("outline: none");
+  });
+
+  it.each(["Sidebar.tsx", "GroupPanel.tsx", "BotSettingsDialog.tsx", "ComputerPanel.tsx"])(
+    "%s uses the shared handle, not a bright bar of its own",
+    (file) => {
+      const source = readFileSync(join(here, file), "utf8");
+      const separators = source.match(/role="separator"[\s\S]*?className=("[^"]*"|\{[^}]*\})/g) ?? [];
+      expect(separators.length).toBeGreaterThan(0);
+      for (const separator of separators) {
+        const className = /className=("[^"]*"|\{[^}]*\})$/.exec(separator)?.[1] ?? "";
+        expect(className).toContain("app-resize-handle");
+        expect(className).not.toMatch(/bg-accent|\bw-3\b|w-1\.5|cursor-col-resize/);
+      }
+    },
+  );
+});

@@ -1,5 +1,6 @@
 // Density is an occasional preference chosen in Settings > Appearance; the
-// Sagax sidebar head keeps only its frequent controls (collapse and New).
+// Sagax sidebar head keeps only its frequent controls (search and New). The
+// edge collapses it: see `sidebarDragTarget` in sidebar-preferences.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,14 +53,46 @@ afterEach(() => {
 
 describe("sidebar header", () => {
   it.each(["comfortable", "compact", "icons"] as const)(
-    "keeps collapse and add but no density menu at %s density",
+    "keeps search and New but no collapse button or density menu at %s density",
     (density) => {
       fixture.density = density;
       const html = render();
-      expect(html).toContain(density === "icons" ? 'aria-label="Expand sidebar"' : 'aria-label="Collapse sidebar to avatars"');
       expect(html).toContain('aria-label="New"');
+      expect(html).not.toContain("data-sidebar-collapse");
+      expect(html).not.toContain('aria-label="Expand sidebar"');
+      expect(html).not.toContain('aria-label="Collapse sidebar to avatars"');
+      expect(html).not.toContain("lucide-panel-left");
       expect(html).not.toContain("Choose sidebar density");
       expect(html).not.toContain('title="Sidebar density"');
+    },
+  );
+
+  it.each(["comfortable", "compact", "icons"] as const)(
+    "draws New as a round button like search, with the new-conversation glyph, at %s density",
+    (density) => {
+      fixture.density = density;
+      const html = render();
+      const news = html.match(/<button[^>]*data-sidebar-new[^>]*>[\s\S]*?<\/button>/g) ?? [];
+      expect(news).toHaveLength(1);
+      expect(news[0]).toContain('title="New"');
+      expect(news[0]).toContain("lucide-square-pen");
+      expect(news[0]).not.toContain("lucide-plus");
+      const search = (html.match(/<button[^>]*data-sidebar-search[^>]*>/g) ?? [])[0] ?? "";
+      const classOf = (tag: string) => /class="([^"]*)"/.exec(tag)?.[1];
+      expect(classOf(news[0] ?? "")).toBe(classOf(search));
+    },
+  );
+
+  it.each(["comfortable", "icons"] as const)(
+    "keeps the edge separator (drag, double-click) at %s density, quiet at rest",
+    (density) => {
+      fixture.density = density;
+      const html = render();
+      const handle = (html.match(/<div[^>]*role="separator"[^>]*aria-label="Resize sidebar"[^>]*>/g) ?? [])[0] ?? "";
+      expect(handle).toContain("app-resize-handle");
+      expect(handle).toContain('aria-valuemin="80"');
+      expect(handle).toContain(density === "icons" ? 'aria-valuenow="80"' : 'aria-valuenow="280"');
+      expect(handle).not.toMatch(/bg-accent|w-3\b/);
     },
   );
 

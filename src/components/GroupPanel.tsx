@@ -169,7 +169,7 @@ export function GroupPanel({
             return next;
           });
         }}
-        className="app-resize-handle absolute inset-y-0 -left-1.5 z-10 hidden w-3 cursor-col-resize focus-visible:bg-accent/40 lg:block"
+        className="app-resize-handle -left-[3px] hidden lg:block"
       />
       {(macInset || browser) && <div className="content-topbar-strip" />}
       <div className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
