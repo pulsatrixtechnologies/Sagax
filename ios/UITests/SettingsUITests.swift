@@ -244,6 +244,59 @@ final class SettingsUITests: XCTestCase {
         waitForExpectations(timeout: 15)
     }
 
+    /// Dim is not only the settings sheet: closing it, the home behind is
+    /// drawn on the Dim background too, and Black puts back exactly #141414.
+    @MainActor
+    func testDimToneAppliesToTheHomeAndBlackRestoresIt() {
+        let app = launch()
+        defer { setTone("black", in: app) }
+        setTone("dim", in: app)
+        XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 10))
+        XCTAssertTrue(eventually(5) { self.homeBackground(app) == 0x1C1C1E }, "home background \(String(homeBackground(app), radix: 16))")
+
+        setTone("black", in: app)
+        XCTAssertTrue(eventually(5) { self.homeBackground(app) == 0x141414 }, "home background \(String(homeBackground(app), radix: 16))")
+    }
+
+    /// Opens Settings > Appearance (from the home or the settings root),
+    /// picks the tone and closes the sheet.
+    @MainActor
+    private func setTone(_ tone: String, in app: XCUIApplication) {
+        if !app.element("settings-close").exists {
+            let open = app.element("home-account")
+            XCTAssertTrue(open.waitForExistence(timeout: 10))
+            open.tap()
+        }
+        let row = app.element("settings-appearance")
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        for _ in 0..<6 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        let option = app.element("tone.\(tone)")
+        XCTAssertTrue(option.waitForExistence(timeout: 5))
+        option.tap()
+        app.element("settings-back").firstMatch.tap()
+        let close = app.element("settings-close")
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.tap()
+        XCTAssertTrue(waitForDisappearance(close, timeout: 5))
+    }
+
+    /// The home's background between the header and the first section
+    /// label, as 0xRRGGBB.
+    private func homeBackground(_ app: XCUIApplication) -> UInt32 {
+        guard let image = app.screenshot().image.cgImage else { return 0 }
+        let scale = CGFloat(image.width) / app.frame.width
+        let x = Int(130 * scale), y = Int(128 * scale)
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let context = CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return 0 }
+        context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
+        return UInt32(pixel[0]) << 16 | UInt32(pixel[1]) << 8 | UInt32(pixel[2])
+    }
+
     private func waitForDisappearance(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
         let gone = NSPredicate(format: "exists == false")
         let expectation = XCTNSPredicateExpectation(predicate: gone, object: element)

@@ -26,16 +26,45 @@ extension Color {
     }
 }
 
+extension UIColor {
+    /// `UIColor(hex: 0x141414)`: the UIKit twin of `Color(hex:)`, same sRGB values.
+    convenience init(hex: UInt32, alpha: CGFloat = 1) {
+        self.init(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: alpha
+        )
+    }
+}
+
 enum Theme {
     // MARK: Surfaces
-    static let bg = Color(hex: 0x141414)
+    //
+    // The surfaces follow Settings > App > Appearance > Black or Dim everywhere
+    // in the app, not only in the screen that changes it: each one is a dynamic
+    // colour that reads the stored tone when it is resolved. Black keeps the
+    // reference values exactly (#141414, #202020, ...); Dim lifts the same
+    // family one step. `ThemeToneRefresh` (applied once at the root) makes
+    // views already on screen draw again when the tone changes.
+
+    /// The app background: #141414 in Black (the parity value), #1C1C1E in Dim.
+    static let bg = toned(black: 0x141414, dim: 0x1C1C1E)
     /// The computer view draws on pure black.
     static let bgComputer = Color(hex: 0x000000)
     /// The "Dim" appearance: a lifted dark grey instead of near-black.
     static let bgDim = Color(hex: 0x1C1C1E)
-    static let card = Color(hex: 0x202020)
-    static let hairline = Color(hex: 0x313131)
-    static let tabHairline = Color(hex: 0x262626)
+    static let card = toned(black: 0x202020, dim: 0x2C2C2E)
+    static let hairline = toned(black: 0x313131, dim: 0x3A3A3C)
+    static let tabHairline = toned(black: 0x262626, dim: 0x303032)
+
+    /// A colour that is `black` under the Black tone and `dim` under Dim,
+    /// resolved from the stored preference each time it is drawn.
+    static func toned(black: UInt32, dim: UInt32) -> Color {
+        let blackColor = UIColor(hex: black)
+        let dimColor = UIColor(hex: dim)
+        return Color(uiColor: UIColor { _ in AppearanceTone.current == .dim ? dimColor : blackColor })
+    }
     /// Glass control fill: about 13% white over `bg`.
     static let glassFill = Color(hex: 0x333333)
     static let glassRimLight = Color(hex: 0x7A7A7A)
@@ -77,9 +106,9 @@ enum Theme {
 
     // MARK: Chat (measure-chat-profile.md §1)
     /// The assistant bubble is a card: #202020, no tail.
-    static let bubbleAssistant = Color(hex: 0x202020)
+    static let bubbleAssistant = toned(black: 0x202020, dim: 0x2C2C2E)
     /// Your own words: one step lighter than the assistant card, same family.
-    static let bubbleUser = Color(hex: 0x2E2E30)
+    static let bubbleUser = toned(black: 0x2E2E30, dim: 0x3A3A3C)
     /// "Today 4:53 PM" between stretches of conversation.
     static let chatTimestamp = Color(hex: 0x555557)
     /// The 5 pt list dot inside a bubble.
@@ -246,7 +275,37 @@ enum AppearanceTone: String, CaseIterable, Identifiable {
     case black, dim
     var id: String { rawValue }
     var label: LocalizedStringKey { self == .black ? "Black" : "Dim" }
-    var background: Color { self == .black ? Theme.bg : Theme.bgDim }
+    /// This tone's background, whatever tone is stored (the Appearance page
+    /// and the settings sheet draw the one being picked).
+    var background: Color { self == .black ? Color(hex: 0x141414) : Theme.bgDim }
+
+    /// The stored tone, read when a `Theme` surface is resolved.
+    static var current: AppearanceTone {
+        UserDefaults.standard.string(forKey: PrefKey.appearanceTone).flatMap(AppearanceTone.init(rawValue:)) ?? .black
+    }
+}
+
+/// Applied once at the root: when the tone changes, everything already on
+/// screen draws again so the dynamic `Theme` surfaces resolve to the new one.
+/// The environment value is what carries the change down the tree; nothing
+/// reads it by name.
+struct ThemeToneRefresh: ViewModifier {
+    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
+
+    func body(content: Content) -> some View {
+        content.environment(\.appearanceTone, AppearanceTone(rawValue: tone) ?? .black)
+    }
+}
+
+private struct AppearanceToneKey: EnvironmentKey {
+    static let defaultValue = AppearanceTone.black
+}
+
+extension EnvironmentValues {
+    var appearanceTone: AppearanceTone {
+        get { self[AppearanceToneKey.self] }
+        set { self[AppearanceToneKey.self] = newValue }
+    }
 }
 
 extension PrefKey {

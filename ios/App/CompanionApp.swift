@@ -42,6 +42,8 @@ struct CompanionApp: App {
                 .id(language)
                 // Settings > App > Appearance: System follows the device, Dark forces it.
                 .preferredColorScheme((AppearanceMode(rawValue: appearance) ?? .system).colorScheme)
+                // Settings > App > Appearance: Black or Dim, everywhere.
+                .modifier(ThemeToneRefresh())
                 .onAppear {
                     OpenMausSharedInbox.removeDirectories(olderThan: 60 * 60)
                     session.connect()
