@@ -51,6 +51,9 @@ import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
 import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg, type OrgSection } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
+import { Eye, UserRound } from "lucide-react";
+import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
+import { groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
 import { PersonAvatar } from "./MessageAuthor";
 import { OrgSectionMenuItems, SectionNameInput, orgSectionMenuItems, type OrgSectionMenuActions } from "./OrgSectionMenu";
 import { SectionMembersDialog } from "./SectionMembersDialog";
@@ -243,7 +246,7 @@ function groupPreview(group: Group, bots: Bot[]): string {
 }
 
 /** A small member stack identifies a group without turning it into a card. */
-function StackedMauses({ members, density }: { members: Bot[]; density: SidebarDensity }) {
+export function StackedMauses({ members, density, viewerId }: { members: Bot[]; density: SidebarDensity; viewerId: string }) {
   const iconOnly = density === "icons";
   // Same footprint as a bot row's avatar (BotListItem: 28 compact, 36
   // comfortable) so group and bot names share one left edge.
@@ -253,7 +256,7 @@ function StackedMauses({ members, density }: { members: Bot[]; density: SidebarD
     const b = members[0];
     return (
       <div className={cn("flex shrink-0 items-center justify-center", slotSize)}>
-        {b ? <BotAvatar bot={b} state="happy" size={singleSize} animated={false} /> : <Users size={24} className="text-ink-secondary" />}
+        {b ? <BotAvatar bot={b} primary={isViewersPrimaryBot(b, viewerId)} primaryRingClassName="ring-sidebar" state="happy" size={singleSize} animated={false} /> : <Users size={24} className="text-ink-secondary" />}
       </div>
     );
   }
@@ -268,7 +271,7 @@ function StackedMauses({ members, density }: { members: Bot[]; density: SidebarD
           hover and selected rows. The faces simply overlap. */}
       {shown.map((b, index) => (
         <span key={b.id} className={cn("absolute rounded-full", spots[index])}>
-          <BotAvatar bot={b} state="idle" size={face} animated={false} />
+          <BotAvatar bot={b} primary={isViewersPrimaryBot(b, viewerId)} primaryRingClassName="ring-sidebar" state="idle" size={face} animated={false} />
         </span>
       ))}
     </div>
@@ -317,13 +320,13 @@ export function GroupListItem({
       onClick={() => dispatch({ type: "select", id: group.id })}
       onContextMenu={(e) => {
         e.preventDefault();
-        if (!peer) onMenu({ groupId: group.id, x: e.clientX, y: e.clientY });
+        onMenu({ groupId: group.id, x: e.clientX, y: e.clientY });
       }}
       // the menu must be reachable without a pointer: Shift+F10, and the
       // dedicated ContextMenu key (whose native event carries no useful
       // coordinates) both open it centered on the row
       onKeyDown={(e) => {
-        if (peer || (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10"))) return;
+        if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
         e.preventDefault();
         const rect = e.currentTarget.getBoundingClientRect();
         onMenu({ groupId: group.id, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
@@ -342,7 +345,7 @@ export function GroupListItem({
     >
       {peer
         ? <span className={cn("flex shrink-0 items-center justify-center", density === "icons" ? "size-12" : density === "compact" ? "size-7" : "size-9")}><PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={density === "icons" ? 44 : density === "compact" ? 28 : 36} /></span>
-        : <StackedMauses members={members} density={density} />}
+        : <StackedMauses members={members} density={density} viewerId={viewerActorId(state.config)} />}
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
           <span className={cn("truncate text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>{rowName}</span>
@@ -462,6 +465,7 @@ function RoomContextMenu({
 
   if (!motion.shown || !group || !shown) return null;
   const isBotChat = Boolean(group.dm);
+  const peerId = group.peopleDm ? peopleDmPeer(group, viewerActorId(state.config), new Map())?.id : undefined;
   const ownsRoom = viewerOwnsGroup(group, state.config);
   const mayDelete = viewerMayDeleteGroup(group, state.config);
   const saveRename = () => {
@@ -478,7 +482,19 @@ function RoomContextMenu({
       style={{ top, left }}
       className={cn("fixed z-40 w-[228px] min-w-[200px] overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
-      {!remoteClient && ownsRoom && (renaming ? (
+      {peerId && (
+        <button
+          onClick={() => {
+            onClose();
+            dispatch({ type: "openPersonPanel", personId: peerId });
+          }}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
+        >
+          <UserRound size={16} className="text-ink" />
+          {t("personPanel.view")}
+        </button>
+      )}
+      {!group.peopleDm && !remoteClient && ownsRoom && (renaming ? (
         <div className="flex items-center gap-1 px-0.5 py-0.5">
           <input
             autoFocus
@@ -530,7 +546,7 @@ function RoomContextMenu({
           {isBotChat ? t("sidebar.room.renameChat") : t("sidebar.room.renameChannel")}
         </button>
       ))}
-      {!remoteClient && !isBotChat && (
+      {!remoteClient && !isBotChat && !group.peopleDm && (
         <button
           onClick={() => {
             onClose();
@@ -552,7 +568,18 @@ function RoomContextMenu({
         <ClipboardCopy size={16} className="text-ink" />
         {t("sidebar.copyConversationId")}
       </button>
-      {!remoteClient && mayDelete && <button
+      <button
+        onClick={() => {
+          if (peerId) hideFromSidebar("person", peerId);
+          else hideFromSidebar("group", group.id);
+          onClose();
+        }}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
+      >
+        <EyeOff size={16} className="text-ink" />
+        {t("sidebar.hidden.hide")}
+      </button>
+      {!group.peopleDm && !remoteClient && mayDelete && <button
         onClick={() => {
           onClose();
           onDelete(group.id);
@@ -1011,9 +1038,12 @@ export function BotContextMenu({
           void navigator.clipboard?.writeText(bot.threadId);
         }),
         divider("d2"),
+        // Only this person's sidebar: the bot, its owner and everyone else
+        // keep it; Archive (below) is the bot-wide action.
+        item(<EyeOff size={16} className="text-ink" />, t("sidebar.hidden.hide"), () => hideFromSidebar("bot", bot.id)),
         item(
-          <EyeOff size={16} className="text-ink" />,
-          "Hide from sidebar",
+          <Archive size={16} className="text-ink" />,
+          t("sidebar.bot.archive"),
           () => onArchive(bot),
           {
             disabled: archiveBlocked,
@@ -1781,6 +1811,41 @@ export function sidebarListedBots(bots: Bot[], viewerId: string, orgMode: boolea
   return bots.map((bot) => (isExternalBot(bot, viewerId) && bot.section && !sections.includes(bot.section) ? { ...bot, section: undefined } : bot));
 }
 
+/** The "Hidden (N)" row at the foot of the list: closed by default; each
+ * entry comes back with Show. */
+function HiddenEntriesRow({ rows }: { rows: ReturnType<typeof hiddenSidebarRows> }) {
+  const [open, setOpen] = useState(false);
+  if (!rows.length) return null;
+  return (
+    <div data-sidebar-hidden className="mt-3 flex flex-col gap-0.5">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] font-medium text-sidebar-ink-secondary hover:text-sidebar-ink"
+      >
+        <ChevronRight aria-hidden="true" size={12} className={cn("transition-transform", open && "rotate-90")} />
+        <EyeOff aria-hidden="true" size={12} />
+        {t("sidebar.hidden.title", { count: rows.length })}
+      </button>
+      {open && rows.map((row) => (
+        <div key={row.key} data-sidebar-hidden-row={row.key} className="flex items-center gap-2 rounded-md py-1 pl-7 pr-1 text-[13px] text-sidebar-ink-secondary hover:bg-sidebar-hover">
+          <span className="min-w-0 flex-1 truncate">{row.name}</span>
+          <button
+            type="button"
+            onClick={() => showInSidebar(row.key)}
+            aria-label={t("sidebar.hidden.showNamed", { name: row.name })}
+            className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[12px] text-sidebar-ink hover:bg-sidebar-selected"
+          >
+            <Eye aria-hidden="true" size={12} />
+            {t("sidebar.hidden.show")}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   open: boolean;
   onClose: () => void;
@@ -1833,6 +1898,20 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // Slice 4: sections are channels on a server signed in with Perspicax.
   const perspicaxOrg = usePerspicaxOrg();
   const orgMode = perspicaxOrg !== null;
+  const sidebarHidden = useSidebarHidden();
+  const sidebarPeople = useOrgPeople();
+  // A new message brings a hidden entry back, per the person's setting
+  // (people on, bots off by default; Settings > Appearance).
+  useEffect(() => {
+    if (!sidebarHidden.items.length) return;
+    const me = orgViewerId(state);
+    const keys = entriesToUnhide(sidebarHidden, {
+      bots: state.bots,
+      groups: state.groups,
+      personGroup: (personId) => state.groups.find((group) => group.peopleDm && groupHiddenKey(group, me) === hiddenKey("person", personId)),
+    });
+    if (keys.length) showInSidebar(keys);
+  }, [sidebarHidden, state.bots, state.groups, state.config]);
   const [orgSections, setOrgSections] = useState<OrgSection[]>([]);
   const [orgMenu, setOrgMenu] = useState<{ name: string | null; id: string | null; x: number; y: number } | null>(null);
   const [sectionEdit, setSectionEdit] = useState<{ mode: "new" } | { mode: "rename"; name: string } | null>(null);
@@ -2050,7 +2129,9 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const q: string = "";
 
   const viewerId = orgViewerId(state);
-  const sidebarBots = sidebarListedBots(state.bots, viewerId, orgMode, state.sections ?? []);
+  const hiddenEntries = hiddenKeySet(sidebarHidden);
+  const sidebarShown = withoutHiddenEntries(state.bots, state.groups, hiddenEntries, viewerId);
+  const sidebarBots = sidebarListedBots(sidebarShown.bots, viewerId, orgMode, state.sections ?? []);
   const pinnedBots = sidebarBots.filter((bot) => !bot.hidden && bot.pinned);
   const matchingBots = sidebarBots
     .filter((b) => !b.hidden)
@@ -2063,7 +2144,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         b.tasks?.some((task) => !task.routineRunId && task.title.toLowerCase().includes(q)) ||
         b.projects?.some((folder) => folder.name.toLowerCase().includes(q)),
     );
-  const visibleGroups = state.groups.filter((g) => !q || g.name.toLowerCase().includes(q) || g.tasks?.some((task) => task.title.toLowerCase().includes(q)));
+  const visibleGroups = sidebarShown.groups.filter((g) => !q || g.name.toLowerCase().includes(q) || g.tasks?.some((task) => task.title.toLowerCase().includes(q)));
   const {
     sectionChiefs,
     sectionedBots,
@@ -2349,7 +2430,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   aria-current={selected ? "page" : undefined}
                   className={cn("flex w-20 min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 pb-1 pt-1.5", selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover")}
                 >
-                  <BotAvatar bot={bot} state="idle" size={density === "icons" ? 36 : 72} animated={false} />
+                  <BotAvatar bot={bot} primary={isViewersPrimaryBot(bot, viewerId)} primaryRingClassName="ring-sidebar" state="idle" size={density === "icons" ? 36 : 72} animated={false} />
                   {density !== "icons" && <span className="w-full truncate text-center text-[11px] leading-4 tracking-[.005em] text-sidebar-ink">{bot.name}</span>}
                   {density !== "icons" && title ? (
                     <span className="max-w-full truncate rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1.5 text-[10px] leading-4 text-sidebar-ink-secondary">{title}</span>
@@ -2478,6 +2559,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             );
           })}
 
+          {density !== "icons" && <HiddenEntriesRow rows={hiddenSidebarRows(sidebarHidden.items, { bots: state.bots, groups: state.groups, viewerId, people: sidebarPeople })} />}
         </div>
       </div>
       <p className="sr-only" aria-live="polite" aria-atomic="true">

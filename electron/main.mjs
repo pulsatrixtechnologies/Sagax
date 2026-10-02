@@ -86,6 +86,7 @@ import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
 import { createDesktopBridge } from "./desktop-bridge.mjs";
+import { applyAppIcon, createAppIconStore, parseAppIconRequest, windowIconPath } from "./app-icon.mjs";
 import { createProxyCredentialStore, createProxyCredentials, proxyPasswordAnswerScript, proxyPasswordPage } from "./proxy-credentials.mjs";
 import { createLocalVm } from "./local-vm.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
@@ -141,6 +142,31 @@ function devBundleHasSystemIcon() {
   } catch {
     return false;
   }
+}
+// Settings > Appearance > App icon (electron/app-icon.mjs). Read lazily:
+// userData is pinned before anything reads it.
+let appIconStoreInstance = null;
+const appIconStore = () => (appIconStoreInstance ??= createAppIconStore(app.getPath("userData")));
+function savedAppIcon() {
+  try { return appIconStore().load(); } catch { return null; }
+}
+/** The icon a new window opens with: the person's custom one on Windows
+ * and Linux (the taskbar shows the window's icon), else the app's. */
+function currentWindowIcon() {
+  return process.platform === "darwin" ? APP_ICON : windowIconPath(savedAppIcon(), process.platform, APP_ICON);
+}
+function showAppIcon(saved) {
+  return applyAppIcon(saved, {
+    platform: process.platform,
+    app,
+    windows: BrowserWindow.getAllWindows(),
+    nativeImage,
+    defaultIconPath: APP_ICON,
+    // A runtime Dock image drops the Liquid Glass rendering of the bundle
+    // icon, so the default is the bundle's own (null), except in an
+    // unpackaged run without a compiled icon, which shows the flat PNG.
+    defaultDockIcon: !app.isPackaged && !devBundleHasSystemIcon() ? APP_ICON : null,
+  });
 }
 let desktopViewerWindow = null;
 let desktopViewerOwner = null;
@@ -1852,7 +1878,7 @@ function openDesktopViewer(owner, rawUrl, rawTitle, contextId) {
     modal: false,
     show: false,
     title,
-    icon: APP_ICON,
+    icon: currentWindowIcon(),
     backgroundColor: "#070707",
     autoHideMenuBar: true,
     webPreferences: {
@@ -2829,7 +2855,7 @@ function createWindow({ deferNavigation = false } = {}) {
     // recolors the native caption-button overlay, otherwise a saved light
     // skin still flashes the Midnight-black block on every cold start.
     show: !waitsForSkinSync && !startupScreen,
-    icon: APP_ICON,
+    icon: currentWindowIcon(),
     backgroundColor: "#070707",
     autoHideMenuBar: process.platform !== "darwin",
     ...windowChromeOptions(process.platform),
@@ -3235,6 +3261,24 @@ ipcMain.handle("desktop:save-file", localOnly("desktop:save-file", async (event,
     shell.showItemInFolder(choice.filePath);
     return choice.filePath;
   });
+}));
+
+// Settings > Appearance > App icon. The page draws every icon through the
+// system template and sends PNGs; nothing here reads a file the page names.
+ipcMain.handle("app-icon:get", desktopUiOnly("app-icon:get", () => {
+  const saved = savedAppIcon();
+  return { platform: process.platform, id: saved?.id ?? null, updatedAt: saved?.updatedAt ?? null };
+}));
+ipcMain.handle("app-icon:set", desktopUiOnly("app-icon:set", (_event, request) => {
+  const parsed = parseAppIconRequest(request);
+  const saved = appIconStore().save(parsed, { ico: process.platform === "win32" });
+  showAppIcon(saved);
+  return { platform: process.platform, id: saved?.id ?? null, updatedAt: saved?.updatedAt ?? null };
+}));
+ipcMain.handle("app-icon:reset", desktopUiOnly("app-icon:reset", () => {
+  appIconStore().clear();
+  showAppIcon(null);
+  return { platform: process.platform, id: null, updatedAt: null };
 }));
 
 // The renderer owns the skin, including the Windows caption buttons it draws
@@ -4116,7 +4160,11 @@ app.whenReady().then(async () => {
   // system icon. Unpackaged dev runs get the same compiled icon from
   // scripts/dev-desktop.mjs; the flat PNG is only the fallback
   // when that script could not run (no Xcode actool).
-  if (process.platform === "darwin" && !app.isPackaged && !devBundleHasSystemIcon()) app.dock.setIcon(APP_ICON);
+  // The person's custom app icon (Settings > Appearance) wins over both;
+  // it is their choice to trade the Liquid Glass rendering for it.
+  const customAppIcon = savedAppIcon();
+  if (customAppIcon) { try { showAppIcon(customAppIcon); } catch (error) { console.warn("[app-icon] restore failed", error); } }
+  else if (process.platform === "darwin" && !app.isPackaged && !devBundleHasSystemIcon()) app.dock.setIcon(APP_ICON);
   startupPhase("reading saved credentials");
   secureCredentials = await loadSecureCredentials();
   // The AssemblyAI key only fed the removed Teach a skill recorder, and its

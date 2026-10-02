@@ -1,6 +1,6 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, Clock, Mic, Paperclip, Square, Target, TriangleAlert, Users, X } from "lucide-react";
+import { ArrowUp, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
 import { api, useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -562,7 +562,6 @@ export function Composer({
   const viewerId = state.config?.viewer?.principalId ?? null;
   const orgFullAccess = orgFullAccessFor(perspicaxOrg, modeBot, viewerId);
   const fullAccessAvailable = trustedThreadAccess || orgFullAccess === "allowed";
-  const modeIsFull = Boolean(modeBot && approvalModeFor(modeBot) === "full");
   const uploadImage = useCallback(async (file: File): Promise<Attachment | null> => {
     const optimistic = optimisticImageAttachment(file);
     if (!optimistic) return null;
@@ -1075,17 +1074,6 @@ export function Composer({
                   orgFullAccess={orgFullAccess}
                   onManageCommandAllowlist={ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
                 />
-              )}
-              {modeBot && approvalEngine && !remoteClient && modeIsFull && (
-                <span
-                  role="status"
-                  data-full-access-badge
-                  title={t("approvalMode.full.badgeTitle")}
-                  className="flex h-6 shrink-0 items-center gap-1 rounded-full border border-danger/35 bg-danger/10 px-2 text-[11px] font-medium text-danger"
-                >
-                  <TriangleAlert size={12} aria-hidden="true" />
-                  {t("approvalMode.full.badge")}
-                </span>
               )}
               {modeBot && !remoteClient && (
                 <PlaceChip

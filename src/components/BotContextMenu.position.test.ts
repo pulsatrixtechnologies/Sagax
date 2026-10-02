@@ -104,3 +104,11 @@ describe("bot actions menu viewport placement", () => {
     expect(negative.style).toEqual({ top: "8px", left: "8px" });
   });
 });
+
+describe("bot actions menu: hide versus archive", () => {
+  it("offers Hide from sidebar (this person only) beside Archive (the bot)", () => {
+    const html = render();
+    expect(html).toContain(">Hide from sidebar</button>");
+    expect(html).toContain(">Archive</button>");
+  });
+});

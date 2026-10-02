@@ -64,3 +64,38 @@ describe("/api/org/routine-delegation", () => {
     expect(await answer(alice, "DELETE")).toMatchObject({ status: 200, body: { revoked: true } });
   });
 });
+
+describe("/api/org/directory manageUrl (person panel)", () => {
+  async function directoryAs(role: "admin" | "member") {
+    const out: { body?: { people: { principalId: string; manageUrl?: string }[] } } = {};
+    const routes = createPerspicaxOrgRoutes({
+      issuer: "https://px.example.test/",
+      orgName: "Acme",
+      directory: () => ({
+        people: () => [{ sub: "u 1", login: "ada", name: "Ada Example", email: "ada@example.test", role: "employee", status: "active" }],
+        state: () => ({ state: "ok" }),
+        serverId: () => undefined,
+      }) as never,
+      bySubject: () => ({ id: "pr_ada" }) as never,
+      viewerRole: () => role,
+      settings: () => ({ orgKeyConfigured: false, allowFullAccess: true }),
+      pendingAdminApprovals: () => [],
+    });
+    const ctx = {
+      req: {}, res: { setHeader: () => {} }, url: new URL("http://127.0.0.1/api/org/directory"), path: "/api/org/directory", method: "GET",
+      auth: session({ principalId: "pr_viewer" }),
+      json: (_res: unknown, _status: number, body: unknown) => { out.body = body as typeof out.body; },
+      readBody: async () => ({}),
+    } as unknown as RouteContext;
+    await routes(ctx);
+    return out.body!.people;
+  }
+
+  it("gives an admin each person's Perspicax console page", async () => {
+    expect((await directoryAs("admin"))[0]).toMatchObject({ principalId: "pr_ada", manageUrl: "https://px.example.test/console/users/u%201" });
+  });
+
+  it("never sends the console page to a member", async () => {
+    expect((await directoryAs("member"))[0]).not.toHaveProperty("manageUrl");
+  });
+});

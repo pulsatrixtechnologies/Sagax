@@ -663,6 +663,27 @@ of that thread. The owner's notification of such a run names no thread, only
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
 
+## Person panel and hidden sidebar entries
+
+A person of the organization opens in the right panel like a bot
+(`src/components/PersonPanel.tsx`, store `personPanelId`, action
+`openPersonPanel`): from a direct conversation's header or context menu, a
+group's person label, the group's People list and another person's name in
+a bot chat. It shows only the directory's fields (name, login, email,
+avatar, role, teams), the groups the viewer shares with them, their bots the
+viewer already sees, Message, Hide/Show, and for an admin "Manage in
+Perspicax": `GET /api/org/directory` adds `manageUrl`
+(`<issuer>/console/users/<sub>`) for admins only. Nothing from a private
+thread. Hiding is per person and view-only (`src/lib/sidebar-hidden.ts`,
+key `sagax.sidebarHidden.v1`, synced by `/api/me/preferences` on an
+organization server): bots by id, groups by id, people by principal; still
+reached by search, the palette and the To: picker; a "Hidden (N)" row and
+Settings > Appearance show them back. A new unread message unhides people
+and groups by default, bots only when the person turns it on. Archive stays
+the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
+`src/lib/person-panel.test.ts`, `PersonPanel.test.ts`,
+`src/state/person-panel.reducer.test.ts`.
+
 ## Computer tab and Local VM on an organization server
 
 The Computer tab (`src/components/computer/OrgComputerTab.tsx`) draws the

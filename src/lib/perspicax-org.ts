@@ -34,6 +34,8 @@ export interface OrgDirectoryPerson {
   avatarUrl?: string;
   /** A Perspicax service account: never someone to write to. */
   service?: true;
+  /** Admins only: this person's page in the Perspicax console. */
+  manageUrl?: string;
 }
 
 let peoplePending: Promise<Map<string, OrgDirectoryPerson>> | null = null;

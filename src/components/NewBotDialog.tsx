@@ -26,22 +26,41 @@ import { FullAccessWarning } from "./FullAccessWarning";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { SharePresetDialog } from "./SharePresetDialog";
 import { servedPage } from "@/lib/desktop";
+import { viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
 
 const SECTIONS = ["Identity", "Soul", "Skills", "Memory", "Routines", "Access", "Model", "Permissions", "Voice & alerts"] as const;
 type Section = typeof SECTIONS[number];
 
 /** Companion pairing permits creation, but not reading host defaults or
- * patching host settings. Keep its existing single-request creation flow. */
-export function CompanionNewBotDialog() {
+ * patching host settings. Keep its existing single-request creation flow.
+ * Cancel, Escape and the backdrop always close it, through the caller's
+ * `onClose` when one opened it (Settings, the team map) and through the
+ * store's New bot flag otherwise. */
+export function CompanionNewBotDialog({ onClose, onCreated, section, preserveSelection }: {
+  onClose?: () => void; onCreated?: (bot: Bot) => void | Promise<void>; section?: string; preserveSelection?: boolean;
+} = {}) {
   const { state, dispatch } = useStore();
   const dialog = useRef<HTMLDivElement>(null);
-  const close = () => dispatch({ type: "toggleNewBot", open: false });
+  const closeRef = useRef(() => {});
+  closeRef.current = () => {
+    if (onClose) onClose();
+    else dispatch({ type: "toggleNewBot", open: false });
+  };
+  const close = () => closeRef.current();
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog.current?.focus();
-    return () => { if (opener?.isConnected) opener.focus(); };
+    // On the window, not the dialog: Escape still closes it when focus
+    // left the dialog (a click on the backdrop, a disabled button).
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault(); event.stopPropagation(); closeRef.current();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => { window.removeEventListener("keydown", onKey, true); if (opener?.isConnected) opener.focus(); };
   }, []);
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+  return <div data-dialog-backdrop className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+    onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t("newBot.create")} tabIndex={-1}
       className="w-full max-w-sm rounded-[14px] border border-border bg-elevated p-5 text-ink"
       onKeyDown={event => {
@@ -53,11 +72,40 @@ export function CompanionNewBotDialog() {
           else if (!event.shiftKey && document.activeElement === buttons.at(-1)) { event.preventDefault(); buttons[0]?.focus(); }
         }
       }}>
-      <h2 className="mb-4 text-[17px] font-semibold">{t("newBot.create")}</h2>
+      <h2 className="mb-2 text-[17px] font-semibold">{t("newBot.create")}</h2>
+      <p data-new-bot-quick className="mb-4 text-[13px] leading-[18px] text-ink-secondary">{t("newBot.quickCreate")}</p>
       <div className="flex justify-end gap-2">
         <button type="button" onClick={close} className="ui-button">{t("common.cancel")}</button>
-        <button type="button" disabled={state.botCreationPending} onClick={() => dispatch({ type: "newBot", onCreated: close })}
+        <button type="button" disabled={state.botCreationPending} onClick={() => dispatch({ type: "newBot", ...(section !== undefined ? { section } : {}), ...(preserveSelection ? { preserveSelection } : {}), onCreated: bot => {
+          close();
+          if (bot && onCreated) void Promise.resolve(onCreated(bot)).catch(cause => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+        } })}
           className="ui-button ui-button-primary disabled:opacity-40">{t("newBot.create")}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+/** Shown instead of New bot to a person who may only use the bots shared
+ * with them (Perspicax `sagax_bots: use`): never an empty creation form. */
+export function BotsReadOnlyDialog({ onClose }: { onClose: () => void }) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault(); event.stopPropagation(); closeRef.current();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+  return <div data-dialog-backdrop className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+    onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div role="dialog" aria-modal="true" aria-label={t("sidebar.newBot")} tabIndex={-1}
+      className="w-full max-w-sm rounded-[14px] border border-border bg-elevated p-5 text-ink">
+      <p role="note" data-bots-read-only className="mb-4 text-[13px] leading-[18px] text-ink-secondary">{t("bots.readOnly.notice")}</p>
+      <div className="flex justify-end">
+        <button type="button" autoFocus onClick={onClose} className="ui-button">{t("common.close")}</button>
       </div>
     </div>
   </div>;
@@ -65,12 +113,20 @@ export function CompanionNewBotDialog() {
 
 /** Someone signed in to another person's server (an organization member)
  * gets the same single-request creation: the host's defaults and settings
- * are not theirs to read or change. */
+ * are not theirs to read or change. A read-only person gets the notice,
+ * never the form. Every route keeps the caller's `onClose`. */
 export function NewBotDialog(props: Parameters<typeof LocalNewBotDialog>[0] = {}) {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
+  const close = props.onClose ?? (() => dispatch({ type: "toggleNewBot", open: false }));
+  if (viewerBotsReadOnly(state.config) || !viewerCanCreateBots(state.config)) return <BotsReadOnlyDialog onClose={close} />;
   const guestOfServer = state.config?.viewer?.operator === false;
-  return (typeof window !== "undefined" && window.ogb?.remoteClient?.active) || guestOfServer
-    ? <CompanionNewBotDialog /> : <LocalNewBotDialog {...props} />;
+  if ((typeof window !== "undefined" && window.ogb?.remoteClient?.active) || guestOfServer) {
+    // The host's defaults for new bots are not a guest's to edit: there is
+    // no form to show, so close rather than open an empty dialog.
+    if (props.defaultsMode) return null;
+    return <CompanionNewBotDialog onClose={props.onClose} onCreated={props.onCreated} section={props.section} preserveSelection={props.preserveSelection} />;
+  }
+  return <LocalNewBotDialog {...props} />;
 }
 
 export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCreated, preserveSelection = false }: {
@@ -367,8 +423,19 @@ function DraftRoutines({ draft }: { draft: BotCreationDraft }) {
 }
 
 export function DefaultBotSettings() {
+  const { state } = useStore();
   const [open, setOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
+  // A read-only person reads why instead of a button that would open an
+  // empty form. A guest of someone else's server (an organization member,
+  // a companion) cannot read or change the host's defaults: no row.
+  if (viewerBotsReadOnly(state.config)) {
+    return <div className="flex items-center justify-between gap-4 px-3.5 py-2.5"><span className="text-[13px] leading-[18px] text-ink">{t("newBot.defaults")}</span>
+      <p role="note" data-bots-read-only className="text-right text-[12.5px] leading-snug text-ink-secondary">{t("bots.readOnly.notice")}</p>
+    </div>;
+  }
+  const guest = state.config?.viewer?.operator === false || (typeof window !== "undefined" && window.ogb?.remoteClient?.active === true);
+  if (guest) return null;
   return <>
     <div className="flex items-center justify-between gap-4 px-3.5 py-2.5"><span className="text-[13px] leading-[18px] text-ink">{t("newBot.defaults")}</span>
       <div className="flex shrink-0 gap-2">

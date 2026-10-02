@@ -11,6 +11,7 @@ import { initAnalytics } from "@/lib/analytics";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatView } from "@/components/ChatView";
 import { GroupView } from "@/components/GroupView";
+import { PersonPanel } from "@/components/PersonPanel";
 import { BotSettingsDialog } from "@/components/BotSettingsDialog";
 import { RemoteAgentSettingsPanel } from "@/components/RemoteAgentSettingsPanel";
 import { NewBotDialog } from "@/components/NewBotDialog";
@@ -383,6 +384,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
         <BotSettingsDialog key={`panel:${bot.id}`} bot={bot} onOpenVmWorkspace={openLocalVmWorkspace} />
       )}
       {remoteClient && state.settingsOpen && bot && <RemoteAgentSettingsPanel bot={bot} />}
+      {state.personPanelId && <PersonPanel key={`person:${state.personPanelId}`} personId={state.personPanelId} />}
       {remoteClient && state.computerOpen && bot && (
         <RemoteDesktopPanel key={`computer:${bot.id}`} bot={bot} />
       )}

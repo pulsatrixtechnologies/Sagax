@@ -42,6 +42,7 @@ import { UsageSection } from "./UsageSection";
 import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { WorkspacesSection, workspacesAvailable } from "./WorkspacesSection";
 import { SkinPicker } from "./SkinPicker";
+import { SidebarHiddenSettings } from "./SidebarHiddenSettings";
 import { SKINS, readSkin } from "@/lib/skins";
 import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
@@ -54,6 +55,7 @@ import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
 import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
 import { ThreadCleanupSettings } from "./ThreadCleanupSettings";
 import { DefaultBotSettings } from "./NewBotDialog";
+import { AppIconPicker, appIconAvailable } from "./settings/AppIconPicker";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
 import { CompanyBackupSettings } from "./CompanyBackupSettings";
 import { cn } from "@/lib/cn";
@@ -77,7 +79,7 @@ export const SECTIONS: Array<{
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "cloudAccount", labelKey: "settings.section.cloudAccount", icon: User, keywords: ["cloud", "account", "personal", "sign in", "pro", "subscription", "billing"] },
-  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating"] },
+  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
   { id: "decisionModel", labelKey: "settings.section.decisionModel", icon: Zap, keywords: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"] },
@@ -1171,11 +1173,22 @@ export function SettingsModal() {
                 >
                   <SkinPicker />
                 </Card>
+                {appIconAvailable() && (
+                  <Card
+                    collapsible
+                    cardId="appearance.appIcon"
+                    title={t("settings.appIcon.title")}
+                    subtitle={t("settings.appIcon.subtitle")}
+                  >
+                    <AppIconPicker />
+                  </Card>
+                )}
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <FontRow />
                   <SidebarDensityRow />
                   <SidebarLogoRow />
                   <ShowThreadsRow />
+                  <SidebarHiddenSettings />
                   <NotificationSoundsRow />
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
