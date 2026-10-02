@@ -311,6 +311,17 @@ export function cancelSteeredMessage(botId: string, messageId: string, expectedT
   return false;
 }
 
+/** Cancel everything waiting for one thread (a parallel task stopped before
+ * it started). Returns how many lines were dropped. */
+export function cancelThreadQueue(botId: string, threadId: string): number {
+  const entry = queues.get(threadId);
+  if (!entry || entry.botId !== botId) return 0;
+  queues.delete(threadId);
+  settleChatFollowups(entry.items.map((item) => item.messageId), "cancelled");
+  changed();
+  return entry.items.length;
+}
+
 /** Atomically lift a thread's whole queue out of the map for a live steer.
  * The entry leaves first so a settle that starts draining while the adapter
  * is still thinking can never also dispatch the same words as a follow-up

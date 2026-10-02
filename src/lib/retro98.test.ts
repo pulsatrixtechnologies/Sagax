@@ -94,7 +94,7 @@ describe("/hibou98 in the composer", () => {
 
   it("is intercepted before the composer dispatches a send", () => {
     const composer = readFileSync(join(here, "../components/Composer.tsx"), "utf8");
-    const send = composer.slice(composer.indexOf("const send = () => {"));
+    const send = composer.slice(composer.indexOf("const send = ("));
     const consume = send.indexOf("consumeRetroCommand(text, attachments.length)");
     expect(consume).toBeGreaterThan(-1);
     expect(consume).toBeLessThan(send.indexOf('type: "send"'));

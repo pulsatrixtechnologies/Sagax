@@ -101,6 +101,9 @@ export type RuntimeEvent = RuntimeEventBase &
          * edit), as the tool named them. Recorded on the activity message so
          * the conversation's Files tab can list them once the call succeeds. */
         files?: string[];
+        /** A call a sub-agent made: the item id of the call that started
+         * that sub-agent (Claude's Agent tool), so its steps nest under it. */
+        parentItemId?: string;
       }
     | { type: "item.updated"; itemType: "tool" | "reasoning"; tokens?: number | null }
     | { type: "item.completed"; itemType: "tool"; ok: boolean; output?: string }

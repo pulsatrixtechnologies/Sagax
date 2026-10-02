@@ -167,6 +167,7 @@ import {
   roomTurnTimeoutMinutes,
   threadEventLogMaxBytes,
   maxConcurrentBotThreads,
+  maxParallelTasksPerPerson,
   threadEventLogRetentionDays,
   saveConfig,
   showToolCallsEnabled,
@@ -286,6 +287,7 @@ import { _loadPending, buildDelegationFailurePrompt, buildDelegationRevivalPromp
 import {
   cancelSteeredMessage,
   drainSteeredMessages,
+  cancelThreadQueue,
   hasQueuedSteeredMessages,
   holdSteeredQueue,
   onSteeredQueueChange,
@@ -297,6 +299,18 @@ import {
   restoreSteeredMessages,
   settleHeldSteeredQueue,
 } from "./steer-queue.ts";
+import {
+  parallelAdmission,
+  parallelBlocked,
+  parallelBrief,
+  parallelOutcome,
+  parallelPending,
+  parallelResultText,
+  parallelTaskTitle,
+  prepareParallelWorkspace,
+  type BriefLine,
+} from "./parallel-tasks.ts";
+import { isBusySendMode, type BusySendMode, type ParallelTaskRef, type ParallelTaskState } from "../shared/parallel-tasks.ts";
 import {
   cancelChannelMessage,
   drainChannelMessages,
@@ -8770,7 +8784,8 @@ bus.subscribe((event: RuntimeEvent) => {
         const message = pushMessage({
           role: "bot",
           kind: "activity",
-          tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}) },
+          tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}),
+            ...(event.parentItemId ? { parentItemId: event.parentItemId } : {}) },
           // attributed to its turn so the digest can count it
           turnId: liveTurnId,
         });
@@ -9120,6 +9135,8 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       const reply = lastReply.get(event.threadId) ?? "";
       lastReply.delete(event.threadId);
+      // A parallel task's first turn answers in the conversation it came from.
+      settleParallelTask(event.threadId, { ok: event.ok, reply, why: event.stopReason ?? undefined });
       // A run that broke — not one the person stopped, and not a routine's,
       // which reports through its own failure path — is the Primary Bot's to see.
       // A lazy computer-claim rejection already reported its failure and
@@ -10130,7 +10147,8 @@ function drainQueuedSends() {
     new Promise<void>((resolve, reject) => {
       // The drained turn is booked to whoever sent the first waiting line.
       void startTurn(botId, prompt, {
-        threadId, userMessage, excludeMessageIds: excludeIds, unattended, onTurnSettled: resolve,
+        threadId, userMessage, excludeMessageIds: excludeIds, unattended,
+        onTurnSettled: () => { resolve(); settleParallelFallback(threadId); },
         trigger: queuedTurnTrigger(head),
         // the first waiting line's speaker, as it was when queued; rows
         // queued before speakers were kept read from their provenance
@@ -10143,6 +10161,7 @@ function drainQueuedSends() {
             ok: false,
           },
         });
+        settleParallelTask(threadId, { ok: false, reply: "", why: err instanceof Error ? err.message : String(err) });
         resolve();
         // M2: only this group left the queue, and a turn that never
         // started publishes no completion to wake the groups behind it.
@@ -10152,7 +10171,7 @@ function drainQueuedSends() {
     // Provider completion can precede its dispatch promise: keep the queue
     // intact until that exact handshake releases its runtime-only claim.
     (botId, threadId) => threadBusy(botId, threadId) || botAtThreadCapacity(botId) || Boolean(activeGroupTurnForBot(botId))
-      || parksBehindCoordination(botId, threadId),
+      || parksBehindCoordination(botId, threadId) || parallelTaskBlocked(botId, threadId),
   );
   // Asides always drain after person follow-ups (see drainAsideLane): the
   // steer drain above can make a thread busy again, deferring its asides
@@ -10240,6 +10259,252 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
   }
   const message = await startTurn(botId, text, { threadId, replyTo, sendId, sender, trigger, speaker, ...(voiceCall ? { voiceCall } : {}) });
   return { ok: true as const, threadId, message };
+}
+
+// ── parallel tasks (shared/parallel-tasks.ts, server/parallel-tasks.ts) ──
+// A request sent while the conversation is busy can run as its own task: a
+// thread of the same bot, linked to the conversation, whose first turn's
+// result is posted back there as a reply to the request.
+
+/** Parallel tasks stopped by a person before their result was posted. */
+const parallelStops = new Set<string>();
+
+/** The parallel task of a thread still owed a result, with its bot. */
+function pendingParallelTask(threadId: string): { bot: BotRecord; task: TaskRecord } | null {
+  const bot = store.botByThread(threadId);
+  const task = bot ? store.taskByThread(bot.id, threadId) : undefined;
+  return bot && task && parallelPending(task) ? { bot, task } : null;
+}
+
+/** A waiting parallel task holds its slot until its person has one free. */
+function parallelTaskBlocked(botId: string, threadId: string): boolean {
+  const task = store.taskByThread(botId, threadId);
+  if (!task?.parallelOf) return false;
+  return parallelBlocked({ task, tasks: store.tasks(botId), limit: maxParallelTasksPerPerson(cfg), busy: (id) => threadBusy(botId, id) });
+}
+
+function patchParallelCard(parentThreadId: string, cardId: string | undefined, patch: Partial<ParallelTaskRef>) {
+  if (!cardId) return;
+  const card = store.messagesFor(parentThreadId).find((message) => message.id === cardId);
+  if (!card?.parallelTask) return;
+  store.patchMessage(parentThreadId, cardId, { parallelTask: { ...card.parallelTask, ...patch } });
+}
+
+/** Start (or queue) a parallel task for `text`, asked in `threadId`. */
+async function startParallelTask(input: {
+  botId: string;
+  threadId: string;
+  text: string;
+  replyTo?: Message;
+  sendId?: string;
+  sender?: ResolvedSender;
+  trigger?: UsageTrigger;
+  speaker?: TurnSpeaker;
+  /** The asker's key for the per-person limit (absent: the operator). */
+  principalId?: string;
+  /** The bot itself opened it (start_thread with report_back). */
+  byBot?: boolean;
+  /** The task's name, when the bot gave one. */
+  title?: string;
+  /** Org audit actor. */
+  auth?: RequestAuth;
+}): Promise<{ ok: true; threadId: string; message: Message; parallel: { threadId: string; title: string; state: ParallelTaskState; cardMessageId: string } }> {
+  const bot = store.bot(input.botId);
+  const parentTask = bot ? store.taskByThread(bot.id, input.threadId) : undefined;
+  if (!bot || !parentTask) throw Object.assign(new Error("the target task no longer exists"), { status: 409 });
+  if (parentTask.parallelOf && !input.byBot) {
+    // A task of a task would answer into a conversation nobody is reading.
+    throw Object.assign(new Error("this conversation is already a parallel task; send it here or in the main conversation"), { status: 409, code: "parallel_nested" });
+  }
+  const limit = maxParallelTasksPerPerson(cfg);
+  const admission = parallelAdmission({
+    tasks: store.tasks(bot.id),
+    principalId: input.principalId,
+    limit,
+    queued: (id) => !threadBusy(bot.id, id) && hasQueuedSteeredMessages(bot.id, id),
+  });
+  if (admission.action === "refuse") {
+    throw Object.assign(new Error(`you already have ${admission.running} parallel tasks running and ${admission.waiting} waiting on this bot; wait for one to finish`), { status: 409, code: "parallel_limit" });
+  }
+  const title = input.title?.trim() || parallelTaskTitle(input.text);
+  const inherited = parentThreadModel(bot.id, input.threadId);
+  const child = store.createTask(bot.id, title, false, parentTask.projectId, undefined,
+    inherited.approvalMode ?? (approvalModeFor(parentTask) === "full" ? "full" : undefined),
+    parentTask.ownerPrincipalId, inherited.modelSelection ?? parentTask.modelSelection);
+  if (!child) throw Object.assign(new Error("couldn't create the parallel task"), { status: 500 });
+  // Where it works: a worktree of the conversation's repository, else the
+  // same folder (the brief says it is shared), else its own task folder.
+  const parentProjected = store.projectBotForTask(bot.id, input.threadId) ?? bot;
+  const parentCwd = parentTask.cwd !== undefined ? parentTask.cwd : parentProjected.cwd;
+  const workspace = prepareParallelWorkspace({
+    parentCwd, privateRoot: join(DATA_DIR, "task-workspaces"), root: join(DATA_DIR, "parallel-worktrees"), botId: bot.id, threadId: child.threadId,
+  });
+  // A worktree is the task's folder; otherwise it keeps its own private one
+  // (never the conversation's: two turns never share a working folder).
+  store.patchTask(bot.id, child.threadId, { cwd: workspace.kind === "worktree" ? workspace.cwd : ensureTaskWorkspace(bot.id, child.threadId) });
+  const now = Date.now();
+  // The request line, in the conversation the person is reading. A task the
+  // bot opened has no person's words to show: its card is the anchor.
+  const request = input.byBot ? null : store.appendMessage(input.threadId, {
+    role: "user",
+    kind: "text",
+    text: input.text,
+    replyToId: input.replyTo?.id,
+    sendId: input.sendId,
+    ...(input.sender ? { sender: input.sender } : {}),
+    parallelTask: { threadId: child.threadId, title, requestMessageId: "", role: "request" },
+  });
+  if (request) {
+    store.patchMessage(input.threadId, request.id, {
+      parallelTask: { threadId: child.threadId, title, requestMessageId: request.id, role: "request" },
+    });
+  }
+  const card = store.appendMessage(input.threadId, {
+    role: "bot",
+    kind: "activity",
+    tool: { name: `Parallel task #${title}`, ok: true },
+    threadRef: { botId: bot.id, threadId: child.threadId, title },
+    parallelTask: { threadId: child.threadId, title, requestMessageId: request?.id ?? "", role: "card", state: "queued", startedAt: now },
+  });
+  const anchorId = request?.id ?? card.id;
+  if (!request) patchParallelCard(input.threadId, card.id, { requestMessageId: card.id });
+  store.setTaskParallelOf(bot.id, child.threadId, {
+    threadId: input.threadId, messageId: anchorId, cardMessageId: card.id, at: now,
+    ...(input.principalId ? { principalId: input.principalId } : {}),
+    ...(input.byBot ? { byBot: true } : {}),
+  });
+  if (IDENTITY.kind === "perspicax") {
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      action: "task.parallel_start",
+      target: auditBotTarget(bot.id),
+      after: { threadId: child.threadId, conversation: input.threadId, ...(input.byBot ? { byBot: true } : {}) },
+      actor: input.auth ? orgAuditActor(input.auth) : { kind: "worker" },
+    });
+  }
+  const recent: BriefLine[] = store.activePath(input.threadId)
+    .filter((message) => message.id !== anchorId && message.kind === "text" && message.text?.trim()
+      && (message.role === "user" || message.role === "bot") && !message.parallelTask)
+    .slice(-6)
+    .map((message) => ({ role: message.role === "user" ? "user" as const : "bot" as const, text: message.text!, ...(message.sender?.name ? { name: message.sender.name } : {}) }));
+  const brief = parallelBrief({
+    request: promptWithReply(input.text, input.replyTo, input.sender?.name || cfg.profile?.name?.trim() || "User"),
+    conversationTitle: parentTask.title,
+    recent,
+    workspace,
+    personName: input.sender?.name || cfg.profile?.name?.trim() || "The person",
+    byBot: input.byBot,
+  });
+  const reply = (state: ParallelTaskState) => ({
+    ok: true as const, threadId: input.threadId, message: store.messagesFor(input.threadId).find((m) => m.id === anchorId) ?? request ?? card,
+    parallel: { threadId: child.threadId, title, state, cardMessageId: card.id },
+  });
+  const mustQueue = admission.action === "queue" || botAtThreadCapacity(bot.id) || Boolean(activeGroupTurnForBot(bot.id));
+  if (mustQueue) {
+    queueSteeredMessage(bot.id, child.threadId, input.text, {
+      prompt: brief, reason: "capacity", sender: input.sender, trigger: input.trigger, speaker: input.speaker,
+      ...(input.byBot ? { unattended: isUnattended(bot.id, input.threadId) } : {}),
+    });
+    return reply("queued");
+  }
+  const userMessage = store.appendMessage(child.threadId, {
+    role: "user", kind: "text", text: input.text, ...(input.sender ? { sender: input.sender } : {}),
+  });
+  try {
+    await startTurn(bot.id, brief, {
+      threadId: child.threadId, userMessage, excludeMessageIds: [userMessage.id],
+      sender: input.sender, trigger: input.trigger, speaker: input.speaker,
+      ...(input.byBot ? { unattended: isUnattended(bot.id, input.threadId) } : {}),
+      onTurnSettled: () => settleParallelFallback(child.threadId),
+    });
+  } catch (error) {
+    settleParallelTask(child.threadId, { ok: false, reply: "", why: error instanceof Error ? error.message : String(error) });
+    return reply("failed");
+  }
+  patchParallelCard(input.threadId, card.id, { state: "running" });
+  return reply("running");
+}
+
+/** A parallel task's first turn settled: post its result into the
+ * conversation it answers, as a reply to the request, once. */
+function settleParallelTask(threadId: string, outcome: { ok: boolean; reply: string; why?: string }) {
+  const pending = pendingParallelTask(threadId);
+  if (!pending) return;
+  const { bot, task } = pending;
+  const link = task.parallelOf!;
+  const stopped = parallelStops.delete(threadId) || outcome.why === "interrupted";
+  const state = parallelOutcome({ ok: outcome.ok, stopped });
+  const endedAt = Date.now();
+  store.setTaskParallelOf(bot.id, threadId, { ...link, reportedAt: endedAt, outcome: state });
+  const parent = store.taskByThread(bot.id, link.threadId);
+  if (!parent) return;
+  const request = store.messagesFor(link.threadId).find((message) => message.id === link.messageId);
+  const ref: ParallelTaskRef = {
+    threadId, title: task.title, requestMessageId: link.messageId, role: "result", state, endedAt,
+  };
+  store.appendMessage(link.threadId, {
+    role: "bot",
+    kind: "text",
+    text: redactSecretsInText(parallelResultText({ state, reply: outcome.reply, why: outcome.why })),
+    ...(request?.kind === "text" ? { replyToId: request.id } : {}),
+    parallelTask: ref,
+  });
+  patchParallelCard(link.threadId, link.cardMessageId, { state, endedAt });
+  // The conversation's next turn reads what its session has not seen: the
+  // request and this result.
+  markTaskContextExternallyUpdated(bot, link.threadId);
+  // A finished task folds out of the default sidebar list (never deleted);
+  // a failed or stopped one stays where the person can see it.
+  if (state === "done" && !task.closedBy) {
+    store.setTaskClosedBy(bot.id, threadId, { botId: bot.id, name: bot.name, at: endedAt });
+  }
+  if (IDENTITY.kind === "perspicax") {
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      action: "task.parallel_settle",
+      target: auditBotTarget(bot.id),
+      after: { threadId, conversation: link.threadId, state },
+      actor: { kind: "worker" },
+    });
+  }
+  // A person's freed slot may let one of their waiting tasks start.
+  queueMicrotask(drainQueuedSends);
+}
+
+/** A turn that settled without turn.completed (refused before it ran, for
+ * one) leaves its parallel task owed a result: settle it as not finished. */
+function settleParallelFallback(threadId: string) {
+  setTimeout(() => {
+    const pending = pendingParallelTask(threadId);
+    if (!pending || threadBusy(pending.bot.id, threadId) || hasQueuedSteeredMessages(pending.bot.id, threadId)) return;
+    const said = [...store.messagesFor(threadId)].reverse().find((message) => message.kind === "access" || message.tool?.name.startsWith("error:"));
+    settleParallelTask(threadId, { ok: false, reply: "", why: said?.tool?.name.replace(/^error:\s*/, "") ?? "the task could not start" });
+  }, 0).unref?.();
+}
+
+/** Stop one parallel task: its running turn, or its place in line. */
+async function stopParallelTask(botId: string, threadId: string): Promise<"stopped" | "not_pending"> {
+  const pending = pendingParallelTask(threadId);
+  if (!pending || pending.bot.id !== botId) return "not_pending";
+  parallelStops.add(threadId);
+  if (threadBusy(botId, threadId)) {
+    await interruptDirectThread(botId, threadId);
+    return "stopped";
+  }
+  cancelThreadQueue(botId, threadId);
+  settleParallelTask(threadId, { ok: false, reply: "" });
+  return "stopped";
+}
+
+/** After a restart: a parallel task whose turn was cut off and is not
+ * waiting in line will never settle on its own. */
+function settleOrphanedParallelTasks() {
+  for (const bot of store.bots) {
+    for (const task of store.tasks(bot.id)) {
+      if (!parallelPending(task) || threadBusy(bot.id, task.threadId) || hasQueuedSteeredMessages(bot.id, task.threadId)) continue;
+      settleParallelTask(task.threadId, { ok: false, reply: "", why: "the server restarted while it ran" });
+    }
+  }
 }
 
 /** How many start_thread calls one turn may make. Same spirit as the
@@ -16446,6 +16711,7 @@ function configStatus() {
     newBots: cfg.newBots?.effort ? { effort: cfg.newBots.effort } : {},
     threads: {
       maxConcurrentPerBot: maxConcurrentBotThreads(cfg),
+      maxParallelPerPerson: maxParallelTasksPerPerson(cfg),
       ...(eventLogMaxBytes !== null ? { eventLogMaxBytes } : {}),
       ...(eventLogRetentionDays !== null ? { eventLogRetentionDays } : {}),
     },
@@ -17536,6 +17802,23 @@ function activityChildren(botId: string, threadId: string): ActivityChildRef[] {
       title: store.taskByThread(node.botId, node.threadId)?.title || node.text.slice(0, 120),
       status: node.status === "source" || node.status === "resume" ? "running" : node.status,
       startedAt: node.startedAt ?? node.createdAt,
+    });
+  }
+  // its parallel tasks (shared/parallel-tasks.ts)
+  for (const task of store.tasks(botId)) {
+    if (task.parallelOf?.threadId !== threadId || seen.has(task.threadId)) continue;
+    seen.add(task.threadId);
+    const outcome = task.parallelOf.outcome;
+    out.push({
+      botId,
+      threadId: task.threadId,
+      title: task.title,
+      status: threadBusy(botId, task.threadId)
+        ? task.activity === "waiting-on-you" ? "waiting" : "running"
+        : outcome === "done" ? "completed" : outcome === "failed" ? "failed" : outcome === "stopped" ? "cancelled"
+        : hasQueuedSteeredMessages(botId, task.threadId) ? "queued" : "running",
+      startedAt: task.parallelOf.at,
+      parallel: true,
     });
   }
   for (const watch of delegationWatch.values()) {
@@ -22231,6 +22514,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           projectId = project.id;
         }
         const sourceTitle = owner.group ? owner.group.name : (store.taskByThread(from.id, fromThreadId)?.title ?? "");
+        // report_back: a parallel task of this conversation, whose card shows
+        // here and whose result is posted back here (shared/parallel-tasks.ts).
+        if (target.id === from.id && body.reportBack === true && !owner.group && store.taskByThread(from.id, fromThreadId)) {
+          internalCapability.openedThreads += 1;
+          const speaker = peerSpeaker(from.id, fromThreadId);
+          try {
+            const started = await startParallelTask({
+              botId: from.id, threadId: fromThreadId, text: message, title, byBot: true,
+              speaker, principalId: "principalId" in speaker ? speaker.principalId : undefined,
+            });
+            return json(res, 201, {
+              threadId: started.parallel.threadId, title: started.parallel.title, botId: from.id, botName: from.name,
+              self: true, parallel: true, state: started.parallel.state, limit: maxParallelTasksPerPerson(cfg),
+            });
+          } catch (error) {
+            return json(res, (error as { status?: number }).status ?? 409, { error: error instanceof Error ? error.message : String(error) });
+          }
+        }
         if (target.id === from.id) {
           const inherited = parentThreadModel(from.id, fromThreadId);
           const task = store.createTask(from.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() },
@@ -26239,6 +26540,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const sendId = parseSendId(body.sendId);
       const replyTo = resolveReplyTarget(threadId, body.replyToId);
+      // What a send to a busy conversation does (shared/parallel-tasks.ts):
+      // join the running turn (steer, the default), run as its own task in
+      // parallel, or wait for the running turn (after).
+      if (body.busyMode !== undefined && !isBusySendMode(body.busyMode)) {
+        return json(res, 400, { error: "busyMode must be steer, parallel or after" });
+      }
+      const busyMode: BusySendMode = guardedBody ? "steer" : (body.busyMode ?? "steer");
       const receipt = await sendSequencer.run(
         sendId ? `bot:${bot.id}:${threadId}:${sendId}` : undefined,
         sendFingerprint(text, replyTo?.id),
@@ -26308,6 +26616,27 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             return { ok: true as const, threadId, message };
           }
 
+          // A new request while this conversation works: its own task, which
+          // runs now (or when a slot frees) and answers here.
+          if (currentAtStart.busy && busyMode === "parallel") {
+            return startParallelTask({
+              botId: bot.id, threadId, text, replyTo, sendId, sender: messageSender(auth), trigger,
+              speaker: speakerFor(auth), principalId: auth.kind === "session" ? personKey(auth.session) : undefined, auth,
+            });
+          }
+          // After this one: wait in the queue, never joining the running turn.
+          if (currentAtStart.busy && busyMode === "after") {
+            const queued = queueSteeredMessage(currentAtStart.id, threadId, text, {
+              replyToId: replyTo?.id,
+              sendId,
+              prompt: promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"),
+              sender: messageSender(auth),
+              trigger,
+              speaker: speakerFor(auth),
+              ...(voiceCall ? { voiceCall } : {}),
+            });
+            return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
+          }
           // Claude can accept the message inside its live turn. If the write
           // loses a race with turn settlement, or the engine cannot steer, the
           // existing server-side queue records it atomically for the next turn.
@@ -26410,6 +26739,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 404, { error: "no such queued message" });
       }
       return json(res, 200, { ok: true });
+    }
+
+    // Stop one parallel task (shared/parallel-tasks.ts): its running turn,
+    // or its place in line. The conversation it answers gets the outcome.
+    m = path.match(/^\/api\/bots\/([\w-]+)\/parallel\/([\w-]+)\/stop$/);
+    if (m && method === "POST") {
+      const bot = store.bot(m[1]);
+      if (!bot) return json(res, 404, { error: "no such bot" });
+      const taskThreadId = routeThreadId(bot, m[2], "thread.post");
+      const notYours = cloudThreadRefusal(auth, taskThreadId);
+      if (notYours) return json(res, 403, { error: notYours });
+      const outcome = await stopParallelTask(bot.id, taskThreadId);
+      if (outcome === "not_pending") return json(res, 404, { error: "no running or waiting parallel task there" });
+      return json(res, 200, { ok: true, outcome });
     }
 
     // Steer a queued message into the RUNNING turn (no interrupt). Engines
@@ -29215,7 +29558,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   } catch (e) {
     const status = (e as any)?.status ?? 500;
     const candidateCode = (e as { code?: unknown })?.code;
-    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "org_full_access_disabled"].includes(candidateCode)
+    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "org_full_access_disabled", "parallel_limit", "parallel_nested"].includes(candidateCode)
       ? candidateCode : undefined;
     return json(res, status, { error: e instanceof Error ? e.message : String(e), ...(code ? { code } : {}) });
   } finally {
@@ -29393,6 +29736,7 @@ server.listen(PORT, "127.0.0.1", () => {
   followupsReady = true;
   drainQueuedSends();
   drainQueuedChannelSends();
+  settleOrphanedParallelTasks();
   // Startup work uses the same turn dispatcher and local tool endpoint as
   // ordinary chat. Start only once every registry is initialized and the
   // endpoint is listening; earlier dispatch can hit uninitialized bindings.

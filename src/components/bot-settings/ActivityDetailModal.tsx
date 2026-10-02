@@ -7,22 +7,21 @@
 // The server decides what this person may read (server/routes/bot-activity.ts):
 // a routine run seen without its thread comes with no steps and no thread.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ExternalLink, FileText, Laptop, Loader2, Server, Square, X } from "lucide-react";
+import { ExternalLink, FileText, Loader2, Send, Square, X } from "lucide-react";
 
 import { api, useStore } from "@/state/store";
-import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import {
   activityStatusActive,
   activityStatusLabel,
   activityViaLabel,
-  activityWhereLabel,
   formatActivityDuration,
   loadBotActivityDetail,
   type BotActivityDetail,
   type BotActivityItem,
 } from "@/lib/bot-activity";
 import { ActivityCard, ActivityStatusIcon } from "./ActivityCard";
+import { ActivitySteps } from "./ActivitySteps";
 import { AccessCard, type AccessViewer } from "../AccessCard";
 
 const POLL_MS = 3_000;
@@ -41,7 +40,51 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 /** The body, without fetching: tests render it with a fixed detail. */
-export function ActivityDetailBody({ item, detail, error, now, engineName, onStop, onOpenThread, onOpenChild, stopping = false, viewer, onSignIn }: {
+/** A message into a running task: it joins the work in progress. */
+function SteerBox({ onSteer }: { onSteer: (text: string) => Promise<void> }) {
+  const [text, setText] = useState("");
+  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const submit = async () => {
+    const words = text.trim();
+    if (!words || state === "sending") return;
+    setState("sending");
+    try {
+      await onSteer(words);
+      setText("");
+      setState("sent");
+    } catch {
+      setState("error");
+    }
+  };
+  return (
+    <section className="mt-4" data-activity-steer="">
+      <label htmlFor="activity-steer" className="mb-1.5 block text-[12px] font-medium text-ink-secondary">{t("activity.steer.label")}</label>
+      <div className="flex items-center gap-2">
+        <input
+          id="activity-steer"
+          value={text}
+          onChange={(event) => { setText(event.target.value); if (state !== "sending") setState("idle"); }}
+          onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }}
+          placeholder={t("activity.steer.placeholder")}
+          className="min-w-0 flex-1 rounded-lg border border-hairline/40 bg-inset px-3 py-1.5 text-[12.5px] text-ink placeholder:text-ink-tertiary focus:outline-none focus:ring-2 focus:ring-accent/40"
+        />
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={!text.trim() || state === "sending"}
+          className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {state === "sending" ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+          {t("activity.steer.send")}
+        </button>
+      </div>
+      {state === "sent" && <p role="status" className="mt-1 text-[11.5px] text-ink-secondary">{t("activity.steer.sent")}</p>}
+      {state === "error" && <p role="alert" className="mt-1 text-[11.5px] text-danger">{t("botPanel.activity.error")}</p>}
+    </section>
+  );
+}
+
+export function ActivityDetailBody({ item, detail, error, now, engineName, onStop, onOpenThread, onOpenChild, onSteer, stopping = false, viewer, onSignIn }: {
   item: BotActivityItem;
   /** Who reads the access card of a refused run (the server already sent
    * it to its audience only). */
@@ -54,6 +97,8 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
   onStop: () => void;
   onOpenThread: (botId: string, threadId: string) => void;
   onOpenChild: (child: BotActivityItem) => void;
+  /** Send a message into this running task (it joins the work in progress). */
+  onSteer?: (text: string) => Promise<void>;
   stopping?: boolean;
 }) {
   const shown = detail ?? item;
@@ -65,7 +110,9 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
         <span className="mt-0.5"><ActivityStatusIcon status={shown.status} size={18} /></span>
         <div className="min-w-0 flex-1">
           <h2 id="activity-detail-title" className="break-words text-[15px] font-semibold leading-snug text-ink">{shown.title}</h2>
-          <p data-activity-detail-status className="mt-0.5 text-[12.5px] text-ink-secondary">{activityStatusLabel(shown.status)}</p>
+          <p data-activity-detail-status className="mt-0.5 text-[12.5px] text-ink-secondary">
+            {shown.parallel ? `${t("botPanel.activity.parallel")} · ` : ""}{activityStatusLabel(shown.status)}
+          </p>
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
@@ -98,6 +145,8 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
           <p className="mt-3 text-[12px] leading-relaxed text-ink-secondary">{t("botPanel.activity.privateRun")}</p>
         )}
 
+        {running && detail?.canStop && detail.threadId && onSteer && <SteerBox key={detail.id} onSteer={onSteer} />}
+
         {detail && detail.children.length > 0 && (
           <section className="mt-4">
             <h3 className="mb-2 text-[12px] font-medium text-ink-secondary">{t("botPanel.activity.children")}</h3>
@@ -115,30 +164,7 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
             {detail.steps.length === 0 ? (
               <p className="text-[12.5px] text-ink-secondary">{t("botPanel.activity.stepsEmpty")}</p>
             ) : (
-              <ol data-activity-steps className="relative flex flex-col gap-0.5 border-l border-hairline-weak pl-3">
-                {detail.stepsTruncated && <li className="pb-1 text-[11.5px] text-ink-secondary">{t("botPanel.activity.stepsOlder")}</li>}
-                {detail.steps.map((step) => (
-                  <li key={step.id} data-activity-step={step.name} className="relative py-1">
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "absolute -left-[17px] top-[11px] size-2 rounded-full",
-                        step.ok === undefined ? "bg-accent animate-pulse" : step.ok ? "bg-success" : "bg-danger",
-                      )}
-                    />
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink">{step.name}</span>
-                      {step.where && (
-                        <span data-activity-where={step.where} className="flex shrink-0 items-center gap-1 rounded-md bg-inset px-1.5 py-0.5 text-[11px] text-ink-secondary">
-                          {step.where === "computer" ? <Laptop size={11} aria-hidden="true" /> : <Server size={11} aria-hidden="true" />}
-                          {activityWhereLabel(step.where)}
-                        </span>
-                      )}
-                    </div>
-                    {step.summary && <p className="mt-0.5 line-clamp-2 break-words text-[11.5px] leading-snug text-ink-secondary">{step.summary}</p>}
-                  </li>
-                ))}
-              </ol>
+              <ActivitySteps steps={detail.steps} truncated={detail.stepsTruncated} />
             )}
           </section>
         )}
@@ -223,7 +249,9 @@ export function ActivityDetailModal({ item, onClose, onChanged }: {
   const stop = () => {
     if (!detail?.threadId) return;
     setStopping(true);
-    dispatch({ type: "interrupt", botId: detail.botId, threadId: detail.threadId, onError: () => setStopping(false) });
+    // a parallel task stops on its own: its conversation gets the outcome
+    if (detail.parallel) dispatch({ type: "stopParallelTask", botId: detail.botId, threadId: detail.threadId });
+    else dispatch({ type: "interrupt", botId: detail.botId, threadId: detail.threadId, onError: () => setStopping(false) });
     window.setTimeout(() => { setStopping(false); void load(); onChanged(); }, 1_500);
   };
   const openThread = (threadBotId: string, threadId: string) => {
@@ -267,6 +295,14 @@ export function ActivityDetailModal({ item, onClose, onChanged }: {
           onStop={stop}
           onOpenThread={openThread}
           onOpenChild={(child) => { if (child.threadId) setCurrent(child); }}
+          onSteer={async (text) => {
+            if (!detail?.threadId) return;
+            await api(`/api/bots/${detail.botId}/messages`, {
+              method: "POST",
+              body: JSON.stringify({ text, threadId: detail.threadId, busyMode: "steer", sendId: crypto.randomUUID() }),
+            });
+            void load();
+          }}
           stopping={stopping}
           viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
           onSignIn={() => { onClose(); dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); }}

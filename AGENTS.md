@@ -663,6 +663,55 @@ of that thread. The owner's notification of such a run names no thread, only
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
 
+## Parallel tasks (sending while the bot works, 2026-10-02)
+
+A message sent to a busy 1:1 conversation carries `busyMode`
+(`shared/parallel-tasks.ts`): `steer` joins the running turn (the default,
+live steer or the queue), `after` waits in the queue, `parallel` runs it as
+its own task. The composer offers the three (`BusySendChooser`, suggested
+choice by `suggestBusySendMode`, Enter picks) unless the person set a
+default in Settings > Parallel threads (`sagax.busySend.v1`, synced per
+person). Keep these rules, each covered by `server/parallel-tasks.test.ts`,
+`server/parallel-tasks.e2e.test.ts` or `src/components/parallel-tasks.ui.test.ts`:
+
+- A parallel task is a thread of the same bot (`TaskRecord.parallelOf`,
+  never a TASK_PATCH_FIELD): its own engine session, the conversation's
+  model, approval level and owner (private threads), the asker's payer
+  (trigger and speaker of the send). Its first prompt is a brief
+  (`parallelBrief`): who asked, recent lines of the conversation as context,
+  never another parallel request.
+- Working folder: a worktree of the conversation's git repository on
+  `sagax/parallel-<id>` (`prepareParallelWorkspace`, under
+  `DATA_DIR/parallel-worktrees`); otherwise its own private task folder,
+  reading the conversation's project folder only. Two turns never share a
+  folder (the workspace resource refuses the second).
+- The conversation shows the request line (`parallelTask.role: request`),
+  a live card (`card`: state from the task's busy/activity, Stop, Open) and,
+  when the first turn settles, the answer as a reply to the request
+  (`result`, `settleParallelTask`, once: `reportedAt`). Later turns in the
+  task's own thread stay there. A done task closes (`closedBy`), a failed
+  or stopped one stays.
+- Limits: `threads.maxParallelPerPerson` (default 3) running per person per
+  bot; more queue (`parallelTaskBlocked` in the drain), past twice the
+  limit waiting a send answers 409 `parallel_limit`. The bot's thread limit
+  still applies. A task of a task is refused (`parallel_nested`).
+- Stop one: `POST /api/bots/:id/parallel/:threadId/stop` (client scope,
+  thread.post), or Stop in its thread; either reads as stopped.
+- Approvals stay in the task's thread and are answered there; the
+  conversation's approval stepper lists them tagged with the task
+  (`useParallelApprovals`, `Pending.threadId`), and its cancel stops that
+  task only.
+- The bot may fork itself: `start_thread` with `report_back: true` on itself.
+- Org: `task.parallel_start` and `task.parallel_settle` in the admin
+  activity log. Routines are unaffected (no busyMode).
+- Activity lists a parallel task once (its own entry, `parallel: true`) and
+  as a child of its conversation. The detail names steps in words
+  (`src/lib/activity-steps.ts`, reusing the approval naming), keeps the raw
+  id under Technical details, nests a Claude sub-agent's calls under its
+  Agent step (`tool.parentItemId` from `parent_tool_use_id`) with its
+  request and report, and a running task takes a message (steer). Claude's
+  own sub-agents cannot be steered or stopped apart from their turn.
+
 ## Person panel and hidden sidebar entries
 
 A person of the organization opens in the right panel like a bot

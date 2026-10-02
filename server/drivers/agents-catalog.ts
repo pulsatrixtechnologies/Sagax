@@ -372,6 +372,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
         message: { type: "string", description: "The complete first message of the thread — everything the run needs, since it will not see this conversation." },
         bot_id: { type: "string", description: "Optional: the teammate's id from list_bots. Leave out to open the thread on yourself." },
         folder: { type: "string", description: "Optional: the name of one of that bot's existing folders to file the thread under. Leave out unless the person named one." },
+        report_back: { type: "boolean", description: "Optional, on yourself only: true runs it as a parallel task of this conversation. The person sees its live card here and its result is posted back here as a reply when it finishes. Use it when the person asks for something unrelated while you are busy, so both run at once." },
       },
       required: ["title", "message"],
     },

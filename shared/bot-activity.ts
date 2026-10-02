@@ -47,6 +47,9 @@ export interface BotActivityItem {
   canStop?: boolean;
   /** A listed sub-agent: the entry that started it. */
   parentId?: string;
+  /** A parallel task of a conversation (shared/parallel-tasks.ts): the
+   * person can steer it (send it a message) and stop it on its own. */
+  parallel?: boolean;
 }
 
 /** GET /api/bots/:id/activity: the entries (`?filter=coding|other`), and
@@ -67,6 +70,13 @@ export interface BotActivityStep {
    * or their server environment. Absent on a solo server. */
   where?: "computer" | "server";
   files?: string[];
+  /** The call's arguments as the chat shows them (bounded, redacted). */
+  input?: string;
+  /** A call a sub-agent made: the step of the Agent call that started it. */
+  parentId?: string;
+  /** On a sub-agent's own step (Claude's Agent tool): what it was asked
+   * and, once done, what it reported. */
+  subagent?: { description?: string; prompt?: string; type?: string; result?: string };
 }
 
 export interface BotActivityDetail extends BotActivityItem {

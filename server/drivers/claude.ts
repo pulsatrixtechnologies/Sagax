@@ -2122,6 +2122,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                   summary: commandSummary(b.input),
                   input: toolDetailPreview(b.input),
                   ...filesField(writtenFilesFromToolInput(b.name, b.input)),
+                  // a sub-agent's call: nested under the Agent call that started it
+                  ...(typeof o.parent_tool_use_id === "string" && o.parent_tool_use_id ? { parentItemId: o.parent_tool_use_id } : {}),
                 });
               }
             }

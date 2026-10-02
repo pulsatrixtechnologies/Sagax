@@ -14,10 +14,21 @@ describe("ThreadConcurrencySettings", () => {
     fixture.limit = undefined;
     const markup = renderToStaticMarkup(createElement(ThreadConcurrencySettings));
     expect(markup).toContain('value="3" selected=""');
-    expect(markup.match(/<option /g)).toHaveLength(10);
+    const concurrency = markup.slice(markup.indexOf('id="thread-concurrency"'), markup.indexOf("</select>"));
+    expect(concurrency.match(/<option /g)).toHaveLength(10);
     expect(markup).toContain('value="10"');
     expect(markup).toContain("Extra messages queue until a slot opens.");
     expect(markup).toContain("Maximum running threads per bot");
+  });
+  it("offers the busy-send default and the per-person parallel limit (three by default)", () => {
+    fixture.limit = undefined;
+    const markup = renderToStaticMarkup(createElement(ThreadConcurrencySettings));
+    expect(markup).toContain('id="busy-send-default"');
+    expect(markup).toContain('value="ask" selected=""');
+    expect(markup).toContain("New task in parallel");
+    const parallel = markup.slice(markup.indexOf('id="parallel-limit"'));
+    expect(parallel).toContain('value="3" selected=""');
+    expect(parallel.slice(0, parallel.indexOf("</select>")).match(/<option /g)).toHaveLength(10);
   });
   it("shows the confirmed server value", () => {
     fixture.limit = 10;
