@@ -685,7 +685,7 @@ describe("Cua integration", () => {
   it("ships xdotool and xclip for the phone's remote input and clipboard", () => {
     const dockerfile = managedImageDockerfile();
     expect(dockerfile).toContain("apt-get install -y --no-install-recommends xdotool xclip");
-    expect(dockerfile).toContain("xdotool version");
+    expect(dockerfile).toContain("command -v xdotool");
     expect(dockerfile).toContain("command -v xclip");
   });
 

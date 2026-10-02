@@ -239,7 +239,10 @@ final class ComputerUITests: XCTestCase {
         app.launch()
         let pad = app.descendants(matching: .any)["computer-trackpad"]
         XCTAssertTrue(pad.waitForExistence(timeout: 30))
-        Thread.sleep(forTimeInterval: 3)
+        // In control, the picture comes from the VM's own screenshots.
+        XCTAssertTrue(app.descendants(matching: .any)["computer-picture"].waitForExistence(timeout: 30),
+                      "the Local VM's frame reaches the phone")
+        Thread.sleep(forTimeInterval: 1)
         pad.tap()
         Thread.sleep(forTimeInterval: 1.5)
         app.typeText("echo sagax-phone-e2e > /tmp/sagax-e2e.txt\n")

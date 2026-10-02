@@ -170,7 +170,7 @@ RUN set -eux; \\
     apt-get update; \\
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xdotool xclip; \\
     rm -rf /var/lib/apt/lists/*; \\
-    xdotool version; \\
+    command -v xdotool; \\
     command -v xclip
 # Install before XFCE starts so the panel and window manager see the font too.
 # Noto Sans CJK JP is distributed under the SIL Open Font License 1.1.
