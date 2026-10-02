@@ -8786,7 +8786,8 @@ bus.subscribe((event: RuntimeEvent) => {
         const message = pushMessage({
           role: "bot",
           kind: "activity",
-          tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}) },
+          tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}),
+            ...(event.parentItemId ? { parentItemId: event.parentItemId } : {}) },
           // attributed to its turn so the digest can count it
           turnId: liveTurnId,
         });
@@ -10436,7 +10437,7 @@ function settleParallelTask(threadId: string, outcome: { ok: boolean; reply: str
   const stopped = parallelStops.delete(threadId) || outcome.why === "interrupted";
   const state = parallelOutcome({ ok: outcome.ok, stopped });
   const endedAt = Date.now();
-  store.setTaskParallelOf(bot.id, threadId, { ...link, reportedAt: endedAt });
+  store.setTaskParallelOf(bot.id, threadId, { ...link, reportedAt: endedAt, outcome: state });
   const parent = store.taskByThread(bot.id, link.threadId);
   if (!parent) return;
   const request = store.messagesFor(link.threadId).find((message) => message.id === link.messageId);
@@ -17803,6 +17804,23 @@ function activityChildren(botId: string, threadId: string): ActivityChildRef[] {
       title: store.taskByThread(node.botId, node.threadId)?.title || node.text.slice(0, 120),
       status: node.status === "source" || node.status === "resume" ? "running" : node.status,
       startedAt: node.startedAt ?? node.createdAt,
+    });
+  }
+  // its parallel tasks (shared/parallel-tasks.ts)
+  for (const task of store.tasks(botId)) {
+    if (task.parallelOf?.threadId !== threadId || seen.has(task.threadId)) continue;
+    seen.add(task.threadId);
+    const outcome = task.parallelOf.outcome;
+    out.push({
+      botId,
+      threadId: task.threadId,
+      title: task.title,
+      status: threadBusy(botId, task.threadId)
+        ? task.activity === "waiting-on-you" ? "waiting" : "running"
+        : outcome === "done" ? "completed" : outcome === "failed" ? "failed" : outcome === "stopped" ? "cancelled"
+        : hasQueuedSteeredMessages(botId, task.threadId) ? "queued" : "running",
+      startedAt: task.parallelOf.at,
+      parallel: true,
     });
   }
   for (const watch of delegationWatch.values()) {

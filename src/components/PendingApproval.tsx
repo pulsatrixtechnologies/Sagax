@@ -8,7 +8,7 @@
 // (it scrolls instead), and the buttons ordered least-destructive-last so
 // the primary action sits under your thumb.
 import { memo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, GitFork } from "lucide-react";
 import { useStore, type Bot, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t, tFromServer } from "@/lib/i18n";
@@ -35,6 +35,10 @@ export interface Pending {
   detail: string;
   held?: string;
   heldCode?: string;
+  /** Asked by a parallel task of this conversation (shared/parallel-tasks.ts):
+   * its own thread, where the answer goes, and its name for the card. */
+  threadId?: string;
+  parallelTitle?: string;
 }
 
 /** The persisted payload is the authoritative marker. Tool names are
@@ -225,6 +229,12 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
       }
       className="px-4 pt-3"
     >
+      {pending.parallelTitle && (
+        <div className="mb-1.5 flex items-center gap-1.5 text-[11.5px] text-ink-secondary" data-approval-parallel={pending.threadId}>
+          <GitFork size={12} aria-hidden="true" />
+          <span className="truncate">{t("approval.parallelTask", { title: pending.parallelTitle })}</span>
+        </div>
+      )}
       <ApprovalHeading
         bot={bot}
         title={<span aria-live="polite">{view ? view.title : label(pending)}</span>}
@@ -299,7 +309,7 @@ export function PendingApprovalActions({
   const decide = (behavior: "allow" | "deny", always = false, rememberCommand = false) =>
     dispatch({
       type: "decideRequest",
-      threadId,
+      threadId: pending.threadId ?? threadId,
       requestId: pending.requestId,
       behavior,
       message: behavior === "deny" ? "Denied by the user." : undefined,
@@ -435,7 +445,7 @@ export function PendingApprovalBox({
           ? {
               count: readOnly.length,
               onAllow: () => {
-                for (const each of readOnly) dispatch({ type: "decideRequest", threadId, requestId: each.requestId, behavior: "allow" });
+                for (const each of readOnly) dispatch({ type: "decideRequest", threadId: each.threadId ?? threadId, requestId: each.requestId, behavior: "allow" });
               },
             }
           : undefined}
@@ -444,7 +454,10 @@ export function PendingApprovalBox({
         pending={pending}
         threadId={threadId}
         bot={botFor(pending)}
-        onCancelTurn={onCancelTurn}
+        // a parallel task's "cancel" stops that task, never this conversation's turn
+        onCancelTurn={pending.threadId && pending.threadId !== threadId && botFor(pending)
+          ? () => dispatch({ type: "stopParallelTask", botId: botFor(pending)!.id, threadId: pending.threadId! })
+          : onCancelTurn}
       />
     </div>
   );

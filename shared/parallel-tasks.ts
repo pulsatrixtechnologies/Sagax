@@ -64,6 +64,8 @@ export interface TaskParallelOf {
   principalId?: string;
   /** Set once the result was posted back. */
   reportedAt?: number;
+  /** How it ended, once reported. */
+  outcome?: ParallelTaskState;
   /** Opened by the bot itself (start_thread with report_back), not a person. */
   byBot?: boolean;
 }

@@ -72,6 +72,7 @@ import {
   doubleEnterSteersQueue,
 } from "./ComposerQueuedMessages";
 import { BusySendChooser, moveBusyChoice } from "./BusySendChooser";
+import { useParallelApprovals } from "./parallel-approvals";
 import { useBusySendPreference } from "@/lib/busy-send";
 import { suggestBusySendMode, type BusySendMode } from "../../shared/parallel-tasks";
 import { skillAuthoringEnabled } from "@/lib/feature-flags";
@@ -159,7 +160,9 @@ export function Composer({
   const composerTask = profile?.tasks?.find((task) => task.threadId === threadId);
   // the VISIBLE branch only — an approval left on a branch you edited away
   // from must not keep blocking the composer
-  const approvals = pendingApprovals(group ? group.messages : bot ? visibleMessages(bot) : []);
+  // this conversation's own, then those its parallel tasks wait on
+  const parallelApprovals = useParallelApprovals(group ? undefined : bot);
+  const approvals = [...pendingApprovals(group ? group.messages : bot ? visibleMessages(bot) : []), ...parallelApprovals];
   const approval = approvals[0];
   const approvalBotFor = (pending: Pending) => group
     ? members?.find((member) => member.id === pending.message.from?.botId) ??

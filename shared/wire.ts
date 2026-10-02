@@ -486,6 +486,8 @@ export interface WireMessage {
     fullResult?: boolean;
     /** Files the call wrote, as the tool named them (see thread-files.ts). */
     files?: string[];
+    /** A call a sub-agent made: the item id of the call that started it. */
+    parentItemId?: string;
   };
   /** user messages sent INTO a running turn (capabilities.queueing). */
   steered?: boolean;
