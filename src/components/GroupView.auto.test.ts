@@ -48,6 +48,11 @@ describe("room responder selector", () => {
     expect(markup).toContain("Jev is off, so plain messages go to Theo");
   });
 
+  it("is read-only for someone who does not own the group", () => {
+    const markup = renderToStaticMarkup(createElement(DefaultResponderSelect, { group: room({ kind: "auto" }), members, disabled: true }));
+    expect(markup).toMatch(/<select[^>]* disabled=""/);
+  });
+
   it("switching a lead room to Auto keeps the lead as its fallback", () => {
     const tree = DefaultResponderSelect({ group: room({ kind: "member", botId: "theo" }), members });
     const select = nodes(tree).find((node) => node.type === "select")!;

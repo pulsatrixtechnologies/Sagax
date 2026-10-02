@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, serverCommandApproval, speakerPrincipal } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, serverCommandApproval, speakerPrincipal } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -156,6 +156,39 @@ describe("the key_refused card", () => {
     expect(accessCardForViewer(message, { principalId: BOB, admin: true }).access.detail).toBe("quota");
     expect(accessCardForViewer(message, { principalId: BOB, admin: false }).access).not.toHaveProperty("detail");
     expect(message.access.detail).toBe("quota");
+  });
+});
+
+describe("who an access card is for (2026-10-01)", () => {
+  const OWNER = "pr_owner";
+  const base = { engine: "Claude", botId: "x", ownerPrincipalId: OWNER };
+  it("goes to whose credentials the turn needed, never the rest of the room", () => {
+    const bobs = { kind: "access", access: { ...base, reason: "no_access", payer: "speaker", payerPrincipalId: BOB } };
+    expect(accessCardAudience(bobs.access)).toEqual([BOB]);
+    expect(accessCardVisibleTo(bobs, BOB)).toBe(true);
+    expect(accessCardVisibleTo(bobs, BOB.toUpperCase())).toBe(true);
+    expect(accessCardVisibleTo(bobs, ALICE)).toBe(false);
+    expect(accessCardVisibleTo(bobs, OWNER)).toBe(false);
+    expect(accessCardVisibleTo(bobs, "")).toBe(false);
+    expect(accessCardVisibleTo(bobs, undefined)).toBe(false);
+  });
+  it("sends a routine's card to the bot's owner, and an older card without a payer too", () => {
+    expect(accessCardAudience({ ...base, reason: "no_access", payer: "owner", payerPrincipalId: OWNER, routine: true } as never)).toEqual([OWNER]);
+    expect(accessCardAudience({ ...base, reason: "no_access" })).toEqual([OWNER]);
+    expect(accessCardAudience({ ...base, reason: "engine_missing", payerPrincipalId: BOB })).toEqual([BOB]);
+  });
+  it("sends a paused routine to the person it runs as and the owner", () => {
+    expect(accessCardAudience({ ...base, reason: "routine_delegation", runAsPrincipalId: BOB })).toEqual([BOB, OWNER]);
+    expect(accessCardAudience({ ...base, reason: "routine_delegation", runAsPrincipalId: OWNER })).toEqual([OWNER]);
+  });
+  it("keeps a refused organization key shared, and a person's own refused key theirs", () => {
+    expect(accessCardAudience({ ...base, reason: "key_refused" })).toBeNull();
+    expect(accessCardVisibleTo({ kind: "access", access: { ...base, reason: "key_refused" } }, ALICE)).toBe(true);
+    expect(accessCardAudience({ ...base, reason: "key_refused", payerPrincipalId: BOB })).toEqual([BOB]);
+  });
+  it("leaves every other row alone", () => {
+    expect(accessCardVisibleTo({ kind: "text" }, ALICE)).toBe(true);
+    expect(accessCardVisibleTo({ kind: "text" }, undefined)).toBe(true);
   });
 });
 

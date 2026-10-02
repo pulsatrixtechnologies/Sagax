@@ -35,6 +35,7 @@ import {
 import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
+import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
@@ -113,6 +114,7 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
+import { groupMemberBots } from "@/lib/group-members";
 
 
 
@@ -286,9 +288,7 @@ export function GroupListItem({
   // quiet rows keep the line only while the room reports work in progress
   const groupStatus = Boolean(group.busyBotId) || Boolean(group.working);
   const roomBusy = groupStatus;
-  const members = group.memberIds
-    .map((id) => state.bots.find((b) => b.id === id))
-    .filter((b): b is Bot => Boolean(b));
+  const members = groupMemberBots(group, state.bots);
   const last = group.messages.at(-1);
   // A direct conversation with a person reads as that person.
   const orgPeople = useOrgPeople();
@@ -449,6 +449,8 @@ function RoomContextMenu({
 
   if (!motion.shown || !group || !shown) return null;
   const isBotChat = Boolean(group.dm);
+  const ownsRoom = viewerOwnsGroup(group, state.config);
+  const mayDelete = viewerMayDeleteGroup(group, state.config);
   const saveRename = () => {
     const name = nextRename(group.name, draft);
     if (name) dispatch({ type: "patchGroup", groupId: group.id, patch: { name } });
@@ -463,7 +465,7 @@ function RoomContextMenu({
       style={{ top, left }}
       className={cn("fixed z-40 w-[228px] min-w-[200px] overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
-      {!remoteClient && (renaming ? (
+      {!remoteClient && ownsRoom && (renaming ? (
         <div className="flex items-center gap-1 px-0.5 py-0.5">
           <input
             autoFocus
@@ -537,7 +539,7 @@ function RoomContextMenu({
         <ClipboardCopy size={16} className="text-ink" />
         {t("sidebar.copyConversationId")}
       </button>
-      {!remoteClient && <button
+      {!remoteClient && mayDelete && <button
         onClick={() => {
           onClose();
           onDelete(group.id);
@@ -2014,7 +2016,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     ...sectionedRooms.map((group) => group.section!),
   ])];
   const teamOrder = (key: string) => key === "" ? -1 : teamNames.includes(key) ? teamNames.indexOf(key) : teamNames.length;
-  const teamMap = buildTeamMapSections(matchingBots, teamNames)
+  const teamMap = buildTeamMapSections(matchingBots, teamNames, { general: unsectionedRooms.length > 0 })
     .sort((a, b) => teamOrder(a.key) - teamOrder(b.key))
     .filter((team) => {
       if (team.key) return true;

@@ -109,7 +109,7 @@ describe("team backups", () => {
     });
     const ada = store.createBot({ name: "Ada" }, { seedMessages: false });
     const bea = store.createBot({ name: "Bea" }, { seedMessages: false });
-    const group = store.createGroup("Room", [ada.id, bea.id], false, undefined, { bulletin: "", defaultResponder, completed: true });
+    const group = store.createGroup("Room", [ada.id, bea.id], false, undefined, { bulletin: "", defaultResponder });
     return { store, routines, ada, bea, group };
   };
 

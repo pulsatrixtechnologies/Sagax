@@ -35,6 +35,8 @@ export const USER_PREFERENCE_KEYS = [
   "openmausbot.sidebarAttentionPinned.v1",
   // privacy
   "omb-analytics-opt-out",
+  // voice mode: the xAI voice, speed and language (shared/voice-mode.ts)
+  "omb.voiceMode.v1",
 ] as const;
 
 export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number];

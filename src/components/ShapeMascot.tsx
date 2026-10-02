@@ -1,5 +1,5 @@
 // The original mascot shapes: a soft body in the bot's color with two small
-// eyes, in eight shapes (shared/mascot-look.ts) and six skins. Pure SVG and
+// eyes, in thirteen shapes (shared/mascot-look.ts, shape-art.ts) and six skins. Pure SVG and
 // CSS, so it costs nothing in the sidebar and the chat. It blinks, breathes,
 // looks up while thinking and bounces while working; reduced motion keeps it
 // still. The desktop mascot draws the same shapes and moves them itself.
@@ -8,21 +8,31 @@ import { useId } from "react";
 import { MAUS_COLORS } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
 import { MASCOT_SHAPES, SHAPE_SKINS, type MascotShape, type ShapeSkin } from "../../shared/mascot-look";
+import { EYES, SHAPE_ART } from "./shape-art";
 
-/** Each shape's outline (viewBox 0 0 100 100) and where its eyes sit. */
-export const SHAPE_ART: Record<MascotShape, { d: string; eyes: [number, number]; gap: number }> = {
-  circle: { d: "M50 8a42 42 0 1 1 0 84a42 42 0 1 1 0-84z", eyes: [50, 52], gap: 11 },
-  // a bean, a little tilted, its bump to the left
-  blob: { d: "M30 22C40 10 62 8 76 18C90 28 94 50 86 66C78 82 58 92 40 88C22 84 8 70 10 54C11 46 17 42 22 38C26 34 24 28 30 22z", eyes: [54, 50], gap: 11 },
-  squircle: { d: "M30 10H70C82 10 90 18 90 30V70C90 82 82 90 70 90H30C18 90 10 82 10 70V30C10 18 18 10 30 10z", eyes: [50, 52], gap: 12 },
-  pill: { d: "M30 26H70C83 26 94 37 94 50C94 63 83 74 70 74H30C17 74 6 63 6 50C6 37 17 26 30 26z", eyes: [50, 50], gap: 12 },
-  triangle: { d: "M44 14C47 9 53 9 56 14L91 76C94 82 90 88 84 88H16C10 88 6 82 9 76z", eyes: [50, 64], gap: 10 },
-  hexagon: { d: "M44 9C48 7 52 7 56 9L84 25C88 27 90 31 90 35V65C90 69 88 73 84 75L56 91C52 93 48 93 44 91L16 75C12 73 10 69 10 65V35C10 31 12 27 16 25z", eyes: [50, 52], gap: 12 },
-  // three lobes on a flat base
-  cloud: { d: "M24 82C13 82 6 74 6 64C6 54 13 47 22 46C22 32 33 22 46 22C55 22 63 27 67 35C70 33 74 32 78 32C88 32 96 41 95 52C94 60 90 66 84 68C88 72 86 82 78 82z", eyes: [50, 58], gap: 12 },
-  // a teardrop, point up
-  drop: { d: "M50 6C58 22 82 42 82 62C82 80 68 92 50 92C32 92 18 80 18 62C18 42 42 22 50 6z", eyes: [50, 62], gap: 11 },
-};
+export { SHAPE_ART, EYES } from "./shape-art";
+
+/**
+ * The one face every shape wears (EYES, shape-art.ts): the same two slanted
+ * ovals on every shape, placed at the shape's face anchor. Sleeping and
+ * happy eyes are the same strokes on every shape too.
+ */
+export function ShapeEyes({ face, color, mood, look }: { face: [number, number]; color: string; mood: ShapeMood; look: number }) {
+  const eye = ([dx, dy]: readonly [number, number], key: string) => {
+    const x = face[0] + dx;
+    const y = face[1] + dy;
+    const transform = `rotate(${EYES.tilt} ${x} ${y})`;
+    if (mood === "sleeping") return <path key={key} d={`M${x - 5.5} ${y + 1}q5.5 4.6 11 0`} transform={transform} fill="none" stroke={color} strokeWidth={3.2} strokeLinecap="round" />;
+    if (mood === "happy") return <path key={key} d={`M${x - 5.5} ${y + 2}q5.5 -6 11 0`} transform={transform} fill="none" stroke={color} strokeWidth={3.4} strokeLinecap="round" />;
+    return <ellipse key={key} className="shape-eye" cx={x} cy={y + look} rx={EYES.rx} ry={EYES.ry} transform={transform} fill={color} />;
+  };
+  return (
+    <g className="shape-eyes">
+      {eye(EYES.left, "l")}
+      {eye(EYES.right, "r")}
+    </g>
+  );
+}
 
 export type ShapeMood = "idle" | "thinking" | "working" | "happy" | "sleeping";
 
@@ -70,16 +80,7 @@ export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44
   const art = SHAPE_ART[MASCOT_SHAPES.includes(shape) ? shape : "circle"];
   const paint = shapeSkinPaint(SHAPE_SKINS.includes(skin) ? skin : "plain", hexOf(color));
   const uid = `shape-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const [ex, ey] = art.eyes;
-  const look = mood === "thinking" ? -4 : mood === "sleeping" ? 2 : 0;
-  const eye = (x: number) =>
-    mood === "sleeping" ? (
-      <path key={x} d={`M${x - 4} ${ey + 1}q4 3 8 0`} fill="none" stroke={paint.eyes} strokeWidth={2.2} strokeLinecap="round" />
-    ) : mood === "happy" ? (
-      <path key={x} d={`M${x - 4} ${ey + 1}q4 -4 8 0`} fill="none" stroke={paint.eyes} strokeWidth={2.4} strokeLinecap="round" />
-    ) : (
-      <ellipse key={x} className="shape-eye" cx={x} cy={ey + look} rx={3.6} ry={4.6} fill={paint.eyes} />
-    );
+  const look = mood === "thinking" ? -3 : 0;
   return (
     <span
       className={cn("shape-mascot inline-flex shrink-0", animated && `shape-mascot-live shape-mood-${mood}`, className)}
@@ -119,10 +120,7 @@ export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44
             filter={paint.glow ? `url(#${uid}-glow)` : undefined}
           />
           {paint.shine && <path d={art.d} fill={`url(#${uid}-shine)`} />}
-          <g className="shape-eyes">
-            {eye(ex - art.gap / 2 - 4)}
-            {eye(ex + art.gap / 2 + 4)}
-          </g>
+          <ShapeEyes face={art.face} color={paint.eyes} mood={mood} look={look} />
         </g>
       </svg>
     </span>

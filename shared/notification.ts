@@ -22,7 +22,7 @@ export type NotifyKind =
    * Sent to admins only, at most once per month for each. */
   | "spend"
   /** A person wrote to another in a direct conversation between people
-   * (server/people-dms.ts). Sent to the recipient only; `botId` is empty. */
+   * (server/people-dms.ts). Sent to the recipient only (`audience`); `botId` is empty. */
   | "message";
 
 export interface Notification {
@@ -39,7 +39,9 @@ export interface Notification {
    * already works off `threadId` alone; this is what lets a client say which
    * room, and stack a room's banners together instead of under the bot. */
   groupId?: string;
-  /** Only this principal receives the frame (a person-to-person message). */
-  recipientId?: string;
+  /** Organization server: the only principals this notification reaches
+   * (a refused turn's access card is private to its person). Absent: everyone
+   * who sees the bot. */
+  audience?: string[];
 }
 

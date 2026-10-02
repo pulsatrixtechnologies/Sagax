@@ -372,6 +372,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET", "PUT"], path: /^\/api\/groups\/[\w-]+\/memory$/ },
   // a direct conversation with another person of the organization (server/people-dms.ts)
   { methods: ["POST"], path: /^\/api\/people-dms$/ },
+  // Organization server: a group's owner deletes it (server/group-ownership.ts);
+  // the route refuses a client session anywhere else.
+  { methods: ["DELETE"], path: /^\/api\/groups\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/ },
   // attachments
   { methods: ["POST"], path: /^\/api\/attachments$/ },
@@ -381,6 +384,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/tts\/voices$/ },
   { methods: ["POST"], path: /^\/api\/tts\/prepare$/ },
   { methods: ["POST"], path: /^\/api\/tts\/speak$/ },
+  // voice mode (server/voice-mode.ts): the speaker's own turn on a bot they may use; never the key
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:status|voices)$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe)$/ },
   // routines: a scheduled message; the input carries no cwd or permission field
   { methods: ["GET"], path: /^\/api\/routines$/ },
   { methods: ["POST"], path: /^\/api\/routines$/ },
@@ -480,9 +486,9 @@ export function memberBotFieldViolation(body: unknown): string | null {
 /** Same for a room: name, reading state, and the roster. humanIds and
  * memberIds are not refused here. canEditHumans and canPlaceBot decide them. */
 const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinnedMessageId", "section", "humanIds", "memberIds"]);
-export function clientGroupPatchViolation(body: unknown): string | null {
+export function clientGroupPatchViolation(body: unknown, extra: readonly string[] = []): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
-  for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key)) return key;
+  for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key) && !extra.includes(key)) return key;
   return null;
 }
 

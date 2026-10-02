@@ -108,3 +108,21 @@ test("fails closed on unparsable or opaque origins", () => {
   assert.equal(appPermissionAllowed("notifications", "data:text/html,x", "about:blank"), false);
   assert.equal(appPermissionAllowed("notifications", "javascript:alert(1)", LOCAL_ORIGIN), false);
 });
+
+test("voice mode in server mode: the organization server's bundled UI may open the microphone only", () => {
+  const ORG = "https://sagax.example.test";
+  const extra = { microphoneOrigins: [ORG, null] };
+  assert.equal(appPermissionAllowed("media", `${ORG}/chat`, LOCAL_ORIGIN, { mediaTypes: ["audio"] }, extra), true);
+  assert.equal(appPermissionAllowed("media", `${ORG}/chat`, LOCAL_ORIGIN, { mediaType: "audio" }, extra), true);
+  // never the camera, the screen, or anything but media
+  assert.equal(appPermissionAllowed("media", `${ORG}/chat`, LOCAL_ORIGIN, { mediaTypes: ["video"] }, extra), false);
+  assert.equal(appPermissionAllowed("media", `${ORG}/chat`, LOCAL_ORIGIN, { mediaTypes: ["audio", "video"] }, extra), false);
+  assert.equal(appPermissionAllowed("media", `${ORG}/chat`, LOCAL_ORIGIN, { mediaTypes: [] }, extra), false);
+  for (const permission of ["notifications", "clipboard-read", "geolocation", "fullscreen"]) {
+    assert.equal(appPermissionAllowed(permission, `${ORG}/chat`, LOCAL_ORIGIN, {}, extra), false, permission);
+  }
+  // another origin, or no server mode: refused
+  assert.equal(appPermissionAllowed("media", "https://evil.example.test/", LOCAL_ORIGIN, { mediaTypes: ["audio"] }, extra), false);
+  assert.equal(appPermissionAllowed("media", `${ORG}/chat`, LOCAL_ORIGIN, { mediaTypes: ["audio"] }), false);
+  assert.equal(appPermissionAllowed("media", `${ORG}/chat`, LOCAL_ORIGIN, { mediaTypes: ["audio"] }, { microphoneOrigins: [null] }), false);
+});

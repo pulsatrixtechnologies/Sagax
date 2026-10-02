@@ -769,7 +769,6 @@ describe("Store", () => {
     const channel = store.createGroup("Launch", [bot.id], false, "Work", {
       bulletin: "Ship carefully.",
       defaultResponder: { kind: "mentions" },
-      completed: true,
     });
 
     expect(channel).toMatchObject({
@@ -783,6 +782,21 @@ describe("Store", () => {
       defaultResponder: { kind: "mentions" },
       setupCompletedAt: channel.setupCompletedAt,
     });
+  });
+
+  it("treats a room left with setup pending as set up", () => {
+    const store = new Store(selection);
+    const bot = store.createBot();
+    const room = store.createGroup("Pending", [bot.id]);
+    expect(room.setupCompletedAt).toBe(room.createdAt);
+    const file = join(DATA_DIR, "groups.json");
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Array<{ id: string; setupCompletedAt?: number | null; setupSkippedAt?: number | null }>;
+    const saved = raw.find((group) => group.id === room.id)!;
+    saved.setupCompletedAt = null;
+    saved.setupSkippedAt = null;
+    writeFileSync(file, JSON.stringify(raw));
+
+    expect(new Store(selection).group(room.id)).toMatchObject({ setupCompletedAt: room.createdAt, setupSkippedAt: null });
   });
 
   it("migrates old rooms without routing to their first member", () => {
