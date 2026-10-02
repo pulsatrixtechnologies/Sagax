@@ -25,6 +25,7 @@ import { redactSecretsInText } from "./redact.ts";
 import { AVATAR_FOCUS_CENTER, AVATAR_ZOOM_MIN, botAvatarProfile, clampAvatarFocus, clampAvatarZoom } from "../shared/bot-avatar.ts";
 import { approvalModeFor, isApprovalMode } from "../shared/approval-mode.ts";
 import type { ProfileRequestChanges } from "../shared/profile-request.ts";
+import type { TaskParallelOf } from "../shared/parallel-tasks.ts";
 import type { TeamSetupRequest, TeamSetupResult } from "../shared/team-setup.ts";
 import type { GroupGoalRunCardData } from "../shared/group-goal-run.ts";
 import { isMentionBoundary, isMentionNameContinuation } from "../shared/mention-boundary.ts";
@@ -2784,6 +2785,19 @@ export class Store {
     const task = this.taskByThread(botId, threadId);
     if (!bot || !task) return null;
     task.openedBy = structuredClone(openedBy);
+    this.saveBots();
+    this.emit({ type: "bot", botId });
+    return task;
+  }
+
+  /** Link (or update the link of) a parallel task to the conversation it
+   * answers (shared/parallel-tasks.ts). Never reachable from the HTTP task
+   * PATCH: parallelOf is not a TASK_PATCH_FIELD. */
+  setTaskParallelOf(botId: string, threadId: string, parallelOf: TaskParallelOf): TaskRecord | null {
+    const bot = this.bot(botId);
+    const task = this.taskByThread(botId, threadId);
+    if (!bot || !task) return null;
+    task.parallelOf = structuredClone(parallelOf);
     this.saveBots();
     this.emit({ type: "bot", botId });
     return task;

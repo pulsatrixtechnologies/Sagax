@@ -15,6 +15,8 @@
 //                      | api-error (the CLI reports a non-auth API error as
 //                        assistant text, then an error result; no model output)
 //   FAKE_CLAUDE_API_ERROR text for the api-error frame (default: overloaded).
+//   FAKE_CLAUDE_GATE_DIR with slow: a prompt carrying [gate:NAME] holds its
+//                      reply until <dir>/NAME exists (its last marker).
 //   FAKE_CLAUDE_RELEASE with hang: the turn ends normally once this file exists.
 //   FAKE_CLAUDE_DUMP   path to write {argv, env, cwd, prompt, systemPrompt,
 //                      mcpConfig} as JSON,
@@ -873,7 +875,13 @@ const playReply = (prompt: JsonValue, mcpNote: string) => {
     };
     // a late steer's turn holds on its own gate, so a test can look at the
     // harness while the CLI is still working on the words it steered
-    const finishGate = lateContinuation ? process.env.FAKE_CLAUDE_LATE_STEER_GATE : process.env.FAKE_CLAUDE_SLOW_FINISH_GATE;
+    // FAKE_CLAUDE_GATE_DIR: a prompt carrying [gate:NAME] holds until
+    // <dir>/NAME exists, so a test can finish several turns in any order.
+    const gateDir = process.env.FAKE_CLAUDE_GATE_DIR;
+    // the last marker: a prompt may quote earlier lines before its request
+    const marker = gateDir ? [...promptText(prompt).matchAll(/\[gate:([\w-]+)\]/g)].at(-1)?.[1] : undefined;
+    const finishGate = marker && gateDir ? join(gateDir, marker)
+      : lateContinuation ? process.env.FAKE_CLAUDE_LATE_STEER_GATE : process.env.FAKE_CLAUDE_SLOW_FINISH_GATE;
     if (finishGate) {
       const poll = setInterval(() => {
         if (!existsSync(finishGate)) return;

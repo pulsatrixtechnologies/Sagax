@@ -770,6 +770,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const body: Record<string, unknown> = { fromBotId: BOT_ID, fromThreadId: THREAD_ID, title, message, depth: DEPTH };
     if (toBotId) body.toBotId = toBotId;
     if (folder) body.folder = folder;
+    if (args.report_back === true) body.reportBack = true;
     const r = await api("/api/internal/threads", { method: "POST", body: JSON.stringify(body) });
     // A refusal opened nothing. A "failed" state opened the thread and could
     // not start its turn — that one still counts, and still has an id.
@@ -779,6 +780,10 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const threadId = String(r.threadId ?? "");
     const where = r.self === true ? "on yourself" : `on @${String(r.botName ?? "that bot")}`;
     const opened = `Opened thread #${threadTitle} ${where} [thread id: ${threadId}].`;
+    if (r.self === true && r.parallel === true) {
+      if (r.state === "failed") return { text: `${opened} It could not start: ${String(r.error ?? "unknown reason")}. Tell the person.`, isError: true };
+      return { text: `${opened} It runs as a parallel task of this conversation${r.state === "queued" ? " (waiting for a free slot)" : ""}: the person sees its card here, and its result is posted back here when it finishes. Do not wait for it; carry on or end your turn.` };
+    }
     if (r.self === true) {
       if (r.state === "running") {
         return { text: `${opened} It is running now, in parallel with this conversation, and its result stays in that thread — it will not be delivered here. Mention it to the person as #${threadTitle}; use list_threads in a later turn to see how it is going.` };
