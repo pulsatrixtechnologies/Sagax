@@ -34,6 +34,33 @@ the mail of a solo server. Keep these rules, each covered by a test in
 - A sender always has a name (default `Sagax`); Twilio refuses one without.
 - Tests and fixtures use fake credentials only.
 
+On an organization server Settings leaves Email out (Perspicax manages the
+organization's mail; `organizationHidesSection` in `SettingsModal.tsx`).
+
+## Organization settings (2026-10-01)
+
+Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
+`src/components/EnginesSettings.org.test.ts`,
+`src/components/Sidebar.header.test.ts`,
+`src/components/settings/MyRoutineDelegation.test.ts` and
+`server/org-bot-force.test.ts`:
+
+- Connected apps (Composio) is experimental (`features.connectedApps`, off):
+  off hides the sidebar entry, the Settings > API keys card and the tour's
+  apps steps. The claude.ai connectors status then shows in Settings > Model
+  providers (`HarnessConnectorsSection placement="settings"`).
+- A person's own subscription sign-in lives in Settings > Model providers
+  (`MyEngines`, organization server only), no longer under Organization.
+- Routines in my name is read-only: allowed by default, revoked in the
+  Perspicax console (`manageUrl`, the person's Sagax tab). Perspicax has no
+  silent authorization, so `ensureRoutineDelegation` starts the consent once,
+  after the person's first routine.
+- An organization admin force-stops or force-deletes any bot
+  (`POST /api/org/bots/<id>/force-stop|force-delete`, delete confirmed with
+  the bot's name): admin scope, `orgAdminCaller`, audited
+  (`bot.force_stop`, `bot.force_delete`), the owner notified (`admin-action`,
+  `audience` the owner). A solo server answers 403 `identity_perspicax`.
+
 ## Profile on an organization server
 
 On an organization server (`OMB_IDENTITY=perspicax`) a signed-in person's
@@ -366,7 +393,7 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   `ENABLE_CLAUDEAI_MCP_SERVERS=false`.
 - Connector tools (`mcp__claude_ai_*`) are never pre-allowed: they ride the
   approval flow. An engine tool denial blocks host built-ins, never them.
-- Connected apps shows them read-only (`GET /api/me/harness-connectors`, the
+- Connected apps (or Model providers while Connected apps is off) shows them read-only (`GET /api/me/harness-connectors`, the
   caller's own account only, no email or URL) with a link to
   claude.ai/customize/connectors; an admin turns them off with
   `PUT /api/harness-connectors/settings` (`config.harnessConnectors.claudeAi`).
