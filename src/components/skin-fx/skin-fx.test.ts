@@ -175,6 +175,37 @@ describe("the holographic foil glides without a seam", () => {
   });
 });
 
+describe("no layer edges and no flash", () => {
+  const appShape = (skin: (typeof SHAPE_SKINS)[number], size = 112) => renderToStaticMarkup(createElement(ShapeMascot, { shape: "star", skin, color: "blue", size }));
+  const keyframe = (name: string) => css.slice(css.indexOf(`@keyframes ${name} {`), css.indexOf("}\n}", css.indexOf(`@keyframes ${name} {`)));
+
+  it("never masks a moving rectangle: the iridescent rims are the outline stroked in the foil", () => {
+    for (const skin of SHAPE_SKINS) {
+      for (const html of [appShape(skin), appShape(skin, 24)]) {
+        expect(html, skin).not.toContain("<mask");
+        expect(html, skin).not.toContain("mask=");
+      }
+    }
+    expect(appShape("holo")).toMatch(/<path d="[^"]+" fill="none" stroke="url\(#[^)]+-foil\)" stroke-width="3.2"/);
+  });
+
+  it("crossfades into a new skin: no pop past full size, no bright frame", () => {
+    const pop = keyframe("fx-equip-pop");
+    expect(pop).toMatch(/0% \{ transform: scale\(0\.9\d\); opacity: 0\.\d+; \}/);
+    expect(pop).not.toMatch(/scale\(1\.\d/);
+    expect(keyframe("fx-ring")).toMatch(/0% \{[^}]*opacity: 0\.[0-7]/);
+    for (const name of ["fx-ghost-y", "fx-ghost-x"]) {
+      const peak = Math.max(...[...keyframe(name).matchAll(/opacity: ([\d.]+)/g)].map((m) => Number(m[1])));
+      expect(peak, name).toBeLessThanOrEqual(0.35);
+    }
+  });
+
+  it("keeps an app avatar's jump inside its own headroom", () => {
+    const lift = Math.max(...[...keyframe("fx-body-jump").matchAll(/translateY\(-(\d+)%\)/g)].map((m) => Number(m[1])));
+    expect(lift).toBeLessThanOrEqual(12);
+  });
+});
+
 describe("skin ids persist and migrate", () => {
   it("maps older skin names to the current ids (the desktop window: electron/floating-bot-window.test.mjs)", () => {
     for (const [old, current] of Object.entries(LEGACY_SHAPE_SKINS)) {

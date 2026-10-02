@@ -55,14 +55,6 @@ export function roundedPolygon(points: Point[], radius: number): string {
   return `${d}Z`;
 }
 
-/** A polygon with very soft corners: points along each edge, kept away from the corners, smoothed. */
-function softPolygon(corners: Point[], keep = 0.2): Point[] {
-  return corners.flatMap((a, i) => {
-    const b = corners[(i + 1) % corners.length];
-    return [keep, 0.5, 1 - keep].map((t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t] as Point);
-  });
-}
-
 /** A regular polygon's corners around a center, the first at `turn` degrees from straight up. */
 function regular(cx: number, cy: number, r: number, sides: number, turnDeg = 0): Point[] {
   return Array.from({ length: sides }, (_, i) => {
@@ -75,6 +67,25 @@ function regular(cx: number, cy: number, r: number, sides: number, turnDeg = 0):
 function rotate(points: Point[], cx: number, cy: number, deg: number): Point[] {
   const a = (deg * Math.PI) / 180;
   return points.map(([x, y]) => [cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a), cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)]);
+}
+
+/**
+ * A symmetric heart filling the box: the classic heart curve, sampled, with
+ * the samples at the top dip and the bottom point left out so the smoothing
+ * rounds both (a soft dip, a rounded point, never a cusp).
+ */
+function heart(count = 72): Point[] {
+  const scale = 2.75;
+  const points: Point[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const t = (i / count) * Math.PI * 2;
+    const fromDip = Math.min(t, Math.PI * 2 - t);
+    if (fromDip < 0.2 || Math.abs(t - Math.PI) < 0.3) continue;
+    const x = 16 * Math.sin(t) ** 3;
+    const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+    points.push([50 + x * scale, 40 - y * scale]);
+  }
+  return points;
 }
 
 /** One shape: its outline and where its face sits. */
@@ -95,19 +106,16 @@ export const SHAPE_ART: Record<MascotShape, ShapeArt> = {
   sparkle: { d: smoothClosed(polar(50, 50, (a) => 31 + 18 * Math.abs(Math.cos(2 * a)) ** 1.6, 64)), face: [55, 48] },
   // (5) a four-lobe clover
   clover: { d: smoothClosed(polar(50, 50, (a) => 28 + 16 * Math.abs(Math.cos(2 * a)) ** 0.6, 128, Math.PI / 4)), face: [55, 45] },
-  // (6) a bean, heart-like, leaning right: a wide top-right lobe, a point at the bottom left
-  bean: {
-    d: "M21.4 24.1C28 9 45.6 6.8 56.6 15.4C65.4 6.8 85.2 9 91.8 24.1C98.4 41.4 87.4 60.8 69.8 73.8C56.6 83.5 41.2 91 19.2 93.2C10.4 93.2 6 86.7 8.2 78.1C12.6 63 8.2 47.8 12.6 37C14.8 30.6 17 28.4 21.4 24.1Z",
-    face: [60, 40],
-  },
+  // (6) a heart (id "bean", kept for stored looks): two even lobes on top, a soft rounded point at the bottom
+  bean: { d: smoothClosed(heart()), face: [50, 47] },
   // (7) an eight-lobe scalloped flower
   flower: { d: smoothClosed(polar(50, 50, (a) => 38 + 6 * Math.abs(Math.cos(4 * a)) ** 0.7, 160)), face: [55, 45] },
   // (8) a teardrop, its point at the top left
   drop: { d: smoothClosed(rotate(polar(52, 54, (a) => 38 + 22 * Math.max(0, Math.cos(a)) ** 10, 120), 52, 54, -45)), face: [57, 54] },
   // (9) a pill, lying down
   pill: { d: roundedPolygon([[2, 20], [98, 20], [98, 80], [2, 80]], 30), face: [56, 48] },
-  // (10) a soft guitar pick: a wide top, a point at the bottom right
-  pick: { d: smoothClosed(softPolygon([[-2, 3], [102, 4], [82, 102]], 0.15)), face: [58, 36] },
+  // (10) a triangle (id "pick", kept for stored looks): upright, tilted a little like the others, corners rounded about 12%
+  pick: { d: roundedPolygon(rotate([[50, 4], [97, 88], [3, 88]], 50, 60, -6), 12), face: [51, 57] },
   // (11) a rounded pentagon, a little house, tilted slightly
   house: { d: roundedPolygon(rotate([[50, 5], [95, 39], [84, 93], [16, 93], [5, 39]], 50, 52, 8), 14), face: [56, 50] },
   // (12) a six-point soft star
