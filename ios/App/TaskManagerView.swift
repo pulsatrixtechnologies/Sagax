@@ -4,6 +4,7 @@ import CompanionCore
 /// Bot thread selection belongs to this phone. Group threads retain their
 /// shared, serial selection on the paired computer.
 struct TaskManagerView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     var onSelectThread: (String) -> Void = { _ in }
     @EnvironmentObject private var session: Session

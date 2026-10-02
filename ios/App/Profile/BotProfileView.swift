@@ -13,6 +13,7 @@ import SwiftUI
 import UIKit
 
 struct BotProfileView: View {
+    @Environment(\.themePalette) var themePalette
     enum Tab: String, CaseIterable, Identifiable {
         case info, links, media, files
         var id: String { rawValue }
@@ -129,7 +130,6 @@ struct BotProfileView: View {
         .navigationBarBackButtonHidden(true)
         .background(SwipeBackBridge())
         .persistentSystemOverlays(.hidden)
-        .preferredColorScheme(.dark)
         .navigationDestination(isPresented: $showingInstructions) {
             InstructionView(bot: current)
         }

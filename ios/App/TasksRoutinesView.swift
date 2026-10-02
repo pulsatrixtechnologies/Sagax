@@ -2,6 +2,7 @@ import CompanionCore
 import SwiftUI
 
 struct TasksRoutinesView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var routines: [Routine] = []
     @State private var runs: [RoutineRun] = []
@@ -130,6 +131,7 @@ private enum RoutineEditorTarget: Identifiable {
 }
 
 private struct RoutineRow: View {
+    @Environment(\.themePalette) var themePalette
     let routine: Routine
     let bot: Bot?
 
@@ -156,6 +158,7 @@ private struct RoutineRow: View {
 }
 
 private struct RoutineRunRow: View {
+    @Environment(\.themePalette) var themePalette
     let run: RoutineRun
     let bot: Bot?
     @EnvironmentObject private var session: Session
@@ -192,6 +195,7 @@ private struct RoutineRunRow: View {
 }
 
 struct RoutineEditorView: View {
+    @Environment(\.themePalette) var themePalette
     let routine: Routine?
     let onSaved: () async -> Void
 

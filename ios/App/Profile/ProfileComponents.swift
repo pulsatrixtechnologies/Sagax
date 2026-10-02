@@ -13,6 +13,7 @@ import UIKit
 
 /// A #202020 card, radius 16, `margin` from the screen edges.
 struct ProfileCard<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
     var margin: CGFloat = Theme.Profile.cardMargin
     @ViewBuilder let content: () -> Content
 
@@ -27,6 +28,7 @@ struct ProfileCard<Content: View>: View {
 
 /// The 1 pt divider, from `leading` (card-relative) to the trailing edge.
 struct ProfileDivider: View {
+    @Environment(\.themePalette) var themePalette
     var leading: CGFloat = Theme.Profile.iconColumn - 0.7
 
     var body: some View {
@@ -36,6 +38,7 @@ struct ProfileDivider: View {
 
 /// "Character", "Routines", "Schedule": 12 pt grey, 18 pt into the card.
 struct ProfileSectionLabel: View {
+    @Environment(\.themePalette) var themePalette
     let text: LocalizedStringKey
     var margin: CGFloat = Theme.Profile.cardMargin
 
@@ -52,6 +55,7 @@ struct ProfileSectionLabel: View {
 
 /// The grey sentence under a card.
 struct ProfileFooter: View {
+    @Environment(\.themePalette) var themePalette
     let text: LocalizedStringKey
 
     var body: some View {
@@ -68,6 +72,7 @@ struct ProfileFooter: View {
 
 /// The 7 x 12.3 pt grey chevron.
 struct ProfileChevron: View {
+    @Environment(\.themePalette) var themePalette
     var body: some View {
         Image(systemName: "chevron.right")
             .font(.system(size: 13.5, weight: .regular))
@@ -78,6 +83,7 @@ struct ProfileChevron: View {
 
 /// A leading icon centred 30 pt into the card.
 struct ProfileRowIcon: View {
+    @Environment(\.themePalette) var themePalette
     let systemImage: String
     var size: CGFloat = 16
     var color: Color = Theme.iconGrey
@@ -93,6 +99,7 @@ struct ProfileRowIcon: View {
 
 /// One row: an optional icon, a title (and subtitle), and a trailing view.
 struct ProfileRow<Trailing: View>: View {
+    @Environment(\.themePalette) var themePalette
     var icon: ProfileRowIcon?
     let title: Text
     var subtitle: Text?
@@ -141,6 +148,7 @@ extension ProfileRow where Trailing == EmptyView {
 
 /// A trailing chevron with the measured right inset.
 struct ProfileChevronTrailing: View {
+    @Environment(\.themePalette) var themePalette
     var body: some View {
         ProfileChevron().padding(.trailing, Theme.Profile.chevronTrailing)
     }
@@ -148,6 +156,7 @@ struct ProfileChevronTrailing: View {
 
 /// "Show more" under a list: 14 medium grey, centred.
 struct ShowMoreButton: View {
+    @Environment(\.themePalette) var themePalette
     let loading: Bool
     let action: () -> Void
 
@@ -176,6 +185,7 @@ struct ShowMoreButton: View {
 /// The content scrolled under the top buttons fades into the background
 /// (04: the card reads #1C1C1C at y 112, #181818 at y 64, gone by y 40).
 struct ProfileTopFade: View {
+    @Environment(\.themePalette) var themePalette
     var body: some View {
         LinearGradient(
             stops: [
@@ -196,6 +206,7 @@ struct ProfileTopFade: View {
 
 /// A pushed screen's back circle (chevron ink 8.7 x 15.3 pt).
 struct ProfileBackButton: View {
+    @Environment(\.themePalette) var themePalette
     let action: () -> Void
 
     var body: some View {
@@ -223,6 +234,7 @@ struct GlassMenuItem: Identifiable {
 /// from the button, 6 pt above its top and 8.3 pt from the screen edge, with
 /// a 36 pt row pitch and no separators.
 struct GlassMenuPanel: View {
+    @Environment(\.themePalette) var themePalette
     let items: [GlassMenuItem]
     let close: () -> Void
 
@@ -424,6 +436,7 @@ struct ShareGlyph: Shape {
 
 /// A 44 pt glass circle holding the share glyph.
 struct ShareGlassButton: View {
+    @Environment(\.themePalette) var themePalette
     let action: () -> Void
 
     var body: some View {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CompanionWelcomeView: View {
+    @Environment(\.themePalette) var themePalette
     let onConnect: () -> Void
     let onSkip: () -> Void
 
@@ -82,6 +83,7 @@ struct CompanionWelcomeView: View {
 }
 
 private struct WelcomeBenefit: View {
+    @Environment(\.themePalette) var themePalette
     let icon: String
     let title: LocalizedStringKey
     let detail: LocalizedStringKey
@@ -107,6 +109,7 @@ private struct WelcomeBenefit: View {
 }
 
 struct UnpairedHomeView: View {
+    @Environment(\.themePalette) var themePalette
     let onConnect: () -> Void
 
     var body: some View {
@@ -172,6 +175,7 @@ struct UnpairedHomeView: View {
 }
 
 struct NotificationOnboardingView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var enabling = false
     let onContinue: () -> Void

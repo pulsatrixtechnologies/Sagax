@@ -7,6 +7,7 @@ import UIKit
 #endif
 
 struct PairingView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @StateObject private var discovery = Discovery()
 

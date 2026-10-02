@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct SkillExecutionReceiptView: View {
+    @Environment(\.themePalette) var themePalette
     public let skillName: String
     public let status: String // "running", "success", "error"
     public let durationMs: Int

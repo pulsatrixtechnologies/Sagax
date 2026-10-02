@@ -2,6 +2,7 @@ import SwiftUI
 import CompanionCore
 
 public struct AgentThoughtChamberView: View {
+    @Environment(\.themePalette) var themePalette
     public let reasoning: String
     public let botName: String
     public let mascotColor: Color

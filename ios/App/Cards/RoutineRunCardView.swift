@@ -12,6 +12,7 @@ import SwiftUI
 /// redraws in place from queued to its result; nothing here keeps state
 /// about the run beyond whether the report is expanded.
 struct RoutineRunCardView: View {
+    @Environment(\.themePalette) var themePalette
     let card: RoutineRunCard
     /// When the message landed; stands in for runs with no scheduled time.
     let at: Date

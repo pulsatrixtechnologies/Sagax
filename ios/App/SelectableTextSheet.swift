@@ -8,6 +8,7 @@ import SwiftUI
 import UIKit
 
 struct SelectableTextSheet: View {
+    @Environment(\.themePalette) var themePalette
     let text: String
     @Environment(\.dismiss) private var dismiss
     @State private var copied = false

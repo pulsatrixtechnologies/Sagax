@@ -8,6 +8,7 @@ import SwiftUI
 import CompanionCore
 
 struct NewGroupSheet: View {
+    @Environment(\.themePalette) var themePalette
     let close: () -> Void
     let created: (Room) -> Void
 

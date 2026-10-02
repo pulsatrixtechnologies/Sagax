@@ -9,6 +9,7 @@ import UIKit
 // MARK: - Links (08)
 
 struct LinksTab: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @ObservedObject var loader: LibraryLoader<BotLink>
     @State private var opened: IdentifiedURL?
@@ -68,6 +69,7 @@ struct LinksTab: View {
 // MARK: - Media (09)
 
 struct MediaTab: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @ObservedObject var loader: LibraryLoader<BotLibraryFile>
     @State private var viewing: BotLibraryFile?
@@ -108,6 +110,7 @@ struct MediaTab: View {
 
 /// A thumbnail through the authenticated preview route.
 struct LibraryThumbnail: View {
+    @Environment(\.themePalette) var themePalette
     let file: BotLibraryFile
     @EnvironmentObject private var session: Session
     @State private var image: UIImage?
@@ -130,6 +133,7 @@ struct LibraryThumbnail: View {
 
 /// One image, full screen, at its full size.
 struct MediaViewer: View {
+    @Environment(\.themePalette) var themePalette
     let file: BotLibraryFile
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
@@ -162,7 +166,6 @@ struct MediaViewer: View {
                 .padding(.top, 6)
                 .accessibilityIdentifier("media-viewer-close")
         }
-        .preferredColorScheme(.dark)
         .task {
             guard let client = session.profileClient else { failed = true; return }
             do { image = UIImage(data: try await client.botFileData(file, preview: false)) } catch { failed = true }
@@ -174,6 +177,7 @@ struct MediaViewer: View {
 // MARK: - Files (10)
 
 struct FilesTab: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @ObservedObject var loader: LibraryLoader<BotLibraryFile>
     @EnvironmentObject private var session: Session
@@ -238,6 +242,7 @@ struct FilesTab: View {
 // MARK: - Empty
 
 struct LibraryEmptyState: View {
+    @Environment(\.themePalette) var themePalette
     let loading: Bool
     let problem: String?
     let empty: Text

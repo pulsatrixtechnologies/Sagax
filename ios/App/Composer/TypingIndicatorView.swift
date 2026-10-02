@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct TypingIndicatorView: View {
+    @Environment(\.themePalette) var themePalette
     public let tintColor: Color
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     

@@ -6,6 +6,7 @@ import SwiftUI
 /// transcript live here — this mirrors the paired-safe `BotOverview` payload
 /// exactly. Shell copied from `ConnectedAppsView`.
 struct BotOverviewView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
 
     @EnvironmentObject private var session: Session

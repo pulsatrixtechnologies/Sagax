@@ -36,6 +36,7 @@ enum CompactRosterMetrics {
 
 /// One bot on one line, with its threads beneath it when opened.
 struct CompactBotEntry: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     /// When the bot's current thread last moved, from the roster summary.
     let lastActivity: Double
@@ -358,6 +359,7 @@ struct CompactBotEntry: View {
 
 /// One thread under its bot: title, then its status and when it last moved.
 struct CompactThreadLine: View {
+    @Environment(\.themePalette) var themePalette
     let task: BotTask
     /// A held send, from the client's queue state (never in `activity`).
     var queued = false
@@ -474,6 +476,7 @@ struct CompactThreadLine: View {
 
 /// A group on one line: two of its members' faces, overlapping, then its name.
 struct CompactRoomRow: View {
+    @Environment(\.themePalette) var themePalette
     let room: Room
     let lastActivity: Double
     /// An unanswered approval or question sits in the group's thread.
@@ -530,6 +533,7 @@ struct CompactRoomRow: View {
 /// accessibility sizes, it grows with the text, so one row's time does not
 /// run into the next row's name.
 private struct RowPadding: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var stacked = CompactRosterMetrics.rowPadding
 
@@ -541,6 +545,7 @@ private struct RowPadding: ViewModifier {
 /// Beneath a bot's name at the accessibility sizes: the hand or the spinner,
 /// then the time and the role as one quiet line that gives way at its end.
 private struct SecondLine: View {
+    @Environment(\.themePalette) var themePalette
     let line: CompactSecondLine
     let color: String
     let spinnerLabel: LocalizedStringKey
@@ -567,6 +572,7 @@ private struct SecondLine: View {
 /// Two members' faces in one face's square: the first up and left, the
 /// second down and right on a ring of the list's background.
 private struct RoomFaces: View {
+    @Environment(\.themePalette) var themePalette
     let members: [Bot]
     let size: CGFloat
 
@@ -578,6 +584,7 @@ private struct RoomFaces: View {
 /// The unread dot, in its own gutter at the row's leading edge, as on the
 /// comfortable rows.
 private struct UnreadDot: View {
+    @Environment(\.themePalette) var themePalette
     let visible: Bool
     let color: String
 
@@ -597,6 +604,7 @@ private struct UnreadDot: View {
 /// The trailing marks: a hand in the chat's colour while it waits on the
 /// person, and a spinner in place of the time while it works.
 private struct RowStatus: View {
+    @Environment(\.themePalette) var themePalette
     let waiting: Bool
     let working: Bool
     let stamp: String
@@ -633,6 +641,7 @@ private struct RowStatus: View {
 /// scales with the name, so it keeps its default proportion to it at every
 /// text size instead of outgrowing it at the largest ones.
 struct ChiefBadge: View {
+    @Environment(\.themePalette) var themePalette
     /// Caption's size at the default text size, scaled as the name's body is.
     @ScaledMetric(relativeTo: .body) private var size: CGFloat = 12
 

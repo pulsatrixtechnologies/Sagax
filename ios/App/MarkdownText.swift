@@ -14,6 +14,7 @@ import UIKit
 import CompanionCore
 
 private struct OptionalIdentifier: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     let identifier: String?
 
     func body(content: Content) -> some View {
@@ -26,6 +27,7 @@ private struct OptionalIdentifier: ViewModifier {
 }
 
 struct MarkdownText: View {
+    @Environment(\.themePalette) var themePalette
     let source: String
     /// Draws a caret after the last block. The streaming bubble sets this so
     /// the live reply and the settled one are the same view with the same

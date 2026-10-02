@@ -19,6 +19,7 @@ public struct CommandSkillItem: Identifiable {
 }
 
 public struct CommandSkillHUDView: View {
+    @Environment(\.themePalette) var themePalette
     @Binding public var text: String
     @Binding public var isVisible: Bool
     public let commands: [CommandSkillItem]
@@ -172,6 +173,7 @@ public struct CommandSkillHUDView: View {
 }
 
 private struct CommandCardView: View {
+    @Environment(\.themePalette) var themePalette
     let cmd: CommandSkillItem
     let isDark: Bool
     let action: () -> Void

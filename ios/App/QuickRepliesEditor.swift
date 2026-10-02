@@ -7,6 +7,7 @@ import SwiftUI
 import CompanionCore
 
 struct QuickRepliesEditor: View {
+    @Environment(\.themePalette) var themePalette
     @AppStorage(PrefKey.quickReplies) private var stored = ""
     @State private var editing: QuickReply?
     @State private var addingNew = false
@@ -104,6 +105,7 @@ struct QuickRepliesEditor: View {
 
 /// Add and edit are the same form; only the title differs.
 private struct QuickReplyForm: View {
+    @Environment(\.themePalette) var themePalette
     @State var reply: QuickReply
     let onSave: (QuickReply) -> Void
     @Environment(\.dismiss) private var dismiss

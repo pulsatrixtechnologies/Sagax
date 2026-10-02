@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct GitPRDiffCardView: View {
+    @Environment(\.themePalette) var themePalette
     public let filename: String
     public let diffText: String
     public let additions: Int

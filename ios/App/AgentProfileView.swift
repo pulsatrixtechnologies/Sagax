@@ -7,6 +7,7 @@ import SwiftUI
 /// computer; the phone sees only the model catalog, configured/not-configured
 /// status, and renderer-neutral profile operations.
 struct AgentProfileView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
 
     @EnvironmentObject private var session: Session

@@ -20,6 +20,7 @@ import UIKit
 import AVFoundation
 
 struct ChatView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     @State private var selectedThreadId: String
     @EnvironmentObject private var session: Session
@@ -1404,6 +1405,7 @@ struct ChatView: View {
 }
 
 struct MessageRow: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let message: Message
     /// Last bubble of a run from the same side: the one that gets the tail.
@@ -1651,6 +1653,7 @@ private struct ActivityShareSheet: UIViewControllerRepresentable {
 }
 
 struct TextBubble: View {
+    @Environment(\.themePalette) var themePalette
     let message: Message
     let chat: Chat
     var tailed = true
@@ -1760,6 +1763,7 @@ struct TextBubble: View {
 /// A tool the bot ran. Deliberately quiet — these are the bulk of a busy
 /// transcript and they are context, not content.
 struct ActivityChip: View {
+    @Environment(\.themePalette) var themePalette
     let tool: ToolActivity?
     /// The thread this chip opened, when it opened one.
     var threadRef: ThreadRef? = nil
@@ -1824,6 +1828,7 @@ struct ActivityChip: View {
 /// A quiet capsule under a reply for the harness's receipts (the work
 /// digest, a compaction record): one line, and the full text on tap.
 struct ReceiptChip: View {
+    @Environment(\.themePalette) var themePalette
     let icon: String
     let label: String
     var hint = "Shows the full text"
@@ -1860,6 +1865,7 @@ struct ReceiptChip: View {
 /// provider-neutral: Apple Passwords works without another subscription,
 /// while 1Password, Bitwarden and other enabled providers work as usual.
 struct CredentialRequestCardView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let message: Message
     let secret: SecretRequestCardData
@@ -2268,6 +2274,7 @@ struct CredentialRequestCardView: View {
 /// screen the companion exists for — a bot stopped, and only a person can
 /// let it continue.
 struct CardView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let message: Message
     @EnvironmentObject private var session: Session
@@ -2435,6 +2442,7 @@ struct CardView: View {
 /// A frame of the bot's computer. In the paged shape the pixels are not in
 /// the transcript — they are fetched here, once, when the row appears.
 struct ScreenShot: View {
+    @Environment(\.themePalette) var themePalette
     let threadId: String
     let message: Message
     @EnvironmentObject private var session: Session
@@ -2484,6 +2492,7 @@ struct ScreenShot: View {
 /// animates opacity on a separate view, which needs a device to get right;
 /// static is honest until then.
 struct StreamingBubble: View {
+    @Environment(\.themePalette) var themePalette
     let text: String?
     let reasoning: String?
     var color: String = "blue"
@@ -2529,6 +2538,7 @@ struct StreamingBubble: View {
 /// line each, editable and deletable, with a note when the harness held them
 /// for thread capacity rather than because a turn is running.
 private struct QueuedSendList: View {
+    @Environment(\.themePalette) var themePalette
     let sends: [QueuedSend]
     let edit: (QueuedSend) -> Void
     let cancel: (QueuedSend) -> Void

@@ -57,6 +57,7 @@ enum WalkieVoiceKey {
 }
 
 struct WalkieVoiceSheet: View {
+    @Environment(\.themePalette) var themePalette
     /// Play a short sample with the current settings.
     let onSample: () -> Void
 

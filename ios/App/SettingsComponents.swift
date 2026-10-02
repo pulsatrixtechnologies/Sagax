@@ -34,6 +34,7 @@ enum SettingsMetrics {
 /// glass X or back circle, an optional title and trailing control), with the
 /// top scroll-edge fade over the header height.
 struct SettingsPage<Trailing: View, Content: View>: View {
+    @Environment(\.themePalette) var themePalette
     enum Leading { case close(() -> Void), back }
 
     var title: LocalizedStringKey?
@@ -45,9 +46,8 @@ struct SettingsPage<Trailing: View, Content: View>: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.settingsPop) private var settingsPop
-    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
 
-    private var background: Color { (AppearanceTone(rawValue: tone) ?? .black).background }
+    private var background: Color { Theme.bg }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -120,6 +120,7 @@ extension SettingsPage where Trailing == EmptyView {
 
 /// A grouped card at the sheet's margins (x 23.17 to 378.5 on screen).
 struct SettingsCard<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -133,6 +134,7 @@ struct SettingsCard<Content: View>: View {
 /// The grey 11 pt label above a card ("Bot", "Switch Account"): card bottom
 /// to label cap top 30.2, label baseline to card top 10.5.
 struct SettingsSectionLabel: View {
+    @Environment(\.themePalette) var themePalette
     let text: LocalizedStringKey
 
     var body: some View {
@@ -148,6 +150,7 @@ struct SettingsSectionLabel: View {
 
 /// The grey explanation under a card: cap top 10.7 below it, 14 pt lines.
 struct SettingsFooter: View {
+    @Environment(\.themePalette) var themePalette
     let text: LocalizedStringKey
 
     var body: some View {
@@ -168,6 +171,7 @@ struct SettingsFooter: View {
 /// subtitle sit at the reference's baselines, a toggle tops out at +13.8 in
 /// a two-line row and is centred otherwise.
 struct SettingsRow: View {
+    @Environment(\.themePalette) var themePalette
     enum Accessory {
         case none
         case chevron
@@ -338,6 +342,7 @@ struct SettingsRow: View {
 
 /// `chevron.right` in #6B6A6D: ink 6.67 x 11.67.
 struct SettingsChevron: View {
+    @Environment(\.themePalette) var themePalette
     var body: some View {
         Image(systemName: "chevron.right")
             .font(.system(size: 13, weight: .semibold))
@@ -348,6 +353,7 @@ struct SettingsChevron: View {
 
 /// A row press shows as a faint lift instead of the system's grey flash.
 struct SettingsRowButtonStyle: ButtonStyle {
+    @Environment(\.themePalette) var themePalette
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(configuration.isPressed ? Color.white.opacity(0.06) : Color.clear)
@@ -356,6 +362,7 @@ struct SettingsRowButtonStyle: ButtonStyle {
 
 /// The person's photo (an absolute URL or an app path), else their initial.
 struct AccountPhoto: View {
+    @Environment(\.themePalette) var themePalette
     let photo: UIImage?
     let name: String
     var size: CGFloat = 38.5
@@ -376,6 +383,7 @@ struct AccountPhoto: View {
 
 /// The profile row (65.33): photo, name over email, optional chevron.
 struct AccountCardRow: View {
+    @Environment(\.themePalette) var themePalette
     let name: String
     let detail: String?
     let photo: UIImage?

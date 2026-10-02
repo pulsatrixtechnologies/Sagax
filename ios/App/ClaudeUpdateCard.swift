@@ -10,6 +10,7 @@ import UIKit
 /// way the message that failed is not resent by the update, so every ending
 /// says to send it again.
 struct ClaudeUpdateCard: View {
+    @Environment(\.themePalette) var themePalette
     let instanceId: String
     let tint: Color
     @EnvironmentObject private var session: Session

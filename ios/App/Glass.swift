@@ -10,6 +10,7 @@ import SwiftUI
 
 /// Something floating over content: a tile, a pill, a sheet.
 struct GlassSurface<S: InsettableShape>: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     let shape: S
     var interactive: Bool = true
     var tint: Color? = nil
@@ -46,6 +47,7 @@ extension View {
 /// Neighbouring glass merges when it touches, the way it does in the
 /// system's own bars. A no-op before iOS 26.
 struct GlassGroup<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
     var spacing: CGFloat = 8
     @ViewBuilder let content: () -> Content
 
@@ -61,6 +63,7 @@ struct GlassGroup<Content: View>: View {
 /// A round glass button with one glyph — the shape of every action in the
 /// chrome that is not a pill.
 struct GlassButton: View {
+    @Environment(\.themePalette) var themePalette
     let systemImage: String
     var size: CGFloat = 44
     var weight: Font.Weight = .medium

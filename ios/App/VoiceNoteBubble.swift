@@ -188,6 +188,7 @@ extension VoiceNotePlayer: AVAudioPlayerDelegate {
 /// behavior is this slice's contract. The transcript stays the message
 /// body; this bubble is the playable clip beside it.
 struct VoiceNoteBubble: View {
+    @Environment(\.themePalette) var themePalette
     let note: MessageVoiceNote
     var tint: Color = .accentColor
 

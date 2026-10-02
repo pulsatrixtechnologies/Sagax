@@ -30,6 +30,7 @@ enum ChatProfileRoute {
 /// in 14 medium, 14 pt out (83 pt wide for "Ara").
 /// The mascot carries the bot's live state (working, needs you).
 struct ChatNameCapsule: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     var state: MausState = .idle
     /// Hidden while the island intro is carrying the face.
@@ -71,6 +72,7 @@ struct ChatNameCapsule: View {
 /// Content scrolled under the top bar blurs and fades into the background:
 /// gone above about y 36, about 60% through the bar, clear below it.
 struct ChatTopEdgeFade: View {
+    @Environment(\.themePalette) var themePalette
     var background: Color = Theme.bg
 
     var body: some View {
@@ -134,6 +136,7 @@ struct VoiceWaveformGlyph: Shape {
 /// The white 36x28 capsule at the end of the field: the waveform starts voice
 /// mode; once there is something to send it becomes the send arrow.
 struct ComposerVoiceSendButton: View {
+    @Environment(\.themePalette) var themePalette
     let canSend: Bool
     let busy: Bool
     let send: () -> Void

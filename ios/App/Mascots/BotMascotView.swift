@@ -10,6 +10,7 @@ import SwiftUI
 import UIKit
 
 struct BotMascotView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     let size: CGFloat
     var state: MausState = .idle
@@ -81,6 +82,7 @@ struct BotMascotView: View {
 /// scaled by the zoom about that same point (`AvatarFraming.imageRect`),
 /// masked to a circle, 22 % corners or a square.
 struct FramedPicture: View {
+    @Environment(\.themePalette) var themePalette
     let image: UIImage
     let size: CGFloat
     let crop: AvatarCrop
@@ -135,6 +137,7 @@ private struct AnimatedAttachmentView: UIViewRepresentable {
 
 /// A chat's avatar: a bot's own, or a room's members as a group.
 struct ChatAvatarView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let size: CGFloat
     var state: MausState = .idle

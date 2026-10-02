@@ -9,6 +9,7 @@ import UIKit
 /// workspace integration while still giving mobile users explicit Work,
 /// Personal, and client-account choices.
 struct ConnectedAppsView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @Environment(\.scenePhase) private var scenePhase
     @State private var catalog: ConnectorCatalog?

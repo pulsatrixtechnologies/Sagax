@@ -3,6 +3,7 @@ import SwiftUI
 
 /// The compact thread label shared by the roster and the thread picker.
 struct BotThreadRow: View {
+    @Environment(\.themePalette) var themePalette
     let task: BotTask
     var selected = false
     /// The thread is holding a queued send, from the client's queue state.

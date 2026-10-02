@@ -8,6 +8,7 @@ import SwiftUI
 import CompanionCore
 
 struct CreateBotSheet: View {
+    @Environment(\.themePalette) var themePalette
     let close: () -> Void
     let created: (Bot) -> Void
 

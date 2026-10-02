@@ -127,6 +127,7 @@ struct ParityLaunch {
 
 /// Opens the requested reference screen once the roster has arrived.
 struct ParityScreenLauncher: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var presented: ParityScreen?
     @State private var launched = false
@@ -188,6 +189,7 @@ struct ParityScreenLauncher: ViewModifier {
 /// A screen that a later phase builds. Drawn on the theme background so the
 /// diff measures the gap honestly instead of comparing against the home.
 struct ParityPlaceholderView: View {
+    @Environment(\.themePalette) var themePalette
     let screen: ParityScreen
     let close: () -> Void
 
@@ -202,7 +204,6 @@ struct ParityPlaceholderView: View {
                 .foregroundStyle(Theme.textTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .preferredColorScheme(.dark)
     }
 }
 #endif

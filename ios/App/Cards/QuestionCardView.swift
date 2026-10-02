@@ -15,6 +15,7 @@ import SwiftUI
 /// The answer text is built by `AskQuestionAnswer.format`, so an answer given
 /// here is byte-for-byte the one the Mac would have sent.
 struct QuestionCardView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let message: Message
     @EnvironmentObject private var session: Session

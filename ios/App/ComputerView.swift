@@ -16,6 +16,7 @@ import UIKit
 enum ComputerFit: String { case fit, fill }
 
 struct ComputerView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
@@ -423,6 +424,7 @@ struct ComputerView: View {
 
 /// "?": what each gesture does.
 struct ComputerGestureHelp: View {
+    @Environment(\.themePalette) var themePalette
     @Environment(\.dismiss) private var dismiss
 
     private let rows: [(String, LocalizedStringKey, LocalizedStringKey)] = [

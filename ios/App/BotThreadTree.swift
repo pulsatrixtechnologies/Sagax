@@ -4,6 +4,7 @@ import SwiftUI
 /// Observe search and live thread metadata here, independently of the
 /// roster summary's stable bot identity.
 struct BotThreadTree: View {
+    @Environment(\.themePalette) var themePalette
     let botID: String
     @Binding var query: String
     @Binding var expanded: Bool

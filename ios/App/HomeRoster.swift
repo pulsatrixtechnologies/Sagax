@@ -72,6 +72,7 @@ struct CollapsedSections {
 
 /// The person's photo in a 44 pt glass ring (38 pt photo inset 3 pt).
 struct HomeAccountButton: View {
+    @Environment(\.themePalette) var themePalette
     let action: () -> Void
     @EnvironmentObject private var session: Session
     @State private var photo: UIImage?
@@ -123,6 +124,7 @@ struct HomeAccountButton: View {
 /// A pinned bot or group: an 85 pt mascot, its name centred beneath with
 /// the unread dot after it.
 struct HomePinnedCell: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     var state: MausState = .idle
 
@@ -175,6 +177,7 @@ struct HomePinnedCell: View {
 // MARK: - Section header
 
 struct HomeSectionHeader: View {
+    @Environment(\.themePalette) var themePalette
     let title: String
     let collapsed: Bool
     let toggle: () -> Void
@@ -221,6 +224,7 @@ struct HomeRowStatus: Equatable {
 /// One bot or group on two lines: 42 pt mascot, name, role chip and time,
 /// then the preview with its leading icon.
 struct HomeChatRow: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let preview: RosterPreviewLine
     let stamp: String
@@ -366,6 +370,7 @@ struct HomeChatRow: View {
 /// The glass popover that grows out of the "+" button: New Bot and New
 /// Group Chat, 14 pt, on a 35.8 pt pitch with about 10 pt of padding.
 struct HomePlusMenu: View {
+    @Environment(\.themePalette) var themePalette
     var canCreateBot: Bool
     let newBot: () -> Void
     let newGroup: () -> Void

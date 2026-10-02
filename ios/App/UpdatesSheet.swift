@@ -7,6 +7,7 @@ import SwiftUI
 import CompanionCore
 
 struct UpdatesSheet: View {
+    @Environment(\.themePalette) var themePalette
     let open: (Chat) -> Void
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
@@ -70,6 +71,7 @@ struct UpdatesSheet: View {
 }
 
 private struct UpdateRow: View {
+    @Environment(\.themePalette) var themePalette
     let update: ChatUpdate
     let open: () -> Void
     @EnvironmentObject private var session: Session

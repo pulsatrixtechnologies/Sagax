@@ -8,6 +8,7 @@ import SwiftUI
 import CompanionCore
 
 struct WalkieView: View {
+    @Environment(\.themePalette) var themePalette
     /// Leave Walkie for a chat — the caller owns navigation.
     let onOpen: (Chat) -> Void
 
@@ -40,7 +41,6 @@ struct WalkieView: View {
         .frame(maxWidth: CompanionLayout.rosterWidth)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
-        .preferredColorScheme(.dark)
         .animation(.snappy(duration: 0.2), value: reviewing)
         .sheet(isPresented: $showingVoice) {
             WalkieVoiceSheet {
@@ -49,7 +49,6 @@ struct WalkieView: View {
                     walkie.sample(agentVoice: voice)
                 }
             }
-                .preferredColorScheme(.dark)
         }
         .onAppear {
             walkie.speaksReplies = speakReplies
@@ -353,6 +352,7 @@ struct WalkieView: View {
 // MARK: - Pieces
 
 struct WalkieAgentRow: View {
+    @Environment(\.themePalette) var themePalette
     let agent: WalkieAgent
     let selected: Bool
 
@@ -399,6 +399,7 @@ struct WalkieAgentRow: View {
 }
 
 struct WalkieStatusMark: View {
+    @Environment(\.themePalette) var themePalette
     let status: WalkieAgent.Status
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var turning = false
@@ -434,6 +435,7 @@ struct WalkieStatusMark: View {
 }
 
 struct WalkieKey: View {
+    @Environment(\.themePalette) var themePalette
     let title: LocalizedStringKey
     let systemImage: String
     let enabled: Bool
@@ -471,6 +473,7 @@ struct WalkieKey: View {
 }
 
 struct WalkieWave: View {
+    @Environment(\.themePalette) var themePalette
     let active: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

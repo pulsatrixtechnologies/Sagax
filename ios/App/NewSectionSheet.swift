@@ -7,6 +7,7 @@ private let maximumBotsPerSection = 100
 /// A normal tap always works; holding for a beat starts a trail that can be
 /// drawn through the grid without lifting a finger.
 struct NewSectionSheet: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

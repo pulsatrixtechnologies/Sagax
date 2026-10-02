@@ -11,6 +11,7 @@ import SwiftUI
 import CompanionCore
 
 struct ActivityRunChip: View {
+    @Environment(\.themePalette) var themePalette
     let items: [Message]
     /// Where an "Opened thread" chip inside the run goes once unfolded.
     var openThread: ((ThreadRef) -> Void)? = nil

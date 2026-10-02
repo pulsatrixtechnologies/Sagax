@@ -42,6 +42,7 @@ enum AttachmentImportError: LocalizedError {
 }
 
 struct PendingAttachmentChip: View {
+    @Environment(\.themePalette) var themePalette
     let attachment: PendingMessageAttachment
     let remove: () -> Void
 
@@ -104,6 +105,7 @@ struct PendingAttachmentChip: View {
 /// transport metadata only: every byte still comes through the authenticated
 /// route for the message that introduced it.
 struct TranscriptAttachmentView: View {
+    @Environment(\.themePalette) var themePalette
     let attachment: DisplayedMessageAttachment
     let threadId: String
     let messageId: String
@@ -452,6 +454,7 @@ struct FilePreviewItem: Identifiable {
 }
 
 struct FilePreviewView: View {
+    @Environment(\.themePalette) var themePalette
     let item: FilePreviewItem
     let close: () -> Void
     @State private var linkError: LocalizedStringKey?

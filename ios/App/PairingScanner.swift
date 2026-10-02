@@ -11,6 +11,7 @@ import UIKit
 import VisionKit
 
 struct PairingScannerSheet: View {
+    @Environment(\.themePalette) var themePalette
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 

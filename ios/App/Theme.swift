@@ -10,6 +10,7 @@
 // section labels and footers, the role chip, the card sheet container and
 // the top scroll-edge fade. `ThemeGalleryView` (DEBUG) shows them together.
 import SwiftUI
+import CompanionCore
 
 // MARK: - Colour
 
@@ -41,104 +42,141 @@ extension UIColor {
 enum Theme {
     // MARK: Surfaces
     //
-    // The surfaces follow Settings > App > Appearance > Black or Dim everywhere
-    // in the app, not only in the screen that changes it: each one is a dynamic
-    // colour that reads the stored tone when it is resolved. Black keeps the
-    // reference values exactly (#141414, #202020, ...); Dim lifts the same
-    // family one step. `ThemeToneRefresh` (applied once at the root) makes
-    // views already on screen draw again when the tone changes.
+    // Every colour is read from the active skin (CompanionCore/Skins.swift)
+    // when it is asked for. `ThemeRoot`, applied once at the root, decides the
+    // skin (Settings > Appearance, the phone's light or dark, the computer's
+    // own choice), stores it in `ThemeRuntime` and in the environment
+    // (`\.themePalette`); every view declares that environment value, so a
+    // change redraws the whole tree live and these properties answer with the
+    // new skin. Black keeps the reference values exactly (#141414, #202020, ...).
 
-    /// The app background: #141414 in Black (the parity value), #1C1C1E in Dim.
-    static let bg = toned(black: 0x141414, dim: 0x1C1C1E)
-    /// The computer view draws on pure black.
+    /// The active skin's tokens.
+    static var palette: SkinPalette { ThemeRuntime.palette }
+
+    /// The app background: #141414 in Black (the parity value).
+    static var bg: Color { palette.bg.color }
+    /// The computer view draws on pure black, whatever the skin.
     static let bgComputer = Color(hex: 0x000000)
-    /// The "Dim" appearance: a lifted dark grey instead of near-black.
-    static let bgDim = Color(hex: 0x1C1C1E)
-    static let card = toned(black: 0x202020, dim: 0x2C2C2E)
-    static let hairline = toned(black: 0x313131, dim: 0x3A3A3C)
-    static let tabHairline = toned(black: 0x262626, dim: 0x303032)
+    static var card: Color { palette.card.color }
+    /// One step above a card: a pressed row, the user's bubble on Black.
+    static var cardRaised: Color { palette.cardRaised.color }
+    static var hairline: Color { palette.hairline.color }
+    static var tabHairline: Color { palette.tabHairline.color }
+    /// Code, quoted output and sunken fields.
+    static var inset: Color { palette.inset.color }
+    /// Behind the window: teal on Hibou 98, the background elsewhere.
+    static var desktop: Color { palette.desktop.color }
 
-    /// A colour that is `black` under the Black tone and `dim` under Dim,
-    /// resolved from the stored preference each time it is drawn.
-    static func toned(black: UInt32, dim: UInt32) -> Color {
-        let blackColor = UIColor(hex: black)
-        let dimColor = UIColor(hex: dim)
-        return Color(uiColor: UIColor { _ in AppearanceTone.current == .dim ? dimColor : blackColor })
-    }
-    /// Glass control fill: about 13% white over `bg`.
-    static let glassFill = Color(hex: 0x333333)
-    static let glassRimLight = Color(hex: 0x7A7A7A)
-    static let glassRimDark = Color(hex: 0x060606)
-    static let chip = Color(hex: 0x252527)
-    static let pill = Color(hex: 0x2B2B2D)
-    static let pillBorder = Color(hex: 0x363537)
+    /// Glass control fill: about 13% white over `bg` on Black.
+    static var glassFill: Color { palette.glassFill.color }
+    static var glassRimLight: Color { palette.glassRimLight.color }
+    static var glassRimDark: Color { palette.glassRimDark.color }
+    static var chip: Color { palette.chip.color }
+    static var pill: Color { palette.pill.color }
+    static var pillBorder: Color { palette.pillBorder.color }
     /// Behind a card sheet the home is dimmed with black at 50%.
-    static let dim = Color.black.opacity(0.5)
-    /// A disabled light capsule ("Next", "Create"): about 57% white glass.
-    static let disabledCapsule = Color(hex: 0x999999)
-    static let disabledCapsuleText = Color(hex: 0x2D2D2D)
+    static var dim: Color { Color.black.opacity(palette.isDark ? 0.5 : 0.28) }
+    /// A disabled light capsule ("Next", "Create"): about 57% white glass on Black.
+    static var disabledCapsule: Color { palette.disabledCapsule.color }
+    static var disabledCapsuleText: Color { palette.disabledCapsuleText.color }
+    /// The filled call to action and the ink on it (white and black on Black).
+    static var primaryFill: Color { palette.primaryFill.color }
+    static var primaryInk: Color { palette.primaryInk.color }
 
     // MARK: Text
-    static let textPrimary = Color.white
-    static let textSecondary = Color(hex: 0x9C9BA1)
+    static var textPrimary: Color { palette.textPrimary.color }
+    static var textSecondary: Color { palette.textSecondary.color }
     /// Home previews, headers and pinned labels read a touch darker.
-    static let textSecondaryHome = Color(hex: 0x97969D)
-    static let textTertiary = Color(hex: 0x575659)
-    static let textDisabled = Color(hex: 0x5F5E62)
-    static let placeholder = Color(hex: 0x6B6A6C)
-    static let chevron = Color(hex: 0x6B6A6D)
-    static let iconGrey = Color(hex: 0x9B9BA1)
-    static let chipText = Color(hex: 0x9E9EA4)
-    static let addedText = Color(hex: 0x818183)
+    static var textSecondaryHome: Color { palette.textSecondaryHome.color }
+    static var textTertiary: Color { palette.textTertiary.color }
+    static var textDisabled: Color { palette.textDisabled.color }
+    static var placeholder: Color { palette.placeholder.color }
+    static var chevron: Color { palette.chevron.color }
+    static var iconGrey: Color { palette.iconGrey.color }
+    static var chipText: Color { palette.chipText.color }
+    static var addedText: Color { palette.addedText.color }
 
     // MARK: Accents
-    static let toggleOn = Color(hex: 0x68CE67)
-    static let blue = Color(hex: 0x2D6DE7)
-    static let unreadDot = Color(hex: 0x2D6BE3)
-    static let caret = Color(hex: 0x4C69EA)
+    /// Switches: #68CE67 on Black and Dim, the skin's accent elsewhere (as the desktop).
+    static var toggleOn: Color { palette.toggleOn.color }
+    static var toggleOff: Color { palette.toggleOff.color }
+    static var toggleKnob: Color { palette.toggleKnob.color }
+    /// The accent fill (#2D6DE7 on Black).
+    static var blue: Color { palette.accent.color }
+    static var accent: Color { palette.accent.color }
+    /// Ink on an accent fill.
+    static var accentInk: Color { palette.accentInk.color }
+    static var unreadDot: Color { palette.unreadDot.color }
+    static var caret: Color { palette.caret.color }
+    static var focus: Color { palette.focus.color }
     /// Destructive rows in settings cards.
-    static let destructive = Color(hex: 0xF49A96)
+    static var destructive: Color { palette.destructive.color }
     /// Destructive items in glass menus.
-    static let destructiveMenu = Color(hex: 0xFF7876)
-    static let routineActive = Color(hex: 0x5DA16B)
-    static let routinePaused = Color(hex: 0xD65555)
-    static let selectionRing = Color(hex: 0x545356)
+    static var destructiveMenu: Color { palette.destructiveMenu.color }
+    static var danger: Color { palette.danger.color }
+    static var dangerInk: Color { palette.dangerInk.color }
+    static var success: Color { palette.success.color }
+    static var successInk: Color { palette.successInk.color }
+    static var warning: Color { palette.warning.color }
+    static var routineActive: Color { palette.routineActive.color }
+    static var routinePaused: Color { palette.routinePaused.color }
+    static var selectionRing: Color { palette.selectionRing.color }
 
     // MARK: Chat (measure-chat-profile.md §1)
-    /// The assistant bubble is a card: #202020, no tail.
-    static let bubbleAssistant = toned(black: 0x202020, dim: 0x2C2C2E)
-    /// Your own words: one step lighter than the assistant card, same family.
-    static let bubbleUser = toned(black: 0x2E2E30, dim: 0x3A3A3C)
+    /// The assistant bubble is a card: #202020 on Black, no tail.
+    static var bubbleAssistant: Color { palette.bubbleAssistant.color }
+    static var bubbleAssistantText: Color { palette.bubbleAssistantText.color }
+    /// Your own words: one step lighter than the assistant card on Black.
+    static var bubbleUser: Color { palette.bubbleUser.color }
+    static var bubbleUserText: Color { palette.bubbleUserText.color }
     /// "Today 4:53 PM" between stretches of conversation.
-    static let chatTimestamp = Color(hex: 0x555557)
+    static var chatTimestamp: Color { palette.chatTimestamp.color }
     /// The 5 pt list dot inside a bubble.
-    static let bulletDot = Color(hex: 0x5F5E61)
+    static var bulletDot: Color { palette.bulletDot.color }
     /// The composer's placeholder and its mic glyph.
-    static let composerPlaceholder = Color(hex: 0x6B6B6E)
-    static let composerMic = Color(hex: 0xA3A2AA)
+    static var composerPlaceholder: Color { palette.composerPlaceholder.color }
+    static var composerMic: Color { palette.composerMic.color }
+    /// The approval / question card ("Approval needed").
+    static var attentionSurface: Color { palette.attentionSurface.color }
+    static var attentionBorder: Color { palette.attentionBorder.color }
+    static var attentionText: Color { palette.attentionText.color }
+    static var attentionSecondary: Color { palette.attentionSecondary.color }
 
     // MARK: Type (SF Pro at the measured sizes; no Dynamic Type)
     enum Font {
         /// Chat bubble, profile rows, composer: 14 regular, 18.1 line pitch.
-        static let body = SwiftUI.Font.system(size: 14)
-        static let bodyMedium = SwiftUI.Font.system(size: 14, weight: .medium)
+        static var body: SwiftUI.Font { Theme.font(14) }
+        static var bodyMedium: SwiftUI.Font { Theme.font(14, .medium) }
         /// Settings rows.
-        static let rowTitle = SwiftUI.Font.system(size: 13.5)
-        static let headerTitle = SwiftUI.Font.system(size: 13.5, weight: .medium)
-        static let buttonLabel = SwiftUI.Font.system(size: 13.5, weight: .semibold)
+        static var rowTitle: SwiftUI.Font { Theme.font(13.5) }
+        static var headerTitle: SwiftUI.Font { Theme.font(13.5, .medium) }
+        static var buttonLabel: SwiftUI.Font { Theme.font(13.5, .semibold) }
         /// Settings subtitles, section labels and footers.
-        static let label = SwiftUI.Font.system(size: 11)
-        static let labelMedium = SwiftUI.Font.system(size: 11, weight: .medium)
+        static var label: SwiftUI.Font { Theme.font(11) }
+        static var labelMedium: SwiftUI.Font { Theme.font(11, .medium) }
         /// Profile section labels, footers and two-line subtitles.
-        static let profileLabel = SwiftUI.Font.system(size: 12)
-        static let roleChip = SwiftUI.Font.system(size: 12, weight: .medium)
-        static let time = SwiftUI.Font.system(size: 11.5)
-        static let preview = SwiftUI.Font.system(size: 12.5)
-        static let tab = SwiftUI.Font.system(size: 13)
-        static let profileName = SwiftUI.Font.system(size: 18, weight: .semibold)
+        static var profileLabel: SwiftUI.Font { Theme.font(12) }
+        static var roleChip: SwiftUI.Font { Theme.font(12, .medium) }
+        static var time: SwiftUI.Font { Theme.font(11.5) }
+        static var preview: SwiftUI.Font { Theme.font(12.5) }
+        static var tab: SwiftUI.Font { Theme.font(13) }
+        static var profileName: SwiftUI.Font { Theme.font(18, .semibold) }
         static let code = SwiftUI.Font.system(size: 12, design: .monospaced)
-        static let timestamp = SwiftUI.Font.system(size: 11)
-        static let appName = SwiftUI.Font.system(size: 17)
+        static var timestamp: SwiftUI.Font { Theme.font(11) }
+        static var appName: SwiftUI.Font { Theme.font(17) }
+    }
+
+    /// The skin's face at a measured size: SF Pro (Black and most skins), New
+    /// York for the serif choice, Verdana standing in for MS Sans Serif on
+    /// Hibou 98 (a touch smaller, as Tahoma sets tighter).
+    static func font(_ size: CGFloat, _ weight: SwiftUI.Font.Weight = .regular) -> SwiftUI.Font {
+        switch ThemeRuntime.typeface {
+        case .system: return .system(size: size, weight: weight)
+        case .serif: return .system(size: size, weight: weight, design: .serif)
+        case .retro:
+            let bold = weight == .semibold || weight == .bold || weight == .heavy || weight == .black
+            return .custom(bold ? "Verdana-Bold" : "Verdana", size: size * 0.9)
+        }
     }
 
     /// Body text renders at a 16.7 pt natural line; the reference pitch is 18.1.
@@ -151,8 +189,8 @@ enum Theme {
         static let glassLarge: CGFloat = 44
         static let glassSheet: CGFloat = 42
         static let glassSmall: CGFloat = 38
-        static let cardRadius: CGFloat = 16
-        static let bubbleRadius: CGFloat = 20
+        static var cardRadius: CGFloat { Theme.palette.bevelled ? 0 : 16 }
+        static var bubbleRadius: CGFloat { Theme.palette.bevelled ? 0 : 20 }
         static let rowInset: CGFloat = 17.5
         static let rowHeight: CGFloat = 44.5
         static let toggleRowHeight: CGFloat = 53.67
@@ -160,11 +198,11 @@ enum Theme {
         static let cardGap: CGFloat = 27
         static let sheetInset: CGFloat = 8
         /// Circle fits are 37/50; continuous corners render about 12% rounder.
-        static let sheetTopRadius: CGFloat = 33
-        static let sheetBottomRadius: CGFloat = 44
+        static var sheetTopRadius: CGFloat { Theme.palette.bevelled ? 0 : 33 }
+        static var sheetBottomRadius: CGFloat { Theme.palette.bevelled ? 0 : 44 }
         static let chipHeight: CGFloat = 19
-        static let chipRadius: CGFloat = 6.3
-        static let menuRadius: CGFloat = 28
+        static var chipRadius: CGFloat { Theme.palette.bevelled ? 0 : 6.3 }
+        static var menuRadius: CGFloat { Theme.palette.bevelled ? 0 : 28 }
         /// The top scroll-edge fade runs over the header height.
         static let scrollEdgeHeight: CGFloat = 80
     }
@@ -252,63 +290,17 @@ extension Theme {
     }
 
     /// Links, "Reset to default", "Add routine", "Share as Template".
-    static let accentText = Color(hex: 0x2F6CE7)
+    static var accentText: Color { palette.accentText.color }
     /// "Show more" under a profile list.
-    static let showMore = Color(hex: 0x97959C)
+    static var showMore: Color { palette.showMore.color }
     /// The "..." glass menu body over the dark card.
-    static let menuGlass = Color(hex: 0x3B3A3B)
+    static var menuGlass: Color { palette.menuGlass.color }
 }
 
 // MARK: - Preferences
 
-/// Settings > App > Appearance. Stored per device.
-enum AppearanceMode: String, CaseIterable, Identifiable {
-    case system, dark
-    var id: String { rawValue }
-    var label: LocalizedStringKey { self == .system ? "System" : "Dark" }
-    /// System follows the device; Dark forces dark. Light is a later pass.
-    var colorScheme: ColorScheme? { self == .system ? nil : .dark }
-}
-
-/// The dark background flavour: near-black or a lifted grey.
-enum AppearanceTone: String, CaseIterable, Identifiable {
-    case black, dim
-    var id: String { rawValue }
-    var label: LocalizedStringKey { self == .black ? "Black" : "Dim" }
-    /// This tone's background, whatever tone is stored (the Appearance page
-    /// and the settings sheet draw the one being picked).
-    var background: Color { self == .black ? Color(hex: 0x141414) : Theme.bgDim }
-
-    /// The stored tone, read when a `Theme` surface is resolved.
-    static var current: AppearanceTone {
-        UserDefaults.standard.string(forKey: PrefKey.appearanceTone).flatMap(AppearanceTone.init(rawValue:)) ?? .black
-    }
-}
-
-/// Applied once at the root: when the tone changes, everything already on
-/// screen draws again so the dynamic `Theme` surfaces resolve to the new one.
-/// The environment value is what carries the change down the tree; nothing
-/// reads it by name.
-struct ThemeToneRefresh: ViewModifier {
-    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
-
-    func body(content: Content) -> some View {
-        content.environment(\.appearanceTone, AppearanceTone(rawValue: tone) ?? .black)
-    }
-}
-
-private struct AppearanceToneKey: EnvironmentKey {
-    static let defaultValue = AppearanceTone.black
-}
-
-extension EnvironmentValues {
-    var appearanceTone: AppearanceTone {
-        get { self[AppearanceToneKey.self] }
-        set { self[AppearanceToneKey.self] = newValue }
-    }
-}
-
 extension PrefKey {
+    /// The earlier Appearance keys, read once to migrate (ThemeStore).
     static let appearanceMode = "companion.prefs.appearanceMode"
     static let appearanceTone = "companion.prefs.appearanceTone"
     /// On by default; read by `Haptics` before every generator fires.
@@ -322,12 +314,18 @@ extension PrefKey {
 /// refraction and the rim; the fill under it is tinted so the flat centre
 /// reads #333333 over the dark background, as in the references.
 struct ThemeGlass<S: InsettableShape>: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     let shape: S
     var fill: Color = Theme.glassFill
     var interactive: Bool = true
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
+        if Theme.palette.bevelled {
+            // Hibou 98: a raised grey button, square, bevelled.
+            content
+                .background(fill)
+                .overlay(RetroBevel())
+        } else if #available(iOS 26.0, *) {
             content
                 .background(fill.opacity(0.92), in: shape)
                 .glassEffect(interactive ? .clear.interactive() : .clear, in: shape)
@@ -339,8 +337,39 @@ struct ThemeGlass<S: InsettableShape>: ViewModifier {
     }
 }
 
+/// The 98.css bevel: white and light grey on the top-left, black and dark
+/// grey on the bottom-right (`--r98-raised`), or the reverse when sunken.
+struct RetroBevel: View {
+    @Environment(\.themePalette) var themePalette
+    var sunken = false
+
+    var body: some View {
+        let light = sunken ? Color(hex: 0x0A0A0A) : Color.white
+        let lightInner = sunken ? Color(hex: 0x808080) : Color(hex: 0xDFDFDF)
+        let dark = sunken ? Color.white : Color(hex: 0x0A0A0A)
+        let darkInner = sunken ? Color(hex: 0xDFDFDF) : Color(hex: 0x808080)
+        GeometryReader { proxy in
+            let w = proxy.size.width, h = proxy.size.height
+            Path { p in
+                p.move(to: CGPoint(x: 0.5, y: h)); p.addLine(to: CGPoint(x: 0.5, y: 0.5)); p.addLine(to: CGPoint(x: w, y: 0.5))
+            }.stroke(light, lineWidth: 1)
+            Path { p in
+                p.move(to: CGPoint(x: 1.5, y: h - 1)); p.addLine(to: CGPoint(x: 1.5, y: 1.5)); p.addLine(to: CGPoint(x: w - 1, y: 1.5))
+            }.stroke(lightInner, lineWidth: 1)
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: h - 0.5)); p.addLine(to: CGPoint(x: w - 0.5, y: h - 0.5)); p.addLine(to: CGPoint(x: w - 0.5, y: 0))
+            }.stroke(dark, lineWidth: 1)
+            Path { p in
+                p.move(to: CGPoint(x: 1, y: h - 1.5)); p.addLine(to: CGPoint(x: w - 1.5, y: h - 1.5)); p.addLine(to: CGPoint(x: w - 1.5, y: 1))
+            }.stroke(darkInner, lineWidth: 1)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 /// The fallback rim: light at the top and bottom edges, dark at the sides.
 struct ThemeGlassRim<S: InsettableShape>: View {
+    @Environment(\.themePalette) var themePalette
     let shape: S
 
     var body: some View {
@@ -382,6 +411,7 @@ extension View {
 
 /// A round glass button: 44 pt on screens, 42 in sheets, 38 on the computer.
 struct GlassCircleButton: View {
+    @Environment(\.themePalette) var themePalette
     enum Size: CGFloat {
         case large = 44, sheet = 42, small = 38
         /// Glyphs are 17 to 20 pt medium in the references.
@@ -427,6 +457,7 @@ struct GlassCircleButton: View {
 /// A glass capsule holding arbitrary content (name pill, search field,
 /// "N installed"). Height defaults to the 44 pt control height.
 struct GlassCapsule<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
     var height: CGFloat = Theme.Metric.glassLarge
     var horizontalPadding: CGFloat = 14
     var fill: Color = Theme.glassFill
@@ -442,6 +473,7 @@ struct GlassCapsule<Content: View>: View {
 
 /// The light capsule action ("Next", "Create"): grey glass while disabled.
 struct CapsuleActionButton: View {
+    @Environment(\.themePalette) var themePalette
     let title: LocalizedStringKey
     var enabled: Bool
     var height: CGFloat = 44
@@ -451,12 +483,12 @@ struct CapsuleActionButton: View {
         Button(action: action) {
             Text(title)
                 .font(Theme.Font.buttonLabel)
-                .foregroundStyle(enabled ? Color.black : Theme.disabledCapsuleText)
+                .foregroundStyle(enabled ? Theme.primaryInk : Theme.disabledCapsuleText)
                 .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity)
                 .frame(height: height)
-                .background(enabled ? Color.white : Theme.disabledCapsule, in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5))
+                .background(enabled ? Theme.primaryFill : Theme.disabledCapsule, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.palette.isDark ? Color.white.opacity(0.35) : Theme.hairline, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
@@ -468,6 +500,7 @@ struct CapsuleActionButton: View {
 /// A grouped card: #202020, radius 16, rows separated by a hairline inset to
 /// the text column.
 struct CardSection<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
     var horizontalMargin: CGFloat = 23.17
     @ViewBuilder let content: () -> Content
 
@@ -475,12 +508,14 @@ struct CardSection<Content: View>: View {
         VStack(spacing: 0, content: content)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
+            .overlay { if Theme.palette.bevelled { RetroBevel(sunken: true) } }
             .padding(.horizontal, horizontalMargin)
     }
 }
 
 /// The 1 pt divider between rows: from the text column to the trailing edge.
 struct CardHairline: View {
+    @Environment(\.themePalette) var themePalette
     var leadingInset: CGFloat = Theme.Metric.rowInset
 
     var body: some View {
@@ -494,6 +529,7 @@ struct CardHairline: View {
 /// One row of a card. The accessory decides the trailing side; the style
 /// decides the title colour.
 struct CardRow: View {
+    @Environment(\.themePalette) var themePalette
     enum Accessory {
         case none
         case chevron
@@ -609,6 +645,7 @@ struct CardRow: View {
 
 /// The iOS 26 switch as measured: 60x27 track, white pill knob 35x23.
 struct ParityToggleStyle: ToggleStyle {
+    @Environment(\.themePalette) var themePalette
     var width: CGFloat = 60.33
     var height: CGFloat = 26.67
 
@@ -620,9 +657,9 @@ struct ParityToggleStyle: ToggleStyle {
             withAnimation(.easeOut(duration: 0.22)) { configuration.isOn.toggle() }
         } label: {
             ZStack(alignment: configuration.isOn ? .trailing : .leading) {
-                Capsule().fill(configuration.isOn ? Theme.toggleOn : Color(hex: 0x39393D))
+                Capsule().fill(configuration.isOn ? Theme.toggleOn : Theme.toggleOff)
                 Capsule()
-                    .fill(Color.white)
+                    .fill(Theme.toggleKnob)
                     .frame(width: knobWidth, height: knobHeight)
                     .padding(2)
             }
@@ -635,6 +672,7 @@ struct ParityToggleStyle: ToggleStyle {
 
 /// "Bot", "Switch Account": grey 11 pt above a card.
 struct SectionLabel: View {
+    @Environment(\.themePalette) var themePalette
     let text: LocalizedStringKey
     var leading: CGFloat = 41.67
 
@@ -650,6 +688,7 @@ struct SectionLabel: View {
 
 /// The grey explanation under a card.
 struct Footer: View {
+    @Environment(\.themePalette) var themePalette
     let text: LocalizedStringKey
     var leading: CGFloat = 41.67
 
@@ -667,6 +706,7 @@ struct Footer: View {
 
 /// The role beside a name: 19 pt high, radius 6.3, not a capsule.
 struct RoleChip: View {
+    @Environment(\.themePalette) var themePalette
     let text: String
     /// The home list's chips ink a touch narrower than 12 pt medium.
     var font: Font = Theme.Font.roleChip
@@ -689,6 +729,7 @@ struct RoleChip: View {
 /// screen, about 37 pt top and 50 pt bottom corners, over the home dimmed by
 /// black at 50%. The home is not scaled or blurred.
 struct CardSheetContainer<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
     var topOffset: CGFloat = 123.67
     var background: Color = Theme.bg
     let onDismiss: () -> Void
@@ -738,6 +779,7 @@ struct CardSheetShape: Shape {
 /// Content scrolled under a header fades into the background over about the
 /// header height. On iOS 26 the system soft edge effect is used as well.
 struct TopScrollEdgeFade: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     var height: CGFloat = Theme.Metric.scrollEdgeHeight
     var background: Color = Theme.bg
 
@@ -780,12 +822,12 @@ extension View {
 /// Every building block on one screen, for review and for the parity harness
 /// (`-parityScreen theme-gallery`).
 struct ThemeGalleryView: View {
+    @Environment(\.themePalette) var themePalette
     @State private var toggleA = true
     @State private var toggleB = false
     @State private var showingSheet = false
     @AppStorage(PrefKey.haptics) private var haptics = true
-    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
-    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
+    @ObservedObject private var themes = ThemeStore.shared
 
     var body: some View {
         ZStack {
@@ -805,14 +847,14 @@ struct ThemeGalleryView: View {
                         GlassCircleButton(systemImage: "keyboard", size: .small) {}
                         GlassCapsule {
                             Circle().fill(Color.purple).frame(width: 24, height: 24)
-                            Text(verbatim: "Ara").font(Theme.Font.bodyMedium).foregroundStyle(.white)
+                            Text(verbatim: "Ara").font(Theme.Font.bodyMedium).foregroundStyle(Theme.textPrimary)
                         }
                     }
                     .padding(.horizontal, Theme.Metric.screenEdge)
                     .padding(.top, 16)
 
                     HStack(spacing: 8) {
-                        Text(verbatim: "Aurora").font(Theme.Font.bodyMedium).foregroundStyle(.white)
+                        Text(verbatim: "Aurora").font(Theme.Font.bodyMedium).foregroundStyle(Theme.textPrimary)
                         RoleChip(text: "Finance Manager")
                         Spacer()
                         Text(verbatim: "3:41 PM").font(Theme.Font.time).foregroundStyle(Theme.textTertiary)
@@ -852,8 +894,8 @@ struct ThemeGalleryView: View {
                     .padding(.bottom, Theme.Metric.cardGap)
 
                     CardSection {
-                        CardRow(title: "Appearance", accessory: .valueChevron("\(appearance == "dark" ? "Dark" : "System") · \(tone == "dim" ? "Dim" : "Black")")) {
-                            appearance = appearance == AppearanceMode.dark.rawValue ? AppearanceMode.system.rawValue : AppearanceMode.dark.rawValue
+                        CardRow(title: "Appearance", accessory: .valueChevron(themes.selection.mode.rawValue)) {
+                            themes.update { $0.mode = $0.mode == .fixed ? .system : .fixed }
                         }
                         CardHairline()
                         CardRow(title: "Show card sheet", accessory: .chevron) { showingSheet = true }
@@ -880,7 +922,6 @@ struct ThemeGalleryView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 }
 #endif

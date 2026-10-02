@@ -18,6 +18,7 @@ public struct ActionChipItem: Identifiable {
 }
 
 public struct PredictiveActionChipsView: View {
+    @Environment(\.themePalette) var themePalette
     public let chips: [ActionChipItem]
     public let accentColor: Color
     public let onSelectChip: (ActionChipItem) -> Void

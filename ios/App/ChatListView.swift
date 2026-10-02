@@ -10,6 +10,7 @@ import SwiftUI
 import CompanionCore
 
 struct ChatListView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var query = ""
     @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
@@ -764,6 +765,7 @@ struct ChatListView: View {
 /// A room as a round tile: the first two members' mascots stacked, its name
 /// beneath. `nil` is the "make one" tile.
 struct GroupTile: View {
+    @Environment(\.themePalette) var themePalette
     let room: Room?
     @EnvironmentObject private var session: Session
 
@@ -810,6 +812,7 @@ struct GroupTile: View {
 /// bot it belongs to, ready to jump straight there. Waiting outranks
 /// working, which outranks queued and unread — the same order as the tree.
 struct AttentionRow: View {
+    @Environment(\.themePalette) var themePalette
     let entry: AttentionThread
     /// Compact's rows follow Dynamic Type, and these grow with them, in the
     /// proportions they have at the default size. Comfortable's rows keep
@@ -875,6 +878,7 @@ struct AttentionRow: View {
 }
 
 struct ChatRow: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let preview: String
     let at: Double
@@ -968,6 +972,7 @@ struct ChatRow: View {
 
 /// The floating pill: who is doing what right now, at a glance.
 struct UpdatesPill: View {
+    @Environment(\.themePalette) var themePalette
     let updates: [ChatUpdate]
     let action: () -> Void
 
@@ -1030,6 +1035,7 @@ struct UpdatesPill: View {
 
 /// Up to three mascots overlapping, the way a group of faces reads at a glance.
 struct MascotStack: View {
+    @Environment(\.themePalette) var themePalette
     let chats: [Chat]
     var size: CGFloat = 28
     var overlap: CGFloat = 12
@@ -1047,6 +1053,7 @@ struct MascotStack: View {
 
 /// Connection state, shown only when it is not "fine".
 struct StatusBanner: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
 
     var body: some View {
@@ -1077,6 +1084,7 @@ struct StatusBanner: View {
 }
 
 struct SearchHitRow: View {
+    @Environment(\.themePalette) var themePalette
     let hit: SearchHit
 
     var body: some View {
@@ -1211,7 +1219,6 @@ extension ChatListView {
                 ) { chat in path.append(chat) }
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     // MARK: Header
