@@ -115,11 +115,10 @@ async function stopServer(proc) {
 }
 
 async function api(base, method, path, body) {
-  const res = await fetch(`${base}${path}`, {
-    method,
-    headers: body === undefined ? {} : { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const init = body === undefined
+    ? { method }
+    : { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+  const res = await fetch(`${base}${path}`, init);
   const text = await res.text();
   let parsed = null;
   try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
