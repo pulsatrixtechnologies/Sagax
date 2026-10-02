@@ -183,7 +183,8 @@ final class SettingsUITests: XCTestCase {
         let search = app.textFields["plugins-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
-        search.typeText("deepwiki")
+        // Return closes the keyboard, which can otherwise cover the result.
+        search.typeText("deepwiki\n")
         let add = app.element("plugin-add.deepwiki")
         XCTAssertTrue(add.waitForExistence(timeout: 10))
         XCTAssertEqual(add.label, "Add")

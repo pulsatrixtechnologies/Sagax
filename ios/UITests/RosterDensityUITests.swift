@@ -108,7 +108,17 @@ final class RosterDensityUITests: XCTestCase {
 
     @MainActor
     func testSettingSwitchesBackToComfortableAndIsRemembered() {
-        let app = launchRoster(density: nil)
+        // The density this test saves would outlive it on the simulator and
+        // turn the other suites' standard home into this list: put the
+        // install default back afterwards.
+        addTeardownBlock { @MainActor in
+            let reset = XCUIApplication()
+            reset.terminate()
+            reset.launchArguments = Self.baseArguments + ["-reset-list-density"]
+            reset.launch()
+            reset.terminate()
+        }
+        let app = launchRoster(density: nil, saved: true)
         XCTAssertTrue(app.buttons["threads-toggle.roster-pepper"].waitForExistence(timeout: 10))
 
         chooseDensity("Comfortable", in: app)
@@ -186,14 +196,16 @@ final class RosterDensityUITests: XCTestCase {
 
     /// `nil` is compact: the install default is now the standard home
     /// (HomeUITests), and these tests cover the compact and comfortable lists.
+    /// `saved` stores the density instead of pinning it for the launch.
     @MainActor
-    private func launchRoster(density: String?) -> XCUIApplication {
+    private func launchRoster(density: String?, saved: Bool = false) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.terminate()
         app.launchArguments = Self.baseArguments
-            // Saved, not pinned: the switching test changes it in Settings.
-            + ["-set-list-density", density ?? "compact"]
+            // Pinned for this launch only; the switching test instead saves
+            // it, as a choice made in Settings, so Settings can change it.
+            + [saved ? "-set-list-density" : "-companion.prefs.rosterDensity", density ?? "compact"]
         app.launch()
         if app.buttons["Connect computer"].exists {
             app.terminate()

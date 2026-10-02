@@ -115,7 +115,10 @@ log "fixture at $ENDPOINT"
 # ── screens ──────────────────────────────────────────────────────────────
 for screen in "${SCREENS[@]}"; do
   xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-  ARGS=(-parityEndpoint "$ENDPOINT" -parityToken "$TOKEN" -parityScreen "$screen")
+  # The references are the standard home: a list density saved on this
+  # simulator (Settings > Advanced, or a roster UI test) must not change them.
+  ARGS=(-parityEndpoint "$ENDPOINT" -parityToken "$TOKEN" -parityScreen "$screen"
+    -companion.prefs.rosterDensity standard)
   [ -n "$ENVIRONMENT" ] && ARGS+=(-parityEnvironment "$ENVIRONMENT")
   xcrun simctl launch "$UDID" "$BUNDLE_ID" "${ARGS[@]}" >/dev/null
   sleep "$WAIT"
