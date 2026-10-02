@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { parseRoutineDelegationHash, routineDelegationReturnText } from "@/lib/routine-delegation";
+import { ensureRoutineDelegation, parseRoutineDelegationHash, routineDelegationReturnText } from "@/lib/routine-delegation";
 import type { Routine } from "@/lib/routines";
 import { accessCardLines, AccessCard } from "../AccessCard";
 import { RoutineDelegationBanner, RoutineList, routineSuspendedText } from "../routines/RoutineList";
@@ -14,25 +14,51 @@ import { MyRoutineDelegation } from "./MyRoutineDelegation";
 const OWNER = "pr_00000000-0000-4000-8000-0000000000a0";
 const BOB = "pr_00000000-0000-4000-8000-0000000000b0";
 
-describe("Routines in my name (slice 6)", () => {
-  it("offers to allow when there is no delegation, and counts paused routines", () => {
-    const markup = renderToStaticMarkup(createElement(MyRoutineDelegation, { initial: { state: "none", suspended: 2 } }));
+describe("Routines in my name (slice 6, allowed by default since 2026-10-01)", () => {
+  it("says it is allowed by default, counts paused routines and offers no switch", () => {
+    const markup = renderToStaticMarkup(createElement(MyRoutineDelegation, {
+      initial: { state: "none", suspended: 2, manageUrl: "https://px.example.test/console/users/S1?tab=sagax" },
+    }));
     expect(markup).toContain("Routines in my name");
-    expect(markup).toContain("Not allowed. Your routines are paused until you allow them.");
+    expect(markup).toContain("Allowed by default. Perspicax confirms it after your first routine.");
     expect(markup).toContain("2 paused routine(s)");
-    expect(markup).toContain("Allow my routines to act in my name");
+    expect(markup).not.toContain("Allow my routines to act in my name");
     expect(markup).not.toContain("Revoke");
+    expect(markup).not.toContain("<button");
+    expect(markup).toContain("Manage in Perspicax");
+    expect(markup).toContain('href="https://px.example.test/console/users/S1?tab=sagax"');
     expect(markup).toContain('data-routine-delegation="none"');
   });
 
-  it("shows since when it is allowed, and the revoke button", () => {
+  it("shows since when it is allowed, read-only, with the link to Perspicax", () => {
     const markup = renderToStaticMarkup(createElement(MyRoutineDelegation, {
       initial: { state: "active", consentedAt: Date.UTC(2026, 8, 30, 10), renewedAt: Date.UTC(2026, 8, 30, 11), expiresAt: Date.UTC(2026, 9, 30, 11), suspended: 0 },
+      issuer: "https://px.example.test/",
     }));
     expect(markup).toContain("Allowed since");
-    expect(markup).toContain("Revoke");
+    expect(markup).not.toContain("<button");
     expect(markup).not.toContain("paused routine");
-    expect(markup).not.toContain("Allow my routines");
+    expect(markup).toContain('href="https://px.example.test/console/"');
+  });
+
+  it("starts the Perspicax consent once, after a first routine, and never on a solo server", async () => {
+    const store = new Map<string, string>();
+    const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => { store.set(key, value); } };
+    let started = 0;
+    const start = async () => { started++; };
+    const none = async () => ({ state: "none" as const, suspended: 0, manageUrl: "https://px.example.test/console/users/S1?tab=sagax" });
+    expect(await ensureRoutineDelegation({ load: none, start, storage })).toBe("started");
+    expect(await ensureRoutineDelegation({ load: none, start, storage })).toBe("skipped");
+    expect(started).toBe(1);
+    // another person on the same browser is asked once too
+    const other = async () => ({ state: "none" as const, suspended: 0, manageUrl: "https://px.example.test/console/users/S2?tab=sagax" });
+    expect(await ensureRoutineDelegation({ load: other, start, storage })).toBe("started");
+    expect(started).toBe(2);
+    // already allowed: nothing to ask
+    expect(await ensureRoutineDelegation({ load: async () => ({ state: "active" as const, suspended: 0 }), start, storage: new Map() as never })).toBe("active");
+    // a solo server answers 403: nothing happens
+    expect(await ensureRoutineDelegation({ load: async () => { throw new Error("identity_perspicax"); }, start, storage })).toBe("unavailable");
+    expect(started).toBe(2);
   });
 
   it("reads the consent's return from the address, and says what went wrong", () => {

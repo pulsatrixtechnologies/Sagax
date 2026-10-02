@@ -170,6 +170,31 @@ describe("Settings > Organization on a Perspicax server", () => {
     expect(markup).toContain("No organization key is set on this server.");
     expect(renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: { ...org, settings: { orgKeyConfigured: true } }, onChanged: () => {} }))).toContain("An organization key is set on this server");
     expect(markup).toContain("Commands waiting for an admin");
+    // 2026-10-01: no copy-file import card, no My engines (Model providers has the sign-in)
+    expect(markup).not.toContain("Bring bots from a solo Sagax");
+    expect(markup).not.toContain("My subscriptions and keys");
+    expect(markup).not.toContain("data-my-engines");
+    expect(markup).toContain("Routines in my name");
+  });
+  it("gives an admin Force stop and Force delete on every bot, and a member neither", async () => {
+    const { OrgSharing } = await import("../settings/OrgSharing");
+    const bots = [{ id: "b1", name: "Atlas", ownerPrincipalId: BOB, ownerName: "Bob", engine: { instanceId: "claude", driver: "claudeAgent" }, grants: [] }];
+    const asAdmin = renderToStaticMarkup(createElement(OrgSharing, { initial: bots, admin: true }));
+    expect(asAdmin).toContain('data-org-bot-force="b1"');
+    expect(asAdmin).toContain("Force stop");
+    expect(asAdmin).toContain("Force delete");
+    const asMember = renderToStaticMarkup(createElement(OrgSharing, { initial: bots }));
+    expect(asMember).toContain("Atlas");
+    expect(asMember).not.toContain("Force stop");
+    expect(asMember).not.toContain("Force delete");
+    setLocale("fr");
+    try {
+      const fr = renderToStaticMarkup(createElement(OrgSharing, { initial: bots, admin: true }));
+      expect(fr).toContain("Forcer l&#x27;arrêt");
+      expect(fr).toContain("Forcer la suppression");
+    } finally {
+      setLocale("en");
+    }
   });
   it("gives a member the state, the link and the same explanation", () => {
     const markup = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: { ...org, viewerRole: "member", link: { state: "error", error: "link_refused" } }, onChanged: () => {} }));
