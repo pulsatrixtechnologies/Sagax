@@ -71,7 +71,7 @@ export async function readSessionState(fetchImpl: typeof fetch = fetch): Promise
 }
 
 /** Why the pair page shows on this machine: the server trusts local
- * requests only as a service (OMB_LOOPBACK_TRUST=service, or a hosted
+ * requests only as a service (SAGAX_LOOPBACK_TRUST=service, or a hosted
  * workspace), so an SSH tunnel is not the owner and must sign in. */
 export const SERVICE_TRUST_REASON = "This server does not treat this computer as its owner. Sign in or pair this browser to continue.";
 

@@ -1,6 +1,6 @@
 // Settings → Engines → Antigravity → "Free up space". On Windows, Google's
 // Antigravity runtime unpacks a large set of files every time it starts and
-// leaves them behind whenever it is stopped by force. OpenMausBot clears the
+// leaves them behind whenever it is stopped by force. Sagax clears the
 // ones in its own folder by itself; this also finds the ones left in the
 // Windows temporary folder. It always says how much it found before deleting.
 import { useState } from "react";
