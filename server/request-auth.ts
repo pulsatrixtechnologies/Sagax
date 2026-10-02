@@ -452,6 +452,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // names and statuses of their own account only. The admin switch
   // (PUT /api/harness-connectors/settings) stays admin.
   { methods: ["GET"], path: /^\/api\/me\/harness-connectors$/ },
+  // The engine's own slash commands for a bot the caller may use
+  // (server/harness-commands.ts): names, descriptions and hints only.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/harness-commands$/ },
   // Slice 6: the caller's own routine delegation (allow, status, revoke).
   { methods: ["GET", "POST", "DELETE"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler

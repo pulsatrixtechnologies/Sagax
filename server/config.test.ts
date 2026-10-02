@@ -26,6 +26,7 @@ import { customMcpServers,
   threadEventLogRetentionDays,
   showToolCallsEnabled,
   routinesInConversationEnabled,
+  connectedAppsEnabled,
   templatesEnabled,
   saveConfig,
   skillAuthoringEnabled,
@@ -582,6 +583,9 @@ describe("configuration boundaries", () => {
       features: { routinesInConversation: true },
     });
     expect(routinesInConversationEnabled({ features: { routinesInConversation: true } })).toBe(true);
+    expect(connectedAppsEnabled({})).toBe(false);
+    expect(parseConfigPatch({ features: { connectedApps: true } })).toEqual({ features: { connectedApps: true } });
+    expect(connectedAppsEnabled({ features: { connectedApps: true } })).toBe(true);
   });
 
   it("keeps the sidebar's Templates entry off unless the experimental option is on", () => {

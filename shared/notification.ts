@@ -23,7 +23,10 @@ export type NotifyKind =
   | "spend"
   /** A person wrote to another in a direct conversation between people
    * (server/people-dms.ts). Sent to the recipient only (`audience`); `botId` is empty. */
-  | "message";
+  | "message"
+  /** An organization admin force-stopped or force-deleted a bot
+   * (server/org-bot-force.ts). Sent to the bot's owner only (`audience`). */
+  | "admin-action";
 
 export interface Notification {
   kind: NotifyKind;

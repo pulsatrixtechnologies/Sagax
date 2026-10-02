@@ -25,6 +25,7 @@ import { ClaudeLoginController } from "./claude-login-auth.ts";
 
 import type {
   DriverCreateInput,
+  HarnessCommandScope,
   ModelCatalog,
   ProviderDriver,
   ProviderInstance,
@@ -50,6 +51,8 @@ import {
   resolveInjectId,
 } from "./local-inject.ts";
 import { appendNative } from "./native.ts";
+import { probeClaudeCommands } from "./harness-command-probe.ts";
+import { normalizeClaudeCommands, type HarnessCommand } from "../../shared/harness-commands.ts";
 import { permissionCommand, permissionLaunchCwd, permissionPaths } from "./permission-command.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
@@ -1230,6 +1233,27 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         );
       });
     const listeners = new Set<RuntimeEventListener>();
+    // The slash commands each bot's latest live session reported in `init`.
+    const liveCommands = new Map<string, { names: string[]; terminal: string[] }>();
+    /** The engine's slash commands for a bot's turns: a short process with
+     * the turn's folder and isolation answers `initialize` (no model call),
+     * then what the bot's live session reported is layered in. */
+    const listCommands = async (scope: HarnessCommandScope): Promise<HarnessCommand[]> => {
+      const env = environment();
+      const args: string[] = [];
+      if (!inheritsUserConfig(env)) {
+        if (!scope.mcpFromUserConfig && claudeCliSupports(cliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
+        if (claudeCliSupports(cliVersion, "--setting-sources")) args.push("--setting-sources", "project");
+        env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
+      }
+      const listed = await probeClaudeCommands({ cli: config.cli, args, env, cwd: scope.cwd ?? homedir() });
+      const live = scope.botId ? liveCommands.get(scope.botId) : undefined;
+      if (!live) return listed;
+      const known = new Set(listed.map((command) => command.name));
+      const merged = [...listed, ...normalizeClaudeCommands(live.names.filter((name) => !known.has(name)))];
+      const terminal = new Set(live.terminal);
+      return merged.map((command) => terminal.has(command.name) ? { ...command, unavailable: "interactive" as const } : command);
+    };
     // one active turn per thread; a second send while busy is a caller bug
     const active = new Map<string, { stop: () => void; turnId: string; broker?: Awaited<ReturnType<typeof createPermissionBroker>> }>();
 
@@ -1990,6 +2014,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                 break;
               }
               session.sawInit = true;
+              // What this bot's live session can run: its MCP prompts and the
+              // commands only a terminal can run (listCommands merges them).
+              const liveBot = session.turn?.input.botId;
+              if (liveBot && Array.isArray(o.slash_commands)) {
+                liveCommands.set(liveBot, {
+                  names: o.slash_commands.filter((name: unknown): name is string => typeof name === "string"),
+                  terminal: Array.isArray(o.terminal_slash_commands) ? o.terminal_slash_commands.filter((name: unknown): name is string => typeof name === "string") : [],
+                });
+              }
               session.nativePermissionMode = typeof o.permissionMode === "string" ? o.permissionMode : null;
               if (typeof o.session_id === "string") session.sessionId = o.session_id;
               // The turn the CLI starts for a steered message it could not
@@ -2672,6 +2705,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       },
       generateText: (prompt, options) => generateReview(prompt, options?.signal, options?.onUsage),
       reviewPermission: generateReview,
+      listCommands,
       dispose: async () => {
         try {
           await login.dispose();
