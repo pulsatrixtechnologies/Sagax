@@ -15,6 +15,7 @@ import { formatTaskTokens, headlineTokens, usageDetail } from "@/lib/usage";
 import { nextRename } from "@/lib/rename";
 import { FolderIcon, NewThreadButton } from "./BotProjects";
 import { useShowThreads } from "@/lib/thread-preferences";
+import { threadsOffReturnTarget } from "./thread-home";
 import { attentionJumpAction, attentionOwnerName, AttentionThreadRows, crossBotAttentionThreads, threadsWhenTreeHidden, type AttentionThread } from "./SidebarBotActivity";
 import { formatUpdatedAt, orderedThreadList, threadByline, threadRecency, threadUpdatedLabel, useRelativeNow } from "./SidebarThreadRow";
 
@@ -449,6 +450,30 @@ export function BotActivityPicker({ bot }: { bot: Bot }) {
         </option>)}
       </select>
       <span className="truncate text-[12px] text-ink-secondary">{bot.tasks?.find((task) => task.threadId === bot.threadId)?.title}</span>
+    </div>
+  );
+}
+
+/** Threads off: one quiet link back to the person's conversation when the
+ * open thread is not their latest one (an untouched extra thread, or an
+ * older sibling opened from the activity picker). Never creates a thread. */
+export function ThreadsOffReturnLink({ bot }: { bot: Bot }) {
+  const { dispatch } = useStore();
+  const showThreads = useShowThreads();
+  if (showThreads) return null;
+  const target = threadsOffReturnTarget(bot);
+  if (!target) return null;
+  const title = bot.tasks?.find((task) => task.threadId === target)?.title;
+  return (
+    <div className="flex shrink-0 items-center px-5 py-1" data-threads-off-return>
+      <button
+        type="button"
+        onClick={() => dispatch({ type: "switchTask", botId: bot.id, threadId: target })}
+        title={title}
+        className="rounded px-1.5 py-0.5 text-[12.5px] text-accent hover:bg-raised"
+      >
+        {t("task.backToConversation")}
+      </button>
     </div>
   );
 }

@@ -75,7 +75,7 @@ import { prefersWideBubble } from "@/lib/rich-blocks";
 import { ScreenFrame } from "./ScreenFrame";
 import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
-import { BotActivityPicker, TaskPicker } from "./TaskPicker";
+import { BotActivityPicker, TaskPicker, ThreadsOffReturnLink } from "./TaskPicker";
 
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
@@ -1399,6 +1399,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           card hangs over the thread */}
       <VoiceCallDock bot={bot} />
       <BotActivityPicker bot={bot} />
+      <ThreadsOffReturnLink bot={bot} />
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {routineExecution && <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[11.5px] text-ink-secondary">
         <span className="min-w-0 flex-1 truncate">{t("routines.executionDetails", { name: routineExecution.routineName })}</span>

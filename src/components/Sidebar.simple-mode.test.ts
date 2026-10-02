@@ -95,6 +95,24 @@ describe("bot-first sidebar", () => {
     });
   }
 
+  it.each(densities)("leads back to the latest conversation from an untouched extra thread, %s density, threads off", (density) => {
+    const trapped: Bot = { ...bot, threadId: "extra", tasks: [
+      { threadId: "main", title: "Main", createdAt: 1, updatedAt: 50 },
+      { threadId: "extra", title: "Untitled", createdAt: 60, updatedAt: 60 },
+    ] };
+    for (const enabled of [false, true]) {
+      fixture.showThreads = enabled;
+      fixture.dispatch.mockClear();
+      let tree: ReactNode;
+      function Capture() { tree = BotListItem({ ...rowProps(density), bot: trapped }); return tree; }
+      renderToStaticMarkup(createElement(Capture));
+      findElement(tree, "data-sidebar-bot-row", bot.id)!.props.onClick!({ type: "click", target: {} } as MouseEvent);
+      expect(fixture.dispatch.mock.calls).toEqual(enabled
+        ? [[{ type: "select", id: bot.id }]]
+        : [[{ type: "select", id: bot.id }], [{ type: "switchTask", botId: bot.id, threadId: "main" }]]);
+    }
+  });
+
   it.each(densities)("keeps selection separate from expansion in %s density", (density) => {
     fixture.state.selectedId = bot.id;
     const markup = renderToStaticMarkup(createElement(BotListItem, rowProps(density)));
