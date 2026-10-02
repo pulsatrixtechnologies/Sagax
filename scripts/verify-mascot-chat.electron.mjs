@@ -45,11 +45,11 @@ const history = Array.from({ length: 3 }, (_, i) => ({ asked: `Earlier question 
 // a premium skin with live effects: the heaviest look to chat over
 const LOOK = { character: "shape", shape: "star", skins: { shape: "holo" } };
 
-function snapshot({ balloon = null, text = "", streaming = false, theme, mascot = LOOK } = {}) {
+function snapshot({ balloon = null, text = "", streaming = false, theme, mascot = LOOK, task = "idle", flyAway = false } = {}) {
   return {
     v: 1, id: BOT, name: "Sagax", label: "Sagax", color: "green", skin: "none", avatar: null, pose: streaming ? "speak" : "idle",
     reduced: false, retro: false, sparkle: 0, locale: "en", menu: [{ id: "open", label: "Open in the app" }],
-    task: "idle", mood: 0.8, flyAway: false, hints: { mood: "", working: "", pin: "Put back" }, liveliness: "normal",
+    task, mood: 0.8, flyAway, hints: { mood: "", working: "", pin: "Put back" }, liveliness: "normal",
     mascot,
     ...(theme ? { theme } : {}),
     balloon: balloon
@@ -62,12 +62,13 @@ const update = (snap) => ipcMain.emit("floating-bots:update", { sender: brain },
 
 const MONITOR = `(() => {
   if (window.__fm) return true;
-  const fm = window.__fm = { last: 0, gaps: [], long: 0, longMs: 0, on: false, shownAt: 0, clipped: 0, jumps: 0, anchor: null, still: true };
+  const fm = window.__fm = { last: 0, gaps: [], long: 0, longMs: 0, on: false, shownAt: 0, clipped: 0, jumps: 0, anchor: null, still: true, hidden: 0 };
   const loop = (t) => {
     if (fm.on && fm.last) {
       fm.gaps.push(t - fm.last);
       // a frame drawn with the content cut by a window that has not caught up
       const root = document.querySelector(".fb-root");
+      if (!document.querySelector(".fb-balloon")) fm.hidden += 1;
       if (root && (root.scrollWidth > innerWidth + 1 || root.scrollHeight > innerHeight + 1)) fm.clipped += 1;
       // the character's corner on the screen: it must not move unless dragged
       const stage = document.querySelector(".fb-stage")?.getBoundingClientRect();
@@ -93,9 +94,9 @@ const MONITOR = `(() => {
 })()`;
 
 const js = (win, code) => win.webContents.executeJavaScript(code);
-const startFrames = (win, still = true) => js(win, `(() => { const fm = window.__fm; fm.gaps = []; fm.long = 0; fm.longMs = 0; fm.last = 0; fm.clipped = 0; fm.jumps = 0; fm.anchor = null; fm.still = ${still}; fm.on = true; return true; })()`);
+const startFrames = (win, still = true) => js(win, `(() => { const fm = window.__fm; fm.gaps = []; fm.long = 0; fm.longMs = 0; fm.last = 0; fm.clipped = 0; fm.jumps = 0; fm.hidden = 0; fm.anchor = null; fm.still = ${still}; fm.on = true; return true; })()`);
 async function stopFrames(win) {
-  const r = await js(win, "(() => { const fm = window.__fm; fm.on = false; return { gaps: fm.gaps, long: fm.long, longMs: fm.longMs, clipped: fm.clipped, jumps: fm.jumps }; })()");
+  const r = await js(win, "(() => { const fm = window.__fm; fm.on = false; return { gaps: fm.gaps, long: fm.long, longMs: fm.longMs, clipped: fm.clipped, jumps: fm.jumps, hidden: fm.hidden }; })()");
   const gaps = r.gaps.slice().sort((a, b) => a - b);
   const frame = 1000 / 60;
   const dropped = r.gaps.reduce((sum, gap) => sum + Math.max(0, Math.round(gap / frame) - 1), 0);
@@ -105,8 +106,11 @@ async function stopFrames(win) {
     dropped,
     droppedPct: expected ? Math.round((dropped / expected) * 1000) / 10 : 0,
     worstMs: Math.round(gaps.at(-1) ?? 0),
+    // when the worst frame came, ms from the start of the measure
+    worstAtMs: Math.round(r.gaps.slice(0, r.gaps.indexOf(gaps.at(-1))).reduce((sum, gap) => sum + gap, 0)),
     p95Ms: Math.round(gaps[Math.floor(gaps.length * 0.95)] ?? 0),
     clippedFrames: r.clipped,
+    ...(r.hidden ? { balloonHiddenFrames: r.hidden } : {}),
     ...(r.jumps ? { anchorJumps: r.jumps } : {}),
     longTasks: r.long,
     longTaskMs: Math.round(r.longMs),
@@ -154,7 +158,7 @@ function median(values) {
 }
 
 /** A pointer drag on an element of the page, in screen space, over `steps` frames. */
-async function drag(win, selector, dx, dy, steps) {
+async function drag(win, selector, dx, dy, steps, perFrame = 1) {
   const rect = await js(win, `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   const start = win.getBounds();
   const sx = start.x + rect.x;
@@ -170,7 +174,10 @@ async function drag(win, selector, dx, dy, steps) {
     await wait(16);
     const gx = sx + (dx * i) / steps;
     const gy = sy + (dy * i) / steps;
-    win.webContents.sendInputEvent({ type: "mouseMove", button: "left", ...at(gx, gy) });
+    // a 120 Hz pointer reports two moves a frame
+    for (let k = perFrame - 1; k >= 0; k -= 1) {
+      win.webContents.sendInputEvent({ type: "mouseMove", button: "left", ...at(gx - (dx * k) / steps / perFrame, gy - (dy * k) / steps / perFrame) });
+    }
     // where the dragged thing is drawn now, on the screen, against the pointer
     const now = await js(win, `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     const b = win.getBounds();
@@ -255,12 +262,27 @@ app.whenReady().then(async () => {
     await wait(300);
     report.stream = { updates: 161, ms: Date.now() - started, windowMoves: moves(), ...cpu(win), ...(await stopFrames(win)) };
 
+    // a message sent from the balloon: the bot works ("Fly away during tasks" on, the default) and replies
+    const home = win.getBounds();
+    resetCounters();
+    await startFrames(win, false);
+    for (let i = 0; i < 100; i += 1) {
+      update(snapshot({ balloon: true, text: stream.slice(0, i * 20), streaming: i > 0, task: "working", flyAway: true }));
+      await wait(40);
+    }
+    update(snapshot({ balloon: true, text: stream.slice(0, 2000), task: "idle", flyAway: true }));
+    await wait(2500);
+    const after = win.getBounds();
+    report.replyWhileWorking = { windowMoves: moves(), leftHomePx: Math.round(Math.hypot(after.x + after.width - home.x - home.width, after.y + after.height - home.y - home.height)), ...(await stopFrames(win)) };
+    update(snapshot({ balloon: true, text: PARAGRAPH }));
+    await wait(2500);
+
     // drag the mascot with the balloon open
     resetCounters();
     cpu(win);
     await startFrames(win, false);
-    const dragged = await drag(win, ".fb-body", -220, -120, 90);
-    report.drag = { steps: 90, windowMoves: moves(), positionWrites: counters.writes, ...dragged, ...cpu(win), ...(await stopFrames(win)) };
+    const dragged = await drag(win, ".fb-body", -220, -120, 90, 2);
+    report.drag = { steps: 90, pointerMoves: 180, windowMoves: moves(), positionWrites: counters.writes, ...dragged, ...cpu(win), ...(await stopFrames(win)) };
 
     // resize the balloon from its grip
     resetCounters();
