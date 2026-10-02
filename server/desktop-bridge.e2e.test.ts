@@ -29,6 +29,7 @@ import { SandboxService } from "./sandboxd-core.ts";
 import { createSandboxdHandler } from "./sandboxd.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { FakeDocker } from "./testing/fake-docker.ts";
+import { zipArchive } from "./testing/archive-fixtures.mjs";
 import { connectFakeDesktop, openFakeTunnel, type FakeDesktop } from "./testing/fake-desktop.ts";
 import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
 import { freePortBlock } from "./testing/ports.ts";
@@ -121,6 +122,12 @@ async function upload(auth: Auth, name: string, body: string): Promise<{ path: s
   const res = await fetch(`${BASE}/api/files?name=${encodeURIComponent(name)}`, { method: "POST", headers: { "content-type": "text/markdown", cookie: auth.cookie! }, body });
   expect(res.status).toBe(201);
   return await res.json() as { path: string; name: string };
+}
+
+async function uploadZip(auth: Auth, name: string, body: Buffer): Promise<{ path: string; name: string; archive: { files: number; status: string } }> {
+  const res = await fetch(`${BASE}/api/files?name=${encodeURIComponent(name)}`, { method: "POST", headers: { "content-type": "application/zip", cookie: auth.cookie! }, body });
+  expect(res.status).toBe(201);
+  return await res.json() as { path: string; name: string; archive: { files: number; status: string } };
 }
 
 /** An open /api/events stream (as the browser opens it): what it received. */
@@ -295,6 +302,28 @@ posixOnly("organization server: the desktop bridge", () => {
     expect(activity.some((entry) => entry.kind === "tool" && entry.detail === "read_file")).toBe(true);
   }, 120_000);
 
+  it("an attached zip is unpacked on the speaker's own computer, never on the server, with its manifest in the message", async () => {
+    const file = await uploadZip(alice, "project.zip", zipArchive([{ name: "project/README.md", data: README }, { name: "project/src/main.ts", data: "export {}" }]));
+    expect(file.archive).toMatchObject({ status: "ok", files: 2 });
+    // listed, not unpacked, on the server host
+    expect(existsSync(file.path.replace(/\.zip$/, ""))).toBe(false);
+    const manifest = await api("GET", `/api/attachments/${file.path.split("/").at(-1)}/manifest`, alice);
+    expect(manifest.status).toBe(200);
+    expect(manifest.body.entries.map((entry: { path: string }) => entry.path)).toEqual(["project/README.md", "project/src/main.ts"]);
+    const before = desktop.operations.length;
+    await turn(alice, aliceBot, `read the attachment\n\n<attached-file path="${file.path}" name="project.zip" />`);
+    const staged = [...desktop.staged.keys()].find((name) => name.endsWith("-project.zip"))!;
+    expect(staged).toMatch(/^[0-9a-f]{8}-project\.zip$/);
+    const operations = desktop.operations.slice(before);
+    expect(operations.find((operation) => operation.action === "extract_archive")).toMatchObject({ name: staged });
+    const prompt = lastPrompt();
+    expect(prompt).toContain("<attached-archive name=\\\"project.zip\\\"");
+    expect(prompt).toContain(`extracted-path=\\\"/Users/alice/Library/Caches/Sagax/attachments/${staged.replace(/\.zip$/, "")}\\\"`);
+    expect(prompt).toContain("project/src/main.ts (9 B)");
+    // Bob cannot read the manifest of an archive in Alice's private thread
+    expect([403, 404]).toContain((await api("GET", `/api/attachments/${file.path.split("/").at(-1)}/manifest`, bob)).status);
+  }, 120_000);
+
   it("creates the Local VM on the speaker's own computer, its progress taken for the turn", async () => {
     // Alice sees her bot's computer being set up, then ready; Bob, who
     // cannot see her bot, receives neither.
@@ -348,6 +377,16 @@ posixOnly("organization server: the desktop bridge", () => {
     expect(lastPrompt()).toMatch(/\/workspace\/attachments\/[0-9a-f]{8}-notes\.md/);
     const copies = docker.execs.filter((entry) => entry.exec.Env.some((value) => /^SAGAX_PATH=\/workspace\/attachments\/[0-9a-f]{8}-notes\.md$/.test(value)));
     expect(copies.length).toBeGreaterThan(0);
+    expect(desktop.operations.length).toBe(before);
+
+    // An archive is copied there too and unpacked there, by python3 in the
+    // environment, into the folder the bot was told about.
+    const zip = await uploadZip(alice, "data.zip", zipArchive([{ name: "rows.csv", data: "a,b\n1,2\n" }]));
+    await turn(alice, aliceBot, `read the attachment\n\n<attached-file path="${zip.path}" name="data.zip" />`);
+    const unpack = docker.execs.find((entry) => entry.exec.Cmd.includes("python3") && entry.exec.Cmd.some((arg) => /^\/workspace\/attachments\/[0-9a-f]{8}-data$/.test(arg)));
+    expect(unpack).toBeTruthy();
+    expect(unpack!.exec.Cmd.some((arg) => /^\/workspace\/attachments\/[0-9a-f]{8}-data\.zip$/.test(arg))).toBe(true);
+    expect(lastPrompt()).toMatch(/extracted-path=\\"\/workspace\/attachments\/[0-9a-f]{8}-data\\"/);
     expect(desktop.operations.length).toBe(before);
   }, 120_000);
 
