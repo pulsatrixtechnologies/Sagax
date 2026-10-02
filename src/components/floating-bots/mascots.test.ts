@@ -76,7 +76,9 @@ describe("a bot's character and its look", () => {
 
   it("is drawn through BotAvatar at every bot avatar call site", () => {
     // a bot's mascot is never drawn straight from the owl or the old cursor body outside these files
-    const allowed = new Set(["Avatar.tsx", "OwlAvatar.tsx", "OwlSkinFx.tsx", "mascots.tsx", "MascotLookEditor.tsx", "FloatingBotWindow.tsx", "AssistantArt.tsx", "RetroAssistant.tsx", "Owl25D.tsx", "CursorAvatar.tsx"]);
+    const allowed = new Set(["Avatar.tsx", "OwlAvatar.tsx", "OwlSkinFx.tsx", "mascots.tsx", "MascotLookEditor.tsx", "FloatingBotWindow.tsx", "AssistantArt.tsx", "RetroAssistant.tsx", "Owl25D.tsx", "CursorAvatar.tsx",
+      // an achievement reward's skin preview (the toast, the achievements page), not a bot
+      "RewardPreview.tsx"]);
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
