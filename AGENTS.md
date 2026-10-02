@@ -598,8 +598,17 @@ The bot's side panel (`src/components/BotSettingsDialog.tsx`, tabs in
 `bot-settings/panel-tabs.ts`) shows Details | Library | Computer | More. The
 name and label are edited where they show (`InlineEditableText`), the
 description behind the (i) beside the name (`DescriptionInfo`); there are no
-Name, Label or Description fields. Details lists Coding first
-(`ActivitySection`, `ActivityDetailModal`), then Routines. Coding reads
+Name, Label or Description fields. Details lists Coding, Activity, then
+Routines (`ActivitySection`, `ActivityListModal`, `ActivityDetailModal`).
+Coding shows coding jobs only: the server marks an entry `coding` from its
+tool calls and folder (`server/activity-coding.ts`: source edits, git
+commit/push/worktree, pull requests, file changes inside a repository;
+never the title, and never the bot's own SOUL.md/MEMORY.md), the newest
+few of 7 days, See all opening the list filtered to coding. Activity holds
+everything else plus the sub-agents the listed threads started: running
+first (elapsed time, current step, Stop when `canStop`), then the last
+day's finished work, hidden when empty. A thread with no user turn is not
+listed. Both read
 `GET /api/bots/:id/activity` and `/activity/item`
 (`server/routes/bot-activity.ts`, types in `shared/bot-activity.ts`): every
 thread passes `botThreadReadable`, every routine run `routineSeenBy`; a run
@@ -611,7 +620,7 @@ in another person's private thread there, with its actions, and nothing else
 of that thread. The owner's notification of such a run names no thread, only
 `routineRunId` (`routineAccessNotifications`), and opens the run there
 (`openBotActivity`); the run's person keeps the thread link. Tests:
-`server/routes/bot-activity.test.ts`, `ActivitySection.test.ts`,
+`server/routes/bot-activity.test.ts`, `server/activity-coding.test.ts`, `ActivitySection.test.ts`,
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
 

@@ -637,6 +637,7 @@ import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
+import { inGitRepository } from "./activity-coding.ts";
 import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
@@ -17034,6 +17035,7 @@ ROUTES.push(createBotActivityRoutes({
   personName: (principalId) => personDisplayName(principals.byId(principalId)) || "",
   organization: () => IDENTITY.kind === "perspicax",
   runAccessCard: (run, viewerId) => routineRunAccessCard(run, viewerId),
+  inRepository: (cwd) => inGitRepository(cwd),
 }));
 /** The access card a failed routine run left (refused for lack of
  * credentials, or paused), as this viewer may see it: on an organization
