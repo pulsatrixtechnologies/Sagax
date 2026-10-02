@@ -226,7 +226,7 @@ export function TeamImportDetails({ pending, importedNames, org = false }: {
             : pending.version === 2
             ? t("teamImport.sharedTeamSafety")
             : pending.kind === "package"
-            ? "Bots, Chief of Staff, group chats, and reviewed playbooks are loaded. Suggested routines arrive paused, and connected apps stay off until you approve them. Conversations, credentials, permissions, and computer access stay private."
+            ? "Bots, the Primary Bot, group chats, and reviewed playbooks are loaded. Suggested routines arrive paused, and connected apps stay off until you approve them. Conversations, credentials, permissions, and computer access stay private."
             : "Only roles and appearance are loaded. Your conversations, account connections, permissions, and computer access stay private."}
         </p>
       </div>
