@@ -112,6 +112,9 @@ class TunnelStream extends Duplex {
     super({ allowHalfOpen: true });
     this.tunnel = tunnel;
     this.id = id;
+    // A desktop going away must never crash the server: consumers attach
+    // their own listener, this one only keeps an unobserved error quiet.
+    this.on("error", () => {});
   }
   _read(): void { /* data is pushed as it arrives */ }
   _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
@@ -414,7 +417,7 @@ export async function startEgressProxy(deps: {
     void route(grant, dest.host, dest.port).then(({ stream, via }) => {
       deps.audit({ person: grant.person, botId: grant.botId, threadId: grant.threadId, host: dest.host, port: dest.port, via, ok: true });
       const upstream = httpRequest({
-        method: req.method, path: `${url.pathname}${url.search}`, headers, agent: false,
+        method: req.method, path: `${url.pathname}${url.search}`, headers,
         createConnection: () => stream as unknown as Socket,
       }, (answer) => {
         res.writeHead(answer.statusCode ?? 502, answer.headers);
