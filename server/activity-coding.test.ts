@@ -32,6 +32,32 @@ describe("coding classification", () => {
     expect(isCodingWork(codingSignals([]))).toBe(false);
   });
 
+  it("does not count an import of the bot's directive, soul and identity through sub-agents as coding", () => {
+    // "Import this as your directive, soul, identity · Finished · 2 sub-agents":
+    // the requests and the files' text quote git and gh, the files are the
+    // bot's own profile.
+    const directive = "Rules: never git push to main.\ngit commit only on a branch.\ngh pr create --base main, never merge.";
+    const tools = [
+      { name: "Read", files: ["/Users/me/Downloads/directive.txt"] },
+      { name: "Agent", input: JSON.stringify({ description: "Write the soul", prompt: `Turn this into SOUL.md:\n${directive}` }) },
+      { name: "Agent", input: JSON.stringify({ description: "Write the identity", prompt: `git push is forbidden. ${directive}` }), summary: "git commit rules" },
+      { name: "Write", files: ["/Users/me/.sagax/bots/b1/SOUL.md"], input: JSON.stringify({ file_path: "/Users/me/.sagax/bots/b1/SOUL.md", content: directive }) },
+      { name: "Write", files: ["IDENTITY.md"], input: `{"file_path":"IDENTITY.md","content":"${directive.replace(/\n/g, "\\n")}` },
+      { name: "Bash", input: { command: `cat > /Users/me/.sagax/bots/b1/DIRECTIVE.md <<'EOF'\n${directive}\nEOF` } },
+      { name: "Bash", input: `{"command":"cat > SOUL.md <<'EOF'\\n${directive.replace(/\n/g, "\\\\n")}` },
+    ];
+    const signals = codingSignals(tools);
+    expect(signals.vcs).toBe(false);
+    expect(signals.codeFiles).toBe(0);
+    expect(isCodingWork(signals)).toBe(false);
+  });
+
+  it("still counts a sub-agent that changed source files or ran version control", () => {
+    expect(isCodingWork(codingSignals([{ name: "Agent", input: "{\"prompt\":\"fix it\"}" }, { name: "Edit", files: ["src/a.ts"] }]))).toBe(true);
+    expect(isCodingWork(codingSignals([{ name: "Agent" }, { name: "Bash", input: { command: "cd /repo && git push origin HEAD" } }]))).toBe(true);
+    expect(isCodingWork(codingSignals([{ name: "Bash", input: "{\"command\":\"git commit -m x\"}" }]))).toBe(true);
+  });
+
   it("counts any file change inside a repository, but not profile edits there", () => {
     expect(isCodingWork(codingSignals([{ name: "Write", files: ["docs/guide.md"] }]), true)).toBe(true);
     expect(isCodingWork(codingSignals([{ name: "Write", files: ["SOUL.md"] }]), true)).toBe(false);

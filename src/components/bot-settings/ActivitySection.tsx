@@ -2,29 +2,33 @@
 // /api/bots/:id/activity, narrowed by the server to what this person may
 // read: on an organization server their own threads only).
 //
-// Coding lists coding jobs only (the server's `coding`: edits to source
-// files, version control, pull requests, file changes inside a repository;
-// never a title), running ones first, the newest few of the last 7 days, and
-// See all opens ActivityListModal on Coding. Activity tracks everything else:
-// routine runs and work handed over (workflows), the sub-agents this bot's
-// threads started, and other background work. Running entries come first
-// with a spinner, elapsed time, current step and Stop where the viewer may;
-// work finished in the last day follows. Activity hides when nothing ran.
-// A card opens ActivityDetailModal. The list refetches when the bot's
+// Both sections show live work only. Coding lists running coding jobs (the
+// server's `coding`: edits to source files, version control, pull requests,
+// file changes inside a repository; never a title). Activity lists
+// everything else that runs: routine runs and work handed over (workflows),
+// the sub-agents this bot's threads started, parallel tasks and other
+// background work. A running entry has a spinner, elapsed time, current step
+// and Stop where the viewer may. When it finishes it reads "Finished" for
+// FINISHED_LINGER_MS, fades out and leaves (LiveActivity); with nothing
+// running a section is its header and a quiet line. The section title opens
+// ActivityListModal, the history (newest first, by status, searchable), and
+// a card opens ActivityDetailModal. The list refetches when the bot's
 // threads change (the store's event stream) and polls while work runs.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, Loader2, SquareTerminal } from "lucide-react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { Activity, ChevronRight, Loader2, SquareTerminal } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
 import {
-  activityGroups,
+  activityLive,
   activitySignature,
   activityStatusActive,
-  codingPreview,
+  codingLive,
+  FINISHED_FADE_MS,
+  LiveActivity,
   loadBotActivity,
   loadBotActivityDetail,
-  type ActivityGroups,
   type BotActivityFilter,
   type BotActivityItem,
   type BotActivityList,
@@ -42,13 +46,20 @@ export interface CardActions {
   onStop?: (item: BotActivityItem) => void;
   stopping?: ReadonlySet<string>;
   now?: number;
+  /** A finished entry on its way out of the panel. */
+  fading?: (item: BotActivityItem) => boolean;
 }
 
 function Cards({ items, label, actions }: { items: BotActivityItem[]; label: string; actions: CardActions }) {
   return (
     <ul className="flex flex-col gap-2" aria-label={label}>
       {items.map((item) => (
-        <li key={item.id}>
+        <li
+          key={item.id}
+          data-activity-fading={actions.fading?.(item) ? "" : undefined}
+          className={cn("transition-opacity ease-out", actions.fading?.(item) && "opacity-0")}
+          style={{ transitionDuration: `${FINISHED_FADE_MS}ms` }}
+        >
           <ActivityCard item={item} onOpen={actions.onOpen} now={actions.now} onStop={actions.onStop} stopping={actions.stopping?.has(item.id)} />
         </li>
       ))}
@@ -58,10 +69,11 @@ function Cards({ items, label, actions }: { items: BotActivityItem[]; label: str
 
 /** The Coding list as it is drawn: loading, error, empty or the cards.
  * Split out so it renders without the fetching around it. */
-export function ActivityList({ items, error, onOpen, now, onStop, stopping, emptyKey = "botPanel.coding.empty" }: {
+export function ActivityList({ items, error, onOpen, now, onStop, stopping, fading, label, emptyKey = "botPanel.coding.empty" }: {
   items: BotActivityItem[] | null;
+  label?: string;
   error: boolean;
-  emptyKey?: "botPanel.coding.empty" | "botPanel.list.empty";
+  emptyKey?: "botPanel.coding.empty" | "botPanel.list.empty" | "botPanel.live.idle";
 } & CardActions) {
   if (items === null && error) {
     return <p role="alert" className="rounded-xl bg-card px-3 py-2.5 text-[12.5px] text-ink-secondary">{t("botPanel.coding.error")}</p>;
@@ -73,6 +85,9 @@ export function ActivityList({ items, error, onOpen, now, onStop, stopping, empt
       </p>
     );
   }
+  if (items.length === 0 && emptyKey === "botPanel.live.idle") {
+    return <p data-activity-empty className="px-0.5 text-[12.5px] text-ink-tertiary">{t(emptyKey)}</p>;
+  }
   if (items.length === 0) {
     return (
       <div data-activity-empty className="rounded-xl border border-dashed border-hairline/50 px-4 py-3 text-center text-[12.5px] leading-relaxed text-ink-secondary">
@@ -80,50 +95,26 @@ export function ActivityList({ items, error, onOpen, now, onStop, stopping, empt
       </div>
     );
   }
-  return <Cards items={items} label={t("botPanel.coding.title")} actions={{ onOpen, now, onStop, stopping }} />;
+  return <Cards items={items} label={label ?? t("botPanel.coding.title")} actions={{ onOpen, now, onStop, stopping, fading }} />;
 }
 
-/** The Activity groups as drawn; nothing at all when both are empty. */
-export function ActivityFeed({ groups, actions }: { groups: ActivityGroups; actions: CardActions }) {
-  if (!groups.running.length && !groups.recent.length) return null;
+/** A section header; its title opens the section's history. */
+export function SectionHeader({ icon, title, name, onOpenHistory }: { icon: React.ReactNode; title: string; name: BotActivityFilter; onOpenHistory: (filter: BotActivityFilter) => void }) {
   return (
-    <div className="flex flex-col gap-3">
-      {groups.running.length > 0 && (
-        <div data-activity-group="running" className="flex flex-col gap-1.5">
-          <h3 className="px-0.5 text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{t("botPanel.activity.running", { count: groups.running.length })}</h3>
-          <Cards items={groups.running} label={t("botPanel.activity.running", { count: groups.running.length })} actions={actions} />
-        </div>
-      )}
-      {groups.recent.length > 0 && (
-        <div data-activity-group="recent" className="flex flex-col gap-1.5">
-          <h3 className="px-0.5 text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{t("botPanel.activity.recent")}</h3>
-          <Cards items={groups.recent} label={t("botPanel.activity.recent")} actions={actions} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SectionHeader({ icon, title, action }: { icon: React.ReactNode; title: string; action?: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      {icon}
-      <h2 className="min-w-0 flex-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{title}</h2>
-      {action}
-    </div>
-  );
-}
-
-function HeaderLink({ onClick, children, name }: { onClick: () => void; children: React.ReactNode; name: string }) {
-  return (
-    <button
-      type="button"
-      data-activity-see-all={name}
-      onClick={onClick}
-      className="shrink-0 rounded-md px-1.5 py-0.5 text-[12px] text-accent-text hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-    >
-      {children}
-    </button>
+    <h2 className="flex">
+      <button
+        type="button"
+        data-activity-history={name}
+        onClick={() => onOpenHistory(name)}
+        aria-haspopup="dialog"
+        title={t("botPanel.history.open")}
+        className="group -mx-1 flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left text-[13px] font-normal leading-[18px] text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      >
+        {icon}
+        <span className="truncate">{title}</span>
+        <ChevronRight size={13} aria-hidden="true" className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+      </button>
+    </h2>
   );
 }
 
@@ -133,6 +124,11 @@ export function ActivitySection({ bot }: { bot: Bot }) {
   const [error, setError] = useState(false);
   const [open, setOpen] = useState<BotActivityItem | null>(null);
   const [all, setAll] = useState<BotActivityFilter | null>(null);
+  // Finished work leaves the panel a few seconds after it finished.
+  const [, rerender] = useReducer((count: number) => count + 1, 0);
+  const tracker = useRef<LiveActivity | null>(null);
+  tracker.current ??= new LiveActivity(rerender);
+  useEffect(() => () => tracker.current?.dispose(), []);
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
   const request = useRef(0);
@@ -143,6 +139,7 @@ export function ActivitySection({ bot }: { bot: Bot }) {
     return loadBotActivity(api, bot.id, { limit: LIST_LIMIT })
       .then((next) => {
         if (id !== request.current) return;
+        tracker.current?.update([...next.items, ...next.subagents]);
         setList(next);
         setNow(Date.now());
         setError(false);
@@ -156,6 +153,8 @@ export function ActivitySection({ bot }: { bot: Bot }) {
     setList(null);
     setOpen(null);
     setAll(null);
+    tracker.current?.dispose();
+    tracker.current = new LiveActivity(rerender);
   }, [bot.id]);
   // A notification asked for one entry (openBotActivity): open it once,
   // even when it is past the list's window (a routine run refused on the
@@ -197,10 +196,10 @@ export function ActivitySection({ bot }: { bot: Bot }) {
     window.setTimeout(() => { done(); void refresh(); }, 1_500);
   }, [dispatch, refresh]);
 
-  const coding = list ? codingPreview(list.items, now) : null;
-  const groups = list ? activityGroups(list.items, list.subagents, now) : { running: [], recent: [] };
-  const otherCount = list ? list.items.filter((item) => !item.coding).length : 0;
-  const actions: CardActions = { onOpen: setOpen, onStop: stop, stopping, now };
+  const live = tracker.current.view();
+  const coding = list ? codingLive(list.items, live) : null;
+  const other = list ? activityLive(list.items, list.subagents, live) : null;
+  const actions: CardActions = { onOpen: setOpen, onStop: stop, stopping, now, fading: live.fading };
 
   return (
     <>
@@ -208,24 +207,20 @@ export function ActivitySection({ bot }: { bot: Bot }) {
         <SectionHeader
           icon={<SquareTerminal size={16} aria-hidden="true" className="text-ink-secondary" />}
           title={t("botPanel.coding.title")}
-          action={coding && coding.total > coding.shown.length
-            ? <HeaderLink name="coding" onClick={() => setAll("coding")}>{t("botPanel.coding.seeAll", { count: coding.total })}</HeaderLink>
-            : undefined}
+          name="coding"
+          onOpenHistory={setAll}
         />
-        <ActivityList items={coding?.shown ?? null} error={error} {...actions} />
+        <ActivityList items={coding} error={error} emptyKey="botPanel.live.idle" {...actions} />
       </section>
-      {(groups.running.length > 0 || groups.recent.length > 0) && (
-        <section data-bot-settings-section="activity" className="flex flex-col gap-2">
-          <SectionHeader
-            icon={<Activity size={16} aria-hidden="true" className="text-ink-secondary" />}
-            title={t("botPanel.activity.title")}
-            action={otherCount > 0
-              ? <HeaderLink name="other" onClick={() => setAll("other")}>{t("botPanel.activity.history")}</HeaderLink>
-              : undefined}
-          />
-          <ActivityFeed groups={groups} actions={actions} />
-        </section>
-      )}
+      <section data-bot-settings-section="activity" className="flex flex-col gap-2">
+        <SectionHeader
+          icon={<Activity size={16} aria-hidden="true" className="text-ink-secondary" />}
+          title={t("botPanel.activity.title")}
+          name="other"
+          onOpenHistory={setAll}
+        />
+        {other && <ActivityList items={other} error={false} label={t("botPanel.activity.title")} emptyKey="botPanel.live.idle" {...actions} />}
+      </section>
       {all && (
         <ActivityListModal
           botId={bot.id}

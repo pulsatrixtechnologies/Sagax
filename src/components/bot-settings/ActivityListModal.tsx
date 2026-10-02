@@ -1,18 +1,31 @@
-// See all, from Details > Coding or Activity: the bot's last 7 days as this
-// person may read them, filtered to coding jobs or to everything else
-// (`?filter=coding|other`, server/routes/bot-activity.ts). A card opens
-// ActivityDetailModal above this one.
+// The history, from the Coding or Activity section title: the bot's last 7
+// days as this person may read them, coding jobs or everything else
+// (`?filter=coding|other`, server/routes/bot-activity.ts; Activity adds the
+// sub-agents), newest first, narrowed by status (running, finished, failed)
+// and by words. A card opens ActivityDetailModal above this one.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Search, X } from "lucide-react";
 
 import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { activityStatusActive, loadBotActivity, type BotActivityFilter, type BotActivityItem } from "@/lib/bot-activity";
+import { activityStatusActive, historyItems, loadBotActivity, type BotActivityFilter, type BotActivityItem, type HistoryStatus } from "@/lib/bot-activity";
 import { ActivityList } from "./ActivitySection";
 
 const POLL_MS = 4_000;
 const FILTERS: BotActivityFilter[] = ["coding", "other"];
+const STATUSES: HistoryStatus[] = ["all", "running", "finished", "failed"];
+const STATUS_KEYS = {
+  all: "botPanel.history.status.all",
+  running: "botPanel.history.status.running",
+  finished: "botPanel.history.status.finished",
+  failed: "botPanel.history.status.failed",
+} as const;
+
+const chip = (selected: boolean) => cn(
+  "rounded-md px-2 py-1 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+  selected ? "bg-elevated-hover text-ink" : "text-ink-secondary hover:text-ink",
+);
 
 export function ActivityListModal({ botId, filter, onFilter, onClose, onOpen, onStop, stopping }: {
   botId: string;
@@ -26,6 +39,8 @@ export function ActivityListModal({ botId, filter, onFilter, onClose, onOpen, on
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [items, setItems] = useState<BotActivityItem[] | null>(null);
   const [error, setError] = useState(false);
+  const [status, setStatus] = useState<HistoryStatus>("all");
+  const [search, setSearch] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const request = useRef(0);
 
@@ -34,7 +49,7 @@ export function ActivityListModal({ botId, filter, onFilter, onClose, onOpen, on
     return loadBotActivity(api, botId, { filter, limit: 50 })
       .then((next) => {
         if (id !== request.current) return;
-        setItems(next.items);
+        setItems([...next.items, ...next.subagents]);
         setNow(Date.now());
         setError(false);
       })
@@ -83,7 +98,7 @@ export function ActivityListModal({ botId, filter, onFilter, onClose, onOpen, on
           <X size={16} />
         </button>
         <div className="border-b border-hairline/40 px-5 pb-3 pt-4">
-          <h2 id="activity-list-title" className="text-[15px] font-semibold leading-snug text-ink">{t("botPanel.list.title")}</h2>
+          <h2 id="activity-list-title" className="text-[15px] font-semibold leading-snug text-ink">{t("botPanel.history.title")}</h2>
           <p className="mt-0.5 text-[12.5px] text-ink-secondary">{t("botPanel.list.window")}</p>
           <div role="tablist" className="mt-3 flex gap-1">
             {FILTERS.map((id) => (
@@ -94,18 +109,36 @@ export function ActivityListModal({ botId, filter, onFilter, onClose, onOpen, on
                 aria-selected={filter === id}
                 data-activity-filter={id}
                 onClick={() => onFilter(id)}
-                className={cn(
-                  "rounded-md px-2 py-1 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
-                  filter === id ? "bg-elevated-hover text-ink" : "text-ink-secondary hover:text-ink",
-                )}
+                className={chip(filter === id)}
               >
                 {t(id === "coding" ? "botPanel.list.filter.coding" : "botPanel.list.filter.other")}
               </button>
             ))}
           </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div role="group" aria-label={t("botPanel.history.statusAria")} className="flex gap-1">
+              {STATUSES.map((id) => (
+                <button key={id} type="button" aria-pressed={status === id} data-history-status={id} onClick={() => setStatus(id)} className={chip(status === id)}>
+                  {t(STATUS_KEYS[id])}
+                </button>
+              ))}
+            </div>
+            <label className="ml-auto flex min-w-[160px] flex-1 items-center gap-1.5 rounded-md border border-hairline/50 bg-card px-2 py-1">
+              <Search size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+              <input
+                type="search"
+                data-history-search
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t("botPanel.history.search")}
+                aria-label={t("botPanel.history.search")}
+                className="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-tertiary"
+              />
+            </label>
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
-          <ActivityList items={items} error={error} onOpen={onOpen} onStop={onStop} stopping={stopping} now={now} emptyKey="botPanel.list.empty" />
+          <ActivityList items={items && historyItems(items, status, search)} error={error} onOpen={onOpen} onStop={onStop} stopping={stopping} now={now} emptyKey="botPanel.list.empty" />
         </div>
       </div>
     </dialog>
