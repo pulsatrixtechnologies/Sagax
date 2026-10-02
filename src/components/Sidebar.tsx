@@ -115,6 +115,7 @@ import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 import { profileInitials, SidebarProfileMenu } from "./SidebarProfileMenu";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads } from "@/lib/thread-preferences";
+import { useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
@@ -1796,6 +1797,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     if (composeOpen && COMPOSE_DISMISS.has(action.type)) onCompose?.();
   };
   const showThreads = useShowThreads();
+  const showLogo = useShowSidebarLogo();
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const { capabilities } = useDesktopCapabilities();
   const importReturnRef = useRef<HTMLButtonElement>(null);
@@ -2271,11 +2273,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         ) : (
           <>
             <div className={cn("flex h-11 items-center justify-between gap-2 pl-4 pr-3", !(macInset || browser) && "mt-2")}>
-              <span className="flex min-w-0 items-center gap-2 text-sidebar-ink" data-sidebar-brand>
-                <PulsatrixMark size={22} />
-                <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
-              </span>
-              <span className="flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
+              {showLogo && (
+                <span className="flex min-w-0 items-center gap-2 text-sidebar-ink" data-sidebar-brand>
+                  <PulsatrixMark size={22} />
+                  <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
+                </span>
+              )}
+              <span className="ml-auto flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
                 <button
                   type="button"
                   data-sidebar-search
