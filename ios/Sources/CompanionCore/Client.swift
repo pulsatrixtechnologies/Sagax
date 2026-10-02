@@ -680,6 +680,9 @@ public struct CompanionClient: Sendable {
         return (try? JSONDecoder().decode(SendReceipt.self, from: data)) ?? SendReceipt()
     }
 
+    /// The client's session, for a streamed response body (a call's voice).
+    var streamingSession: URLSession { session }
+
     func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await session.data(for: request)
