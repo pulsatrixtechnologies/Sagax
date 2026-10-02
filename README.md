@@ -6,7 +6,7 @@
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-38d591)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/pulsatrixtechnologies/pulsa-bot?include_prereleases&label=release&color=1084fe&cacheSeconds=300)](https://github.com/pulsatrixtechnologies/pulsa-bot/releases)
-![Platforms](https://img.shields.io/badge/platforms-macOS%20arm64%20%7C%20macOS%20x64%20%7C%20Windows%20x64-2B2E3A)
+![Platforms](https://img.shields.io/badge/platforms-macOS%20arm64%20%7C%20x64%20%C2%B7%20Windows%20x64%20%7C%20arm64-2B2E3A)
 ![Engines](https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20more-d97757)
 
 <img src="docs/images/readme/hero.webp" alt="Sagax main window: the sidebar lists bots and group chats; the Launch room group shows two people and three bots working on a website launch" width="900">
@@ -183,7 +183,7 @@ effects and moves.
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/images/readme/settings-model-providers.webp" alt="Settings, Model providers: Claude Code and Codex ready, the claude.ai connectors card, and other providers that need setup" width="100%">
+<img src="docs/images/readme/settings-model-providers.webp" alt="Settings, Model providers: the claude.ai connectors of your own account (Microsoft 365 and GitHub connected, Google Calendar needs sign-in), Claude Code and Codex ready" width="100%">
 </td>
 <td width="50%" valign="top">
 <img src="docs/images/readme/settings-organization.webp" alt="Settings, Organization: join a Perspicax server by copying chosen bots, with their conversations and memory, into the organization's Sagax" width="100%">
@@ -199,9 +199,15 @@ Download the latest build from the
 
 | Platform | Files | First launch |
 |---|---|---|
-| macOS, Apple silicon | `PulsaBot-X.Y.Z-arm64.dmg` or `.zip` | Open the `.dmg` and drag Sagax to Applications. |
-| macOS, Intel | `PulsaBot-X.Y.Z-x64.dmg` or `.zip` | Same. |
-| Windows x64 | `PulsaBot-X.Y.Z-setup.exe`, or the portable `PulsaBot-X.Y.Z-win-x64.zip` | Run the installer. |
+| macOS, Apple silicon | `Sagax-X.Y.Z-arm64.dmg` or `.zip` | Open the `.dmg` and drag Sagax to Applications. |
+| macOS, Intel | `Sagax-X.Y.Z-x64.dmg` or `.zip` | Same. |
+| Windows, x64 and arm64 | `Sagax-X.Y.Z-setup.exe` (one installer for both) | Run the installer; it installs the build for your PC. |
+| Windows, portable | `Sagax-X.Y.Z-win-x64.zip` or `Sagax-X.Y.Z-win-arm64.zip` | Unzip and run `Sagax.exe`. |
+
+Releases up to 0.3.0 used `PulsaBot-...` file names and Windows x64 only.
+On Windows arm64 a few bundled helpers have no arm64 build yet and run under
+Windows' x64 emulation: the Cloudflare Tunnel connector, the built-in
+browser engine and the Android platform tools. The app itself, computer use and voice run natively.
 
 First launch notes:
 
