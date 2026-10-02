@@ -85,7 +85,7 @@ export function SandboxDesktopView({ onConnected, embedded = false }: { onConnec
           // wheel (the server then refuses the bots' clicks there).
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <button type="button" onClick={toggleControl} data-take-control
-              className="pointer-events-auto flex min-h-[44px] items-center gap-2 rounded-full bg-black/65 px-4 py-2 text-[13px] font-medium text-white shadow-md backdrop-blur-sm transition-opacity hover:bg-black/80 md:min-h-0 md:opacity-80 md:group-hover/desk:opacity-100">
+              className="pointer-events-auto flex min-h-[44px] items-center gap-2 rounded-full bg-black/65 px-4 py-2 text-[13px] font-medium text-white shadow-md backdrop-blur-sm transition-opacity hover:bg-black/80 md:min-h-0 md:opacity-80 md:group-hover/desk:opacity-100 focus-visible:opacity-100 touch:opacity-100">
               <Hand size={15} aria-hidden="true" />
               {t("sandboxDesktop.takeControl")}
             </button>
