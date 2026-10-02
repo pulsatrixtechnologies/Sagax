@@ -66,6 +66,35 @@ onboarding tests:
   it at `/api/people/<principalId>/avatar?v=<version>`. Without those
   Perspicax fields everyone keeps their initials.
 
+## Group memory and direct messages between people
+
+A user-created group keeps one shared memory (`server/group-memory.ts`,
+`DATA_DIR/group-memory/<groupId>/MEMORY.md`), separate from every bot's own
+workspace. Keep these rules, each covered by `server/group-memory.test.ts`,
+`server/group-memory.e2e.test.ts` or `server/people-dms.e2e.test.ts`:
+
+- Every bot of the group reads it in each room turn there (the
+  `group-memory` prompt section); a bot writes it only with
+  `group_memory_update` (`/api/internal/group-memory`: a bot of that group,
+  speaking in it, group memory on, the bot's own memory switch on). Nothing
+  moves between a bot's private memory and the group's on its own.
+- Entries, budget and expiry are the bot memory's (`applyMemoryUpdate`);
+  secrets are redacted on every write; it goes away with its group.
+- `GET/PUT /api/groups/<id>/memory`: the group's people read, its owner
+  (`createdBy`, an org admin for older groups, the operator, a solo admin
+  session) edits it or switches it off (`memoryEnabled`). A removed member
+  gets 404 at once (the channel gate).
+
+On an organization server a person writes to another person through
+`POST /api/people-dms` (`server/people-dms.ts`): a group record with
+`peopleDm: true`, two `humanIds` and no bot. Only those two list, read,
+stream, search, export or write it (not an admin, a section, nor loopback);
+it stays people-only (no bot, task, rename, delete, folder or memory); a
+message starts no turn and notifies the other person only (`notify` kind
+`message` with `recipientId`). Backups and packages leave it out. The To:
+picker offers the directory's active persons (never `service` accounts,
+nor oneself).
+
 ## Launch flow (desktop)
 
 First run on the desktop app's own window opens the launch screen
