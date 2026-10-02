@@ -75,3 +75,12 @@ describe("openmausbot data dir", () => {
     expect(existsSync(`${fresh}.migrating.lock`)).toBe(false);
   });
 });
+
+describe("the same server under both names", () => {
+  it("serves its descriptor at the new well-known path and the old one", async () => {
+    const fresh = await (await fetch(`http://127.0.0.1:${PORT}/.well-known/sagax/environment`)).json() as { environmentId: string };
+    const old = await (await fetch(`http://127.0.0.1:${PORT}/.well-known/openmausbot/environment`)).json();
+    expect(fresh.environmentId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(old).toEqual(fresh);
+  });
+});

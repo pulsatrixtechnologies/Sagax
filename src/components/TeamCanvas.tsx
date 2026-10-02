@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowRight, BookOpen, Crown, MessageCircle, Minus, Monitor, MoreHorizontal, Pencil, Plus, Trash2, Users } from "lucide-react";
-import { api, useStore, type Bot } from "@/state/store";
+import { useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { teamMapStatus, type TeamMapSection } from "@/lib/team-map";
 import { COMPUTER_DRAG_TYPE, fitTeams, layoutTeams, orderBots, parseBotOrders, parsePositions, reorderBot, zoomAt, type Point, type View } from "@/lib/team-canvas";
 import { BotAvatar } from "./Avatar";
 import { InstanceProviderMark, ProviderMark } from "./ProviderIcons";
+import { fetchEnvironmentDescriptor } from "@/lib/environment-descriptor";
 
 type Gesture = {
   id: number;
@@ -109,7 +110,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onEdit
   // workspace's identity so switching hosted workspaces never shares a layout.
   useEffect(() => {
     let active = true;
-    void api("/.well-known/openmausbot/environment", { signal: AbortSignal.timeout(5_000) }).then((environment) => {
+    void fetchEnvironmentDescriptor({ signal: AbortSignal.timeout(5_000) }).then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status))))).then((environment) => {
       if (!active || typeof environment.environmentId !== "string") return;
       storageKey.current = `omb-team-canvas:${environment.environmentId}`;
       try {

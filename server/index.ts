@@ -4,6 +4,7 @@
 // First of all, SAGAX_* settings onto the names the code reads (step 1 of
 // the rename, electron/legacy-names.mjs).
 import "../electron/legacy-env-boot.mjs";
+import { ENVIRONMENT_PATHS } from "../electron/legacy-names.mjs";
 // First, before any module that could start a process: a Cloud home's
 // secrets off the launcher's pipe (cloud-secrets-boot.ts).
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
@@ -18192,7 +18193,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // code into a session. Everything else needs the loopback owner or a
     // paired session with the right scope.
     if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
-    if (method === "GET" && path === "/.well-known/openmausbot/environment") {
+    // The new path and the old one (kept for one release, legacy-names.mjs).
+    if (method === "GET" && ENVIRONMENT_PATHS.includes(path)) {
       return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && !CLOUD_HOME && IDENTITY.kind === "solo" && emailSignIn.enabled(), sharedComputers: lendingEnabled(), identity: identityDescriptor(IDENTITY) }));
     }
     // The browser lands here after an MCP server's sign-in. Public: the
@@ -18210,7 +18212,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.end(page.html);
       return;
     }
-    const domainCheck = /^\/\.well-known\/openmausbot\/domain-check\/([a-f0-9]{64})$/.exec(path);
+    const domainCheck = /^\/\.well-known\/(?:sagax|openmausbot)\/domain-check\/([a-f0-9]{64})$/.exec(path);
     if (method === "GET" && domainCheck) {
       res.setHeader("cache-control", "no-store");
       const challenge = customDomainVerifier.challenge(domainCheck[1]);

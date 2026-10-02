@@ -46,7 +46,7 @@ import { explainTailscaleFailure, tailscaleServe, tailscaleServeOff, tailscaleSt
 import { defaultSetupIo, SetupCancelled, type SetupIo } from "./cli-prompts.ts";
 import { normalizePhoneOrigin, phonePairingInstructions, runPhoneSetup } from "./cli-phone-setup.ts";
 import type { AppConfig } from "./config.ts";
-import { defaultDataDir } from "../electron/legacy-names.mjs";
+import { defaultDataDir, ENVIRONMENT_PATH, fetchEnvironmentDescriptor, LEGACY_ENVIRONMENT_PATH } from "../electron/legacy-names.mjs";
 import {
   cleanupTunnelOrigin,
   createTunnelAccount,
@@ -352,6 +352,13 @@ function refusedAsService(status: number, body: any): boolean {
   return status === 403 && typeof body?.error === "string" && /shared server|Sign in through the workspace portal/.test(body.error);
 }
 
+/** The local server's environment descriptor: the new path, then the old one
+ * for a server started before Sagax (legacy-names.mjs). */
+async function apiEnvironment(port: number): Promise<{ status: number; body: any }> {
+  const current = await api(port, ENVIRONMENT_PATH);
+  return current.status === 404 ? api(port, LEGACY_ENVIRONMENT_PATH) : current;
+}
+
 async function serverUp(port: number, pid?: number): Promise<boolean> {
   try {
     const { status, body } = await api(port, "/api/health");
@@ -368,7 +375,7 @@ export async function isWorkspaceRunning(options: CliOptions): Promise<boolean> 
     const { status, body } = await api(options.port, "/api/health");
     if (status !== 200 || body?.app !== "openmausbot") return false;
     const expected = readFileSync(join(options.dataDir, "environment-id"), "utf8").trim();
-    const descriptor = await api(options.port, "/.well-known/openmausbot/environment");
+    const descriptor = await apiEnvironment(options.port);
     return /^[0-9a-f-]{36}$/i.test(expected) && descriptor.status === 200 && descriptor.body?.environmentId === expected;
   } catch { return false; }
 }
@@ -392,8 +399,8 @@ export async function openDashboard(port: number, env = process.env): Promise<bo
 export async function verifyPhoneEndpoint(port: number, origin: string): Promise<boolean> {
   if (!normalizePhoneOrigin(origin)) return false;
   try {
-    const local = await api(port, "/.well-known/openmausbot/environment");
-    const remote = await fetch(`${origin}/.well-known/openmausbot/environment`, { signal: AbortSignal.timeout(5000), redirect: "error" });
+    const local = await apiEnvironment(port);
+    const remote = await fetchEnvironmentDescriptor(origin, { signal: AbortSignal.timeout(5000), redirect: "error" });
     if (local.status !== 200 || !remote.ok) return false;
     const descriptor = await remote.json() as { environmentId?: unknown };
     return typeof local.body?.environmentId === "string" && local.body.environmentId.length > 0
@@ -637,7 +644,7 @@ export function formatSessions(sessions: Array<{ id: string; label: string; scop
 export async function runStatus(options: CliOptions, io: CliIo = defaultIo()): Promise<number> {
   let code = 0;
   try {
-    const res = await fetch(`http://127.0.0.1:${options.port}/.well-known/openmausbot/environment`);
+    const res = await fetchEnvironmentDescriptor(`http://127.0.0.1:${options.port}`);
     const body: any = await res.json();
     io.log(options.json ? JSON.stringify(body, null, 2) : `${body.label} · Sagax ${body.version} on ${body.platform} · id ${body.environmentId}`);
   } catch {

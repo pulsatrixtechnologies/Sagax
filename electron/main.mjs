@@ -86,7 +86,7 @@ import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
-import { defaultDataDir, URL_SCHEMES } from "./legacy-names.mjs";
+import { defaultDataDir, fetchEnvironmentDescriptor, URL_SCHEMES } from "./legacy-names.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
 import { cloudHomeConnectUrl, withCloudHome } from "./cloud-home.mjs";
@@ -352,7 +352,7 @@ function setSignInState(next) {
 /** What the saved server says about desktop returns, or null when it cannot be read. */
 async function serverSignInSupport(origin) {
   try {
-    const res = await fetch(`${origin}/.well-known/openmausbot/environment`, { signal: AbortSignal.timeout(3_000), redirect: "error" });
+    const res = await fetchEnvironmentDescriptor(origin, { signal: AbortSignal.timeout(3_000), redirect: "error" });
     if (!res.ok) return null;
     return oidcSignInModule.signInSupport(await res.json());
   } catch {
@@ -1979,7 +1979,7 @@ async function refreshSharedComputersAllowed() {
   // whether it accepts a person's computer (its public descriptor).
   const locked = serverModeEnvironment(environmentsState);
   if (locked) {
-    sharedComputersAllowed = await fetch(`${locked.origin}/.well-known/openmausbot/environment`, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) })
+    sharedComputersAllowed = await fetchEnvironmentDescriptor(locked.origin, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) })
       .then((res) => (res.ok ? res.json() : null))
       .then((descriptor) => descriptor?.capabilities?.sharedComputers === true)
       .catch(() => false);
@@ -2534,7 +2534,7 @@ async function upgradeSavedOrganizationServers() {
 
 async function isOrganizationServer(origin) {
   try {
-    const response = await fetch(`${origin}/.well-known/openmausbot/environment`, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) });
+    const response = await fetchEnvironmentDescriptor(origin, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) });
     return response.ok && (await response.json())?.identity?.kind === "perspicax";
   } catch {
     return false;

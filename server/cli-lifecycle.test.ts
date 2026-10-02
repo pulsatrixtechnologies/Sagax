@@ -210,7 +210,7 @@ describe("CLI startup lifecycle", () => {
     expect(await runServe({ ...options, pair: true, phone: "android", publicUrl: "https://fixture.example.test" }, log)).toBe(0);
     expect(log).toHaveBeenCalledWith(expect.stringContaining("no phone pairing code was created"));
     expect(requests.some((url) => url.includes("/api/auth/pairing"))).toBe(false);
-    expect(requests).toContain("https://fixture.example.test/.well-known/openmausbot/environment");
+    expect(requests).toContain("https://fixture.example.test/.well-known/sagax/environment");
   });
 
   it("offers Android client pairing only after verifying the same workspace, without claiming it is connected", async () => {
@@ -236,7 +236,7 @@ describe("CLI startup lifecycle", () => {
         // the public address with --public-url and must build both from that.
         return Response.json({ code, url: null, expiresAt, credential, serverName: "fixture", hint: "set OMB_PUBLIC_URL" });
       }
-      expect(address).toMatch(/\/\.well-known\/openmausbot\/environment$/);
+      expect(address).toMatch(/\/\.well-known\/sagax\/environment$/);
       expect(init?.method).not.toBe("POST");
       expect(init?.body).toBeUndefined();
       return Response.json({ environmentId: workspaceId });
@@ -247,9 +247,9 @@ describe("CLI startup lifecycle", () => {
     const requests = fetcher.mock.calls.map(([url]) => String(url));
     const pairingRequest = `http://127.0.0.1:${options.port}/api/auth/pairing`;
     expect(requests.filter((url) => url === pairingRequest)).toHaveLength(1);
-    expect(requests).toContain(`http://127.0.0.1:${options.port}/.well-known/openmausbot/environment`);
-    expect(requests).toContain(`${origin}/.well-known/openmausbot/environment`);
-    expect(requests.indexOf(`${origin}/.well-known/openmausbot/environment`)).toBeLessThan(requests.indexOf(pairingRequest));
+    expect(requests).toContain(`http://127.0.0.1:${options.port}/.well-known/sagax/environment`);
+    expect(requests).toContain(`${origin}/.well-known/sagax/environment`);
+    expect(requests.indexOf(`${origin}/.well-known/sagax/environment`)).toBeLessThan(requests.indexOf(pairingRequest));
     const output = log.mock.calls.map(([line]) => line).join("\n");
     expect(output).toContain(`pairing code:  ${code}`);
     expect(output).toContain(`expires:       ${new Date(expiresAt).toLocaleTimeString()} (single use)`);
