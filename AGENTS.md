@@ -327,6 +327,20 @@ Electron restart (no HMR); launch-test them before committing.
 - `fit.ts` sizes the stage for the widest pose; `pilot.ts` moves the window
   (flights, walks) through `floating-bots:geometry`, `move-to` and
   `autopilot`; main clamps every move and never saves spots flown to.
+- The chat stays smooth (`window-frame.ts`): while the balloon is open the
+  window holds the balloon's room and only grows, so streaming, resizing or
+  moving the balloon never resizes the window per frame; it fits again when
+  the balloon closes or a gesture ends. Drags move the window once a frame
+  (`setPosition`, one request in flight); main saves a spot once the window
+  stands still and only calls `setIgnoreMouseEvents`, `setFocusable` and
+  `focus` on a change. With the balloon open the mascot stays home (no
+  wander, no flight while its bot works), draws at 30 fps at most and the
+  skin's loops rest. Measure with `node scripts/verify-mascot-chat.mjs`
+  (isolated real Electron: open latency, window moves, clipped and dropped
+  frames, mascot jumps, position writes, theme).
+- The balloon wears the app's theme: the brain sends `theme` (the skin and
+  the brand accent, `theme.ts`, followed live) and the window stamps it;
+  Trombi keeps its Hibou 98 balloon whatever the theme.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
