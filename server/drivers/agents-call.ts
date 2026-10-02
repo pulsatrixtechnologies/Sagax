@@ -53,14 +53,14 @@ export interface ToolCallResult {
 }
 
 /** The context a spawned proxy was given, with a fresh set of turn guards:
- *   OMB_BOT_ID, OMB_THREAD_ID, OMB_TURN_DEPTH, plus the catalog switches
+ *   SAGAX_BOT_ID, SAGAX_THREAD_ID, SAGAX_TURN_DEPTH, plus the catalog switches
  *   (agents-catalog.ts) and the harness address and token (agents-client.ts). */
 export function toolCallContextFromEnv(env: NodeJS.ProcessEnv): ToolCallContext {
   const profile = catalogProfileFromEnv(env);
   return {
     botId: profile.botId,
-    threadId: env.OMB_THREAD_ID ?? "",
-    depth: Number(env.OMB_TURN_DEPTH ?? "0") || 0,
+    threadId: env.SAGAX_THREAD_ID ?? "",
+    depth: Number(env.SAGAX_TURN_DEPTH ?? "0") || 0,
     externalRuntime: profile.externalRuntime,
     coordinating: profile.coordinating,
     sharedComputers: profile.sharedComputers,

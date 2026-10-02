@@ -11,7 +11,7 @@ export interface FleetReply {
 }
 
 export function fleetSocketPath(env: NodeJS.ProcessEnv = process.env): string {
-  return env.OMB_FLEET_SOCKET?.trim() || "/run/openmausbot/fleet.sock";
+  return env.SAGAX_FLEET_SOCKET?.trim() || "/run/openmausbot/fleet.sock";
 }
 
 /** Whether this server can reach a fleet agent at all. */

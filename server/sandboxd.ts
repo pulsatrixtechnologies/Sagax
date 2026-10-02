@@ -1,14 +1,19 @@
 // sagax-sandboxd: the sandbox provisioner. A separate, minimal service and
 // the ONLY component that holds the Docker socket. Its API is narrow: ensure,
-// stop, delete, exec and status for sandboxes addressed by an opaque PERSON
+// stop, pause, resume, delete, exec, stats and status for sandboxes addressed by an opaque PERSON
 // key (never a bot), over signed requests only the Sagax server can make
 // (server/sandboxd-auth.ts). It cannot build an arbitrary container: every
 // create body comes from sandboxContainerSpec() and must pass
 // assertSandboxIsolation().
 //
+// The live view of a person's desktop is one more signed call: an HTTP
+// upgrade on /v1/sandboxes/<key>/desktop that becomes a byte stream to the
+// VNC port inside that sandbox (createSandboxdUpgradeHandler).
+//
 //   node dist-server/sandboxd.js                    serve (compose service)
 //   node dist-server/sandboxd.js --uninstall-egress remove the host egress rules
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { Duplex } from "node:stream";
 import { pathToFileURL } from "node:url";
 
 import { ensureSandboxdKey, SANDBOXD_AUTH_HEADER, SandboxdVerifier } from "./sandboxd-auth.ts";
@@ -56,13 +61,16 @@ export function createSandboxdHandler(service: SandboxService, verifier: Sandbox
         return send(res, 200, { instance: service.config.instance, egress: service.egress, maxRunning: service.config.maxRunning, idleMinutes: service.config.idleStopMs / 60_000 });
       }
       if (method === "GET" && url.pathname === "/v1/sandboxes") return send(res, 200, { sandboxes: await service.list() });
-      const match = /^\/v1\/sandboxes\/([a-f0-9]{32})(?:\/(ensure|stop|exec))?$/.exec(url.pathname);
+      const match = /^\/v1\/sandboxes\/([a-f0-9]{32})(?:\/(ensure|stop|exec|pause|resume|stats))?$/.exec(url.pathname);
       if (!match) return send(res, 404, { error: "not found" });
       const key = match[1]!;
       const action = match[2];
       if (method === "GET" && !action) return send(res, 200, await service.status(key));
       if (method === "POST" && action === "ensure") return send(res, 200, await service.ensure(key));
       if (method === "POST" && action === "stop") return send(res, 200, await service.stop(key));
+      if (method === "POST" && action === "pause") return send(res, 200, await service.pause(key));
+      if (method === "POST" && action === "resume") return send(res, 200, await service.resume(key));
+      if (method === "GET" && action === "stats") return send(res, 200, await service.stats(key));
       if (method === "DELETE" && !action) {
         return send(res, 200, await service.remove(key, { keepWorkspace: url.searchParams.get("keepWorkspace") === "1" }));
       }
@@ -86,6 +94,47 @@ export function createSandboxdHandler(service: SandboxService, verifier: Sandbox
   };
 }
 
+export const SANDBOXD_DESKTOP_UPGRADE = "sagax-rfb";
+const DESKTOP_PATH = /^\/v1\/sandboxes\/([a-f0-9]{32})\/desktop$/;
+
+function refuseUpgrade(socket: Duplex, status: number, code: string): void {
+  const body = JSON.stringify({ error: code, code });
+  const reason = status === 401 ? "Unauthorized" : status === 404 ? "Not Found" : status === 409 ? "Conflict" : status === 429 ? "Too Many Requests" : "Error";
+  socket.end(`HTTP/1.1 ${status} ${reason}\r\ncontent-type: application/json\r\ncontent-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`);
+}
+
+/** The live view's stream: authenticated like every other call (an empty
+ * body is signed), then the socket is spliced to the desktop relay inside
+ * that one sandbox. */
+export function createSandboxdUpgradeHandler(service: SandboxService, verifier: SandboxdVerifier) {
+  return (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+    socket.on("error", () => socket.destroy());
+    const method = req.method ?? "GET";
+    const rawPath = req.url ?? "/";
+    if (!verifier.verify(req.headers[SANDBOXD_AUTH_HEADER], method, rawPath, Buffer.alloc(0))) return refuseUpgrade(socket, 401, "unauthorized");
+    let url: URL;
+    try { url = new URL(rawPath, "http://sandboxd"); } catch { return refuseUpgrade(socket, 404, "not_found"); }
+    const match = DESKTOP_PATH.exec(url.pathname);
+    if (method !== "POST" || !match || String(req.headers.upgrade ?? "").toLowerCase() !== SANDBOXD_DESKTOP_UPGRADE) return refuseUpgrade(socket, 404, "not_found");
+    const control = url.searchParams.get("control") === "1";
+    socket.pause();
+    void service.desktopStream(match[1]!, { control }).then((stream) => {
+      if (socket.destroyed) { stream.destroy(); return; }
+      socket.write(`HTTP/1.1 101 Switching Protocols\r\nconnection: Upgrade\r\nupgrade: ${SANDBOXD_DESKTOP_UPGRADE}\r\n\r\n`);
+      if (head.length) stream.write(head);
+      stream.on("error", () => socket.destroy());
+      socket.on("close", () => stream.destroy());
+      stream.on("close", () => socket.destroy());
+      socket.pipe(stream).pipe(socket);
+      socket.resume();
+    }, (error: unknown) => {
+      if (error instanceof SandboxError) return refuseUpgrade(socket, error.status, error.code);
+      console.error(`sandboxd: desktop stream failed: ${error instanceof Error ? error.message : String(error)}`);
+      refuseUpgrade(socket, 500, "internal");
+    });
+  };
+}
+
 async function main(): Promise<void> {
   const config = sandboxdConfigFromEnv();
   const docker = dockerApi(config.dockerSocket);
@@ -99,7 +148,9 @@ async function main(): Promise<void> {
   const service = new SandboxService(docker, config);
   const egress = await service.installEgressPolicy();
   console.log(`sandboxd: instance ${config.instance}, egress policy ${egress}, at most ${config.maxRunning} running, idle stop ${config.idleStopMs / 60_000} min`);
-  const server = createServer(createSandboxdHandler(service, new SandboxdVerifier(key)));
+  const verifier = new SandboxdVerifier(key);
+  const server = createServer(createSandboxdHandler(service, verifier));
+  server.on("upgrade", createSandboxdUpgradeHandler(service, verifier));
   server.requestTimeout = 16 * 60_000;
   server.listen(config.listenPort, config.listenHost);
   const sweep = setInterval(() => {

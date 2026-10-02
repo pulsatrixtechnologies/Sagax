@@ -1,9 +1,11 @@
 // An in-memory DockerApi for the sandbox provisioner tests: records every
 // create body so the tests can assert what would reach a real daemon.
+import { Duplex } from "node:stream";
+
 import type { ContainerSummary, DockerApi, ExecRequest, ExecResult } from "../sandboxd-docker.ts";
 
 export class FakeDocker implements DockerApi {
-  containers = new Map<string, { running: boolean; labels: Record<string, string>; spec: Record<string, unknown>; startedAt: number }>();
+  containers = new Map<string, { running: boolean; paused?: boolean; labels: Record<string, string>; spec: Record<string, unknown>; startedAt: number }>();
   networks = new Map<string, { labels: Record<string, string>; subnets: string[]; spec: Record<string, unknown> }>();
   volumes = new Map<string, { labels: Record<string, string> }>();
   images = new Set<string>(["sagax-sandbox:test"]);
@@ -17,11 +19,11 @@ export class FakeDocker implements DockerApi {
   async imageExists(image: string) { return this.images.has(image); }
   async inspectContainer(name: string): Promise<ContainerSummary | null> {
     const found = this.containers.get(name);
-    return found ? { name, running: found.running, labels: found.labels, startedAt: found.startedAt } : null;
+    return found ? { name, running: found.running, ...(found.paused ? { paused: true } : {}), labels: found.labels, startedAt: found.startedAt } : null;
   }
   async listContainers(labels: Record<string, string>) {
     return [...this.containers].filter(([, value]) => Object.entries(labels).every(([key, want]) => value.labels[key] === want))
-      .map(([name, value]) => ({ name, running: value.running, labels: value.labels, startedAt: value.startedAt }));
+      .map(([name, value]) => ({ name, running: value.running, ...(value.paused ? { paused: true } : {}), labels: value.labels, startedAt: value.startedAt }));
   }
   async createContainer(name: string, spec: Record<string, unknown>) {
     this.calls.push(`create ${name}`);
@@ -38,7 +40,7 @@ export class FakeDocker implements DockerApi {
   async stopContainer(name: string) {
     this.calls.push(`stop ${name}`);
     const found = this.containers.get(name);
-    if (found) found.running = false;
+    if (found) { found.running = false; found.paused = false; }
   }
   async removeContainer(name: string) { this.calls.push(`rm ${name}`); this.containers.delete(name); }
   async inspectNetwork(name: string) {
@@ -66,6 +68,37 @@ export class FakeDocker implements DockerApi {
     if (!this.containers.get(name)?.running) throw new Error("container not running");
     this.execs.push({ name, exec });
     return this.execResult(exec);
+  }
+  /** The desktop relay: greets like a VNC server, then echoes what it gets
+   * prefixed with "echo:". Every stream opened is kept for the tests. */
+  streams: Duplex[] = [];
+  async execStream(name: string, exec: ExecRequest) {
+    if (!this.containers.get(name)?.running) throw new Error("container not running");
+    this.execs.push({ name, exec });
+    const stream: Duplex = new Duplex({
+      read() {},
+      write(chunk: Buffer, _encoding, callback) { stream.push(Buffer.concat([Buffer.from("echo:"), chunk])); callback(); },
+      final(callback) { stream.push(null); callback(); },
+    });
+    stream.push(Buffer.from("RFB 003.008\n"));
+    this.streams.push(stream);
+    return stream;
+  }
+  async pauseContainer(name: string) {
+    this.calls.push(`pause ${name}`);
+    const found = this.containers.get(name);
+    if (!found?.running) throw new Error("not running");
+    found.paused = true;
+  }
+  async unpauseContainer(name: string) {
+    this.calls.push(`unpause ${name}`);
+    const found = this.containers.get(name);
+    if (found) found.paused = false;
+  }
+  stats = { cpus: 0.25, memoryBytes: 300 * 1024 * 1024, memoryLimitBytes: 1536 * 1024 * 1024 };
+  async containerStats(name: string) {
+    if (!this.containers.get(name)?.running) throw new Error("not running");
+    return this.stats;
   }
   async runOnce(name: string) {
     this.calls.push(`helper ${name}`);

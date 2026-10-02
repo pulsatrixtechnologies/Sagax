@@ -25,6 +25,8 @@ function fixture({ activeId = "old", remoteAccess = null, restartIntent = false,
 
 test("the organisation protocol is a fixed action without URL routing or credentials", () => {
   assert.equal(isOrganizationDeepLink("openmausbot://organization"), true);
+  assert.equal(isOrganizationDeepLink("sagax://organization"), true);
+  assert.equal(isOrganizationDeepLink("sagax://organization?url=https://old.example"), false);
   for (const value of [null, {}, "", "openmausbot://organization/", "openmausbot://organization?", "openmausbot://organization#", "openmausbot://organization?url=https://old.example", "openmausbot://organization#token=secret", "openmausbot://organization/other", "openmausbot://user@organization", "openmausbot://organization:443", "openmausbot://organization.evil", "https://organization", " openmausbot://organization", "openmausbot://%6frganization"]) {
     assert.equal(isOrganizationDeepLink(value), false);
   }

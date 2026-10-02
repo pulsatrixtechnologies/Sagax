@@ -153,7 +153,7 @@ export function parseTeamBackup(input: unknown): TeamBackup {
     if (!bot.chiefOfStaff) continue;
     // Persisted section identity is its exact trimmed display label.
     const section = bot.section?.trim() ?? "";
-    if (chiefs.has(section) || bot.hidden) throw new Error("Invalid backup: a section must have at most one visible Chief of Staff");
+    if (chiefs.has(section) || bot.hidden) throw new Error("Invalid backup: a section must have at most one visible Primary Bot");
     chiefs.add(section);
   }
   for (const group of backup.groups) {

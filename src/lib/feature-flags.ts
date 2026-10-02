@@ -1,7 +1,7 @@
 import { t } from "./i18n";
 
 export interface FeatureFlagConfig {
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; connectedApps?: boolean; templates?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean };
   browserEngine?: { kind: "engine" | "unavailable"; reason?: string; installable?: boolean; installing?: boolean; installError?: string };
 }
 
@@ -58,6 +58,22 @@ export function connectedAppsEnabled(config: FeatureFlagConfig | null | undefine
  * server's templatesEnabled. */
 export function templatesEnabled(config: FeatureFlagConfig | null | undefined): boolean {
   return config?.features?.templates === true;
+}
+
+/** VPS Computer: a bot's computer on the person's own SSH-reachable VPS
+ * (Settings > Connections VPS, Settings > Computer's VPS card, the Cloud
+ * backend picker). Experimental: off until switched on in Settings >
+ * Experimental features; mirrors the server's vpsComputerEnabled. */
+export function vpsComputerEnabled(config: FeatureFlagConfig | null | undefined): boolean {
+  return config?.features?.vpsComputer === true;
+}
+
+/** Boat Computer: a hosted cloud computer (Settings > Connections Boat key,
+ * Settings > Computer's Boat card, the Cloud place, Team map's "Boat
+ * computer"). Experimental: off until switched on; mirrors the server's
+ * boatComputerEnabled. */
+export function boatComputerEnabled(config: FeatureFlagConfig | null | undefined): boolean {
+  return config?.features?.boatComputer === true;
 }
 
 /** Opt-in computer sharing — lending this desktop's folders, terminal or

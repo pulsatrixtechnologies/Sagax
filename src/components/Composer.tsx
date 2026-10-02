@@ -1,7 +1,9 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
+import { ArrowUp, Clock, Mic, Paperclip, Square, Target, TriangleAlert, Users, X } from "lucide-react";
 import { api, useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
+import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
@@ -74,14 +76,18 @@ import { mentionChoicesForQuery } from "@/lib/mentions";
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
 import {
   composerCommandMenu,
+  composerGroupCommandMenu,
+  composerGroupSlashTrigger,
   composerSlashTrigger,
   engineCommandInsertion,
+  groupCommandTargets,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
   type ComposerMenuItem,
   type ComposerSlashCommand,
+  type GroupEngineCommands,
 } from "@/lib/composer-commands";
-import { useHarnessCommands } from "@/lib/harness-commands";
+import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-commands";
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
 import { WorkplaceNotice } from "./WorkplaceNotice";
 
@@ -307,11 +313,25 @@ export function Composer({
   const engineSupportsImages = imageTargetsSupport(effectiveText, effectiveChannelMode);
 
   // ── Slash commands and @mentions ─────────────────────────────────────
-  const slash = composerSlashTrigger(text, caret);
+  // In a group "/" also opens right after a leading @mention: that bot's
+  // engine commands only (shared/harness-commands.ts groupCommandTarget).
+  const groupSlash = group && !group.dm ? composerGroupSlashTrigger(text, caret, members ?? []) : null;
+  const slash = group && !group.dm ? groupSlash?.trigger ?? null : composerSlashTrigger(text, caret);
   const locale = activeLocale();
   // The engine's own commands (Claude Code, Codex) for a 1:1 conversation,
   // read the first time "/" is typed there (src/lib/harness-commands.ts).
-  const engineCommands = useHarnessCommands(api, !group ? bot?.id : undefined, threadId || undefined, Boolean(slash) && !group);
+  // On an organization server the list is the signed-in person's own, so the
+  // cache is theirs too.
+  const commandViewerId = state.config?.viewer?.principalId ?? null;
+  const engineCommands = useHarnessCommands(api, !group ? bot?.id : undefined, threadId || undefined, Boolean(slash) && !group, commandViewerId);
+  // In a group: the commands of the bot(s) the command would reach, per bot.
+  const groupSlashOpen = Boolean(groupSlash);
+  const groupSlashBotId = groupSlash?.botId;
+  const groupTargets = useMemo(
+    () => groupSlashOpen && group ? groupCommandTargets({ botId: groupSlashBotId }, members ?? [], group.defaultResponder) : [],
+    [groupSlashOpen, groupSlashBotId, group, members],
+  );
+  const groupEngineCommands = useGroupHarnessCommands(api, groupTargets.map((target) => target.bot.id), group && !group.dm ? group.id : undefined, threadId || undefined, groupSlashOpen, commandViewerId);
   const commandListRef = useRef<HTMLDivElement>(null);
   const commandCandidates = useMemo((): ComposerMenuItem[] => {
     if (!slash || slash.start === dismissedSlashAt) return [];
@@ -345,8 +365,17 @@ export function Composer({
       label: "/setup",
       description: t("composer.command.setupDesc"),
     });
-    return composerCommandMenu(available, group ? [] : engineCommands.answer?.commands ?? [], slash.query);
-  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer]);
+    if (group) {
+      // after a leading mention only that bot's engine commands make sense
+      const sets: GroupEngineCommands[] = groupTargets.map((target) => ({
+        bot: { id: target.bot.id, name: target.bot.name },
+        commands: groupEngineCommands.lists.find((list) => list.botId === target.bot.id)?.answer.commands ?? [],
+        mention: target.mention,
+      }));
+      return composerGroupCommandMenu(groupSlashBotId ? [] : available, sets, slash.query);
+    }
+    return composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query);
+  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   // Tag another bot; the agent reaches it via ask_bot.
@@ -526,6 +555,13 @@ export function Composer({
     ? state.instances.find((instance) => instance.instanceId === modeBot.modelSelection.instanceId)
     : undefined;
   const trustedThreadAccess = Boolean(!remoteClient && window.ogb?.approvals && capabilities.host.packaged);
+  // Organization server: the bot's owner grants Full over HTTP while the
+  // organization allows it (src/lib/full-access.ts, server/org-full-access.ts).
+  const perspicaxOrg = usePerspicaxOrg();
+  const viewerId = state.config?.viewer?.principalId ?? null;
+  const orgFullAccess = orgFullAccessFor(perspicaxOrg, modeBot, viewerId);
+  const fullAccessAvailable = trustedThreadAccess || orgFullAccess === "allowed";
+  const modeIsFull = Boolean(modeBot && approvalModeFor(modeBot) === "full");
   const uploadImage = useCallback(async (file: File): Promise<Attachment | null> => {
     const optimistic = optimisticImageAttachment(file);
     if (!optimistic) return null;
@@ -571,9 +607,16 @@ export function Composer({
   };
   const setApprovalMode = (mode: ApprovalMode) => {
     if (!modeBot || modeBot.busy || mode === approvalModeFor(modeBot)) return;
-    if ((mode === "full" || mode === "custom") && !trustedThreadAccess) return;
+    if (mode === "custom" && !trustedThreadAccess) return;
+    if (mode === "full" && !fullAccessAvailable) return;
     if (mode === "full") {
-      setApprovalWarning({ mode, botId: modeBot.id, threadId: modeBot.threadId });
+      // The warning is confirmed once per bot; later choices go straight in.
+      if (fullAccessNeedsConfirmation(modeBot, viewerId, Boolean(perspicaxOrg))) {
+        setApprovalWarning({ mode, botId: modeBot.id, threadId: modeBot.threadId });
+        return;
+      }
+      dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId,
+        patch: { approvalMode: "full", confirmFullAccess: !perspicaxOrg, ...(perspicaxOrg ? { organizationFullAccess: true } : {}) } });
       return;
     }
     // Safe Auto still needs its dedicated warning when it can drive the host.
@@ -852,8 +895,10 @@ export function Composer({
             exitProps={commandMotion.exitProps}
             items={commandCandidates}
             highlight={highlight}
-            loading={!group && engineCommands.loading}
-            onRefresh={!group && engineCommands.answer?.available ? engineCommands.refresh : undefined}
+            loading={group ? groupEngineCommands.loading : engineCommands.loading}
+            onRefresh={group
+              ? groupEngineCommands.lists.some((list) => list.answer.available) ? groupEngineCommands.refresh : undefined
+              : engineCommands.answer?.available ? engineCommands.refresh : undefined}
             onPick={pickCommand}
             onHighlight={setHighlight}
           />
@@ -1026,8 +1071,20 @@ export function Composer({
                   onSelect={setApprovalMode}
                   disabled={Boolean(modeBot.busy)}
                   trustedModesAvailable={trustedThreadAccess}
+                  orgFullAccess={orgFullAccess}
                   onManageCommandAllowlist={ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
                 />
+              )}
+              {modeBot && approvalEngine && !remoteClient && modeIsFull && (
+                <span
+                  role="status"
+                  data-full-access-badge
+                  title={t("approvalMode.full.badgeTitle")}
+                  className="flex h-6 shrink-0 items-center gap-1 rounded-full border border-danger/35 bg-danger/10 px-2 text-[11px] font-medium text-danger"
+                >
+                  <TriangleAlert size={12} aria-hidden="true" />
+                  {t("approvalMode.full.badge")}
+                </span>
               )}
               {modeBot && !remoteClient && (
                 <PlaceChip
@@ -1230,14 +1287,14 @@ export function Composer({
       />}
       <FullAccessWarning
         open={approvalWarning?.mode === "full"}
-        scope="thread"
+        scope={perspicaxOrg ? "organization" : "thread"}
         onCancel={() => setApprovalWarning(null)}
         onConfirm={() => {
           const target = approvalWarning;
           setApprovalWarning(null);
-          if (target?.mode !== "full" || !trustedThreadAccess) return;
+          if (target?.mode !== "full" || !fullAccessAvailable) return;
           dispatch({ type: "updateTask", botId: target.botId, threadId: target.threadId,
-            patch: { approvalMode: "full", confirmFullAccess: true } });
+            patch: { approvalMode: "full", confirmFullAccess: true, ...(perspicaxOrg ? { organizationFullAccess: true } : {}) } });
         }}
       />
       <LocalComputerAutoWarning

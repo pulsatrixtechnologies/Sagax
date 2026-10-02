@@ -27,7 +27,7 @@ pnpm exec vitest run server/fleet.test.ts server/fleet-cli.test.ts server/fleet-
 ```
 
 These pin the rendered template unit (per-slug user, private `/tmp`, no new
-privileges, read-only system, the `${OMB_PORT}`-style expansion), the
+privileges, read-only system, the `${SAGAX_PORT}`-style expansion), the
 nftables fence rules, the running and suspended Caddy site blocks, the
 environment file, the seeded config, the argument lists and their order for
 every operation, the registry kept in step, the health wait placement, the

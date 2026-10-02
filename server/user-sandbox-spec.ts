@@ -79,18 +79,21 @@ export interface SandboxdConfig {
 const MiB = 1024 * 1024;
 
 /** Defaults sized for the GOX VM (4 vCPU, 8 GiB) next to Perspicax, Caddy,
- * the Teams bot and the Sagax server: at most three environments running at
- * once, 1 GiB and one CPU each, so a full house stays near 3 GiB. */
+ * the Teams bot and the Sagax server: every environment can open its desktop
+ * (Xvnc, openbox and Chromium measured near 250 MiB, a few heavy tabs well
+ * under 1 GiB), so 1.5 GiB and one CPU each and at most two running at once:
+ * a full house stays at 3 GiB. Chromium's processes and threads count
+ * against the pids limit, hence 512. */
 export const DEFAULT_SANDBOX_LIMITS: SandboxLimits = {
-  memoryBytes: 1024 * MiB,
+  memoryBytes: 1536 * MiB,
   nanoCpus: 1_000_000_000,
-  pidsLimit: 256,
-  tmpBytes: 256 * MiB,
+  pidsLimit: 512,
+  tmpBytes: 512 * MiB,
   workspaceQuotaBytes: 2048 * MiB,
   maxFileBytes: 512 * MiB,
   nofile: 1024,
 };
-export const DEFAULT_MAX_RUNNING = 3;
+export const DEFAULT_MAX_RUNNING = 2;
 export const DEFAULT_IDLE_MINUTES = 15;
 export const DEFAULT_SUBNET_POOL = "10.213.0.0/16";
 export const DEFAULT_SANDBOXD_PORT = 8791;

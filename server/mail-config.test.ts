@@ -5,7 +5,7 @@ describe("mail settings", () => {
   it("lets a saved value win over the environment, which fills the rest", () => {
     const r = resolveMailSettings({
       file: { provider: "sendgrid", from: "web@gox.ca", sendgrid: { apiKey: "SG.file" } },
-      env: { OMB_MAIL_PROVIDER: "smtp", OMB_MAIL_FROM: "env@gox.ca", OMB_SMTP_HOST: "smtp.gox.ca", OMB_SMTP_PORT: "587", OMB_SMTP_SECURE: "starttls", OMB_SMTP_PASSWORD: "pw" },
+      env: { SAGAX_MAIL_PROVIDER: "smtp", SAGAX_MAIL_FROM: "env@gox.ca", SAGAX_SMTP_HOST: "smtp.gox.ca", SAGAX_SMTP_PORT: "587", SAGAX_SMTP_SECURE: "starttls", SAGAX_SMTP_PASSWORD: "pw" },
     });
     expect(r.settings.provider).toBe("sendgrid");
     expect(r.settings.from).toBe("web@gox.ca");
@@ -17,9 +17,9 @@ describe("mail settings", () => {
     expect(r.server.from).toBe("env@gox.ca");
   });
 
-  it("reads the sender name from OMB_MAIL_FROM_NAME and lets a saved one win", () => {
-    expect(resolveMailSettings({ file: undefined, env: { OMB_MAIL_FROM_NAME: "GOX" } }).settings.fromName).toBe("GOX");
-    const r = resolveMailSettings({ file: { fromName: "Pulsa" }, env: { OMB_MAIL_FROM_NAME: "GOX" } });
+  it("reads the sender name from SAGAX_MAIL_FROM_NAME and lets a saved one win", () => {
+    expect(resolveMailSettings({ file: undefined, env: { SAGAX_MAIL_FROM_NAME: "GOX" } }).settings.fromName).toBe("GOX");
+    const r = resolveMailSettings({ file: { fromName: "Pulsa" }, env: { SAGAX_MAIL_FROM_NAME: "GOX" } });
     expect(r.settings.fromName).toBe("Pulsa");
     expect(r.envManaged).toContain("fromName");
     expect(r.saved).toContain("fromName");
@@ -28,8 +28,8 @@ describe("mail settings", () => {
   it("reads a secret from a _FILE path, and the direct value wins", () => {
     const files: Record<string, string> = { "/run/secrets/sg": "SG.fromfile\n" };
     const read = (p: string) => files[p]!;
-    expect(resolveMailSettings({ file: undefined, env: { OMB_SENDGRID_API_KEY_FILE: "/run/secrets/sg" }, readFile: read }).settings.sendgrid?.apiKey).toBe("SG.fromfile");
-    expect(resolveMailSettings({ file: undefined, env: { OMB_SENDGRID_API_KEY_FILE: "/run/secrets/sg", OMB_SENDGRID_API_KEY: "SG.direct" }, readFile: read }).settings.sendgrid?.apiKey).toBe("SG.direct");
+    expect(resolveMailSettings({ file: undefined, env: { SAGAX_SENDGRID_API_KEY_FILE: "/run/secrets/sg" }, readFile: read }).settings.sendgrid?.apiKey).toBe("SG.fromfile");
+    expect(resolveMailSettings({ file: undefined, env: { SAGAX_SENDGRID_API_KEY_FILE: "/run/secrets/sg", SAGAX_SENDGRID_API_KEY: "SG.direct" }, readFile: read }).settings.sendgrid?.apiKey).toBe("SG.direct");
   });
 
   it("is ready only with a provider, a sender and that provider's fields", () => {
@@ -48,7 +48,7 @@ describe("mail settings", () => {
     const read = (p: string) => files[p]!;
     const fromFile = resolveMailSettings({
       file: undefined,
-      env: { OMB_MAIL_PROVIDER: "twilio", OMB_TWILIO_API_KEY_SID: "SKenv", OMB_TWILIO_API_KEY_SECRET_FILE: "/run/secrets/twilio" },
+      env: { SAGAX_MAIL_PROVIDER: "twilio", SAGAX_TWILIO_API_KEY_SID: "SKenv", SAGAX_TWILIO_API_KEY_SECRET_FILE: "/run/secrets/twilio" },
       readFile: read,
     });
     expect(fromFile.settings.provider).toBe("twilio");
@@ -56,7 +56,7 @@ describe("mail settings", () => {
     expect(fromFile.envManaged.sort()).toEqual(["provider", "twilio.apiKeySecret", "twilio.apiKeySid"]);
     const direct = resolveMailSettings({
       file: undefined,
-      env: { OMB_TWILIO_API_KEY_SECRET_FILE: "/run/secrets/twilio", OMB_TWILIO_API_KEY_SECRET: "fake-secret-direct" },
+      env: { SAGAX_TWILIO_API_KEY_SECRET_FILE: "/run/secrets/twilio", SAGAX_TWILIO_API_KEY_SECRET: "fake-secret-direct" },
       readFile: read,
     });
     expect(direct.settings.twilio?.apiKeySecret).toBe("fake-secret-direct");
@@ -64,11 +64,11 @@ describe("mail settings", () => {
 
   it("ignores a malformed SMTP port instead of truncating it", () => {
     for (const bad of ["587abc", "587.9", "0", "70000"]) {
-      const r = resolveMailSettings({ file: undefined, env: { OMB_SMTP_PORT: bad } });
+      const r = resolveMailSettings({ file: undefined, env: { SAGAX_SMTP_PORT: bad } });
       expect(r.settings.smtp?.port).toBeUndefined();
       expect(r.envManaged).not.toContain("smtp.port");
     }
-    const r = resolveMailSettings({ file: undefined, env: { OMB_SMTP_PORT: "2525" } });
+    const r = resolveMailSettings({ file: undefined, env: { SAGAX_SMTP_PORT: "2525" } });
     expect(r.settings.smtp?.port).toBe(2525);
     expect(r.envManaged).toContain("smtp.port");
   });
@@ -83,7 +83,7 @@ describe("mail settings", () => {
   });
 
   it("shows the Twilio key SID but never its secret", () => {
-    const status = publicMailStatus(resolveMailSettings({ file: undefined, env: { OMB_MAIL_PROVIDER: "twilio", OMB_MAIL_FROM: "a@b.c", OMB_TWILIO_API_KEY_SID: "SKfakesid", OMB_TWILIO_API_KEY_SECRET: "fake-twilio-secret" } }));
+    const status = publicMailStatus(resolveMailSettings({ file: undefined, env: { SAGAX_MAIL_PROVIDER: "twilio", SAGAX_MAIL_FROM: "a@b.c", SAGAX_TWILIO_API_KEY_SID: "SKfakesid", SAGAX_TWILIO_API_KEY_SECRET: "fake-twilio-secret" } }));
     expect(JSON.stringify(status)).not.toContain("fake-twilio-secret");
     expect(status.twilio).toEqual({ apiKeySid: "SKfakesid", apiKeySecretConfigured: true });
     expect(status.ready).toBe(true);
@@ -112,7 +112,7 @@ function fragments(secret: string): string[] {
 describe("the mail settings view", () => {
   const resolved = () => resolveMailSettings({
     file: { provider: "twilio", from: "bot@gox.ca", twilio: { apiKeySid: "SKfakesid", apiKeySecret: SAVED_SECRET }, smtp: { password: SMTP_SECRET } },
-    env: { OMB_MAIL_PROVIDER: "sendgrid", OMB_SENDGRID_API_KEY: ENV_SECRET, OMB_SMTP_HOST: "smtp.gox.ca" },
+    env: { SAGAX_MAIL_PROVIDER: "sendgrid", SAGAX_SENDGRID_API_KEY: ENV_SECRET, SAGAX_SMTP_HOST: "smtp.gox.ca" },
   });
 
   it("never carries a secret, not even a fragment of one", () => {

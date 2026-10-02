@@ -60,13 +60,13 @@ app.whenReady().then(async () => {
     claude: { driver: "claudeAgent", config: { cli: join(root, "server/testing/fake-claude-cli.ts") } },
   } }));
   const env = {
-    HOME: home, USERPROFILE: home, OMB_DATA_DIR: home, PATH: "",
+    HOME: home, USERPROFILE: home, SAGAX_DATA_DIR: home, PATH: "",
     ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-    OMB_PORT: String(harnessPort), OMB_WEBHOOK_PORT: String(webhookPort),
-    OMB_COMPANION_PORT: String(phonePort), OMB_CONTROL_PORT: String(controlPort),
+    SAGAX_PORT: String(harnessPort), SAGAX_WEBHOOK_PORT: String(webhookPort),
+    SAGAX_COMPANION_PORT: String(phonePort), SAGAX_CONTROL_PORT: String(controlPort),
     FAKE_CLAUDE_MODE: "happy",
   };
-  const harness = fork("dist-server/index.js", { ...env, OMB_DESKTOP_PARENT: "1" });
+  const harness = fork("dist-server/index.js", { ...env, SAGAX_DESKTOP_PARENT: "1" });
   await until(() => api(harnessPort, "/api/health").catch(() => null));
   assert.equal((await api(harnessPort, "/api/bots", "POST", {})).status, 403);
   harness.postMessage({ type: "openmausbot:desktop-mutation-token", token: owner, companionToken: relay });

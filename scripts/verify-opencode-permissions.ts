@@ -13,13 +13,13 @@ const workspace = join(home, "workspace");
 const external = join(home, "outside", "receipt.txt");
 mkdirSync(workspace);
 mkdirSync(join(home, "outside"));
-writeFileSync(external, "OMB_EXTERNAL_READ_RECEIPT");
+writeFileSync(external, "SAGAX_EXTERNAL_READ_RECEIPT");
 process.env = {
   PATH: process.env.PATH, HOME: home, USERPROFILE: home,
   XDG_CONFIG_HOME: join(home, "config"), XDG_DATA_HOME: join(home, "data"),
   XDG_CACHE_HOME: join(home, "cache"), XDG_STATE_HOME: join(home, "state"),
-  OMB_DATA_DIR: join(home, "omb"), OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
-  OPENCODE_DISABLE_MODELS_FETCH: "true", OPENMAUSBOT_PROBE_LOCAL_INJECT: "0",
+  SAGAX_DATA_DIR: join(home, "omb"), OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
+  OPENCODE_DISABLE_MODELS_FETCH: "true", SAGAX_PROBE_LOCAL_INJECT: "0",
   ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
 };
 let calls = 0;
@@ -39,7 +39,7 @@ const server = createServer(async (req, res) => {
   }
   const payload = JSON.parse(body);
   const toolResult = payload.messages.at(-1)?.role === "tool";
-  readSucceeded ||= toolResult && JSON.stringify(payload.messages.at(-1)).includes("OMB_EXTERNAL_READ_RECEIPT");
+  readSucceeded ||= toolResult && JSON.stringify(payload.messages.at(-1)).includes("SAGAX_EXTERNAL_READ_RECEIPT");
   const tool = { index: 0, id: `read-${++calls}`, type: "function", function: { name: "read", arguments: JSON.stringify({ filePath: external }) } };
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   const chunk = (delta: unknown, finish_reason: string | null) => `data: ${JSON.stringify({id:`fixture-${calls}`,object:"chat.completion.chunk",created:0,model:"fixture",choices:[{index:0,delta,finish_reason}]})}\n\n`;

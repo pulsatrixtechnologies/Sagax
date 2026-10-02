@@ -6,12 +6,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, SquareTerminal, Workflow } from "lucide-react";
 
-import { api, type Bot } from "@/state/store";
+import { api, useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
 import {
   activitySignature,
   activityStatusActive,
   loadBotActivity,
+  loadBotActivityDetail,
   type BotActivityItem,
 } from "@/lib/bot-activity";
 import { ActivityCard } from "./ActivityCard";
@@ -55,6 +56,7 @@ export function ActivityList({ items, error, onOpen }: {
 }
 
 export function ActivitySection({ bot }: { bot: Bot }) {
+  const { state, dispatch } = useStore();
   const [items, setItems] = useState<BotActivityItem[] | null>(null);
   const [error, setError] = useState(false);
   const [open, setOpen] = useState<BotActivityItem | null>(null);
@@ -78,6 +80,19 @@ export function ActivitySection({ bot }: { bot: Bot }) {
     setItems(null);
     setOpen(null);
   }, [bot.id]);
+  // A notification asked for one entry (openBotActivity): open it once,
+  // even when it is past the list's window (a routine run refused on the
+  // owner's credentials in another person's thread).
+  const target = state.botActivityTarget;
+  useEffect(() => {
+    if (!target || target.botId !== bot.id) return;
+    dispatch({ type: "botActivityOpened" });
+    let live = true;
+    loadBotActivityDetail(api, bot.id, target.itemId)
+      .then((detail) => { if (live) setOpen(detail); })
+      .catch(() => { if (live) setError(true); });
+    return () => { live = false; };
+  }, [target, bot.id, dispatch]);
   // The bot's threads changed (a turn started or settled, a hop arrived):
   // what the list shows changed too.
   useEffect(() => { void refresh(); }, [refresh, signature]);

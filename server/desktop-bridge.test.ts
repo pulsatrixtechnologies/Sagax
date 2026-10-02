@@ -183,3 +183,21 @@ describe("the sagax-desktop tools", () => {
     expect(old).toMatchObject({ isError: true, content: [{ type: "text", text: expect.stringMatching(/too old to create a Local VM/) }] });
   });
 });
+
+describe("the person's own computer in their Computer tab", () => {
+  it("keeps coarse system facts for that person's desktop only", async () => {
+    const sessions = new Map([["s-ada", ADA], ["s-bob", BOB]]);
+    const bridges = new DesktopBridges((session) => sessions.get(session) ?? null);
+    const ada = registration();
+    bridges.register(ada, "s-ada", secret);
+    const system = { os: "macOS 27.0", arch: "arm64", cpus: 10, cpuPercent: 15, memoryGb: 32, memoryUsedGb: 18.5, diskGb: 994, diskFreeGb: 410 };
+    expect(() => bridges.setSystem(ada.id, "s-bob", secret, system)).toThrow();
+    expect(() => bridges.setSystem(ada.id, "s-ada", "b".repeat(64), system)).toThrow();
+    bridges.setSystem(ada.id, "s-ada", secret, system);
+    expect(bridges.status(ADA)[0]!.system).toEqual(system);
+    expect(bridges.status(BOB)).toEqual([]);
+    const { desktopSystemInfo } = await import("./desktop-bridge.ts");
+    expect(desktopSystemInfo.safeParse({ ...system, hostname: "ada-mbp" }).success).toBe(false);
+    expect(desktopSystemInfo.safeParse({ ...system, os: "x".repeat(81) }).success).toBe(false);
+  });
+});

@@ -13,7 +13,6 @@ import net from "node:net";
 
 import { coarseFailure, isBlockedAddress, isLanAddress, openConnection, openDesktopTunnel, proxyChain, proxyCredentialsFromEnv, tunnelVerdict, TUNNEL, tunnelMessage } from "./desktop-tunnel.mjs";
 import { createProxyCredentialStore, createProxyCredentials, proxyPasswordPage } from "./proxy-credentials.mjs";
-import { CONTAINER, IMAGE, IMAGE_LABELS } from "./local-vm-recipe.mjs";
 
 const posix = process.platform !== "win32";
 
@@ -51,7 +50,7 @@ test("paths are absolute or the person's home; attachment names are one file", (
 });
 
 test("commands get no Sagax, Electron or credential variables", () => {
-  const env = commandEnvironment({ PATH: "/bin", HOME: "/h", OMB_PORT: "1", SAGAX_X: "1", ELECTRON_RUN_AS_NODE: "1", OPENAI_API_KEY: "k", GITHUB_TOKEN: "t", LANG: "C" });
+  const env = commandEnvironment({ PATH: "/bin", HOME: "/h", SAGAX_PORT: "1", SAGAX_X: "1", ELECTRON_RUN_AS_NODE: "1", OPENAI_API_KEY: "k", GITHUB_TOKEN: "t", LANG: "C" });
   assert.deepEqual(Object.keys(env).sort(), ["HOME", "LANG", "PATH"]);
 });
 
@@ -113,11 +112,16 @@ test("fetch_url fetches from this computer's network", async () => {
 
 test("Local VM: only labelled Sagax containers", async () => {
   const calls = [];
-  const vm = createLocalVm({ run: async argv => {
+  const vm = createLocalVm({ dataDir: "/Users/ada/.openmausbot", platform: "linux", env: { PATH: "/usr/bin" }, exists: file => file === "/Users/ada/.openmausbot/vm-home", exec: async argv => {
     calls.push(argv.join(" "));
-    if (argv[1] === "version") return { content: [{ type: "text", text: "27.0\n[exit 0]" }] };
-    if (argv[1] === "ps") return { content: [{ type: "text", text: "openmausbot-computer\trunning\n[exit 0]" }] };
-    return { content: [{ type: "text", text: "Linux\n[exit 0]" }] };
+    if (argv[1] === "version") return { code: 0, stdout: "27.0\n", stderr: "" };
+    if (argv[1] === "info") return { code: 0, stdout: "Docker Desktop\n", stderr: "" };
+    if (argv[1] === "context") return { code: 0, stdout: "unix:///Users/ada/.docker/run/docker.sock\n", stderr: "" };
+    if (argv[1] === "ps") return { code: 0, stdout: "openmausbot-computer\trunning\n", stderr: "" };
+    if (argv[1] === "inspect") return argv[2] === "openmausbot-computer"
+      ? { code: 0, stdout: JSON.stringify([{ Name: "/openmausbot-computer", State: { Running: true }, Config: { Labels: { "com.openmausbot.local-vm": "1" } }, Mounts: [{ Type: "bind", Source: "/Users/ada/.openmausbot/vm-home" }] }]), stderr: "" }
+      : { code: 1, stdout: "", stderr: "no such container" };
+    return { code: 0, stdout: "Linux\n", stderr: "" };
   } });
   assert.match((await vm.status()).content[0].text, /openmausbot-computer/);
   await vm.exec(undefined, "uname");
@@ -495,108 +499,133 @@ test("a system proxy lookup that fails (PAC out of reach) goes direct, and the a
 });
 
 // ── Local VM creation on this computer, after the person's yes ──
+// The same one-click setup as the Computer tab (electron/local-vm.mjs), from
+// the server's recipe, started by a bot only after the person's yes here.
 
-function fakeRuntime({ image = false, containers = "", fail = {} } = {}) {
-  const calls = [];
-  let created = false;
-  let built = image;
-  const out = value => ({ content: [{ type: "text", text: `${value}\n[exit 0]` }] });
-  const bad = value => ({ content: [{ type: "text", text: `${value}\n[exit 1]` }], isError: true });
-  const run = async argv => {
-    calls.push(argv);
-    const [, verb] = argv;
-    if (verb === "version") return out("27.0");
-    if (verb === "ps") return out(created ? `${CONTAINER}\trunning` : containers);
-    if (verb === "image") return built ? out(JSON.stringify(IMAGE_LABELS)) : bad("No such image");
-    if (verb === "pull") return fail.pull ? bad("network down") : out("pulled");
-    if (verb === "build") { built = true; return out("built"); }
-    if (verb === "run") { created = true; return out("abc123"); }
-    if (verb === "exec") return out("");
-    return bad("unexpected");
-  };
-  return { run, calls };
+const VM_HOME = "/Users/ada";
+const VM_DATA = `${VM_HOME}/.sagax`;
+const VM_WORKSPACE = `${VM_DATA}/vm-home`;
+const CONTAINER = "openmausbot-computer";
+const IMAGE = "localhost/openmausbot/cua-local-vm:driver-0.20.0-v5";
+const BASE_IMAGE = `docker.io/trycua/xfce-cua@sha256:${"a".repeat(64)}`;
+const IMAGE_LABELS = { "com.openmausbot.local-vm": "1", "com.openmausbot.cua-driver": "0.20.0" };
+
+function vmSpec() {
+  const run = runtime => ["run", "-d", "--name", CONTAINER, ...(runtime === "podman" ? ["--userns", "keep-id:uid=1000,gid=1000"] : []),
+    "--label", "com.openmausbot.local-vm=1", "--label", "com.openmausbot.workspace-path=__SAGAX_WORKSPACE__",
+    "--cap-drop", "ALL", "--cap-add", "SETUID", "--mount", "type=bind,source=__SAGAX_WORKSPACE__,target=/home/cua/workspace",
+    "-e", "VNC_PW=__SAGAX_VNC_PW__", "-p", "127.0.0.1:6080:6901", IMAGE];
+  return { version: 1, container: CONTAINER, image: IMAGE, baseImage: BASE_IMAGE, imageLabels: IMAGE_LABELS, dockerfile: `FROM ${BASE_IMAGE}\nUSER root\n`, run: { docker: run("docker"), podman: run("podman") } };
 }
 
+/** A fake Docker Desktop recording every call; `existing` is a container. */
+function fakeRuntime({ image = false, existing = null, fail = {}, gate = null, runtime = true } = {}) {
+  const calls = [];
+  let current = existing;
+  let built = image;
+  const ok = stdout => ({ code: 0, stdout, stderr: "" });
+  const no = stderr => ({ code: 1, stdout: "", stderr });
+  const exec = async argv => {
+    calls.push(argv);
+    if (!runtime) return no("ENOENT");
+    const [, verb, ...rest] = argv;
+    if (verb === "version") return ok("27.3.1\n");
+    if (verb === "info") return ok("Docker Desktop\n");
+    if (verb === "context") return ok(`unix://${VM_HOME}/.docker/run/docker.sock\n`);
+    if (verb === "ps") return ok(current ? `${CONTAINER}\t${current.State.Running ? "running" : "exited"}\n` : "");
+    if (verb === "inspect") return current && rest[0] === CONTAINER ? ok(JSON.stringify([current])) : no("No such object");
+    if (verb === "image") return built ? ok(JSON.stringify([{ Config: { Labels: IMAGE_LABELS } }])) : no("No such image");
+    if (verb === "pull") { if (gate) await gate; return fail.pull ? no("network down") : ok("pulled"); }
+    if (verb === "build") { built = true; return ok("built"); }
+    if (verb === "run") { current = vmContainer({ source: VM_WORKSPACE }); return ok("abc\n"); }
+    if (verb === "start") { current.State.Running = true; return ok(""); }
+    return ok("");
+  };
+  return { exec, calls };
+}
+
+function vmContainer({ source = VM_WORKSPACE, running = false } = {}) {
+  return { Name: `/${CONTAINER}`, State: { Running: running, Status: running ? "running" : "exited" }, Config: { Image: IMAGE, Labels: { "com.openmausbot.local-vm": "1", "com.openmausbot.workspace-path": source } }, Mounts: [{ Type: "bind", Source: source, Destination: "/home/cua/workspace" }] };
+}
+
+const vmFor = (runtime, extra = {}) => createLocalVm({
+  exec: runtime.exec, dataDir: VM_DATA, home: VM_HOME, platform: "darwin", env: {},
+  exists: file => [VM_WORKSPACE, `${VM_HOME}/.docker/run/docker.sock`, "/Applications/Docker.app"].includes(file),
+  mkdir: async () => {}, makeTemp: async () => "/tmp/ctx", writeFile: async () => {}, removeDir: async () => {}, pollMs: 1, ...extra,
+});
+
 test("Local VM create: the person declines on this computer, nothing is created", async () => {
-  const home = sandboxHome();
   const runtime = fakeRuntime();
   const asked = [];
-  const vm = createLocalVm({ run: runtime.run, workspaceDir: path.join(home, "vm-home"), confirm: async question => { asked.push(question); return false; } });
+  const vm = vmFor(runtime, { confirmCreate: async question => { asked.push(question); return false; } });
   const progress = [];
-  const result = await vm.create({ progress: message => progress.push(message) });
+  const result = await vm.create({ spec: vmSpec(), progress: message => progress.push(message) });
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /declined/);
   // nothing reported before (or without) the yes: the turn never shows set up
   assert.deepEqual(progress, []);
-  assert.equal(asked[0].runtime, "docker");
+  assert.equal(asked[0].runtime, "Docker Desktop");
   assert.equal(asked[0].needsImage, true);
   assert.equal(runtime.calls.some(argv => ["pull", "build", "run"].includes(argv[1])), false);
-  fs.rmSync(home, { recursive: true, force: true });
 });
 
-test("Local VM create: yes on this computer, the image is prepared and the VM created like solo mode, progress goes to the turn", async () => {
-  const home = sandboxHome();
+test("Local VM create: yes on this computer, the image is prepared and the VM created like the Computer tab, progress goes to the turn", async () => {
   const runtime = fakeRuntime();
   const progress = [];
-  const workspaceDir = path.join(home, "vm-home");
-  const vm = createLocalVm({ run: runtime.run, workspaceDir, confirm: async () => true, password: () => "pw", pollMs: 1 });
-  const result = await vm.create({ progress: message => progress.push(message) });
-  assert.equal(result.isError, undefined);
-  assert.match(result.content[0].text, /is ready on this computer \(docker\)/);
+  const vm = vmFor(runtime, { confirmCreate: async () => true });
+  const result = await vm.create({ spec: vmSpec(), progress: message => progress.push(message) });
+  assert.equal(result.isError, undefined, result.content[0].text);
+  assert.match(result.content[0].text, /is ready on this computer/);
   assert.deepEqual(runtime.calls.filter(argv => ["pull", "build", "run"].includes(argv[1])).map(argv => argv[1]), ["pull", "build", "run"]);
   const runArgv = runtime.calls.find(argv => argv[1] === "run");
   assert.ok(runArgv.includes(IMAGE));
-  assert.ok(runArgv.includes("VNC_PW=pw"));
-  assert.ok(runArgv.some(arg => arg.includes(`source=${workspaceDir}`)));
+  assert.ok(runArgv.some(arg => arg.includes(`source=${VM_WORKSPACE},`)));
+  assert.ok(!runArgv.some(arg => arg.includes("__SAGAX_")));
   assert.ok(runArgv.includes("ALL"), "capabilities dropped");
-  assert.equal(fs.statSync(workspaceDir).isDirectory(), true);
-  assert.deepEqual(progress.map(message => message.split(" (")[0]), [
-    "Downloading the Local VM desktop image",
-    "Building the Local VM desktop image",
-    "Creating the Local VM",
-    "Waiting for the Local VM desktop to start",
-  ]);
-  fs.rmSync(home, { recursive: true, force: true });
+  assert.ok(progress.includes("Creating the Local VM"));
+  assert.ok(progress.some(message => message.startsWith("Preparing the Local VM desktop image (Downloading")));
+  assert.ok(progress.includes("Starting the Local VM"));
 });
 
-test("Local VM create: an existing VM, a prepared image, no runtime, a failed download", async () => {
-  const home = sandboxHome();
-  const existing = createLocalVm({ run: fakeRuntime({ containers: `${CONTAINER}\texited` }).run, workspaceDir: home, confirm: async () => assert.fail("no prompt for an existing VM") });
-  assert.match((await existing.create()).content[0].text, /already exists .*Start it/);
+test("Local VM create: an existing VM, a stale one, a prepared image, no runtime, a bad recipe, a failed download, an old app", async () => {
+  const existing = vmFor(fakeRuntime({ existing: vmContainer() }), { confirmCreate: async () => assert.fail("no prompt for an existing VM") });
+  assert.match((await existing.create({ spec: vmSpec() })).content[0].text, /already exists .*Start it/);
+  // a VM bound to a deleted folder is never repaired by a bot: the Computer tab does it
+  const staleRuntime = fakeRuntime({ existing: vmContainer({ source: "/private/var/folders/x/T/omb-test/.sagax/vm-home" }) });
+  const stale = await vmFor(staleRuntime, { confirmCreate: async () => assert.fail("no prompt for a stale VM") }).create({ spec: vmSpec() });
+  assert.equal(stale.isError, true);
+  assert.match(stale.content[0].text, /Repair it from the Computer tab/);
+  assert.equal(staleRuntime.calls.some(argv => ["rm", "run"].includes(argv[1])), false);
   const prepared = fakeRuntime({ image: true });
   const asked = [];
-  await createLocalVm({ run: prepared.run, workspaceDir: path.join(home, "w"), confirm: async question => { asked.push(question); return true; }, pollMs: 1 }).create();
+  await vmFor(prepared, { confirmCreate: async question => { asked.push(question); return true; } }).create({ spec: vmSpec() });
   assert.equal(asked[0].needsImage, false);
   assert.equal(prepared.calls.some(argv => argv[1] === "pull"), false);
-  const none = createLocalVm({ run: async () => ({ content: [{ type: "text", text: "[exit 127]" }], isError: true }), workspaceDir: home, confirm: async () => true });
-  await assert.rejects(none.create(), /No container runtime/);
-  const offline = createLocalVm({ run: fakeRuntime({ fail: { pull: true } }).run, workspaceDir: home, confirm: async () => true });
-  await assert.rejects(offline.create(), /Downloading the desktop image failed: network down/);
-  const old = createLocalVm({ run: fakeRuntime().run });
-  await assert.rejects(old.create(), /cannot create a Local VM here/);
-  fs.rmSync(home, { recursive: true, force: true });
+  const none = createLocalVm({ exec: fakeRuntime({ runtime: false }).exec, dataDir: VM_DATA, home: VM_HOME, platform: "darwin", env: {}, exists: () => false, confirmCreate: async () => true });
+  await assert.rejects(none.create({ spec: vmSpec() }), /No container runtime/);
+  await assert.rejects(vmFor(fakeRuntime(), { confirmCreate: async () => true }).create({ spec: { ...vmSpec(), container: "elsewhere" } }), /recipe this app does not accept/);
+  const offline = await vmFor(fakeRuntime({ fail: { pull: true } }), { confirmCreate: async () => true }).create({ spec: vmSpec() });
+  assert.equal(offline.isError, true);
+  assert.match(offline.content[0].text, /Creating the Local VM failed: Download failed: network down/);
+  await assert.rejects(vmFor(fakeRuntime()).create({ spec: vmSpec() }), /cannot create a Local VM here/);
 });
 
 test("Local VM create: a turn that ends does not stop a creation under way; the next one attaches to it", async () => {
-  const home = sandboxHome();
-  const runtime = fakeRuntime();
   let release;
-  const gate = new Promise(resolve => { release = resolve; });
-  const slow = async argv => { if (argv[1] === "pull") await gate; return runtime.run(argv); };
-  const vm = createLocalVm({ run: slow, workspaceDir: path.join(home, "w"), confirm: async () => true, pollMs: 1 });
+  const runtime = fakeRuntime({ gate: new Promise(resolve => { release = resolve; }) });
+  const vm = vmFor(runtime, { confirmCreate: async () => true });
   const turn = new AbortController();
-  const first = vm.create({ signal: turn.signal });
+  const first = vm.create({ spec: vmSpec(), signal: turn.signal });
   for (let tries = 0; tries < 50 && !runtime.calls.some(argv => argv[1] === "pull"); tries++) await new Promise(resolve => setTimeout(resolve, 5));
   turn.abort();
   assert.match((await first).content[0].text, /keeps being created/);
-  assert.match((await vm.status()).content[0].text, /"creating":"Downloading/);
+  assert.equal(JSON.parse((await vm.status()).content[0].text).setup.state, "running");
   const progress = [];
-  const second = vm.create({ progress: message => progress.push(message) });
+  const second = vm.create({ spec: vmSpec(), progress: message => progress.push(message) });
   release();
   assert.match((await second).content[0].text, /is ready/);
-  assert.match(progress[0], /^Already being created on this computer/);
+  assert.match(progress[0], /^Already being created on this computer: Preparing the Local VM desktop image/);
   assert.equal(runtime.calls.filter(argv => argv[1] === "run").length, 1);
-  fs.rmSync(home, { recursive: true, force: true });
 });
 
 test("the connector sends a Local VM creation's progress to the server", async () => {
@@ -612,7 +641,7 @@ test("the connector sends a Local VM creation's progress to the server", async (
     if (req.url.endsWith("/poll")) {
       if (served) { await new Promise(resolve => setTimeout(resolve, 200)); return send({ job: null }); }
       served = true;
-      return send({ job: { id: "6f9619ff-8b86-4011-b42d-00c04fc964fe", operation: { action: "vm_create", timeout_seconds: 600 } } });
+      return send({ job: { id: "6f9619ff-8b86-4011-b42d-00c04fc964fe", operation: { action: "vm_create", arguments: { spec: vmSpec() }, timeout_seconds: 600 } } });
     }
     if (req.url.endsWith("/lease")) return send({ active: true });
     if (req.url.endsWith("/progress")) { seen.progress.push(JSON.parse(body)); return send({ ok: true }); }
@@ -626,7 +655,7 @@ test("the connector sends a Local VM creation's progress to the server", async (
     environment: () => ({ id: "org", name: "GOX", origin }), fetch: globalThis.fetch, cookieHeader: async () => "",
     home, attachmentsDir: path.join(home, "tmp"), activityFile: path.join(home, "app-data", "bridge-activity.jsonl"),
     WebSocketImpl: null, retryMs: 50,
-    localVm: createLocalVm({ run: fakeRuntime({ image: true }).run, workspaceDir: path.join(home, "vm-home"), confirm: async () => true, pollMs: 1 }),
+    localVm: vmFor(fakeRuntime({ image: true }), { confirmCreate: async () => true }),
   });
   bridge.sync();
   for (let tries = 0; tries < 100 && !seen.results.length; tries++) await new Promise(resolve => setTimeout(resolve, 30));

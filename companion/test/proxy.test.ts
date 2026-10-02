@@ -130,9 +130,9 @@ beforeAll(async () => {
   SIDECAR = `http://127.0.0.1:${SIDECAR_PORT}`;
 
   home = mkdtempSync(join(tmpdir(), "companion-test-"));
-  mkdirSync(join(home, ".openmausbot"), { recursive: true });
+  mkdirSync(join(home, ".sagax"), { recursive: true });
   writeFileSync(
-    join(home, ".openmausbot", "config.json"),
+    join(home, ".sagax", "config.json"),
     JSON.stringify({ instances: { ghost: { driver: "not-a-real-driver", displayName: "Ghost" } } }),
   );
 
@@ -143,7 +143,7 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(HARNESS_PORT),
+      SAGAX_PORT: String(HARNESS_PORT),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

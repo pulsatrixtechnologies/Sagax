@@ -55,7 +55,7 @@ const dump = () => until(() => {
 }, Boolean);
 const idle = (botId: string) => until(() => api("GET", "/api/bots?messages=0"), s => !s.bots.find((b: any) => b.id === botId)?.busy);
 const computer = (d: any) => d.mcpConfig.mcpServers.computer;
-const gate = (c: any) => fetch(c.env.OMB_CONTROL_URL, { headers: { authorization: `Bearer ${c.env.OMB_CONTROL_TOKEN}` } });
+const gate = (c: any) => fetch(c.env.SAGAX_CONTROL_URL, { headers: { authorization: `Bearer ${c.env.SAGAX_CONTROL_TOKEN}` } });
 
 beforeAll(async () => {
   fixtureHome = mkdtempSync(join(tmpdir(), "omb-group-vm-"));
@@ -109,12 +109,12 @@ beforeAll(async () => {
     child = spawn(process.execPath, ["--import", pathToFileURL(join(ROOT, "server/testing/group-local-vm-hooks.mjs")).href, join(ROOT, "server/index.ts")], {
       cwd: ROOT, env: {
         PATH: dirname(process.execPath), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-        HOME: fixtureHome, USERPROFILE: fixtureHome, OMB_DATA_DIR: data,
+        HOME: fixtureHome, USERPROFILE: fixtureHome, SAGAX_DATA_DIR: data,
         APPDATA: join(fixtureHome, "appdata"), LOCALAPPDATA: join(fixtureHome, "localappdata"),
         TEMP: fixtureHome, TMP: fixtureHome, TMPDIR: fixtureHome,
-        OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), OMB_STATIC_DIR: ui, OMB_TEST_VM_STATE: stateFile,
-        OMB_BOX_API: `http://127.0.0.1:${boatPort}`,
-        OMB_USER_DATA: join(fixtureHome, "user-data"),
+        SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1), SAGAX_STATIC_DIR: ui, SAGAX_TEST_VM_STATE: stateFile,
+        SAGAX_BOX_API: `http://127.0.0.1:${boatPort}`,
+        SAGAX_USER_DATA: join(fixtureHome, "user-data"),
       }, stdio: ["ignore", "pipe", "pipe"],
     });
     child.stdout!.on("data", () => {});
@@ -290,7 +290,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
     const { bots, group } = await room();
     await send(group.id);
     const mounted: any = await dump();
-    const token = mounted.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+    const token = mounted.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
     const call = (path: string, body: unknown) => fetch(base + path, {
       method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -337,7 +337,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       await api("POST", `/api/bots/${bot.id}/messages`, { text: "Run a command on the VM" });
       const mounted: any = await dump();
       expect(computer(mounted)).toBeTruthy();
-      const token = mounted.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+      const token = mounted.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
       const response = await fetch(base + "/api/internal/vm-exec", {
         method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify({ command: "printf auto" }),
@@ -459,7 +459,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       await api("POST", `/api/bots/${bot.id}/messages`, { text: "Open Chrome on the cloud VM" });
       const before: any = await dump();
       if (computer(before)) expect((await gate(computer(before))).status).toBe(200);
-      const token = before.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+      const token = before.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
       const options = await (await fetch(base + "/api/internal/computer/select", { headers: { authorization: `Bearer ${token}` } })).json() as any;
       expect(options.options.find((option: any) => option.surface === "cloud")).toMatchObject({ available: true, ready: false,
         canStart: state !== "missing-auto", canCreate: state === "missing-auto" });
@@ -501,14 +501,14 @@ describe("Group Local VM ownership on the real isolated server", () => {
       await api("POST", `/api/bots/${bot.id}/messages`, { text: "Open Chrome on an available VM and inspect its page title" });
       const before: any = await dump();
       expect(computer(before)).toBeUndefined();
-      const token = before.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+      const token = before.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
       const call = (method: string, body?: unknown) => fetch(base + "/api/internal/computer/select", { method,
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
       const available = await (await call("GET")).json() as any;
       expect(available.canSelect).toBe(true);
       // Not a Cloud home: every place is listed, and no bot is told it runs in the cloud.
       expect(available.options.map((option: any) => option.surface)).toEqual(["cloud", "vm", "local", "browser"]);
-      expect(before.mcpConfig.mcpServers.agents.env.OMB_CLOUD_HOME).toBe("0");
+      expect(before.mcpConfig.mcpServers.agents.env.SAGAX_CLOUD_HOME).toBe("0");
       expect(before.systemPrompt).not.toContain(cloudHomePrompt(true));
       expect(before.systemPrompt).not.toContain("You run on the user's OMB Cloud");
       expect(available.options).toContainEqual(expect.objectContaining({ surface: "vm", available: true }));
@@ -548,7 +548,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       await api("PATCH", `/api/bots/${bot.id}`, { computer: failure === "off" ? "off" : "browser", browser: false });
       await api("POST", `/api/bots/${bot.id}/messages`, { text: "Open Chrome on the VM" });
       const sent: any = await dump();
-      const token = sent.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+      const token = sent.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
       const selected = await fetch(base + "/api/internal/computer/select", { method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ surface: "vm" }) });
       expect(selected.status).toBe(failure === "off" ? 403 : 200);
@@ -567,7 +567,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
         writeFileSync(finishFile, "finish");
         const next: any = await dump();
         expect(computer(next)).toBeUndefined();
-        expect(next.mcpConfig.mcpServers.agents.env.OMB_THREAD_ID).toBe(bot.threadId);
+        expect(next.mcpConfig.mcpServers.agents.env.SAGAX_THREAD_ID).toBe(bot.threadId);
         expect(next.prompt.message.content).toContain(text);
         expect(next.prompt.message.content).not.toContain("The computer selection is now");
       } else await api("POST", `/api/bots/${bot.id}/interrupt`, {});
@@ -630,7 +630,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       const sent = await dump() as { systemPrompt: string };
       const c = computer(sent);
       expect(c).toBeTruthy();
-      expect(c.env.OMB_CUA_COMMAND).toBe("/fixture/cua-driver");
+      expect(c.env.SAGAX_CUA_COMMAND).toBe("/fixture/cua-driver");
       expect(c.args.some((arg: string) => arg.includes("container-mcp"))).toBe(false);
       expect(sent.systemPrompt).toContain("You can act on the user's computer");
       expect(sent.systemPrompt).toContain("tell them it is on this computer");
@@ -766,8 +766,8 @@ describe("Group Local VM ownership on the real isolated server", () => {
     expect(second.args).toEqual(first.args);
     expect((await gate(second)).status).toBe(200);
     expect((await gate(first)).status).toBe(401);
-    const impersonation = await fetch(second.env.OMB_CONTROL_URL.replace(bots[1].id, bots[0].id), {
-      headers: { authorization: `Bearer ${second.env.OMB_CONTROL_TOKEN}` },
+    const impersonation = await fetch(second.env.SAGAX_CONTROL_URL.replace(bots[1].id, bots[0].id), {
+      headers: { authorization: `Bearer ${second.env.SAGAX_CONTROL_TOKEN}` },
     });
     expect(impersonation.status).toBe(403);
     await stop(group.id); await idle(bots[1].id);

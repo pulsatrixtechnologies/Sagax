@@ -10,7 +10,8 @@ export const DOCS_URL = `${APP_REPOSITORY}/tree/main/docs`;
 export const HELP_CENTER_URL = DOCS_URL;
 export const APPROVAL_LEVELS_URL = `${APP_REPOSITORY}/blob/main/docs/approval-levels.md`;
 export const RELEASES_URL = `${APP_REPOSITORY}/releases`;
-export const PRO_URL = "https://www.openmausbot.com/pro";
+/** No upstream Pro offer: the original project's site is never linked. */
+export const PRO_URL = "";
 export const LICENSE_URL = `${APP_REPOSITORY}/blob/main/LICENSE`;
 
 /** Fork version Vite inlined from package.json forkVersion. "dev" outside the bundler. */
@@ -18,7 +19,7 @@ export function appVersion(): string {
   return typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
 }
 
-/** Official OpenMausBot release this fork is based on. Stays on that line. */
+/** Official OpenMausBot (upstream) release this fork is based on. Stays on that line. */
 export function baseVersion(): string {
   return typeof __BASE_VERSION__ === "string" ? __BASE_VERSION__ : "dev";
 }

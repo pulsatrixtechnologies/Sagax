@@ -1,8 +1,8 @@
 package com.openmausbot.companion.ui
 
 /**
- * The mascot palette — `src/lib/mascot.ts` MAUS_COLORS, the same ten the desktop
- * and `ios/App/MausAvatar.swift` use, with the same fallback grey. Rooms are
+ * The mascot palette: `src/lib/mascot.ts` MAUS_COLORS (all but white and black), shared
+ * with `ios/App/MausAvatar.swift`, with the same fallback grey. Rooms are
  * always `"blue"` (that lives in `:core`'s `Chat.RoomChat.color`).
  *
  * Plain ARGB ints rather than `Color` so the mapping is unit-testable on the JVM.
@@ -21,6 +21,9 @@ object MausPalette {
         "yellow" to 0xFFD8A729.toInt(),
         "teal" to 0xFF01A492.toInt(),
         "coral" to 0xFFE5634E.toInt(),
+        "brown" to 0xFF8B5E3C.toInt(),
+        "amber" to 0xFFF2A51A.toInt(),
+        "grey" to 0xFF8E949E.toInt(),
     )
 
     val names: Set<String> get() = hex.keys

@@ -4,11 +4,14 @@
 // offers for its turns: read by the engine itself (ProviderInstance.
 // listCommands) in the folder and isolation those turns get, so a command
 // shows only when a turn will load it. Cached per bot, engine and scope;
-// `refresh=1` reads again.
+// `refresh=1` reads again. On an organization server the scope is the
+// SPEAKER's: their own subscription and claude.ai connectors change the
+// list, so it is cached per bot and person then (commandListAccess).
 //
 // A message whose first word is one of them reaches the engine verbatim
 // (resolveTypedCommand): Sagax's own commands win a name collision, the
-// engine's is then /engine:<name>; one the chat cannot run is refused.
+// engine's is then /engine:<name>; one the chat cannot run is refused. In a
+// group the command goes to one bot only (groupCommandTarget).
 import {
   isSagaxCommandName,
   parseTypedCommand,
@@ -17,7 +20,7 @@ import {
   type HarnessCommand,
   type HarnessCommandList,
 } from "../shared/harness-commands.ts";
-import type { HarnessCommandScope } from "./contracts.ts";
+import type { HarnessCommandScope, TurnAccessInput } from "./contracts.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 
@@ -54,8 +57,10 @@ export class HarnessCommandCatalog {
   }
 
   private key(source: HarnessCommandSource): string {
-    const { cwd, withholdHostTools, mcpFromUserConfig } = source.scope;
-    return JSON.stringify([source.botId, source.instanceId, cwd ?? null, Boolean(withholdHostTools), Boolean(mcpFromUserConfig)]);
+    const { cwd, withholdHostTools, mcpFromUserConfig, access, claudeAiConnectors } = source.scope;
+    // per bot and, where it changes the list, per person: a subscription's
+    // login directory and the claude.ai connectors of that account
+    return JSON.stringify([source.botId, source.instanceId, cwd ?? null, Boolean(withholdHostTools), Boolean(mcpFromUserConfig), access?.identity ?? null, Boolean(claudeAiConnectors)]);
   }
 
   /** The last list read for this source, at any age. */
@@ -84,6 +89,21 @@ export class HarnessCommandCatalog {
     this.inflight.set(key, work);
     return work;
   }
+}
+
+/** What of a turn's credentials shapes the engine's command list: a
+ * person's own subscription (their login directory) only. A key, the
+ * organization's or the server's access lists what the server's engine
+ * lists, so those speakers share one list. Never carries a secret. */
+export function commandListAccess(access: TurnAccessInput | undefined): TurnAccessInput | undefined {
+  if (access?.via !== "subscription") return undefined;
+  if (!access.claudeConfigDir && !access.codexHome) return undefined;
+  return {
+    via: "subscription",
+    identity: access.identity,
+    ...(access.claudeConfigDir ? { claudeConfigDir: access.claudeConfigDir } : {}),
+    ...(access.codexHome ? { codexHome: access.codexHome } : {}),
+  };
 }
 
 /** What a person's message is for its turn: the engine command it runs, a
@@ -119,11 +139,13 @@ export function unavailableCommandError(resolution: Extract<CommandResolution, {
 export interface HarnessCommandRouteDeps {
   /** The bot's command source for the caller, a refusal, or null when its
    * engine lists no commands. */
-  sourceFor(auth: RequestAuth, botId: string, threadId: string | null): { status: number; error: string } | HarnessCommandSource | null;
+  sourceFor(auth: RequestAuth, botId: string, threadId: string | null, groupId?: string | null): { status: number; error: string } | HarnessCommandSource | null;
   catalog: HarnessCommandCatalog;
 }
 
-/** GET /api/bots/:id/harness-commands[?threadId=…][&refresh=1] */
+/** GET /api/bots/:id/harness-commands[?threadId=…][&groupId=…][&refresh=1]
+ * (`groupId`: the bot as a member of that group, `threadId` then one of
+ * the group's conversations). */
 export function createHarnessCommandRoutes(deps: HarnessCommandRouteDeps): RouteHandler {
   return async ({ res, url, path, method, auth, json }) => {
     const match = HARNESS_COMMANDS_PATH.exec(path);
@@ -132,7 +154,9 @@ export function createHarnessCommandRoutes(deps: HarnessCommandRouteDeps): Route
     if (method !== "GET") return json(res, 405, { error: "method not allowed" });
     const threadId = url.searchParams.get("threadId");
     if (threadId !== null && !/^[\w-]{1,128}$/.test(threadId)) return json(res, 400, { error: "threadId must be a task id" });
-    const source = deps.sourceFor(auth, match[1] ?? "", threadId);
+    const groupId = url.searchParams.get("groupId");
+    if (groupId !== null && !/^[\w-]{1,128}$/.test(groupId)) return json(res, 400, { error: "groupId must be a group id" });
+    const source = deps.sourceFor(auth, match[1] ?? "", threadId, groupId);
     if (source && "status" in source) return json(res, source.status, { error: source.error });
     if (!source) return json(res, 200, { available: false, reason: "not_supported", commands: [] });
     try {

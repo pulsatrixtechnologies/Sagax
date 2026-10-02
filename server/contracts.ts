@@ -294,6 +294,13 @@ export interface HarnessCommandScope {
   /** The bot whose live sessions may add to the list (MCP prompts of its
    * own servers, the terminal-only commands the CLI reports). */
   botId?: string;
+  /** Organization server: the speaker's own subscription when their turns
+   * run on it (their login directory: their user skills, plugins and
+   * claude.ai account). Never a key: a key does not change the list. */
+  access?: TurnAccessInput;
+  /** The turn keeps the claude.ai connectors of the account it runs on
+   * (server/harness-connectors.ts), so their MCP prompts are listed. */
+  claudeAiConnectors?: boolean;
 }
 
 /** An MCP server this machine starts and talks to over stdio. */

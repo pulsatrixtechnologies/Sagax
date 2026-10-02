@@ -47,7 +47,7 @@ async function start() {
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -97,7 +97,7 @@ function identitySnapshot() {
 posixOnly("identity migration at boot", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-identity-migration-"));
-    data = join(home, ".openmausbot");
+    data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     write("config.json", { profile: { name: "JC", email: "jc@gox.ca" } });
     // A first boot only builds a valid bot and channel; they are then

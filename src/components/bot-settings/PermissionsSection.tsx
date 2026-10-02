@@ -1,7 +1,7 @@
 // Permissions: how autonomously this bot acts — the approval level (ask /
 // auto / full / custom), review-routine approvals, whether it asks before
-// contacting other bots, and whether it holds the section's Chief of Staff
-// role. Moved from SettingsPanel.tsx (Chief of Staff ~720-755,
+// contacting other bots, and whether it is its person's Primary Bot
+// (formerly Chief of Staff). Moved from SettingsPanel.tsx (Chief of Staff ~720-755,
 // Ask-before-contacting ~757-776, Approval level ~990-1010, Review routine
 // approvals ~1013-1050).
 //
@@ -12,12 +12,14 @@
 // warnings remember which bot they were opened for, so a bot switch while
 // one is up never applies the choice to the newly selected bot.
 import { useState } from "react";
-import { Crown } from "lucide-react";
+import { Star } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
-import { useStore, type Bot } from "@/state/store";
+import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { api, useStore, type Bot } from "@/state/store";
 import type { ApprovalMode } from "../../../shared/approval-mode";
 import { ApprovalModeSelector } from "../ApprovalModeSelector";
 import { CommandAllowlistDialog } from "../CommandAllowlistDialog";
@@ -44,8 +46,29 @@ export function PermissionsSection({
   const [fullAccessTarget, setFullAccessTarget] = useState<string | null>(null);
   const [allThreads, setAllThreads] = useState(true);
   const [commandAllowlistTarget, setCommandAllowlistTarget] = useState<{ botId: string; botName: string } | null>(null);
+  const [primaryError, setPrimaryError] = useState<string | null>(null);
+  // Taking the role goes through the owner's own route (one per person; an
+  // organization member may choose theirs). A draft or a step-down patches.
+  const togglePrimary = () => {
+    setPrimaryError(null);
+    if (bot.chiefOfStaff || draft) return patch({ chiefOfStaff: !bot.chiefOfStaff });
+    void api<{ bot: Bot }>(`/api/bots/${bot.id}/primary`, { method: "POST" })
+      .then((response) => dispatch({ type: "botPatched", bot: response.bot }))
+      .catch((error: unknown) => setPrimaryError(error instanceof Error ? error.message : String(error)));
+  };
+  // Organization server: the owner sets Full as the bot's default (its new
+  // threads and routines) over HTTP while the organization allows it.
+  const perspicaxOrg = usePerspicaxOrg();
+  const viewerId = state.config?.viewer?.principalId ?? null;
+  const orgFullAccess = draft ? undefined : orgFullAccessFor(perspicaxOrg, bot, viewerId);
   const setApprovalMode = (mode: ApprovalMode) => {
     if (bot.busy || mode === approvalMode) return;
+    if (mode === "full" && orgFullAccess !== undefined) {
+      if (orgFullAccess !== "allowed") return;
+      if (fullAccessNeedsConfirmation(bot, viewerId, true)) setFullAccessTarget(bot.id);
+      else dispatch({ type: "updateBot", botId: bot.id, patch: { approvalMode: "full", organizationFullAccess: true } });
+      return;
+    }
     if (mode === "full") {
       setAllThreads(true);
       setFullAccessTarget(bot.id);
@@ -67,17 +90,17 @@ export function PermissionsSection({
       >
         <div className="flex items-center gap-3">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-control text-ink-secondary">
-            <Crown size={17} />
+            <Star size={17} className="text-orange-500" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-medium text-ink">Chief of Staff</div>
-            <div className="text-[11.5px] text-ink-secondary">One for {sectionName}</div>
+            <div className="text-[13px] font-medium text-ink">Primary Bot</div>
+            <div className="text-[11.5px] text-ink-secondary">One per person</div>
           </div>
           <Switch
             checked={Boolean(bot.chiefOfStaff)}
-            aria-label="Chief of Staff"
+            aria-label="Primary Bot"
             disabled={!bot.chiefOfStaff && !canCoordinate}
-            onClick={() => patch({ chiefOfStaff: !bot.chiefOfStaff })}
+            onClick={togglePrimary}
             title={!bot.chiefOfStaff && !canCoordinate ? "This model cannot contact other bots" : undefined}
             className="disabled:cursor-not-allowed"
           />
@@ -86,13 +109,14 @@ export function PermissionsSection({
           {bot.chiefOfStaff && !canCoordinate
             ? "This bot still holds the role, but its current provider cannot contact teammates. Choose a provider that supports bot coordination."
             : bot.chiefOfStaff
-              ? `This is the primary contact for ${sectionName}. It can create and coordinate specialists in this team, then combine their work into one answer.`
+              ? `This is your primary bot, your main contact. It coordinates your other bots and specialists (home team: ${sectionName}), then combines their work into one answer.`
               : !canCoordinate
                 ? "Choose a provider that supports bot coordination."
                 : currentChief
-                  ? `Make this bot the ${sectionName} Chief and hand the role over from ${currentChief.name}.`
-                  : `Make this bot the primary contact for the ${sectionName} team.`}
+                  ? `Make this bot your primary bot and hand the role over from ${currentChief.name}.`
+                  : "Make this bot your primary bot, your main contact who coordinates your other bots."}
         </div>
+        {primaryError && <div role="alert" className="mt-2 text-[12px] text-danger">{primaryError}</div>}
         <ProposalStatus bot={bot} kind="chief" />
         {bot.chiefOfStaff && <ManagedTeamsSettings
           key={bot.id + JSON.stringify(bot.managedSections ?? [])}
@@ -141,6 +165,7 @@ export function PermissionsSection({
             wide
             disabled={Boolean(bot.busy)}
             trustedModesAvailable={trustedModesAvailable}
+            orgFullAccess={orgFullAccess}
             onManageCommandAllowlist={!draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
           />
         </div>
@@ -173,13 +198,18 @@ export function PermissionsSection({
       />
       <FullAccessWarning
         open={fullAccessTarget !== null}
+        scope={orgFullAccess !== undefined ? "organization" : "bot"}
         allThreads={allThreads}
-        onAllThreadsChange={draft ? undefined : setAllThreads}
+        onAllThreadsChange={draft || orgFullAccess !== undefined ? undefined : setAllThreads}
         onCancel={() => setFullAccessTarget(null)}
         onConfirm={() => {
           const target = fullAccessTarget;
           setFullAccessTarget(null);
           if (!target) return;
+          if (orgFullAccess !== undefined) {
+            dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true, organizationFullAccess: true } });
+            return;
+          }
           dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true, applyToAllThreads: allThreads } });
         }}
       />

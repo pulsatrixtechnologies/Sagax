@@ -500,7 +500,7 @@ function isPortableSource(value: string): boolean {
 /** "Include my New bot defaults as a preset": the saved defaults, reduced to
  * the preset allowlist. Name, look, standing instructions, skills and (when
  * `includeNotes`) starter notes. Never the model, folder, computer, approval
- * level, connected apps, MCP servers, browser, peers, Chief settings or
+ * level, connected apps, MCP servers, browser, peers, Primary Bot settings or
  * routines. Null when nothing is left worth sharing. `avatar` is the
  * picture the dialog prepared (a data URL), checked by the exporter. */
 export function presetFromDefaults(defaults: NewBotDefaults | undefined, options: {

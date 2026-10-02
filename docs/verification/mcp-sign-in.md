@@ -19,9 +19,9 @@ server, and pairs an admin browser. It never contacts the user's running app,
 reads their OAuth credentials, or signs into a real provider.
 
 The browser tools follow the existing `control-omb ui` setup: set
-`OMB_AGENT_BROWSER_PATH` and `AGENT_BROWSER_EXECUTABLE_PATH` to reuse installed
+`SAGAX_AGENT_BROWSER_PATH` and `AGENT_BROWSER_EXECUTABLE_PATH` to reuse installed
 binaries, or let the fixture install the pinned tools. Set
-`OMB_UI_EVIDENCE_DIR` to choose the screenshots directory (default:
+`SAGAX_UI_EVIDENCE_DIR` to choose the screenshots directory (default:
 `.omb-scratch/mcp-oauth-evidence`).
 
 The fixture verifies:

@@ -1,4 +1,4 @@
-# OpenMausBot harness server — hosted/self-hosted tenant image.
+# Sagax harness server — hosted/self-hosted tenant image.
 #
 # Two stages: build the renderer + the self-contained server bundle, then ship
 # only those artifacts on a slim Node runtime. The server keeps binding
@@ -13,7 +13,7 @@
 # an empty named volume mounted there inherits this owner.
 #
 # HOME is the /data volume, so engine CLI logins (~/.claude, ~/.codex, ...) and
-# OpenMausBot's own state (~/.openmausbot) persist across container restarts.
+# Sagax's own state (/data/.openmausbot, kept for existing volumes) persist across container restarts.
 
 FROM node:24-bookworm-slim AS build
 WORKDIR /src

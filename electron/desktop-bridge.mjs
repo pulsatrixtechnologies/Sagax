@@ -23,15 +23,53 @@ import { setTimeout as delay } from "node:timers/promises";
 import { assertOutsideProtected, createSharedCua, personalSecretPaths, protectedIdentities, sharedComputerError } from "./shared-computer-access.mjs";
 import { createLendingActivity } from "./lending-activity.mjs";
 import { openDesktopTunnel } from "./desktop-tunnel.mjs";
-import { BASE_IMAGE, CONTAINER, CUA_SOCKET, DOCKERFILE, IMAGE, IMAGE_LABELS, MANAGED_LABEL, runArgs } from "./local-vm-recipe.mjs";
+import { createLocalVm } from "./local-vm.mjs";
+
+export { createLocalVm };
 
 const OUTPUT_LIMIT = 512 * 1024;
+const SYSTEM_REFRESH_MS = 30_000;
+
+const roundGb = (bytes, step = 0.5) => Math.round(bytes / 1024 ** 3 / step) * step;
+const OS_NAMES = { darwin: "macOS", win32: "Windows", linux: "Linux" };
+
+/** Coarse facts about this computer for the person's own Computer tab:
+ * OS and version, CPU model and count, CPU use (rounded to 5 %), memory and
+ * disk rounded to half a GiB. Nothing about files, apps or networks.
+ * `previous` is the last CPU sample, so the use covers the interval. */
+export async function systemInfo({ platform = process.platform, version = typeof process.getSystemVersion === "function" ? process.getSystemVersion() : os.release(), home = os.homedir(), previous = null, statfs = fs.statfs } = {}) {
+  const cpus = os.cpus();
+  const times = cpus.reduce((sum, cpu) => {
+    const total = Object.values(cpu.times).reduce((a, b) => a + b, 0);
+    return { idle: sum.idle + cpu.times.idle, total: sum.total + total };
+  }, { idle: 0, total: 0 });
+  let cpuPercent;
+  if (previous && times.total > previous.total) {
+    cpuPercent = Math.min(100, Math.max(0, Math.round(((1 - (times.idle - previous.idle) / (times.total - previous.total)) * 100) / 5) * 5));
+  }
+  const total = os.totalmem();
+  const info = {
+    os: `${OS_NAMES[platform] ?? "Linux"} ${String(version).split(/\s/)[0]}`.slice(0, 80),
+    arch: process.arch.slice(0, 20),
+    ...(cpus[0]?.model ? { cpuModel: cpus[0].model.replace(/\s+/g, " ").trim().slice(0, 80) } : {}),
+    cpus: Math.max(1, cpus.length),
+    ...(cpuPercent === undefined ? {} : { cpuPercent }),
+    memoryGb: roundGb(total),
+    memoryUsedGb: roundGb(Math.max(0, total - os.freemem())),
+  };
+  try {
+    const disk = await statfs(home);
+    info.diskGb = Math.round((disk.blocks * disk.bsize) / 1024 ** 3);
+    info.diskFreeGb = Math.round((disk.bavail * disk.bsize) / 1024 ** 3);
+  } catch { /* unknown */ }
+  return { info, sample: times };
+}
 const READ_DEFAULT = 256_000;
 const READ_MAX = 1_000_000;
 const WRITE_MAX = 1024 * 1024;
 const FETCH_MAX = 256 * 1024;
 const STAGE_MAX = 25 * 1024 * 1024;
-const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "stage_file"]);
+const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "stage_file"]);
 const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final"]);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
@@ -71,7 +109,7 @@ export function commandEnvironment(env = process.env) {
   const out = {};
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) continue;
-    if (/^(OMB_|SAGAX_|ELECTRON_|OPENMAUSBOT_|CHROME_)/i.test(key)) continue;
+    if (/^(SAGAX_|SAGAX_|ELECTRON_|SAGAX_|CHROME_)/i.test(key)) continue;
     if (/(API_KEY|_TOKEN$|SECRET|PASSWORD|_KEY_FILE$)/i.test(key)) continue;
     out[key] = value;
   }
@@ -163,135 +201,6 @@ export async function searchFiles(root, { pattern, glob, protectedRoots, signal 
   return text(results.length ? `${results.join("\n")}${results.length >= 200 || visited >= 20_000 ? "\n[more results not shown]" : ""}` : "No matches.");
 }
 
-/** Local VM: the Sagax Linux desktop container(s) on this computer, by
- * their labels; nothing else is ever started or entered. `create` makes the
- * shared Local VM the way solo mode does (the pinned image and hardened run
- * arguments of electron/local-vm-recipe.mjs, generated from
- * server/container-computer.ts), only after the person said yes on this
- * computer (`confirm`, the desktop app's own prompt). */
-export function createLocalVm({
-  run = (argv, options) => runCommand("", { ...options, argv }), confirm = null, workspaceDir = null,
-  password = () => randomBytes(6).toString("base64url"), readyWaitMs = 90_000, pollMs = 2000,
-} = {}) {
-  let runtime;
-  let creating = null;
-  let confirming = false;
-  const cli = async () => {
-    if (runtime) return runtime;
-    for (const candidate of ["docker", "podman"]) {
-      const answer = await run([candidate, "version", "--format", "{{.Client.Version}}"], { timeoutSeconds: 15 }).catch(() => null);
-      if (answer && !answer.isError) { runtime = candidate; return runtime; }
-    }
-    return null;
-  };
-  const list = async () => {
-    const tool = await cli();
-    if (!tool) throw new Error("No container runtime (Docker or Podman) on this computer, so there is no Local VM here.");
-    const answer = await run([tool, "ps", "-a", "--filter", `label=${MANAGED_LABEL}=1`, "--format", "{{.Names}}\t{{.State}}"], { timeoutSeconds: 30 });
-    if (answer.isError) throw new Error("The container runtime did not answer.");
-    return answer.content[0].text.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("[exit")).map(line => { const [name, state] = line.split("\t"); return { name, state }; }).filter(entry => /^[\w.-]+$/.test(entry.name ?? ""));
-  };
-  const pick = async container => {
-    const all = await list();
-    if (!all.length) throw new Error("No Local VM exists on this computer yet. Create one with the local_vm action create (the person confirms it on this computer).");
-    const chosen = container ? all.find(entry => entry.name === container) : all[0];
-    if (!chosen) throw new Error("That Local VM does not exist on this computer.");
-    return chosen;
-  };
-  const output = answer => (answer?.content?.[0]?.text ?? "").split("\n").filter(line => line.trim() && !line.startsWith("[exit")).slice(-3).join(" ").slice(0, 400);
-  /** The image is there and carries the labels solo mode checks. */
-  const imageReady = async tool => {
-    const answer = await run([tool, "image", "inspect", IMAGE, "--format", "{{json .Config.Labels}}"], { timeoutSeconds: 30 }).catch(() => null);
-    if (!answer || answer.isError) return false;
-    try {
-      const labels = JSON.parse(answer.content[0].text.split("\n")[0]);
-      return Object.entries(IMAGE_LABELS).every(([key, value]) => labels?.[key] === value);
-    } catch { return false; }
-  };
-  const until = (promise, signal) => new Promise((resolve, reject) => {
-    if (!signal) { promise.then(resolve, reject); return; }
-    const stop = () => resolve(failure("The turn ended while the Local VM was being created. It keeps being created on this computer; ask for its status later."));
-    if (signal.aborted) { stop(); return; }
-    signal.addEventListener("abort", stop, { once: true });
-    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", stop));
-  });
-  const provision = async (tool, needsImage, step) => {
-    const steps = [];
-    const say = message => { steps.push(message); step(message); };
-    if (needsImage) {
-      say("Downloading the Local VM desktop image (the first time takes several minutes)");
-      const pulled = await run([tool, "pull", BASE_IMAGE], { timeoutSeconds: 600 });
-      if (pulled.isError) throw new Error(`Downloading the desktop image failed: ${output(pulled)}`);
-      say("Building the Local VM desktop image");
-      const context = await fs.mkdtemp(path.join(os.tmpdir(), "sagax-local-vm-"));
-      try {
-        await fs.writeFile(path.join(context, "Dockerfile"), DOCKERFILE, { mode: 0o600 });
-        const built = await run([tool, "build", "-t", IMAGE, context], { timeoutSeconds: 600 });
-        if (built.isError) throw new Error(`Building the desktop image failed: ${output(built)}`);
-      } finally { await fs.rm(context, { recursive: true, force: true }).catch(() => {}); }
-      if (!(await imageReady(tool))) throw new Error("The desktop image was built but does not carry the expected labels.");
-    }
-    say("Creating the Local VM");
-    await fs.mkdir(workspaceDir, { recursive: true, mode: 0o700 });
-    if (process.platform !== "win32") await fs.chmod(workspaceDir, 0o700);
-    const created = await run([tool, ...runArgs(tool, password(), workspaceDir)], { timeoutSeconds: 120 });
-    if (created.isError) throw new Error(`Creating the Local VM failed: ${output(created)}`);
-    say("Waiting for the Local VM desktop to start");
-    const deadline = Date.now() + readyWaitMs;
-    let ready = false;
-    while (!ready && Date.now() < deadline) {
-      const probe = await run([tool, "exec", "-u", "cua", CONTAINER, "test", "-S", CUA_SOCKET], { timeoutSeconds: 15 }).catch(() => null);
-      ready = Boolean(probe && !probe.isError);
-      if (!ready) await delay(pollMs);
-    }
-    const done = ready ? `The Local VM ${CONTAINER} is ready on this computer (${tool}).` : `The Local VM ${CONTAINER} was created on this computer (${tool}); its desktop is still starting. Check again with status in a minute.`;
-    return text(`${done}\n${steps.map(entry => `- ${entry}`).join("\n")}`);
-  };
-  return {
-    async status() { return text({ localVms: await list(), ...(creating ? { creating: creating.step } : {}) }); },
-    async start(container) {
-      const tool = await cli(); const chosen = await pick(container);
-      if (/running/i.test(chosen.state ?? "")) return text(`${chosen.name} is already running`);
-      return run([tool, "start", chosen.name], { timeoutSeconds: 120 });
-    },
-    async exec(container, command, options) {
-      const tool = await cli(); const chosen = await pick(container);
-      if (!/running/i.test(chosen.state ?? "")) throw new Error(`${chosen.name} is not running; start it first`);
-      return run([tool, "exec", "-u", "cua", chosen.name, "bash", "-lc", command], options);
-    },
-    /** Create the Local VM here, after the person's yes on this computer.
-     * Progress goes to `progress` (the turn), only once the person said yes;
-     * a turn that ends does not stop a creation already under way. */
-    async create({ signal, progress = () => {} } = {}) {
-      const report = message => { try { progress(message); } catch { /* best effort */ } };
-      if (creating) { report(`Already being created on this computer: ${creating.step}`); return until(creating.promise, signal); }
-      if (!confirm || !workspaceDir) throw new Error("This Sagax desktop app cannot create a Local VM here. Update it, or create the Local VM from its settings.");
-      const tool = await cli();
-      if (!tool) throw new Error("No container runtime (Docker or Podman) on this computer. Install Docker Desktop or Podman, start it, then ask again.");
-      const existing = await list();
-      if (existing.length) {
-        const running = existing.find(entry => /running/i.test(entry.state ?? ""));
-        return text(running ? `A Local VM already exists and is running on this computer: ${running.name}.` : `A Local VM already exists on this computer: ${existing[0].name} (${existing[0].state ?? "stopped"}). Start it with the action start.`);
-      }
-      if (confirming) throw new Error("A Local VM creation is already waiting for the person's answer on this computer.");
-      const needsImage = !(await imageReady(tool));
-      // Nothing is reported before the person's yes: the server starts showing
-      // the bot's computer being set up at the first step it receives.
-      confirming = true;
-      let allowed;
-      try { allowed = await confirm({ runtime: tool, needsImage, signal }); } finally { confirming = false; }
-      if (signal?.aborted) return failure("The turn ended before the person answered. Nothing was created.");
-      if (!allowed) return failure("The person declined creating a Local VM on their computer. Nothing was created.");
-      if (creating) return until(creating.promise, signal);
-      const entry = { step: "starting" };
-      entry.promise = provision(tool, needsImage, message => { entry.step = message; report(message); }).finally(() => { if (creating === entry) creating = null; });
-      entry.promise.catch(() => {});
-      creating = entry;
-      return until(entry.promise, signal);
-    },
-  };
-}
-
 /** Run one operation on this computer. `deps` holds what only Electron or
  * the person's settings provide. */
 export async function executeBridgeOperation(operation, deps, signal) {
@@ -377,8 +286,14 @@ export async function executeBridgeOperation(operation, deps, signal) {
     }
     case "vm_status": return deps.localVm.status();
     case "vm_start": return deps.localVm.start(operation.container);
+    case "vm_stop": return deps.localVm.power("stop");
+    case "vm_pause": return deps.localVm.power("pause");
+    case "vm_resume": return deps.localVm.power("resume");
+    case "vm_setup": return deps.localVm.setup(operation.arguments?.spec);
+    case "vm_install": return deps.localVm.install(String(operation.arguments?.choice ?? ""));
+    case "vm_screenshot": return deps.localVm.screenshot();
     case "vm_run_command": return deps.localVm.exec(operation.container, operation.command, { timeoutSeconds: operation.timeout_seconds ?? 120, signal });
-    case "vm_create": return deps.localVm.create({ signal, progress: deps.progress });
+    case "vm_create": return deps.localVm.create({ spec: operation.arguments?.spec, signal, progress: deps.progress });
     case "stage_file": {
       const dir = deps.attachmentsDir;
       await fs.mkdir(dir, { recursive: true, mode: 0o700 });
@@ -415,8 +330,7 @@ const describe = operation => {
 export function createDesktopBridge({
   environment, fetch: fetchImpl, cookieHeader, home = os.homedir(), attachmentsDir, protectedPaths = [], activityFile,
   fetchUrl = globalThis.fetch, browse, cuaConnection, hostControl, resolveProxy, proxyCredentials, lookup, tunnelConnect, WebSocketImpl = globalThis.WebSocket,
-  platform = process.platform, hostname = os.hostname(), onChange = () => {}, confirmLocalVm = null, localVmWorkspace = null,
-  localVm = createLocalVm({ confirm: confirmLocalVm, workspaceDir: localVmWorkspace }), retryMs = 5000,
+  platform = process.platform, hostname = os.hostname(), onChange = () => {}, localVm = createLocalVm(), retryMs = 5000,
 }) {
   const roots = [...protectedPaths, ...personalSecretPaths(home)];
   const activity = createLendingActivity(activityFile);
@@ -472,6 +386,19 @@ export function createDesktopBridge({
           await preferences();
           const refresh = setInterval(() => void preferences(), 60_000);
           live.addEventListener("abort", () => clearInterval(refresh), { once: true });
+          // Coarse system facts for the person's Computer tab. An older
+          // server answers 404: nothing else depends on it.
+          let cpuSample = null;
+          const system = async () => {
+            try {
+              const { info, sample } = await systemInfo({ platform, previous: cpuSample });
+              cpuSample = sample;
+              await request(env, `/api/desktop-bridge/${id}/system`, info, live, secret);
+            } catch { /* optional */ }
+          };
+          void system();
+          const systemTimer = setInterval(() => void system(), SYSTEM_REFRESH_MS);
+          live.addEventListener("abort", () => clearInterval(systemTimer), { once: true });
           // The tunnel: the cookie and the secret ride its handshake only.
           const startTunnel = async () => {
             if (!WebSocketImpl || live.aborted) return;

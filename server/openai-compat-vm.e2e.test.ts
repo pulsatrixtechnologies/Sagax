@@ -153,12 +153,12 @@ beforeAll(async () => {
     cwd: ROOT,
     env: {
       PATH: [fakebin, dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter),
-      HOME: fixtureHome, USERPROFILE: fixtureHome, OMB_DATA_DIR: data,
+      HOME: fixtureHome, USERPROFILE: fixtureHome, SAGAX_DATA_DIR: data,
       APPDATA: join(fixtureHome, "appdata"), LOCALAPPDATA: join(fixtureHome, "localappdata"),
       TEMP: fixtureHome, TMP: fixtureHome, TMPDIR: fixtureHome,
-      OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), OMB_STATIC_DIR: ui,
-      OMB_TEST_VM_STATE: stateFile, OMB_EXTRA_PATH: fakebin,
-      OMB_USER_DATA: join(fixtureHome, "user-data"),
+      SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1), SAGAX_STATIC_DIR: ui,
+      SAGAX_TEST_VM_STATE: stateFile, SAGAX_EXTRA_PATH: fakebin,
+      SAGAX_USER_DATA: join(fixtureHome, "user-data"),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -242,6 +242,6 @@ describe("openai-compat Local VM tools", () => {
     }, Boolean);
     await idle(bot.id);
     expect(dump!.mcpConfig?.mcpServers?.computer).toBeTruthy();
-    expect(String(dump!.mcpConfig!.mcpServers!.computer.env?.OMB_CONTROL_URL ?? "")).toContain("127.0.0.1");
+    expect(String(dump!.mcpConfig!.mcpServers!.computer.env?.SAGAX_CONTROL_URL ?? "")).toContain("127.0.0.1");
   }, 60_000);
 });

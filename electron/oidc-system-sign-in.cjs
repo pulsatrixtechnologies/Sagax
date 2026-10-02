@@ -30,7 +30,7 @@ const http = require("node:http");
 const OIDC_START_PATH = "/auth/oidc/start";
 const SYSTEM_SIGN_IN_TTL_MS = 10 * 60_000;
 const LOOPBACK_MAX_BODY_BYTES = 2048;
-const CREDENTIAL = /^omb_pair_[A-Za-z0-9_-]{20,128}$/;
+const CREDENTIAL = /^(?:sgx|omb)_pair_[A-Za-z0-9_-]{20,128}$/;
 const ERROR_CODE = /^[a-z0-9_]{1,64}$/;
 
 function activeOrigin(state) {
@@ -67,7 +67,17 @@ function signInSupport(descriptor) {
   return {
     loopbackReturn: perspicax && identity.loopbackReturn === true,
     nativeReturn: perspicax && identity.nativeReturn === true,
+    /** The server can end on sagax://auth when the start names it
+     * (`return=<sagaxReturnLink>`); older servers end on openmausbot://auth. */
+    sagaxReturn: perspicax && identity.nativeReturn === true
+      && Array.isArray(identity.nativeReturnSchemes) && identity.nativeReturnSchemes.includes("sagax"),
   };
+}
+
+/** The scheme return a desktop start names on a server that offers sagax://
+ * (server/oidc-login.ts sagaxReturnLink: the same string, compared exactly). */
+function sagaxReturnLink(origin) {
+  return `sagax://auth?origin=${encodeURIComponent(origin)}`;
 }
 
 /** The app bundle (macOS) or executable (Windows, Linux) of this process,
@@ -340,6 +350,7 @@ module.exports = {
   oidcLoginStartUrl,
   ownsScheme,
   redactedTarget,
+  sagaxReturnLink,
   signInSupport,
   startLoopbackReturn,
 };

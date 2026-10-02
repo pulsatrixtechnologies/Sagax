@@ -9,7 +9,7 @@
 //
 // Admin scope only: the auth gate already refuses other callers (the routes
 // are not in request-auth.ts CLIENT_ALLOW), and every handler checks again.
-// An organization server (OMB_IDENTITY=perspicax) has no email sign-in or
+// An organization server (SAGAX_IDENTITY=perspicax) has no email sign-in or
 // invitations, so it answers 403 identity_perspicax: Perspicax sends its mail.
 // A test message goes only to the address the caller signed in with (the
 // operator's profile address at this computer). No body field is accepted,

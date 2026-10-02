@@ -19,7 +19,7 @@ export function supportsApprovalMode(driverKind: string | undefined, mode: Appro
   // implemented in the harness: createOpenAIChatRuntime answers its own tool
   // gate instead of opening a card. Without this a bot on one of these
   // engines could never stop asking — not by its own level, and not through
-  // a Chief's delegated Full access either.
+  // a Primary Bot's delegated Full access either.
   return ["codex", "claudeAgent", "antigravityAgent", "cursorAgent", "grokAgent", "opencodeGo", "qwenAgent", "geminiAgent",
     "openai-compat", "grok", "minimax", "mistral"].includes(driverKind ?? "");
 }

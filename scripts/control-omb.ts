@@ -1,6 +1,8 @@
 #!/usr/bin/env -S node --experimental-strip-types
 // Thin, agent-friendly CLI over the same guarded MCP operations exposed to
 // external clients. It deliberately owns no second API client or wait loop.
+// Old names in the shell (OMB_PORT) become SAGAX_* first.
+import "../electron/legacy-env-boot.mjs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, mkdirSync, mkdtempSync, openSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -68,7 +70,7 @@ read-only:
   wait --bot ID [--task ID] [--timeout 30] [--url URL]
   wait --channel ID [--task ID] [--timeout 30] [--url URL]
 
-mutating (an explicit --url or OPENMAUSBOT_URL/OMB_PORT is required):
+mutating (an explicit --url or SAGAX_URL/SAGAX_PORT is required):
   new-bot --name NAME [--url URL]
   new-channel --name NAME --members ID,ID [--url URL]
   send --bot ID --text TEXT [--task ID] [--dry-run] [--url URL]
@@ -127,7 +129,7 @@ function positiveInteger(value: unknown, name: string, fallback: number, maximum
 function configuredUrl(raw: unknown, env: NodeJS.ProcessEnv, requiredForMutation: boolean): string | undefined {
   const explicit = typeof raw === "string" && raw.trim()
     ? raw.trim()
-    : env.OPENMAUSBOT_URL?.trim() || (env.OMB_PORT ? `http://127.0.0.1:${env.OMB_PORT}` : "");
+    : env.SAGAX_URL?.trim() || (env.SAGAX_PORT ? `http://127.0.0.1:${env.SAGAX_PORT}` : "");
   if (!explicit) {
     if (requiredForMutation) {
       throw new ControlOmbError(
@@ -353,9 +355,9 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
     TMP: fixtureTemp,
     TMPDIR: fixtureTemp,
     HERMES_HOME: join(dataDir, ".hermes"),
-    OMB_DATA_DIR: dataDir,
-    OMB_PORT: String(port),
-    OMB_WEBHOOK_PORT: String(port + 1),
+    SAGAX_DATA_DIR: dataDir,
+    SAGAX_PORT: String(port),
+    SAGAX_WEBHOOK_PORT: String(port + 1),
     // The fixture's default CLI behaviour; a caller that sets
     // FAKE_CLAUDE_MODE explicitly overrides it below to drive the CLI's
     // failure paths (exit-early, dead-session, hang...) through the real
@@ -370,7 +372,7 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
     // server also scans /opt/homebrew/bin, /usr/local/bin and the login
     // shell's PATH, so a developer's own `codex` (or any engine CLI) becomes
     // an "available" engine that CI never has (#2035).
-    OMB_TEST_SEALED_PATH: "1",
+    SAGAX_TEST_SEALED_PATH: "1",
   });
   // The fake engine's own knobs (mode, replies, tool calls) are the one thing
   // a caller may script into the child: FAKE_CLAUDE_* crosses, nothing else.
@@ -380,12 +382,15 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   }
   // A test's key for relaying an organization library into the fixture
   // (POST /api/testing/org-library); the route does not exist without it.
-  if (parentEnv.OMB_TEST_ORG_LIBRARY_KEY) childEnv.OMB_TEST_ORG_LIBRARY_KEY = parentEnv.OMB_TEST_ORG_LIBRARY_KEY;
+  if (parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY) childEnv.SAGAX_TEST_ORG_LIBRARY_KEY = parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY;
   // Voice-note e2e fault injection: arms the one-shot audio-append failure
   // prelude inside the fixture server (see fail-audio-append-once.mjs).
-  if (parentEnv.OMB_TEST_FAIL_AUDIO_APPEND_ONCE) {
-    childEnv.OMB_TEST_FAIL_AUDIO_APPEND_ONCE = parentEnv.OMB_TEST_FAIL_AUDIO_APPEND_ONCE;
+  if (parentEnv.SAGAX_TEST_FAIL_AUDIO_APPEND_ONCE) {
+    childEnv.SAGAX_TEST_FAIL_AUDIO_APPEND_ONCE = parentEnv.SAGAX_TEST_FAIL_AUDIO_APPEND_ONCE;
   }
+  // No-phone-home e2e: where the fixture logs every outbound connection
+  // (server/testing/network-audit.mjs).
+  if (parentEnv.SAGAX_TEST_NETWORK_AUDIT) childEnv.SAGAX_TEST_NETWORK_AUDIT = parentEnv.SAGAX_TEST_NETWORK_AUDIT;
   return childEnv;
 }
 
@@ -452,20 +457,23 @@ export async function launchVerificationServer(
   // Opt-in live Local VM fixture: keep the temporary home and fake engine,
   // granting only the explicitly selected machine connection and static UI.
   if (localVm) Object.assign(childEnv, {
-    OMB_EXTRA_PATH: [localVm.binDir, ...(process.platform === "win32" ? [join(childEnv.SYSTEMROOT || "C:\\Windows", "System32")] : [])].join(delimiter),
+    SAGAX_EXTRA_PATH: [localVm.binDir, ...(process.platform === "win32" ? [join(childEnv.SYSTEMROOT || "C:\\Windows", "System32")] : [])].join(delimiter),
     CONTAINER_HOST: localVm.host,
     CONTAINER_SSHKEY: localVm.sshKey,
-    OMB_STATIC_DIR: localVm.staticDir,
+    SAGAX_STATIC_DIR: localVm.staticDir,
   });
-  if (enterprise) Object.assign(childEnv, { OMB_ENTERPRISE_DIR: enterprise.dir, OMB_LICENSE_KEY: enterprise.licenseKey });
+  if (enterprise) Object.assign(childEnv, { SAGAX_ENTERPRISE_DIR: enterprise.dir, SAGAX_LICENSE_KEY: enterprise.licenseKey });
   if (browser) Object.assign(childEnv, {
-    OMB_AGENT_BROWSER_PATH: browser.binaryPath,
+    SAGAX_AGENT_BROWSER_PATH: browser.binaryPath,
     AGENT_BROWSER_EXECUTABLE_PATH: browser.executablePath,
   });
-  if (boatFixtureApi) childEnv.OMB_BOX_API = boatFixtureApi;
+  if (boatFixtureApi) childEnv.SAGAX_BOX_API = boatFixtureApi;
   const serverArgs = ["--experimental-strip-types"];
-  if (childEnv.OMB_TEST_FAIL_AUDIO_APPEND_ONCE === "1") {
+  if (childEnv.SAGAX_TEST_FAIL_AUDIO_APPEND_ONCE === "1") {
     serverArgs.push("--import", pathToFileURL(join(ROOT, "server", "testing", "fail-audio-append-once.mjs")).href);
+  }
+  if (childEnv.SAGAX_TEST_NETWORK_AUDIT) {
+    serverArgs.push("--import", pathToFileURL(join(ROOT, "server", "testing", "network-audit.mjs")).href);
   }
   serverArgs.push(join(ROOT, "server", "index.ts"));
   const child = spawn(process.execPath, serverArgs, {

@@ -6,9 +6,9 @@ import { launchVerificationServer, runControlOmb } from "./control-omb.ts";
 import { mountPreview, parkUntilSignal, type MountedPreview } from "./testing/preview-fixture.ts";
 
 
-const binaryPath = process.env.OMB_VERIFY_BROWSER_BINARY;
-const executablePath = process.env.OMB_VERIFY_BROWSER_CHROME;
-if (!binaryPath || !executablePath) throw new Error("Set OMB_VERIFY_BROWSER_BINARY and OMB_VERIFY_BROWSER_CHROME to explicit installed binaries.");
+const binaryPath = process.env.SAGAX_VERIFY_BROWSER_BINARY;
+const executablePath = process.env.SAGAX_VERIFY_BROWSER_CHROME;
+if (!binaryPath || !executablePath) throw new Error("Set SAGAX_VERIFY_BROWSER_BINARY and SAGAX_VERIFY_BROWSER_CHROME to explicit installed binaries.");
 const fixture = await launchVerificationServer(process.env, undefined, undefined, { binaryPath, executablePath });
 let ui: MountedPreview | undefined;
 try {

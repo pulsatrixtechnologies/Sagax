@@ -2,6 +2,7 @@
 // it dispatches typed commands over HTTP and folds the one SSE event
 // stream from the harness server into local state. The reducer stays
 // pure; everything async lives in the wrapped dispatch + SSE fold.
+import { withPrimaryBot } from "@/lib/primary-bot";
 import {
   createContext,
   useCallback,
@@ -461,8 +462,9 @@ export interface Bot {
   /** the one message pinned to the top of this bot's active thread */
   pinnedMessageId?: string;
   /** This sidebar section's primary coordinator. */
+  /** The owner's Primary Bot (one per person), under its former wire name. */
   chiefOfStaff?: boolean;
-  /** Additional teams the owner explicitly lets this Chief work with. */
+  /** Additional teams the owner explicitly lets this Primary Bot work with. */
   managedSections?: string[];
   /** When this bot wants to talk to another bot (ask_bot/delegate_bot),
    * pause and ask the user first. Off by default. */
@@ -493,6 +495,9 @@ export interface Bot {
   visibility?: BotVisibility;
   /** Lowercased user id of the person who created this bot. */
   ownerUserId?: string;
+  /** Who confirmed the Full access warning for this bot, once
+   * (server/org-full-access.ts). */
+  fullAccessConsent?: { principalId: string; at: number };
   directGrants?: string[];
   /** Slice 4: grants with levels (user: or team: targets). */
   grants?: { target: string; level: "use" | "run" | "edit" | "manage"; by: string; at: number }[];
@@ -540,6 +545,9 @@ export function currentTaskBot(bot: Bot, threadId = bot.threadId): Bot {
 
 export type TaskUpdatePatch = Partial<Pick<Task, "modelSelection" | "approvalMode" | "autoApprove" | "pinnedMessageId">> & {
   confirmFullAccess?: boolean;
+  /** Organization server: the owner grants Full over HTTP; the server
+   * checks the policy, the owner and the one-time confirmation. */
+  organizationFullAccess?: boolean;
   acknowledgeLocalAuto?: boolean;
   updateBotDefault?: boolean;
   resetApprovalToAsk?: boolean;
@@ -553,7 +561,7 @@ export type TaskUpdatePatch = Partial<Pick<Task, "modelSelection" | "approvalMod
 };
 
 function taskPatchFields(patch: TaskUpdatePatch): Partial<Task> {
-  const { confirmFullAccess: _fullConsent, acknowledgeLocalAuto: _localAck, updateBotDefault: _modelDefault, resetApprovalToAsk, projectId, archivedAt, snoozedUntil, surface, pinned, ...fields } = patch;
+  const { confirmFullAccess: _fullConsent, organizationFullAccess: _orgFull, acknowledgeLocalAuto: _localAck, updateBotDefault: _modelDefault, resetApprovalToAsk, projectId, archivedAt, snoozedUntil, surface, pinned, ...fields } = patch;
   return { ...fields, ...(resetApprovalToAsk ? { approvalMode: "ask", autoApprove: false, alwaysAllow: [] } : {}),
     ...(projectId === undefined ? {} : { projectId: projectId ?? undefined }),
     ...(archivedAt === undefined ? {} : { archivedAt: archivedAt ?? undefined }),
@@ -712,7 +720,7 @@ export interface ConfigStatus {
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
-  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; templates?: boolean };
+  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; templates?: boolean; connectedApps?: boolean; vpsComputer?: boolean; boatComputer?: boolean };
   /** First-run progress: whether the welcome tour was finished and which
    * one-time hints were dismissed. Server-owned so it follows the workspace. */
   onboarding?: OnboardingStatus;
@@ -1004,6 +1012,9 @@ export interface AppState {
   botSettingsSection: BotSettingsSection;
   /** True only when the open action named a section — accordion expands that row. */
   botSettingsExpandAccordion: boolean;
+  /** A Coding activity item the bot panel opens once (openBotActivity);
+   * cleared by the panel when it shows it. */
+  botActivityTarget: { botId: string; itemId: string } | null;
   /** latest live frame of a bot's computer, per botId */
   screens: Record<string, { png: string; mime: string; threadId?: string }>;
   /** bots whose cloud computer is being provisioned */
@@ -1271,6 +1282,11 @@ export type Action =
   | { type: "notice"; notice: AppState["notice"] }
   | { type: "revealThread"; threadId: string }
   | { type: "toggleSettings"; open?: boolean; section?: BotSettingsSection; botId?: string }
+  /** Open a bot's panel on Details with one Coding activity item shown
+   * (`run:<routineRunId>` or `thread:<threadId>`), e.g. from the owner's
+   * notification of a routine run refused in another person's thread. */
+  | { type: "openBotActivity"; botId: string; itemId: string }
+  | { type: "botActivityOpened" }
   | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp" }
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "toggleComputer"; open?: boolean }
@@ -1337,6 +1353,13 @@ export function openNotificationTarget(
   target: NotificationTarget,
   state: NotificationRoutingState,
 ) {
+  // A routine run refused in another person's private thread: the owner's
+  // notification names no thread, only the run, which the bot's Coding
+  // activity shows with its access card (shared/notification.ts).
+  if (!target.threadId && target.routineRunId) {
+    dispatch({ type: "openBotActivity", botId: target.botId, itemId: `run:${target.routineRunId}` });
+    return;
+  }
   // A room's approval/question notification carries the asker bot with the
   // GROUP's thread id; asking the bot to switch to that thread would 404.
   // Open the room itself. Cross-bot routine receipts carry the executing
@@ -1767,15 +1790,9 @@ export function reducer(state: AppState, action: Action): AppState {
               ? "celebrate"
               : null;
       const animated = kind ? withMascotMotion(state, action.bot.id, kind) : state;
+      // One Primary Bot per person, not per section.
       const next = action.bot.chiefOfStaff
-        ? {
-            ...animated,
-            bots: animated.bots.map((b) =>
-              b.id === action.bot.id || (b.section?.trim() || "") !== (action.bot.section?.trim() || "")
-                ? b
-                : { ...b, chiefOfStaff: false },
-            ),
-          }
+        ? { ...animated, bots: withPrimaryBot(animated.bots, { ...before, ...action.bot } as Bot) }
         : animated;
       const switchedThread =
         typeof action.bot.threadId === "string" && action.bot.threadId !== before.threadId &&
@@ -2053,6 +2070,13 @@ export function reducer(state: AppState, action: Action): AppState {
         appSettingsOpen: open ? false : state.appSettingsOpen,
       };
     }
+    case "openBotActivity": {
+      const opened = reducer(state, { type: "toggleSettings", open: true, section: "routines", botId: action.botId });
+      if (opened === state) return state;
+      return { ...opened, botActivityTarget: { botId: action.botId, itemId: action.itemId } };
+    }
+    case "botActivityOpened":
+      return state.botActivityTarget ? { ...state, botActivityTarget: null } : state;
     case "togglePlugins": {
       const open = action.open ?? !state.pluginsOpen;
       return {
@@ -2166,21 +2190,15 @@ export function reducer(state: AppState, action: Action): AppState {
           ? withMascotMotion(state, action.botId, "customize")
           : state;
       const target = animated.bots.find((bot) => bot.id === action.botId);
-      const chiefSection = (action.patch.section ?? target?.section)?.trim() || "";
-      const next = action.patch.chiefOfStaff
-        ? {
-            ...animated,
-            bots: animated.bots.map((b) =>
-              b.id === action.botId || (b.section?.trim() || "") !== chiefSection
-                ? b
-                : { ...b, chiefOfStaff: false },
-            ),
-          }
+      // One Primary Bot per person, not per section.
+      const next = action.patch.chiefOfStaff && target
+        ? { ...animated, bots: withPrimaryBot(animated.bots, target) }
         : animated;
       const {
         acknowledgeLocalAuto: _localAck,
         confirmFullAccess: _fullConfirmation,
         applyToAllThreads: _allThreads,
+        organizationFullAccess: _orgFull,
         computer,
         connectorTools,
         ...rest
@@ -2472,6 +2490,7 @@ export const initialState: AppState = {
   tourOpen: false,
   botSettingsSection: "overview",
   botSettingsExpandAccordion: false,
+  botActivityTarget: null,
   screens: {},
   provisioning: {},
   deletingBots: {},
@@ -2565,8 +2584,15 @@ export async function persistTaskApproval(
   bridge: TrustedApprovalBridge | undefined,
   request: (path: string, init?: RequestInit) => Promise<{ bot: BotAnnouncement }> = api,
 ): Promise<BotAnnouncement> {
-  const { approvalMode, autoApprove, confirmFullAccess, acknowledgeLocalAuto, ...ordinary } = patch;
+  const { approvalMode, autoApprove, confirmFullAccess, organizationFullAccess, acknowledgeLocalAuto, ...ordinary } = patch;
   const mode = approvalMode ?? (autoApprove === undefined ? undefined : autoApprove ? "auto" : "ask");
+  if (mode === "full" && organizationFullAccess === true) {
+    // Organization server: no desktop channel; the server decides (policy,
+    // owner, the one-time confirmation it remembers for the bot).
+    const result = await request(`/api/bots/${botId}/tasks/${threadId}`, { method: "PATCH",
+      body: JSON.stringify({ ...ordinary, approvalMode: "full", ...(confirmFullAccess === true ? { confirmFullAccess: true } : {}) }) });
+    return result.bot;
+  }
   if (mode === "full" && confirmFullAccess !== true) throw new Error("Confirm Full access for this thread first");
   if ((mode === "full" || mode === "custom") && !bridge) throw new Error("This approval change requires the packaged desktop app");
   if (mode && bridge) {
@@ -2595,8 +2621,19 @@ export async function persistBotUpdate(
     approvalMode,
     confirmFullAccess,
     applyToAllThreads,
+    organizationFullAccess,
     ...ordinaryPatch
   } = patch;
+  if (approvalMode === "full" && organizationFullAccess === true) {
+    // Organization server: ordinary fields first, then the Full grant alone
+    // (the server refuses anything riding along with it).
+    if (Object.keys(ordinaryPatch).length) {
+      await request(`/api/bots/${botId}`, { method: "PATCH", body: JSON.stringify(ordinaryPatch), signal });
+    }
+    const result = await request(`/api/bots/${botId}`, { method: "PATCH", signal,
+      body: JSON.stringify({ approvalMode: "full", ...(confirmFullAccess === true ? { confirmFullAccess: true } : {}) }) });
+    return result.bot;
+  }
   const trustedMode = approvalMode === "full" || approvalMode === "custom"
     ? approvalMode
     : null;

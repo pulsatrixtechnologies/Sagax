@@ -123,6 +123,35 @@ describe("bot activity API", () => {
     expect((await get(base, "/api/bots/pepper/activity/item?runId=run-1", "bob")).status).toBe(404);
   });
 
+  it("gives a failed run's access card to its audience only, with or without the thread", async () => {
+    const failed = [
+      { id: "run-2", routineId: "r2", routineName: "Bob's check", botId: "pepper", status: "failed", target: "bot", runOn: "auto", scheduledFor: NOW - 4_000, startedAt: NOW - 4_000, finishedAt: NOW - 3_000, manual: true, createdAt: NOW - 4_000, threadId: "t-bob", error: "no credentials" },
+    ] as unknown as RoutineRun[];
+    const card = { reason: "no_access", engine: "Claude", botId: "pepper", ownerPrincipalId: "alice", payer: "owner", payerPrincipalId: "alice", routine: true, cause: "no_credentials" } as const;
+    const asked: Array<string | undefined> = [];
+    const base = await serve(deps({
+      runs: () => [...runs, ...failed],
+      // the bot's owner and bob (the person it runs as) see the run
+      runSeen: (_run, viewerId) => !viewerId || viewerId === "alice" || viewerId === "bob",
+      runAccessCard: (run, viewerId) => { asked.push(viewerId); return run.id === "run-2" && viewerId === "alice" ? card : undefined; },
+    }));
+    // alice owns the bot: bob's thread stays his, the card is hers
+    const owner = await get(base, "/api/bots/pepper/activity/item?runId=run-2", "alice");
+    expect(owner.status).toBe(200);
+    expect(owner.body.item).toMatchObject({ id: "run:run-2", status: "failed", steps: [], note: "no credentials", access: card });
+    expect(owner.body.item).not.toHaveProperty("threadId");
+    expect(JSON.stringify(owner.body)).not.toContain("secret plan");
+    // bob reads his own thread there, without her card
+    const runAs = await get(base, "/api/bots/pepper/activity/item?runId=run-2", "bob");
+    expect(runAs.body.item).toMatchObject({ threadId: "t-bob" });
+    expect(runAs.body.item).not.toHaveProperty("access");
+    expect(asked).toEqual(["alice", "bob"]);
+    // a completed run never asks for a card
+    asked.length = 0;
+    await get(base, "/api/bots/pepper/activity/item?runId=run-1", "alice");
+    expect(asked).toEqual([]);
+  });
+
   it("opens the detail of one's own thread: steps with where they ran, files, payer, sub-agents", async () => {
     const base = await serve();
     const { status, body } = await get(base, "/api/bots/pepper/activity/item?threadId=t-alice", "alice");

@@ -210,3 +210,71 @@ export function resolveTypedCommand(message: string, commands: readonly HarnessC
   const engineText = typed.args ? `/${name} ${typed.args}` : `/${name}`;
   return { kind: "engine", command, args: typed.args, engineText };
 }
+
+// ── a group's command ────────────────────────────────────────────────────
+// In a group, an engine command is for ONE bot: the bot the message starts
+// by mentioning (`@Scout /compact keep the plan`), else the group's lead when
+// it answers alone. A room that answers with everyone, Auto or mentions only
+// names no bot, so its "/" menu inserts the mention itself.
+
+export interface GroupCommandMember {
+  id: string;
+  name: string;
+  hidden?: boolean;
+}
+
+/** The group's default responder, as both the server and the client keep it. */
+export interface GroupCommandResponder {
+  kind: string;
+  botId?: string;
+}
+
+/** A leading `@Name` (the longest active member name, case-insensitive, not
+ * the start of a longer word) and where the rest of the message starts. */
+export function leadingMention<T extends GroupCommandMember>(text: string, members: readonly T[]): { member: T; rest: number } | null {
+  const start = text.length - text.trimStart().length;
+  if (text[start] !== "@") return null;
+  const lower = text.slice(start + 1).toLowerCase();
+  const member = members
+    .filter((candidate) => !candidate.hidden && candidate.name.trim())
+    .sort((a, b) => b.name.length - a.name.length)
+    .find((candidate) => {
+      const name = candidate.name.toLowerCase();
+      return lower.startsWith(name) && !/^[\p{L}\p{N}\p{M}_]/u.test(lower.slice(name.length));
+    });
+  if (!member) return null;
+  let rest = start + 1 + member.name.length;
+  while (rest < text.length && /\s/u.test(text[rest] ?? "")) rest++;
+  return { member, rest };
+}
+
+export interface GroupCommandRoute {
+  /** The one bot whose engine gets the command. */
+  botId: string;
+  /** The message without its leading mention: `/name args`. */
+  commandText: string;
+  /** The bot was named by a leading mention (else it is the group's lead). */
+  mentioned: boolean;
+}
+
+/** The bot a group message's engine command goes to, or null when the
+ * message is not one (an ordinary line, a Sagax command, or a room that
+ * names no single bot). The command itself is checked against that bot's
+ * engine list later, by the turn. */
+export function groupCommandTarget<T extends GroupCommandMember>(
+  text: string,
+  members: readonly T[],
+  defaultResponder: GroupCommandResponder,
+): GroupCommandRoute | null {
+  const available = members.filter((member) => !member.hidden);
+  const mention = leadingMention(text, available);
+  const commandText = (mention ? text.slice(mention.rest) : text).trim();
+  if (mention && mention.rest === text.trimEnd().length) return null;
+  if (mention && !/\s/u.test(text[mention.rest - 1] ?? "")) return null;
+  const typed = parseTypedCommand(commandText);
+  if (!typed || isSagaxCommandName(typed.name)) return null;
+  if (mention) return { botId: mention.member.id, commandText, mentioned: true };
+  if (defaultResponder.kind !== "member" || !defaultResponder.botId) return null;
+  const lead = available.find((member) => member.id === defaultResponder.botId);
+  return lead ? { botId: lead.id, commandText, mentioned: false } : null;
+}

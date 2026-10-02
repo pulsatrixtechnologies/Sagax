@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, FilePen, Hand, ListChecks, Settings, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Check, FilePen, Hand, ListChecks, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
 
 import { approvalModeFor, hasNativeAutoReview, supportsApprovalMode, type ApprovalMode } from "../../shared/approval-mode";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
+import type { OrgFullAccess } from "@/lib/full-access";
 
 /** Keys, not labels — these are the words the held notes quote back to the
  * reader ("… so Approve for me stopped to ask"), and a label resolved in this
@@ -20,7 +21,8 @@ const APPROVAL_MODE_KEYS: ReadonlyArray<{
   { mode: "ask", labelKey: "approvalMode.ask.label", chipKey: "approvalMode.ask.chip", descriptionKey: "approvalMode.ask.desc", Icon: Hand },
   { mode: "edits", labelKey: "approvalMode.edits.label", chipKey: "approvalMode.edits.chip", descriptionKey: "approvalMode.edits.desc", Icon: FilePen },
   { mode: "auto", labelKey: "approvalMode.auto.label", chipKey: "approvalMode.auto.chip", descriptionKey: "approvalMode.auto.desc", Icon: ShieldCheck },
-  { mode: "full", labelKey: "approvalMode.full.label", chipKey: "approvalMode.full.chip", descriptionKey: "approvalMode.full.desc", Icon: ShieldAlert },
+  // A warning sign, unlike the shields of the other levels: Full asks nothing.
+  { mode: "full", labelKey: "approvalMode.full.label", chipKey: "approvalMode.full.chip", descriptionKey: "approvalMode.full.desc", Icon: TriangleAlert },
   { mode: "custom", labelKey: "approvalMode.custom.label", chipKey: "approvalMode.custom.chip", descriptionKey: "approvalMode.custom.desc", Icon: Settings },
 ];
 
@@ -44,13 +46,16 @@ export function approvalModeOptions(): ApprovalModeOption[] {
   }));
 }
 
-export function approvalModeOptionsFor(driverKind: string, trustedModesAvailable = true) {
+export function approvalModeOptionsFor(driverKind: string, trustedModesAvailable = true, orgFullAccess?: OrgFullAccess) {
   return approvalModeOptions()
     .filter((option) => supportsApprovalMode(driverKind, option.mode)
       // Antigravity has no native reviewer. Offer its explicit full-access
       // grant as Auto instead of a second choice that actually behaves as Ask.
       && (driverKind !== "antigravityAgent" || option.mode !== "auto")
-      && (trustedModesAvailable || option.mode === "ask" || option.mode === "edits" || option.mode === "auto"))
+      && (trustedModesAvailable || option.mode === "ask" || option.mode === "edits" || option.mode === "auto" ||
+        // Organization server: the bot's owner sees Full (greyed when the
+        // organization turned it off); Custom stays desktop only.
+        (option.mode === "full" && orgFullAccess !== undefined && orgFullAccess !== "hidden")))
     .map((option) => {
       if (driverKind === "antigravityAgent" && option.mode === "full") {
         return {
@@ -92,6 +97,7 @@ export function ApprovalModeSelector({
   wide = false,
   disabled = false,
   trustedModesAvailable = true,
+  orgFullAccess,
   onManageCommandAllowlist,
 }: {
   approvalMode?: ApprovalMode;
@@ -105,6 +111,8 @@ export function ApprovalModeSelector({
   disabled?: boolean;
   trustedModesAvailable?: boolean;
   trustedModesNotice?: string;
+  /** Organization server only (src/lib/full-access.ts). */
+  orgFullAccess?: OrgFullAccess;
   onManageCommandAllowlist?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -119,7 +127,7 @@ export function ApprovalModeSelector({
   const current = approvalModeOptionsFor(driverKind).find((option) => option.mode === mode)
     ?? allOptions.find((option) => option.mode === mode)
     ?? allOptions[0];
-  const visibleOptions = approvalModeOptionsFor(driverKind, trustedModesAvailable);
+  const visibleOptions = approvalModeOptionsFor(driverKind, trustedModesAvailable, orgFullAccess);
   const requiresLocalDesktop = approvalModeSelectionRequiresLocalDesktop(
     mode,
     trustedModesAvailable,
@@ -180,11 +188,11 @@ export function ApprovalModeSelector({
       >
         {wide ? (
           <span className="flex min-w-0 items-center gap-2">
-            <CurrentIcon size={14} className="shrink-0 opacity-70" />
+            <CurrentIcon size={14} className={cn("shrink-0", mode === "full" ? "text-danger" : "opacity-70")} />
             <span className="truncate">{current.label}</span>
           </span>
         ) : (
-          <CurrentIcon size={16} className="shrink-0 opacity-80" />
+          <CurrentIcon size={16} className={cn("shrink-0", mode === "full" ? "text-danger" : "opacity-80")} />
         )}
         {wide && <span aria-hidden className="text-[11px] text-ink-secondary">⌄</span>}
       </button>
@@ -207,27 +215,31 @@ export function ApprovalModeSelector({
           {visibleOptions.map((option) => {
             const selected = option.mode === mode;
             const Icon = option.Icon;
+            // The organization turned Full off: shown, greyed, with why.
+            const orgOff = option.mode === "full" && orgFullAccess === "disabled";
+            const optionDisabled = modesDisabled || orgOff;
             return (
               <Fragment key={option.mode}>
                 <button
                   type="button"
                   role="menuitemradio"
                   aria-checked={selected}
-                  disabled={modesDisabled}
+                  disabled={optionDisabled}
+                  data-approval-mode={option.mode}
                   title={
-                    disabled ? t("approvalMode.busy") : requiresLocalDesktop ? t("approvalMode.customLocalOnly") : undefined
+                    disabled ? t("approvalMode.busy") : requiresLocalDesktop ? t("approvalMode.customLocalOnly") : orgOff ? t("approvalMode.full.orgDisabled") : undefined
                   }
                   onClick={() => {
-                    if (modesDisabled) return;
+                    if (optionDisabled) return;
                     onSelect(option.mode);
                     setOpen(false);
                   }}
                   className={cn(
                     "flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover",
-                    modesDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
+                    optionDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
                   )}
                 >
-                  <Icon size={16} className="mt-px shrink-0 text-ink" />
+                  <Icon size={16} className={cn("mt-px shrink-0", option.mode === "full" ? "text-danger" : "text-ink")} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex items-center justify-between gap-3 text-[13px] leading-[18px] text-ink">
                       {option.label}
@@ -236,6 +248,11 @@ export function ApprovalModeSelector({
                     <span className="text-[12px] leading-4 text-ink-tertiary">
                       {option.description}
                     </span>
+                    {orgOff && (
+                      <span className="mt-0.5 text-[12px] leading-4 text-warning" data-full-access-org-off>
+                        {t("approvalMode.full.orgDisabled")}
+                      </span>
+                    )}
                   </span>
                 </button>
                 {option.mode === "full" && allowlistAction}

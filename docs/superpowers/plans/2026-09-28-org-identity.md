@@ -899,9 +899,9 @@ git commit -m "feat: ask for the server address when creating an organization"
 
 ## Serveur de développement
 
-Le serveur de coordination tourne dans Docker sur le Mac de l'opérateur: `docker compose up -d --build` à la racine (`compose.yaml`, projet `pulsa`, image construite depuis ce repo, jamais depuis l'image d'OpenMausBot). Il écoute sur `127.0.0.1:8080`. L'opérateur gère lui-même l'exposition (proxy, tunnel ou Tailscale). Les tests de bout en bout de la Task 6 n'en dépendent pas: ils démarrent le harness directement sur un `DATA_DIR` temporaire.
+Le serveur de coordination tourne dans Docker sur le Mac de l'opérateur: `docker compose up -d --build` à la racine (`compose.yaml`, projet `pulsa`, image construite depuis ce repo, jamais depuis l'image d'Sagax). Il écoute sur `127.0.0.1:8080`. L'opérateur gère lui-même l'exposition (proxy, tunnel ou Tailscale). Les tests de bout en bout de la Task 6 n'en dépendent pas: ils démarrent le harness directement sur un `DATA_DIR` temporaire.
 
 ## Hors tranche (noté pour la suite)
 
-- Déployer le control plane du fork et changer l'adresse par défaut. C'est une action Pulsatrix (compte Cloudflare). La variable `OMB_CONTROL_PLANE_URL` existe déjà et suffit pour pointer un serveur vers le nouveau control plane.
+- Déployer le control plane du fork et changer l'adresse par défaut. C'est une action Pulsatrix (compte Cloudflare). La variable `SAGAX_CONTROL_PLANE_URL` existe déjà et suffit pour pointer un serveur vers le nouveau control plane.
 - Séparer le rôle d'organisation du scope `admin` du serveur: tranche 2.

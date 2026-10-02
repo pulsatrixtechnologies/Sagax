@@ -15,7 +15,7 @@ import { claudeDisallowedTools } from "../server/drivers/host-tools.ts";
 
 const HOST_ACTING = ["Bash", "BashOutput", "KillShell", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "LS", "WebFetch", "EnterWorktree", "ExitWorktree", "Workflow"];
 
-/** GOX's standing allow rules (OMB_CLAUDE_ALLOW): an allow never beats the
+/** GOX's standing allow rules (SAGAX_CLAUDE_ALLOW): an allow never beats the
  * organization deny. */
 const GOX_ALLOW = [
   "Bash(claude plugin marketplace add pulsatrixtechnologies/marketplace)",
@@ -65,6 +65,6 @@ check("control: a solo turn has Bash", solo.includes("Bash"));
 const leaked = HOST_ACTING.filter((tool) => org.includes(tool));
 check("organization turn: no shell, file or fetch tool on the Sagax server", leaked.length === 0, leaked.join(",") || `${org.length} tools left`);
 check("organization turn: a Bash call cannot be made (tool absent)", !org.includes("Bash"));
-check("organization turn with GOX's OMB_CLAUDE_ALLOW rules: Bash still absent (deny wins)", !orgWithAllow.includes("Bash"));
+check("organization turn with GOX's SAGAX_CLAUDE_ALLOW rules: Bash still absent (deny wins)", !orgWithAllow.includes("Bash"));
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");
 process.exit(failed ? 1 : 0);

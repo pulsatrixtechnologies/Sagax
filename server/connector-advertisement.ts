@@ -14,12 +14,12 @@ import { CONNECTOR_SLUG_PATTERN, CONNECTOR_TOOL_NAME_PATTERN, type ConnectorTool
 import { serviceSlugFor, serviceSlugForCandidates } from "./connector-verdict.ts";
 
 /** The env var mcpIntegration sets and connector-proxy.ts reads. */
-export const CONNECTOR_ALLOWED_TOOLS_ENV = "OMB_CONNECTOR_ALLOWED_TOOLS";
+export const CONNECTOR_ALLOWED_TOOLS_ENV = "SAGAX_CONNECTOR_ALLOWED_TOOLS";
 
 /** The env var carrying the connected-service slugs the filter resolves
  * tool-name prefixes against. Without it the filter falls back to the
  * plain first-segment split, exactly as when the catalog is unreachable. */
-export const CONNECTOR_SERVICE_SLUGS_ENV = "OMB_CONNECTOR_SERVICE_SLUGS";
+export const CONNECTOR_SERVICE_SLUGS_ENV = "SAGAX_CONNECTOR_SERVICE_SLUGS";
 
 /** Upper bound for the serialized allowlist. Past it the env var is
  * omitted entirely (mounting must never depend on catalog size) and the

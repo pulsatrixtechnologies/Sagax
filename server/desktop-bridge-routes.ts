@@ -5,6 +5,9 @@
 //   POST /api/desktop-bridge/<id>/poll|lease|progress|result|disconnect
 //   GET  /api/desktop-bridge/<id>/tunnel   (WebSocket) network egress
 //   GET  /api/me/desktop-bridge            the person's own status + activity
+//   POST /api/desktop-bridge/<id>/system   coarse OS, CPU, memory, disk facts
+//   POST /api/me/desktop-bridge/local-vm   the person's own Local VM through
+//                                          their desktop: { action: status|start }
 //
 // Every call is the session's own person: the person is read from the
 // session, never from the body, and a private secret (x-sagax-bridge-secret,
@@ -15,11 +18,18 @@ import type { IncomingMessage, Server } from "node:http";
 import { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 
-import { desktopBridgeRegistration, type DesktopBridges } from "./desktop-bridge.ts";
+import { localVmDesktopSpec } from "./container-computer.ts";
+import { desktopBridgeRegistration, desktopSystemInfo, type DesktopBridgeOperation, type DesktopBridges } from "./desktop-bridge.ts";
 import type { DesktopTunnels } from "./desktop-egress.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 
-const ID_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/(poll|lease|progress|result|disconnect)$/;
+const ID_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/(poll|lease|progress|result|disconnect|system)$/;
+const LOCAL_VM_ROUTE = "/api/me/desktop-bridge/local-vm";
+/** What the person's Computer tab may ask of their own Local VM. */
+const LOCAL_VM_ACTIONS: Record<string, DesktopBridgeOperation["action"]> = {
+  status: "vm_status", start: "vm_start", stop: "vm_stop", pause: "vm_pause", resume: "vm_resume",
+  setup: "vm_setup", install: "vm_install", screenshot: "vm_screenshot",
+};
 const TUNNEL_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/tunnel$/;
 
 export function isDesktopTunnelPath(path: string): boolean {
@@ -80,7 +90,7 @@ export function createDesktopBridgeRoutes(deps: {
   workplace: (person: string) => unknown;
 }): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
-    if (path !== "/api/me/desktop-bridge" && path !== "/api/desktop-bridge/connect" && !ID_ROUTE.test(path)) return PASS;
+    if (path !== "/api/me/desktop-bridge" && path !== "/api/desktop-bridge/connect" && path !== LOCAL_VM_ROUTE && !ID_ROUTE.test(path)) return PASS;
     res.setHeader("cache-control", "no-store");
     if (!deps.organization()) return json(res, 404, { error: `no route: ${method} ${path}` });
     const person = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() : undefined;
@@ -98,6 +108,25 @@ export function createDesktopBridgeRoutes(deps: {
     if (method !== "POST") return json(res, 405, { error: "method not allowed" });
     if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return json(res, 415, { error: "JSON required" });
     const body = await readBody(req, 4_000_000) as Record<string, unknown> | null;
+    if (path === LOCAL_VM_ROUTE) {
+      // The person's own Local VM on their own connected computer, asked by
+      // that person from their Computer tab (never a bot, never another's).
+      const action = typeof body?.action === "string" && Object.hasOwn(LOCAL_VM_ACTIONS, body.action) ? LOCAL_VM_ACTIONS[body.action] : undefined;
+      if (!action) return json(res, 400, { error: `action must be one of ${Object.keys(LOCAL_VM_ACTIONS).join(", ")}` });
+      const operation: DesktopBridgeOperation = action === "vm_setup"
+        // The server's own hardened recipe (one source of truth); the
+        // desktop checks it and fills in its own folder and password.
+        ? { action, arguments: { spec: localVmDesktopSpec() } }
+        : action === "vm_install"
+          ? { action, arguments: { choice: typeof body?.choice === "string" ? body.choice.slice(0, 40) : "" } }
+          : { action };
+      try {
+        return json(res, 200, { result: await deps.bridges.request(person, operation, () => true) });
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        return json(res, typeof status === "number" && status >= 400 && status < 600 ? status : 502, { error: (error as Error).message, code: (error as { code?: string }).code });
+      }
+    }
     const secret = String(req.headers["x-sagax-bridge-secret"] ?? "");
     try {
       if (path === "/api/desktop-bridge/connect") {
@@ -124,6 +153,11 @@ export function createDesktopBridgeRoutes(deps: {
       if (action === "progress") return json(res, 200, { ok: deps.bridges.progress(id!, auth.session.id, secret, String(body?.jobId), body?.message) });
       if (action === "result") deps.bridges.complete(id!, auth.session.id, secret, String(body?.jobId), body?.result);
       if (action === "disconnect") deps.bridges.disconnect(id!, auth.session.id, secret);
+      if (action === "system") {
+        const parsed = desktopSystemInfo.safeParse(body);
+        if (!parsed.success) return json(res, 400, { error: "Invalid system information" });
+        deps.bridges.setSystem(id!, auth.session.id, secret, parsed.data);
+      }
       return json(res, 200, { ok: true });
     } catch (error) {
       const status = (error as { status?: number }).status;

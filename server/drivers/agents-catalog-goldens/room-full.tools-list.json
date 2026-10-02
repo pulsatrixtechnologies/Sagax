@@ -343,7 +343,7 @@
     },
     {
       "name": "create_bot",
-      "description": "Create a specialist bot in your section. Chief of Staff only. Omit modelSelection to use the workspace default, or choose exact IDs from list_team_setup. Connected apps and automatic approvals start disabled. Assign work through delegate_bot. Maximum four new bots per turn.",
+      "description": "Create a specialist bot in your section. Primary Bot only. Omit modelSelection to use the workspace default, or choose exact IDs from list_team_setup. Connected apps and automatic approvals start disabled. Assign work through delegate_bot. Maximum four new bots per turn.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -396,7 +396,7 @@
     },
     {
       "name": "list_team_setup",
-      "description": "Chief of Staff only: list authorized teams, teammate IDs, and exact engine/model choices for team setup. Call before proposing configuration; never invent model IDs. Existing thread models are independent of bot defaults.",
+      "description": "Primary Bot only: list authorized teams, teammate IDs, and exact engine/model choices for team setup. Call before proposing configuration; never invent model IDs. Existing thread models are independent of bot defaults.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -411,7 +411,7 @@
     },
     {
       "name": "propose_team_setup",
-      "description": "Chief of Staff only: submit all requested specialist creation, profile/model configuration, Chief assignments, and authorized team moves in ONE combined plan. Use exact catalog engine/model IDs from list_team_setup. Combine all fields for each bot; use the same create key or botId to coalesce repeated entries. New teams must be named explicitly in newTeams and have a specialist in this plan; access is granted only to those new teams. Existing unauthorized teams cannot be included. Models change bot defaults for groups/new threads; existing threads and execution permissions stay unchanged. If review is pending, the decision and structured result automatically resume you once; do not ask again, poll, or repeat the proposal. Read the result: granted Full Access may apply the change immediately. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success from the permission mode alone; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
+      "description": "Primary Bot only: submit all requested specialist creation, profile/model configuration, and authorized team moves in ONE combined plan. Use exact catalog engine/model IDs from list_team_setup. Combine all fields for each bot; use the same create key or botId to coalesce repeated entries. New teams must be named explicitly in newTeams and have a specialist in this plan; access is granted only to those new teams. Existing unauthorized teams cannot be included. Models change bot defaults for groups/new threads; existing threads and execution permissions stay unchanged. If review is pending, the decision and structured result automatically resume you once; do not ask again, poll, or repeat the proposal. Read the result: granted Full Access may apply the change immediately. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success from the permission mode alone; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -467,7 +467,7 @@
                     },
                     "chiefOfStaff": {
                       "type": "boolean",
-                      "description": "Appoint or remove this team's Chief. At most one Chief per team: explicitly demote the current Chief in the same plan when replacing them. Does not grant access to other teams or change execution permissions."
+                      "description": "Hand the Primary Bot role to this bot, or remove it. One Primary Bot per person: explicitly step the current Primary Bot down in the same plan when replacing it. Does not grant access to other teams or change execution permissions."
                     },
                     "description": {
                       "type": "string",
@@ -527,7 +527,7 @@
     },
     {
       "name": "propose_bot_deletion",
-      "description": "Chief of Staff only: when the user explicitly asks to delete a named teammate, submit a separate deletion request for that exact bot. Deletion removes its conversations, memory, instructions, skills, and any computer owned only by it; generated project files and shared team computers remain. Running work or an unavailable computer provider can block deletion safely. Never delete yourself, substitute an archive, or put deletion into a setup batch. If review is pending, the decision and result resume you once. Read the result: granted Full Access may apply the change immediately. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success from the permission mode alone; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
+      "description": "Primary Bot only: when the user explicitly asks to delete a named teammate, submit a separate deletion request for that exact bot. Deletion removes its conversations, memory, instructions, skills, and any computer owned only by it; generated project files and shared team computers remain. Running work or an unavailable computer provider can block deletion safely. Never delete yourself, substitute an archive, or put deletion into a setup batch. If review is pending, the decision and result resume you once. Read the result: granted Full Access may apply the change immediately. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success from the permission mode alone; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -550,7 +550,7 @@
     },
     {
       "name": "create_room",
-      "description": "Create a room in your own section when the user asks for one (maximum four per turn). Chiefs only. Choose active peers from list_bots; you are included automatically as the default responder. This creates no turns or messages. Section moves stay with the user. Follow the tool result under the effective access level; if permission is refused, ask the user to make the room change instead, without trying another route.",
+      "description": "Create a room in your own section when the user asks for one (maximum four per turn). Primary Bots only. Choose active peers from list_bots; you are included automatically as the default responder. This creates no turns or messages. Section moves stay with the user. Follow the tool result under the effective access level; if permission is refused, ask the user to make the room change instead, without trying another route.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -584,7 +584,7 @@
     },
     {
       "name": "manage_room",
-      "description": "Manage a room from list_rooms: rename it, change its bulletin, or add/remove/set members. Chiefs only, within your own section and allowed peers; keep yourself as a member. Busy rooms, pending approvals and team-goal leads are protected. You cannot move rooms or bots between sections. Follow the tool result under the effective access level; if the change is refused, report the blocker and ask the user to make the change instead, without trying another route.",
+      "description": "Manage a room from list_rooms: rename it, change its bulletin, or add/remove/set members. Primary Bots only, within your own section and allowed peers; keep yourself as a member. Busy rooms, pending approvals and team-goal leads are protected. You cannot move rooms or bots between sections. Follow the tool result under the effective access level; if the change is refused, report the blocker and ask the user to make the change instead, without trying another route.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -715,7 +715,7 @@
     },
     {
       "name": "retry_thread",
-      "description": "Chief of Staff only. Resume a teammate's thread whose last run failed, stalled or could not start — the one an incident report named — exactly where it stopped, keeping its conversation and files. The teammate gets a line saying you asked for the retry and why. Use it when the cause looks transient (a crash, a timeout, a busy service). Use delegate_bot with a corrected brief instead when the request itself needs to change, and tell the person instead when only they can fix the cause (a sign-in, a missing credential, an unanswered question). Never retry the same thread more than twice.",
+      "description": "Primary Bot only. Resume a teammate's thread whose last run failed, stalled or could not start — the one an incident report named — exactly where it stopped, keeping its conversation and files. The teammate gets a line saying you asked for the retry and why. Use it when the cause looks transient (a crash, a timeout, a busy service). Use delegate_bot with a corrected brief instead when the request itself needs to change, and tell the person instead when only they can fix the cause (a sign-in, a missing credential, an unanswered question). Never retry the same thread more than twice.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1167,7 +1167,7 @@
     },
     {
       "name": "propose_profile",
-      "description": "Submit user-requested changes to your own name, title, description, standing instructions (SOUL.md), working folder (cwd), or your alert and voice toggles (notifications, speakReplies). Keep SOUL.md short — who you are and the rules you never break; put step-by-step procedure into a skill instead. A Chief of Staff may pass for_bot_id (from list_bots) for a requested change to another bot in its section. Read the result: granted Full Access may apply the change immediately. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success from the permission mode alone; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
+      "description": "Submit user-requested changes to your own name, title, description, standing instructions (SOUL.md), working folder (cwd), or your alert and voice toggles (notifications, speakReplies). Keep SOUL.md short — who you are and the rules you never break; put step-by-step procedure into a skill instead. A Primary Bot may pass for_bot_id (from list_bots) for a requested change to another bot in its section. Read the result: granted Full Access may apply the change immediately. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success from the permission mode alone; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1212,7 +1212,7 @@
           },
           "for_bot_id": {
             "type": "string",
-            "description": "Chief of Staff only: the id of another bot in your section whose profile this changes. Omit to change your own."
+            "description": "Primary Bot only: the id of another bot in your section whose profile this changes. Omit to change your own."
           }
         },
         "required": [
@@ -1222,7 +1222,7 @@
     },
     {
       "name": "propose_model",
-      "description": "Submit a user-requested switch of this bot's default engine and model. Use the exact instance and model ids the person named, or for a Chief the ids from the team-setup catalog. The card warns about capabilities the switch gains or loses; existing threads keep their current models. Read the result: granted Full Access may apply the change immediately. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success from the permission mode alone; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
+      "description": "Submit a user-requested switch of this bot's default engine and model. Use the exact instance and model ids the person named, or for a Primary Bot the ids from the team-setup catalog. The card warns about capabilities the switch gains or loses; existing threads keep their current models. Read the result: granted Full Access may apply the change immediately. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success from the permission mode alone; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1264,7 +1264,7 @@
           },
           "for_bot_id": {
             "type": "string",
-            "description": "Chief of Staff only: the id of another bot in your section whose default model this changes. Omit to change your own."
+            "description": "Primary Bot only: the id of another bot in your section whose default model this changes. Omit to change your own."
           }
         },
         "required": [

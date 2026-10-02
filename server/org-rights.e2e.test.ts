@@ -127,17 +127,17 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
-      OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
       // the directory refreshes at boot and at every sign-in only, so each
       // path (directory, refreshed id_token) is proven on its own
-      OMB_PERSPICAX_DIRECTORY_SECONDS: "3600",
-      OMB_OIDC_REFRESH_AFTER_SECONDS: "2",
-      OMB_ANTHROPIC_API_KEY: ORG_KEY,
-      OMB_ORG_NAME: "Acme",
+      SAGAX_PERSPICAX_DIRECTORY_SECONDS: "3600",
+      SAGAX_OIDC_REFRESH_AFTER_SECONDS: "2",
+      SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
+      SAGAX_ORG_NAME: "Acme",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -169,7 +169,7 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-rights-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
@@ -179,7 +179,7 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: {
         claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: dump }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
-        codex: { driver: "codex", environment: { OMB_DEVICE_AUTH_FIXTURE: "1" }, config: { cli: FAKE_CODEX_LOGIN } },
+        codex: { driver: "codex", environment: { SAGAX_DEVICE_AUTH_FIXTURE: "1" }, config: { cli: FAKE_CODEX_LOGIN } },
       },
     }));
     await start();
@@ -276,6 +276,11 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect([403, 404]).toContain((await api("GET", `/api/threads/${x.threadId}/messages`, mia)).status);
     const listed = (await api("GET", "/api/org/bots", mia)).body.bots as Array<{ id: string; grants: Array<{ target: string }> }>;
     expect(listed.find((b) => b.id === x.id)?.grants.map((g) => g.target)).toEqual([`team:${TEAM_T}`]);
+    // the list carries the bot's public look and whether it works now, nothing more of it
+    const shownX = listed.find((b) => b.id === x.id) as unknown as { look?: Record<string, unknown>; running?: unknown };
+    expect(shownX.running).toBe(false);
+    expect(typeof shownX.look?.color).toBe("string");
+    expect(Object.keys(shownX.look ?? {}).every((key) => ["id", "name", "title", "color", "avatarUrl", "avatarCrop", "avatarZoom", "avatarFocusX", "avatarFocusY", "mascotBody", "mascotSkin", "mascotLook"].includes(key))).toBe(true);
     expect((await api("PUT", `/api/bots/${x.id}/grants`, mia, { target: `team:${TEAM_T}`, level: "run" })).status).toBe(403);
     // she never opens what she administers: no entry for herself, on a bot,
     // a section or a room that lists her team
@@ -356,7 +361,7 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     await waitFor(async () => (await api("GET", `/api/me/engines/codex/login/status?flowId=${encodeURIComponent(flowId)}`, erin)).body.auth?.phase === "succeeded", 20_000);
     const engines = (await api("GET", "/api/me/engines", erin)).body.engines as Array<{ instanceId: string; subscription: { signedIn: boolean }; myTurns: string }>;
     expect(engines.find((e) => e.instanceId === "codex")).toMatchObject({ subscription: { supported: true, signedIn: true }, myTurns: "subscription" });
-    const dir = join(home, ".openmausbot", "principals", ids.erin!, "codex");
+    const dir = join(home, ".sagax", "principals", ids.erin!, "codex");
     expect(statSync(dir).mode & 0o777).toBe(0o700);
     expect(statSync(join(dir, ".pulsabot-login.json")).mode & 0o777).toBe(0o600);
     // another person's session cannot read erin's flow, and no engine without personal sign-in

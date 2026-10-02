@@ -6,7 +6,7 @@ import { recordEvents } from "../testing/events.ts";
 afterEach(() => vi.unstubAllEnvs());
 
 it.each(["json", "http-error", "truncated", "interrupt"] as const)("settles a real loopback %s response without hanging or reporting false success", async (mode) => {
-  vi.stubEnv("OPENMAUS_OPENAI_COMPAT_IDLE_TIMEOUT_MS", "1000");
+  vi.stubEnv("SAGAX_OPENAI_COMPAT_IDLE_TIMEOUT_MS", "1000");
   let received!: () => void;
   const requestReceived = new Promise<void>((resolve) => { received = resolve; });
   const upstream = createServer((req, res) => {

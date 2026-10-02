@@ -91,7 +91,7 @@ export function readQwenModelCatalog(env: Record<string, string | undefined> = p
 }
 
 function envKeyFor(hostId: string): string {
-  return `OPENMAUSBOT_QWEN_${hostId.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY`;
+  return `SAGAX_QWEN_${hostId.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY`;
 }
 
 /** Upsert an OpenAI-compatible provider row so `qwen -m` can reach the host. */

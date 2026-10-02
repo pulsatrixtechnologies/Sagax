@@ -11,10 +11,10 @@ import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
-const forced = process.env.OMB_UI_E2E === "1";
+const forced = process.env.SAGAX_UI_E2E === "1";
 const enabled = forced || Boolean(binary);
 const launchTimeout = forced && !binary ? 600_000 : 180_000;
-if (!enabled) console.log("skipping presets UI e2e: set OMB_UI_E2E=1 to install the pinned browser");
+if (!enabled) console.log("skipping presets UI e2e: set SAGAX_UI_E2E=1 to install the pinned browser");
 const evidence = (name: string) => join(ROOT, ".omb-scratch", "verify-evidence", `presets-${name}.png`);
 
 describe("Preset bots in the real renderer", () => {

@@ -35,7 +35,7 @@ import type { OidcIdentity } from "./oidc-rp.ts";
 /** A run renews the delegation at most this often (D6). */
 export const ROUTINE_CONSENT_RENEW_MS = 600_000;
 
-/** OMB_ROUTINE_RENEW_SECONDS (tests): a whole number from 1 to 600, else
+/** SAGAX_ROUTINE_RENEW_SECONDS (tests): a whole number from 1 to 600, else
  * the default. A shorter window only renews more often. */
 export function routineRenewMs(value: string | undefined): number {
   const seconds = Number(value);

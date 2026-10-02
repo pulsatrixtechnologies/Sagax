@@ -1,7 +1,10 @@
 // The Sagax server's side of the sandbox provisioner API (server/sandboxd.ts):
 // signed requests on the internal control network. Holds no Docker access.
+import { request } from "node:http";
+import type { Duplex } from "node:stream";
+
 import { signSandboxdRequest, SANDBOXD_AUTH_HEADER } from "./sandboxd-auth.ts";
-import type { SandboxExecInput, SandboxExecOutput, SandboxStatus } from "./sandboxd-core.ts";
+import type { SandboxExecInput, SandboxExecOutput, SandboxStats, SandboxStatus } from "./sandboxd-core.ts";
 import { SANDBOX_KEY_RE } from "./user-sandbox-spec.ts";
 
 export interface SandboxdInfo {
@@ -26,8 +29,14 @@ export interface SandboxdClient {
   status(key: string): Promise<SandboxStatus>;
   ensure(key: string): Promise<SandboxStatus>;
   stop(key: string): Promise<SandboxStatus>;
+  pause(key: string): Promise<SandboxStatus>;
+  resume(key: string): Promise<SandboxStatus>;
+  stats(key: string): Promise<SandboxStats>;
   remove(key: string, options?: { keepWorkspace?: boolean }): Promise<SandboxStatus>;
   exec(key: string, input: SandboxExecInput): Promise<SandboxExecOutput>;
+  /** A byte stream to the VNC port of this sandbox's desktop (the live
+   * view). Refused when the sandbox is not running. */
+  desktopStream(key: string, options: { control: boolean }): Promise<Duplex>;
 }
 
 /** Only plain http to a host on the internal network: no credentials in the
@@ -67,7 +76,34 @@ export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: ty
     status: (sandboxKey) => call<SandboxStatus>("GET", keyPath(sandboxKey)),
     ensure: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/ensure"), {}, 180_000),
     stop: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/stop"), {}),
+    pause: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/pause"), {}),
+    resume: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/resume"), {}),
+    stats: (sandboxKey) => call<SandboxStats>("GET", keyPath(sandboxKey, "/stats"), undefined, 30_000),
     remove: (sandboxKey, options = {}) => call<SandboxStatus>("DELETE", keyPath(sandboxKey, options.keepWorkspace ? "?keepWorkspace=1" : "")),
     exec: (sandboxKey, input) => call<SandboxExecOutput>("POST", keyPath(sandboxKey, "/exec"), input, ((input.timeoutSec ?? 120) + 60) * 1000),
+    desktopStream: (sandboxKey, options) => new Promise<Duplex>((resolve, reject) => {
+      const path = keyPath(sandboxKey, `/desktop${options.control ? "?control=1" : ""}`);
+      const req = request({
+        hostname: base.hostname, port: base.port || 80, method: "POST", path, timeout: 15_000,
+        headers: { connection: "Upgrade", upgrade: "sagax-rfb", [SANDBOXD_AUTH_HEADER]: signSandboxdRequest(key(), "POST", path, "") },
+      });
+      req.on("upgrade", (_res, socket, head) => {
+        socket.setTimeout(0);
+        if (head.length) socket.unshift(head);
+        resolve(socket);
+      });
+      req.on("response", (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => { if (chunks.length < 16) chunks.push(chunk); });
+        res.on("end", () => {
+          let code = "error";
+          try { code = (JSON.parse(Buffer.concat(chunks).toString("utf8")) as { code?: string }).code ?? code; } catch { /* plain */ }
+          reject(new SandboxdRequestError(res.statusCode ?? 502, code, `the provisioner answered ${res.statusCode}`));
+        });
+      });
+      req.on("timeout", () => req.destroy(new Error("the provisioner did not answer")));
+      req.on("error", reject);
+      req.end();
+    }),
   };
 }

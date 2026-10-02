@@ -86,8 +86,8 @@ jobs:
         run: node scripts/smoke-browser-bundle.mjs --resources /opt/Pulsa Bot/resources
       - name: Launch packaged app and verify lifecycle
         env:
-          OMB_KEEP_SMOKE_DIR: "1"
-          OMB_SMOKE_INSTALLED_DEB: "1"
+          SAGAX_KEEP_SMOKE_DIR: "1"
+          SAGAX_SMOKE_INSTALLED_DEB: "1"
         run: pnpm smoke:linux-package
       - name: Remove the installed upgrade fixture
         if: always()

@@ -53,7 +53,7 @@ describe("license expiry through the running server", () => {
     expect(edition).toMatchObject({ edition: "enterprise", features: ["budgets"], expiresAt });
     expect(edition.expiresInDays).toBeGreaterThanOrEqual(11);
     expect(edition.expiresInDays).toBeLessThanOrEqual(12);
-    expect(server.log()).toContain(`OMB_LICENSE_KEY expires on ${expiresAt}`);
+    expect(server.log()).toContain(`SAGAX_LICENSE_KEY expires on ${expiresAt}`);
     expect((await server.adminConfig()).edition).toEqual({
       edition: "enterprise", features: ["budgets"], license: { expiresAt, expiresInDays: edition.expiresInDays },
     });
@@ -69,7 +69,7 @@ describe("license expiry through the running server", () => {
     const server = await boot(expiresAt);
     const edition = await server.edition();
     expect(edition).toMatchObject({ edition: "enterprise", features: ["budgets"], expiresAt, graceEndsAt: day(5) });
-    expect(edition.notice).toBe(`OMB_LICENSE_KEY expired on ${expiresAt}; enterprise features keep working until ${day(5)} while it is renewed`);
+    expect(edition.notice).toBe(`SAGAX_LICENSE_KEY expired on ${expiresAt}; enterprise features keep working until ${day(5)} while it is renewed`);
     expect(server.log()).toContain(`enterprise features keep working until ${day(5)}`);
     expect((await server.adminConfig()).edition.license).toMatchObject({ expiresAt, graceEndsAt: day(5) });
     expect((await server.memberConfig()).edition.license).toBeUndefined();
@@ -82,6 +82,6 @@ describe("license expiry through the running server", () => {
     const server = await boot(day(90));
     expect((await server.edition()).expiresInDays).toBeGreaterThan(30);
     expect((await server.adminConfig()).edition).toEqual({ edition: "enterprise", features: ["budgets"] });
-    expect(server.log()).not.toContain("OMB_LICENSE_KEY expires on");
+    expect(server.log()).not.toContain("SAGAX_LICENSE_KEY expires on");
   }, 90_000);
 });

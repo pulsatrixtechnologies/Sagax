@@ -19,10 +19,16 @@ const providers: Record<string, string> = {
 
 /** One disclosure, not a second settings dialog. Keep its children mounted so
  * closing a card does not abandon an in-progress sign-in or a CLI path draft. */
-export function EngineCard({ instance, children }: { instance: InstanceInfo; children: ReactNode }) {
-  const ready = engineReady(instance);
-  const email = instance.snapshot.authenticated === true ? instance.snapshot.account?.email : undefined;
-  const subtitle = email ?? (instance.access === "custom"
+export function EngineCard({ instance, personal, children }: {
+  instance: InstanceInfo;
+  /** On an organization server: the signed-in person's own access (who
+   * pays for their turns) instead of the server's account and readiness. */
+  personal?: { ready: boolean; line: string; turns: string };
+  children: ReactNode;
+}) {
+  const ready = personal ? personal.ready : engineReady(instance);
+  const email = !personal && instance.snapshot.authenticated === true ? instance.snapshot.account?.email : undefined;
+  const subtitle = personal?.line ?? email ?? (instance.access === "custom"
     ? t("engines.library.custom")
     : providers[instance.driverKind] ?? instance.driverKind);
   // Some CLIs return their executable name rather than a version. Do not show
@@ -37,7 +43,7 @@ export function EngineCard({ instance, children }: { instance: InstanceInfo; chi
           </span>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[15px] font-semibold tracking-[-0.015em] text-ink" title={instance.displayName}>{instance.displayName}</div>
-            <div className="mt-1 truncate text-[12px] text-ink-secondary" title={subtitle}>{subtitle}</div>
+            <div className="mt-1 truncate text-[12px] text-ink-secondary" title={subtitle} data-my-turns={personal?.turns}>{subtitle}</div>
           </div>
           <ChevronDown size={16} aria-hidden="true" className="shrink-0 text-ink-secondary transition-transform group-open/engine:rotate-180 motion-reduce:transition-none" />
         </div>
@@ -60,20 +66,22 @@ export function EngineCard({ instance, children }: { instance: InstanceInfo; chi
   );
 }
 
-export function EngineSections({ instances, renderEngine }: {
+export function EngineSections({ instances, renderEngine, isReady = engineReady }: {
   instances: InstanceInfo[];
   renderEngine: (instance: InstanceInfo) => ReactNode;
+  /** Which group a card sits in (the person's own access on an organization server). */
+  isReady?: (instance: InstanceInfo) => boolean;
 }) {
   // Flat, instance-keyed siblings keep forms and sign-in state alive when a
   // refreshed status moves a card between groups. Separate section parents
   // would remount it and discard unsaved input.
   return <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] items-start gap-3">
     {[true, false].flatMap((ready) => {
-      const rows = instances.filter((instance) => engineReady(instance) === ready);
+      const rows = instances.filter((instance) => isReady(instance) === ready);
       if (!rows.length) return [];
       const label = t(ready ? "onboarding.engines.ready" : "onboarding.engines.needsSetup");
       return [
-        <div key={`heading-${ready}`} className={cn("col-span-full flex items-center justify-between gap-3", !ready && instances.some(engineReady) && "mt-4")}>
+        <div key={`heading-${ready}`} className={cn("col-span-full flex items-center justify-between gap-3", !ready && instances.some(isReady) && "mt-4")}>
           <h2 className="text-[12px] font-semibold text-ink-secondary">{label}</h2>
           <span className="text-[11px] tabular-nums text-ink-secondary">{t(rows.length === 1 ? "engines.library.countOne" : "engines.library.count", { count: rows.length })}</span>
         </div>,

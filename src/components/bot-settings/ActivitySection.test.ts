@@ -109,6 +109,25 @@ describe("activity detail modal", () => {
     expect(html).not.toContain("Steps");
   });
 
+  it("shows the owner the access card of a run refused on her credentials, with its actions", () => {
+    const refused: BotActivityDetail = {
+      ...finished, status: "failed", steps: [], stepsTruncated: false, files: [], children: [], canStop: false,
+      access: { reason: "no_access", engine: "Claude", botId: "pepper", ownerPrincipalId: "alice", payer: "owner", payerPrincipalId: "alice", routine: true, cause: "no_credentials", subscriptionSignIn: true, keysUrl: "https://px.example.test/console/me/keys" },
+    };
+    const html = body({ item: finished, detail: refused, viewer: { principalId: "alice", admin: true }, onSignIn: () => {} });
+    expect(html).toContain("data-activity-access");
+    expect(html).toContain('data-access-card="no_access"');
+    expect(html).toContain("Your routine can&#x27;t run: you don&#x27;t have Claude access.");
+    expect(html).toContain("data-access-sign-in");
+    expect(html).toContain("Sign in with my subscription");
+    expect(html).toContain('href="https://px.example.test/console/me/keys"');
+    expect(html).toContain("Add my key in Perspicax");
+    expect(html).toContain("the organization&#x27;s key in Settings &gt; Connections");
+    expect(html).not.toContain("Open thread");
+    // a run without a card shows none
+    expect(body({ item: finished, detail: { ...refused, access: undefined } })).not.toContain("data-activity-access");
+  });
+
   it("formats durations at a glance", () => {
     expect(formatActivityDuration(45_000)).toBe("45s");
     expect(formatActivityDuration(12 * 60_000)).toBe("12m");

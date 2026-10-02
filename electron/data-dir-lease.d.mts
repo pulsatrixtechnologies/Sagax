@@ -26,3 +26,5 @@ export declare function acquireDataDirLeaseForProcess(
   dataDir: string,
   environment?: NodeJS.ProcessEnv | Record<string, string | undefined>,
 ): OwnedDataDirLease | DelegatedDataDirLease;
+
+export declare function dataDirLeaseIsActive(dataDir: string): boolean;

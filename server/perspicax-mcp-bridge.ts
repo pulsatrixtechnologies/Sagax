@@ -17,11 +17,11 @@ import readline from "node:readline";
 
 type Json = Record<string, unknown>;
 
-const HARNESS = (process.env.OMB_HARNESS_URL ?? "http://127.0.0.1:8799").replace(/\/+$/, "");
-const TOKEN = process.env.OMB_PERSPICAX_TOKEN ?? "";
-const PROFILE = process.env.OMB_PERSPICAX_PROFILE ?? "";
-const BOT_ID = process.env.OMB_BOT_ID ?? "";
-const THREAD_ID = process.env.OMB_THREAD_ID ?? "";
+const HARNESS = (process.env.SAGAX_HARNESS_URL ?? "http://127.0.0.1:8799").replace(/\/+$/, "");
+const TOKEN = process.env.SAGAX_PERSPICAX_TOKEN ?? "";
+const PROFILE = process.env.SAGAX_PERSPICAX_PROFILE ?? "";
+const BOT_ID = process.env.SAGAX_BOT_ID ?? "";
+const THREAD_ID = process.env.SAGAX_THREAD_ID ?? "";
 const RELAY_TIMEOUT_MS = 10 * 60_000 + 30_000;
 const MAX_RESPONSE_BYTES = 20 * 1024 * 1024;
 const UNAVAILABLE = "Perspicax is unavailable";

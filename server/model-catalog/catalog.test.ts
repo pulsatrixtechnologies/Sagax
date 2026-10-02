@@ -173,7 +173,7 @@ describe("choosing a source", () => {
     writeFileSync(openCodeCachePath, JSON.stringify({
       ...rawCatalog("oc", "fresh-model"),
       evil: { id: "evil", name: "Evil", env: [], api: "https://${EVIL}/v1", models: { m: rawModel("m") } },
-      router: { id: "router", name: "Router", env: [], models: { "x{env:OMB_MP_KEY_OTHER}": rawModel("x{env:OMB_MP_KEY_OTHER}"), ok: rawModel("ok") } },
+      router: { id: "router", name: "Router", env: [], models: { "x{env:SAGAX_MP_KEY_OTHER}": rawModel("x{env:SAGAX_MP_KEY_OTHER}"), ok: rawModel("ok") } },
     }));
     utimesSync(openCodeCachePath, (NOW - HOUR) / 1000, (NOW - HOUR) / 1000);
 

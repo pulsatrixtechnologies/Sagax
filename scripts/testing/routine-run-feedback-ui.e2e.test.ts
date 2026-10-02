@@ -7,7 +7,7 @@ import { waitForExit } from "../../server/testing/cleanup.ts";
 let child: ChildProcess | undefined;
 afterAll(() => waitForExit(child, { signal: "SIGINT", graceMs: 30_000 }));
 
-(process.env.OMB_UI_E2E === "1" ? it : it.skip)("Run now shows pending, its exact result, and retryable request errors", async () => {
+(process.env.SAGAX_UI_E2E === "1" ? it : it.skip)("Run now shows pending, its exact result, and retryable request errors", async () => {
   const root = fileURLToPath(new URL("../..", import.meta.url));
   let output = "";
   child = spawn(process.execPath, ["--experimental-strip-types", "scripts/control-omb.ts", "ui", "launch"], { cwd: root, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
@@ -57,5 +57,5 @@ afterAll(() => waitForExit(child, { signal: "SIGINT", graceMs: 30_000 }));
   await click("Run now");
   await expect.poll(dialog, { timeout: 30_000 }).toContain("Completed");
   expect(await dialog()).toContain("A different competing run.");
-  if (process.env.OMB_RUN_FEEDBACK_SCREENSHOT) await ui("screenshot", "--out", process.env.OMB_RUN_FEEDBACK_SCREENSHOT);
+  if (process.env.SAGAX_RUN_FEEDBACK_SCREENSHOT) await ui("screenshot", "--out", process.env.SAGAX_RUN_FEEDBACK_SCREENSHOT);
 }, 180_000);

@@ -141,7 +141,7 @@ describe("bot packages", () => {
   it("round-trips one Chief-of-Staff-readable Markdown playbook", () => {
     const markdown = renderBotPackageMarkdown(parseBotPackage(validPackage));
     expect(markdown).toContain("## Activation");
-    expect(markdown).toContain("Give this file to your Chief of Staff");
+    expect(markdown).toContain("Give this file to your Primary Bot");
     expect(markdown).not.toContain("autoApprove");
     expect(markdown).not.toContain("approvalMode");
     expect(parseBotPackage(markdown).package).toMatchObject({

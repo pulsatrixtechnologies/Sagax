@@ -9,7 +9,8 @@ import {
   ChevronRight,
 
   ClipboardCopy,
-  Crown,
+  ArrowLeftRight,
+  Star,
   EyeOff,
   Folder,
   FolderMinus,
@@ -47,6 +48,8 @@ import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useHeldMenuMotion } from "./MenuMotion";
 import { lastNonReceipt } from "@/lib/receipts";
 import { t } from "@/lib/i18n";
+import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
+import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg, type OrgSection } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
 import { PersonAvatar } from "./MessageAuthor";
@@ -112,6 +115,7 @@ import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 import { profileInitials, SidebarProfileMenu } from "./SidebarProfileMenu";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads } from "@/lib/thread-preferences";
+import { useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
@@ -841,6 +845,8 @@ export function BotContextMenu({
   onMoveToSection,
   onNewFolder,
   onRename,
+  onMakePrimary,
+  onReplacePrimary,
 }: {
   menu: MenuState | null;
   onClose: () => void;
@@ -849,6 +855,10 @@ export function BotContextMenu({
   onMoveToSection: (botId: string) => void;
   onNewFolder: (botId: string) => void;
   onRename: (botId: string) => void;
+  /** Make this bot the viewer's Primary Bot (one per person). */
+  onMakePrimary?: (bot: Bot) => void;
+  /** Open "Choose a primary Bot" to hand the role to another of their bots. */
+  onReplacePrimary?: (bot: Bot) => void;
 }) {
   const motion = useHeldMenuMotion(menu);
   const shown = motion.value;
@@ -939,6 +949,15 @@ export function BotContextMenu({
     floating ? t("floatingBots.menu.unfloat") : t("floatingBots.menu.float"),
     () => toggleFloatingBot(bot.id),
   );
+  // The Primary Bot (one per person): its own menu offers to hand the role
+  // to another of the viewer's bots; the viewer's other bots offer to take
+  // it. Someone else's bot shared with the viewer offers neither.
+  const viewerId = orgViewerId(state);
+  const primaryItem = isViewersPrimaryBot(bot, viewerId)
+    ? onReplacePrimary && item(<ArrowLeftRight size={16} className="text-ink" />, t("sidebar.bot.replacePrimary"), () => onReplacePrimary(bot))
+    : viewerOwnsBot(bot, viewerId) && !bot.hidden
+      ? onMakePrimary && item(<Star size={16} className="text-ink" />, t("sidebar.bot.makePrimary"), () => onMakePrimary(bot))
+      : null;
 
   return createPortal(
     <div
@@ -1011,6 +1030,7 @@ export function BotContextMenu({
           }}
         />,
       ]}
+      {primaryItem && <>{divider("primary")}{primaryItem}</>}
     </div>,
     document.body,
   );
@@ -1308,9 +1328,9 @@ export function BotListItem({
       : density === "compact"
         ? cn(showThreads ? "gap-1.5 py-1" : "gap-2 py-1.5", showThreads ? "pl-6 pr-9 group-hover:pr-[5.75rem] group-focus-within:pr-[5.75rem] max-md:pr-[5.75rem] touch:pr-[5.75rem]" : "pl-2 pr-9")
         : cn("min-h-[54px] gap-2 py-2", showThreads ? "pl-6 pr-9 group-hover:pr-[5.75rem] group-focus-within:pr-[5.75rem] max-md:pr-[5.75rem] touch:pr-[5.75rem]" : "pl-2 pr-9"),
-    // Chief of Staff is called out by the crown label below, not by tinting
-    // the whole row — an accent border + fill read as "selected" even when
-    // another bot was active.
+    // The Primary Bot is called out by the star on its avatar, not by
+    // tinting the whole row: an accent border and fill read as "selected"
+    // even when another bot was active.
     selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
   );
   const activityTasks = sidebarBotActivityTasks(bot, state.pendingQueued);
@@ -1323,6 +1343,10 @@ export function BotListItem({
   // quiet rows drop the last-message preview but keep a line that reports
   // something happening now; an idle bot is just its name
   const statusLine = deleting || working || waiting || teammateWait || queued;
+  // The viewer's own Primary Bot wears the orange star at the avatar's
+  // bottom-right corner; a status dot then sits at the top-right instead.
+  const primary = isViewersPrimaryBot(bot, orgViewerId(state));
+  const dotCorner = primary ? "-top-0.5" : "-bottom-0.5";
   const body = (
     <>
       {/* flex, not inline: an inline wrapper adds a baseline gap under the
@@ -1330,6 +1354,8 @@ export function BotListItem({
       <span className="relative flex shrink-0">
         <BotAvatar
           bot={bot}
+          primary={primary}
+          primaryRingClassName="ring-sidebar"
           state={stateForBot({ ...bot, messages: visible })}
           size={avatarSize}
           motion={mascotMotion?.kind ?? "none"}
@@ -1347,17 +1373,17 @@ export function BotListItem({
           <span
             data-testid="working-dot"
             className={cn(
-              "absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-success",
+              "absolute -right-0.5 rounded-full border-2 border-sidebar bg-success", dotCorner,
               iconOnly ? "size-3" : "size-2.5",
             )}
           />
         )}
         {waiting && <span data-testid="waiting-dot" role="status" aria-label={t("sidebar.preview.waiting")} title={t("sidebar.preview.waiting")}
-          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-warning", iconOnly ? "size-3" : "size-2.5")} />}
+          className={cn("absolute -right-0.5 rounded-full border-2 border-sidebar bg-warning", dotCorner, iconOnly ? "size-3" : "size-2.5")} />}
         {teammateWait && <span data-testid="teammate-wait-dot" role="status" aria-label={t("sidebar.preview.waitingOnTeammate")} title={t("sidebar.preview.waitingOnTeammate")}
-          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-accent", iconOnly ? "size-3" : "size-2.5")} />}
+          className={cn("absolute -right-0.5 rounded-full border-2 border-sidebar bg-accent", dotCorner, iconOnly ? "size-3" : "size-2.5")} />}
         {!teammateWait && !waiting && !working && queued && <span data-testid="queued-dot" role="status" aria-label={t("task.queued")} title={t("task.queued")}
-          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-sidebar-ink-secondary", iconOnly ? "size-3" : "size-2.5")} />}
+          className={cn("absolute -right-0.5 rounded-full border-2 border-sidebar bg-sidebar-ink-secondary", dotCorner, iconOnly ? "size-3" : "size-2.5")} />}
       </span>
       <div className={cn("min-w-0 flex-1", iconOnly && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
@@ -1385,11 +1411,6 @@ export function BotListItem({
             />
             {title && !renaming && !quiet && (
               <span className="max-w-[46%] shrink truncate rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1.5 text-[11px] leading-4 text-sidebar-ink-secondary">{title}</span>
-            )}
-            {bot.chiefOfStaff && !renaming && (
-              <Crown size={12} className="shrink-0 text-accent" role="img" aria-label={t("sidebar.bot.chiefOfStaff")} data-testid="chief-crown">
-                <title>{t("sidebar.bot.chiefOfStaff")}</title>
-              </Crown>
             )}
           </span>
           {selected && last && !renaming && !expanded && (
@@ -1776,6 +1797,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     if (composeOpen && COMPOSE_DISMISS.has(action.type)) onCompose?.();
   };
   const showThreads = useShowThreads();
+  const showLogo = useShowSidebarLogo();
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const { capabilities } = useDesktopCapabilities();
   const importReturnRef = useRef<HTMLButtonElement>(null);
@@ -1951,6 +1973,23 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       });
     } catch (cause) {
       setTeamFeedback({ error: true, text: cause instanceof Error ? cause.message : String(cause) });
+    }
+  };
+
+  // One Primary Bot per person: the server hands the role over from the
+  // previous one (POST /api/bots/:id/primary) and sends both bots' frames.
+  const [primaryPicker, setPrimaryPicker] = useState<{ currentId: string; pending: boolean; error: string | null } | null>(null);
+  const makePrimaryBot = async (botId: string, fromPicker = false) => {
+    if (fromPicker) setPrimaryPicker((open) => (open ? { ...open, pending: true, error: null } : open));
+    try {
+      const response = await api<{ bot: Bot }>(`/api/bots/${botId}/primary`, { method: "POST" });
+      dispatch({ type: "botPatched", bot: response.bot });
+      setPrimaryPicker(null);
+      setTeamFeedback({ error: false, text: t("primaryBot.made", { name: response.bot.name }) });
+    } catch (cause) {
+      const text = cause instanceof Error ? cause.message : String(cause);
+      if (fromPicker) setPrimaryPicker((open) => (open ? { ...open, pending: false, error: text } : open));
+      else setTeamFeedback({ error: true, text });
     }
   };
 
@@ -2234,11 +2273,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         ) : (
           <>
             <div className={cn("flex h-11 items-center justify-between gap-2 pl-4 pr-3", !(macInset || browser) && "mt-2")}>
-              <span className="flex min-w-0 items-center gap-2 text-sidebar-ink" data-sidebar-brand>
-                <PulsatrixMark size={22} />
-                <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
-              </span>
-              <span className="flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
+              {showLogo && (
+                <span className="flex min-w-0 items-center gap-2 text-sidebar-ink" data-sidebar-brand>
+                  <PulsatrixMark size={22} />
+                  <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
+                </span>
+              )}
+              <span className="ml-auto flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
                 <button
                   type="button"
                   data-sidebar-search
@@ -2490,7 +2531,19 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           }}
           onNewFolder={setNewFolderBotId}
           onRename={(botId) => setRenameBotId(botId)}
+          onMakePrimary={(bot) => void makePrimaryBot(bot.id)}
+          onReplacePrimary={(bot) => setPrimaryPicker({ currentId: bot.id, pending: false, error: null })}
         />
+      <PrimaryBotPicker
+        open={primaryPicker !== null}
+        bots={sidebarBots}
+        viewerId={orgViewerId(state)}
+        currentId={primaryPicker?.currentId ?? null}
+        pending={primaryPicker?.pending}
+        error={primaryPicker?.error}
+        onCancel={() => setPrimaryPicker(null)}
+        onConfirm={(botId) => void makePrimaryBot(botId, true)}
+      />
       {showThreads && newFolderBotId && state.bots.find((bot) => bot.id === newFolderBotId) && <BotProjectDialog bot={state.bots.find((bot) => bot.id === newFolderBotId)!} onClose={() => setNewFolderBotId(null)} />}
       <ConfirmDialog
         open={confirm !== null}

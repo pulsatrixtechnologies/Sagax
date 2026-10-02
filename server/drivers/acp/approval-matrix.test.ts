@@ -60,7 +60,7 @@ describe("remaining ACP approval mappings", () => {
         USERPROFILE: scratch,
         HERMES_HOME: join(scratch, ".hermes"),
         KIMI_CODE_HOME: join(scratch, ".kimi"),
-        OPENMAUSBOT_PROBE_LOCAL_INJECT: "0",
+        SAGAX_PROBE_LOCAL_INJECT: "0",
         FAKE_ACP_MODE: "permission",
         FAKE_ACP_DUMP: dump,
         FAKE_ACP_RPC_DUMP: rpcDump,
@@ -98,7 +98,7 @@ describe("remaining ACP approval mappings", () => {
           if (driver === OpenCodeDriver) {
             const permission = JSON.parse(JSON.parse(readFileSync(dump, "utf8")).env.OPENCODE_PERMISSION);
             if (approvalMode === "full") expect(permission).toMatchObject({ "*": "allow", external_directory: "allow", read: "allow", bash: "allow", edit: "allow" });
-            // the person's own rule stays in force; only the folders OpenMaus
+            // the person's own rule stays in force; only the folders Sagax
             // owns (attachments here: this turn names no bot) are allowed
             else expect(permission).toEqual({ external_directory: {
               "*": "ask",

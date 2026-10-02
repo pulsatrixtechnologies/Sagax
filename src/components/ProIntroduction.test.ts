@@ -14,6 +14,9 @@ vi.mock("react", async original => ({ ...await original<typeof import("react")>(
 vi.mock("@/state/store", () => ({ useStore: () => ({ state: f.state, dispatch: vi.fn() }), useStreaming: () => ({ streaming: f.streaming }), api: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/lib/analytics", () => ({ emailGateDone: () => false }));
 vi.mock("@/lib/updater", () => ({ useUpdaterState: () => f.updater }));
+// Sagax ships no upstream Pro offer (PRO_URL is empty, see the last test);
+// the dormant card is exercised here with a fixture address.
+vi.mock("@/lib/app-links", async original => ({ ...await original<typeof import("@/lib/app-links")>(), PRO_URL: "https://pro.example.test/" }));
 import { PRO_DISMISSED, ProIntroduction, ProSettingsCard, proOfferAvailable } from "./ProIntroduction";
 
 /** The first card's dismissal id, in browser storage and the workspace hint record. */
@@ -102,4 +105,9 @@ it("suppresses Pro subscribers, unknown/failed account state, and remote clients
   push(pro); expect(render()).toBe("");
   for (const state of [null, pro, { status: "unavailable" }, { status: "reauth-required" }, { status: "connecting" }] as Array<CloudAccountState | null>) expect(proOfferAvailable(state)).toBe(false);
   push(signedOut); window.ogb!.remoteClient = { active: true } as any; expect(render()).toBe("");
+});
+
+it("ships with no upstream Pro offer", async () => {
+  const links = await vi.importActual<typeof import("@/lib/app-links")>("@/lib/app-links");
+  expect(links.PRO_URL).toBe("");
 });

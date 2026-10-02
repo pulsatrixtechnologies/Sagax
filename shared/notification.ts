@@ -9,7 +9,7 @@ export type NotifyKind =
   | "routine-failed"
   | "routine-deferred"
   | "turn-failed"
-  /** A run failed, stalled or could not start and no Chief of Staff was
+  /** A run failed, stalled or could not start and no Primary Bot was
    * there to take it: the person is the one who has to look. */
   | "incident"
   | "takeover"
@@ -46,5 +46,11 @@ export interface Notification {
    * (a refused turn's access card is private to its person). Absent: everyone
    * who sees the bot. */
   audience?: string[];
+  /** Organization server: a routine run whose access card sits in another
+   * person's private thread (the person it runs as) while this audience is
+   * the bot's owner, who cannot read that thread. `threadId` is then empty
+   * and the click opens this run in the bot's Coding activity, which shows
+   * the same card to its audience only (server/routes/bot-activity.ts). */
+  routineRunId?: string;
 }
 

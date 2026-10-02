@@ -19,7 +19,7 @@ export type EngineAccessRefusal = "engine_missing" | "no_access";
  *   - owner-routine: a routine, webhook or other automation; `principalId`
  *     is the person it runs as (slice 6: its runAs), absent the owner;
  *   - peer: another bot's hop (ask_bot, delegation, an opened thread, an
- *     aside, a Chief's retry). `principalId` is whoever the source turn spoke
+ *     aside, a Primary Bot's retry). `principalId` is whoever the source turn spoke
  *     for ("" when that was an unknown person); absent, the requesting bot's
  *     owner speaks. `routinePayer` (2026-10-01): on a routine's hop, whose
  *     credentials the routine runs on (its bot's owner), carried along the
@@ -199,6 +199,29 @@ export function accessCardAudience(access: { reason: string; ownerPrincipalId: s
   if (access.reason === "routine_delegation") return ids([access.runAsPrincipalId, access.ownerPrincipalId]);
   if (access.reason === "key_refused") return access.payerPrincipalId?.trim() ? ids([access.payerPrincipalId]) : null;
   return ids([access.payerPrincipalId || access.ownerPrincipalId]);
+}
+
+/** The notifications of a refused or paused routine run, split by who can
+ * open the thread its access card sits in (2026-10-01). A routine runs as a
+ * person, in that person's private thread, but its card may be for the bot's
+ * owner (the owner's credentials pay): the owner cannot read that thread, so
+ * the owner's copy names no thread and carries `routineRunId`, which opens
+ * the run in the bot's Coding activity (the same card, its audience only).
+ * Without an audience (a shared card) or a run, it is one notification, as
+ * before. */
+export function routineAccessNotifications<N extends { threadId: string; audience?: string[]; routineRunId?: string }>(
+  notification: N,
+  audience: string[] | null,
+  input: { routineRunId?: string; readable: (principalId: string) => boolean },
+): N[] {
+  if (!audience) return [notification];
+  if (!input.routineRunId) return [{ ...notification, audience }];
+  const readers = audience.filter((id) => input.readable(id));
+  const others = audience.filter((id) => !readers.includes(id));
+  const out: N[] = [];
+  if (readers.length) out.push({ ...notification, audience: readers });
+  if (others.length) out.push({ ...notification, threadId: "", routineRunId: input.routineRunId, audience: others });
+  return out;
 }
 
 /** Whether a stored row reaches this viewer: an access card only reaches its

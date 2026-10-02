@@ -1,4 +1,4 @@
-// propose_tightening: a bot (or a Chief for a section peer) proposes an
+// propose_tightening: a bot (or a Primary Bot for a section peer) proposes an
 // authority REDUCTION through a human-confirmed card. Same shape as
 // profile-requests.ts: everything is re-validated at confirm time — a card
 // can sit open for days, so the direction is checked against live state
@@ -88,7 +88,7 @@ export interface TighteningRequestServiceOptions {
   /** Server-owned effective mode of the source conversation, never request input. */
   autoApply?: (botId: string, threadId: string) => boolean;
   canPersist?: (botId: string, threadId: string) => { ok: true } | { ok: false; status: number; error: string };
-  /** Chief targeting another bot: returns a refusal sentence or null. Checked at propose AND confirm. */
+  /** Primary Bot targeting another bot: returns a refusal sentence or null. Checked at propose AND confirm. */
   validateTarget?: (proposerBotId: string, targetBotId: string) => string | null;
   /** Effective mounted MCP server names (config-aware); default reads the bot record only. */
   mountedMcpServers?: (bot: BotRecord) => string[];

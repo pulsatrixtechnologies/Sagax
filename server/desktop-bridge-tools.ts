@@ -6,6 +6,7 @@
 //
 // Never pre-allowed for any engine: every call rides the bot's approval mode
 // (Ask shows a card per call), exactly as the engine's own tools do in solo.
+import { localVmDesktopSpec } from "./container-computer.ts";
 import type { DesktopBridgeOperation } from "./desktop-bridge.ts";
 
 const where = "on the computer of the person you are working for (their own PC, through their Sagax desktop app), like their own terminal";
@@ -162,7 +163,7 @@ export function desktopToolOperation(name: string, args: Record<string, unknown>
       if (args.action === "run") return { action: "vm_run_command", command: str(args.command, "command"), ...(container ? { container } : {}), timeout_seconds: optionalNumber(args.timeout_seconds, 1, 600) ?? 120 };
       // Waits up to ten minutes; a creation that takes longer keeps going on
       // the computer and status says where it is.
-      if (args.action === "create") return { action: "vm_create", timeout_seconds: 600 };
+      if (args.action === "create") return { action: "vm_create", arguments: { spec: localVmDesktopSpec() }, timeout_seconds: 600 };
       throw new Error("action must be status, start, run or create");
     }
     default:
