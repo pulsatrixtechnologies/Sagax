@@ -283,6 +283,55 @@ port — only the route to it is different.
 
 ---
 
+## Organization sign-in and the demo
+
+**Sign in to an organization** (welcome screen) asks for the server address,
+reads its `/.well-known/openmausbot/environment`, and opens
+`/auth/oidc/start?client=phone` in the system authentication sheet
+(`ASWebAuthenticationSession`, so Safari's Perspicax session and passkeys
+work). When the descriptor lists `identity.phoneReturnSchemes: ["sagax", ...]`
+the app adds `&return=sagax` and the sheet ends on
+`sagax://pair?address=&token=` (a refusal on `sagax://pair?error=<code>`);
+an older server ends on `openmausbot://pair`. The two-minute credential is
+redeemed with `POST /api/pair` into a session bound to the person (their
+private threads, their payer, member permissions), kept in the Keychain.
+Every failure stays on the page with its reason: unreachable, not a Sagax
+server, refused, cancelled, credential expired, or the Keychain refusing to
+keep the session (an unsigned simulator build: see Stage 3).
+
+Isolated check, no live Perspicax: start the fixture (fake Perspicax that
+signs one person in at once, real server, temporary home, free port) from the
+repository root, then run the UI tests with its address:
+
+```sh
+node --experimental-strip-types scripts/serve-ios-org-fixture.ts --port 18841
+cd ios && TEST_RUNNER_ORG_FIXTURE=http://127.0.0.1:18841 xcodebuild test \
+  -project OpenMausCompanion.xcodeproj -scheme OpenMausCompanion \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -only-testing:OpenMausCompanionUITests/OnboardingUITests \
+  DEVELOPMENT_TEAM=<team> CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual
+```
+
+**Try the demo** opens the whole app on made-up data (`DemoServer`): four
+bots, a group with a person (Sam Rivera), an approval to answer, a working
+bot with a computer screen, a routine, and replies streamed from canned
+text. The demo session's only URL protocol answers every request on the
+phone, so nothing reaches the network; nothing is written to the Keychain,
+the saved connections, the widgets or Live Activities. **Exit demo** returns
+to the welcome screen. `-demo` opens it at launch and `-demo-clock <epoch
+seconds>` pins its times for screenshots.
+
+### App Review notes
+
+> Sagax connects to the user's own computer or to their organization's
+> server, so a reviewer has no account to sign in with. To review every
+> screen without one, tap **Try the demo** on the first screen: it opens the
+> full app with made-up bots, chats, an approval to accept or decline, a
+> group, a routine and a bot's computer screen, all local to the device
+> with no network access. Tap **Exit demo** at the top of the home to
+> return. Organization sign-in uses the organization's own Pulsatrix
+> identity provider in the system authentication sheet.
+
 ## What is expected not to work
 
 Not built yet, so not bugs:

@@ -1180,6 +1180,7 @@ extension ChatListView {
                     Color.clear.frame(height: HomeMetrics.headerTop + HomeMetrics.headerHeight + 8)
                     StatusBanner()
                         .frame(maxWidth: .infinity)
+                    if session.isDemo { DemoBanner() }
                     if pinnedChats.isEmpty {
                         Color.clear.frame(height: 12)
                     } else {

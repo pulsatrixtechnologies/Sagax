@@ -90,6 +90,18 @@ final class Session: ObservableObject {
     /// False once the server showed it has no group pins: the home then
     /// stops offering to pin a group.
     @Published private(set) var groupPinsSupported = true
+    /// The app is showing the demo (`DemoServer`): local made-up data, no
+    /// network, nothing saved. Leaving it returns to the welcome screen.
+    @Published private(set) var isDemo = false
+    private var demoServer: DemoServer?
+    /// Which way the connect screen opened: a computer (QR, nearby,
+    /// address and code) or an organization (Sign in with Pulsatrix).
+    @Published private(set) var connectMode: ConnectMode = .computer
+
+    enum ConnectMode: Equatable {
+        case computer
+        case organization
+    }
 
     private var client: CompanionClient?
     /// The live client, for the Settings sheet's own reads and writes
@@ -197,6 +209,12 @@ final class Session: ObservableObject {
             return
         }
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-reset-pairings") {
+            // UI tests start each case from a fresh install's state.
+            for saved in OpenMausSharedConnectionStore.loadRegistry().connections { Keychain.remove(saved.id) }
+            OpenMausSharedConnectionStore.saveRegistry(CompanionConnectionRegistry())
+            UserDefaults.standard.removeObject(forKey: OrgServerMemory.key)
+        }
         if (arguments.contains("-store-preview") || arguments.contains("-computer-switcher-preview")),
            let url = Bundle.main.url(
                forResource: arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : "StorePreview",
@@ -538,8 +556,57 @@ final class Session: ObservableObject {
         pendingChat = nil
     }
 
-    func beginPairing() {
+    /// Open the connect screen; `mode` picks its first page (nil keeps the
+    /// current one).
+    func beginPairing(_ mode: ConnectMode? = nil) {
+        if let mode { connectMode = mode }
         pairingRequested = true
+    }
+
+    // MARK: - Demo
+
+    /// Open the demo: the full app on `DemoServer`'s made-up workspace.
+    /// Nothing reaches the Keychain, the saved connections or the network.
+    func enterDemo() {
+        stopActiveRuntime()
+        let server = DemoServer(now: DemoLaunch.clock ?? Date())
+        server.onFrame = { [weak self] frame in
+            // One serial queue keeps the server's order.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.applyDemoFrame(frame) }
+            }
+        }
+        demoServer = server
+        isDemo = true
+        pairingRequested = false
+        connection = server.connection
+        connections = [server.connection]
+        client = server.makeClient()
+        var demoState = CompanionState()
+        demoState.hydrate(server.fleet)
+        if let png = DemoScreen.pngBase64() {
+            demoState.apply(.screen(botId: "demo-forge", png: png, mime: "image/png"))
+        }
+        state = demoState
+        status = .live
+    }
+
+    private func applyDemoFrame(_ frame: Frame) {
+        guard isDemo else { return }
+        state.apply(frame)
+    }
+
+    /// Leave the demo for the welcome screen (or the saved pairing, if one
+    /// exists): everything the demo held is dropped.
+    func exitDemo() {
+        guard isDemo else { return }
+        demoServer?.stop()
+        demoServer = nil
+        isDemo = false
+        connections = []
+        clearActiveConnection()
+        restore()
+        if connection != nil { connect() }
     }
 
     func endPairing() {
@@ -585,6 +652,7 @@ final class Session: ObservableObject {
     }
 
     func forgetConnection(id: String) {
+        if isDemo { exitDemo(); return }
         guard let forgotten = registry.connection(id: id) else { return }
         let wasActive = registry.activeConnectionID == id
         // A server session is ended on the server too, best effort: the
@@ -596,6 +664,7 @@ final class Session: ObservableObject {
         if wasActive { stopActiveRuntime() }
         preparedPhoneCredentials = preparedPhoneCredentials.filter { $0.value.connectionID != id }
         Keychain.remove(id)
+        BrandMascotCache.forget(id)
         registry.remove(id: id)
         persistRegistry()
         connections = registry.connections
@@ -620,6 +689,7 @@ final class Session: ObservableObject {
     /// Compatibility for the existing revoked-pairing and detail actions:
     /// sign out now means remove only the selected computer.
     func signOut() {
+        if isDemo { exitDemo(); return }
 #if DEBUG
         // Parity harness: the fixture connection lives in memory only, so
         // there is no saved pairing to forget; end the session in memory.
@@ -708,6 +778,8 @@ final class Session: ObservableObject {
 
     /// Called when the app comes to the front, and once at launch.
     func connect() {
+        // The demo has no stream: its server hands frames over directly.
+        if isDemo { return }
         // A restore that found the keychain locked left `client` nil on
         // purpose. Coming to the front is the moment worth retrying on: the
         // app is on screen, so the phone is in someone's hand and unlocked.
@@ -802,6 +874,7 @@ final class Session: ObservableObject {
     /// the island. After that, iOS suspends us anyway; disconnect cleanly so
     /// the cursor is written down at a known point.
     func linger() {
+        if isDemo { return }
         guard streamTask != nil, lingerTask == .invalid else { disconnect(); return }
         // A previous request can leave a sleeper behind when iOS refuses the
         // background assertion. Never let it outlive the assertion it belongs

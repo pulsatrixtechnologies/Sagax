@@ -1599,6 +1599,19 @@ public struct ServerIdentity: Codable, Hashable, Sendable {
     public var loginPath: String?
     /// The server ends a native sign-in on an `openmausbot://` link.
     public var nativeReturn: Bool?
+    /// Schemes a phone start may name with `&return=`. A server that lists
+    /// `sagax` ends the phone's sign-in on `sagax://pair`; older servers
+    /// omit it and end on `openmausbot://pair`.
+    public var phoneReturnSchemes: [String]? = nil
+
+    public init(kind: String, protocol: String? = nil, issuer: String? = nil, loginPath: String? = nil, nativeReturn: Bool? = nil, phoneReturnSchemes: [String]? = nil) {
+        self.kind = kind
+        self.protocol = `protocol`
+        self.issuer = issuer
+        self.loginPath = loginPath
+        self.nativeReturn = nativeReturn
+        self.phoneReturnSchemes = phoneReturnSchemes
+    }
 }
 
 /// "Sign in with Pulsatrix" from the phone: the authentication sheet opens
@@ -1606,11 +1619,22 @@ public struct ServerIdentity: Codable, Hashable, Sendable {
 /// invite link the app already accepts from a QR code
 /// (`openmausbot://pair?address=...&token=omb_pair_...&name=...`).
 public enum PulsatrixSignIn {
-    public static let callbackScheme = "openmausbot"
+    /// This app's own scheme, asked for whenever the server offers it.
+    public static let callbackScheme = "sagax"
+    /// What a server that predates `phoneReturnSchemes` ends on.
+    public static let legacyCallbackScheme = "openmausbot"
+    /// Every scheme a sign-in may end on.
+    public static let callbackSchemes: Set<String> = [callbackScheme, legacyCallbackScheme]
 
-    /// `<server origin>/auth/oidc/start?client=phone`, or nil for an address
-    /// that is not http(s).
-    public static func startURL(base: URL) -> URL? {
+    /// The scheme to ask the server for: `sagax` when it advertises the
+    /// phone return, else the one it always ends on.
+    public static func returnScheme(for identity: ServerIdentity?) -> String {
+        identity?.phoneReturnSchemes?.contains(callbackScheme) == true ? callbackScheme : legacyCallbackScheme
+    }
+
+    /// `<server origin>/auth/oidc/start?client=phone[&return=sagax]`, or nil
+    /// for an address that is not http(s).
+    public static func startURL(base: URL, returnScheme: String = legacyCallbackScheme) -> URL? {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false),
               let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
               components.host != nil
@@ -1618,7 +1642,9 @@ public enum PulsatrixSignIn {
         components.path = "/auth/oidc/start"
         components.query = nil
         components.fragment = nil
-        components.queryItems = [URLQueryItem(name: "client", value: "phone")]
+        var items = [URLQueryItem(name: "client", value: "phone")]
+        if returnScheme == callbackScheme { items.append(URLQueryItem(name: "return", value: callbackScheme)) }
+        components.queryItems = items
         return components.url
     }
 

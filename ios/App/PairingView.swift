@@ -20,386 +20,249 @@ struct PairingView: View {
     @State private var submission = CompanionPairingSubmissionState()
     @State private var failure: String?
     @State private var showingScanner = false
-    @State private var showingOtherWays = false
-    @State private var showingManualInput = false
     @State private var choiceGeneration = 0
     /// Set when the chosen server signs people in with Pulsatrix and returns
     /// to native apps (its descriptor's `identity.nativeReturn`).
     @State private var pulsatrixOrigin: URL?
+    @State private var pulsatrixScheme = PulsatrixSignIn.legacyCallbackScheme
     @StateObject private var pulsatrixSignIn = PulsatrixWebSignIn()
 
     private let onCancel: () -> Void
+    /// Set when this page was opened from the welcome screen's choices.
+    private let onBack: (() -> Void)?
 
-    init(onCancel: @escaping () -> Void = {}) {
+    init(onCancel: @escaping () -> Void = {}, onBack: (() -> Void)? = nil) {
         self.onCancel = onCancel
+        self.onBack = onBack
     }
 
     private var pairing: Bool { submission.isInFlight }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    if let chosen {
-                        confirmationView(for: chosen)
-                    } else {
-                        pairingHero
-                        qrAction
-                        otherWays
-                    }
-
-                    if let failure {
-                        errorBanner(failure)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 24)
-                .frame(maxWidth: 560)
-                .frame(maxWidth: .infinity)
+        OnboardingPage(
+            title: "Connect my computer",
+            leading: .init(systemImage: onBack == nil ? "xmark" : "chevron.left", label: onBack == nil ? "Not now" : "Back", identifier: "pairing-close") {
+                guard submission.allowsNavigation else { return }
+                (onBack ?? onCancel)()
             }
-            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("Connect computer")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Not now", action: onCancel)
-                        .disabled(!submission.allowsNavigation)
-                }
+        ) {
+            if let failure {
+                OnboardingErrorBanner(message: failure)
             }
-            .onAppear {
-                accept(session.pairingInvite)
+            if let chosen {
+                confirmationView(for: chosen)
+            } else {
+                pairingHero
+                qrAction
+                otherWays
             }
-            .onDisappear {
-                choiceGeneration += 1
-                discovery.stop()
-            }
-            .onValueChange(of: session.pairingInvite) { invite in accept(invite) }
-            .onValueChange(of: showingOtherWays) { isShowing in
-                if isShowing {
-                    discovery.start()
-                } else {
-                    discovery.stop()
-                }
-            }
-            .fullScreenCover(isPresented: $showingScanner) {
-                PairingScannerSheet { payload in
-                    guard let url = URL(string: payload), let invite = PairingInvite.parse(url) else {
-                        return "That isn't an OpenMausBot pairing QR code."
-                    }
-                    accept(invite)
-                    return nil
-                }
-            }
-            .interactiveDismissDisabled(pairing)
         }
+        .onAppear {
+            accept(session.pairingInvite)
+            discovery.start()
+        }
+        .onDisappear {
+            choiceGeneration += 1
+            discovery.stop()
+        }
+        .onValueChange(of: session.pairingInvite) { invite in accept(invite) }
+        .fullScreenCover(isPresented: $showingScanner) {
+            PairingScannerSheet { payload in
+                guard let url = URL(string: payload), let invite = PairingInvite.parse(url) else {
+                    return "That isn't a Sagax pairing QR code."
+                }
+                accept(invite)
+                return nil
+            }
+        }
+        .interactiveDismissDisabled(pairing)
     }
 
     private var pairingHero: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(MausPalette.color("blue").opacity(0.12))
-                    .frame(width: 124, height: 124)
-                Image(systemName: "laptopcomputer.and.iphone")
-                    .font(.system(size: 46, weight: .medium))
-                    .foregroundStyle(MausPalette.color("blue"))
-            }
-            .accessibilityHidden(true)
-
-            VStack(spacing: 8) {
-                Text("Connect to your computer")
-                    .font(.title.bold())
-                    .multilineTextAlignment(.center)
-                Text("Scan the QR code in OpenMausBot. We'll securely choose the best way to connect.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
+        OnboardingHero(
+            title: "Connect your computer",
+            subtitle: "In Sagax on your computer, open Settings, then Phone, then Set up a phone. Scan the code it shows.",
+            color: "green",
+            mascotSize: 88
+        )
     }
 
     private var qrAction: some View {
-        VStack(spacing: 12) {
-            Button {
-                Haptics.selection()
-                failure = nil
-                showingScanner = true
-            } label: {
-                Label("Scan QR code", systemImage: "qrcode.viewfinder")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-
-            Text("On your computer, open Settings → Phone → Set up a phone.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+        OnboardingCapsule(title: "Scan QR code", identifier: "pairing-scan") {
+            failure = nil
+            showingScanner = true
         }
+        .padding(.horizontal, 23.17)
+        .padding(.bottom, Theme.Metric.cardGap)
     }
 
     private var otherWays: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            DisclosureGroup(isExpanded: $showingOtherWays) {
-                VStack(alignment: .leading, spacing: 18) {
-                    discoveredComputers
-
-                    Divider()
-
-                    DisclosureGroup(isExpanded: $showingManualInput) {
-                        manualEntry
-                            .padding(.top, 12)
-                    } label: {
-                        Label("Enter address and code", systemImage: "keyboard")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                }
-                .padding(.top, 18)
-            } label: {
-                Text("Other ways to connect")
-                    .font(.headline)
+        VStack(spacing: 0) {
+            SectionLabel(text: "Nearby computers")
+            CardSection {
+                discoveredComputers
             }
+            SectionLabel(text: "Address and code")
+                .padding(.top, Theme.Metric.cardGap)
+            CardSection {
+                manualEntry
+            }
+            Footer(text: "Use the address shown in Settings, then Phone, on your computer. A server's pairing link works too.")
         }
-        .padding(18)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     @ViewBuilder
     private var discoveredComputers: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("Nearby computers", systemImage: "desktopcomputer")
-                    .font(.subheadline.weight(.semibold))
+        if let discoveryFailure = discovery.failure {
+            CardRow(title: discoveryFailure, systemImage: "wifi.exclamationmark")
+        } else if discovery.found.isEmpty {
+            HStack(spacing: 10) {
+                Text("Computers ready to pair appear here.")
+                    .font(Theme.Font.rowTitle)
+                    .foregroundStyle(Theme.textSecondary)
                 Spacer()
-                if discovery.browsing && discovery.found.isEmpty {
+                if discovery.browsing {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityLabel("Looking for computers")
                 }
             }
-
-            if let discoveryFailure = discovery.failure {
-                Text(discoveryFailure)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if discovery.found.isEmpty {
-                Text("Computers ready to pair will appear here.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(discovery.found) { service in
-                    Button {
-                        Haptics.selection()
-                        Task { await choose(service) }
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "laptopcomputer")
-                                .foregroundStyle(MausPalette.color("blue"))
-                                .frame(width: 30, height: 30)
-                            Text(service.name)
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Enter the code shown on this computer")
+            .padding(.horizontal, Theme.Metric.rowInset)
+            .frame(minHeight: Theme.Metric.rowHeight)
+        } else {
+            ForEach(Array(discovery.found.enumerated()), id: \.element.id) { index, service in
+                if index > 0 { CardHairline(leadingInset: 44.8) }
+                CardRow(title: LocalizedStringKey(service.name), systemImage: "laptopcomputer", accessory: .chevron) {
+                    Task { await choose(service) }
                 }
+                .accessibilityHint("Enter the code shown on this computer")
             }
         }
     }
 
     private var manualEntry: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TextField("Computer address", text: $manualAddress)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-                .textContentType(.URL)
-                .padding(12)
-                .background(Color(uiColor: .tertiarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            Text("Use the address shown in Phone settings on your computer.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            Button("Continue") {
-                Haptics.selection()
-                failure = nil
-                // The whole link a server printed (https://host/pair#code=…) is
-                // fine here too: it names both the address and the code.
-                if let url = URL(string: manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)),
-                   let invite = PairingInvite.parse(url) {
-                    accept(invite)
-                    return
-                }
-                guard let connection = Self.parse(manualAddress) else {
-                    failure = "That address doesn't look right. Copy it from Phone settings and try again."
-                    return
-                }
-                choiceGeneration += 1
-                scannedCredential = nil
-                pairRequestId = nil
-                chosen = connection
-            }
-            .buttonStyle(.bordered)
-            .disabled(manualAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        VStack(spacing: 0) {
+            OnboardingField(placeholder: "Computer address", text: $manualAddress, identifier: "pairing-address")
+                .onSubmit(continueWithAddress)
+            CardHairline()
+            CardRow(title: "Continue", accessory: .chevron, style: .action, action: continueWithAddress)
+                .disabled(manualAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("pairing-continue")
         }
+    }
+
+    private func continueWithAddress() {
+        failure = nil
+        guard !manualAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // The whole link a server printed (https://host/pair#code=...) is
+        // fine here too: it names both the address and the code.
+        if let url = URL(string: manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)),
+           let invite = PairingInvite.parse(url) {
+            accept(invite)
+            return
+        }
+        guard let connection = Self.parse(manualAddress) else {
+            failure = String(localized: "That address doesn't look right. Copy it from Phone settings on your computer and try again.")
+            return
+        }
+        choiceGeneration += 1
+        scannedCredential = nil
+        pairRequestId = nil
+        chosen = connection
     }
 
     @ViewBuilder
     private func confirmationView(for connection: Connection) -> some View {
         let badge = connectionBadge(for: connection)
-        VStack(spacing: 22) {
-            ZStack {
-                Circle()
-                    .fill(MausPalette.color("green").opacity(0.12))
-                    .frame(width: 92, height: 92)
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: 36, weight: .medium))
-                    .foregroundStyle(MausPalette.color("green"))
-            }
-            .accessibilityHidden(true)
+        VStack(spacing: 0) {
+            OnboardingHero(
+                title: LocalizedStringKey(connection.name),
+                subtitle: LocalizedStringKey(badge.title),
+                color: "green",
+                mascotSize: 72
+            )
 
-            VStack(spacing: 8) {
-                Text(connection.name)
-                    .font(.title2.bold())
-                    .multilineTextAlignment(.center)
-                Label(badge.title, systemImage: badge.systemImage)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(MausPalette.color("green"))
+            SectionLabel(text: "Address")
+            CardSection {
+                CardRow(title: LocalizedStringKey(connection.pairingConsentOrigin), systemImage: badge.systemImage)
             }
+            Footer(text: "Make sure this is the computer or server you expect before connecting.")
 
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Computer address")
-                    .font(.subheadline.weight(.semibold))
-                Text(connection.pairingConsentOrigin)
-                    .font(.footnote.monospaced())
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Make sure this is the computer you expect before connecting.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            if let origin = pulsatrixOrigin, scannedCredential == nil {
+                SectionLabel(text: "Your organization")
+                    .padding(.top, Theme.Metric.cardGap)
+                CardSection {
+                    CardRow(
+                        title: "Sign in with Pulsatrix",
+                        subtitle: "This server signs people in with Pulsatrix.",
+                        systemImage: "building.2",
+                        accessory: .chevron,
+                        style: .action
+                    ) { startPulsatrixSignIn(origin) }
+                    .disabled(pairing || pulsatrixSignIn.running)
+                    .accessibilityIdentifier("pairing-pulsatrix")
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(Color(uiColor: .tertiarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .accessibilityElement(children: .combine)
 
             if let credential = scannedCredential {
                 if !connectionIsProtected(connection) {
-                    Text("Only continue on a network you trust. Local connections are authenticated but are not encrypted by OpenMausBot.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Footer(text: "Only continue on a network you trust. Local connections are authenticated but not encrypted.")
                 }
-
-                Button {
-                    Haptics.selection()
-                    beginSubmission(connection, credential: credential)
-                } label: {
-                    HStack {
-                        if pairing { ProgressView().tint(.white) }
-                        Text(pairing ? "Connecting…" : "Connect")
-                    }
-                    .frame(maxWidth: .infinity)
+                OnboardingCapsule(title: "Connect", busyTitle: "Connecting...", busy: pairing, identifier: "pairing-connect") {
+                    beginSubmission(connection, credential: credential, fromSignIn: false)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(pairing)
+                .padding(.horizontal, 23.17)
+                .padding(.top, Theme.Metric.cardGap)
             } else {
-                if let origin = pulsatrixOrigin {
-                    VStack(spacing: 10) {
-                        Button {
-                            Haptics.selection()
-                            startPulsatrixSignIn(origin)
-                        } label: {
-                            HStack {
-                                if pulsatrixSignIn.running { ProgressView().tint(.white) }
-                                Text("Sign in with Pulsatrix")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .disabled(pairing || pulsatrixSignIn.running)
-
-                        Text("Your organization signs you in with Pulsatrix. You can also enter a pairing code.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
+                SectionLabel(text: "Pairing code")
+                    .padding(.top, Theme.Metric.cardGap)
+                CardSection {
+                    TextField(text: $code) {
+                        Text(verbatim: "000000").foregroundStyle(Theme.placeholder)
+                    }
+                    .keyboardType(.asciiCapable)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .textContentType(.oneTimeCode)
+                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .frame(height: 56)
+                    .accessibilityIdentifier("pairing-code")
+                    .onValueChange(of: code) { value in
+                        // six digits for a computer, ABCD-EFGH-JKLM for a server
+                        code = String(value.uppercased().filter { $0.isASCII && ($0.isNumber || $0.isLetter || $0 == "-") }.prefix(14))
                     }
                 }
-                VStack(spacing: 12) {
-                    Text("Enter the code shown on your computer")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    TextField("000000", text: $code)
-                        .keyboardType(.asciiCapable)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .textContentType(.oneTimeCode)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .multilineTextAlignment(.center)
-                        .padding(.vertical, 12)
-                        .background(Color(uiColor: .tertiarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .onValueChange(of: code) { value in
-                            // six digits for a computer, ABCD-EFGH-JKLM for a server
-                            code = String(value.uppercased().filter { $0.isASCII && ($0.isNumber || $0.isLetter || $0 == "-") }.prefix(14))
-                        }
-
-                    if code.count >= 12, !Self.codeLooksComplete(code) {
-                        Text("A server's code is 12 letters and digits, never 0, O, 1 or I.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-
-                    Button {
-                        Haptics.selection()
-                        beginSubmission(connection, credential: code)
-                    } label: {
-                        HStack {
-                            if pairing { ProgressView().tint(.white) }
-                            Text(pairing ? "Connecting…" : "Connect")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!Self.codeLooksComplete(code) || pairing)
+                Footer(text: code.count >= 12 && !Self.codeLooksComplete(code)
+                    ? "A server's code is 12 letters and digits, never 0, O, 1 or I."
+                    : "The code shown on your computer: 6 digits, or 12 characters for a server.")
+                OnboardingCapsule(title: "Connect", busyTitle: "Connecting...", busy: pairing, enabled: Self.codeLooksComplete(code), identifier: "pairing-connect") {
+                    beginSubmission(connection, credential: code, fromSignIn: false)
                 }
+                .padding(.horizontal, 23.17)
+                .padding(.top, Theme.Metric.cardGap)
             }
 
-            Button("Choose a different computer") {
+            Button {
                 Haptics.selection()
                 chosen = nil
                 code = ""
                 scannedCredential = nil
                 pairRequestId = nil
                 failure = nil
+            } label: {
+                Text("Choose a different computer")
+                    .font(Theme.Font.rowTitle)
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
             }
-            .foregroundStyle(.secondary)
+            .buttonStyle(.plain)
             .disabled(!submission.allowsNavigation)
+            .padding(.top, 8)
+            .accessibilityIdentifier("pairing-different")
         }
-        .padding(22)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .task(id: connection.pairingConsentOrigin) {
             await probePulsatrixSignIn(connection)
         }
@@ -414,38 +277,24 @@ struct PairingView: View {
         let probe = CompanionClient(connection: connection, token: nil, requestTimeout: 8)
         guard let environment = try? await probe.environment(), environment.offersPulsatrixSignIn else { return }
         guard chosen?.pairingConsentOrigin == connection.pairingConsentOrigin else { return }
+        pulsatrixScheme = PulsatrixSignIn.returnScheme(for: environment.identity)
         pulsatrixOrigin = base
     }
 
     @MainActor
     private func startPulsatrixSignIn(_ origin: URL) {
         failure = nil
-        pulsatrixSignIn.start(origin: origin) { invite in
-            guard let invite else {
-                failure = "Sign-in with Pulsatrix did not finish. Try again, or enter a pairing code."
+        pulsatrixSignIn.start(origin: origin, scheme: pulsatrixScheme) { outcome in
+            guard case let .invite(invite) = outcome else {
+                failure = (OrgConnectError.from(outcome) ?? .signInUnexpected).localizedMessage
                 return
             }
             // The person chose this server and signed in on it: redeem the
-            // two-minute credential it handed back right away.
+            // two-minute credential it handed back right away, and keep this
+            // screen (with the reason) if that fails.
             accept(invite)
-            beginSubmission(invite.connection, credential: invite.credential)
+            beginSubmission(invite.connection, credential: invite.credential, fromSignIn: true)
         }
-    }
-
-    private func errorBanner(_ message: String) -> some View {
-        Label {
-            Text(message)
-                .fixedSize(horizontal: false, vertical: true)
-        } icon: {
-            Image(systemName: "exclamationmark.triangle.fill")
-        }
-        .font(.footnote)
-        .foregroundStyle(.red)
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .accessibilityElement(children: .combine)
     }
 
     @MainActor
@@ -465,13 +314,13 @@ struct PairingView: View {
     }
 
     @MainActor
-    private func beginSubmission(_ connection: Connection, credential: String) {
+    private func beginSubmission(_ connection: Connection, credential: String, fromSignIn: Bool) {
         guard submission.begin() else { return }
-        Task { await submit(connection, credential: credential) }
+        Task { await submit(connection, credential: credential, fromSignIn: fromSignIn) }
     }
 
     @MainActor
-    private func submit(_ connection: Connection, credential: String) async {
+    private func submit(_ connection: Connection, credential: String, fromSignIn: Bool) async {
         failure = nil
         var succeeded = false
         defer {
@@ -499,11 +348,19 @@ struct PairingView: View {
             pairRequestId = nil
             succeeded = true
         } catch {
+            if fromSignIn {
+                // A sign-in's credential is single use: stay on this server,
+                // say why, and offer the sign-in again.
+                failure = OrgSignInView.map(error, host: connection.displayAddress).localizedMessage
+                scannedCredential = nil
+                pairRequestId = nil
+                return
+            }
             if cameFromScanner {
                 if error is PairingRouteError {
                     failure = error.localizedDescription
                 } else {
-                    failure = "\(error.localizedDescription) Start pairing again on your computer and rescan the new QR code."
+                    failure = "\(error.localizedDescription) " + String(localized: "Start pairing again on your computer and scan the new QR code.")
                     chosen = nil
                     scannedCredential = nil
                     pairRequestId = nil

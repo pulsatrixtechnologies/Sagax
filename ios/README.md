@@ -96,6 +96,9 @@ ios/
     SSE.swift                    line parser + URLSession event stream
     Client.swift                 every call the phone is allowed to make
     Store.swift                  the fold: frames → state
+    OrgSignIn.swift              organization sign-in outcomes, errors, connect state machine
+    Demo.swift, DemoFixture.swift  the demo's in-memory server and made-up workspace
+    BrandMascot.swift            which mascot stands for the app
     SectionSelection.swift       pure swipe/dwell selection state + grid hit testing
     Dictation.swift              composer text + transcript join
   Tests/CompanionCoreTests/
@@ -113,6 +116,9 @@ ios/
     Mascots/                     the Sagax characters (owl, shapes, Trombi), the picture crop,
                                  group faces, and a DEBUG gallery (-mascotGallery owl|shape|trombi|group)
     PairingView.swift            QR handoff, discovery, address and code fallback
+    Onboarding/                  welcome (three ways in), organization sign-in, shared page chrome
+    Demo/                        demo launch options, drawn computer screen, home banner
+    BrandMascotView.swift        the Sagax owl, or the Primary Bot once connected
     PairingScanner.swift         native QR camera, permission and recovery UI
     Glass.swift                  the one material the chrome is made of (Liquid Glass on 26+)
     SpeechBubble.swift           the bubble shape; the tail is the reference vector, scaled
