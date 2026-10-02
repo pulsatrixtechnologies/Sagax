@@ -1,5 +1,6 @@
 import { codexToolSurfaceArgs } from "./codex-tool-surface.ts";
 import { CODEX_WITHHELD_APPROVAL, codexHostToolArgs, codexHostToolRequest } from "./host-tools.ts";
+import { networkProxyEnvironment } from "./network-proxy.ts";
 // Codex driver — upstream CodexDriver skeleton over agentcal's
 // drivers/codex.js runtime: the official `codex` CLI headless over its
 // app-server JSON-RPC protocol (newline-delimited JSON on stdio).
@@ -791,6 +792,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       const launchAttempt = async (attempt: number): Promise<void> => {
         const env = childEnv();
         if (planToken) env.OPENMAUSBOT_CHATGPT_TOKEN = planToken;
+        // Desktop bridge: this turn's network traffic leaves through the
+        // person's computer (never the model traffic: NO_PROXY).
+        if (turn.networkProxy) Object.assign(env, networkProxyEnvironment(turn.networkProxy, env));
         // An organization owner key (codexAccessLaunch) wins over a ChatGPT
         // plan sign-in, which wins over a managed or local provider.
         const launch = codexAccessLaunch(env, turn.access);

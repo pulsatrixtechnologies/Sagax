@@ -306,6 +306,12 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // with the feature off these paths are as unlisted as any other, so a
   // client session is refused exactly the way an unknown route refuses it.
   { methods: ["POST"], path: /^\/api\/shared-computers\/(?:connect|[\w-]+\/(?:poll|lease|result|disconnect))$/, feature: "sharedComputers" },
+  // Organization server: the person's own desktop app bridges their computer
+  // (server/desktop-bridge-routes.ts). The handler answers the session's own
+  // person only, binds poll/results to a private desktop secret, and 404s on
+  // a solo server.
+  { methods: ["POST"], path: /^\/api\/desktop-bridge\/(?:connect|[0-9a-f-]{36}\/(?:poll|lease|result|disconnect))$/ },
+  { methods: ["GET"], path: /^\/api\/me\/desktop-bridge$/ },
   // Organization server (OMB_IDENTITY=perspicax): a member pairs their own
   // phone or computer. The handler binds the code to the member's person and
   // clamps its scopes to the session's own.

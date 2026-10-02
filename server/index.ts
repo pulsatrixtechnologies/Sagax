@@ -538,6 +538,7 @@ import {
   resolveLoopbackTrust,
   resolveRequestAuth,
   parseCookies,
+  isSameOrigin,
   serializeSessionCookie,
   sessionCookieName,
 } from "./request-auth.ts";
@@ -636,8 +637,14 @@ import { readSandboxdKey } from "./sandboxd-auth.ts";
 import { sandboxdClient } from "./user-sandbox-client.ts";
 import { UserSandboxManager, UserSandboxUnavailable, userSandboxSettingsFromEnv } from "./user-sandbox-manager.ts";
 import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
-import { resolveExecutionTarget, sandboxPrincipalForTurn, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
+import { sandboxPrincipalForTurn, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 import { handleUserSandboxMcp } from "./user-sandbox-tools.ts";
+import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeOperation, type WorkplaceDecision } from "./desktop-bridge.ts";
+import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
+import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
+import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
+import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAttachments, stagedName, SANDBOX_ATTACHMENTS_DIR, type StagingTarget, type TurnAttachedFile } from "./attachment-staging.ts";
+import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
 import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
@@ -755,6 +762,43 @@ const userComputers = createUserComputerRouter([{
   owns: (person: string, computerId: string) => sharedComputers.list(person).some((computer) => computer.id === computerId),
   request: (person: string, operation: z.infer<typeof sharedComputerOperation>, active: () => boolean) => sharedComputers.request(operation, person, active),
 }]);
+/** The person a live session is signed in as right now (lowercased), or
+ * null when it ended: the desktop bridge re-reads it on every call, so a
+ * session that changed hands or ended never relays for anyone. */
+function liveSessionPerson(sessionId: string): string | null {
+  if (!sessions.isLive(sessionId)) return null;
+  return sessions.byId(sessionId)?.principalId?.trim().toLowerCase() || null;
+}
+// Organization server: each person's own desktop app bridges their computer
+// (server/desktop-bridge.ts): bots in their conversations run shell, files,
+// search, fetch, browser, computer use and Local VM there, and their network
+// traffic leaves through it (server/desktop-egress.ts).
+const desktopBridges = new DesktopBridges(liveSessionPerson);
+const desktopTunnels = new DesktopTunnels(liveSessionPerson);
+const bridgeAudit = createBridgeAudit(join(DATA_DIR, "desktop-bridge-audit.jsonl"));
+const userPreferenceStore = createUserPreferenceStore(DATA_DIR);
+/** A person's "where bots work" preference (shared/bot-workplace.ts). */
+function workplacePreference(person: string | null): BotWorkplace {
+  if (!person) return parseBotWorkplace(null);
+  try {
+    return parseBotWorkplace(userPreferenceStore.get(person).preferences[BOT_WORKPLACE_PREFERENCE]);
+  } catch {
+    return parseBotWorkplace(null);
+  }
+}
+/** What one turn decided about where its tools run, by thread, for the
+ * internal tool routes, attachment copies and the egress proxy. Removed with
+ * the turn's capabilities (revokeInternalCapabilityGeneration). */
+type TurnWorkplace = {
+  generation: string;
+  botId: string;
+  decision: WorkplaceDecision;
+  /** The speaker's own attachments still to copy where the tools run. */
+  staging: { target: StagingTarget; files: TurnAttachedFile[] } | null;
+};
+const turnWorkplaces = new Map<string, TurnWorkplace>();
+let egressProxy: EgressProxy | null = null;
+
 /** The person a shared-computer call provably acts for
  * (sharedComputerPrincipal), as the router reads a speaker. */
 function personSpeaker(principal: string | null): TurnSpeaker | undefined {
@@ -2327,11 +2371,13 @@ type InternalCapability = {
   threadId: string;
   generation: string;
   depth: number;
-  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox";
+  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox" | "desktop";
   /** Slice 5: the one Perspicax profile a "perspicax" capability relays for. */
   perspicaxProfile?: string;
   /** A "sandbox" capability: whose server environment it runs in. */
   sandboxPrincipalId?: string;
+  /** A "desktop" capability: whose own computer it reaches (desktop bridge). */
+  desktopPrincipalId?: string;
   skillAuthoring: boolean;
   createdBots: number;
   createdRooms?: number;
@@ -2457,11 +2503,13 @@ function revokeInternalCapabilityGeneration(threadId: string, generation: string
   if (activeInternalGenerationByThread.get(threadId) === generation) {
     activeInternalGenerationByThread.delete(threadId);
   }
+  if (turnWorkplaces.get(threadId)?.generation === generation) turnWorkplaces.delete(threadId);
   internalGenerationByProviderTurn.deleteGeneration(threadId, generation);
 }
 
 function revokeInternalCapabilitiesForThread(threadId: string): void {
   computerSelectionTurns.delete(threadId);
+  turnWorkplaces.delete(threadId);
   void perspicaxMcp?.endThread(threadId);
   const generation = activeInternalGenerationByThread.get(threadId);
   if (generation) revokeInternalCapabilityGeneration(threadId, generation);
@@ -2475,6 +2523,7 @@ function revokeInternalCapabilitiesForThread(threadId: string): void {
 
 function revokeAllInternalCapabilities(): void {
   computerSelectionTurns.clear();
+  turnWorkplaces.clear();
   if (perspicaxMcp) perspicaxEnding = perspicaxMcp.endAll();
   internalCapabilities.clear();
   // foreignTurns stays: a turn that is not provably the owner's can still
@@ -3337,19 +3386,153 @@ function userSandboxIntegration(botId: string, threadId: string, generation: str
   };
 }
 
-/** Mount the right person's environment when this turn's hands land there
- * (sandboxPrincipalForTurn). */
-function mountUserSandbox(
-  integrations: NonNullable<SendTurnInput["integrations"]>,
-  input: { botId: string; threadId: string; generation: string; desktopTargeted: boolean; customMcp: boolean; sandboxPrincipalId: string | null },
-): void {
-  const target = resolveExecutionTarget({
+/** The person's own computer for one turn (organization mode, desktop
+ * bridge): the same stdio proxy, as the "sagax-desktop" tool server, holding
+ * only a turn-scoped capability bound to that person. */
+function userDesktopIntegration(botId: string, threadId: string, generation: string, desktopPrincipalId: string) {
+  const token = mintInternalCapability({
+    botId, threadId, generation, depth: 0, kind: "desktop", skillAuthoring: false, createdBots: 0, openedThreads: 0, desktopPrincipalId,
+  });
+  return {
+    command: process.execPath,
+    args: [SPAWNED_PROXIES.userSandbox],
+    env: { ...AGENTS_NODE_FLAG, OMB_SANDBOX_TOKEN: token, OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`, OMB_TOOL_SERVER: DESKTOP_BRIDGE_MCP_NAME },
+  };
+}
+
+/** Where this turn's tools run and for whom (server/desktop-bridge.ts
+ * resolveBotWorkplace), from the person's preference and whether their
+ * desktop app is connected right now. */
+function decideWorkplace(input: { desktopTargeted: boolean; routine: boolean; principal: string | null; personAsked: boolean }): WorkplaceDecision {
+  const principal = input.principal?.trim().toLowerCase() || null;
+  return resolveBotWorkplace({
     organization: IDENTITY.kind === "perspicax",
     sandboxConfigured: Boolean(userSandbox),
     desktopTargeted: input.desktopTargeted,
+    routine: input.routine,
+    principal,
+    personAsked: input.personAsked,
+    preference: workplacePreference(principal),
+    desktopConnected: desktopBridges.connected(principal),
   });
-  if (target === "user-sandbox" && input.customMcp && input.sandboxPrincipalId) {
-    integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation, input.sandboxPrincipalId) };
+}
+
+/** The provider text for this turn with the speaker's own attachments
+ * pointed where the tools run (server/attachment-staging.ts). Another
+ * person's upload is left as is and never copied. */
+function workplaceTurnText(text: string, decision: WorkplaceDecision): { text: string; staging: TurnWorkplace["staging"] } {
+  if (IDENTITY.kind !== "perspicax") return { text, staging: null };
+  const person = decision.principal;
+  const files = attachedFilesInText(text, ATTACHMENTS_DIR).filter((file) => person && attachmentIsTheirs(person, attachmentReferences(file.file)));
+  if (!files.length) return { text, staging: null };
+  const desktop = decision.target === "user-desktop" ? desktopBridges.current(person) : null;
+  const target: StagingTarget | null = desktop
+    ? { kind: "user-desktop", attachmentsDir: desktop.attachmentsDir, platform: desktop.platform }
+    : decision.target === "user-sandbox" ? { kind: "user-sandbox" } : null;
+  const staged = stageTurnAttachments(text, files, target);
+  return { text: staged.text, staging: target && staged.staged.length ? { target, files: staged.staged } : null };
+}
+
+/** What the bot is told about where its tools run, when it matters: on the
+ * person's own computer, or in their server environment because their
+ * computer is not connected (the UI says so too). Provider text only. */
+function withWorkplaceNote(text: string, decision: WorkplaceDecision): string {
+  if (decision.target === "user-desktop" && decision.reason === "desktop") {
+    return `${text}\n\n<workplace>Your ${DESKTOP_BRIDGE_MCP_NAME} tools run on this person's own computer, through their Sagax desktop app: their files, apps, network and Local VM, as if you were on their machine.</workplace>`;
+  }
+  if (decision.fallback && decision.target === "user-sandbox") {
+    return `${text}\n\n<workplace>This person's computer is not connected (their Sagax desktop app is closed or signed out), so your tools run in their server environment instead. Their own files and local network are not reachable from there; tell them so if they ask for them.</workplace>`;
+  }
+  return text;
+}
+
+/** Every stored message naming an upload, with its person and time: the
+ * first one tells whose upload it is (attachmentIsTheirs). */
+function attachmentReferences(file: string): { person?: string; at: number }[] {
+  const out: { person?: string; at: number }[] = [];
+  for (const threadId of threadsUsingAttachment(file)) {
+    for (const message of store.messagesFor(threadId)) {
+      if (!message.text?.includes(file)) continue;
+      const person = message.role === "user" ? linePersonKey(message) : undefined;
+      out.push({ person: person?.trim().toLowerCase(), at: message.at });
+    }
+  }
+  return out;
+}
+
+/** The egress proxy for this turn, when its tools run on the person's
+ * computer and that computer's tunnel is up: the engine's own network
+ * traffic (remote MCP servers, tool HTTP calls) then leaves through it. */
+function turnNetworkProxy(threadId: string, botId: string, decision: WorkplaceDecision): { url: string; noProxy: string[] } | undefined {
+  const person = decision.principal;
+  if (decision.target !== "user-desktop" || !person || !egressProxy || !desktopTunnels.connected(person)) return undefined;
+  const url = egressProxy.urlFor({
+    person, botId, threadId,
+    active: () => {
+      const current = turnWorkplaces.get(threadId);
+      return Boolean(current && current.decision.target === "user-desktop" && current.decision.principal === person &&
+        activeInternalGenerationByThread.get(threadId) === current.generation);
+    },
+    network: () => workplacePreference(person).network,
+  });
+  const hosts = [process.env.OMB_PERSPICAX_ISSUER, process.env.ANTHROPIC_BASE_URL, process.env.OPENAI_BASE_URL]
+    .map((value) => { try { return value ? new URL(value).hostname : ""; } catch { return ""; } });
+  return { url, noProxy: hosts.filter(Boolean) };
+}
+
+/** Mount the right person's tools when this turn's hands land there: their
+ * own computer (desktop bridge) or their server environment. */
+function mountUserSandbox(
+  integrations: NonNullable<SendTurnInput["integrations"]>,
+  input: { botId: string; threadId: string; generation: string; customMcp: boolean; decision: WorkplaceDecision; staging: TurnWorkplace["staging"] },
+): void {
+  const { decision } = input;
+  turnWorkplaces.set(input.threadId, { generation: input.generation, botId: input.botId, decision, staging: input.staging });
+  if (!input.customMcp || !decision.principal) return;
+  if (decision.target === "user-sandbox") {
+    integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation, decision.principal) };
+  } else if (decision.target === "user-desktop" && desktopBridges.connected(decision.principal)) {
+    integrations.custom = { ...integrations.custom, [DESKTOP_BRIDGE_MCP_NAME]: userDesktopIntegration(input.botId, input.threadId, input.generation, decision.principal) };
+  }
+}
+
+/** Copy the turn's pending attachments where its tools run, once, at its
+ * first tool call (nothing is created for a turn that never uses a tool). */
+async function stagePendingAttachments(threadId: string, generation: string): Promise<void> {
+  const workplace = turnWorkplaces.get(threadId);
+  if (!workplace?.staging || workplace.generation !== generation || !workplace.decision.principal) return;
+  const { target, files } = workplace.staging;
+  workplace.staging = null;
+  const person = workplace.decision.principal;
+  for (const file of files) {
+    try {
+      if (target.kind === "user-sandbox" && userSandbox) {
+        const path = `${SANDBOX_ATTACHMENTS_DIR}/${stagedName(file)}`;
+        // Linux keeps each environment string under 128 KiB: chunks of 48 KiB.
+        for (const chunk of attachmentChunks(file, 48 * 1024)) {
+          const result = await userSandbox.exec(person, {
+            argv: ["sh", "-c", chunk.offset === 0
+              ? 'mkdir -p -- "$(dirname -- "$SAGAX_PATH")" && printf %s "$SAGAX_CONTENT_B64" | base64 -d > "$SAGAX_PATH"'
+              : 'printf %s "$SAGAX_CONTENT_B64" | base64 -d >> "$SAGAX_PATH"'],
+            env: { SAGAX_PATH: path, SAGAX_CONTENT_B64: chunk.data.toString("base64") },
+            timeoutSec: 30,
+          });
+          if (result.exitCode !== 0) throw new Error(result.stderr.trim() || "copy failed");
+        }
+      } else if (target.kind === "user-desktop") {
+        const active = () => activeInternalGenerationByThread.get(threadId) === generation;
+        for (const chunk of attachmentChunks(file, 512 * 1024)) {
+          const result = await desktopBridges.request(person, {
+            action: "stage_file", name: stagedName(file), content: chunk.data.toString("base64"), encoding: "base64", offset: chunk.offset, final: chunk.final,
+          }, active) as { isError?: boolean; content?: { text?: string }[] } | null;
+          if (result?.isError) throw new Error(result.content?.[0]?.text ?? "copy failed");
+        }
+      }
+      bridgeAudit.record({ person, botId: workplace.botId, threadId, target: target.kind, kind: "tool", detail: `attachment ${stagedName(file)}`, ok: true });
+    } catch (error) {
+      bridgeAudit.record({ person, botId: workplace.botId, threadId, target: target.kind, kind: "tool", detail: `attachment ${stagedName(file)}`, ok: false, error: (error as Error).message });
+      console.error(`[omb-bridge] could not copy attachment ${file.file} to ${target.kind}: ${(error as Error).message}`);
+    }
   }
 }
 
@@ -10154,7 +10337,7 @@ async function startTurn(
   // path-reading drivers retain the attachment tag as their compatibility route.
   const resolvedImages = extractTurnImages(text);
   const usesNativeImageInput = instance.adapter.capabilities.nativeImageInput === true;
-  const providerText = usesNativeImageInput ? resolvedImages.text : text;
+  let providerText = usesNativeImageInput ? resolvedImages.text : text;
   const turnImages = usesNativeImageInput ? resolvedImages.images : [];
   const commsDepth = opts?.commsDepth ?? 0;
   // Classify the turn where the peer paths' depth actually arrives: by the
@@ -10234,6 +10417,21 @@ async function startTurn(
   });
   // an automatic recovery re-enters with these options: same speaker
   opts = { ...opts, speaker };
+  // Organization server: where this turn's tools run, and for whom, decided
+  // once (server/desktop-bridge.ts); the speaker's own attachments are
+  // pointed there and small text ones given inline.
+  const turnPlace = decideWorkplace({
+    desktopTargeted: plan.computer === "local",
+    routine: routineLineage(speaker),
+    principal: sandboxPrincipalForTurn({
+      botOwnerPrincipalId: effectiveBotOwner(bot),
+      routine: routineLineage(speaker),
+      speakerPrincipalId: orgSpeakerPrincipal(bot, speaker),
+    }),
+    personAsked: !routineLineage(speaker) && Boolean(orgSpeakerPrincipal(bot, speaker)),
+  });
+  const placedText = opts.cardContinuation ? { text: providerText, staging: null } : workplaceTurnText(providerText, turnPlace);
+  providerText = withWorkplaceNote(placedText.text, turnPlace);
   // A compaction summarizes with the bot's engine too, so it is gated like
   // a turn, and so is a fresh delegated turn (a hop, as ask_bot's is); other
   // card continuations resume a turn already admitted.
@@ -10620,12 +10818,8 @@ async function startTurn(
       const wants = plan.computer;
       mountUserSandbox(integrations, {
         botId: bot.id, threadId, generation: dispatchClaimId,
-        desktopTargeted: wants === "local", customMcp: instance.adapter.capabilities.customMcp === true,
-        sandboxPrincipalId: sandboxPrincipalForTurn({
-          botOwnerPrincipalId: effectiveBotOwner(bot),
-          routine: routineLineage(speaker),
-          speakerPrincipalId: orgSpeakerPrincipal(bot, speaker),
-        }),
+        customMcp: instance.adapter.capabilities.customMcp === true,
+        decision: turnPlace, staging: placedText.staging,
       });
       // A place the organisation disallows, or a Cloud home never offers, is
       // refused before anything is prepared; Auto below simply skips them.
@@ -11108,6 +11302,9 @@ async function startTurn(
         liveBot &&
         plan.browser &&
         !(plan.computer === undefined && mountedComputer) &&
+        // On the person's computer, web pages open in their own browser
+        // (sagax-desktop browse), on their network, not on this server.
+        !(turnPlace.target === "user-desktop" && integrations.custom?.[DESKTOP_BRIDGE_MCP_NAME]) &&
         builtInBrowserEnabled(cfg) &&
         liveBot.browser !== false &&
         instance.adapter.capabilities.browserMcp === true
@@ -11270,6 +11467,7 @@ async function startTurn(
         mentionTurn: tagged.length > 0,
         integrations,
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+        ...(() => { const networkProxy = turnNetworkProxy(threadId, bot.id, turnPlace); return networkProxy ? { networkProxy } : {}; })(),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
         cwd,
@@ -13062,13 +13260,29 @@ async function runGroupMemberTurn(
   const resolvedLatestImages = latestUser?.text && !cardContinuation && !latestInBurst
     ? extractTurnImages(latestUser.text)
     : { text: latestUser?.text ?? "", images: [] };
+  // Organization server: where this room turn's tools run (the person whose
+  // message it answers), and their own attachments pointed there.
+  const roomRoutine = !roomSpeakerId && roomRoutineSpeaker(threadId) !== null;
+  const roomPrincipal = sandboxPrincipalForTurn({
+    botOwnerPrincipalId: effectiveBotOwner(bot),
+    routine: roomRoutine,
+    speakerPrincipalId: roomSpeakerId,
+    roomCreatorPrincipalId: group.createdBy ?? group.humanIds?.[0],
+  });
+  let roomPlace = decideWorkplace({ desktopTargeted: false, routine: roomRoutine, principal: roomPrincipal, personAsked: Boolean(roomSpeakerId) });
+  const roomPlaced = latestUser && !cardContinuation && !latestInBurst && latestUser.sender?.id?.trim().toLowerCase() === roomPlace.principal
+    ? workplaceTurnText(usesNativeImageInput ? resolvedLatestImages.text : latestUser.text ?? "", roomPlace)
+    : { text: null, staging: null };
+  const latestOverride = roomPlaced.text !== null && roomPlaced.staging !== null
+    ? roomPlaced.text
+    : usesNativeImageInput ? resolvedLatestImages.text : null;
   const roomContext = serializeRoomContext(
     threadId,
     userName,
-    usesNativeImageInput && latestUser
+    latestUser && (usesNativeImageInput || latestOverride !== null)
       ? [
           ...burstOverrides,
-          ...(latestInBurst ? [] : [{ messageId: latestUser.id, text: resolvedLatestImages.text }]),
+          ...(latestInBurst || latestOverride === null ? [] : [{ messageId: latestUser.id, text: latestOverride }]),
         ]
       : undefined,
     bot.id,
@@ -13286,7 +13500,8 @@ async function runGroupMemberTurn(
   }
   // One place per room turn as well: a team computer reached on Auto means
   // no separate built-in browser.
-  if (roomPlan.browser && !(roomPlan.computer === undefined && roomTeamComputer)) {
+  if (roomPlan.browser && !(roomPlan.computer === undefined && roomTeamComputer) &&
+      !(roomPlace.target === "user-desktop" && integrations.custom?.[DESKTOP_BRIDGE_MCP_NAME])) {
     const selectedProfile = readyBot.browserProfile;
     const browser = await browserIntegration(readyBot.id, selectedProfile, { threadId, generation: internalGeneration });
     if (browser) integrations.browser = browser.integration;
@@ -13316,15 +13531,11 @@ async function runGroupMemberTurn(
   const roomSetupIsCurrent = () => !isCancelled?.() &&
     groupSpeakers.get(threadId) === roomSpeaker &&
     activeInternalGenerationByThread.get(threadId) === internalGeneration;
+  if (roomPlan.computer === "local") roomPlace = decideWorkplace({ desktopTargeted: true, routine: roomRoutine, principal: roomPrincipal, personAsked: Boolean(roomSpeakerId) });
   mountUserSandbox(integrations, {
     botId: readyBot.id, threadId, generation: internalGeneration,
-    desktopTargeted: roomPlan.computer === "local", customMcp: instance.adapter.capabilities.customMcp === true,
-    sandboxPrincipalId: sandboxPrincipalForTurn({
-      botOwnerPrincipalId: effectiveBotOwner(readyBot),
-      routine: !roomSpeakerId && roomRoutineSpeaker(threadId) !== null,
-      speakerPrincipalId: roomSpeakerId,
-      roomCreatorPrincipalId: readyGroup.createdBy ?? readyGroup.humanIds?.[0],
-    }),
+    customMcp: instance.adapter.capabilities.customMcp === true,
+    decision: roomPlace, staging: roomPlaced.staging,
   });
   if (!roomTeamComputer && roomPlan.computer === "local") {
     integrations.localComputer = await mountHostComputer(
@@ -13653,6 +13864,7 @@ async function runGroupMemberTurn(
         cwd,
         integrations,
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+        ...(() => { const networkProxy = turnNetworkProxy(threadId, readyBot.id, roomPlace); return networkProxy ? { networkProxy } : {}; })(),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
         ...(instance.instanceId === readyBot.modelSelection.instanceId
@@ -16431,7 +16643,12 @@ const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
-ROUTES.push(createUserPreferenceRoutes({ store: createUserPreferenceStore(DATA_DIR), organization: () => IDENTITY.kind === "perspicax" }));
+ROUTES.push(createUserPreferenceRoutes({ store: userPreferenceStore, organization: () => IDENTITY.kind === "perspicax" }));
+ROUTES.push(createDesktopBridgeRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  bridges: desktopBridges, tunnels: desktopTunnels, audit: bridgeAudit,
+  workplace: (person) => workplacePreference(person),
+}));
 // The bot-memory panel's routes (MEMORY.md, memory/ topics, journal); the
 // store lookups — the 404 precheck and journal thread titles — stay explicit.
 ROUTES.push(createBotMemoryRoutes({
@@ -18820,6 +19037,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? "phone"
         : path === "/api/internal/sandbox/mcp"
         ? "sandbox"
+        : path === "/api/internal/desktop/mcp"
+        ? "desktop"
         : path === "/api/internal/perspicax/mcp"
         ? "perspicax"
         : path.startsWith("/api/internal/connectors/")
@@ -19016,6 +19235,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const ownerId = internalCapability.sandboxPrincipalId;
         if (!ownerId) return json(res, 403, { error: "this capability has no server environment" });
         try {
+          if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
           const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
             exec: (input) => userSandbox.exec(ownerId, input),
             overQuota: () => userSandbox.workspaceOverQuota(ownerId),
@@ -19026,6 +19246,42 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (error instanceof UserSandboxUnavailable) return json(res, 200, { result: { content: [{ type: "text", text: error.message }], isError: true } });
           const status = (error as { status?: number }).status;
           return json(res, status === 400 || status === 404 ? status : 502, { error: error instanceof Error ? error.message : "the server environment failed" });
+        }
+      }
+      if (method === "POST" && path === "/api/internal/desktop/mcp") {
+        // The person's own computer through their desktop app (organization
+        // mode). The bearer names whose computer (fixed at mount); the hub
+        // reaches only that person's own connected desktop.
+        if (IDENTITY.kind !== "perspicax") return json(res, 404, { error: "unknown internal endpoint" });
+        const frame = await readInternalBody() as { method?: unknown; params?: unknown } | null;
+        const rpcMethod = typeof frame?.method === "string" ? frame.method : "";
+        const person = internalCapability.desktopPrincipalId;
+        if (!person) return json(res, 403, { error: "this capability has no computer" });
+        const active = () => internalCapabilityIsActive(internalCapability);
+        try {
+          if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          const result = await handleDesktopBridgeMcp(rpcMethod, frame?.params, async (operation: DesktopBridgeOperation) => {
+            // The bot's own "no computer" setting holds on the person's screen too.
+            if ((operation.action === "computer_tools" || operation.action === "computer_call") && store.bot(internalCapability.botId)?.computer === "off") {
+              throw new Error("This bot has no computer. Change its Computer setting to use the screen.");
+            }
+            const detail = operation.action === "fetch_url" || operation.action === "browse"
+              ? `${operation.action} ${(() => { try { return new URL(operation.url ?? "").host; } catch { return ""; } })()}`
+              : operation.action;
+            try {
+              const answer = await desktopBridges.request(person, operation, active);
+              bridgeAudit.record({ person, botId: internalCapability.botId, threadId: internalCapability.threadId, target: "user-desktop", kind: "tool", detail, ok: (answer as { isError?: boolean } | null)?.isError !== true });
+              return answer;
+            } catch (error) {
+              bridgeAudit.record({ person, botId: internalCapability.botId, threadId: internalCapability.threadId, target: "user-desktop", kind: "tool", detail, ok: false, error: (error as Error).message });
+              throw error;
+            }
+          });
+          requireActiveInternalCapability();
+          return json(res, 200, { result });
+        } catch (error) {
+          const status = (error as { status?: number }).status;
+          return json(res, status === 400 || status === 404 ? status : 502, { error: error instanceof Error ? error.message : "your computer could not be reached" });
         }
       }
       if (method === "POST" && path === "/api/internal/phone/claim") {
@@ -27521,6 +27777,31 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
 const server = createServer(handleRequest);
 desktopViewer.attach(server, handleRequest);
+/** The desktop bridge's network tunnel (organization mode): the WebSocket a
+ * person's desktop app opens, checked against their live session and the
+ * desktop's own secret before any byte is relayed. */
+const desktopTunnelDeps = {
+  organization: () => IDENTITY.kind === "perspicax",
+  session: (req: IncomingMessage) => {
+    const token = parseCookies(req.headers.cookie).get(SESSION_COOKIE);
+    const record = token ? sessions.authenticate(token) : null;
+    const person = record ? liveSessionPerson(record.id) : null;
+    return record && person ? { id: record.id, person } : null;
+  },
+  sameOrigin: (req: IncomingMessage) => isSameOrigin(req),
+  bridgeOwner: (id: string, session: string, secret: string) => desktopBridges.owns(id, session, secret),
+  tunnels: desktopTunnels,
+};
+attachDesktopTunnel(server, desktopTunnelDeps);
+if (IDENTITY.kind === "perspicax") {
+  egressProxy = await startEgressProxy({
+    tunnels: desktopTunnels,
+    audit: (entry) => bridgeAudit.record({
+      person: entry.person, botId: entry.botId, threadId: entry.threadId, target: entry.via === "desktop" ? "user-desktop" : "direct",
+      kind: "network", detail: `${entry.host}:${entry.port}`, ok: entry.ok, error: entry.error,
+    }),
+  });
+}
 
 calendarCalls.start();
 
@@ -27697,6 +27978,7 @@ if (TUNNEL_SOCKET) {
   if (process.platform !== "win32") rmSync(TUNNEL_SOCKET, { force: true });
   tunnelListener = createServer(handleRequest);
   desktopViewer.attach(tunnelListener, handleRequest);
+  attachDesktopTunnel(tunnelListener, desktopTunnelDeps);
   tunnelListener.listen(TUNNEL_SOCKET, () => {
     console.log(`openmausbot tunnel listener on ${TUNNEL_SOCKET}`);
   });
@@ -27713,6 +27995,9 @@ const gracefulShutdown = createGracefulShutdown({
       // any cleanup function reaches an await.
       revokeAllInternalCapabilities();
       sharedComputers.close();
+      desktopBridges.close();
+      desktopTunnels.close();
+      void egressProxy?.close();
       sharedComputerControl.close();
       browserLive.closeAll();
       desktopViewer.closeAll();
