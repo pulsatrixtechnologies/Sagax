@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Bot } from "@/state/store";
 
-import { sidebarListedBots } from "./Sidebar";
+import { parseItemDrag, sidebarListedBots } from "./Sidebar";
 
 const bot = (id: string, ownerUserId?: string, section?: string): Bot => ({
   id, threadId: `t-${id}`, name: id, title: "", description: "", notifications: true, color: "green", unread: false,
@@ -24,5 +24,14 @@ describe("sidebarListedBots", () => {
 
   it("still leaves another person's bot out on a shared workspace", () => {
     expect(sidebarListedBots([mine, shared], "pr_bob", false).map((b) => b.id)).toEqual(["mine"]);
+  });
+});
+
+describe("dragging a bot or a group onto a section", () => {
+  it("reads what the drag carries and ignores anything else", () => {
+    expect(parseItemDrag(JSON.stringify({ kind: "bot", id: "b1" }))).toEqual({ kind: "bot", id: "b1" });
+    expect(parseItemDrag(JSON.stringify({ kind: "group", id: "g1" }))).toEqual({ kind: "group", id: "g1" });
+    expect(parseItemDrag(JSON.stringify({ kind: "folder", id: "f" }))).toBeNull();
+    expect(parseItemDrag("")).toBeNull();
   });
 });
