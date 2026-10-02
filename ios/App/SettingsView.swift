@@ -51,6 +51,8 @@ struct SettingsView: View {
             }
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.92), value: navigator.routes)
+        // The references were taken with the home indicator auto-hidden.
+        .persistentSystemOverlays(ParityMode.isActive ? .hidden : .automatic)
         .environmentObject(model)
         .environmentObject(navigator)
         .task {
@@ -154,7 +156,7 @@ private struct SettingsRootPage: View {
 #if DEBUG
             if ParityLaunch.current?.screen == .settingsBottom {
                 // 14-settings-bottom: the Notifications card's top at y 197.
-                ScrollOffsetSetter(offset: 574).frame(width: 0, height: 0)
+                ScrollOffsetSetter(offset: 573.67).frame(width: 0, height: 0)
             }
 #endif
         }
@@ -239,7 +241,7 @@ private struct SettingsRootPage: View {
                 accessory: .toggle(Binding(get: { model.timeZoneAuto }, set: { on in Task { await model.setTimeZoneAuto(on) } })),
                 height: 74,
                 identifier: "settings-time-zone-auto",
-                textTop: 13.07
+                textTop: 13.4
             )
             CardHairline(leadingInset: SettingsMetrics.rowInset)
             if model.timeZoneAuto {

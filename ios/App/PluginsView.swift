@@ -246,6 +246,7 @@ struct PluginsView: View {
                     .accessibilityIdentifier("settings-back")
                 Text("Plugins")
                     .font(Theme.Font.headerTitle)
+                    .tracking(SettingsMetrics.tracking135)
                     .foregroundStyle(Theme.textPrimary)
                     .padding(.leading, SettingsMetrics.titleGap)
                     .accessibilityAddTraits(.isHeader)
@@ -277,6 +278,7 @@ struct PluginsView: View {
                 .padding(.trailing, model.installed.plugins.isEmpty ? 0 : 8)
                 Text("\(model.installed.count) installed")
                     .font(Theme.Font.headerTitle)
+                    .tracking(SettingsMetrics.tracking135)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                     .accessibilityIdentifier("plugins-installed-count")
@@ -299,10 +301,15 @@ struct PluginsView: View {
                 Text("Not installed").tag(PluginFilter.notInstalled)
             }
         } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(model.filter == .all ? Theme.textPrimary : Theme.blue)
-                .frame(width: 42, height: 42)
+            // Three centred bars, 17.33 / 11 / 4 pt wide on a 5.9 pt pitch.
+            VStack(spacing: 4) {
+                ForEach([17.33, 11, 4] as [CGFloat], id: \.self) { width in
+                    Capsule().frame(width: width, height: 2)
+                }
+            }
+            .foregroundStyle(model.filter == .all ? Theme.textPrimary : Theme.blue)
+            .offset(y: -0.2)
+            .frame(width: 42, height: 42)
                 .contentShape(Circle())
         }
         .themeGlass(Circle())
@@ -433,6 +440,7 @@ private struct PluginRowLayout<Icon: View, Pill: View>: View {
             VStack(alignment: .leading, spacing: 2.6) {
                 Text(verbatim: name)
                     .font(Theme.Font.rowTitle)
+                    .tracking(SettingsMetrics.tracking135)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                 if !description.isEmpty {

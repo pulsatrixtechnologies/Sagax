@@ -169,7 +169,7 @@ struct BotComputerSettingsView: View {
                     style: .destructive,
                     height: 74,
                     identifier: "computer-reset",
-                    textTop: 12.67
+                    textTop: 13.0
                 ) { if running == nil { confirming = .reset } }
             }
             .disabled(running != nil)
@@ -177,16 +177,9 @@ struct BotComputerSettingsView: View {
             SettingsCard {
                 SettingsRow(title: "Disk space", accessory: .value(diskText), height: 45, identifier: "computer-disk")
             }
-            if let problem = status?.problem ?? loadError {
-                // What the computer itself says is wrong ("Start docker first").
-                Text(verbatim: problem)
-                    .font(Theme.Font.label)
-                    .foregroundStyle(Theme.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 33.3)
-                    .padding(.top, 8)
-                    .accessibilityIdentifier("computer-problem")
-            }
+            // What the computer says is wrong ("Start docker first") comes
+            // with the refusal when an action is tried; the status row
+            // itself stays as in the reference.
         }
         .task { await load() }
         .confirmationDialog(confirmTitle, isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), titleVisibility: .visible) {
@@ -213,8 +206,8 @@ struct BotComputerSettingsView: View {
 
     private var resetDescription: String {
         status?.kind == .local
-            ? "Rebuilds your Bots' computer from its current version. Files in your workspace folder stay."
-            : "Erases your Bots' computer, workspace files included, and starts it again from the latest version."
+            ? "Rebuild from the current image. Files in your workspace folder stay."
+            : "Rebuild from the latest image. Files in your workspace are erased."
     }
 
     private var footerText: LocalizedStringKey {
@@ -407,11 +400,11 @@ struct SettingsSearchField: View {
     var identifier: String
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7.67) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15.3, weight: .medium))
                 .foregroundStyle(Color(hex: 0x6B6B6D))
-            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Color(hex: 0x6C6B6F)))
+            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Color(hex: 0x6C6B6F)).tracking(SettingsMetrics.tracking135))
                 .font(Theme.Font.rowTitle)
                 .foregroundStyle(Theme.textPrimary)
                 .textInputAutocapitalization(.never)
@@ -428,6 +421,7 @@ struct SettingsSearchField: View {
                 .accessibilityLabel("Clear")
             }
         }
+        .offset(y: -0.33)
         .padding(.leading, 12.67)
         .padding(.trailing, 12)
         .frame(height: 40.67)

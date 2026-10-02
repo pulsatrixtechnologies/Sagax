@@ -24,6 +24,8 @@ enum SettingsMetrics {
     /// Previous card bottom to the next card top when a label sits between.
     static let labelledGap: CGFloat = 48.67
     static let footerGap: CGFloat = 30.3
+    /// The references set 13.5 pt text about 1% tighter than SwiftUI does.
+    static let tracking135: CGFloat = -0.05
 }
 
 // MARK: - Page
@@ -87,6 +89,7 @@ struct SettingsPage<Trailing: View, Content: View>: View {
             if let title {
                 Text(title)
                     .font(Theme.Font.headerTitle)
+                    .tracking(SettingsMetrics.tracking135)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                     .padding(.leading, SettingsMetrics.titleGap)
@@ -246,13 +249,14 @@ struct SettingsRow: View {
             }
             Text(title)
                 .font(Theme.Font.rowTitle)
+                .tracking(SettingsMetrics.tracking135)
                 .foregroundStyle(titleColor)
                 .lineLimit(1)
             Spacer(minLength: 12)
             trailing
         }
         // Centred text sits a pixel low against the references.
-        .offset(y: -0.33)
+        .offset(y: isToggle ? 0 : -0.33)
         .padding(.leading, SettingsMetrics.rowInset)
         .padding(.trailing, trailingPadding)
         .frame(height: height ?? (isToggle ? Theme.Metric.toggleRowHeight : 43.5))
@@ -262,9 +266,10 @@ struct SettingsRow: View {
         // The text column runs to a fixed gap before the control, whatever
         // the control's own sizing says, so lines wrap where the
         // reference's do.
-        VStack(alignment: .leading, spacing: 3.3) {
+        VStack(alignment: .leading, spacing: 2.3) {
             Text(title)
                 .font(Theme.Font.rowTitle)
+                .tracking(SettingsMetrics.tracking135)
                 .foregroundStyle(titleColor)
             WrappingLabel(text: AppStrings.localized(subtitle), size: 11, color: UIColor(Theme.textSecondary), lineHeight: 14)
         }
@@ -309,10 +314,10 @@ struct SettingsRow: View {
         case .chevron:
             SettingsChevron()
         case let .value(text):
-            Text(verbatim: text).font(Theme.Font.rowTitle).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            Text(verbatim: text).font(Theme.Font.rowTitle).tracking(SettingsMetrics.tracking135).foregroundStyle(Theme.textSecondary).lineLimit(1)
         case let .valueChevron(text):
             HStack(spacing: 11.67) {
-                Text(verbatim: text).font(Theme.Font.rowTitle).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                Text(verbatim: text).font(Theme.Font.rowTitle).tracking(SettingsMetrics.tracking135).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 SettingsChevron()
             }
         case let .toggle(binding):
@@ -383,6 +388,7 @@ struct AccountCardRow: View {
             VStack(alignment: .leading, spacing: 1.2) {
                 Text(verbatim: name)
                     .font(Theme.Font.rowTitle)
+                    .tracking(SettingsMetrics.tracking135)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                 if let detail {

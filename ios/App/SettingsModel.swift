@@ -29,6 +29,17 @@ final class SettingsModel: ObservableObject {
     /// refuses one route (403 for a member, 404 on an older one) leaves that
     /// row in its empty state and the others still load.
     func load() async {
+        // Right after launch the first reads can race the connection coming
+        // up; a pass where nothing answered is tried twice more.
+        for attempt in 0..<3 {
+            await loadOnce()
+            if (identity != nil && usage != nil && botSettings != nil) || attempt == 2 { break }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        await syncTimeZoneIfAutomatic()
+    }
+
+    private func loadOnce() async {
         guard let client else { return }
         async let identity = try? client.accountIdentity()
         async let usage = try? client.usage()
@@ -44,7 +55,6 @@ final class SettingsModel: ObservableObject {
         if let path = loadedIdentity?.avatarUrl, photo == nil {
             photo = await loadPhoto(path, client: client)
         }
-        await syncTimeZoneIfAutomatic()
     }
 
     private func loadPhoto(_ path: String, client: CompanionClient) async -> UIImage? {

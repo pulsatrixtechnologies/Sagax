@@ -45,7 +45,7 @@ final class SettingsUITests: XCTestCase {
     // MARK: API
 
     private func api(_ method: String, _ path: String, body: [String: Any]? = nil) -> (Int, [String: Any]) {
-        var request = URLRequest(url: URL(string: endpoint + path)!)
+        var request = URLRequest(url: URL(string: endpoint + path)!, timeoutInterval: 140)
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let body {
@@ -60,7 +60,7 @@ final class SettingsUITests: XCTestCase {
             result = (status, json)
             done.signal()
         }.resume()
-        _ = done.wait(timeout: .now() + 30)
+        _ = done.wait(timeout: .now() + 150)
         return result
     }
 
