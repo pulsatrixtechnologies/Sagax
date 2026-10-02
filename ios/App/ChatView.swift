@@ -373,6 +373,10 @@ struct ChatView: View {
             // Profile parity screenshots without automating a tap through the
             // animated island/header transition.
             if ProcessInfo.processInfo.arguments.contains("-open-profile") { showingProfile = true }
+            if let screen = ParityLaunch.current?.screen {
+                if screen.opensComputer { showingComputer = true }
+                if screen.opensProfile { showingProfile = true }
+            }
 #endif
         }
         .onValueChange(of: selectedThreadWasRemoved) { removed in

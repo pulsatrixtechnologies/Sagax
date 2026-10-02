@@ -289,6 +289,10 @@ private struct RoutineEditorView: View {
                             Text("Newer schedule").tag(RoutineSchedule.Kind.unknown)
                                 .rowSelectionDisabled()
                         }
+                        if kind == .cron {
+                            Text("Cron").tag(RoutineSchedule.Kind.cron)
+                                .rowSelectionDisabled()
+                        }
                         Text("One time").tag(RoutineSchedule.Kind.once)
                         Text("Selected days").tag(RoutineSchedule.Kind.daily)
                         Text("Every X minutes").tag(RoutineSchedule.Kind.interval)
@@ -457,6 +461,13 @@ private struct RoutineEditorView: View {
             let anchor = Calendar.current.date(bySetting: .second, value: 0, of: intervalAnchor)
                 ?? intervalAnchor
             schedule = .interval(everyMinutes: minutes, anchorAt: anchor)
+        case .cron:
+            // Cron is edited on the computer; the phone keeps it as it is.
+            guard let routine, routine.schedule.type == .cron else {
+                saving = false
+                return
+            }
+            schedule = routine.schedule
         case .unknown:
             saving = false
             return
@@ -504,6 +515,8 @@ private extension RoutineSchedule {
             return Date(timeIntervalSince1970: at / 1_000).formatted(date: .abbreviated, time: .shortened)
         case .unknown:
             return "Newer schedule"
+        case .cron:
+            return cronDisplay ?? "Cron"
         case .interval:
             guard let everyMinutes else { return "Interval unavailable" }
             let cadence = "Every \(everyMinutes) min"

@@ -16,6 +16,7 @@ struct CompanionApp: App {
     @State private var liveActivities = LiveActivityBridge()
     @State private var widgetSync = WidgetSyncBridge.makeAppGroupBridge()
     @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
+    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
 
     var body: some Scene {
         WindowGroup {
@@ -39,6 +40,8 @@ struct CompanionApp: App {
                 // person changes deliberately and almost never. `session` lives
                 // on the App, not here, so the connection survives.
                 .id(language)
+                // Settings > App > Appearance: System follows the device, Dark forces it.
+                .preferredColorScheme((AppearanceMode(rawValue: appearance) ?? .system).colorScheme)
                 .onAppear {
                     OpenMausSharedInbox.removeDirectories(olderThan: 60 * 60)
                     session.connect()
@@ -104,6 +107,7 @@ struct RootView: View {
                 .onAppear { hasSeenWelcome = true }
             case .chats:
                 ChatListView()
+                    .parityLauncher()
                     .onAppear {
                         hasSeenWelcome = true
                         // This is either an existing pairing or a new pairing
@@ -181,6 +185,7 @@ struct RootView: View {
         // Store-preview runs are deterministic screenshot fixtures, not a
         // first pairing, and must keep landing on the requested chat surface.
         if ProcessInfo.processInfo.arguments.contains("-store-preview") { return .determined }
+        if ParityLaunch.current != nil { return .determined }
         #endif
         guard session.notificationAuthorizationResolved else { return .unresolved }
         return session.notificationAuthorization == .notDetermined ? .notDetermined : .determined

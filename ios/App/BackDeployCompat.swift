@@ -123,7 +123,10 @@ extension View {
     /// generators are driven by hand, which is what the modifier does anyway.
     @ViewBuilder
     func feedback<T: Equatable>(_ kind: FeedbackKind, trigger: T) -> some View {
-        if #available(iOS 17.0, *) {
+        // Settings > App > Haptics off: no generator, declarative or not.
+        if !Haptics.isEnabled {
+            self
+        } else if #available(iOS 17.0, *) {
             switch kind {
             case .selection: sensoryFeedback(.selection, trigger: trigger)
             case .warning: sensoryFeedback(.warning, trigger: trigger)

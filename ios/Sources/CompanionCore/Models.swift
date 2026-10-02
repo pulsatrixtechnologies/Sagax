@@ -1130,6 +1130,9 @@ public struct Voice: Codable, Hashable, Identifiable, Sendable {
 public struct RoutineSchedule: Codable, Hashable, Sendable {
     public enum Kind: String, Codable, Sendable {
         case once, daily, interval
+        /// A five-field cron expression in an explicit IANA zone
+        /// (`shared/routine-schedule.ts`). Shown raw; the phone does not edit it.
+        case cron
         /// A schedule introduced by a newer desktop. It remains visible but
         /// cannot be toggled or saved until the user chooses a supported kind.
         case unknown
@@ -1150,6 +1153,22 @@ public struct RoutineSchedule: Codable, Hashable, Sendable {
     public var weekdays: [Int]?
     public var everyMinutes: Int?
     public var anchorAt: Int64?
+    /// `cron`: minute hour day-of-month month weekday.
+    public var expression: String?
+    /// `cron`: the IANA zone the expression is read in.
+    public var timeZone: String?
+
+    public static func cron(expression: String, timeZone: String) -> Self {
+        .init(type: .cron, expression: expression, timeZone: timeZone)
+    }
+
+    /// How the reference shows a cron schedule: `CRON_TZ=<zone> <expression>`,
+    /// or the bare expression when the zone is missing. Nil for other kinds.
+    public var cronDisplay: String? {
+        guard type == .cron, let expression, !expression.isEmpty else { return nil }
+        guard let timeZone, !timeZone.isEmpty else { return expression }
+        return "CRON_TZ=\(timeZone) \(expression)"
+    }
 
     public static func once(at: Date) -> Self {
         .init(type: .once, at: at.timeIntervalSince1970 * 1_000, time: nil, weekdays: nil)
@@ -1297,6 +1316,8 @@ public extension Routine {
             (5...1_440).contains(schedule.everyMinutes ?? 0) && schedule.anchorAt != nil
         case .once:
             (schedule.at ?? -.infinity) > date.timeIntervalSince1970 * 1_000
+        case .cron:
+            !(schedule.expression ?? "").isEmpty && !(schedule.timeZone ?? "").isEmpty
         case .unknown:
             false
         }

@@ -615,7 +615,7 @@ public struct CompanionClient: Sendable {
 
     // MARK: - Requests
 
-    private func makeRequest(_ method: String, _ path: String, query: [URLQueryItem] = [], body: [String: Any]? = nil) throws -> URLRequest {
+    func makeRequest(_ method: String, _ path: String, query: [URLQueryItem] = [], body: [String: Any]? = nil) throws -> URLRequest {
         guard let base = connection.baseURL,
               var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
         else { throw APIError.badURL }
@@ -643,7 +643,7 @@ public struct CompanionClient: Sendable {
     /// Encodable request bodies are used for contracts where omitted and null
     /// have different meanings. JSONSerialization cannot preserve that type
     /// distinction without rebuilding the object by hand at every call site.
-    private func makeRequest<Body: Encodable>(
+    func makeRequest<Body: Encodable>(
         _ method: String,
         _ path: String,
         encodedBody body: Body
@@ -655,7 +655,7 @@ public struct CompanionClient: Sendable {
     }
 
     @discardableResult
-    private func send<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
+    func send<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
         let (data, response) = try await perform(request)
         try Self.check(response, data)
         do {
@@ -665,7 +665,7 @@ public struct CompanionClient: Sendable {
         }
     }
 
-    private func send(_ request: URLRequest) async throws {
+    func send(_ request: URLRequest) async throws {
         let (data, response) = try await perform(request)
         try Self.check(response, data)
     }
@@ -680,7 +680,7 @@ public struct CompanionClient: Sendable {
         return (try? JSONDecoder().decode(SendReceipt.self, from: data)) ?? SendReceipt()
     }
 
-    private func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
+    func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await session.data(for: request)
         } catch {
@@ -1399,6 +1399,8 @@ public struct CompanionClient: Sendable {
         if let weekdays = input.schedule.weekdays { schedule["weekdays"] = weekdays }
         if let everyMinutes = input.schedule.everyMinutes { schedule["everyMinutes"] = everyMinutes }
         if let anchorAt = input.schedule.anchorAt { schedule["anchorAt"] = anchorAt }
+        if let expression = input.schedule.expression { schedule["expression"] = expression }
+        if let timeZone = input.schedule.timeZone { schedule["timeZone"] = timeZone }
         var body: [String: Any] = [
             "name": input.name, "prompt": input.prompt, "botId": input.botId,
             "runOn": input.runOn, "schedule": schedule, "durationMinutes": input.durationMinutes,
@@ -1544,7 +1546,7 @@ public struct CompanionClient: Sendable {
             }
     }
 
-    private static func validRouteID(_ value: String) -> Bool {
+    static func validRouteID(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.allSatisfy { byte in
             (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte)
                 || byte == 45 || byte == 95

@@ -179,6 +179,14 @@ final class Session: ObservableObject {
             Task { @MainActor in await self?.openNotification(target) }
         }
 #if DEBUG
+        // Parity harness: a fixture server, held in memory only (ParityLaunch.swift).
+        if let parity = ParityLaunch.current {
+            let fixture = parity.connection
+            connections = [fixture]
+            configureActiveConnection(fixture, token: parity.token)
+            Task { await refreshNotificationAuthorization() }
+            return
+        }
         let arguments = ProcessInfo.processInfo.arguments
         if (arguments.contains("-store-preview") || arguments.contains("-computer-switcher-preview")),
            let url = Bundle.main.url(
