@@ -313,9 +313,11 @@ export interface WireBot {
   section?: string;
   /** the one message pinned to the top of this bot's active thread */
   pinnedMessageId?: string;
-  /** The coordinator for this bot's sidebar section. */
+  /** This is its owner's Primary Bot: their main contact, who coordinates
+   * the other bots. At most one per person (one on a solo server), enforced
+   * by the server. Stored and sent under its former name, Chief of Staff. */
   chiefOfStaff?: boolean;
-  /** Owner-selected additional teams this Chief may coordinate. */
+  /** Owner-selected additional teams this Primary Bot may coordinate. */
   managedSections?: string[];
   /** Pause for human approval before this bot talks to a peer. */
   approvePeerComms?: boolean;

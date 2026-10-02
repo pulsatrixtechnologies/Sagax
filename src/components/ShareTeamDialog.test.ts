@@ -49,7 +49,7 @@ describe("Share team", () => {
     const words = text(renderToStaticMarkup(createElement(ShareTeamContents, { preview, includeMemory: true, localSkips: ["Quill · picture — picture is larger than 64 KB"] })));
     for (const line of [
       "Bots 3 · Morgan, Scout, Quill", "Skills · arrive switched off 3", "Playbooks 1", "Group chats 1", "Routines · arrive paused 2",
-      "Shared instructions Included", "Chief of Staff Morgan", "Connections · addresses only 1", "Pictures 1", "Starter notes 2",
+      "Shared instructions Included", "Primary Bot Morgan", "Connections · addresses only 1", "Pictures 1", "Starter notes 2",
       "Never included: chat history, keys and passwords, model choices, computers, and who can see each bot.",
       "Removed what looked like a key or password from: Scout · standing instructions",
       "Quill · picture — picture is larger than 64 KB",

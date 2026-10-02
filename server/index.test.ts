@@ -1466,6 +1466,28 @@ describe("harness HTTP API", () => {
     }
   });
 
+  it("makes one Primary Bot per person through POST /api/bots/:id/primary", async () => {
+    const [first, second] = await Promise.all([api("POST", "/api/bots"), api("POST", "/api/bots")]).then(
+      (created) => created.map((response) => response.body.bot),
+    );
+    try {
+      const made = await api("POST", `/api/bots/${first.id}/primary`);
+      expect(made.status).toBe(200);
+      expect(made.body.bot).toMatchObject({ id: first.id, chiefOfStaff: true });
+      // Another team does not make a second one: the role moves.
+      expect((await api("PATCH", `/api/bots/${second.id}`, { section: "Elsewhere" })).status).toBe(200);
+      const moved = await api("POST", `/api/bots/${second.id}/primary`);
+      expect(moved.status).toBe(200);
+      expect(moved.body.changed).toEqual(expect.arrayContaining([first.id, second.id]));
+      const bots = (await api("GET", "/api/bots")).body.bots as Array<{ id: string; chiefOfStaff?: boolean }>;
+      expect(bots.filter((bot) => bot.chiefOfStaff).map((bot) => bot.id)).toEqual([second.id]);
+      expect((await api("POST", "/api/bots/missing-bot/primary")).status).toBe(404);
+    } finally {
+      await api("PATCH", `/api/bots/${second.id}`, { chiefOfStaff: false });
+      await Promise.all([first, second].map((bot) => api("DELETE", `/api/bots/${bot.id}`)));
+    }
+  });
+
   it("protects a team-goal lead and pauses the routine when its room is deleted", async () => {
     const [lead, other] = await Promise.all([api("POST", "/api/bots"), api("POST", "/api/bots")]).then(
       (created) => created.map((response) => response.body.bot),
@@ -2108,7 +2130,7 @@ describe("harness HTTP API", () => {
       const nonChief = await createOperator(outsiderChannel.threadId, "Non-Chief Operator", outsider.id);
       expect(nonChief).toEqual({
         status: 403,
-        body: { error: "only a section's Chief of Staff can create operator bots" },
+        body: { error: "only a Primary Bot can create operator bots" },
       });
       const denied = await createOperator(outsiderChannel.threadId, "Forbidden Operator");
       expect(denied).toEqual({
@@ -3592,7 +3614,7 @@ describe("harness HTTP API", () => {
       // asynchronous, so the Chief can still be busy here, and while a token
       // is configured a busy bot's delete is refused with 409 (index.ts:6673).
       // That refusal was swallowed by the catch below, leaving this Chief in
-      // the store for the rest of the file — and because setChiefOfStaff is
+      // the store for the rest of the file — and because setPrimaryBot is
       // per-section (store.ts:2020), electing a Chief in the default section
       // never cleared it, so the team-import test's store-wide count saw two.
       await api("PUT", "/api/config", { box: { token: "" } }).catch(() => undefined);
@@ -3881,7 +3903,7 @@ describe("harness HTTP API", () => {
     }
   });
 
-  it("elects one Chief of Staff per section and preserves other section Chiefs", async () => {
+  it("keeps one Primary Bot per person across sections", async () => {
     const workA = (await api("POST", "/api/bots")).body.bot;
     const workB = (await api("POST", "/api/bots")).body.bot;
     const personal = (await api("POST", "/api/bots")).body.bot;
@@ -3890,17 +3912,16 @@ describe("harness HTTP API", () => {
       await api("PATCH", `/api/bots/${workB.id}`, { section: "Work" });
       await api("PATCH", `/api/bots/${personal.id}`, { section: "Personal", chiefOfStaff: true });
 
+      // Another section hands the role over too: one per person.
       let bots = (await api("GET", "/api/bots")).body.bots;
-      expect(bots.find((bot: { id: string }) => bot.id === workA.id).chiefOfStaff).toBe(true);
+      expect(bots.find((bot: { id: string }) => bot.id === workA.id).chiefOfStaff).toBe(false);
       expect(bots.find((bot: { id: string }) => bot.id === personal.id).chiefOfStaff).toBe(true);
 
       await api("PATCH", `/api/bots/${workB.id}`, { chiefOfStaff: true });
       bots = (await api("GET", "/api/bots")).body.bots;
-      expect(bots.find((bot: { id: string }) => bot.id === workA.id).chiefOfStaff).toBe(false);
-      expect(bots.find((bot: { id: string }) => bot.id === workB.id).chiefOfStaff).toBe(true);
-      expect(bots.find((bot: { id: string }) => bot.id === personal.id).chiefOfStaff).toBe(true);
+      expect(bots.filter((bot: { chiefOfStaff?: boolean }) => bot.chiefOfStaff).map((bot: { id: string }) => bot.id)).toEqual([workB.id]);
 
-      // Moving a Chief keeps its role and hands off only in the destination.
+      // Moving the Primary Bot to another team keeps its role and changes no one else.
       await api("PATCH", `/api/bots/${workB.id}`, { section: "Personal" });
       bots = (await api("GET", "/api/bots")).body.bots;
       expect(bots.find((bot: { id: string }) => bot.id === workB.id).chiefOfStaff).toBe(true);
@@ -3955,37 +3976,20 @@ describe("harness HTTP API", () => {
     }
   });
 
-  it("rejects a sidebar section Chief collision without changing any bot", async () => {
-    const incumbent = (await api("POST", "/api/bots")).body.bot;
-    const incoming = (await api("POST", "/api/bots")).body.bot;
+  it("files a Primary Bot into any team: sections never conflict over it", async () => {
+    const primary = (await api("POST", "/api/bots")).body.bot;
     const teammate = (await api("POST", "/api/bots")).body.bot;
     try {
-      await api("PATCH", `/api/bots/${incumbent.id}`, { section: "Launch", chiefOfStaff: true });
-      await api("PATCH", `/api/bots/${incoming.id}`, { section: "Research", chiefOfStaff: true });
+      await api("PATCH", `/api/bots/${primary.id}`, { section: "Research", chiefOfStaff: true });
       await api("PATCH", `/api/bots/${teammate.id}`, { section: "Personal" });
-
-      const response = await api("POST", "/api/sidebar-sections", {
-        name: "Launch",
-        botIds: [incoming.id, teammate.id],
-      });
-      expect(response).toEqual({
-        status: 409,
-        body: {
-          error: "A team can have only one Chief of Staff. Choose one Chief or use a team without one.",
-        },
-      });
-
+      const response = await api("POST", "/api/sidebar-sections", { name: "Launch", botIds: [primary.id, teammate.id] });
+      expect(response.status).toBe(200);
       const bots = (await api("GET", "/api/bots")).body.bots;
-      expect(bots.find((bot: { id: string }) => bot.id === incumbent.id))
-        .toMatchObject({ section: "Launch", chiefOfStaff: true });
-      expect(bots.find((bot: { id: string }) => bot.id === incoming.id))
-        .toMatchObject({ section: "Research", chiefOfStaff: true });
-      expect(bots.find((bot: { id: string }) => bot.id === teammate.id))
-        .toMatchObject({ section: "Personal" });
-      expect(Boolean(bots.find((bot: { id: string }) => bot.id === teammate.id)?.chiefOfStaff))
-        .toBe(false);
+      expect(bots.find((bot: { id: string }) => bot.id === primary.id)).toMatchObject({ section: "Launch", chiefOfStaff: true });
+      expect(bots.find((bot: { id: string }) => bot.id === teammate.id)).toMatchObject({ section: "Launch" });
     } finally {
-      for (const bot of [incumbent, incoming, teammate]) await api("DELETE", `/api/bots/${bot.id}`);
+      await api("PATCH", `/api/bots/${primary.id}`, { chiefOfStaff: false });
+      for (const bot of [primary, teammate]) await api("DELETE", `/api/bots/${bot.id}`);
     }
   });
 
@@ -4822,7 +4826,7 @@ describe("harness HTTP API", () => {
     expect(markdownExport.status).toBe(200);
     expect(markdownExport.body).toMatchObject({ name: "Field Team", members: visibleNames.length });
     expect(markdownExport.body.markdown).toContain("## Activation");
-    expect(markdownExport.body.markdown).toContain("Give this file to your Chief of Staff");
+    expect(markdownExport.body.markdown).toContain("Give this file to your Primary Bot");
     expect(markdownExport.body.markdown).not.toMatch(/Archived|autoApprove|alwaysAllow|modelSelection|threadId/);
     expect((await api("GET", "/api/bots")).body.groups).toHaveLength(roomsBefore);
     expect((await api("POST", "/api/teams/export", {})).body.team.name).toBe("My OpenMaus Team");

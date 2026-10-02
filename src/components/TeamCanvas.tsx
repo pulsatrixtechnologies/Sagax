@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowRight, BookOpen, Crown, MessageCircle, Minus, Monitor, MoreHorizontal, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { ArrowRight, BookOpen, MessageCircle, Minus, Monitor, MoreHorizontal, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { api, useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -42,10 +42,9 @@ function BotCard({ bot, selected, moving, connected, onComputer, onArrange }: {
         onArrange(bot, event.key === "ArrowUp" ? -1 : 1);
       }}
       className="flex h-[82px] w-full cursor-grab items-center gap-3 rounded-t-xl px-4 text-left active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-accent">
-      <BotAvatar bot={bot} size={38} motion="none" motionKey={0} animated={false} />
+      <BotAvatar bot={bot} primary={Boolean(bot.chiefOfStaff)} primaryRingClassName="ring-card" size={38} motion="none" motionKey={0} animated={false} />
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5"><span className="truncate text-[14px] font-semibold">{bot.name}</span>
-          {bot.chiefOfStaff && <Crown size={12} className="shrink-0 text-warning" aria-label={t("chat.chiefOfStaff")} />}</span>
+        <span className="flex items-center gap-1.5"><span className="truncate text-[14px] font-semibold">{bot.name}</span></span>
         <span className="mt-1 block truncate text-[11px] text-ink-secondary">{bot.title || (bot.chiefOfStaff ? t("chat.chiefOfStaff") : t("canvas.bot"))}</span>
       </span>
     </button>

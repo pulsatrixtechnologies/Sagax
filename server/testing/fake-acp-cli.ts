@@ -30,7 +30,7 @@
 //                     returns immediately, the peer runs after our turn)
 //                   | chief-delegate (delegates only for an ASSIGN_TO_PEER
 //                     prompt; ordinary follow-ups stay responsive)
-//                   | create-peer (a Chief creates a specialist, then delegates
+//                   | create-peer (a Primary Bot creates a specialist, then delegates
 //                     work to it through the returned id)
 //                   | echo-gated (reply by echoing the full prompt, and when
 //                     FAKE_ACP_GATE_FILE is set hold the turn open until that

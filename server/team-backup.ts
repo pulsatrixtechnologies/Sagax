@@ -165,7 +165,7 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
   return document;
 }
 
-/** Import is always additive, including sections and Chiefs. Rollback owns
+/** Import is always additive, including sections and Primary Bots. Rollback owns
  * only the fresh records below and cannot touch any pre-existing bot/chat. */
 /** The section-channel records an organization import keeps in step
  * (server/section-channels.ts); absent in solo mode. */
@@ -250,13 +250,16 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
       bots.push(bot);
       botIds.set(source.key, bot.id);
       store.patchBot(bot.id, { composio: false, computer: "off", browser: false, approvalMode: "ask", autoApprove: false,
-        connectorTools: {}, hidden: source.hidden, chiefOfStaff: source.chiefOfStaff, playbooks: source.playbooks });
+        connectorTools: {}, hidden: source.hidden, playbooks: source.playbooks });
       if (source.memory) restoreMemory(bot.id, source.memory);
       if (channels && bot.section) {
         channelFor(bot.section);
         channels.recordPlacement(bot.section, bot.id, options.ownerUserId!);
       }
     }
+    // Former Chiefs of Staff (one per section) arrive under the one-per-
+    // person Primary Bot rule (store.adoptImportedLeaders).
+    store.adoptImportedLeaders(backup.bots.filter((source) => source.chiefOfStaff).map((source) => botIds.get(source.key)!));
     for (const source of backup.bots) {
       const bot = store.bot(botIds.get(source.key)!)!;
       const tasks = source.tasks.map((task, i): TaskRecord => {

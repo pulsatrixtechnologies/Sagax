@@ -5,6 +5,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { isMacPlatform } from "@/lib/keyboard-shortcuts";
 import { viewerActorId, viewerCanCreateBots } from "@/lib/viewer";
+import { isViewersPrimaryBot } from "@/lib/primary-bot";
 import { useStore, type Bot } from "@/state/store";
 import { useOrgPeople, type OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { personAvatarSrc } from "@/lib/profile-management";
@@ -345,7 +346,7 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
                   selected ? "bg-raised/80" : "hover:bg-raised/60",
                 )}
               >
-                <BotAvatar bot={bot} state="idle" size={28} animated={false} />
+                <BotAvatar bot={bot} primary={isViewersPrimaryBot(bot, viewer)} primaryRingClassName="ring-elevated" state="idle" size={28} animated={false} />
                 <span className="min-w-0 flex-1 truncate">{bot.name}</span>
                 {mode === "group" && member && !selected && <Check size={14} className="shrink-0 text-ink-secondary group-hover:hidden" />}
                 <span className={cn(
