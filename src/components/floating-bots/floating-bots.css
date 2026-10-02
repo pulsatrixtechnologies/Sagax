@@ -766,6 +766,10 @@ html[data-floating-bot] #root {
   user-select: none;
   -webkit-user-select: none;
 }
+/* Trombi's balloon too: its retro text cap (180px) must not leave a resized balloon half empty */
+.fb-root.r98-root .fb-thread {
+  max-height: none;
+}
 .fb-root .fb-thread {
   flex: 1 1 auto;
   max-height: none;
