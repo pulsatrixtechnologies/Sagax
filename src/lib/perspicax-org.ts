@@ -203,17 +203,6 @@ export interface MyEngine {
   myTurns: "subscription" | "key" | "org-key" | "none";
 }
 
-export interface OrgSection {
-  id: string;
-  name: string;
-  ownerPrincipalId: string;
-  members: { target: string; role: "moderator" | "participant" | "readonly" }[];
-  defaultLevel: "use" | "run";
-  roomId?: string;
-  viewerRole: "owner" | "moderator" | "participant" | "readonly" | null;
-  canModerate: boolean;
-}
-
 /** `<issuer>/console/pulsabot/keys`, where an owner sets their model keys. */
 export function perspicaxKeysUrl(issuer: string): string {
   return `${issuer.replace(/\/+$/, "")}/console/pulsabot/keys`;

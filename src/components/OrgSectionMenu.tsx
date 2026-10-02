@@ -1,19 +1,18 @@
-// The sidebar section menu on a server signed in with Perspicax (slice 4,
-// spec section 3: sections are channels). Right-click, Shift+F10 or the
-// ContextMenu key on a section header, or a right-click on the empty list
-// area, opens it for every signed-in person. What the caller may not do is
-// not shown (server/section-channels.ts decides in the end).
+// The sidebar section menu on a server signed in with Perspicax.
+// Right-click, Shift+F10 or the ContextMenu key on a section header, or a
+// right-click on the empty list area, opens it for every signed-in person.
+// Sections are the person's own folders (src/lib/personal-sections.ts):
+// they share nothing, so there is no members or sharing item. A bot is
+// shared from its own panel; a group has its own people.
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronsDownUp, ChevronsUpDown, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsDownUp, ChevronsUpDown, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import type { OrgSection } from "@/lib/perspicax-org";
 
 export interface OrgSectionMenuActions {
   onNew: () => void;
   onRename?: () => void;
-  onMembers?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onCollapseAll?: () => void;
@@ -21,23 +20,22 @@ export interface OrgSectionMenuActions {
   onDelete?: () => void;
 }
 
-/** Which items a section's menu shows: General (null) and the empty list
- * area only create; a shared section's items follow the caller's rights. */
-export function orgSectionMenuItems(section: OrgSection | null, input: { named: boolean; canMoveUp: boolean; canMoveDown: boolean; anyExpanded: boolean }): Array<keyof OrgSectionMenuActions> {
+/** Which items a section's menu shows: General and the empty list area
+ * create, move and fold; one of the person's own sections also renames and
+ * deletes (its items go back to General). */
+export function orgSectionMenuItems(input: { named: boolean; canMoveUp: boolean; canMoveDown: boolean; anyExpanded: boolean }): Array<keyof OrgSectionMenuActions> {
   const items: Array<keyof OrgSectionMenuActions> = ["onNew"];
-  if (input.named && section?.canModerate) items.push("onRename");
-  if (input.named && section) items.push("onMembers");
+  if (input.named) items.push("onRename");
   if (input.canMoveUp) items.push("onMoveUp");
   if (input.canMoveDown) items.push("onMoveDown");
   items.push(input.anyExpanded ? "onCollapseAll" : "onExpandAll");
-  if (input.named && section?.canModerate) items.push("onDelete");
+  if (input.named) items.push("onDelete");
   return items;
 }
 
 const ITEM_KEYS = {
   onNew: { label: "sidebar.section.new", Icon: Plus },
   onRename: { label: "sidebar.section.rename", Icon: Pencil },
-  onMembers: { label: "sidebar.section.members", Icon: Users },
   onMoveUp: { label: "sidebar.section.moveUp", Icon: ArrowUp },
   onMoveDown: { label: "sidebar.section.moveDown", Icon: ArrowDown },
   onCollapseAll: { label: "sidebar.section.collapseAll", Icon: ChevronsDownUp },

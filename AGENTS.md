@@ -755,6 +755,29 @@ the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `src/lib/person-panel.test.ts`, `PersonPanel.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
 
+## Sidebar sections are personal
+
+On an organization server a sidebar section is one person's folder and
+shares nothing (JC, 2026-10-02). Keep these rules, covered by
+`src/lib/personal-sections.test.ts`, `server/section-channels.test.ts` and
+`src/components/bot-settings/SharingSection.test.ts`:
+
+- The sections live in the person's preference `sagax.sidebarSections.v1`
+  (`src/lib/personal-sections.ts`, synced per person through
+  `/api/me/preferences`); the sidebar overlays them on `bot.section` and
+  `group.section`, which it never writes in organization mode. A solo
+  server keeps the server's sections (one person).
+- The menu creates, renames, moves, folds and deletes; no members or
+  sharing item. A bot is shared from its own panel; a group has its people.
+- General (what is in none of my sections: my bots, bots shared with me,
+  groups, conversations with people) is always shown, on top. Deleting a
+  section puts its items back in General and never deletes anything.
+- Server: bots take no access from a section. At boot each legacy shared
+  section became bot grants once (`sectionShareGrants`, marker
+  `botSharesMigratedAt` in `section-channels.json`); the records stay and
+  rooms keep reading them. `PUT /api/org/sections/:id/members|bots` answers
+  410 `sections_are_personal`.
+
 ## Computer tab and Local VM on an organization server
 
 The Computer tab (`src/components/computer/OrgComputerTab.tsx`) draws the
