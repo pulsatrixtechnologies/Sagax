@@ -3,12 +3,15 @@
 // the server, signed in as the person (their session cookie) and bound to
 // this desktop's private bridge secret. For each connection the server asks
 // for, THIS computer decides and connects: through the operating system's
-// proxy settings (resolveProxy) and its routes, so a VPN applies.
+// proxy settings (resolveProxy, which also evaluates a PAC file the system
+// names; HTTP, HTTPS, SOCKS4a and SOCKS5 proxies, SOCKS5 with a user name and
+// password) and its routes, so a VPN applies.
 //
 // Never reachable from elsewhere: no port is opened here. The person's own
 // option "local network only" is applied on this side too.
 import dns from "node:dns/promises";
 import net from "node:net";
+import tls from "node:tls";
 
 export const TUNNEL = { OPEN: 1, OPENED: 2, FAILED: 3, DATA: 4, END: 5 };
 const MAX_STREAMS = 256;
@@ -54,64 +57,239 @@ export function isBlockedAddress(address) {
 /** Whether this computer opens host:port for a bot, given the person's
  * network option. Resolves names with this computer's own resolver (its
  * VPN's DNS included). */
-export async function tunnelVerdict(host, port, network, lookup = dns.lookup) {
+export async function tunnelVerdict(host, port, network, lookup = dns.lookup, { proxied = false } = {}) {
   if (typeof host !== "string" || !host || host.length > 253 || !Number.isInteger(port) || port < 1 || port > 65535) return { ok: false, code: "bad", message: "Invalid destination" };
+  if (/^localhost\.?$|\.localhost\.?$/i.test(host)) return { ok: false, code: "blocked", message: "This computer's own services and link-local addresses are not reachable through it" };
   let addresses;
   try {
     addresses = net.isIP(host) ? [host] : (await lookup(host, { all: true, verbatim: true })).map(entry => entry.address);
   } catch {
+    addresses = [];
+  }
+  if (!addresses.length) {
+    // Behind a proxy that resolves names itself (a corporate SOCKS or HTTP
+    // proxy), a name this computer cannot resolve is the proxy's to resolve.
+    // "Local network only" needs this computer's own answer.
+    if (proxied && network !== "lan") return { ok: true, address: null };
     return { ok: false, code: "unresolved", message: `${host} could not be resolved on this computer` };
   }
-  if (!addresses.length) return { ok: false, code: "unresolved", message: `${host} could not be resolved on this computer` };
   if (addresses.some(isBlockedAddress)) return { ok: false, code: "blocked", message: "This computer's own services and link-local addresses are not reachable through it" };
   if (network === "lan" && !addresses.every(isLanAddress)) return { ok: false, code: "outside-lan", message: "Outside this computer's local network" };
   return { ok: true, address: addresses[0] };
 }
 
-/** Parse a PAC answer ("DIRECT", "PROXY host:port; DIRECT", ...): the first
- * HTTP proxy, or null for direct. SOCKS is not used: direct instead. */
-export function proxyFromPac(answer) {
+/** Parse the operating system's proxy answer for one destination (a PAC
+ * result, as Electron's session.resolveProxy gives it: "DIRECT",
+ * "PROXY host:port; SOCKS5 host:port; DIRECT", ...) into the routes to try,
+ * in order. An empty or unreadable answer is direct. SOCKS is SOCKS4a and
+ * SOCKS5 (Chromium's meaning of the PAC keywords). */
+export function proxyChain(answer) {
+  const chain = [];
   for (const part of String(answer ?? "").split(";")) {
-    const match = /^\s*(PROXY|HTTPS)\s+([^\s:]+):(\d+)\s*$/i.exec(part);
-    if (match) return { host: match[2], port: Number(match[3]) };
-    if (/^\s*DIRECT\s*$/i.test(part)) return null;
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    if (/^DIRECT$/i.test(trimmed)) { chain.push({ type: "direct" }); continue; }
+    const match = /^(PROXY|HTTP|HTTPS|SOCKS|SOCKS4|SOCKS5)\s+(\[[0-9a-f:.]+\]|[^\s:[\]]+):(\d{1,5})$/i.exec(trimmed);
+    if (!match) continue;
+    const port = Number(match[3]);
+    if (port < 1 || port > 65535) continue;
+    const keyword = match[1].toUpperCase();
+    const type = keyword === "HTTPS" ? "https" : keyword === "SOCKS5" ? "socks5" : keyword.startsWith("SOCKS") ? "socks4" : "http";
+    chain.push({ type, host: match[2].replace(/^\[|\]$/g, ""), port });
   }
-  return null;
+  return chain.length ? chain : [{ type: "direct" }];
 }
 
-/** Open host:port, through the OS proxy when it names one (HTTP CONNECT). */
-async function openConnection(host, port, address, resolveProxy, connect) {
-  const proxy = resolveProxy ? proxyFromPac(await resolveProxy(`https://${host}:${port}`).catch(() => "DIRECT")) : null;
-  if (!proxy) return connect({ host: address ?? host, port });
-  const socket = await connect({ host: proxy.host, port: proxy.port });
-  socket.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`);
+/** The proxy credentials named in the environment (ALL_PROXY, SOCKS_PROXY,
+ * ... as socks5://user:password@host:port), for the SOCKS proxy the system
+ * settings name. The operating system's own proxy passwords are not read. */
+export function proxyCredentialsFromEnv(env = process.env) {
+  const entries = [];
+  for (const key of ["SOCKS5_PROXY", "socks5_proxy", "SOCKS_PROXY", "socks_proxy", "ALL_PROXY", "all_proxy"]) {
+    const value = env[key];
+    if (!value) continue;
+    try {
+      const url = new URL(value);
+      if (!/^socks(4a?|5h?)?:$/i.test(url.protocol) || !url.username) continue;
+      entries.push({ host: url.hostname.replace(/^\[|\]$/g, "").toLowerCase(), port: Number(url.port || 1080), username: decodeURIComponent(url.username), password: decodeURIComponent(url.password) });
+    } catch { /* not a URL */ }
+  }
+  return ({ host, port }) => {
+    const found = entries.find(entry => entry.host === String(host).toLowerCase() && entry.port === port);
+    return found ? { username: found.username, password: found.password } : null;
+  };
+}
+
+/** Read a proxy's answer piece by piece, then leave whatever follows on the
+ * socket for the stream. */
+function proxyReader(socket, timeoutMs = 15_000) {
+  let buffered = Buffer.alloc(0);
+  let waiting = null;
+  let failed = null;
+  const settle = () => {
+    if (!waiting) return;
+    const size = waiting.size(buffered);
+    if (size !== null) {
+      const { resolve } = waiting; waiting = null;
+      const piece = buffered.subarray(0, size); buffered = buffered.subarray(size);
+      resolve(piece);
+    } else if (failed) { const { reject } = waiting; waiting = null; reject(failed); }
+  };
+  const onData = chunk => { buffered = Buffer.concat([buffered, chunk]); if (buffered.length > 65_536) failed ??= new Error("proxy answer too long"); settle(); };
+  const onEnd = () => { failed ??= new Error("the system proxy closed the connection"); settle(); };
+  const onError = error => { failed ??= error; settle(); };
+  const timer = setTimeout(() => { failed ??= new Error("the system proxy did not answer in time"); settle(); }, timeoutMs);
+  socket.on("data", onData); socket.on("end", onEnd); socket.on("close", onEnd); socket.on("error", onError);
+  const take = size => new Promise((resolve, reject) => { waiting = { size, resolve, reject }; settle(); });
+  return {
+    /** Exactly `count` bytes. */
+    read: count => take(data => data.length >= count ? count : null),
+    /** An HTTP answer's head, through its blank line. */
+    head: () => take(data => { const end = data.indexOf("\r\n\r\n"); return end >= 0 ? end + 4 : null; }),
+    done() {
+      clearTimeout(timer);
+      socket.off("data", onData); socket.off("end", onEnd); socket.off("close", onEnd); socket.off("error", onError);
+      // Paused until the stream's own reader takes over: nothing is lost.
+      socket.pause();
+      if (buffered.length) socket.unshift(buffered);
+      buffered = Buffer.alloc(0);
+    },
+  };
+}
+
+/** The 16 bytes of an IPv6 address (net.isIP already said it is one). */
+export function ipv6Bytes(address) {
+  const text = address.toLowerCase().replace(/(\d+)\.(\d+)\.(\d+)\.(\d+)$/, (_, a, b, c, d) => `${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`);
+  const [left, right] = text.split("::");
+  const head = left ? left.split(":") : [];
+  const tail = right === undefined ? [] : right ? right.split(":") : [];
+  const groups = right === undefined ? head : [...head, ...Array(8 - head.length - tail.length).fill("0"), ...tail];
+  return Buffer.from(groups.flatMap(group => { const value = parseInt(group, 16); return [value >> 8, value & 255]; }));
+}
+
+function socksAddress(host) {
+  const family = net.isIP(host);
+  if (family === 4) return Buffer.from([1, ...host.split(".").map(Number)]);
+  if (family === 6) return Buffer.concat([Buffer.from([4]), ipv6Bytes(host)]);
+  const name = Buffer.from(host, "utf8");
+  if (name.length > 255) throw new Error("Destination name too long for the SOCKS proxy");
+  return Buffer.concat([Buffer.from([3, name.length]), name]);
+}
+
+const SOCKS5_REPLIES = { 1: "general failure", 2: "not allowed by its rules", 3: "network unreachable", 4: "host unreachable", 5: "connection refused", 6: "time out", 7: "command not supported", 8: "address type not supported" };
+
+/** SOCKS5 (RFC 1928) CONNECT, with user name and password (RFC 1929) when
+ * the proxy asks and credentials are known. */
+export async function socks5Connect(socket, host, port, credentials) {
+  const reader = proxyReader(socket);
+  try {
+    const methods = credentials ? [0x00, 0x02] : [0x00];
+    socket.write(Buffer.from([5, methods.length, ...methods]));
+    const [version, method] = await reader.read(2);
+    if (version !== 5) throw new Error("the system proxy is not a SOCKS5 proxy");
+    if (method === 0x02 && credentials) {
+      const user = Buffer.from(credentials.username ?? "", "utf8");
+      const pass = Buffer.from(credentials.password ?? "", "utf8");
+      if (user.length > 255 || pass.length > 255) throw new Error("SOCKS user name or password too long");
+      socket.write(Buffer.concat([Buffer.from([1, user.length]), user, Buffer.from([pass.length]), pass]));
+      const [, status] = await reader.read(2);
+      if (status !== 0) throw new Error("the system SOCKS proxy refused the user name and password");
+    } else if (method === 0x02 || method === 0xff) {
+      throw new Error(credentials ? "the system SOCKS proxy accepts none of the offered sign-in methods" : "the system SOCKS proxy asks for a user name and password (set ALL_PROXY=socks5://user:password@host:port for the desktop app)");
+    } else if (method !== 0x00) {
+      throw new Error("the system SOCKS proxy asks for an unsupported sign-in method");
+    }
+    socket.write(Buffer.concat([Buffer.from([5, 1, 0]), socksAddress(host), Buffer.from([port >> 8, port & 255])]));
+    const [replyVersion, reply, , type] = await reader.read(4);
+    if (replyVersion !== 5) throw new Error("the system SOCKS proxy answered badly");
+    if (reply !== 0) throw new Error(`the system SOCKS proxy refused the connection (${SOCKS5_REPLIES[reply] ?? `code ${reply}`})`);
+    const length = type === 1 ? 4 : type === 4 ? 16 : type === 3 ? (await reader.read(1))[0] : -1;
+    if (length < 0) throw new Error("the system SOCKS proxy answered badly");
+    await reader.read(length + 2);
+  } finally { reader.done(); }
+  return socket;
+}
+
+/** SOCKS4a CONNECT (the PAC keyword SOCKS). */
+export async function socks4Connect(socket, host, port) {
+  const reader = proxyReader(socket);
+  try {
+    const family = net.isIP(host);
+    if (family === 6) throw new Error("a SOCKS4 proxy cannot reach an IPv6 address");
+    const ip = family === 4 ? host.split(".").map(Number) : [0, 0, 0, 1];
+    const name = family === 4 ? Buffer.alloc(0) : Buffer.concat([Buffer.from(host, "utf8"), Buffer.from([0])]);
+    socket.write(Buffer.concat([Buffer.from([4, 1, port >> 8, port & 255, ...ip, 0]), name]));
+    const answer = await reader.read(8);
+    if (answer[1] !== 0x5a) throw new Error("the system SOCKS proxy refused the connection");
+  } finally { reader.done(); }
+  return socket;
+}
+
+/** HTTP CONNECT through an HTTP(S) proxy. */
+export async function httpConnect(socket, host, port) {
+  const reader = proxyReader(socket);
+  try {
+    const target = net.isIP(host) === 6 ? `[${host}]:${port}` : `${host}:${port}`;
+    socket.write(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n\r\n`);
+    const head = await reader.head();
+    if (!/^HTTP\/1\.[01] 2\d\d/.test(head.toString("latin1"))) throw new Error("the system proxy refused the connection");
+  } finally { reader.done(); }
+  return socket;
+}
+
+/** Open host:port the way this computer's settings say for it: each route
+ * of the proxy chain in order (HTTP, HTTPS, SOCKS4a or SOCKS5 proxy, or
+ * direct to the verified `address`), the first one that connects wins. A
+ * proxy that fails never silently turns into a direct connection unless the
+ * chain itself lists DIRECT after it. */
+export async function openConnection(host, port, address, chain, { connect = defaultConnect, connectTls = defaultConnectTls, credentials = () => null } = {}) {
+  let last = null;
+  for (const route of chain) {
+    let socket = null;
+    try {
+      if (route.type === "direct") {
+        if (!address) throw new Error(`${host} could not be resolved on this computer`);
+        return { socket: await connect({ host: address, port }), via: "direct" };
+      }
+      socket = route.type === "https" ? await connectTls({ host: route.host, port: route.port }) : await connect({ host: route.host, port: route.port });
+      if (route.type === "socks5") await socks5Connect(socket, host, port, await credentials({ type: route.type, host: route.host, port: route.port }));
+      else if (route.type === "socks4") await socks4Connect(socket, host, port);
+      else await httpConnect(socket, host, port);
+      return { socket, via: `${route.type} ${route.host}:${route.port}` };
+    } catch (error) {
+      socket?.destroy();
+      last = error;
+    }
+  }
+  throw last ?? new Error("No route to the destination");
+}
+
+/** The URL the system's proxy settings (and a PAC file) are asked about. */
+export const proxyQueryUrl = (host, port) => {
+  const name = net.isIP(host) === 6 ? `[${host}]` : host;
+  return port === 80 ? `http://${name}/` : port === 443 ? `https://${name}/` : `https://${name}:${port}/`;
+};
+
+function defaultConnect({ host, port }) {
   return new Promise((resolve, reject) => {
-    let head = Buffer.alloc(0);
-    const onData = chunk => {
-      head = Buffer.concat([head, chunk]);
-      const end = head.indexOf("\r\n\r\n");
-      if (end < 0) { if (head.length > 16_384) { socket.destroy(); reject(new Error("proxy answer too long")); } return; }
-      socket.off("data", onData);
-      if (!/^HTTP\/1\.[01] 2\d\d/.test(head.subarray(0, end).toString("latin1"))) { socket.destroy(); reject(new Error("the system proxy refused the connection")); return; }
-      const rest = head.subarray(end + 4);
-      if (rest.length) socket.unshift(rest);
-      resolve(socket);
-    };
-    socket.on("data", onData);
+    const socket = net.connect({ host, port });
+    socket.once("connect", () => { socket.off("error", reject); resolve(socket); });
     socket.once("error", reject);
   });
 }
 
-const defaultConnect = ({ host, port }) => new Promise((resolve, reject) => {
-  const socket = net.connect({ host, port });
-  socket.once("connect", () => { socket.off("error", reject); resolve(socket); });
-  socket.once("error", reject);
-});
+function defaultConnectTls({ host, port }) {
+  return new Promise((resolve, reject) => {
+    const socket = tls.connect({ host, port, servername: net.isIP(host) ? undefined : host });
+    socket.once("secureConnect", () => { socket.off("error", reject); resolve(socket); });
+    socket.once("error", reject);
+  });
+}
 
 /** One tunnel. `WebSocketImpl` is the platform WebSocket (Node's global in
  * Electron's main process), given headers: the session cookie, the origin
  * and the bridge secret. Resolves once open; `closed` settles when it ends. */
-export function openDesktopTunnel({ url, headers, network = () => "all", resolveProxy, lookup, connect = defaultConnect, record = () => {}, WebSocketImpl = globalThis.WebSocket }) {
+export function openDesktopTunnel({ url, headers, network = () => "all", resolveProxy, proxyCredentials = proxyCredentialsFromEnv(), lookup, connect = defaultConnect, connectTls = defaultConnectTls, record = () => {}, WebSocketImpl = globalThis.WebSocket }) {
   const streams = new Map();
   const socket = new WebSocketImpl(url, { headers });
   socket.binaryType = "arraybuffer";
@@ -135,20 +313,25 @@ export function openDesktopTunnel({ url, headers, network = () => "all", resolve
       try { target = JSON.parse(payload.toString("utf8")); } catch { fail(stream, "bad", "Invalid request"); return; }
       if (streams.size >= MAX_STREAMS) { fail(stream, "busy", "Too many connections"); return; }
       void (async () => {
-        const verdict = await tunnelVerdict(target?.host, target?.port, network(), lookup);
+        const valid = typeof target?.host === "string" && Number.isInteger(target?.port);
+        // The system's settings for this destination (proxy, PAC file, or
+        // direct), asked before anything else.
+        const chain = valid && resolveProxy ? proxyChain(await resolveProxy(proxyQueryUrl(target.host, target.port)).catch(() => "DIRECT")) : [{ type: "direct" }];
+        const verdict = await tunnelVerdict(target?.host, target?.port, network(), lookup, { proxied: chain.some(route => route.type !== "direct") });
         if (!verdict.ok) {
           record({ host: String(target?.host ?? ""), port: Number(target?.port) || 0, ok: false, error: verdict.message });
           fail(stream, verdict.code, verdict.message);
           return;
         }
         let upstream;
-        try { upstream = await openConnection(target.host, target.port, verdict.address, resolveProxy, connect); }
+        let via;
+        try { ({ socket: upstream, via } = await openConnection(target.host, target.port, verdict.address, chain, { connect, connectTls, credentials: proxyCredentials })); }
         catch (error) {
-          record({ host: target.host, port: target.port, ok: false, error: error.message });
-          fail(stream, "refused", `Could not connect to ${target.host}:${target.port} from this computer`);
+          record({ host: target.host, port: target.port, ok: false, error: error.message, via: chain.map(route => route.type).join(",") });
+          fail(stream, "refused", `Could not connect to ${target.host}:${target.port} from this computer (${error.message})`);
           return;
         }
-        record({ host: target.host, port: target.port, ok: true });
+        record({ host: target.host, port: target.port, ok: true, via });
         streams.set(stream, upstream);
         upstream.on("data", chunk => {
           send(TUNNEL.DATA, stream, chunk);
@@ -161,6 +344,7 @@ export function openDesktopTunnel({ url, headers, network = () => "all", resolve
         upstream.on("close", () => streams.delete(stream));
         upstream.on("error", () => { streams.delete(stream); send(TUNNEL.END, stream); });
         send(TUNNEL.OPENED, stream);
+        upstream.resume();
       })();
     } else if (type === TUNNEL.DATA) {
       streams.get(stream)?.write(payload);

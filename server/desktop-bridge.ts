@@ -43,7 +43,7 @@ export type DesktopBridgeRegistration = z.infer<typeof desktopBridgeRegistration
 
 export const DESKTOP_BRIDGE_ACTIONS = [
   "run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse",
-  "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "stage_file",
+  "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "stage_file",
 ] as const;
 export type DesktopBridgeAction = (typeof DESKTOP_BRIDGE_ACTIONS)[number];
 
@@ -78,13 +78,13 @@ export function desktopBridgeCapability(action: DesktopBridgeAction): keyof Desk
     case "fetch_url": return "fetch";
     case "browse": return "browser";
     case "computer_tools": case "computer_call": return "computer";
-    case "vm_status": case "vm_start": case "vm_run_command": return "localVm";
+    case "vm_status": case "vm_start": case "vm_run_command": case "vm_create": return "localVm";
   }
 }
 
 export type DesktopBridgeStatus = { id: string; name: string; platform: string; online: boolean; busy: boolean; lastSeenAt: number; capabilities: DesktopBridgeRegistration["capabilities"] };
 
-type Job = { id: string; operation: DesktopBridgeOperation; active: () => boolean; sent: boolean; resolve: (result: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
+type Job = { id: string; operation: DesktopBridgeOperation; active: () => boolean; sent: boolean; resolve: (result: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout; progress?: (message: string) => void; progressCount: number };
 type Bridge = { registration: DesktopBridgeRegistration; session: string; person: string; secret: string; seen: number; connectedAt: number; jobs: Map<string, Job>; wake?: () => void };
 
 const failure = (message: string, status = 409, code?: string) => Object.assign(new Error(message), { status, ...(code ? { code } : {}) });
@@ -245,6 +245,22 @@ export class DesktopBridges {
     return job?.sent === true && job.active();
   }
 
+  /** A step of a running job (Local VM creation), for the turn. Bounded,
+   * plain text; a job that is not this desktop's, not handed out or no
+   * longer wanted is ignored. */
+  progress(id: string, session: string, secret: string, jobId: string, message: unknown): boolean {
+    const entry = this.authorize(id, session, secret);
+    entry.seen = this.now();
+    const job = entry.jobs.get(jobId);
+    if (!job?.sent || !job.active() || !job.progress || typeof message !== "string") return false;
+    // oxlint-disable-next-line no-control-regex
+    const clean = message.replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 300);
+    if (!clean || job.progressCount >= 50) return false;
+    job.progressCount++;
+    try { job.progress(clean); } catch { /* the turn's display only */ }
+    return true;
+  }
+
   complete(id: string, session: string, secret: string, jobId: string, result: unknown) {
     const entry = this.authorize(id, session, secret);
     entry.seen = this.now();
@@ -265,7 +281,7 @@ export class DesktopBridges {
 
   /** One operation on `person`'s own connected desktop. Another person's
    * desktop is never reachable from here: the lookup is by person. */
-  request(person: string | null, operation: DesktopBridgeOperation, active: () => boolean): Promise<unknown> {
+  request(person: string | null, operation: DesktopBridgeOperation, active: () => boolean, onProgress?: (message: string) => void): Promise<unknown> {
     const key = normalize(person);
     if (!key) return Promise.reject(failure("No person asked in this turn, so no one's computer can be used.", 403, "no_person"));
     let entry: Bridge | null = null;
@@ -281,7 +297,7 @@ export class DesktopBridges {
     const timeoutMs = Math.min(660_000, ((operation.timeout_seconds ?? 120) + 60) * 1000);
     return new Promise((resolve, reject) => {
       const id = randomUUID();
-      const job: Job = { id, operation, active, sent: false, resolve, reject, timer: setTimeout(() => this.finish(bridge, job, failure("Your computer did not answer in time. The action's outcome is unknown; check before repeating it.")), timeoutMs) };
+      const job: Job = { id, operation, active, sent: false, resolve, reject, progress: onProgress, progressCount: 0, timer: setTimeout(() => this.finish(bridge, job, failure("Your computer did not answer in time. The action's outcome is unknown; check before repeating it.")), timeoutMs) };
       bridge.jobs.set(id, job); bridge.wake?.();
     });
   }

@@ -91,11 +91,11 @@ export const DESKTOP_BRIDGE_TOOLS = [
   },
   {
     name: "local_vm",
-    description: "The person's Local VM (the Sagax Linux desktop container on their computer): action status lists it, start starts it, run runs a bash command inside it.",
+    description: "The person's Local VM (the Sagax Linux desktop container on their computer): action status lists it, start starts it, run runs a bash command inside it, create makes one when none exists (the person confirms it on their computer; the first time downloads and builds the desktop image, which takes several minutes, and progress shows in the conversation).",
     inputSchema: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["status", "start", "run"] },
+        action: { type: "string", enum: ["status", "start", "run", "create"] },
         command: { type: "string" },
         container: { type: "string", description: "Which Local VM, from status (default: the first one)." },
         timeout_seconds: { type: "number" },
@@ -160,7 +160,10 @@ export function desktopToolOperation(name: string, args: Record<string, unknown>
       if (args.action === "status") return { action: "vm_status" };
       if (args.action === "start") return { action: "vm_start", ...(container ? { container } : {}) };
       if (args.action === "run") return { action: "vm_run_command", command: str(args.command, "command"), ...(container ? { container } : {}), timeout_seconds: optionalNumber(args.timeout_seconds, 1, 600) ?? 120 };
-      throw new Error("action must be status, start or run");
+      // Waits up to ten minutes; a creation that takes longer keeps going on
+      // the computer and status says where it is.
+      if (args.action === "create") return { action: "vm_create", timeout_seconds: 600 };
+      throw new Error("action must be status, start, run or create");
     }
     default:
       throw new Error(`unknown tool ${name}`);
@@ -207,7 +210,12 @@ export async function handleDesktopBridgeMcp(
     let operation: DesktopBridgeOperation;
     try { operation = desktopToolOperation(call.name, args); } catch (error) { return text(error instanceof Error ? error.message : String(error), true); }
     try {
-      return desktopToolResult(await request(operation));
+      const result = desktopToolResult(await request(operation));
+      // A desktop app from before Local VM creation refuses the operation.
+      if (operation.action === "vm_create" && result.isError && result.content[0]?.type === "text" && result.content[0].text === "Invalid request") {
+        return text("The Sagax desktop app on this computer is too old to create a Local VM. Update it, or create the Local VM from its settings.", true);
+      }
+      return result;
     } catch (error) {
       return text(error instanceof Error ? error.message : String(error), true);
     }

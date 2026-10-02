@@ -23,6 +23,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { assertOutsideProtected, createSharedCua, personalSecretPaths, protectedIdentities, sharedComputerError } from "./shared-computer-access.mjs";
 import { createLendingActivity } from "./lending-activity.mjs";
 import { openDesktopTunnel } from "./desktop-tunnel.mjs";
+import { BASE_IMAGE, CONTAINER, CUA_SOCKET, DOCKERFILE, IMAGE, IMAGE_LABELS, MANAGED_LABEL, runArgs } from "./local-vm-recipe.mjs";
 
 const OUTPUT_LIMIT = 512 * 1024;
 const READ_DEFAULT = 256_000;
@@ -30,7 +31,7 @@ const READ_MAX = 1_000_000;
 const WRITE_MAX = 1024 * 1024;
 const FETCH_MAX = 256 * 1024;
 const STAGE_MAX = 25 * 1024 * 1024;
-const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "stage_file"]);
+const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "stage_file"]);
 const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final"]);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
@@ -163,34 +164,91 @@ export async function searchFiles(root, { pattern, glob, protectedRoots, signal 
 }
 
 /** Local VM: the Sagax Linux desktop container(s) on this computer, by
- * their labels; nothing else is ever started or entered. */
-export function createLocalVm({ run = (argv, options) => runCommand("", { ...options, argv }) } = {}) {
+ * their labels; nothing else is ever started or entered. `create` makes the
+ * shared Local VM the way solo mode does (the pinned image and hardened run
+ * arguments of electron/local-vm-recipe.mjs, generated from
+ * server/container-computer.ts), only after the person said yes on this
+ * computer (`confirm`, the desktop app's own prompt). */
+export function createLocalVm({
+  run = (argv, options) => runCommand("", { ...options, argv }), confirm = null, workspaceDir = null,
+  password = () => randomBytes(6).toString("base64url"), readyWaitMs = 90_000, pollMs = 2000,
+} = {}) {
   let runtime;
+  let creating = null;
+  let confirming = false;
   const cli = async () => {
-    if (runtime !== undefined) return runtime;
+    if (runtime) return runtime;
     for (const candidate of ["docker", "podman"]) {
       const answer = await run([candidate, "version", "--format", "{{.Client.Version}}"], { timeoutSeconds: 15 }).catch(() => null);
       if (answer && !answer.isError) { runtime = candidate; return runtime; }
     }
-    runtime = null;
-    return runtime;
+    return null;
   };
   const list = async () => {
     const tool = await cli();
     if (!tool) throw new Error("No container runtime (Docker or Podman) on this computer, so there is no Local VM here.");
-    const answer = await run([tool, "ps", "-a", "--filter", "label=com.openmausbot.local-vm=1", "--format", "{{.Names}}\t{{.State}}"], { timeoutSeconds: 30 });
+    const answer = await run([tool, "ps", "-a", "--filter", `label=${MANAGED_LABEL}=1`, "--format", "{{.Names}}\t{{.State}}"], { timeoutSeconds: 30 });
     if (answer.isError) throw new Error("The container runtime did not answer.");
     return answer.content[0].text.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("[exit")).map(line => { const [name, state] = line.split("\t"); return { name, state }; }).filter(entry => /^[\w.-]+$/.test(entry.name ?? ""));
   };
   const pick = async container => {
     const all = await list();
-    if (!all.length) throw new Error("No Local VM exists on this computer yet. Create one from Sagax's Local VM settings on this computer.");
+    if (!all.length) throw new Error("No Local VM exists on this computer yet. Create one with the local_vm action create (the person confirms it on this computer).");
     const chosen = container ? all.find(entry => entry.name === container) : all[0];
     if (!chosen) throw new Error("That Local VM does not exist on this computer.");
     return chosen;
   };
+  const output = answer => (answer?.content?.[0]?.text ?? "").split("\n").filter(line => line.trim() && !line.startsWith("[exit")).slice(-3).join(" ").slice(0, 400);
+  /** The image is there and carries the labels solo mode checks. */
+  const imageReady = async tool => {
+    const answer = await run([tool, "image", "inspect", IMAGE, "--format", "{{json .Config.Labels}}"], { timeoutSeconds: 30 }).catch(() => null);
+    if (!answer || answer.isError) return false;
+    try {
+      const labels = JSON.parse(answer.content[0].text.split("\n")[0]);
+      return Object.entries(IMAGE_LABELS).every(([key, value]) => labels?.[key] === value);
+    } catch { return false; }
+  };
+  const until = (promise, signal) => new Promise((resolve, reject) => {
+    if (!signal) { promise.then(resolve, reject); return; }
+    const stop = () => resolve(failure("The turn ended while the Local VM was being created. It keeps being created on this computer; ask for its status later."));
+    if (signal.aborted) { stop(); return; }
+    signal.addEventListener("abort", stop, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", stop));
+  });
+  const provision = async (tool, needsImage, step) => {
+    const steps = [];
+    const say = message => { steps.push(message); step(message); };
+    if (needsImage) {
+      say("Downloading the Local VM desktop image (the first time takes several minutes)");
+      const pulled = await run([tool, "pull", BASE_IMAGE], { timeoutSeconds: 600 });
+      if (pulled.isError) throw new Error(`Downloading the desktop image failed: ${output(pulled)}`);
+      say("Building the Local VM desktop image");
+      const context = await fs.mkdtemp(path.join(os.tmpdir(), "sagax-local-vm-"));
+      try {
+        await fs.writeFile(path.join(context, "Dockerfile"), DOCKERFILE, { mode: 0o600 });
+        const built = await run([tool, "build", "-t", IMAGE, context], { timeoutSeconds: 600 });
+        if (built.isError) throw new Error(`Building the desktop image failed: ${output(built)}`);
+      } finally { await fs.rm(context, { recursive: true, force: true }).catch(() => {}); }
+      if (!(await imageReady(tool))) throw new Error("The desktop image was built but does not carry the expected labels.");
+    }
+    say("Creating the Local VM");
+    await fs.mkdir(workspaceDir, { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") await fs.chmod(workspaceDir, 0o700);
+    const created = await run([tool, ...runArgs(tool, password(), workspaceDir)], { timeoutSeconds: 120 });
+    if (created.isError) throw new Error(`Creating the Local VM failed: ${output(created)}`);
+    say("Waiting for the Local VM desktop to start");
+    const deadline = Date.now() + readyWaitMs;
+    let ready = false;
+    while (!ready && Date.now() < deadline) {
+      const probe = await run([tool, "exec", "-u", "cua", CONTAINER, "test", "-S", CUA_SOCKET], { timeoutSeconds: 15 }).catch(() => null);
+      ready = Boolean(probe && !probe.isError);
+      if (!ready) await delay(pollMs);
+    }
+    const done = ready ? `The Local VM ${CONTAINER} is ready on this computer (${tool}).` : `The Local VM ${CONTAINER} was created on this computer (${tool}); its desktop is still starting. Check again with status in a minute.`;
+    return text(`${done}\n${steps.map(entry => `- ${entry}`).join("\n")}`);
+  };
   return {
-    async status() { return text({ localVms: await list() }); },
+    async status() { return text({ localVms: await list(), ...(creating ? { creating: creating.step } : {}) }); },
     async start(container) {
       const tool = await cli(); const chosen = await pick(container);
       if (/running/i.test(chosen.state ?? "")) return text(`${chosen.name} is already running`);
@@ -200,6 +258,35 @@ export function createLocalVm({ run = (argv, options) => runCommand("", { ...opt
       const tool = await cli(); const chosen = await pick(container);
       if (!/running/i.test(chosen.state ?? "")) throw new Error(`${chosen.name} is not running; start it first`);
       return run([tool, "exec", "-u", "cua", chosen.name, "bash", "-lc", command], options);
+    },
+    /** Create the Local VM here, after the person's yes on this computer.
+     * Progress goes to `progress` (the turn); a turn that ends does not stop
+     * a creation already under way. */
+    async create({ signal, progress = () => {} } = {}) {
+      const report = message => { try { progress(message); } catch { /* best effort */ } };
+      if (creating) { report(`Already being created on this computer: ${creating.step}`); return until(creating.promise, signal); }
+      if (!confirm || !workspaceDir) throw new Error("This Sagax desktop app cannot create a Local VM here. Update it, or create the Local VM from its settings.");
+      const tool = await cli();
+      if (!tool) throw new Error("No container runtime (Docker or Podman) on this computer. Install Docker Desktop or Podman, start it, then ask again.");
+      const existing = await list();
+      if (existing.length) {
+        const running = existing.find(entry => /running/i.test(entry.state ?? ""));
+        return text(running ? `A Local VM already exists and is running on this computer: ${running.name}.` : `A Local VM already exists on this computer: ${existing[0].name} (${existing[0].state ?? "stopped"}). Start it with the action start.`);
+      }
+      if (confirming) throw new Error("A Local VM creation is already waiting for the person's answer on this computer.");
+      const needsImage = !(await imageReady(tool));
+      report("Asking on the computer for permission to create the Local VM");
+      confirming = true;
+      let allowed;
+      try { allowed = await confirm({ runtime: tool, needsImage, signal }); } finally { confirming = false; }
+      if (signal?.aborted) return failure("The turn ended before the person answered. Nothing was created.");
+      if (!allowed) return failure("The person declined creating a Local VM on their computer. Nothing was created.");
+      if (creating) return until(creating.promise, signal);
+      const entry = { step: "starting" };
+      entry.promise = provision(tool, needsImage, message => { entry.step = message; report(message); }).finally(() => { if (creating === entry) creating = null; });
+      entry.promise.catch(() => {});
+      creating = entry;
+      return until(entry.promise, signal);
     },
   };
 }
@@ -290,6 +377,7 @@ export async function executeBridgeOperation(operation, deps, signal) {
     case "vm_status": return deps.localVm.status();
     case "vm_start": return deps.localVm.start(operation.container);
     case "vm_run_command": return deps.localVm.exec(operation.container, operation.command, { timeoutSeconds: operation.timeout_seconds ?? 120, signal });
+    case "vm_create": return deps.localVm.create({ signal, progress: deps.progress });
     case "stage_file": {
       const dir = deps.attachmentsDir;
       await fs.mkdir(dir, { recursive: true, mode: 0o700 });
@@ -325,8 +413,9 @@ const describe = operation => {
  * server while the app is in server mode and signed in. */
 export function createDesktopBridge({
   environment, fetch: fetchImpl, cookieHeader, home = os.homedir(), attachmentsDir, protectedPaths = [], activityFile,
-  fetchUrl = globalThis.fetch, browse, cuaConnection, hostControl, resolveProxy, lookup, tunnelConnect, WebSocketImpl = globalThis.WebSocket,
-  platform = process.platform, hostname = os.hostname(), onChange = () => {}, localVm = createLocalVm(), retryMs = 5000,
+  fetchUrl = globalThis.fetch, browse, cuaConnection, hostControl, resolveProxy, proxyCredentials, lookup, tunnelConnect, WebSocketImpl = globalThis.WebSocket,
+  platform = process.platform, hostname = os.hostname(), onChange = () => {}, confirmLocalVm = null, localVmWorkspace = null,
+  localVm = createLocalVm({ confirm: confirmLocalVm, workspaceDir: localVmWorkspace }), retryMs = 5000,
 }) {
   const roots = [...protectedPaths, ...personalSecretPaths(home)];
   const activity = createLendingActivity(activityFile);
@@ -389,8 +478,8 @@ export function createDesktopBridge({
               tunnel = openDesktopTunnel({
                 url: `${env.origin.replace(/^http/, "ws")}/api/desktop-bridge/${id}/tunnel`,
                 headers: { cookie: await cookieHeader(env.origin), origin: env.origin, "x-sagax-bridge-secret": secret },
-                network: () => network, resolveProxy, lookup, WebSocketImpl, ...(tunnelConnect ? { connect: tunnelConnect } : {}),
-                record: ({ host, port, ok, error }) => activity.record({ env, action: "network", detail: `${host}:${port}`, ok, error }),
+                network: () => network, resolveProxy, proxyCredentials, lookup, WebSocketImpl, ...(tunnelConnect ? { connect: tunnelConnect } : {}),
+                record: ({ host, port, ok, error, via }) => activity.record({ env, action: "network", detail: `${host}:${port}${via && via !== "direct" ? ` via ${via}` : ""}`, ok, error }),
               });
               live.addEventListener("abort", () => tunnel?.close(), { once: true });
               await tunnel.ready;
@@ -418,9 +507,15 @@ export function createDesktopBridge({
             }, 2000);
             let result;
             let control;
+            // Progress for the turn (Local VM creation): best effort, bounded.
+            let progressSent = 0;
+            const progress = message => {
+              if (progressSent++ >= 50) return;
+              void call("progress", { jobId: job.id, message: String(message).slice(0, 300) }).catch(() => {});
+            };
             try {
               result = await executeBridgeOperation(operation, {
-                home, attachmentsDir, protectedPaths: roots, fetchUrl, browse, localVm,
+                home, attachmentsDir, protectedPaths: roots, fetchUrl, browse, localVm, progress,
                 computer: cuaConnection ? async (op, sig) => {
                   if (hostControl) control = await hostControl(job.id, sig);
                   if (!cua) {

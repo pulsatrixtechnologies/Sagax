@@ -166,6 +166,7 @@ posixOnly("organization server: the desktop bridge", () => {
               { server: "sagax-environment", tool: "read_file", arguments: { path: "$ATTACHED_FILE" }, when: "read the attachment" },
               { server: "sagax-desktop", tool: "run_command", arguments: { command: "hostname" }, when: "run it" },
               { server: "sagax-environment", tool: "run_command", arguments: { command: "hostname" }, when: "run it" },
+              { server: "sagax-desktop", tool: "local_vm", arguments: { action: "create" }, when: "create the local vm" },
             ]),
             FAKE_CLAUDE_MCP_DUMP: mcpDump,
             FAKE_CLAUDE_PROMPTS: prompts,
@@ -209,6 +210,12 @@ posixOnly("organization server: the desktop bridge", () => {
     desktop = await connectFakeDesktop({
       base: BASE, cookie: alice.cookie!, name: "Alice's Mac", attachmentsDir: "/Users/alice/Library/Caches/Sagax/attachments",
       resolve: (host, port) => host === "intranet.test" ? { host: "127.0.0.1", port: intranetPort } : { host, port },
+      handle: async (operation, progress) => {
+        if (operation.action !== "vm_create") return { content: [{ type: "text", text: `desktop:${operation.action}` }] };
+        await progress("Downloading the Local VM desktop image");
+        await progress("Creating the Local VM");
+        return { content: [{ type: "text", text: "desktop:vm created" }] };
+      },
     });
     await desktop.tunnelOpen;
     aliceBot = await createBot(alice, "Xavier");
@@ -255,6 +262,18 @@ posixOnly("organization server: the desktop bridge", () => {
     const activity = (await api("GET", "/api/me/desktop-bridge", alice)).body.activity as Array<{ kind: string; detail: string; target: string }>;
     expect(activity.some((entry) => entry.kind === "network" && entry.detail === "intranet.test:80" && entry.target === "user-desktop")).toBe(true);
     expect(activity.some((entry) => entry.kind === "tool" && entry.detail === "read_file")).toBe(true);
+  }, 120_000);
+
+  it("creates the Local VM on the speaker's own computer, its progress taken for the turn", async () => {
+    const reply = await turn(alice, aliceBot, "create the local vm");
+    expect(reply).toContain("mcp:local_vm:ok");
+    expect(dump().calls.find((call) => call.tool === "local_vm")?.text).toBe("desktop:vm created");
+    expect(desktop.operations.at(-1)).toEqual({ action: "vm_create", timeout_seconds: 600 });
+    expect(desktop.progress).toEqual([
+      { message: "Downloading the Local VM desktop image", ok: true },
+      { message: "Creating the Local VM", ok: true },
+    ]);
+    expect(docker.containers.size).toBe(0);
   }, 120_000);
 
   it("never reaches Alice's computer for a teammate talking to her bot", async () => {
