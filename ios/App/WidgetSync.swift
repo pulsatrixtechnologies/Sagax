@@ -36,7 +36,7 @@ final class WidgetSyncBridge {
     /// the whole bridge a no-op rather than a crash in a development build.
     static func makeAppGroupBridge() -> WidgetSyncBridge {
         let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: OpenMausSharedConfiguration.appGroupIdentifier
+            forSecurityApplicationGroupIdentifier: SagaxSharedConfiguration.appGroupIdentifier
         )
         return WidgetSyncBridge(store: container.map { WidgetSnapshotStore(directory: $0) })
     }
@@ -44,10 +44,11 @@ final class WidgetSyncBridge {
     func attach(to session: Session) {
         // Both the fleet and the connection matter: an unpaired app must
         // clear the snapshot even when no state change would have said so.
-        cancellable = Publishers.CombineLatest(session.$state, session.$connection)
+        cancellable = Publishers.CombineLatest3(session.$state, session.$connection, session.$isDemo)
             .debounce(for: .milliseconds(400), scheduler: DispatchQueue.main)
-            .sink { [weak self] state, connection in
-                self?.sync(state, connectionID: connection?.id)
+            .sink { [weak self] state, connection, isDemo in
+                // The demo never reaches the widgets: they show "not paired".
+                self?.sync(isDemo ? CompanionState() : state, connectionID: isDemo ? nil : connection?.id)
             }
     }
 

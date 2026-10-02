@@ -62,7 +62,7 @@ it("sends updater progress to a reopened window without restarting the updater",
 
 it("pins the feed to Sagax's GitHub releases with pre-releases off by default", () => {
   startUpdater();
-  expect(updater.setFeedURL).toHaveBeenLastCalledWith({ provider: "github", owner: "pulsatrixtechnologies", repo: "pulsa-bot" });
+  expect(updater.setFeedURL).toHaveBeenLastCalledWith({ provider: "github", owner: "pulsatrixtechnologies", repo: "sagax" });
   expect(updater.allowPrerelease).toBe(false);
   expect(updater.allowDowngrade).toBe(false);
 });

@@ -136,7 +136,7 @@ private struct RoutineRow: View {
     var body: some View {
         let canToggle = routine.canToggle()
         HStack(spacing: 12) {
-            if let bot { BotAvatarView(bot: bot, size: 42, state: routine.enabled ? .idle : .sleeping, animated: false) }
+            if let bot { BotMascotView(bot: bot, size: 42, state: routine.enabled ? .idle : .sleeping, animated: false) }
             else { Image(systemName: "calendar.badge.exclamationmark").frame(width: 42, height: 42) }
             VStack(alignment: .leading, spacing: 3) {
                 Text(routine.name).font(.headline)
@@ -191,7 +191,7 @@ private struct RoutineRunRow: View {
     }
 }
 
-private struct RoutineEditorView: View {
+struct RoutineEditorView: View {
     let routine: Routine?
     let onSaved: () async -> Void
 
@@ -216,12 +216,13 @@ private struct RoutineEditorView: View {
     @State private var advancedExpanded: Bool
     @State private var saving = false
 
-    init(routine: Routine?, onSaved: @escaping () async -> Void) {
+    /// `presetBotId`: a new routine made from a bot's profile starts on that bot.
+    init(routine: Routine?, presetBotId: String? = nil, onSaved: @escaping () async -> Void) {
         self.routine = routine
         self.onSaved = onSaved
         _name = State(initialValue: routine?.name ?? "")
         _prompt = State(initialValue: routine?.prompt ?? "")
-        _botId = State(initialValue: routine?.botId ?? "")
+        _botId = State(initialValue: routine?.botId ?? presetBotId ?? "")
         _runOn = State(initialValue: routine?.runLocation ?? .maus)
         _runAvailability = State(initialValue: nil)
         _availabilityLoaded = State(initialValue: false)
@@ -277,7 +278,7 @@ private struct RoutineEditorView: View {
                     if runOn == .maus {
                         Text("Uses this agent's selected model and computer setting on the paired computer.")
                     } else if runAvailability?.cloudReady == true {
-                        Text("Runs the agent and its tools inside its Boat virtual machine. The VM wakes automatically for each run; keep OpenMausBot running so its scheduler can launch the job.")
+                        Text("Runs the agent and its tools inside its Boat virtual machine. The VM wakes automatically for each run; keep Sagax running so its scheduler can launch the job.")
                     } else {
                         Text("This existing Cloud VM choice is preserved, but it cannot run until the paired computer has a configured Boat API key and an available Boat agent.")
                     }
@@ -287,6 +288,10 @@ private struct RoutineEditorView: View {
                     Picker("Repeats", selection: $kind) {
                         if kind == .unknown {
                             Text("Newer schedule").tag(RoutineSchedule.Kind.unknown)
+                                .rowSelectionDisabled()
+                        }
+                        if kind == .cron {
+                            Text("Cron").tag(RoutineSchedule.Kind.cron)
                                 .rowSelectionDisabled()
                         }
                         Text("One time").tag(RoutineSchedule.Kind.once)
@@ -355,7 +360,7 @@ private struct RoutineEditorView: View {
                         DatePicker("Starting", selection: $intervalAnchor)
                     } else {
                         Label(
-                            "This routine uses a schedule added by a newer OpenMausBot. Choose One time, Selected days, or Every X minutes before saving.",
+                            "This routine uses a schedule added by a newer Sagax. Choose One time, Selected days, or Every X minutes before saving.",
                             systemImage: "exclamationmark.triangle"
                         )
                         .font(.footnote)
@@ -457,6 +462,13 @@ private struct RoutineEditorView: View {
             let anchor = Calendar.current.date(bySetting: .second, value: 0, of: intervalAnchor)
                 ?? intervalAnchor
             schedule = .interval(everyMinutes: minutes, anchorAt: anchor)
+        case .cron:
+            // Cron is edited on the computer; the phone keeps it as it is.
+            guard let routine, routine.schedule.type == .cron else {
+                saving = false
+                return
+            }
+            schedule = routine.schedule
         case .unknown:
             saving = false
             return
@@ -504,6 +516,8 @@ private extension RoutineSchedule {
             return Date(timeIntervalSince1970: at / 1_000).formatted(date: .abbreviated, time: .shortened)
         case .unknown:
             return "Newer schedule"
+        case .cron:
+            return cronDisplay ?? "Cron"
         case .interval:
             guard let everyMinutes else { return "Interval unavailable" }
             let cadence = "Every \(everyMinutes) min"

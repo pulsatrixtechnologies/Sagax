@@ -28,6 +28,7 @@ import { EchoGuard } from "./echo";
 import { loadOrt } from "./onnx";
 import { PcmPlayer, type Sentence } from "./player";
 import { SentenceStream } from "./sentences";
+import { spokenPart } from "./spoken";
 import { judge, readVoiceprint, saveVoiceprint, SpeakerEmbedder, voiceprintOf, type Voiceprint } from "./speaker-id";
 import { LiveTranscriber } from "./stt-stream";
 import { FRAME_MS, TurnDetector } from "./turns";
@@ -65,8 +66,10 @@ export interface VoiceCallEvents {
   state(state: CallState): void;
   /** words recognized so far in the current turn */
   partial(text: string): void;
-  /** an accepted turn: send it to the bot */
-  utterance(text: string, metrics: TurnMetrics): void;
+  /** an accepted turn: send it to the bot. `interrupted`: the person cut
+   * the bot (talked over it, or over its running turn, or pressed
+   * interrupt) since the last turn sent; the bot is told (Message.voiceCall). */
+  utterance(text: string, metrics: TurnMetrics, turn: { interrupted: boolean }): void;
   /** stop the bot's running turn on the server */
   "interrupt-bot"(): void;
   /** the bot's speech was cut (barge-in, interrupt, hold, end) */
@@ -151,6 +154,8 @@ export class VoiceCall {
   private reply: SentenceStream | null = null;
   private turn: TurnMetrics | null = null;
   private bargeIn: BargeInMetrics | null = null;
+  /** the person cut the bot since the last turn sent */
+  private cutBot = false;
   private enrolling: { frames: Float32Array[]; levels: number[]; done: (frames: Float32Array[] | null) => void; until: number } | null = null;
   /** the on-device models loaded (else the level detector serves) */
   modelsReady = false;
@@ -304,14 +309,14 @@ export class VoiceCall {
   replyProgress(text: string): void {
     if (this.state.phase === "held" || this.state.phase === "ended") return;
     this.reply ??= new SentenceStream();
-    for (const sentence of this.reply.feed(text)) this.enqueue(sentence);
+    for (const sentence of this.reply.feed(spokenPart(text))) this.enqueue(sentence);
   }
 
   /** The answer (or this block of it) is complete. */
   replyDone(text: string): Promise<boolean> {
     const stream = this.reply ?? new SentenceStream();
     this.reply = null;
-    const rest = stream.finish(text);
+    const rest = stream.finish(spokenPart(text));
     for (const sentence of rest) this.enqueue(sentence);
     if (!this.player.busy) return Promise.resolve(true);
     return new Promise((resolve) => this.speechWaiters.push(resolve));
@@ -570,6 +575,9 @@ export class VoiceCall {
     const { state, effects } = step(this.state, event);
     const changed = state !== this.state;
     this.state = state;
+    // the person cut the bot: the next turn they send says so
+    if ((event.type === "speech-start" && state.phase === "interrupted") ||
+      (event.type === "interrupt" && effects.some((effect) => effect.type === "cancel-speech"))) this.cutBot = true;
     for (const effect of effects) this.run(effect);
     if (changed) this.emit("state", state);
   }
@@ -605,7 +613,8 @@ export class VoiceCall {
           this.turn.sentAt = this.now();
           this.emit("metrics", this.turn, this.bargeIn);
         }
-        this.emit("utterance", effect.text, this.turn ?? { stoppedAt: this.now(), endedAt: this.now() });
+        this.emit("utterance", effect.text, this.turn ?? { stoppedAt: this.now(), endedAt: this.now() }, { interrupted: this.cutBot });
+        this.cutBot = false;
         return;
       case "finalize-stt":
         void this.finishTurn();

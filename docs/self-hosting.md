@@ -206,7 +206,7 @@ Requirements: Docker with Compose, a DNS name pointing at the machine, and
 ports 80/443 open.
 
 ```sh
-git clone https://github.com/pulsatrixtechnologies/pulsa-bot && cd pulsa-bot/deploy
+git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot/deploy
 cp .env.example .env            # set DOMAIN
 docker compose pull omb && docker compose up -d
 ```
@@ -254,7 +254,7 @@ Requirements: Node 24+, pnpm, and at least one agent CLI installed and
 signed in on the server.
 
 ```sh
-git clone https://github.com/pulsatrixtechnologies/pulsa-bot && cd pulsa-bot
+git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot
 pnpm install
 
 # choose where data lives and start the server
@@ -652,7 +652,12 @@ What changes:
   credential without a click: `/pair#code=...&auto=1` opened in an ordinary
   browser shows the code form. The phone apps offer **Sign in with Pulsatrix**
   for such a server: `?client=phone` ends on the same
-  `openmausbot://pair?address=...&token=...` link a pairing QR code carries.
+  `openmausbot://pair?address=...&token=...` link a pairing QR code carries,
+  and `?client=phone&return=sagax` (Sagax for iOS, when
+  `identity.phoneReturnSchemes` lists `sagax`) ends on
+  `sagax://pair?address=...&token=...` instead, a refused sign-in on
+  `sagax://pair?address=...&error=<code>`. Perspicax is unchanged for phones
+  too: the server is the OpenID Connect client.
   A signed-in member may also open a pairing code for their own device; the
   device acts as them and never gets more than their own scopes. Such a
   device has no grant of its own: it is served only while one of the

@@ -450,7 +450,7 @@ async function showPhonePairing(options: CliOptions, origin: string | undefined,
 /** The pairing link a device opens, rendered as text and a QR code.
  *
  * One window has two links. `url` opens the web app and is what a browser and
- * the iOS app read. `inviteUrl` is the openmausbot:// scheme the native
+ * the iOS app read. `inviteUrl` is the sagax:// scheme the native
  * companion scanners accept, and it is the ONLY thing an Android app can
  * scan — its parser rejects any https QR outright. Which one becomes the QR
  * therefore depends on which app is about to scan it; the other is still
@@ -541,7 +541,7 @@ async function mintPairing(port: number, options: { label?: string; client?: boo
   // A server too old to mint a credential simply has no invite: the web link
   // still works, so an upgrade is never required to pair a browser.
   const invite = typeof body.credential === "string" && address
-    ? `openmausbot://pair?address=${encodeURIComponent(address)}&token=${encodeURIComponent(body.credential)}${typeof body.serverName === "string" ? `&name=${encodeURIComponent(body.serverName)}` : ""}`
+    ? `sagax://pair?address=${encodeURIComponent(address)}&token=${encodeURIComponent(body.credential)}${typeof body.serverName === "string" ? `&name=${encodeURIComponent(body.serverName)}` : ""}`
     : typeof body.inviteUrl === "string" ? body.inviteUrl : null;
   return pairingBlock({ code: body.code, url, inviteUrl: invite, expiresAt: body.expiresAt, hint: typeof body.hint === "string" ? body.hint : null, phone: options.phone });
 }

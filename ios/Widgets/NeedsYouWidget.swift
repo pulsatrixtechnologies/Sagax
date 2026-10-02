@@ -50,7 +50,7 @@ private struct NeedsYouView: View {
         Group {
             switch entry.state {
             case .unpaired:
-                Placeholder(icon: "qrcode", message: "Open MausBot to pair")
+                Placeholder(icon: "qrcode", message: "Open Sagax to pair")
             case .quiet:
                 Placeholder(icon: "checkmark.circle", message: "All quiet")
             case .fresh, .stale:
@@ -70,7 +70,7 @@ private struct NeedsYouView: View {
             }
         }
         // A widget with no ask on it taps into nothing; with one, it
-        // opens that chat — the same openmausbot://chat link the app
+        // opens that chat — the same sagax://chat link the app
         // routes from notifications.
         .widgetURL(asks.first.flatMap { WidgetChatLink.url(threadId: $0.chat.threadId) })
     }
@@ -78,7 +78,8 @@ private struct NeedsYouView: View {
     private func smallRow(_ row: WidgetSnapshot.Row) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                MausFaceStill(
+                MascotStill(
+                    chat: row.chat,
                     color: row.chat.color,
                     state: MausState(rawValue: row.face) ?? .idle,
                     size: 30
@@ -110,7 +111,8 @@ private struct NeedsYouView: View {
             }
             ForEach(asks.prefix(3), id: \.chat) { row in
                 HStack(spacing: 8) {
-                    MausFaceStill(
+                    MascotStill(
+                        chat: row.chat,
                         color: row.chat.color,
                         state: MausState(rawValue: row.face) ?? .idle,
                         size: 26
@@ -180,7 +182,7 @@ struct AnswerPills: View {
         if #available(iOS 17.0, *) {
             pills
         } else {
-            Text("Open MausBot to answer")
+            Text("Open Sagax to answer")
                 .font(.system(size: compact ? 11 : 13, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

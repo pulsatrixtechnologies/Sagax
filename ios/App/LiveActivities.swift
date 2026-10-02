@@ -28,9 +28,10 @@ final class LiveActivityCoordinator {
         AnswerApprovalIntent.handler = { [weak self, weak session] threadId, requestId, choice, isPermission in
             await self?.answer(session: session, threadId: threadId, requestId: requestId, choice: choice, isPermission: isPermission)
         }
-        cancellable = session.$state
+        cancellable = session.$state.combineLatest(session.$isDemo)
             .debounce(for: .milliseconds(400), scheduler: DispatchQueue.main)
-            .sink { [weak self] state in self?.sync(state) }
+            // No Live Activity for the demo's made-up bots.
+            .sink { [weak self] state, isDemo in self?.sync(isDemo ? CompanionState() : state) }
     }
 
     private func answer(session: Session?, threadId: String, requestId: String, choice: String, isPermission: Bool) async {
@@ -81,7 +82,10 @@ final class LiveActivityCoordinator {
                 )
                 Task { await activity.update(.init(state: content, staleDate: nil), alertConfiguration: newAsk ? alert : nil) }
             } else {
-                let attributes = BotActivityAttributes(botId: bot.id, threadId: bot.threadId, name: bot.name, color: bot.color)
+                let attributes = BotActivityAttributes(
+                    botId: bot.id, threadId: bot.threadId, name: bot.name, color: bot.color,
+                    mascotLook: bot.mascotLook, mascotSkin: bot.mascotSkin
+                )
                 _ = try? Activity.request(attributes: attributes, content: .init(state: content, staleDate: nil), pushType: nil)
                 // a fresh activity cannot alert on request; one immediate alerting update does it
                 if let alert, let activity = Activity<BotActivityAttributes>.activities.first(where: { $0.attributes.botId == bot.id }) {

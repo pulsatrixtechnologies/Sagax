@@ -9,8 +9,8 @@ isolated fixture; never verify mutations against the user's live app or data.
 All work stays in `pulsatrixtechnologies` repositories. Never open a pull
 request, issue, or push against the original OpenMausBot project
 (`milind-soni/OpenMausBot`) or any other upstream. Push branches only to
-`origin` (`pulsatrixtechnologies/pulsa-bot`) and target PRs at it. Pass
-`--repo pulsatrixtechnologies/pulsa-bot` to `gh` so it never picks a parent
+`origin` (`pulsatrixtechnologies/sagax`) and target PRs at it. Pass
+`--repo pulsatrixtechnologies/sagax` to `gh` so it never picks a parent
 repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
@@ -275,8 +275,11 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 
 ## Voice mode (xAI)
 
-The call button on a bot opens the floating voice bar
-(`src/components/voice-mode/`) when `GET /api/bots/<id>/voice/status` says
+The call button on a bot opens the voice call bar
+(`src/components/voice-mode/`), a slim in-call banner docked at the top of
+the chat column (`VoiceCallDock`, first in ChatView's banner stack; it
+pushes the thread down, never floats over it; layout pinned by
+`VoiceModeBar.layout.test.ts`), when `GET /api/bots/<id>/voice/status` says
 xAI voice mode serves the person; otherwise a solo Mac keeps the older call
 (macOS dictation helper). Keep these rules, each covered by
 `server/voice-mode.test.ts`, `src/lib/voice-mode/voice-mode.test.ts`,
@@ -315,6 +318,11 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   `POST /voice/stream` (raw PCM). Barge-in ducks then cancels the bot's voice
   and interrupts its running turn. Tests: `call-logic.test.ts`, `call.test.ts`,
   `models.test.ts`, `server/voice-call.e2e.test.ts`.
+- Call turns carry `voiceCall` (Message.voiceCall); the server adds the
+  hidden "Phone call" volatile section (`server/voice-call-prompt.ts`), never
+  stored as the person's text. The call speaks only `spokenPart` of an answer,
+  cleaned by `src/lib/voice-mode/spoken.ts`. Tests:
+  `server/voice-call-prompt.test.ts`, `server/voice-call-prompt.e2e.test.ts`.
 - xAI is only ears and a voice: never its realtime agent, responses, chat or
   function calling. Every turn goes to the bot through the normal send route,
   and only the bot's text is synthesized. The e2e test and
@@ -613,8 +621,17 @@ The bot's side panel (`src/components/BotSettingsDialog.tsx`, tabs in
 `bot-settings/panel-tabs.ts`) shows Details | Library | Computer | More. The
 name and label are edited where they show (`InlineEditableText`), the
 description behind the (i) beside the name (`DescriptionInfo`); there are no
-Name, Label or Description fields. Details lists Coding first
-(`ActivitySection`, `ActivityDetailModal`), then Routines. Coding reads
+Name, Label or Description fields. Details lists Coding, Activity, then
+Routines (`ActivitySection`, `ActivityListModal`, `ActivityDetailModal`).
+Coding shows coding jobs only: the server marks an entry `coding` from its
+tool calls and folder (`server/activity-coding.ts`: source edits, git
+commit/push/worktree, pull requests, file changes inside a repository;
+never the title, and never the bot's own SOUL.md/MEMORY.md), the newest
+few of 7 days, See all opening the list filtered to coding. Activity holds
+everything else plus the sub-agents the listed threads started: running
+first (elapsed time, current step, Stop when `canStop`), then the last
+day's finished work, hidden when empty. A thread with no user turn is not
+listed. Both read
 `GET /api/bots/:id/activity` and `/activity/item`
 (`server/routes/bot-activity.ts`, types in `shared/bot-activity.ts`): every
 thread passes `botThreadReadable`, every routine run `routineSeenBy`; a run
@@ -626,7 +643,7 @@ in another person's private thread there, with its actions, and nothing else
 of that thread. The owner's notification of such a run names no thread, only
 `routineRunId` (`routineAccessNotifications`), and opens the run there
 (`openBotActivity`); the run's person keeps the thread link. Tests:
-`server/routes/bot-activity.test.ts`, `ActivitySection.test.ts`,
+`server/routes/bot-activity.test.ts`, `server/activity-coding.test.ts`, `ActivitySection.test.ts`,
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
 
@@ -818,7 +835,7 @@ Sagax contacts no service of the original OpenMausBot project and sends no
 telemetry. Keep these rules, each covered by a test:
 
 - Updates come only from our GitHub releases: `electron/update-feed.mjs` pins
-  electron-updater to `pulsatrixtechnologies/pulsa-bot` (channel latest,
+  electron-updater to `pulsatrixtechnologies/sagax` (channel latest,
   pre-releases opt-in in Settings > General). Tests:
   `electron/update-feed.node-test.mjs`, `electron/updater.test.mjs`.
 - No analytics: `src/lib/analytics.ts` is a no-op and `posthog-js` is gone.

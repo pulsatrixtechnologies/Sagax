@@ -44,8 +44,8 @@ writeFileSync(
       bin: { openmausbot: "cli.js" },
       files: ["cli.js", "dist-server", "dist", "skills", "LICENSE", "LICENSE-POLYFORM-NC.md", "LICENSE-APACHE", "NOTICE", "README.md"],
       engines: { node: ">=24" },
-      repository: { type: "git", url: "https://github.com/pulsatrixtechnologies/pulsa-bot.git" },
-      homepage: "https://github.com/pulsatrixtechnologies/pulsa-bot#readme",
+      repository: { type: "git", url: "https://github.com/pulsatrixtechnologies/sagax.git" },
+      homepage: "https://github.com/pulsatrixtechnologies/sagax#readme",
       keywords: ["openmausbot", "agents", "self-hosted", "server"],
     },
     null,
@@ -132,8 +132,8 @@ For a service, use \`serve --tunnel\` after \`login\` for managed HTTPS,
 \`login\` command signs in to a Sagax account, not an AI provider;
 it does not start the tunnel itself.
 
-[Setup guide](https://github.com/pulsatrixtechnologies/pulsa-bot/blob/main/docs/cli-onboarding.md)
-· [Hosting guide](https://github.com/pulsatrixtechnologies/pulsa-bot/blob/main/docs/self-hosting.md)
+[Setup guide](https://github.com/pulsatrixtechnologies/sagax/blob/main/docs/cli-onboarding.md)
+· [Hosting guide](https://github.com/pulsatrixtechnologies/sagax/blob/main/docs/self-hosting.md)
 `,
 );
 console.log(`npm package assembled at ${out} (openmausbot@${app.version})`);

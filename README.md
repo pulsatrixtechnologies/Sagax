@@ -5,7 +5,7 @@
 **A desktop home for your AI bots: real agents with their own computer, alone on your Mac or PC or shared across your organization.**
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-38d591)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/pulsatrixtechnologies/pulsa-bot?include_prereleases&label=release&color=1084fe&cacheSeconds=300)](https://github.com/pulsatrixtechnologies/pulsa-bot/releases)
+[![Latest release](https://img.shields.io/github/v/release/pulsatrixtechnologies/sagax?include_prereleases&label=release&color=1084fe&cacheSeconds=300)](https://github.com/pulsatrixtechnologies/sagax/releases)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20arm64%20%7C%20x64%20%C2%B7%20Windows%20x64%20%7C%20arm64-2B2E3A)
 ![Engines](https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20more-d97757)
 
@@ -194,7 +194,7 @@ effects and moves.
 ## Install
 
 Download the latest build from the
-[Releases page](https://github.com/pulsatrixtechnologies/pulsa-bot/releases)
+[Releases page](https://github.com/pulsatrixtechnologies/sagax/releases)
 (tags `pulsa-vX.Y.Z`).
 
 | Platform | Files | First launch |
@@ -299,7 +299,7 @@ Requirements: macOS or Windows (Ubuntu 24.04 x64 builds but is not
 published), Node 24 or newer, pnpm, and at least one engine CLI signed in.
 
 ```sh
-git clone https://github.com/pulsatrixtechnologies/pulsa-bot && cd pulsa-bot
+git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot
 pnpm install
 
 pnpm dev:server    # Sagax server on 127.0.0.1:8799
@@ -324,6 +324,7 @@ pnpm test               # unit, server, desktop and packaged-server tests
 pnpm build              # typecheck and production build
 pnpm package:fork:mac   # Sagax build for macOS into release/
 pnpm package:fork:win   # Sagax build for Windows into release/
+pnpm package:fork:win:cross  # Windows x64 + arm64 from macOS (no Windows runner)
 ```
 
 `package.json` keeps three versions: `forkVersion` is the Sagax version used
@@ -379,6 +380,6 @@ of their owners.
 ## Support
 
 - Bugs and questions:
-  [GitHub Issues](https://github.com/pulsatrixtechnologies/pulsa-bot/issues).
+  [GitHub Issues](https://github.com/pulsatrixtechnologies/sagax/issues).
 - Commercial licenses and organization deployments: contact Pulsatrix
   Technologies inc. through [github.com/pulsatrixtechnologies](https://github.com/pulsatrixtechnologies).

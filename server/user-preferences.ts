@@ -34,6 +34,8 @@ export interface UserPreferenceStore {
   get(principalId: string): PersonPreferences;
   /** Replace this person's preferences with the known keys of `input`. */
   put(principalId: string, input: unknown): PersonPreferences;
+  /** Forget this person's preferences (account deletion). */
+  remove(principalId: string): void;
 }
 
 export function createUserPreferenceStore(dataDir: string, now: () => number = Date.now): UserPreferenceStore {
@@ -74,6 +76,12 @@ export function createUserPreferenceStore(dataDir: string, now: () => number = D
       all[principalId] = entry;
       writeFileAtomic(file, `${JSON.stringify({ version: 1, people: all }, null, 2)}\n`, { mode: 0o600 });
       return { stored: true, preferences: { ...entry.preferences }, updatedAt: entry.updatedAt };
+    },
+    remove(principalId) {
+      const all = load();
+      if (!all[principalId]) return;
+      delete all[principalId];
+      writeFileAtomic(file, `${JSON.stringify({ version: 1, people: all }, null, 2)}\n`, { mode: 0o600 });
     },
   };
 }

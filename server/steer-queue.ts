@@ -57,6 +57,9 @@ interface QueueEntry {
     /** Who the turn these words start speaks for (organization engine
      * gate), captured when they were sent. */
     speaker?: TurnSpeaker;
+    /** Words said on a voice call: the drained line keeps the mark, so the
+     * turn it starts gets the phone-call instruction. */
+    voiceCall?: Message["voiceCall"];
     /** When the words were queued (epoch ms): drain-time coalescing splits
      * one sender's items when the gap between them outgrows the window. */
     queuedAt: number;
@@ -125,7 +128,7 @@ export function queueSteeredMessage(
   botId: string,
   threadId: string,
   text: string,
-  options: { prompt?: string; replyToId?: string; sendId?: string; reason?: SteerQueueReason; unattended?: boolean; peerAsk?: Message["peerAsk"]; sender?: ResolvedSender; trigger?: UsageTrigger; speaker?: TurnSpeaker } = {},
+  options: { prompt?: string; replyToId?: string; sendId?: string; reason?: SteerQueueReason; unattended?: boolean; peerAsk?: Message["peerAsk"]; sender?: ResolvedSender; trigger?: UsageTrigger; speaker?: TurnSpeaker; voiceCall?: Message["voiceCall"] } = {},
 ): QueuedSteer {
   const id = newId();
   const entry = queues.get(threadId) ?? { botId, items: [] };
@@ -144,6 +147,7 @@ export function queueSteeredMessage(
     sender: options.sender,
     trigger: options.trigger,
     ...(options.speaker ? { speaker: options.speaker } : {}),
+    ...(options.voiceCall ? { voiceCall: options.voiceCall } : {}),
     queuedAt: Date.now(),
   };
   saveChatFollowup({ id, kind: "bot", ownerId: botId, threadId, payload: item });
@@ -234,6 +238,7 @@ export function drainSteeredMessages(
           queueId: item.messageId,
           peerAsk: item.peerAsk,
           sender: item.sender,
+          ...(item.voiceCall ? { voiceCall: item.voiceCall } : {}),
         }),
       );
     }

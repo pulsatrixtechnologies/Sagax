@@ -16,6 +16,8 @@ struct AgentProfileView: View {
     @State private var description: String
     @State private var notifications: Bool
     @State private var crop: AvatarCrop
+    @StateObject private var owlHandle = OwlMascotHandle()
+    @State private var nextWingMove = 0
     @State private var voice: String
     @State private var speakReplies: Bool
     @State private var photo: PhotosPickerItem?
@@ -191,7 +193,14 @@ struct AgentProfileView: View {
                 Section {
                     HStack {
                         Spacer()
-                        BotAvatarView(bot: current, size: 112, state: .happy, animated: true)
+                        // a tap plays the owl's next wing move, as the desktop's preview does
+                        BotMascotView(bot: current, size: 112, state: .happy, animated: true, owlHandle: owlHandle)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                let moves = OwlWingMove.allCases
+                                owlHandle.flourish(moves[nextWingMove % moves.count])
+                                nextWingMove += 1
+                            }
                         Spacer()
                     }
                     .listRowBackground(Color.clear)
@@ -233,7 +242,7 @@ struct AgentProfileView: View {
                     } footer: {
                         Text(imageGenerationReady
                              ? "Generation uses the shared image provider configured on your computer. No provider key is sent to or stored on this device."
-                             : "To generate images, configure the shared image provider in OpenMausBot on your computer. Provider keys cannot be added from this device.")
+                             : "To generate images, configure the shared image provider in Sagax on your computer. Provider keys cannot be added from this device.")
                     }
                 }
 
@@ -347,7 +356,7 @@ struct AgentProfileView: View {
                         } else if usesChatterbox {
                             Text("Any OpenAI-compatible server running Chatterbox works, no key needed. Save its address and model id above.")
                         } else if usesFishAudio {
-                            Text("Add the shared Fish Audio key in OpenMausBot on your computer. The key is never returned to iOS.")
+                            Text("Add the shared Fish Audio key in Sagax on your computer. The key is never returned to iOS.")
                         } else {
                             Text("Add the shared ElevenLabs key in this agent's profile on the computer. The key is never returned to iOS.")
                         }

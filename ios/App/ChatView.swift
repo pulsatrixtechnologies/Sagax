@@ -32,6 +32,9 @@ struct ChatView: View {
     @State private var showingComputer = false
     @State private var showingPlus = false
     @State private var showingProfile = false
+    @State private var pushingProfile = false
+    @State private var showingWalkie = false
+    @AppStorage("walkie.target") private var walkieTarget = ""
     @State private var showCommandHUD = false
     @State private var shareFile: ShareFile?
     @State private var showingPhotoPicker = false
@@ -75,6 +78,7 @@ struct ChatView: View {
     /// The live bubble's scroll target. A constant because there is at most
     /// one per chat and it has no message id to borrow.
     static let liveBubbleId = "companion.live"
+    static let bottomId = "companion.bottom"
 
     /// The live chat record, so busy/unread stay current as frames land.
     private var current: Chat {
@@ -136,6 +140,158 @@ struct ChatView: View {
     }
 
     var body: some View {
+        // Type-erased at two seams (layout, lifecycle, presentations): the
+        // whole chain as one opaque type made the optimizer abort ("Possible
+        // non-terminating type substitution") when archiving Release.
+        AnyView(screen)
+        .sheet(isPresented: $showingTasks) {
+            if current.supportsTasks {
+                TaskManagerView(chat: current) { selectedThreadId = $0 }
+            }
+        }
+        .sheet(isPresented: $showingProfile) {
+            if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
+        }
+        .fullScreenCover(isPresented: $showingWalkie) {
+            WalkieView { chat in
+                showingWalkie = false
+                // Walkie hands back the chat it wants open: this one stays,
+                // another one is pushed from the home the way a deep link is.
+                if chat.threadId != threadId { session.openChat(threadId: chat.threadId) }
+            }
+            .environmentObject(session)
+        }
+        .sheet(item: $shareFile) { file in
+            ActivityShareSheet(items: [file.url])
+        }
+        .photosPicker(
+            isPresented: $showingPhotoPicker,
+            selection: $selectedPhotos,
+            maxSelectionCount: max(1, AttachmentPolicy.maximumItems - attachments.count),
+            matching: .images,
+            preferredItemEncoding: .current
+        )
+        .onValueChange(of: selectedPhotos) { items in
+            guard !items.isEmpty else { return }
+            Task { await importPhotos(items) }
+        }
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: [.content],
+            allowsMultipleSelection: true,
+            onCompletion: importFiles
+        )
+        .fullScreenCover(item: $filePreview) { preview in
+            FilePreviewView(item: preview) {
+                filePreview = nil
+            }
+        }
+    }
+
+    private var screen: some View {
+        AnyView(arrival)
+        .onDisappear {
+            dictation.stop()
+            resetFilePreview()
+            cancelThreadOpen()
+        }
+        .onValueChange(of: scenePhase) { phase in
+            if phase != .active { dictation.stop() }
+        }
+        .onValueChange(of: showingComputer) { shown in
+            if shown { dictation.stop() }
+        }
+        .onValueChange(of: showingTasks) { shown in
+            if shown { dictation.stop() }
+        }
+        .onValueChange(of: showingProfile || pushingProfile) { shown in
+            if shown { dictation.stop() }
+        }
+        .onValueChange(of: showingWalkie) { shown in
+            if shown { dictation.stop() }
+        }
+        .onValueChange(of: showingPlus) { shown in
+            if shown { dictation.stop() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
+            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey]
+            let value = (raw as? NSNumber)?.uintValue ?? (raw as? UInt)
+            if value == AVAudioSession.InterruptionType.began.rawValue {
+                dictation.stop()
+            }
+        }
+        .onValueChange(of: dictation.transcript) { spoken in
+            // Always join against the text frozen at capture start. A newer
+            // partial then replaces the older partial instead of duplicating it.
+            draft = Dictation.draft(base: dictation.base, transcript: spoken)
+        }
+        .onValueChange(of: dictation.isListening) { listening in
+            if listening { composerFocused = false }
+        }
+    }
+
+    private var arrival: some View {
+        AnyView(layout)
+        .task(id: threadId) {
+            if selectedThreadWasRemoved { dismiss(); return }
+            let openedChat = current
+            session.threadSelection.rememberThread(openedChat, connectionID: session.connection?.id)
+            await session.loadThreadIfNeeded(openedChat.threadId)
+            // opening a chat is what marks it read, exactly as on the desktop
+            if openedChat.unread { await session.markRead(openedChat) }
+#if DEBUG
+            // `-open-plus`: the + sheet up, for the screenshot harness
+            if ProcessInfo.processInfo.arguments.contains("-open-plus") { showingPlus = true }
+            // Profile parity screenshots without automating a tap through the
+            // animated island/header transition.
+            if ProcessInfo.processInfo.arguments.contains("-open-profile") { openProfile() }
+            if let screen = ParityLaunch.current?.screen {
+                if screen.opensComputer { showingComputer = true }
+                if screen.opensProfile {
+                    // a push while the chat's own push still animates is dropped
+                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    openProfile()
+                }
+            }
+#endif
+        }
+        .onValueChange(of: selectedThreadWasRemoved) { removed in
+            if removed { dismiss() }
+        }
+        .onValueChange(of: session.state.hasLoadedPage(forThread: threadId)) { loaded in
+            let requestedThread = threadId
+            if !loaded { Task { await session.loadThreadIfNeeded(requestedThread) } }
+        }
+        .onValueChange(of: current.unread) { unread in
+            // A message can arrive while this chat is already on screen. The
+            // initial task above will not run again, so clear that new unread
+            // bit here rather than leaving a badge on an open conversation.
+            let readChat = current
+            if unread { Task { await session.markRead(readChat) } }
+        }
+        .onValueChangePair(of: threadId) { previous, next in
+            dictation.stop()
+            threadDrafts[previous] = ComposerSnapshot(text: draft, attachments: attachments, error: attachmentError)
+            let restored = threadDrafts.removeValue(forKey: next) ?? ComposerSnapshot()
+            draft = restored.text
+            attachments = restored.attachments
+            attachmentError = restored.error
+            selectedPhotos = []
+            showCommandHUD = false
+            showingPlus = false
+            // The local task picker changed threads. A download
+            // started in the previous task must not open a sheet (or surface
+            // its error) in the new one when the network reply arrives late.
+            resetFilePreview()
+            cancelThreadOpen()
+        }
+        .onValueChange(of: session.connection?.id) { _ in
+            cancelThreadOpen()
+        }
+    }
+
+    @ViewBuilder
+    private var layout: some View {
         // Read the transcript once for this render. Pagination changes the
         // array as a unit; repeatedly reaching through ObservableObject for
         // every row only recomputes the same value.
@@ -156,10 +312,7 @@ struct ChatView: View {
                     // height exact and the anchor land on the newest message.
                     // A thread holds 50 messages until you ask for more, so
                     // there is nothing here worth being lazy about.
-                    VStack(alignment: .leading, spacing: 6) {
-                        // room for the floating face when scrolled to the top
-                        Color.clear.frame(height: 72)
-
+                    VStack(alignment: .leading, spacing: 0) {
                         if session.state.hasMore[threadId] == true {
                             Button("Load earlier messages") {
                                 // keep the reader where they were: after older
@@ -177,16 +330,21 @@ struct ChatView: View {
                         }
 
                         ForEach(Array(transcript.enumerated()), id: \.element.id) { index, row in
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: 0) {
                                 // a gap in time is worth marking; a timestamp
                                 // on every message is just noise
                                 if startsANewStretch(at: index, in: transcript) {
+                                    // 11 pt #555557, centred: about 22.6 pt
+                                    // under the previous bubble and 17.6 pt
+                                    // above the next one (reference 02).
                                     Text(RelativeStamp.separator(row.head.date))
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.secondary.opacity(0.7))
+                                        .font(Theme.Font.timestamp)
+                                        .foregroundStyle(Theme.chatTimestamp)
                                         .frame(maxWidth: .infinity)
-                                        .padding(.top, 10)
-                                        .padding(.bottom, 4)
+                                        .padding(.top, index == 0 ? 8 : 22.6)
+                                        .padding(.bottom, 17.6)
+                                } else if index > 0 {
+                                    Color.clear.frame(height: Self.rowGap)
                                 }
                                 switch row {
                                 case let .message(message):
@@ -217,6 +375,7 @@ struct ChatView: View {
                         // where both are on screen.
                         if let live = session.state.streaming[threadId], !live.isEmpty {
                             StreamingBubble(text: live, reasoning: nil, color: current.color)
+                                .padding(.top, Self.rowGap)
                                 .id(Self.liveBubbleId)
                         } else if activityDetail != ActivityDetail.hidden.rawValue,
                                   let thinking = session.state.reasoning[threadId], !thinking.isEmpty {
@@ -224,53 +383,39 @@ struct ChatView: View {
                             // of the reply exist, the reasoning is behind us
                             // and showing both is just noise.
                             StreamingBubble(text: nil, reasoning: thinking, color: current.color)
+                                .padding(.top, Self.rowGap)
                                 .id(Self.liveBubbleId)
                         } else if current.busy {
                             TypingIndicatorView(tintColor: MausPalette.color(current.color))
+                                .padding(.top, Self.rowGap)
                                 .id(Self.liveBubbleId)
                                 .accessibilityLabel("\(current.name) is working")
                         }
+
+                        // The bottom of the conversation: 26.3 pt from the
+                        // last bubble to the composer's top, less the
+                        // composer's own top padding. Scrolling targets this,
+                        // so the gap is always in view.
+                        Color.clear
+                            .frame(height: 26.3 - Self.composerTopPadding)
+                            .id(Self.bottomId)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, Theme.Chat.bubbleLeading)
+                    .padding(.top, 12)
                     .frame(maxWidth: CompanionLayout.chatWidth, alignment: .leading)
                     .frame(maxWidth: .infinity)
                 }
-                // The header lives in the scroll view's top safe area: the
-                // transcript starts below it and scrolls under it — that is
-                // what the glass is for. An inset rather than a content
-                // margin, because `.defaultScrollAnchor(.bottom)` anchored
-                // unreliably against a margin and opened chats mid-way.
-                // The blur is only the top strip — back, computer — the way
-                // a system bar is; the transcript starts on that line and
-                // scrolls under the face and name, which float over it.
-                .safeAreaInset(edge: .top, spacing: 0) { headerBar }
-                .overlay(alignment: .top) { headerFace }
+                // The transcript starts under the top bar and scrolls
+                // beneath it: a clear inset the height of the bar, then the
+                // fade and the glass controls float over the content.
+                .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: Self.topBarHeight) }
                 .overlay(alignment: .top) {
-                    // One face, in one layer, measured from the screen's top
-                    // edge: it sits in the island while that is open and
-                    // glides into its header slot when the island lets go.
-                    let topInset = IslandGeometry.topInset
-                    let islandSide: CGFloat = 220
-                    // centred in the part of the square the hardware island does not cover
-                    let islandFaceCentre = IslandGeometry.top + IslandGeometry.size.height + (islandSide - IslandGeometry.size.height) / 2
-                    let headerFaceCentre = topInset + 26
-                    let faceSize = 60 + 72 * facePhase
-                    let faceCentre = headerFaceCentre + (islandFaceCentre - headerFaceCentre) * facePhase
-                    ZStack(alignment: .top) {
-                        if islandVisible {
-                            IslandShell(expanded: islandExpanded, expandedSize: CGSize(width: islandSide, height: islandSide)) {
-                                Color.clear
-                            }
-                        }
-                        ChatAvatarView(chat: current, size: faceSize, state: MausState.forChat(current, in: session.state), animated: MausState.forChat(current, in: session.state).showsActivity || islandExpanded, comets: islandExpanded)
-                            .offset(y: faceCentre - faceSize / 2)
-                            .allowsHitTesting(false)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .top)
-                    .ignoresSafeArea(edges: .top)
-                    .allowsHitTesting(false)
+                    ChatTopEdgeFade()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .ignoresSafeArea()
                 }
+                .overlay(alignment: .top) { headerBar }
+                .overlay(alignment: .top) { islandFace }
                 .task {
                     // grow, hold a beat, shrink — the face rides along
                     guard CompanionLayout.supportsIslandPresentation, !reduceMotion else { return }
@@ -315,8 +460,18 @@ struct ChatView: View {
                 // message where `scrollAnchorCompat` cannot (iOS 16). On 17 the
                 // anchor has already put us there and this is a no-op.
                 .onValueChange(of: transcript.last?.id, initial: true) { _ in
-                    guard let last = transcript.last else { return }
-                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    guard transcript.last != nil else { return }
+                    withAnimation { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+                }
+                // Long markdown replies finish laying out after the first
+                // pass; settle on the newest message once they have, unless a
+                // deep link asked for a particular one.
+                .task(id: threadId) {
+                    for delay in [150, 450] {
+                        try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
+                        guard !Task.isCancelled, session.focusedMessageId == nil, revealedMessageId == nil else { return }
+                        proxy.scrollTo(Self.bottomId, anchor: .bottom)
+                    }
                 }
                 // Follow the text as it arrives. Keyed on length rather than
                 // the string so this fires once per delta batch, and without
@@ -324,7 +479,7 @@ struct ChatView: View {
                 // into a stutter, because each scroll interrupts the last.
                 .onValueChange(of: session.state.streaming[threadId]?.count ?? 0) { length in
                     guard length > 0 else { return }
-                    proxy.scrollTo(Self.liveBubbleId, anchor: .bottom)
+                    proxy.scrollTo(Self.bottomId, anchor: .bottom)
                 }
                 .task(id: session.focusedMessageId) {
                     guard let messageId = session.focusedMessageId,
@@ -340,6 +495,16 @@ struct ChatView: View {
                         return false
                     }
                     proxy.scrollTo(folded?.id ?? messageId, anchor: .center)
+                    // The expanded turn's bubbles (long markdown) finish laying
+                    // out after the first pass and push the target down; land
+                    // on it again once they have, as the newest-message settle
+                    // above does. Focus is consumed after, since consuming it
+                    // changes this task's id and would cancel the settle.
+                    for delay in [150, 450] {
+                        try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
+                        guard !Task.isCancelled else { return }
+                        proxy.scrollTo(messageId, anchor: .center)
+                    }
                     session.consumeFocus(messageId)
                 }
             }
@@ -349,6 +514,11 @@ struct ChatView: View {
             composer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        // The composer sits 30 pt above the screen's bottom edge, inside the
+        // home-indicator area, as in the reference; the keyboard still
+        // pushes it up.
+        .ignoresSafeArea(.container, edges: .bottom)
+        .background(Theme.bg.ignoresSafeArea())
         .overlay(alignment: .bottom) { plusSheet }
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
@@ -360,256 +530,171 @@ struct ChatView: View {
         .navigationDestination(isPresented: $showingComputer) {
             if case let .bot(bot) = current { ComputerView(bot: bot) }
         }
-        .task(id: threadId) {
-            if selectedThreadWasRemoved { dismiss(); return }
-            let openedChat = current
-            session.threadSelection.rememberThread(openedChat, connectionID: session.connection?.id)
-            await session.loadThreadIfNeeded(openedChat.threadId)
-            // opening a chat is what marks it read, exactly as on the desktop
-            if openedChat.unread { await session.markRead(openedChat) }
-#if DEBUG
-            // `-open-plus`: the + sheet up, for the screenshot harness
-            if ProcessInfo.processInfo.arguments.contains("-open-plus") { showingPlus = true }
-            // Profile parity screenshots without automating a tap through the
-            // animated island/header transition.
-            if ProcessInfo.processInfo.arguments.contains("-open-profile") { showingProfile = true }
-#endif
-        }
-        .onValueChange(of: selectedThreadWasRemoved) { removed in
-            if removed { dismiss() }
-        }
-        .onValueChange(of: session.state.hasLoadedPage(forThread: threadId)) { loaded in
-            let requestedThread = threadId
-            if !loaded { Task { await session.loadThreadIfNeeded(requestedThread) } }
-        }
-        .onValueChange(of: current.unread) { unread in
-            // A message can arrive while this chat is already on screen. The
-            // initial task above will not run again, so clear that new unread
-            // bit here rather than leaving a badge on an open conversation.
-            let readChat = current
-            if unread { Task { await session.markRead(readChat) } }
-        }
-        .onValueChangePair(of: threadId) { previous, next in
-            dictation.stop()
-            threadDrafts[previous] = ComposerSnapshot(text: draft, attachments: attachments, error: attachmentError)
-            let restored = threadDrafts.removeValue(forKey: next) ?? ComposerSnapshot()
-            draft = restored.text
-            attachments = restored.attachments
-            attachmentError = restored.error
-            selectedPhotos = []
-            showCommandHUD = false
-            showingPlus = false
-            // The local task picker changed threads. A download
-            // started in the previous task must not open a sheet (or surface
-            // its error) in the new one when the network reply arrives late.
-            resetFilePreview()
-            cancelThreadOpen()
-        }
-        .onValueChange(of: session.connection?.id) { _ in
-            cancelThreadOpen()
-        }
-        .onDisappear {
-            dictation.stop()
-            resetFilePreview()
-            cancelThreadOpen()
-        }
-        .onValueChange(of: scenePhase) { phase in
-            if phase != .active { dictation.stop() }
-        }
-        .onValueChange(of: showingComputer) { shown in
-            if shown { dictation.stop() }
-        }
-        .onValueChange(of: showingTasks) { shown in
-            if shown { dictation.stop() }
-        }
-        .onValueChange(of: showingProfile) { shown in
-            if shown { dictation.stop() }
-        }
-        .onValueChange(of: showingPlus) { shown in
-            if shown { dictation.stop() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
-            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey]
-            let value = (raw as? NSNumber)?.uintValue ?? (raw as? UInt)
-            if value == AVAudioSession.InterruptionType.began.rawValue {
-                dictation.stop()
-            }
-        }
-        .onValueChange(of: dictation.transcript) { spoken in
-            // Always join against the text frozen at capture start. A newer
-            // partial then replaces the older partial instead of duplicating it.
-            draft = Dictation.draft(base: dictation.base, transcript: spoken)
-        }
-        .onValueChange(of: dictation.isListening) { listening in
-            if listening { composerFocused = false }
-        }
-        .sheet(isPresented: $showingTasks) {
-            if current.supportsTasks {
-                TaskManagerView(chat: current) { selectedThreadId = $0 }
-            }
-        }
-        .sheet(isPresented: $showingProfile) {
-            if case let .bot(bot) = current { AgentProfileView(bot: bot) }
-        }
-        .sheet(item: $shareFile) { file in
-            ActivityShareSheet(items: [file.url])
-        }
-        .photosPicker(
-            isPresented: $showingPhotoPicker,
-            selection: $selectedPhotos,
-            maxSelectionCount: max(1, AttachmentPolicy.maximumItems - attachments.count),
-            matching: .images,
-            preferredItemEncoding: .current
-        )
-        .onValueChange(of: selectedPhotos) { items in
-            guard !items.isEmpty else { return }
-            Task { await importPhotos(items) }
-        }
-        .fileImporter(
-            isPresented: $showingFileImporter,
-            allowedContentTypes: [.content],
-            allowsMultipleSelection: true,
-            onCompletion: importFiles
-        )
-        .fullScreenCover(item: $filePreview) { preview in
-            FilePreviewView(item: preview) {
-                filePreview = nil
-            }
+        .navigationDestination(isPresented: $pushingProfile) {
+            if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
         }
     }
 
     // MARK: - Header
 
-    /// Back on the left with the rest-of-app unread count, threads and the
-    /// bot's computer on the right — a blurred strip to the top edge.
+    /// The top bar of reference 02: 44 pt glass circles 18 pt from the
+    /// edges (back, computer) and the centred name capsule.
+    static let topBarHeight: CGFloat = 56
+    /// Space between two rows of the transcript.
+    static let rowGap: CGFloat = 10
+    static let composerTopPadding: CGFloat = 6
+
+    private var mascotState: MausState { MausState.forChat(current, in: session.state) }
+
     private var headerBar: some View {
-        HStack(alignment: .top) {
-            Button { dismiss() } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                    if unreadElsewhere > 0 {
-                        Text("\(unreadElsewhere)")
-                            .font(.system(size: 13, weight: .semibold))
-                            .padding(.horizontal, 7)
-                            .frame(minWidth: 22, minHeight: 22)
-                            .background(Capsule().fill(Color.secondary.opacity(0.22)))
+        ZStack {
+            HStack(spacing: 0) {
+                // chevron ink 8.7 x 15.3 pt, optically centred at x 39.7
+                GlassCircleButton(
+                    systemImage: "chevron.left", accessibilityLabel: "Back",
+                    glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25)
+                ) { dismiss() }
+                    .chatGlassRim(Circle())
+                    .overlay(alignment: .topTrailing) {
+                        if unreadElsewhere > 0 {
+                            Text(verbatim: "\(unreadElsewhere)")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.white)
+                                .padding(.horizontal, 5)
+                                .frame(minWidth: 18, minHeight: 18)
+                                .background(Theme.unreadDot, in: Capsule())
+                                .offset(x: 4, y: -4)
+                                .allowsHitTesting(false)
+                                .accessibilityLabel(Text(String(localized: "\(unreadElsewhere) unread elsewhere")))
+                        }
                     }
-                }
-                .foregroundStyle(Color.primary)
-                .padding(.leading, 12)
-                .padding(.trailing, unreadElsewhere > 0 ? 8 : 12)
-                .frame(height: 44)
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .glassCapsule()
-            .accessibilityLabel("Back")
-
-            Spacer(minLength: 4)
-
-            HStack(spacing: 8) {
-                if current.supportsTasks {
+                Spacer(minLength: 8)
+                if case .bot = current {
+                    // outline monitor, ink 18 x 16.7 pt (drawn: the SF
+                    // symbols fill the screen)
                     Button {
-                        showingTasks = true
+                        Haptics.selection()
+                        showingComputer = true
                     } label: {
-                        Label("Threads", systemImage: "square.stack")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Color.primary)
-                            .padding(.horizontal, 12)
-                            .frame(height: 44)
-                            .contentShape(Capsule())
+                        ComputerGlyph()
+                            .fill(Theme.textPrimary)
+                            .frame(width: ComputerGlyph.size.width, height: ComputerGlyph.size.height)
+                            .offset(y: 0.1)
+                            .frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
+                            .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .glassCapsule()
-                    .accessibilityIdentifier("header-threads")
-                }
-                if case .bot = current {
-                    GlassButton(systemImage: "display", size: 44, weight: .medium) {
-                        showingComputer = true
-                    }
+                    .themeGlass(Circle())
+                    .chatGlassRim(Circle())
                     .accessibilityLabel("Watch \(current.name)'s computer")
+                    .accessibilityIdentifier("header-computer")
                 } else {
-                    Color.clear.frame(width: 44, height: 44)
+                    Color.clear.frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
                 }
             }
+            ChatNameCapsule(chat: current, state: mascotState, mascotHidden: islandVisible) { openProfile() }
+                .frame(maxWidth: 230)
+                .contextMenu { nameCapsuleMenu }
+                .accessibilityLabel(Text(current.name))
+                // The thread is no longer drawn in the header; VoiceOver
+                // (and the UI tests) still hear which one is open.
+                .accessibilityValue(Text(current.supportsTasks ? current.threadTitle : current.subtitle))
+                .accessibilityHint(Text(current.isBot
+                    ? String(localized: "Opens the profile. Touch and hold for threads.")
+                    : String(localized: "Opens the conversation options.")))
+                .accessibilityIdentifier("chat-name")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
-        .padding(.bottom, 8)
+        .padding(.horizontal, Theme.Metric.screenEdge)
+        .padding(.top, 6)
         .frame(maxWidth: CompanionLayout.headerWidth)
         .frame(maxWidth: .infinity)
-        .background(
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .mask(
-                    VStack(spacing: 0) {
-                        Color.black
-                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                            .frame(height: 20)
-                    }
-                )
-                .padding(.bottom, -20)
-                .ignoresSafeArea(edges: .top)
-                .allowsHitTesting(false)
-        )
     }
 
-    /// The bot's face over its name pill, floating over the transcript
-    /// between the two buttons.
-    private var headerFace: some View {
-        VStack(spacing: 6) {
-            // Always here, following the island's face while that one is
-            // the source: when the island lets go, this one flies home.
-            // The face itself is drawn by the island layer above so there is
-            // still only one animated avatar. This transparent seat becomes
-            // its independent profile button once the opening transition has
-            // settled.
-            if case .bot = current {
-                Button { showingProfile = true } label: {
-                    Color.clear
-                        .frame(width: 60, height: 60)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .allowsHitTesting(!islandVisible)
-                .accessibilityHidden(islandVisible)
-                .accessibilityLabel("Open \(current.name) settings")
-                .accessibilityHint("Changes this bot's model, profile, notifications, and voice")
-            } else {
-                Color.clear.frame(width: 60, height: 60)
+    /// Touch and hold the name: threads and the profile.
+    @ViewBuilder
+    private var nameCapsuleMenu: some View {
+        if current.supportsTasks {
+            Button { showingTasks = true } label: {
+                Label(String(localized: "Threads"), systemImage: "square.stack")
             }
-            Button {
-                if current.supportsTasks { showingTasks = true }
-                else { showingPlus = true }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(current.name)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.primary)
-                        .lineLimit(1)
-                    if current.supportsTasks || !current.subtitle.isEmpty {
-                        Text(current.supportsTasks ? current.threadTitle : current.subtitle)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.secondary)
-                            .lineLimit(1)
+            if case let .bot(bot) = current {
+                Button {
+                    Task {
+                        if let created = await session.createTask(for: bot, title: nil) {
+                            selectedThreadId = created.threadId
+                        }
                     }
-                    Image(systemName: current.supportsTasks ? "chevron.down" : "ellipsis")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Color.secondary)
+                } label: {
+                    Label(String(localized: "New thread"), systemImage: "plus.square.on.square")
                 }
-                .padding(.leading, 12)
-                .padding(.trailing, 10)
-                .frame(height: 32)
-                .contentShape(Capsule())
             }
-            .buttonStyle(.plain)
-            .glassCapsule()
-            .accessibilityLabel(current.supportsTasks ? "Switch thread: \(current.threadTitle)" : "Open \(current.name) thread options")
-            .accessibilityHint("Choose a conversation or start a new thread")
-            .accessibilityIdentifier("thread-switcher")
         }
-        .padding(.top, -4)
+        if case .bot = current {
+            Button { openProfile() } label: {
+                Label(String(localized: "Profile"), systemImage: "person.crop.circle")
+            }
+        }
+    }
+
+    /// The name capsule opens the profile (rooms: their threads or the +
+    /// sheet). `ChatProfileRoute` decides what the profile is and how it is
+    /// presented.
+    private func openProfile() {
+        guard case .bot = current else {
+            if current.supportsTasks { showingTasks = true } else { showingPlus = true }
+            return
+        }
+        switch ChatProfileRoute.presentation {
+        case .sheet: showingProfile = true
+        case .push: pushingProfile = true
+        }
+    }
+
+    /// Voice mode: Walkie, aimed at this bot.
+    private func startVoiceMode() {
+        dictation.stop()
+        composerFocused = false
+        if case let .bot(bot) = current { walkieTarget = bot.id }
+        showingWalkie = true
+    }
+
+    /// The island greeting: the face grows in the island, then shrinks into
+    /// the capsule's 24 pt mascot seat. One face in one layer, measured from
+    /// the screen's top edge.
+    private var islandFace: some View {
+        let topInset = IslandGeometry.topInset
+        let islandSide: CGFloat = 220
+        // centred in the part of the square the hardware island does not cover
+        let islandFaceCentre = IslandGeometry.top + IslandGeometry.size.height + (islandSide - IslandGeometry.size.height) / 2
+        let seatCentre = topInset + 6 + Theme.Metric.glassLarge / 2
+        let seatSize = Theme.Chat.capsuleMascot
+        let faceSize = seatSize + (132 - seatSize) * facePhase
+        let faceCentre = seatCentre + (islandFaceCentre - seatCentre) * facePhase
+        let seatOffsetX = Self.capsuleMascotOffset(name: current.name) * (1 - facePhase)
+        let state = mascotState
+        return ZStack(alignment: .top) {
+            if islandVisible {
+                IslandShell(expanded: islandExpanded, expandedSize: CGSize(width: islandSide, height: islandSide)) {
+                    Color.clear
+                }
+                ChatAvatarView(chat: current, size: faceSize, state: state, animated: true, comets: islandExpanded)
+                    .offset(x: seatOffsetX, y: faceCentre - faceSize / 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// The capsule mascot's centre relative to the screen's centre: the
+    /// capsule is 12 + 24 + 10 + name + 14 wide and centred.
+    static func capsuleMascotOffset(name: String) -> CGFloat {
+        let nameWidth = ceil((name as NSString).size(withAttributes: [
+            .font: UIFont.systemFont(ofSize: 14, weight: .medium),
+        ]).width)
+        let width = min(230, 12 + Theme.Chat.capsuleMascot + 10 + nameWidth + 14)
+        return -width / 2 + 12 + Theme.Chat.capsuleMascot / 2
     }
 
     // MARK: - The + sheet
@@ -654,13 +739,15 @@ struct ChatView: View {
                         .buttonStyle(.plain)
                         .disabled(action.disabled)
                         .opacity(action.disabled ? 0.45 : 1)
+                        .accessibilityIdentifier("plus-\(action.id)")
                     }
                 }
                 .padding(.vertical, 10)
                 .frame(maxWidth: CompanionLayout.chatWidth, alignment: .leading)
                 .glassSheet(cornerRadius: 30)
                 .padding(.horizontal, 12)
-                .padding(.bottom, 70)
+                // above the composer row (30 pt bottom inset, 44 pt tall)
+                .padding(.bottom, Theme.Chat.composerBottom + Theme.Metric.glassLarge + 12)
                 .frame(maxWidth: .infinity)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -690,6 +777,14 @@ struct ChatView: View {
                 id: "files", systemImage: "paperclip", title: "Choose File",
                 subtitle: "Add a document from Files", disabled: !canAddAttachment
             ) { showingFileImporter = true },
+            PlusAction(
+                id: "commands", systemImage: "command",
+                title: LocalizedStringKey(String(localized: "Slash commands")),
+                subtitle: LocalizedStringKey(String(localized: "Diff, retry, steer and more")),
+                disabled: preparingAttachments || sendingMessage
+            ) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { showCommandHUD = true }
+            },
         ]
         if case let .bot(bot) = current {
             out.append(PlusAction(
@@ -707,11 +802,16 @@ struct ChatView: View {
             out.append(PlusAction(
                 id: "settings", systemImage: "gearshape", title: "Bot settings",
                 subtitle: "Model, profile, voice and notifications"
-            ) { showingProfile = true })
+            ) { openProfile() })
             out.append(PlusAction(
                 id: "computer", systemImage: "display", title: "Watch computer",
                 subtitle: "Live view of what \(bot.name) is doing"
             ) { showingComputer = true })
+            out.append(PlusAction(
+                id: "voice", systemImage: "waveform",
+                title: LocalizedStringKey(String(localized: "Voice mode")),
+                subtitle: LocalizedStringKey(String(localized: "Talk to \(bot.name) hands-free"))
+            ) { startVoiceMode() })
         }
         if case let .room(room) = current, room.dm != true {
             out.append(PlusAction(
@@ -1187,8 +1287,10 @@ struct ChatView: View {
                     }
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if draft.isEmpty && attachments.isEmpty && !current.busy
+            } else if composerFocused && draft.isEmpty && attachments.isEmpty && !current.busy
                         && !hasPendingApproval && !storedChips.isEmpty {
+                // Quick replies while the keyboard is up: the resting
+                // screen is the reference's bare composer.
                 PredictiveActionChipsView(chips: storedChips, accentColor: MausPalette.color(current.color)) { chip in
                     submit(chip.prompt)
                 }
@@ -1212,124 +1314,108 @@ struct ChatView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            GlassGroup(spacing: 10) {
-                HStack(alignment: .bottom, spacing: 10) {
+            HStack(alignment: .bottom, spacing: Theme.Chat.composerGap) {
+                // "+": 44 pt glass circle. Attachments, threads, slash
+                // commands and the rest live in the sheet it opens.
+                Button {
+                    dictation.stop()
+                    composerFocused = false
+                    withAnimation(.snappy(duration: 0.28)) { showingPlus.toggle() }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 20.5, weight: .medium))
+                        .foregroundStyle(showingPlus ? Color.black : Theme.textPrimary)
+                        .rotationEffect(.degrees(showingPlus ? 45 : 0))
+                        .frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
+                        .background(Circle().fill(showingPlus ? Color.white : Color.clear))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .themeGlass(Circle())
+                .chatGlassRim(Circle())
+                .disabled(preparingAttachments || sendingMessage)
+                .accessibilityLabel(showingPlus ? "Close" : "More")
+                .accessibilityIdentifier("composer-plus")
+
+                // The field: "Ask {name}", the mic (dictation) and the white
+                // capsule (voice mode, or send once there is something to send).
+                HStack(alignment: .bottom, spacing: 0) {
+                    TextField(
+                        "",
+                        text: $draft,
+                        prompt: Text(composerPrompt).foregroundColor(Theme.composerPlaceholder),
+                        axis: .vertical
+                    )
+                        .lineLimit(1...5)
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textPrimary)
+                        .padding(.leading, 16.6)
+                        .padding(.top, 12.35)
+                        .padding(.bottom, 13.65)
+                        .focused($composerFocused)
+                        .accessibilityIdentifier("message-input")
+                        // Partial transcripts rebuild from a frozen base;
+                        // prevent competing edits without dimming the text.
+                        .allowsHitTesting(
+                            !dictation.isListening && !dictation.isStarting
+                                && !preparingAttachments && !sendingMessage
+                        )
+                        .onValueChange(of: draft) { value in
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                showCommandHUD = value.hasPrefix("/")
+                            }
+                        }
+                        // The software keyboard's Return inserts a newline,
+                        // like Messages; only the send button sends. A
+                        // hardware Return still sends, Shift-Return breaks
+                        // the line. onKeyPress never sees the software
+                        // keyboard, so this cannot turn its Return into a send.
+                        .onHardwareReturn { submit() }
+
                     Button {
-                        dictation.stop()
                         composerFocused = false
-                        withAnimation(.snappy(duration: 0.28)) { showingPlus.toggle() }
+                        dictation.toggle(capturing: draft)
                     } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(showingPlus ? Color(uiColor: .systemBackground) : Color.primary)
-                            .rotationEffect(.degrees(showingPlus ? 45 : 0))
-                            .frame(width: 44, height: 44)
-                            .background(Circle().fill(showingPlus ? Color.primary : Color.clear))
-                            .contentShape(Circle())
+                        MicGlyph()
+                            .fill(dictation.isListening ? Color.red : Theme.composerMic)
+                            .frame(width: MicGlyph.size.width, height: MicGlyph.size.height)
+                            .frame(width: 32, height: Theme.Metric.glassLarge)
+                            .contentShape(Rectangle())
+                            .pulseCompat(isActive: dictation.isListening)
                     }
                     .buttonStyle(.plain)
-                    .glassCapsule()
                     .disabled(preparingAttachments || sendingMessage)
-                    .accessibilityLabel(showingPlus ? "Close" : "More")
+                    .padding(.trailing, 6.3)
+                    .accessibilityLabel(dictation.isListening ? "Stop dictation" : "Start dictation")
 
-                    HStack(alignment: .bottom, spacing: 6) {
-                        Button {
-                            dictation.stop()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                                showCommandHUD.toggle()
-                            }
-                            Haptics.selection()
-                        } label: {
-                            Image(systemName: "command")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(showCommandHUD ? Color.primary : Color.secondary)
-                                .frame(width: 30, height: 32)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(preparingAttachments || sendingMessage)
-                        .accessibilityLabel("Slash commands")
-                        .padding(.leading, 6)
-                        .padding(.bottom, 6)
-
-                        TextField(
-                            sendingMessage ? "Sending…" : dictation.isListening ? "Listening…" : "Ask \(current.name)",
-                            text: $draft,
-                            axis: .vertical
-                        )
-                            .lineLimit(1...5)
-                            .font(.system(size: 17))
-                            .padding(.vertical, 11)
-                            .focused($composerFocused)
-                            .accessibilityIdentifier("message-input")
-                            // Partial transcripts rebuild from a frozen base;
-                            // prevent competing edits without dimming the text.
-                            .allowsHitTesting(
-                                !dictation.isListening && !dictation.isStarting
-                                    && !preparingAttachments && !sendingMessage
-                            )
-                            .onValueChange(of: draft) { value in
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    showCommandHUD = value.hasPrefix("/")
-                                }
-                            }
-                            // The software keyboard's Return inserts a newline,
-                            // like Messages; only the arrow button sends. A
-                            // hardware Return still sends, Shift-Return breaks
-                            // the line. onKeyPress never sees the software
-                            // keyboard, so this cannot turn its Return into a send.
-                            .onHardwareReturn { submit() }
-
-                        Button {
-                            composerFocused = false
-                            dictation.toggle(capturing: draft)
-                        } label: {
-                            Image(systemName: dictation.isListening ? "mic.fill" : "mic")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(dictation.isListening ? Color.red : Color.primary)
-                                .frame(width: 32, height: 32)
-                                .background(
-                                    Circle().fill(
-                                        dictation.isListening
-                                            ? Color.red.opacity(0.2)
-                                            : Color.secondary.opacity(0.12)
-                                    )
-                                )
-                                .pulseCompat(isActive: dictation.isListening)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(preparingAttachments || sendingMessage)
-                        .padding(.bottom, 6)
-                        .accessibilityLabel(dictation.isListening ? "Stop dictation" : "Start dictation")
-
-                        Button { submit() } label: {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundStyle(canSend ? Color.white : Color.secondary)
-                                .frame(width: 32, height: 32)
-                                .background(
-                                    Circle().fill(canSend ? BubbleColor.mine : Color.secondary.opacity(0.18))
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!canSend)
-                        .padding(.trailing, 6)
-                        .padding(.bottom, 6)
-                        .animation(.easeOut(duration: 0.15), value: canSend)
-                    }
-                    .frame(minHeight: 44)
-                    // A capsule at one line (44pt tall, 22pt corners) that
-                    // keeps those 22pt corners as the draft grows, the way
-                    // Messages does. A true Capsule would round to half the
-                    // height, and a five-line draft became a giant pill.
-                    .glassSheet(cornerRadius: 22)
+                    ComposerVoiceSendButton(
+                        canSend: canSend,
+                        busy: preparingAttachments || sendingMessage,
+                        send: { submit() },
+                        voice: startVoiceMode
+                    )
+                    .padding(.trailing, 9.3)
+                    .padding(.bottom, (Theme.Metric.glassLarge - Theme.Chat.voiceCapsule.height) / 2)
                 }
+                .frame(minHeight: Theme.Metric.glassLarge)
+                // 22 pt corners: a capsule at one line that keeps its
+                // corners as the draft grows, the way Messages does.
+                .themeGlass(RoundedRectangle(cornerRadius: 22, style: .continuous), interactive: false)
+                .chatGlassRim(RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
+        .padding(.leading, Theme.Chat.composerLeading)
+        .padding(.trailing, Theme.Chat.composerInset)
+        .padding(.top, Self.composerTopPadding)
+        .padding(.bottom, composerFocused ? 8 : Theme.Chat.composerBottom)
         .frame(maxWidth: CompanionLayout.chatWidth)
         .frame(maxWidth: .infinity)
+    }
+
+    private var composerPrompt: String {
+        if sendingMessage { return String(localized: "Sending…") }
+        if dictation.isListening { return String(localized: "Listening…") }
+        return String(localized: "Ask \(current.name)")
     }
 }
 
@@ -1616,7 +1702,7 @@ struct TextBubble: View {
         // No face beside the bubble: the bot's face is in the header, and in
         // a room the name line says who spoke. The bubble sits at the edge.
         HStack(alignment: .bottom, spacing: 0) {
-            if mine { Spacer(minLength: 56) }
+            if mine { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
 
             VStack(alignment: .leading, spacing: 4) {
                 if let speaker, !mine {
@@ -1651,7 +1737,8 @@ struct TextBubble: View {
                     }
                     if !shared.text.isEmpty {
                         Text(shared.text)
-                            .font(.system(size: 17))
+                            .font(Theme.Font.body)
+                            .lineSpacing(Theme.bodyLineSpacing)
                             .foregroundStyle(BubbleColor.mineText)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1668,20 +1755,20 @@ struct TextBubble: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal, customCard ? 0 : 15)
-            .padding(.vertical, customCard ? 0 : 11)
+            .padding(.horizontal, customCard ? 0 : Theme.Chat.bubblePaddingH)
+            .padding(.vertical, customCard ? 0 : Theme.Chat.bubblePaddingV)
+            // No tail (reference 02): a #202020 card with 20 pt corners for
+            // the bot, the same shape one step lighter for you.
             .background(
                 Group {
                     if !customCard {
-                        SpeechBubble(tail: tailed ? (mine ? .trailing : .leading) : .none)
+                        RoundedRectangle(cornerRadius: Theme.Metric.bubbleRadius, style: .continuous)
                             .fill(mine ? BubbleColor.mine : BubbleColor.theirs)
                     }
                 }
             )
-            // leave room for the tail below, so the next row does not sit on it
-            .padding(.bottom, !customCard && tailed ? SpeechBubble.tailDrop() : 0)
 
-            if !mine { Spacer(minLength: 44) }
+            if !mine { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
         }
     }
 }
@@ -2010,7 +2097,7 @@ struct CredentialRequestCardView: View {
                     Label("Pair again to enter here", systemImage: "qrcode")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(tint)
-                    Text("This pairing predates secure phone entry. Scan a fresh QR from OpenMausBot, or finish this request on your computer.")
+                    Text("This pairing predates secure phone entry. Scan a fresh QR from Sagax, or finish this request on your computer.")
                         .font(.system(size: 13))
                         .foregroundStyle(Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2440,11 +2527,13 @@ struct StreamingBubble: View {
                         .foregroundStyle(Color.primary)
                 }
             }
-            .padding(.horizontal, 15)
-            .padding(.vertical, 11)
-            .background(SpeechBubble(tail: .leading).fill(BubbleColor.theirs))
-            .padding(.bottom, SpeechBubble.tailDrop())
-            Spacer(minLength: 44)
+            .padding(.horizontal, Theme.Chat.bubblePaddingH)
+            .padding(.vertical, Theme.Chat.bubblePaddingV)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Metric.bubbleRadius, style: .continuous)
+                    .fill(BubbleColor.theirs)
+            )
+            Spacer(minLength: Theme.Chat.bubbleTrailingGap)
         }
         // No `.textSelection` on purpose: selecting text that is still growing
         // fights the reader, and the settled bubble a frame later is

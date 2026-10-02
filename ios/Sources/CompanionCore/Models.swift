@@ -538,6 +538,32 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var activeLeafId: String?
     /// Paged responses only: there is more transcript above what you got.
     public var hasMore: Bool?
+    /// Which Sagax character stands for the bot (owl, shape or Trombi) and
+    /// its look. Absent or malformed means the owl; see `MascotLook`.
+    public var mascotLook: MascotLook?
+    /// The owl's special edition. Absent or unknown means `none`.
+    public var mascotSkin: MascotSkin?
+    /// The uploaded picture's framing inside its crop: zoom 1...3 and the
+    /// focus point 0...1. Read them through `framing`, which clamps.
+    public var avatarZoom: Double?
+    public var avatarFocusX: Double?
+    public var avatarFocusY: Double?
+    /// The first line of the bot's standing instructions, for search
+    /// subtitles. Older servers omit it.
+    public var instructionsLead: String?
+
+    /// The look the renderers draw: the stored one, or the owl.
+    public var resolvedMascotLook: CompleteMascotLook {
+        (mascotLook ?? .owl).complete
+    }
+
+    /// The owl's skin, `none` when absent.
+    public var resolvedMascotSkin: MascotSkin { mascotSkin ?? .none }
+
+    /// The picture's framing, clamped the way the desktop clamps it.
+    public var framing: (zoom: Double, focusX: Double, focusY: Double) {
+        (AvatarFraming.clampZoom(avatarZoom), AvatarFraming.clampFocus(avatarFocusX), AvatarFraming.clampFocus(avatarFocusY))
+    }
 
     /// Routine results are ordinary tasks; only their per-run executions are hidden.
     public var visibleTasks: [BotTask] {
@@ -721,6 +747,8 @@ public struct Room: Codable, Hashable, Identifiable, Sendable {
     public var tasks: [BotTask]?
     public var messages: [Message]?
     public var hasMore: Bool?
+    /// Pinned to the home row. Older servers have no group pins and omit it.
+    public var pinned: Bool?
 }
 
 // MARK: - Responses
@@ -739,13 +767,17 @@ public struct Fleet: Decodable, Sendable {
     /// Held sends for every bot thread, the same snapshot the
     /// bot.queued frames carry. Older computers omit it.
     public var botQueuedMessages: [String: [QueuedSend]]?
+    /// The sidebar sections in the server's order (`store.sections`), the
+    /// order the desktop shows them in. Older computers omit it.
+    public var sections: [String]?
 
-    private enum CodingKeys: String, CodingKey { case bots, groups, botQueuedMessages }
+    private enum CodingKeys: String, CodingKey { case bots, groups, botQueuedMessages, sections }
 
-    public init(bots: [Bot], groups: [Room], botQueuedMessages: [String: [QueuedSend]]? = nil) {
+    public init(bots: [Bot], groups: [Room], botQueuedMessages: [String: [QueuedSend]]? = nil, sections: [String]? = nil) {
         self.bots = bots
         self.groups = groups
         self.botQueuedMessages = botQueuedMessages
+        self.sections = sections
     }
 
     public init(from decoder: Decoder) throws {
@@ -758,6 +790,7 @@ public struct Fleet: Decodable, Sendable {
             [String: [Lossy<QueuedSend>]].self,
             forKey: .botQueuedMessages
         ))??.mapValues { list in list.compactMap(\.value) }
+        sections = (try? container.decodeIfPresent([String].self, forKey: .sections)) ?? nil
     }
 }
 
@@ -1067,6 +1100,15 @@ public struct BotProfilePatch: Encodable, Sendable {
     public var mascotBody: String?
     public var voice: String?
     public var speakReplies: Bool?
+    /// One of the twelve `MausColors` names.
+    public var color: String?
+    public var mascotSkin: MascotSkin?
+    public var mascotLook: MascotLook?
+    public var mascotExpression: String?
+    /// Sent as given; the server clamps zoom to 1...3 and focus to 0...1.
+    public var avatarZoom: Double?
+    public var avatarFocusX: Double?
+    public var avatarFocusY: Double?
 
     /// `avatarUrl` needs three wire states: omitted, a stored path, or JSON
     /// null to clear. A nested optional would technically represent that, but
@@ -1085,7 +1127,14 @@ public struct BotProfilePatch: Encodable, Sendable {
         avatarCrop: AvatarCrop? = nil,
         mascotBody: String? = nil,
         voice: String? = nil,
-        speakReplies: Bool? = nil
+        speakReplies: Bool? = nil,
+        color: String? = nil,
+        mascotSkin: MascotSkin? = nil,
+        mascotLook: MascotLook? = nil,
+        mascotExpression: String? = nil,
+        avatarZoom: Double? = nil,
+        avatarFocusX: Double? = nil,
+        avatarFocusY: Double? = nil
     ) {
         self.name = name
         self.title = title
@@ -1096,10 +1145,18 @@ public struct BotProfilePatch: Encodable, Sendable {
         self.mascotBody = mascotBody
         self.voice = voice
         self.speakReplies = speakReplies
+        self.color = color
+        self.mascotSkin = mascotSkin
+        self.mascotLook = mascotLook
+        self.mascotExpression = mascotExpression
+        self.avatarZoom = avatarZoom
+        self.avatarFocusX = avatarFocusX
+        self.avatarFocusY = avatarFocusY
     }
 
     private enum CodingKeys: String, CodingKey {
         case name, title, description, notifications, avatarUrl, avatarCrop, mascotBody, voice, speakReplies
+        case color, mascotSkin, mascotLook, mascotExpression, avatarZoom, avatarFocusX, avatarFocusY
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -1118,6 +1175,13 @@ public struct BotProfilePatch: Encodable, Sendable {
         try values.encodeIfPresent(mascotBody, forKey: .mascotBody)
         try values.encodeIfPresent(voice, forKey: .voice)
         try values.encodeIfPresent(speakReplies, forKey: .speakReplies)
+        try values.encodeIfPresent(color, forKey: .color)
+        try values.encodeIfPresent(mascotSkin, forKey: .mascotSkin)
+        try values.encodeIfPresent(mascotLook, forKey: .mascotLook)
+        try values.encodeIfPresent(mascotExpression, forKey: .mascotExpression)
+        try values.encodeIfPresent(avatarZoom, forKey: .avatarZoom)
+        try values.encodeIfPresent(avatarFocusX, forKey: .avatarFocusX)
+        try values.encodeIfPresent(avatarFocusY, forKey: .avatarFocusY)
     }
 }
 
@@ -1130,6 +1194,9 @@ public struct Voice: Codable, Hashable, Identifiable, Sendable {
 public struct RoutineSchedule: Codable, Hashable, Sendable {
     public enum Kind: String, Codable, Sendable {
         case once, daily, interval
+        /// A five-field cron expression in an explicit IANA zone
+        /// (`shared/routine-schedule.ts`). Shown raw; the phone does not edit it.
+        case cron
         /// A schedule introduced by a newer desktop. It remains visible but
         /// cannot be toggled or saved until the user chooses a supported kind.
         case unknown
@@ -1150,6 +1217,22 @@ public struct RoutineSchedule: Codable, Hashable, Sendable {
     public var weekdays: [Int]?
     public var everyMinutes: Int?
     public var anchorAt: Int64?
+    /// `cron`: minute hour day-of-month month weekday.
+    public var expression: String?
+    /// `cron`: the IANA zone the expression is read in.
+    public var timeZone: String?
+
+    public static func cron(expression: String, timeZone: String) -> Self {
+        .init(type: .cron, expression: expression, timeZone: timeZone)
+    }
+
+    /// How the reference shows a cron schedule: `CRON_TZ=<zone> <expression>`,
+    /// or the bare expression when the zone is missing. Nil for other kinds.
+    public var cronDisplay: String? {
+        guard type == .cron, let expression, !expression.isEmpty else { return nil }
+        guard let timeZone, !timeZone.isEmpty else { return expression }
+        return "CRON_TZ=\(timeZone) \(expression)"
+    }
 
     public static func once(at: Date) -> Self {
         .init(type: .once, at: at.timeIntervalSince1970 * 1_000, time: nil, weekdays: nil)
@@ -1297,6 +1380,8 @@ public extension Routine {
             (5...1_440).contains(schedule.everyMinutes ?? 0) && schedule.anchorAt != nil
         case .once:
             (schedule.at ?? -.infinity) > date.timeIntervalSince1970 * 1_000
+        case .cron:
+            !(schedule.expression ?? "").isEmpty && !(schedule.timeZone ?? "").isEmpty
         case .unknown:
             false
         }
@@ -1500,7 +1585,7 @@ public struct ServerEnvironment: Codable, Hashable, Sendable {
     public var identity: ServerIdentity? = nil
 
     /// The server signs people in with Pulsatrix and returns to native apps
-    /// (`/auth/oidc/start?client=phone` ends on an `openmausbot://pair` link).
+    /// (`/auth/oidc/start?client=phone` ends on a `sagax://pair` link).
     public var offersPulsatrixSignIn: Bool {
         identity?.kind == "perspicax" && identity?.nativeReturn == true
     }
@@ -1512,20 +1597,46 @@ public struct ServerIdentity: Codable, Hashable, Sendable {
     public var `protocol`: String?
     public var issuer: String?
     public var loginPath: String?
-    /// The server ends a native sign-in on an `openmausbot://` link.
+    /// The server ends a native sign-in on a `sagax://` link.
     public var nativeReturn: Bool?
+    /// Schemes a phone start may name with `&return=`. A server that lists
+    /// `sagax` ends the phone's sign-in on `sagax://pair`; older servers
+    /// omit it and end on `openmausbot://pair`.
+    public var phoneReturnSchemes: [String]? = nil
+
+    public init(kind: String, protocol: String? = nil, issuer: String? = nil, loginPath: String? = nil, nativeReturn: Bool? = nil, phoneReturnSchemes: [String]? = nil) {
+        self.kind = kind
+        self.protocol = `protocol`
+        self.issuer = issuer
+        self.loginPath = loginPath
+        self.nativeReturn = nativeReturn
+        self.phoneReturnSchemes = phoneReturnSchemes
+    }
 }
 
 /// "Sign in with Pulsatrix" from the phone: the authentication sheet opens
 /// this address on the server, and the server's answer is the pairing
 /// invite link the app already accepts from a QR code
-/// (`openmausbot://pair?address=...&token=omb_pair_...&name=...`).
+/// (`sagax://pair?address=...&token=omb_pair_...&name=...`).
 public enum PulsatrixSignIn {
-    public static let callbackScheme = "openmausbot"
+    /// This app's own scheme (the only one it registers), asked for
+    /// whenever the server offers it.
+    public static let callbackScheme = CompanionURLScheme.name
+    /// What a server that predates `phoneReturnSchemes` ends on. Only the
+    /// sign-in sheet ever sees it: the app does not register it.
+    public static let legacyCallbackScheme = "openmausbot"
+    /// Every scheme a sign-in may end on.
+    public static let callbackSchemes: Set<String> = [callbackScheme, legacyCallbackScheme]
 
-    /// `<server origin>/auth/oidc/start?client=phone`, or nil for an address
-    /// that is not http(s).
-    public static func startURL(base: URL) -> URL? {
+    /// The scheme to ask the server for: `sagax` when it advertises the
+    /// phone return, else the one it always ends on.
+    public static func returnScheme(for identity: ServerIdentity?) -> String {
+        identity?.phoneReturnSchemes?.contains(callbackScheme) == true ? callbackScheme : legacyCallbackScheme
+    }
+
+    /// `<server origin>/auth/oidc/start?client=phone[&return=sagax]`, or nil
+    /// for an address that is not http(s).
+    public static func startURL(base: URL, returnScheme: String = legacyCallbackScheme) -> URL? {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false),
               let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
               components.host != nil
@@ -1533,19 +1644,31 @@ public enum PulsatrixSignIn {
         components.path = "/auth/oidc/start"
         components.query = nil
         components.fragment = nil
-        components.queryItems = [URLQueryItem(name: "client", value: "phone")]
+        var items = [URLQueryItem(name: "client", value: "phone")]
+        if returnScheme == callbackScheme { items.append(URLQueryItem(name: "return", value: callbackScheme)) }
+        components.queryItems = items
         return components.url
     }
 
     /// The invite the sign-in came back with, or nil (a cancelled sheet, a
     /// link for another server, anything that is not an invite).
     public static func invite(from callback: URL, expectedOrigin: URL) -> PairingInvite? {
-        guard let invite = PairingInvite.parse(callback),
+        guard let invite = PairingInvite.parse(sagaxLink(callback)),
               invite.credential.hasPrefix("omb_pair_"),
               let address = invite.connection.baseURL,
               sameOrigin(address, expectedOrigin)
         else { return nil }
         return invite
+    }
+
+    /// An older server's `openmausbot://pair` answer, read as the
+    /// `sagax://pair` link it stands for; deep links stay sagax:// only.
+    static func sagaxLink(_ url: URL) -> URL {
+        guard url.scheme?.lowercased() == legacyCallbackScheme,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return url }
+        components.scheme = callbackScheme
+        return components.url ?? url
     }
 
     static func sameOrigin(_ a: URL, _ b: URL) -> Bool {

@@ -81,7 +81,7 @@ import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 
 import { SpeakButton } from "./SpeakButton";
-import { CallOverlay } from "./CallView";
+import { CallOverlay, VoiceCallDock } from "./CallView";
 import { effectivePlace, toolPlace, type EffectivePlace } from "@/lib/place";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
@@ -1298,7 +1298,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
 
   return (
     <main className="app-glow relative flex h-full min-w-0 flex-1 flex-col bg-app">
-      {/* Call mode covers the thread while the bot is on the line */}
+      {/* The older call mode covers the thread while the bot is on the line;
+          a voice mode call docks at the top of the banner stack below */}
       <CallOverlay bot={bot} />
       {(macInset || browser) && <div className="content-topbar-strip" />}
       {/* Header */}
@@ -1393,6 +1394,9 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       {/* Banners sit below the floating header; the wrapper vanishes when
           none is showing so the transcript can run to the top. */}
       <div className="chat-banners pt-[52px] empty:hidden">
+      {/* Voice mode's in-call banner: first in the stack, right under the
+          header, so it pushes the thread down instead of floating over it */}
+      <VoiceCallDock bot={bot} />
       <BotActivityPicker bot={bot} />
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {routineExecution && <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[11.5px] text-ink-secondary">

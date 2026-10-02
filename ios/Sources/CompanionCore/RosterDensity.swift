@@ -13,11 +13,14 @@
 import Foundation
 
 public enum RosterDensity: String, CaseIterable, Codable, Sendable {
+    /// The home of the visual-parity pass: pinned bots as large mascots,
+    /// collapsible sections and two-line rows.
+    case standard
     case comfortable
     case compact
 
     /// What a new install shows.
-    public static let `default`: RosterDensity = .compact
+    public static let `default`: RosterDensity = .standard
 
     /// A stored choice, read defensively: anything this build cannot read —
     /// a density a later version adds, or a damaged store — lands on the
@@ -28,6 +31,7 @@ public enum RosterDensity: String, CaseIterable, Codable, Sendable {
 
     public var label: String {
         switch self {
+        case .standard: "Standard"
         case .comfortable: "Comfortable"
         case .compact: "Compact"
         }
@@ -35,6 +39,7 @@ public enum RosterDensity: String, CaseIterable, Codable, Sendable {
 
     public var caption: String {
         switch self {
+        case .standard: "Pinned bots up top, then each section with every bot’s latest message."
         case .comfortable: "Larger faces, with each bot’s latest message under its name."
         case .compact: "One line per bot. Bots with more than one active thread show how many; tap the number to list them."
         }
@@ -109,7 +114,7 @@ public struct CompactBotRow: Equatable, Sendable {
     public let status: RosterRowStatus
     /// Threads behind the "› N" control.
     public let threadCount: Int
-    /// The Chief of Staff crown after the name.
+    /// The Primary Bot's orange star after the name.
     public let showsChiefBadge: Bool
     /// The comfortable row's rule, exactly: the bot's own unread flag,
     /// hidden while its conversation is busy — which the harness also

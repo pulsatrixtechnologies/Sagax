@@ -1,7 +1,7 @@
 // The compact home list: one line per bot and per group.
 //
 // The phone's version of the desktop sidebar's compact density: name, role
-// and status on one line, a crown after a Chief of Staff's name, and a
+// and status on one line, an orange star after the Primary Bot's name, and a
 // thread list only under a bot that has more than one thread — opened from
 // its "› N" control and lined up with the bot's name. What each row shows
 // is decided in CompanionCore's `CompactBotRow`; this file is layout.
@@ -94,7 +94,7 @@ struct CompactBotEntry: View {
             Button(action: openRow) {
                 HStack(spacing: 0) {
                     UnreadDot(visible: row.showsUnreadDot, color: bot.color)
-                    BotAvatarView(
+                    BotMascotView(
                         bot: bot, size: face,
                         state: MausState.forChat(.bot(bot), in: session.state),
                         animated: false
@@ -111,7 +111,7 @@ struct CompactBotEntry: View {
                         // a size smaller so the name reads first.
                         VStack(alignment: .leading, spacing: 2) {
                             name(bot, row)
-                            let line = row.secondLine(stamp: RelativeStamp.list(lastActivity), role: bot.title)
+                            let line = row.secondLine(stamp: RelativeStamp.list(lastActivity), role: bot.displayRole)
                             if !line.isEmpty {
                                 SecondLine(line: line, color: bot.color, spinnerLabel: spinnerLabel)
                             }
@@ -167,8 +167,8 @@ struct CompactBotEntry: View {
                 // leaves rather than an equal share of the line.
                 name(bot, row)
                     .layoutPriority(1)
-                if !bot.title.isEmpty {
-                    Text(verbatim: bot.title)
+                if !bot.displayRole.isEmpty {
+                    Text(verbatim: bot.displayRole)
                         .font(.subheadline)
                         .foregroundStyle(Color.secondary)
                         .lineLimit(1)
@@ -189,7 +189,7 @@ struct CompactBotEntry: View {
                 .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                 .fixedSize(horizontal: false, vertical: true)
             if row.showsChiefBadge {
-                ChiefBadge()
+                PrimaryBotBadge()
             }
         }
     }
@@ -571,22 +571,7 @@ private struct RoomFaces: View {
     let size: CGFloat
 
     var body: some View {
-        ZStack {
-            if let first = members.first {
-                BotAvatarView(bot: first, size: size * 0.74, state: .happy, animated: false)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            } else {
-                MausAvatar(color: "blue", size: size, state: .happy, animated: false)
-            }
-            if members.count > 1 {
-                BotAvatarView(bot: members[1], size: size * 0.62, state: .happy, animated: false)
-                    .padding(1.5)
-                    .background(Circle().fill(Color(uiColor: .systemBackground)))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .offset(x: 3, y: 3)
-            }
-        }
-        .frame(width: size, height: size)
+        GroupMascotView(members: members, size: size)
     }
 }
 
@@ -644,18 +629,38 @@ private struct RowStatus: View {
     }
 }
 
-/// The Chief of Staff mark after a bot's name: the desktop's crown. It
-/// scales with the name, so it keeps its default proportion to it at every
-/// text size instead of outgrowing it at the largest ones.
-struct ChiefBadge: View {
+/// The Primary Bot mark after a bot's name: the desktop's orange star badge
+/// (`PrimaryBotBadge` in src/components/Avatar.tsx). It scales with the
+/// name, so it keeps its default proportion to it at every text size instead
+/// of outgrowing it at the largest ones.
+extension Bot {
+    /// The role a row shows: the bot's own title, else "Primary Bot" for the
+    /// Primary Bot (in the person's language), else nothing.
+    var displayRole: String {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !title.isEmpty { return title }
+        return chiefOfStaff == true ? String(localized: "Primary Bot") : ""
+    }
+}
+
+struct PrimaryBotBadge: View {
     /// Caption's size at the default text size, scaled as the name's body is.
-    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 13
+
+    init(size: CGFloat = 13) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: .body)
+    }
 
     var body: some View {
-        Image(systemName: "crown.fill")
-            .font(.system(size: size))
-            .foregroundStyle(Color.accentColor)
-            .accessibilityLabel("Chief of Staff")
-            .accessibilityIdentifier("chief-badge")
+        ZStack {
+            Circle().fill(Color.orange)
+            Image(systemName: "star.fill")
+                .font(.system(size: size * 0.62, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .frame(width: size, height: size)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Primary Bot"))
+        .accessibilityIdentifier("primary-bot-badge")
     }
 }

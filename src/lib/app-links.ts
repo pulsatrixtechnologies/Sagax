@@ -4,7 +4,7 @@
 export const APP_NAME = "Sagax";
 /** The full brand, sibling of Pulsatrix Perspicax: the About dialog. */
 export const APP_FULL_NAME = "Pulsatrix Sagax";
-export const APP_REPOSITORY = "https://github.com/pulsatrixtechnologies/pulsa-bot";
+export const APP_REPOSITORY = "https://github.com/pulsatrixtechnologies/sagax";
 /** Help, docs, releases, and the license all open this fork. */
 export const DOCS_URL = `${APP_REPOSITORY}/tree/main/docs`;
 export const HELP_CENTER_URL = DOCS_URL;

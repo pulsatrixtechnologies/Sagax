@@ -38,7 +38,7 @@ import type { Routine, RoutineInput, RoutineRun, RoutineRunStatusFilter } from "
 import type { WebhookAttempt, WebhookIngressStatus, WebhookTrigger } from "@/lib/webhooks";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { answerResponse, dismissResponse } from "@/lib/card-answer";
-import { currentCall } from "@/lib/call";
+import { currentCall, voiceCallId } from "@/lib/call";
 import { showNotification, type NotificationTarget } from "@/lib/notify";
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
@@ -1209,6 +1209,8 @@ export type Action =
       sendId?: string;
       replyToId?: string;
       threadId?: string;
+      /** said on a voice call (Message.voiceCall): the turn is a phone turn */
+      voiceCall?: { callId: string; interrupted?: boolean; language?: string };
       onError?: () => void;
     }
   | { type: "pendingQueued"; threadId: string; queueId: string; text: string; reason?: SteerQueueReason }
@@ -3243,10 +3245,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const threadId =
             action.threadId ?? stateRef.current.bots.find((bot) => bot.id === action.botId)?.threadId;
           const sendId = action.sendId ?? crypto.randomUUID();
+          // words typed to a bot that is on a voice call are a call turn too:
+          // its answer is read aloud like the rest of the call
+          const liveCallId = voiceCallId(action.botId);
+          const voiceCall = action.voiceCall ?? (liveCallId ? { callId: liveCallId } : undefined);
           void waitForExecutionSettings(botBeforeSend ? [botBeforeSend] : [], threadId)
             .then(() => api(`/api/bots/${action.botId}/messages`, {
                 method: "POST",
-                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId }),
+                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}) }),
               }))
             .then((body) => {
               if (body?.message && typeof body.threadId === "string") {

@@ -1,0 +1,105 @@
+import { describe, expect, it } from "vitest";
+
+import { splitSessionPrompt } from "./drivers/prompt-split.ts";
+import { CALL_MARK, ENDED_MARK, INTERRUPTED_MARK, voiceCallTurn } from "./testing/voice-call-turns.ts";
+import {
+  parseVoiceCallMeta,
+  VOICE_CALL_INTERRUPTED_NOTE,
+  voiceCallInstruction,
+  voiceCallSection,
+  voiceCallSteerPrompt,
+} from "./voice-call-prompt.ts";
+
+describe("parseVoiceCallMeta", () => {
+  it("accepts a call mark and drops what it does not know", () => {
+    expect(parseVoiceCallMeta(undefined)).toBeUndefined();
+    expect(parseVoiceCallMeta({ callId: "call-0123456789" })).toEqual({ callId: "call-0123456789" });
+    expect(parseVoiceCallMeta({ callId: "call-0123456789", interrupted: true, language: "fr", extra: 1 }))
+      .toEqual({ callId: "call-0123456789", interrupted: true, language: "fr" });
+    expect(parseVoiceCallMeta({ callId: "call-0123456789", interrupted: false })).toEqual({ callId: "call-0123456789" });
+  });
+
+  it("refuses a malformed mark", () => {
+    for (const bad of ["call", [], { callId: "no" }, { callId: "call-0123456789", interrupted: "yes" }, { callId: "call-0123456789", language: "auto" }, { callId: "call-0123456789", language: "xx" }]) {
+      expect(parseVoiceCallMeta(bad)).toHaveProperty("error");
+    }
+  });
+});
+
+describe("the phone-call instruction", () => {
+  it("tells the bot it is on a call and how to talk", () => {
+    const text = voiceCallInstruction("Ada", { callId: "call-0123456789", language: "fr" });
+    expect(text).toContain("You are on a live phone call with Ada.");
+    expect(text).toContain("transcription errors");
+    expect(text).toContain("never mention a transcript, dictation or voice mode");
+    expect(text).toContain("one to three at a time");
+    expect(text).toContain("No markdown, lists, tables, code blocks, emojis or URLs");
+    expect(text).toContain("Je regarde ça");
+    expect(text).toContain("(their call is set to French)");
+    expect(text).toContain("Keep your own persona and instructions");
+    expect(text).not.toContain(VOICE_CALL_INTERRUPTED_NOTE);
+    expect(text).not.toMatch(/[–—]/);
+  });
+
+  it("carries the interrupted marker only on an interrupted turn", () => {
+    expect(voiceCallInstruction("Ada", { callId: "call-0123456789", interrupted: true })).toContain(VOICE_CALL_INTERRUPTED_NOTE);
+  });
+
+  it("names a person signed in by email by the name part", () => {
+    expect(voiceCallInstruction("ada@example.com", { callId: "call-0123456789" })).toContain("phone call with ada.");
+    expect(voiceCallInstruction(undefined, { callId: "call-0123456789" })).toContain("phone call with the person.");
+  });
+
+  it("is a call section on call turns, an ended note once after, nothing otherwise", () => {
+    const call = { voiceCall: { callId: "call-0123456789" } };
+    expect(voiceCallSection(call, undefined, "Ada")).toContain(CALL_MARK);
+    expect(voiceCallSection({}, call, "Ada")).toContain(ENDED_MARK);
+    expect(voiceCallSection({}, {}, "Ada")).toBe("");
+    expect(voiceCallSection(undefined, undefined, "Ada")).toBe("");
+  });
+
+  it("marks words steered into a running turn without storing anything", () => {
+    expect(voiceCallSteerPrompt("hi", undefined)).toBe("hi");
+    const steered = voiceCallSteerPrompt("hi", { callId: "call-0123456789", interrupted: true });
+    expect(steered).toMatch(/^\[Said on the live phone call/);
+    expect(steered).toContain(VOICE_CALL_INTERRUPTED_NOTE);
+    expect(steered.endsWith("\n\nhi")).toBe(true);
+  });
+});
+
+describe("voice call turns in the system prompt halves", () => {
+  it("rides the volatile half, so the stable prefix and the CLI session stay put", () => {
+    const written = voiceCallTurn("written");
+    const call = voiceCallTurn("call");
+    expect(call.systemStable).toBe(written.systemStable);
+    expect(call.systemVolatile).toContain(CALL_MARK);
+    expect(call.system).toContain(CALL_MARK);
+    expect(written.system).not.toContain(CALL_MARK);
+    expect(voiceCallTurn("after").systemVolatile).toContain(ENDED_MARK);
+    expect(voiceCallTurn("interrupted")).toMatchObject({ mentionTurn: true });
+  });
+
+  // ACP agents and pi share splitSessionPrompt
+  it("reaches a session-keeping engine (ACP, pi) only on call turns", () => {
+    const turns = (["written", "call", "call", "interrupted", "interrupted", "after", "written"] as const).map(voiceCallTurn);
+    let receipt = null;
+    const sent: string[] = [];
+    for (const [index, turn] of turns.entries()) {
+      const next = splitSessionPrompt(turn.systemStable!, turn.systemVolatile!, receipt, turn.system, `words ${index}`, Boolean(turn.mentionTurn));
+      receipt = next.receipt;
+      sent.push(next.text);
+    }
+    expect(sent[0]).not.toContain(CALL_MARK);
+    expect(sent[1]).toContain(CALL_MARK);
+    // unchanged: the session already holds it
+    expect(sent[2]).toBe("words 2");
+    // an interrupted turn always carries its marker, even twice in a row
+    expect(sent[3]).toContain(INTERRUPTED_MARK);
+    expect(sent[4]).toContain(INTERRUPTED_MARK);
+    expect(sent[5]).toContain(ENDED_MARK);
+    expect(sent[5]).not.toContain(CALL_MARK);
+    expect(sent[6]).not.toContain(CALL_MARK);
+    expect(sent[6]).not.toContain(ENDED_MARK);
+    for (const [index, text] of sent.entries()) expect(text.endsWith(`words ${index}`)).toBe(true);
+  });
+});

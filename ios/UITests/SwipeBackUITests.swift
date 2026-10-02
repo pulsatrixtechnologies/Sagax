@@ -75,7 +75,7 @@ final class SwipeBackUITests: XCTestCase {
     /// the caller's assertion still goes red.
     @MainActor
     private func edgeSwipeUntilPopped(in app: XCUIApplication) {
-        let header = app.buttons["thread-switcher"]
+        let header = app.buttons["chat-name"]
         for _ in 0..<2 {
             edgeSwipe(in: app)
             if !header.waitForExistence(timeout: 3) { return }
@@ -102,9 +102,10 @@ final class SwipeBackUITests: XCTestCase {
             "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
-            // Home starts from the install default (compact), whatever an
-            // earlier run saved; Pepper's threads open from its "› 3".
-            "-reset-list-density"
+            // The compact list, whatever an earlier run saved (the install
+            // default is now the standard home); Pepper's threads open from
+            // its "› 3".
+            "-companion.prefs.rosterDensity", "compact"
         ]
         app.launch()
         // Simulator installation can restore an unpaired, prewarmed scene
@@ -138,8 +139,8 @@ final class SwipeBackUITests: XCTestCase {
 
     @MainActor
     private func assertOnThread(_ title: String, in app: XCUIApplication) {
-        let header = app.buttons["thread-switcher"]
-        let expected = NSPredicate(format: "label == %@", "Switch thread: \(title)")
+        let header = app.buttons["chat-name"]
+        let expected = NSPredicate(format: "value == %@", title)
         let appeared = XCTNSPredicateExpectation(predicate: expected, object: header)
         // Thread headers settle late on a loaded CI runner, matching the
         // timeouts ThreadNavigationUITests already carries.

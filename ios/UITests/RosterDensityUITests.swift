@@ -6,7 +6,7 @@ import XCTest
 /// and the preview has no API client, so nothing can be sent anywhere.
 final class RosterDensityUITests: XCTestCase {
     @MainActor
-    func testCompactIsTheDefault() {
+    func testCompactRoster() {
         let app = launchRoster(density: nil)
         let pepper = app.buttons["threads-toggle.roster-pepper"]
         XCTAssertTrue(pepper.waitForExistence(timeout: 10))
@@ -17,10 +17,10 @@ final class RosterDensityUITests: XCTestCase {
         // Groups are rows, made from the "+" on their title.
         XCTAssertTrue(app.buttons["chat-row.roster-general"].exists)
         XCTAssertTrue(app.buttons["new-group"].exists)
-        // The Chief of Staff wears the crown right after its name.
-        let crown = app.buttons["chat-row.roster-atlas"].descendants(matching: .any)["chief-badge"]
-        XCTAssertTrue(crown.exists)
-        XCTAssertEqual(crown.label, "Chief of Staff")
+        // The Primary Bot wears the orange star right after its name.
+        let star = app.buttons["chat-row.roster-atlas"].descendants(matching: .any)["primary-bot-badge"]
+        XCTAssertTrue(star.exists)
+        XCTAssertEqual(star.label, "Primary Bot")
         recordScreenshot("Compact roster by default", in: app)
     }
 
@@ -108,7 +108,17 @@ final class RosterDensityUITests: XCTestCase {
 
     @MainActor
     func testSettingSwitchesBackToComfortableAndIsRemembered() {
-        let app = launchRoster(density: nil)
+        // The density this test saves would outlive it on the simulator and
+        // turn the other suites' standard home into this list: put the
+        // install default back afterwards.
+        addTeardownBlock { @MainActor in
+            let reset = XCUIApplication()
+            reset.terminate()
+            reset.launchArguments = Self.baseArguments + ["-reset-list-density"]
+            reset.launch()
+            reset.terminate()
+        }
+        let app = launchRoster(density: nil, saved: true)
         XCTAssertTrue(app.buttons["threads-toggle.roster-pepper"].waitForExistence(timeout: 10))
 
         chooseDensity("Comfortable", in: app)
@@ -184,15 +194,18 @@ final class RosterDensityUITests: XCTestCase {
         "-companion.onboarding.notificationsSeen", "YES",
     ]
 
-    /// `nil` starts from the install default: a density saved by an earlier
-    /// run on this simulator is removed first.
+    /// `nil` is compact: the install default is now the standard home
+    /// (HomeUITests), and these tests cover the compact and comfortable lists.
+    /// `saved` stores the density instead of pinning it for the launch.
     @MainActor
-    private func launchRoster(density: String?) -> XCUIApplication {
+    private func launchRoster(density: String?, saved: Bool = false) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.terminate()
         app.launchArguments = Self.baseArguments
-            + (density.map { ["-companion.prefs.rosterDensity", $0] } ?? ["-reset-list-density"])
+            // Pinned for this launch only; the switching test instead saves
+            // it, as a choice made in Settings, so Settings can change it.
+            + [saved ? "-set-list-density" : "-companion.prefs.rosterDensity", density ?? "compact"]
         app.launch()
         if app.buttons["Connect computer"].exists {
             app.terminate()
@@ -205,15 +218,35 @@ final class RosterDensityUITests: XCTestCase {
     @MainActor
     private func chooseDensity(_ label: String, in app: XCUIApplication) {
         app.buttons["Settings"].tap()
+        // List density lives in Settings > Advanced (the earlier settings,
+        // kept behind the parity Settings page).
+        let advanced = app.descendants(matching: .any)["settings-advanced"].firstMatch
+        XCTAssertTrue(advanced.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !advanced.isHittable { app.swipeUp() }
+        advanced.tap()
         let picker = app.buttons["list-density"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
-        picker.tap()
-        let option = app.buttons[label]
-        XCTAssertTrue(option.waitForExistence(timeout: 5))
-        option.tap()
+        func chosen() -> Bool { (picker.value as? String)?.contains(label) == true || picker.label.contains(label) }
+        // The menu morphs open from the row (iOS 26 and later); a tap that
+        // lands while it is still opening closes it without choosing, so
+        // let it settle, and try once more if the value did not change.
+        for _ in 0..<2 where !chosen() {
+            picker.tap()
+            let option = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != 'list-density'", label)).firstMatch
+            XCTAssertTrue(option.waitForExistence(timeout: 5))
+            RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+            option.tap()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+        }
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
-        XCTAssertTrue((picker.value as? String)?.contains(label) == true || picker.label.contains(label))
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(chosen())
+        app.buttons["Done"].tap()
+        // Settings pushed from this list leads with Back (a close button
+        // when it is the home's card sheet).
+        let leading = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier IN %@", ["settings-close", "settings-back"])).firstMatch
+        XCTAssertTrue(leading.waitForExistence(timeout: 5))
+        leading.tap()
         XCTAssertTrue(app.buttons["updates-button"].waitForExistence(timeout: 5))
     }
 
@@ -228,8 +261,8 @@ final class RosterDensityUITests: XCTestCase {
 
     @MainActor
     private func assertThread(_ title: String, in app: XCUIApplication) {
-        let header = app.buttons["thread-switcher"]
-        let expected = NSPredicate(format: "label == %@", "Switch thread: \(title)")
+        let header = app.buttons["chat-name"]
+        let expected = NSPredicate(format: "value == %@", title)
         let appeared = XCTNSPredicateExpectation(predicate: expected, object: header)
         XCTAssertEqual(XCTWaiter.wait(for: [appeared], timeout: 10), .completed)
     }

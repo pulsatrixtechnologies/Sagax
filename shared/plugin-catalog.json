@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "notion",
+      "name": "Notion",
+      "description": "Search, read and update pages and databases in your Notion workspace.",
+      "url": "https://mcp.notion.com/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "notion",
+      "domain": "notion.com",
+      "docsUrl": "https://developers.notion.com/docs/mcp"
+    },
+    {
+      "id": "linear",
+      "name": "Linear",
+      "description": "Find, create and update issues, projects and comments in Linear.",
+      "url": "https://mcp.linear.app/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "linear",
+      "domain": "linear.app",
+      "docsUrl": "https://linear.app/docs/mcp"
+    },
+    {
+      "id": "atlassian",
+      "name": "Atlassian",
+      "description": "Work with Jira issues and Confluence pages in your Atlassian cloud site.",
+      "url": "https://mcp.atlassian.com/v1/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "atlassian",
+      "domain": "atlassian.com",
+      "docsUrl": "https://support.atlassian.com/atlassian-rovo-mcp-server/"
+    },
+    {
+      "id": "asana",
+      "name": "Asana",
+      "description": "Read and update tasks, projects and goals in Asana.",
+      "url": "https://mcp.asana.com/sse",
+      "transport": "sse",
+      "auth": "oauth",
+      "icon": "asana",
+      "domain": "asana.com",
+      "docsUrl": "https://developers.asana.com/docs/using-asanas-mcp-server"
+    },
+    {
+      "id": "sentry",
+      "name": "Sentry",
+      "description": "Look into errors, issues and releases from your Sentry organization.",
+      "url": "https://mcp.sentry.dev/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "sentry",
+      "domain": "sentry.io",
+      "docsUrl": "https://docs.sentry.io/product/sentry-mcp/"
+    },
+    {
+      "id": "stripe",
+      "name": "Stripe",
+      "description": "Look up customers, payments and subscriptions, and use the Stripe docs.",
+      "url": "https://mcp.stripe.com",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "stripe",
+      "domain": "stripe.com",
+      "docsUrl": "https://docs.stripe.com/mcp"
+    },
+    {
+      "id": "vercel",
+      "name": "Vercel",
+      "description": "Inspect projects, deployments and logs on Vercel.",
+      "url": "https://mcp.vercel.com",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "vercel",
+      "domain": "vercel.com",
+      "docsUrl": "https://vercel.com/docs/mcp/vercel-mcp"
+    },
+    {
+      "id": "figma",
+      "name": "Figma",
+      "description": "Read designs, components and variables from Figma files.",
+      "url": "https://mcp.figma.com/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "figma",
+      "domain": "figma.com",
+      "docsUrl": "https://help.figma.com/hc/en-us/articles/32132100833559"
+    },
+    {
+      "id": "canva",
+      "name": "Canva",
+      "description": "Search, create and export designs in your Canva account.",
+      "url": "https://mcp.canva.com/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "canva",
+      "domain": "canva.com",
+      "docsUrl": "https://www.canva.dev/docs/connect/canva-mcp-server-setup/"
+    },
+    {
+      "id": "higgsfield",
+      "name": "Higgsfield",
+      "description": "Generate images and videos with Higgsfield.",
+      "url": "https://mcp.higgsfield.ai/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "higgsfield",
+      "domain": "higgsfield.ai",
+      "docsUrl": "https://higgsfield.ai"
+    },
+    {
+      "id": "supabase",
+      "name": "Supabase",
+      "description": "Manage tables, run queries and read logs of your Supabase projects.",
+      "url": "https://mcp.supabase.com/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "supabase",
+      "domain": "supabase.com",
+      "docsUrl": "https://supabase.com/docs/guides/getting-started/mcp"
+    },
+    {
+      "id": "neon",
+      "name": "Neon",
+      "description": "Create branches and run SQL on your Neon Postgres projects.",
+      "url": "https://mcp.neon.tech/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "neon",
+      "domain": "neon.tech",
+      "docsUrl": "https://neon.com/docs/ai/neon-mcp-server"
+    },
+    {
+      "id": "paypal",
+      "name": "PayPal",
+      "description": "Work with invoices, orders and transactions in your PayPal business account.",
+      "url": "https://mcp.paypal.com/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "paypal",
+      "domain": "paypal.com",
+      "docsUrl": "https://developer.paypal.com/tools/mcp-server/"
+    },
+    {
+      "id": "intercom",
+      "name": "Intercom",
+      "description": "Search conversations and contacts in your Intercom workspace.",
+      "url": "https://mcp.intercom.com/mcp",
+      "transport": "http",
+      "auth": "oauth",
+      "icon": "intercom",
+      "domain": "intercom.com",
+      "docsUrl": "https://developers.intercom.com/docs/guides/mcp"
+    },
+    {
+      "id": "huggingface",
+      "name": "Hugging Face",
+      "description": "Search models, datasets, papers and Spaces on the Hugging Face Hub.",
+      "url": "https://huggingface.co/mcp",
+      "transport": "http",
+      "auth": "none",
+      "icon": "huggingface",
+      "domain": "huggingface.co",
+      "docsUrl": "https://huggingface.co/docs/hub/agents-mcp"
+    },
+    {
+      "id": "context7",
+      "name": "Context7",
+      "description": "Up-to-date documentation and code examples for libraries and frameworks.",
+      "url": "https://mcp.context7.com/mcp",
+      "transport": "http",
+      "auth": "none",
+      "icon": "context7",
+      "domain": "context7.com",
+      "docsUrl": "https://github.com/upstash/context7"
+    },
+    {
+      "id": "deepwiki",
+      "name": "DeepWiki",
+      "description": "Ask questions about public GitHub repositories and read their generated docs.",
+      "url": "https://mcp.deepwiki.com/mcp",
+      "transport": "http",
+      "auth": "none",
+      "icon": "deepwiki",
+      "domain": "deepwiki.com",
+      "docsUrl": "https://docs.devin.ai/work-with-devin/deepwiki-mcp"
+    },
+    {
+      "id": "cloudflare-docs",
+      "name": "Cloudflare Docs",
+      "description": "Search the Cloudflare developer documentation.",
+      "url": "https://docs.mcp.cloudflare.com/mcp",
+      "transport": "http",
+      "auth": "none",
+      "icon": "cloudflare",
+      "domain": "cloudflare.com",
+      "docsUrl": "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/"
+    }
+  ]
+}

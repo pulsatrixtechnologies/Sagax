@@ -13,6 +13,8 @@ import {
   McpOAuthVault,
   parseBearerChallenge,
   PENDING_FLOW_TTL_MS,
+  phoneOAuthReturns,
+  phoneReturnLocation,
   protectedResourceMetadataUrls,
   resolveVaultKey,
   type VaultKeySource,
@@ -313,6 +315,31 @@ describe("vault", () => {
     expect(oauth.status("notes", remote("https://mcp.example.com/mcp"))).toMatchObject({ auth: "error" });
     const servers = { notes: remote("https://mcp.example.com/mcp") };
     expect(oauth.withAuthHeaders(servers)).toBe(servers);
+  });
+});
+
+describe("a phone's sign-in sheet", () => {
+  it("ends on the app address the sign-in started with, with the outcome and never the code", async () => {
+    fake = await startFakeOAuthMcp();
+    const oauth = manager();
+    await oauth.probe("notes", remote(fake.mcpUrl));
+    const { authorizationUrl } = await oauth.start("notes", remote(fake.mcpUrl), { redirectUri: REDIRECT, returnTo: "sagax://oauth-done" });
+    const back = await fake.authorize(authorizationUrl);
+    const result = await oauth.callback(back.searchParams);
+    expect(result).toEqual({ ok: true, name: "notes", returnTo: "sagax://oauth-done" });
+    const location = phoneReturnLocation(result)!;
+    expect(location).toBe("sagax://oauth-done?status=ok&server=notes");
+    expect(location).not.toContain(back.searchParams.get("code")!);
+    expect(phoneReturnLocation({ ok: false, name: "notes", error: "The sign-in was cancelled.", returnTo: "sagax://oauth-done" }))
+      .toBe("sagax://oauth-done?status=error&server=notes&error=The+sign-in+was+cancelled.");
+    // a desktop sign-in keeps its page
+    expect(phoneReturnLocation({ ok: true, name: "notes" })).toBeNull();
+  });
+
+  it("returns only to listed app addresses", () => {
+    expect(phoneOAuthReturns({})).toEqual(["sagax://oauth-done"]);
+    expect(phoneOAuthReturns({ SAGAX_PHONE_OAUTH_RETURNS: "https://app.example.test/oauth-done, javascript:alert(1), http://evil.test/x, sagaxbeta://done" }))
+      .toEqual(["sagax://oauth-done", "https://app.example.test/oauth-done", "sagaxbeta://done"]);
   });
 });
 

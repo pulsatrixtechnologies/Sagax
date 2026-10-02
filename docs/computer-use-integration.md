@@ -47,12 +47,12 @@ does not replace remote/cloud boats or the isolated Local VM provider. Local
 alternatives evaluated and rejected:
 
 The Ubuntu GNOME beta uses the same official CUA provider with the Phase 5
-supply-chain contract tracked in [#113](https://github.com/pulsatrixtechnologies/pulsa-bot/issues/113): pinned archive
+supply-chain contract tracked in [#113](https://github.com/pulsatrixtechnologies/sagax/issues/113): pinned archive
 and inner hashes, exact archive allowlist, outside-ASAR resources, full notices/SBOM, no runtime download/update,
 and fail-closed packaged discovery. Electron still owns a private embedded daemon/socket, and the harness only
-receives the validated MCP proxy contract. Xorg is tracked in [#79](https://github.com/pulsatrixtechnologies/pulsa-bot/issues/79);
+receives the validated MCP proxy contract. Xorg is tracked in [#79](https://github.com/pulsatrixtechnologies/sagax/issues/79);
 GNOME/Wayland additionally requires WinRects v8 plus the exact Cua health-report contract tracked in
-[#109](https://github.com/pulsatrixtechnologies/pulsa-bot/issues/109).
+[#109](https://github.com/pulsatrixtechnologies/sagax/issues/109).
 
 | Option | Verdict |
 | --- | --- |

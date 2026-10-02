@@ -764,7 +764,7 @@ function composioBrokerUrl() {
 
 // The packaged app has no terminal: everything about the server child's life
 // goes to server.log in the OS log dir (~/Library/Logs/openmausbot on macOS,
-// Console.app-visible; %APPDATA%\openmausbot\logs on Windows), which is also
+// Console.app-visible; %APPDATA%\sagax\logs on Windows), which is also
 // why stdio is piped, not inherited — under a Finder/Explorer launch the
 // parent's stdio leads nowhere and a failed boot is otherwise undiagnosable.
 const LOG_DIR = app.getPath("logs");
@@ -840,6 +840,15 @@ const routineWake = createRoutineWakeHold({
   settings: () => routineWakeSettings(app.getPath("userData")),
   log: (line) => slog(line),
 });
+
+// Each step of the packaged boot is written to server.log, so a startup that
+// stalls on someone's machine says where in the log they send us, and the
+// loading screen shows the step it is on.
+const startupClock = Date.now();
+function startupPhase(phase, status) {
+  slog(`startup: ${phase} (+${Date.now() - startupClock}ms)`);
+  if (status) startupScreen?.setStatus(status);
+}
 
 function slog(line) {
   try {
@@ -1683,10 +1692,18 @@ async function startServerOn(port) {
 }
 
 async function startServerPackaged() {
+  startupPhase("starting the local server", "Starting the local server…");
+  const started = await startServerPackagedOnce();
+  startupPhase(started ? "local server ready" : "local server failed to start");
+  return started;
+}
+
+async function startServerPackagedOnce() {
   // two passes: a quit-and-reopen relaunch can race the dying instance's
   // server during teardown — one settle-and-retry covers it
   let everyPortForeignOwned = true;
   for (let attempt = 0; attempt < 2; attempt++) {
+    let sawForeignOwner = false;
     for (const port of [8799, 18799, 28799]) {
       if (desktopShutdownStarted) return false;
       const started = await startServerOn(port);
@@ -1698,7 +1715,12 @@ async function startServerPackaged() {
       // A child that exited or timed out is not evidence of a port conflict —
       // only "another process answered health checks" is.
       if (started.reason !== "foreign-owner") everyPortForeignOwned = false;
+      else sawForeignOwner = true;
     }
+    // The second pass exists for a dying previous instance still holding a
+    // port. A child that crashed or never answered on every port will do the
+    // same again: retrying only doubles the wait before the error page.
+    if (!sawForeignOwner) break;
     await new Promise((r) => setTimeout(r, 2500));
   }
   serverStartConflictOnly = everyPortForeignOwned;
@@ -4046,8 +4068,18 @@ app.whenReady().then(async () => {
     isHidden: () => desktopTray?.isHidden() ?? false,
     onShow: (win) => desktopTray?.windowShown(win),
     onFinished: () => { startupScreen = null; },
+    onOpenLogs: () => {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+      void shell.openPath(LOG_DIR).then((error) => { if (error) slog(`startup: open logs failed: ${error}`); });
+    },
+    onRetry: () => {
+      slog("startup: retry requested from the loading screen");
+      app.relaunch();
+      app.quit();
+    },
   });
   await startupScreen.ready;
+  startupPhase("loading screen shown");
   if (desktopShutdownStarted) return;
   session.defaultSession.on("will-download", (_event, item) => {
     item.setSavePath(collisionFreeDownloadPath(app.getPath("downloads"), item.getFilename()));
@@ -4084,6 +4116,7 @@ app.whenReady().then(async () => {
   // scripts/dev-desktop.mjs; the flat PNG is only the fallback
   // when that script could not run (no Xcode actool).
   if (process.platform === "darwin" && !app.isPackaged && !devBundleHasSystemIcon()) app.dock.setIcon(APP_ICON);
+  startupPhase("reading saved credentials");
   secureCredentials = await loadSecureCredentials();
   // The AssemblyAI key only fed the removed Teach a skill recorder, and its
   // set/clear handler went with it; drop the orphaned secret rather than
@@ -4108,6 +4141,7 @@ app.whenReady().then(async () => {
     writable: !credentialStoreUnavailable,
   });
   secureCredentials = secureCredentialState.read();
+  startupPhase("preparing the credential store");
   if (app.isPackaged) await ensurePhoneSecretIdentity();
   if (app.isPackaged) await ensureMcpOAuthKey();
   desktopRemoteAccess = desktopCompanionAccess(secureCredentials);
@@ -4202,7 +4236,15 @@ app.whenReady().then(async () => {
   if (desktopShutdownStarted) return;
   if (app.isPackaged && !desktopRemoteAccess) void ensureManagedDesktop().start().then(() => companyBackupSchedule.start()).catch(() => {});
   // Fresh local use never makes a Cloud request; start only restores an existing grant.
-  if (app.isPackaged && !desktopRemoteAccess) cloudAccountStarted = ensureCloudAccount().start().catch(() => {});
+  // OMB Cloud is off in Sagax: ensureCloudAccount() throws synchronously then,
+  // and a throw here ended startup before the main window was created.
+  if (app.isPackaged && !desktopRemoteAccess && CLOUD_SERVICES_ENABLED) {
+    try {
+      cloudAccountStarted = ensureCloudAccount().start().catch(() => {});
+    } catch (error) {
+      slog(`cloud account restore skipped: ${error?.message ?? error}`);
+    }
+  }
   // The companion the user left on comes back without anyone finding the
   // toggle again — one attempt, after the harness port is settled, with the
   // exact options the IPC handler uses. A failure surfaces in companionState
@@ -4244,6 +4286,7 @@ app.whenReady().then(async () => {
     // not there publishes nothing, so decide once restoring has finished.
     void cloudAccountStarted.then(() => computerSharing?.cloudChanged());
   });
+  startupPhase("opening the workspace", "Opening your workspace…");
   let restoredOrganizationEntry = false;
   await workspaceMenuAction(async () => { restoredOrganizationEntry = await organizationEntry.restore(); });
   organizationEntryReady = true;
@@ -4253,6 +4296,7 @@ app.whenReady().then(async () => {
   const deliveredCloudEntry = await cloudEntry.ready();
   if (!restoredOrganizationEntry && !deliveredOrganizationEntry && !deliveredCloudEntry && (!mainWindow || mainWindow.isDestroyed())) createWindow();
   void upgradeSavedOrganizationServers().catch((error) => slog(`organization server upgrade failed: ${error?.message ?? error}`));
+  startupPhase("workspace window created");
   // Reconcile incomplete setup and resume interrupted sign-out only after the
   // local app is usable. This background network work never gates LAN pairing
   // or the first window.

@@ -10,24 +10,24 @@ import XCTest
 final class RosterDensityTests: XCTestCase {
     // MARK: - The setting
 
-    func testCompactIsTheDefault() {
-        XCTAssertEqual(RosterDensity.default, .compact)
-        XCTAssertEqual(RosterDensity(stored: nil), .compact)
+    func testStandardIsTheDefault() {
+        XCTAssertEqual(RosterDensity.default, .standard)
+        XCTAssertEqual(RosterDensity(stored: nil), .standard)
     }
 
     func testStoredChoicesRoundTrip() {
         for density in RosterDensity.allCases {
             XCTAssertEqual(RosterDensity(stored: density.rawValue), density)
         }
-        XCTAssertEqual(RosterDensity.allCases, [.comfortable, .compact])
+        XCTAssertEqual(RosterDensity.allCases, [.standard, .comfortable, .compact])
     }
 
     /// A value this build cannot read — a density a later version adds, or a
     /// damaged store — lands on the default, not on comfortable.
-    func testUnreadableStoredValuesFallBackToCompact() {
-        XCTAssertEqual(RosterDensity(stored: "icons"), .compact)
-        XCTAssertEqual(RosterDensity(stored: ""), .compact)
-        XCTAssertEqual(RosterDensity(stored: "Compact"), .compact)
+    func testUnreadableStoredValuesFallBackToTheDefault() {
+        XCTAssertEqual(RosterDensity(stored: "icons"), .standard)
+        XCTAssertEqual(RosterDensity(stored: ""), .standard)
+        XCTAssertEqual(RosterDensity(stored: "Compact"), .standard)
     }
 
     // MARK: - Thread count behind "› N"

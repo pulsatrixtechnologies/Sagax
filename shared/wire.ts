@@ -257,6 +257,10 @@ export interface WireBot {
   soulHash?: string;
   /** The SOUL.md mirror differed from soul at the last turn dispatch. */
   soulDrift?: boolean;
+  /** Server-computed: the first non-empty line of `soul` without heading
+   * marks, at most 140 characters (shared/instructions-lead.ts). Absent when
+   * the bot has no instructions. */
+  instructionsLead?: string;
   notifications: boolean;
   color: MausColor;
   mascotExpression?: MausExpression | null;
@@ -526,6 +530,11 @@ export interface WireMessage {
   sendId?: string;
   /** Per-send channel behavior. Absent is legacy quick chat. */
   channelMode?: "chat" | "goal";
+  /** A user message said on a voice call (src/components/voice-mode/LiveCall.tsx):
+   * which call, whether the person cut the bot's previous answer to say it,
+   * and the call's language when one is set. The turn it starts gets the
+   * hidden phone-call instruction (server/voice-call-prompt.ts). */
+  voiceCall?: { callId: string; interrupted?: boolean; language?: string };
   /** group threads: which member said this (sender attribution). */
   from?: { botId: string; name: string; color: string };
   /** Set on a room message a bot pushed in with post_to_room. */
@@ -676,6 +685,8 @@ export interface WireGroup {
   /** The room's shared instructions. */
   bulletin: string;
   unread: boolean;
+  /** Kept in the home's pinned row (the phone's, like a bot's `pinned`). */
+  pinned?: boolean;
   createdAt: number;
   /** Organization server: the principal who created the room. A bot's
    * follow-up no person asked for runs in this person's server environment

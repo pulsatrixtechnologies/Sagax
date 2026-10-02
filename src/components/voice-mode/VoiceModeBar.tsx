@@ -1,8 +1,10 @@
-// The floating voice bar (voice mode): the bot's name on top, its avatar,
-// a live waveform of both sides (the bot above the line, the person below),
-// the call's state, then settings, transcript, hold, mute and end, like a
-// phone. It sits above the composer while the call is on and leaves the
-// thread readable.
+// The voice call bar (voice mode): a slim in-call banner docked at the top
+// of the chat column, like a phone's: the bot's avatar, name and call timer,
+// the call's state, a live waveform of both sides (the bot above the line,
+// the person below), then settings, transcript, hold, mute and end. It is
+// part of the layout (ChatView's banner stack), so it pushes the thread down
+// instead of covering it; on a narrow column the waveform folds away and the
+// controls stay reachable.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Hand, MessageSquare, Mic, MicOff, Pause, PhoneOff, Play, Settings2 } from "lucide-react";
 
@@ -58,8 +60,29 @@ export interface VoiceModeBarProps {
 
 const BARS = 28;
 
+/** The call's running time, as a phone shows it: m:ss, then h:mm:ss.
+ * Exported for tests. */
+export function formatCallTime(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
+}
+
+/** Time since the bar opened (the call's start), ticking once a second. */
+function useCallElapsed(): number {
+  const [started] = useState(() => Date.now());
+  const [now, setNow] = useState(started);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return now - started;
+}
+
 /** What the bar says for each state of the call. Exported for tests. */
-export function phaseLabel(phase: CallPhase, botName: string, muted: boolean): string {
+export function phaseLabel(phase: CallPhase, muted: boolean): string {
   if (phase === "held") return t("voiceMode.phase.held");
   if (muted) return t("voiceMode.muted");
   switch (phase) {
@@ -67,7 +90,7 @@ export function phaseLabel(phase: CallPhase, botName: string, muted: boolean): s
     case "listening": return t("voiceMode.listening");
     case "hearing": return t("voiceMode.phase.hearing");
     case "thinking": return t("voiceMode.phase.thinking");
-    case "speaking": return botName;
+    case "speaking": return t("voiceMode.phase.speaking");
     case "interrupted": return t("voiceMode.phase.interrupted");
     default: return "";
   }
@@ -137,6 +160,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
   const [voices, setVoices] = useState<VoiceOption[] | null>(null);
   const [voicesError, setVoicesError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<{ id: string; loading: boolean } | null>(null);
+  const elapsed = useCallElapsed();
   const [enrollment, setEnrollment] = useState<Enrollment>(call.enrolled ? { state: "enrolled" } : { state: "none" });
 
   useEffect(() => {
@@ -192,13 +216,14 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
 
   const muted = state.muted;
   const held = state.phase === "held";
-  const status = phaseLabel(state.phase, bot.name, muted);
+  const status = phaseLabel(state.phase, muted);
   const line = state.phase === "hearing" || state.phase === "interrupted" ? heard : state.phase === "speaking" ? caption : "";
   const push = callSettings.input === "push";
 
   return (
-    <div
-      className="pointer-events-none absolute inset-x-0 bottom-28 z-30 flex justify-center px-4"
+    <section
+      className="@container/callbar mx-3 mb-2 overflow-hidden rounded-2xl border border-hairline/50 bg-panel shadow-sm md:mx-5"
+      aria-label={t("voiceMode.callWith", { name: bot.name })}
       data-voice-bar
       data-voice-phase={state.phase}
       data-voice-first-audio-ms={metrics?.firstAudioMs}
@@ -208,9 +233,105 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
       data-voice-endpoint-ms={call.endpointMs}
       data-voice-models={call.modelsReady ? "on-device" : "level"}
     >
-      <div className="pointer-events-auto flex w-full max-w-[520px] flex-col items-center gap-1.5">
-        <div className="rounded-full bg-panel/95 px-3 py-0.5 text-[12.5px] font-medium text-ink shadow-md ring-1 ring-hairline/50">{bot.name}</div>
-        <div className="w-full rounded-2xl bg-panel/95 p-2 shadow-2xl ring-1 ring-hairline/50 backdrop-blur">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5" data-voice-callbar-row>
+        <button
+          type="button"
+          onClick={state.botAudible ? () => call.interrupt() : undefined}
+          className="shrink-0 rounded-full"
+          aria-label={state.botAudible ? t("voiceMode.interrupt") : bot.name}
+        >
+          <BotAvatar
+            bot={bot}
+            size={32}
+            state={state.phase === "listening" || state.phase === "hearing" ? "listening" : state.phase === "speaking" ? "sending" : state.phase === "thinking" || state.phase === "interrupted" ? "thinking" : "working"}
+          />
+        </button>
+        <div className="flex min-w-[7rem] flex-1 basis-0 flex-col leading-tight" data-voice-callbar-info>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <span className="truncate text-[13px] font-medium text-ink">{bot.name}</span>
+            <span className="shrink-0 text-[11.5px] tabular-nums text-ink-tertiary" data-voice-timer>{formatCallTime(elapsed)}</span>
+          </div>
+          <div className="truncate text-[11.5px] text-ink-tertiary" aria-live="polite" data-voice-status>
+            {line ? <span className="text-ink-secondary">{line}</span> : status}
+          </div>
+        </div>
+        <div className="hidden min-w-0 max-w-[260px] flex-1 @[34rem]/callbar:flex" data-voice-waveform>
+          <Waveform call={call} state={state} />
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 @[28rem]/callbar:gap-1" data-voice-controls>
+          {push && (
+            <button
+              type="button"
+              aria-label={t("voiceMode.pushToTalk")}
+              title={t("voiceMode.pushHint")}
+              data-voice-ptt
+              disabled={muted || held}
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId);
+                call.pushToTalk(true);
+              }}
+              onPointerUp={() => call.pushToTalk(false)}
+              onPointerCancel={() => call.pushToTalk(false)}
+              className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40", state.phase === "hearing" && "bg-accent text-accent-ink")}
+            >
+              <Hand size={17} />
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label={t("voiceMode.settings")}
+            aria-expanded={settingsOpen}
+            data-voice-gear
+            onClick={() => {
+              setSettingsOpen((open) => !open);
+              setList(null);
+            }}
+            className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-raised hover:text-ink", settingsOpen && "bg-raised text-ink")}
+          >
+            <Settings2 size={17} />
+          </button>
+          <button
+            type="button"
+            aria-label={t("voiceMode.transcript")}
+            aria-expanded={transcriptOpen}
+            onClick={() => setTranscriptOpen((open) => !open)}
+            className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-raised hover:text-ink", transcriptOpen && "bg-raised text-ink")}
+          >
+            <MessageSquare size={17} />
+          </button>
+          <button
+            type="button"
+            aria-label={held ? t("voiceMode.resume") : t("voiceMode.hold")}
+            aria-pressed={held}
+            data-voice-hold
+            onClick={() => (held ? call.resume() : call.hold())}
+            className={cn("flex size-9 shrink-0 items-center justify-center rounded-full hover:bg-raised", held ? "bg-raised text-warning" : "text-ink-secondary hover:text-ink")}
+          >
+            {held ? <Play size={16} /> : <Pause size={16} />}
+          </button>
+          <button
+            type="button"
+            aria-label={muted ? t("voiceMode.unmute") : t("voiceMode.mute")}
+            aria-pressed={muted}
+            data-voice-mute
+            onClick={() => call.setMuted(!muted)}
+            className={cn("flex size-9 shrink-0 items-center justify-center rounded-full hover:bg-raised", muted ? "bg-raised text-danger" : "text-ink-secondary hover:text-ink")}
+          >
+            {muted ? <MicOff size={17} /> : <Mic size={17} />}
+          </button>
+          <button
+            type="button"
+            aria-label={t("voiceMode.end")}
+            data-voice-end
+            onClick={onEnd}
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-danger text-white hover:brightness-110"
+          >
+            <PhoneOff size={16} />
+          </button>
+        </div>
+      </div>
+      {(settingsOpen || transcriptOpen || refusal || note || notice) && (
+        <div className="max-h-[45vh] overflow-y-auto px-2 pb-2" data-voice-callbar-panels>
           {settingsOpen && (
             <VoiceModeSettingsPanel
               settings={settings}
@@ -285,97 +406,8 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
               )}
             </div>
           )}
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={state.botAudible ? () => call.interrupt() : undefined}
-              className="shrink-0 rounded-full"
-              aria-label={state.botAudible ? t("voiceMode.interrupt") : bot.name}
-            >
-              <BotAvatar
-                bot={bot}
-                size={36}
-                state={state.phase === "listening" || state.phase === "hearing" ? "listening" : state.phase === "speaking" ? "sending" : state.phase === "thinking" || state.phase === "interrupted" ? "thinking" : "working"}
-              />
-            </button>
-            <div className="flex min-w-0 flex-1 flex-col">
-              <Waveform call={call} state={state} />
-              <div className="truncate px-1 text-[11.5px] text-ink-tertiary" aria-live="polite" data-voice-status>
-                {line ? <span className="text-ink-secondary">{line}</span> : status}
-              </div>
-            </div>
-            {push && (
-              <button
-                type="button"
-                aria-label={t("voiceMode.pushToTalk")}
-                title={t("voiceMode.pushHint")}
-                data-voice-ptt
-                disabled={muted || held}
-                onPointerDown={(event) => {
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  call.pushToTalk(true);
-                }}
-                onPointerUp={() => call.pushToTalk(false)}
-                onPointerCancel={() => call.pushToTalk(false)}
-                className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40", state.phase === "hearing" && "bg-accent text-accent-ink")}
-              >
-                <Hand size={17} />
-              </button>
-            )}
-            <button
-              type="button"
-              aria-label={t("voiceMode.settings")}
-              aria-expanded={settingsOpen}
-              data-voice-gear
-              onClick={() => {
-                setSettingsOpen((open) => !open);
-                setList(null);
-              }}
-              className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-raised hover:text-ink", settingsOpen && "bg-raised text-ink")}
-            >
-              <Settings2 size={17} />
-            </button>
-            <button
-              type="button"
-              aria-label={t("voiceMode.transcript")}
-              aria-expanded={transcriptOpen}
-              onClick={() => setTranscriptOpen((open) => !open)}
-              className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-raised hover:text-ink", transcriptOpen && "bg-raised text-ink")}
-            >
-              <MessageSquare size={17} />
-            </button>
-            <button
-              type="button"
-              aria-label={held ? t("voiceMode.resume") : t("voiceMode.hold")}
-              aria-pressed={held}
-              data-voice-hold
-              onClick={() => (held ? call.resume() : call.hold())}
-              className={cn("flex size-9 shrink-0 items-center justify-center rounded-full hover:bg-raised", held ? "bg-raised text-warning" : "text-ink-secondary hover:text-ink")}
-            >
-              {held ? <Play size={16} /> : <Pause size={16} />}
-            </button>
-            <button
-              type="button"
-              aria-label={muted ? t("voiceMode.unmute") : t("voiceMode.mute")}
-              aria-pressed={muted}
-              data-voice-mute
-              onClick={() => call.setMuted(!muted)}
-              className={cn("flex size-9 shrink-0 items-center justify-center rounded-full hover:bg-raised", muted ? "bg-raised text-danger" : "text-ink-secondary hover:text-ink")}
-            >
-              {muted ? <MicOff size={17} /> : <Mic size={17} />}
-            </button>
-            <button
-              type="button"
-              aria-label={t("voiceMode.end")}
-              data-voice-end
-              onClick={onEnd}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-danger text-white hover:brightness-110"
-            >
-              <PhoneOff size={16} />
-            </button>
-          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </section>
   );
 }

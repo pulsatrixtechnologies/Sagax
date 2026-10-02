@@ -13,7 +13,7 @@ import Speech
 final class WalkieMic: @unchecked Sendable {
     enum Failure: Error { case noInput }
 
-    private let queue = DispatchQueue(label: "com.openmausbot.walkie.mic")
+    private let queue = DispatchQueue(label: "ca.pulsatrix.sagax.walkie.mic")
     private let lock = NSLock()
     private var engine: AVAudioEngine?
     private var request: SFSpeechAudioBufferRecognitionRequest?

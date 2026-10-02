@@ -25,7 +25,7 @@ function loadUpdater() {
   }
 }
 
-const RELEASES = "https://github.com/pulsatrixtechnologies/pulsa-bot/releases";
+const RELEASES = "https://github.com/pulsatrixtechnologies/sagax/releases";
 const atom = (tags) => `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">${tags
   .map((tag) => `<entry><id>${tag}</id><updated>2026-10-01T00:00:00Z</updated><link rel="alternate" type="text/html" href="${RELEASES}/tag/${tag}"/><title>${tag}</title><content type="html">notes</content></entry>`)
@@ -97,11 +97,11 @@ for (const allowPrerelease of [false, true]) {
 }
 
 test("the feed is Sagax's GitHub repository, nothing else", () => {
-  assert.deepEqual({ ...UPDATE_FEED }, { provider: "github", owner: "pulsatrixtechnologies", repo: "pulsa-bot" });
+  assert.deepEqual({ ...UPDATE_FEED }, { provider: "github", owner: "pulsatrixtechnologies", repo: "sagax" });
   assert.equal(isOurReleaseUrl(`${RELEASES}/download/pulsa-v0.3.0/latest-mac.yml`), true);
   assert.equal(isOurReleaseUrl("https://github.com/milind-soni/OpenMausBot/releases/latest"), false);
-  assert.equal(isOurReleaseUrl("https://github.com/pulsatrixtechnologies/pulsa-bot-evil/releases"), false);
-  assert.equal(isOurReleaseUrl("http://github.com/pulsatrixtechnologies/pulsa-bot/releases"), false);
+  assert.equal(isOurReleaseUrl("https://github.com/pulsatrixtechnologies/sagax-evil/releases"), false);
+  assert.equal(isOurReleaseUrl("http://github.com/pulsatrixtechnologies/sagax/releases"), false);
   assert.equal(isOurReleaseUrl("https://cloud.openmausbot.com/update"), false);
 });
 
@@ -124,6 +124,6 @@ test("electron-builder publishes to the same repository", async () => {
   const publish = yml.match(/^publish:\n((?:[ \t-].*\n)+)/m)?.[1] ?? "";
   assert.match(publish, /provider: github/);
   assert.match(publish, /owner: pulsatrixtechnologies/);
-  assert.match(publish, /repo: pulsa-bot/);
+  assert.match(publish, /repo: sagax/);
   assert.doesNotMatch(publish, /provider: (generic|s3|spaces|keygen|bitbucket|snapStore)/);
 });

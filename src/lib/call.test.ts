@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { currentCall, deferCallCleanup, endCall, startCall } from "./call";
+import { clearVoiceCallId, currentCall, deferCallCleanup, endCall, setVoiceCallId, startCall, voiceCallId } from "./call";
 
 describe("call ownership", () => {
   beforeEach(() => {
@@ -36,5 +36,20 @@ describe("call ownership", () => {
     await Promise.resolve();
 
     expect(currentCall()).toBeNull();
+  });
+
+  it("marks sends as call turns only while that bot's voice call is live", () => {
+    setVoiceCallId("bot-a", "call-a");
+    expect(voiceCallId("bot-a")).toBeNull(); // not on the line yet
+    startCall("bot-a");
+    expect(voiceCallId("bot-a")).toBe("call-a");
+    expect(voiceCallId("bot-b")).toBeNull();
+    // a newer call's id survives the old call's teardown
+    setVoiceCallId("bot-a", "call-b");
+    clearVoiceCallId("bot-a", "call-a");
+    expect(voiceCallId("bot-a")).toBe("call-b");
+    endCall("bot-a");
+    expect(voiceCallId("bot-a")).toBeNull();
+    clearVoiceCallId("bot-a", "call-b");
   });
 });

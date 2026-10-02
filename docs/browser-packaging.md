@@ -100,6 +100,15 @@ the normal application packaging workflow consumes it. Candidate testing does
 not replace the packaged-app tests. Published vendor bytes must not be
 overwritten; a changed build needs a new revision and reviewed pins.
 
+The pinned Windows bytes are hosted on Sagax's own release
+[`browser-engine-v0.36.0-omb.1`](https://github.com/pulsatrixtechnologies/sagax/releases/tag/browser-engine-v0.36.0-omb.1)
+(a pre-release not marked latest, so the in-app updater never offers it),
+with `SHA256SUMS`, the license and the patch. Packaging never downloads them
+from a third-party release page. To rebuild them without GitHub Actions, run
+`scripts/build-windows-browser-vendor.mjs` in a Linux x64 container (for
+example `docker run --platform linux/amd64` with Node 24, Rust 1.97.1,
+pnpm 11.1.3 and `mingw-w64`), then pin and host the new revision.
+
 The Windows revision has a separate managed installation directory so an old
 0.36.0 download is not mistaken for the patched engine. Desktop packages use
 their bundled engine. Explicit executable overrides remain user-managed.

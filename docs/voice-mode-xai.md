@@ -17,6 +17,38 @@ synthesized. `server/voice-call.e2e.test.ts` and `scripts/verify-voice-mode.ts`
 fail if a call reaches any xAI path other than `/v1/stt`, `/v1/tts` and
 `/v1/tts/voices`.
 
+## The bot knows it is on the phone
+
+Every turn said on a call is sent with `voiceCall` (`{ callId, interrupted?,
+language? }`, stored on the person's message as `Message.voiceCall`; words
+typed to a bot while its call is live carry the call id too). For such a turn
+the server adds a hidden "Phone call" section to the bot's system prompt
+(`server/voice-call-prompt.ts`): a live phone call with the person, words from
+speech recognition that may be misheard (infer the meaning, never mention a
+transcript, dictation or voice mode, never ask to type), short spoken answers
+of one to three sentences, no markdown, lists, tables, code, emojis or URLs,
+numbers said aloud, one clarifying question at a time, a short spoken note
+before slow tool work, and at the end of the call an optional written
+follow-up below a line of `---` that is never spoken. The bot's own persona,
+instructions and language stay; only formatting and turn-taking change. When
+the person cut the bot's previous answer (barge-in or the interrupt button),
+the turn says so, and the bot drops that thought.
+
+The section is a volatile one (`server/system-prompt.ts`), so each engine
+gets it through its own channel for changed context: Claude's appended system
+prompt on a new session or the context note of a live one, Codex's turn
+input next to its developer instructions, the newest user message of an API
+driver, the session note of ACP agents and pi. An interrupted turn always
+carries it. It is never stored as the person's text and never shown in the
+thread. The first written turn after a call is told the call ended. Words
+that join a running turn are marked as said on the call. Tests:
+`server/voice-call-prompt.test.ts`, `server/voice-call-prompt.e2e.test.ts`,
+the per-driver cases in `server/drivers/{claude,codex,openai-compat}.test.ts`.
+
+Before synthesis the call strips any markdown, emoji, URL or HTML the bot
+still wrote, and stops at the follow-up rule (`src/lib/voice-mode/spoken.ts`,
+then the server's `server/tts/speech-text.ts`).
+
 ## A live call, like a phone
 
 The person presses the call button on a bot. When the server reports

@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { IDP_SWEEP_SLACK_MS, IdpGrantVault, IdpSessionManager } from "./idp-session.ts";
-import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneReturnLink, profileManagement, sagaxReturnLink, scopesForRole, validLoopbackReturn, writesManagedProfile } from "./oidc-login.ts";
+import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneErrorLink, phoneReturnLink, profileManagement, sagaxReturnLink, scopesForRole, validLoopbackReturn, writesManagedProfile } from "./oidc-login.ts";
 import { RoutineConsents } from "./org-routine-consent.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import { PrincipalRegistry } from "./principals.ts";
@@ -27,7 +27,7 @@ describe("SAGAX_IDENTITY", () => {
   it("derives the redirect URI from the public origin and defaults the client id", () => {
     const config = identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "https://px.example.test/", SAGAX_PUBLIC_URL: "https://bot.example.test/" });
     expect(config).toEqual({ kind: "perspicax", issuer: "https://px.example.test", clientId: "pulsa-bot", publicOrigin: "https://bot.example.test", redirectUri: "https://bot.example.test/auth/oidc/callback" });
-    expect(identityDescriptor(config)).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"] });
+    expect(identityDescriptor(config)).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"], phoneReturnSchemes: ["sagax", "openmausbot"] });
     expect(identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "http://localhost:18787", SAGAX_PUBLIC_URL: "http://localhost:18788", SAGAX_OIDC_CLIENT_ID: "other" }))
       .toMatchObject({ clientId: "other", redirectUri: "http://localhost:18788/auth/oidc/callback" });
   });
@@ -311,13 +311,33 @@ describe("the sign-in routes (in process)", () => {
   it("ends a phone sign-in on the invite link both phone apps already parse", async () => {
     const { location } = await walk("phone");
     const url = new URL(location);
-    expect(url.protocol).toBe("openmausbot:");
+    expect(url.protocol).toBe("sagax:");
     expect(url.host).toBe("pair");
     expect(url.searchParams.get("address")).toBe(base);
     expect(url.searchParams.get("name")).toBe("Acme & Co bots");
     const token = url.searchParams.get("token")!;
     expect(token).toMatch(/^omb_pair_[A-Za-z0-9_-]{43}$/);
     expect(location).toBe(phoneReturnLink(base, token, "Acme & Co bots"));
+  });
+
+  it("ends a phone sign-in that names return=sagax on sagax://pair, and its refusals there too", async () => {
+    const { location } = await walk("phone", { returnTo: "sagax" });
+    const url = new URL(location);
+    expect(url.protocol).toBe("sagax:");
+    expect(url.host).toBe("pair");
+    expect(url.searchParams.get("address")).toBe(base);
+    const token = url.searchParams.get("token")!;
+    expect(token).toMatch(/^omb_pair_[A-Za-z0-9_-]{43}$/);
+    expect(location).toBe(phoneReturnLink(base, token, "Acme & Co bots", "sagax"));
+    // a refusal comes back to the app, never to the web /pair page
+    expect((await walk("phone", { returnTo: "sagax", binding: "omb_session_test_oidc=wrong" })).location).toBe(phoneErrorLink(base, "binding"));
+    expect(phoneErrorLink(base, "binding")).toBe(`sagax://pair?address=${encodeURIComponent(base)}&error=binding`);
+    // only that exact word, and only for a phone
+    for (const returnTo of ["sagax://pair", "SAGAX", "openmausbot", ""]) {
+      expect((await walk("phone", { returnTo })).location, returnTo).toBe("/pair#signin_error=return");
+    }
+    expect((await walk("desktop", { returnTo: "sagax" })).location).toBe("/pair#signin_error=return");
+    expect((await walk("web", { returnTo: "sagax" })).location).toBe("/pair#signin_error=return");
   });
 
   it("sends desktop errors back to the app, phone and web errors to /pair", async () => {

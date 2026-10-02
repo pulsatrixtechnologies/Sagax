@@ -42,16 +42,16 @@ for kind in iphone ipad; do
   simulator_id=$(xcrun simctl create "omb-ios-threads-${kind}-${GITHUB_RUN_ID}" "$(device_type "$kind")" "$runtime_id")
   created_ids+=("$simulator_id")
   xcodebuild \
-    -project OpenMausCompanion.xcodeproj \
-    -scheme OpenMausCompanion \
+    -project Sagax.xcodeproj \
+    -scheme Sagax \
     -configuration Debug \
     -destination "platform=iOS Simulator,id=${simulator_id}" \
     -derivedDataPath "${RUNNER_TEMP}/omb-ios-threads-build" \
     -resultBundlePath "${RUNNER_TEMP}/omb-ios-threads-${kind}.xcresult" \
     -parallel-testing-enabled NO \
-    -only-testing:OpenMausCompanionUITests/ThreadNavigationUITests \
-    -only-testing:OpenMausCompanionUITests/TranscriptPresentationUITests \
-    -only-testing:OpenMausCompanionUITests/SwipeBackUITests \
-    -only-testing:OpenMausCompanionUITests/RosterDensityUITests \
+    -only-testing:SagaxUITests/ThreadNavigationUITests \
+    -only-testing:SagaxUITests/TranscriptPresentationUITests \
+    -only-testing:SagaxUITests/SwipeBackUITests \
+    -only-testing:SagaxUITests/RosterDensityUITests \
     CODE_SIGNING_ALLOWED=NO test
 done

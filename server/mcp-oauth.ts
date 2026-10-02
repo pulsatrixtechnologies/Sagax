@@ -373,11 +373,39 @@ interface PendingFlow {
   verifier: string;
   redirectUri: string;
   createdAt: number;
+  /** A phone's sign-in sheet (ASWebAuthenticationSession) waits for this
+   * address; the callback redirects there instead of showing a page. */
+  returnTo?: string;
 }
 
 export type CallbackResult =
-  | { ok: true; name: string }
-  | { ok: false; name?: string; error: string };
+  | { ok: true; name: string; returnTo?: string }
+  | { ok: false; name?: string; error: string; returnTo?: string };
+
+/** The app return addresses a sign-in may end on: the phone's custom scheme
+ * by default, plus any listed in SAGAX_PHONE_OAUTH_RETURNS (comma separated,
+ * custom schemes or https universal links), compared exactly. */
+export function phoneOAuthReturns(env: NodeJS.ProcessEnv = process.env): string[] {
+  const extra = (env.SAGAX_PHONE_OAUTH_RETURNS ?? "").split(",").map((value) => value.trim()).filter((value) => {
+    try {
+      const url = new URL(value);
+      return !url.username && !url.password && !url.hash && (url.protocol === "https:" || /^[a-z][a-z0-9+.-]*:$/.test(url.protocol) && !["http:", "javascript:", "data:", "file:"].includes(url.protocol));
+    } catch { return false; }
+  });
+  return ["sagax://oauth-done", ...extra];
+}
+
+/** Where the phone's sheet is sent when the sign-in ends: the return
+ * address with `status` (ok or error), `server` and, on error, `error` (a
+ * short message; never a code or token). */
+export function phoneReturnLocation(result: CallbackResult): string | null {
+  if (!result.returnTo) return null;
+  const url = new URL(result.returnTo);
+  url.searchParams.set("status", result.ok ? "ok" : "error");
+  if (result.name) url.searchParams.set("server", result.name);
+  if (!result.ok) url.searchParams.set("error", result.error.slice(0, 200));
+  return url.toString();
+}
 
 /** One transient answer about a server that needs no sign-in, or that could
  * not be reached: kept in memory only, keyed by a hash of URL and headers. */
@@ -541,7 +569,7 @@ export class McpOAuthManager {
   async start(
     name: string,
     server: RemoteMcpSpec,
-    input: { redirectUri: string; clientId?: string; clientSecret?: string },
+    input: { redirectUri: string; clientId?: string; clientSecret?: string; returnTo?: string },
     outer?: AbortSignal,
   ): Promise<{ authorizationUrl: string }> {
     let record = this.record(name, server);
@@ -584,7 +612,7 @@ export class McpOAuthManager {
     for (const [key, flow] of this.pending) if (flow.name === name) this.pending.delete(key);
     const state = base64url(randomBytes(32));
     const { verifier, challenge } = pkcePair();
-    this.pending.set(state, { name, serverUrl: server.url, verifier, redirectUri: client.redirectUri, createdAt: this.now() });
+    this.pending.set(state, { name, serverUrl: server.url, verifier, redirectUri: client.redirectUri, createdAt: this.now(), ...(input.returnTo ? { returnTo: input.returnTo } : {}) });
 
     const url = new URL(record.authorizationEndpoint);
     url.searchParams.set("response_type", "code");
@@ -638,6 +666,11 @@ export class McpOAuthManager {
     const flow = state ? this.pending.get(state) : undefined;
     if (state) this.pending.delete(state);
     if (!flow) return { ok: false, error: "This sign-in link has expired or was already used. Start the sign-in again from Sagax." };
+    const result = await this.finish(flow, query, outer);
+    return flow.returnTo ? { ...result, returnTo: flow.returnTo } : result;
+  }
+
+  private async finish(flow: PendingFlow, query: URLSearchParams, outer?: AbortSignal): Promise<CallbackResult> {
     const record = this.vault.get(flow.name);
     if (!record || record.serverUrl !== flow.serverUrl || !record.client) {
       return { ok: false, name: flow.name, error: "This MCP server changed while signing in. Start the sign-in again." };

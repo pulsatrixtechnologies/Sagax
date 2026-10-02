@@ -112,9 +112,9 @@ struct WorkingMonitorProvider: TimelineProvider {
         guard
             let store = WidgetSnapshotStore.makeAppGroupStore(),
             let snapshot = store.read(),
-            let connection = OpenMausSharedConnectionStore.loadRegistry()
+            let connection = SagaxSharedConnectionStore.loadRegistry()
                 .connection(id: snapshot.connectionID),
-            let token = try? OpenMausSharedKeychain.token(for: connection.id)
+            let token = try? SagaxSharedKeychain.token(for: connection.id)
         else { return }
         await WidgetSnapshotRefresh.refresh(connection: connection, token: token, store: store)
     }
@@ -138,7 +138,7 @@ struct WorkingMonitorView: View {
         Group {
             switch entry.state {
             case .unpaired:
-                Placeholder(icon: "qrcode", message: "Open MausBot to pair")
+                Placeholder(icon: "qrcode", message: "Open Sagax to pair")
             case .quiet:
                 Placeholder(icon: "checkmark.circle", message: "Nothing working")
             case .fresh, .stale:
@@ -181,7 +181,8 @@ struct WorkingMonitorView: View {
     private func rowView(_ row: WidgetSnapshot.Row) -> some View {
         rowLink(row) {
             HStack(spacing: 8) {
-                MausFaceStill(
+                MascotStill(
+                    chat: row.chat,
                     color: row.chat.color,
                     state: MausState(rawValue: row.face) ?? .idle,
                     size: 22
