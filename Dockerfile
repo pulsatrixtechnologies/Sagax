@@ -1,4 +1,4 @@
-# OpenMausBot harness server — hosted/self-hosted tenant image.
+# Sagax harness server — hosted/self-hosted tenant image.
 #
 # Two stages: build the renderer + the self-contained server bundle, then ship
 # only those artifacts on a slim Node runtime. The server keeps binding
