@@ -619,6 +619,9 @@ import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotLibraryRoutes } from "./routes/bot-library.ts";
 import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
+import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
+import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
+import { diskSpace, folderBytes } from "./disk-usage.ts";
 import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bot-settings.ts";
 import { createComputerInputRoutes } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
@@ -16590,6 +16593,63 @@ ROUTES.push(createBotSettingsRoutes({
       ? () => true
       : (routine) => Boolean(routine.botId) && effectiveRunAs({ botId: routine.botId!, ...(routine.runAs ? { runAs: routine.runAs } : {}) }) === scope.principalId);
   },
+}));
+// Settings > Bot > Auto-review Rules (server/routes/auto-review-rules.ts).
+ROUTES.push(createAutoReviewRuleRoutes({
+  bots: () => store.bots,
+  rules: (botId) => commandAllowlist.list(botId),
+  remove: (botId, ruleId) => commandAllowlist.remove(botId, ruleId),
+  mayManage: canManageCommandAllowlist,
+}));
+// The phone's Bot Computer screen (server/routes/computer-status.ts): the
+// person's server environment on an organization server, this computer's
+// Local VM container on a personal one, behind one set of routes.
+async function localComputerSummary() {
+  const status = await containerComputerStatus(undefined, undefined, SHARED_LOCAL_VM_TARGET);
+  const [workspaceBytes, disk] = await Promise.all([folderBytes(status.workspace_path), diskSpace(DATA_DIR)]);
+  const version = status.image_ref.split(":").pop();
+  return {
+    configured: Boolean(status.runtime),
+    state: status.container,
+    diskState: diskStateForFree(disk.freeBytes, disk.totalBytes),
+    workspaceBytes,
+    ...(disk.totalBytes ? { limitBytes: disk.totalBytes } : {}),
+    ...(version ? { version } : {}),
+    ...(status.problem ? { problem: status.problem } : {}),
+  };
+}
+/** Pull or rebuild the shared Local VM with the same guards as its own
+ * routes (/api/local-computer/pull, remove, run). */
+async function localComputerLifecycle(kind: "update" | "reset") {
+  const refusal = hostComputerRefusal();
+  if (refusal) throw Object.assign(new Error(refusal), { status: 403, code: "host_computer" });
+  const target = SHARED_LOCAL_VM_TARGET;
+  if (localVmImageBusy || localVmModeChangeBusy || localVmLifecycleBusy.has(target.key)) {
+    throw Object.assign(new Error("another Local VM setup action is still running"), { status: 409, code: "busy" });
+  }
+  if (kind === "reset") {
+    if (localVmMode(cfg) !== "shared") throw Object.assign(new Error("Each bot's desktop is reset from its own Computer panel in this mode."), { status: 409, code: "per_bot" });
+    if (localVmLeaseFor(target).current(localVmOwnerBusy) || localVmActiveThreads.has(target.key)) {
+      throw Object.assign(new Error("the Local VM is being used by a bot — stop that turn first"), { status: 409, code: "in_use" });
+    }
+    localVmLifecycleBusy.add(target.key);
+    try {
+      await containerComputerAction("remove", undefined, undefined, target);
+      await containerComputerAction("run", undefined, undefined, target);
+      localVmIdleFor(target).touch();
+    } finally { localVmLifecycleBusy.delete(target.key); }
+  } else {
+    localVmImageBusy = true;
+    try { await containerComputerAction("pull", undefined, undefined, target); }
+    finally { localVmImageBusy = false; }
+  }
+  return localComputerSummary();
+}
+ROUTES.push(createComputerStatusRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  sandbox: () => userSandbox,
+  local: { status: localComputerSummary, update: () => localComputerLifecycle("update"), reset: () => localComputerLifecycle("reset") },
+  mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
 }));
 // The people of a solo server: its email sign-in list and the invitations
 // that add to it (server/org-routes.ts). A solo server has no organization

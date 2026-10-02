@@ -4,6 +4,7 @@
 //
 //   GET  /api/me/server-environment         status, resources, last used
 //   POST /api/me/server-environment/reset   recreate it ({ confirm: true })
+//   POST /api/me/server-environment/update  rebuild it from the current image, keeping /workspace
 import { PASS, type RouteHandler } from "./routes/table.ts";
 import type { UserSandboxManager } from "./user-sandbox-manager.ts";
 import { UserSandboxUnavailable } from "./user-sandbox-manager.ts";
@@ -14,7 +15,7 @@ export function createUserSandboxRoutes(deps: {
   organization: boolean;
 }): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
-    if (path !== "/api/me/server-environment" && path !== "/api/me/server-environment/reset") return PASS;
+    if (path !== "/api/me/server-environment" && path !== "/api/me/server-environment/reset" && path !== "/api/me/server-environment/update") return PASS;
     res.setHeader("cache-control", "no-store");
     if (!deps.organization) return json(res, 404, { error: "not found" });
     const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : undefined;
@@ -27,6 +28,14 @@ export function createUserSandboxRoutes(deps: {
     }
     if (method !== "POST") return json(res, 405, { error: "method not allowed" });
     if (!manager) return json(res, 409, { error: "This server has no server environments.", code: "not_configured" });
+    if (path === "/api/me/server-environment/update") {
+      try {
+        return json(res, 200, { configured: true, ...(await manager.update(principalId)) });
+      } catch (error) {
+        if (error instanceof UserSandboxUnavailable) return json(res, 409, { error: error.message, code: error.code });
+        return json(res, 502, { error: "The server environment could not be updated.", code: "unavailable" });
+      }
+    }
     const body = await readBody(req) as Record<string, unknown> | null;
     if (body?.confirm !== true) return json(res, 400, { error: "Confirm the reset: it erases /workspace.", code: "confirm" });
     try {

@@ -110,6 +110,27 @@ describe("UserSandboxManager", () => {
     expect(docker.calls.filter((call) => call.startsWith("create")).length).toBe(creates + 1);
   });
 
+  it("update rebuilds the container from the current image and keeps /workspace", async () => {
+    const m = manager();
+    await m.exec(ALICE, { argv: ["true"] });
+    const creates = docker.calls.filter((call) => call.startsWith("create")).length;
+    const view = await m.update(ALICE);
+    expect(view.state).toBe("running");
+    expect(docker.calls).not.toContain(`rmvol ${sandboxNames(m.keyFor(ALICE)).volume}`);
+    expect(docker.calls.filter((call) => call.startsWith("create")).length).toBe(creates + 1);
+    await m.personOut(BOB);
+    await expect(m.update(BOB)).rejects.toMatchObject({ code: "person_out" });
+  });
+
+  it("removes an environment and its workspace at once for account deletion", async () => {
+    const m = manager();
+    await m.exec(ALICE, { argv: ["true"] });
+    await m.personOut(ALICE);
+    await m.removeNow(ALICE);
+    expect(docker.calls).toContain(`rmvol ${sandboxNames(m.keyFor(ALICE)).volume}`);
+    expect(m.pendingDeletionAt(ALICE)).toBeNull();
+  });
+
   it("reports unavailable instead of throwing when the provisioner is down", async () => {
     const down: SandboxdClient = {
       info: () => Promise.reject(new Error("down")), status: () => Promise.reject(new Error("down")),
