@@ -248,6 +248,11 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     };
   }
 
+  function untouched(threadId: string): boolean {
+    const page = deps.messages(threadId, 3);
+    return !page.hasMore && page.messages.every((message) => message.role !== "user" && !message.tool);
+  }
+
   /** The list, newest first with running work on top. */
   function list(bot: ActivityBot, viewerId: string | undefined, limit: number): BotActivityItem[] {
     const since = now() - BOT_ACTIVITY_WINDOW_MS;
@@ -261,6 +266,8 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       if (!deps.threadReadable(bot.id, task.threadId, viewerId)) continue;
       const recent = task.busy || (task.updatedAt ?? task.createdAt) >= since;
       if (!recent) continue;
+      // A conversation nobody wrote in yet (at most the bot's greeting) did no work.
+      if (!task.busy && !task.routineRunId && !task.openedBy && untouched(task.threadId)) continue;
       if (task.routineRunId) listedRuns.add(task.routineRunId);
       listedThreads.add(task.threadId);
       items.push(threadItem(bot, task, runById, viewerId));

@@ -239,6 +239,17 @@ describe("bot activity API", () => {
     expect((await get(base, "/api/bots/pepper/activity?filter=coding", "alice")).body.subagents).toEqual([]);
   });
 
+  it("leaves out a conversation nobody wrote in yet, greeting or not", async () => {
+    const empty: ActivityTask = { threadId: "t-empty", title: "New thread", createdAt: NOW - 1_000, updatedAt: NOW - 1_000, ownerPrincipalId: "alice" };
+    const greeting: ActivityMessage = { id: "g1", role: "bot", kind: "text", at: NOW - 1_000, text: "Hi, I'm Pepper." };
+    const base = await serve(deps({
+      tasks: (botId) => (botId === "pepper" ? [...tasks, empty] : []),
+      messages: (threadId, limit) => ({ messages: (threadId === "t-empty" ? [greeting] : messages[threadId] ?? []).slice(-limit), hasMore: false }),
+    }));
+    const { body } = await get(base, "/api/bots/pepper/activity");
+    expect(body.items!.map((item) => item.id)).not.toContain("thread:t-empty");
+  });
+
   it("refuses writes and a detail without a target", async () => {
     const base = await serve();
     expect((await fetch(`${base}/api/bots/pepper/activity`, { method: "POST" })).status).toBe(405);
