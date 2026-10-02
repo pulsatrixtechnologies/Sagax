@@ -1,6 +1,10 @@
 "use strict";
 
-const DESKTOP_MUTATION_HEADER = "X-Pulsa Bot-Desktop-Owner";
+// Must equal server/request-auth.ts DESKTOP_OWNER_HEADER. Lowercase on
+// purpose: the upstream rebrand rewrites "OpenMausBot", and a name with a
+// space (the old "X-Pulsa Bot-Desktop-Owner") is not a valid HTTP header, so
+// Chromium dropped it and every guarded desktop change was refused (403).
+const DESKTOP_MUTATION_HEADER = "x-openmausbot-desktop-owner";
 
 /** Add the per-launch owner capability to main-process requests. Chromium's
  * webRequest hook cannot see Node fetch, so both paths use this one header

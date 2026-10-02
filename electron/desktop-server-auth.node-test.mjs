@@ -23,3 +23,12 @@ test("leaves development requests unchanged and rejects bad packaged tokens", ()
   }), { accept: "application/json" });
   assert.throws(() => desktopServerHeaders({}, { packaged: true, token: "short" }), /invalid/);
 });
+
+test("the owner header is a valid HTTP name the server reads", async () => {
+  // A space made Chromium drop the header and the server refuse every change.
+  assert.match(DESKTOP_MUTATION_HEADER, /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/);
+  const { readFileSync } = await import("node:fs");
+  const server = readFileSync(new URL("../server/request-auth.ts", import.meta.url), "utf8");
+  const expected = server.match(/const DESKTOP_OWNER_HEADER = "([^"]+)"/)?.[1];
+  assert.equal(DESKTOP_MUTATION_HEADER.toLowerCase(), expected);
+});
