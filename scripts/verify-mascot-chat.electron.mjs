@@ -10,6 +10,10 @@
 //    then from its left): the gap left to the character's box (at most 4 px,
 //    never over its face), and the clicks the window takes over transparent
 //    parts (none: they reach the apps behind);
+//  - call: a voice call on the mascot (the app runs it; here a stand-in
+//    state): the pill under its feet without growing the window, the bounce
+//    with the bot's level, the lean while the person talks, the controls'
+//    events, the transcript and settings cards;
 // counting window setBounds calls, position writes, dropped frames (rAF gaps)
 // and long tasks; then the balloon's background under two skins and Trombi.
 import { app, BrowserWindow, ipcMain, screen } from "electron";
@@ -53,12 +57,20 @@ const history = Array.from({ length: 3 }, (_, i) => ({ asked: `Earlier question 
 // a premium skin with live effects: the heaviest look to chat over
 const LOOK = { character: "shape", shape: "star", skins: { shape: "holo" } };
 
-function snapshot({ balloon = null, text = "", streaming = false, theme, mascot = LOOK, task = "idle", flyAway = false } = {}) {
+const CALL = {
+  phase: "speaking", muted: false, botAudible: true, push: false, startedAt: Date.now() - 42_000, line: "Sure, here is what I found.",
+  transcript: [{ id: "m1", who: "you", text: "What is on my calendar today?" }, { id: "m2", who: "bot", text: "Two meetings, the first at ten." }],
+  note: null, notice: null, settings: { voice: "", speed: 1, language: "auto" }, callSettings: { input: "auto", onlyMyVoice: false, earcons: true },
+  voices: [{ id: "eve", label: "Eve" }, { id: "ara", label: "Ara" }], voicesError: null, enrollment: { state: "none" }, previewing: null,
+};
+
+function snapshot({ balloon = null, text = "", streaming = false, theme, mascot = LOOK, task = "idle", flyAway = false, call = null } = {}) {
   return {
     v: 1, id: BOT, name: "Sagax", label: "Sagax", color: "green", skin: "none", avatar: null, pose: streaming ? "speak" : "idle",
     reduced: false, retro: false, sparkle: 0, locale: "en", menu: [{ id: "open", label: "Open in the app" }],
-    task, mood: 0.8, flyAway, hints: { mood: "", working: "", pin: "Put back" }, liveliness: "normal",
+    task, mood: 0.8, flyAway, hints: { mood: "", working: "", pin: "Put back", call: "Call Sagax" }, liveliness: "normal",
     mascot,
+    ...(call ? { call } : {}),
     ...(theme ? { theme } : {}),
     balloon: balloon
       ? { kind: "chat", title: "Sagax", asked: "Tell me something long", text, history, streaming, truncated: false, open: "Open in Sagax", close: "Close",
@@ -207,7 +219,10 @@ const boxes = (win) => js(win, `(() => {
 async function takesPointer(win, x, y) {
   const b = win.getBounds();
   win.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(x), y: Math.round(y), globalX: b.x + Math.round(x), globalY: b.y + Math.round(y) });
-  await wait(120);
+  // main hears of a change over IPC: give it a moment, then a second move to settle a late enter
+  await wait(150);
+  win.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(x) + 1, y: Math.round(y), globalX: b.x + Math.round(x) + 1, globalY: b.y + Math.round(y) });
+  await wait(250);
   return !counters.ignoring;
 }
 
@@ -241,7 +256,9 @@ async function measureNear(win) {
   ];
   const through = [];
   for (const point of transparent) through.push({ ...point, takes: await takesPointer(win, point.x, point.y) });
-  const overBalloon = await takesPointer(win, (left.balloon.left + left.balloon.right) / 2, (left.balloon.top + left.balloon.bottom) / 2);
+  // over the balloon it takes the pointer (a synthetic move can land before the page has laid out: try a few spots)
+  let overBalloon = false;
+  for (let i = 0; i < 3 && !overBalloon; i += 1) overBalloon = await takesPointer(win, (left.balloon.left + left.balloon.right) / 2 + i * 12, (left.balloon.top + left.balloon.bottom) / 2 + i * 12);
   const result = {
     dockedGapPx: Math.round(docked.owl.top - docked.balloon.bottom),
     fromAboveGapPx: Math.round(above.owl.top - above.balloon.bottom),
@@ -258,6 +275,91 @@ async function measureNear(win) {
   await js(win, `(() => { localStorage.removeItem("omb.floatingBots.balloon.v1"); return true; })()`);
   update(snapshot());
   await wait(400);
+  return result;
+}
+
+const levels = (bot, mic = 0) => ipcMain.emit("floating-bots:level", { sender: brain }, { botId: BOT, levels: { bot, mic } });
+const click = async (win, selector) => {
+  const at = await js(win, `(() => { const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect(); return r && { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+  if (!at) throw new Error(`nothing to click at ${selector}: ${await js(win, "(document.querySelector('.fb-head')?.outerHTML ?? document.body.innerHTML).slice(0, 400)")}`);
+  win.webContents.sendInputEvent({ type: "mouseMove", ...at });
+  await wait(60);
+  win.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...at });
+  win.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...at });
+  await wait(250);
+};
+
+async function measureCall(win) {
+  const dir = path.dirname(out);
+  const callEvents = () => brainEvents.filter((e) => e.channel === "floating-bots:event" && e.payload.event.type === "call").map((e) => e.payload.event.action);
+  // the balloon offers the call
+  update(snapshot({ balloon: true, text: PARAGRAPH }));
+  await wait(700);
+  await click(win, "[data-call-start]");
+  const started = callEvents().includes("start");
+  update(snapshot({ call: CALL }));
+  await wait(900);
+  const before = win.getBounds();
+  resetCounters();
+  const geometry = await js(win, `(() => {
+    const r = (q) => { const b = document.querySelector(q)?.getBoundingClientRect(); return b && { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; };
+    return { pill: r(".fb-call-pill"), owl: r(".fb-body"), stage: r(".fb-stage"), call: document.querySelector(".fb-stage")?.dataset.call ?? null };
+  })()`);
+  // the bounce follows the bot's level
+  const scaleAt = async (level) => {
+    levels(level);
+    await wait(200);
+    return js(win, "getComputedStyle(document.querySelector('.fb-body')).scale");
+  };
+  const quiet = await scaleAt(0);
+  const loud = await scaleAt(0.9);
+  fs.writeFileSync(path.join(dir, "mascot-call-pill.png"), (await win.webContents.capturePage()).toPNG());
+  for (let i = 0; i < 30; i += 1) {
+    levels(Math.abs(Math.sin(i / 3)), 0);
+    await wait(30);
+  }
+  update(snapshot({ call: { ...CALL, phase: "hearing", botAudible: false, line: "Move my ten o'clock" } }));
+  for (let i = 0; i < 20; i += 1) {
+    levels(0, Math.abs(Math.sin(i / 2)) * 0.8);
+    await wait(30);
+  }
+  await wait(300);
+  const lean = await js(win, "({ call: document.querySelector('.fb-stage')?.dataset.call, rotate: getComputedStyle(document.querySelector('.fb-body')).rotate })");
+  fs.writeFileSync(path.join(dir, "mascot-call-hearing.png"), (await win.webContents.capturePage()).toPNG());
+  const pillMoves = moves();
+  // the controls report to the brain
+  await click(win, "[data-voice-mute]");
+  await click(win, "[data-voice-transcript-toggle]");
+  await wait(400);
+  const transcript = await js(win, "document.querySelectorAll('[data-voice-card] [data-voice-line]').length");
+  fs.writeFileSync(path.join(dir, "mascot-call-transcript.png"), (await win.webContents.capturePage()).toPNG());
+  await click(win, "[data-voice-gear]");
+  await wait(400);
+  const settings = await js(win, "Boolean(document.querySelector('[data-voice-card] [data-voice-call-settings]'))");
+  fs.writeFileSync(path.join(dir, "mascot-call-settings.png"), (await win.webContents.capturePage()).toPNG());
+  await click(win, "[data-voice-gear]");
+  await click(win, "[data-voice-end]");
+  // a transparent spot beside the pill still lets clicks through
+  const size = await js(win, "({ w: innerWidth, h: innerHeight })");
+  const through = await takesPointer(win, size.w - 2, size.h - 2);
+  update(snapshot());
+  await wait(400);
+  const result = {
+    started,
+    stageCall: geometry.call,
+    pillUnderFeetPx: Math.round(geometry.pill.top - geometry.owl.bottom),
+    pillInsideStage: geometry.pill.bottom <= geometry.stage.bottom + 0.5 && geometry.pill.left >= geometry.stage.left - 0.5,
+    windowGrewForPill: win.getBounds().height !== before.height && moves() > 0 ? true : false,
+    windowMovesDuringCall: pillMoves,
+    bounce: { quiet, loud },
+    lean,
+    events: callEvents(),
+    transcriptLines: transcript,
+    settingsCard: settings,
+    transparentTakesClicks: through,
+  };
+  const ok = result.started && result.pillInsideStage && quiet !== loud && lean.call === "hearing" && result.events.includes("mute") && result.events.includes("voices") && result.events.includes("end") && transcript >= 2 && settings && !through;
+  if (!ok) throw new Error(`mascot call: ${JSON.stringify(result)}`);
   return result;
 }
 
@@ -362,6 +464,7 @@ app.whenReady().then(async () => {
     const resized = await drag(win, ".fb-grip", -140, -90, 60);
     report.resize = { steps: 60, windowMoves: moves(), positionWrites: counters.writes, ...resized, ...cpu(win), ...(await stopFrames(win)) };
     report.near = await measureNear(win);
+    report.call = await measureCall(win);
     report.events = brainEvents.filter((e) => e.channel === "floating-bots:event").map((e) => e.payload.event.type);
 
     // theme: the app's skin, live, and Trombi's own look

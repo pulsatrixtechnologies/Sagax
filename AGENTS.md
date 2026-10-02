@@ -394,6 +394,21 @@ Electron restart (no HMR); launch-test them before committing.
   of its offset away from the mascot grows the window; the part toward it is
   a `translate` inside the window it has. It sits above the art (z-index 2),
   under the effects (z-index 3).
+- Voice calls with the mascot reuse the app's call, never a second one: the
+  engine (`LiveCallEngine`) runs once in the app page (`CallEngineHost` in
+  App, for the bot `useOnCall()` names) and publishes the call
+  (`src/lib/voice-mode/live-call-store.ts`); the app's pill (`LiveCall`) and
+  the mascot only show and drive it. The mascot's call button (balloon header,
+  `hints.call`, and the menu's "call") starts that same call for its bot
+  (`mascot-call.ts`, `runMascotCallEvent`): one call at a time across app and
+  mascots (`lib/call.ts`). The brain sends `snapshot.call` (`FloatingCall`)
+  and the levels on their own channel (`floating-bots:level`, 20 Hz, rounded);
+  the window draws `MascotCall.tsx` (the pill under the mascot's feet, inside
+  the stage's room; the card where the balloon goes) and the mascot bounces
+  (`--fb-voice`) and leans in (`data-call`), never under reduced motion. The
+  microphone is the app page's (its permission), never the mascot window's.
+  Main sanitizes `call`, its events and their settings patches. Measured in
+  `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.

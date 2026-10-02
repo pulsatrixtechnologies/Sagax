@@ -7,6 +7,7 @@
 // line, the field grows to four lines, Escape closes. Trombi talks in the
 // Hibou 98 look (a 98 title bar to drag, a 98 grip).
 import { memo, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { Phone } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { BalloonMarkdown } from "./BalloonMarkdown";
 import type { FloatingBalloon, FloatingEvent } from "./protocol";
@@ -159,6 +160,8 @@ export interface BalloonProps {
   wantsKeyboard?: (on: boolean) => void;
   /** Labels the window has no translations for. */
   pinLabel: string;
+  /** The call button's label, where voice mode serves this bot (absent: no button). */
+  callLabel?: string;
   /** The mascot's stage under the balloon, for the room the window holds. */
   stage?: Size;
   /** The character's box in that stage: the balloon comes right up to it, never over its face. */
@@ -180,7 +183,7 @@ const Earlier = memo(function Earlier({ asked, text }: { asked: string; text: st
   );
 });
 
-export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hover, wantsKeyboard, pinLabel, stage, owl, onReserve }: BalloonProps) {
+export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hover, wantsKeyboard, pinLabel, callLabel, stage, owl, onReserve }: BalloonProps) {
   const [draft, setDraft] = useState("");
   const [place, setPlace] = useState<BalloonPlace>(() => readBalloonPlace(botId));
   const box = useRef<HTMLDivElement>(null);
@@ -348,6 +351,11 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
         {!detached && (retro ? <span className="r98-tail" aria-hidden="true" /> : <span className="fb-tail" aria-hidden="true" />)}
         <div className={cn("fb-head", retro && "r98-titlebar")} onPointerDown={startGesture("move")} data-drag-handle="">
           <strong className={retro ? "r98-titlebar-text" : "fb-name"}>{balloon.title ?? name}</strong>
+          {callLabel && (
+            <button type="button" className={retro ? "r98-titlebar-btn" : "fb-close fb-call-btn"} aria-label={callLabel} title={callLabel} data-call-start="" onPointerDown={(event) => event.stopPropagation()} onClick={() => onEvent({ type: "call", action: "start" })}>
+              <Phone size={retro ? 9 : 13} strokeWidth={2.25} aria-hidden="true" />
+            </button>
+          )}
           {detached && (
             <button type="button" className={retro ? "r98-titlebar-btn" : "fb-close"} aria-label={pinLabel} title={pinLabel} onPointerDown={(event) => event.stopPropagation()} onClick={pinBack}>
               ⌖

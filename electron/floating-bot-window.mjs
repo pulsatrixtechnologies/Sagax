@@ -174,6 +174,64 @@ function avatar(value) {
   };
 }
 
+const CALL_PHASES = new Set(["connecting", "listening", "hearing", "thinking", "speaking", "interrupted", "held", "ended"]);
+const CALL_LINES = 8;
+const CALL_TEXT_MAX = 1200;
+const VOICE_ID_RE = /^[a-zA-Z0-9._-]{0,64}$/;
+const LANGUAGE_RE = /^[a-zA-Z-]{2,16}$/;
+
+/** The live voice call as the mascot shows it: states, short texts and the call's settings, nothing else. */
+export function sanitizeCall(value) {
+  if (!value || typeof value !== "object" || !CALL_PHASES.has(value.phase)) return null;
+  const settings = value.settings && typeof value.settings === "object" ? value.settings : {};
+  const callSettings = value.callSettings && typeof value.callSettings === "object" ? value.callSettings : {};
+  const enrollment = value.enrollment && typeof value.enrollment === "object" ? value.enrollment : {};
+  return {
+    phase: value.phase,
+    muted: flag(value.muted),
+    botAudible: flag(value.botAudible),
+    push: flag(value.push),
+    startedAt: isFiniteNumber(value.startedAt) && value.startedAt > 0 ? value.startedAt : 0,
+    line: text(value.line, CALL_TEXT_MAX) ?? "",
+    transcript: Array.isArray(value.transcript)
+      ? value.transcript.slice(-CALL_LINES).filter((line) => line && typeof line === "object" && typeof line.text === "string").map((line, index) => ({
+          id: typeof line.id === "string" && ID_RE.test(line.id) ? line.id : `line-${index}`,
+          who: line.who === "you" ? "you" : "bot",
+          text: line.text.slice(0, CALL_TEXT_MAX),
+          ...(line.interrupted === true ? { interrupted: true } : {}),
+        }))
+      : [],
+    note: text(value.note, 300) ?? null,
+    notice: text(value.notice, 300) ?? null,
+    settings: {
+      voice: typeof settings.voice === "string" && VOICE_ID_RE.test(settings.voice) ? settings.voice : "",
+      speed: isFiniteNumber(settings.speed) ? clampNumber(settings.speed, 0.5, 2) : 1,
+      language: typeof settings.language === "string" && (settings.language === "auto" || LANGUAGE_RE.test(settings.language)) ? settings.language : "auto",
+    },
+    callSettings: {
+      input: callSettings.input === "push" ? "push" : "auto",
+      onlyMyVoice: flag(callSettings.onlyMyVoice),
+      earcons: callSettings.earcons !== false,
+    },
+    voices: Array.isArray(value.voices)
+      ? value.voices.slice(0, 64).filter((voice) => voice && typeof voice.id === "string" && VOICE_ID_RE.test(voice.id) && typeof voice.label === "string").map((voice) => ({ id: voice.id, label: voice.label.slice(0, 80) }))
+      : null,
+    voicesError: text(value.voicesError, 200) ?? null,
+    enrollment: enrollment.state === "recording"
+      ? { state: "recording", share: isFiniteNumber(enrollment.share) ? clampNumber(enrollment.share, 0, 1) : 0 }
+      : { state: enrollment.state === "enrolled" || enrollment.state === "failed" ? enrollment.state : "none" },
+    previewing: value.previewing && typeof value.previewing.id === "string" && VOICE_ID_RE.test(value.previewing.id)
+      ? { id: value.previewing.id, loading: flag(value.previewing.loading) }
+      : null,
+  };
+}
+
+/** The call's two levels, 0..1. */
+export function sanitizeLevels(value) {
+  if (!value || typeof value !== "object" || !isFiniteNumber(value.bot) || !isFiniteNumber(value.mic)) return null;
+  return { bot: clampNumber(value.bot, 0, 1), mic: clampNumber(value.mic, 0, 1) };
+}
+
 /**
  * What the brain may tell a floating bot's window: who it is, how it looks, a
  * pose and, when talking, a balloon of short plain texts. Anything else is
@@ -207,6 +265,8 @@ export function sanitizeFloatingSnapshot(value) {
       working: text(value.hints?.working, 200) ?? "",
       ...(typeof value.hints?.hoot === "string" ? { hoot: value.hints.hoot.slice(0, 40) } : {}),
       ...(typeof value.hints?.pin === "string" ? { pin: value.hints.pin.slice(0, 80) } : {}),
+      // present when the bot takes voice calls: the call button's label
+      ...(typeof value.hints?.call === "string" ? { call: value.hints.call.slice(0, 80) } : {}),
     },
     liveliness: LIVELINESS.has(value.liveliness) ? value.liveliness : "normal",
     context: context(value.context),
@@ -214,6 +274,7 @@ export function sanitizeFloatingSnapshot(value) {
   };
   const theme = appTheme(value.theme);
   if (theme) snapshot.theme = theme;
+  snapshot.call = sanitizeCall(value.call);
   const balloon = value.balloon;
   if (balloon && typeof balloon === "object" && BALLOON_KINDS.has(balloon.kind)) {
     snapshot.balloon = {
@@ -244,7 +305,13 @@ export function sanitizeFloatingSnapshot(value) {
   return snapshot;
 }
 
-const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send", "play", "pet"]);
+const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send", "play", "pet", "call"]);
+const CALL_ACTIONS = new Set(["start", "end", "mute", "unmute", "hold", "resume", "interrupt", "retry", "talk", "release", "voices", "enroll", "forget", "preview", "settings", "call-settings"]);
+/** The settings a mascot's call may change, and how each is checked. */
+const CALL_PATCH = {
+  settings: { voice: (v) => typeof v === "string" && VOICE_ID_RE.test(v), speed: (v) => isFiniteNumber(v) && v >= 0.5 && v <= 2, language: (v) => typeof v === "string" && (v === "auto" || LANGUAGE_RE.test(v)) },
+  "call-settings": { input: (v) => v === "auto" || v === "push", onlyMyVoice: (v) => typeof v === "boolean", earcons: (v) => typeof v === "boolean" },
+};
 export const SEND_MAX = 4000;
 
 /** What a floating window may report back: a click, a menu choice, or typed text. */
@@ -255,6 +322,17 @@ export function sanitizeFloatingEvent(value) {
     if (typeof value.text !== "string") return null;
     const typed = value.text.slice(0, SEND_MAX);
     return typed.trim() ? { type: "send", text: typed } : null;
+  }
+  if (value.type === "call") {
+    if (!CALL_ACTIONS.has(value.action)) return null;
+    if (value.action === "preview") return typeof value.voice === "string" && VOICE_ID_RE.test(value.voice) ? { type: "call", action: "preview", voice: value.voice } : null;
+    const rules = CALL_PATCH[value.action];
+    if (rules) {
+      const patch = {};
+      if (value.patch && typeof value.patch === "object") for (const [key, check] of Object.entries(rules)) if (Object.hasOwn(value.patch, key) && check(value.patch[key])) patch[key] = value.patch[key];
+      return Object.keys(patch).length ? { type: "call", action: value.action, patch } : null;
+    }
+    return { type: "call", action: value.action };
   }
   return { type: value.type };
 }
@@ -632,6 +710,13 @@ export function createFloatingBotWindows(deps) {
       }
       entry.snapshot = clean;
       entry.win.webContents.send("floating-bot:state", clean);
+    },
+    // the call's levels, many times a second: straight to that bot's window, never kept
+    "floating-bots:level": (event, message) => {
+      if (!isMain(event) || !message || !isBotId(message.botId)) return;
+      const levels = sanitizeLevels(message.levels);
+      const entry = floats.get(message.botId);
+      if (levels && live(entry)) entry.win.webContents.send("floating-bot:level", levels);
     },
     "floating-bots:ready": (event) => {
       const found = senderFloat(event);

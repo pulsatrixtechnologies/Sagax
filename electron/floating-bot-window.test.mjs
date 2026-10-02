@@ -10,6 +10,7 @@ import {
   READY_TIMEOUT_MS,
   REMEMBER_DELAY_MS,
   waitForPage,
+  sanitizeCall,
   sanitizeFloatingEvent,
   sanitizeFloatingSnapshot,
   sanitizePositions,
@@ -548,6 +549,50 @@ describe("floating bots: payload validation", () => {
     expect(sanitizeFloatingEvent({ type: "send", text: 1 })).toBeNull();
     expect(sanitizeFloatingEvent({ type: "eval", code: "x" })).toBeNull();
     expect(sanitizeFloatingEvent("click")).toBeNull();
+  });
+});
+
+describe("floating bots: a voice call with the mascot", () => {
+  it("passes the call's states, short texts and settings only, bounded", () => {
+    const call = sanitizeCall({
+      phase: "speaking", muted: true, botAudible: true, push: false, startedAt: 5, line: "x".repeat(5000), token: "secret",
+      transcript: Array.from({ length: 20 }, (_, i) => ({ id: `m${i}`, who: i % 2 ? "bot" : "you", text: "hi", html: "<b>" })),
+      settings: { voice: "eve", speed: 9, language: "fr", key: "sk" },
+      callSettings: { input: "push", onlyMyVoice: true, earcons: false },
+      voices: [{ id: "eve", label: "Eve" }, { id: "bad id!", label: "X" }],
+      enrollment: { state: "recording", share: 3 },
+      previewing: { id: "eve", loading: true },
+    });
+    expect(call).not.toHaveProperty("token");
+    expect(call.line).toHaveLength(1200);
+    expect(call.transcript).toHaveLength(8);
+    expect(call.transcript[0]).not.toHaveProperty("html");
+    expect(call.settings).toEqual({ voice: "eve", speed: 2, language: "fr" });
+    expect(call.callSettings).toEqual({ input: "push", onlyMyVoice: true, earcons: false });
+    expect(call.voices).toEqual([{ id: "eve", label: "Eve" }]);
+    expect(call.enrollment).toEqual({ state: "recording", share: 1 });
+    expect(sanitizeCall({ phase: "ringing" })).toBeNull();
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, call: { phase: "listening" }, hints: { call: "Call Sagax" } })).toMatchObject({ call: { phase: "listening" }, hints: { call: "Call Sagax" } });
+  });
+
+  it("takes back only known call actions, with checked settings", () => {
+    expect(sanitizeFloatingEvent({ type: "call", action: "start", botId: "other" })).toEqual({ type: "call", action: "start" });
+    expect(sanitizeFloatingEvent({ type: "call", action: "dial" })).toBeNull();
+    expect(sanitizeFloatingEvent({ type: "call", action: "preview", voice: "eve" })).toEqual({ type: "call", action: "preview", voice: "eve" });
+    expect(sanitizeFloatingEvent({ type: "call", action: "settings", patch: { voice: "eve", speed: 1.5, xai: "key" } })).toEqual({ type: "call", action: "settings", patch: { voice: "eve", speed: 1.5 } });
+    expect(sanitizeFloatingEvent({ type: "call", action: "call-settings", patch: { input: "shout" } })).toBeNull();
+  });
+
+  it("relays the call's levels from the app page to that bot's window only", () => {
+    const { emit, open, fromMain } = setup();
+    const a = open("bot_a");
+    const b = open("bot_b").win;
+    emit("floating-bots:level", fromMain, { botId: "bot_a", levels: { bot: 2, mic: 0.2 } });
+    expect(a.win.webContents.sent.at(-1)).toEqual(["floating-bot:level", { bot: 1, mic: 0.2 }]);
+    expect(b.webContents.sent).toHaveLength(0);
+    // a mascot window cannot speak for the app page
+    emit("floating-bots:level", a.from, { botId: "bot_b", levels: { bot: 1, mic: 1 } });
+    expect(b.webContents.sent).toHaveLength(0);
   });
 });
 

@@ -6,6 +6,9 @@ import type { Liveliness, MascotTask } from "./behavior";
 import type { FloatingContext } from "./gauge";
 import type { MascotLook } from "../../../shared/mascot-look";
 import type { FloatingTheme } from "./theme";
+import type { CallPhase } from "@/lib/voice-mode/call-machine";
+import type { CallSettings } from "@/lib/voice-mode/call-settings";
+import type { VoiceModeSettings } from "../../../shared/voice-mode";
 
 export type FloatingPose = "idle" | "think" | "speak" | "celebrate" | "alert" | "sleep";
 export type { MascotTask };
@@ -43,6 +46,47 @@ export interface FloatingBalloon {
   input: { label: string; placeholder: string; send: string } | null;
 }
 
+/**
+ * The live voice call with this bot, as the mascot shows it (the brain runs
+ * the call, live-call-store.ts; the window only draws it and reports clicks).
+ */
+export interface FloatingCall {
+  phase: CallPhase;
+  muted: boolean;
+  /** the bot's voice is audible now (a click on the mascot interrupts it) */
+  botAudible: boolean;
+  /** push to talk (a hold-to-talk button), else hands-free */
+  push: boolean;
+  /** when the call started (Date.now() in the app) */
+  startedAt: number;
+  /** the person's words so far, or the bot's sentence now audible */
+  line: string;
+  transcript: { id: string; who: "you" | "bot"; text: string; interrupted?: boolean }[];
+  note: string | null;
+  notice: string | null;
+  settings: VoiceModeSettings;
+  callSettings: CallSettings;
+  /** the voices to pick from, once asked for ("voices") */
+  voices: { id: string; label: string }[] | null;
+  voicesError: string | null;
+  enrollment: { state: "none" | "enrolled" | "failed" } | { state: "recording"; share: number };
+  previewing: { id: string; loading: boolean } | null;
+}
+
+/** What the mascot's call controls ask of the brain. */
+export type FloatingCallAction =
+  | "start" | "end" | "mute" | "unmute" | "hold" | "resume" | "interrupt" | "retry"
+  | "talk" | "release" | "voices" | "enroll" | "forget" | "preview" | "settings" | "call-settings";
+export const CALL_ACTIONS: ReadonlySet<FloatingCallAction> = new Set<FloatingCallAction>([
+  "start", "end", "mute", "unmute", "hold", "resume", "interrupt", "retry", "talk", "release", "voices", "enroll", "forget", "preview", "settings", "call-settings",
+]);
+
+/** How loud each side of the call is now, 0..1 (its own light channel, many times a second). */
+export interface FloatingCallLevels {
+  bot: number;
+  mic: number;
+}
+
 export interface FloatingSnapshot {
   v: 1;
   /** The bot's id: the balloon remembers its size and place per bot. */
@@ -69,7 +113,7 @@ export interface FloatingSnapshot {
   /** The "Fly away during tasks" setting. */
   flyAway: boolean;
   /** Short texts the mascot shows: the mood meter's label, the parked badge's, its hoot. */
-  hints: { mood: string; working: string; hoot?: string; pin?: string };
+  hints: { mood: string; working: string; hoot?: string; pin?: string; call?: string };
   /** The "Activity level" setting; normal when absent. */
   liveliness?: Liveliness;
   /** The followed thread's context use, for the energy bar; null before its first turn. */
@@ -78,6 +122,8 @@ export interface FloatingSnapshot {
   mascot?: MascotLook;
   /** The app's theme (skin and brand accent), for the balloon; the window's default when absent. */
   theme?: FloatingTheme;
+  /** The live voice call with this bot, when there is one. */
+  call?: FloatingCall | null;
 }
 
 
@@ -88,7 +134,8 @@ export interface FloatingSnapshot {
 export type FloatingEvent =
   | { type: "click" | "context" | "dismiss" | "open" | "play" | "pet" }
   | { type: "menu"; id: string }
-  | { type: "send"; text: string };
+  | { type: "send"; text: string }
+  | { type: "call"; action: FloatingCallAction; voice?: string; patch?: Record<string, string | number | boolean> };
 
 export interface FloatingRect {
   x: number;
@@ -120,6 +167,8 @@ export interface FloatingWindowBridge {
   send(event: FloatingEvent): void;
   ready(): void;
   onState(callback: (state: FloatingSnapshot) => void): () => void;
+  /** The call's levels (optional: an older preload lacks it). */
+  onLevel?(callback: (levels: FloatingCallLevels) => void): () => void;
 }
 
 /** window.ogb.floatingBots, from electron/preload.cjs (the local main page only). */
@@ -129,6 +178,8 @@ export interface FloatingBotsBridge {
   setAlwaysOnTop(botId: string, on: boolean): Promise<boolean>;
   list(): Promise<string[]>;
   update(botId: string, snapshot: FloatingSnapshot): void;
+  /** The call's levels for that bot's window (optional: an older preload lacks it). */
+  level?(botId: string, levels: FloatingCallLevels): void;
   onEvent(cb: (value: { botId: string; event: FloatingEvent }) => void): () => void;
   onClosed(cb: (value: { botId: string }) => void): () => void;
   /** A window is ready but has no state: send it again (optional: an older preload lacks it). */
@@ -150,6 +201,8 @@ export function mascotFields(snapshot: Partial<FloatingSnapshot>): Pick<Floating
       mood: typeof snapshot.hints?.mood === "string" ? snapshot.hints.mood : "",
       working: typeof snapshot.hints?.working === "string" ? snapshot.hints.working : "",
       ...(typeof snapshot.hints?.hoot === "string" ? { hoot: snapshot.hints.hoot } : {}),
+      ...(typeof snapshot.hints?.pin === "string" ? { pin: snapshot.hints.pin } : {}),
+      ...(typeof snapshot.hints?.call === "string" ? { call: snapshot.hints.call } : {}),
     },
     liveliness: snapshot.liveliness === "calm" || snapshot.liveliness === "lively" ? snapshot.liveliness : "normal",
   };
@@ -171,7 +224,8 @@ export function isFloatingSnapshot(value: unknown): value is FloatingSnapshot {
 /** The brain's check of what came back from a window (main already validated it). */
 export function isFloatingEvent(value: unknown): value is FloatingEvent {
   if (!value || typeof value !== "object") return false;
-  const event = value as { type?: unknown; id?: unknown; text?: unknown };
+  const event = value as { type?: unknown; id?: unknown; text?: unknown; action?: unknown };
+  if (event.type === "call") return CALL_ACTIONS.has(event.action as FloatingCallAction);
   if (event.type === "menu") return typeof event.id === "string" && ID.test(event.id);
   if (event.type === "send") return typeof event.text === "string" && event.text.trim().length > 0;
   return ["click", "context", "dismiss", "open", "play", "pet"].includes(event.type as string);

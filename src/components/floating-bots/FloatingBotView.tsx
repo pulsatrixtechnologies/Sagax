@@ -29,6 +29,7 @@ import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
 import { mascotFields, type FloatingEvent, type FloatingPose, type FloatingSnapshot } from "./protocol";
 import type { Size } from "./window-frame";
+import { MascotCallCardView, MascotCallPill, type LevelSource, type MascotCallCard } from "./MascotCall";
 import type { MascotLook } from "../../../shared/mascot-look";
 
 // The Hibou 98 extras (retro balloon stylesheet, Trombi's sparkle) load only
@@ -54,6 +55,8 @@ const OWL_SIZE = 120;
 /** The stage around it: big enough that no spin, flip, jump or spread wing is ever cut off (fit.ts). */
 const STAGE = mascotStage(OWL_SIZE);
 export const MASCOT_SIZE = { width: STAGE.width, height: STAGE.height } as const;
+/** The call card's gap to the character's head, px. */
+const CARD_GAP = 6;
 /** The character's own box in the stage: the balloon may come right up to it. */
 const OWL_BOX = { left: STAGE.left, top: STAGE.top, size: OWL_SIZE } as const;
 
@@ -107,6 +110,8 @@ export interface FloatingBotViewProps {
   onSide?: (side: BalloonSide) => void;
   /** Desktop: the room the open balloon may take, so the window is sized once rather than per frame. */
   onReserve?: (reserve: Size | null, exact: boolean) => void;
+  /** The voice call's levels as they come (its waveform, the mascot's bounce). */
+  onLevels?: LevelSource;
 }
 
 interface CharacterProps {
@@ -282,7 +287,7 @@ function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnap
   );
 }
 
-export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve }: FloatingBotViewProps) {
+export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve, onLevels }: FloatingBotViewProps) {
   // an older brain may not send the mascot's fields yet
   const snapshot: FloatingSnapshot = given.hints ? given : { ...given, ...mascotFields(given) };
   const [menuOpen, setMenuOpen] = useState(false);
@@ -305,8 +310,9 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const gaze = useRef<{ x: number; y: number } | null>(null);
   const pet = useRef(newStroke());
   const lastClick = useRef<number | null>(null);
-  // a chat in progress keeps the mascot home: it neither wanders nor flies off with the balloon
-  const chatOpen = Boolean(snapshot.balloon);
+  // a chat or a call in progress keeps the mascot home: it neither wanders nor flies off with the balloon
+  const call = snapshot.call ?? null;
+  const chatOpen = Boolean(snapshot.balloon) || Boolean(call);
   const task = mascotTaskFor(snapshot.task, chatOpen);
   const mascotOptions = () => ({
     reduced,
@@ -459,27 +465,47 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const [side, setSide] = useState<BalloonSide>({ below: Boolean(below), right: false });
   const [room, setRoom] = useState({ x: 0, y: 0, w: BALLOON_MAX_W, h: 420 });
   const balloonOpen = Boolean(balloon);
-  chattingRef.current = balloonOpen;
+  // the call pill's card (settings, transcript) opens where the balloon goes
+  const [callCard, setCallCard] = useState<MascotCallCard>(null);
+  useEffect(() => {
+    if (!call) setCallCard(null);
+  }, [call]);
+  const callCardShown = Boolean(call && (callCard || call.note || call.notice));
+  const panelOpen = balloonOpen || callCardShown;
+  chattingRef.current = balloonOpen || Boolean(call);
   useLayoutEffect(() => {
-    if (!balloonOpen) return;
+    if (!panelOpen) return;
     const next = balloonSide(pilot ? "desktop" : "overlay", Boolean(below), STAGE.height);
     setSide(next.side);
     setRoom(next.room);
     onSide?.(next.side);
     // decided once per opening
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [balloonOpen]);
+  }, [panelOpen]);
+
+  // On a call the mascot bounces with its bot's voice (the stage's --fb-voice, set
+  // straight on the element: no render per level) and leans in while the person talks
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!call || !onLevels || !stage) return;
+    const off = onLevels((levels) => stage.style.setProperty("--fb-voice", String(levels.bot)));
+    return () => {
+      off();
+      stage.style.removeProperty("--fb-voice");
+    };
+  }, [Boolean(call), onLevels]);
 
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (menuOpen) setMenuOpen(false);
+      else if (callCard) setCallCard(null);
       else if (balloon) onEvent({ type: "dismiss" });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen, balloon, onEvent]);
+  }, [menuOpen, callCard, balloon, onEvent]);
 
   // With no balloon to type in, give the keyboard back to whatever had it (the balloon takes it when it opens).
   const hasInput = Boolean(balloon?.input);
@@ -556,6 +582,10 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     if (start.moved) {
       mover.moved();
       dispatch({ type: "drag", now: now(), on: false });
+    } else if (!start.menu && snapshot.call?.botAudible) {
+      // on a call the mascot is the pill's avatar: a click while its bot speaks cuts it, as in the app
+      setMenuOpen(false);
+      onEvent({ type: "call", action: "interrupt" });
     } else if (!start.menu) {
       setMenuOpen(false);
       // a click opens the chat at once; a second click soon after opens the app instead
@@ -593,7 +623,12 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           hover={hover}
           wantsKeyboard={wantsKeyboard}
           pinLabel={snapshot.hints.pin ?? ""}
+          callLabel={!call ? snapshot.hints.call : undefined}
         />
+      )}
+      {call && callCardShown && (
+        // right above the character's head, over the stage's empty room (no gap of empty stage between them)
+        <MascotCallCardView call={call} name={snapshot.name} card={callCard} onEvent={onEvent} hover={hover} style={side.below ? undefined : { marginBottom: -(STAGE.top - CARD_GAP + 8) }} />
       )}
       {menuOpen && (
         <div role="menu" aria-label={snapshot.name} className={cn("fb-menu", retro && "r98-menu")} onPointerEnter={() => hover(true)} onPointerLeave={() => hover(false)}>
@@ -622,6 +657,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
         data-activity={activity}
         data-3d=""
         data-away={away ? "" : undefined}
+        data-call={call && !away ? (call.muted || call.phase === "held" ? "quiet" : call.phase) : undefined}
         style={{ "--fb-owl": owlHex(snapshot.color), ...(away ? {} : { width: STAGE.width, height: STAGE.height, "--fb-feet": `${STAGE.top + OWL_SIZE - 2}px` }) } as React.CSSProperties}
       >
         {retro && !away && (
@@ -698,6 +734,11 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
             />
           </span>
         </button>
+        {call && (
+          <div className="fb-call" style={{ top: STAGE.top + OWL_SIZE + 2 }}>
+            <MascotCallPill call={call} name={snapshot.name} card={callCard} onCard={setCallCard} onEvent={onEvent} hover={hover} levels={onLevels} />
+          </div>
+        )}
         </>
         )}
       </div>

@@ -40,7 +40,8 @@ html[data-floating-bot] #root {
   width: max-content;
   padding: 8px 6px 4px;
 }
-.fb-root.fb-window .fb-balloon {
+.fb-root.fb-window .fb-balloon,
+.fb-root.fb-window .fb-call-card {
   max-width: none;
 }
 
@@ -901,4 +902,65 @@ html[data-floating-bot] #root {
    one-shot bursts finish, and the mascot itself keeps moving (at half rate). */
 .fb-root[data-chatting] .fb-body .skin-fx-live * {
   animation-play-state: paused !important;
+}
+
+/* ─── a voice call with the mascot (MascotCall.tsx) ───────────────────── */
+/* The app's call pill, scaled down, under the mascot's feet: inside the
+   stage's empty room, so the window does not grow for it. */
+.fb-root .fb-call-btn {
+  margin-left: auto;
+}
+.fb-root .fb-call {
+  position: absolute;
+  left: 50%;
+  z-index: 2;
+  width: min(200px, 100%);
+  transform: translateX(-50%);
+}
+.fb-root .fb-call-pill {
+  animation: fb-pop 0.16s ease-out both;
+}
+.fb-root .fb-call-card {
+  position: relative;
+  z-index: 2;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  animation: fb-pop 0.16s ease-out both;
+}
+/* The mascot is the pill's avatar: it bounces with its bot's voice
+   (--fb-voice, 0..1, from the call's levels) and leans in to listen. Its own
+   clips keep running; these compose with them (translate, scale, rotate). */
+.fb-root .fb-stage[data-call] .fb-body {
+  transition: rotate 0.25s ease-out, translate 0.08s linear, scale 0.08s linear;
+}
+.fb-root .fb-stage[data-call="speaking"] .fb-body {
+  translate: 0 calc(var(--fb-voice, 0) * -5px);
+  scale: calc(1 + var(--fb-voice, 0) * 0.04) calc(1 + var(--fb-voice, 0) * 0.06);
+}
+.fb-root .fb-stage[data-call="listening"] .fb-body {
+  rotate: -2deg;
+}
+.fb-root .fb-stage[data-call="hearing"] .fb-body {
+  rotate: -6deg;
+  translate: 0 -2px;
+}
+.fb-root[data-reduced] .fb-stage[data-call] .fb-body,
+.fb-root[data-reduced] .fb-call-pill,
+.fb-root[data-reduced] .fb-call-card {
+  translate: none;
+  scale: none;
+  rotate: none;
+  transition: none;
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fb-root .fb-stage[data-call] .fb-body,
+  .fb-root .fb-call-pill,
+  .fb-root .fb-call-card {
+    translate: none;
+    scale: none;
+    rotate: none;
+    transition: none;
+    animation: none;
+  }
 }

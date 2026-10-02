@@ -30,4 +30,9 @@ contextBridge.exposeInMainWorld("floatingBotWindow", {
     ipcRenderer.on("floating-bot:state", handler);
     return () => ipcRenderer.removeListener("floating-bot:state", handler);
   },
+  onLevel: (callback) => {
+    const handler = (_event, levels) => callback(levels);
+    ipcRenderer.on("floating-bot:level", handler);
+    return () => ipcRenderer.removeListener("floating-bot:level", handler);
+  },
 });

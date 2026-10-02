@@ -7,7 +7,11 @@
 // instructions, memory, tools, approvals, payer rules, the speaker's
 // attribution and private-thread rules, the transcript in the thread). xAI
 // only hears (speech to text) and reads the bot's own words aloud.
-import { useCallback, useEffect, useRef, useState } from "react";
+//
+// The engine (LiveCallEngine) runs once, window-wide (CallEngineHost), and
+// publishes the call (live-call-store.ts); the app's pill (LiveCall) and the
+// desktop mascot's only show it and drive it.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useStore, useStreaming, visibleMessages, type Bot } from "@/state/store";
 import { clearVoiceCallId, currentCall, endCall, setVoiceCallId } from "@/lib/call";
@@ -16,21 +20,20 @@ import { VoiceCall, type BargeInMetrics, type TurnMetrics } from "@/lib/voice-mo
 import { readCallSettings } from "@/lib/voice-mode/call-settings";
 import type { CallState } from "@/lib/voice-mode/call-machine";
 import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
+import { publishLiveCall, retractLiveCall, useLiveCall, type LiveCallData, type LiveCallMetrics } from "@/lib/voice-mode/live-call-store";
 import { t } from "@/lib/i18n";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "../PendingApproval";
 import { VoiceModeBar, type VoiceAccessCard } from "./VoiceModeBar";
 
-export interface CallMetrics {
-  /** the person stopped talking -> the first sample of the answer (ms) */
-  firstAudioMs?: number;
-  /** the person stopped talking -> the turn's words were sent (ms) */
-  sentMs?: number;
-  /** first voiced frame over the bot -> the bot ducked / cancelled (ms) */
-  duckMs?: number;
-  bargeInMs?: number;
-}
+/**
+ * firstAudioMs: the person stopped talking -> the first sample of the answer;
+ * sentMs: -> the turn's words were sent; duckMs / bargeInMs: first voiced
+ * frame over the bot -> the bot ducked / cancelled (all ms).
+ */
+export type CallMetrics = LiveCallMetrics;
 
-export function LiveCall({ bot }: { bot: Bot }) {
+/** Runs the call with this bot and publishes it; draws nothing. */
+export function LiveCallEngine({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
   const { streaming } = useStreaming();
   const [call, setCall] = useState<VoiceCall | null>(null);
@@ -38,7 +41,6 @@ export function LiveCall({ bot }: { bot: Bot }) {
   const [heard, setHeard] = useState("");
   const [caption, setCaption] = useState("");
   const [note, setNote] = useState<string | null>(null);
-  const [refusal] = useState<VoiceAccessCard | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<CallMetrics>({});
   const [interrupted, setInterrupted] = useState<Set<string>>(() => new Set());
@@ -246,6 +248,53 @@ export function LiveCall({ bot }: { bot: Bot }) {
     }
   }, [call, messages, approval, question, bot.name]);
 
+  // ── what every surface shows ─────────────────────────────────────────
+  const [startedAt] = useState(() => Date.now());
+  const lines = messages.filter((m) => m.kind === "text" && m.text?.trim()).slice(-8);
+  const transcriptKey = lines.map((m) => `${m.id}:${m.text!.length}:${interrupted.has(m.id) ? 1 : 0}`).join("|");
+  const transcript = useMemo(
+    () => lines.map((m) => ({ id: m.id, who: m.role === "user" ? ("you" as const) : ("bot" as const), text: m.text!.trim(), interrupted: interrupted.has(m.id) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transcriptKey],
+  );
+  const data = useMemo<LiveCallData | null>(
+    () =>
+      call && state
+        ? {
+            botId: bot.id,
+            call,
+            state,
+            startedAt,
+            heard,
+            caption,
+            note,
+            notice,
+            transcript,
+            metrics,
+            retry: () => {
+              setNote(null);
+              void call.retry();
+            },
+          }
+        : null,
+    [bot.id, call, state, startedAt, heard, caption, note, notice, transcript, metrics],
+  );
+  useEffect(() => {
+    if (data) publishLiveCall(data);
+  }, [data]);
+  useEffect(() => {
+    if (!call) return;
+    return () => retractLiveCall(call);
+  }, [call]);
+  return null;
+}
+
+/** The app's call pill for this bot, over the call the engine runs. */
+export function LiveCall({ bot }: { bot: Bot }) {
+  const live = useLiveCall();
+  const data = live?.botId === bot.id ? live : null;
+  const call = data?.call ?? null;
+
   // ── keys: Escape hangs up; Space interrupts, or talks in push-to-talk ─
   useEffect(() => {
     if (!call) return;
@@ -279,27 +328,22 @@ export function LiveCall({ bot }: { bot: Bot }) {
     };
   }, [bot.id, call]);
 
-  if (!call || !state) return null;
-  const transcript = messages
-    .filter((m) => m.kind === "text" && m.text?.trim())
-    .slice(-8)
-    .map((m) => ({ id: m.id, who: m.role === "user" ? ("you" as const) : ("bot" as const), text: m.text!.trim(), interrupted: interrupted.has(m.id) }));
+  if (!data) return null;
+  const refusal: VoiceAccessCard | null = null;
   return (
     <VoiceModeBar
       bot={bot}
-      call={call}
-      state={state}
-      heard={heard}
-      caption={caption}
-      note={note}
-      notice={notice}
+      call={data.call}
+      state={data.state}
+      heard={data.heard}
+      caption={data.caption}
+      note={data.note}
+      notice={data.notice}
       refusal={refusal}
-      transcript={transcript}
-      metrics={metrics}
-      onRetry={() => {
-        setNote(null);
-        void call.retry();
-      }}
+      transcript={data.transcript}
+      metrics={data.metrics}
+      startedAt={data.startedAt}
+      onRetry={data.retry}
       onEnd={() => endCall(bot.id)}
     />
   );
