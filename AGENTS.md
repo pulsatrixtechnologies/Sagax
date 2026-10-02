@@ -436,3 +436,24 @@ Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
 - MCP sign-in is ours (`server/mcp-oauth.ts`, vault `mcp-oauth.enc` and
   `mcp-oauth.key`, both left out of workspace backups). Upstream's own
   MCP sign-in manager and routes were not taken.
+
+## No phone-home
+
+Sagax contacts no service of the original OpenMausBot project and sends no
+telemetry. Keep these rules, each covered by a test:
+
+- Updates come only from our GitHub releases: `electron/update-feed.mjs` pins
+  electron-updater to `pulsatrixtechnologies/pulsa-bot` (channel latest,
+  pre-releases opt-in in Settings > General). Tests:
+  `electron/update-feed.node-test.mjs`, `electron/updater.test.mjs`.
+- No analytics: `src/lib/analytics.ts` is a no-op and `posthog-js` is gone.
+- `electron/upstream-hosts.mjs` is the block list (every `openmausbot.*`
+  domain, `posthog.com`, the upstream author's GitHub). Main guards its fetch
+  and every Electron session; the server imports `server/network-guard.ts`
+  first. Upstream defaults stay empty: Cloud (`CLOUD_ORIGIN`, bridges behind
+  `--sagax-cloud`), control plane (`OMB_CONTROL_PLANE_URL` of ours only),
+  Admin portal, Pro link, team catalog (`SAGAX_TEAM_LIBRARY_URL`).
+- `pnpm check:no-phone-home` (run by `package:prepare` and
+  `electron/no-phone-home.node-test.mjs`) fails when a bundle names a blocked
+  host outside its reviewed allowlist; `server/no-phone-home.e2e.test.ts`
+  audits a server start and a chat turn.
