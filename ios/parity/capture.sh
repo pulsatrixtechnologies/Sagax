@@ -9,8 +9,9 @@
 #                                                "system" follows the simulator)
 #   PARITY_APPEARANCE=light ios/parity/capture.sh  the simulator's appearance
 #   PARITY_OUT=/tmp/shots ios/parity/capture.sh  where the PNGs go
-#   ios/parity/capture.sh cards 22-appearance    extra screens: a chat with every
-#                                                card type (store preview), and
+#   ios/parity/capture.sh cards cards-top 22-appearance  extra screens: a chat with
+#                                                every card type (store preview; its end
+#                                                and its first cards), and
 #                                                Settings > Appearance
 #
 # Then: python3 ios/parity/diff.py [--gate]
@@ -131,6 +132,7 @@ for screen in "${SCREENS[@]}"; do
   [ -n "$ENVIRONMENT" ] && ARGS+=(-parityEnvironment "$ENVIRONMENT")
   # "cards": the store preview's Scout chat with every card type, no fixture.
   [ "$screen" = "cards" ] && ARGS=(-store-preview -cards-preview -open-first -companion.prefs.rosterDensity standard)
+  [ "$screen" = "cards-top" ] && ARGS=(-store-preview -cards-preview -cards-top -open-first -companion.prefs.rosterDensity standard)
   [ -n "$SKIN" ] && ARGS+=(-paritySkin "$SKIN")
   xcrun simctl launch "$UDID" "$BUNDLE_ID" "${ARGS[@]}" >/dev/null
   sleep "$WAIT"

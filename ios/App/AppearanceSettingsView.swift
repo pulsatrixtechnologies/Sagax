@@ -79,19 +79,26 @@ struct AppearanceSettingsView: View {
         }
     }
 
+    /// Two previews a row. Not lazy: thirteen cards at most, and every one
+    /// exists for VoiceOver and the UI tests as soon as the page does.
     private func skinGrid(_ skins: [SkinID], selected: SkinID, slot: String) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-            ForEach(skins) { skin in
-                SkinPreviewCard(skin: skin, selected: skin == selected) {
-                    if slot == "computer" {
-                        themes.choose(skin, client: client)
-                    } else if slot == "fixed" {
-                        themes.update { $0.fixedSkin = skin }
-                    } else {
-                        themes.update { skin.isDark ? ($0.darkSkin = skin) : ($0.lightSkin = skin) }
+        let rows = stride(from: 0, to: skins.count, by: 2).map { Array(skins[$0..<min($0 + 2, skins.count)]) }
+        return VStack(spacing: 10) {
+            ForEach(rows, id: \.first) { row in
+                HStack(alignment: .top, spacing: 10) {
+                    ForEach(row) { skin in
+                        SkinPreviewCard(skin: skin, selected: skin == selected, identifier: "skin.\(slot).\(skin.rawValue)") {
+                            if slot == "computer" {
+                                themes.choose(skin, client: client)
+                            } else if slot == "fixed" {
+                                themes.update { $0.fixedSkin = skin }
+                            } else {
+                                themes.update { skin.isDark ? ($0.darkSkin = skin) : ($0.lightSkin = skin) }
+                            }
+                        }
                     }
+                    if row.count == 1 { Color.clear.frame(maxWidth: .infinity) }
                 }
-                .accessibilityIdentifier("skin.\(slot).\(skin.rawValue)")
             }
         }
         .padding(.horizontal, 23.17)
@@ -106,6 +113,7 @@ struct SkinPreviewCard: View {
     @Environment(\.themePalette) var themePalette
     let skin: SkinID
     let selected: Bool
+    var identifier: String?
     let action: () -> Void
 
     var body: some View {
@@ -149,8 +157,9 @@ struct SkinPreviewCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(verbatim: skin.name))
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier(identifier ?? "skin.\(skin.rawValue)")
     }
 
     private func miniature(_ p: SkinPalette) -> some View {

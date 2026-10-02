@@ -238,16 +238,15 @@ struct ThemeRoot: ViewModifier {
 }
 
 /// Black keeps the system tint the references were measured with; every
-/// other skin tints controls with its accent, as the desktop does.
+/// other skin tints controls with its accent, as the desktop does. One
+/// modifier with an optional tint, never an `if`: a branch here would give
+/// the whole app a new identity on a skin change and drop every view's state
+/// (the open settings sheet, the navigation stack).
 private struct ThemeTint: ViewModifier {
     let palette: SkinPalette
 
     func body(content: Content) -> some View {
-        if palette.id == .black || palette.id == .dim {
-            content
-        } else {
-            content.tint(palette.accent.color)
-        }
+        content.tint(palette.id == .black || palette.id == .dim ? nil : palette.accent.color)
     }
 }
 

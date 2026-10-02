@@ -246,8 +246,8 @@ final class SettingsUITests: XCTestCase {
     }
 
     /// Dim is not only the settings sheet: closing it, the home behind is
-    /// drawn on the Dim background too, and following the phone again (dark
-    /// simulator) puts back exactly #141414.
+    /// drawn on the Dim background too, Black puts back exactly #141414, and
+    /// following the phone again wears the default pair.
     @MainActor
     func testDimSkinAppliesToTheHomeAndSystemRestoresBlack() {
         let app = launch()
@@ -256,8 +256,12 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 10))
         XCTAssertTrue(eventually(5) { self.homeBackground(app) == 0x1C1C1E }, "home background \(String(homeBackground(app), radix: 16))")
 
-        setSkin(nil, in: app)
+        setSkin("black", in: app)
         XCTAssertTrue(eventually(5) { self.homeBackground(app) == 0x141414 }, "home background \(String(homeBackground(app), radix: 16))")
+
+        // Following the phone: Black on a dark simulator, Pulsatrix Light on a light one.
+        setSkin(nil, in: app)
+        XCTAssertTrue(eventually(5) { [0x141414, 0xEEF2F8].contains(self.homeBackground(app)) }, "home background \(String(homeBackground(app), radix: 16))")
     }
 
     /// Picking a skin redraws everything at once, the page doing the picking
@@ -278,6 +282,7 @@ final class SettingsUITests: XCTestCase {
             XCTAssertTrue(app.element("theme.mode.fixed").exists || app.element("skin.fixed.\(skin)").exists, "still on Appearance")
         }
         // the root row names the skin worn now
+        for _ in 0..<8 where !app.element("settings-back").firstMatch.isHittable { app.swipeDown() }
         app.element("settings-back").firstMatch.tap()
         let row = app.element("settings-appearance")
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -300,6 +305,7 @@ final class SettingsUITests: XCTestCase {
     /// Opens Settings > Appearance from the home or the settings root.
     @MainActor
     private func openAppearance(in app: XCUIApplication) {
+        if app.element("theme.mode.system").exists { return }
         if !app.element("settings-close").exists {
             let open = app.element("home-account")
             XCTAssertTrue(open.waitForExistence(timeout: 10))
@@ -324,8 +330,10 @@ final class SettingsUITests: XCTestCase {
             card.tap()
             for _ in 0..<8 where !app.element("settings-back").firstMatch.isHittable { app.swipeDown() }
         } else {
+            for _ in 0..<8 where !app.element("theme.mode.system").isHittable { app.swipeDown() }
             app.element("theme.mode.system").tap()
         }
+        for _ in 0..<8 where !app.element("settings-back").firstMatch.isHittable { app.swipeDown() }
         app.element("settings-back").firstMatch.tap()
         let close = app.element("settings-close")
         XCTAssertTrue(close.waitForExistence(timeout: 5))

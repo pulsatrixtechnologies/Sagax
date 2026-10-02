@@ -37,6 +37,16 @@ final class SkinsTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
 
+    func testBotColoursAreDeepenedToReadOnLightSkins() {
+        let cyan = SkinColor(0x0EA5C6)
+        let white = SkinColor(0xFFFFFF)
+        XCTAssertLessThan(cyan.contrast(on: white), 4.5)
+        let ink = cyan.readable(on: white)
+        XCTAssertGreaterThanOrEqual(ink.contrast(on: white), 4.5)
+        XCTAssertGreaterThan(ink.blue, ink.red, "keeps its hue")
+        XCTAssertEqual(SkinColor(0x0B1526).readable(on: white), SkinColor(0x0B1526), "already readable: unchanged")
+    }
+
     func testContrastMaths() {
         XCTAssertEqual(SkinColor(0xFFFFFF).contrast(on: SkinColor(0x000000)), 21, accuracy: 0.01)
         XCTAssertEqual(SkinColor(0x777777).contrast(on: SkinColor(0xFFFFFF)), 4.48, accuracy: 0.01)

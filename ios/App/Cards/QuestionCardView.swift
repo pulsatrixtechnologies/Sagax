@@ -104,7 +104,7 @@ struct QuestionCardView: View {
         HStack(alignment: .firstTextBaseline) {
             Label("\(chat.name) has a question", systemImage: "questionmark.bubble.fill")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(settled ? Theme.attentionSecondary : tint)
+                .foregroundStyle(settled ? Theme.attentionSecondary : Theme.readable(tint))
             Spacer(minLength: 8)
             if questions.count > 1, !settled {
                 Text("\(answeredCount) of \(questions.count)")
@@ -233,7 +233,7 @@ struct QuestionCardView: View {
                 .foregroundStyle(complete ? Color.white : Theme.disabledCapsuleText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
-                .background(Capsule().fill(complete ? tint : Theme.disabledCapsule))
+                .background(Capsule().fill(complete ? Theme.readable(tint) : Theme.disabledCapsule))
         }
         .buttonStyle(.plain)
         .disabled(!complete || answering)

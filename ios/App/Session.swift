@@ -258,6 +258,10 @@ final class Session: ObservableObject {
                 }
                 focusedMessageId = "progress2"
             }
+            if arguments.contains("-cards-top") {
+                // The cards chat from its first cards (the theme captures).
+                focusedMessageId = "c-tool"
+            }
             if arguments.contains("-chat-compaction-preview"),
                var receipt = state.messages["preview-gmail"]?.last {
                 receipt.id = "preview-compaction"

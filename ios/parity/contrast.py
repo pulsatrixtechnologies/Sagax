@@ -114,13 +114,13 @@ def score_tile(tile: np.ndarray) -> float | None:
     return float(np.percentile(ratios, 90))
 
 
-def check(path: Path, minimum: float, annotate: bool) -> list[tuple[float, tuple[int, int, int, int]]]:
+def check(path: Path, minimum: float, annotate: bool, top_pt: float = STATUS_BAR_PT) -> list[tuple[float, tuple[int, int, int, int]]]:
     image = Image.open(path).convert("RGB")
     rgb = np.asarray(image)
     h, w = rgb.shape[:2]
     sx, sy = w / SCREEN_PT[0], h / SCREEN_PT[1]
     tw, th = int(TILE_PT[0] * sx), int(TILE_PT[1] * sy)
-    top = int(STATUS_BAR_PT * sy)
+    top = int(top_pt * sy)
     failures = []
     for y in range(top, h - th + 1, th):
         for x in range(0, w - tw + 1, tw):
@@ -145,14 +145,15 @@ def main() -> int:
     parser.add_argument("--gate", action="store_true")
     parser.add_argument("--annotate", action="store_true")
     parser.add_argument("--allow", type=int, default=0, help="failing tiles tolerated per screen")
+    parser.add_argument("--top", type=float, default=STATUS_BAR_PT, help="points skipped at the top (54: the status bar; 130 also skips the header's scroll-edge fade, which fades text on purpose)")
     parser.add_argument("--baseline", type=Path, help="a folder of reference PNGs: tiles that already fail there are by design")
     args = parser.parse_args()
     bad = 0
     for directory in args.dirs:
         for png in sorted(directory.glob("*.png")):
-            failures = check(png, args.min, args.annotate)
+            failures = check(png, args.min, args.annotate, args.top)
             if args.baseline and (args.baseline / png.name).exists():
-                known = {box for _, box in check(args.baseline / png.name, args.min, False)}
+                known = {box for _, box in check(args.baseline / png.name, args.min, False, args.top)}
                 failures = [f for f in failures if f[1] not in known]
             worst = min((f[0] for f in failures), default=None)
             status = "ok" if len(failures) <= args.allow else "LOW"

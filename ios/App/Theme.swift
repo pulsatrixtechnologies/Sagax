@@ -60,6 +60,17 @@ enum Theme {
         palette.id == .black || palette.id == .dim ? reference : themed()
     }
 
+    /// A bot's colour used as text: unchanged on a dark skin, deepened on a
+    /// light one until it reads on the skin's cards (4.5:1).
+    static func readable(_ color: Color) -> Color {
+        guard !palette.isDark else { return color }
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a) else { return color }
+        func byte(_ v: CGFloat) -> UInt32 { UInt32(max(0, min(1, v)) * 255 + 0.5) }
+        let skin = SkinColor(byte(r) << 16 | byte(g) << 8 | byte(b))
+        return skin.readable(on: palette.card).color
+    }
+
     /// The app background: #141414 in Black (the parity value).
     static var bg: Color { palette.bg.color }
     /// The computer view draws on pure black, whatever the skin.

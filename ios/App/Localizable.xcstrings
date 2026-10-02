@@ -1167,6 +1167,18 @@
             "state": "translated",
             "value": "Computador"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordinateur"
+          }
         }
       }
     },
@@ -10980,6 +10992,666 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ontem %@"
+          }
+        }
+      }
+    },
+    "Match the phone": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match the phone"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comme le téléphone"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Igual ao telefone"
+          }
+        }
+      }
+    },
+    "A light skin and a dark skin, switching with the phone.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A light skin and a dark skin, switching with the phone."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un thème clair et un thème sombre, qui suivent le téléphone."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um tema claro e um tema escuro, que acompanham o telefone."
+          }
+        }
+      }
+    },
+    "Always one skin": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always one skin"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours le même thème"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sempre o mesmo tema"
+          }
+        }
+      }
+    },
+    "The same skin whatever the phone's appearance.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The same skin whatever the phone's appearance."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le même thème, que le téléphone soit clair ou sombre."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O mesmo tema, com o telefone claro ou escuro."
+          }
+        }
+      }
+    },
+    "Same as my computer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same as my computer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comme mon ordinateur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Igual ao meu computador"
+          }
+        }
+      }
+    },
+    "The skin and font chosen on the computer. A skin picked here is saved there too.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The skin and font chosen on the computer. A skin picked here is saved there too."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le thème et la police choisis sur l'ordinateur. Un thème choisi ici y est aussi enregistré."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O tema e a fonte escolhidos no computador. Um tema escolhido aqui também é salvo lá."
+          }
+        }
+      }
+    },
+    "Light": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clair"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claro"
+          }
+        }
+      }
+    },
+    "Skin": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skin"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thème"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tema"
+          }
+        }
+      }
+    },
+    "Computer's skin": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computer's skin"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thème de l'ordinateur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tema do computador"
+          }
+        }
+      }
+    },
+    "Font": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Font"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Police"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fonte"
+          }
+        }
+      }
+    },
+    "Skin default": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skin default"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Celle du thème"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Padrão do tema"
+          }
+        }
+      }
+    },
+    "Serif": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serif"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec empattements"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serifada"
+          }
+        }
+      }
+    },
+    "Fixed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixed"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixe"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixo"
+          }
+        }
+      }
+    },
+    "Black is the phone's own look. The other skins are the computer's, with the same colours.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Black is the phone's own look. The other skins are the computer's, with the same colours."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Black est l'allure propre au téléphone. Les autres thèmes sont ceux de l'ordinateur, avec les mêmes couleurs."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Black é o visual próprio do telefone. Os outros temas são os do computador, com as mesmas cores."
+          }
+        }
+      }
+    },
+    "This computer does not share its appearance yet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This computer does not share its appearance yet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet ordinateur ne partage pas encore son apparence."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este computador ainda não compartilha a aparência."
+          }
+        }
+      }
+    },
+    "Could not reach the computer to read its appearance.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not reach the computer to read its appearance."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de joindre l'ordinateur pour lire son apparence."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível acessar o computador para ler a aparência."
+          }
+        }
+      }
+    },
+    "Could not save the appearance on the computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not save the appearance on the computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'enregistrer l'apparence sur l'ordinateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível salvar a aparência no computador."
+          }
+        }
+      }
+    },
+    "The phone's own look. Near-black, quiet greys.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The phone's own look. Near-black, quiet greys."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'allure propre au téléphone. Presque noir, des gris discrets."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O visual próprio do telefone. Quase preto, cinzas discretos."
+          }
+        }
+      }
+    },
+    "The phone's own look, lifted to a softer grey.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The phone's own look, lifted to a softer grey."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'allure propre au téléphone, éclaircie en un gris plus doux."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O visual próprio do telefone, clareado para um cinza mais suave."
+          }
+        }
+      }
+    },
+    "Pulsatrix blue. Deep navy with a soft glow from the top.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsatrix blue. Deep navy with a soft glow from the top."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le bleu Pulsatrix. Un marine profond, avec une douce lueur venue du haut."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O azul Pulsatrix. Azul-marinho profundo com um brilho suave vindo de cima."
+          }
+        }
+      }
+    },
+    "Pulsatrix blue on a bright ice ground, with the same soft glow from the top.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsatrix blue on a bright ice ground, with the same soft glow from the top."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le bleu Pulsatrix sur un fond glacé lumineux, avec la même douce lueur venue du haut."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O azul Pulsatrix sobre um fundo gelo claro, com o mesmo brilho suave vindo de cima."
+          }
+        }
+      }
+    },
+    "The original. Cool and dark.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original. Cool and dark."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'original. Froid et sombre."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O original. Frio e escuro."
+          }
+        }
+      }
+    },
+    "Daylight on paper, warm and quiet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daylight on paper, warm and quiet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La lumière du jour sur du papier, chaude et calme."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Luz do dia sobre papel, quente e tranquila."
+          }
+        }
+      }
+    },
+    "Night shift. Dark, warm, lit in brass.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Night shift. Dark, warm, lit in brass."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quart de nuit. Sombre, chaud, éclairé de laiton."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turno da noite. Escuro, quente, iluminado em latão."
+          }
+        }
+      }
+    },
+    "Cool daylight. Porcelain and deep teal.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cool daylight. Porcelain and deep teal."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lumière du jour fraîche. Porcelaine et sarcelle profond."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Luz do dia fria. Porcelana e verde-azulado profundo."
+          }
+        }
+      }
+    },
+    "Quiet charcoal and softened steel blue.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quiet charcoal and softened steel blue."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charbon discret et bleu acier adouci."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carvão discreto e azul-aço suavizado."
+          }
+        }
+      }
+    },
+    "Clean daylight with a restrained navy accent.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clean daylight with a restrained navy accent."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une lumière du jour nette, avec une touche de marine retenue."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Luz do dia limpa, com um toque discreto de azul-marinho."
+          }
+        }
+      }
+    },
+    "Muted plum after dark, calm and low-key.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muted plum after dark, calm and low-key."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prune feutrée à la nuit tombée, calme et discrète."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ameixa suave depois do anoitecer, calma e discreta."
+          }
+        }
+      }
+    },
+    "Midnight in reverse. Near-white, ink-black bubbles.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Midnight in reverse. Near-white, ink-black bubbles."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Midnight à l'envers. Presque blanc, des bulles noir d'encre."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Midnight ao contrário. Quase branco, balões preto-tinta."
+          }
+        }
+      }
+    },
+    "Bevelled grey windows on a teal desktop, straight out of the late 90s.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bevelled grey windows on a teal desktop, straight out of the late 90s."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Des fenêtres grises en relief sur un bureau sarcelle, tout droit sorties de la fin des années 90."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Janelas cinza em relevo sobre uma área de trabalho verde-azulada, direto do fim dos anos 90."
           }
         }
       }

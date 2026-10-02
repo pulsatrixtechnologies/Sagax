@@ -75,7 +75,7 @@ struct RoutineRunCardView: View {
                         withAnimation(.snappy) { expanded.toggle() }
                     }
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(Theme.readable(tint))
                     .buttonStyle(.plain)
                 }
             }

@@ -51,6 +51,21 @@ public struct SkinColor: Equatable, Hashable, Sendable {
         return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
+    /// This colour, deepened (on a light ground) or lifted (on a dark one)
+    /// just enough to read as text on `ground`: a bot colour such as cyan or
+    /// yellow keeps its hue on a light skin and still clears `minimum`.
+    public func readable(on ground: SkinColor, minimum: Double = 4.5) -> SkinColor {
+        guard contrast(on: ground) < minimum else { return self }
+        let target = ground.luminance > 0.4 ? SkinColor(0x000000) : SkinColor(0xFFFFFF)
+        var step = 0.05
+        while step <= 1 {
+            let mixed = target.opacity(step).over(SkinColor(hex))
+            if mixed.contrast(on: ground) >= minimum { return mixed }
+            step += 0.05
+        }
+        return target
+    }
+
     /// `#RRGGBB` or `#RRGGBBAA`.
     public init?(css: String) {
         var text = css.trimmingCharacters(in: .whitespaces)
@@ -306,7 +321,7 @@ public struct SkinPalette: Equatable, Sendable {
     }()
 
     /// A desktop skin on the phone: the desktop's tokens, placed on the
-    /// phone's surfaces by role (see docs/ios-themes.md for the table).
+    /// phone's surfaces by role.
     public static func derived(_ id: SkinID, _ t: DesktopSkinTokens) -> SkinPalette {
         let quiet = t.inkTertiary
         return SkinPalette(

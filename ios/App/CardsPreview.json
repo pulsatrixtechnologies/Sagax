@@ -10,7 +10,7 @@
    "color": "cyan",
    "section": "Launch",
    "chiefOfStaff": true,
-   "unread": true,
+   "unread": false,
    "modelSelection": {
     "instanceId": "preview",
     "model": "preview"
@@ -179,7 +179,8 @@
      "at": 1787028800000,
      "parentId": "c-question"
     }
-   ]
+   ],
+   "pinned": true
   },
   {
    "id": "preview-pixel",
@@ -190,7 +191,7 @@
    "notifications": true,
    "color": "purple",
    "section": "Launch",
-   "pinned": true,
+   "pinned": false,
    "unread": false,
    "modelSelection": {
     "instanceId": "preview",

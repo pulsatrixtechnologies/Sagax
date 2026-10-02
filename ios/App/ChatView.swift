@@ -1703,7 +1703,7 @@ struct TextBubble: View {
                 if let speaker, !mine {
                     Text(speaker.name)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(MausPalette.color(speaker.color))
+                        .foregroundStyle(Theme.readable(MausPalette.color(speaker.color)))
                 }
                 ForEach(message.voiceNotes) { note in
                     VoiceNoteBubble(note: note, tint: MausPalette.color(chat.color))
@@ -1973,7 +1973,7 @@ struct CredentialRequestCardView: View {
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: "key.fill")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(Theme.readable(tint))
                     .frame(width: 38, height: 38)
                     .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
 
@@ -2024,7 +2024,7 @@ struct CredentialRequestCardView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("Enter securely on this phone", systemImage: "lock.shield.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(Theme.readable(tint))
 
                     if preparedSubmission == nil {
                         SecureField(placeholder, text: $value)
@@ -2094,7 +2094,7 @@ struct CredentialRequestCardView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("Pair again to enter here", systemImage: "qrcode")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(Theme.readable(tint))
                     Text("This pairing predates secure phone entry. Scan a fresh QR from OpenMausBot, or finish this request on your computer.")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
@@ -2107,7 +2107,7 @@ struct CredentialRequestCardView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("Secure connection required", systemImage: "lock.shield.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(Theme.readable(tint))
                     Text("Switch to Secure phone access (HTTPS) or Tailscale, then try again. You can still finish this request on your computer.")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.textSecondary)
@@ -2316,7 +2316,7 @@ struct CardView: View {
                 if card.isPending {
                     Label("\(chat.name) is waiting on you", systemImage: "hand.raised.fill")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(Theme.readable(tint))
                 }
                 Text(card.title)
                     .font(.system(size: 16, weight: .semibold))
@@ -2389,7 +2389,7 @@ struct CardView: View {
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 40)
                                     .background(
-                                        Capsule().fill(Self.isRefusal(option) ? Theme.cardRaised : tint)
+                                        Capsule().fill(Self.isRefusal(option) ? Theme.cardRaised : Theme.readable(tint))
                                     )
                             }
                             .buttonStyle(.plain)
