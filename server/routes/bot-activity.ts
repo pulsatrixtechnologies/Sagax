@@ -310,6 +310,7 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
         startedAt: child.startedAt,
         updatedAt: child.startedAt,
         ...(readable && child.threadId ? { threadId: child.threadId } : {}),
+        ...(readable && child.threadId && activityStatusActive(status) && deps.threadWritable(child.botId, child.threadId, viewerId) ? { canStop: true } : {}),
         startedBy: { kind: "bot", name: bot.name },
       } satisfies BotActivityItem;
     });
