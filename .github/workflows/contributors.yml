@@ -40,7 +40,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: '.github/cla-signatures.json'
-          path-to-document: 'https://github.com/pulsatrixtechnologies/pulsa-bot/blob/main/CLA.md'
+          path-to-document: 'https://github.com/pulsatrixtechnologies/sagax/blob/main/CLA.md'
           branch: 'cla-signatures'
           allowlist: 'milind-soni,dependabot[bot],renovate[bot],github-actions[bot]'
           custom-notsigned-prcomment: >-

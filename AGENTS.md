@@ -9,8 +9,8 @@ isolated fixture; never verify mutations against the user's live app or data.
 All work stays in `pulsatrixtechnologies` repositories. Never open a pull
 request, issue, or push against the original OpenMausBot project
 (`milind-soni/OpenMausBot`) or any other upstream. Push branches only to
-`origin` (`pulsatrixtechnologies/pulsa-bot`) and target PRs at it. Pass
-`--repo pulsatrixtechnologies/pulsa-bot` to `gh` so it never picks a parent
+`origin` (`pulsatrixtechnologies/sagax`) and target PRs at it. Pass
+`--repo pulsatrixtechnologies/sagax` to `gh` so it never picks a parent
 repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
@@ -812,7 +812,7 @@ Sagax contacts no service of the original OpenMausBot project and sends no
 telemetry. Keep these rules, each covered by a test:
 
 - Updates come only from our GitHub releases: `electron/update-feed.mjs` pins
-  electron-updater to `pulsatrixtechnologies/pulsa-bot` (channel latest,
+  electron-updater to `pulsatrixtechnologies/sagax` (channel latest,
   pre-releases opt-in in Settings > General). Tests:
   `electron/update-feed.node-test.mjs`, `electron/updater.test.mjs`.
 - No analytics: `src/lib/analytics.ts` is a no-op and `posthog-js` is gone.

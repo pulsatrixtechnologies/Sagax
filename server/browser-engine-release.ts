@@ -51,7 +51,7 @@ const RELEASES = new Map<string, AgentBrowserReleaseAsset>([
       // Hosted on our own vendor release (docs/browser-packaging.md).
       target: "win32-x64", version: "0.36.0-omb.1",
       asset: "agent-browser-win32-x64-0.36.0-omb.1.exe",
-      url: "https://github.com/pulsatrixtechnologies/pulsa-bot/releases/download/browser-engine-v0.36.0-omb.1/agent-browser-win32-x64-0.36.0-omb.1.exe",
+      url: "https://github.com/pulsatrixtechnologies/sagax/releases/download/browser-engine-v0.36.0-omb.1/agent-browser-win32-x64-0.36.0-omb.1.exe",
       sha256: "33bee834f6a6072ec8688b0914726e0262874d758f69f27e8baf7eaac6b5ed15", bytes: 13806080,
     },
   ],

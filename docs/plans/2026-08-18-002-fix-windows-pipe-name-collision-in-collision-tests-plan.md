@@ -97,7 +97,7 @@ The pre-existing broker tests never hit this because they use distinct thread id
 - `pnpm exec vitest run server/drivers/claude.test.ts` — 33 tests declared; on Windows, 33 pass; on macOS and Ubuntu, 32 pass and 1 is skipped (the Windows-only pipe-naming test at line 66).
 - `pnpm typecheck` — clean.
 - Full `pnpm test` on macOS (vitest + broker:test + updater + packaged-server).
-- The Windows `typecheck + test (windows-latest)` job is green on two consecutive runs. If it is not, obtain the job log (authenticated `gh api repos/pulsatrixtechnologies/pulsa-bot/actions/jobs/<id>/logs`) and name the failing test before any further change; do not guess a second fix.
+- The Windows `typecheck + test (windows-latest)` job is green on two consecutive runs. If it is not, obtain the job log (authenticated `gh api repos/pulsatrixtechnologies/sagax/actions/jobs/<id>/logs`) and name the failing test before any further change; do not guess a second fix.
 
 ## Definition of Done
 

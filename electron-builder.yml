@@ -27,7 +27,7 @@ protocols:
 publish:
   - provider: github
     owner: pulsatrixtechnologies
-    repo: pulsa-bot
+    repo: sagax
 
 directories:
   buildResources: build

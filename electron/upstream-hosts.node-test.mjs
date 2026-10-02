@@ -21,7 +21,7 @@ test("the original project's services, analytics and upstream repositories are b
 
 test("our own releases, providers and look-alike hosts pass", () => {
   for (const url of [
-    "https://github.com/pulsatrixtechnologies/pulsa-bot/releases/latest",
+    "https://github.com/pulsatrixtechnologies/sagax/releases/latest",
     "https://raw.githubusercontent.com/pulsatrixtechnologies/teams/main/catalog.json",
     "https://api.openai.com/v1/responses",
     "https://openmausbot.com.example.test/",
@@ -52,5 +52,5 @@ test("an Electron session cancels blocked requests", () => {
   const answer = (url) => { let result; listener({ url }, (value) => { result = value; }); return result; };
   assert.deepEqual(answer("https://cloud.openmausbot.com/x"), { cancel: true });
   assert.deepEqual(answer("https://github.com/milind-soni/x"), { cancel: true });
-  assert.deepEqual(answer("https://github.com/pulsatrixtechnologies/pulsa-bot"), { cancel: false });
+  assert.deepEqual(answer("https://github.com/pulsatrixtechnologies/sagax"), { cancel: false });
 });

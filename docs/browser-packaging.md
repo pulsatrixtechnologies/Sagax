@@ -101,7 +101,7 @@ not replace the packaged-app tests. Published vendor bytes must not be
 overwritten; a changed build needs a new revision and reviewed pins.
 
 The pinned Windows bytes are hosted on Sagax's own release
-[`browser-engine-v0.36.0-omb.1`](https://github.com/pulsatrixtechnologies/pulsa-bot/releases/tag/browser-engine-v0.36.0-omb.1)
+[`browser-engine-v0.36.0-omb.1`](https://github.com/pulsatrixtechnologies/sagax/releases/tag/browser-engine-v0.36.0-omb.1)
 (a pre-release not marked latest, so the in-app updater never offers it),
 with `SHA256SUMS`, the license and the patch. Packaging never downloads them
 from a third-party release page. To rebuild them without GitHub Actions, run

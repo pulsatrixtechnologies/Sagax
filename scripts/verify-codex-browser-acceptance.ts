@@ -75,7 +75,7 @@ try {
     await api("PATCH", `/api/bots/${bot.id}`, { computer: "browser", browser: true });
     const prompts = [
       "Open Google Calendar in your own browser.",
-      "Open the GitHub page for pulsatrixtechnologies/pulsa-bot in your browser and tell me how the project is described there.",
+      "Open the GitHub page for pulsatrixtechnologies/sagax in your browser and tell me how the project is described there.",
     ];
     for (const [index, prompt] of prompts.entries()) {
       const entry: any = { model, botId: bot.id, prompt };
@@ -108,7 +108,7 @@ try {
       const tabs = entry.browser.observations.filter((item: any) => item.kind === "tabs").at(-1)?.tabs ?? [];
       entry.verified = entry.wait?.status === "settled" && tabs.some((tab: any) => tab.active && (index === 0
         ? /^https:\/\/(?:calendar\.google\.com\/|accounts\.google\.com\/.*calendar\.google\.com|workspace\.google\.com\/(?:intl\/[a-z-]+\/)?products\/calendar\/)/.test(tab.url)
-        : tab.url === "https://github.com/pulsatrixtechnologies/pulsa-bot"));
+        : tab.url === "https://github.com/pulsatrixtechnologies/sagax"));
       save();
       console.log(JSON.stringify({ model, index, status: entry.wait?.status, browser: entry.browser }));
       if (entry.wait?.status !== "settled") break;

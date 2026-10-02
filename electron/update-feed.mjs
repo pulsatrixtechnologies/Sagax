@@ -1,5 +1,5 @@
 // The one place updates come from: Sagax's own GitHub releases
-// (pulsatrixtechnologies/pulsa-bot, tags pulsa-vX.Y.Z). The feed is pinned in
+// (pulsatrixtechnologies/sagax, tags pulsa-vX.Y.Z). The feed is pinned in
 // code with setFeedURL, so an app-update.yml or dev-app-update.yml pointing
 // anywhere else is never read. Channel stays "latest"; pre-releases are an
 // opt-in kept in this computer's userData (update-preferences.json).
@@ -9,10 +9,13 @@ import { join } from "node:path";
 export const UPDATE_FEED = Object.freeze({
   provider: "github",
   owner: "pulsatrixtechnologies",
-  repo: "pulsa-bot",
+  repo: "sagax",
 });
 
 const RELEASES_PREFIX = `https://github.com/${UPDATE_FEED.owner}/${UPDATE_FEED.repo}/releases`;
+// The repository was renamed from pulsa-bot to sagax; GitHub redirects the old
+// path, which apps up to 0.4.0 still request.
+const LEGACY_RELEASES_PREFIX = `https://github.com/${UPDATE_FEED.owner}/pulsa-bot/releases`;
 // Release assets redirect from github.com to GitHub's object storage.
 const ASSET_HOSTS = new Set(["objects.githubusercontent.com", "release-assets.githubusercontent.com"]);
 
@@ -27,7 +30,7 @@ export function isOurReleaseUrl(url) {
   if (parsed.protocol !== "https:") return false;
   if (ASSET_HOSTS.has(parsed.hostname)) return true;
   const plain = `${parsed.origin}${parsed.pathname}`;
-  return plain === RELEASES_PREFIX || plain.startsWith(`${RELEASES_PREFIX}/`) || plain === `${RELEASES_PREFIX}.atom`;
+  return [RELEASES_PREFIX, LEGACY_RELEASES_PREFIX].some((prefix) => plain === prefix || plain.startsWith(`${prefix}/`) || plain === `${prefix}.atom`);
 }
 
 const PREFS_FILE = "update-preferences.json";

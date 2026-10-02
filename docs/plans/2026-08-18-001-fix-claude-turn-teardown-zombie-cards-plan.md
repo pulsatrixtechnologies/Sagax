@@ -7,7 +7,7 @@ product_contract_source: ce-plan-bootstrap
 
 # fix: Kill the child process and drop late asks on Claude turn teardown
 
-**Origin issue:** [pulsatrixtechnologies/pulsa-bot#211](https://github.com/pulsatrixtechnologies/pulsa-bot/issues/211) — "Turn teardown discards the permission broker without ensuring child CLI/MCP exit — late approval requests become dead 'zombie' cards"
+**Origin issue:** [pulsatrixtechnologies/sagax#211](https://github.com/pulsatrixtechnologies/sagax/issues/211) — "Turn teardown discards the permission broker without ensuring child CLI/MCP exit — late approval requests become dead 'zombie' cards"
 
 ---
 
@@ -132,4 +132,4 @@ Rationale: fix A's contract is about the OS process, not just emitted events —
 - [ ] New `result-then-hang` fake-CLI mode added; new tests for both units pass.
 - [ ] All pre-existing tests in `server/drivers/claude.test.ts` and `server/kill-tree.test.ts` still pass (R3).
 - [ ] No changes to `codex.ts`, `acp/core.ts`, `antigravity.ts`, or the issue's point-3 startup sweep — explicitly deferred.
-- [ ] Changes committed with a message referencing pulsatrixtechnologies/pulsa-bot#211.
+- [ ] Changes committed with a message referencing pulsatrixtechnologies/sagax#211.

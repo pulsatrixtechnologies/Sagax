@@ -6,7 +6,7 @@ description: Build and verify the Windows desktop build (NSIS installer + latest
 # Windows release
 
 Ships `Pulsa Bot-<version>-setup.exe` and its update feed to
-[pulsatrixtechnologies/pulsa-bot](https://github.com/pulsatrixtechnologies/pulsa-bot/releases).
+[pulsatrixtechnologies/sagax](https://github.com/pulsatrixtechnologies/sagax/releases).
 The unified release workflow mirrors the same bytes to the legacy releases
 repository for apps installed before the updater migration.
 
@@ -61,7 +61,7 @@ Get-Content release\win-unpacked\resources\app-update.yml  # feed config
 - Missing `server/index.js` → `utilityProcess.fork` fails → the 🐭 "Couldn't start
   the bot server" page.
 - Missing `ui/index.html` → server has nothing to serve → black window.
-- `app-update.yml` must point at `pulsatrixtechnologies/pulsa-bot` and, while the
+- `app-update.yml` must point at `pulsatrixtechnologies/sagax` and, while the
   build is unsigned, **must not contain `publisherName`** — electron-updater would
   reject every update as untrusted.
 
@@ -82,7 +82,7 @@ carries both platforms.
 
 ```powershell
 Copy-Item release/Pulsa Bot-<version>-setup.exe release/Pulsa Bot-setup.exe
-gh release upload v<version> --repo pulsatrixtechnologies/pulsa-bot `
+gh release upload v<version> --repo pulsatrixtechnologies/sagax `
   release/Pulsa Bot-<version>-setup.exe `
   release/Pulsa Bot-setup.exe `
   release/Pulsa Bot-<version>-setup.exe.blockmap `

@@ -164,7 +164,7 @@ describe("outward links", () => {
     expect(DOCS_URL).toBe(`${APP_REPOSITORY}/tree/main/docs`);
     expect(RELEASES_URL).toBe(`${APP_REPOSITORY}/releases`);
     expect(LICENSE_URL).toBe(`${APP_REPOSITORY}/blob/main/LICENSE`);
-    expect(APP_REPOSITORY).toBe("https://github.com/pulsatrixtechnologies/pulsa-bot");
+    expect(APP_REPOSITORY).toBe("https://github.com/pulsatrixtechnologies/sagax");
   });
 });
 
