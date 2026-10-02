@@ -24,6 +24,7 @@ import { assertOutsideProtected, createSharedCua, personalSecretPaths, protected
 import { createLendingActivity } from "./lending-activity.mjs";
 import { openDesktopTunnel } from "./desktop-tunnel.mjs";
 import { createLocalVm } from "./local-vm.mjs";
+import { archiveKind, extractArchive, extractedFolderName } from "./archive-extract.mjs";
 
 export { createLocalVm };
 
@@ -68,8 +69,9 @@ const READ_DEFAULT = 256_000;
 const READ_MAX = 1_000_000;
 const WRITE_MAX = 1024 * 1024;
 const FETCH_MAX = 256 * 1024;
-const STAGE_MAX = 25 * 1024 * 1024;
-const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "stage_file"]);
+/** The server's largest upload (an archive, server/attachments.ts). */
+const STAGE_MAX = 90 * 1024 * 1024;
+const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "stage_file", "extract_archive"]);
 const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final"]);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
@@ -309,6 +311,16 @@ export async function executeBridgeOperation(operation, deps, signal) {
       }
       return text(operation.final ? `saved ${target}` : "ok");
     }
+    case "extract_archive": {
+      // A staged archive, unpacked next to it with the safety rules of
+      // archive-extract.mjs (no links, nothing outside the folder, bomb limits).
+      const dir = deps.attachmentsDir;
+      const name = attachmentName(operation.name);
+      if (!archiveKind(name)) throw new Error("Not an archive");
+      const result = await extractArchive(path.join(dir, name), path.join(dir, attachmentName(extractedFolderName(name))));
+      if (!result.extracted) return failure(`Not unpacked: ${result.manifest.reason ?? result.manifest.status}`);
+      return text(`unpacked ${result.manifest.files} files into ${path.join(dir, extractedFolderName(name))}`);
+    }
     default:
       throw new Error("Unsupported operation");
   }
@@ -320,7 +332,7 @@ const describe = operation => {
     case "read_file": case "write_file": case "list_files": case "search_files": return String(operation.path ?? "~").slice(0, 300);
     case "fetch_url": case "browse": try { return new URL(operation.url).host; } catch { return ""; }
     case "computer_call": return String(operation.tool_name ?? "");
-    case "stage_file": return String(operation.name ?? "");
+    case "stage_file": case "extract_archive": return String(operation.name ?? "");
     default: return "";
   }
 };
