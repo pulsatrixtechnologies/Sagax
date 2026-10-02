@@ -318,7 +318,7 @@ posixOnly("organization server: the desktop bridge", () => {
     expect(operations.find((operation) => operation.action === "extract_archive")).toMatchObject({ name: staged });
     const prompt = lastPrompt();
     expect(prompt).toContain("<attached-archive name=\\\"project.zip\\\"");
-    expect(prompt).toContain(`extracted-path=\\\"/Users/alice/Library/Caches/Sagax/attachments/${staged.replace(/\.zip$/, "")}\\\"`);
+    expect(prompt).toContain(`extracted-path=\\"/Users/alice/Library/Caches/Sagax/attachments/${staged.replace(/\.zip$/, "")}\\"`);
     expect(prompt).toContain("project/src/main.ts (9 B)");
     // Bob cannot read the manifest of an archive in Alice's private thread
     expect([403, 404]).toContain((await api("GET", `/api/attachments/${file.path.split("/").at(-1)}/manifest`, bob)).status);

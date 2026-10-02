@@ -3,7 +3,7 @@
 // first lines instead of flooding the composer; a file dropped anywhere
 // on the window attaches by path.
 import { useEffect, useRef, useState } from "react";
-import { ClipboardPaste, File as FileIcon, Image as ImageIcon, LoaderCircle, MessageSquareText, X } from "lucide-react";
+import { ClipboardPaste, File as FileIcon, FileArchive, Image as ImageIcon, LoaderCircle, MessageSquareText, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
   attachmentImageUrl,
@@ -14,6 +14,7 @@ import {
   type PasteAttachment,
 } from "@/lib/composer-attachments";
 import { AttachmentPreviewDialog, previewImage, type PreviewImage } from "./AttachmentPreview";
+import { ArchiveContents } from "./ArchiveContents";
 import { CitationBadge } from "./CitationUI";
 import type { CitationAttachment } from "@/lib/citations";
 
@@ -198,6 +199,19 @@ export function ComposerAttachments({
                   {a.uploading ? "Uploading…" : formatSize(a.size)}
                 </div>
               </Chip>
+            ) : a.archive ? (
+              <Chip key={a.id} label="ARCHIVE" title={a.name} onRemove={() => onRemove(a.id)}>
+                <div className="flex min-h-[76px] flex-col justify-center gap-1">
+                  <div className="flex items-center gap-2">
+                    <FileArchive size={16} className="shrink-0 text-ink-secondary" />
+                    <div className="min-w-0">
+                      <div className="truncate text-[12px] text-ink">{a.name}</div>
+                      <div className="text-[10.5px] text-ink-tertiary">{formatSize(a.size)}</div>
+                    </div>
+                  </div>
+                  <ArchiveContents summary={a.archive} />
+                </div>
+              </Chip>
             ) : (
               <Chip key={a.id} label="FILE" title={a.path} onRemove={() => onRemove(a.id)}>
                 <div className="flex h-[76px] items-center gap-2">
@@ -224,11 +238,11 @@ function Chip({
   onRemove,
 }: {
   children: React.ReactNode;
-  label: "PASTED" | "FILE" | "IMAGE";
+  label: "PASTED" | "FILE" | "IMAGE" | "ARCHIVE";
   title: string;
   onRemove: () => void;
 }) {
-  const Icon = label === "PASTED" ? ClipboardPaste : label === "IMAGE" ? ImageIcon : FileIcon;
+  const Icon = label === "PASTED" ? ClipboardPaste : label === "IMAGE" ? ImageIcon : label === "ARCHIVE" ? FileArchive : FileIcon;
   return (
     <div
       title={title}
