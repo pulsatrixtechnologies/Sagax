@@ -1850,6 +1850,27 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.mcpConfig.mcpServers.ogb.args[0]).not.toContain("mcp-gate");
   });
 
+  it("pre-allows computer_select, never the tools it routes to", async () => {
+    await create();
+    const dump = join(scratch, "auto-computer.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+
+    await instance.adapter.sendTurn({
+      threadId: "t-auto-computer",
+      text: "hi",
+      integrations: { custom: {
+        "sagax-computer": { command: "node", args: ["proxy"], env: {} },
+        "sagax-desktop": { command: "node", args: ["proxy"], env: {} },
+      } },
+    });
+    await recorder.until((e) => e.type === "turn.completed");
+
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    const allowed = seen.argv[seen.argv.indexOf("--allowedTools") + 1] as string;
+    expect(allowed.split(",")).toContain("mcp__sagax-computer");
+    expect(allowed).not.toContain("mcp__sagax-desktop");
+  });
+
   it("mounts bot servers directly when the result budget is turned off", async () => {
     const dump = join(scratch, "gate-off.json");
     await create(undefined, { FAKE_CLAUDE_DUMP: dump, SAGAX_MCP_RESULT_BUDGET: "0" });

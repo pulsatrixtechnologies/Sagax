@@ -47,6 +47,9 @@ export interface OrgDirectoryEntry {
   /** A Perspicax service account (`kind: "service"`): never a person to
    * write to (server/people-dms.ts). */
   service?: true;
+  /** Admins only: this person's page in the Perspicax console
+   * (`<issuer>/console/users/<sub>`). Never sent to a member. */
+  manageUrl?: string;
 }
 
 export interface OrgDirectoryTeam {
@@ -114,9 +117,16 @@ export function routineDelegationManageUrl(issuer: string): string {
   return `${issuer.replace(/\/+$/, "")}/console/me/access#sagax`;
 }
 
+/** `<issuer>/console/users/<sub>`: a person's page in the Perspicax console,
+ * where an admin manages them. */
+export function perspicaxUserManageUrl(issuer: string, sub: string): string {
+  return `${issuer.replace(/\/+$/, "")}/console/users/${encodeURIComponent(sub)}`;
+}
+
 /** The directory as principals, sorted by name then login. Only people the
- * directory lists are returned; each carries the principal it upserted. */
-export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], bySubject: (iss: string, sub: string) => Principal | null): OrgDirectoryEntry[] {
+ * directory lists are returned; each carries the principal it upserted.
+ * `forAdmin` adds each person's console page (manageUrl). */
+export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], bySubject: (iss: string, sub: string) => Principal | null, forAdmin = false): OrgDirectoryEntry[] {
   const entries: OrgDirectoryEntry[] = [];
   for (const person of people) {
     const principal = bySubject(issuer, person.sub);
@@ -134,6 +144,7 @@ export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], b
       disabled: person.status === "disabled",
       ...(person.kind === "service" || person.type === "service" ? { service: true as const } : {}),
       teams: (principal.teams ?? []).map((team) => ({ id: team.id, manager: team.manager })),
+      ...(forAdmin ? { manageUrl: perspicaxUserManageUrl(issuer, person.sub) } : {}),
     });
   }
   const text = (value: string) => value.toLocaleLowerCase();
@@ -156,7 +167,7 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
     if (method === "GET" && path === "/api/org/directory") {
       res.setHeader("cache-control", "no-store");
       return json(res, 200, {
-        people: directory ? orgDirectoryEntries(deps.issuer, directory.people(), deps.bySubject) : [],
+        people: directory ? orgDirectoryEntries(deps.issuer, directory.people(), deps.bySubject, deps.viewerRole(auth) === "admin") : [],
         ...(deps.teams ? { teams: deps.teams() } : {}),
         ...(deps.viewer ? { viewer: deps.viewer(auth) } : {}),
       });

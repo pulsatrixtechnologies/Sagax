@@ -4,11 +4,26 @@
 import { otherAuthorName } from "@/lib/viewer";
 import { InitialsAvatar } from "./Avatar";
 import { useStore, type Message } from "@/state/store";
+import { t } from "@/lib/i18n";
 
 export function OtherAuthorLabel({ message }: { message: Pick<Message, "role" | "sender"> }) {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const name = otherAuthorName(message, state.config);
   if (!name) return null;
+  const personId = message.sender?.id?.trim();
+  if (personId) {
+    return (
+      <button
+        type="button"
+        data-open-person={personId}
+        onClick={() => dispatch({ type: "openPersonPanel", personId })}
+        title={t("personPanel.open", { name })}
+        className="mb-1 mr-1.5 max-w-[80%] truncate text-[12px] leading-4 text-ink-secondary hover:text-ink hover:underline"
+      >
+        {name}
+      </button>
+    );
+  }
   return <div className="mb-1 mr-1.5 max-w-[80%] truncate text-[12px] leading-4 text-ink-secondary">{name}</div>;
 }
 
@@ -22,12 +37,28 @@ export function PersonAvatar({ avatarUrl, initials, size = 20 }: { avatarUrl?: s
   );
 }
 
-/** Above the first line of another person's run in a group: avatar and name. */
-export function RoomPersonLabel({ name, initials, avatarUrl }: { name: string; initials: string; avatarUrl?: string }) {
-  return (
-    <div data-testid="room-person" className="-mb-1.5 ms-1.5 mt-3 flex items-center gap-1.5 px-1.5">
+/** Above the first line of another person's run in a group: avatar and name.
+ * With `onOpen` (a person of the directory), both open their panel. */
+export function RoomPersonLabel({ name, initials, avatarUrl, personId, onOpen }: { name: string; initials: string; avatarUrl?: string; personId?: string; onOpen?: (personId: string) => void }) {
+  const face = (
+    <>
       <PersonAvatar avatarUrl={avatarUrl} initials={initials} />
       <span className="max-w-[60vw] truncate text-[12px] font-medium leading-4 text-ink-secondary">{name}</span>
+    </>
+  );
+  return (
+    <div data-testid="room-person" className="-mb-1.5 ms-1.5 mt-3 flex items-center gap-1.5 px-1.5">
+      {personId && onOpen ? (
+        <button
+          type="button"
+          data-open-person={personId}
+          onClick={() => onOpen(personId)}
+          title={t("personPanel.open", { name })}
+          className="flex min-w-0 items-center gap-1.5 rounded-md hover:[&>span]:text-ink hover:[&>span]:underline"
+        >
+          {face}
+        </button>
+      ) : face}
     </div>
   );
 }

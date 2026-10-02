@@ -99,9 +99,12 @@ the configured TTS provider, half duplex).
   soft tone. On by default once enrolled; "Forget my voice" deletes it.
 - **Phone UX.** States connecting, listening, hearing, thinking, speaking,
   interrupted and on hold; earcons (connect, interrupt, ignored voice, hold,
-  end; can be turned off); a waveform of both sides (the bot above the line,
-  the person below); hold, mute, end; hands-free or push to talk (hold Space
-  or the hand button), set per computer in `omb.voiceCall.v1`.
+  end; can be turned off); a compact call pill centered under the name chip:
+  avatar (state and timer in its tooltip), a dotted waveform of both sides
+  (the bot's voice in the accent), Settings, Transcript, mute and end; the
+  card it opens holds the transcript as bubbles or the settings (with hold);
+  hands-free or push to talk (hold Space or the hand button), set per
+  computer in `omb.voiceCall.v1`.
 - **Approvals** are read aloud and answered by a spoken yes or no (English
   or French), as in calls.
 

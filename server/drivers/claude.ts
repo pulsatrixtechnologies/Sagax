@@ -9,6 +9,7 @@
 //   - the bot's cloud computer (boat.dev) via server/computer-proxy.ts
 //     — screenshot/exec/open_url, the CUA-on-the-boat bridge
 import { claudeDisallowedTools } from "./host-tools.ts";
+import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
 import { networkProxyEnvironment } from "./network-proxy.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
@@ -1610,6 +1611,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         mcpServers[name] = { ...server };
         botOwned.add(name);
       }
+      // computer_select only chooses among the computers this turn may
+      // already reach (server/auto-computer.ts): no card for the choice
+      // itself; every tool it routes to still rides the approval mode.
+      if (mcpServers[AUTO_COMPUTER_MCP_NAME]) allowed.push(`mcp__${AUTO_COMPUTER_MCP_NAME}`);
       // --strict-mcp-config (above) makes this config the CLI's only source
       // of MCP servers, so a server the bot's OWN project declares would
       // otherwise vanish with the machine's. Merge it last: a project file

@@ -282,6 +282,12 @@ const __SAGAX_DEFAULT_SERVER__: string;
       openExternal?(url: string): Promise<boolean>;
       /** Recolor the native window chrome for a skin; absent on older builds. */
       applySkin?(skin: string): Promise<boolean>;
+      /** Settings > Appearance > App icon (electron/app-icon.mjs). */
+      appIcon?: {
+        get(): Promise<{ platform: string; id: string | null; updatedAt: number | null }>;
+        set(request: { id: string; images: Array<{ size: number; png: string }> }): Promise<{ platform: string; id: string | null; updatedAt: number | null }>;
+        reset(): Promise<{ platform: string; id: null; updatedAt: null }>;
+      };
       /** Hibou 98: the assistant in its own always-on-top window (local desktop page only). */
       retroAssistant?: {
         setDetached(on: boolean): Promise<boolean>;
