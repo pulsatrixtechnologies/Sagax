@@ -24,7 +24,6 @@ import { WorkingDots } from "@/components/WorkingIndicator";
 import { MessageActions, messageActionClass } from "@/components/MessageActions";
 import { useSpeech } from "@/lib/tts/useSpeech";
 import { useCaptionChrome, useDesktopCapabilities, useMacInsetChrome } from "@/components/DesktopCapabilities";
-import { UsagePill } from "./UsagePill";
 import {
   api,
   currentTaskBot,
@@ -1373,7 +1372,6 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             </button>
           )}
           <TaskPicker bot={bot} />
-          <UsageChip bot={bot} />
           {/* Share, Inspector and the panel toggle move into the bot panel's
               top bar while it is open, the way Grok Bot's do. */}
           {!remoteClient && !panelOpen && <button
@@ -1649,13 +1647,3 @@ export function NewConversationInstead({ onNew }: { onNew: () => void }) {
   );
 }
 
-/** What the open task has spent and how full its context is: quiet until
- * the first turn settles. Hover shows the breakdown; click opens the bot's
- * settings, where the Usage card has the rest. */
-function UsageChip({ bot }: { bot: Bot }) {
-  const { state, dispatch } = useStore();
-  const usage = bot.tasks?.find((t) => t.threadId === bot.threadId)?.usage;
-  if (!usage) return null;
-  const billing = state.instances.find((i) => i.instanceId === bot.modelSelection.instanceId)?.snapshot.billing;
-  return <UsagePill usage={usage} billing={billing} onOpen={() => dispatch({ type: "toggleSettings", open: true, section: "usage" })} />;
-}

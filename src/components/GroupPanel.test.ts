@@ -40,4 +40,18 @@ describe("group panel", () => {
     expect(html).toContain("Only the group&#x27;s owner can change these settings.");
     expect(html).not.toContain('id="group-name-room"');
   });
+
+  it("edits the name in place for its owner, like a bot's, with the instructions behind the (i)", () => {
+    const html = render({ canEdit: true });
+    expect(html).toMatch(/<button[^>]*id="group-panel-title"[^>]*data-inline-edit="text"/);
+    expect(html).not.toContain('id="group-name-room"');
+    expect(html).toContain('data-description-info="button"');
+    expect(html).toContain('title="Be brief."');
+  });
+
+  it("shows the name as plain text to someone else", () => {
+    const html = render({ canEdit: false });
+    expect(html).toContain('<span id="group-panel-title"');
+    expect(html).not.toContain('data-inline-edit="text"');
+  });
 });

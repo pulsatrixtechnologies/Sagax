@@ -88,7 +88,7 @@
   "sidebar.aria": "Bots y navegación",
   "sidebar.search": "Buscar",
   "sidebar.searchAria": "Buscar bots y mensajes",
-  "sidebar.searchPlaceholder": "Buscar…",
+  "sidebar.search": "Buscar",
   "sidebar.noMatch": "Nada coincide con «{query}»",
   "sidebar.preview.waiting": "Esperándote…",
   "sidebar.preview.working": "Trabajando…",

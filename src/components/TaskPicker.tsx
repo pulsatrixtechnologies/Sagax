@@ -8,6 +8,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Activity, Check, FolderInput, MessagesSquare, Pencil, Pin, PinOff, Plus, Search, Trash2 } from "lucide-react";
 import { useStore, type Bot, type BotProject, type Group, type Task } from "@/state/store";
 import { cn } from "@/lib/cn";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import { formatTaskTokens, headlineTokens, usageDetail } from "@/lib/usage";
@@ -245,9 +246,10 @@ function ConversationTaskPicker({
         }}
         title={switchTitle}
         aria-label={t("task.switch")}
-        className="flex size-8 items-center justify-center rounded-md text-ink-secondary hover:bg-raised hover:text-ink"
+        aria-expanded={open}
+        className={cn(CIRCLE_BUTTON, "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60", open && "bg-elevated-hover")}
       >
-        <MessagesSquare size={18} />
+        <MessagesSquare size={18} strokeWidth={1.75} aria-hidden="true" />
       </button>
 
       {motion.shown && (
@@ -474,9 +476,12 @@ export function TaskPicker({ bot }: { bot: Bot }) {
 }
 
 /** The same task affordance in a channel. DMs never render it because their
- * transcript is the private bot-to-bot exchange rather than user work. */
+ * transcript is the private bot-to-bot exchange rather than user work. Like
+ * the bot's, it shows only while threads are on (Settings > Appearance). */
 export function GroupTaskPicker({ group }: { group: Group }) {
   const { dispatch } = useStore();
+  const showThreads = useShowThreads();
+  if (!showThreads) return null;
   return (
     <ConversationTaskPicker
       threadId={group.threadId}

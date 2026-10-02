@@ -175,7 +175,7 @@
   "sidebar.aria": "機器人與導覽",
   "sidebar.search": "搜尋",
   "sidebar.searchAria": "搜尋機器人與訊息",
-  "sidebar.searchPlaceholder": "搜尋…",
+  "sidebar.search": "搜尋",
   "sidebar.noMatch": "沒有符合「{query}」的項目",
   "sidebar.preview.waiting": "等待你的回應…",
   "sidebar.preview.waitingOnTeammate": "正在等待隊友…",

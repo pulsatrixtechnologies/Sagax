@@ -53,7 +53,7 @@ export function RoutineDelegationBanner({ routines, viewerPrincipalId, initial }
   );
 }
 
-export function RoutineList({ routines, loading, error, onOpen, onToggle, viewerPrincipalId }: {
+export function RoutineList({ routines, loading, error, onOpen, onToggle, viewerPrincipalId, grouped = false }: {
   routines: Routine[];
   /** Slice 6: the signed-in person on an organization server. */
   viewerPrincipalId?: string | null;
@@ -64,6 +64,8 @@ export function RoutineList({ routines, loading, error, onOpen, onToggle, viewer
   onOpen: (routine: Routine) => void;
   onLogs?: (routine: Routine) => void;
   onToggle?: (routine: Routine) => void;
+  /** The bot panel: one rounded card, rows split by hairlines. */
+  grouped?: boolean;
 }) {
   const sorted = [...routines].sort((a, b) => Number(b.enabled) - Number(a.enabled) || (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity) || a.name.localeCompare(b.name));
   return <div aria-label={t("routines.list")}>
@@ -72,9 +74,9 @@ export function RoutineList({ routines, loading, error, onOpen, onToggle, viewer
     {loading && <p role="status" className="flex items-center gap-2 p-3 text-[12px] text-ink-secondary"><Loader2 size={14} className="animate-spin" />{t("routines.loading")}</p>}
     {!loading && !error && sorted.length === 0 && <div className="rounded-xl border border-dashed border-hairline/50 p-5 text-center text-[13px] text-ink-secondary"><Repeat2 size={20} className="mx-auto mb-2 opacity-60" />{t("routines.empty")}</div>}
     {sorted.length > 0 && (
-      <div className="flex flex-col gap-0.5">
+      <div className={grouped ? "flex flex-col overflow-hidden rounded-xl border border-hairline-weak bg-card" : "flex flex-col gap-0.5"}>
         {sorted.map((routine) => (
-          <div key={routine.id} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover">
+          <div key={routine.id} data-routine-row className={grouped ? "flex items-center gap-2.5 border-b border-hairline-weak px-3 py-2.5 last:border-b-0 hover:bg-hover" : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover"}>
             <button type="button" onClick={() => onOpen(routine)} className="min-w-0 flex-1 text-left">
               <span className="block truncate text-[13px] leading-[18px] text-ink">{routine.name}</span>
               <span className="block truncate text-[13px] leading-[18px] text-ink-secondary">{routineScheduleState(routine)}</span>

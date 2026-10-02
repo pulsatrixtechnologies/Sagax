@@ -8,7 +8,7 @@ import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingL
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
-import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled } from "@/lib/feature-flags";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { withTourReset } from "@/lib/guided-tour";
@@ -691,13 +691,14 @@ function ExperimentalFeaturesRow() {
   const { state, dispatch } = useStore();
   const skillAuthoring = skillAuthoringEnabled(state.config);
   const browser = builtInBrowserEnabled(state.config);
+  const templates = templatesEnabled(state.config);
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
-  const [saving, setSaving] = useState<"skillAuthoring" | "browser" | null>(null);
+  const [saving, setSaving] = useState<"skillAuthoring" | "browser" | "templates" | null>(null);
   const [error, setError] = useState("");
 
-  const toggle = async (feature: "skillAuthoring" | "browser", next: boolean) => {
+  const toggle = async (feature: "skillAuthoring" | "browser" | "templates", next: boolean) => {
     if (saving) return;
     setSaving(feature);
     setError("");
@@ -720,7 +721,7 @@ function ExperimentalFeaturesRow() {
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser), total: 2 })}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates), total: 3 })}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
@@ -755,6 +756,21 @@ function ExperimentalFeaturesRow() {
           aria-label={t("settings.experimental.browserAria")}
           disabled={saving !== null || (!browser && !desktopBrowser && !browserInstallable)}
           onClick={() => void toggle("browser", !browser)}
+          className="disabled:cursor-wait disabled:opacity-50"
+        />
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-templates>
+        <div className="min-w-0">
+          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.templates")}</div>
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
+            {t("settings.experimental.templatesDetail")}
+          </div>
+        </div>
+        <Switch
+          checked={templates}
+          aria-label={t("settings.experimental.templatesAria")}
+          disabled={saving !== null}
+          onClick={() => void toggle("templates", !templates)}
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
