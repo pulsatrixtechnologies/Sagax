@@ -751,6 +751,9 @@
   },
   "12-settings-top": {
     "rects": [
+      { "rect": [21, 866, 46, 8], "why": "home row mascot below the sheet" },
+      { "rect": [300, 866, 80, 8], "why": "home row date below the sheet (relative to capture day)" },
+      { "rect": [148, 384, 46, 14], "why": "brand name in the Plugins subtitle (Sagax vs reference brand)" },
       {
         "rect": [
           0,
@@ -791,6 +794,9 @@
   },
   "14-settings-bottom": {
     "rects": [
+      { "rect": [21, 866, 46, 8], "why": "home row mascot below the sheet" },
+      { "rect": [300, 866, 80, 8], "why": "home row date below the sheet (relative to capture day)" },
+      { "rect": [40, 558, 100, 18], "why": "brand name of the terms row (Sagax vs reference brand)" },
       {
         "rect": [
           0,
@@ -822,6 +828,9 @@
   },
   "15-plugins": {
     "rects": [
+      { "rect": [21, 866, 46, 8], "why": "home row mascot below the sheet" },
+      { "rect": [300, 866, 80, 8], "why": "home row date below the sheet (relative to capture day)" },
+      { "rect": [0, 54, 402, 70], "why": "home header behind the sheet (photo)" },
       {
         "rect": [
           226,
@@ -844,6 +853,10 @@
   },
   "16-account": {
     "rects": [
+      { "rect": [21, 866, 46, 8], "why": "home row mascot below the sheet" },
+      { "rect": [300, 866, 80, 8], "why": "home row date below the sheet (relative to capture day)" },
+      { "rect": [176, 568, 160, 13], "why": "brand name in the delete footer (Sagax vs reference brand)" },
+      { "rect": [0, 54, 402, 70], "why": "home header behind the sheet (photo)" },
       {
         "rect": [
           40,
@@ -1040,6 +1053,9 @@
   },
   "21-bot-computer": {
     "rects": [
+      { "rect": [21, 866, 46, 8], "why": "home row mascot below the sheet" },
+      { "rect": [300, 866, 80, 8], "why": "home row date below the sheet (relative to capture day)" },
+      { "rect": [0, 54, 402, 70], "why": "home header behind the sheet (photo)" },
       {
         "rect": [
           300,

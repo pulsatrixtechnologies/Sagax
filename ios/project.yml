@@ -80,6 +80,11 @@ targets:
           - CFBundleURLName: com.openmausbot.companion.pairing
             CFBundleURLSchemes:
               - openmausbot
+          # Plugin sign-in from the phone returns here (sagax://oauth-done);
+          # ASWebAuthenticationSession catches it before the app does.
+          - CFBundleURLName: com.openmausbot.companion.oauth
+            CFBundleURLSchemes:
+              - sagax
         # REQUIRED, and easy to lose. Without a launch screen iOS runs the
         # app in compatibility scaling: letterboxed inside black bars, with
         # everything drawn oversized, on every modern iPhone. An empty
