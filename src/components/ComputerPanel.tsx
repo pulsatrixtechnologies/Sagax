@@ -1522,7 +1522,13 @@ export function ComputerPanel({
   // (src/components/computer/OrgComputerTab.tsx).
   const body = bridgeStatus ? (
     <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
-      <OrgComputerTab bridge={bridgeStatus} computerOff={bot.computer === "off"} botName={bot.name} />
+      <OrgComputerTab
+        bridge={bridgeStatus}
+        place={bot.computer ?? "auto"}
+        computerOff={bot.computer === "off"}
+        botName={bot.name}
+        onChangePlace={() => dispatch({ type: "toggleSettings", botId: bot.id, section: "access", open: true })}
+      />
       {!embedded && <div className="mt-6">
         <RoutinesSection key={bot.id} bot={bot} routines={botRoutines} runs={state.routineRuns} defaultRunOn={cloudRoutineReady ? "cloud" : "maus"} />
       </div>}

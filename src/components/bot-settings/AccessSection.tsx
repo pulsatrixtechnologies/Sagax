@@ -15,7 +15,7 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { mcpServersForBot, useMcpServers } from "@/lib/mcp-servers";
-import { placeOffered } from "@/lib/place";
+import { cloudComputersOffered, placeLabelKey, placeOffered } from "@/lib/place";
 import { shortPath } from "@/lib/short-path";
 import { useDesktopCapabilities } from "../DesktopCapabilities";
 import { CloudBackendPicker } from "../CloudBackendPicker";
@@ -565,66 +565,80 @@ export function AccessSection({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-hairline/40 p-4">
-        <div className="text-[13px] font-medium text-ink">Works on</div>
+      <div className="rounded-xl border border-hairline/40 p-4" data-works-on-org={organization ? "1" : "0"}>
+        <div className="text-[13px] font-medium text-ink">{t("computer.worksOn")}</div>
         <div className="mt-0.5 text-[13px] text-ink-secondary">
-          Where this bot works{bot.computer ? "" : " (currently: auto)"}. Browser is the built-in browser tab only; no desktop.
+          {t(organization ? "worksOn.helpOrg" : "worksOn.help")}{bot.computer ? "" : ` ${t("worksOn.currentlyAuto", { place: t(placeLabelKey("auto", organization)) })}`}
         </div>
         <ProposalStatus bot={bot} kind="owner" />
         <div className="mt-3 grid grid-cols-3 gap-1.5">
-          {([
-            [null, "Auto"],
-            ["cloud", "Cloud"],
-            ["vm", "Local VM"],
-            ["local", "This computer"],
-            ["browser", "Browser"],
-            ["off", "Off"],
-          ] as const).filter(([mode]) => mode === null || mode === "off" || placeOffered(mode, state.config)).map(([mode, label]) => (
-            <button
-              key={mode ?? "auto"}
-              disabled={(mode === "local" && !localSelectable) || (mode === "browser" && !browserSelectable)}
-              title={
-                mode === "local" && !localSelectable
-                  ? localDisabledReason ?? undefined
-                  : mode === "browser"
-                    ? browserSelectable ? "The built-in browser tab only; no desktop" : browserDisabledReason
-                    : mode === "off"
-                      ? "No computer and no built-in browser"
-                      : undefined
-              }
-              onClick={() => {
-                if ((mode === null && bot.computer === undefined) || mode === bot.computer) return;
-                if (mode === "local" && derived.approvalMode === "auto") setLocalAutoWarning(bot.id);
-                // a browser-only bot must actually have its browser: flip
-                // the per-bot switch on with the destination
-                else if (mode === "browser") patch({ computer: mode, browser: true });
-                else patch({ computer: mode });
-              }}
-              className={cn(
-                "rounded-lg border px-1.5 py-1.5 text-[12px] whitespace-nowrap",
-                ((mode === "local" && !localSelectable) || (mode === "browser" && !browserSelectable)) && "cursor-not-allowed opacity-40",
-                (mode === null ? bot.computer === undefined : bot.computer === mode)
-                  ? "border-hairline bg-control text-ink"
-                  : "border-hairline/40 text-ink-secondary hover:bg-control/60 hover:text-ink",
-              )}
-            >
-              {label}
-            </button>
-          ))}
+          {(([null, "cloud", "vm", "local", "browser", "off"] as const)
+            .filter((mode) => mode === null || mode === "off" || placeOffered(mode, state.config, organization))
+          ).map((mode) => {
+            const disabled = (mode === "local" && !localSelectable) || (mode === "browser" && !browserSelectable);
+            return (
+              <button
+                key={mode ?? "auto"}
+                type="button"
+                disabled={disabled}
+                title={
+                  mode === "local" && !localSelectable
+                    ? localDisabledReason ?? undefined
+                    : mode === "browser"
+                      ? browserSelectable ? t("worksOn.browserTitle") : browserDisabledReason
+                      : mode === "off"
+                        ? t("computer.dest.offDesc")
+                        : undefined
+                }
+                onClick={() => {
+                  if ((mode === null && bot.computer === undefined) || mode === bot.computer) return;
+                  if (mode === "local" && derived.approvalMode === "auto") setLocalAutoWarning(bot.id);
+                  // a browser-only bot must actually have its browser: flip
+                  // the per-bot switch on with the destination
+                  else if (mode === "browser") patch({ computer: mode, browser: true });
+                  else patch({ computer: mode });
+                }}
+                className={cn(
+                  "rounded-lg border px-1.5 py-1.5 text-[12px] whitespace-nowrap",
+                  disabled && "cursor-not-allowed opacity-40",
+                  (mode === null ? bot.computer === undefined : bot.computer === mode)
+                    ? "border-hairline bg-control text-ink"
+                    : "border-hairline/40 text-ink-secondary hover:bg-control/60 hover:text-ink",
+                )}
+              >
+                {t(placeLabelKey(mode ?? "auto", organization))}
+              </button>
+            );
+          })}
         </div>
+        {(!localSelectable || !browserSelectable) && (
+          <ul className="mt-2 flex flex-col gap-0.5 text-[11.5px] leading-relaxed text-ink-secondary" data-works-on-disabled>
+            {!localSelectable && placeOffered("local", state.config, organization) && (
+              <li>{t("worksOn.disabled", { place: t("place.local"), reason: localDisabledReason ?? t("place.unavailable") })}</li>
+            )}
+            {!browserSelectable && (
+              <li>{t("worksOn.disabled", { place: t("place.browser"), reason: browserDisabledReason })}</li>
+            )}
+          </ul>
+        )}
         {bot.computer === "off" && (
           <div className="mt-3 rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
-            <span className="font-medium text-ink">Off means no screen.</span>{" "}
-            This bot gets no computer and no built-in browser, so it cannot open a web page, click, or type
-            anywhere. Its connected apps, MCP servers, files and chat all still work.
+            <span className="font-medium text-ink">{t("worksOn.offTitle")}</span>{" "}
+            {t("worksOn.offBody")}
           </div>
         )}
-        {(!bot.computer || bot.computer === "cloud") && (
+        {organization && (!bot.computer || bot.computer === "cloud") && (
+          <div className="mt-3 rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary" data-works-on-cloud-org>
+            <span className="font-medium text-ink">{t("worksOn.cloudOrgTitle")}</span>{" "}
+            {t("worksOn.cloudOrgBody")}
+          </div>
+        )}
+        {!organization && (!bot.computer || bot.computer === "cloud") && (state.config?.cloudHome === true || cloudComputersOffered(state.config)) && (
           <>
             {!bot.computer && (
               <div className="mt-3 rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
-                <span className="font-medium text-ink">Auto cloud preference.</span>{" "}
-                This chooses what Auto may reuse during a task; viewing settings does not create or wake a computer.
+                <span className="font-medium text-ink">{t("worksOn.autoCloudTitle")}</span>{" "}
+                {t("worksOn.autoCloudBody")}
               </div>
             )}
             <CloudBackendPicker

@@ -1,62 +1,69 @@
 // The Computer tab on an organization server, self-contained so it slots
 // into any bot panel layout. It looks like the solo panel: one large screen
 // (ComputerScreen) with Play / Pause / Stop on it and "<Bot>'s screen" below,
-// showing the computer this person's bots use right now:
+// showing the computer this bot uses, as its Works on says
+// (src/lib/place.ts orgComputerFor):
 //
-// - "Mon ordinateur (VM locale)": the Local VM on their own computer, through
-//   the desktop app (src/lib/desktop-local-vm.ts, electron/local-vm.mjs),
-//   set up, repaired or started from the screen itself;
-// - "Environnement serveur": their server environment (power, live desktop
-//   through SandboxDesktopView).
+// - Auto and Cloud: the person's server environment (power, live desktop
+//   through SandboxDesktopView, view-only until they take control);
+// - Local VM and This computer: their own computer through the desktop app
+//   (src/lib/desktop-local-vm.ts, electron/local-vm.mjs), set up, repaired or
+//   started from the screen itself.
 //
-// Above it, the source selector bound to the person's "where bots work"
-// preference, with one sentence saying which one is used now and why; below
-// it, a light usage panel (disk, CPU, memory, OS) for that computer.
+// Above it, one line naming that computer with a link to the bot's Works on
+// (no selector here: the bot's setting decides); below it, a light usage
+// panel (disk, CPU, memory, OS) for that computer.
 //
 // Every action is the signed-in person's own (the server takes the person
 // from the session); nothing here names a bot or another person.
 import { useCallback, useEffect, useState } from "react";
 import { Cpu, HardDrive, Laptop, MemoryStick, Server } from "lucide-react";
 
-import { cn } from "@/lib/cn";
-import { currentDesktop, readWorkplace, writeWorkplace, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
+import { currentDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import {
   desktopLocalVm, installChoices, localVmProblemKey, localVmView, runtimeSummaryKey,
   type DesktopLocalVmStatus, type InstallChoice, type LocalVmAction, type ScreenState, type SetupStep,
 } from "@/lib/desktop-local-vm";
 import { t } from "@/lib/i18n";
+import { orgComputerFor, placeLabelKey, type EffectivePlace } from "@/lib/place";
 import {
   formatBytes, loadServerEnvironment, loadServerEnvironmentStats, powerServerEnvironment, powerState,
   type PowerAction, type ServerEnvironmentStats, type ServerEnvironmentStatus,
 } from "@/lib/server-environment";
-import type { BotWorkplacePlace } from "../../../shared/bot-workplace";
 import { SandboxDesktopView } from "../SandboxDesktopView";
 import { ComputerScreen, type ScreenAction } from "./ComputerScreen";
 
 const STATS_REFRESH_MS = 5_000;
+const STATS_IDLE_REFRESH_MS = 15_000;
 const LOCAL_STATUS_MS = 10_000;
 const LOCAL_SETUP_MS = 2_000;
 const LOCAL_FRAME_MS = 4_000;
 
 export type ComputerSource = "local" | "server";
 
-/** Which computer the person's bots use now, and why (one sentence). */
-export function activeComputer(bridge: DesktopBridgeStatus, place: BotWorkplacePlace): { source: ComputerSource; reason: "chosenComputer" | "chosenServer" | "notConnected" } {
-  if (place === "server") return { source: "server", reason: "chosenServer" };
-  return bridge.connected ? { source: "local", reason: "chosenComputer" } : { source: "server", reason: "notConnected" };
+/** Which computer this bot uses, from its Works on, and why (one sentence). */
+export function activeComputer(bridge: DesktopBridgeStatus, place: EffectivePlace): { source: ComputerSource; reason: "cloud" | "computer" | "notConnected" | "none" } {
+  const computer = orgComputerFor(place);
+  if (computer === "server") return { source: "server", reason: "cloud" };
+  if (computer === "computer") return { source: "local", reason: bridge.connected ? "computer" : "notConnected" };
+  return { source: "server", reason: "none" };
 }
 
-export function OrgComputerTab({ bridge, computerOff, botName, initialLocal = null }: {
-  bridge: DesktopBridgeStatus; computerOff: boolean; botName: string;
+export function OrgComputerTab({ bridge, place, computerOff, botName, onChangePlace, initialLocal = null }: {
+  bridge: DesktopBridgeStatus;
+  /** The bot's Works on (Auto when unset). */
+  place: EffectivePlace;
+  computerOff: boolean; botName: string;
+  /** Opens the bot's Works on setting. */
+  onChangePlace?: () => void;
   /** Tests: the desktop's Local VM status to start from. */
   initialLocal?: DesktopLocalVmStatus | null;
 }) {
-  const [place, setPlace] = useWorkplacePlace(bridge);
   const active = activeComputer(bridge, place);
   const desktop = currentDesktop(bridge);
   return (
     <div className="flex flex-col gap-3" data-org-computer={active.source === "server" ? "user-sandbox" : "user-desktop"}>
-      <WorkplaceSelector place={place} onChange={setPlace} bridge={bridge} />
+      <ActiveComputerLine place={place} bridge={bridge} botName={botName} onChange={onChangePlace} />
       {active.source === "server"
         ? <ServerComputerScreen caption={t("computer.screenOf", { name: botName })} />
         : <LocalComputerScreen bridge={bridge} caption={t("computer.screenOf", { name: botName })} initial={initialLocal} />}
@@ -66,44 +73,24 @@ export function OrgComputerTab({ bridge, computerOff, botName, initialLocal = nu
   );
 }
 
-/** The person's place preference, local first so the switch answers at once
- * (the server reads the synced preference at the next turn). */
-export function useWorkplacePlace(bridge: DesktopBridgeStatus | null): [BotWorkplacePlace, (place: BotWorkplacePlace) => void] {
-  const [place, setPlace] = useState<BotWorkplacePlace>(() => bridge?.workplace?.place ?? readWorkplace().place);
-  const serverPlace = bridge?.workplace?.place;
-  useEffect(() => { if (serverPlace) setPlace(serverPlace); }, [serverPlace]);
-  const change = useCallback((next: BotWorkplacePlace) => {
-    setPlace(next);
-    writeWorkplace({ ...readWorkplace(), place: next });
-  }, []);
-  return [place, change];
-}
-
-/** "Où ce robot travaille : Mon ordinateur (VM locale) | Environnement
- * serveur", and which one is used now. */
-export function WorkplaceSelector({ place, onChange, bridge }: { place: BotWorkplacePlace; onChange: (place: BotWorkplacePlace) => void; bridge: DesktopBridgeStatus }) {
+/** "Luna works on: Cloud (server environment). Change", and one sentence
+ * saying what that computer is. */
+export function ActiveComputerLine({ place, bridge, botName, onChange }: { place: EffectivePlace; bridge: DesktopBridgeStatus; botName: string; onChange?: (() => void) | undefined }) {
   const active = activeComputer(bridge, place);
   const name = currentDesktop(bridge)?.name ?? "";
+  const Icon = active.source === "server" ? Server : Laptop;
   return (
-    <div className="flex flex-col gap-1.5" data-workplace-selector={place}>
-      <div role="radiogroup" aria-label={t("orgComputer.where")} className="flex flex-col gap-1">
-        <span className="text-[12px] text-ink-secondary">{t("orgComputer.where")}</span>
-        <div className="flex overflow-hidden rounded-lg border border-hairline/60">
-          {(["computer", "server"] as const).map((value, index) => (
-            <button key={value} type="button" role="radio" aria-checked={place === value} onClick={() => onChange(value)} className={cn(
-              "flex min-h-[44px] flex-1 items-center justify-center gap-1.5 px-2 py-1.5 text-[12px] md:min-h-0",
-              index > 0 && "border-l border-hairline/60",
-              place === value ? "bg-control text-ink" : "text-ink-secondary hover:bg-control/60 hover:text-ink",
-            )}>
-              {value === "computer" ? <Laptop size={13} aria-hidden="true" /> : <Server size={13} aria-hidden="true" />}
-              {t(value === "computer" ? "orgComputer.source.local" : "orgComputer.source.server")}
-            </button>
-          ))}
-        </div>
+    <div className="flex flex-col gap-0.5 text-[12px]" data-works-on={place} data-active-computer={active.source}>
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-ink">
+        <Icon size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+        <span>{t("orgComputer.worksOn", { name: botName, place: t(placeLabelKey(place, true)) })}</span>
+        {onChange && (
+          <button type="button" onClick={onChange} className="text-accent underline-offset-2 hover:underline">
+            {t("orgComputer.change")}
+          </button>
+        )}
       </div>
-      <p className="text-[11.5px] leading-relaxed text-ink-secondary" data-active-computer={active.source}>
-        {t(`orgComputer.why.${active.reason}`, { name })}
-      </p>
+      <p className="text-[11.5px] leading-relaxed text-ink-secondary">{t(`orgComputer.why.${active.reason}`, { name })}</p>
     </div>
   );
 }
@@ -286,7 +273,7 @@ export function setupProgress(steps: SetupStep[]): string {
 }
 
 /** Disk, CPU, memory and OS of the person's server environment, refreshed
- * every few seconds while the tab is visible and the environment runs. */
+ * every few seconds while the tab is visible (more often while it runs). */
 export function UsagePanel() {
   const visible = usePageVisible();
   const [stats, setStats] = useState<ServerEnvironmentStats | null>(null);
@@ -298,8 +285,10 @@ export function UsagePanel() {
       try { setStats(await loadServerEnvironmentStats(controller.signal)); } catch { /* keep the last one */ }
     };
     void load();
-    if (!running) return () => controller.abort();
-    const timer = window.setInterval(() => void load(), STATS_REFRESH_MS);
+    // Keep asking while it is off too: the person may start it from the
+    // screen above, and a usage panel frozen on its first answer kept
+    // showing "?" next to a running desktop.
+    const timer = window.setInterval(() => void load(), running ? STATS_REFRESH_MS : STATS_IDLE_REFRESH_MS);
     return () => { controller.abort(); window.clearInterval(timer); };
   }, [visible, running]);
   const live = stats?.state === "running";

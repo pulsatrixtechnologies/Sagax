@@ -4,58 +4,79 @@ import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { boatComputerEnabled, browserAvailable, builtInBrowserEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
+import type { LocaleKey } from "@/locales";
 import { instanceSupportsLocalComputer, localComputerSelectable } from "@/lib/local-computer";
 import { effectivePlace, PLACES, placeLabelKey, placeOffered, type Place } from "@/lib/place";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useStore, type Bot, type Task } from "@/state/store";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { PlaceIcon } from "./PlaceIcon";
 
 export type PlaceAvailability = Record<Place, boolean>;
 
+/** An organization server (Perspicax): Cloud is the person's server
+ * environment and Auto means Cloud (src/lib/place.ts). */
+export function useOrganizationServer(): boolean {
+  return usePerspicaxOrg() !== null;
+}
+
 /** The same reachability the Works on picker applies, so the chip never
  * offers a place the panel would grey out. */
 export function usePlaceAvailability(bot: Bot): PlaceAvailability {
   const { state } = useStore();
   const { capabilities } = useDesktopCapabilities();
+  const organization = useOrganizationServer();
   const instance = state.instances.find((candidate) => candidate.instanceId === bot.modelSelection.instanceId);
   const computerMcp = instance?.capabilities?.computerMcp === true;
   const boxAgent = instance?.driverKind === "boxAgent";
   // Places the enrolled organisation disallows, or this server never
   // offers (an OMB Cloud home), are not reachable.
   const allowed = state.config?.managedPolicy?.computers ?? { thisComputer: true, localVm: true, box: true, vps: true };
+  const local = localComputerSelectable({ capabilities, providerSupportsLocal: instanceSupportsLocalComputer(state.instances, bot) }) && allowed.thisComputer;
+  const browser = builtInBrowserEnabled(state.config) && browserAvailable(state.config) && instance?.capabilities?.browserMcp === true && !boxAgent;
+  // Organization server: Cloud is the person's server environment and the
+  // Local VM is the one on their own computer (through the Sagax app); the
+  // experimental VPS and Boat flags have nothing to do with either.
+  if (organization) return { cloud: true, vm: allowed.localVm, local, browser };
   return {
     cloud: (bot.cloudBackend === "vps" ? computerMcp && !boxAgent : computerMcp || boxAgent) && (bot.cloudBackend === "vps" ? allowed.vps : allowed.box)
       && (state.config?.cloudHome === true || (bot.cloudBackend === "vps" ? vpsComputerEnabled(state.config) : boatComputerEnabled(state.config))),
     vm: Boolean(instance?.snapshot?.state === "available" && computerMcp && !boxAgent) && allowed.localVm && placeOffered("vm", state.config),
-    local: localComputerSelectable({ capabilities, providerSupportsLocal: instanceSupportsLocalComputer(state.instances, bot) }) && allowed.thisComputer && placeOffered("local", state.config),
-    browser: builtInBrowserEnabled(state.config) && browserAvailable(state.config) && instance?.capabilities?.browserMcp === true && !boxAgent,
+    local: local && placeOffered("local", state.config),
+    browser,
   };
 }
 
-const DESCRIPTION: Record<Place, "computer.dest.cloudDesc" | "computer.dest.vmDesc" | "computer.dest.localDesc" | "computer.dest.browserDesc"> = {
+const DESCRIPTION: Record<Place, LocaleKey> = {
   cloud: "computer.dest.cloudDesc", vm: "computer.dest.vmDesc", local: "computer.dest.localDesc", browser: "computer.dest.browserDesc",
+};
+const ORG_DESCRIPTION: Record<Place, LocaleKey> = {
+  cloud: "computer.dest.cloudOrgDesc", vm: "computer.dest.vmOrgDesc", local: "computer.dest.localOrgDesc", browser: "computer.dest.browserDesc",
 };
 
 /** Where this conversation works, always visible beside the send button.
  * Shows the effective place (the conversation's pin, else the bot's Works
  * on), pulses while a turn is acting there, and pins another place for this
  * conversation only. No confirmation card: choosing is the whole gesture. */
-export function PlaceChip({ bot, task, live, disabled = false, onPin }: {
+export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpen = false }: {
   bot: Bot;
   task?: Pick<Task, "surface"> | null;
   live: boolean;
   disabled?: boolean;
   onPin: (surface: Place | null) => void;
+  /** Tests: render with the menu open. */
+  initialOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   const motion = useMenuMotion(open);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const { state } = useStore();
   const availability = usePlaceAvailability(bot);
+  const organization = useOrganizationServer();
   const effective = effectivePlace(bot, task);
   const pinned = Boolean(task?.surface);
   const off = effective === "off";
-  const label = t(placeLabelKey(effective));
+  const label = t(placeLabelKey(effective, organization));
   const showLive = live && effective !== "off" && effective !== "auto";
   const title = off ? t("place.offHint") : disabled ? t("place.busy") : pinned ? t("place.pinnedHere") : t("place.fromBot");
 
@@ -106,11 +127,11 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin }: {
               <PlaceIcon place={botDefault} size={16} className="mt-px shrink-0 text-ink" aria-hidden="true" />
               <span className="min-w-0 flex-1">
                 <span className="block text-[13px] leading-[18px] text-ink">{t("place.followBot")}</span>
-                <span className="block text-[12px] leading-4 text-ink-tertiary">{t("place.followBotDetail", { place: t(placeLabelKey(botDefault)) })}</span>
+                <span className="block text-[12px] leading-4 text-ink-tertiary">{t("place.followBotDetail", { place: t(placeLabelKey(botDefault, organization)) })}</span>
               </span>
               {!pinned && <Check size={14} className="mt-0.5 shrink-0 text-ink" aria-hidden="true" />}
             </button>
-            {PLACES.filter((place) => placeOffered(place, state.config)).map((place) => {
+            {PLACES.filter((place) => placeOffered(place, state.config, organization)).map((place) => {
               const selected = task?.surface === place;
               const reachable = availability[place];
               // An option this bot cannot use here is left out, unless it is
@@ -129,8 +150,8 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin }: {
                 >
                   <PlaceIcon place={place} size={16} className="mt-px shrink-0 text-ink" aria-hidden="true" />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[13px] leading-[18px] text-ink">{t(placeLabelKey(place))}</span>
-                    <span className="block text-[12px] leading-4 text-ink-tertiary">{reachable ? t(DESCRIPTION[place]) : t("place.unavailable")}</span>
+                    <span className="block text-[13px] leading-[18px] text-ink">{t(placeLabelKey(place, organization))}</span>
+                    <span className="block text-[12px] leading-4 text-ink-tertiary">{reachable ? t((organization ? ORG_DESCRIPTION : DESCRIPTION)[place]) : t("place.unavailable")}</span>
                   </span>
                   {selected && <Check size={14} className="mt-0.5 shrink-0 text-ink" aria-hidden="true" />}
                 </button>
