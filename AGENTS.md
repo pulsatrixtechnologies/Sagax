@@ -34,6 +34,33 @@ the mail of a solo server. Keep these rules, each covered by a test in
 - A sender always has a name (default `Sagax`); Twilio refuses one without.
 - Tests and fixtures use fake credentials only.
 
+On an organization server Settings leaves Email out (Perspicax manages the
+organization's mail; `organizationHidesSection` in `SettingsModal.tsx`).
+
+## Organization settings (2026-10-01)
+
+Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
+`src/components/EnginesSettings.org.test.ts`,
+`src/components/Sidebar.header.test.ts`,
+`src/components/settings/MyRoutineDelegation.test.ts` and
+`server/org-bot-force.test.ts`:
+
+- Connected apps (Composio) is experimental (`features.connectedApps`, off):
+  off hides the sidebar entry, the Settings > API keys card and the tour's
+  apps steps. The claude.ai connectors status then shows in Settings > Model
+  providers (`HarnessConnectorsSection placement="settings"`).
+- A person's own subscription sign-in lives in Settings > Model providers
+  (`MyEngines`, organization server only), no longer under Organization.
+- Routines in my name is read-only: allowed by default, revoked in the
+  Perspicax console (`manageUrl`, the person's Sagax tab). Perspicax has no
+  silent authorization, so `ensureRoutineDelegation` starts the consent once,
+  after the person's first routine.
+- An organization admin force-stops or force-deletes any bot
+  (`POST /api/org/bots/<id>/force-stop|force-delete`, delete confirmed with
+  the bot's name): admin scope, `orgAdminCaller`, audited
+  (`bot.force_stop`, `bot.force_delete`), the owner notified (`admin-action`,
+  `audience` the owner). A solo server answers 403 `identity_perspicax`.
+
 ## Profile on an organization server
 
 On an organization server (`OMB_IDENTITY=perspicax`) a signed-in person's
@@ -306,6 +333,18 @@ Keep these rules, each covered by `server/user-sandbox*.test.ts`,
   parameter properties in these files.
 - `scripts/smoke-user-sandbox.ts` proves isolation on a real Docker host and
   removes everything it creates.
+- The environment's desktop (`deploy/sandbox/sagax-desktop`, Xvnc on
+  127.0.0.1 inside the sandbox only) starts on demand: computer use
+  (`computer_list_tools`, `computer_use`, fixed argv, never a shell line) or
+  the owner's live view. The view (`/api/desktop-viewer/sandbox/me`) is built
+  from the caller's own session principal, never an id; read-only by default
+  (view-only VNC password), `?control=1` for control; its WebSocket starts
+  nothing and reaches the VNC port only through the provisioner's signed
+  upgrade (`/v1/sandboxes/<key>/desktop`). The Computer tab's power and usage
+  routes (`/api/me/server-environment/power|stats`) act on the caller's own
+  environment only; shutdown and pause under a running turn need `confirm`.
+  Tests: `server/user-sandbox-desktop.test.ts`, `server/sandboxd.test.ts`;
+  Docker: `scripts/smoke-sandbox-desktop.ts`.
 
 ## Desktop bridge (organization mode)
 
@@ -366,18 +405,59 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   `ENABLE_CLAUDEAI_MCP_SERVERS=false`.
 - Connector tools (`mcp__claude_ai_*`) are never pre-allowed: they ride the
   approval flow. An engine tool denial blocks host built-ins, never them.
-- Connected apps shows them read-only (`GET /api/me/harness-connectors`, the
+- Connected apps (or Model providers while Connected apps is off) shows them read-only (`GET /api/me/harness-connectors`, the
   caller's own account only, no email or URL) with a link to
   claude.ai/customize/connectors; an admin turns them off with
   `PUT /api/harness-connectors/settings` (`config.harnessConnectors.claudeAi`).
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
 
+## Engine slash commands in the chat
+
+Typing "/" in a 1:1 conversation lists Sagax's own commands and the bot
+engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
+`src/components/ComposerCommandMenu.tsx`). Keep these rules, each covered by
+`shared/harness-commands.test.ts`, `server/harness-commands.test.ts`,
+`server/harness-commands.e2e.test.ts` or the driver tests:
+
+- The engine lists them itself, without a model call, in the folder and
+  isolation the bot's turns get (`ProviderInstance.listCommands`): Claude
+  Code answers the stream-json `initialize` control request (built-ins,
+  project commands and skills, plugin commands and skills, MCP prompts);
+  Codex answers `skills/list`. `GET /api/bots/:id/harness-commands`
+  (`?threadId`, `?refresh=1`) caches them per bot, engine and scope.
+- A message whose first word is an engine command reaches the engine
+  verbatim (no recall, reply or replay wrapper); Codex gets the skill's file
+  with `$name`. Without a session to resume, the next turn still gets the
+  replay. Peer hops and card continuations never run one.
+- Sagax's commands (`goal`, `learn`, `setup`) win a name collision; the
+  engine's is `/engine:<name>`. What the chat cannot run (terminal-only, or
+  managed by Sagax: model, effort, sessions, approvals, MCP) is listed dimmed
+  with its reason and refused at send (409).
+- `scripts/smoke-harness-commands.ts` checks the real CLIs.
+
+## Bot panel
+
+The bot's side panel (`src/components/BotSettingsDialog.tsx`, tabs in
+`bot-settings/panel-tabs.ts`) shows Details | Library | Computer | More. The
+name and label are edited where they show (`InlineEditableText`), the
+description behind the (i) beside the name (`DescriptionInfo`); there are no
+Name, Label or Description fields. Details lists Coding first
+(`ActivitySection`, `ActivityDetailModal`), then Routines. Coding reads
+`GET /api/bots/:id/activity` and `/activity/item`
+(`server/routes/bot-activity.ts`, types in `shared/bot-activity.ts`): every
+thread passes `botThreadReadable`, every routine run `routineSeenBy`; a run
+seen without its thread has no steps or thread link, and a sub-agent on
+someone else's thread shows no request text. Tests:
+`server/routes/bot-activity.test.ts`, `ActivitySection.test.ts`,
+`InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`.
+
 ## Group settings
 
 A group has no setup dialog and no pending setup state. Every group setting
 lives in its side panel (`src/components/GroupPanel.tsx`, the bot panel
-shell): Details holds the name, people and bots; Instructions holds the
+shell): the name is edited in place at its top (its owner) and the (i)
+beside it shows the instructions; Details holds the people and bots; Instructions holds the
 group instructions (`bulletin`); Advanced holds the default responder (a
 specific lead, Auto with Jev, everyone, or only when mentioned) and the
 working folder (empty means each bot's own folder). Keep these rules:
@@ -466,3 +546,24 @@ Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
 - MCP sign-in is ours (`server/mcp-oauth.ts`, vault `mcp-oauth.enc` and
   `mcp-oauth.key`, both left out of workspace backups). Upstream's own
   MCP sign-in manager and routes were not taken.
+
+## No phone-home
+
+Sagax contacts no service of the original OpenMausBot project and sends no
+telemetry. Keep these rules, each covered by a test:
+
+- Updates come only from our GitHub releases: `electron/update-feed.mjs` pins
+  electron-updater to `pulsatrixtechnologies/pulsa-bot` (channel latest,
+  pre-releases opt-in in Settings > General). Tests:
+  `electron/update-feed.node-test.mjs`, `electron/updater.test.mjs`.
+- No analytics: `src/lib/analytics.ts` is a no-op and `posthog-js` is gone.
+- `electron/upstream-hosts.mjs` is the block list (every `openmausbot.*`
+  domain, `posthog.com`, the upstream author's GitHub). Main guards its fetch
+  and every Electron session; the server imports `server/network-guard.ts`
+  first. Upstream defaults stay empty: Cloud (`CLOUD_ORIGIN`, bridges behind
+  `--sagax-cloud`), control plane (`OMB_CONTROL_PLANE_URL` of ours only),
+  Admin portal, Pro link, team catalog (`SAGAX_TEAM_LIBRARY_URL`).
+- `pnpm check:no-phone-home` (run by `package:prepare` and
+  `electron/no-phone-home.node-test.mjs`) fails when a bundle names a blocked
+  host outside its reviewed allowlist; `server/no-phone-home.e2e.test.ts`
+  audits a server start and a chat turn.

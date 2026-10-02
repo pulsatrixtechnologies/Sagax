@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StoreProvider, type Bot, type Group } from "@/state/store";
 import { BotThreadList, GroupThreadList } from "./Sidebar";
 import { formatUpdatedAt } from "./SidebarThreadRow";
@@ -8,6 +8,13 @@ import { GroupTaskPicker, TaskPicker } from "./TaskPicker";
 import { workingFolderLabel } from "./ComposerTray";
 
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }));
+// The header pickers follow the threads setting; server rendering reads it as off.
+const threads = vi.hoisted(() => ({ show: false }));
+vi.mock("@/lib/thread-preferences", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/thread-preferences")>(),
+  useShowThreads: () => threads.show,
+}));
+beforeEach(() => { threads.show = false; });
 
 const bot: Bot = {
   id: "maus", threadId: "idle", name: "Maus", title: "", description: "", notifications: true,
@@ -42,6 +49,7 @@ describe("sidebar bot threads", () => {
   });
 
   it("keeps All threads accessible even with one thread so its history actions remain reachable", () => {
+    threads.show = true;
     const render = (candidate: Bot) => renderToStaticMarkup(createElement(StoreProvider, null, createElement(TaskPicker, { bot: candidate })));
     expect(render(bot)).toContain('aria-label="All threads"');
     const single = render({ ...bot, tasks: [bot.tasks![1]!] });
@@ -112,6 +120,9 @@ describe("sidebar bot threads", () => {
     expect(markup).toContain("Previous review");
     // New thread lives on the room row now, not at the end of the list
     expect(markup).not.toContain("New thread");
+    // The header picker follows the threads setting, like the bot's.
+    expect(renderToStaticMarkup(createElement(StoreProvider, null, createElement(GroupTaskPicker, { group })))).toBe("");
+    threads.show = true;
     const picker = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GroupTaskPicker, { group })));
     expect(picker).toContain('aria-label="All threads"');
     expect(picker).not.toContain("Tasks");

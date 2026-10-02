@@ -7,7 +7,7 @@ import { t } from "@/lib/i18n";
 import { RoutineEditor } from "../RoutinesPage";
 import { RoutineList } from "../routines/RoutineList";
 
-export function RoutinesSection({ bot, routines, runs, defaultRunOn }: { bot: Bot; routines: Routine[]; runs: RoutineRun[]; defaultRunOn?: RoutineRunOn }) {
+export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = false }: { bot: Bot; routines: Routine[]; runs: RoutineRun[]; defaultRunOn?: RoutineRunOn; grouped?: boolean }) {
   const { state, dispatch } = useStore();
   const [editing, setEditing] = useState<Routine | "new" | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -41,7 +41,7 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn }: { bot: Bo
       <button type="button" onClick={() => setEditing("new")} aria-label={t("computer.routines.create")} title={t("computer.routines.create")} className="ui-icon-button"><Plus size={15} /></button>
       <button type="button" onClick={() => dispatch({ type: "showRoutines", section: "logs", botId: bot.id })} aria-label={t("routines.logs")} title={t("routines.logs")} className="ui-icon-button"><FileText size={14} /></button>
     </div>
-    <RoutineList routines={routines} runs={runs} loading={state.routinesLoadState === "loading" && routines.length === 0} error={state.routinesLoadState === "error"} onOpen={(routine) => setDetailId(routine.id)} onToggle={toggle} />
+    <RoutineList routines={routines} runs={runs} loading={state.routinesLoadState === "loading" && routines.length === 0} error={state.routinesLoadState === "error"} onOpen={(routine) => setDetailId(routine.id)} onToggle={toggle} grouped={grouped} />
     {editing === "new" && <RoutineEditor key={`${bot.id}-new`} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} onClose={() => setEditing(null)} />}
   </div>;
 }

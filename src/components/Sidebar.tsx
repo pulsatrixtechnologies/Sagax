@@ -39,11 +39,12 @@ import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { liveActivityLabel } from "@/lib/live-activity";
-import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { connectedAppsEnabled, llmThreadTitlesEnabled, templatesEnabled } from "@/lib/feature-flags";
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
 import { stateForBot } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useHeldMenuMotion } from "./MenuMotion";
 import { lastNonReceipt } from "@/lib/receipts";
 import { t } from "@/lib/i18n";
@@ -131,10 +132,19 @@ const SIDEBAR_DEFAULT_WIDTH = 280;
  * a touch larger so the 18px glyphs keep the rail's weight. */
 const SIDEBAR_ICON_BUTTON = "flex size-8 items-center justify-center rounded-lg text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
-/** The palette chord as this platform spells it, for the search field. */
-function paletteShortcutKeys(): string[] {
+/** The head's round search button: the header's 36px circle (share, panel),
+ * in the sidebar's own ink, with the same focus ring as its neighbours. */
+const SIDEBAR_SEARCH_BUTTON = cn(
+  CIRCLE_BUTTON,
+  "text-sidebar-ink-secondary hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+);
+
+/** The palette chord as this platform spells it: "⌘K" on macOS, "Ctrl+K"
+ * on Windows and Linux, for the search button's tooltip. */
+export function paletteShortcutLabel(isMac: boolean = isMacPlatform()): string {
   const item = SHORTCUT_GROUPS.flatMap((group) => group.items).find((entry) => entry.id === "command-palette");
-  return item ? shortcutKeysForPlatform(item) : ["⌘", "K"];
+  const keys = item ? shortcutKeysForPlatform(item, isMac) : isMac ? ["⌘", "K"] : ["Ctrl", "K"];
+  return keys.join(isMac ? "" : "+");
 }
 
 /** Fade the list's edges the way Grok Bot does: the top 28px once there is
@@ -1880,7 +1890,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     text: string;
     restoreBot?: { id: string; name: string };
   } | null>(null);
-  const paletteKeys = paletteShortcutKeys();
+  const searchTitle = `${t("sidebar.search")} (${paletteShortcutLabel()})`;
   // null on 404 and on any other failure, so the roster stays.
   // Chosen in Settings > Appearance or with the collapse button; one store.
   const density = useSidebarDensity();
@@ -2161,14 +2171,16 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       attention: routineAttention,
       onSelect: () => dispatch({ type: "showRoutines" }),
     },
-    {
+    // Connected apps is experimental (Settings > Experimental features).
+    ...(connectedAppsEnabled(state.config) ? [{
       key: "plugins",
       tourId: "nav-apps",
       label: t("sidebar.nav.connectedApps"),
       icon: Puzzle,
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
-    },
-    ...(!remoteClient ? [{
+    }] : []),
+    // Experimental: hidden until Settings > Experimental features turns it on.
+    ...(!remoteClient && templatesEnabled(state.config) ? [{
       key: "templates",
       label: t("sidebar.teamLibrary"),
       icon: Library,
@@ -2205,8 +2217,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       )}
     >
       {/* The head, like Perspicax's: the brand row (the Pulsatrix mark and the name, then
-          New and the collapse button) and a full-width search field that
-          opens the command palette. macOS owns inset traffic lights above the
+          the round search button that opens the command palette, New and the
+          collapse button). macOS owns inset traffic lights above the
           brand row; the whole head is the window's drag handle there and on
           Windows, with every control opted out. */}
       <div data-sidebar-head style={windowDragStyle} className="shrink-0">
@@ -2235,13 +2247,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             </button>
             <button
               type="button"
+              data-sidebar-search
               onClick={openCommandPalette}
               aria-label={t("sidebar.searchAria")}
               aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
-              title={`${t("sidebar.searchAria")} (${paletteKeys.join(" ")})`}
-              className={SIDEBAR_ICON_BUTTON}
+              title={searchTitle}
+              className={SIDEBAR_SEARCH_BUTTON}
             >
-              <Search size={18} strokeWidth={1.75} />
+              <Search size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
             <button
               ref={importReturnRef}
@@ -2264,6 +2277,17 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               </span>
               <span className="flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
                 <button
+                  type="button"
+                  data-sidebar-search
+                  onClick={openCommandPalette}
+                  aria-label={t("sidebar.searchAria")}
+                  aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
+                  title={searchTitle}
+                  className={cn(SIDEBAR_SEARCH_BUTTON, "mr-1")}
+                >
+                  <Search size={16} strokeWidth={1.75} aria-hidden="true" />
+                </button>
+                <button
                   ref={importReturnRef}
                   type="button"
                   onClick={() => onCompose?.()}
@@ -2285,26 +2309,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <PanelLeftClose size={18} strokeWidth={1.75} />
                 </button>
               </span>
-            </div>
-            <div className="pb-2 pl-2 pr-3 pt-1.5" style={windowNoDragStyle}>
-              {/* Looks like a field, opens the palette: bots, rooms and
-                  transcript hits live there, the same place ⌘K goes. */}
-              <button
-                type="button"
-                data-sidebar-search
-                onClick={openCommandPalette}
-                aria-label={t("sidebar.searchAria")}
-                aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
-                className="flex h-8 w-full items-center gap-2 rounded-lg border border-sidebar-hairline bg-sidebar-hover pl-2.5 pr-1.5 text-left text-sidebar-ink-secondary transition-colors hover:border-sidebar-ink-secondary/50 hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-              >
-                <Search size={14} strokeWidth={2} className="shrink-0" aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{t("sidebar.searchPlaceholder")}</span>
-                <span className="flex shrink-0 items-center gap-0.5" aria-hidden="true">
-                  {paletteKeys.map((key) => (
-                    <kbd key={key} className="flex h-4 min-w-4 items-center justify-center rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1 font-sans text-[11px] leading-none text-sidebar-ink-secondary">{key}</kbd>
-                  ))}
-                </span>
-              </button>
             </div>
           </>
         )}

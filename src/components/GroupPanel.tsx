@@ -15,6 +15,8 @@ import { BotAvatar } from "./Avatar";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { GroupMemoryTab } from "./GroupMemoryTab";
 import { inputCls } from "./bot-settings/field";
+import { InlineEditableText } from "./bot-settings/InlineEditableText";
+import { DescriptionInfo } from "./bot-settings/DescriptionInfo";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { normalizeState } from "@/lib/mascot";
 
@@ -91,17 +93,11 @@ export function GroupPanel({
   const tabs: readonly GroupPanelTab[] = advanced == null ? GROUP_PANEL_TABS.filter((id) => id !== "advanced") : GROUP_PANEL_TABS;
   const [settingsWidth, setSettingsWidth] = useState(readSettingsWidth);
   const settingsResize = useRef<{ x: number; width: number; current: number } | null>(null);
-  const [name, setName] = useState(group.name);
   const [bulletin, setBulletin] = useState(group.bulletin);
-  useEffect(() => setName(group.name), [group.name]);
   useEffect(() => setBulletin(group.bulletin), [group.bulletin]);
 
   const closePanel = () => dispatch({ type: "toggleSettings", open: false });
-  const saveName = () => {
-    const next = name.trim();
-    if (!next || next === group.name) return setName(group.name);
-    dispatch({ type: "patchGroup", groupId: group.id, patch: { name: next } });
-  };
+  const saveName = (next: string) => dispatch({ type: "patchGroup", groupId: group.id, patch: { name: next } });
   const saveBulletin = () => {
     if (bulletin !== group.bulletin) dispatch({ type: "patchGroup", groupId: group.id, patch: { bulletin } });
   };
@@ -191,7 +187,26 @@ export function GroupPanel({
           <div className="py-3">
             <GroupAvatarStack members={members} size={112} />
           </div>
-          <span id="group-panel-title" className="mt-2 max-w-full truncate text-[17px] font-medium leading-6 text-ink">{group.name}</span>
+          {/* As on a bot: the name is edited where it shows (its owner),
+              and the (i) beside it reveals the group instructions. */}
+          <div className="mt-2 flex max-w-full items-center justify-center gap-0.5">
+            <InlineEditableText
+              id="group-panel-title"
+              value={group.name}
+              required
+              maxLength={100}
+              ariaLabel={t("botPanel.name.edit")}
+              onSave={canEdit ? saveName : undefined}
+              className="text-[17px] font-medium leading-6 text-ink"
+            />
+            <DescriptionInfo
+              value={group.bulletin}
+              label={t("groupPanel.instructions")}
+              emptyText={t("groupPanel.instructionsEmpty")}
+              placeholder={t("groupPanel.instructionsPlaceholder")}
+              onSave={canEdit ? (next) => dispatch({ type: "patchGroup", groupId: group.id, patch: { bulletin: next } }) : undefined}
+            />
+          </div>
           <span className="mt-0.5 max-w-full truncate text-[12px] leading-4 text-ink-secondary">
             {members.length === 1 ? t("groupPanel.botOne") : t("groupPanel.botMany", { count: members.length })}
           </span>
@@ -234,26 +249,6 @@ export function GroupPanel({
 
         {tab === "details" && (
           <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
-            {canEdit && (
-              <div>
-                <label htmlFor={`group-name-${group.id}`} className="mb-1.5 block text-[13px] text-ink-secondary">{t("groupPanel.name")}</label>
-                <input
-                  id={`group-name-${group.id}`}
-                  className={inputCls}
-                  maxLength={100}
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  onBlur={saveName}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") event.currentTarget.blur();
-                    if (event.key === "Escape") {
-                      event.stopPropagation();
-                      setName(group.name);
-                    }
-                  }}
-                />
-              </div>
-            )}
             {details}
           </div>
         )}

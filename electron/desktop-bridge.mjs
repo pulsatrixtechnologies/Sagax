@@ -25,6 +25,42 @@ import { createLendingActivity } from "./lending-activity.mjs";
 import { openDesktopTunnel } from "./desktop-tunnel.mjs";
 
 const OUTPUT_LIMIT = 512 * 1024;
+const SYSTEM_REFRESH_MS = 30_000;
+
+const roundGb = (bytes, step = 0.5) => Math.round(bytes / 1024 ** 3 / step) * step;
+const OS_NAMES = { darwin: "macOS", win32: "Windows", linux: "Linux" };
+
+/** Coarse facts about this computer for the person's own Computer tab:
+ * OS and version, CPU model and count, CPU use (rounded to 5 %), memory and
+ * disk rounded to half a GiB. Nothing about files, apps or networks.
+ * `previous` is the last CPU sample, so the use covers the interval. */
+export async function systemInfo({ platform = process.platform, version = typeof process.getSystemVersion === "function" ? process.getSystemVersion() : os.release(), home = os.homedir(), previous = null, statfs = fs.statfs } = {}) {
+  const cpus = os.cpus();
+  const times = cpus.reduce((sum, cpu) => {
+    const total = Object.values(cpu.times).reduce((a, b) => a + b, 0);
+    return { idle: sum.idle + cpu.times.idle, total: sum.total + total };
+  }, { idle: 0, total: 0 });
+  let cpuPercent;
+  if (previous && times.total > previous.total) {
+    cpuPercent = Math.min(100, Math.max(0, Math.round(((1 - (times.idle - previous.idle) / (times.total - previous.total)) * 100) / 5) * 5));
+  }
+  const total = os.totalmem();
+  const info = {
+    os: `${OS_NAMES[platform] ?? "Linux"} ${String(version).split(/\s/)[0]}`.slice(0, 80),
+    arch: process.arch.slice(0, 20),
+    ...(cpus[0]?.model ? { cpuModel: cpus[0].model.replace(/\s+/g, " ").trim().slice(0, 80) } : {}),
+    cpus: Math.max(1, cpus.length),
+    ...(cpuPercent === undefined ? {} : { cpuPercent }),
+    memoryGb: roundGb(total),
+    memoryUsedGb: roundGb(Math.max(0, total - os.freemem())),
+  };
+  try {
+    const disk = await statfs(home);
+    info.diskGb = Math.round((disk.blocks * disk.bsize) / 1024 ** 3);
+    info.diskFreeGb = Math.round((disk.bavail * disk.bsize) / 1024 ** 3);
+  } catch { /* unknown */ }
+  return { info, sample: times };
+}
 const READ_DEFAULT = 256_000;
 const READ_MAX = 1_000_000;
 const WRITE_MAX = 1024 * 1024;
@@ -382,6 +418,19 @@ export function createDesktopBridge({
           await preferences();
           const refresh = setInterval(() => void preferences(), 60_000);
           live.addEventListener("abort", () => clearInterval(refresh), { once: true });
+          // Coarse system facts for the person's Computer tab. An older
+          // server answers 404: nothing else depends on it.
+          let cpuSample = null;
+          const system = async () => {
+            try {
+              const { info, sample } = await systemInfo({ platform, previous: cpuSample });
+              cpuSample = sample;
+              await request(env, `/api/desktop-bridge/${id}/system`, info, live, secret);
+            } catch { /* optional */ }
+          };
+          void system();
+          const systemTimer = setInterval(() => void system(), SYSTEM_REFRESH_MS);
+          live.addEventListener("abort", () => clearInterval(systemTimer), { once: true });
           // The tunnel: the cookie and the secret ride its handshake only.
           const startTunnel = async () => {
             if (!WebSocketImpl || live.aborted) return;

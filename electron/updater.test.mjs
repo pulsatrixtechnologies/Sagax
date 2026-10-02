@@ -6,7 +6,7 @@ localOriginModule.setLocalOrigin("http://127.0.0.1:8799");
 const localEvent = { senderFrame: { url: "http://127.0.0.1:8799/" } };
 
 const { updater, handlers } = vi.hoisted(() => ({
-  updater: { on: vi.fn(), downloadUpdate: vi.fn() },
+  updater: { on: vi.fn(), downloadUpdate: vi.fn(), setFeedURL: vi.fn() },
   handlers: new Map(),
 }));
 
@@ -58,4 +58,11 @@ it("sends updater progress to a reopened window without restarting the updater",
   expect(handlers.get("update:get-state")(localEvent)).toMatchObject({ status: "downloaded", version: "2.0.0" });
   expect(updater.on.mock.calls).toHaveLength(listenerCount);
   expect(vi.getTimerCount()).toBe(timerCount);
+});
+
+it("pins the feed to Sagax's GitHub releases with pre-releases off by default", () => {
+  startUpdater();
+  expect(updater.setFeedURL).toHaveBeenLastCalledWith({ provider: "github", owner: "pulsatrixtechnologies", repo: "pulsa-bot" });
+  expect(updater.allowPrerelease).toBe(false);
+  expect(updater.allowDowngrade).toBe(false);
 });

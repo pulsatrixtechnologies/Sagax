@@ -33,7 +33,7 @@ export interface AccessCardLines {
   /** Where the viewer adds their own key (Perspicax console). */
   link?: { href: string; label: string };
   /** The viewer can sign in with their own subscription for this engine
-   * (Settings > Organization > My engines). */
+   * (Settings > Model providers > My subscriptions and keys). */
   signIn?: boolean;
   reconnect?: boolean;
 }

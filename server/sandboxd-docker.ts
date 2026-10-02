@@ -2,6 +2,7 @@
 // provisioner container mounts. Small on purpose: the calls the sandbox
 // lifecycle needs and nothing that could build an arbitrary container.
 import { request } from "node:http";
+import { Duplex } from "node:stream";
 
 export interface ExecRequest {
   Cmd: string[];
@@ -19,10 +20,35 @@ export interface ExecResult {
 
 export interface ContainerSummary {
   name: string;
+  /** Running or paused: it holds its memory either way. */
   running: boolean;
+  /** Frozen by `docker pause` (Docker reports it running too). */
+  paused?: boolean;
   labels: Record<string, string>;
   /** Docker's own State.StartedAt, ms. */
   startedAt?: number;
+}
+
+export interface ContainerStats {
+  /** CPU used over the sample, in CPUs (1.0 = one full CPU). */
+  cpus: number;
+  /** Memory in use, page cache that can be reclaimed left out. */
+  memoryBytes: number;
+  memoryLimitBytes: number;
+}
+
+/** CPUs used between two samples of Docker's stats, and memory without the
+ * reclaimable page cache (cgroup v2 inactive_file, v1 total_inactive_file). */
+export function statsFromDocker(raw: Record<string, unknown>): ContainerStats {
+  const cpu = (raw.cpu_stats ?? {}) as { cpu_usage?: { total_usage?: number }; system_cpu_usage?: number; online_cpus?: number };
+  const pre = (raw.precpu_stats ?? {}) as { cpu_usage?: { total_usage?: number }; system_cpu_usage?: number };
+  const cpuDelta = (cpu.cpu_usage?.total_usage ?? 0) - (pre.cpu_usage?.total_usage ?? 0);
+  const systemDelta = (cpu.system_cpu_usage ?? 0) - (pre.system_cpu_usage ?? 0);
+  const online = cpu.online_cpus ?? 1;
+  const cpus = cpuDelta > 0 && systemDelta > 0 ? (cpuDelta / systemDelta) * online : 0;
+  const memory = (raw.memory_stats ?? {}) as { usage?: number; limit?: number; stats?: Record<string, number> };
+  const cache = memory.stats?.inactive_file ?? memory.stats?.total_inactive_file ?? 0;
+  return { cpus, memoryBytes: Math.max(0, (memory.usage ?? 0) - cache), memoryLimitBytes: memory.limit ?? 0 };
 }
 
 export interface DockerApi {
@@ -33,6 +59,10 @@ export interface DockerApi {
   createContainer(name: string, spec: Record<string, unknown>): Promise<void>;
   startContainer(name: string): Promise<void>;
   stopContainer(name: string, timeoutSeconds: number): Promise<void>;
+  pauseContainer(name: string): Promise<void>;
+  unpauseContainer(name: string): Promise<void>;
+  /** One sample of the container's CPU and memory (Docker's stats API). */
+  containerStats(name: string): Promise<ContainerStats>;
   removeContainer(name: string): Promise<void>;
   inspectNetwork(name: string): Promise<{ labels: Record<string, string>; subnets: string[] } | null>;
   listNetworks(labels: Record<string, string>): Promise<{ name: string; subnets: string[] }[]>;
@@ -42,6 +72,10 @@ export interface DockerApi {
   createVolume(spec: Record<string, unknown>): Promise<void>;
   removeVolume(name: string): Promise<void>;
   exec(name: string, exec: ExecRequest, maxBytes: number): Promise<ExecResult>;
+  /** One exec whose stdin and stdout stay open as a byte stream (the live
+   * view's relay to the desktop's VNC port, inside the sandbox). stdout is
+   * demultiplexed; stderr is dropped. Ending the stream closes the exec. */
+  execStream(name: string, exec: ExecRequest): Promise<Duplex>;
   /** Create, run to completion, collect output and remove a one-shot
    * container (the egress policy helper only). */
   runOnce(name: string, spec: Record<string, unknown>, timeoutMs: number): Promise<{ exitCode: number; output: string }>;
@@ -90,6 +124,24 @@ export function demuxDockerStream(chunks: Buffer, maxBytes: number): { stdout: B
     }
   }
   return { stdout: Buffer.concat(out), stderr: Buffer.concat(err), truncated };
+}
+
+/** Docker's multiplexed attach stream, decoded as it arrives: each frame is
+ * an 8-byte header (stream id, 3 zero bytes, big-endian size) and a payload.
+ * Only stdout (1) is passed on. */
+export function dockerStreamDemuxer(onStdout: (chunk: Buffer) => void): (chunk: Buffer) => void {
+  let pending: Buffer = Buffer.alloc(0);
+  return (chunk) => {
+    pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+    while (pending.length >= 8) {
+      const size = pending.readUInt32BE(4);
+      if (pending.length < 8 + size) break;
+      const stream = pending[0];
+      const payload = pending.subarray(8, 8 + size);
+      pending = pending.subarray(8 + size);
+      if (stream === 1 && payload.length) onStdout(Buffer.from(payload));
+    }
+  };
 }
 
 /** The daemon's own API version, so the client works from Docker 24 (1.43)
@@ -171,11 +223,12 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
   };
   const summary = (raw: Record<string, unknown>): ContainerSummary => {
     const config = (raw.Config ?? {}) as { Labels?: Record<string, string> };
-    const state = (raw.State ?? {}) as { Running?: boolean; StartedAt?: string };
+    const state = (raw.State ?? {}) as { Running?: boolean; Paused?: boolean; StartedAt?: string };
     const started = state.StartedAt ? Date.parse(state.StartedAt) : NaN;
     return {
       name: String(raw.Name ?? "").replace(/^\//, ""),
       running: state.Running === true,
+      ...(state.Paused === true ? { paused: true } : {}),
       labels: config.Labels ?? {},
       ...(Number.isFinite(started) && started > 0 ? { startedAt: started } : {}),
     };
@@ -194,11 +247,19 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
     inspectContainer: (name) => orNull(async () => summary(await json("GET", `/containers/${safeName(name)}/json`))),
     async listContainers(labels) {
       const rows = await json("GET", `/containers/json?all=1&filters=${labelFilter(labels)}`) as unknown as { Names?: string[]; State?: string; Labels?: Record<string, string> }[];
-      return rows.map((row) => ({ name: (row.Names?.[0] ?? "").replace(/^\//, ""), running: row.State === "running", labels: row.Labels ?? {} }));
+      return rows.map((row) => ({
+        name: (row.Names?.[0] ?? "").replace(/^\//, ""),
+        running: row.State === "running" || row.State === "paused",
+        ...(row.State === "paused" ? { paused: true } : {}),
+        labels: row.Labels ?? {},
+      }));
     },
     async createContainer(name, spec) { await json("POST", `/containers/create?name=${safeName(name)}`, spec); },
     async startContainer(name) { await json("POST", `/containers/${safeName(name)}/start`, undefined, [204, 304]); },
     async stopContainer(name, timeoutSeconds) { await json("POST", `/containers/${safeName(name)}/stop?t=${Math.max(0, Math.floor(timeoutSeconds))}`, undefined, [204, 304, 404]); },
+    async pauseContainer(name) { await json("POST", `/containers/${safeName(name)}/pause`, undefined, [204, 304]); },
+    async unpauseContainer(name) { await json("POST", `/containers/${safeName(name)}/unpause`, undefined, [204, 304]); },
+    async containerStats(name) { return statsFromDocker(await json("GET", `/containers/${safeName(name)}/stats?stream=false`)); },
     async removeContainer(name) { await json("DELETE", `/containers/${safeName(name)}?force=1&v=0`, undefined, [204, 404]); },
     inspectNetwork: (name) => orNull(async () => {
       const raw = await json("GET", `/networks/${safeName(name)}`);
@@ -232,6 +293,43 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       return { exitCode, stdout: streams.stdout, stderr: streams.stderr, truncated: streams.truncated || started.truncated };
+    },
+    async execStream(name, exec) {
+      const created = await json("POST", `/containers/${safeName(name)}/exec`, {
+        AttachStdin: true, AttachStdout: true, AttachStderr: false, Tty: false, Privileged: false, ...exec,
+      });
+      const id = String(created.Id ?? "");
+      if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Docker returned no exec id");
+      version ??= negotiateVersion(socketPath);
+      const apiVersion = await version;
+      const payload = Buffer.from(JSON.stringify({ Detach: false, Tty: false }));
+      const socket = await new Promise<import("node:net").Socket>((resolve, reject) => {
+        const req = request({
+          socketPath, method: "POST", path: `/${apiVersion}/exec/${id}/start`, timeout: 30_000,
+          headers: { "content-type": "application/json", "content-length": payload.length, connection: "Upgrade", upgrade: "tcp" },
+        });
+        req.on("upgrade", (_res, upgraded, head) => {
+          upgraded.setTimeout(0);
+          if (head.length) upgraded.unshift(head);
+          resolve(upgraded);
+        });
+        req.on("response", (res) => { res.resume(); reject(new DockerError(res.statusCode ?? 0, `Docker exec attach failed (${res.statusCode})`)); });
+        req.on("timeout", () => req.destroy(new Error("Docker request timed out")));
+        req.on("error", reject);
+        req.end(payload);
+      });
+      const stream = new Duplex({
+        write(chunk: Buffer, _encoding, callback) { socket.write(chunk, callback); },
+        final(callback) { socket.end(); callback(); },
+        read() { socket.resume(); },
+        destroy(error, callback) { socket.destroy(); callback(error); },
+      });
+      const demux = dockerStreamDemuxer((chunk) => { if (!stream.push(chunk)) socket.pause(); });
+      socket.on("data", demux);
+      socket.on("end", () => stream.push(null));
+      socket.on("close", () => { if (!stream.destroyed) stream.destroy(); });
+      socket.on("error", (error) => stream.destroy(error));
+      return stream;
     },
     async runOnce(name, spec, timeoutMs) {
       await json("DELETE", `/containers/${safeName(name)}?force=1`, undefined, [204, 404]);

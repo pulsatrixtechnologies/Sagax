@@ -11,6 +11,11 @@ on:
         required: true
         type: string
         default: feat/org-channels
+      prerelease:
+        description: "Mark as a GitHub pre-release (the in-app updater offers it only to people who opted in)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -111,4 +116,4 @@ jobs:
           This is not an official OpenMausBot release.
           EOF
           )
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --prerelease --title "Pulsa Bot $fork" --notes "$notes" out/*
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" ${{ inputs.prerelease && '--prerelease' || '' }} --title "Pulsa Bot $fork" --notes "$notes" out/*

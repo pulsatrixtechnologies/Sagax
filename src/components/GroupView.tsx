@@ -38,7 +38,6 @@ import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 import { Composer } from "./Composer";
 import { ChatFindBar } from "./ChatFindBar";
 import { GroupTaskPicker } from "./TaskPicker";
-import { GroupUsageChip } from "./GroupUsageChip";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
@@ -329,7 +328,7 @@ export const Transcript = memo(function Transcript({
               <AccessCard
                 access={m.access}
                 viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
-                onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "organization" })}
+                onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
               />
             </div>
           ) : m.kind === "goal.run" ? (
@@ -1030,7 +1029,6 @@ export function GroupView({ group: stored }: { group: Group }) {
             isGroup
           />}
           {!group.dm && <GroupTaskPicker group={group} />}
-          <GroupUsageChip usage={group.usage} />
           {group.dm && memberMauses}
           {!group.dm && !panelOpen && <button
             type="button"

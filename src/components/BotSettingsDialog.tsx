@@ -14,7 +14,6 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { BOT_SECTIONS } from "./bot-settings/sections";
 import { useBotSettingsDerived } from "./bot-settings/useBotSettingsDerived";
 import { OverviewSection } from "./bot-settings/OverviewSection";
-import { IdentitySection } from "./bot-settings/IdentitySection";
 import { SlackSection } from "./bot-settings/SlackSection";
 import { useSlackManagementUrl } from "./bot-settings/useSlackManagement";
 import { SoulSection } from "./bot-settings/SoulSection";
@@ -32,7 +31,13 @@ import { SharingSection } from "./bot-settings/SharingSection";
 import { PerspicaxSection } from "./bot-settings/PerspicaxSection";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { FilesSection } from "./bot-settings/FilesSection";
-import { isAdvancedSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
+import { isMoreSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
+import { ActivitySection } from "./bot-settings/ActivitySection";
+import { InlineEditableText } from "./bot-settings/InlineEditableText";
+import { DescriptionInfo } from "./bot-settings/DescriptionInfo";
+import { PackageProvenance } from "./bot-settings/PackageProvenance";
+import { ProposalStatus } from "./bot-settings/ProposalStatus";
+import { BOT_PROFILE_LIMITS } from "../../shared/bot-profile";
 import { ComputerPanel } from "./ComputerPanel";
 import { BotProfileAvatarCard } from "./BotProfileAvatarCard";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
@@ -108,7 +113,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
   // (SharingSection); the audience setting does not apply there.
   const perspicaxOrg = usePerspicaxOrg();
   const sections = BOT_SECTIONS
-    .filter((entry) => isAdvancedSection(entry.id))
+    .filter((entry) => isMoreSection(entry.id))
     .filter((entry) => entry.id !== "slack" || slackUrl !== null)
     .filter((entry) => entry.id !== "visibility" || (servedPage() && ownerOrAdmin === true && perspicaxOrg === null))
     .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null)
@@ -312,15 +317,6 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
             onOpen={(target) => dispatch({ type: "toggleSettings", open: true, section: target })}
           />
         );
-      case "identity":
-        return (
-          <IdentitySection
-            bot={bot}
-            patch={derived.patch}
-            activeState={derived.activeState}
-            mascotMotion={derived.mascotMotion}
-          />
-        );
       case "soul":
         return <SoulSection bot={bot} patch={derived.patch} />;
       case "slack":
@@ -425,7 +421,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
         {/* Top bar: only the controls, the way Grok Bot's panel opens. On
             Windows it drops below the caption buttons (padClass). */}
         <div className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
-          {tab === "advanced" && !collapsed ? (
+          {tab === "more" && !collapsed ? (
             <button
               type="button"
               onClick={() => dispatch({ type: "toggleSettings", open: true })}
@@ -462,8 +458,37 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
           {/* Who this is, then the tabs */}
           <div className="flex shrink-0 flex-col items-center px-4 pb-3">
             <BotProfileAvatarCard bot={bot} activeState={derived.activeState} mascotMotion={derived.mascotMotion} onPatch={derived.patch} />
-            <span id="bot-settings-title" className="mt-2 max-w-full truncate text-[17px] font-medium leading-6 text-ink">{bot.name}</span>
-            {bot.title.trim() && <span className="mt-0.5 max-w-full truncate text-[12px] leading-4 text-ink-secondary">{bot.title.trim()}</span>}
+            {/* Name and label are edited where they show; the description
+                sits behind the (i) beside the name. */}
+            <div className="mt-2 flex max-w-full items-center justify-center gap-0.5">
+              <InlineEditableText
+                id="bot-settings-title"
+                value={bot.name}
+                required
+                maxLength={BOT_PROFILE_LIMITS.name}
+                ariaLabel={t("botPanel.name.edit")}
+                onSave={(name) => derived.patch({ name })}
+                className="text-[17px] font-medium leading-6 text-ink"
+              />
+              <DescriptionInfo
+                value={bot.description}
+                maxLength={BOT_PROFILE_LIMITS.description}
+                label={t("botPanel.description.label")}
+                emptyText={t("botPanel.description.empty")}
+                placeholder={t("botPanel.description.placeholder")}
+                onSave={(description) => derived.patch({ description })}
+              />
+            </div>
+            <InlineEditableText
+              value={bot.title}
+              maxLength={BOT_PROFILE_LIMITS.title}
+              placeholder={t("botPanel.label.add")}
+              ariaLabel={t("botPanel.label.edit")}
+              onSave={(title) => derived.patch({ title })}
+              muted
+              className="mt-0.5 text-[12.5px] leading-4"
+            />
+            <div className="mt-1 w-full max-w-full empty:hidden"><ProposalStatus bot={bot} kind="chief" /></div>
             <div
               role="tablist"
               aria-label={t("botPanel.tabsAria")}
@@ -500,23 +525,15 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
 
           {tab === "details" && (
             <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
-              <IdentitySection
-                bot={bot}
-                patch={derived.patch}
-                activeState={derived.activeState}
-                mascotMotion={derived.mascotMotion}
-                showAvatar={false}
-              />
+              <ActivitySection bot={bot} />
+              <section data-bot-settings-section="routines" className="flex flex-col gap-2">
+                <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} grouped />
+              </section>
+              <PackageProvenance bot={bot} />
             </div>
           )}
 
-          {tab === "routines" && (
-            <div className="px-4 pb-6 pt-2" data-bot-settings-section="routines">
-              <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />
-            </div>
-          )}
-
-          {tab === "files" && <div className="px-4 pb-6 pt-2"><FilesSection bot={bot} /></div>}
+          {tab === "library" && <div className="px-4 pb-6 pt-2"><FilesSection bot={bot} /></div>}
 
           {tab === "computer" && (
             <div className="px-4 pt-2">
@@ -524,7 +541,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
             </div>
           )}
 
-          {tab === "advanced" && (
+          {tab === "more" && (
             <>
               {collapsed && <div className="mx-4 mb-3 flex shrink-0 items-center gap-2 rounded-lg border border-hairline-weak bg-elevated px-2.5 py-1.5">
                 <Search size={14} className="shrink-0 text-ink-secondary" />
@@ -579,8 +596,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
           )}
           {/* Memory stays mounted so an unsaved draft survives tab and
               section changes; it shows only while it is the open section. */}
-          <div hidden={!(tab === "advanced" && !collapsed && section === "memory")} className="px-4 pb-6">
-            <MemorySection bot={bot} active={tab === "advanced" && !collapsed && section === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />
+          <div hidden={!(tab === "more" && !collapsed && section === "memory")} className="px-4 pb-6">
+            <MemorySection bot={bot} active={tab === "more" && !collapsed && section === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />
           </div>
         </div>
       </aside>

@@ -5,6 +5,10 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 // Sandboxed preloads receive Electron's restricted `require`, which cannot
 // load sibling CommonJS files. Keep this tiny predicate inline here; main's
 const desktopRemoteClient = process.argv.includes("--openmausbot-remote-client");
+// The original project's Cloud (account, Move to Cloud, lending) is exposed
+// only when main enables it (CLOUD_SERVICES_ENABLED in cloud-account.mjs);
+// Sagax ships with it off.
+const cloudServices = process.argv.includes("--omb-company-desktop=1") && process.argv.includes("--sagax-cloud=1");
 
 let pendingPackageInstallUrl = null;
 const packageInstallListeners = new Set();
@@ -306,6 +310,8 @@ const bridge = {
     check: () => ipcRenderer.invoke("update:check"),
     download: () => ipcRenderer.invoke("update:download"),
     install: () => ipcRenderer.invoke("update:install"),
+    /** Opt in or out of pre-release versions (our GitHub releases only). */
+    setPrereleases: (enabled) => ipcRenderer.invoke("update:set-prereleases", enabled === true),
     onState: (cb) => {
       ipcRenderer
         .invoke("update:get-state")
@@ -354,7 +360,7 @@ const bridge = {
       return () => ipcRenderer.removeListener("workspaces:open-settings", handler);
     },
   },
-  cloudAccount: process.argv.includes("--omb-company-desktop=1") ? {
+  cloudAccount: cloudServices ? {
     state: () => ipcRenderer.invoke("cloud-account:state"),
     begin: () => ipcRenderer.invoke("cloud-account:begin"),
     reopen: () => ipcRenderer.invoke("cloud-account:reopen"),
@@ -379,7 +385,7 @@ const bridge = {
   /** Move to Cloud: this computer's workspace to the person's Cloud home.
    * No arguments reach main. A remote page may start a move only from the
    * person's own click. */
-  cloudMove: process.argv.includes("--omb-company-desktop=1") ? {
+  cloudMove: cloudServices ? {
     state: () => ipcRenderer.invoke("cloud-move:state"),
     start: () => isLocalPage || navigator.userActivation?.isActive === true
       ? ipcRenderer.invoke("cloud-move:start") : Promise.reject(new Error("Choose Move to start moving.")),
@@ -395,7 +401,7 @@ const bridge = {
   /** The Cloud's setup checklist: "Let your Cloud use this Mac" opens the
    * lending switch in this app's own Settings → OMB Cloud. No arguments; it
    * shows the switch and changes nothing. */
-  cloudLending: process.argv.includes("--omb-company-desktop=1") ? {
+  cloudLending: cloudServices ? {
     open: () => ipcRenderer.invoke("cloud-lending:open"),
   } : undefined,
   organization: process.argv.includes("--omb-company-desktop=1") ? {

@@ -4,6 +4,8 @@
 // First, before any module that could start a process: a Cloud home's
 // secrets off the launcher's pipe (cloud-secrets-boot.ts).
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
+// Then the upstream/analytics network block (network-guard.ts).
+import "./network-guard.ts";
 import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type GroupActor } from "./group-ownership.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
@@ -162,6 +164,8 @@ import {
   saveConfig,
   showToolCallsEnabled,
   routinesInConversationEnabled,
+  connectedAppsEnabled,
+  templatesEnabled,
   claudeUserMcpEnabled,
   claudeAiConnectorsEnabled,
   skillAuthoringEnabled,
@@ -526,6 +530,8 @@ import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
+import { createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
+import type { HarnessCommandScope } from "./contracts.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
@@ -623,6 +629,7 @@ import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
@@ -640,6 +647,7 @@ import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type 
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
+import { createOrgBotForceRoutes } from "./org-bot-force.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { readSandboxdKey } from "./sandboxd-auth.ts";
 import { sandboxdClient } from "./user-sandbox-client.ts";
@@ -669,8 +677,8 @@ import {
   type Worker,
 } from "./workers.ts";
 import { createDeciderRoutes } from "./routes/decider.ts";
-import { createDesktopViewer, desktopViewerUrl } from "./routes/desktop-viewer.ts";
-import { localDesktopTarget, localVmViewerStatus, viewerTargetId } from "./desktop-viewer-targets.ts";
+import { createDesktopViewer, desktopViewerUrl, SANDBOX_VIEWER_TARGET } from "./routes/desktop-viewer.ts";
+import { localDesktopTarget, localVmViewerStatus, sandboxDesktopTarget, viewerTargetId } from "./desktop-viewer-targets.ts";
 import { createAntigravityLeftoverRoutes } from "./routes/antigravity-leftovers.ts";
 import { findAntigravityLeftovers, removeAntigravityLeftovers } from "./drivers/antigravity-temp.ts";
 
@@ -4233,7 +4241,17 @@ if (userSandbox) {
     else userSandbox.personBack(person.id);
   });
 }
-ROUTES.push(createUserSandboxRoutes({ manager: () => userSandbox, organization: IDENTITY.kind === "perspicax" }));
+ROUTES.push(createUserSandboxRoutes({
+  manager: () => userSandbox,
+  organization: IDENTITY.kind === "perspicax",
+  turnRunning: (principalId) => {
+    const person = principalId.trim().toLowerCase();
+    for (const workplace of turnWorkplaces.values()) {
+      if (workplace.decision.target === "user-sandbox" && workplace.decision.principal === person) return true;
+    }
+    return false;
+  },
+}));
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
 const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
 /** Slice 4 (D10): each person's own engine sign-ins, organization mode. */
@@ -6295,7 +6313,13 @@ function audienceChanged(): void {
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
-  target: (id) => {
+  target: (id, auth) => {
+    if (id === SANDBOX_VIEWER_TARGET) {
+      // The caller's own server environment desktop, never anyone else's.
+      const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : "";
+      if (IDENTITY.kind !== "perspicax" || !userSandbox || !principalId) return;
+      return sandboxDesktopTarget(userSandbox, principalId);
+    }
     if (id.startsWith("vps/")) {
       const botId = id.slice(4);
       if (store.bot(botId)?.cloudBackend !== "vps") return;
@@ -11556,12 +11580,31 @@ async function startTurn(
       // Slice 4: this turn's credentials (an owner key is read now).
       // (solo mode takes no extra await: its dispatch timing is unchanged)
       const turnAccess = IDENTITY.kind === "perspicax" ? await orgTurnAccess(threadId, bot, instance, speaker) : undefined;
+      // An engine slash command typed by a person (or set in a routine)
+      // reaches the engine verbatim (server/harness-commands.ts); a peer hop
+      // or a card continuation never runs one.
+      const typedCommand = !opts?.cardContinuation && commsDepth === 0
+        ? await typedCommandForTurn(resolvedImages.text, harnessCommandSource(bot, threadId, {
+          botId: bot.id,
+          ...(cwd ? { cwd } : {}),
+          ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+          mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        }), harnessCommands)
+        : { kind: "none" as const };
+      if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped during command lookup");
+      const engineCommand = typedCommand.kind === "engine" ? typedCommand : null;
+      // With no session to resume, the command runs in a new one that never
+      // saw the conversation: the next turn must still rebuild it, so the
+      // bookkeeping that would mark the context delivered is left for it.
+      const contextStillPending = Boolean(engineCommand && dispatchContext.sessionReset && transcript.length > 0 &&
+        !NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind));
       const dispatch = await guardTurnDispatch(instance.adapter.sendTurn({
         threadId,
         botId: bot.id,
         ...(turnAccess ? { access: turnAccess } : {}),
         startupRecovery: cfg.automaticRecovery?.enabled === true && !opts?.automaticRecoveryAttempted,
-        text: withRecalled(recalled, dispatchContext.turnText),
+        text: engineCommand ? engineCommand.engineText : withRecalled(recalled, dispatchContext.turnText),
+        ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         refreshSystemPrompt: true,
         images: turnImages,
         approvalMode: approvalModeForTurn(bot, commsDepth > 0, threadId),
@@ -11574,8 +11617,8 @@ async function startTurn(
         // resume the wrong conversation and defeat the context bubble
         resumeCursor: dispatchContext.resumeCursor,
         sessionReset: dispatchContext.sessionReset,
-        ...(dispatchContext.recoveryText !== undefined ? { recoveryText: dispatchContext.recoveryText } : {}),
-        ...(dispatchContext.recoveryIsReplay ? { recoveryIsReplay: true } : {}),
+        ...(dispatchContext.recoveryText !== undefined && !engineCommand ? { recoveryText: dispatchContext.recoveryText } : {}),
+        ...(dispatchContext.recoveryIsReplay && !engineCommand ? { recoveryIsReplay: true } : {}),
         transcript,
         system: prompt.text,
         systemStable: prompt.stable,
@@ -11612,13 +11655,13 @@ async function startTurn(
       }
       clearDirectTurnDispatch(threadId, dispatchClaimId);
       // dispatched: the rewind is spent, and the old cursors are dead
-      if (rewound) store.patchTask(bot.id, threadId, { rewound: false, resumeCursors: {} });
-      if (contextReset && record) store.patchTask(bot.id, threadId, { appliedCompactionId: record.id, contextFloor: undefined });
+      if (rewound && !contextStillPending) store.patchTask(bot.id, threadId, { rewound: false, resumeCursors: {} });
+      if (contextReset && record && !contextStillPending) store.patchTask(bot.id, threadId, { appliedCompactionId: record.id, contextFloor: undefined });
       // and this engine now owns the thread's most recent turn
       // Consume exactly the external-update generation this turn replayed.
       // If a newer delegated result landed during setup, its unique marker
       // differs and must survive so the next turn also receives that update.
-      if (!isExternalContextMarker(task.lastInstanceId) || task.lastInstanceId === externalContextMarker) {
+      if (!contextStillPending && (!isExternalContextMarker(task.lastInstanceId) || task.lastInstanceId === externalContextMarker)) {
         store.markTaskDispatched(bot.id, threadId, instanceId);
       }
       // a turn can settle before dispatch returns, and a poller started
@@ -11987,6 +12030,32 @@ async function stopBotForEmergencyApprovalDowngrade(botId: string): Promise<void
   }
 
   await directStop;
+}
+
+/** An organization admin's "Forcer l'arrêt" (server/org-bot-force.ts):
+ * every running turn of the bot stops, in its own threads, its routine run
+ * and the room it is speaking in. Cancellation flags flip before any await. */
+async function forceStopBot(botId: string): Promise<void> {
+  const bot = store.bot(botId);
+  if (!bot) return;
+  const work: Array<Promise<unknown>> = [interruptAllDirectThreads(botId)];
+  // Its own routine run and a room goal it coordinates, each once.
+  const routineRuns = [routines?.activeBotRunForBot(bot.id), routines?.activeRunForBot(bot.id)]
+    .filter((run, index, all): run is NonNullable<typeof run> => Boolean(run) && all.findIndex((other) => other?.id === run!.id) === index);
+  for (const routineRun of routineRuns) {
+    if (routineRun.threadId) revokeInternalCapabilitiesForThread(routineRun.threadId);
+    cancelDirectTurnDispatch(bot.id, routineRun.threadId);
+    work.push(routines!.cancelRun(routineRun.id).then(() => { if (routineRun.threadId) closeOpenApprovals(routineRun.threadId); }));
+  }
+  const groupTurn = activeGroupTurnForBot(bot.id);
+  if (groupTurn) {
+    revokeInternalCapabilitiesForThread(groupTurn.threadId);
+    cancelGroupTurnOperations(groupTurn.group.id, groupTurn.threadId);
+    work.push(Promise.resolve(runningTurnInstance(bot, groupTurn.threadId)?.adapter.interruptTurn(groupTurn.threadId)).then(() => closeOpenApprovals(groupTurn.threadId)));
+  }
+  const results = await Promise.allSettled(work);
+  const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failure) throw failure.reason;
 }
 
 // Load queued handoffs before scheduler recovery can fail an interrupted
@@ -12957,7 +13026,7 @@ const webhooks = new WebhookManager({
   // delivery:"post" webhooks land in a dedicated "Updates" task, never
   // bot.threadId (the bot's currently-selected task) -- see
   // resolvePostThread below. Fixes
-  // https://github.com/milind-soni/OpenMausBot/issues/2071: a post used to
+  // upstream issue #2071: a post used to
   // land wherever the owner (or another automation) had last switched
   // that bot's selection, including a live conversation.
   post: (botId, threadId, text) => {
@@ -16113,6 +16182,8 @@ function configStatus() {
       skillAuthoring: skillAuthoringEnabled(cfg),
       showToolCalls: showToolCallsEnabled(cfg),
       routinesInConversation: routinesInConversationEnabled(cfg),
+      connectedApps: connectedAppsEnabled(cfg),
+      templates: templatesEnabled(cfg),
       browser: builtInBrowserEnabled(cfg),
       // Maintainer-only escape hatch, not a Settings toggle: the desktop
       // shell and the Settings UI read it so they offer nothing this server
@@ -16790,6 +16861,60 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+// What a bot is doing (server/routes/bot-activity.ts): its threads, the
+// work it handed other bots and its routine runs, as the viewer may read them.
+ROUTES.push(createBotActivityRoutes({
+  bot: (id) => store.bot(id),
+  tasks: (botId) => store.tasks(botId),
+  viewerId: (auth) => channelFilterViewerId(auth),
+  threadReadable: (botId, threadId, viewerId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && botThreadReadable(bot!, threadId, viewerId, "thread.read");
+  },
+  threadWritable: (botId, threadId, viewerId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && botThreadReadable(bot!, threadId, viewerId, "thread.post");
+  },
+  runs: (botId) => routines?.listRuns().filter((run) => run.botId === botId && run.target !== "room-goal") ?? [],
+  runSeen: (run, viewerId) => !viewerId || routineSeenBy(run, viewerId),
+  messages: (threadId, limit) => {
+    const page = store.messagesTail(threadId, limit);
+    return { messages: page.messages, hasMore: page.hasMore };
+  },
+  children: (botId, threadId) => activityChildren(botId, threadId),
+  personName: (principalId) => personDisplayName(principals.byId(principalId)) || "",
+  organization: () => IDENTITY.kind === "perspicax",
+}));
+/** The sub-agents a direct thread started: coordinate_bots work (room
+ * handoffs whose parent is this thread) and legacy delegations in flight. */
+function activityChildren(botId: string, threadId: string): ActivityChildRef[] {
+  const out: ActivityChildRef[] = [];
+  const seen = new Set<string>();
+  for (const node of roomHandoffs.nodes.values()) {
+    if (!node.parentId || node.groupId) continue;
+    const parent = roomHandoffs.nodes.get(node.parentId);
+    if (!parent || parent.threadId !== threadId || parent.botId !== botId) continue;
+    seen.add(node.threadId);
+    out.push({
+      botId: node.botId,
+      threadId: node.threadId,
+      title: store.taskByThread(node.botId, node.threadId)?.title || node.text.slice(0, 120),
+      status: node.status === "source" || node.status === "resume" ? "running" : node.status,
+      startedAt: node.startedAt ?? node.createdAt,
+    });
+  }
+  for (const watch of delegationWatch.values()) {
+    if (watch.sourceBotId !== botId || watch.sourceThreadId !== threadId || !watch.taskId || seen.has(watch.taskId)) continue;
+    out.push({
+      botId: watch.toBotId,
+      threadId: watch.taskId,
+      title: store.taskByThread(watch.toBotId, watch.taskId)?.title || watch.toBotName || "",
+      status: "running",
+      startedAt: watch.startedAtMs ?? Date.now(),
+    });
+  }
+  return out;
+}
 // A group's shared memory (server/routes/group-memory.ts): its people read
 // it, its owner edits it or switches it off.
 ROUTES.push(createGroupMemoryRoutes({
@@ -17986,6 +18111,32 @@ ROUTES.push(createOrgImportRoute({
     category: "org", action: "org.import", target: { kind: "server" }, after: { ...details }, actor: orgAuditActor(auth),
   }),
 }));
+// Admin force actions on any bot (Settings > Organization > Sharing).
+ROUTES.push(createOrgBotForceRoutes({
+  organization: IDENTITY.kind === "perspicax",
+  isAdmin: orgAdminCaller,
+  bot: (id) => {
+    const bot = store.bot(id);
+    return bot ? { id: bot.id, name: bot.name, ownerPrincipalId: botFacts(bot).ownerPrincipalId } : null;
+  },
+  actorId: actorPrincipalId,
+  stop: forceStopBot,
+  remove: (botId) => deleteBotWithLifecycle(botId),
+  audit: (auth, action, bot) => orgAudit({
+    category: "bot", action, target: { kind: "bot", id: bot.id, name: bot.name },
+    before: { ownerPrincipalId: bot.ownerPrincipalId }, actor: orgAuditActor(auth),
+  }),
+  notifyOwner: (bot, action, auth) => {
+    const admin = principals.byId(actorPrincipalId(auth));
+    const who = admin ? personDisplayName(admin) || "An admin" : "An admin";
+    notify({
+      kind: "admin-action", botId: bot.id, botName: bot.name, threadId: store.bot(bot.id)?.threadId ?? "",
+      title: action === "stop" ? `${bot.name} was stopped by an admin` : `${bot.name} was deleted by an admin`,
+      body: action === "stop" ? `${who} stopped all of its work.` : `${who} deleted this bot.`,
+      audience: [bot.ownerPrincipalId],
+    });
+  },
+}));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
   // A person's Perspicax avatar (personAvatarUrl), read through the link and
@@ -18307,6 +18458,48 @@ ROUTES.push(createHarnessConnectorRoutes({
     return { cli, env, key: `instance:${instanceId}` };
   },
   inventory: claudeAiInventory,
+}));
+
+// The engines' own slash commands in the chat (server/harness-commands.ts):
+// listed by the engine itself in the folder and isolation the bot's turns
+// get, passed through verbatim when typed.
+const harnessCommands = new HarnessCommandCatalog();
+function harnessCommandSource(bot: BotRecord, threadId: string | undefined, scope?: HarnessCommandScope): HarnessCommandSource | null {
+  const instance = turnInstance(bot, undefined, threadId);
+  const engine = instance ? harnessEngineFor(instance.driverKind) : null;
+  if (!instance?.listCommands || !engine) return null;
+  const task = threadId ? store.taskByThread(bot.id, threadId) : undefined;
+  // the folder the thread's next turn runs in (see the pin in runTurn)
+  const cwd = task && task.cwd !== undefined ? task.cwd ?? undefined
+    : bot.cwd ?? (task && threadId && supportsWorkspaceFiles(instance.driverKind) ? ensureTaskWorkspace(bot.id, threadId) : undefined);
+  const list = instance.listCommands.bind(instance);
+  return {
+    botId: bot.id,
+    instanceId: instance.instanceId,
+    engine,
+    scope: scope ?? {
+      botId: bot.id,
+      ...(cwd ? { cwd } : {}),
+      ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+      mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+    },
+    list,
+  };
+}
+ROUTES.push(createHarnessCommandRoutes({
+  catalog: harnessCommands,
+  sourceFor: (auth, botId, threadId) => {
+    const bot = store.bot(botId);
+    if (!bot) return { status: 404, error: "no such bot" };
+    const viewerId = actorPrincipalId(auth);
+    if (threadId && !store.taskByThread(bot.id, threadId)) return { status: 404, error: "no such conversation" };
+    if (IDENTITY.kind === "perspicax") {
+      const viewer = authzViewerFromId(viewerId);
+      if (!viewer || !canOnBot(viewer, "bot.use", botFacts(bot))) return { status: 404, error: "no such bot" };
+      if (threadId && !botThreadReadable(bot, threadId, viewerId, "thread.post")) return { status: 404, error: "no such conversation" };
+    }
+    return harnessCommandSource(bot, threadId ?? (IDENTITY.kind === "perspicax" ? viewerThreadOf(bot, viewerId) : bot.threadId));
+  },
 }));
 
 // Invite links (/join#token=...): public like /api/auth/email/start, and
@@ -19502,6 +19695,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!ownerId) return json(res, 403, { error: "this capability has no server environment" });
         try {
           if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          // The bot's own "no computer" setting holds on the environment's desktop too.
+          const toolName = (frame?.params as { name?: unknown } | undefined)?.name;
+          if (rpcMethod === "tools/call" && (toolName === "computer_use" || toolName === "computer_list_tools") && store.bot(internalCapability.botId)?.computer === "off") {
+            return json(res, 200, { result: { content: [{ type: "text", text: "This bot has no computer. Change its Computer setting to use the screen." }], isError: true } });
+          }
           const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
             exec: (input) => userSandbox.exec(ownerId, input),
             overQuota: () => userSandbox.workspaceOverQuota(ownerId),
@@ -25046,6 +25244,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const threadId = routeThreadId(bot, body.threadId);
       const notYours = cloudGuestSendRefusal(auth, threadId);
       if (notYours) return json(res, 403, { error: notYours });
+      // An engine command the chat cannot run is refused before it is
+      // recorded (server/harness-commands.ts).
+      if (text.startsWith("/")) {
+        const typed = await typedCommandForTurn(extractTurnImages(text).text, harnessCommandSource(bot, threadId), harnessCommands);
+        if (typed.kind === "unavailable") return json(res, 409, unavailableCommandError(typed));
+      }
       // Who this message is from, for the ledger. It is captured here and
       // travels with the message: into the turn it starts, or into the queue
       // until it drains. A message steered into someone else's running turn

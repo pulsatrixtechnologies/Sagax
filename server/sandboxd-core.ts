@@ -3,6 +3,8 @@
 // key: created on first need, started on demand, stopped after an idle
 // period, removed on request. Every object it touches carries its labels and
 // its deployment instance; anything else with a matching name is refused.
+import type { Duplex } from "node:stream";
+
 import type { DockerApi } from "./sandboxd-docker.ts";
 import {
   SANDBOX_INSTANCE_LABEL,
@@ -23,7 +25,7 @@ import {
   type SandboxdConfig,
 } from "./user-sandbox-spec.ts";
 
-export type SandboxState = "missing" | "stopped" | "running";
+export type SandboxState = "missing" | "stopped" | "running" | "paused";
 export type EgressPolicyState = "enforced" | "missing" | "not-required";
 
 export interface SandboxStatus {
@@ -34,6 +36,24 @@ export interface SandboxStatus {
   overQuota: boolean;
   busy: number;
   limits: { memoryMb: number; cpus: number; pids: number; diskMb: number; tmpMb: number };
+}
+
+/** The usage panel of the person's Computer tab: a light sample, scoped to
+ * that one sandbox. */
+export interface SandboxStats {
+  key: string;
+  state: SandboxState;
+  /** CPU in use as a percentage of the sandbox's own CPU quota. */
+  cpuPercent: number | null;
+  memoryBytes: number | null;
+  memoryLimitBytes: number;
+  workspaceBytes: number | null;
+  workspaceQuotaBytes: number;
+  /** e.g. "Debian GNU/Linux 12 (bookworm)", read inside the sandbox once. */
+  os: string | null;
+  arch: string | null;
+  /** The image's name and tag, without the registry. */
+  image: string;
 }
 
 export interface SandboxExecInput {
@@ -69,12 +89,17 @@ const MAX_EXEC_ENV_BYTES = 1_500_000;
 const MAX_CONCURRENT_EXECS = 4;
 const USAGE_TTL_MS = 60_000;
 const CAPACITY_IDLE_GRACE_MS = 60_000;
+/** Live views of one person's desktop open at once (windows, reconnects). */
+export const MAX_DESKTOP_STREAMS = 4;
+const CONTROL_TOUCH_MS = 30_000;
 
 export class SandboxService {
   private readonly lastUsed = new Map<string, number>();
   private readonly busy = new Map<string, number>();
   private readonly usage = new Map<string, { bytes: number; at: number }>();
   private readonly locks = new Map<string, Promise<void>>();
+  private readonly desktopStreams = new Map<string, number>();
+  private readonly osInfo = new Map<string, { os: string; arch: string }>();
   egress: EgressPolicyState;
 
   private readonly docker: DockerApi;
@@ -143,7 +168,7 @@ export class SandboxService {
     const names = sandboxNames(key);
     const container = await this.docker.inspectContainer(names.container);
     if (container && !this.owned(container.labels, key)) throw new SandboxError(409, "conflict", "a container with this name is not managed by this provisioner");
-    const state: SandboxState = !container ? "missing" : container.running ? "running" : "stopped";
+    const state: SandboxState = !container ? "missing" : container.paused ? "paused" : container.running ? "running" : "stopped";
     const usage = this.usage.get(key);
     return {
       key,
@@ -223,6 +248,9 @@ export class SandboxService {
       const names = sandboxNames(key);
       let container = await this.docker.inspectContainer(names.container);
       if (container && !this.owned(container.labels, key)) throw new SandboxError(409, "conflict", "a container with this name is not managed by this provisioner");
+      if (container?.paused) {
+        throw new SandboxError(409, "paused", "the server environment is paused; its owner resumes it from the Computer tab");
+      }
       if (container?.running) {
         this.touch(key);
         return this.status(key);
@@ -273,6 +301,7 @@ export class SandboxService {
         this.usage.delete(key);
       }
       this.lastUsed.delete(key);
+      this.osInfo.delete(key);
       return this.status(key);
     });
   }
@@ -319,12 +348,116 @@ export class SandboxService {
     }
   }
 
+  /** Freeze every process of the sandbox (docker pause): it keeps its
+   * memory but uses no CPU, and bots are refused until it is resumed. */
+  pause(key: string): Promise<SandboxStatus> {
+    this.checkKey(key);
+    return this.withLock(key, async () => {
+      const names = sandboxNames(key);
+      const container = await this.docker.inspectContainer(names.container);
+      if (container && !this.owned(container.labels, key)) throw new SandboxError(409, "conflict", "a container with this name is not managed by this provisioner");
+      if (!container?.running) throw new SandboxError(409, "not_running", "the server environment is not running");
+      if (!container.paused) await this.docker.pauseContainer(names.container);
+      return this.status(key);
+    });
+  }
+
+  resume(key: string): Promise<SandboxStatus> {
+    this.checkKey(key);
+    return this.withLock(key, async () => {
+      const names = sandboxNames(key);
+      const container = await this.docker.inspectContainer(names.container);
+      if (container && !this.owned(container.labels, key)) throw new SandboxError(409, "conflict", "a container with this name is not managed by this provisioner");
+      if (container?.paused) await this.docker.unpauseContainer(names.container);
+      this.touch(key);
+      return this.status(key);
+    });
+  }
+
+  /** CPU, memory, disk and OS of one sandbox. Starts nothing; a stopped or
+   * paused sandbox answers without CPU and memory figures. */
+  async stats(key: string): Promise<SandboxStats> {
+    const status = await this.status(key);
+    const names = sandboxNames(key);
+    const { limits } = this.config;
+    let cpuPercent: number | null = null;
+    let memoryBytes: number | null = null;
+    if (status.state === "running") {
+      const sample = await this.docker.containerStats(names.container);
+      cpuPercent = Math.round((sample.cpus / (limits.nanoCpus / 1e9)) * 1000) / 10;
+      memoryBytes = sample.memoryBytes;
+      if (!this.osInfo.has(key)) {
+        const result = await this.docker.exec(names.container, {
+          Cmd: ["sh", "-c", ". /etc/os-release 2>/dev/null; echo \"${PRETTY_NAME:-Linux}\"; uname -m"], User: `${SANDBOX_UID}:${SANDBOX_UID}`, Env: [], WorkingDir: "/",
+        }, 4096).catch(() => null);
+        const [os, arch] = (result?.stdout.toString("utf8") ?? "").trim().split("\n");
+        if (os && arch) this.osInfo.set(key, { os: os.slice(0, 80), arch: arch.slice(0, 20) });
+      }
+      await this.refreshUsage(key).catch(() => null);
+    }
+    const usage = this.usage.get(key);
+    return {
+      key,
+      state: status.state,
+      cpuPercent,
+      memoryBytes,
+      memoryLimitBytes: limits.memoryBytes,
+      workspaceBytes: usage?.bytes ?? null,
+      workspaceQuotaBytes: limits.workspaceQuotaBytes,
+      os: this.osInfo.get(key)?.os ?? null,
+      arch: this.osInfo.get(key)?.arch ?? null,
+      image: this.config.image.split("/").pop() ?? this.config.image,
+    };
+  }
+
+  /** The live view: a byte stream to the desktop's VNC port, which listens
+   * on 127.0.0.1 inside the sandbox only. Never starts anything: the
+   * sandbox and its desktop must already run (the Sagax server starts them
+   * through exec when the owner opens the view). A view in control counts
+   * as use, so the sandbox does not idle out under the person's hands; a
+   * view that only watches does not keep it alive. */
+  async desktopStream(key: string, options: { control: boolean }): Promise<Duplex> {
+    this.checkKey(key);
+    const names = sandboxNames(key);
+    const container = await this.docker.inspectContainer(names.container);
+    if (container && !this.owned(container.labels, key)) throw new SandboxError(409, "conflict", "a container with this name is not managed by this provisioner");
+    if (!container?.running) throw new SandboxError(409, "not_running", "the server environment is stopped");
+    if (container.paused) throw new SandboxError(409, "paused", "the server environment is paused");
+    const open = this.desktopStreams.get(key) ?? 0;
+    if (open >= MAX_DESKTOP_STREAMS) throw new SandboxError(429, "busy", "too many live views of this desktop are open");
+    this.desktopStreams.set(key, open + 1);
+    let stream: Duplex;
+    try {
+      stream = await this.docker.execStream(names.container, {
+        Cmd: ["sagax-desktop", "relay"], User: `${SANDBOX_UID}:${SANDBOX_UID}`, Env: [], WorkingDir: SANDBOX_WORKSPACE,
+      });
+    } catch (error) {
+      this.releaseDesktopStream(key);
+      throw error;
+    }
+    let released = false;
+    const timer = options.control ? setInterval(() => this.touch(key), CONTROL_TOUCH_MS) : null;
+    timer?.unref?.();
+    if (options.control) this.touch(key);
+    stream.once("close", () => {
+      if (timer) clearInterval(timer);
+      if (!released) { released = true; this.releaseDesktopStream(key); }
+    });
+    return stream;
+  }
+
+  private releaseDesktopStream(key: string): void {
+    const left = (this.desktopStreams.get(key) ?? 1) - 1;
+    if (left > 0) this.desktopStreams.set(key, left);
+    else this.desktopStreams.delete(key);
+  }
+
   /** Measure /workspace at most once a minute (soft quota). */
   async refreshUsage(key: string, force = false): Promise<number | null> {
     const cached = this.usage.get(key);
     if (!force && cached && this.now() - cached.at < USAGE_TTL_MS) return cached.bytes;
     const container = await this.docker.inspectContainer(sandboxNames(key).container);
-    if (!container?.running || !this.owned(container.labels, key)) return cached?.bytes ?? null;
+    if (!container?.running || container.paused || !this.owned(container.labels, key)) return cached?.bytes ?? null;
     const result = await this.docker.exec(sandboxNames(key).container, {
       Cmd: ["du", "-sxb", SANDBOX_WORKSPACE], User: `${SANDBOX_UID}:${SANDBOX_UID}`, Env: [], WorkingDir: "/",
     }, 4096);
