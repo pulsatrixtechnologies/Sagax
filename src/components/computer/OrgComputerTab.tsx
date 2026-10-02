@@ -96,7 +96,7 @@ function ServerEnvironmentComputer({ botName }: { botName: string }) {
         {(state === "running" || state === "paused") && <PowerButton icon={Power} label={t("orgComputer.shutdown")} danger disabled={busy} onClick={() => void act("shutdown")} />}
       </div>
       {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
-      <SandboxDesktopView />
+      <SandboxDesktopView onConnected={() => void load()} />
       <UsagePanel running={state === "running" || state === "paused"} />
     </>
   );

@@ -14,11 +14,15 @@ import { sandboxViewerPath, sandboxViewerProblem, type SandboxViewerProblem } fr
 
 type ViewState = "idle" | "connecting" | "connected" | "stopped" | SandboxViewerProblem;
 
-export function SandboxDesktopView() {
+/** `onConnected`: the view is live (opening it may have started the
+ * environment, so a power chip next to it should refresh). */
+export function SandboxDesktopView({ onConnected }: { onConnected?: () => void } = {}) {
   const screen = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ViewState>("idle");
   const [control, setControl] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
 
   useEffect(() => {
     if (attempt === 0) return;
@@ -40,7 +44,11 @@ export function SandboxDesktopView() {
         client.viewOnly = config.viewOnly !== false;
         client.scaleViewport = true;
         client.background = "var(--color-inset)";
-        client.addEventListener("connect", () => { if (!controller.signal.aborted) setState("connected"); });
+        client.addEventListener("connect", () => {
+          if (controller.signal.aborted) return;
+          setState("connected");
+          onConnectedRef.current?.();
+        });
         client.addEventListener("disconnect", () => { if (!controller.signal.aborted) setState("stopped"); });
       } catch {
         if (!controller.signal.aborted) setState("unavailable");
