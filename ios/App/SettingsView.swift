@@ -301,9 +301,8 @@ private struct SettingsRootPage: View {
     /// The white Sagax owl over "Sagax": 60.67 pt below Sign Out.
     private var footer: some View {
         VStack(spacing: 0) {
-            OwlMascotView(color: "white", size: 47.67)
-                .frame(width: 47.67, height: 47.67)
-                .accessibilityHidden(true)
+            // The Primary Bot once connected, else the white Sagax owl.
+            BrandMascotView(owlColor: "white", size: 47.67, animated: false)
             Text(verbatim: "Sagax")
                 .font(Theme.Font.appName)
                 .foregroundStyle(Theme.textPrimary)

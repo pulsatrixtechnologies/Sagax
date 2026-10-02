@@ -162,7 +162,11 @@ final class MascotLookTests: XCTestCase {
             "purple": "#8057C8", "cyan": "#0EA5C6", "pink": "#D84F8B", "yellow": "#D8A729",
             "teal": "#01A492", "coral": "#E5634E", "white": "#F4F4F4", "black": "#1D1E22",
         ]
-        XCTAssertEqual(MausColors.hex, expected)
+        for (name, hex) in expected { XCTAssertEqual(MausColors.hex[name], hex, name) }
+        // Every colour of the palettes in shared/mascot-colors.ts decodes too.
+        XCTAssertEqual(MausColors.hex.count, 52)
+        XCTAssertEqual(MausColors.hex["navy"], "#1E3A70")
+        XCTAssertEqual(MausColors.hex["mint"], "#98DDB9")
         XCTAssertEqual(MausColors.ink["black"], "#8B93A3")
         XCTAssertEqual(MausColors.ink["blue"], "#377FE6")
         XCTAssertEqual(MausColors.hex(for: "#abcdef"), "#ABCDEF")

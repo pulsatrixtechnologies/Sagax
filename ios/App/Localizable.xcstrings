@@ -637,6 +637,18 @@
             "state": "translated",
             "value": "Aprovações esperando por você"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approvals that are waiting for you"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les approbations qui vous attendent"
+          }
         }
       }
     },
@@ -991,6 +1003,18 @@
             "state": "translated",
             "value": "Escolher outro computador"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a different computer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir un autre ordinateur"
+          }
         }
       }
     },
@@ -1177,6 +1201,18 @@
             "state": "translated",
             "value": "Endereço do computador"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computer address"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse de l'ordinateur"
+          }
         }
       }
     },
@@ -1226,6 +1262,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conectar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecter"
           }
         }
       }
@@ -1278,6 +1326,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conectar meu computador"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect my computer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecter mon ordinateur"
           }
         }
       }
@@ -1410,6 +1470,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Continuar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuer"
           }
         }
       }
@@ -1975,6 +2047,18 @@
             "state": "translated",
             "value": "Ativar notificações"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable notifications"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activer les notifications"
+          }
         }
       }
     },
@@ -2068,6 +2152,18 @@
             "state": "translated",
             "value": "Digite o código mostrado neste computador"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the code shown on this computer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrez le code affiché sur cet ordinateur"
+          }
         }
       }
     },
@@ -2107,6 +2203,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Trabalhos concluídos e novidades importantes"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finished work and important updates"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le travail terminé et les mises à jour importantes"
           }
         }
       }
@@ -2209,6 +2317,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conexão HTTPS"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS connection"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion HTTPS"
           }
         }
       }
@@ -2442,6 +2562,18 @@
             "state": "translated",
             "value": "Procurando computadores"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Looking for computers"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recherche d'ordinateurs"
+          }
         }
       }
     },
@@ -2565,6 +2697,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Computadores por perto"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nearby computers"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordinateurs à proximité"
           }
         }
       }
@@ -2853,6 +2997,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Agora não"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not now"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus tard"
           }
         }
       }
@@ -4046,6 +4202,18 @@
             "state": "translated",
             "value": "Escanear QR code"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan QR code"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanner le code QR"
+          }
         }
       }
     },
@@ -4452,6 +4620,18 @@
             "state": "translated",
             "value": "Fique por dentro"
           }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stay in the loop"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restez au courant"
+          }
         }
       }
     },
@@ -4593,6 +4773,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conexão Tailscale"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tailscale connection"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion Tailscale"
           }
         }
       }
@@ -5093,6 +5285,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conexão local confiável"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trusted local connection"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion locale de confiance"
           }
         }
       }
@@ -5613,6 +5817,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Se connecter avec Pulsatrix"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in with Pulsatrix"
           }
         }
       }
@@ -10980,6 +11190,806 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ontem %@"
+          }
+        }
+      }
+    },
+    "A server's code is 12 letters and digits, never 0, O, 1 or I.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A server's code is 12 letters and digits, never 0, O, 1 or I."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le code d'un serveur compte 12 lettres et chiffres, jamais 0, O, 1 ni I."
+          }
+        }
+      }
+    },
+    "Address and code": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Address and code"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse et code"
+          }
+        }
+      }
+    },
+    "Address": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Address"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse"
+          }
+        }
+      }
+    },
+    "Ask your administrator for this address. It is remembered on this phone for next time.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask your administrator for this address. It is remembered on this phone for next time."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demandez cette adresse à votre administrateur. Ce téléphone la retient pour la prochaine fois."
+          }
+        }
+      }
+    },
+    "Computers ready to pair appear here.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computers ready to pair appear here."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les ordinateurs prêts à être jumelés apparaissent ici."
+          }
+        }
+      }
+    },
+    "Connect your computer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect your computer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connectez votre ordinateur"
+          }
+        }
+      }
+    },
+    "Connecting...": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting..."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion..."
+          }
+        }
+      }
+    },
+    "Contacting the server...": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contacting the server..."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contact du serveur..."
+          }
+        }
+      }
+    },
+    "Continue with Pulsatrix": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue with Pulsatrix"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuer avec Pulsatrix"
+          }
+        }
+      }
+    },
+    "Demo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démo"
+          }
+        }
+      }
+    },
+    "Exit demo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exit demo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter la démo"
+          }
+        }
+      }
+    },
+    "Get alerts while Sagax is open or was recently in the background. Alerts stop after iOS fully suspends or closes the app.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get alerts while Sagax is open or was recently in the background. Alerts stop after iOS fully suspends or closes the app."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recevez des alertes pendant que Sagax est ouvert ou était récemment en arrière-plan. Elles s'arrêtent quand iOS suspend ou ferme complètement l'app."
+          }
+        }
+      }
+    },
+    "In Sagax on your computer, open Settings, then Phone, then Set up a phone. Scan the code it shows.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In Sagax on your computer, open Settings, then Phone, then Set up a phone. Scan the code it shows."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans Sagax sur votre ordinateur, ouvrez Réglages, puis Téléphone, puis Configurer un téléphone. Scannez le code affiché."
+          }
+        }
+      }
+    },
+    "Made-up bots and chats. Nothing leaves this phone.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Made-up bots and chats. Nothing leaves this phone."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Des robots et des conversations fictifs. Rien ne quitte ce téléphone."
+          }
+        }
+      }
+    },
+    "Made-up data, nothing leaves this phone.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Made-up data, nothing leaves this phone."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Données fictives, rien ne quitte ce téléphone."
+          }
+        }
+      }
+    },
+    "Make sure this is the computer or server you expect before connecting.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make sure this is the computer or server you expect before connecting."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifiez que c'est bien l'ordinateur ou le serveur attendu avant de vous connecter."
+          }
+        }
+      }
+    },
+    "No account yet?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No account yet?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de compte?"
+          }
+        }
+      }
+    },
+    "Only continue on a network you trust. Local connections are authenticated but not encrypted.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only continue on a network you trust. Local connections are authenticated but not encrypted."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuez seulement sur un réseau de confiance. Les connexions locales sont authentifiées mais pas chiffrées."
+          }
+        }
+      }
+    },
+    "Pairing code": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing code"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code de jumelage"
+          }
+        }
+      }
+    },
+    "Sagax opens your organization's Pulsatrix sign-in. Your private chats, your keys and your permissions come with you.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax opens your organization's Pulsatrix sign-in. Your private chats, your keys and your permissions come with you."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax ouvre la connexion Pulsatrix de votre organisation. Vos conversations privées, vos clés et vos permissions vous suivent."
+          }
+        }
+      }
+    },
+    "Scan the QR code shown in Sagax on your computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan the QR code shown in Sagax on your computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scannez le code QR affiché dans Sagax sur votre ordinateur."
+          }
+        }
+      }
+    },
+    "Server address": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server address"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse du serveur"
+          }
+        }
+      }
+    },
+    "Sign in to an organization": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in to an organization"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter à une organisation"
+          }
+        }
+      }
+    },
+    "Signing in...": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signing in..."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion en cours..."
+          }
+        }
+      }
+    },
+    "Signs people in with Pulsatrix": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signs people in with Pulsatrix"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion avec Pulsatrix"
+          }
+        }
+      }
+    },
+    "Start pairing again on your computer and scan the new QR code.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start pairing again on your computer and scan the new QR code."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relancez le jumelage sur votre ordinateur et scannez le nouveau code QR."
+          }
+        }
+      }
+    },
+    "That address doesn't look right. Copy it from Phone settings on your computer and try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That address doesn't look right. Copy it from Phone settings on your computer and try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette adresse ne semble pas valide. Copiez-la depuis les réglages Téléphone de votre ordinateur et réessayez."
+          }
+        }
+      }
+    },
+    "That isn't a Sagax pairing QR code.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That isn't a Sagax pairing QR code."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce n'est pas un code QR de jumelage Sagax."
+          }
+        }
+      }
+    },
+    "The code shown on your computer: 6 digits, or 12 characters for a server.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The code shown on your computer: 6 digits, or 12 characters for a server."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le code affiché sur votre ordinateur : 6 chiffres, ou 12 caractères pour un serveur."
+          }
+        }
+      }
+    },
+    "This address is a computer, not an organization. Go back and choose Connect my computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This address is a computer, not an organization. Go back and choose Connect my computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette adresse est un ordinateur, pas une organisation. Revenez en arrière et choisissez Connecter mon ordinateur."
+          }
+        }
+      }
+    },
+    "This server signs people in with Pulsatrix.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This server signs people in with Pulsatrix."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce serveur connecte les gens avec Pulsatrix."
+          }
+        }
+      }
+    },
+    "Try the demo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try the demo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essayer la démo"
+          }
+        }
+      }
+    },
+    "Use the address shown in Settings, then Phone, on your computer. A server's pairing link works too.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the address shown in Settings, then Phone, on your computer. A server's pairing link works too."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisez l'adresse affichée dans Réglages, puis Téléphone, sur votre ordinateur. Le lien de jumelage d'un serveur fonctionne aussi."
+          }
+        }
+      }
+    },
+    "Welcome to Sagax": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welcome to Sagax"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bienvenue dans Sagax"
+          }
+        }
+      }
+    },
+    "With your Pulsatrix account. Passkeys work.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With your Pulsatrix account. Passkeys work."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec votre compte Pulsatrix. Les clés d'accès fonctionnent."
+          }
+        }
+      }
+    },
+    "Your bots keep working on your computer or your organization's server. Follow them, answer their questions and send them work from here.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your bots keep working on your computer or your organization's server. Follow them, answer their questions and send them work from here."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos robots travaillent sur votre ordinateur ou sur le serveur de votre organisation. Suivez-les, répondez à leurs questions et confiez-leur du travail d'ici."
+          }
+        }
+      }
+    },
+    "Your data stays on your computer or your organization's server. This phone keeps only a sign-in, in the Keychain.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your data stays on your computer or your organization's server. This phone keeps only a sign-in, in the Keychain."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos données restent sur votre ordinateur ou sur le serveur de votre organisation. Ce téléphone ne garde qu'une session, dans le trousseau."
+          }
+        }
+      }
+    },
+    "Your organization": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your organization"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre organisation"
+          }
+        }
+      }
+    },
+    "Can't reach %@. Check the address and your connection, then try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach %@. Check the address and your connection, then try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de joindre %@. Vérifiez l'adresse et votre connexion, puis réessayez."
+          }
+        }
+      }
+    },
+    "%@ isn't a Sagax server. Check the address and try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ isn't a Sagax server. Check the address and try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n'est pas un serveur Sagax. Vérifiez l'adresse et réessayez."
+          }
+        }
+      }
+    },
+    "This server signs people in with Pulsatrix. Tap Sign in with Pulsatrix.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This server signs people in with Pulsatrix. Tap Sign in with Pulsatrix."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce serveur connecte les gens avec Pulsatrix. Touchez Se connecter avec Pulsatrix."
+          }
+        }
+      }
+    },
+    "Sign-in was cancelled. Tap Continue with Pulsatrix to try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in was cancelled. Tap Continue with Pulsatrix to try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion a été annulée. Touchez Continuer avec Pulsatrix pour réessayer."
+          }
+        }
+      }
+    },
+    "Your Pulsatrix account can't use this server. Ask an administrator.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Pulsatrix account can't use this server. Ask an administrator."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre compte Pulsatrix ne peut pas utiliser ce serveur. Demandez à un administrateur."
+          }
+        }
+      }
+    },
+    "The server can't reach Pulsatrix right now. Try again in a moment.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server can't reach Pulsatrix right now. Try again in a moment."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur ne joint pas Pulsatrix pour le moment. Réessayez dans un instant."
+          }
+        }
+      }
+    },
+    "The sign-in took too long or was opened elsewhere. Try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The sign-in took too long or was opened elsewhere. Try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion a pris trop de temps ou a été ouverte ailleurs. Réessayez."
+          }
+        }
+      }
+    },
+    "Pulsatrix did not allow the sign-in.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsatrix did not allow the sign-in."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsatrix n'a pas autorisé la connexion."
+          }
+        }
+      }
+    },
+    "The server refused the sign-in (%@). Try again, or ask an administrator.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server refused the sign-in (%@). Try again, or ask an administrator."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le serveur a refusé la connexion (%@). Réessayez ou demandez à un administrateur."
+          }
+        }
+      }
+    },
+    "The sign-in ended unexpectedly. Try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The sign-in ended unexpectedly. Try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion s'est terminée de façon inattendue. Réessayez."
+          }
+        }
+      }
+    },
+    "Signed in, but this phone couldn't keep the session securely (%@). Builds without signing can't save it; use a signed build.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signed in, but this phone couldn't keep the session securely (%@). Builds without signing can't save it; use a signed build."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté, mais ce téléphone n'a pas pu garder la session de façon sécurisée (%@). Une version non signée ne peut pas l'enregistrer; utilisez une version signée."
+          }
+        }
+      }
+    },
+    "The sign-in expired before the phone could use it. Sign in again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The sign-in expired before the phone could use it. Sign in again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion a expiré avant que le téléphone puisse l'utiliser. Reconnectez-vous."
           }
         }
       }

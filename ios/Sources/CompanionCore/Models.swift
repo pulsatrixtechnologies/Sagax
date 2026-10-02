@@ -1599,6 +1599,19 @@ public struct ServerIdentity: Codable, Hashable, Sendable {
     public var loginPath: String?
     /// The server ends a native sign-in on a `sagax://` link.
     public var nativeReturn: Bool?
+    /// Schemes a phone start may name with `&return=`. A server that lists
+    /// `sagax` ends the phone's sign-in on `sagax://pair`; older servers
+    /// omit it and end on `openmausbot://pair`.
+    public var phoneReturnSchemes: [String]? = nil
+
+    public init(kind: String, protocol: String? = nil, issuer: String? = nil, loginPath: String? = nil, nativeReturn: Bool? = nil, phoneReturnSchemes: [String]? = nil) {
+        self.kind = kind
+        self.protocol = `protocol`
+        self.issuer = issuer
+        self.loginPath = loginPath
+        self.nativeReturn = nativeReturn
+        self.phoneReturnSchemes = phoneReturnSchemes
+    }
 }
 
 /// "Sign in with Pulsatrix" from the phone: the authentication sheet opens
@@ -1606,11 +1619,24 @@ public struct ServerIdentity: Codable, Hashable, Sendable {
 /// invite link the app already accepts from a QR code
 /// (`sagax://pair?address=...&token=omb_pair_...&name=...`).
 public enum PulsatrixSignIn {
+    /// This app's own scheme (the only one it registers), asked for
+    /// whenever the server offers it.
     public static let callbackScheme = CompanionURLScheme.name
+    /// What a server that predates `phoneReturnSchemes` ends on. Only the
+    /// sign-in sheet ever sees it: the app does not register it.
+    public static let legacyCallbackScheme = "openmausbot"
+    /// Every scheme a sign-in may end on.
+    public static let callbackSchemes: Set<String> = [callbackScheme, legacyCallbackScheme]
 
-    /// `<server origin>/auth/oidc/start?client=phone`, or nil for an address
-    /// that is not http(s).
-    public static func startURL(base: URL) -> URL? {
+    /// The scheme to ask the server for: `sagax` when it advertises the
+    /// phone return, else the one it always ends on.
+    public static func returnScheme(for identity: ServerIdentity?) -> String {
+        identity?.phoneReturnSchemes?.contains(callbackScheme) == true ? callbackScheme : legacyCallbackScheme
+    }
+
+    /// `<server origin>/auth/oidc/start?client=phone[&return=sagax]`, or nil
+    /// for an address that is not http(s).
+    public static func startURL(base: URL, returnScheme: String = legacyCallbackScheme) -> URL? {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false),
               let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
               components.host != nil
@@ -1618,19 +1644,31 @@ public enum PulsatrixSignIn {
         components.path = "/auth/oidc/start"
         components.query = nil
         components.fragment = nil
-        components.queryItems = [URLQueryItem(name: "client", value: "phone")]
+        var items = [URLQueryItem(name: "client", value: "phone")]
+        if returnScheme == callbackScheme { items.append(URLQueryItem(name: "return", value: callbackScheme)) }
+        components.queryItems = items
         return components.url
     }
 
     /// The invite the sign-in came back with, or nil (a cancelled sheet, a
     /// link for another server, anything that is not an invite).
     public static func invite(from callback: URL, expectedOrigin: URL) -> PairingInvite? {
-        guard let invite = PairingInvite.parse(callback),
+        guard let invite = PairingInvite.parse(sagaxLink(callback)),
               invite.credential.hasPrefix("omb_pair_"),
               let address = invite.connection.baseURL,
               sameOrigin(address, expectedOrigin)
         else { return nil }
         return invite
+    }
+
+    /// An older server's `openmausbot://pair` answer, read as the
+    /// `sagax://pair` link it stands for; deep links stay sagax:// only.
+    static func sagaxLink(_ url: URL) -> URL {
+        guard url.scheme?.lowercased() == legacyCallbackScheme,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return url }
+        components.scheme = callbackScheme
+        return components.url ?? url
     }
 
     static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
