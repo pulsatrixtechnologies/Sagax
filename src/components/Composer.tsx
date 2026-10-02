@@ -46,6 +46,7 @@ import {
   handoffAttachmentImagePreview,
   clipboardHasImages,
   clipboardImageFiles,
+  clipboardOtherFiles,
   composeMessage,
   composerShouldRefocus,
   composerTakesFocusOnOpen,
@@ -601,7 +602,7 @@ export function Composer({
       throw error;
     }
   }, [draftId]);
-  const pickFiles = async (picked: FileList | null) => {
+  const pickFiles = async (picked: FileList | readonly File[] | null) => {
     if (!picked?.length) return;
     changeDraftAttachmentPending(draftId, true);
     try {
@@ -791,6 +792,14 @@ export function Composer({
         })();
         return;
       }
+    }
+    // a zip or a document copied in the Finder or Explorer attaches like a
+    // picked file (same intake, same limits and notices)
+    const otherFiles = clipboardOtherFiles(e.clipboardData);
+    if (otherFiles.length > 0) {
+      e.preventDefault();
+      void pickFiles(otherFiles);
+      return;
     }
     const pasted = e.clipboardData.getData("text/plain");
     // a pasted thread reference — canonical link, its markdown shape, or a

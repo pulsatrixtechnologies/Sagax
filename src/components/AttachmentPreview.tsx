@@ -30,11 +30,13 @@ import {
 import {
   attachmentBasename,
   attachmentImageUrl,
+  isArchiveName,
   type TranscriptFileAttachment,
   type TranscriptImageAttachment,
 } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { ArchiveContents, useArchiveManifest } from "./ArchiveContents";
 import { useConversationGallery } from "./conversation-gallery-context";
 import { isInlineRasterDataUrl } from "@/lib/rich-blocks";
 
@@ -922,8 +924,16 @@ export function AttachedFileChip({ file, message, linked = false, className }: {
               : save.reason}
         </div>
       )}
+      {file.private && isArchiveName(file.name) && <TranscriptArchive path={file.path} />}
     </div>
   );
+}
+
+/** An attached archive's count and list, from the server's manifest. */
+function TranscriptArchive({ path }: { path: string }) {
+  const summary = useArchiveManifest(path);
+  if (!summary) return null;
+  return <ArchiveContents summary={summary} className="border-t border-hairline/30 px-2.5 py-1.5" />;
 }
 
 /** Transcript file paths stay inert until the person explicitly asks the

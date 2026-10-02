@@ -297,7 +297,8 @@ export function pathSubject(path: string): PathSubject | null {
   if (m && m[1] !== "wake") return { kind: "routine", id: m[1]! };
   m = /^\/api\/routine-runs\/([\w-]+)\//.exec(path);
   if (m && m[1] !== "seen-all") return { kind: "routine-run", id: m[1]! };
-  m = /^\/api\/attachments\/([\w.-]+)$/.exec(path);
+  // the file itself and an archive's manifest (`/manifest`)
+  m = /^\/api\/attachments\/([\w.-]+)(?:\/manifest)?$/.exec(path);
   if (m) return { kind: "attachment", name: m[1]! };
   return null;
 }

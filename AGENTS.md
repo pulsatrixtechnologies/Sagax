@@ -563,6 +563,15 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 - Attachments of the CURRENT message are the speaker's only when the first
   message naming them is theirs; small text ones are inlined, all are copied
   where the tools run at the first tool call, and the tag names that path.
+- Archives (zip, tar, tar.gz, 7z; 90 MB per file): the server only LISTS
+  them (`server/attachment-archives.ts`); they are unpacked where the bot
+  works, next to the copy, at the first tool call (python3 in the server
+  environment, `extract_archive` on the desktop, `electron/archive-extract.mjs`;
+  solo: next to the upload). No links, nothing outside the folder, bomb limits
+  (5000 files, 512 MB, ratio 200, depth 24), an encrypted zip kept as is. The
+  message carries an `<attached-archive>` manifest. Tests:
+  `electron/archive-extract.node-test.mjs`, `server/attachment-archives.test.ts`,
+  `server/archive-attachments.e2e.test.ts`, `server/desktop-bridge.e2e.test.ts`.
 - The desktop never reads or writes the app's own data, its cookies or the
   person's credential stores through the bridge.
 
