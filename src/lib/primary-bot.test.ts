@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { isViewersPrimaryBot, primaryBotChoices, viewerOwnsBot, withPrimaryBot } from "./primary-bot";
+import { isViewersPrimaryBot, primaryBotChoices, viewerOwnsBot, withPrimaryBot, type PrimaryBotCandidate } from "./primary-bot";
 
-const bots = [
+const bots: PrimaryBotCandidate[] = [
   { id: "cryptic", name: "Cryptic", chiefOfStaff: true },
   { id: "atlas", name: "Atlas" },
   { id: "zed", name: "Zed", title: "Researcher" },
