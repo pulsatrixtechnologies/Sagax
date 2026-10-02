@@ -824,7 +824,7 @@ const MessagesList = memo(function MessagesList({
                 <AccessCard
                   access={m.access}
                   viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
-                  onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "organization" })}
+                  onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
                 />
               ) : null;
             case "secret":

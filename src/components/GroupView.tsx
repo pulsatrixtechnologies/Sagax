@@ -328,7 +328,7 @@ export const Transcript = memo(function Transcript({
               <AccessCard
                 access={m.access}
                 viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
-                onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "organization" })}
+                onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
               />
             </div>
           ) : m.kind === "goal.run" ? (

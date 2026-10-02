@@ -8,7 +8,7 @@ import { setLocale, t } from "@/lib/i18n";
 import type { SidebarDensity } from "@/lib/sidebar-preferences";
 import { StoreProvider } from "@/state/store";
 
-const fixture = vi.hoisted(() => ({ density: "comfortable" as SidebarDensity, templates: undefined as boolean | undefined }));
+const fixture = vi.hoisted(() => ({ density: "comfortable" as SidebarDensity, templates: undefined as boolean | undefined, connectedApps: undefined as boolean | undefined }));
 
 vi.mock("@/lib/sidebar-preferences", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/sidebar-preferences")>(),
@@ -21,8 +21,8 @@ vi.mock("@/state/store", async (importOriginal) => {
     ...original,
     useStore: () => {
       const store = original.useStore();
-      if (fixture.templates === undefined) return store;
-      return { ...store, state: { ...store.state, config: { ...store.state.config, features: { skillAuthoring: true, templates: fixture.templates } } } };
+      if (fixture.templates === undefined && fixture.connectedApps === undefined) return store;
+      return { ...store, state: { ...store.state, config: { ...store.state.config, features: { skillAuthoring: true, templates: fixture.templates, connectedApps: fixture.connectedApps } } } };
     },
   };
 });
@@ -41,6 +41,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   fixture.templates = undefined;
+  fixture.connectedApps = undefined;
   setLocale("en");
 });
 
@@ -83,7 +84,19 @@ describe("sidebar header", () => {
     fixture.templates = true;
     const html = render();
     expect(html).toContain(">Templates</span>");
+    expect(html).not.toContain(">Connected apps</span>");
+  });
+
+  it("hides Connected apps in the bottom menu until its experimental flag is on", () => {
+    fixture.density = "comfortable";
+    expect(render()).not.toContain(">Connected apps</span>");
+    expect(render()).not.toContain('data-tour="nav-apps"');
+    fixture.connectedApps = false;
+    expect(render()).not.toContain(">Connected apps</span>");
+    fixture.connectedApps = true;
+    const html = render();
     expect(html).toContain(">Connected apps</span>");
+    expect(html).toContain(">Team map</span>");
   });
 
   it("spells the palette chord per platform", () => {

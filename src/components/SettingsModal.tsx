@@ -8,7 +8,8 @@ import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingL
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
-import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled } from "@/lib/feature-flags";
+import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled } from "@/lib/feature-flags";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { withTourReset } from "@/lib/guided-tour";
@@ -82,7 +83,7 @@ export const SECTIONS: Array<{
   { id: "decisionModel", labelKey: "settings.section.decisionModel", icon: Zap, keywords: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"] },
   { id: "engines", labelKey: "settings.section.engines", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription"] },
   { id: "companion", labelKey: "settings.section.companion", icon: TabletSmartphone, keywords: ["companion", "device", "phone", "desktop", "client", "host", "pair", "pairing", "mobile", "https", "secure", "tailscale", "wifi", "remote", "advanced", "domain", "dns", "self-hosted", "server", "caddy"] },
-  { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["vm", "virtual", "desktop"] },
+  { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur"] },
   { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing"] },
   { id: "people", labelKey: "settings.section.people", icon: Users, keywords: ["people", "users", "invite", "sign in", "members", "admins", "access"] },
   { id: "mail", labelKey: "settings.section.mail", icon: Mail, keywords: ["email", "mail", "courriel", "smtp", "sendgrid", "twilio", "sender", "invitations", "sign-in codes"] },
@@ -109,6 +110,13 @@ export function cardsMatching(query: string): string[] {
   return Object.entries(CARD_KEYWORDS)
     .filter(([, words]) => words.some((word) => word.includes(query)))
     .map(([id]) => id);
+}
+
+/** Sections an organization server (Perspicax) leaves out: its mail is
+ * managed in the Perspicax admin console. A solo server keeps Email: it
+ * sends its own sign-in codes and invitations. */
+export function organizationHidesSection(id: AppSettingsSection, organization: boolean): boolean {
+  return organization && id === "mail";
 }
 
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
@@ -692,13 +700,14 @@ function ExperimentalFeaturesRow() {
   const skillAuthoring = skillAuthoringEnabled(state.config);
   const browser = builtInBrowserEnabled(state.config);
   const templates = templatesEnabled(state.config);
+  const connectedApps = connectedAppsEnabled(state.config);
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
-  const [saving, setSaving] = useState<"skillAuthoring" | "browser" | "templates" | null>(null);
+  const [saving, setSaving] = useState<"skillAuthoring" | "browser" | "templates" | "connectedApps" | null>(null);
   const [error, setError] = useState("");
 
-  const toggle = async (feature: "skillAuthoring" | "browser" | "templates", next: boolean) => {
+  const toggle = async (feature: "skillAuthoring" | "browser" | "templates" | "connectedApps", next: boolean) => {
     if (saving) return;
     setSaving(feature);
     setError("");
@@ -721,7 +730,7 @@ function ExperimentalFeaturesRow() {
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates), total: 3 })}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates) + Number(connectedApps), total: 4 })}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
@@ -771,6 +780,21 @@ function ExperimentalFeaturesRow() {
           aria-label={t("settings.experimental.templatesAria")}
           disabled={saving !== null}
           onClick={() => void toggle("templates", !templates)}
+          className="disabled:cursor-wait disabled:opacity-50"
+        />
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-connected-apps>
+        <div className="min-w-0">
+          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.connectedApps")}</div>
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
+            {t("settings.experimental.connectedAppsDetail")}
+          </div>
+        </div>
+        <Switch
+          checked={connectedApps}
+          aria-label={t("settings.experimental.connectedAppsAria")}
+          disabled={saving !== null}
+          onClick={() => void toggle("connectedApps", !connectedApps)}
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
@@ -865,6 +889,10 @@ export function SettingsModal() {
   // Server mode: this app shows its organization's server only (src/lib/launch.ts).
   const serverMode = useServerMode();
   const lockedServer = serverMode?.active ? serverMode : null;
+  // An organization server (Perspicax): the desktop locked to one, or a
+  // page whose server answers GET /api/org as Perspicax.
+  const perspicaxOrg = usePerspicaxOrg();
+  const organization = Boolean(lockedServer) || perspicaxOrg !== null;
   const soloDesktop = !remoteActive && Boolean(launchBridges(window.ogb)) && state.config?.onboarding?.launchMode !== "server";
   // A request for Settings > Organization (the Server menu, a deep link) on
   // a desktop with no server opens the launch screen on Server instead.
@@ -891,6 +919,7 @@ export function SettingsModal() {
     // how the server sends sign-in codes and invitations: its admins and
     // the operator, on the desktop and on the web
     .filter((entry) => entry.id !== "mail" || ownerOrAdmin === true)
+    .filter((entry) => !organizationHidesSection(entry.id, organization))
     // the activity log belongs to a workspace served to a browser, and to its admins
     .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
@@ -1160,7 +1189,7 @@ export function SettingsModal() {
                     </details>
                   </div>
                 </Card>
-                <Card
+                {connectedAppsEnabled(state.config) && <Card
                   collapsible
                   cardId="connections.apps"
                   defaultOpen={false}
@@ -1174,7 +1203,7 @@ export function SettingsModal() {
                   summary={configuredSummary(state.config, ["composio"])}
                 >
                   <ApiKeyRow section="composio" />
-                </Card>
+                </Card>}
                 <Card
                   collapsible
                   cardId="connections.integrations"

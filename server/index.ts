@@ -162,6 +162,7 @@ import {
   saveConfig,
   showToolCallsEnabled,
   routinesInConversationEnabled,
+  connectedAppsEnabled,
   templatesEnabled,
   claudeUserMcpEnabled,
   claudeAiConnectorsEnabled,
@@ -644,6 +645,7 @@ import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type 
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
+import { createOrgBotForceRoutes } from "./org-bot-force.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { readSandboxdKey } from "./sandboxd-auth.ts";
 import { sandboxdClient } from "./user-sandbox-client.ts";
@@ -12004,6 +12006,32 @@ async function stopBotForEmergencyApprovalDowngrade(botId: string): Promise<void
   await directStop;
 }
 
+/** An organization admin's "Forcer l'arrêt" (server/org-bot-force.ts):
+ * every running turn of the bot stops, in its own threads, its routine run
+ * and the room it is speaking in. Cancellation flags flip before any await. */
+async function forceStopBot(botId: string): Promise<void> {
+  const bot = store.bot(botId);
+  if (!bot) return;
+  const work: Array<Promise<unknown>> = [interruptAllDirectThreads(botId)];
+  // Its own routine run and a room goal it coordinates, each once.
+  const routineRuns = [routines?.activeBotRunForBot(bot.id), routines?.activeRunForBot(bot.id)]
+    .filter((run, index, all): run is NonNullable<typeof run> => Boolean(run) && all.findIndex((other) => other?.id === run!.id) === index);
+  for (const routineRun of routineRuns) {
+    if (routineRun.threadId) revokeInternalCapabilitiesForThread(routineRun.threadId);
+    cancelDirectTurnDispatch(bot.id, routineRun.threadId);
+    work.push(routines!.cancelRun(routineRun.id).then(() => { if (routineRun.threadId) closeOpenApprovals(routineRun.threadId); }));
+  }
+  const groupTurn = activeGroupTurnForBot(bot.id);
+  if (groupTurn) {
+    revokeInternalCapabilitiesForThread(groupTurn.threadId);
+    cancelGroupTurnOperations(groupTurn.group.id, groupTurn.threadId);
+    work.push(Promise.resolve(runningTurnInstance(bot, groupTurn.threadId)?.adapter.interruptTurn(groupTurn.threadId)).then(() => closeOpenApprovals(groupTurn.threadId)));
+  }
+  const results = await Promise.allSettled(work);
+  const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failure) throw failure.reason;
+}
+
 // Load queued handoffs before scheduler recovery can fail an interrupted
 // run. Its failure callback can then durably drop that work immediately;
 // nothing dispatches until the listener is ready below.
@@ -16120,6 +16148,7 @@ function configStatus() {
       skillAuthoring: skillAuthoringEnabled(cfg),
       showToolCalls: showToolCallsEnabled(cfg),
       routinesInConversation: routinesInConversationEnabled(cfg),
+      connectedApps: connectedAppsEnabled(cfg),
       templates: templatesEnabled(cfg),
       browser: builtInBrowserEnabled(cfg),
       // Maintainer-only escape hatch, not a Settings toggle: the desktop
@@ -18047,6 +18076,32 @@ ROUTES.push(createOrgImportRoute({
   audit: (auth, details) => orgAudit({
     category: "org", action: "org.import", target: { kind: "server" }, after: { ...details }, actor: orgAuditActor(auth),
   }),
+}));
+// Admin force actions on any bot (Settings > Organization > Sharing).
+ROUTES.push(createOrgBotForceRoutes({
+  organization: IDENTITY.kind === "perspicax",
+  isAdmin: orgAdminCaller,
+  bot: (id) => {
+    const bot = store.bot(id);
+    return bot ? { id: bot.id, name: bot.name, ownerPrincipalId: botFacts(bot).ownerPrincipalId } : null;
+  },
+  actorId: actorPrincipalId,
+  stop: forceStopBot,
+  remove: (botId) => deleteBotWithLifecycle(botId),
+  audit: (auth, action, bot) => orgAudit({
+    category: "bot", action, target: { kind: "bot", id: bot.id, name: bot.name },
+    before: { ownerPrincipalId: bot.ownerPrincipalId }, actor: orgAuditActor(auth),
+  }),
+  notifyOwner: (bot, action, auth) => {
+    const admin = principals.byId(actorPrincipalId(auth));
+    const who = admin ? personDisplayName(admin) || "An admin" : "An admin";
+    notify({
+      kind: "admin-action", botId: bot.id, botName: bot.name, threadId: store.bot(bot.id)?.threadId ?? "",
+      title: action === "stop" ? `${bot.name} was stopped by an admin` : `${bot.name} was deleted by an admin`,
+      body: action === "stop" ? `${who} stopped all of its work.` : `${who} deleted this bot.`,
+      audience: [bot.ownerPrincipalId],
+    });
+  },
 }));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
