@@ -180,7 +180,7 @@ export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
 
 /** The Primary Bot mark: orange circle, white star, bottom-right. */
 export function PrimaryBotBadge({ size, ringClassName = "ring-panel", label }: { size: number; ringClassName?: string; label?: string }) {
-  const badge = Math.max(10, Math.round(size * 0.42));
+  const badge = Math.min(18, Math.max(10, Math.round(size * 0.28)));
   return (
     <span
       data-testid="primary-bot-badge"
