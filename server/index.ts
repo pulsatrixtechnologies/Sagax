@@ -537,6 +537,7 @@ import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
+import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt } from "./voice-call-prompt.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
@@ -10149,7 +10150,7 @@ function drainAsideLane() {
 
 /** Keep a person's words off the transcript until a direct-thread slot is
  * available. Reuse the existing cancellable, idempotent composer queue. */
-async function startOrQueueDirectMessage(botId: string, threadId: string, text: string, replyTo?: Message, sendId?: string, sender?: ResolvedSender, trigger?: UsageTrigger, speaker?: TurnSpeaker) {
+async function startOrQueueDirectMessage(botId: string, threadId: string, text: string, replyTo?: Message, sendId?: string, sender?: ResolvedSender, trigger?: UsageTrigger, speaker?: TurnSpeaker, voiceCall?: Message["voiceCall"]) {
   const decision = admit("direct", {}, {
     // A room turn holds the bot exactly like the sibling opened-thread queue
     // below: the drain's own block check waits it out, so the words queue
@@ -10168,10 +10169,11 @@ async function startOrQueueDirectMessage(botId: string, threadId: string, text: 
       sender,
       trigger,
       speaker,
+      ...(voiceCall ? { voiceCall } : {}),
     });
     return { ok: true as const, queued: true as const, queueId: queued.id, threadId, reason: decision.reason };
   }
-  const message = await startTurn(botId, text, { threadId, replyTo, sendId, sender, trigger, speaker });
+  const message = await startTurn(botId, text, { threadId, replyTo, sendId, sender, trigger, speaker, ...(voiceCall ? { voiceCall } : {}) });
   return { ok: true as const, threadId, message };
 }
 
@@ -10453,6 +10455,8 @@ async function startTurn(
     computerSelectionContinuation?: boolean;
     /** Earlier text message this user turn is replying to. */
     replyTo?: Message;
+    /** Words said on a voice call (Message.voiceCall). */
+    voiceCall?: Message["voiceCall"];
     /** Stable identity supplied by the composer so a network retry cannot
      * dispatch the same user action twice. */
     sendId?: string;
@@ -10629,6 +10633,7 @@ async function startTurn(
           sendId: opts?.sendId,
           peerAsk: opts?.peerAsk,
           sender: opts?.sender,
+          ...(opts?.voiceCall ? { voiceCall: opts.voiceCall } : {}),
         });
   }
   // Organization server (slice 3, D13): no turn without engine access. The
@@ -10643,6 +10648,16 @@ async function startTurn(
   });
   // an automatic recovery re-enters with these options: same speaker
   opts = { ...opts, speaker };
+  // A voice call turn gets the hidden phone-call instruction; the first
+  // written turn after a call is told the call ended. Only a person's own
+  // turn: a continuation or a peer hop is not said on the phone.
+  const voiceCallText = opts?.cardContinuation || opts?.commsDepth || userMessage.peerAsk
+    ? ""
+    : voiceCallSection(
+      userMessage,
+      store.activePath(threadId).findLast((message) => message.role === "user" && message.id !== userMessage?.id && !message.peerAsk && message.at <= userMessage!.at),
+      userMessage.sender?.name ?? botUserName(bot),
+    );
   // Organization server: where this turn's tools run, and for whom, decided
   // once (server/desktop-bridge.ts); the speaker's own attachments are
   // pointed there and small text ones given inline.
@@ -11639,6 +11654,8 @@ async function startTurn(
         { id: "playbooks", label: "Playbooks", text: packagePlaybooks },
         { id: "webhook", label: "Webhook provenance", text: opts?.automationSource === "webhook" ? WEBHOOK_PROMPT : "" },
         { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed; do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
+        // a voice call: the phone-call instruction (server/voice-call-prompt.ts)
+        { id: "voice-call", label: "Phone call", text: voiceCallText },
       ]);
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
       // Automatic recall rides in front of THIS turn's message, never in the
@@ -11721,7 +11738,8 @@ async function startTurn(
         systemVolatile: prompt.volatile,
         // the mentions half describes this turn: identical consecutive tags
         // must still deliver their note (SendTurnInput.mentionTurn)
-        mentionTurn: tagged.length > 0,
+        // and so does an interrupted call turn's marker
+        mentionTurn: tagged.length > 0 || Boolean(userMessage.voiceCall?.interrupted),
         integrations,
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         ...(() => { const networkProxy = turnNetworkProxy(threadId, bot.id, turnPlace); return networkProxy ? { networkProxy } : {}; })(),
@@ -26041,6 +26059,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const text = String(body.text ?? "").trim();
       if (!text) return json(res, 400, { error: "text required" });
+      // words said on a voice call: the turn gets the phone-call instruction
+      const voiceCall = parseVoiceCallMeta(body.voiceCall);
+      if (voiceCall && "error" in voiceCall) return json(res, 400, { error: voiceCall.error });
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
       requirePinnedClientThread(bot.id, body.threadId);
@@ -26174,7 +26195,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             // the second check carries that fact to the type system.
             if (busyAdmission.action === "steer" && instance?.adapter.steer) {
               steered = await instance.adapter
-                .steer(threadId, promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"))
+                .steer(threadId, voiceCallSteerPrompt(promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"), voiceCall))
                 .catch((): SteerOutcome => "indeterminate");
             }
             // steer() is awaited adapter work. The turn can settle, the task can
@@ -26217,13 +26238,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                 sendId,
                 steered: true,
                 sender: messageSender(auth),
+                ...(voiceCall ? { voiceCall } : {}),
               });
               // Offered to the next turn again unless the person stops this one.
               handoffs.steered(threadId, steerTarget, instance?.instanceId, message.id);
               return { ok: true as const, steered: true as const, threadId, message };
             }
             if (!current.busy) {
-              return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth));
+              return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall);
             }
             const queued = queueSteeredMessage(current.id, threadId, text, {
               replyToId: replyTo?.id,
@@ -26232,10 +26254,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               sender: messageSender(auth),
               trigger,
               speaker: speakerFor(auth),
+              ...(voiceCall ? { voiceCall } : {}),
             });
             return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
           }
-          return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth));
+          return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall);
         },
       );
       return json(res, 202, receipt);

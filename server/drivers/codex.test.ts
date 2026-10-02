@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CALL_MARK, ENDED_MARK, INTERRUPTED_MARK, voiceCallTurn } from "../testing/voice-call-turns.ts";
 
 import type { ProviderInstance, RuntimeEvent } from "../contracts.ts";
 import { DATA_DIR, NATIVE_DIR } from "../config.ts";
@@ -487,6 +488,34 @@ describe("CodexDriver turns (fake app-server)", () => {
     const fourth = await send("split-4.json", "fourth", "Memory: moved to Toronto.", "codex-thread-1", true);
     expect(turnText(fourth)).toContain("Memory: moved to Toronto.");
     expect(turnText(fourth)).toContain("fourth");
+  });
+
+  it("gives a resumed Codex thread the phone-call instruction only on call turns", async () => {
+    await create({ mode: "resume" });
+    const send = async (index: number, kind: Parameters<typeof voiceCallTurn>[0]) => {
+      const dumpName = `voice-call-${index}.json`;
+      process.env.FAKE_CODEX_DUMP = join(scratch, dumpName);
+      const { turnId } = await instance.adapter.sendTurn({
+        threadId: "t-voice-call",
+        text: `words ${index}`,
+        ...voiceCallTurn(kind),
+        ...(index > 0 ? { resumeCursor: "codex-thread-1" } : {}),
+      });
+      await recorder.until((event) => event.type === "turn.completed" && event.turnId === turnId);
+      const calls = JSON.parse(readFileSync(join(scratch, dumpName), "utf8")).calls as Array<{ method: string; params: Record<string, unknown> }>;
+      // the developer slot keeps the stable rules: no call text in it
+      for (const call of calls) expect(String(call.params.developerInstructions ?? "")).not.toContain(CALL_MARK);
+      const input = calls.find((c) => c.method === "turn/start")?.params?.input as Array<{ text?: string }> | undefined;
+      return input?.[0]?.text ?? "";
+    };
+    const sent = [await send(0, "written"), await send(1, "call"), await send(2, "call"), await send(3, "interrupted"), await send(4, "after")];
+    expect(sent[0]).not.toContain(CALL_MARK);
+    expect(sent[1]).toContain(CALL_MARK);
+    expect(sent[2]).toBe("words 2");
+    expect(sent[3]).toContain(INTERRUPTED_MARK);
+    expect(sent[4]).toContain(ENDED_MARK);
+    expect(sent[4]).not.toContain(CALL_MARK);
+    for (const [index, text] of sent.entries()) expect(text.endsWith(`words ${index}`)).toBe(true);
   });
 
   it("ignores requests received after turn completion", async () => {

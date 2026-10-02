@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CALL_MARK, ENDED_MARK, INTERRUPTED_MARK, voiceCallTurn } from "../testing/voice-call-turns.ts";
 
 import { DATA_DIR, ensureDirs, instanceConfigs, NATIVE_DIR } from "../config.ts";
 import type { ProviderInstance } from "../contracts.ts";
@@ -1334,6 +1335,43 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(sent[1].message.content).toContain("Tagged: @Testy");
     expect(sent[1].message.content.endsWith("two")).toBe(true);
     expect(seen.systemPrompt).toContain("Tagged: @Testy");
+  });
+
+  it("hands a live session the phone-call instruction only on call turns", async () => {
+    await create();
+    const dump = join(scratch, "voice-call.json");
+    const prompts = join(scratch, "voice-call-prompts.jsonl");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    process.env.FAKE_CLAUDE_PROMPTS = prompts;
+    const kinds = ["written", "call", "call", "interrupted", "after"] as const;
+    for (const [index, kind] of kinds.entries()) {
+      recorder.events.length = 0;
+      await instance.adapter.sendTurn({ threadId: "t-voice-call", text: `words ${index}`, ...voiceCallTurn(kind) });
+      await recorder.until((e) => e.type === "turn.completed");
+    }
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    // one process for the whole conversation: the call never respawns it
+    expect(seen.systemPrompt).not.toContain(CALL_MARK);
+    const sent = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line).message.content as string);
+    expect(sent).toHaveLength(5);
+    expect(sent[0]).toBe("words 0");
+    expect(sent[1]).toContain(CALL_MARK);
+    expect(sent[2]).toBe("words 2");
+    expect(sent[3]).toContain(INTERRUPTED_MARK);
+    expect(sent[4]).toContain(ENDED_MARK);
+    expect(sent[4]).not.toContain(CALL_MARK);
+    for (const [index, text] of sent.entries()) expect(text.endsWith(`words ${index}`)).toBe(true);
+  });
+
+  it("launches a call turn with the phone-call instruction in the appended system prompt", async () => {
+    await create();
+    const dump = join(scratch, "voice-call-spawn.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await instance.adapter.sendTurn({ threadId: "t-voice-call-spawn", text: "hello", ...voiceCallTurn("call") });
+    await recorder.until((e) => e.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.systemPrompt).toContain(CALL_MARK);
+    expect(seen.prompt).not.toContain(CALL_MARK);
   });
 
   it("still relaunches when the stable half of the prompt changes", async () => {

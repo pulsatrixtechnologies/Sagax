@@ -152,11 +152,11 @@ async function setup(options: Setup = {}) {
     voiceprint: options.voiceprint ?? null,
     now: () => clock,
   });
-  const utterances: Array<{ text: string; metrics: TurnMetrics }> = [];
+  const utterances: Array<{ text: string; metrics: TurnMetrics; interrupted: boolean }> = [];
   const interrupts: number[] = [];
   const metrics: Array<{ turn: TurnMetrics | null; bargeIn: BargeInMetrics | null }> = [];
   const rejected: string[] = [];
-  call.on("utterance", (text, m) => utterances.push({ text, metrics: { ...m } }));
+  call.on("utterance", (text, m, turn) => utterances.push({ text, metrics: { ...m }, interrupted: turn.interrupted }));
   call.on("interrupt-bot", () => interrupts.push(clock));
   call.on("metrics", (turn, bargeIn) => metrics.push({ turn: turn && { ...turn }, bargeIn: bargeIn && { ...bargeIn } }));
   call.on("rejected", (reason) => rejected.push(reason));
@@ -188,6 +188,8 @@ describe("VoiceCall", () => {
     await t.feed(0.02, 0.001, 25); // 800 ms of silence
     await t.settle();
     expect(t.utterances.map((u) => u.text)).toEqual(["hello bot"]);
+    // nothing was cut: the bot is not told it was interrupted
+    expect(t.utterances[0]!.interrupted).toBe(false);
     expect(t.socket().finalizes).toBe(1);
     // the turn's frames (plus a short preroll), not the quiet room before it
     expect(t.socket().audioBytes).toBeGreaterThan(40 * VAD_FRAME * 2);
@@ -223,6 +225,44 @@ describe("VoiceCall", () => {
     await t.feed(0.02, 0.001, 25);
     await t.settle();
     expect(t.utterances.map((u) => u.text)).toEqual(["wait, stop"]);
+    // the turn that cut the bot says so (Message.voiceCall.interrupted)
+    expect(t.utterances[0]!.interrupted).toBe(true);
+  });
+
+  it("only the turn that cut the bot is marked interrupted", async () => {
+    const t = await setup({ transcripts: ["wait, stop", "and another thing"] });
+    void t.call.say("Here is a long answer. It goes on and on for a while.");
+    await t.feed(0.95, 0.06, 20);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    t.call.setBotBusy(false);
+    await t.feed(0.95, 0.06, 20);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(t.utterances.map((u) => [u.text, u.interrupted])).toEqual([["wait, stop", true], ["and another thing", false]]);
+  });
+
+  it("the interrupt button marks the next turn interrupted", async () => {
+    const t = await setup({ transcripts: ["go on"] });
+    void t.call.say("Here is a long answer. It goes on and on for a while.");
+    t.call.interrupt();
+    await t.feed(0.95, 0.06, 20);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(t.utterances.map((u) => [u.text, u.interrupted])).toEqual([["go on", true]]);
+  });
+
+  it("never speaks markdown, emoji, links or the written follow-up", async () => {
+    const t = await setup();
+    t.call.replyProgress("**Sure!** \u{1F600} See https://example.com/a for it.\n\n- First point here");
+    const heard = t.call.replyDone("**Sure!** \u{1F600} See https://example.com/a for it.\n\n- First point here\n\nBye for now.\n\n---\nDetails: https://example.com/b");
+    const said = t.speech.mock.calls.map((c) => c[1]).join(" ");
+    expect(said).toContain("Sure!");
+    expect(said).toContain("First point here");
+    expect(said).toContain("Bye for now.");
+    expect(said).not.toMatch(/\*|https?:|example\.com|Details|---|\u{1F600}/u);
+    t.player.drain();
+    await heard;
   });
 
   it("a cough over the bot: ducked, then back, nothing cancelled", async () => {

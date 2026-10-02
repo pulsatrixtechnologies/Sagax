@@ -53,6 +53,23 @@ export function deferCallCleanup(targetId: string, isMounted: () => boolean): vo
   });
 }
 
+/** The voice mode call id of the bot on a live call (LiveCall), so every
+ * send to it while the call lasts is marked as a call turn. */
+const voiceCalls = new Map<string, string>();
+
+export function setVoiceCallId(targetId: string, callId: string): void {
+  voiceCalls.set(targetId, callId);
+}
+
+/** Ownership-safe: a call's teardown never clears a newer call's id. */
+export function clearVoiceCallId(targetId: string, callId: string): void {
+  if (voiceCalls.get(targetId) === callId) voiceCalls.delete(targetId);
+}
+
+export function voiceCallId(targetId: string): string | null {
+  return current === targetId ? voiceCalls.get(targetId) ?? null : null;
+}
+
 export function useOnCall(): string | null {
   return useSyncExternalStore(
     (fn) => {
