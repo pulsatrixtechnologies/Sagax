@@ -26,7 +26,7 @@ import { type CallSettings } from "./call-settings";
 import { INITIAL_CALL, step, type CallEffect, type CallEvent, type CallState } from "./call-machine";
 import { EchoGuard } from "./echo";
 import { loadOrt } from "./onnx";
-import { PcmPlayer, type Sentence } from "./player";
+import { PcmPlayer, type PlaybackCut, type Sentence } from "./player";
 import { SentenceStream } from "./sentences";
 import { spokenPart } from "./spoken";
 import { judge, readVoiceprint, saveVoiceprint, SpeakerEmbedder, voiceprintOf, type Voiceprint } from "./speaker-id";
@@ -69,11 +69,12 @@ export interface VoiceCallEvents {
   /** an accepted turn: send it to the bot. `interrupted`: the person cut
    * the bot (talked over it, or over its running turn, or pressed
    * interrupt) since the last turn sent; the bot is told (Message.voiceCall). */
-  utterance(text: string, metrics: TurnMetrics, turn: { interrupted: boolean }): void;
+  utterance(text: string, metrics: TurnMetrics, turn: { interrupted: boolean; cut?: PlaybackCut }): void;
   /** stop the bot's running turn on the server */
   "interrupt-bot"(): void;
-  /** the bot's speech was cut (barge-in, interrupt, hold, end) */
-  "speech-cancelled"(): void;
+  /** the bot's speech was cut (barge-in, interrupt, hold, end), with what
+   * the person heard of it and what they did not */
+  "speech-cancelled"(cut: PlaybackCut): void;
   /** a turn from another voice was ignored */
   rejected(reason: "other-voice" | "empty"): void;
   /** the sentence now audible */
@@ -156,6 +157,10 @@ export class VoiceCall {
   private bargeIn: BargeInMetrics | null = null;
   /** the person cut the bot since the last turn sent */
   private cutBot = false;
+  /** what they heard of the answer they cut (told to the bot) */
+  private lastCut: PlaybackCut | null = null;
+  /** the answer's text so far, as last handed to replyProgress */
+  private replyText = "";
   private enrolling: { frames: Float32Array[]; levels: number[]; done: (frames: Float32Array[] | null) => void; until: number } | null = null;
   /** the on-device models loaded (else the level detector serves) */
   modelsReady = false;
@@ -309,7 +314,8 @@ export class VoiceCall {
   replyProgress(text: string): void {
     if (this.state.phase === "held" || this.state.phase === "ended") return;
     this.reply ??= new SentenceStream();
-    for (const sentence of this.reply.feed(spokenPart(text))) this.enqueue(sentence);
+    this.replyText = spokenPart(text);
+    for (const sentence of this.reply.feed(this.replyText)) this.enqueue(sentence);
   }
 
   /** The answer (or this block of it) is complete. */
@@ -593,8 +599,16 @@ export class VoiceCall {
         this.bargeIn = null;
         return;
       case "cancel-speech": {
+        // what played by the audio clock, plus what the bot had written but
+        // not yet handed to the voice: the person heard none of that
+        const played = this.player.playback(this.o.voice().speed);
+        const unwritten = this.reply ? this.replyText.slice(this.reply.position).trim() : "";
+        const cut: PlaybackCut = { heard: played.heard, unheard: [played.unheard, unwritten].filter(Boolean).join(" ") };
+        if (cut.heard || cut.unheard) this.lastCut = cut;
+        this.player.resetLedger();
         void this.player.cancel();
         this.reply = null;
+        this.replyText = "";
         if (this.bargeIn) {
           this.bargeIn.cancelledAt = this.now();
           this.emit("metrics", this.turn, this.bargeIn);
@@ -602,7 +616,7 @@ export class VoiceCall {
         const waiters = this.speechWaiters;
         this.speechWaiters = [];
         for (const resolve of waiters) resolve(false);
-        this.emit("speech-cancelled");
+        this.emit("speech-cancelled", cut);
         return;
       }
       case "interrupt-bot":
@@ -613,8 +627,14 @@ export class VoiceCall {
           this.turn.sentAt = this.now();
           this.emit("metrics", this.turn, this.bargeIn);
         }
-        this.emit("utterance", effect.text, this.turn ?? { stoppedAt: this.now(), endedAt: this.now() }, { interrupted: this.cutBot });
+        this.emit("utterance", effect.text, this.turn ?? { stoppedAt: this.now(), endedAt: this.now() }, {
+          interrupted: this.cutBot,
+          ...(this.cutBot && this.lastCut ? { cut: this.lastCut } : {}),
+        });
         this.cutBot = false;
+        this.lastCut = null;
+        // a new answer starts: what it plays is measured from here
+        this.player.resetLedger();
         return;
       case "finalize-stt":
         void this.finishTurn();

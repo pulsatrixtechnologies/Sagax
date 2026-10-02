@@ -92,6 +92,13 @@ class FakePlayer {
   }
   tone() { this.tones += 1; }
   async close() {}
+  /** what the person heard when the answer is cut (set by a test) */
+  heard = "";
+  resetLedger() {}
+  playback() {
+    const all = this.queued.map((s) => s.text).join(" ");
+    return { heard: this.heard, unheard: all.startsWith(this.heard) ? all.slice(this.heard.length).trim() : all };
+  }
 }
 
 /** VAD from a script: the frame's first sample carries its probability
@@ -152,11 +159,11 @@ async function setup(options: Setup = {}) {
     voiceprint: options.voiceprint ?? null,
     now: () => clock,
   });
-  const utterances: Array<{ text: string; metrics: TurnMetrics; interrupted: boolean }> = [];
+  const utterances: Array<{ text: string; metrics: TurnMetrics; interrupted: boolean; cut?: { heard: string; unheard: string } }> = [];
   const interrupts: number[] = [];
   const metrics: Array<{ turn: TurnMetrics | null; bargeIn: BargeInMetrics | null }> = [];
   const rejected: string[] = [];
-  call.on("utterance", (text, m, turn) => utterances.push({ text, metrics: { ...m }, interrupted: turn.interrupted }));
+  call.on("utterance", (text, m, turn) => utterances.push({ text, metrics: { ...m }, interrupted: turn.interrupted, ...(turn.cut ? { cut: turn.cut } : {}) }));
   call.on("interrupt-bot", () => interrupts.push(clock));
   call.on("metrics", (turn, bargeIn) => metrics.push({ turn: turn && { ...turn }, bargeIn: bargeIn && { ...bargeIn } }));
   call.on("rejected", (reason) => rejected.push(reason));
@@ -227,6 +234,24 @@ describe("VoiceCall", () => {
     expect(t.utterances.map((u) => u.text)).toEqual(["wait, stop"]);
     // the turn that cut the bot says so (Message.voiceCall.interrupted)
     expect(t.utterances[0]!.interrupted).toBe(true);
+  });
+
+  it("barge-in: the turn that cut the bot says what the person heard and what they did not", async () => {
+    const t = await setup({ transcripts: ["no, the other one"] });
+    t.call.setBotBusy(true);
+    t.call.replyProgress("It is sunny in Montreal today. Tomorrow it will rain all day. ");
+    // the first sentence played, then the person talked over the second
+    t.player.heard = "It is sunny in Montreal today.";
+    t.call.replyProgress("It is sunny in Montreal today. Tomorrow it will rain all day. Bring an umbrella");
+    const cuts: Array<{ heard: string; unheard: string }> = [];
+    t.call.on("speech-cancelled", (cut) => cuts.push(cut));
+    await t.feed(0.95, 0.06, 20);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(cuts[0]).toEqual({ heard: "It is sunny in Montreal today.", unheard: "Tomorrow it will rain all day. Bring an umbrella" });
+    expect(t.utterances[0]).toMatchObject({ text: "no, the other one", interrupted: true, cut: cuts[0] });
+    // the next turn cut nothing
+    t.call.setBotBusy(false);
   });
 
   it("only the turn that cut the bot is marked interrupted", async () => {

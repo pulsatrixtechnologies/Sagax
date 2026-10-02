@@ -124,3 +124,25 @@ it("delivers words said while the bot works once: steered in, never handed back 
     await t.fixture.close();
   }
 }, 120_000);
+
+it("tells the bot how much of its cut answer the person heard, and keeps the rest for the transcript", async () => {
+  const t = await callFixture();
+  try {
+    const replies = async () => (await t.messages()).filter((m) => m.role === "bot" && m.turnTerminal).length;
+    await t.send({ text: "what is the weather", voiceCall: { callId: CALL_ID } });
+    await expect.poll(replies, { timeout: 15_000 }).toBe(1);
+    await t.send({
+      text: "no, in Quebec City",
+      voiceCall: { callId: CALL_ID, interrupted: true, heard: "It is sunny in Montreal", unheard: "and it will rain tonight." },
+    });
+    await expect.poll(replies, { timeout: 15_000 }).toBe(2);
+    const prompt = t.prompts().at(-1)!;
+    expect(prompt).toContain('They heard up to: "It is sunny in Montreal".');
+    expect(prompt).toContain('They did not hear: "and it will rain tonight."');
+    const cut = (await t.messages()).filter((m) => m.role === "user").at(-1);
+    expect(cut.voiceCall).toEqual({ callId: CALL_ID, interrupted: true, heard: "It is sunny in Montreal", unheard: "and it will rain tonight." });
+    expect(cut.text).toBe("no, in Quebec City");
+  } finally {
+    await t.fixture.close();
+  }
+}, 120_000);

@@ -43,6 +43,10 @@ export function LiveCall({ bot }: { bot: Bot }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<CallMetrics>({});
   const [interrupted, setInterrupted] = useState<Set<string>>(() => new Set());
+  /** the cut answers' words the person never heard, by reply id (transcript) */
+  const [unheard, setUnheard] = useState<Map<string, string>>(() => new Map());
+  /** the last cut: its unheard words go on the reply it cut, once settled */
+  const lastCut = useRef<{ unheard: string } | null>(null);
   const threadRef = useRef(bot.threadId);
   threadRef.current = bot.threadId;
   const botRef = useRef(bot);
@@ -123,8 +127,9 @@ export function LiveCall({ bot }: { bot: Bot }) {
           ...(barge?.cancelledAt !== undefined ? { bargeInMs: Math.round(barge.cancelledAt - barge.candidateAt) } : {}),
         });
       }),
-      live.on("speech-cancelled", () => {
+      live.on("speech-cancelled", (cut) => {
         setCaption("");
+        if (cut.unheard) lastCut.current = { unheard: cut.unheard };
         // what was being said is cut: the rest of that answer is not spoken
         dropOldReply.current = true;
         dropStream.current = streamingRef.current ?? "";
@@ -145,7 +150,7 @@ export function LiveCall({ bot }: { bot: Bot }) {
 
   // ── what the person said ───────────────────────────────────────────────
   const onUtterance = useCallback(
-    (said: string, interrupted = false) => {
+    (said: string, interrupted = false, cut?: { heard: string; unheard: string }) => {
       const current = botRef.current;
       if (!call || currentCall() !== current.id) return;
       setHeard("");
@@ -192,7 +197,13 @@ export function LiveCall({ bot }: { bot: Bot }) {
         text: said,
         threadId: current.threadId,
         sendId: utteranceId,
-        voiceCall: { callId, utteranceId, ...(interrupted ? { interrupted: true } : {}), ...(language && language !== "auto" ? { language } : {}) },
+        voiceCall: {
+          callId,
+          utteranceId,
+          // a barge-in says how much of the cut answer the person heard
+          ...(interrupted ? { interrupted: true, ...(cut ? { heard: cut.heard, unheard: cut.unheard } : {}) } : {}),
+          ...(language && language !== "auto" ? { language } : {}),
+        },
       });
     },
     [call, callId, dispatch],
@@ -200,7 +211,7 @@ export function LiveCall({ bot }: { bot: Bot }) {
 
   useEffect(() => {
     if (!call) return;
-    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted));
+    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted, turn.cut));
   }, [call, onUtterance]);
 
   useEffect(() => {
@@ -254,6 +265,10 @@ export function LiveCall({ bot }: { bot: Bot }) {
       // an answer from before the person's latest words (the turn they cut)
       if (dropOldReply.current || messages.indexOf(reply) < lastUser) {
         setInterrupted((previous) => new Set(previous).add(reply.id));
+        // the words of it the person never heard stay in the transcript, marked
+        const cut = lastCut.current;
+        lastCut.current = null;
+        if (cut?.unheard) setUnheard((previous) => new Map(previous).set(reply.id, cut.unheard));
         continue;
       }
       void call.replyDone(reply.text!);
@@ -301,7 +316,13 @@ export function LiveCall({ bot }: { bot: Bot }) {
   const transcript = messages
     .filter((m) => m.kind === "text" && m.text?.trim())
     .slice(-8)
-    .map((m) => ({ id: m.id, who: m.role === "user" ? ("you" as const) : ("bot" as const), text: m.text!.trim(), interrupted: interrupted.has(m.id) }));
+    .map((m) => ({
+      id: m.id,
+      who: m.role === "user" ? ("you" as const) : ("bot" as const),
+      text: m.text!.trim(),
+      interrupted: interrupted.has(m.id),
+      ...(unheard.has(m.id) ? { unheard: unheard.get(m.id) } : {}),
+    }));
   return (
     <VoiceModeBar
       bot={bot}

@@ -53,7 +53,7 @@ export interface VoiceModeBarProps {
   notice?: string | null;
   /** an access card: no xAI key serves this person */
   refusal: VoiceAccessCard | null;
-  transcript: Array<{ id: string; who: "you" | "bot"; text: string; interrupted?: boolean }>;
+  transcript: Array<{ id: string; who: "you" | "bot"; text: string; interrupted?: boolean; unheard?: string }>;
   metrics?: CallMetrics;
   onRetry(): void;
   onEnd(): void;
@@ -444,6 +444,11 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
                       >
                         {entry.text}
                         {entry.interrupted && <span className="ml-1.5 rounded bg-panel/60 px-1 text-[11px] text-ink-tertiary">{t("voiceMode.interruptedMark")}</span>}
+                        {entry.unheard && (
+                          <span className="mt-0.5 block text-[12px] text-ink-tertiary" data-voice-unheard>
+                            {t("voiceMode.unheardMark")} <span className="italic">{entry.unheard}</span>
+                          </span>
+                        )}
                       </div>
                     ))}
                     {line && (

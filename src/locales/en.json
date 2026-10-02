@@ -4354,6 +4354,7 @@
   "voiceMode.pushToTalk": "Hold to talk",
   "voiceMode.pushHint": "Hold Space or this button while you talk",
   "voiceMode.interruptedMark": "interrupted",
+  "voiceMode.unheardMark": "Not heard:",
   "voiceMode.otherVoice": "Another voice was ignored (Only my voice).",
   "voiceMode.yesOrNo": "Sorry, is that a yes or a no?",
   "voiceMode.approvalFailed": "I couldn't save that decision. Please try again.",
