@@ -166,6 +166,8 @@ import {
   routinesInConversationEnabled,
   connectedAppsEnabled,
   templatesEnabled,
+  vpsComputerEnabled,
+  boatComputerEnabled,
   claudeUserMcpEnabled,
   claudeAiConnectorsEnabled,
   skillAuthoringEnabled,
@@ -16208,6 +16210,8 @@ function configStatus() {
       routinesInConversation: routinesInConversationEnabled(cfg),
       connectedApps: connectedAppsEnabled(cfg),
       templates: templatesEnabled(cfg),
+      vpsComputer: vpsComputerEnabled(cfg),
+      boatComputer: boatComputerEnabled(cfg),
       browser: builtInBrowserEnabled(cfg),
       // Maintainer-only escape hatch, not a Settings toggle: the desktop
       // shell and the Settings UI read it so they offer nothing this server

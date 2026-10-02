@@ -59,7 +59,7 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
 async function start(env: Record<string, string>) {
   child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
     cwd: join(SERVER_DIR, ".."),
-    env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1), ...env },
+    env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, OMB_LOCAL_VM_TEST_NAMESPACE: process.env.OMB_LOCAL_VM_TEST_NAMESPACE ?? "", OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1), ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout!.on("data", (c) => (log += c));
