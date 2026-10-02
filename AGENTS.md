@@ -168,6 +168,24 @@ onboarding tests:
   it at `/api/people/<principalId>/avatar?v=<version>`. Without those
   Perspicax fields everyone keeps their initials.
 
+## Settings layout: one card level, sub-pages for long settings
+
+Settings draws one level of card: what sits inside a card is flat (no
+bordered box in a bordered box; `ManagedProfileIdentity flat` in General).
+A setting too long for a card gets a sub-page instead of a growing card
+(`src/components/SettingsSubPage.tsx`): the section shows a
+`SettingsSubPageRow` (title, one-line summary, Edit) and the page replaces
+the section with a back arrow and the breadcrumb "General > About me".
+Back, the breadcrumb and Escape return to the section (Escape is taken in
+the capture phase, so it never closes Settings from a sub-page). The open
+page is `appSettingsSubPage` in the store (`toggleAppSettings` with
+`subPage`; any other navigation clears it); register a page in `SUB_PAGES`
+in `SettingsModal.tsx`. About me is the first: a full-height editor that
+saves as you type, a character count (24,000 max, `server/config.ts`), a
+short guide with an outline, and the block bots read
+(`userProfileSystemPrompt`). Tests: `src/components/SettingsSubPage.test.ts`,
+`src/components/SettingsModal.serverMode.test.ts`.
+
 ## Group memory and direct messages between people
 
 A user-created group keeps one shared memory (`server/group-memory.ts`,
@@ -217,8 +235,11 @@ Server mode (the launch screen's Server) is exclusive: `serverModeId` in
 organization server. While it is set nothing switches to Local or another
 server (`withActive`, `switchEnvironment`, `requireNotServerMode`), the
 packaged app starts no local server, and the only way out is `leaveServerMode`
-in `electron/main.mjs` (Settings > General > Server > Change, Server > Change
-server…), which signs out and returns to the launch screen. Tests:
+in `electron/main.mjs` (Settings > General > Server > Sign out, Server > Change
+server…), which asks in a native dialog ("Sign out of <name>?"), signs out
+and returns to the launch screen. That Server card names the server's
+address in bold, the organization and the signed-in person
+(`ServerModeCard`, test `src/components/SettingsModal.serverMode.test.ts`). Tests:
 `electron/server-mode.node-test.mjs`, `electron/environments.node-test.mjs`.
 
 An organization server (`org: true`, set by org-join after its probe) is

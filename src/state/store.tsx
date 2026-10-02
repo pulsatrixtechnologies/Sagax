@@ -1016,6 +1016,10 @@ export interface AppState {
    * openmausbot://cloud link; each link counts up. Any other
    * toggleAppSettings (another section, the same one by hand, closing) sets 0. */
   appSettingsCloudLink: number;
+  /** A settings sub-page pushed inside the section (src/components/
+   * SettingsSubPage.tsx), e.g. General > About me; null shows the section.
+   * Any toggleAppSettings that names none (another section, closing) clears it. */
+  appSettingsSubPage: string | null;
   shortcutsOpen: boolean;
   /** the first-run welcome tour, also replayable from Settings → General */
   welcomeOpen: boolean;
@@ -1317,7 +1321,7 @@ export type Action =
   | { type: "toggleInspector"; open?: boolean }
   | { type: "focusMessage"; threadId: string; messageId: string }
   | { type: "focusMessageConsumed"; nonce: number }
-  | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; cloudLink?: boolean }
+  | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; cloudLink?: boolean; subPage?: string }
   | { type: "toggleShortcuts"; open?: boolean }
   | { type: "toggleWelcome"; open?: boolean }
   | { type: "toggleLaunch"; open?: boolean; mode?: "solo" | "server" }
@@ -2189,6 +2193,7 @@ export function reducer(state: AppState, action: Action): AppState {
         appSettingsOpen: open,
         appSettingsSection: action.section ?? state.appSettingsSection,
         appSettingsCloudLink: action.cloudLink && open ? state.appSettingsCloudLink + 1 : 0,
+        appSettingsSubPage: open ? action.subPage ?? null : null,
         personPanelId: open ? null : state.personPanelId,
         settingsOpen: open ? false : state.settingsOpen,
         computerOpen: open ? false : state.computerOpen,
@@ -2537,6 +2542,7 @@ export const initialState: AppState = {
   appSettingsOpen: false,
   appSettingsSection: "general",
   appSettingsCloudLink: 0,
+  appSettingsSubPage: null,
   shortcutsOpen: false,
   welcomeOpen: false,
   launchOpen: false,

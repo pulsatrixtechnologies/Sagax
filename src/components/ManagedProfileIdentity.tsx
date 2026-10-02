@@ -10,10 +10,12 @@ import type { ManagedProfile } from "@/lib/profile-management";
 import { InitialsAvatar } from "./Avatar";
 import { profileInitials, profileLabel } from "./SidebarProfileMenu";
 
-export function ManagedProfileIdentity({ profile, className = "" }: { profile: ManagedProfile; className?: string }) {
+/** `flat`: inside a settings card, which already draws the border. */
+export function ManagedProfileIdentity({ profile, className = "", flat = false }: { profile: ManagedProfile; className?: string; flat?: boolean }) {
   const { name, email, url, avatarUrl } = profile;
+  const frame = flat ? "" : "rounded-[14px] border-[0.5px] border-border px-3.5 py-2.5";
   return (
-    <div className={`flex items-center gap-3 rounded-[14px] border-[0.5px] border-border px-3.5 py-2.5 text-left ${className}`} data-testid="managed-profile">
+    <div className={`flex items-center gap-3 text-left ${frame} ${className}`} data-testid="managed-profile">
       {avatarUrl ? (
         <img src={avatarUrl} alt="" width={36} height={36} className="size-9 shrink-0 rounded-full object-cover" />
       ) : (
