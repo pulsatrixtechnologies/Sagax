@@ -106,6 +106,7 @@ import { groupTurnCwd } from "./room-cwd.ts";
 import { RoomTurnDeadline, RoomTurnStallRegistry, roomTurnTimeoutMessage } from "./room-turn-timeout.ts";
 import * as boat from "./boat.ts";
 import { TeamComputers, teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
+import { instructionsLead } from "../shared/instructions-lead.ts";
 import { isEffortLevel, type BotVisibility, type CardAnswerer, type ResolvedSender, type WireAccessCard, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
 import type { TeamComputersPayload } from "../shared/team-computer.ts";
 import { boatCreateRecoverySnapshot, retireDeletedBoatCreate } from "./boat-create-idempotency.ts";
@@ -615,6 +616,7 @@ import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
+import { createBotLibraryRoutes } from "./routes/bot-library.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
@@ -4085,8 +4087,9 @@ const wireBot = (bot: BotRecord): WireBot => {
   const visible = approvalGrant && !approvalGrant.threadOnly
     ? { ...rest, approvalMode: "ask" as const, autoApprove: false }
     : rest;
+  const lead = instructionsLead(visible.soul);
   return { ...visible, waitingForTeammates: activeCoordinationForThread(bot.threadId) && !threadBusy(bot.id, bot.threadId),
-    avatarUrl: visible.avatarUrl ?? null, ...(tasks ? { tasks: tasks.map(wireTask) } : {}) };
+    avatarUrl: visible.avatarUrl ?? null, ...(lead ? { instructionsLead: lead } : {}), ...(tasks ? { tasks: tasks.map(wireTask) } : {}) };
 };
 
 /** The correlated private response carries the requested value so Electron
@@ -16462,6 +16465,38 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+// The bot profile's Links, Media and Files tabs and Share as Template
+// (server/routes/bot-library.ts, iOS parity).
+ROUTES.push(createBotLibraryRoutes<BotRecord>({
+  bot: (id) => store.bot(id) ?? undefined,
+  threadsFor: (bot) => {
+    // On an organization server a person reads only their own threads.
+    const viewer = scopedThreadViewer();
+    const shown = threadsShownTo(bot, store.tasks(bot.id), viewer).map((task) => task.threadId);
+    return viewer ? shown : [bot.threadId, ...shown];
+  },
+  messages: (threadId) => activePath(store.messagesFor(threadId), store.activeLeaf(threadId)),
+  files: (threadId) => listThreadFiles(threadFileRefsFor(threadId), (ref) => statMessageFile(ref.path, threadFileRoots(threadId, ref))),
+  mayExport: ownerOrAdminOf,
+  exportBot: (bot) => {
+    const skills = collectTeamSkills([bot], "all");
+    if (!skills.ok) throw new TeamExportError(skills.error);
+    const exported = createTeamPackageExport({
+      team: bot.section?.trim() ?? "",
+      name: bot.name,
+      authorName: cfg.profile?.name?.trim(),
+      bots: [bot],
+      groups: [],
+      routines: routines!.listRoutines().filter((routine) => routine.botId === bot.id),
+      published: null,
+      skillsByBot: skills.skillsByBot,
+      skillSelection: "all",
+      mcpServers: cfg.mcpServers ?? {},
+      skipped: skills.skipped,
+    });
+    return { document: exported.document, filename: exported.filename, redacted: exported.redacted, skipped: exported.skipped, summary: packageSummary(exported.document) };
+  },
+}));
 // The people of a solo server: its email sign-in list and the invitations
 // that add to it (server/org-routes.ts). A solo server has no organization
 // (slice 8), so the invitations are issued in the name of this server: the
@@ -17070,6 +17105,21 @@ function memberOwnsBot(auth: RequestAuth, bot: { ownerUserId?: unknown }): boole
   if (auth.kind !== "session" || !botCreationAllowed(auth)) return false;
   const actor = actorPrincipalId(auth).trim().toLowerCase();
   return Boolean(actor) && effectiveBotOwner(bot) === actor;
+}
+/** The bot's owner (a chat-scoped session owning it, or granted edit on an
+ * organization server), an admin session, or the owner at this computer
+ * (loopback, the paired phone's companion included). Never a local service. */
+function ownerOrAdminOf(auth: RequestAuth, bot: BotRecord): boolean {
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  if (auth.scopes.includes("admin")) return true;
+  if (memberOwnsBot(auth, bot)) return true;
+  return IDENTITY.kind === "perspicax" && atLeast(viewerBotLevel(auth, bot), "edit");
+}
+/** A request the paired phone's companion relayed (request-auth.ts checked
+ * its capability before it became a loopback request). The header alone only
+ * ever narrows what a request may do, so trusting it here is safe. */
+function companionRequest(req: IncomingMessage, auth: RequestAuth): boolean {
+  return auth.kind === "loopback" && req.headers["x-openmausbot-companion"] === "1";
 }
 /** On an organization server, a chat-scoped session who is not the
  * operator changes how a bot looks only on bots they own or may edit. */
@@ -23381,6 +23431,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "POST") {
       const existing = store.bot(m[1]);
       if (!existing) return json(res, 404, { error: "no such bot" });
+      // A chat-scoped session (a phone) generates only for a bot it owns or
+      // may edit; admins and the owner at this computer for any.
+      if (!ownerOrAdminOf(auth, existing)) {
+        return json(res, 403, { error: "forbidden: only the bot owner or an admin can change its picture" });
+      }
       // Generation is slow and both desktop and companion clients may edit or
       // delete this bot while it is in flight. Snapshot the two fields this
       // request owns before the first await so a late result cannot win.
@@ -23555,6 +23610,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         return json(res, 400, { error: "body must be a JSON object" });
+      }
+      // A paired phone reaches a personal server through the companion as
+      // its owner, but only with the fields an owner may set from a phone
+      // (look, framing, name, instructions, notifications, model): never
+      // where the bot runs or what it may do unasked.
+      if (companionRequest(req, auth)) {
+        const field = memberBotFieldViolation(body);
+        if (field) return json(res, 403, { error: `forbidden: a phone may change a bot's name, look, instructions, notifications and model, not "${field}"` });
       }
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
         const target = store.bot(m[1]);

@@ -299,6 +299,21 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/auth\/session$/ },
   // own preferences (organization server; the handler answers the session's person only)
   { methods: ["GET", "PUT"], path: /^\/api\/me\/preferences$/ },
+  // The bot settings of the phone's Settings sheet (auto-review default, time
+  // zone): the person's own on an organization server; on a solo server the
+  // handler lets only the owner change the server's.
+  { methods: ["GET", "PUT"], path: /^\/api\/settings\/bot$/ },
+  // Delete my account (organization server: the handler deletes only the
+  // session's own person; a solo server answers 400 personal_server).
+  { methods: ["DELETE"], path: /^\/api\/me$/ },
+  // The phone's Bot Computer screen: one route for the person's own
+  // computer (their server environment, or this computer's local container,
+  // which the handler keeps to the owner).
+  { methods: ["GET"], path: /^\/api\/computer\/status$/ },
+  { methods: ["POST"], path: /^\/api\/computer\/(?:update|reset)$/ },
+  // Plugin catalog (reads: names, descriptions, icons; no secrets). Installing
+  // one changes the server's MCP servers and stays admin.
+  { methods: ["GET"], path: /^\/api\/plugins\/(?:search|installed)$/ },
   { methods: ["POST"], path: /^\/api\/auth\/stream-ticket$/ },
   { methods: ["POST"], path: /^\/api\/auth\/logout$/ },
   // Own outbound desktop connector, additionally bound to a private secret.
@@ -343,6 +358,13 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+\/title$/ }, // Regenerate title: a rename by the bot's own engine
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/profile$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+$/ }, // display fields only, or the owner's own bot: see clientBotPatchViolation
+  // iOS parity (docs/ios-companion.md): the owner's (or an admin's) picture
+  // generation, and the bot profile's Links, Media and Files tabs. The
+  // handlers check the owner and narrow the threads to the viewer's own.
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/avatar\/generate$/ },
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/(?:links|files)$/ },
+  // Share as Template: a single-bot package without secrets (owner or admin).
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/export$/ },
   // An organization member's own bots: the handler requires a member or
   // admin role, limits the fields (memberBotFieldViolation) and, for a
   // delete, that the session owns the bot.
@@ -421,6 +443,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The caller's own server environment (user-sandbox): status and reset.
   { methods: ["GET"], path: /^\/api\/me\/server-environment$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/server-environment\/reset$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/me\/server-environment\/update$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/status$/, feature: "orgDirectory" },
   // The caller's own claude.ai connectors (server/harness-connectors.ts):
@@ -451,7 +474,11 @@ export function requiredScope(method: string, path: string, features: ClientFeat
 
 /** Fields a client session may change on a bot: how it looks in the list,
  * never what it may do. Returns the first offending field, or null. */
-const CLIENT_BOT_PATCH_FIELDS = new Set(["unread", "pinned", "pinnedMessageId", "color", "mascotExpression", "mascotBody", "mascotSkin", "mascotLook"]);
+const CLIENT_BOT_PATCH_FIELDS = new Set([
+  "unread", "pinned", "pinnedMessageId", "color", "mascotExpression", "mascotBody", "mascotSkin", "mascotLook",
+  // how the picture sits in its frame (the phone's framing view)
+  "avatarCrop", "avatarZoom", "avatarFocusX", "avatarFocusY",
+]);
 export function clientBotPatchViolation(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
   for (const key of Object.keys(body)) if (!CLIENT_BOT_PATCH_FIELDS.has(key)) return key;
@@ -465,7 +492,7 @@ export function clientBotPatchViolation(body: unknown): string | null {
  * browser profile, peers, teams): those stay server admin settings. */
 const MEMBER_BOT_FIELDS = new Set([
   ...CLIENT_BOT_PATCH_FIELDS,
-  "name", "title", "description", "soul", "avatarUrl", "modelSelection", "requireAvailableModel",
+  "name", "title", "description", "soul", "notifications", "avatarUrl", "modelSelection", "requireAvailableModel",
 ]);
 export function memberBotFieldViolation(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
