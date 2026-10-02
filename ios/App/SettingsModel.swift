@@ -9,7 +9,6 @@ import UIKit
 @MainActor
 final class SettingsModel: ObservableObject {
     @Published private(set) var identity: AccountIdentity?
-    @Published private(set) var photo: UIImage?
     @Published private(set) var usage: UsageSummary?
     var usagePercent: Int? { usage?.budgetPercent }
     @Published private(set) var botSettings: BotSettingsResponse?
@@ -52,16 +51,11 @@ final class SettingsModel: ObservableObject {
         botSettings = await settings
         self.rules = await rules
         installedCount = await installed?.count
-        if let path = loadedIdentity?.avatarUrl, photo == nil {
-            photo = await loadPhoto(path, client: client)
+        // The photo lives on the session (Session.accountPhoto), shared with
+        // the home: opening Settings brings it up to date too.
+        if let loadedIdentity, let session, let connectionID = session.connection?.id {
+            await session.refreshAccountPhoto(loadedIdentity.avatar, connectionID: connectionID)
         }
-    }
-
-    private func loadPhoto(_ path: String, client: CompanionClient) async -> UIImage? {
-        if let url = URL(string: path), let scheme = url.scheme, scheme == "https" || scheme == "http" {
-            return (try? await URLSession.shared.data(from: url).0).flatMap(UIImage.init(data:))
-        }
-        return (try? await client.avatar(path: path)).flatMap(UIImage.init(data:))
     }
 
     // MARK: Account card

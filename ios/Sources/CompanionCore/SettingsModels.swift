@@ -27,7 +27,10 @@ public struct AccountIdentity: Decodable, Equatable, Sendable {
         self.scopes = scopes
     }
 
-    private enum CodingKeys: String, CodingKey { case kind, name, email, computerName, avatarUrl, picture, scopes, label }
+    /// The photo this phone may request from its own server, or nil.
+    public var avatar: AccountAvatar? { AccountAvatar(avatarUrl) }
+
+    private enum CodingKeys: String, CodingKey { case kind, name, email, computerName, avatarUrl, scopes, label }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -40,7 +43,7 @@ public struct AccountIdentity: Decodable, Equatable, Sendable {
         name = text(.name)
         email = text(.email)
         computerName = text(.computerName)
-        avatarUrl = text(.avatarUrl) ?? text(.picture)
+        avatarUrl = text(.avatarUrl)
         scopes = (try? values.decodeIfPresent([String].self, forKey: .scopes)) ?? []
     }
 

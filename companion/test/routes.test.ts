@@ -281,7 +281,7 @@ describe("what it may not", () => {
 describe("iOS parity routes", () => {
   it("crosses the phone's new reads and owner actions, method by method", () => {
     for (const [method, path] of [
-      ["GET", "/api/auth/session"],
+      ["GET", "/api/auth/session"], ["GET", "/api/people/pr_0b1c-2d/avatar"],
       ["GET", "/api/bots/bot_1/links"], ["GET", "/api/bots/bot_1/files"],
       ["GET", "/api/threads/th_1/files"], ["GET", `/api/threads/th_1/files/${"a".repeat(24)}`],
       ["POST", "/api/bots/bot_1/export"],
@@ -306,6 +306,8 @@ describe("iOS parity routes", () => {
       ["DELETE", "/api/me/preferences"], ["DELETE", "/api/groups/room_1"], ["POST", "/api/me/server-environment/delete"],
       ["GET", "/api/bots/bot_1/computer/input"], ["POST", "/api/bots/bot_1/computer/clipboard"],
       ["GET", `/api/threads/th_1/files/${"a".repeat(24)}/extra`],
+      ["PUT", "/api/people/pr_1/avatar"], ["DELETE", "/api/people/pr_1/avatar"], ["GET", "/api/people/pr_1"],
+      ["GET", "/api/people/pr_1/avatar/extra"], ["GET", "/api/people/../config/avatar"], ["GET", `/api/people/${"a".repeat(81)}/avatar`],
     ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(false);
   });
 

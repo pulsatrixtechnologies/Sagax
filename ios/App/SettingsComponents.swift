@@ -191,6 +191,10 @@ struct SettingsRow: View {
     /// Title top inside a two-line row (the references differ by a point
     /// between rows).
     var textTop: CGFloat = 14.37
+    /// A picture before the title (Switch Account: each account's photo).
+    var leading: AnyView?
+    /// What VoiceOver and UI tests read as the row's value.
+    var accessibilityValueText: String?
     var action: (() -> Void)?
 
     private var titleColor: Color {
@@ -228,6 +232,7 @@ struct SettingsRow: View {
             } label: { row }
             .buttonStyle(SettingsRowButtonStyle())
             .accessibilityIdentifier(identifier ?? "")
+            .accessibilityValue(Text(verbatim: accessibilityValueText ?? ""))
         } else if isToggle {
             // The switch stays its own element, named after the row.
             row
@@ -240,6 +245,9 @@ struct SettingsRow: View {
 
     private var oneLine: some View {
         HStack(spacing: 0) {
+            if let leading {
+                leading.padding(.trailing, 10)
+            }
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: systemImage == "trash" ? 15.5 : 17.8, weight: .regular))
@@ -354,7 +362,8 @@ struct SettingsRowButtonStyle: ButtonStyle {
     }
 }
 
-/// The person's photo (an absolute URL or an app path), else their initial.
+/// The person's photo (Session.accountPhoto, AccountPhotoStore), else their
+/// initial.
 struct AccountPhoto: View {
     let photo: UIImage?
     let name: String
@@ -414,8 +423,11 @@ struct AccountCardRow: View {
             } label: { row }
             .buttonStyle(SettingsRowButtonStyle())
             .accessibilityIdentifier("settings-account")
+            .accessibilityValue(Text(verbatim: photo == nil ? "" : "photo"))
         } else {
             row.accessibilityElement(children: .combine)
+                .accessibilityIdentifier("account-card")
+                .accessibilityValue(Text(verbatim: photo == nil ? "" : "photo"))
         }
     }
 }

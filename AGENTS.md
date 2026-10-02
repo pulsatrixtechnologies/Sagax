@@ -166,7 +166,13 @@ onboarding tests:
   (null removes it), reads the PNG or JPEG through the link
   (`GET /api/v1/pulsabot/people/<sub>/avatar`, Bearer link token) and serves
   it at `/api/people/<principalId>/avatar?v=<version>`. Without those
-  Perspicax fields everyone keeps their initials.
+  Perspicax fields everyone keeps their initials. The iPhone app shows it
+  (home, Settings account card, Account, Switch Account) from that route
+  only, with its own bearer (never Perspicax, never the `picture` URL), and
+  keeps it per connection keyed by the versioned URL; it reads the session
+  again at each foreground (`ios/UITests/OrgAvatarUITests.swift`,
+  `PARITY_ORG=1 node ios/parity/fixture-server.mjs`). A personal computer
+  has no Perspicax link and names no avatar.
 
 ## Group memory and direct messages between people
 
