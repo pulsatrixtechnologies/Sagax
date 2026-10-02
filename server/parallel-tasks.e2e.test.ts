@@ -20,6 +20,7 @@ import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLAUDE = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
+const FAKE_ACP = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
 const posixOnly = describe.skipIf(process.platform === "win32");
 const SEND_P1 = randomUUID();
 const SEND_P2 = randomUUID();
@@ -62,6 +63,7 @@ posixOnly("parallel tasks e2e", () => {
 
   beforeAll(async () => {
     chmodSync(FAKE_CLAUDE, 0o755);
+    chmodSync(FAKE_ACP, 0o755);
     home = mkdtempSync(join(tmpdir(), "omb-parallel-"));
     gates = join(home, "gates");
     mkdirSync(gates, { recursive: true });
@@ -73,6 +75,18 @@ posixOnly("parallel tasks e2e", () => {
           environment: { FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_GATE_DIR: gates },
           config: { cli: FAKE_CLAUDE, permissionMode: "bypassPermissions" },
         },
+        // a turn whose Agent call starts a sub-agent that reads a file
+        claudeAgent: {
+          driver: "claudeAgent",
+          environment: { FAKE_CLAUDE_TOOL_CALLS: JSON.stringify([
+            { name: "Agent", id: "agent-1", input: { description: "check the logs", prompt: "Read the server logs and list errors", subagent_type: "general-purpose" }, output: [{ type: "text", text: "Two errors found" }] },
+            { name: "Read", parent: "agent-1", input: { file_path: "/var/log/app.log" }, output: "error A\nerror B" },
+            { name: "Bash", input: { command: "echo done" }, output: "done" },
+          ]) },
+          config: { cli: FAKE_CLAUDE, permissionMode: "bypassPermissions" },
+        },
+        // every turn asks the person to approve a command, then replies
+        askFirst: { driver: "grokAgent", environment: { FAKE_ACP_MODE: "permission" }, config: { cli: FAKE_ACP, fullAuto: false } },
       },
     }));
     const port = await freePortBlock([0, 1]);
@@ -230,4 +244,49 @@ posixOnly("parallel tasks e2e", () => {
       await api("PATCH", "/api/config", { threads: { maxParallelPerPerson: null } });
     }
   }, 90_000);
+
+  it("a parallel task's approval is its own: asked in its thread, named on its card, answered without touching the main turn", async () => {
+    const bot = (await api("POST", "/api/bots")).body.bot;
+    await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId: "askFirst", model: "default" } });
+    const openCard = async (threadId: string) => (await messages(bot.id, threadId)).find((m) => m.kind === "options" && m.card?.requestId && !m.card.answered);
+    expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "main work", threadId: bot.threadId })).status).toBe(202);
+    await waitFor(async () => Boolean(await openCard(bot.threadId)), "the main turn's approval");
+    const sent = await api("POST", `/api/bots/${bot.id}/messages`, { text: "check the disk", threadId: bot.threadId, busyMode: "parallel" });
+    const taskThread = sent.body.parallel.threadId as string;
+    await waitFor(async () => Boolean(await openCard(taskThread)), "the task's approval");
+    await waitFor(async () => (await tasks(bot.id)).find((task) => task.threadId === taskThread)?.activity === "waiting-on-you", "the task to wait on the person");
+    const mainCard = await openCard(bot.threadId);
+    const taskCard = await openCard(taskThread);
+    expect(taskCard.card.requestId).not.toBe(mainCard.card.requestId);
+    // the conversation's card names the task that waits
+    const card = (await messages(bot.id, bot.threadId)).find((m) => m.parallelTask?.role === "card");
+    expect(card.threadRef).toMatchObject({ threadId: taskThread, title: "check the disk" });
+    // the task's request cannot be answered from the main thread
+    await api("POST", `/api/threads/${bot.threadId}/respond`, { requestId: taskCard.card.requestId, behavior: "allow" });
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await openCard(taskThread))?.card.requestId).toBe(taskCard.card.requestId);
+    expect((await api("POST", `/api/threads/${taskThread}/respond`, { requestId: taskCard.card.requestId, behavior: "allow" })).status).toBe(200);
+    await waitFor(async () => (await messages(bot.id, bot.threadId)).some((m) => m.parallelTask?.role === "result"), "the task's result");
+    const result = (await messages(bot.id, bot.threadId)).find((m) => m.parallelTask?.role === "result");
+    expect(result.text).toContain("handled the permission decision");
+    expect(result.replyToId).toBe(sent.body.message.id);
+    // the main turn still waits on its own approval
+    expect((await openCard(bot.threadId))?.card.requestId).toBe(mainCard.card.requestId);
+    await api("POST", `/api/threads/${bot.threadId}/respond`, { requestId: mainCard.card.requestId, behavior: "deny" });
+    await waitFor(async () => (await getBot(bot.id)).busy === false, "the main turn");
+  }, 60_000);
+
+  it("the task detail nests a sub-agent's calls under its Agent step, with its request and report", async () => {
+    const bot = (await api("POST", "/api/bots")).body.bot;
+    await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId: "claudeAgent", model: "claude-fake" } });
+    expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "look into the errors", threadId: bot.threadId })).status).toBe(202);
+    await waitFor(async () => (await messages(bot.id, bot.threadId)).some((m) => m.role === "bot" && m.kind === "text" && m.turnId), "the reply");
+    await waitFor(async () => (await getBot(bot.id)).busy === false, "the turn to settle");
+    const detail = (await api("GET", `/api/bots/${bot.id}/activity/item?threadId=${bot.threadId}`)).body.item;
+    const agent = detail.steps.find((step: any) => step.name === "Agent");
+    expect(agent.subagent).toMatchObject({ description: "check the logs", prompt: "Read the server logs and list errors", type: "general-purpose" });
+    expect(agent.subagent.result).toContain("Two errors found");
+    expect(detail.steps.find((step: any) => step.name === "Read")).toMatchObject({ parentId: agent.id });
+    expect(detail.steps.find((step: any) => step.name === "Bash")).not.toHaveProperty("parentId");
+  }, 60_000);
 });

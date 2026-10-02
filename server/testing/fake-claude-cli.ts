@@ -51,6 +51,8 @@
 //                      one tool_use (fresh id, that name and input) followed
 //                      by its tool_result (is_error unless ok, default true).
 //                      Unset, a turn makes the single default Bash call.
+//                      `parent` (another call's id) makes it a sub-agent's
+//                      call (parent_tool_use_id); that parent settles last.
 //   FAKE_CLAUDE_HOOKS  1: honour the `hooks` block of the --settings file the
 //                      way the real CLI does — after each tool_result run
 //                      every PostToolUse command with the event JSON on
@@ -169,7 +171,7 @@ const scriptedReplies = (() => {
     return [];
   }
 })();
-type ScriptedToolCall = { name: string; id?: string; input: Record<string, unknown>; ok: boolean; output?: unknown };
+type ScriptedToolCall = { name: string; id?: string; input: Record<string, unknown>; ok: boolean; output?: unknown; parent?: string };
 // null = unset (or unparseable): keep the single default Bash call.
 const scriptedToolCalls: ScriptedToolCall[] | null = (() => {
   const raw = process.env.FAKE_CLAUDE_TOOL_CALLS;
@@ -178,10 +180,11 @@ const scriptedToolCalls: ScriptedToolCall[] | null = (() => {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
     return parsed
-      .filter((call): call is { name: string; id?: unknown; input?: unknown; ok?: unknown; output?: unknown } => typeof call?.name === "string")
+      .filter((call): call is { name: string; id?: unknown; input?: unknown; ok?: unknown; output?: unknown; parent?: unknown } => typeof call?.name === "string")
       .map((call) => ({
         name: call.name,
         ...(typeof call.id === "string" ? { id: call.id } : {}),
+        ...(typeof call.parent === "string" ? { parent: call.parent } : {}),
         input: call.input && typeof call.input === "object" && !Array.isArray(call.input) ? call.input as Record<string, unknown> : {},
         ok: call.ok !== false,
         output: call.output,
@@ -799,12 +802,26 @@ const playReply = (prompt: JsonValue, mcpNote: string) => {
   const usage = { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 };
   if (scriptedToolCalls) {
     // scripted calls come first, each settled before the reply text
-    for (const call of scriptedToolCalls) {
-      const id = call.id ?? `tu-${process.pid}-${++toolUseCount}`;
-      out({ type: "assistant", message: { content: [{ type: "tool_use", id, name: call.name, input: call.input }], usage } });
-      out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: !call.ok, content: call.output }] } });
+    // A call with `parent` is a sub-agent's (parent_tool_use_id); the
+    // parent's own result waits until its sub-agent's calls are done, the
+    // way an Agent call settles after the work it started.
+    const settle = (call: ScriptedToolCall, id: string) => {
+      out({ type: "user", ...(call.parent ? { parent_tool_use_id: call.parent } : {}), message: { content: [{ type: "tool_result", tool_use_id: id, is_error: !call.ok, content: call.output }] } });
       runHooks("PostToolUse", { tool_name: call.name, tool_input: call.input, tool_response: call.output, tool_use_id: id });
-    }
+    };
+    const waiting = new Map<string, ScriptedToolCall>();
+    scriptedToolCalls.forEach((call, index) => {
+      const id = call.id ?? `tu-${process.pid}-${++toolUseCount}`;
+      out({ type: "assistant", ...(call.parent ? { parent_tool_use_id: call.parent } : {}), message: { content: [{ type: "tool_use", id, name: call.name, input: call.input }], usage } });
+      if (scriptedToolCalls.slice(index + 1).some((later) => later.parent === id)) waiting.set(id, call);
+      else settle(call, id);
+      for (const [parentId, parent] of waiting) {
+        if (!scriptedToolCalls.slice(index + 1).some((later) => later.parent === parentId)) {
+          waiting.delete(parentId);
+          settle(parent, parentId);
+        }
+      }
+    });
     for (const text of replyParts) out({ type: "assistant", message: { content: [{ type: "text", text }], usage } });
   } else {
     replyParts.forEach((text, index) => {
