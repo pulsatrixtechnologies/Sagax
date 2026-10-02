@@ -238,7 +238,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // The organization's key serves by itself (2026-10-01): bob has no
     // subscription and no key of his own. Slice 8: the settings also carry
     // the interim attach window (none here).
-    expect((await api("GET", "/api/org", alice)).body.settings).toEqual({ orgKeyConfigured: true, interimAttach: { until: null, people: 0 } });
+    expect((await api("GET", "/api/org", alice)).body.settings).toEqual({ orgKeyConfigured: true, allowFullAccess: true, interimAttach: { until: null, people: 0 } });
     shared = await createBot(alice, "Xavier", "claude");
     const refusals = [
       await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: "bob@example.test" }),
