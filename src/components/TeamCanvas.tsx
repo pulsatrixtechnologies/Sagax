@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowRight, BookOpen, MessageCircle, Minus, Monitor, MoreHorizontal, Pencil, Plus, Trash2, Users } from "lucide-react";
-import { api, useStore, type Bot } from "@/state/store";
+import { useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { teamMapStatus, type TeamMapSection } from "@/lib/team-map";

@@ -67,6 +67,9 @@ const SKIP_EXACT = new Set([
   "electron/upstream-hosts.node-test.mjs",
   "scripts/check-no-phone-home.mjs",
   "electron/no-phone-home.node-test.mjs",
+  // compose .env names and the old hook switch, kept by hand
+  "docs/verification/podman-self-hosting.md",
+  "scripts/git-hooks/pre-push",
   "server/fleet-cli.ts",
   "server/fleet-cli.test.ts",
   "server/fleet-cli-filesystem.test.ts",
@@ -131,6 +134,7 @@ const PROTECT = [
   re(`OpenMausBot(?: project| contributors| releases?\\b| version| Enterprise License|\\. The original)`),
   re(`Milind Soni and OpenMausBot`),
   re(`base stays OpenMausBot`),
+  re(`settings \\(OMB_\\*\\)`),
   re(`existing \`~/\\.${OLD}\``),
   re(`(?:originally published as|Not use the) OpenMausBot`),
   // lines that name the old spellings on purpose (where a value came from)
