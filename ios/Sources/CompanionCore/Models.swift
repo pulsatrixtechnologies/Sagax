@@ -538,6 +538,29 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var activeLeafId: String?
     /// Paged responses only: there is more transcript above what you got.
     public var hasMore: Bool?
+    /// Which Sagax character stands for the bot (owl, shape or Trombi) and
+    /// its look. Absent or malformed means the owl; see `MascotLook`.
+    public var mascotLook: MascotLook?
+    /// The owl's special edition. Absent or unknown means `none`.
+    public var mascotSkin: MascotSkin?
+    /// The uploaded picture's framing inside its crop: zoom 1...3 and the
+    /// focus point 0...1. Read them through `framing`, which clamps.
+    public var avatarZoom: Double?
+    public var avatarFocusX: Double?
+    public var avatarFocusY: Double?
+
+    /// The look the renderers draw: the stored one, or the owl.
+    public var resolvedMascotLook: CompleteMascotLook {
+        (mascotLook ?? .owl).complete
+    }
+
+    /// The owl's skin, `none` when absent.
+    public var resolvedMascotSkin: MascotSkin { mascotSkin ?? .none }
+
+    /// The picture's framing, clamped the way the desktop clamps it.
+    public var framing: (zoom: Double, focusX: Double, focusY: Double) {
+        (AvatarFraming.clampZoom(avatarZoom), AvatarFraming.clampFocus(avatarFocusX), AvatarFraming.clampFocus(avatarFocusY))
+    }
 
     /// Routine results are ordinary tasks; only their per-run executions are hidden.
     public var visibleTasks: [BotTask] {
@@ -1067,6 +1090,15 @@ public struct BotProfilePatch: Encodable, Sendable {
     public var mascotBody: String?
     public var voice: String?
     public var speakReplies: Bool?
+    /// One of the twelve `MausColors` names.
+    public var color: String?
+    public var mascotSkin: MascotSkin?
+    public var mascotLook: MascotLook?
+    public var mascotExpression: String?
+    /// Sent as given; the server clamps zoom to 1...3 and focus to 0...1.
+    public var avatarZoom: Double?
+    public var avatarFocusX: Double?
+    public var avatarFocusY: Double?
 
     /// `avatarUrl` needs three wire states: omitted, a stored path, or JSON
     /// null to clear. A nested optional would technically represent that, but
@@ -1085,7 +1117,14 @@ public struct BotProfilePatch: Encodable, Sendable {
         avatarCrop: AvatarCrop? = nil,
         mascotBody: String? = nil,
         voice: String? = nil,
-        speakReplies: Bool? = nil
+        speakReplies: Bool? = nil,
+        color: String? = nil,
+        mascotSkin: MascotSkin? = nil,
+        mascotLook: MascotLook? = nil,
+        mascotExpression: String? = nil,
+        avatarZoom: Double? = nil,
+        avatarFocusX: Double? = nil,
+        avatarFocusY: Double? = nil
     ) {
         self.name = name
         self.title = title
@@ -1096,10 +1135,18 @@ public struct BotProfilePatch: Encodable, Sendable {
         self.mascotBody = mascotBody
         self.voice = voice
         self.speakReplies = speakReplies
+        self.color = color
+        self.mascotSkin = mascotSkin
+        self.mascotLook = mascotLook
+        self.mascotExpression = mascotExpression
+        self.avatarZoom = avatarZoom
+        self.avatarFocusX = avatarFocusX
+        self.avatarFocusY = avatarFocusY
     }
 
     private enum CodingKeys: String, CodingKey {
         case name, title, description, notifications, avatarUrl, avatarCrop, mascotBody, voice, speakReplies
+        case color, mascotSkin, mascotLook, mascotExpression, avatarZoom, avatarFocusX, avatarFocusY
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -1118,6 +1165,13 @@ public struct BotProfilePatch: Encodable, Sendable {
         try values.encodeIfPresent(mascotBody, forKey: .mascotBody)
         try values.encodeIfPresent(voice, forKey: .voice)
         try values.encodeIfPresent(speakReplies, forKey: .speakReplies)
+        try values.encodeIfPresent(color, forKey: .color)
+        try values.encodeIfPresent(mascotSkin, forKey: .mascotSkin)
+        try values.encodeIfPresent(mascotLook, forKey: .mascotLook)
+        try values.encodeIfPresent(mascotExpression, forKey: .mascotExpression)
+        try values.encodeIfPresent(avatarZoom, forKey: .avatarZoom)
+        try values.encodeIfPresent(avatarFocusX, forKey: .avatarFocusX)
+        try values.encodeIfPresent(avatarFocusY, forKey: .avatarFocusY)
     }
 }
 
