@@ -22,6 +22,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
+import { createServer as createHttpServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -377,6 +378,100 @@ function seedTranscripts(dataDir, seeded) {
   db.close();
 }
 
+
+// ── computer test double (harness only) ─────────────────────────────────
+// The fixture's bots have no desktop, so the real server answers 404
+// `no_computer` to computer input. For screens 13 and 11 and the computer
+// UI tests, a pass-through proxy sits in front of the server and plays the
+// desktop: it records input batches and clipboard writes, serves a clipboard
+// and a fixed screenshot, and checks control with the real server's
+// GET .../computer/control. Everything else is piped through untouched.
+// `PARITY_COMPUTER_DOUBLE=0` turns it off. Production code never sees it.
+//
+//   GET    /__parity/computer   -> { batches, clipboard, clipboardWrites }
+//   DELETE /__parity/computer   -> resets the record
+const COMPUTER_DOUBLE = process.env.PARITY_COMPUTER_DOUBLE !== "0";
+const computerRecord = { batches: [], clipboard: "Texte du presse-papiers distant", clipboardWrites: [] };
+let desktopShot = null;
+
+function desktopPng() {
+  desktopShot ??= png(1280, 800, [150, 150, 150]).toString("base64");
+  return desktopShot;
+}
+
+function startComputerDouble(upstreamPort) {
+  const sendJson = (res, status, body) => {
+    res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify(body));
+  };
+  const readJson = (req) => new Promise((resolve) => {
+    let raw = "";
+    req.on("data", (c) => { raw += c; });
+    req.on("end", () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch { resolve(null); } });
+  });
+  const controlHeld = async (botId, req) => {
+    const r = await fetch(`http://127.0.0.1:${upstreamPort}/api/bots/${botId}/computer/control`, {
+      headers: req.headers.authorization ? { authorization: req.headers.authorization } : {},
+    });
+    if (!r.ok) return { status: r.status };
+    return { held: Boolean((await r.json()).held) };
+  };
+  const proxy = (req, res) => {
+    const up = httpRequest(
+      { host: "127.0.0.1", port: upstreamPort, method: req.method, path: req.url, headers: req.headers },
+      (upRes) => {
+        res.writeHead(upRes.statusCode ?? 502, upRes.headers);
+        upRes.pipe(res);
+      },
+    );
+    up.on("error", () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+    res.on("close", () => up.destroy());
+    req.pipe(up);
+  };
+  const server = createHttpServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://fixture");
+    if (url.pathname === "/__parity/computer") {
+      if (req.method === "DELETE") {
+        computerRecord.batches = [];
+        computerRecord.clipboardWrites = [];
+        computerRecord.clipboard = "Texte du presse-papiers distant";
+      }
+      return sendJson(res, 200, computerRecord);
+    }
+    const m = url.pathname.match(/^\/api\/bots\/([\w-]+)\/computer\/(input|clipboard|screenshot)$/);
+    if (!m) return proxy(req, res);
+    const [, botId, action] = m;
+    const control = await controlHeld(botId, req).catch(() => ({ status: 502 }));
+    if (control.status) return sendJson(res, control.status, { error: "refused upstream" });
+    if (action === "screenshot" && req.method === "POST") return sendJson(res, 200, { png: desktopPng(), format: "png" });
+    if (!control.held) return sendJson(res, 409, { error: "Take control of this computer first.", code: "no_control" });
+    if (action === "input" && req.method === "POST") {
+      const body = await readJson(req);
+      const events = body?.events;
+      if (!Array.isArray(events) || events.length < 1 || events.length > 64 || !events.every((e) => typeof e?.type === "string")) {
+        return sendJson(res, 400, { error: "events: invalid", code: "invalid_input" });
+      }
+      computerRecord.batches.push({ botId, at: Date.now(), controlLeaseId: body.controlLeaseId ?? null, events });
+      return sendJson(res, 200, { ok: true, applied: events.length });
+    }
+    if (action === "clipboard" && req.method === "GET") return sendJson(res, 200, { text: computerRecord.clipboard });
+    if (action === "clipboard" && req.method === "PUT") {
+      const body = await readJson(req);
+      if (typeof body?.text !== "string") return sendJson(res, 400, { error: "text: invalid", code: "invalid_input" });
+      computerRecord.clipboard = body.text;
+      computerRecord.clipboardWrites.push(body.text);
+      return sendJson(res, 200, { ok: true });
+    }
+    return sendJson(res, 405, { error: "method not allowed" });
+  });
+  server.requestTimeout = 0;
+  server.timeout = 0;
+  server.keepAliveTimeout = 60_000;
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve({ server, port: server.address().port }));
+  });
+}
+
 // ── pass two: pairing ───────────────────────────────────────────────────
 async function pair(base) {
   const opened = await api(base, "POST", "/api/auth/pairing", { label: "parity-harness", scopes: ["admin", "client"] });
@@ -417,9 +512,12 @@ async function main() {
   child = startServer(port, webhook);
   await waitHealthy(base, child);
   const session = await pair(base);
+  const front = COMPUTER_DOUBLE ? `http://127.0.0.1:${(await startComputerDouble(port)).port}` : base;
+  if (COMPUTER_DOUBLE) console.error(`[parity] computer double ${front} -> ${base}`);
   const fleet = await fetch(`${base}/api/bots`, { headers: { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
   const record = {
-    endpoint: base,
+    endpoint: front,
+    server: base,
     token: session.token,
     environmentId: session.environmentId,
     scopes: session.scopes,
@@ -429,7 +527,7 @@ async function main() {
   };
   writeFileSync(join(OUT, "session.json"), `${JSON.stringify(record, null, 2)}\n`);
   console.error(`[parity] ready: ${record.bots} bots, session written to ios/parity/out/session.json`);
-  console.log(JSON.stringify({ endpoint: base, environmentId: record.environmentId, bots: record.bots }));
+  console.log(JSON.stringify({ endpoint: front, environmentId: record.environmentId, bots: record.bots }));
   if (once) await shutdown(0);
 }
 

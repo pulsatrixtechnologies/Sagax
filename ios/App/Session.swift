@@ -1719,6 +1719,10 @@ final class Session: ObservableObject {
         await perform { try await $0.interrupt(botId: bot.id, threadId: bot.threadId) }
     }
 
+    /// The live client for the computer viewer's input, clipboard and control
+    /// calls (ComputerView), which handle their own refusals. Nil offline.
+    var computerClient: CompanionClient? { client }
+
     /// Ask for one fresh cloud viewer URL. Unlike ordinary actions this
     /// returns the value to a browser sheet and never writes it to app state.
     func cloudDesktop(for bot: Bot) async throws -> URL {
