@@ -51,7 +51,7 @@ function harness(overrides = {}) {
 test("probe accepts a Perspicax server, with a 5 s timeout and redirects refused", async () => {
   const h = harness();
   assert.deepEqual(await h.join.probe(`${ORG}/pair`), { origin: ORG, issuer: "https://px.example.test" });
-  assert.equal(h.calls.fetched[0].url, `${ORG}/.well-known/openmausbot/environment`);
+  assert.equal(h.calls.fetched[0].url, `${ORG}/.well-known/sagax/environment`);
   assert.equal(h.calls.fetched[0].init.redirect, "error");
   assert.ok(h.calls.fetched[0].init.signal instanceof AbortSignal);
 });

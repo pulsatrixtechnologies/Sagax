@@ -13,6 +13,7 @@ const ALLOWED = new Set([
   "engineSetup.device.enableHint", // a ChatGPT "workspace admin"
   "serverEnvironment.help", // the /workspace folder path inside a server environment
   "serverEnvironment.reset.confirm", // the same /workspace path
+  "orgComputer.confirmRunning", // the same /workspace path
   // Keys another branch adds with its own wording go here until reviewed.
 ]);
 

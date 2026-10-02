@@ -142,7 +142,7 @@ export function resolveDriverBinary() {
   }
   if (process.platform === "darwin" && fs.existsSync(INSTALLED_DRIVER)) return INSTALLED_DRIVER;
   if (process.platform === "win32") {
-    const staged = path.join(app.getAppPath(), "dist-native", "cua-win32-x64", "cua-driver.exe");
+    const staged = path.join(app.getAppPath(), "dist-native", `cua-win32-${process.arch}`, "cua-driver.exe");
     return fs.existsSync(staged) ? staged : resolveWindowsDriver();
   }
   return null;
@@ -183,7 +183,7 @@ async function loadEmbeddedSdk() {
     return { ...embedded, ...permissions };
   }
   const isWindows = process.platform === "win32";
-  process.env.OPENMAUSBOT_CUA_SDK_LIBRARY = path.join(
+  process.env.SAGAX_CUA_SDK_LIBRARY = path.join(
     process.resourcesPath,
     "cua-sdk",
     "native",
@@ -285,7 +285,7 @@ export async function startCua() {
   }
 
   const wantEmbedded =
-    process.platform === "win32" || app.isPackaged || process.env.OPENMAUSBOT_CUA_EMBEDDED === "1";
+    process.platform === "win32" || app.isPackaged || process.env.SAGAX_CUA_EMBEDDED === "1";
   let nextConnection;
 
   if (wantEmbedded) {

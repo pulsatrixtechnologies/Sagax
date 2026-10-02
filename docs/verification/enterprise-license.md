@@ -7,7 +7,7 @@ directory is absent. A license key with no layer does not unlock features.
 ## Sub-features
 
 - A checkout, npm package, Docker image, and packaged desktop ship without
-  `enterprise/`. `OMB_ENTERPRISE_DIR`, when set, is the only place looked at,
+  `enterprise/`. `SAGAX_ENTERPRISE_DIR`, when set, is the only place looked at,
   and a missing directory stays the open-source edition.
 - From 30 days before a key expires: `expiresInDays` on `/api/edition`, a
   warning in the startup log, and a banner in Settings for admins. The dates

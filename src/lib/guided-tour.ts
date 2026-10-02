@@ -60,7 +60,7 @@ export const TOUR_STEPS: TourStep[] = [
   { id: "tour.computer-browser", anchor: "computer-browser", fallbackAnchor: "computer-tabs", skipIfMissing: true, placement: "below", onEnter: "openComputer", onExit: "closeComputer" },
   { id: "tour.tools", anchor: "tools", placement: "right", onExit: "openTools" },
   { id: "tour.apps", anchor: "nav-apps", skipIfMissing: true, placement: "right", onEnter: "openTools", onExit: "openApps" },
-  { id: "tour.apps-panel", anchor: "apps-panel", placement: "below", onEnter: "openApps", onExit: "closeApps" },
+  { id: "tour.apps-panel", anchor: "apps-panel", skipIfMissing: true, placement: "below", onEnter: "openApps", onExit: "closeApps" },
   { id: "tour.automations", anchor: "nav-automations", skipIfMissing: true, placement: "right", onEnter: "openTools", onExit: "openAutomations" },
   { id: "tour.automations-page", anchor: "automations-page", placement: "below", onEnter: "openAutomations", onExit: "backToChat" },
   // back where they started: the closing card sits on the chat itself

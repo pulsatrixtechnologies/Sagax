@@ -1,4 +1,4 @@
-// The decision model: a fast classifier that picks among options OpenMausBot
+// The decision model: a fast classifier that picks among options Sagax
 // already knows (which bot answers a room message, and later which element
 // to click or which tools to mount) in a few hundred milliseconds, before
 // any engine turn starts. It never does the work itself.

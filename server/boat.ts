@@ -58,7 +58,7 @@ export function isolatedRemoteCommand(command: string): string {
   ].join(" ");
 }
 
-// Boat's provider surface keeps its historical Box-era names: env OMB_BOX_API,
+// Boat's provider surface keeps its historical Box-era names: env SAGAX_BOX_API,
 // base path /api/box/v1, REST paths /boxes/*, and the box_ token prefix.
 const READY = new Set(["idle", "ready", "running"]);
 const SLEEPING = new Set(["archived", "archiving", "stopped", "stopping"]);
@@ -172,7 +172,7 @@ function snapshotBoatConfig(cfg: AppConfig): AppConfig {
 }
 
 /** The base URL follows the credential in use (included-services.ts): an own
- * token goes to Boat (OMB_BOX_API points it at a stub in tests), Cloud Pro's
+ * token goes to Boat (SAGAX_BOX_API points it at a stub in tests), Cloud Pro's
  * included token only to its relay. */
 function boatFetch(cfg: AppConfig, path: string, opts: RequestInit = {}) {
   const account = boatAccount(cfg);
@@ -620,7 +620,7 @@ export async function listManagedBoats(
 
       const matchingRows = candidates.filter((candidate) => candidate?.id === recovery.boxId);
       if (matchingRows.length > 1) {
-        return invalidInventory("boat.dev returned a conflicting id for an OpenMaus-managed cloud computer — refresh or repair it in boat.dev");
+        return invalidInventory("boat.dev returned a conflicting id for a Sagax-managed cloud computer — refresh or repair it in boat.dev");
       }
       if (matchingRows.length === 1) {
         const listedName = typeof matchingRows[0]?.name === "string" ? matchingRows[0].name : "";
@@ -724,11 +724,11 @@ export async function listManagedBoats(
     if (!owner) continue;
     const boxId = typeof candidate.id === "string" ? candidate.id : "";
     if (!BOAT_ID.test(boxId)) {
-      return invalidInventory("boat.dev returned an invalid id for an OpenMaus-managed cloud computer — refresh or repair it in boat.dev");
+      return invalidInventory("boat.dev returned an invalid id for a Sagax-managed cloud computer — refresh or repair it in boat.dev");
     }
     const existing = ownedBoatByBot.get(owner.botId);
     if (existing && existing !== boxId) {
-      return invalidInventory("boat.dev returned conflicting cloud computers for one OpenMaus bot — repair them in boat.dev before continuing");
+      return invalidInventory("boat.dev returned conflicting cloud computers for one Sagax bot — repair them in boat.dev before continuing");
     }
     ownedBoatByBot.set(owner.botId, boxId);
   }
@@ -760,10 +760,10 @@ export async function listManagedBoats(
     // deterministic name), silently skipping a malformed/duplicated identity
     // could let bot deletion mistake provider corruption for absence.
     if (!BOAT_ID.test(boxId)) {
-      return invalidInventory("boat.dev returned an invalid id for an OpenMaus-managed cloud computer — refresh or repair it in boat.dev");
+      return invalidInventory("boat.dev returned an invalid id for a Sagax-managed cloud computer — refresh or repair it in boat.dev");
     }
     if ((boatIdCounts.get(boxId) ?? 0) !== 1 || seenBoatIds.has(boxId)) {
-      return invalidInventory("boat.dev returned a conflicting id for an OpenMaus-managed cloud computer — refresh or repair it in boat.dev");
+      return invalidInventory("boat.dev returned a conflicting id for a Sagax-managed cloud computer — refresh or repair it in boat.dev");
     }
     if (legacyOwner && owner && options.adoptLegacy !== false) {
       try {
@@ -859,7 +859,7 @@ async function revalidateManagedBoat(
   if (!inventory.available) throw inventoryFailure(inventory);
   const instance = inventory.instances.find((candidate) => candidate.boxId === boxId);
   if (!instance) {
-    throw Object.assign(new Error("that OpenMaus-managed cloud computer no longer exists"), { status: 404 });
+    throw Object.assign(new Error("that Sagax-managed cloud computer no longer exists"), { status: 404 });
   }
   return instance;
 }
@@ -1267,7 +1267,7 @@ export async function provisionBoat(cfg: AppConfig, botId: string, _botName: str
   const credentialEnv = boatCredentialEnv(cfg);
   cfg = snapshotBoatConfig(cfg);
   if (!boatConfigured(cfg)) {
-    throw new Error('box provider not enabled — add {"box":{"token":"…"}} to ~/.openmausbot/config.json');
+    throw new Error('box provider not enabled — add {"box":{"token":"…"}} to ~/.sagax/config.json');
   }
   await finishPriorDeletionBeforeProvision(cfg, botId);
   const vmName = await boatNameFor(botId);

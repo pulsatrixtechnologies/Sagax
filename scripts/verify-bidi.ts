@@ -92,7 +92,7 @@ try {
   await control(["wait", "--bot", probe.id, "--timeout", "30"]);
 
   ui = await mountPreview(fixture, {
-    entry: "/scripts/testing/threads-preview.tsx", route: "/__bidi.html", title: "Isolated OpenMaus Bidi",
+    entry: "/scripts/testing/threads-preview.tsx", route: "/__bidi.html", title: "Isolated Sagax Bidi",
   });
   console.log(JSON.stringify({ ...fixture.info, previewUrl: ui.previewUrl }));
   await parkUntilSignal();

@@ -52,7 +52,7 @@ async function start() {
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -116,7 +116,7 @@ const principalsFile = () => JSON.parse(readFileSync(join(data, "principals.json
 posixOnly("org identity", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-org-identity-"));
-    data = join(home, ".openmausbot");
+    data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" } }));
     // Zara is a person this server knows by address, with a device bound to
@@ -261,7 +261,7 @@ posixOnly("org identity", () => {
 posixOnly("slice 8: a solo server keeps email sign-in, without an organization", () => {
   it("keeps the email routes, invitations and both sessions, refuses an organization and ignores the old org key", async () => {
     const home2 = mkdtempSync(join(tmpdir(), "omb-interim-removed-"));
-    const data2 = join(home2, ".openmausbot");
+    const data2 = join(home2, ".sagax");
     mkdirSync(data2, { recursive: true });
     writeFileSync(join(data2, "config.json"), JSON.stringify({
       profile: { name: "JC", email: "jc@gox.ca" },
@@ -289,9 +289,9 @@ posixOnly("slice 8: a solo server keeps email sign-in, without an organization",
       env: {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-        HOME: home2, USERPROFILE: home2, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
+        HOME: home2, USERPROFILE: home2, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
         // Mail is captured, never sent (server/index.ts test seam).
-        OMB_MAIL_CAPTURE_FILE: join(home2, "mail.jsonl"), OMB_TEST_SEAMS: "1", NODE_ENV: "test",
+        SAGAX_MAIL_CAPTURE_FILE: join(home2, "mail.jsonl"), SAGAX_TEST_SEAMS: "1", NODE_ENV: "test",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

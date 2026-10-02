@@ -13,7 +13,7 @@ export interface ModelRequestCardData {
   /** The proposing conversation; authority is fixed here. */
   botId: string;
   threadId: string;
-  /** Whose default model changes: the proposer, or a section peer named by a Chief. */
+  /** Whose default model changes: the proposer, or a section peer named by a Primary Bot. */
   targetBotId: string;
   targetName: string;
   createdAt: number;

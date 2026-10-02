@@ -13,8 +13,10 @@ import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { TurnDigest } from "./digest.ts";
 import type { BotAvatarCrop } from "./bot-avatar.ts";
 import type { MascotBodyId } from "./mascot-bodies.ts";
+import type { MascotColorName } from "./mascot-colors.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
 import type { MascotLook } from "./mascot-look.ts";
+import type { BotPublicProfile } from "./bot-public-profile.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
 import type { TeamSetupRequest } from "./team-setup.ts";
 import type { RoutineRequestCardData } from "./routine-request.ts";
@@ -59,9 +61,8 @@ export type CloudBackend = "box" | "vps";
  * person's seat they are the same "cloud computer" panel. */
 export type Surface = "cloud" | "vm" | "local" | "browser";
 
-export type MausColor =
-  | "green" | "blue" | "red" | "orange" | "purple" | "cyan" | "pink"
-  | "yellow" | "teal" | "coral" | "white" | "black";
+/** A bot color name: the palettes in shared/mascot-colors.ts. */
+export type MausColor = MascotColorName;
 
 /** The face a bot rests on, as one of the engine's state names. Kept as a
  * plain string rather than a union: bots saved under the app's earlier
@@ -294,6 +295,9 @@ export interface WireBot {
   /** Auto mode: the bot approves its own tool permissions. */
   autoApprove?: boolean;
   /** Canonical approval level. Missing resolves through autoApprove. */
+  /** Who confirmed the Full access warning for this bot, once
+   * (server/org-full-access.ts). Later grants by that person skip it. */
+  fullAccessConsent?: { principalId: string; at: number };
   approvalMode?: ApprovalMode;
   /** Tools this bot may always use without asking. */
   alwaysAllow?: string[];
@@ -316,9 +320,11 @@ export interface WireBot {
   section?: string;
   /** the one message pinned to the top of this bot's active thread */
   pinnedMessageId?: string;
-  /** The coordinator for this bot's sidebar section. */
+  /** This is its owner's Primary Bot: their main contact, who coordinates
+   * the other bots. At most one per person (one on a solo server), enforced
+   * by the server. Stored and sent under its former name, Chief of Staff. */
   chiefOfStaff?: boolean;
-  /** Owner-selected additional teams this Chief may coordinate. */
+  /** Owner-selected additional teams this Primary Bot may coordinate. */
   managedSections?: string[];
   /** Pause for human approval before this bot talks to a peer. */
   approvePeerComms?: boolean;
@@ -681,8 +687,18 @@ export interface WireGroup {
    * follow-up no person asked for runs in this person's server environment
    * (server/user-sandbox-routing.ts). Absent on older rooms. */
   createdBy?: string;
+  /** Organization server: who owns the room's settings (its creator, else
+   * the first person listed; null when its organization admins do). Only
+   * the owner changes them (server/group-ownership.ts). Absent on a solo
+   * server. */
+  ownerId?: string | null;
   /** true for auto-created bot-bot channels. */
   dm?: boolean;
+  /** Organization server: a direct conversation between two people
+   * (`humanIds`), with no bot (server/people-dms.ts). Only those two read it. */
+  peopleDm?: boolean;
+  /** The group's shared memory (server/group-memory.ts); absent = on. */
+  memoryEnabled?: boolean;
   /** transient: the member currently running a turn. */
   busyBotId?: string | null;
   /** transient: when the busy member's turn started, for the elapsed
@@ -697,7 +713,7 @@ export interface WireGroup {
   pinnedMessageId?: string;
   /** sidebar section heading this room is filed under. */
   section?: string;
-  /** New user-created rooms start with setup pending. */
+  /** Set at creation: rooms have no pending setup step any more. */
   setupCompletedAt?: number | null;
   setupSkippedAt?: number | null;
   /** The narrowest audience this room has ever had (see
@@ -707,6 +723,10 @@ export interface WireGroup {
   /** True while any member (or hand-off) is mid-turn. Computed at
    * projection time, never persisted. */
   working: boolean;
+  /** Each bot in the room as every person in it sees it (name, label,
+   * look), whoever owns it: never its settings or other threads. Computed
+   * at projection time (shared/bot-public-profile.ts). */
+  memberProfiles?: BotPublicProfile[];
 }
 
 // ── live wire frames ───────────────────────────────────────────────────
@@ -741,7 +761,7 @@ export type ServerFrame =
   | { kind: "webhook.deleted"; webhookId: string }
   | { kind: "runtime"; event: RuntimeEvent }
   | { kind: "screen"; botId: string; threadId: string; png: string; mime?: string }
-  | { kind: "computer"; botId: string; state: "provisioning" | "waking" }
+  | { kind: "computer"; botId: string; state: "provisioning" | "waking" | "ready" }
   | { kind: "computer-control"; botId: string; held: boolean; helpReason: string | null }
   | { kind: "bot.deleted"; botId: string }
   /** The config status object spread flat into the frame; its full typing

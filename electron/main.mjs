@@ -1,3 +1,5 @@
+// First: SAGAX_* settings onto the names the code reads (legacy-names.mjs).
+import "./legacy-env-boot.mjs";
 import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, Tray, WebContentsView, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, safeStorage, screen, session, shell, systemPreferences, utilityProcess } from "electron";
 import { createRequire } from "node:module";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -24,7 +26,7 @@ import { activateExistingWindow, releaseSingleInstanceLock } from "./single-inst
 import { pollServerIdentity } from "./server-boot-probe.mjs";
 import { createServerSupervisor } from "./server-supervisor.mjs";
 import { packageUrlFromCommandLine, packageUrlFromDeepLink } from "./package-link.mjs";
-import { createOrganizationEntry, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
+import { createOrganizationEntry, ORGANIZATION_DEEP_LINK, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
 import { createOrgJoin, forgetDetail } from "./org-join.mjs";
 import { trafficLightsForSkin, windowChromeOptions } from "./window-chrome.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
@@ -83,21 +85,33 @@ import oidcSignInModule from "./oidc-system-sign-in.cjs";
 import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
+import { createDesktopBridge } from "./desktop-bridge.mjs";
+import { createProxyCredentialStore, createProxyCredentials, proxyPasswordAnswerScript, proxyPasswordPage } from "./proxy-credentials.mjs";
+import { createLocalVm } from "./local-vm.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
+import { defaultDataDir, fetchEnvironmentDescriptor, URL_SCHEMES } from "./legacy-names.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
-import { createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
+import { CLOUD_SERVICES_ENABLED, createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
 import { cloudHomeConnectUrl, withCloudHome } from "./cloud-home.mjs";
 import { createCloudEntry } from "./cloud-entry.mjs";
 import { cloudPageSenderAllowed, createCloudMove, parseCloudMoveStatus } from "./cloud-move.mjs";
 import { createOrgLibrary } from "./org-library.mjs";
 import { createCompanyBackups } from "./company-backups.mjs";
 import { createCompanyBackupSchedule } from "./company-backup-schedule.mjs";
-import { keepUserDataInPlace } from "./user-data-location.mjs";
+import { keepUserDataInPlace, RUNTIME_NAME } from "./user-data-location.mjs";
+import { migrateSafeStorageKeychain } from "./keychain-migration.mjs";
 import { FULL_NAME } from "./app-name.mjs";
 
-// Before anything reads userData: the on-screen name (Sagax) must never move
-// the data folder or the keychain secret (see user-data-location.mjs).
+// Before anything reads userData: the folder is pinned (moved once from
+// "openmausbot" to "sagax"), never derived from the on-screen name, and the
+// keychain secret keeps its name (see user-data-location.mjs).
 keepUserDataInPlace(app);
+// Inert while the runtime name is still RUNTIME_NAME. Once it changes, the
+// new "<name> Safe Storage" keychain entry is copied from the old one before
+// safeStorage is first used (keychain-migration.mjs).
+const keychainReady = app.getName() !== RUNTIME_NAME
+  ? migrateSafeStorageKeychain({ to: app.getName(), log: (line) => console.warn(line) }).catch(() => "failed")
+  : Promise.resolve("same");
 // The native About panel (macOS app menu, Linux) would say "openmausbot".
 app.setAboutPanelOptions({ applicationName: FULL_NAME });
 
@@ -343,7 +357,7 @@ function setSignInState(next) {
 /** What the saved server says about desktop returns, or null when it cannot be read. */
 async function serverSignInSupport(origin) {
   try {
-    const res = await fetch(`${origin}/.well-known/openmausbot/environment`, { signal: AbortSignal.timeout(3_000), redirect: "error" });
+    const res = await fetchEnvironmentDescriptor(origin, { signal: AbortSignal.timeout(3_000), redirect: "error" });
     if (!res.ok) return null;
     return oidcSignInModule.signInSupport(await res.json());
   } catch {
@@ -351,13 +365,13 @@ async function serverSignInSupport(origin) {
   }
 }
 
-/** Whether openmausbot:// links reach this exact running copy of the app. */
-async function thisAppOwnsAuthScheme() {
-  const isDefault = app.isDefaultProtocolClient("openmausbot");
+/** Whether `scheme`:// links (sagax or openmausbot) reach this exact running copy of the app. */
+async function thisAppOwnsAuthScheme(scheme) {
+  const isDefault = app.isDefaultProtocolClient(scheme);
   let handlerPath = null;
   if (isDefault && (process.platform === "darwin" || process.platform === "win32")) {
     try {
-      handlerPath = (await app.getApplicationInfoForProtocol("openmausbot://auth"))?.path ?? null;
+      handlerPath = (await app.getApplicationInfoForProtocol(`${scheme}://auth`))?.path ?? null;
     } catch {
       handlerPath = null;
     }
@@ -429,7 +443,9 @@ async function startPulsatrixSignIn(_win, loginStart) {
       signInLog(`could not listen on 127.0.0.1 (${error?.code ?? "error"})`);
     }
   }
-  const owns = support.nativeReturn && !loopback ? await thisAppOwnsAuthScheme() : false;
+  // sagax:// first, when the server can end there; else openmausbot://.
+  const ownsSagax = support.sagaxReturn && !loopback ? await thisAppOwnsAuthScheme("sagax") : false;
+  const owns = ownsSagax || (support.nativeReturn && !loopback ? await thisAppOwnsAuthScheme("openmausbot") : false);
   if (attempt !== signInAttempt) {
     loopback?.cancel();
     return;
@@ -442,7 +458,7 @@ async function startPulsatrixSignIn(_win, loginStart) {
   });
   if (path === "unsupported") {
     loopback?.cancel();
-    signInLog(`${origin} cannot come back to this app (server loopback return: ${support.loopbackReturn}, this app owns openmausbot: ${owns})`);
+    signInLog(`${origin} cannot come back to this app (server loopback return: ${support.loopbackReturn}, this app owns sagax or openmausbot: ${owns})`);
     setSignInState({ status: "error", origin, error: "unsupported" });
     return;
   }
@@ -451,7 +467,7 @@ async function startPulsatrixSignIn(_win, loginStart) {
     loopback = null;
     pendingSystemSignIn.begin(origin);
   }
-  const url = oidcSignInModule.desktopStartUrl(origin, loopback?.returnTo);
+  const url = oidcSignInModule.desktopStartUrl(origin, loopback?.returnTo ?? (ownsSagax ? oidcSignInModule.sagaxReturnLink(origin) : undefined));
   const current = { origin, url, loopback };
   currentSignIn = current;
   setSignInState({ status: "waiting", origin });
@@ -482,7 +498,7 @@ async function startPulsatrixSignIn(_win, loginStart) {
 /** Handle an openmausbot://auth link. Returns whether it was one. The
  * credential is never logged. */
 function takeAuthReturnLink(rawUrl) {
-  if (typeof rawUrl !== "string" || !/^openmausbot:\/\/auth(?:[/?#]|$)/i.test(rawUrl)) return false;
+  if (typeof rawUrl !== "string" || !/^(?:sagax|openmausbot):\/\/auth(?:[/?#]|$)/i.test(rawUrl)) return false;
   const parsed = environmentsModule.parseAuthReturnLink(rawUrl, environmentsState);
   if (!parsed) {
     signInLog("ignored an openmausbot://auth link that does not name a saved server");
@@ -508,10 +524,10 @@ app.on("open-url", (event, url) => {
 });
 
 app.on("second-instance", (_event, commandLine) => {
-  const authReturn = Array.isArray(commandLine) ? commandLine.find((arg) => typeof arg === "string" && /^openmausbot:\/\/auth(?:[/?#]|$)/i.test(arg)) : undefined;
+  const authReturn = Array.isArray(commandLine) ? commandLine.find((arg) => typeof arg === "string" && /^(?:sagax|openmausbot):\/\/auth(?:[/?#]|$)/i.test(arg)) : undefined;
   if (authReturn && takeAuthReturnLink(authReturn)) return;
   if (takeOrganizationDeepLink(commandLine)) {
-    queueOrganizationEntry("openmausbot://organization");
+    queueOrganizationEntry(ORGANIZATION_DEEP_LINK);
     return;
   }
   if (cloudEntry.fromArgs(commandLine)) return;
@@ -596,12 +612,17 @@ const serverSupervisor = createServerSupervisor({
   log: slog,
 });
 
+let resolvedDesktopDataDir = null;
 function desktopDataDir() {
   // Match the historical desktop fallback for an unset or empty override,
   // then pass this exact resolved path to the utility child. server/config.ts
-  // intentionally treats an empty OMB_DATA_DIR differently, so inheriting it
+  // intentionally treats an empty SAGAX_DATA_DIR differently, so inheriting it
   // without normalization would lease one directory and write another.
-  return process.env.OMB_DATA_DIR || path.join(app.getPath("home"), ".openmausbot");
+  // Resolved once: the first call moves ~/.openmausbot to ~/.sagax when no
+  // running copy holds it (legacy-names.mjs), and the answer must not change
+  // under a running app.
+  resolvedDesktopDataDir ??= process.env.SAGAX_DATA_DIR || defaultDataDir({ home: app.getPath("home") });
+  return resolvedDesktopDataDir;
 }
 
 async function stopUtilityServer(proc, timeoutMs = UTILITY_SERVER_STOP_TIMEOUT_MS) {
@@ -636,6 +657,7 @@ const CREDENTIALS_FILE = path.join(app.getPath("userData"), "credentials.bin");
 let credentialStoreUnavailable = false;
 
 async function loadSecureCredentials() {
+  await keychainReady;
   const result = await readSecureCredentials({
     exists: () => fs.existsSync(CREDENTIALS_FILE),
     isAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
@@ -659,6 +681,7 @@ async function saveSecureCredentials(credentials) {
   if (credentialStoreUnavailable) {
     throw new Error("The operating-system credential store could not be read this launch");
   }
+  await keychainReady;
   if (!(await safeStorage.isAsyncEncryptionAvailable())) {
     throw new Error("The operating-system credential store is unavailable");
   }
@@ -736,12 +759,12 @@ async function secureWorkspaceConfig() {
 // connections through a third party's service. Without the variable, the
 // app uses the workspace's own Composio project key (self-hosted mode).
 function composioBrokerUrl() {
-  return normalizeManagedComposioBrokerUrl(process.env.OMB_COMPOSIO_BROKER_URL?.trim() || "");
+  return normalizeManagedComposioBrokerUrl(process.env.SAGAX_COMPOSIO_BROKER_URL?.trim() || "");
 }
 
 // The packaged app has no terminal: everything about the server child's life
 // goes to server.log in the OS log dir (~/Library/Logs/openmausbot on macOS,
-// Console.app-visible; %APPDATA%\openmausbot\logs on Windows), which is also
+// Console.app-visible; %APPDATA%\sagax\logs on Windows), which is also
 // why stdio is piped, not inherited — under a Finder/Explorer launch the
 // parent's stdio leads nowhere and a failed boot is otherwise undiagnosable.
 const LOG_DIR = app.getPath("logs");
@@ -767,6 +790,14 @@ import {
   stopCompanion,
 } from "./companion.mjs";
 import { createRoutineWakeHold, rememberRoutineWake, routineWakeSettings } from "./routine-wake.mjs";
+import { installFetchGuard, installSessionBlock } from "./upstream-hosts.mjs";
+
+// No request from this app reaches the original OpenMausBot services, the
+// upstream author's repositories or an analytics host: main's own fetch is
+// guarded here, every Electron session (windows, webviews, the updater's net
+// session) on creation and once ready (electron/upstream-hosts.mjs).
+installFetchGuard(globalThis);
+app.on("session-created", (created) => installSessionBlock(created, (line) => slog(`network: ${line}`)));
 
 /** IPC that controls this computer, its files, its logins or its updater is
  * answered only for the local server's UI (electron/local-origin.cjs). A
@@ -809,6 +840,15 @@ const routineWake = createRoutineWakeHold({
   settings: () => routineWakeSettings(app.getPath("userData")),
   log: (line) => slog(line),
 });
+
+// Each step of the packaged boot is written to server.log, so a startup that
+// stalls on someone's machine says where in the log they send us, and the
+// loading screen shows the step it is on.
+const startupClock = Date.now();
+function startupPhase(phase, status) {
+  slog(`startup: ${phase} (+${Date.now() - startupClock}ms)`);
+  if (status) startupScreen?.setStatus(status);
+}
 
 function slog(line) {
   try {
@@ -1256,10 +1296,11 @@ function syncPhoneSecretKey(proc) {
 
 function ensureCloudAccount() {
   if (cloudAccount) return cloudAccount;
+  if (!CLOUD_SERVICES_ENABLED) throw new Error("OMB Cloud is not available in Sagax.");
   if (!app.isPackaged || desktopRemoteAccess) throw new Error("OMB Cloud sign-in requires the local desktop app.");
   cloudAccount = createCloudAccountClient({
     store: createCloudAccountStore({ file: path.join(app.getPath("userData"), "cloud-account.bin"), encryption: {
-      available: async () => (await safeStorage.isAsyncEncryptionAvailable()) &&
+      available: async () => (await keychainReady, await safeStorage.isAsyncEncryptionAvailable()) &&
         (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text"),
       encrypt: value => safeStorage.encryptStringAsync(value), decrypt: value => safeStorage.decryptStringAsync(value),
     } }),
@@ -1281,7 +1322,7 @@ function ensureManagedDesktop() {
   if (managedDesktop) return managedDesktop;
   if (!app.isPackaged || desktopRemoteAccess) throw new Error("Organization sign-in requires the installed desktop app running on this computer.");
   const encryption = {
-    available: async () => (await safeStorage.isAsyncEncryptionAvailable()) &&
+    available: async () => (await keychainReady, await safeStorage.isAsyncEncryptionAvailable()) &&
       (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text"),
     encrypt: value => safeStorage.encryptStringAsync(value),
     decrypt: value => safeStorage.decryptStringAsync(value),
@@ -1548,23 +1589,23 @@ async function startServerOn(port) {
     // server gets only a private capability that validates that same live
     // owner; fallback-port children must not race to replace the parent lease.
     ...desktopDataDirLease.utilityServerLeaseEnvironment(),
-    OMB_DATA_DIR: desktopDataDir(),
+    SAGAX_DATA_DIR: desktopDataDir(),
     // A packaged utility child must never fall back to a descriptor inherited
     // from the launching shell. It starts fail-closed until this exact main
     // process sends the private in-memory connection after spawn.
-    OMB_DESKTOP_PARENT: "1",
-    OMB_STATIC_DIR: path.join(process.resourcesPath, "ui"),
-    OMB_RESOURCES_PATH: process.resourcesPath,
-    OMB_SKILLS_DIR: path.join(process.resourcesPath, "skills"),
-    OMB_PORT: String(port),
+    SAGAX_DESKTOP_PARENT: "1",
+    SAGAX_STATIC_DIR: path.join(process.resourcesPath, "ui"),
+    SAGAX_RESOURCES_PATH: process.resourcesPath,
+    SAGAX_SKILLS_DIR: path.join(process.resourcesPath, "skills"),
+    SAGAX_PORT: String(port),
     // the server advertises this to remote clients so version skew is visible
-    OMB_APP_VERSION: app.getVersion(),
-    OMB_USER_DATA: app.getPath("userData"),
+    SAGAX_APP_VERSION: app.getVersion(),
+    SAGAX_USER_DATA: app.getPath("userData"),
     ...(secureCredentials.composioApiKey
       ? { COMPOSIO_API_KEY: secureCredentials.composioApiKey }
       : {}),
     // "we could not read your keys" must not reach the UI as "you have none"
-    OMB_CREDENTIAL_STORE: credentialStoreUnavailable ? "unavailable" : "ok",
+    SAGAX_CREDENTIAL_STORE: credentialStoreUnavailable ? "unavailable" : "ok",
     // one env var per stored workspace secret (xai/box/voice/OpenCode Go);
     // the server prefers these over config.json, whose plaintext fields
     // the boot migration has deleted
@@ -1572,10 +1613,10 @@ async function startServerOn(port) {
     // The key of the server's encrypted MCP sign-in vault. It lives in
     // credentials.bin; without it the server refuses to invent another.
     ...(typeof secureCredentials.mcpOAuthKey === "string" && /^[0-9a-f]{64}$/.test(secureCredentials.mcpOAuthKey)
-      ? { OMB_MCP_OAUTH_KEY: secureCredentials.mcpOAuthKey }
+      ? { SAGAX_MCP_OAUTH_KEY: secureCredentials.mcpOAuthKey }
       : {}),
   });
-  delete childEnv.OMB_BROWSER_CONNECTION;
+  delete childEnv.SAGAX_BROWSER_CONNECTION;
   slog(`fork ${entry} port=${port}`);
   const proc = utilityProcess.fork(entry, [], {
     env: childEnv,
@@ -1651,10 +1692,18 @@ async function startServerOn(port) {
 }
 
 async function startServerPackaged() {
+  startupPhase("starting the local server", "Starting the local server…");
+  const started = await startServerPackagedOnce();
+  startupPhase(started ? "local server ready" : "local server failed to start");
+  return started;
+}
+
+async function startServerPackagedOnce() {
   // two passes: a quit-and-reopen relaunch can race the dying instance's
   // server during teardown — one settle-and-retry covers it
   let everyPortForeignOwned = true;
   for (let attempt = 0; attempt < 2; attempt++) {
+    let sawForeignOwner = false;
     for (const port of [8799, 18799, 28799]) {
       if (desktopShutdownStarted) return false;
       const started = await startServerOn(port);
@@ -1666,7 +1715,12 @@ async function startServerPackaged() {
       // A child that exited or timed out is not evidence of a port conflict —
       // only "another process answered health checks" is.
       if (started.reason !== "foreign-owner") everyPortForeignOwned = false;
+      else sawForeignOwner = true;
     }
+    // The second pass exists for a dying previous instance still holding a
+    // port. A child that crashed or never answered on every port will do the
+    // same again: retrying only doubles the wait before the error page.
+    if (!sawForeignOwner) break;
     await new Promise((r) => setTimeout(r, 2500));
   }
   serverStartConflictOnly = everyPortForeignOwned;
@@ -1963,7 +2017,7 @@ async function refreshSharedComputersAllowed() {
   // whether it accepts a person's computer (its public descriptor).
   const locked = serverModeEnvironment(environmentsState);
   if (locked) {
-    sharedComputersAllowed = await fetch(`${locked.origin}/.well-known/openmausbot/environment`, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) })
+    sharedComputersAllowed = await fetchEnvironmentDescriptor(locked.origin, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) })
       .then((res) => (res.ok ? res.json() : null))
       .then((descriptor) => descriptor?.capabilities?.sharedComputers === true)
       .catch(() => false);
@@ -2014,6 +2068,153 @@ function sharingController() {
     },
   });
   return computerSharing;
+}
+
+// ── desktop bridge (server mode) ────────────────────────────────────────
+// The organization server's bots, working for the person signed in here,
+// run their tools on this computer and their traffic leaves through it
+// (electron/desktop-bridge.mjs, server/desktop-bridge.ts). Only while this
+// app is locked to that server and signed in; the cookie and the bridge
+// secret never leave the main process.
+let desktopBridgeConnector = null;
+let bridgeBrowseSession = null;
+async function bridgeBrowse(url, screenshot, signal) {
+  // Its own in-memory session: no cookie of the person's own browsing, and
+  // never this app's own session with the server.
+  bridgeBrowseSession ??= session.fromPartition("sagax-bridge-browse");
+  const win = new BrowserWindow({ show: false, width: 1280, height: 900, webPreferences: { session: bridgeBrowseSession, offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: true } });
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  const stop = () => { if (!win.isDestroyed()) win.destroy(); };
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    await Promise.race([win.loadURL(url), new Promise((_, reject) => setTimeout(() => reject(new Error("The page took too long to load")), 30_000))]);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (screenshot) {
+      const image = await win.webContents.capturePage();
+      return { content: [{ type: "image", data: image.toPNG().toString("base64"), mimeType: "image/png" }, { type: "text", text: `screenshot of ${url}` }] };
+    }
+    const html = String(await win.webContents.executeJavaScript("document.documentElement.outerHTML"));
+    return { content: [{ type: "text", text: html.length > 512 * 1024 ? `${html.slice(0, 512 * 1024)}\n[page shortened]` : html }] };
+  } finally {
+    signal?.removeEventListener("abort", stop);
+    stop();
+  }
+}
+/** The person's yes, on this computer, before a bot creates the Local VM
+ * here through the desktop bridge (as solo mode asks in its settings). */
+async function confirmBridgeLocalVm({ runtime, needsImage, signal }) {
+  const env = serverModeEnvironment(environmentsState);
+  const french = /^fr\b/i.test(app.getLocale());
+  const server = env?.name ?? (french ? "votre serveur" : "your server");
+  const detail = french
+    ? [
+      `Un robot de ${server}, qui travaille pour vous, veut un bureau Linux (Local VM) sur cet ordinateur, avec ${runtime}.`,
+      needsImage ? "Sagax télécharge et construit d'abord l'image du bureau (quelques Go, plusieurs minutes)." : "L'image du bureau est déjà prête.",
+      "Le Local VM utilise jusqu'à 4 Go de mémoire et 2 processeurs, n'est joignable que depuis cet ordinateur et garde ses fichiers dans le dossier de Sagax. Vous pourrez le supprimer plus tard.",
+    ]
+    : [
+      `A bot on ${server}, working for you, wants a Linux desktop (Local VM) on this computer, with ${runtime}.`,
+      needsImage ? "Sagax first downloads and builds the desktop image (a few GB, several minutes)." : "The desktop image is already prepared.",
+      "The Local VM uses up to 4 GB of memory and 2 processors, is reachable from this computer only and keeps its files in Sagax's folder. You can remove it later.",
+    ];
+  const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+    type: "question",
+    message: french ? "Créer un Local VM sur cet ordinateur?" : "Create a Local VM on this computer?",
+    detail: detail.join("\n\n"),
+    buttons: french ? ["Créer", "Annuler"] : ["Create", "Cancel"],
+    defaultId: 1, cancelId: 1,
+    ...(signal ? { signal } : {}),
+  });
+  return response === 0 && !signal?.aborted;
+}
+
+/** The person's SOCKS5 user name and password for the system proxy, asked
+ * once in a small window of the app when the proxy asks and none is known
+ * (proxy-credentials.mjs). Resolves { username, password } or null. */
+async function askProxyPassword({ host, port }) {
+  const french = /^fr\b/i.test(app.getLocale());
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const win = new BrowserWindow({
+    parent, modal: Boolean(parent), width: 440, height: 330, resizable: false, minimizable: false, maximizable: false, show: false,
+    title: french ? "Mot de passe du proxy" : "Proxy password",
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: true, partition: "sagax-proxy-password" },
+  });
+  win.setMenuBarVisibility?.(false);
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event) => event.preventDefault());
+  const closed = new Promise((resolve) => win.once("closed", () => resolve(null)));
+  try {
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(proxyPasswordPage({ host, port, french }))}`);
+    win.show();
+    return await Promise.race([win.webContents.executeJavaScript(proxyPasswordAnswerScript, true), closed]);
+  } catch {
+    return null;
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+}
+
+let bridgeProxyCredentials = null;
+function desktopBridgeProxyCredentials() {
+  bridgeProxyCredentials ??= createProxyCredentials({
+    store: createProxyCredentialStore({
+      file: path.join(app.getPath("userData"), "proxy-passwords.bin"), fs, log: (message) => slog(message),
+      encryption: {
+        available: async () => (await safeStorage.isAsyncEncryptionAvailable()) &&
+          (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text"),
+        encrypt: (value) => safeStorage.encryptStringAsync(value),
+        decrypt: (buffer) => safeStorage.decryptStringAsync(buffer),
+      },
+    }),
+    prompt: askProxyPassword,
+  });
+  return bridgeProxyCredentials;
+}
+
+function desktopBridge() {
+  desktopBridgeConnector ??= createDesktopBridge({
+    environment: () => serverModeEnvironment(environmentsState),
+    // main's own calls never go through the bundled-UI handler (bundled-ui.cjs)
+    fetch: (url, init) => session.defaultSession.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
+    cookieHeader: async (origin) => (await session.defaultSession.cookies.get({ url: origin })).map((cookie) => `${cookie.name}=${cookie.value}`).join("; "),
+    attachmentsDir: path.join(app.getPath("temp"), "Sagax", "attachments"),
+    // The app's own data (its cookies and grants) and the harness data dir
+    // never pass through the bridge; the person's credential stores neither.
+    protectedPaths: [app.getPath("userData"), desktopDataDir()],
+    activityFile: path.join(app.getPath("userData"), "desktop-bridge-activity.jsonl"),
+    // The person's own network: Chromium's stack, the OS proxy and the VPN.
+    fetchUrl: (url, init) => session.fromPartition("sagax-bridge-net").fetch(url, init),
+    // The system proxy for each destination (a PAC file included), and the
+    // SOCKS5 password when the proxy asks: this app's environment, else what
+    // the person typed once here (kept encrypted by the OS).
+    resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+    proxyCredentials: desktopBridgeProxyCredentials(),
+    browse: bridgeBrowse,
+    cuaConnection: async () => {
+      const connection = await cuaReady.catch(() => null);
+      return connection?.mcpCommand ? connection : null;
+    },
+    // The Local VM on this computer, bound to this app's own data dir; an
+    // install happens only after the person confirms here, in an OS dialog.
+    localVm: createLocalVm({
+      dataDir: desktopDataDir(),
+      home: app.getPath("home"),
+      openExternal: (url) => shell.openExternal(url),
+      // A bot asking for a Local VM here: the person says yes on this computer.
+      confirmCreate: confirmBridgeLocalVm,
+      confirm: async ({ product, method }) => {
+        const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+        const message = method === "brew" ? `Install ${product} with Homebrew?` : `Open the ${product} download page?`;
+        const detail = method === "brew"
+          ? `Sagax runs "brew install --cask ${product.toLowerCase()}" on this computer. ${product} runs the Local VM, an isolated Linux desktop for your bots. macOS may ask for your password.`
+          : `${product} runs the Local VM, an isolated Linux desktop for your bots. Install it, open it once, then come back and choose Set up in one click.`;
+        const options = { type: "question", buttons: ["Continue", "Cancel"], defaultId: 0, cancelId: 1, message, detail };
+        const answer = window ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
+        return answer.response === 0;
+      },
+    }),
+  });
+  return desktopBridgeConnector;
 }
 
 /** The verified Cloud sign-in, as lending needs it: never a renderer's word.
@@ -2128,7 +2329,7 @@ function refreshApplicationMenu() {
       onSwitch: (id) => void workspaceMenuAction(() => switchEnvironment(id)),
       onAddFromClipboard: () => void addServerFromClipboard(),
       onConnect: () => void workspaceMenuAction(openWorkspaceSettings),
-      onOrganizationSignIn: () => queueOrganizationEntry("openmausbot://organization"),
+      onOrganizationSignIn: () => queueOrganizationEntry(ORGANIZATION_DEEP_LINK),
       onForget: (id) => void workspaceMenuAction(() => forgetEnvironment(id)),
       onOpenSettings: () => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("app:open-settings");
@@ -2149,10 +2350,10 @@ let bundledScheme = null;
 let currentBundledOrigin = null;
 function bundledUiStaticDir() {
   if (app.isPackaged) return path.join(process.resourcesPath, "ui");
-  return process.env.OMB_BUNDLED_UI_DIR || null;
+  return process.env.SAGAX_BUNDLED_UI_DIR || null;
 }
 function bundledUiDevOrigin() {
-  if (app.isPackaged || process.env.OMB_BUNDLED_UI_DIR) return null;
+  if (app.isPackaged || process.env.SAGAX_BUNDLED_UI_DIR) return null;
   return new URL(DEV_URL).origin;
 }
 const bundledUiHandler = bundledUiModule.createBundledUiHandler({
@@ -2209,6 +2410,7 @@ function persistEnvironments(next) {
   writeEnvironments(next);
   environmentsState = next;
   syncBundledUi();
+  desktopBridge().sync();
   refreshApplicationMenu();
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(workspaceWindowTitle(environmentsState, desktopRemoteAccess));
 }
@@ -2518,7 +2720,7 @@ async function upgradeSavedOrganizationServers() {
 
 async function isOrganizationServer(origin) {
   try {
-    const response = await fetch(`${origin}/.well-known/openmausbot/environment`, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) });
+    const response = await fetchEnvironmentDescriptor(origin, { redirect: "error", credentials: "omit", signal: AbortSignal.timeout(3_000) });
     return response.ok && (await response.json())?.identity?.kind === "perspicax";
   } catch {
     return false;
@@ -2640,7 +2842,8 @@ function createWindow({ deferNavigation = false } = {}) {
       // renderer's remote-only feature gates. Keep the two facts independent:
       // upstream's origin boundary must not erase the client-mode marker.
       additionalArguments: [...desktopCompanionRendererArguments(rendererOrigin(), desktopRemoteAccess),
-        ...(app.isPackaged && !desktopRemoteAccess ? ["--omb-company-desktop=1"] : [])],
+        ...(app.isPackaged && !desktopRemoteAccess ? ["--omb-company-desktop=1"] : []),
+        ...(app.isPackaged && !desktopRemoteAccess && CLOUD_SERVICES_ENABLED ? ["--sagax-cloud=1"] : [])],
     },
   });
   mainWindow = win;
@@ -2769,14 +2972,14 @@ function createWindow({ deferNavigation = false } = {}) {
   // Packaged CI smoke hook. It validates the real renderer/preload bridge and
   // same-origin embedded server, then follows the normal window-close path.
   // No debugging port or sandbox override is needed.
-  if (process.env.OMB_SMOKE_TEST === "1") {
+  if (process.env.SAGAX_SMOKE_TEST === "1") {
     win.webContents.once("did-finish-load", async () => {
       try {
         const result = await win.webContents.executeJavaScript(`
           (async () => {
             if (!window.ogb?.getCapabilities) throw new Error("desktop preload bridge is unavailable");
             let crashPromise = null;
-            if (${JSON.stringify(process.env.OMB_SMOKE_CUA === "1")}) {
+            if (${JSON.stringify(process.env.SAGAX_SMOKE_CUA === "1")}) {
               crashPromise = new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => {
                   unsubscribe?.();
@@ -2832,7 +3035,7 @@ function createWindow({ deferNavigation = false } = {}) {
             `unexpected packaged renderer URL: ${result.location} (expected ${expectedLocation})`,
           );
         }
-        if (process.env.OMB_SMOKE_BUNDLED_CUA === "1") {
+        if (process.env.SAGAX_SMOKE_BUNDLED_CUA === "1") {
           const connection = await cuaReady;
           const expectedDriver = path.join(
             process.resourcesPath,
@@ -2870,7 +3073,7 @@ function createWindow({ deferNavigation = false } = {}) {
       } catch (error) {
         console.error(`[smoke] renderer-failed ${error?.stack ?? error}`);
       } finally {
-        if (process.env.OMB_SMOKE_KEEP_OPEN !== "1") win.close();
+        if (process.env.SAGAX_SMOKE_KEEP_OPEN !== "1") win.close();
       }
     });
   }
@@ -3013,7 +3216,7 @@ ipcMain.handle("desktop:export-diagnostics", localOnly("desktop:export-diagnosti
 // copy of the chat UI instead of the file. Ask where to put it and copy it
 // there instead: a save dialog tells the user the file landed somewhere and
 // where, which a silent copy into ~/Downloads does not. The path is
-// renderer-controlled, so it must resolve inside ~/.openmausbot and be a
+// renderer-controlled, so it must resolve inside the data folder and be a
 // regular file — never a symlink escape or directory.
 ipcMain.handle("desktop:save-file", localOnly("desktop:save-file", async (event, rawPath) => {
   return withSavableFile(rawPath, { home: os.homedir() }, async ({ defaultName, copyTo }) => {
@@ -3834,6 +4037,7 @@ setCuaStateListener((connection) => {
 });
 
 app.whenReady().then(async () => {
+  installSessionBlock(session.defaultSession, (line) => slog(`network: ${line}`));
   // Cached-before-the-fix attachment responses outlive `no-store`: entries
   // stored under the old one-year immutable policy can replay to a second
   // identity in this profile without the visibility gate re-running. The
@@ -3864,8 +4068,18 @@ app.whenReady().then(async () => {
     isHidden: () => desktopTray?.isHidden() ?? false,
     onShow: (win) => desktopTray?.windowShown(win),
     onFinished: () => { startupScreen = null; },
+    onOpenLogs: () => {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+      void shell.openPath(LOG_DIR).then((error) => { if (error) slog(`startup: open logs failed: ${error}`); });
+    },
+    onRetry: () => {
+      slog("startup: retry requested from the loading screen");
+      app.relaunch();
+      app.quit();
+    },
   });
   await startupScreen.ready;
+  startupPhase("loading screen shown");
   if (desktopShutdownStarted) return;
   session.defaultSession.on("will-download", (_event, item) => {
     item.setSavePath(collisionFreeDownloadPath(app.getPath("downloads"), item.getFilename()));
@@ -3888,7 +4102,8 @@ app.whenReady().then(async () => {
     }
   }
   if (app.isPackaged) {
-    app.setAsDefaultProtocolClient("openmausbot");
+    // sagax:// is primary; openmausbot:// stays for one release (legacy-names.mjs).
+    for (const scheme of URL_SCHEMES) app.setAsDefaultProtocolClient(scheme);
     // Chromium adds this capability below JavaScript, so renderer requests
     // can mutate the local harness while a Full-access shell using curl
     // cannot impersonate the person operating the desktop app.
@@ -3901,6 +4116,7 @@ app.whenReady().then(async () => {
   // scripts/dev-desktop.mjs; the flat PNG is only the fallback
   // when that script could not run (no Xcode actool).
   if (process.platform === "darwin" && !app.isPackaged && !devBundleHasSystemIcon()) app.dock.setIcon(APP_ICON);
+  startupPhase("reading saved credentials");
   secureCredentials = await loadSecureCredentials();
   // The AssemblyAI key only fed the removed Teach a skill recorder, and its
   // set/clear handler went with it; drop the orphaned secret rather than
@@ -3925,6 +4141,7 @@ app.whenReady().then(async () => {
     writable: !credentialStoreUnavailable,
   });
   secureCredentials = secureCredentialState.read();
+  startupPhase("preparing the credential store");
   if (app.isPackaged) await ensurePhoneSecretIdentity();
   if (app.isPackaged) await ensureMcpOAuthKey();
   desktopRemoteAccess = desktopCompanionAccess(secureCredentials);
@@ -4035,16 +4252,22 @@ app.whenReady().then(async () => {
   // Device permissions (microphone, notifications, clipboard) are for the
   // local UI only; privileged capabilities (camera, geolocation, USB, MIDI,
   // serial) stay off. Client mode's loopback relay is the local UI.
+  // Voice mode in server mode: the bundled UI drawn on the organization
+  // server's origin (bundled-ui.cjs) may open the microphone, nothing else.
+  const microphoneOrigins = () => [bundledOrigin(environmentsState)];
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     const requesting = details?.requestingUrl ?? contents?.getURL?.() ?? "";
-    callback(appPermissionAllowed(permission, requesting, rendererOrigin(), details));
+    callback(appPermissionAllowed(permission, requesting, rendererOrigin(), details, { microphoneOrigins: microphoneOrigins() }));
   });
   session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
     const requesting = requestingOrigin || contents?.getURL?.() || "";
-    return appPermissionAllowed(permission, requesting, rendererOrigin(), details);
+    return appPermissionAllowed(permission, requesting, rendererOrigin(), details, { microphoneOrigins: microphoneOrigins() });
   });
   environmentsState = readEnvironments();
   syncBundledUi();
+  // Server mode: this app bridges the organization's bots to this computer
+  // for the signed-in person (electron/desktop-bridge.mjs).
+  desktopBridge().sync();
   // Maintainer grants never start while computer sharing is off: no poll
   // loop, no registration, no grant replay from disk. Lending to the person's
   // own Cloud is gated by their Cloud sign-in instead, so its saved grant
@@ -4055,6 +4278,7 @@ app.whenReady().then(async () => {
     // not there publishes nothing, so decide once restoring has finished.
     void cloudAccountStarted.then(() => computerSharing?.cloudChanged());
   });
+  startupPhase("opening the workspace", "Opening your workspace…");
   let restoredOrganizationEntry = false;
   await workspaceMenuAction(async () => { restoredOrganizationEntry = await organizationEntry.restore(); });
   organizationEntryReady = true;
@@ -4064,6 +4288,7 @@ app.whenReady().then(async () => {
   const deliveredCloudEntry = await cloudEntry.ready();
   if (!restoredOrganizationEntry && !deliveredOrganizationEntry && !deliveredCloudEntry && (!mainWindow || mainWindow.isDestroyed())) createWindow();
   void upgradeSavedOrganizationServers().catch((error) => slog(`organization server upgrade failed: ${error?.message ?? error}`));
+  startupPhase("workspace window created");
   // Reconcile incomplete setup and resume interrupted sign-out only after the
   // local app is usable. This background network work never gates LAN pairing
   // or the first window.
@@ -4137,6 +4362,7 @@ app.on("before-quit", (e) => {
   void cloudMove?.close();
   companyBackupController?.abort();
   computerSharing?.close();
+  desktopBridgeConnector?.close();
   lendingTray?.destroy();
   if (cuaCleanedUp) return;
   e.preventDefault();

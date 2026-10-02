@@ -41,7 +41,9 @@ describe("resolveEngineAccess: the person who speaks pays", () => {
   });
 
   it("an engine that is not installed wins over everything", () => {
-    expect(resolveEngineAccess(input({ signedIn: [`${OWNER}/claudeAgent`], keys: ["SUB-OWNER/anthropic"], keyBacked: true, instance: { ...CLAUDE, installed: false } }))).toEqual({ ok: false, reason: "engine_missing" });
+    expect(resolveEngineAccess(input({ signedIn: [`${OWNER}/claudeAgent`], keys: ["SUB-OWNER/anthropic"], keyBacked: true, instance: { ...CLAUDE, installed: false } }))).toEqual({ ok: false, reason: "engine_missing", payer: "owner", payerPrincipalId: OWNER });
+    // the card names whose turn it was, so it reaches that person only
+    expect(resolveEngineAccess(input({ speaker: { origin: "person", principalId: BOB }, instance: { ...CLAUDE, installed: false } }))).toEqual({ ok: false, reason: "engine_missing", payer: "speaker", payerPrincipalId: BOB });
   });
 
   // The decision table: speaker (owner, someone shared with) x what that
@@ -157,7 +159,7 @@ describe("materializeEngineAccess", () => {
   it("runs Codex on the payer's OpenAI key from an empty home of their own", async () => {
     const inp = input({ instance: CODEX, keys: ["SUB-OWNER/openai"] });
     const out = await materializeEngineAccess(inp, resolveEngineAccess(inp), deps({ ok: true, key: "sk-test-openai-000000000001", fingerprint: "fp2" }));
-    expect(out).toMatchObject({ ok: true, access: { via: "owner-key", identity: `owner-key:${OWNER}:fp2`, environment: { OMB_OWNER_OPENAI_API_KEY: "sk-test-openai-000000000001" }, codexHome: `/data/principals/${OWNER}/codex-key`, codexOwnerKey: true } });
+    expect(out).toMatchObject({ ok: true, access: { via: "owner-key", identity: `owner-key:${OWNER}:fp2`, environment: { SAGAX_OWNER_OPENAI_API_KEY: "sk-test-openai-000000000001" }, codexHome: `/data/principals/${OWNER}/codex-key`, codexOwnerKey: true } });
     const bobs = input({ speaker: bob, instance: CODEX, keys: ["SUB-BOB/openai"] });
     expect(await materializeEngineAccess(bobs, resolveEngineAccess(bobs), deps({ ok: true, key: "sk-test-openai-000000000002", fingerprint: "fp3" }))).toMatchObject({ ok: true, access: { via: "speaker-key", codexHome: `/data/principals/${BOB_PID}/codex-key`, codexOwnerKey: true } });
   });

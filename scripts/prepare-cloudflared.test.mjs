@@ -25,7 +25,7 @@ describe("cloudflared download retries", () => {
 
   function mockDownload() {
     vi.useFakeTimers();
-    vi.stubEnv("OMB_CLOUDFLARED_ARCHIVE_DIR", "");
+    vi.stubEnv("SAGAX_CLOUDFLARED_ARCHIVE_DIR", "");
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -105,6 +105,13 @@ const PINNED_ASSETS = {
     binarySha256: "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
     archive: false,
   },
+  "win32-arm64": {
+    name: "cloudflared-windows-amd64.exe",
+    sha256: "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
+    binarySha256: "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
+    archive: false,
+    executableTarget: "win32-x64",
+  },
 };
 
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -117,7 +124,7 @@ function executableFixture(target) {
   } else if (target === "linux-x64" || target === "linux-arm64") {
     Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1]).copy(bytes);
     bytes.writeUInt16LE(target === "linux-arm64" ? 183 : 62, 18);
-  } else if (target === "win32-x64") {
+  } else if (target === "win32-x64" || target === "win32-arm64") {
     bytes.write("MZ", 0, "ascii");
     bytes.writeUInt32LE(0x40, 0x3c);
     bytes.write("PE\0\0", 0x40, "binary");
@@ -130,7 +137,7 @@ describe("pinned cloudflared packaging", () => {
   it("stages both macOS architectures and only shipped desktop targets elsewhere", () => {
     expect(targetsForHost("darwin")).toEqual(["darwin-arm64", "darwin-x64"]);
     expect(targetsForHost("linux")).toEqual(["linux-x64"]);
-    expect(targetsForHost("win32")).toEqual(["win32-x64"]);
+    expect(targetsForHost("win32")).toEqual(["win32-x64", "win32-arm64"]);
     expect(() => targetsForHost("freebsd")).toThrow(/unsupported/);
   });
 
@@ -166,7 +173,7 @@ describe("pinned cloudflared packaging", () => {
 
   it("stages the current target for development without narrowing package preparation", () => {
     expect(packageJson.scripts["dev:desktop"]).toBe(
-      "node scripts/prepare-cloudflared.mjs --current && electron .",
+      "node scripts/prepare-cloudflared.mjs --current && node scripts/dev-desktop.mjs",
     );
     expect(packageJson.scripts["build:cloudflared"]).toBe(
       "node scripts/prepare-cloudflared.mjs",
@@ -187,9 +194,15 @@ describe("pinned cloudflared packaging", () => {
 
   it("recognizes only the executable formats and architectures we ship", () => {
     for (const target of Object.keys(PINNED_ASSETS)) {
-      expect(executableTarget(executableFixture(target))).toBe(target);
+      expect(executableTarget(executableFixture(target))).toBe(PINNED_ASSETS[target].executableTarget ?? target);
     }
     expect(() => executableTarget(Buffer.from("not an executable"))).toThrow(/unsupported/);
+  });
+
+  it("ships the emulated amd64 executable for Windows on Arm", () => {
+    const bytes = executableFixture("win32-x64");
+    expect(() => verifyPinnedBinary(bytes, "win32-arm64")).toThrow(/SHA-256 verification/);
+    expect(() => verifyPinnedBinary(executableFixture("darwin-arm64"), "win32-arm64")).toThrow(/architecture mismatch/);
   });
 
   it("checks architecture before accepting a pinned executable", () => {

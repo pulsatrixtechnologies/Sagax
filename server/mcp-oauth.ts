@@ -91,13 +91,13 @@ export type VaultKeySource =
 
 /** Where the vault key comes from. The desktop shell keeps it in the
  * OS-encrypted credential store (credentials.bin) and hands it over as
- * OMB_MCP_OAUTH_KEY; a desktop child without it must not invent a second
+ * SAGAX_MCP_OAUTH_KEY; a desktop child without it must not invent a second
  * key. A headless server keeps a 0600 key file beside its data, the same
  * treatment as the browser engine's session key. */
 export function resolveVaultKey(dataDir: string, env: NodeJS.ProcessEnv = process.env): VaultKeySource {
-  const fromEnv = env.OMB_MCP_OAUTH_KEY?.trim().toLowerCase();
+  const fromEnv = env.SAGAX_MCP_OAUTH_KEY?.trim().toLowerCase();
   if (fromEnv && HEX_KEY.test(fromEnv)) return { kind: "key", key: Buffer.from(fromEnv, "hex") };
-  if (env.OMB_DESKTOP_PARENT === "1") {
+  if (env.SAGAX_DESKTOP_PARENT === "1") {
     return { kind: "unavailable", reason: "The encrypted credential store could not be read on this launch." };
   }
   const file = join(dataDir, KEY_FILE);

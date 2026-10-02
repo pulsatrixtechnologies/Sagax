@@ -538,3 +538,28 @@ export function acquireDataDirLeaseForProcess(dataDir, environment = process.env
     ? acquireDataDirLease(dataDir)
     : validateChildDelegation(dataDir, encoded);
 }
+
+/**
+ * Whether a live server, or a desktop that owns one, may be using `dataDir`
+ * right now. Read-only: nothing is created or retired. Fails closed: a
+ * lease that cannot be read, or that another computer may hold, counts as
+ * active. The folder migration (legacy-names.mjs) asks this before it moves a
+ * data folder that a running older copy of the app could still be writing.
+ */
+export function dataDirLeaseIsActive(dataDir) {
+  for (const leasePath of [join(dataDir, LEASE_NAME), join(dataDir, DELEGATED_CHILD_DIR, LEASE_NAME)]) {
+    let owner;
+    try {
+      owner = readOwner(leasePath);
+    } catch {
+      return true;
+    }
+    if (!owner) continue;
+    try {
+      if (!sameMachine(owner) || ownerIsAlive(owner)) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}

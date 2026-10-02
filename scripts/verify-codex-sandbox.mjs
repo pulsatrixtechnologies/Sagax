@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = mkdtempSync(join(tmpdir(), "omb-native-sandbox-"));
-process.env.OMB_DATA_DIR = join(root, "omb");
+process.env.SAGAX_DATA_DIR = join(root, "omb");
 mkdirSync(join(root, "omb", "native"), { recursive: true });
 console.log(`Evidence: ${root}`);
 const { CodexDriver } = await import("../server/drivers/codex.ts");

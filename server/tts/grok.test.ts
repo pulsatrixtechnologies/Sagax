@@ -20,6 +20,9 @@ beforeAll(async () => {
       if (status !== 200) {
         res.writeHead(status, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: "fixture-xai-key private text" }));
+      } else if (req.url === "/v1/stt") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ text: "bonjour", language: "fr", duration: 1 }));
       } else if (req.url === "/v1/tts/voices") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(voices));
@@ -32,7 +35,7 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Expected TCP fixture");
-  vi.stubEnv("OMB_XAI_TTS_API", `http://127.0.0.1:${address.port}/v1`);
+  vi.stubEnv("SAGAX_XAI_TTS_API", `http://127.0.0.1:${address.port}/v1`);
 });
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -101,5 +104,23 @@ describe("Grok voice", () => {
   it("accepts MP3 content types with parameters", async () => {
     contentType = "audio/mp3; charset=binary";
     expect((await (await voice()).speak(config, "hi")).mime).toBe("audio/mpeg");
+  });
+
+  it("voice mode: sends the picked speed and language, and no voice for Not set", async () => {
+    const grok = await import("./grok.ts");
+    await grok.synthesize("Salut", "ara", "fixture-xai-key", { speed: 1.25, language: "fr" });
+    await grok.synthesize("Hi", undefined, "fixture-xai-key", { speed: 1 });
+    expect(JSON.parse(seen[0]!.body)).toEqual({ text: "Salut", voice_id: "ara", language: "fr", speed: 1.25, output_format: { codec: "mp3" } });
+    expect(JSON.parse(seen[1]!.body)).toEqual({ text: "Hi", language: "auto", output_format: { codec: "mp3" } });
+  });
+
+  it("voice mode: transcribes one recorded turn through /v1/stt with the language hint", async () => {
+    const grok = await import("./grok.ts");
+    const heard = await grok.transcribe(new Uint8Array([82, 73, 70, 70]), "audio/wav", "fixture-xai-key", "fr");
+    expect(heard).toEqual({ text: "bonjour", language: "fr" });
+    expect(seen[0]?.url).toBe("/v1/stt");
+    expect(seen[0]?.authorization).toBe("Bearer fixture-xai-key");
+    expect(seen[0]?.body).toContain('name="language"');
+    expect(seen[0]?.body).toContain('filename="turn.wav"');
   });
 });

@@ -68,15 +68,15 @@ async function restart(grants: Grants) {
     env: {
       ...verificationServerEnvironment({}, owned.info.dataDir, Number(new URL(owned.info.url).port)),
       FAKE_CLAUDE_TEXT_DUMP: join(owned.info.dataDir, "fake-claude-helper-dump.json"),
-      OMB_ENTERPRISE_DIR: layer, OMB_LICENSE_KEY: "fixture-only",
-      OMB_ADMIN_URL: "https://admin.example.test", OMB_ADMIN_WORKSPACE: "fixture",
-      OMB_PUBLIC_URL: "https://fixture.example.test", OMB_ADMIN_MEMBERSHIP: "portal",
+      SAGAX_ENTERPRISE_DIR: layer, SAGAX_LICENSE_KEY: "fixture-only",
+      SAGAX_ADMIN_URL: "https://admin.example.test", SAGAX_ADMIN_WORKSPACE: "fixture",
+      SAGAX_PUBLIC_URL: "https://fixture.example.test", SAGAX_ADMIN_MEMBERSHIP: "portal",
       // This fixture drives the model policy over loopback; the hosted
       // loopback default (service trust) is covered in hosted-access.test.ts.
-      OMB_LOOPBACK_TRUST: "owner",
-      OMB_HOSTED_MODELS: JSON.stringify(grants), OMB_HOSTED_MODEL_TOKEN: TOKEN,
-      OMB_HOSTED_CLAUDE_CLI: join(ROOT, "server/testing/fake-claude-cli.ts"),
-      OMB_HOSTED_CODEX_CLI: join(ROOT, "server/testing/fake-codex-app-server.ts"),
+      SAGAX_LOOPBACK_TRUST: "owner",
+      SAGAX_HOSTED_MODELS: JSON.stringify(grants), SAGAX_HOSTED_MODEL_TOKEN: TOKEN,
+      SAGAX_HOSTED_CLAUDE_CLI: join(ROOT, "server/testing/fake-claude-cli.ts"),
+      SAGAX_HOSTED_CODEX_CLI: join(ROOT, "server/testing/fake-codex-app-server.ts"),
     },
     stdio: ["ignore", log, log],
   });

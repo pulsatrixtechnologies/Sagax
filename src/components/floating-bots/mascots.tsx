@@ -2,13 +2,20 @@
 // desktop, one entry each (id, label, what it can animate, how it draws on
 // the desktop and as a thumbnail). Adding a character is adding an entry.
 // The same behavior state machine (behavior.ts) drives them all; each
-// renderer maps the clips it can show and degrades gracefully: the original
-// shapes and Trombi have no wings, so a flight is a bouncing hop across.
-// The character and its look come from the bot (bot.mascotLook).
-import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
+// renderer maps the clips it can show and degrades gracefully: the shapes
+// and Trombi have no wings, so a flight is a bouncing hop across. The
+// character and its look come from the bot (bot.mascotLook); the desktop
+// draws a skin's full effects, and its move effects with each move.
+import { lazy, Suspense, useEffect, useId, useRef, useState, type ComponentType } from "react";
+import { MAUS_COLORS } from "@/lib/mascot";
+import { owlSkinId } from "@/lib/owl/owl-skins";
+import { owlFxPalette } from "@/components/OwlSkinFx";
+import { EquipFx, MoveFx } from "@/components/skin-fx/SkinFx";
 import { OwlAvatar } from "@/components/OwlAvatar";
 import { ShapeMascot, type ShapeMood } from "@/components/ShapeMascot";
-import { Trombi, type TrombiPose } from "@/components/retro-assistant/Trombi";
+import type { TrombiPose } from "@/components/retro-assistant/Trombi";
+import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
+import { fxMoveFor, useEquipBurst, useMoveBurst, useReducedMotion, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
 import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
 import { createFrameSmoother, type MascotActivity, type MascotFrame } from "./behavior";
 import Owl25D, { flatTilt, flatTurn } from "./Owl25D";
@@ -65,7 +72,7 @@ const DEG = 180 / Math.PI;
 /**
  * A whole-character 2.5D transform for a frame: a perspective turn (spins,
  * facing the other way), a flip in its plane (backflips), lift, lean, squash
- * and size. For characters drawn in one piece (the original bodies, Trombi).
+ * and size. For characters drawn in one piece (the shapes, Trombi).
  */
 export function motion25dTransform(frame: MascotFrame, size: number): string {
   const facing = flatTurn(frame.face);
@@ -120,9 +127,31 @@ function Motion25D({ size, frame, fps, onHitTest, children }: Pick<MascotRenderP
 // the 3D owl and three.js: their own chunk, fetched only when a bot's owl is set to 3D
 const Owl3D = lazy(() => import("./owl3d/Owl3D"));
 
+/** The owl skin's equip animation and its move effects, over the desktop owl (the rarity set's effects). */
+function OwlSkinBursts({ color, skin, activity }: { color: string; skin: string; activity: MascotActivity }) {
+  const reduced = useReducedMotion();
+  const skinId = owlSkinId(skin);
+  const uid = `owlfx-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const equip = useEquipBurst(skinId, !reduced);
+  const burst = useMoveBurst(useClipFx(activity), !reduced);
+  const hex = (MAUS_COLORS as Record<string, string>)[color] ?? color;
+  if (!equip && !burst) return null;
+  return (
+    <>
+      {equip && <EquipFx key={equip} palette={owlFxPalette(skinId, hex)} uid={`${uid}-eq`} />}
+      {burst && <MoveFx key={burst.key} move={burst.move} palette={owlFxPalette(skinId, hex)} uid={`${uid}-mv`} />}
+    </>
+  );
+}
+
 function OwlRender({ color, skin, size, frame, fps, onHitTest, look, activity, stage }: MascotRenderProps) {
   const [flat, setFlat] = useState(false);
-  const owl2d = <Owl25D color={color} skin={skin} size={size} frame={frame} fps={fps} onHitTest={onHitTest} />;
+  const owl2d = (
+    <span style={{ position: "relative", display: "block", width: size, height: size }}>
+      <Owl25D color={color} skin={skin} size={size} frame={frame} fps={fps} onHitTest={onHitTest} />
+      <OwlSkinBursts color={color} skin={skin} activity={activity} />
+    </span>
+  );
   if (look.style !== "3d" || !stage || flat) return owl2d;
   return (
     <Suspense fallback={owl2d}>
@@ -135,7 +164,7 @@ function OwlThumb({ color, skin, size }: MascotThumbProps) {
   return <OwlAvatar color={color} skin={skin} size={size} animated={false} trackPointer={false} label={null} />;
 }
 
-/* ------------------------------------------------- the original shapes */
+/* ------------------------------------------------------------ the shapes */
 
 /** A shape's face for a clip. */
 export function shapeMoodForClip(activity: MascotActivity, pose: FloatingPose): ShapeMood {
@@ -146,10 +175,24 @@ export function shapeMoodForClip(activity: MascotActivity, pose: FloatingPose): 
   return "idle";
 }
 
+/**
+ * The skin effect of the clip playing now: a new request each time a move
+ * starts (the behavior machine moves the body itself), none between moves.
+ */
+export function useClipFx(activity: MascotActivity): FxMoveRequest | null {
+  const last = useRef<{ activity: MascotActivity; request: FxMoveRequest | null }>({ activity: "idle", request: null });
+  if (last.current.activity !== activity) {
+    const move = fxMoveFor(activity);
+    last.current = { activity, request: move ? { clip: move, key: Date.now() } : null };
+  }
+  return last.current.request;
+}
+
 function ShapeRender({ color, look, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
+  const move = useClipFx(activity);
   return (
     <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest}>
-      <ShapeMascot shape={look.shape} skin={look.skins.shape} color={color} size={size * 0.8} mood={shapeMoodForClip(activity, pose)} label={null} />
+      <ShapeMascot shape={look.shape} skin={look.skins.shape} color={color} size={size * 0.8} mood={shapeMoodForClip(activity, pose)} detail="full" move={move} label={null} />
     </Motion25D>
   );
 }
@@ -177,21 +220,16 @@ export function trombiPoseFor(activity: MascotActivity, pose: FloatingPose): Tro
 export const TROMBI_SCALE = 0.72 * 1.15;
 
 function TrombiRender({ size, look, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
+  const move = useClipFx(activity);
   return (
     <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest}>
-      <span className={`trombi-skin-${look.skins.trombi}`} style={{ display: "contents" }}>
-        <Trombi pose={trombiPoseFor(activity, pose)} size={size * TROMBI_SCALE} label={null} />
-      </span>
+      <SkinnedTrombi skin={look.skins.trombi} pose={trombiPoseFor(activity, pose)} size={size} width={size * TROMBI_SCALE} detail="full" move={move} label={null} />
     </Motion25D>
   );
 }
 
 function TrombiThumb({ size, look }: MascotThumbProps) {
-  return (
-    <span className={`trombi-skin-${look.skins.trombi}`} style={{ display: "contents" }}>
-      <Trombi pose="idle" size={size * 0.8} still label={null} />
-    </span>
-  );
+  return <SkinnedTrombi skin={look.skins.trombi} pose="idle" size={size} width={size * 0.8} animated={false} label={null} />;
 }
 
 /* ----------------------------------------------------------- registry */
@@ -206,5 +244,5 @@ export function mascotFor(look: Pick<MascotLook, "character"> | undefined): Masc
   return MASCOTS.find((entry) => entry.id === look?.character) ?? MASCOTS[0];
 }
 
-/** The original shapes, in the picker's order. */
+/** The shapes, in the picker's order. */
 export const SHAPE_CHOICES: readonly MascotShape[] = MASCOT_SHAPES;

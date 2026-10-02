@@ -27,7 +27,7 @@ const { AccessSection } = await import("./AccessSection");
 const { PermissionsSection } = await import("./PermissionsSection");
 const { VisibilitySection } = await import("./VisibilitySection");
 
-const CHIEF_COPY = "Chief-proposable";
+const CHIEF_COPY = "The Primary Bot can propose this";
 const OWNER_COPY = "Owner-only";
 
 function makeBot(overrides: Partial<Bot> = {}): Bot {
@@ -155,10 +155,10 @@ describe("Edit Profile boundary markers in sections", () => {
       createElement(StoreProvider, null, createElement(AccessSection, { bot: makeBot(), derived: makeDerived() })),
     );
     expect(markup).toContain(
-      'Where this bot runs its shell and file tools.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">Chief-proposable',
+      'Where this bot runs its shell and file tools.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">The Primary Bot can propose this',
     );
     expect(markup).toContain(
-      'Browser is the built-in browser tab only; no desktop.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">Owner-only',
+      'Browser is the built-in browser tab only; no desktop. Now: Auto.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">Owner-only',
     );
     expect(markup).toContain("Inbound triggers wired to this bot.");
   });

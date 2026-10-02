@@ -91,8 +91,8 @@ export function serviceAllowed(method: string, path: string): boolean {
  *
  * A packaged desktop keeps `owner`: its mutations already need Electron's
  * per-launch capability, and only its owner uses the machine. Elsewhere the
- * operator may set OMB_LOOPBACK_TRUST=owner|service. Without it a hosted
- * workspace (any OMB_ADMIN_* setting, even an incomplete one) defaults to
+ * operator may set SAGAX_LOOPBACK_TRUST=owner|service. Without it a hosted
+ * workspace (any SAGAX_ADMIN_* setting, even an incomplete one) defaults to
  * `service` — shared-workspace Full access is only honoured there, so it needs
  * no rule of its own — and a headless self-hosted server keeps `owner`. A
  * value that is neither fails closed. */
@@ -105,25 +105,25 @@ export function resolveLoopbackTrust(input: {
    * machine (a bot's shell). Always `service`, whatever the setting. */
   cloudHome?: boolean;
 }): { trust: LoopbackTrust; reason: string; warning?: string } {
-  const raw = (input.env ?? process.env).OMB_LOOPBACK_TRUST;
+  const raw = (input.env ?? process.env).SAGAX_LOOPBACK_TRUST;
   const requested = raw?.trim().toLowerCase();
   if (input.cloudHome) {
-    return { trust: "service", reason: "OMB Cloud home", ...(raw !== undefined && requested !== "service" ? { warning: "OMB_LOOPBACK_TRUST is ignored on an OMB Cloud home: a local request is always a service" } : {}) };
+    return { trust: "service", reason: "OMB Cloud home", ...(raw !== undefined && requested !== "service" ? { warning: "SAGAX_LOOPBACK_TRUST is ignored on an OMB Cloud home: a local request is always a service" } : {}) };
   }
   if (input.desktopManaged) {
-    return { trust: "owner", reason: "desktop app", ...(raw !== undefined ? { warning: "OMB_LOOPBACK_TRUST is ignored in the desktop app" } : {}) };
+    return { trust: "owner", reason: "desktop app", ...(raw !== undefined ? { warning: "SAGAX_LOOPBACK_TRUST is ignored in the desktop app" } : {}) };
   }
   if (requested === "owner" || requested === "service") {
     return {
       trust: requested,
-      reason: "OMB_LOOPBACK_TRUST",
+      reason: "SAGAX_LOOPBACK_TRUST",
       ...(requested === "owner" && input.hostedWorkspace
-        ? { warning: "OMB_LOOPBACK_TRUST=owner on a shared workspace: every bot's shell can change settings and approve cards as the owner" }
+        ? { warning: "SAGAX_LOOPBACK_TRUST=owner on a shared workspace: every bot's shell can change settings and approve cards as the owner" }
         : {}),
     };
   }
   if (raw !== undefined && requested !== "") {
-    return { trust: "service", reason: "OMB_LOOPBACK_TRUST", warning: `OMB_LOOPBACK_TRUST="${raw.replace(/[^\w.-]/g, "").slice(0, 40)}" is not owner or service; using service` };
+    return { trust: "service", reason: "SAGAX_LOOPBACK_TRUST", warning: `SAGAX_LOOPBACK_TRUST="${raw.replace(/[^\w.-]/g, "").slice(0, 40)}" is not owner or service; using service` };
   }
   if (input.hostedWorkspace) return { trust: "service", reason: "hosted workspace" };
   return { trust: "owner", reason: "self-hosted default" };
@@ -321,7 +321,14 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // with the feature off these paths are as unlisted as any other, so a
   // client session is refused exactly the way an unknown route refuses it.
   { methods: ["POST"], path: /^\/api\/shared-computers\/(?:connect|[\w-]+\/(?:poll|lease|result|disconnect))$/, feature: "sharedComputers" },
-  // Organization server (OMB_IDENTITY=perspicax): a member pairs their own
+  // Organization server: the person's own desktop app bridges their computer
+  // (server/desktop-bridge-routes.ts). The handler answers the session's own
+  // person only, binds poll/results to a private desktop secret, and 404s on
+  // a solo server.
+  { methods: ["POST"], path: /^\/api\/desktop-bridge\/(?:connect|[0-9a-f-]{36}\/(?:poll|lease|result|disconnect|system))$/ },
+  { methods: ["GET"], path: /^\/api\/me\/desktop-bridge$/ },
+  { methods: ["POST"], path: /^\/api\/me\/desktop-bridge\/local-vm$/ },
+  // Organization server (SAGAX_IDENTITY=perspicax): a member pairs their own
   // phone or computer. The handler binds the code to the member's person and
   // clamps its scopes to the session's own.
   { methods: ["POST"], path: /^\/api\/auth\/pairing$/, feature: "orgPairing" },
@@ -345,6 +352,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // a conversation's files (the bot panel's Files tab): the list and one file by id
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}$/ },
+  // what a bot is doing (the bot panel's Coding list): narrowed to the
+  // viewer's own threads and the routines they may see (routes/bot-activity.ts)
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/activity(?:\/item)?$/ },
   // chat, one to one
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages\/[\w-]+\/edit$/ },
@@ -368,6 +378,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The bot's standing instructions for the profile's Instructions row
   // (owner or admin, checked in the handler).
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/soul$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/primary$/ }, // the person's own bot only: the handler checks the owner
   // An organization member's own bots: the handler requires a member or
   // admin role, limits the fields (memberBotFieldViolation) and, for a
   // delete, that the session owns the bot.
@@ -393,6 +404,13 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/tasks$/ },
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/groups\/[\w-]+\/tasks\/[\w-]+$/ },
   { methods: ["PATCH"], path: /^\/api\/groups\/[\w-]+$/ }, // display fields only: see clientGroupPatchViolation
+  // a group's shared memory: its people read, its owner edits (server/routes/group-memory.ts)
+  { methods: ["GET", "PUT"], path: /^\/api\/groups\/[\w-]+\/memory$/ },
+  // a direct conversation with another person of the organization (server/people-dms.ts)
+  { methods: ["POST"], path: /^\/api\/people-dms$/ },
+  // Organization server: a group's owner deletes it (server/group-ownership.ts);
+  // the route refuses a client session anywhere else.
+  { methods: ["DELETE"], path: /^\/api\/groups\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/ },
   // attachments
   { methods: ["POST"], path: /^\/api\/attachments$/ },
@@ -402,6 +420,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/tts\/voices$/ },
   { methods: ["POST"], path: /^\/api\/tts\/prepare$/ },
   { methods: ["POST"], path: /^\/api\/tts\/speak$/ },
+  // voice mode (server/voice-mode.ts): the speaker's own turn on a bot they may use; never the key
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:status|voices|listen)$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe|stream)$/ },
   // routines: a scheduled message; the input carries no cwd or permission field
   { methods: ["GET"], path: /^\/api\/routines$/ },
   { methods: ["POST"], path: /^\/api\/routines$/ },
@@ -420,7 +441,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The organization (Perspicax on an organization server; a solo server
   // answers 404 no_organization).
   { methods: ["GET"], path: /^\/api\/org$/ },
-  // Organization server (OMB_IDENTITY=perspicax): the people a bot owner may
+  // Organization server (SAGAX_IDENTITY=perspicax): the people a bot owner may
   // share with, from the Perspicax directory. Names, logins and addresses
   // only. PATCH /api/org/settings stays admin.
   { methods: ["GET"], path: /^\/api\/org\/directory$/, feature: "orgDirectory" },
@@ -447,12 +468,20 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/me\/server-environment$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/server-environment\/reset$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/server-environment\/update$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/me\/server-environment\/power$/, feature: "orgDirectory" },
+  { methods: ["GET"], path: /^\/api\/me\/server-environment\/stats$/, feature: "orgDirectory" },
+  // The live view of the caller's own server environment desktop: the route
+  // builds the target from the session's principal (routes/desktop-viewer.ts).
+  { methods: ["GET"], path: /^\/api\/desktop-viewer\/sandbox\/me(?:\/websockify)?$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/status$/, feature: "orgDirectory" },
   // The caller's own claude.ai connectors (server/harness-connectors.ts):
   // names and statuses of their own account only. The admin switch
   // (PUT /api/harness-connectors/settings) stays admin.
   { methods: ["GET"], path: /^\/api\/me\/harness-connectors$/ },
+  // The engine's own slash commands for a bot the caller may use
+  // (server/harness-commands.ts): names, descriptions and hints only.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/harness-commands$/ },
   // Slice 6: the caller's own routine delegation (allow, status, revoke).
   { methods: ["GET", "POST", "DELETE"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler
@@ -506,9 +535,9 @@ export function memberBotFieldViolation(body: unknown): string | null {
 /** Same for a room: name, reading state, and the roster. humanIds and
  * memberIds are not refused here. canEditHumans and canPlaceBot decide them. */
 const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinned", "pinnedMessageId", "section", "humanIds", "memberIds"]);
-export function clientGroupPatchViolation(body: unknown): string | null {
+export function clientGroupPatchViolation(body: unknown, extra: readonly string[] = []): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
-  for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key)) return key;
+  for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key) && !extra.includes(key)) return key;
   return null;
 }
 
@@ -587,7 +616,8 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
   const ticket = path === options.streamPath ? options.url.searchParams.get("ticket") : null;
   let session: SessionRecord | null = null;
   let via: "bearer" | "cookie" | "ticket" | null = null;
-  if (bearer?.startsWith("omb_sess_")) {
+  // sgx_sess_, or omb_sess_ issued before Sagax (valid until it expires)
+  if (bearer?.startsWith("sgx_sess_") || bearer?.startsWith("omb_sess_")) {
     session = options.sessions.authenticate(bearer);
     via = "bearer";
   } else if (ticket) {

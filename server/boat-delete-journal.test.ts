@@ -26,7 +26,7 @@ function worker(dataDir: string, source: string) {
     "--eval",
     source,
   ], {
-    env: { ...process.env, OMB_DATA_DIR: dataDir },
+    env: { ...process.env, SAGAX_DATA_DIR: dataDir },
     stdio: ["pipe", "pipe", "pipe"],
   });
   let stderr = "";
@@ -52,7 +52,7 @@ describe("Boat deletion journal", () => {
 
   beforeEach(() => {
     dataDir = mkdtempSync(join(tmpdir(), "omb-box-delete-journal-"));
-    vi.stubEnv("OMB_DATA_DIR", dataDir);
+    vi.stubEnv("SAGAX_DATA_DIR", dataDir);
     vi.resetModules();
   });
 

@@ -266,7 +266,7 @@ test("Electron relaunch waits for deferred cleanup and the replacement acquires 
     const { writeFileSync } = require("node:fs");
     (async () => {
       let parentAlive = true;
-      try { process.kill(Number(process.env.OMB_UPDATER_TEST_PARENT), 0); }
+      try { process.kill(Number(process.env.SAGAX_UPDATER_TEST_PARENT), 0); }
       catch (error) { if (error.code === "ESRCH") parentAlive = false; else throw error; }
       const { acquireDataDirLease } = await import(${JSON.stringify(leaseModule)});
       const lease = acquireDataDirLease(${JSON.stringify(join(workspace, "data"))});
@@ -288,7 +288,7 @@ test("Electron relaunch waits for deferred cleanup and the replacement acquires 
       const { acquireDataDirLease } = await import(${JSON.stringify(leaseModule)});
       const lease = acquireDataDirLease(${JSON.stringify(join(workspace, "data"))});
       process.env.APPIMAGE = ${JSON.stringify(launched)};
-      process.env.OMB_UPDATER_TEST_PARENT = String(process.pid);
+      process.env.SAGAX_UPDATER_TEST_PARENT = String(process.pid);
       autoUpdater.on("before-quit-for-update", () => app.releaseSingleInstanceLock());
       let cleaned = false;
       app.on("before-quit", event => {

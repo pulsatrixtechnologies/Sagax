@@ -1,5 +1,13 @@
 # Releasing
 
+> **Sagax updater:** installed apps update only from
+> `pulsatrixtechnologies/pulsa-bot` releases tagged `pulsa-vX.Y.Z`
+> (`electron/update-feed.mjs`). By default they look at the latest **full**
+> release (`/releases/latest`); a GitHub pre-release is offered only to people
+> who switched on Settings > General > Pre-release versions. Publish a
+> version everyone should get (starting with 0.4.0) as a full release, not a
+> pre-release; the fork release workflow's `prerelease` input defaults to off.
+
 For a normal release, run **Actions → Prepare next release → Run workflow** and
 choose a patch, minor, or custom version. It opens a tiny version-bump PR;
 merging that PR automatically starts **Release** and assembles a draft from the
@@ -40,6 +48,28 @@ the legacy archive into one complete history and caches it for five minutes.
 Configure the optional Vercel hook below to rebuild the docs immediately after
 publication; otherwise the live cache or the next normal docs deployment
 refreshes it.
+
+## Sagax local release (no GitHub Actions)
+
+Sagax releases are built on a Mac, not by the workflows above:
+
+1. Set `forkVersion` in `package.json` (`version` stays the OpenMausBot base)
+   and write `docs/releases/X.Y.Z.md`.
+2. macOS: `SAGAX_MAC_IDENTITY="<Developer ID name or SHA-1 hash>" pnpm package:fork:mac`
+   (a hash is required when the keychain holds two identities with the same
+   name), then notarize and staple each `.zip`/`.dmg`, re-zip and regenerate
+   `latest-mac.yml` (`node scripts/regenerate-mac-feed.mjs`).
+3. Windows x64 + arm64: `pnpm package:fork:win:cross` (one NSIS installer for
+   both arches, two portable zips, `latest.yml`). After-pack refuses a
+   package whose `.node` addons or `Sagax.exe` are not PE images for that
+   arch; recheck a built or downloaded package with
+   `node scripts/verify-win-natives.mjs <win-unpacked or unzipped dir> x64|arm64`.
+   Nothing here runs the app: a Windows launch is still needed before release.
+4. Gates: `scripts/smoke-browser-bundle.mjs` (live on the host arch,
+   `--check-only` for the others) and `SAGAX_SMOKE_DIST=<resources>/server
+   node scripts/smoke-packaged-server.mjs` for every package.
+5. `gh release create pulsa-vX.Y.Z` with every installer, zip, blockmap and
+   both feeds, as a full release.
 
 ## Updater migration invariant
 

@@ -695,7 +695,6 @@ export class Store {
     // before default responders existed adopt their first member as lead.
     let botsMigrated = false;
     const browserProfileAliases = loadBrowserProfileIdAliases();
-    const chiefSectionsSeen = new Set<string>();
     let groupsMigrated = false;
     for (const b of this.bots) {
       // transient state never survives a restart — and if a previous
@@ -805,20 +804,14 @@ export class Store {
         botsMigrated = true;
       }
     }
+    // A Primary Bot stays reachable in the sidebar. One per person is
+    // enforced by enforceOnePrimaryPerOwner once the server knows who owns
+    // which bot (index.ts runs it at boot).
     for (const b of this.bots) {
-      if (!b.chiefOfStaff) continue;
-      const key = sectionKey(b.section);
-      if (!chiefSectionsSeen.has(key)) {
-        chiefSectionsSeen.add(key);
-        if (b.hidden) {
-          b.hidden = false;
-          botsMigrated = true;
-        }
-        continue;
+      if (b.chiefOfStaff && b.hidden) {
+        b.hidden = false;
+        botsMigrated = true;
       }
-      b.chiefOfStaff = false;
-      delete b.managedSections;
-      botsMigrated = true;
     }
     // Peer grants originally used mutable display names (ask_bot:@Helper).
     // Convert only when exactly one bot has that name; ambiguous legacy
@@ -852,6 +845,11 @@ export class Store {
           groupsMigrated = true;
         }
         continue;
+      }
+      // A room left with setup pending by an older build counts as set up.
+      if (g.setupCompletedAt === null && g.setupSkippedAt == null) {
+        g.setupCompletedAt = g.createdAt;
+        groupsMigrated = true;
       }
       if (!g.tasks?.length) {
         const initialTask: GroupTaskRecord = {
@@ -1194,9 +1192,6 @@ export class Store {
     if (members.some(bot => bot.busy || bot.tasks?.some(task => task.busy)) || rooms.some(group => group.busyBotId)) {
       return "Stop this team's active work before deleting the team";
     }
-    if (this.bots.filter(bot => bot.chiefOfStaff && (!sectionKey(bot.section) || sectionKey(bot.section) === name)).length > 1) {
-      return "General already has a Chief of Staff. Move or change this team's Chief before deleting the team";
-    }
     const nextBots = this.bots.map(bot => ({ ...bot,
       ...(sectionKey(bot.section) === name ? { section: undefined } : {}),
       ...(bot.managedSections ? { managedSections: bot.managedSections.filter(section => sectionKey(section) !== name) } : {}),
@@ -1255,9 +1250,11 @@ export class Store {
     setup?: {
       bulletin?: string;
       defaultResponder?: GroupDefaultResponder;
-      completed?: boolean;
     },
     humanIds?: string[],
+    /** A direct conversation between two people (server/people-dms.ts),
+     * set before the record is first emitted. */
+    extra?: { peopleDm?: true; createdBy?: string },
   ): GroupRecord {
     let acceptedHumans: string[] | undefined;
     if (humanIds !== undefined) {
@@ -1284,9 +1281,13 @@ export class Store {
       section,
     };
     if (acceptedHumans !== undefined) group.humanIds = acceptedHumans;
+    if (extra?.peopleDm) group.peopleDm = true;
+    if (extra?.createdBy) group.createdBy = extra.createdBy;
     if (!dm) {
       group.tasks = [{ threadId, title: UNTITLED_TASK, createdAt, updatedAt: createdAt }];
-      group.setupCompletedAt = setup?.completed ? createdAt : null;
+      // Rooms are usable from creation: there is no pending setup step.
+      // Folder, responder and instructions are edited in the side panel.
+      group.setupCompletedAt = createdAt;
       group.setupSkippedAt = null;
     }
     this.groups.unshift(group);
@@ -1302,7 +1303,7 @@ export class Store {
     );
   }
 
-  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "humanIds" | "defaultResponder" | "bulletin" | "unread" | "pinned" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage" | "createdBy">>): GroupRecord | null {
+  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "humanIds" | "defaultResponder" | "bulletin" | "unread" | "pinned" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage" | "createdBy" | "peopleDm" | "memoryEnabled">>): GroupRecord | null {
     const group = this.group(id);
     if (!group) return null;
     if (Object.prototype.hasOwnProperty.call(patch, "humanIds")) {
@@ -1885,15 +1886,15 @@ export class Store {
     return bot;
   }
 
-  /** All setup fields and the Chief's receipt commit before publishing any
+  /** All setup fields and the Primary Bot's receipt commit before publishing any
    * mutation. Model defaults never rewrite saved thread selections. */
   applyTeamSetup(request: TeamSetupRequest): TeamSetupResult {
     const chief = this.bot(request.botId);
-    if (!chief) throw new Error("The requesting Chief no longer exists");
+    if (!chief) throw new Error("The requesting Primary Bot no longer exists");
     if (chief.lastTeamSetupReceipt?.requestId === request.requestId) return chief.lastTeamSetupReceipt.result;
     const managedSections = [...new Set([...(chief.managedSections ?? []), ...request.newTeams])];
     if (managedSections.length > 100 || managedSections.some((name) => name.trim() !== name || name.length > 60) ||
-        request.newTeams.some((name) => !name) || (request.newTeams.length && !chief.chiefOfStaff)) throw new Error("Invalid reviewed Chief team scope");
+        request.newTeams.some((name) => !name) || (request.newTeams.length && !chief.chiefOfStaff)) throw new Error("Invalid reviewed Primary Bot team scope");
     const nextBots = [...this.bots];
     const changed: BotRecord[] = [];
     for (const operation of request.operations) {
@@ -1907,9 +1908,11 @@ export class Store {
           title: "", description: "", soul: "", notifications: true, color: COLORS[nextBots.length % COLORS.length], unread: false,
           resumeCursors: {}, createdAt, ...operation.fields, modelSelection,
           approvalMode: "ask", autoApprove: false, composio: false, approvePeerComms: false,
-          // A Chief's new teammate is seen by exactly the Chief's audience:
-          // a restricted Chief never creates a bot everyone sees.
+          // A Primary Bot's new teammate is seen by exactly the Primary Bot's audience:
+          // a restricted Primary Bot never creates a bot everyone sees.
           ...(chief.visibility && chief.visibility !== "everyone" ? { visibility: structuredClone(chief.visibility) } : {}),
+          // ...and belongs to the Primary Bot's own person.
+          ...(chief.ownerUserId ? { ownerUserId: chief.ownerUserId } : {}),
           tasks: [{ threadId: operation.threadId, title: UNTITLED_THREAD, createdAt, updatedAt: createdAt, resumeCursors: {},
             modelSelection: structuredClone(modelSelection), approvalMode: "ask", autoApprove: false,
             unread: false, activity: "idle", busy: false }],
@@ -1943,7 +1946,7 @@ export class Store {
     const chiefAt = nextBots.findIndex((bot) => bot.id === chief.id);
     const nextChief = { ...nextBots[chiefAt], lastTeamSetupReceipt: { requestId: request.requestId, result } };
     // Only the newly-created teams explicitly named in the human review may
-    // extend this Chief's reach. Existing teams require owner settings.
+    // extend this Primary Bot's reach. Existing teams require owner settings.
     if (request.newTeams.length && nextChief.chiefOfStaff) {
       nextChief.managedSections = managedSections;
     }
@@ -2119,25 +2122,18 @@ export class Store {
    *
    * This deliberately stages the complete next file before touching the
    * live records. A missing/hidden target therefore changes nothing, and a
-   * failed atomic write cannot leave memory ahead of disk. A Chief collision
-   * is refused rather than silently removing somebody's coordinator role. */
+   * failed atomic write cannot leave memory ahead of disk. A Primary Bot is
+   * one per person, not per section, so any bot may move anywhere. */
   setBotsSection(
     botIds: string[],
     section: string,
-  ): { ok: true; bots: BotRecord[] } | { ok: false; reason: "unavailable" | "chief-conflict" } {
+  ): { ok: true; bots: BotRecord[] } | { ok: false; reason: "unavailable" } {
     const ids = [...new Set(botIds)];
     const targets = ids.map((id) => this.bot(id));
     if (targets.some((bot) => !bot || bot.hidden)) return { ok: false, reason: "unavailable" };
 
     const targetSection = sectionKey(section);
     const selected = targets as BotRecord[];
-    const destinationChiefIds = new Set([
-      ...selected.filter((bot) => bot.chiefOfStaff).map((bot) => bot.id),
-      ...this.bots
-        .filter((bot) => bot.chiefOfStaff && sectionKey(bot.section) === targetSection)
-        .map((bot) => bot.id),
-    ]);
-    if (destinationChiefIds.size > 1) return { ok: false, reason: "chief-conflict" };
 
     const patches = new Map<string, Partial<BotRecord>>();
     for (const bot of selected) {
@@ -2166,7 +2162,7 @@ export class Store {
 
   /** Apply only the membership edits the user made, in one bots-file write. */
   updateTeamMembers(section: string, addIds: string[], removeIds: string[]):
-    { ok: true; bots: BotRecord[] } | { ok: false; reason: "unavailable" | "chief-conflict" | "membership-changed" } {
+    { ok: true; bots: BotRecord[] } | { ok: false; reason: "unavailable" | "membership-changed" } {
     const key = sectionKey(section);
     if (!key || !this.sections.includes(key)) return { ok: false, reason: "unavailable" };
     const adds = new Set(addIds), removes = new Set(removeIds);
@@ -2179,11 +2175,6 @@ export class Store {
     }
     const next = this.bots.map(bot => ids.has(bot.id)
       ? { ...bot, section: adds.has(bot.id) ? key : undefined } : bot);
-    for (const destination of [key, ""]) {
-      if (next.filter(bot => bot.chiefOfStaff && sectionKey(bot.section) === destination).length > 1) {
-        return { ok: false, reason: "chief-conflict" };
-      }
-    }
     if (ids.size) {
       this.saveBots(next);
       for (let i = 0; i < next.length; i++) if (ids.has(next[i].id)) Object.assign(this.bots[i], next[i]);
@@ -2245,21 +2236,33 @@ export class Store {
     return { activity, busy: ACTIVITY_BUSY.has(activity) };
   }
 
-  /** Elect one Chief of Staff in its section (or clear one section) as one persisted change.
-   * The changed records are returned so the server can update every open
-   * window, including the bot that just handed the role over. */
-  setChiefOfStaff(id: string | null, section?: string | null): BotRecord[] | null {
-    const selected = id ? this.bot(id) : null;
-    if (id && !selected) return null;
-    const targetSection = sectionKey(selected?.section ?? section);
+  /** Who owns a bot, as one key per person. index.ts sets the server's own
+   * rule (an unrecorded owner is the local operator); the default keeps a
+   * bare store usable in tests: the recorded owner, else the operator. */
+  botOwnerKey: (bot: BotRecord) => string = (bot) =>
+    typeof bot.ownerUserId === "string" && bot.ownerUserId.trim() ? bot.ownerUserId.trim().toLowerCase() : "";
+
+  /** The Primary Bot of the person who owns `id`, if any. */
+  primaryBotOf(ownerKey: string): BotRecord | undefined {
+    return this.bots.find((bot) => bot.chiefOfStaff && this.botOwnerKey(bot) === ownerKey);
+  }
+
+  /** Make one bot its owner's Primary Bot as one persisted change: every
+   * other bot of the same person gives the role up (one per person, one on a
+   * solo server). The changed records are returned so the server can update
+   * every open window, including the bot that just handed the role over. */
+  setPrimaryBot(id: string): BotRecord[] | null {
+    const selected = this.bot(id);
+    if (!selected) return null;
+    const owner = this.botOwnerKey(selected);
     const changed: BotRecord[] = [];
     for (const bot of this.bots) {
-      if (sectionKey(bot.section) !== targetSection) continue;
+      if (this.botOwnerKey(bot) !== owner) continue;
       const next = bot.id === id;
       if (Boolean(bot.chiefOfStaff) === next && !(next && bot.hidden)) continue;
       if (next) {
         bot.chiefOfStaff = true;
-        // A section's main contact must stay reachable in the sidebar.
+        // A person's main contact must stay reachable in the sidebar.
         bot.hidden = false;
       } else {
         bot.chiefOfStaff = false;
@@ -2270,6 +2273,61 @@ export class Store {
     if (changed.length) this.saveBots();
     for (const bot of changed) this.emit({ type: "bot", botId: bot.id });
     return changed;
+  }
+
+  /** Leaders of an imported team (a package's leader, a backup's former
+   * Chiefs of Staff). An import is additive: a person who has a Primary Bot
+   * keeps it unchanged, and the leaders arrive as ordinary bots (the person
+   * may make one primary, or give theirs the new team, in settings). A
+   * person without one gets the first leader (General first) as Primary
+   * Bot, with the teams the other imported leaders led as its managed teams. */
+  adoptImportedLeaders(ids: readonly string[]): void {
+    const leaders = ids.map((id) => this.bot(id)).filter((bot): bot is BotRecord => Boolean(bot));
+    if (!leaders.length || this.primaryBotOf(this.botOwnerKey(leaders[0]!))) return;
+    const keeper = leaders.find((bot) => !sectionKey(bot.section)) ?? leaders[0]!;
+    this.setPrimaryBot(keeper.id);
+    const reach = new Set<string>();
+    for (const bot of leaders) {
+      if (bot.id !== keeper.id && sectionKey(bot.section) !== sectionKey(keeper.section)) reach.add(sectionKey(bot.section));
+    }
+    if (reach.size) this.patchBot(keeper.id, { managedSections: [...reach].slice(0, 100) });
+  }
+
+  /** One-time migration from Chiefs of Staff (one per section) to Primary
+   * Bots (one per person), idempotent so it can run at every boot. Each
+   * person keeps one: their General (unsectioned) Primary Bot, else the first one.
+   * The others step down, and the teams they led join the kept bot's
+   * managed teams so coordination still reaches them. Returns the ids that
+   * stepped down. */
+  enforceOnePrimaryPerOwner(): string[] {
+    const byOwner = new Map<string, BotRecord[]>();
+    for (const bot of this.bots) {
+      if (!bot.chiefOfStaff) continue;
+      const owner = this.botOwnerKey(bot);
+      byOwner.set(owner, [...(byOwner.get(owner) ?? []), bot]);
+    }
+    const demoted: string[] = [];
+    for (const chiefs of byOwner.values()) {
+      if (chiefs.length < 2) continue;
+      const kept = chiefs.find((bot) => !sectionKey(bot.section)) ??
+        chiefs.reduce((oldest, bot) => ((bot.createdAt ?? 0) <= (oldest.createdAt ?? 0) ? bot : oldest)); // newest bots come first: ties go to the later (older) record
+      const reach = new Set(kept.managedSections ?? []);
+      for (const bot of chiefs) {
+        if (bot === kept) continue;
+        const led = sectionKey(bot.section);
+        if (led !== sectionKey(kept.section)) reach.add(led);
+        for (const section of bot.managedSections ?? []) if (sectionKey(section) !== sectionKey(kept.section)) reach.add(section);
+        bot.chiefOfStaff = false;
+        delete bot.managedSections;
+        demoted.push(bot.id);
+      }
+      if (reach.size) kept.managedSections = [...reach].slice(0, 100);
+    }
+    if (demoted.length) {
+      this.saveBots();
+      for (const bot of this.bots) if (bot.chiefOfStaff || demoted.includes(bot.id)) this.emit({ type: "bot", botId: bot.id });
+    }
+    return demoted;
   }
 
   /** Company instance ids became stable across re-enrolment. Moves every

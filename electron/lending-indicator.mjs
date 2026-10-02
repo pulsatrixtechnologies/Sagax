@@ -22,7 +22,7 @@ export function createLendingIndicator({ Tray, Menu, nativeImage, iconPath, onSt
         tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 }));
         tray.on("click", () => tray?.popUpContextMenu?.());
       }
-      tray.setToolTip(next.busy ? "OpenMaus Bot: your Cloud is using this computer" : "OpenMaus Bot: lent to your Cloud");
+      tray.setToolTip(next.busy ? "Sagax: your Cloud is using this computer" : "Sagax: lent to your Cloud");
       // macOS shows the title beside the icon: visible while in use.
       tray.setTitle?.(next.busy ? "In use" : "");
       tray.setContextMenu(menu(next.busy));

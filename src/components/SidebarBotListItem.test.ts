@@ -132,13 +132,24 @@ describe("BotListItem", () => {
     expect(markup).not.toContain('aria-label="Archive Atlas"');
   });
 
-  it("keeps the Chief of Staff mark beside the name, not on its own line", () => {
+  it("marks the Primary Bot with the orange star on its avatar, never a label chip or crown", () => {
     const withTitle = renderRow(bot({ chiefOfStaff: true, title: "Developer" }));
-    expect(withTitle).toContain('data-testid="chief-crown"');
-    expect(withTitle).toContain('aria-label="Chief of Staff"');
-    expect(withTitle).not.toContain("Chief of Staff</span>");
+    expect(withTitle).toContain('data-testid="primary-bot-badge"');
+    expect(withTitle).toContain('aria-label="Primary Bot"');
+    expect(withTitle).not.toContain("Primary Bot</span>");
+    expect(withTitle).not.toContain("lucide-crown");
+    // The star sits on the avatar, before the name.
+    expect(withTitle.indexOf('data-testid="primary-bot-badge"')).toBeLessThan(withTitle.indexOf(">Atlas<"));
 
-    expect(renderRow(bot())).not.toContain("Chief of Staff");
+    expect(renderRow(bot())).not.toContain("primary-bot-badge");
+    // Someone else's Primary Bot shared with the viewer wears no star.
+    expect(renderRow(bot({ chiefOfStaff: true, ownerUserId: "someone-else" }))).not.toContain("primary-bot-badge");
+  });
+
+  it("moves a status dot to the top-right while the star holds the bottom-right", () => {
+    const working = renderRow(bot({ chiefOfStaff: true, busy: true }));
+    expect(working).toMatch(/data-testid="working-dot" class="[^"]*-top-0\.5/);
+    expect(renderRow(bot({ busy: true }))).toMatch(/data-testid="working-dot" class="[^"]*-bottom-0\.5/);
   });
 
   const titlePill = /<span class="max-w-\[46%\] shrink truncate[^"]*">([^<]*)<\/span>/;
@@ -282,9 +293,9 @@ describe("bot deletion feedback", () => {
       expect(markup).not.toContain("Chief of Staff</span>");
       expect(markup).not.toContain("Created notes.txt with three lines.");
       expect(markup).toContain(">Atlas<");
-      // the crown stays, beside the name, with its label for assistive tech
-      expect(markup).toContain('data-testid="chief-crown"');
-      expect(markup).toContain('aria-label="Chief of Staff"');
+      // the star stays on the avatar, with its label for assistive tech
+      expect(markup).toContain('data-testid="primary-bot-badge"');
+      expect(markup).toContain('aria-label="Primary Bot"');
     });
 
     it("keeps the status line while something is happening", () => {
@@ -299,15 +310,10 @@ describe("bot deletion feedback", () => {
       expect(markup).not.toContain(">hello<");
     });
 
-    it("puts the crown right after the name, inside the name line", () => {
-      const markup = renderRow(bot({ chiefOfStaff: true }), true);
-      expect(markup.indexOf('data-testid="chief-crown"')).toBeGreaterThan(markup.indexOf(">Atlas<"));
-    });
-
-    it("shows the title pill and the crown when quiet rows are off", () => {
+    it("shows the title pill and the star when quiet rows are off", () => {
       const markup = renderRow(bot({ title: "Developer", chiefOfStaff: true }));
       expect(markup).toContain(">Developer<");
-      expect(markup).toContain('data-testid="chief-crown"');
+      expect(markup).toContain('data-testid="primary-bot-badge"');
     });
   });
 });

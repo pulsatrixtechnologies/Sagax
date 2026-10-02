@@ -52,6 +52,8 @@ import {
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { requestSettingsCard } from "./SettingsPrimitives";
+import { OrgComputerTab } from "./computer/OrgComputerTab";
+import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
 
 /** Keep local failure copy translatable while it remains in panel state. */
 class LocalizedPanelError extends Error {
@@ -403,6 +405,7 @@ export function ComputerPanel({
   const cloudSupported = cloudBackend === "vps"
     ? vpsSupported
     : Boolean(cloudRunner(state.instances, bot.modelSelection.instanceId));
+  const bridgeStatus = useDesktopBridgeStatus();
   const botRoutines = state.routines
     .filter((routine) => routine.botId === bot.id)
     .sort((a, b) => Number(b.enabled) - Number(a.enabled) || (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity));
@@ -1158,7 +1161,7 @@ export function ComputerPanel({
     error: t("computer.phase.error"),
   } satisfies Record<Exclude<Phase, "ready" | "local" | "vm">, string>;
 
-  const body = (
+  const deviceBody = (
       <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
           {/* Screen preview */}
           <div className="mb-1.5 mt-2 flex items-center justify-between text-[13px] text-ink-secondary">
@@ -1513,6 +1516,26 @@ export function ComputerPanel({
         )}
       </div>
   );
+
+  // Organization server (a desktop bridge status exists): the computer is
+  // the person's server environment or their own PC, never this bot's own
+  // (src/components/computer/OrgComputerTab.tsx).
+  const body = bridgeStatus ? (
+    <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
+      <OrgComputerTab
+        bridge={bridgeStatus}
+        // The conversation's own place (its pin, else Works on), not the
+        // server's Auto guess, which knows no server environment.
+        place={livePlace}
+        computerOff={livePlace === "off"}
+        botName={bot.name}
+        onChangePlace={() => dispatch({ type: "toggleSettings", botId: bot.id, section: "access", open: true })}
+      />
+      {!embedded && <div className="mt-6">
+        <RoutinesSection key={bot.id} bot={bot} routines={botRoutines} runs={state.routineRuns} defaultRunOn={cloudRoutineReady ? "cloud" : "maus"} />
+      </div>}
+    </div>
+  ) : deviceBody;
 
   return (
     <>

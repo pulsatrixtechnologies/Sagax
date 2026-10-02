@@ -16,7 +16,7 @@
 //   paired from a signed-in session follows the person's other grants after
 //   its creator logs out, and ends with the last one.
 //
-// OMB_OIDC_REFRESH_AFTER_SECONDS=1 makes every grant due after a second.
+// SAGAX_OIDC_REFRESH_AFTER_SECONDS=1 makes every grant due after a second.
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -60,7 +60,7 @@ const CLI_OWNER = "cli-owner-token-0123456789abcdefghijklmnopq";
 const LEGACY_BEARER = "omb_sess_legacy-device-paired-before-the-organization-0001";
 /** A session as the server keeps it (sessions.json): the person behind it. */
 const storedSession = (id: string): { principalId?: string; scopes: string[] } | undefined => {
-  const doc = JSON.parse(readFileSync(join(home, ".openmausbot", "sessions.json"), "utf8")) as { sessions?: Array<{ id: string; principalId?: string; scopes: string[] }> };
+  const doc = JSON.parse(readFileSync(join(home, ".sagax", "sessions.json"), "utf8")) as { sessions?: Array<{ id: string; principalId?: string; scopes: string[] }> };
   return doc.sessions?.find((s) => s.id === id);
 };
 
@@ -81,9 +81,12 @@ const cookiePair = (setCookie: string) => setCookie.split(";")[0]!;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The browser's walk through the provider. Returns where the callback sent it. */
-async function walk(user: FakeOidcUser, client?: "desktop" | "phone"): Promise<{ location: string; cookie: string }> {
+async function walk(user: FakeOidcUser, client?: "desktop" | "phone", returnTo?: string): Promise<{ location: string; cookie: string }> {
   idp.user = { ...user };
-  const start = await fetch(`${BASE}/auth/oidc/start${client ? `?client=${client}` : ""}`, { redirect: "manual" });
+  const query = new URLSearchParams();
+  if (client) query.set("client", client);
+  if (returnTo) query.set("return", returnTo);
+  const start = await fetch(`${BASE}/auth/oidc/start${query.size ? `?${query}` : ""}`, { redirect: "manual" });
   const binding = cookiePair(start.headers.getSetCookie().find((c) => c.includes("_oidc="))!);
   const authorize = await fetch(start.headers.get("location")!, { redirect: "manual" });
   const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: binding } });
@@ -116,7 +119,7 @@ const backchannel = (token: string) => fetch(`${BASE}/api/auth/oidc/backchannel-
 /** Open /api/events with a stream ticket; resolves `ended` when the server closes it. */
 async function openStream(auth: Auth): Promise<{ ended: Promise<void> }> {
   const { body } = await api("POST", "/api/auth/stream-ticket", auth);
-  expect(body.ticket).toMatch(/^omb_tick_/);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
   return new Promise((resolve, reject) => {
     const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
       expect(res.statusCode).toBe(200);
@@ -134,12 +137,12 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
-      OMB_OIDC_REFRESH_AFTER_SECONDS: "1",
-      OMB_CLI_OWNER_STDIN: "1",
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_OIDC_REFRESH_AFTER_SECONDS: "1",
+      SAGAX_CLI_OWNER_STDIN: "1",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -165,7 +168,7 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-oidc-session-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     const now = Date.now();
     writeFileSync(join(data, "sessions.json"), JSON.stringify({ version: 1, sessions: [{
@@ -509,7 +512,7 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
   it("S2-8: the phone return link redeems into a bearer that a back-channel logout ends by principal", async () => {
     const { location } = await walk(BOB, "phone");
     const url = new URL(location);
-    expect(`${url.protocol}//${url.host}`).toBe("openmausbot://pair");
+    expect(`${url.protocol}//${url.host}`).toBe("sagax://pair");
     expect(url.searchParams.get("address")).toBe(BASE);
     const token = url.searchParams.get("token")!;
     expect(token).toMatch(/^omb_pair_[A-Za-z0-9_-]{43}$/);
@@ -529,6 +532,28 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
     expect((await backchannel(idp.logoutToken({ sub: BOB.sub }))).status).toBe(200);
     expect((await api("GET", "/api/auth/session", { bearer })).status).toBe(401);
     expect((await api("GET", "/api/auth/session", { bearer: tablet.body.token })).status).toBe(401);
+  });
+
+  it("S2-8b: a phone that names return=sagax gets sagax://pair and a session bound to its person", async () => {
+    const { location } = await walk(BOB, "phone", "sagax");
+    const url = new URL(location);
+    expect(`${url.protocol}//${url.host}`).toBe("sagax://pair");
+    expect(url.searchParams.get("address")).toBe(BASE);
+    const token = url.searchParams.get("token")!;
+    expect(token).toMatch(/^omb_pair_[A-Za-z0-9_-]{43}$/);
+    const paired = await api("POST", "/api/pair", undefined, { credential: token, deviceName: "Bob's iPhone", pairRequestId: "pair-request-phone-sagax" });
+    expect(paired.status).toBe(200);
+    const bearer = paired.body.token as string;
+    const session = await api("GET", "/api/auth/session", { bearer });
+    expect(session.body).toMatchObject({ identity: "perspicax", scopes: ["client"], role: "employee" });
+    expect(session.body.principalId).toMatch(/^pr_/);
+    // the same person as Bob's web sign-in, never an admin
+    const web = await signIn(BOB);
+    expect((await api("GET", "/api/auth/session", web)).body.principalId).toBe(session.body.principalId);
+    expect((await api("GET", "/api/sidebar-sections", { bearer })).status).toBe(403);
+    // single use
+    expect((await api("POST", "/api/pair", undefined, { credential: token, deviceName: "again" })).status).not.toBe(200);
+    expect(log).not.toContain(token);
   });
 
   it("advertises the native return and refuses an unknown client", async () => {

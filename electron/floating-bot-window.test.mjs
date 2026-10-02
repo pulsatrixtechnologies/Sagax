@@ -8,12 +8,18 @@ import {
   floatingDefaultBounds,
   MAX_FLOATING,
   READY_TIMEOUT_MS,
+  REMEMBER_DELAY_MS,
   waitForPage,
   sanitizeFloatingEvent,
   sanitizeFloatingSnapshot,
   sanitizePositions,
+  mascotLook,
+  APP_SKINS,
+  appTheme,
 } from "./floating-bot-window.mjs";
+import { LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS, SHAPE_SKINS, TROMBI_SKINS } from "../shared/mascot-look.ts";
 import { displaySignature } from "./retro-assistant-window.mjs";
+import { SKIN_IDS } from "../src/lib/skins.ts";
 
 const PRIMARY = { id: 1, bounds: { x: 0, y: 0, width: 1440, height: 900 }, workArea: { x: 0, y: 25, width: 1440, height: 850 } };
 const SECOND = { id: 2, bounds: { x: 1440, y: 0, width: 1920, height: 1080 }, workArea: { x: 1440, y: 0, width: 1920, height: 1040 } };
@@ -44,7 +50,9 @@ function fakeElectron({ displays = [PRIMARY] } = {}) {
     isDestroyed() { return this.destroyed; }
     destroy() { this.destroyed = true; this.events.get("closed")?.forEach((fn) => fn()); }
     getBounds() { return { ...this.bounds }; }
-    setBounds(bounds) { this.bounds = { ...bounds }; }
+    setBounds(bounds) { this.bounds = { ...bounds }; this.calls.push(["setBounds"]); }
+    setPosition(x, y) { this.bounds = { ...this.bounds, x, y }; this.calls.push(["setPosition"]); }
+    isFocused() { return this.calls.some(([name]) => name === "focus"); }
     setAlwaysOnTop(...args) { this.calls.push(["setAlwaysOnTop", ...args]); }
     setVisibleOnAllWorkspaces(...args) { this.calls.push(["setVisibleOnAllWorkspaces", ...args]); }
     setIgnoreMouseEvents(...args) { this.calls.push(["setIgnoreMouseEvents", ...args]); }
@@ -489,7 +497,7 @@ describe("floating bots: payload validation", () => {
     });
     expect(clean.mascot).toEqual({ character: "shape", shape: "cloud", style: "3d", skins: { shape: "neon", trombi: "gold" } });
     expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "dragon" } }).mascot).toEqual({ character: "owl" });
-    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "shape", shape: "star" } }).mascot).toEqual({ character: "shape" });
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, mascot: { character: "shape", shape: "rocket" } }).mascot).toEqual({ character: "shape" });
   });
 
   it("keeps the bot's id, a few earlier exchanges and the pin label, bounded", () => {
@@ -540,5 +548,88 @@ describe("floating bots: payload validation", () => {
     expect(sanitizeFloatingEvent({ type: "send", text: 1 })).toBeNull();
     expect(sanitizeFloatingEvent({ type: "eval", code: "x" })).toBeNull();
     expect(sanitizeFloatingEvent("click")).toBeNull();
+  });
+});
+
+describe("the desktop window's mascot look", () => {
+  it("knows every shape and Trombi skin, and maps older names like the app", () => {
+    for (const skin of SHAPE_SKINS) expect(mascotLook({ character: "shape", skins: { shape: skin } }).skins.shape).toBe(skin);
+    for (const skin of TROMBI_SKINS) expect(mascotLook({ character: "trombi", skins: { trombi: skin } }).skins.trombi).toBe(skin);
+    for (const [old, current] of Object.entries(LEGACY_SHAPE_SKINS)) expect(mascotLook({ character: "shape", skins: { shape: old } }).skins.shape).toBe(current);
+    for (const [old, current] of Object.entries(LEGACY_TROMBI_SKINS)) expect(mascotLook({ character: "trombi", skins: { trombi: old } }).skins.trombi).toBe(current);
+    expect(mascotLook({ character: "shape", skins: { shape: "plasma" } })).toEqual({ character: "shape" });
+  });
+});
+
+describe("floating bots: a smooth chat", () => {
+  it("saves a dragged spot once the window stands still, not at every step macOS reports", () => {
+    vi.useFakeTimers();
+    try {
+      const { open, invoke, saved } = setup();
+      const { win, from } = open("bot_a");
+      for (let i = 0; i < 30; i += 1) {
+        invoke("floating-bots:move-by", from, { dx: -3, dy: -2 });
+        win.events.get("moved")?.forEach((fn) => fn());
+      }
+      expect(saved.positions).toBeUndefined();
+      vi.advanceTimersByTime(REMEMBER_DELAY_MS);
+      const spot = win.getBounds();
+      expect(Object.values(saved.positions)[0].bot_a).toEqual({ x: spot.x + spot.width, y: spot.y + spot.height });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never saves the steps of the mascot's own flight, even when it lands before the delay", () => {
+    vi.useFakeTimers();
+    try {
+      const { open, emit, invoke, saved } = setup();
+      const { win, from } = open("bot_a");
+      emit("floating-bots:autopilot", from, true);
+      invoke("floating-bots:move-to", from, { x: 100, y: 300 });
+      win.events.get("moved")?.forEach((fn) => fn());
+      emit("floating-bots:autopilot", from, false);
+      vi.advanceTimersByTime(REMEMBER_DELAY_MS * 2);
+      expect(saved.positions).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("moves a window without resizing it, and asks nothing when nothing changes", () => {
+    const { open, invoke } = setup();
+    const { win, from } = open("bot_a");
+    win.calls.length = 0;
+    invoke("floating-bots:move-by", from, { dx: -10, dy: -10 });
+    expect(win.calls.map(([name]) => name)).toEqual(["setPosition"]);
+    const { width, height } = win.getBounds();
+    win.calls.length = 0;
+    invoke("floating-bots:resize", from, { width, height });
+    expect(win.calls).toEqual([]);
+    invoke("floating-bots:resize", from, { width: width + 100, height: height + 100 });
+    expect(win.calls.map(([name]) => name)).toEqual(["setBounds"]);
+  });
+
+  it("lets clicks through or takes them only on a change, and focuses only a window without the focus", () => {
+    const { open, emit } = setup();
+    const { win, from } = open("bot_a");
+    win.calls.length = 0;
+    for (const on of [true, true, true, false, false, true]) emit("floating-bots:set-interactive", from, on);
+    expect(win.calls.filter(([name]) => name === "setIgnoreMouseEvents").map(([, ignore]) => ignore)).toEqual([false, true, false]);
+    for (const on of [true, true, true]) emit("floating-bots:set-focusable", from, on);
+    expect(win.calls.filter(([name]) => name === "setFocusable")).toEqual([["setFocusable", true]]);
+    expect(win.calls.filter(([name]) => name === "focus")).toHaveLength(1);
+    emit("floating-bots:set-focusable", from, false);
+    expect(win.calls.filter(([name]) => name === "setFocusable").at(-1)).toEqual(["setFocusable", false]);
+  });
+
+  it("passes the app's theme to the window: a known skin and a hex accent only", () => {
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, theme: { skin: "pulsatrix-light", accent: "#336699" } }).theme).toEqual({ skin: "pulsatrix-light", accent: "#336699" });
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, theme: { skin: "pulsatrix-light", accent: "javascript:x" } }).theme).toEqual({ skin: "pulsatrix-light" });
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, theme: { skin: "other" } })).not.toHaveProperty("theme");
+    expect(sanitizeFloatingSnapshot(SNAPSHOT)).not.toHaveProperty("theme");
+    expect(appTheme({ skin: "dusk", accent: "#abcdef", extra: 1 })).toEqual({ skin: "dusk", accent: "#abcdef" });
+    // main's list is the app's list
+    expect([...APP_SKINS].sort()).toEqual([...SKIN_IDS].sort());
   });
 });

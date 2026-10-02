@@ -1,41 +1,48 @@
 # Licensing
 
-Sagax is a modified distribution of the work originally published as
-OpenMausBot. Both the original work and this distribution are under the
-[Apache License 2.0](LICENSE).
+Sagax is owned by Pulsatrix Technologies inc. and licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE-POLYFORM-NC.md). The summary
+and the Required Notice are in [LICENSE](LICENSE).
 
-Copyright 2026 Milind Soni and OpenMausBot contributors. Those notices stay
-in [NOTICE](NOTICE). Apache 2.0 section 6 does not grant trademark rights.
-The OpenMausBot name and mascot are trademarks of Milind Soni. This product
-does not use them as its name. Naming the original project, to say where
-the work came from, is the use the license allows.
+## In short
 
-## What changed in this distribution
+- **Noncommercial use is free:** personal use, study, research, hobby
+  projects, and use by charities, schools, public research, public safety
+  or health organizations and government institutions, as the license
+  defines them. You may change Sagax and share it for those purposes, as
+  long as you pass on the license terms and the Required Notice.
+- **Commercial use needs a license from Pulsatrix Technologies inc.** That
+  includes running Sagax in or for a business, offering it as a hosted
+  service, and selling, bundling or reselling it.
 
-- The product name is Sagax.
-- The `enterprise/` directory was removed. That directory was not Apache
-  2.0: its own license forbade redistribution. None of that source is
-  included here, and its license check was not rewritten into this tree.
-  `server/enterprise.ts` already starts the open-source edition when the
-  directory is absent. The server then reports `{"edition":"oss"}`.
-  A workspace configured for hosted sign-in still refuses remote access
-  when that adapter is absent.
+## Where the code comes from
 
-## What Apache 2.0 requires when you redistribute
+Sagax is based on OpenMausBot, Copyright 2026 Milind Soni and OpenMausBot
+contributors, under the [Apache License 2.0](LICENSE-APACHE). Apache 2.0
+section 4 lets a modified version put its own license on its changes, as
+long as the Apache terms are kept for the original work. So:
 
-1. Give recipients a copy of the Apache License 2.0 (`LICENSE`).
-2. State that you changed the files. This file and [NOTICE](NOTICE) record
-   the changes above. Add your own changes the same way.
-3. Keep all copyright, patent, trademark, and attribution notices from
-   the source, including `NOTICE` and [`third_party/`](third_party/).
-4. If you ship a notice file with a binary or a source bundle, include a
-   readable copy of the attribution notices from `NOTICE` (Apache 2.0
-   section 4(d)).
-5. Do not use the OpenMausBot name or mascot as the name of your product.
+- The parts of this tree that come unchanged from OpenMausBot stay under
+  Apache 2.0. Anyone may use those parts under Apache 2.0, from here or from
+  the original project.
+- The changes and additions made by Pulsatrix Technologies inc. are under
+  the PolyForm Noncommercial License 1.0.0 only.
+- Copies of Sagax published before 2026-10-02 under Apache 2.0 keep that
+  license. The new terms apply from the releases published after that date.
 
-Contributions to this tree are under Apache 2.0. No DCO sign-off and no
-CLA are required. Submit only code you wrote or have the right to
-contribute. There is no `enterprise/` directory to contribute to.
+The OpenMausBot copyright and attribution notices are kept in
+[NOTICE](NOTICE). Apache 2.0 section 6 does not grant trademark rights: the
+OpenMausBot name and mascot are trademarks of Milind Soni and are not used
+as this product's name.
+
+The `enterprise/` directory of the original project is not part of this
+tree. Its source and its license check were never copied here; with the
+directory absent, the server reports `{"edition":"oss"}`.
+
+## Contributions
+
+Contributions from outside Pulsatrix Technologies inc. need the signed
+contributor agreement described in [CLA.md](CLA.md) before they are merged.
 
 ## Third-party components
 

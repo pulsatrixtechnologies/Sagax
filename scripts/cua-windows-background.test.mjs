@@ -51,7 +51,7 @@ describe("background CUA executable", () => {
     ["missing DOS header", b => b.fill(0, 0, 2)],
     ["bad PE offset", b => b.writeUInt32LE(0xffffffff, 60)],
     ["missing PE signature", b => b.fill(0, pe, pe + 4)],
-    ["wrong architecture", b => b.writeUInt16LE(0xaa64, pe + 4)],
+    ["wrong architecture", b => b.writeUInt16LE(0x14c, pe + 4)],
     ["PE32 image", b => b.writeUInt16LE(0x10b, optional)],
     ["short optional header", b => b.writeUInt16LE(100, pe + 20)],
     ["truncated section table", b => b.writeUInt16LE(90, pe + 6)],
@@ -68,6 +68,12 @@ describe("background CUA executable", () => {
     const bytes = image();
     mutate(bytes);
     expect(() => createBackgroundExecutable(bytes)).toThrow("Unsupported CUA executable");
+  });
+
+  it("accepts an arm64 image for the Windows arm64 package", () => {
+    const source = image();
+    source.writeUInt16LE(0xaa64, pe + 4);
+    expect(createBackgroundExecutable(source).readUInt16LE(optional + 68)).toBe(2);
   });
 
   it("rejects short or non-buffer input", () => {

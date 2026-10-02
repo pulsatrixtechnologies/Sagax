@@ -1,0 +1,204 @@
+// HTTP side of the desktop bridge (organization server). The desktop app,
+// signed in to this server as a person, connects out:
+//
+//   POST /api/desktop-bridge/connect                 register this desktop
+//   POST /api/desktop-bridge/<id>/poll|lease|progress|result|disconnect
+//   GET  /api/desktop-bridge/<id>/tunnel   (WebSocket) network egress
+//   GET  /api/me/desktop-bridge            the person's own status + activity
+//   POST /api/desktop-bridge/<id>/system   coarse OS, CPU, memory, disk facts
+//   POST /api/me/desktop-bridge/local-vm   the person's own Local VM through
+//                                          their desktop: { action: status|start }
+//
+// Every call is the session's own person: the person is read from the
+// session, never from the body, and a private secret (x-sagax-bridge-secret,
+// held by the desktop's main process only) binds poll and results to the
+// exact desktop that registered. Answers 404 on a solo server.
+import { appendFileSync, existsSync, readFileSync, renameSync, statSync } from "node:fs";
+import type { IncomingMessage, Server } from "node:http";
+import { Socket } from "node:net";
+import type { Duplex } from "node:stream";
+
+import { localVmDesktopSpec } from "./container-computer.ts";
+import { desktopBridgeRegistration, desktopSystemInfo, type DesktopBridgeOperation, type DesktopBridges } from "./desktop-bridge.ts";
+import type { DesktopTunnels } from "./desktop-egress.ts";
+import { PASS, type RouteHandler } from "./routes/table.ts";
+
+const ID_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/(poll|lease|progress|result|disconnect|system)$/;
+const LOCAL_VM_ROUTE = "/api/me/desktop-bridge/local-vm";
+/** What the person's Computer tab may ask of their own Local VM. */
+const LOCAL_VM_ACTIONS: Record<string, DesktopBridgeOperation["action"]> = {
+  status: "vm_status", start: "vm_start", stop: "vm_stop", pause: "vm_pause", resume: "vm_resume",
+  setup: "vm_setup", install: "vm_install", screenshot: "vm_screenshot",
+};
+const TUNNEL_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/tunnel$/;
+
+export function isDesktopTunnelPath(path: string): boolean {
+  return TUNNEL_ROUTE.test(path);
+}
+
+export interface BridgeAuditEntry {
+  at: number;
+  person: string;
+  botId?: string;
+  threadId?: string;
+  /** Where it ran: "user-desktop" (their computer) or "direct". */
+  target: string;
+  kind: "tool" | "network" | "connect";
+  /** A tool's action, or "host:port" for the network (never content). */
+  detail: string;
+  ok: boolean;
+  error?: string;
+}
+
+/** Append-only audit of what bots did on, and through, people's computers.
+ * Bounded: rotates once at 5 MB (one previous file kept). */
+export function createBridgeAudit(file: string) {
+  const MAX = 5 * 1024 * 1024;
+  return {
+    record(entry: Omit<BridgeAuditEntry, "at">): void {
+      try {
+        if (existsSync(file) && statSync(file).size > MAX) renameSync(file, `${file}.1`);
+        appendFileSync(file, `${JSON.stringify({ at: Date.now(), ...entry, error: entry.error?.slice(0, 300) })}\n`, { mode: 0o600 });
+      } catch { /* the audit never stops a tool */ }
+    },
+    recent(person: string, limit = 25): BridgeAuditEntry[] {
+      const key = person.trim().toLowerCase();
+      try {
+        const lines = readFileSync(file, "utf8").trimEnd().split("\n").slice(-2000);
+        const out: BridgeAuditEntry[] = [];
+        for (let index = lines.length - 1; index >= 0 && out.length < limit; index--) {
+          try {
+            const entry = JSON.parse(lines[index]!) as BridgeAuditEntry;
+            if (entry.person === key) out.push(entry);
+          } catch { /* skip */ }
+        }
+        return out;
+      } catch {
+        return [];
+      }
+    },
+  };
+}
+export type BridgeAudit = ReturnType<typeof createBridgeAudit>;
+
+export function createDesktopBridgeRoutes(deps: {
+  organization: () => boolean;
+  bridges: DesktopBridges;
+  tunnels: DesktopTunnels;
+  audit: BridgeAudit;
+  /** The person's workplace preference as the server applies it. */
+  workplace: (person: string) => unknown;
+}): RouteHandler {
+  return async ({ req, res, path, method, auth, json, readBody }) => {
+    if (path !== "/api/me/desktop-bridge" && path !== "/api/desktop-bridge/connect" && path !== LOCAL_VM_ROUTE && !ID_ROUTE.test(path)) return PASS;
+    res.setHeader("cache-control", "no-store");
+    if (!deps.organization()) return json(res, 404, { error: `no route: ${method} ${path}` });
+    const person = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() : undefined;
+    if (!person || auth.kind !== "session") return json(res, 403, { error: "Sign in with Pulsatrix to connect your computer.", code: "identity_perspicax" });
+    if (path === "/api/me/desktop-bridge") {
+      if (method !== "GET") return json(res, 405, { error: "method not allowed" });
+      return json(res, 200, {
+        connected: deps.bridges.connected(person),
+        tunnel: deps.tunnels.connected(person),
+        desktops: deps.bridges.status(person),
+        workplace: deps.workplace(person),
+        activity: deps.audit.recent(person),
+      });
+    }
+    if (method !== "POST") return json(res, 405, { error: "method not allowed" });
+    if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return json(res, 415, { error: "JSON required" });
+    const body = await readBody(req, 4_000_000) as Record<string, unknown> | null;
+    if (path === LOCAL_VM_ROUTE) {
+      // The person's own Local VM on their own connected computer, asked by
+      // that person from their Computer tab (never a bot, never another's).
+      const action = typeof body?.action === "string" && Object.hasOwn(LOCAL_VM_ACTIONS, body.action) ? LOCAL_VM_ACTIONS[body.action] : undefined;
+      if (!action) return json(res, 400, { error: `action must be one of ${Object.keys(LOCAL_VM_ACTIONS).join(", ")}` });
+      const operation: DesktopBridgeOperation = action === "vm_setup"
+        // The server's own hardened recipe (one source of truth); the
+        // desktop checks it and fills in its own folder and password.
+        ? { action, arguments: { spec: localVmDesktopSpec() } }
+        : action === "vm_install"
+          ? { action, arguments: { choice: typeof body?.choice === "string" ? body.choice.slice(0, 40) : "" } }
+          : { action };
+      try {
+        return json(res, 200, { result: await deps.bridges.request(person, operation, () => true) });
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        return json(res, typeof status === "number" && status >= 400 && status < 600 ? status : 502, { error: (error as Error).message, code: (error as { code?: string }).code });
+      }
+    }
+    const secret = String(req.headers["x-sagax-bridge-secret"] ?? "");
+    try {
+      if (path === "/api/desktop-bridge/connect") {
+        const parsed = desktopBridgeRegistration.safeParse(body);
+        if (!parsed.success) return json(res, 400, { error: "Invalid desktop registration" });
+        deps.bridges.register(parsed.data, auth.session.id, secret);
+        deps.audit.record({ person, target: "user-desktop", kind: "connect", detail: `${parsed.data.platform} ${parsed.data.name}`.slice(0, 160), ok: true });
+        return json(res, 200, { ok: true, person });
+      }
+      const [, id, action] = ID_ROUTE.exec(path)!;
+      if (action === "poll") {
+        let open = true;
+        res.once("close", () => { open = false; });
+        req.once("aborted", () => { open = false; });
+        const job = await deps.bridges.poll(id!, auth.session.id, secret, undefined, () => open && !res.destroyed);
+        if (!open || res.destroyed) {
+          // Nobody is listening: a job taken now would be lost, so put it back.
+          if (job) deps.bridges.requeue(id!, auth.session.id, secret, job.id);
+          return;
+        }
+        return json(res, 200, { job });
+      }
+      if (action === "lease") return json(res, 200, { active: deps.bridges.liveJob(id!, auth.session.id, secret, String(body?.jobId)) });
+      if (action === "progress") return json(res, 200, { ok: deps.bridges.progress(id!, auth.session.id, secret, String(body?.jobId), body?.message) });
+      if (action === "result") deps.bridges.complete(id!, auth.session.id, secret, String(body?.jobId), body?.result);
+      if (action === "disconnect") deps.bridges.disconnect(id!, auth.session.id, secret);
+      if (action === "system") {
+        const parsed = desktopSystemInfo.safeParse(body);
+        if (!parsed.success) return json(res, 400, { error: "Invalid system information" });
+        deps.bridges.setSystem(id!, auth.session.id, secret, parsed.data);
+      }
+      return json(res, 200, { ok: true });
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      return json(res, typeof status === "number" && status >= 400 && status < 600 ? status : 500, { error: (error as Error).message });
+    }
+  };
+}
+
+/** The tunnel WebSocket. Authenticated here, before any byte is relayed:
+ * the session cookie must be live and signed in as the person whose desktop
+ * registered `id` with this secret. */
+export function attachDesktopTunnel(server: Server, deps: {
+  organization: () => boolean;
+  /** The live session behind the request's cookie, or null. */
+  session: (req: IncomingMessage) => { id: string; person: string } | null;
+  /** The request comes from this server's own origin (or carries none). */
+  sameOrigin: (req: IncomingMessage) => boolean;
+  /** The desktop `id` is registered by this session with this secret. */
+  bridgeOwner: (id: string, session: string, secret: string) => boolean;
+  tunnels: DesktopTunnels;
+}): void {
+  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    let path: string;
+    try { path = new URL(req.url ?? "", "http://localhost").pathname; } catch { return; }
+    const match = TUNNEL_ROUTE.exec(path);
+    if (!match) return;
+    const refuse = (status: number, text: string) => {
+      socket.end(`HTTP/1.1 ${status} ${text}\r\nconnection: close\r\ncontent-length: 0\r\n\r\n`);
+      socket.destroy();
+    };
+    if (!(socket instanceof Socket)) { socket.destroy(); return; }
+    socket.on("error", () => socket.destroy());
+    if (!deps.organization()) return refuse(404, "Not Found");
+    const key = req.headers["sec-websocket-key"];
+    if (req.method !== "GET" || req.headers.upgrade?.toLowerCase() !== "websocket" || req.headers["sec-websocket-version"] !== "13"
+      || typeof key !== "string" || !/^[A-Za-z0-9+/]{22}==$/.test(key)) return refuse(400, "Bad Request");
+    if (!deps.sameOrigin(req)) return refuse(403, "Forbidden");
+    const session = deps.session(req);
+    if (!session) return refuse(401, "Unauthorized");
+    const secret = String(req.headers["x-sagax-bridge-secret"] ?? "");
+    if (!deps.bridgeOwner(match[1]!, session.id, secret)) return refuse(403, "Forbidden");
+    deps.tunnels.accept(socket, head, key, { person: session.person, session: session.id, bridgeId: match[1]! });
+  });
+}

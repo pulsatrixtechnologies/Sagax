@@ -11,10 +11,10 @@ import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
-const forced = process.env.OMB_UI_E2E === "1";
+const forced = process.env.SAGAX_UI_E2E === "1";
 const enabled = forced || Boolean(binary);
 const launchTimeout = forced && !binary ? 600_000 : 180_000;
-if (!enabled) console.log("skipping presets UI e2e: set OMB_UI_E2E=1 to install the pinned browser");
+if (!enabled) console.log("skipping presets UI e2e: set SAGAX_UI_E2E=1 to install the pinned browser");
 const evidence = (name: string) => join(ROOT, ".omb-scratch", "verify-evidence", `presets-${name}.png`);
 
 describe("Preset bots in the real renderer", () => {
@@ -91,7 +91,7 @@ describe("Preset bots in the real renderer", () => {
     const preview = await snapshot();
     expect(preview).toContain("Preset bots: 1 · appear in New bot");
     expect(preview).not.toContain("Team members");
-    expect(preview).toContain("Preset bots — added to New bot");
+    expect(preview).toContain("Preset bots (added to New bot)");
     await ui("screenshot", "--out", evidence("import-preview"));
     await click("Add presets");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("Preset bots added to New bot: 1");

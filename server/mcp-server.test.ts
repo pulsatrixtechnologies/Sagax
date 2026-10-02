@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // scripts/mcp-server.ts snapshots process.env at import time — scrub ambient
-// OMB_* / OPENMAUSBOT_* values before it is evaluated (#1676).
+// SAGAX_* values (or the old OMB_*, OPENMAUSBOT_* names) before it is evaluated (#1676).
 import "./testing/scrub-ambient-omb-env.ts";
 
 import {
@@ -30,7 +30,7 @@ function jsonResponse(body: unknown, options: { ok?: boolean; status?: number; s
 afterEach(() => {
   vi.restoreAllMocks();
   globalThis.fetch = ORIGINAL_FETCH;
-  delete process.env.OPENMAUSBOT_TOKEN;
+  delete process.env.SAGAX_TOKEN;
   delete process.env.ALLOW_INSECURE_HTTP;
 });
 
@@ -759,7 +759,7 @@ describe("connection security and discovery", () => {
   });
 
   it("rejects successful non-JSON responses and sends an optional bearer token", async () => {
-    process.env.OPENMAUSBOT_TOKEN = "proxy-token";
+    process.env.SAGAX_TOKEN = "proxy-token";
     globalThis.fetch = vi.fn(async (_url: any, options: any) => {
       expect(new Headers(options.headers).get("Authorization")).toBe("Bearer proxy-token");
       return { ...jsonResponse({}), json: vi.fn(async () => { throw new Error("not json"); }) };
@@ -779,8 +779,8 @@ describe("connection security and discovery", () => {
   });
 
   it("requires an explicit destination before sending a bearer token", async () => {
-    process.env.OPENMAUSBOT_TOKEN = "proxy-token";
-    await expect(resolveBaseUrl()).rejects.toThrow("OPENMAUSBOT_URL or OMB_PORT");
+    process.env.SAGAX_TOKEN = "proxy-token";
+    await expect(resolveBaseUrl()).rejects.toThrow("SAGAX_URL or SAGAX_PORT");
   });
 
   it("validates direct tool arguments", () => {

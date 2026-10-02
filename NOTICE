@@ -1,61 +1,33 @@
+Sagax
+Copyright 2026 Pulsatrix Technologies inc.
+Licensed under the PolyForm Noncommercial License 1.0.0 (see LICENSE).
+
+Required Notice: Copyright 2026 Pulsatrix Technologies inc. (https://github.com/pulsatrixtechnologies)
+
+This product includes software originally published as OpenMausBot:
+
 OpenMausBot
 Copyright 2026 Milind Soni and OpenMausBot contributors
+Licensed under the Apache License 2.0 (see LICENSE-APACHE).
 
-Sagax
-This distribution is a modified version of the Apache-2.0 work originally
-published as OpenMausBot.
+Changes made by Pulsatrix Technologies inc. to the OpenMausBot work: the
+product is renamed Sagax; organizations through Perspicax, people and
+groups in channels, bot ownership and sharing, server environments, the
+desktop bridge, voice mode, the desktop mascot and many other features were
+added; the interface was redesigned; the source-available enterprise/
+directory was removed and none of its source or license check is included;
+files across the tree were modified. These changes are licensed under the
+PolyForm Noncommercial License 1.0.0, not the Apache License 2.0.
 
-Changes: the product name is Sagax. The source-available enterprise/
-directory was removed, so this tree is Apache-2.0 only. Its license check
-was not copied into this tree. Original copyright and attribution notices
-above are retained.
+The OpenMausBot name and mascot are trademarks of Milind Soni. This product
+does not use those marks as its name. Apache License 2.0 section 6 does not
+grant trademark rights.
 
-The OpenMausBot name and mascot are trademarks of Milind Soni. This
-product does not use those marks as its name. Apache License 2.0 section 6
-does not grant trademark rights.
-
-OpenMausBot was relicensed from the MIT License to the Apache License,
-Version 2.0, with the consent of all contributors whose copyright was
-incorporated before the transition.
-
-The Google Antigravity ACP integration adapts release, installation, profile,
-authentication, and runtime temporary-folder behavior from T3 Code, Copyright
-2026 T3 Tools Inc., used under the MIT License (third_party/t3-code/LICENSE).
-
-Selected-text citation matching adapts T3 Code's assistant citation selection,
-Copyright 2026 T3 Tools Inc., used under the MIT License.
-
-The secure phone credential transport uses @hpke/core and @hpke/common from
-hpke-js, Copyright 2023-2024 Ajitomi Daisuke, used under the MIT License.
-
-Selected provider icon paths are from Simple Icons, used under CC0 1.0.
-The Cohere provider icon path is from Lobe Icons, Copyright 2023 LobeHub,
-used under the MIT License.
-
-The Hibou 98 skin (src/styles/retro98.css and the retro window chrome) adapts
-bevel colors, box-shadows and control metrics from 98.css, Copyright 2020
-Jordan Scales, used under the MIT License (third_party/98.css/LICENSE). Its
-pixel font is not included.
-
-The Pulsatrix and Pulsatrix Light skins use the Geist typeface, Copyright
-2024 The Geist Project Authors (https://github.com/vercel/geist-font),
-bundled from @fontsource-variable/geist and used under the SIL Open Font
-License, Version 1.1 (third_party/geist/OFL.txt).
-
-The model provider catalog bundles provider and model data from models.dev,
-https://github.com/anomalyco/models.dev, Copyright (c) 2025 models.dev, used
-under the MIT License. Its cache and refresh logic is adapted from OpenCode,
-https://github.com/anomalyco/opencode, Copyright (c) 2025 opencode, used under
-the MIT License. The full license texts are in third_party/models-dev/LICENSE
-and third_party/opencode/LICENSE.
-
-The browser desktop viewer bundles the unmodified noVNC 1.7.0 library,
-Copyright the noVNC authors, under MPL-2.0 and its accompanying licenses.
-Attribution, license terms and the corresponding source location are in
-public/novnc-NOTICE.txt (novnc-NOTICE.txt in the built UI).
-
-The 3D Sagax owl (src/components/floating-bots/owl3d/owl.glb) is original
-work of this project: modeled, rigged and animated from scratch by
-tools/owl3d/build_owl.py, after the project's own 2D owl art. Blender is only
-the tool that runs that script; no third-party model, texture or animation
-is included.
+Voice mode bundles on-device models run with onnxruntime-web (Microsoft, MIT
+License): Silero VAD v5 (Silero Team, MIT License, unmodified) and the
+3D-Speaker CAM++ speaker verification model (Alibaba Group) in the ONNX export
+published by sherpa-onnx (k2-fsa), both Apache License 2.0, its weights
+quantized to int8 by Pulsatrix Technologies inc. Licenses are in
+third_party/onnxruntime-web, third_party/silero-vad, third_party/3d-speaker
+and third_party/sherpa-onnx; details and checksums in
+src/lib/voice-mode/models/NOTICE.txt.

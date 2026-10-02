@@ -3,7 +3,7 @@
 // decider.baseUrl) and the Admin's relay (/relay). With no key to paste,
 // rooms start on Auto and ask the relay; an own key wins and goes only to
 // Jev; clearing it falls back; an explicit off wins. The included token goes
-// only to <OMB_CLOUD_DECIDER_URL>/v1/systemone, only with the two requests
+// only to <SAGAX_CLOUD_DECIDER_URL>/v1/systemone, only with the two requests
 // the relay accepts, and is never saved, shown, logged or handed to a child.
 // Disposable home; no network.
 import { randomBytes } from "node:crypto";
@@ -26,7 +26,7 @@ const RELAY_PATH = "/relay/api/cloud/services/decider";
 const ROOM_INSTRUCTIONS = "Which bot in this room should answer `new_message`? Choose __everyone__ only when the message needs several members to answer.";
 const ROOM_STATE_KEYS = ["room", "humans_in_room", "bots_in_room", "recent_messages", "new_message"];
 const KEY_CHECK = {
-  state: { purpose: "OpenMausBot is checking that a decision-model key works." },
+  state: { purpose: "Sagax is checking that a decision-model key works." },
   questions: { answer: { type: "noul", instructions: "Is this a connection check?" } },
 };
 
@@ -95,7 +95,7 @@ beforeAll(async () => {
   relayUrl = `${stubBase}${RELAY_PATH}`;
 
   home = mkdtempSync(join(tmpdir(), "omb-decider-included-"));
-  data = join(home, ".openmausbot");
+  data = join(home, ".sagax");
   mkdirSync(data, { recursive: true });
   engineDump = join(home, "engine-dump.json");
   writeFileSync(join(data, "config.json"), JSON.stringify({
@@ -116,9 +116,9 @@ beforeAll(async () => {
       PATH: process.env.PATH,
       ...(process.env.PATHEXT ? { PATHEXT: process.env.PATHEXT } : {}),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, OMB_DATA_DIR: data, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
-      OMB_CLOUD_DECIDER_URL: relayUrl,
-      OMB_CLOUD_DECIDER_TOKEN: INCLUDED,
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_DATA_DIR: data, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
+      SAGAX_CLOUD_DECIDER_URL: relayUrl,
+      SAGAX_CLOUD_DECIDER_TOKEN: INCLUDED,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -182,10 +182,9 @@ describe("Cloud Pro's included decision model", { timeout: 90_000 }, () => {
     const created = await api("POST", "/api/groups", { name: "Launch", memberIds: [bots.Maya!.id, bots.Theo!.id] });
     expect(created.body.group.defaultResponder).toEqual({ kind: "auto" });
     room = created.body.group;
-    expect((await api("PATCH", `/api/groups/${room.id}/setup`, { action: "complete", cwd: null, bulletin: "", defaultResponder: { kind: "auto" } })).status).toBe(200);
   });
 
-  it("asks the relay who answers, at exactly <OMB_CLOUD_DECIDER_URL>/v1/systemone with the included token", async () => {
+  it("asks the relay who answers, at exactly <SAGAX_CLOUD_DECIDER_URL>/v1/systemone with the included token", async () => {
     pick = bots.Theo!.id;
     const reply = await round(room.id, "The signup button overlaps the footer on Safari.");
     expect(reply.from!.name).toBe("Theo");
@@ -252,7 +251,7 @@ describe("Cloud Pro's included decision model", { timeout: 90_000 }, () => {
     // An engine's environment.
     expect(existsSync(engineDump)).toBe(true);
     const engine = JSON.parse(readFileSync(engineDump, "utf8")).env;
-    expect(engine).not.toHaveProperty("OMB_CLOUD_DECIDER_TOKEN");
+    expect(engine).not.toHaveProperty("SAGAX_CLOUD_DECIDER_TOKEN");
     expect(JSON.stringify(engine)).not.toContain(INCLUDED);
     // A tool started with a copy of the server's own environment, as it is:
     // the token is gone from it, not merely filtered on the way out.
@@ -267,10 +266,10 @@ console.log("dump-env 1.0.0");
     expect(probe.body, probe.text).toMatchObject({ ok: true, version: "dump-env 1.0.0" });
     const raw = JSON.parse(readFileSync(dump, "utf8"));
     // Proves the dump is the server's environment, not an empty one. Every
-    // OMB_CLOUD_* value, the relay URL included, is stripped from a probed CLI.
+    // SAGAX_CLOUD_* value, the relay URL included, is stripped from a probed CLI.
     expect(raw.HOME).toBe(home);
-    expect(raw).not.toHaveProperty("OMB_CLOUD_DECIDER_URL");
-    expect(raw).not.toHaveProperty("OMB_CLOUD_DECIDER_TOKEN");
+    expect(raw).not.toHaveProperty("SAGAX_CLOUD_DECIDER_URL");
+    expect(raw).not.toHaveProperty("SAGAX_CLOUD_DECIDER_TOKEN");
     expect(JSON.stringify(raw)).not.toContain(INCLUDED);
   });
 });

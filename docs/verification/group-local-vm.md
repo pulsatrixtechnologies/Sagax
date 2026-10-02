@@ -20,7 +20,7 @@ member handoff.
 
 Prepare the managed desktop image on an explicitly selected Podman test machine.
 Build the renderer (`node node_modules/vite/bin/vite.js build`), set
-`OMB_VERIFY_PODMAN` to the absolute executable path and `OMB_VERIFY_MACHINE` to that connection,
+`SAGAX_VERIFY_PODMAN` to the absolute executable path and `SAGAX_VERIFY_MACHINE` to that connection,
 then run:
 
 ```sh

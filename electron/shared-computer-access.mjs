@@ -52,7 +52,7 @@ const identify = async candidate => { const info = await fs.stat(candidate, { bi
  * spell one directory several ways, so containment is decided by {dev, ino}
  * and never by comparing path text. A root a fresh install has not created
  * yet protects nothing, so a missing path is skipped rather than thrown. */
-async function protectedIdentities(roots) {
+export async function protectedIdentities(roots) {
   const identities = new Set();
   for (const root of roots ?? []) {
     if (typeof root !== "string" || !root) continue;
@@ -65,7 +65,7 @@ async function protectedIdentities(roots) {
 /** Refuse anything the operating system resolves inside a protected root. A
  * write may create a file that does not exist yet, so fall back to the nearest
  * existing ancestor, then walk that resolved chain comparing identities. */
-async function assertOutsideProtected(identities, target) {
+export async function assertOutsideProtected(identities, target) {
   if (!identities.size) return;
   let current = path.resolve(target);
   for (;;) {

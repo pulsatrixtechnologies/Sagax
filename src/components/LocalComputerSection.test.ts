@@ -299,18 +299,18 @@ describe("cloud computer inventory UI", () => {
   it("keeps disconnected, unavailable, and empty states distinct", () => {
     const disconnected = renderCard({ configured: false });
     expect(disconnected).toContain("Boat is not connected");
-    expect(disconnected).not.toContain("No OpenMaus-managed cloud computers found");
+    expect(disconnected).not.toContain("No Sagax-managed cloud computers found");
 
     const unavailable = renderCard({ unavailableReason: "boat.dev is unavailable" });
     expect(unavailable).toContain("boat.dev is unavailable");
-    expect(unavailable).not.toContain("No OpenMaus-managed cloud computers found");
+    expect(unavailable).not.toContain("No Sagax-managed cloud computers found");
 
     const endpointFailure = renderCard({ configured: null, unavailableReason: "Computer inventory could not load" });
     expect(endpointFailure).toContain("Computer inventory could not load");
     expect(endpointFailure).not.toContain("Boat is not connected");
 
     const empty = renderCard();
-    expect(empty).toContain("No OpenMaus-managed cloud computers found");
+    expect(empty).toContain("No Sagax-managed cloud computers found");
   });
 
   it("uses honest state labels", () => {
@@ -513,7 +513,7 @@ describe("VPS computer inventory UI", () => {
   it("keeps disconnected, unavailable, and empty states distinct", () => {
     expect(renderCard({ configured: false, sshAlias: null })).toContain("VPS is not configured");
     expect(renderCard({ unavailableReason: "SSH host cannot be reached" })).toContain("SSH host cannot be reached");
-    expect(renderCard()).toContain("No OpenMaus-managed VPS computers found");
+    expect(renderCard()).toContain("No Sagax-managed VPS computers found");
   });
 
   it("uses honest status labels", () => {
@@ -542,7 +542,11 @@ describe("Settings → Computers on an OMB Cloud home", () => {
   const cards = () => [...renderToStaticMarkup(createElement(LocalComputerSection)).matchAll(/<button type="button" aria-expanded="[a-z]+"[^>]*><span class="shrink-0">([^<]+)<\/span>/g)].map((match) => match[1]);
 
   it("sets up a Local VM on a desktop or self-hosted server", () => {
-    expect(cards()).toEqual(expect.arrayContaining(["Cloud computers", "Local VM", "Setup"]));
+    expect(cards()).toEqual(expect.arrayContaining(["Local VM", "Setup"]));
+    // Boat Computer is experimental: its card shows only when switched on.
+    expect(cards()).not.toContain("Cloud computers");
+    storeFixture.config = { features: { skillAuthoring: true, boatComputer: true } };
+    expect(cards()).toContain("Cloud computers");
   });
 
   it("shows no Local VM, and no steps to install one, where it cannot exist", () => {

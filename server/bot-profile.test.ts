@@ -135,7 +135,7 @@ describe("mascotSkin", () => {
   it("maps an unknown skin to a readable message", () => {
     expect(parseBotProfilePatch({ mascotSkin: "plasma" } as never, true)).toEqual({
       ok: false,
-      error: "mascotSkin must be none, lightning, gold, neon, inferno, frost, or carbon",
+      error: "mascotSkin must be none, snowy, barn, carbon, gold, frost, neon, lightning, chrome, inferno, holo, galaxy, or spirit",
     });
   });
 });
@@ -168,7 +168,7 @@ describe("mascotLook", () => {
   });
 
   it("refuses an unknown character, shape or skin, or an extra field", () => {
-    for (const mascotLook of [{ character: "dragon" }, { character: "shape", shape: "star" }, { character: "shape", skins: { shape: "chrome" } }, { character: "owl", extra: 1 }]) {
+    for (const mascotLook of [{ character: "dragon" }, { character: "shape", shape: "rocket" }, { character: "shape", skins: { shape: "plasma" } }, { character: "shape", skins: { trombi: "galaxy" } }, { character: "owl", extra: 1 }]) {
       expect(parseBotProfilePatch({ mascotLook } as never, true).ok).toBe(false);
     }
   });

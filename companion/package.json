@@ -1,5 +1,5 @@
 {
-  "name": "@openmausbot/companion",
+  "name": "@sagax/companion",
   "version": "0.1.0",
   "private": true,
   "description": "A sidecar that lets a paired phone reach an unmodified Sagax harness",

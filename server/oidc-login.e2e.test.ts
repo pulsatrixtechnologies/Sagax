@@ -1,13 +1,14 @@
 // "Sign in with Pulsatrix" through the real server, against a local fake
 // OpenID Connect provider (server/testing/fake-oidc-provider.ts) shaped like
-// Perspicax slice 1. The server runs with OMB_IDENTITY=perspicax:
+// Perspicax slice 1. The server runs with SAGAX_IDENTITY=perspicax:
 //
 //   - the environment descriptor advertises the sign-in and no email codes;
 //   - /auth/oidc/start -> provider -> /auth/oidc/callback sets a Sagax
 //     session cookie, and /api/auth/session names the principal, the email
 //     and the role;
 //   - scenario A (spec section 10): an admin signed in this way creates a bot
-//     on the server and gets its answer from the (fake) engine; a second
+//     on the server and gets its answer from the (fake) engine, on the
+//     organization key (the person who speaks pays, 2026-10-01); a second
 //     browser of the same person reads the same thread;
 //   - an employee gets a client session only; a replayed callback, a foreign
 //     browser and a role the server does not know are refused;
@@ -25,6 +26,11 @@ import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLI = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
+const FAKE_CLAUDE = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
+// The organization key (Settings > Connections). Since 2026-10-01 the person
+// who speaks pays: the server's own sign-ins no longer serve an admin's bot,
+// so scenario A's turn runs on this key (org-sharing covers the refusals).
+const ORG_KEY = "sk-ant-test-org-key";
 const posixOnly = describe.skipIf(process.platform === "win32");
 const ADMIN = { sub: "01J9ADMIN0000000000000000A", email: "Alice@Example.test", name: "Alice Admin", preferred_username: "alice", role: "admin" };
 const EMPLOYEE = { sub: "01J9EMPLOYEE00000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee" };
@@ -83,10 +89,11 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -104,17 +111,21 @@ async function start() {
   }
 }
 
-posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
+posixOnly("Sign in with Pulsatrix (SAGAX_IDENTITY=perspicax)", () => {
   beforeAll(async () => {
     chmodSync(FAKE_CLI, 0o755);
+    chmodSync(FAKE_CLAUDE, 0o755);
     idp = await startFakeOidcProvider({ user: ADMIN });
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-oidc-login-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({
-      instances: { grok: { driver: "grokAgent", config: { cli: FAKE_CLI, fullAuto: false } } },
+      instances: {
+        grok: { driver: "grokAgent", config: { cli: FAKE_CLI, fullAuto: false } },
+        claude: { driver: "claudeAgent", config: { cli: FAKE_CLAUDE, fullAuto: true } },
+      },
     }));
     await start();
   });
@@ -129,7 +140,7 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
   it("advertises the Perspicax sign-in and no email codes", async () => {
     const res = await fetch(`${BASE}/.well-known/openmausbot/environment`);
     const body = await res.json() as any;
-    expect(body.identity).toEqual({ kind: "perspicax", protocol: "oidc", issuer: idp.issuer, loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true });
+    expect(body.identity).toEqual({ kind: "perspicax", protocol: "oidc", issuer: idp.issuer, loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"], phoneReturnSchemes: ["sagax", "openmausbot"] });
     expect(body.capabilities.emailSignIn).toBe(false);
     expect(log).toMatch(/service trust \(organization server/);
   });
@@ -153,14 +164,14 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
     expect(session.body.principalId).toMatch(/^pr_/);
     ids.principal = session.body.principalId;
     // the person is keyed by (iss, sub); the email is an attribute
-    const principals = JSON.parse(readFileSync(join(home, ".openmausbot", "principals.json"), "utf8")).principals as any[];
+    const principals = JSON.parse(readFileSync(join(home, ".sagax", "principals.json"), "utf8")).principals as any[];
     expect(principals.find((p) => p.id === ids.principal)).toMatchObject({ subject: { iss: idp.issuer, sub: ADMIN.sub }, email: "alice@example.test", orgRole: "admin" });
     // slice 2 keeps the grant, sealed: nothing from the provider reaches the
     // stored sessions, and the vault holds no readable token
     expect(idp.revoked).toEqual([]);
-    const stored = readFileSync(join(home, ".openmausbot", "sessions.json"), "utf8");
+    const stored = readFileSync(join(home, ".sagax", "sessions.json"), "utf8");
     expect(stored).not.toMatch(/pxlr1\.|pxlo1\.|eyJ/);
-    expect(readFileSync(join(home, ".openmausbot", "idp-grants.enc"), "utf8")).not.toMatch(/pxlr1\./);
+    expect(readFileSync(join(home, ".sagax", "idp-grants.enc"), "utf8")).not.toMatch(/pxlr1\./);
   });
 
   it("scenario A: the admin creates a bot on the server and gets its answer; another browser reads the thread", async () => {
@@ -169,7 +180,7 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     ids.bot = created.body.bot.id;
     ids.thread = created.body.bot.threadId;
-    const patched = await api("PATCH", `/api/bots/${ids.bot}`, jar, { modelSelection: { instanceId: "grok", model: "fake-model" } });
+    const patched = await api("PATCH", `/api/bots/${ids.bot}`, jar, { modelSelection: { instanceId: "claude", model: "fake-model" } });
     expect(patched.status, JSON.stringify(patched.body)).toBe(200);
     const sent = await api("POST", `/api/bots/${ids.bot}/messages`, jar, { text: "Hello from Perspicax", threadId: ids.thread });
     expect(sent.status, JSON.stringify(sent.body)).toBe(202);
@@ -242,7 +253,7 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
 
   it("keeps email solo: a sign-in list and mail on disk change nothing on an organization server", async () => {
     // As if an older build or `openmausbot access add` had written them.
-    const file = join(home, ".openmausbot", "config.json");
+    const file = join(home, ".sagax", "config.json");
     let current: Record<string, unknown> = {};
     try { current = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>; } catch { /* none yet */ }
     writeFileSync(file, JSON.stringify({

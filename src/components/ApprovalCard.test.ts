@@ -436,7 +436,7 @@ describe("ApprovalCard expired proposals", () => {
 
   it("marks a dead proposal as expired instead of waiting for an answer", () => {
     const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: expiredMessage() }));
-    expect(html).toContain("Expired — ask for a fresh proposal");
+    expect(html).toContain("Expired. Ask for a fresh proposal");
     expect(html).not.toContain("Waiting for your confirmation below");
     expect(html).not.toContain("data-tour=\"approval\"");
   });

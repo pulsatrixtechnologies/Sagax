@@ -10,10 +10,10 @@ import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
-const forced = process.env.OMB_UI_E2E === "1";
+const forced = process.env.SAGAX_UI_E2E === "1";
 const enabled = forced || Boolean(binary);
 const launchTimeout = forced && !binary ? 600_000 : 180_000;
-if (!enabled) console.log("skipping share-team UI e2e: set OMB_UI_E2E=1 to install the pinned browser");
+if (!enabled) console.log("skipping share-team UI e2e: set SAGAX_UI_E2E=1 to install the pinned browser");
 
 describe("Share team in the real renderer", () => {
   let child: ChildProcess | undefined;
@@ -124,7 +124,7 @@ describe("Share team in the real renderer", () => {
     await evaluate(`(() => { const input = document.querySelector('[role=dialog] input[type=file]'); const transfer = new DataTransfer(); transfer.items.add(new File([window.__shareText], 'sales-desk-1.0.0.openmaus.json', { type: 'application/json' })); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("2 bots · shared team");
     const preview = await snapshot();
-    for (const line of ["Shared instructions", "Routines: 1 · paused", "Starter notes: 1", "Included skills — added switched off"]) {
+    for (const line of ["Shared instructions", "Routines: 1 · paused", "Starter notes: 1", "Included skills (added switched off)"]) {
       expect(preview).toContain(line);
     }
     expect(preview).not.toContain("Connections to finish");

@@ -302,8 +302,8 @@ describe("vault", () => {
 
   it("uses the desktop key, refuses to invent one under the desktop, and makes a 0600 key file otherwise", () => {
     const hex = "ab".repeat(32);
-    expect(resolveVaultKey(dir, { OMB_MCP_OAUTH_KEY: hex })).toEqual({ kind: "key", key: Buffer.from(hex, "hex") });
-    expect(resolveVaultKey(dir, { OMB_DESKTOP_PARENT: "1" })).toMatchObject({ kind: "unavailable" });
+    expect(resolveVaultKey(dir, { SAGAX_MCP_OAUTH_KEY: hex })).toEqual({ kind: "key", key: Buffer.from(hex, "hex") });
+    expect(resolveVaultKey(dir, { SAGAX_DESKTOP_PARENT: "1" })).toMatchObject({ kind: "unavailable" });
     const made = resolveVaultKey(dir, {});
     expect(made.kind).toBe("key");
     expect(resolveVaultKey(dir, {})).toEqual(made);

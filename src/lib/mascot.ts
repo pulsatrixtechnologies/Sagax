@@ -1,6 +1,14 @@
 import { CURSOR_STATES, type CursorState } from "@/components/CursorAvatar";
 import { botShowsUnread } from "./bot-unread";
 import { lastNonReceipt } from "./receipts";
+import { MASCOT_COLOR_HEX, MASCOT_COLOR_NAMES, mascotColorsIn, relativeLuminance, type MascotColorName } from "../../shared/mascot-colors";
+
+/** A dark color lifted toward white, so it still reads as text on a dark surface. */
+function liftInk(hex: string): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  const lift = (shift: number) => Math.round(((n >> shift) & 255) * 0.45 + 255 * 0.55);
+  return `#${[16, 8, 0].map((shift) => lift(shift).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
 
 /** The mascot's behaviour vocabulary — CursorAvatar's 39 states, under the
  * app's historical names. */
@@ -47,57 +55,39 @@ export const STATE_GROUPS = {
   ],
 } satisfies Record<string, MausState[]>;
 
-export const MAUS_COLOR_NAMES = [
-  "green",
-  "blue",
-  "red",
-  "orange",
-  "purple",
-  "cyan",
-  "pink",
-  "yellow",
-  "teal",
-  "coral",
-  "white",
-  "black",
-] as const;
+/** Every bot color name (shared/mascot-colors.ts): the original fifteen first, then the newer palettes. */
+export const MAUS_COLOR_NAMES = MASCOT_COLOR_NAMES;
 
-export type MausColor = (typeof MAUS_COLOR_NAMES)[number];
+export type MausColor = MascotColorName;
 
-export const MAUS_COLORS = {
-  green: "#009957",
-  blue: "#377FE6",
-  red: "#D94B52",
-  orange: "#E78531",
-  purple: "#8057C8",
-  cyan: "#0EA5C6",
-  pink: "#D84F8B",
-  yellow: "#D8A729",
-  teal: "#01A492",
-  coral: "#E5634E",
-  white: "#F4F4F4",
-  black: "#1D1E22",
-} satisfies Record<MausColor, string>;
+export const MAUS_COLORS: Readonly<Record<MausColor, string>> = MASCOT_COLOR_HEX;
 
 /**
  * A bot colour used as text or a tint on the app's own surfaces. Black has no
  * light of its own and would vanish on a dark theme, so it reads as a cool
- * slate there instead; every other colour is its palette value.
+ * slate there instead; the deep palette and graphite are lifted toward white
+ * the same way. Every other colour is its palette value.
  */
-export const MAUS_INK: Record<MausColor, string> = { ...MAUS_COLORS, black: "#8B93A3" };
+export const MAUS_INK: Record<MausColor, string> = {
+  ...MAUS_COLORS,
+  // the deep palette, lifted the same way: it is a tint, never a vanishing ink
+  ...Object.fromEntries(mascotColorsIn("deep").map((name) => [name, liftInk(MAUS_COLORS[name])])),
+  graphite: "#9AA0AB",
+  black: "#8B93A3",
+};
 
 export function mausInk(color: string | null | undefined): string | undefined {
   return color && Object.hasOwn(MAUS_INK, color) ? MAUS_INK[color as MausColor] : undefined;
 }
 
 /**
- * A colour swatch's paint. The black swatch also gets an inner hairline so it
- * still reads as a button on a dark card.
+ * A colour swatch's paint. The darkest swatches (black, midnight...) also get
+ * an inner hairline so they still read as buttons on a dark card.
  */
 export function swatchStyle(color: MausColor): { backgroundColor: string; boxShadow?: string } {
   return {
     backgroundColor: MAUS_COLORS[color] ?? MAUS_COLORS.green,
-    ...(color === "black" ? { boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.32)" } : {}),
+    ...(relativeLuminance(MAUS_COLORS[color] ?? MAUS_COLORS.green) < 0.035 ? { boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.32)" } : {}),
   };
 }
 

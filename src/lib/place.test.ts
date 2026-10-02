@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectivePlace, isComputerPlace, PLACES, placeLabelKey, placeOffered, toolPlace } from "./place";
+import { effectivePlace, isComputerPlace, orgComputerFor, PLACES, placeLabelKey, placeOffered, toolPlace } from "./place";
 import { toolSurfaceKind } from "../../shared/tool-surface";
 
 describe("where a conversation works", () => {
@@ -14,7 +14,11 @@ describe("where a conversation works", () => {
 
   it("offers every place on a desktop or self-hosted server, and no this computer or Local VM on an OMB Cloud home", () => {
     for (const config of [null, undefined, {}, { cloudHome: false }]) {
-      expect(PLACES.filter((place) => placeOffered(place, config))).toEqual(["cloud", "vm", "local", "browser"]);
+      expect(PLACES.filter((place) => placeOffered(place, config))).toEqual(["vm", "local", "browser"]);
+    }
+    // Cloud (a Boat or a VPS computer) only while one of them is switched on.
+    for (const features of [{ boatComputer: true }, { vpsComputer: true }]) {
+      expect(PLACES.filter((place) => placeOffered(place, { features }))).toEqual(["cloud", "vm", "local", "browser"]);
     }
     expect(PLACES.filter((place) => placeOffered(place, { cloudHome: true }))).toEqual(["cloud", "browser"]);
   });
@@ -50,5 +54,18 @@ describe("where a conversation works", () => {
     expect(toolSurfaceKind("hotkey")).toBe("computer");
     expect(toolSurfaceKind("Bash")).toBeNull();
     expect(toolSurfaceKind("mcp__agents__list_bots")).toBeNull();
+  });
+
+  it("names Cloud and Auto for what they are on an organization server, and maps each place to its computer", () => {
+    expect(placeLabelKey("cloud", true)).toBe("place.cloudOrg");
+    expect(placeLabelKey("auto", true)).toBe("place.autoOrg");
+    expect(placeLabelKey("vm", true)).toBe("place.vm");
+    expect(placeLabelKey("cloud")).toBe("place.cloud");
+    expect(orgComputerFor("auto")).toBe("server");
+    expect(orgComputerFor("cloud")).toBe("server");
+    expect(orgComputerFor("vm")).toBe("computer");
+    expect(orgComputerFor("local")).toBe("computer");
+    expect(orgComputerFor("browser")).toBeNull();
+    expect(orgComputerFor("off")).toBeNull();
   });
 });

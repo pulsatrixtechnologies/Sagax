@@ -23,7 +23,7 @@ describe("service units", () => {
     const unit = systemdUnit(spec);
     expect(unit).toContain("Description=Sagax (agentada)");
     expect(unit).toContain("User=maus");
-    expect(unit).toContain("Environment=OMB_DATA_DIR=/home/maus/.openmausbot");
+    expect(unit).toContain("Environment=SAGAX_DATA_DIR=/home/maus/.openmausbot");
     expect(unit).toContain("ExecStart=/usr/bin/node /usr/lib/node_modules/openmausbot/cli.js serve --port 8799 --data-dir /home/maus/.openmausbot --domain maus.example.com --no-pair");
     expect(unit).toContain("Restart=always");
     expect(unit).toContain("AmbientCapabilities=CAP_NET_BIND_SERVICE");

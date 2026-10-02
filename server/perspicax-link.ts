@@ -29,11 +29,11 @@ const SERVER_ID = /^[0-9a-z]{1,64}$/;
 const LINK_KEYS = ["client_id", "issuer", "link_token", "origin", "server_id", "version"];
 
 export interface LinkExpectation {
-  /** OMB_PERSPICAX_ISSUER, as configured. */
+  /** SAGAX_PERSPICAX_ISSUER, as configured. */
   issuer: string;
-  /** OMB_PUBLIC_URL, this server's public origin. */
+  /** SAGAX_PUBLIC_URL, this server's public origin. */
   publicOrigin: string;
-  /** The OIDC client id (OMB_OIDC_CLIENT_ID, default pulsa-bot). */
+  /** The OIDC client id (SAGAX_OIDC_CLIENT_ID, default pulsa-bot). */
   clientId: string;
 }
 
@@ -103,6 +103,10 @@ const personSchema = z.object({
   email: z.string().max(320).nullable(),
   role: z.enum(["admin", "manager", "employee"]),
   status: z.enum(["active", "disabled"]),
+  /** Perspicax's user type (`person` or `service`); absent from an older
+   * Perspicax, which lists people only. */
+  kind: z.enum(["person", "service"]).optional(),
+  type: z.enum(["person", "service"]).optional(),
   locale: z.string().max(40).nullable().optional(),
   /** Slice 4: which model providers this person keeps a key for in
    * Perspicax (names only, never a key). */
@@ -193,6 +197,10 @@ export const PROVIDER_KEY_TIMEOUT_MS = 5_000;
 export const PROVIDER_KEY_MAX_BYTES = 8 * 1024;
 export const PROVIDER_KEY_CACHE_MS = 60_000;
 export type ModelProvider = "anthropic" | "openai";
+/** A key a person keeps in Perspicax: an engine's provider, or `xai`, which
+ * serves voice mode only (server/voice-mode.ts), never an engine. */
+export type KeyProvider = ModelProvider | "xai";
+const MODEL_PROVIDERS: readonly KeyProvider[] = ["anthropic", "openai", "xai"];
 export type ProviderKeyResult =
   | { ok: true; key: string; fingerprint: string }
   | { ok: false; error: "no_key" | "user_inactive" | "unreachable" | "link" };
@@ -213,9 +221,9 @@ export type ExchangeResult =
   | { ok: false; error: "not_held" | "subject" | "link" | "rate_limited" | "unreachable" };
 
 export interface PerspicaxDirectoryOptions {
-  /** OMB_PERSPICAX_ISSUER: the subjects' `iss`. */
+  /** SAGAX_PERSPICAX_ISSUER: the subjects' `iss`. */
   issuer: string;
-  /** Where the directory is fetched: OMB_PERSPICAX_INTERNAL_URL, else the
+  /** Where the directory is fetched: SAGAX_PERSPICAX_INTERNAL_URL, else the
    * issuer's origin. */
   serverBase: string;
   linkFile: string;
@@ -460,7 +468,7 @@ export class PerspicaxDirectory {
 
   /** An owner's model key, read through the link (slice 4, contract 3):
    * cached in memory for 60 s at most, never logged, never written. */
-  async resolveProviderKey(sub: string, provider: ModelProvider): Promise<ProviderKeyResult> {
+  async resolveProviderKey(sub: string, provider: KeyProvider): Promise<ProviderKeyResult> {
     const cacheKey = `${sub}\u0000${provider}`;
     const cached = this.keyCache.get(cacheKey);
     if (cached && cached.until > this.now()) return { ok: true, key: cached.key, fingerprint: cached.fingerprint };
@@ -765,11 +773,11 @@ export class PerspicaxDirectory {
     for (const person of directory.people) {
       // A disabled person's keys serve nobody (S4-14): resolve would answer
       // 409, and the cache must not outlive the disable.
-      const names: string[] = person.status === "disabled" ? [] : [...new Set((person.provider_keys ?? []).filter((name) => name === "anthropic" || name === "openai"))].sort();
+      const names: string[] = person.status === "disabled" ? [] : [...new Set((person.provider_keys ?? []).filter((name) => (MODEL_PROVIDERS as readonly string[]).includes(name)))].sort();
       keys.set(person.sub, names);
       if (person.status === "disabled") this.forgetSubject(person.sub);
       // A provider the directory no longer lists for this person: drop its key.
-      for (const name of ["anthropic", "openai"]) if (!names.includes(name)) this.invalidate(person.sub, name);
+      for (const name of MODEL_PROVIDERS) if (!names.includes(name)) this.invalidate(person.sub, name);
     }
     for (const sub of this.keysBySub.keys()) {
       if (!keys.has(sub)) this.forgetSubject(sub);
@@ -804,12 +812,12 @@ export class PerspicaxDirectory {
   }
 }
 
-/** OMB_PERSPICAX_DIRECTORY_SECONDS: an integer from 5 to 3600, default 300. */
+/** SAGAX_PERSPICAX_DIRECTORY_SECONDS: an integer from 5 to 3600, default 300. */
 export function directoryIntervalMs(value: string | undefined): number {
   if (value === undefined || value.trim() === "") return 300_000;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 5 || parsed > 3600) {
-    throw new Error("OMB_PERSPICAX_DIRECTORY_SECONDS must be a whole number of seconds from 5 to 3600.");
+    throw new Error("SAGAX_PERSPICAX_DIRECTORY_SECONDS must be a whole number of seconds from 5 to 3600.");
   }
   return parsed * 1000;
 }

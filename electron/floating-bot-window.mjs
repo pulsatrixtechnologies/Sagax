@@ -39,6 +39,8 @@ const MAX_RELOADS = 3;
 const RELOAD_DELAY_MS = 800;
 /** A page that has not said it is ready after this long is reloaded. */
 export const READY_TIMEOUT_MS = 12_000;
+/** A move is saved once the window has stood still this long (macOS reports every step of a move). */
+export const REMEMBER_DELAY_MS = 500;
 
 /** Resolves once `url` answers (or after `tries`): a development page server may still be starting. */
 export async function waitForPage(url, { fetchImpl = globalThis.fetch, tries = 40, delayMs = 250 } = {}) {
@@ -91,22 +93,37 @@ const TASKS = new Set(["idle", "working", "waiting", "error"]);
 const LIVELINESS = new Set(["calm", "normal", "lively"]);
 const MAX_TOKENS = 1e9;
 const CHARACTERS = new Set(["owl", "shape", "trombi"]);
-const SHAPES = new Set(["circle", "blob", "squircle", "pill", "triangle", "hexagon", "cloud", "drop"]);
-const SHAPE_SKINS = new Set(["plain", "glossy", "outline", "neon", "pastel", "night"]);
-const TROMBI_SKINS = new Set(["classic", "gold", "neon", "retro98"]);
+const SHAPES = new Set(["circle", "cloud", "squircle", "sparkle", "clover", "bean", "flower", "drop", "pill", "pick", "house", "star", "hexagon"]);
+/** Shapes from the first set, renamed or replaced (shared/mascot-look.ts LEGACY_SHAPES). */
+const LEGACY_SHAPES = { blob: "bean", triangle: "pick" };
+const SHAPE_SKINS = new Set(["plain", "pastel", "glossy", "night", "outline", "gold", "neon", "chrome", "crystal", "circuit", "holo", "molten", "galaxy"]);
+const TROMBI_SKINS = new Set(["classic", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
+/** Other names a stored skin may carry (shared/mascot-look.ts LEGACY_SHAPE_SKINS, LEGACY_TROMBI_SKINS). */
+const LEGACY_SHAPE_SKINS = { ink: "outline", royal: "gold", metal: "chrome", "liquid-metal": "chrome", glass: "crystal", cyber: "circuit", iridescent: "holo", holographic: "holo", lava: "molten", nebula: "galaxy" };
+const LEGACY_TROMBI_SKINS = { retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
+/** The app's skins (src/lib/skins.ts SKIN_IDS): the balloon wears the one the app wears. */
+export const APP_SKINS = new Set(["pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98"]);
+const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;
+
+/** The app's theme for the balloon: a known skin and a plain hex accent, or nothing. */
+export function appTheme(value) {
+  if (!value || typeof value !== "object" || !APP_SKINS.has(value.skin)) return null;
+  return { skin: value.skin, ...(typeof value.accent === "string" && ACCENT_RE.test(value.accent) ? { accent: value.accent } : {}) };
+}
+const skinOf = (value, legacy) => (typeof value === "string" && Object.hasOwn(legacy, value) ? legacy[value] : value);
 
 /** The bot's character and its look (shared/mascot-look.ts): known values only. */
 export function mascotLook(value) {
   if (!value || typeof value !== "object" || !CHARACTERS.has(value.character)) return null;
   const skins = value.skins && typeof value.skins === "object" ? value.skins : {};
   const cleanSkins = {
-    ...(SHAPE_SKINS.has(skins.shape) ? { shape: skins.shape } : {}),
-    ...(TROMBI_SKINS.has(skins.trombi) ? { trombi: skins.trombi } : {}),
+    ...(SHAPE_SKINS.has(skinOf(skins.shape, LEGACY_SHAPE_SKINS)) ? { shape: skinOf(skins.shape, LEGACY_SHAPE_SKINS) } : {}),
+    ...(TROMBI_SKINS.has(skinOf(skins.trombi, LEGACY_TROMBI_SKINS)) ? { trombi: skinOf(skins.trombi, LEGACY_TROMBI_SKINS) } : {}),
   };
   return {
     character: value.character,
     ...(value.style === "2d" || value.style === "3d" ? { style: value.style } : {}),
-    ...(SHAPES.has(value.shape) ? { shape: value.shape } : {}),
+    ...(SHAPES.has(LEGACY_SHAPES[value.shape] ?? value.shape) ? { shape: LEGACY_SHAPES[value.shape] ?? value.shape } : {}),
     ...(Object.keys(cleanSkins).length ? { skins: cleanSkins } : {}),
   };
 }
@@ -195,6 +212,8 @@ export function sanitizeFloatingSnapshot(value) {
     context: context(value.context),
     mascot: mascotLook(value.mascot) ?? { character: "owl" },
   };
+  const theme = appTheme(value.theme);
+  if (theme) snapshot.theme = theme;
   const balloon = value.balloon;
   if (balloon && typeof balloon === "object" && BALLOON_KINDS.has(balloon.kind)) {
     snapshot.balloon = {
@@ -355,6 +374,14 @@ export function createFloatingBotWindows(deps) {
     return clampToDisplays(bounds, workAreas());
   };
 
+  /** Move or size a window only when that changes something; a move alone keeps its size untouched. */
+  const place = (win, next) => {
+    const now = win.getBounds();
+    if (now.x === next.x && now.y === next.y && now.width === next.width && now.height === next.height) return;
+    if (now.width === next.width && now.height === next.height) win.setPosition(next.x, next.y);
+    else win.setBounds(next);
+  };
+
   const applyOnTop = (win, on) => {
     try {
       if (on) win.setAlwaysOnTop(true, "floating");
@@ -377,7 +404,8 @@ export function createFloatingBotWindows(deps) {
     const options = assistantWindowOptions({ preload, bounds: startBounds(botId), title: "Floating bot", session: deps.session?.() ?? undefined });
     // throttled when hidden or covered, so the 3D mascot stops drawing (and spending battery) there
     const created = new BrowserWindow({ ...options, alwaysOnTop, webPreferences: { ...options.webPreferences, backgroundThrottling: true } });
-    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false };
+    // interactive and focusable as last set, so a repeated request costs nothing (and never flickers)
+    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false, interactive: !clickThrough, focusable: false };
     pending.delete(botId);
     floats.set(botId, entry);
     applyOnTop(created, alwaysOnTop);
@@ -393,9 +421,16 @@ export function createFloatingBotWindows(deps) {
     created.once("ready-to-show", () => {
       if (!created.isDestroyed()) created.showInactive();
     });
-    created.on("moved", () => remember(botId));
+    // on macOS "moved" fires for every step of a move: save once it stops, never per frame
+    created.on("moved", () => {
+      clearTimeout(entry.rememberTimer);
+      // a step of the mascot's own flight is not a spot to keep
+      if (entry.autopilot) return;
+      entry.rememberTimer = setTimeout(() => remember(botId), REMEMBER_DELAY_MS);
+    });
     created.once("closed", () => {
       clearTimeout(entry.watchdog);
+      clearTimeout(entry.rememberTimer);
       if (floats.get(botId)?.win !== created) return;
       floats.delete(botId);
       // closed from outside the brain (a window shortcut): the bot goes back in the app
@@ -523,7 +558,7 @@ export function createFloatingBotWindows(deps) {
         { ...bounds, x: bounds.x + clampNumber(delta.dx, -MAX_MOVE, MAX_MOVE), y: bounds.y + clampNumber(delta.dy, -MAX_MOVE, MAX_MOVE) },
         workAreas(),
       );
-      win.setBounds(next);
+      place(win, next);
       return { x: next.x, y: next.y };
     },
     "floating-bots:move-to": (event, point) => {
@@ -531,7 +566,7 @@ export function createFloatingBotWindows(deps) {
       if (!found || !point || !isFiniteNumber(point.x) || !isFiniteNumber(point.y)) return null;
       const { win } = found.entry;
       const next = clampToDisplays({ ...win.getBounds(), x: Math.round(point.x), y: Math.round(point.y) }, workAreas());
-      win.setBounds(next);
+      place(win, next);
       return next;
     },
     "floating-bots:geometry": (event) => {
@@ -571,7 +606,7 @@ export function createFloatingBotWindows(deps) {
         width,
         height,
       }, workAreas());
-      win.setBounds(next);
+      place(win, next);
       return next;
     },
   };
@@ -626,7 +661,8 @@ export function createFloatingBotWindows(deps) {
     },
     "floating-bots:set-interactive": (event, on) => {
       const found = senderFloat(event);
-      if (!found || typeof on !== "boolean" || !clickThrough) return;
+      if (!found || typeof on !== "boolean" || !clickThrough || found.entry.interactive === on) return;
+      found.entry.interactive = on;
       try {
         found.entry.win.setIgnoreMouseEvents(!on, { forward: true });
       } catch {
@@ -636,20 +672,27 @@ export function createFloatingBotWindows(deps) {
     "floating-bots:set-focusable": (event, on) => {
       const found = senderFloat(event);
       if (!found || typeof on !== "boolean") return;
+      const { entry } = found;
       try {
-        found.entry.win.setFocusable(on);
-        if (on) found.entry.win.focus();
+        // each call is a round trip to the window server: only a change, and focus only when it is not already there
+        if (entry.focusable !== on) entry.win.setFocusable(on);
+        entry.focusable = on;
+        if (on && !entry.win.isFocused()) entry.win.focus();
       } catch {
         /* keep the last state */
       }
     },
     "floating-bots:autopilot": (event, on) => {
       const found = senderFloat(event);
-      if (found && typeof on === "boolean") found.entry.autopilot = on;
+      if (!found || typeof on !== "boolean") return;
+      found.entry.autopilot = on;
+      if (on) clearTimeout(found.entry.rememberTimer);
     },
     "floating-bots:moved": (event) => {
       const found = senderFloat(event);
-      if (found) remember(found.botId);
+      if (!found) return;
+      clearTimeout(found.entry.rememberTimer);
+      remember(found.botId);
     },
   };
 

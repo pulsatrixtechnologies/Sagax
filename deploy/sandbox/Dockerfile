@@ -14,6 +14,12 @@
 FROM debian:bookworm-slim
 
 ARG WITH_BROWSER=1
+# The on-demand desktop (docs/user-sandbox.md, "Desktop"): Xvnc (an X server
+# with a VNC server bound to 127.0.0.1 inside the sandbox only), openbox,
+# xdotool and scrot for computer use, xterm and pcmanfm, a background
+# (hsetroot) and a launcher bar (tint2). Nothing of it runs
+# until a computer-use tool or the person's live view starts it.
+ARG WITH_DESKTOP=1
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -22,12 +28,22 @@ RUN set -eux; \
     if [ "$WITH_BROWSER" = "1" ]; then \
       apt-get install -y --no-install-recommends chromium fonts-noto-color-emoji fonts-freefont-ttf; \
     fi; \
+    if [ "$WITH_DESKTOP" = "1" ]; then \
+      apt-get install -y --no-install-recommends \
+        tigervnc-standalone-server tigervnc-tools openbox xdotool scrot xterm pcmanfm fonts-dejavu-core \
+        tint2 hsetroot; \
+    fi; \
     rm -rf /var/lib/apt/lists/*; \
     groupadd --gid 1000 sandbox; \
     useradd --uid 1000 --gid 1000 --home-dir /workspace --no-create-home --shell /bin/bash sandbox; \
     install -d -o 1000 -g 1000 -m 0700 /workspace; \
     find / -xdev -type f -perm /6000 -exec chmod a-s {} + ; \
     rm -f /etc/sudoers 2>/dev/null || true
+
+COPY --chmod=0755 deploy/sandbox/sagax-desktop /usr/local/bin/sagax-desktop
+COPY deploy/sandbox/openbox-menu.xml /etc/xdg/openbox/menu.xml
+COPY deploy/sandbox/tint2rc /etc/xdg/sagax/tint2rc
+COPY deploy/sandbox/applications/ /usr/share/sagax/applications/
 
 ENV HOME=/workspace LANG=C.UTF-8 SAGAX_ENVIRONMENT=user-sandbox
 WORKDIR /workspace

@@ -38,9 +38,9 @@ export type CodexSupport =
   | { kind: "unsupported"; reason: CodexUnsupportedReason };
 
 export interface ProviderPreset {
-  /** models.dev id, or an OpenMausBot-only id when models.dev has no entry. */
+  /** models.dev id, or a Sagax-only id when models.dev has no entry. */
   id: string;
-  /** The models.dev provider this row describes; absent for OpenMausBot-only rows. */
+  /** The models.dev provider this row describes; absent for Sagax-only rows. */
   catalogId?: string;
   label: string;
   /** Position in the Recommended group, from 1. */

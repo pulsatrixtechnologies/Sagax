@@ -10,6 +10,8 @@ export function CloudBackendPicker({
   compact = false,
   vpsSupported,
   organization = false,
+  boat = true,
+  vps = true,
   onChange,
 }: {
   value: CloudBackend;
@@ -18,8 +20,14 @@ export function CloudBackendPicker({
   /** An organization server: a bot works in its owner's server environment,
    * so the per-bot VPS computer is not offered. */
   organization?: boolean;
+  /** Boat Computer and VPS Computer (Settings > Experimental features):
+   * a backend switched off is not offered. */
+  boat?: boolean;
+  vps?: boolean;
   onChange: (backend: CloudBackend) => void;
 }) {
+  const backends = (organization ? ["box"] as const : ["box", "vps"] as const).filter((backend) => backend === "vps" ? vps : boat);
+  if (!backends.length) return null;
   return (
     <div className="mt-3 rounded-lg bg-inset p-3">
       <div className="text-[12px] font-medium text-ink">{compact ? "Cloud provider" : "Cloud backend"}</div>
@@ -33,7 +41,7 @@ export function CloudBackendPicker({
           : "Boat is the default hosted computer. Choose Self-hosted VPS to use your SSH-configured Linux Docker host."}
       </div>
       <div className="mt-2 flex overflow-hidden rounded-lg border border-hairline/40">
-        {(organization ? ["box"] as const : ["box", "vps"] as const).map((backend, i) => {
+        {backends.map((backend, i) => {
           const disabled = backend === "vps" && !vpsSupported;
           return (
             <button

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Chromium
+Comment=Web browser
+Exec=sagax-desktop browser
+Icon=chromium
+Terminal=false

@@ -19,7 +19,7 @@ export type EngineAccessRefusal = "engine_missing" | "no_access";
  *   - owner-routine: a routine, webhook or other automation; `principalId`
  *     is the person it runs as (slice 6: its runAs), absent the owner;
  *   - peer: another bot's hop (ask_bot, delegation, an opened thread, an
- *     aside, a Chief's retry). `principalId` is whoever the source turn spoke
+ *     aside, a Primary Bot's retry). `principalId` is whoever the source turn spoke
  *     for ("" when that was an unknown person); absent, the requesting bot's
  *     owner speaks. `routinePayer` (2026-10-01): on a routine's hop, whose
  *     credentials the routine runs on (its bot's owner), carried along the
@@ -156,10 +156,16 @@ export function keyRefusedCard(input: {
   ownerPrincipalId: string;
   engine: string;
   redact: (text: string) => string;
-}): { reason: "key_refused"; engine: string; botId: string; ownerPrincipalId: string; detail?: string } | null {
+  /** The person whose own key the turn ran on (slice 4): the card is theirs. */
+  payerPrincipalId?: string;
+}): { reason: "key_refused"; engine: string; botId: string; ownerPrincipalId: string; detail?: string; payerPrincipalId?: string } | null {
   if (input.identity !== "perspicax" || !input.setup || input.claudeUpdate || !input.keyBacked) return null;
   const detail = input.redact(input.message.trim()).slice(0, 200);
-  return { reason: "key_refused", engine: input.engine, botId: input.botId, ownerPrincipalId: input.ownerPrincipalId, ...(detail ? { detail } : {}) };
+  return {
+    reason: "key_refused", engine: input.engine, botId: input.botId, ownerPrincipalId: input.ownerPrincipalId,
+    ...(detail ? { detail } : {}),
+    ...(input.payerPrincipalId ? { payerPrincipalId: input.payerPrincipalId } : {}),
+  };
 }
 
 /** What a viewer receives of an access card: `detail` (the provider's
@@ -169,6 +175,64 @@ export function accessCardForViewer<T extends { access?: { ownerPrincipalId: str
   if (!access?.detail || viewer.admin || (viewer.principalId && viewer.principalId.toLowerCase() === access.ownerPrincipalId.toLowerCase())) return message;
   const { detail: _hidden, ...rest } = access;
   return { ...message, access: rest };
+}
+
+/** Who an access card is for on an organization server (2026-10-01): the
+ * person it is about, never the other members of the thread or room. A
+ * no_access or engine_missing card goes to whose credentials the turn needed
+ * (the person who spoke, or the bot's owner for its routines); a card
+ * written before `payerPrincipalId` existed, or for an unknown speaker,
+ * falls back to the bot's owner, whose credentials those turns used. A paused
+ * routine goes to the person it runs as and the bot's owner. key_refused is
+ * private only when the refused key was a person's own (`payerPrincipalId`);
+ * the organization's key concerns everyone, so that card stays shared (its
+ * provider words still go to the owner and admins only). Null: shared. */
+export function accessCardAudience(access: { reason: string; ownerPrincipalId: string; payerPrincipalId?: string; runAsPrincipalId?: string }): string[] | null {
+  const ids = (list: Array<string | undefined>) => {
+    const out: string[] = [];
+    for (const id of list) {
+      const trimmed = id?.trim();
+      if (trimmed && !out.some((seen) => seen.toLowerCase() === trimmed.toLowerCase())) out.push(trimmed);
+    }
+    return out;
+  };
+  if (access.reason === "routine_delegation") return ids([access.runAsPrincipalId, access.ownerPrincipalId]);
+  if (access.reason === "key_refused") return access.payerPrincipalId?.trim() ? ids([access.payerPrincipalId]) : null;
+  return ids([access.payerPrincipalId || access.ownerPrincipalId]);
+}
+
+/** The notifications of a refused or paused routine run, split by who can
+ * open the thread its access card sits in (2026-10-01). A routine runs as a
+ * person, in that person's private thread, but its card may be for the bot's
+ * owner (the owner's credentials pay): the owner cannot read that thread, so
+ * the owner's copy names no thread and carries `routineRunId`, which opens
+ * the run in the bot's Coding activity (the same card, its audience only).
+ * Without an audience (a shared card) or a run, it is one notification, as
+ * before. */
+export function routineAccessNotifications<N extends { threadId: string; audience?: string[]; routineRunId?: string }>(
+  notification: N,
+  audience: string[] | null,
+  input: { routineRunId?: string; readable: (principalId: string) => boolean },
+): N[] {
+  if (!audience) return [notification];
+  if (!input.routineRunId) return [{ ...notification, audience }];
+  const readers = audience.filter((id) => input.readable(id));
+  const others = audience.filter((id) => !readers.includes(id));
+  const out: N[] = [];
+  if (readers.length) out.push({ ...notification, audience: readers });
+  if (others.length) out.push({ ...notification, threadId: "", routineRunId: input.routineRunId, audience: others });
+  return out;
+}
+
+/** Whether a stored row reaches this viewer: an access card only reaches its
+ * audience (accessCardAudience); every other row is unchanged. An empty
+ * audience reaches nobody. */
+export function accessCardVisibleTo(message: { kind?: unknown; access?: { reason: string; ownerPrincipalId: string; payerPrincipalId?: string; runAsPrincipalId?: string } }, viewerId: string | undefined | null): boolean {
+  if (message.kind !== "access" || !message.access) return true;
+  const audience = accessCardAudience(message.access);
+  if (!audience) return true;
+  const viewer = viewerId?.trim().toLowerCase();
+  return Boolean(viewer) && audience.some((id) => id.toLowerCase() === viewer);
 }
 
 /** Who may answer a card on an organization server: "admin" lets an

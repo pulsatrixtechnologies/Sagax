@@ -6,10 +6,11 @@
 // remembered per bot on this device. Enter sends, Shift+Enter starts a new
 // line, the field grows to four lines, Escape closes. Trombi talks in the
 // Hibou 98 look (a 98 title bar to drag, a 98 grip).
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { cn } from "@/lib/cn";
 import { BalloonMarkdown } from "./BalloonMarkdown";
 import type { FloatingBalloon, FloatingEvent } from "./protocol";
+import { balloonReserve, type Size } from "./window-frame";
 
 export interface BalloonPlace {
   /** px; absent: as wide as the content wants, within bounds. */
@@ -99,17 +100,54 @@ export interface BalloonProps {
   wantsKeyboard?: (on: boolean) => void;
   /** Labels the window has no translations for. */
   pinLabel: string;
+  /** The mascot's stage under the balloon, for the room the window holds. */
+  stage?: Size;
+  /** Desktop: the room the balloon may take (null once closed); `exact` fits the window to it now. */
+  onReserve?: (reserve: Size | null, exact: boolean) => void;
 }
 
-export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hover, wantsKeyboard, pinLabel }: BalloonProps) {
+/**
+ * An earlier exchange: its text no longer changes, so it is parsed once, not
+ * again for every word of the reply streaming under it.
+ */
+const Earlier = memo(function Earlier({ asked, text }: { asked: string; text: string }) {
+  return (
+    <div className="fb-exchange fb-earlier">
+      {asked && <p className="fb-asked">{asked}</p>}
+      {text && <BalloonMarkdown text={text} />}
+    </div>
+  );
+});
+
+export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hover, wantsKeyboard, pinLabel, stage, onReserve }: BalloonProps) {
   const [draft, setDraft] = useState("");
   const [place, setPlace] = useState<BalloonPlace>(() => readBalloonPlace(botId));
   const box = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
-  const gesture = useRef<{ kind: "move" | "resize"; x: number; y: number; start: BalloonPlace & { w0: number; h0: number } } | null>(null);
+  const gesture = useRef<{ kind: "move" | "resize"; x: number; y: number; start: BalloonPlace & { w0: number; h0: number }; delta?: { x: number; y: number }; frame?: number } | null>(null);
 
   useEffect(() => setPlace(readBalloonPlace(botId)), [botId]);
+
+  // The window holds the room this balloon may take (window-frame.ts), set
+  // before the first paint so it opens at its size in one step; a gesture
+  // reserves its whole range at its start and fits again at its end.
+  const reserveFor = (range: "place" | "move" | "resize") => {
+    if (!stage) return null;
+    const grown = range === "resize" ? { ...place, w: Math.max(place.w ?? 0, room.w), h: Math.max(place.h ?? 0, room.h) } : place;
+    const moved = range === "move" ? { ...grown, dx: room.x, dy: room.y } : grown;
+    return balloonReserve({ stage, room, place: moved, maxWidth: BALLOON_MAX_W });
+  };
+  const reserveRef = useRef(reserveFor);
+  reserveRef.current = reserveFor;
+  const ended = useRef(false);
+  useLayoutEffect(() => {
+    if (!onReserve || gesture.current) return;
+    // after a gesture the window fits the balloon's new size and place again
+    onReserve(reserveRef.current("place"), ended.current);
+    ended.current = false;
+  }, [onReserve, stage, room.w, room.h, room.x, room.y, place]);
+  useEffect(() => () => onReserve?.(null, true), [onReserve]);
 
   // Follow a streaming reply to its newest words; a finished one shows its start.
   useEffect(() => {
@@ -151,25 +189,40 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const rect = box.current?.getBoundingClientRect();
     gesture.current = { kind, x: event.screenX, y: event.screenY, start: { ...place, w0: rect?.width ?? BALLOON_MIN.w, h0: rect?.height ?? BALLOON_MIN.h } };
+    // the window takes the gesture's whole range once, rather than a resize per step
+    onReserve?.(reserveRef.current(kind), false);
+  };
+  // one layout per frame, however many moves the pointer reports
+  const applyGesture = () => {
+    const g = gesture.current;
+    if (!g?.delta) return;
+    g.frame = undefined;
+    const delta = g.delta;
+    if (g.kind === "resize") {
+      const size = resizeBalloon({ w: g.start.w ?? g.start.w0, h: g.start.h ?? g.start.h0 }, delta, side, { w: room.w, h: room.h });
+      setPlace((current) => (current.w === size.w && current.h === size.h ? current : { ...current, ...size }));
+    } else {
+      const offset = moveBalloon({ dx: g.start.dx ?? 0, dy: g.start.dy ?? 0 }, delta, side, room);
+      setPlace((current) => (current.dx === offset.dx && current.dy === offset.dy ? current : { ...current, ...offset }));
+    }
   };
   const onGestureMove = (event: ReactPointerEvent) => {
     const g = gesture.current;
     if (!g) return;
-    const delta = { x: event.screenX - g.x, y: event.screenY - g.y };
-    if (g.kind === "resize") {
-      const size = resizeBalloon({ w: g.start.w ?? g.start.w0, h: g.start.h ?? g.start.h0 }, delta, side, { w: room.w, h: room.h });
-      setPlace((current) => ({ ...current, ...size }));
-    } else {
-      const offset = moveBalloon({ dx: g.start.dx ?? 0, dy: g.start.dy ?? 0 }, delta, side, room);
-      setPlace((current) => ({ ...current, ...offset }));
-    }
+    g.delta = { x: event.screenX - g.x, y: event.screenY - g.y };
+    if (g.frame === undefined) g.frame = requestAnimationFrame(applyGesture);
   };
   const endGesture = () => {
-    if (!gesture.current) return;
+    const g = gesture.current;
+    if (!g) return;
+    if (g.frame !== undefined) cancelAnimationFrame(g.frame);
+    applyGesture();
     gesture.current = null;
+    ended.current = true;
+    // a new object, so the window is fitted again even when the gesture changed nothing
     setPlace((current) => {
       writeBalloonPlace(botId, current);
-      return current;
+      return { ...current };
     });
   };
   const pinBack = () => {
@@ -226,10 +279,7 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
         </div>
         <div ref={textRef} className="fb-text fb-thread" data-streaming={balloon.streaming ? "" : undefined} aria-live={balloon.streaming ? "off" : "polite"} tabIndex={0}>
           {(balloon.history ?? []).map((item, index) => (
-            <div key={index} className="fb-exchange fb-earlier">
-              {item.asked && <p className="fb-asked">{item.asked}</p>}
-              {item.text && <BalloonMarkdown text={item.text} />}
-            </div>
+            <Earlier key={index} asked={item.asked} text={item.text} />
           ))}
           <div className="fb-exchange">
             {balloon.asked && balloon.kind !== "approval" && <p className="fb-asked">{balloon.asked}</p>}

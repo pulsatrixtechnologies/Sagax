@@ -9,7 +9,8 @@ import {
   ChevronRight,
 
   ClipboardCopy,
-  Crown,
+  ArrowLeftRight,
+  Star,
   EyeOff,
   Folder,
   FolderMinus,
@@ -35,17 +36,23 @@ import {
 import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
+import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { liveActivityLabel } from "@/lib/live-activity";
-import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { connectedAppsEnabled, llmThreadTitlesEnabled, templatesEnabled } from "@/lib/feature-flags";
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
 import { stateForBot } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useHeldMenuMotion } from "./MenuMotion";
 import { lastNonReceipt } from "@/lib/receipts";
 import { t } from "@/lib/i18n";
-import { usePerspicaxOrg, type OrgSection } from "@/lib/perspicax-org";
+import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
+import { PrimaryBotPicker } from "./PrimaryBotPicker";
+import { useOrgPeople, usePerspicaxOrg, type OrgSection } from "@/lib/perspicax-org";
+import { peopleDmPeer } from "@/lib/people-dm";
+import { PersonAvatar } from "./MessageAuthor";
 import { OrgSectionMenuItems, SectionNameInput, orgSectionMenuItems, type OrgSectionMenuActions } from "./OrgSectionMenu";
 import { SectionMembersDialog } from "./SectionMembersDialog";
 import { isRoutineProblemRun } from "@/lib/routines";
@@ -108,9 +115,11 @@ import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 import { profileInitials, SidebarProfileMenu } from "./SidebarProfileMenu";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads } from "@/lib/thread-preferences";
+import { useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
+import { groupMemberBots } from "@/lib/group-members";
 
 
 
@@ -124,10 +133,19 @@ const SIDEBAR_DEFAULT_WIDTH = 280;
  * a touch larger so the 18px glyphs keep the rail's weight. */
 const SIDEBAR_ICON_BUTTON = "flex size-8 items-center justify-center rounded-lg text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
-/** The palette chord as this platform spells it, for the search field. */
-function paletteShortcutKeys(): string[] {
+/** The head's round search button: the header's 36px circle (share, panel),
+ * in the sidebar's own ink, with the same focus ring as its neighbours. */
+const SIDEBAR_SEARCH_BUTTON = cn(
+  CIRCLE_BUTTON,
+  "text-sidebar-ink-secondary hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+);
+
+/** The palette chord as this platform spells it: "⌘K" on macOS, "Ctrl+K"
+ * on Windows and Linux, for the search button's tooltip. */
+export function paletteShortcutLabel(isMac: boolean = isMacPlatform()): string {
   const item = SHORTCUT_GROUPS.flatMap((group) => group.items).find((entry) => entry.id === "command-palette");
-  return item ? shortcutKeysForPlatform(item) : ["⌘", "K"];
+  const keys = item ? shortcutKeysForPlatform(item, isMac) : isMac ? ["⌘", "K"] : ["Ctrl", "K"];
+  return keys.join(isMac ? "" : "+");
 }
 
 /** Fade the list's edges the way Grok Bot does: the top 28px once there is
@@ -284,10 +302,12 @@ export function GroupListItem({
   // quiet rows keep the line only while the room reports work in progress
   const groupStatus = Boolean(group.busyBotId) || Boolean(group.working);
   const roomBusy = groupStatus;
-  const members = group.memberIds
-    .map((id) => state.bots.find((b) => b.id === id))
-    .filter((b): b is Bot => Boolean(b));
+  const members = groupMemberBots(group, state.bots);
   const last = group.messages.at(-1);
+  // A direct conversation with a person reads as that person.
+  const orgPeople = useOrgPeople();
+  const peer = peopleDmPeer(group, viewerActorId(state.config), orgPeople);
+  const rowName = peer?.name ?? group.name;
   return (
     <>
     <div className="group relative">
@@ -298,13 +318,13 @@ export function GroupListItem({
       onClick={() => dispatch({ type: "select", id: group.id })}
       onContextMenu={(e) => {
         e.preventDefault();
-        onMenu({ groupId: group.id, x: e.clientX, y: e.clientY });
+        if (!peer) onMenu({ groupId: group.id, x: e.clientX, y: e.clientY });
       }}
       // the menu must be reachable without a pointer: Shift+F10, and the
       // dedicated ContextMenu key (whose native event carries no useful
       // coordinates) both open it centered on the row
       onKeyDown={(e) => {
-        if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
+        if (peer || (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10"))) return;
         e.preventDefault();
         const rect = e.currentTarget.getBoundingClientRect();
         onMenu({ groupId: group.id, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
@@ -317,13 +337,16 @@ export function GroupListItem({
         density !== "icons" && (showThreads ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
-      title={density === "icons" ? group.name : undefined}
-      aria-label={density === "icons" ? group.name : undefined}
+      title={density === "icons" ? rowName : undefined}
+      aria-label={density === "icons" ? rowName : undefined}
+      data-people-dm={peer ? peer.id : undefined}
     >
-      <StackedMauses members={members} density={density} />
+      {peer
+        ? <span className={cn("flex shrink-0 items-center justify-center", density === "icons" ? "size-12" : density === "compact" ? "size-7" : "size-9")}><PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={density === "icons" ? 44 : density === "compact" ? 28 : 36} /></span>
+        : <StackedMauses members={members} density={density} />}
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className={cn("truncate text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>{group.name}</span>
+          <span className={cn("truncate text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>{rowName}</span>
           {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
           {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
@@ -340,7 +363,7 @@ export function GroupListItem({
       onClick={() => setThreadsOpen((open) => !open)} className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60">
       <ChevronRight aria-hidden="true" size={12} className={cn("transition-transform", expanded && "rotate-90")} />
     </button>}
-    {!group.dm && density !== "icons" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
+    {!group.dm && !group.peopleDm && density !== "icons" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
       onClick={() => { setThreadsOpen(true); dispatch({ type: "newGroupTask", groupId: group.id }); }}
       className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink disabled:opacity-40 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70 touch:disabled:opacity-40"><Plus size={14} /></button>}
     </div>
@@ -440,6 +463,8 @@ function RoomContextMenu({
 
   if (!motion.shown || !group || !shown) return null;
   const isBotChat = Boolean(group.dm);
+  const ownsRoom = viewerOwnsGroup(group, state.config);
+  const mayDelete = viewerMayDeleteGroup(group, state.config);
   const saveRename = () => {
     const name = nextRename(group.name, draft);
     if (name) dispatch({ type: "patchGroup", groupId: group.id, patch: { name } });
@@ -454,7 +479,7 @@ function RoomContextMenu({
       style={{ top, left }}
       className={cn("fixed z-40 w-[228px] min-w-[200px] overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
-      {!remoteClient && (renaming ? (
+      {!remoteClient && ownsRoom && (renaming ? (
         <div className="flex items-center gap-1 px-0.5 py-0.5">
           <input
             autoFocus
@@ -528,7 +553,7 @@ function RoomContextMenu({
         <ClipboardCopy size={16} className="text-ink" />
         {t("sidebar.copyConversationId")}
       </button>
-      {!remoteClient && <button
+      {!remoteClient && mayDelete && <button
         onClick={() => {
           onClose();
           onDelete(group.id);
@@ -820,6 +845,8 @@ export function BotContextMenu({
   onMoveToSection,
   onNewFolder,
   onRename,
+  onMakePrimary,
+  onReplacePrimary,
 }: {
   menu: MenuState | null;
   onClose: () => void;
@@ -828,6 +855,10 @@ export function BotContextMenu({
   onMoveToSection: (botId: string) => void;
   onNewFolder: (botId: string) => void;
   onRename: (botId: string) => void;
+  /** Make this bot the viewer's Primary Bot (one per person). */
+  onMakePrimary?: (bot: Bot) => void;
+  /** Open "Choose a primary Bot" to hand the role to another of their bots. */
+  onReplacePrimary?: (bot: Bot) => void;
 }) {
   const motion = useHeldMenuMotion(menu);
   const shown = motion.value;
@@ -918,6 +949,15 @@ export function BotContextMenu({
     floating ? t("floatingBots.menu.unfloat") : t("floatingBots.menu.float"),
     () => toggleFloatingBot(bot.id),
   );
+  // The Primary Bot (one per person): its own menu offers to hand the role
+  // to another of the viewer's bots; the viewer's other bots offer to take
+  // it. Someone else's bot shared with the viewer offers neither.
+  const viewerId = orgViewerId(state);
+  const primaryItem = isViewersPrimaryBot(bot, viewerId)
+    ? onReplacePrimary && item(<ArrowLeftRight size={16} className="text-ink" />, t("sidebar.bot.replacePrimary"), () => onReplacePrimary(bot))
+    : viewerOwnsBot(bot, viewerId) && !bot.hidden
+      ? onMakePrimary && item(<Star size={16} className="text-ink" />, t("sidebar.bot.makePrimary"), () => onMakePrimary(bot))
+      : null;
 
   return createPortal(
     <div
@@ -990,6 +1030,7 @@ export function BotContextMenu({
           }}
         />,
       ]}
+      {primaryItem && <>{divider("primary")}{primaryItem}</>}
     </div>,
     document.body,
   );
@@ -1287,9 +1328,9 @@ export function BotListItem({
       : density === "compact"
         ? cn(showThreads ? "gap-1.5 py-1" : "gap-2 py-1.5", showThreads ? "pl-6 pr-9 group-hover:pr-[5.75rem] group-focus-within:pr-[5.75rem] max-md:pr-[5.75rem] touch:pr-[5.75rem]" : "pl-2 pr-9")
         : cn("min-h-[54px] gap-2 py-2", showThreads ? "pl-6 pr-9 group-hover:pr-[5.75rem] group-focus-within:pr-[5.75rem] max-md:pr-[5.75rem] touch:pr-[5.75rem]" : "pl-2 pr-9"),
-    // Chief of Staff is called out by the crown label below, not by tinting
-    // the whole row — an accent border + fill read as "selected" even when
-    // another bot was active.
+    // The Primary Bot is called out by the star on its avatar, not by
+    // tinting the whole row: an accent border and fill read as "selected"
+    // even when another bot was active.
     selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
   );
   const activityTasks = sidebarBotActivityTasks(bot, state.pendingQueued);
@@ -1302,6 +1343,10 @@ export function BotListItem({
   // quiet rows drop the last-message preview but keep a line that reports
   // something happening now; an idle bot is just its name
   const statusLine = deleting || working || waiting || teammateWait || queued;
+  // The viewer's own Primary Bot wears the orange star at the avatar's
+  // bottom-right corner; a status dot then sits at the top-right instead.
+  const primary = isViewersPrimaryBot(bot, orgViewerId(state));
+  const dotCorner = primary ? "-top-0.5" : "-bottom-0.5";
   const body = (
     <>
       {/* flex, not inline: an inline wrapper adds a baseline gap under the
@@ -1309,6 +1354,8 @@ export function BotListItem({
       <span className="relative flex shrink-0">
         <BotAvatar
           bot={bot}
+          primary={primary}
+          primaryRingClassName="ring-sidebar"
           state={stateForBot({ ...bot, messages: visible })}
           size={avatarSize}
           motion={mascotMotion?.kind ?? "none"}
@@ -1326,17 +1373,17 @@ export function BotListItem({
           <span
             data-testid="working-dot"
             className={cn(
-              "absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-success",
+              "absolute -right-0.5 rounded-full border-2 border-sidebar bg-success", dotCorner,
               iconOnly ? "size-3" : "size-2.5",
             )}
           />
         )}
         {waiting && <span data-testid="waiting-dot" role="status" aria-label={t("sidebar.preview.waiting")} title={t("sidebar.preview.waiting")}
-          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-warning", iconOnly ? "size-3" : "size-2.5")} />}
+          className={cn("absolute -right-0.5 rounded-full border-2 border-sidebar bg-warning", dotCorner, iconOnly ? "size-3" : "size-2.5")} />}
         {teammateWait && <span data-testid="teammate-wait-dot" role="status" aria-label={t("sidebar.preview.waitingOnTeammate")} title={t("sidebar.preview.waitingOnTeammate")}
-          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-accent", iconOnly ? "size-3" : "size-2.5")} />}
+          className={cn("absolute -right-0.5 rounded-full border-2 border-sidebar bg-accent", dotCorner, iconOnly ? "size-3" : "size-2.5")} />}
         {!teammateWait && !waiting && !working && queued && <span data-testid="queued-dot" role="status" aria-label={t("task.queued")} title={t("task.queued")}
-          className={cn("absolute -right-0.5 -bottom-0.5 rounded-full border-2 border-sidebar bg-sidebar-ink-secondary", iconOnly ? "size-3" : "size-2.5")} />}
+          className={cn("absolute -right-0.5 rounded-full border-2 border-sidebar bg-sidebar-ink-secondary", dotCorner, iconOnly ? "size-3" : "size-2.5")} />}
       </span>
       <div className={cn("min-w-0 flex-1", iconOnly && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
@@ -1364,11 +1411,6 @@ export function BotListItem({
             />
             {title && !renaming && !quiet && (
               <span className="max-w-[46%] shrink truncate rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1.5 text-[11px] leading-4 text-sidebar-ink-secondary">{title}</span>
-            )}
-            {bot.chiefOfStaff && !renaming && (
-              <Crown size={12} className="shrink-0 text-accent" role="img" aria-label={t("sidebar.bot.chiefOfStaff")} data-testid="chief-crown">
-                <title>{t("sidebar.bot.chiefOfStaff")}</title>
-              </Crown>
             )}
           </span>
           {selected && last && !renaming && !expanded && (
@@ -1755,6 +1797,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     if (composeOpen && COMPOSE_DISMISS.has(action.type)) onCompose?.();
   };
   const showThreads = useShowThreads();
+  const showLogo = useShowSidebarLogo();
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const { capabilities } = useDesktopCapabilities();
   const importReturnRef = useRef<HTMLButtonElement>(null);
@@ -1849,7 +1892,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     text: string;
     restoreBot?: { id: string; name: string };
   } | null>(null);
-  const paletteKeys = paletteShortcutKeys();
+  const searchTitle = `${t("sidebar.search")} (${paletteShortcutLabel()})`;
   // null on 404 and on any other failure, so the roster stays.
   // Chosen in Settings > Appearance or with the collapse button; one store.
   const density = useSidebarDensity();
@@ -1933,6 +1976,23 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     }
   };
 
+  // One Primary Bot per person: the server hands the role over from the
+  // previous one (POST /api/bots/:id/primary) and sends both bots' frames.
+  const [primaryPicker, setPrimaryPicker] = useState<{ currentId: string; pending: boolean; error: string | null } | null>(null);
+  const makePrimaryBot = async (botId: string, fromPicker = false) => {
+    if (fromPicker) setPrimaryPicker((open) => (open ? { ...open, pending: true, error: null } : open));
+    try {
+      const response = await api<{ bot: Bot }>(`/api/bots/${botId}/primary`, { method: "POST" });
+      dispatch({ type: "botPatched", bot: response.bot });
+      setPrimaryPicker(null);
+      setTeamFeedback({ error: false, text: t("primaryBot.made", { name: response.bot.name }) });
+    } catch (cause) {
+      const text = cause instanceof Error ? cause.message : String(cause);
+      if (fromPicker) setPrimaryPicker((open) => (open ? { ...open, pending: false, error: text } : open));
+      else setTeamFeedback({ error: true, text });
+    }
+  };
+
   const undoBotArchive = async (bot: { id: string; name: string }) => {
     setTeamFeedback(null);
     try {
@@ -2005,7 +2065,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     ...sectionedRooms.map((group) => group.section!),
   ])];
   const teamOrder = (key: string) => key === "" ? -1 : teamNames.includes(key) ? teamNames.indexOf(key) : teamNames.length;
-  const teamMap = buildTeamMapSections(matchingBots, teamNames)
+  const teamMap = buildTeamMapSections(matchingBots, teamNames, { general: unsectionedRooms.length > 0 })
     .sort((a, b) => teamOrder(a.key) - teamOrder(b.key))
     .filter((team) => {
       if (team.key) return true;
@@ -2113,14 +2173,16 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       attention: routineAttention,
       onSelect: () => dispatch({ type: "showRoutines" }),
     },
-    {
+    // Connected apps is experimental (Settings > Experimental features).
+    ...(connectedAppsEnabled(state.config) ? [{
       key: "plugins",
       tourId: "nav-apps",
       label: t("sidebar.nav.connectedApps"),
       icon: Puzzle,
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
-    },
-    ...(!remoteClient ? [{
+    }] : []),
+    // Experimental: hidden until Settings > Experimental features turns it on.
+    ...(!remoteClient && templatesEnabled(state.config) ? [{
       key: "templates",
       label: t("sidebar.teamLibrary"),
       icon: Library,
@@ -2157,8 +2219,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       )}
     >
       {/* The head, like Perspicax's: the brand row (the Pulsatrix mark and the name, then
-          New and the collapse button) and a full-width search field that
-          opens the command palette. macOS owns inset traffic lights above the
+          the round search button that opens the command palette, New and the
+          collapse button). macOS owns inset traffic lights above the
           brand row; the whole head is the window's drag handle there and on
           Windows, with every control opted out. */}
       <div data-sidebar-head style={windowDragStyle} className="shrink-0">
@@ -2187,13 +2249,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             </button>
             <button
               type="button"
+              data-sidebar-search
               onClick={openCommandPalette}
               aria-label={t("sidebar.searchAria")}
               aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
-              title={`${t("sidebar.searchAria")} (${paletteKeys.join(" ")})`}
-              className={SIDEBAR_ICON_BUTTON}
+              title={searchTitle}
+              className={SIDEBAR_SEARCH_BUTTON}
             >
-              <Search size={18} strokeWidth={1.75} />
+              <Search size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
             <button
               ref={importReturnRef}
@@ -2210,11 +2273,24 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         ) : (
           <>
             <div className={cn("flex h-11 items-center justify-between gap-2 pl-4 pr-3", !(macInset || browser) && "mt-2")}>
-              <span className="flex min-w-0 items-center gap-2 text-sidebar-ink" data-sidebar-brand>
-                <PulsatrixMark size={22} />
-                <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
-              </span>
-              <span className="flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
+              {showLogo && (
+                <span className="flex min-w-0 items-center gap-2 text-sidebar-ink" data-sidebar-brand>
+                  <PulsatrixMark size={22} />
+                  <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
+                </span>
+              )}
+              <span className="ml-auto flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
+                <button
+                  type="button"
+                  data-sidebar-search
+                  onClick={openCommandPalette}
+                  aria-label={t("sidebar.searchAria")}
+                  aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
+                  title={searchTitle}
+                  className={cn(SIDEBAR_SEARCH_BUTTON, "mr-1")}
+                >
+                  <Search size={16} strokeWidth={1.75} aria-hidden="true" />
+                </button>
                 <button
                   ref={importReturnRef}
                   type="button"
@@ -2237,26 +2313,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <PanelLeftClose size={18} strokeWidth={1.75} />
                 </button>
               </span>
-            </div>
-            <div className="pb-2 pl-2 pr-3 pt-1.5" style={windowNoDragStyle}>
-              {/* Looks like a field, opens the palette: bots, rooms and
-                  transcript hits live there, the same place ⌘K goes. */}
-              <button
-                type="button"
-                data-sidebar-search
-                onClick={openCommandPalette}
-                aria-label={t("sidebar.searchAria")}
-                aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
-                className="flex h-8 w-full items-center gap-2 rounded-lg border border-sidebar-hairline bg-sidebar-hover pl-2.5 pr-1.5 text-left text-sidebar-ink-secondary transition-colors hover:border-sidebar-ink-secondary/50 hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-              >
-                <Search size={14} strokeWidth={2} className="shrink-0" aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{t("sidebar.searchPlaceholder")}</span>
-                <span className="flex shrink-0 items-center gap-0.5" aria-hidden="true">
-                  {paletteKeys.map((key) => (
-                    <kbd key={key} className="flex h-4 min-w-4 items-center justify-center rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1 font-sans text-[11px] leading-none text-sidebar-ink-secondary">{key}</kbd>
-                  ))}
-                </span>
-              </button>
             </div>
           </>
         )}
@@ -2475,7 +2531,19 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           }}
           onNewFolder={setNewFolderBotId}
           onRename={(botId) => setRenameBotId(botId)}
+          onMakePrimary={(bot) => void makePrimaryBot(bot.id)}
+          onReplacePrimary={(bot) => setPrimaryPicker({ currentId: bot.id, pending: false, error: null })}
         />
+      <PrimaryBotPicker
+        open={primaryPicker !== null}
+        bots={sidebarBots}
+        viewerId={orgViewerId(state)}
+        currentId={primaryPicker?.currentId ?? null}
+        pending={primaryPicker?.pending}
+        error={primaryPicker?.error}
+        onCancel={() => setPrimaryPicker(null)}
+        onConfirm={(botId) => void makePrimaryBot(botId, true)}
+      />
       {showThreads && newFolderBotId && state.bots.find((bot) => bot.id === newFolderBotId) && <BotProjectDialog bot={state.bots.find((bot) => bot.id === newFolderBotId)!} onClose={() => setNewFolderBotId(null)} />}
       <ConfirmDialog
         open={confirm !== null}

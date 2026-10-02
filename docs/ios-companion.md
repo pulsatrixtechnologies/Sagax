@@ -118,7 +118,7 @@ harness API:
   If an API payload changes, regenerate the fixtures with
   `node scripts/capture-companion-fixtures.mjs` and review the diff.
 
-The sidecar keeps its device registry in `~/.openmausbot/devices.json`. That is
+The sidecar keeps its device registry in `~/.sagax/devices.json`. That is
 security state owned by the network boundary, not transcript data, so it does
 not belong in the message database.
 
@@ -226,7 +226,7 @@ HTTPS route; the iPhone always uses the same QR trust flow.
 
 This is Password AutoFill, not a password-vault integration. A native
 `SecureField` marked as a password lets the user explicitly choose Apple
-Passwords or any enabled third-party AutoFill provider. OpenMausMobile does
+Passwords or any enabled third-party AutoFill provider. SagaxMobile does
 not enumerate a vault, receive a provider token, or save the entered value in
 its own Keychain.
 

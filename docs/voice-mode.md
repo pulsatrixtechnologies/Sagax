@@ -2,7 +2,8 @@
 
 Historical decision doc, 2026-08-14. It records the original ElevenLabs-only
 shape; the current product also supports Fish Audio, built-in Mac voices, and
-local Chatterbox. See the current [voice guide](../apps/docs/content/docs/features/voice-and-memory.mdx).
+local Chatterbox. See the current [voice guide](../apps/docs/content/docs/features/voice-and-memory.mdx),
+and [voice mode with xAI](voice-mode-xai.md) for the floating voice bar.
 
 ## Shape
 

@@ -60,9 +60,12 @@ describe("sidebar rows", () => {
     setLocale("pt-br");
     const markup = renderRow(bot({ chiefOfStaff: true, busy: true }));
 
-    expect(markup).toContain("Chefe de gabinete");
+    expect(markup).toContain(`aria-label="${t("primaryBot.badge")}"`);
     expect(markup).toContain("Trabalhando…");
     expect(markup).not.toContain("Chief of Staff");
+
+    setLocale("fr");
+    expect(renderRow(bot({ chiefOfStaff: true }))).toContain('aria-label="Robot principal"');
 
     setLocale("ja");
     expect(renderRow(bot())).toContain(`aria-label="${t("sidebar.bot.actions", { name: "Atlas" })}"`);

@@ -1,7 +1,9 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, BookOpen, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
-import { useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
+import { ArrowUp, Clock, Mic, Paperclip, Square, Target, TriangleAlert, Users, X } from "lucide-react";
+import { api, useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
+import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
@@ -31,6 +33,7 @@ import { ComposerAttachments, pathForFile } from "./ComposerAttachments";
 import { splitTranscriptCitations, type CitationAttachment } from "@/lib/citations";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { PlaceChip } from "./PlaceChip";
+import { effectivePlace } from "@/lib/place";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { ApprovalModeSelector } from "./ApprovalModeSelector";
 import { ModelPicker } from "./ModelPicker";
@@ -73,11 +76,21 @@ import { useRetroSkin } from "./RetroChromeHost";
 import { mentionChoicesForQuery } from "@/lib/mentions";
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
 import {
+  composerCommandMenu,
+  composerGroupCommandMenu,
+  composerGroupSlashTrigger,
   composerSlashTrigger,
+  engineCommandInsertion,
+  groupCommandTargets,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
+  type ComposerMenuItem,
   type ComposerSlashCommand,
+  type GroupEngineCommands,
 } from "@/lib/composer-commands";
+import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-commands";
+import { ComposerCommandMenu } from "./ComposerCommandMenu";
+import { WorkplaceNotice } from "./WorkplaceNotice";
 
 /** The active @mention query at the caret: the text between an `@` that
  * starts a word and the caret. null = no mention being typed. */
@@ -107,7 +120,6 @@ export function Composer({
   onClearReply,
   onConsumeReply,
   onRestoreReply,
-  locked: setupLocked = false,
 }: {
   bot?: Bot;
   group?: Group;
@@ -117,11 +129,9 @@ export function Composer({
   onClearReply?: () => void;
   onConsumeReply?: () => void;
   onRestoreReply?: (message: Message, threadId: string) => void;
-  /** New rooms keep the composer inert until their setup is saved or skipped. */
-  locked?: boolean;
 }) {
   const bot = profile ? currentTaskBot(profile) : undefined;
-  const locked = setupLocked || Boolean(bot?.awaitingThreadSnapshot);
+  const locked = Boolean(bot?.awaitingThreadSnapshot);
   const { state, dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
   const { threads, currentBotId } = useThreadRefs();
@@ -304,9 +314,27 @@ export function Composer({
   const engineSupportsImages = imageTargetsSupport(effectiveText, effectiveChannelMode);
 
   // ── Slash commands and @mentions ─────────────────────────────────────
-  const slash = composerSlashTrigger(text, caret);
+  // In a group "/" also opens right after a leading @mention: that bot's
+  // engine commands only (shared/harness-commands.ts groupCommandTarget).
+  const groupSlash = group && !group.dm ? composerGroupSlashTrigger(text, caret, members ?? []) : null;
+  const slash = group && !group.dm ? groupSlash?.trigger ?? null : composerSlashTrigger(text, caret);
   const locale = activeLocale();
-  const commandCandidates = useMemo(() => {
+  // The engine's own commands (Claude Code, Codex) for a 1:1 conversation,
+  // read the first time "/" is typed there (src/lib/harness-commands.ts).
+  // On an organization server the list is the signed-in person's own, so the
+  // cache is theirs too.
+  const commandViewerId = state.config?.viewer?.principalId ?? null;
+  const engineCommands = useHarnessCommands(api, !group ? bot?.id : undefined, threadId || undefined, Boolean(slash) && !group, commandViewerId);
+  // In a group: the commands of the bot(s) the command would reach, per bot.
+  const groupSlashOpen = Boolean(groupSlash);
+  const groupSlashBotId = groupSlash?.botId;
+  const groupTargets = useMemo(
+    () => groupSlashOpen && group ? groupCommandTargets({ botId: groupSlashBotId }, members ?? [], group.defaultResponder) : [],
+    [groupSlashOpen, groupSlashBotId, group, members],
+  );
+  const groupEngineCommands = useGroupHarnessCommands(api, groupTargets.map((target) => target.bot.id), group && !group.dm ? group.id : undefined, threadId || undefined, groupSlashOpen, commandViewerId);
+  const commandListRef = useRef<HTMLDivElement>(null);
+  const commandCandidates = useMemo((): ComposerMenuItem[] => {
     if (!slash || slash.start === dismissedSlashAt) return [];
     const supportsAgents = (candidate?: Bot) =>
       Boolean(
@@ -338,14 +366,17 @@ export function Composer({
       label: "/setup",
       description: t("composer.command.setupDesc"),
     });
-    const query = slash.query.toLowerCase();
-    return available.filter(
-      (command) =>
-        !query ||
-        command.id.startsWith(query) ||
-        command.description.toLowerCase().includes(query),
-    );
-  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale]);
+    if (group) {
+      // after a leading mention only that bot's engine commands make sense
+      const sets: GroupEngineCommands[] = groupTargets.map((target) => ({
+        bot: { id: target.bot.id, name: target.bot.name },
+        commands: groupEngineCommands.lists.find((list) => list.botId === target.bot.id)?.answer.commands ?? [],
+        mention: target.mention,
+      }));
+      return composerGroupCommandMenu(groupSlashBotId ? [] : available, sets, slash.query);
+    }
+    return composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query);
+  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   // Tag another bot; the agent reaches it via ask_bot.
@@ -372,6 +403,13 @@ export function Composer({
   );
 
   useEffect(() => {
+    if (!commandPickerOpen) return;
+    commandListRef.current
+      ?.querySelector<HTMLElement>(`[data-command-index="${highlight}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [highlight, commandPickerOpen]);
+
+  useEffect(() => {
     if (!mentionPickerOpen) return;
     mentionListRef.current
       ?.querySelector<HTMLElement>(`[data-mention-index="${highlight}"]`)
@@ -393,14 +431,19 @@ export function Composer({
     });
   };
 
-  const pickCommand = (command: ComposerSlashCommand) => {
-    if (!slash) return;
-    const replacement = command.id === "learn" ? "/learn " : command.id === "setup" ? "/setup " : "";
+  const pickCommand = (item: ComposerMenuItem | undefined) => {
+    if (!slash || !item) return;
+    // What the chat cannot run stays listed, with its reason, but inserts nothing.
+    if (item.kind === "engine" && item.unavailable) return;
+    const command = item.kind === "sagax" ? item.command : null;
+    const replacement = item.kind === "engine"
+      ? engineCommandInsertion(item)
+      : command?.id === "learn" ? "/learn " : command?.id === "setup" ? "/setup " : "";
     const next = replaceComposerSlashTrigger(text, slash, replacement);
     editText(next.text);
     setCaret(next.caret);
     setDismissedSlashAt(slash.start);
-    setChannelMode(command.id === "goal" ? "goal" : "chat");
+    setChannelMode(command?.id === "goal" ? "goal" : "chat");
     requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.setSelectionRange(next.caret, next.caret);
@@ -513,6 +556,13 @@ export function Composer({
     ? state.instances.find((instance) => instance.instanceId === modeBot.modelSelection.instanceId)
     : undefined;
   const trustedThreadAccess = Boolean(!remoteClient && window.ogb?.approvals && capabilities.host.packaged);
+  // Organization server: the bot's owner grants Full over HTTP while the
+  // organization allows it (src/lib/full-access.ts, server/org-full-access.ts).
+  const perspicaxOrg = usePerspicaxOrg();
+  const viewerId = state.config?.viewer?.principalId ?? null;
+  const orgFullAccess = orgFullAccessFor(perspicaxOrg, modeBot, viewerId);
+  const fullAccessAvailable = trustedThreadAccess || orgFullAccess === "allowed";
+  const modeIsFull = Boolean(modeBot && approvalModeFor(modeBot) === "full");
   const uploadImage = useCallback(async (file: File): Promise<Attachment | null> => {
     const optimistic = optimisticImageAttachment(file);
     if (!optimistic) return null;
@@ -558,9 +608,16 @@ export function Composer({
   };
   const setApprovalMode = (mode: ApprovalMode) => {
     if (!modeBot || modeBot.busy || mode === approvalModeFor(modeBot)) return;
-    if ((mode === "full" || mode === "custom") && !trustedThreadAccess) return;
+    if (mode === "custom" && !trustedThreadAccess) return;
+    if (mode === "full" && !fullAccessAvailable) return;
     if (mode === "full") {
-      setApprovalWarning({ mode, botId: modeBot.id, threadId: modeBot.threadId });
+      // The warning is confirmed once per bot; later choices go straight in.
+      if (fullAccessNeedsConfirmation(modeBot, viewerId, Boolean(perspicaxOrg))) {
+        setApprovalWarning({ mode, botId: modeBot.id, threadId: modeBot.threadId });
+        return;
+      }
+      dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId,
+        patch: { approvalMode: "full", confirmFullAccess: !perspicaxOrg, ...(perspicaxOrg ? { organizationFullAccess: true } : {}) } });
       return;
     }
     // Safe Auto still needs its dedicated warning when it can drive the host.
@@ -803,6 +860,7 @@ export function Composer({
         </div>
       )}
       <div className="pointer-events-auto relative w-full">
+        <WorkplaceNotice place={modeBot ? effectivePlace(modeBot, composerTask) : null} />
         {failedSends.map((failed) => (
           <div
             key={failed.id}
@@ -832,44 +890,19 @@ export function Composer({
           </div>
         ))}
         {commandMotion.shown && (
-          <div
-            role="listbox"
-            aria-label={t("composer.commands.aria")}
-            className={cn("absolute bottom-full left-2 z-20 mb-2 w-80 overflow-hidden rounded-xl border border-hairline/40 bg-raised shadow-lg", commandMotion.className)} {...commandMotion.exitProps}
-          >
-            <div className="border-b border-hairline/20 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-secondary">
-              {t("composer.commands.title")}
-            </div>
-            {commandCandidates.map((command, index) => (
-              <button
-                key={command.id}
-                type="button"
-                role="option"
-                aria-selected={index === highlight}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => pickCommand(command)}
-                onMouseEnter={() => setHighlight(index)}
-                className={cn(
-                  "flex w-full items-center gap-3 px-3 py-2.5 text-left",
-                  index === highlight ? "bg-raised-hover" : "",
-                )}
-              >
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
-                  {command.id === "goal" ? (
-                    <Target size={15} aria-hidden="true" />
-                  ) : (
-                    <BookOpen size={15} aria-hidden="true" />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] font-medium text-accent">{command.label}</span>
-                  <span className="block truncate text-xs text-ink-secondary">
-                    {command.description}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
+          <ComposerCommandMenu
+            listRef={commandListRef}
+            className={commandMotion.className}
+            exitProps={commandMotion.exitProps}
+            items={commandCandidates}
+            highlight={highlight}
+            loading={group ? groupEngineCommands.loading : engineCommands.loading}
+            onRefresh={group
+              ? groupEngineCommands.lists.some((list) => list.answer.available) ? groupEngineCommands.refresh : undefined
+              : engineCommands.answer?.available ? engineCommands.refresh : undefined}
+            onPick={pickCommand}
+            onHighlight={setHighlight}
+          />
         )}
         {mentionMotion.shown && (
           <div
@@ -1039,8 +1072,20 @@ export function Composer({
                   onSelect={setApprovalMode}
                   disabled={Boolean(modeBot.busy)}
                   trustedModesAvailable={trustedThreadAccess}
+                  orgFullAccess={orgFullAccess}
                   onManageCommandAllowlist={ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
                 />
+              )}
+              {modeBot && approvalEngine && !remoteClient && modeIsFull && (
+                <span
+                  role="status"
+                  data-full-access-badge
+                  title={t("approvalMode.full.badgeTitle")}
+                  className="flex h-6 shrink-0 items-center gap-1 rounded-full border border-danger/35 bg-danger/10 px-2 text-[11px] font-medium text-danger"
+                >
+                  <TriangleAlert size={12} aria-hidden="true" />
+                  {t("approvalMode.full.badge")}
+                </span>
               )}
               {modeBot && !remoteClient && (
                 <PlaceChip
@@ -1140,9 +1185,7 @@ export function Composer({
           disabled={Boolean(approval) || locked}
           aria-busy={bot?.awaitingThreadSnapshot || undefined}
           placeholder={
-            setupLocked
-              ? t("composer.placeholder.locked")
-              : approval
+            approval
               ? t("composer.placeholder.approval")
               : attachmentPending
               ? t("composer.placeholder.attaching")
@@ -1245,14 +1288,14 @@ export function Composer({
       />}
       <FullAccessWarning
         open={approvalWarning?.mode === "full"}
-        scope="thread"
+        scope={perspicaxOrg ? "organization" : "thread"}
         onCancel={() => setApprovalWarning(null)}
         onConfirm={() => {
           const target = approvalWarning;
           setApprovalWarning(null);
-          if (target?.mode !== "full" || !trustedThreadAccess) return;
+          if (target?.mode !== "full" || !fullAccessAvailable) return;
           dispatch({ type: "updateTask", botId: target.botId, threadId: target.threadId,
-            patch: { approvalMode: "full", confirmFullAccess: true } });
+            patch: { approvalMode: "full", confirmFullAccess: true, ...(perspicaxOrg ? { organizationFullAccess: true } : {}) } });
         }}
       />
       <LocalComputerAutoWarning

@@ -77,7 +77,7 @@ describe("independent bot tasks through the isolated control surface", () => {
       'const at = process.argv.indexOf("--model");',
       'const model = (at < 0 ? "probe" : process.argv[at + 1]).replace(/[^\\w-]/g, "_");',
       'process.env.FAKE_CLAUDE_MODE = "slow";',
-      'process.env.OMB_FIXTURE_CWD = process.cwd();',
+      'process.env.SAGAX_FIXTURE_CWD = process.cwd();',
       `process.env.FAKE_CLAUDE_SLOW_FINISH_GATE = join(${JSON.stringify(session.info.dataDir)}, model + ".gate");`,
       `process.env.FAKE_CLAUDE_DUMP = join(${JSON.stringify(session.info.dataDir)}, model + ".json");`,
       `await import(${JSON.stringify(fake)});`,
@@ -108,7 +108,7 @@ describe("independent bot tasks through the isolated control surface", () => {
     // this for a different reason.
     expect((await api("PATCH", "/api/config", { threads: { maxConcurrentPerBot: 3 } })).status).toBe(200);
     await control(["send", "--bot", chief.id, "--text", "Ask the reviewer to check the release notes, then return the result here."]);
-    const token = (await dump(models[0])).mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+    const token = (await dump(models[0])).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
     const roster = await internal(token, "GET", "/api/internal/agents");
     expect(roster.status).toBe(200);
     expect(roster.body.bots.find((bot: any) => bot.id === peer.id)).toMatchObject({
@@ -217,7 +217,7 @@ describe("independent bot tasks through the isolated control surface", () => {
     const threadId = task.body.task.threadId;
     await control(["send", "--bot", botId, "--task", threadId, "--text", "REVIEW_MEMORY_OWNER"]);
     const launched = await dump(models[0]);
-    const token = launched.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+    const token = launched.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
     expect((await internal(token, "POST", "/api/internal/memory", { action: "append", text: "A unique saved fact." })).status).toBe(200);
     for (const text of ["", " \n\t "]) {
       expect((await internal(token, "POST", "/api/internal/memory", { action: "replace", oldText: "unique saved fact", text })).status).toBe(400);
@@ -309,11 +309,11 @@ describe("independent bot tasks through the isolated control surface", () => {
     expect(launchedA.argv[launchedA.argv.indexOf("--permission-mode") + 1]).toBe("default");
     expect(launchedB.argv[launchedB.argv.indexOf("--permission-mode") + 1]).toBe("auto");
     evidence.push({ providerSelections: [models[0], models[1]], distinctProcesses: true });
-    expect(launchedA.env.OMB_FIXTURE_CWD).toBe(realpathSync(join(session.info.dataDir, "task-workspaces", botId, taskA)));
-    expect(launchedB.env.OMB_FIXTURE_CWD).toBe(realpathSync(join(session.info.dataDir, "task-workspaces", botId, taskB)));
+    expect(launchedA.env.SAGAX_FIXTURE_CWD).toBe(realpathSync(join(session.info.dataDir, "task-workspaces", botId, taskA)));
+    expect(launchedB.env.SAGAX_FIXTURE_CWD).toBe(realpathSync(join(session.info.dataDir, "task-workspaces", botId, taskB)));
 
-    const tokenA = launchedA.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
-    const tokenB = launchedB.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+    const tokenA = launchedA.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
+    const tokenB = launchedB.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
     expect(tokenA).not.toBe(tokenB);
     const appended = await Promise.all([
       internal(tokenA, "POST", "/api/internal/memory", { botId, threadId: taskA, action: "append", text: "A remembers apples." }),
@@ -404,8 +404,8 @@ describe("independent bot tasks through the isolated control surface", () => {
     const botId = created.bot.id;
     const threadId = created.bot.activeTaskId;
     const group = (await api("POST", "/api/groups", { name: "Captured Group provider", memberIds: [botId] })).body.group;
-    expect((await api("PATCH", `/api/groups/${group.id}/setup`, {
-      action: "complete", cwd: null, bulletin: "", defaultResponder: { kind: "member", botId },
+    expect((await api("PATCH", `/api/groups/${group.id}`, {
+      defaultResponder: { kind: "member", botId },
     })).status).toBe(200);
     expect((await api("POST", `/api/groups/${group.id}/messages`, { text: "GROUP_MODEL_OWNER" })).status).toBe(202);
     await dump(models[0]);
@@ -434,7 +434,7 @@ describe("independent bot tasks through the isolated control surface", () => {
     mkdirSync(cwd);
     expect((await api("PATCH", `/api/bots/${botId}`, { cwd })).status).toBe(200);
     await control(["send", "--bot", botId, "--task", taskA, "--text", "PROJECT_A"]);
-    expect((await dump(models[0])).env.OMB_FIXTURE_CWD).toBe(realpathSync(cwd));
+    expect((await dump(models[0])).env.SAGAX_FIXTURE_CWD).toBe(realpathSync(cwd));
     const second = await tool("create_task", { target_type: "bot", target_id: botId, title: "Project sibling" });
     const taskB = second.task.taskId;
     await control(["set-model", "--bot", botId, "--task", taskB, "--instance", "claude", "--model", models[1]]);
@@ -448,7 +448,7 @@ describe("independent bot tasks through the isolated control surface", () => {
     await control(["interrupt", "--bot", botId, "--task", taskA]);
     await control(["wait", "--bot", botId, "--task", taskA, "--timeout", "10"]);
     await control(["send", "--bot", botId, "--task", taskB, "--text", "PROJECT_B_NOW_OWNS_FOLDER"]);
-    expect((await dump(models[1])).env.OMB_FIXTURE_CWD).toBe(realpathSync(cwd));
+    expect((await dump(models[1])).env.SAGAX_FIXTURE_CWD).toBe(realpathSync(cwd));
     await control(["interrupt", "--bot", botId, "--task", taskB]);
   }, 45_000);
 
@@ -474,9 +474,9 @@ describe("independent bot tasks through the isolated control surface", () => {
     const launchedB = await dump(models[1]);
     const gate = (launched: any) => {
       const env = launched.mcpConfig.mcpServers.computer.env;
-      const url = new URL(env.OMB_CONTROL_URL);
+      const url = new URL(env.SAGAX_CONTROL_URL);
       expect(url.origin).toBe(session.info.url);
-      return internal(env.OMB_CONTROL_TOKEN, "GET", `${url.pathname}${url.search}`);
+      return internal(env.SAGAX_CONTROL_TOKEN, "GET", `${url.pathname}${url.search}`);
     };
     // B acquires first although A started first: mounting the tool did not
     // lock the shared computer. A receives an actionable hold, not authority.

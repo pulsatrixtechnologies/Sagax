@@ -8,7 +8,6 @@ import {
   Bug,
   PanelRight,
   Copy,
-  Crown,
   MessageSquareReply,
 
   Pencil,
@@ -24,7 +23,6 @@ import { WorkingDots } from "@/components/WorkingIndicator";
 import { MessageActions, messageActionClass } from "@/components/MessageActions";
 import { useSpeech } from "@/lib/tts/useSpeech";
 import { useCaptionChrome, useDesktopCapabilities, useMacInsetChrome } from "@/components/DesktopCapabilities";
-import { UsagePill } from "./UsagePill";
 import {
   api,
   currentTaskBot,
@@ -83,7 +81,7 @@ import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 
 import { SpeakButton } from "./SpeakButton";
-import { CallOverlay } from "./CallView";
+import { CallOverlay, VoiceCallDock } from "./CallView";
 import { effectivePlace, toolPlace, type EffectivePlace } from "@/lib/place";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
@@ -91,6 +89,7 @@ import { activeLocale, t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { showPrivateConversationHint } from "@/lib/private-threads";
 import { viewerActorId } from "@/lib/viewer";
+import { isViewersPrimaryBot } from "@/lib/primary-bot";
 import { COMPACT_BUBBLE } from "@/lib/compact-chip";
 import { useFocusMessage } from "@/lib/focus-message";
 import { groupTranscript, isStatusActivity } from "@/lib/activity-runs";
@@ -825,7 +824,7 @@ const MessagesList = memo(function MessagesList({
                 <AccessCard
                   access={m.access}
                   viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
-                  onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "organization" })}
+                  onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
                 />
               ) : null;
             case "secret":
@@ -1299,7 +1298,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
 
   return (
     <main className="app-glow relative flex h-full min-w-0 flex-1 flex-col bg-app">
-      {/* Call mode covers the thread while the bot is on the line */}
+      {/* The older call mode covers the thread while the bot is on the line;
+          a voice mode call docks at the top of the banner stack below */}
       <CallOverlay bot={bot} />
       {(macInset || browser) && <div className="content-topbar-strip" />}
       {/* Header */}
@@ -1328,6 +1328,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           >
             <BotAvatar
               bot={bot}
+              primary={isViewersPrimaryBot(bot, viewerActorId(state.config))}
+              primaryRingClassName="ring-elevated"
               state={stateForBot({ ...bot, messages })}
               size={24}
               motion={mascotMotion?.kind ?? "none"}
@@ -1335,14 +1337,6 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             />
             <span className="truncate text-[14px] font-medium leading-5 text-ink">{bot.name}</span>
           </button>
-          {bot.chiefOfStaff && (
-            // One line, never shrinking with the name (it wrapped "Chief / of /
-            // Staff", #1871); folds to the crown like the chips beside it do,
-            // so the name keeps the room.
-            <span title={t("chat.chiefOfStaff")} className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-accent/12 px-2 py-0.5 text-[11px] font-medium text-accent @max-4xl/chathead:px-1.5">
-              <Crown size={11} aria-hidden="true" /> <span className="@max-4xl/chathead:sr-only">{t("chat.chiefOfStaff")}</span>
-            </span>
-          )}
           {bot.busy && <WorkingDots className="text-ink-secondary" />}
           {!bot.busy && bot.waitingForTeammates && <span className="truncate text-[12px] text-ink-secondary" role="status">Teammates working</span>}
         </div>
@@ -1373,7 +1367,6 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             </button>
           )}
           <TaskPicker bot={bot} />
-          <UsageChip bot={bot} />
           {/* Share, Inspector and the panel toggle move into the bot panel's
               top bar while it is open, the way Grok Bot's do. */}
           {!remoteClient && !panelOpen && <button
@@ -1401,6 +1394,9 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       {/* Banners sit below the floating header; the wrapper vanishes when
           none is showing so the transcript can run to the top. */}
       <div className="chat-banners pt-[52px] empty:hidden">
+      {/* Voice mode's in-call banner: first in the stack, right under the
+          header, so it pushes the thread down instead of floating over it */}
+      <VoiceCallDock bot={bot} />
       <BotActivityPicker bot={bot} />
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {routineExecution && <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[11.5px] text-ink-secondary">
@@ -1649,13 +1645,3 @@ export function NewConversationInstead({ onNew }: { onNew: () => void }) {
   );
 }
 
-/** What the open task has spent and how full its context is: quiet until
- * the first turn settles. Hover shows the breakdown; click opens the bot's
- * settings, where the Usage card has the rest. */
-function UsageChip({ bot }: { bot: Bot }) {
-  const { state, dispatch } = useStore();
-  const usage = bot.tasks?.find((t) => t.threadId === bot.threadId)?.usage;
-  if (!usage) return null;
-  const billing = state.instances.find((i) => i.instanceId === bot.modelSelection.instanceId)?.snapshot.billing;
-  return <UsagePill usage={usage} billing={billing} onOpen={() => dispatch({ type: "toggleSettings", open: true, section: "usage" })} />;
-}

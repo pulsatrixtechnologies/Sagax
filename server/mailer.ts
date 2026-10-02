@@ -176,7 +176,7 @@ export function createMailer(settings: MailSettings, deps: MailerDeps = {}): Mai
   return createSmtpMailer(settings, smtpTransport);
 }
 
-/** A test/e2e seam (OMB_MAIL_CAPTURE_FILE): sends nothing and instead
+/** A test/e2e seam (SAGAX_MAIL_CAPTURE_FILE): sends nothing and instead
  * appends each message as one JSON line `{to,subject,text,at}` to `filePath`.
  * For a harness that spawns this server as a child process and so cannot
  * stub fetch or nodemailer. The caller decides when this seam applies

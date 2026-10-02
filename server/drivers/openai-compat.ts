@@ -2,11 +2,12 @@
 // other endpoints that speak the OpenAI chat-completions contract.
 import type { ModelCatalog, ProviderDriver } from "../contracts.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
+import { currentEnvName, readEnvName } from "../../electron/legacy-names.mjs";
 
 const DRIVER_KIND = "openai-compat";
 const DEFAULT_IDLE_TIMEOUT_MS = 180_000;
 const idleTimeoutMs = () => {
-  const raw = process.env.OPENMAUS_OPENAI_COMPAT_IDLE_TIMEOUT_MS;
+  const raw = process.env.SAGAX_OPENAI_COMPAT_IDLE_TIMEOUT_MS;
   if (!raw) return DEFAULT_IDLE_TIMEOUT_MS;
   const value = Number(raw);
   return Number.isSafeInteger(value) && value >= 1_000 && value <= 2_147_483_647 ? value : DEFAULT_IDLE_TIMEOUT_MS;
@@ -23,7 +24,7 @@ const DEFAULT_KEY_ENV = "OPENAI_COMPAT_API_KEY";
 /** A provider's own key (the built-in OpenAI and OpenRouter instances). An
  * instance reading one of these never falls back to the workspace
  * OpenAI-compatible key, URL, model or routing. */
-const OWN_KEY_ENVS = new Set(["OMB_OPENAI_API_KEY", "OMB_OPENROUTER_API_KEY"]);
+const OWN_KEY_ENVS = new Set(["SAGAX_OPENAI_API_KEY", "SAGAX_OPENROUTER_API_KEY"]);
 
 /** OpenAI's own API, seeded until its live catalog loads. */
 const OPENAI_MODELS: ModelCatalog = {
@@ -65,7 +66,9 @@ function isOpenRouterUrl(url: string): boolean {
 }
 
 function decodeConfig(raw: unknown): OpenAICompatConfig {
-  const config = (raw ?? {}) as Record<string, unknown>;
+  const config = { ...((raw ?? {}) as Record<string, unknown>) };
+  // A variable saved under its old name (OMB_OPENAI_API_KEY) reads as the new one.
+  if (typeof config.apiKeyEnv === "string") config.apiKeyEnv = currentEnvName(config.apiKeyEnv);
   if (config.tools !== undefined && typeof config.tools !== "boolean") throw new Error("tools must be a boolean");
   if (config.managedModels !== undefined && (!Array.isArray(config.managedModels) || !config.managedModels.length || config.managedModels.some(model => typeof model !== "string" || !model.trim()))) throw new Error("Invalid managed models.");
   const ownKey = typeof config.apiKeyEnv === "string" && OWN_KEY_ENVS.has(config.apiKeyEnv);
@@ -120,9 +123,9 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
     const ownKeyVariable = config.apiKeyEnv !== DEFAULT_KEY_ENV;
     const apiKey =
       config.key ??
-      input.environment[config.apiKeyEnv] ??
+      readEnvName(config.apiKeyEnv, input.environment) ??
       (ownKeyVariable ? undefined : input.environment[DEFAULT_KEY_ENV]) ??
-      process.env[config.apiKeyEnv] ??
+      readEnvName(config.apiKeyEnv) ??
       (ownKeyVariable ? undefined : process.env[DEFAULT_KEY_ENV]) ??
       "";
     // The default key and the built-in providers' keys are saved in

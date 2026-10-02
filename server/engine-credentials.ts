@@ -139,12 +139,13 @@ export function turnPayer(input: Pick<EngineCredentialInput, "speaker" | "owner"
  * away between admission and dispatch). */
 export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: boolean } = {}): EngineCredentialPlan {
   if (input.identity !== "perspicax") return { ok: true, via: "server", payer: "organization" };
-  if (!input.instance.installed) return { ok: false, reason: "engine_missing" };
   const payer = turnPayer(input);
   const routine = payer.routine ? { routine: true as const } : {};
   const isOwner = payer.principalId !== "" && key(payer.principalId) === key(input.owner.principalId);
-  const facts: PersonFacts | undefined = payer.principalId === "" ? undefined : isOwner ? input.owner : input.person?.(payer.principalId);
   const who = { payer: isOwner ? "owner" as const : "speaker" as const, ...(payer.principalId ? { payerPrincipalId: payer.principalId } : {}), ...routine };
+  // who it is for: the card goes to that person only (accessCardAudience)
+  if (!input.instance.installed) return { ok: false, reason: "engine_missing", ...who };
+  const facts: PersonFacts | undefined = payer.principalId === "" ? undefined : isOwner ? input.owner : input.person?.(payer.principalId);
   // A disabled person's credentials serve nobody, and their turn (their
   // routines included) does not fall back on the organization either (S4-14).
   if (facts?.disabled) return { ok: false, reason: "no_access", cause: "payer_disabled", ...who };
@@ -207,7 +208,7 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
         access: {
           via: plan.via,
           identity,
-          environment: { OMB_OWNER_OPENAI_API_KEY: result.key },
+          environment: { SAGAX_OWNER_OPENAI_API_KEY: result.key },
           codexHome: join(deps.dataDir, "principals", payer, "codex-key"),
           codexOwnerKey: true,
         },

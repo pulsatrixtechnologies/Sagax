@@ -34,7 +34,7 @@ describe("openmausbot command line", () => {
     expect(parseArgs(["fleet", "create"], {})).toMatchObject({ error: "fleet create needs a workspace name" });
     expect(parseArgs(["fleet", "users", "acme"], {})).toMatchObject({ error: expect.stringContaining("add|remove") });
     expect(parseArgs(["fleet", "create", "acme", "--cap", "-5"], {})).toMatchObject({ error: expect.stringContaining("--cap") });
-    expect(parseArgs([], { OMB_PORT: "8123" })).toMatchObject({ command: "start", port: 8123 });
+    expect(parseArgs([], { SAGAX_PORT: "8123" })).toMatchObject({ command: "start", port: 8123 });
     expect(parseArgs(["--port", "8125", "--no-open", "--local"], {})).toMatchObject({ command: "start", port: 8125, open: false, local: true });
     expect(parseArgs(["--help"], {})).toMatchObject({ command: "help" });
     expect(parseArgs(["-h"], {})).toMatchObject({ command: "help" });
@@ -78,15 +78,15 @@ describe("openmausbot command line", () => {
     expect(block).toContain("pairing code:  ABCD-EFGH-JKLM");
     expect(block).toContain("open or scan:  https://mini.example/pair#code=ABCD-EFGH-JKLM");
     expect(block).toMatch(/[▀▄█]/);
-    const noUrl = pairingBlock({ code: "ABCD-EFGH-JKLM", url: null, expiresAt: Date.now(), hint: "set OMB_PUBLIC_URL" });
+    const noUrl = pairingBlock({ code: "ABCD-EFGH-JKLM", url: null, expiresAt: Date.now(), hint: "set SAGAX_PUBLIC_URL" });
     expect(noUrl).toContain("/pair on the address you use");
-    expect(noUrl).toContain("set OMB_PUBLIC_URL");
+    expect(noUrl).toContain("set SAGAX_PUBLIC_URL");
     expect(qrToString("https://example.com").length).toBeGreaterThan(200);
   });
 
   describe("the two links one pairing window has", () => {
     const url = "https://mini.example/pair#code=ABCD-EFGH-JKLM";
-    const invite = `openmausbot://pair?address=https%3A%2F%2Fmini.example&token=omb_pair_${"a".repeat(43)}&name=mini`;
+    const invite = `sagax://pair?address=https%3A%2F%2Fmini.example&token=omb_pair_${"a".repeat(43)}&name=mini`;
     const block = (over: Record<string, unknown> = {}) =>
       pairingBlock({ code: "ABCD-EFGH-JKLM", url, inviteUrl: invite, expiresAt: Date.now() + 60_000, ...over });
 
@@ -114,7 +114,7 @@ describe("openmausbot command line", () => {
       const out = block({ phone: "android", inviteUrl: null });
       expect(out).toContain(qrToString(url));
       expect(out).toContain("The Android app needs the phone-app link");
-      expect(out).toContain("OMB_PUBLIC_URL");
+      expect(out).toContain("SAGAX_PUBLIC_URL");
       // It must not claim the QR is scannable in the app when it is not.
       expect(out).not.toContain("Scan that in the Sagax app");
     });
@@ -145,7 +145,7 @@ describe("openmausbot command line", () => {
     const port = 21000 + Math.floor(Math.random() * 9000);
     const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "serve", "--port", String(port), "--data-dir", join(home, "data"), "--label", "cli test", "--public-url", "https://mini.example"], {
       cwd: join(SERVER_DIR, ".."),
-      env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_WEBHOOK_PORT: String(port + 1), OMB_BROWSER_CONNECTION: join(home, "browser-connection.json") },
+      env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, SAGAX_WEBHOOK_PORT: String(port + 1), SAGAX_BROWSER_CONNECTION: join(home, "browser-connection.json") },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
@@ -194,7 +194,7 @@ describe("terminal onboarding commands", () => {
   });
   const command = (name: "setup" | "start") => parseArgs([name, "--data-dir", join(process.env.HOME!, "onboarding"), "--port", "18451"], {}) as CliOptions;
   const io = () => ({ log: vi.fn(), error: vi.fn(), ask: vi.fn() });
-  const preserveEnv = () => vi.stubEnv("OMB_DATA_DIR", process.env.OMB_DATA_DIR);
+  const preserveEnv = () => vi.stubEnv("SAGAX_DATA_DIR", process.env.SAGAX_DATA_DIR);
   const phoneSetup = vi.fn<NonNullable<NonNullable<Parameters<typeof runOnboardingCommand>[3]>["phoneSetup"]>>();
   const running = vi.fn().mockResolvedValue(false);
   const open = vi.fn().mockResolvedValue(true);
@@ -212,7 +212,7 @@ describe("terminal onboarding commands", () => {
     const output = io();
     const serve = vi.fn();
     setup.runSetup.mockImplementation(async () => {
-      expect(process.env.OMB_DATA_DIR).toBe(options.dataDir);
+      expect(process.env.SAGAX_DATA_DIR).toBe(options.dataDir);
       return true;
     });
     expect(await runOnboardingCommand(options, output, serve, flow)).toBe(0);
@@ -424,16 +424,16 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     const fleetEnv = {
       HOME: home,
       USERPROFILE: home,
-      OMB_WEBHOOK_PORT: String(port + 1),
-      OMB_BROWSER_CONNECTION: join(home, "browser-connection.json"),
-      OMB_CONTROL_PLANE_URL: stub.url,
-      OMB_CLOUDFLARED_PATH: fake,
-      OMB_TUNNEL_ORIGIN_PORT: String(originPort),
+      SAGAX_WEBHOOK_PORT: String(port + 1),
+      SAGAX_BROWSER_CONNECTION: join(home, "browser-connection.json"),
+      SAGAX_CONTROL_PLANE_URL: stub.url,
+      SAGAX_CLOUDFLARED_PATH: fake,
+      SAGAX_TUNNEL_ORIGIN_PORT: String(originPort),
     };
     // a credential the control plane does not know stops the start; nothing serves
     const rejected = cli(["serve", "--tunnel", "--no-pair", "--port", String(port), "--data-dir", dataDir], {
       ...fleetEnv,
-      OMB_INSTALLATION_CREDENTIAL: `omb_install_${"x".repeat(22)}.${"y".repeat(43)}`,
+      SAGAX_INSTALLATION_CREDENTIAL: `omb_install_${"x".repeat(22)}.${"y".repeat(43)}`,
     });
     let err = "";
     rejected.stderr?.on("data", (chunk) => (err += String(chunk)));
@@ -442,7 +442,7 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
 
     const child = cli(["serve", "--tunnel", "--no-pair", "--port", String(port), "--data-dir", dataDir], {
       ...fleetEnv,
-      OMB_INSTALLATION_CREDENTIAL: stub.seedInstallation("fleet box"),
+      SAGAX_INSTALLATION_CREDENTIAL: stub.seedInstallation("fleet box"),
     });
     let out = "";
     child.stdout?.on("data", (chunk) => (out += String(chunk)));
@@ -451,7 +451,7 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     try {
       const deadline = Date.now() + 60_000;
       while (!out.includes("Sagax is running") && Date.now() < deadline && child.exitCode === null) await new Promise((r) => setTimeout(r, 200));
-      expect(out).toContain("using the installation credential from OMB_INSTALLATION_CREDENTIAL");
+      expect(out).toContain("using the installation credential from SAGAX_INSTALLATION_CREDENTIAL");
       expect(out).toContain(`reachable at ${stub.endpointUrl}`);
       expect(existsSync(join(dataDir, "tunnel-account.json"))).toBe(false);
       let status = 0;
@@ -481,7 +481,7 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     const fake = join(home, "cloudflared");
     writeFileSync(fake, "#!/bin/sh\nexec sleep 300\n", { mode: 0o755 });
     // sign this data dir in, in-process, against the stub
-    vi.stubEnv("OMB_CONTROL_PLANE_URL", stub.url);
+    vi.stubEnv("SAGAX_CONTROL_PLANE_URL", stub.url);
     const quiet = { log: () => undefined, error: () => undefined, ask: async () => stub.otp };
     expect(await runLogin({ command: "login", port: 1, dataDir, tailscale: false, tunnel: false, client: false, pair: true, json: false, email: "cli@example.test" }, quiet)).toBe(0);
     vi.unstubAllEnvs();
@@ -490,11 +490,11 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
     const child = cli(["serve", "--tunnel", "--port", String(port), "--data-dir", dataDir, "--label", "tunnel test"], {
       HOME: home,
       USERPROFILE: home,
-      OMB_WEBHOOK_PORT: String(port + 1),
-      OMB_BROWSER_CONNECTION: join(home, "browser-connection.json"),
-      OMB_CONTROL_PLANE_URL: stub.url,
-      OMB_CLOUDFLARED_PATH: fake,
-      OMB_TUNNEL_ORIGIN_PORT: String(originPort),
+      SAGAX_WEBHOOK_PORT: String(port + 1),
+      SAGAX_BROWSER_CONNECTION: join(home, "browser-connection.json"),
+      SAGAX_CONTROL_PLANE_URL: stub.url,
+      SAGAX_CLOUDFLARED_PATH: fake,
+      SAGAX_TUNNEL_ORIGIN_PORT: String(originPort),
     });
     let out = "";
     child.stdout?.on("data", (chunk) => (out += String(chunk)));
@@ -525,7 +525,7 @@ describe.skipIf(process.platform === "win32")("serve --tunnel", () => {
       const stranger = await fetch(`${gateway}/api/bots`);
       expect(stranger.status).toBe(403);
       expect(((await stranger.json()) as { error: string }).error).toMatch(/through a proxy/);
-      expect(await (await fetch(`${gateway}/api/health`)).json()).toEqual({ app: "openmausbot" });
+      expect(await (await fetch(`${gateway}/api/health`)).json()).toEqual({ app: "openmausbot", product: "sagax" });
       expect(typeof ((await (await fetch(`http://127.0.0.1:${port}/api/health`)).json()) as { pid: unknown }).pid).toBe("number");
       // the printed code pairs a device through the gateway, and its session is honoured there
       const match = /pairing code:  ([A-Z2-9-]+)/.exec(out);
@@ -607,7 +607,7 @@ describe.skipIf(process.platform === "win32")("serve --domain", () => {
     const port = 21000 + Math.floor(Math.random() * 9000);
     const child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "openmausbot.ts"), "serve", "--domain", "omb.example.test", "--port", String(port), "--data-dir", dataDir], {
       cwd: join(SERVER_DIR, ".."),
-      env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_WEBHOOK_PORT: String(port + 1), OMB_BROWSER_CONNECTION: join(home, "browser-connection.json"), OMB_CADDY_PATH: fake },
+      env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, SAGAX_WEBHOOK_PORT: String(port + 1), SAGAX_BROWSER_CONNECTION: join(home, "browser-connection.json"), SAGAX_CADDY_PATH: fake },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";

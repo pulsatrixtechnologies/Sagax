@@ -7,16 +7,28 @@ import { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { isSameOrigin, type RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
+import { isDesktopTunnelPath } from "../desktop-bridge-routes.ts";
+import { bridgeWebSocketToStream, websocketAccept } from "../ws-bridge.ts";
 
-const ROUTE = /^\/api\/desktop-viewer\/(local\/(?:shared|bot-[a-f0-9]{64}|pool-\d+)|vps\/[\w-]+)(\/websockify)?$/;
+// `sandbox/me` is the signed-in person's own server environment desktop
+// (organization mode): there is no id that names another person's.
+const ROUTE = /^\/api\/desktop-viewer\/(local\/(?:shared|bot-[a-f0-9]{64}|pool-\d+)|vps\/[\w-]+|sandbox\/me)(\/websockify)?$/;
+export const SANDBOX_VIEWER_TARGET = "sandbox/me";
 const HANDSHAKE_MS = 10_000;
 const RECHECK_MS = 5_000;
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 /** Providers resolve a managed loopback endpoint, never a browser-supplied URL. */
 export interface DesktopConnection {
+  /** A websockify endpoint on 127.0.0.1 (Local VM, VPS)... */
   port: number;
+  /** ...or a raw RFB byte stream this route frames as WebSocket itself
+   * (the server environment's desktop through the provisioner). */
+  stream?: () => Promise<Duplex>;
   password: string | null;
+  /** Told to the viewer: the password only watches (server-enforced by the
+   * VNC server's view-only password). */
+  viewOnly?: boolean;
   live?: () => boolean;
   touch?: () => void;
   /** Acquired only by WebSockets; release must not close other viewers. */
@@ -24,7 +36,9 @@ export interface DesktopConnection {
 }
 export interface DesktopTarget {
   key: string;
-  resolve: () => Promise<DesktopConnection>;
+  /** Who may open it. Default: the admin scope. */
+  allows?: (auth: RequestAuth) => boolean;
+  resolve: (request: { upgrade: boolean; control: boolean }) => Promise<DesktopConnection>;
 }
 
 export function desktopViewerUrl(target: string, threadId?: string): string {
@@ -35,8 +49,11 @@ export function desktopViewerUrl(target: string, threadId?: string): string {
 interface Upgrade { socket: Socket; head: Buffer; release: () => void; close: () => void; owner?: string }
 
 export function createDesktopViewer(deps: {
-  target: (id: string) => DesktopTarget | undefined;
+  target: (id: string, auth: RequestAuth) => DesktopTarget | undefined;
   live: (auth: RequestAuth) => boolean;
+  /** Other WebSocket routes that run through the same gates (voice mode's
+   * live call, server/voice-mode.ts); they take their socket with upgradeOf. */
+  acceptsUpgrade?: (path: string) => boolean;
 }) {
   const upgrades = new Map<IncomingMessage, Upgrade>();
   let stopped = false;
@@ -45,6 +62,9 @@ export function createDesktopViewer(deps: {
    * maintenance gates as HTTP. Only this route can detach the response socket. */
   function attach(server: Server, handle: (req: IncomingMessage, res: ServerResponse) => Promise<unknown>): void {
     server.on("upgrade", (req, socket, head) => {
+      // The desktop bridge's tunnel answers its own upgrades
+      // (server/desktop-bridge-routes.ts attachDesktopTunnel).
+      try { if (isDesktopTunnelPath(new URL(req.url ?? "", "http://localhost").pathname)) return; } catch { /* answered below */ }
       if (stopped || !(socket instanceof Socket)) { socket.destroy(); return; }
       const res = new ServerResponse(req);
       res.assignSocket(socket);
@@ -55,7 +75,7 @@ export function createDesktopViewer(deps: {
       let path: string;
       try { path = new URL(req.url ?? "", "http://localhost").pathname; }
       catch { res.writeHead(400).end(); return; }
-      if (!ROUTE.exec(path)?.[2]) { res.writeHead(404).end(); return; }
+      if (!ROUTE.exec(path)?.[2] && !deps.acceptsUpgrade?.(path)) { res.writeHead(404).end(); return; }
       // Keep reading while auth/inspection awaits, so a closed tab's FIN is
       // observed. Bound and preserve any eagerly sent WebSocket bytes.
       const upgrade: Upgrade = { socket, head, release: () => socket.off("data", buffer), close: () => socket.destroy() };
@@ -83,33 +103,39 @@ export function createDesktopViewer(deps: {
     res.setHeader("cache-control", "private, no-store");
     if (method !== "GET") return json(res, 405, { error: "method not allowed" });
     // Also enforce at this boundary; the central gate defaults these paths
-    // to admin, like the existing Local VM status and control endpoints.
-    if (!auth.scopes.includes("admin") || !isSameOrigin(req)) return json(res, 403, { error: "forbidden" });
-    const target = deps.target(match[1]);
+    // to admin, like the existing Local VM status and control endpoints. A
+    // person's own server environment is theirs alone (target.allows).
+    const sandbox = match[1] === SANDBOX_VIEWER_TARGET;
+    if ((!sandbox && !auth.scopes.includes("admin")) || !isSameOrigin(req)) return json(res, 403, { error: "forbidden" });
+    const target = deps.target(match[1], auth);
     if (!target) return json(res, 404, { error: "Desktop not found" });
+    if (!(target.allows ?? ((who: RequestAuth) => who.scopes.includes("admin")))(auth)) return json(res, 403, { error: "forbidden" });
+    let control = false;
+    try { control = new URL(req.url ?? "", "http://localhost").searchParams.get("control") === "1"; } catch { /* no query */ }
     const upgrade = upgrades.get(req);
     if (upgrade && auth.kind === "session") upgrade.owner = auth.session.id;
     let connection: DesktopConnection;
-    try { connection = await target.resolve(); }
+    try { connection = await target.resolve({ upgrade: Boolean(match[2]), control }); }
     catch (error) {
       const status = error && typeof error === "object" && "status" in error ? error.status : 502;
       return json(res, typeof status === "number" && status >= 400 && status < 600 ? status : 502,
-        { error: "The desktop is not available. Open it again from OpenMausBot." });
+        { error: "The desktop is not available. Open it again from Sagax." });
     }
     // Inspection may outlive a closed tab or the handshake deadline.
     if (res.destroyed || upgrade?.socket.destroyed) return;
-    const live = () => deps.live(auth) && deps.target(match[1])?.key === target.key && (connection.live?.() ?? true);
+    const live = () => deps.live(auth) && deps.target(match[1], auth)?.key === target.key && (connection.live?.() ?? true);
     if (!live()) return json(res, 401, { error: "Viewer access expired" });
-    if (!Number.isInteger(connection.port) || connection.port < 1 || connection.port > 65535) {
+    if (!connection.stream && (!Number.isInteger(connection.port) || connection.port < 1 || connection.port > 65535)) {
       return json(res, 409, { error: "The desktop viewer is not available." });
     }
-    if (!match[2]) return json(res, 200, { password: connection.password });
+    if (!match[2]) return json(res, 200, { password: connection.password, ...(connection.viewOnly !== undefined ? { viewOnly: connection.viewOnly } : {}) });
     if (!upgrade) return json(res, 426, { error: "WebSocket upgrade required" });
     const key = req.headers["sec-websocket-key"];
     if (req.headers.upgrade?.toLowerCase() !== "websocket" || req.headers["sec-websocket-version"] !== "13"
       || typeof key !== "string" || !/^[A-Za-z0-9+/]{22}==$/.test(key)) {
       return json(res, 400, { error: "Invalid WebSocket handshake" });
     }
+    if (connection.stream) { await bridgeStream(connection, upgrade, res, json, key, live); return; }
     // Fixed host and path, port from an inspected managed container. Never
     // forward cookies, bearer tokens, query parameters or forwarded headers.
     const upstream = request({
@@ -169,8 +195,47 @@ export function createDesktopViewer(deps: {
     upstream.end();
   };
 
+  /** The server environment's desktop: this route is the WebSocket end
+   * itself and splices it to the provisioner's RFB stream. */
+  async function bridgeStream(connection: DesktopConnection, upgrade: Upgrade, res: ServerResponse,
+    json: (res: ServerResponse, status: number, body: unknown) => unknown, key: string, live: () => boolean): Promise<void> {
+    let stream: Duplex;
+    try { stream = await connection.stream!(); }
+    catch (error) {
+      const status = error && typeof error === "object" && "status" in error ? error.status : 502;
+      json(res, typeof status === "number" && status >= 400 && status < 600 ? status : 502, { error: "The desktop is not available." });
+      return;
+    }
+    const { socket } = upgrade;
+    if (socket.destroyed || !live()) {
+      stream.destroy();
+      if (!socket.destroyed) json(res, 401, { error: "Viewer access expired" });
+      return;
+    }
+    upgrade.release();
+    res.detachSocket(socket);
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${websocketAccept(key)}\r\n\r\n`);
+    const head = upgrade.head;
+    upgrade.head = Buffer.alloc(0);
+    let recheck: ReturnType<typeof setInterval> | undefined;
+    const closeBridge = bridgeWebSocketToStream(socket, stream, () => clearInterval(recheck));
+    upgrade.close = () => { clearInterval(recheck); closeBridge(); socket.destroy(); };
+    if (head.length) socket.unshift(head);
+    connection.touch?.();
+    recheck = setInterval(() => {
+      if (!live()) upgrade.close();
+      else connection.touch?.();
+    }, RECHECK_MS);
+    recheck.unref();
+  }
+
   return {
     route, attach,
+    /** The pending upgrade of a request another route accepted (acceptsUpgrade). */
+    upgradeOf: (req: IncomingMessage) => {
+      const upgrade = upgrades.get(req);
+      return upgrade ? { socket: upgrade.socket, get head() { return upgrade.head; }, release: () => upgrade.release() } : undefined;
+    },
     closeForOwner: (owner: string) => { for (const upgrade of upgrades.values()) if (upgrade.owner === owner) upgrade.close(); },
     closeAll: () => {
       stopped = true;

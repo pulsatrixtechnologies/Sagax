@@ -101,7 +101,7 @@ await import(${JSON.stringify(fake)});
     const calls = JSON.parse(readFileSync(`${dump}.config.json`, "utf8")) as Array<{ params: { value?: string } }>;
     assert(calls.some((call) => call.params.value === expected.options[1].id), "every resumed turn must restore the chosen endpoint");
     const servers = JSON.parse(readFileSync(`${dump}.mcp.json`, "utf8")) as Array<{ name: string; env: Array<{ name: string; value: string }> }>;
-    const token = servers.find((server) => server.name === "agents")?.env.find((entry) => entry.name === "OMB_COMMS_TOKEN")?.value;
+    const token = servers.find((server) => server.name === "agents")?.env.find((entry) => entry.name === "SAGAX_COMMS_TOKEN")?.value;
     assert(token, "the agents proxy must receive turn credentials");
     tokens.add(token);
     assert.equal(tokens.size, turn, "each turn must receive a distinct token");

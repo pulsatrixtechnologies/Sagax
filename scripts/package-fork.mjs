@@ -24,12 +24,22 @@ const args = [
   `-c.extraMetadata.version=${fork}`,
   `-c.extraMetadata.baseVersion=${base}`,
 ];
+// SAGAX_MAC_IDENTITY names a Developer ID Application identity in the local
+// keychain (its name, e.g. "Jean-Christophe Proulx (TEAMID)", or its SHA-1
+// hash when two identities share that name) for a signed, hardened build.
+// Without it the macOS build stays unsigned.
+const macIdentity = process.env.SAGAX_MAC_IDENTITY?.trim();
 if (target === "mac") {
-  args.push("-c.mac.identity=null", "-c.mac.hardenedRuntime=false", "-c.dmg.sign=false");
+  if (macIdentity) {
+    args.push(`-c.mac.identity=${macIdentity}`);
+    // A certificate hash (two same-named identities): sign by hash.
+    if (/^[0-9A-F]{40}$/i.test(macIdentity)) args.push("-c.mac.sign=./scripts/mac-sign-by-hash.cjs");
+  }
+  else args.push("-c.mac.identity=null", "-c.mac.hardenedRuntime=false", "-c.dmg.sign=false");
 }
 
 const result = spawnSync("pnpm", args, {
   stdio: "inherit",
-  env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },
+  env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: target === "mac" && macIdentity ? "true" : "false" },
 });
 process.exit(result.status ?? 1);

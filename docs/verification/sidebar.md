@@ -26,7 +26,7 @@ Those paths are covered by the computer-section and server Boat inventory tests.
 
 ## Section deletion
 
-Run `OMB_UI_E2E=1 pnpm exec vitest run scripts/testing/team-lifecycle-ui.e2e.test.ts --maxWorkers=1`.
+Run `SAGAX_UI_E2E=1 pnpm exec vitest run scripts/testing/team-lifecycle-ui.e2e.test.ts --maxWorkers=1`.
 The test launches its own isolated server and real renderer; never point it at
 the user's live workspace. It retains the Team map lifecycle checks and also
 checks deletion directly from a sidebar section header:

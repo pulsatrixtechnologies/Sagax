@@ -106,7 +106,7 @@ export interface OidcRelyingPartyOptions {
   /** RFC 8707 resource for the login access token: the Sagax public
    * origin, so that token is worthless on the identity provider's /mcp. */
   resource?: string;
-  /** OMB_PERSPICAX_INTERNAL_URL (slice 3, D17): an origin this server
+  /** SAGAX_PERSPICAX_INTERNAL_URL (slice 3, D17): an origin this server
    * reaches the provider at from inside the deployment (a compose service
    * name, http allowed). Discovery, JWKS, token and revocation calls go
    * there; the issuer check is unchanged and the authorization endpoint
@@ -115,7 +115,7 @@ export interface OidcRelyingPartyOptions {
   fetch?: typeof fetch;
   now?: () => number;
   /** The budget of token and revocation calls (server/idp-token-pacer.ts);
-   * one is made from OMB_PERSPICAX_TOKEN_BUDGET when absent. */
+   * one is made from SAGAX_PERSPICAX_TOKEN_BUDGET when absent. */
   pacer?: TokenCallPacer;
 }
 
@@ -156,7 +156,8 @@ export interface RoutineDelegationExpectation {
 
 interface PendingFlow {
   client: OidcClientKind;
-  /** A desktop sign-in's validated loopback return (server/oidc-login.ts). */
+  /** A desktop sign-in's validated loopback return, or a phone sign-in's
+   * `sagax` return (server/oidc-login.ts). */
   returnTo?: string;
   purpose: OidcFlowPurpose;
   expect?: RoutineDelegationExpectation;
@@ -552,7 +553,7 @@ export class OidcRelyingParty {
     if (options.internalBase !== undefined && !this.internalBase) throw new OidcError("config", "The internal provider URL must be an http or https origin with no path.");
     this.fetcher = options.fetch ?? fetch;
     this.now = options.now ?? Date.now;
-    this.pacer = options.pacer ?? new TokenCallPacer({ budget: tokenBudget(process.env.OMB_PERSPICAX_TOKEN_BUDGET), now: this.now });
+    this.pacer = options.pacer ?? new TokenCallPacer({ budget: tokenBudget(process.env.SAGAX_PERSPICAX_TOKEN_BUDGET), now: this.now });
   }
 
   /** Revocations this party starts go through `sink` (the durable queue,
@@ -730,8 +731,9 @@ export class OidcRelyingParty {
     const client = purpose === "routines" ? "web" : options.client ?? "web";
     this.pending.set(state, {
       client,
-      // Only a desktop sign-in comes back to a loopback listener.
-      ...(client === "desktop" && options.returnTo ? { returnTo: options.returnTo } : {}),
+      // Only a desktop sign-in comes back to a loopback listener, and only a
+      // phone sign-in to its app's scheme (PHONE_SAGAX_RETURN).
+      ...((client === "desktop" || client === "phone") && options.returnTo ? { returnTo: options.returnTo } : {}),
       purpose,
       ...(expect ? { expect } : {}),
       state,

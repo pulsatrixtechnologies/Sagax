@@ -303,12 +303,12 @@ describe("settings rules", () => {
 
 describe("Cloud Pro's included decisions", () => {
   // What the Admin sets on a Cloud home (docs/cloud-pro.md): a Jev base URL,
-  // whose one relay route is <OMB_CLOUD_DECIDER_URL>/v1/systemone.
+  // whose one relay route is <SAGAX_CLOUD_DECIDER_URL>/v1/systemone.
   const RELAY = "https://cloud.example.test/api/cloud/services/decider";
   const INCLUDED = "omb_decide_unit_included_token_0123456789";
   const cloudPro = () => {
-    vi.stubEnv("OMB_CLOUD_DECIDER_URL", RELAY);
-    vi.stubEnv("OMB_CLOUD_DECIDER_TOKEN", INCLUDED);
+    vi.stubEnv("SAGAX_CLOUD_DECIDER_URL", RELAY);
+    vi.stubEnv("SAGAX_CLOUD_DECIDER_TOKEN", INCLUDED);
   };
   // The app's real room request: the only one the relay takes besides the key check.
   const ROOM = roomRoutingRequest({
@@ -326,7 +326,7 @@ describe("Cloud Pro's included decisions", () => {
   };
   afterEach(() => vi.unstubAllEnvs());
 
-  it("with no own key, decides through exactly <OMB_CLOUD_DECIDER_URL>/v1/systemone, on by default", async () => {
+  it("with no own key, decides through exactly <SAGAX_CLOUD_DECIDER_URL>/v1/systemone, on by default", async () => {
     cloudPro();
     const fetchImpl = theo();
     // a base URL set for own keys never carries the included token
@@ -374,7 +374,7 @@ describe("Cloud Pro's included decisions", () => {
 
   it("is on by default only while included: without the relay's URL and token nothing changes", async () => {
     const fetchImpl = theo();
-    for (const env of [{}, { OMB_CLOUD_DECIDER_TOKEN: INCLUDED }, { OMB_CLOUD_DECIDER_URL: RELAY }]) {
+    for (const env of [{}, { SAGAX_CLOUD_DECIDER_TOKEN: INCLUDED }, { SAGAX_CLOUD_DECIDER_URL: RELAY }]) {
       vi.unstubAllEnvs();
       for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
       expect(describeDecider({})).toEqual({ provider: "jev", configured: false, enabled: false, jobs: { roomRouting: true } });

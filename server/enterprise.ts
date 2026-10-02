@@ -5,7 +5,7 @@
 // starts, and /api/edition reports the open-source edition. Core never imports
 // the layer statically; a build ships it as its own bundled file beside the
 // server (see enterpriseLayerDirs for where it is looked up).
-// The layer's only obligation is `register()`, which turns OMB_LICENSE_KEY into
+// The layer's only obligation is `register()`, which turns SAGAX_LICENSE_KEY into
 // entitlements; core keeps the resulting status and answers `entitled()`.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -50,14 +50,14 @@ export const LICENSE_WARN_DAYS = 30;
 export const LICENSE_GRACE_DAYS = 7;
 const DAY_MS = 24 * 60 * 60_000;
 
-/** Where the layer may be, in order. An explicit OMB_ENTERPRISE_DIR is the
+/** Where the layer may be, in order. An explicit SAGAX_ENTERPRISE_DIR is the
  * only place looked at when set. Otherwise: beside the server root (a
  * checkout, where server/ and enterprise/ are siblings, and the npm package,
  * which copies the bundled layer to <package>/enterprise), then inside it
  * (the Docker image and the packaged desktop ship dist-server/ alone, and
  * scripts/bundle-server.mjs writes the layer to dist-server/enterprise). */
 export function enterpriseLayerDirs(env: NodeJS.ProcessEnv = process.env, serverRoot: string = SERVER_ROOT): string[] {
-  if (env.OMB_ENTERPRISE_DIR) return [env.OMB_ENTERPRISE_DIR];
+  if (env.SAGAX_ENTERPRISE_DIR) return [env.SAGAX_ENTERPRISE_DIR];
   return [join(serverRoot, "..", "enterprise"), join(serverRoot, "enterprise")];
 }
 
@@ -86,7 +86,7 @@ export interface WorkspaceAccess {
 }
 
 export function hostedWorkspaceConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.OMB_ADMIN_URL !== undefined || env.OMB_ADMIN_WORKSPACE !== undefined || env.OMB_ADMIN_MEMBERSHIP !== undefined;
+  return env.SAGAX_ADMIN_URL !== undefined || env.SAGAX_ADMIN_WORKSPACE !== undefined || env.SAGAX_ADMIN_MEMBERSHIP !== undefined;
 }
 
 /** Validate the operator's complete hosted configuration before any session
@@ -99,9 +99,9 @@ export function hostedWorkspaceConfiguration(env: NodeJS.ProcessEnv = process.en
       if (url.protocol !== "https:" || (raw !== url.origin && raw !== `${url.origin}/`)) throw new Error("invalid origin");
       return url;
     };
-    if (!/^[a-z][a-z0-9-]{1,30}$/.test(env.OMB_ADMIN_WORKSPACE ?? "")) return null;
-    if (env.OMB_ADMIN_MEMBERSHIP !== undefined && !["local", "portal"].includes(env.OMB_ADMIN_MEMBERSHIP)) return null;
-    return { admin: origin(env.OMB_ADMIN_URL), tenant: origin(env.OMB_PUBLIC_URL), workspace: env.OMB_ADMIN_WORKSPACE!, portalMembership: env.OMB_ADMIN_MEMBERSHIP === "portal" };
+    if (!/^[a-z][a-z0-9-]{1,30}$/.test(env.SAGAX_ADMIN_WORKSPACE ?? "")) return null;
+    if (env.SAGAX_ADMIN_MEMBERSHIP !== undefined && !["local", "portal"].includes(env.SAGAX_ADMIN_MEMBERSHIP)) return null;
+    return { admin: origin(env.SAGAX_ADMIN_URL), tenant: origin(env.SAGAX_PUBLIC_URL), workspace: env.SAGAX_ADMIN_WORKSPACE!, portalMembership: env.SAGAX_ADMIN_MEMBERSHIP === "portal" };
   } catch { return null; }
 }
 
@@ -123,7 +123,7 @@ export function workspaceMembership(env: NodeJS.ProcessEnv = process.env):
 /** An operator may authorize new Full tasks only on a dedicated,
  * portal-managed server. This is not an HTTP setting or a desktop grant. */
 export function sharedWorkspaceFullAccessConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.OMB_SHARED_WORKSPACE_FULL_ACCESS === "1" && env.OMB_DESKTOP_PARENT !== "1" &&
+  return env.SAGAX_SHARED_WORKSPACE_FULL_ACCESS === "1" && env.SAGAX_DESKTOP_PARENT !== "1" &&
     hostedWorkspaceConfiguration(env)?.portalMembership === true;
 }
 
@@ -147,11 +147,11 @@ export async function loadEnterpriseLayer(
 ): Promise<EditionStatus> {
   workspaceAccessFactory = undefined;
   const dirs = options.dir ? [options.dir] : enterpriseLayerDirs(options.env, options.serverRoot);
-  const licenseKey = options.licenseKey ?? process.env.OMB_LICENSE_KEY;
+  const licenseKey = options.licenseKey ?? process.env.SAGAX_LICENSE_KEY;
   const entry = dirs.map(layerEntry).find((candidate) => candidate !== undefined);
   if (!entry) {
     return oss(
-      licenseKey ? `OMB_LICENSE_KEY is set but no enterprise layer exists at ${dirs.join(" or ")}` : undefined,
+      licenseKey ? `SAGAX_LICENSE_KEY is set but no enterprise layer exists at ${dirs.join(" or ")}` : undefined,
     );
   }
   try {
@@ -160,7 +160,7 @@ export async function loadEnterpriseLayer(
     if (typeof access === "function") workspaceAccessFactory = access as (options: WorkspaceAccessOptions) => WorkspaceAccess;
     const register: unknown = Reflect.get(Object(loaded), "register");
     if (typeof register !== "function") throw new Error(`${entry} does not export register()`);
-    if (!licenseKey) return oss("enterprise layer present but OMB_LICENSE_KEY is not set");
+    if (!licenseKey) return oss("enterprise layer present but SAGAX_LICENSE_KEY is not set");
     // graceDays is additive: a layer that ignores it refuses an expired key
     // at startup exactly as before.
     const registered: unknown = await register({ licenseKey, graceDays: LICENSE_GRACE_DAYS });
@@ -198,7 +198,7 @@ export function editionStatus(now: number = Date.now()): EditionStatus {
     return {
       edition: "oss",
       features: [],
-      notice: `enterprise layer disabled: OMB_LICENSE_KEY expired on ${current.expiresAt}; renew it to keep enterprise features`,
+      notice: `enterprise layer disabled: SAGAX_LICENSE_KEY expired on ${current.expiresAt}; renew it to keep enterprise features`,
     };
   }
   const expiresInDays = Math.ceil((at - now) / DAY_MS);
@@ -208,7 +208,7 @@ export function editionStatus(now: number = Date.now()): EditionStatus {
     ...current,
     expiresInDays,
     graceEndsAt,
-    notice: `OMB_LICENSE_KEY expired on ${current.expiresAt}; enterprise features keep working until ${graceEndsAt} while it is renewed`,
+    notice: `SAGAX_LICENSE_KEY expired on ${current.expiresAt}; enterprise features keep working until ${graceEndsAt} while it is renewed`,
   };
 }
 
@@ -230,11 +230,11 @@ export function entitled(feature: string, now: number = Date.now()): boolean {
 export function licenseWarning(status: EditionStatus): string | null {
   if (status.edition !== "enterprise" || !status.expiresAt || status.expiresInDays === undefined) return null;
   if (status.graceEndsAt) {
-    return `OMB_LICENSE_KEY expired on ${status.expiresAt}; enterprise features keep working until ${status.graceEndsAt} — renew the key before then`;
+    return `SAGAX_LICENSE_KEY expired on ${status.expiresAt}; enterprise features keep working until ${status.graceEndsAt} — renew the key before then`;
   }
   if (status.expiresInDays > LICENSE_WARN_DAYS) return null;
   const days = status.expiresInDays === 1 ? "1 day" : `${status.expiresInDays} days`;
-  return `OMB_LICENSE_KEY expires on ${status.expiresAt} (in ${days}); renew it before then to keep enterprise features`;
+  return `SAGAX_LICENSE_KEY expires on ${status.expiresAt} (in ${days}); renew it before then to keep enterprise features`;
 }
 
 /** One line for the startup log. */

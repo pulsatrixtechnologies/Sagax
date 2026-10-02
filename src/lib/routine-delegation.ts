@@ -3,6 +3,14 @@
 // The consent happens at Perspicax; the server starts it
 // (POST /api/org/routine-delegation) and the callback lands back on the app
 // with `#routine-delegation=ok` or `#routine-delegation-error=<code>`.
+//
+// Since 2026-10-01 the delegation is allowed by default: there is no switch
+// in Sagax. Perspicax has no silent authorization (every authorize request
+// shows its sign-in page, there is no prompt=none nor single sign-on
+// session), so the consent cannot ride along unseen at sign-in. Instead it
+// starts once on its own, right after the person creates their first
+// routine (`ensureRoutineDelegation`), and is revoked in the Perspicax
+// console (the person's own access page, `manageUrl`).
 import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
 
@@ -14,6 +22,11 @@ export interface RoutineDelegationStatus {
   renewedAt?: number;
   expiresAt?: number;
   suspended: number;
+  /** The person's own access page in the Perspicax console
+   * (`<issuer>/console/me/access#sagax`), where they revoke it. */
+  manageUrl?: string;
+  /** Whose status this is, so a shared browser asks each person once. */
+  principalId?: string;
 }
 
 /** The outcome a hash carries, or null when it carries none. */
@@ -69,4 +82,53 @@ export function loadRoutineDelegation(): Promise<RoutineDelegationStatus> {
 
 export function revokeRoutineDelegation(): Promise<{ revoked: boolean }> {
   return api<{ revoked: boolean }>("/api/org/routine-delegation", { method: "DELETE" });
+}
+
+/** Where "the consent already started once on its own" is remembered, per
+ * person (their console address carries their Perspicax id). */
+export const AUTO_CONSENT_KEY = "sagax.routineDelegation.autoConsent.v1";
+
+export interface EnsureDelegationDeps {
+  load?: () => Promise<RoutineDelegationStatus>;
+  start?: () => Promise<void>;
+  storage?: Pick<Storage, "getItem" | "setItem"> | null;
+}
+
+function defaultStorage(): Pick<Storage, "getItem" | "setItem"> | null {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+/** After a routine is created: on an organization server, a person whose
+ * routines may not act in their name yet is sent to the Perspicax consent,
+ * once (a later routine never sends them again; the routines page and the
+ * paused routine card still offer it). A solo server answers 403 here:
+ * nothing happens. */
+export async function ensureRoutineDelegation(deps: EnsureDelegationDeps = {}): Promise<"active" | "started" | "skipped" | "unavailable"> {
+  const load = deps.load ?? loadRoutineDelegation;
+  const start = deps.start ?? (() => startRoutineDelegation());
+  const storage = deps.storage === undefined ? defaultStorage() : deps.storage;
+  let status: RoutineDelegationStatus;
+  try {
+    status = await load();
+  } catch {
+    return "unavailable";
+  }
+  if (status.state === "active") return "active";
+  const key = `${AUTO_CONSENT_KEY}:${status.principalId ?? status.manageUrl ?? "self"}`;
+  try {
+    if (storage?.getItem(key)) return "skipped";
+    storage?.setItem(key, String(Date.now()));
+  } catch {
+    /* no storage: still start it this time */
+  }
+  try {
+    await start();
+    return "started";
+  } catch {
+    return "unavailable";
+  }
 }

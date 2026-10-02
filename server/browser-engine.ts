@@ -220,10 +220,15 @@ interface BrowserLookupOptions {
 }
 
 function packagedBrowser(options: BrowserLookupOptions) {
-  const resources = (options.env ?? process.env).OMB_RESOURCES_PATH;
+  const resources = (options.env ?? process.env).SAGAX_RESOURCES_PATH;
   if (!resources) return null;
+  const platform = options.platform ?? process.platform;
+  const arch = options.arch ?? process.arch;
+  // There is no Windows arm64 browser bundle: the arm64 installer ships the
+  // x64 one, which Windows on Arm runs under its x64 emulation.
+  const target = platform === "win32" && arch === "arm64" ? "win32-x64" : `${platform}-${arch}`;
   try {
-    return browserBundlePaths(join(resolve(resources), "browser-engine"), `${options.platform ?? process.platform}-${options.arch ?? process.arch}`);
+    return browserBundlePaths(join(resolve(resources), "browser-engine"), target);
   } catch {
     return null; // No desktop bundle for this platform/architecture.
   }
@@ -233,13 +238,13 @@ function completePackage(bundle: NonNullable<ReturnType<typeof packagedBrowser>>
   return [bundle.manifest, bundle.engine, bundle.chrome, bundle.licenses].every(exists);
 }
 
-/** OMB_AGENT_BROWSER_PATH, then the complete desktop bundle, pinned download, then
+/** SAGAX_AGENT_BROWSER_PATH, then the complete desktop bundle, pinned download, then
  * PATH (a package or image that installed it globally). */
 export function resolveAgentBrowserBinary(options: BrowserLookupOptions = {}): string | null {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   const exists = options.exists ?? existsSync;
-  const override = env.OMB_AGENT_BROWSER_PATH?.trim();
+  const override = env.SAGAX_AGENT_BROWSER_PATH?.trim();
   if (override) return resolve(override) && exists(resolve(override)) ? resolve(override) : null;
   const bundle = packagedBrowser(options);
   if (bundle && exists(bundle.directory)) return completePackage(bundle, exists) ? bundle.engine : null;

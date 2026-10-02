@@ -4,7 +4,7 @@
 //
 // One file per UTC month under <data>/admin-activity/YYYY-MM.ndjson, 0600,
 // pruned by the decision log's retention window (decision-log.ts
-// `decisions.retentionDays` / OMB_DECISION_RETENTION_DAYS), so one setting
+// `decisions.retentionDays` / SAGAX_DECISION_RETENTION_DAYS), so one setting
 // keeps both. Each row names who acted (a signed-in session, the owner on
 // this machine, a local service, or the command line), what changed (the
 // setting paths), and the values before and after — redacted: a value under

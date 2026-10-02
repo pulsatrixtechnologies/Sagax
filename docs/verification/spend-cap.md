@@ -46,9 +46,9 @@ It prints the fixture's server log path and removes its temporary homes.
 The memory regression also proves that one helper reaching the cap blocks
 the next step in that same upkeep pass, and that raising the cap resumes it.
 
-For the same by hand, launch a fixture with `OMB_ENTERPRISE_DIR` pointing at a
+For the same by hand, launch a fixture with `SAGAX_ENTERPRISE_DIR` pointing at a
 folder whose `server/index.js` exports such a `register()`, and
-`OMB_LICENSE_KEY` set to any value, then use the normal chat-turn commands.
+`SAGAX_LICENSE_KEY` set to any value, then use the normal chat-turn commands.
 
 ## Unit regressions
 

@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StoreProvider, type Bot, type ConfigStatus } from "@/state/store";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
 
-const fixture = vi.hoisted(() => ({ dispatch: vi.fn(), mcpError: false, servers: null as null | Array<{ name: string; enabled: boolean }>, config: null as unknown }));
+const fixture = vi.hoisted(() => ({ dispatch: vi.fn(), mcpError: false, servers: null as null | Array<{ name: string; enabled: boolean }>, config: null as unknown, organization: false }));
+vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/perspicax-org")>(),
+  usePerspicaxOrg: () => (fixture.organization ? { org: { identity: { kind: "perspicax" } } } : null),
+}));
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
   return { ...original, useStore: () => ({ state: { ...original.initialState, config: fixture.config ?? original.initialState.config }, dispatch: fixture.dispatch }) };
@@ -27,7 +31,7 @@ const { AccessSection } = await import("./AccessSection");
 // WorkingFolder (moved into this file) reads window.ogb?.pickFolder directly
 // at render time, same "node" environment gap as above — stub per test, the
 // way desktop.test.ts and EngineUpdateNotice.test.ts do.
-beforeEach(() => { vi.stubGlobal("window", {}); fixture.dispatch.mockReset(); fixture.mcpError = false; fixture.servers = null; fixture.config = null; });
+beforeEach(() => { vi.stubGlobal("window", {}); fixture.dispatch.mockReset(); fixture.mcpError = false; fixture.servers = null; fixture.config = null; fixture.organization = false; });
 afterEach(() => vi.unstubAllGlobals());
 
 function makeBot(overrides: Partial<Bot> = {}): Bot {
@@ -96,7 +100,20 @@ describe("AccessSection always-allowed list", () => {
     expect(idle).not.toContain("finishes all active tasks");
   });
 
+  it("hides the bot's Connected apps switch while the experimental feature is off", () => {
+    const off = render(makeBot());
+    expect(off).not.toContain('aria-label="Allow this bot to use connected apps"');
+    expect(off).not.toContain("Connect an app");
+    fixture.config = { features: { connectedApps: false } };
+    expect(render(makeBot())).not.toContain('aria-label="Allow this bot to use connected apps"');
+    fixture.config = { features: { connectedApps: true }, composio: { configured: true } };
+    const on = render(makeBot());
+    expect(on).toContain('aria-label="Allow this bot to use connected apps"');
+    expect(on).toContain("Connect an app");
+  });
+
   it("opens the established app connection flow without authorizing a second way", () => {
+    fixture.config = { features: { connectedApps: true }, composio: { configured: true } };
     let tree!: ReturnType<typeof AccessSection>;
     function Capture() { tree = AccessSection({ bot: makeBot(), derived: makeDerived() }); return tree; }
     renderToStaticMarkup(createElement(StoreProvider, null, createElement(Capture)));
@@ -140,16 +157,48 @@ describe("AccessSection always-allowed list", () => {
 });
 
 describe("AccessSection Works on", () => {
-  const places = (markup: string) => [...markup.matchAll(/>(Auto|Cloud|Local VM|This computer|Browser|Off)<\/button>/g)].map((match) => match[1]);
+  const places = (markup: string) => [...markup.matchAll(/>(Auto(?: \(Cloud\))?|Cloud computer|Cloud \(server environment\)|Local VM|This computer|Browser|Off)<\/button>/g)].map((match) => match[1]);
+  const FLAGS = [{}, { boatComputer: true }, { vpsComputer: true }, { boatComputer: true, vpsComputer: true }];
 
   it("offers this computer and a Local VM on a desktop or self-hosted server", () => {
-    expect(places(render(makeBot()))).toEqual(["Auto", "Cloud", "Local VM", "This computer", "Browser", "Off"]);
+    // Cloud (Boat or VPS Computer) is experimental and off by default.
+    expect(places(render(makeBot()))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
     fixture.config = { cloudHome: false } as Partial<ConfigStatus>;
-    expect(places(render(makeBot()))).toEqual(["Auto", "Cloud", "Local VM", "This computer", "Browser", "Off"]);
+    expect(places(render(makeBot()))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
+    fixture.config = { cloudHome: false, features: { skillAuthoring: true, boatComputer: true } } as Partial<ConfigStatus>;
+    expect(places(render(makeBot()))).toEqual(["Auto", "Cloud computer", "Local VM", "This computer", "Browser", "Off"]);
   });
 
   it("never offers them on an OMB Cloud home", () => {
     fixture.config = { cloudHome: true } as Partial<ConfigStatus>;
-    expect(places(render(makeBot()))).toEqual(["Auto", "Cloud", "Browser", "Off"]);
+    expect(places(render(makeBot()))).toEqual(["Auto", "Cloud computer", "Browser", "Off"]);
+  });
+
+  it("offers Cloud (the server environment) on an organization server whatever the VPS and Boat flags say, and Auto means Cloud", () => {
+    fixture.organization = true;
+    for (const features of FLAGS) {
+      fixture.config = { features } as Partial<ConfigStatus>;
+      const markup = render(makeBot());
+      expect(places(markup)).toEqual(["Auto (Cloud)", "Cloud (server environment)", "Local VM", "This computer", "Browser", "Off"]);
+      expect(markup).toContain("Now: Auto (Cloud).");
+      expect(markup).toContain("Cloud is your server environment.");
+      // No Boat or VPS backend picker on an organization server.
+      expect(markup).not.toContain("Cloud backend");
+      expect(markup).not.toContain("Auto and cloud computers.");
+    }
+  });
+
+  it("says why an option is disabled", () => {
+    const markup = render(makeBot(), makeDerived({ localSelectable: false, localDisabledReason: "Local computer control requires the desktop app." }));
+    expect(markup).toContain("This computer is not available: Local computer control requires the desktop app.");
+    expect(markup).toContain("Browser is not available: The built-in browser needs the Sagax desktop app");
+    fixture.organization = true;
+    expect(render(makeBot(), makeDerived({ localSelectable: false, localDisabledReason: "Local computer control requires the desktop app." }))).toContain("This computer is not available");
+  });
+
+  it("explains Auto and cloud computers on a solo server only when a cloud computer can be chosen", () => {
+    expect(render(makeBot())).not.toContain("Auto and cloud computers.");
+    fixture.config = { features: { boatComputer: true } } as Partial<ConfigStatus>;
+    expect(render(makeBot())).toContain("Auto and cloud computers.");
   });
 });

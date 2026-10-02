@@ -109,9 +109,9 @@ export function loadEnvironmentId(dataDir: string): string {
 }
 
 /** The desktop app passes its own version; a checkout reads package.json;
- * an image sets OMB_APP_VERSION at build time. */
+ * an image sets SAGAX_APP_VERSION at build time. */
 export function serverVersion(): string {
-  const fromEnv = process.env.OMB_APP_VERSION?.trim();
+  const fromEnv = process.env.SAGAX_APP_VERSION?.trim();
   if (fromEnv) return fromEnv;
   try {
     const pkg: unknown = JSON.parse(readFileSync(join(SERVER_ROOT, "..", "package.json"), "utf8"));
@@ -123,15 +123,15 @@ export function serverVersion(): string {
   return "unknown";
 }
 
-/** This server's display name: OMB_ENVIRONMENT_LABEL, else the
- * organization's name (OMB_ORG_NAME), else the host of its public address
- * (OMB_PUBLIC_URL), else the machine's host name. A container's host name is
+/** This server's display name: SAGAX_ENVIRONMENT_LABEL, else the
+ * organization's name (SAGAX_ORG_NAME), else the host of its public address
+ * (SAGAX_PUBLIC_URL), else the machine's host name. A container's host name is
  * its id (say 2f463c19755e), never a name to show people. */
 export function environmentLabel(env: NodeJS.ProcessEnv = process.env): string {
-  const explicit = env.OMB_ENVIRONMENT_LABEL?.trim() || env.OMB_ORG_NAME?.trim();
+  const explicit = env.SAGAX_ENVIRONMENT_LABEL?.trim() || env.SAGAX_ORG_NAME?.trim();
   if (explicit) return explicit.slice(0, 120);
   try {
-    const host = env.OMB_PUBLIC_URL?.trim() ? new URL(env.OMB_PUBLIC_URL.trim()).hostname : "";
+    const host = env.SAGAX_PUBLIC_URL?.trim() ? new URL(env.SAGAX_PUBLIC_URL.trim()).hostname : "";
     if (host) return host;
   } catch {
     /* not a URL: fall through */

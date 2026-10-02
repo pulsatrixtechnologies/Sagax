@@ -17,6 +17,7 @@ import {
 } from "../../shared/bot-avatar";
 import { BotAvatar } from "./Avatar";
 import { AvatarImageGenerator } from "./AvatarImageGenerator";
+import type { FxMoveRequest } from "./skin-fx/skin-fx";
 
 type AvatarPatch = Partial<
   Pick<Bot, "avatarCrop" | "avatarUrl" | "avatarZoom" | "avatarFocusX" | "avatarFocusY" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin" | "mascotLook">
@@ -79,7 +80,7 @@ function usePopoverPlace(open: boolean, anchor: RefObject<HTMLElement | null>, p
   return place;
 }
 
-// The character and its look (the mascot registry, its thumbnails and a live preview): fetched only when the popover opens.
+// The character and its look (the mascot registry, its thumbnails and the skin cards): fetched only when the popover opens.
 const MascotLookEditor = lazy(() => import("./floating-bots/MascotLookEditor"));
 
 
@@ -207,6 +208,9 @@ export function BotProfileAvatarCard({
     setTriedMove((last) => ({ kind, nonce: (last?.nonce ?? 0) + 1 }));
     dispatch({ type: "playMascotMotion", botId: bot.id, kind });
   };
+  // A shape's or Trombi's move plays on the avatar above the popover, its preview.
+  const [characterMove, setCharacterMove] = useState<FxMoveRequest | null>(null);
+  const playCharacterMove = (clip: string) => setCharacterMove((last) => ({ clip, key: (last?.key ?? 0) + 1 }));
 
   const upload = async (file: File | undefined) => {
     if (!file || busy) return;
@@ -334,7 +338,7 @@ export function BotProfileAvatarCard({
 
         {editorTab === "bot" && crop === "mascot" && editorOpen && (
           <Suspense fallback={<div className="h-[320px]" />}>
-            <MascotLookEditor bot={bot} disabled={busy} onPatch={onPatch} onOwlMove={playMove} />
+            <MascotLookEditor bot={bot} disabled={busy} onPatch={onPatch} onOwlMove={playMove} onMove={playCharacterMove} />
           </Suspense>
         )}
         {editorTab === "bot" && crop !== "mascot" && (
@@ -371,6 +375,7 @@ export function BotProfileAvatarCard({
             size={112}
             motion={previewMotion?.kind ?? "none"}
             motionKey={previewMotion?.nonce ?? 0}
+            characterMove={characterMove}
           />
         </button>
       </div>
@@ -382,7 +387,7 @@ export function BotProfileAvatarCard({
             data-avatar-popover=""
             role="dialog"
             aria-label="Edit avatar"
-            className="fixed z-[1000] overflow-y-auto rounded-2xl border border-hairline/50 bg-card p-3.5 shadow-2xl shadow-black/50"
+            className="fixed z-[1000] overflow-y-auto overscroll-contain rounded-2xl border border-hairline/50 bg-card p-3.5 shadow-2xl shadow-black/50"
             style={{ left: place.left, top: place.top, width: place.width, maxHeight: place.maxHeight, visibility: place.ready ? "visible" : "hidden" }}
           >
             {body}

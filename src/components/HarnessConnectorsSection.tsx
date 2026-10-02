@@ -1,5 +1,7 @@
 // Connected apps > "Provided by Claude (your account)": the claude.ai
 // connectors of the caller's own Claude account (server/harness-connectors.ts).
+// While Connected apps is switched off (Settings > Experimental), the same
+// read-only status shows in Settings > Model providers instead.
 // Read-only here: people add, sign in to and remove them on claude.ai. An
 // admin can turn them off for the whole server.
 import { useCallback, useEffect, useState } from "react";
@@ -43,7 +45,7 @@ export function harnessUnavailableKey(reason: Unavailable | undefined): LocaleKe
   return UNAVAILABLE_KEY[reason ?? "unknown"] ?? UNAVAILABLE_KEY.unknown;
 }
 
-export function HarnessConnectorsSection() {
+export function HarnessConnectorsSection({ placement = "panel" }: { placement?: "panel" | "settings" } = {}) {
   const [answer, setAnswer] = useState<HarnessConnectorsAnswer | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -80,7 +82,8 @@ export function HarnessConnectorsSection() {
 
   const claude = answer?.claude;
   return (
-    <section aria-labelledby="harness-connectors-title" className="mx-6 mb-3 rounded-xl border border-border bg-inset px-4 py-3 sm:mx-8">
+    <section aria-labelledby="harness-connectors-title" data-harness-connectors={placement}
+      className={cn("rounded-xl border border-border bg-inset px-4 py-3", placement === "panel" && "mx-6 mb-3 sm:mx-8")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 id="harness-connectors-title" className="text-[13px] font-semibold text-ink">{t("harnessConnectors.title")}</h3>

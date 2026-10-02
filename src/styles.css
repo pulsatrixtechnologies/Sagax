@@ -123,6 +123,8 @@
   --animate-pop-out: pop-out 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   --animate-caret: caret-blink 1s step-end infinite;
   --animate-msg-in: msg-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-call-dock-in: call-dock-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-call-dock-out: call-dock-out 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   --animate-shimmer: shimmer 2s linear infinite;
   --animate-status-pulse: status-pulse 1.6s steps(2, jump-none) infinite;
   /* onboarding: a block of copy or a row arriving in a beat; `.stagger`
@@ -1311,6 +1313,16 @@ body {
   from { transform: scale(1) translateY(0); opacity: 1; }
   to { transform: scale(0.96) translateY(6px); opacity: 0; }
 }
+/* voice mode's in-call banner (CallView.tsx VoiceCallDock): it opens its
+   room at the top of the chat column, and folds it away when the call ends */
+@keyframes call-dock-in {
+  from { grid-template-rows: 0fr; opacity: 0; transform: translateY(-4px); }
+  to { grid-template-rows: 1fr; opacity: 1; transform: translateY(0); }
+}
+@keyframes call-dock-out {
+  from { height: var(--call-dock-h); margin-bottom: 8px; opacity: 1; }
+  to { height: 0; margin-bottom: 0; opacity: 0; }
+}
 /* streaming caret: a true typing blink (step, not fade) */
 @keyframes caret-blink {
   0%, 100% { opacity: 1; }
@@ -1423,7 +1435,7 @@ body {
   color: transparent;
 }
 @media (prefers-reduced-motion: reduce) {
-  .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out { animation: none; }
+  .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out, .animate-call-dock-in { animation: none; }
   .animate-status-pulse { animation: none; opacity: 0.6; }
   .thinking-shimmer { background: none; color: var(--color-ink-secondary); }
   .turn-mascot-in, .turn-mascot-out, .turn-answer { animation: none; }
@@ -1439,6 +1451,7 @@ body {
 :root[data-reduced-motion="true"] .animate-spot-in,
 :root[data-reduced-motion="true"] .animate-pop-in,
 :root[data-reduced-motion="true"] .animate-pop-out,
+:root[data-reduced-motion="true"] .animate-call-dock-in,
 :root[data-reduced-motion="true"] .welcome-card * {
   animation: none !important;
   transition: none !important;
@@ -2075,6 +2088,47 @@ button:disabled.bg-danger {
 }
 [data-owl-fx="live"] .owl-fx-glow-inferno {
   animation: owl-fx-pulse 1.3s ease-in-out infinite;
+}
+[data-owl-fx="live"] .owl-fx-aura-holo,
+[data-owl-fx="live"] .owl-fx-aura-galaxy,
+[data-owl-fx="live"] .owl-fx-aura-spirit,
+[data-owl-fx="live"] .owl-fx-glow-spirit {
+  animation: owl-fx-pulse 3.6s ease-in-out infinite;
+}
+/* the holographic foil slides across the plumage; the galaxy's nebula drifts;
+   the spirit's wisps rise and fade. Slow, soft and never flashing. */
+[data-owl-fx="live"] .owl-fx-foil {
+  animation-name: owl-fx-foil;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-drift {
+  animation-name: owl-fx-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+[data-owl-fx="live"] .owl-fx-wisp {
+  animation-name: owl-fx-wisp;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+}
+.owl-fx-wisp {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+@keyframes owl-fx-foil {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(128px); }
+}
+@keyframes owl-fx-drift {
+  0% { transform: translate(-10px, 4px); }
+  100% { transform: translate(12px, -6px); }
+}
+@keyframes owl-fx-wisp {
+  0% { transform: translate(0, 0) scale(0.6); opacity: 0; }
+  25% { opacity: 0.7; }
+  100% { transform: translate(4px, -48px) scale(1.15); opacity: 0; }
 }
 @keyframes owl-fx-crackle {
   0%, 30%, 100% { opacity: 0; }

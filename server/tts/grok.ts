@@ -2,7 +2,7 @@
 import { z } from "zod";
 import type { Audio, Voice } from "./elevenlabs.ts";
 
-const API = (process.env.OMB_XAI_TTS_API || "https://api.x.ai/v1").replace(/\/+$/, "");
+const API = (process.env.SAGAX_XAI_TTS_API || "https://api.x.ai/v1").replace(/\/+$/, "");
 const voicesSchema = z.object({
   voices: z.array(z.object({
     voice_id: z.string().min(1),
@@ -10,6 +10,8 @@ const voicesSchema = z.object({
     description: z.string().optional(),
   })),
 });
+
+const sttSchema = z.object({ text: z.string(), language: z.string().optional() });
 
 function refusal(status: number): string {
   if (status === 401 || status === 403) return "xAI rejected the key or its TTS permissions. Check the xAI key in Settings.";
@@ -49,11 +51,22 @@ export async function listVoices(key: string): Promise<Voice[]> {
   }));
 }
 
-export async function synthesize(text: string, voiceId: string, key: string): Promise<Audio> {
+/** Voice mode's choices for one utterance (shared/voice-mode.ts): xAI
+ * takes `speed` from 0.7 to 1.5 and a BCP-47 `language` or "auto". */
+export interface SynthesizeOptions {
+  speed?: number;
+  language?: string;
+}
+
+export async function synthesize(text: string, voiceId: string | undefined, key: string, options: SynthesizeOptions = {}): Promise<Audio> {
+  const body: Record<string, unknown> = { text, language: options.language || "auto", output_format: { codec: "mp3" } };
+  // no voice: xAI's default voice
+  if (voiceId) body.voice_id = voiceId;
+  if (typeof options.speed === "number" && options.speed !== 1) body.speed = options.speed;
   const response = await request("/tts", {
     method: "POST",
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "audio/mpeg" },
-    body: JSON.stringify({ text, voice_id: voiceId, language: "auto", output_format: { codec: "mp3" } }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(60_000),
   });
   const mime = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
@@ -69,4 +82,176 @@ export async function synthesize(text: string, voiceId: string, key: string): Pr
   }
   if (!bytes.byteLength) throw new Error("Grok returned empty audio. Try again.");
   return { bytes, mime: "audio/mpeg" };
+}
+
+/** Speech to text (POST /v1/stt, multipart): one recorded turn. `language`
+ * is a hint; without it xAI detects the language. */
+export async function transcribe(audio: Uint8Array, mime: string, key: string, language?: string): Promise<{ text: string; language?: string }> {
+  const form = new FormData();
+  const name = mime === "audio/wav" ? "turn.wav" : mime === "audio/webm" ? "turn.webm" : "turn.ogg";
+  form.append("file", new Blob([new Uint8Array(audio)], { type: mime }), name);
+  if (language) form.append("language", language);
+  const response = await request("/stt", {
+    method: "POST",
+    headers: { authorization: `Bearer ${key}`, accept: "application/json" },
+    body: form,
+    signal: AbortSignal.timeout(60_000),
+  });
+  const parsed = sttSchema.safeParse(await response.json().catch(() => null));
+  if (!parsed.success) throw new Error("Grok returned an invalid transcript. Try again later.");
+  return { text: parsed.data.text, ...(parsed.data.language ? { language: parsed.data.language } : {}) };
+}
+
+/** The sample rate of the raw PCM voice mode's live calls play
+ * (16-bit little-endian mono). */
+export const VOICE_STREAM_RATE = 24_000;
+
+/** Text to speech as it is generated: POST /v1/tts with a raw PCM
+ * `output_format` answers the audio bytes as xAI produces them, so the first
+ * chunk plays before the sentence is fully synthesized
+ * (https://docs.x.ai/developers/model-capabilities/audio/text-to-speech).
+ * The connection to api.x.ai is pooled by fetch (keep-alive), so the next
+ * sentence of the same answer reuses a warm connection. */
+export async function synthesizeStream(
+  text: string,
+  voiceId: string | undefined,
+  key: string,
+  options: SynthesizeOptions = {},
+  signal?: AbortSignal,
+): Promise<{ body: ReadableStream<Uint8Array>; sampleRate: number }> {
+  const body: Record<string, unknown> = {
+    text,
+    language: options.language || "auto",
+    output_format: { codec: "pcm", sample_rate: VOICE_STREAM_RATE },
+  };
+  if (voiceId) body.voice_id = voiceId;
+  if (typeof options.speed === "number" && options.speed !== 1) body.speed = options.speed;
+  const timeout = AbortSignal.timeout(60_000);
+  const response = await request("/tts", {
+    method: "POST",
+    headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/octet-stream" },
+    body: JSON.stringify(body),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
+  const mime = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (mime === "application/json" || mime.startsWith("text/") || !response.body) {
+    await response.body?.cancel();
+    throw new Error("Grok returned an unexpected audio format. Try again later.");
+  }
+  return { body: response.body, sampleRate: VOICE_STREAM_RATE };
+}
+
+/** One event of xAI's streaming speech to text (wss://api.x.ai/v1/stt). */
+export interface TranscriptEvent {
+  text: string;
+  /** a chunk xAI will not revise */
+  final: boolean;
+  /** the speaker stopped (endpointing or Smart Turn) */
+  speechFinal: boolean;
+}
+
+export interface TranscriptionStream {
+  /** resolves once xAI says `transcript.created` (ready for audio) */
+  ready: Promise<void>;
+  /** 16-bit little-endian PCM at 16 kHz, mono */
+  send(pcm: Uint8Array): void;
+  /** end the current utterance now (`{"type":"finalize"}`) */
+  finalize(): void;
+  close(): void;
+}
+
+export interface TranscriptionHandlers {
+  onTranscript(event: TranscriptEvent): void;
+  onError(message: string): void;
+  onClose(): void;
+}
+
+/** A WebSocket constructor that can send an Authorization header (Node's
+ * global WebSocket, undici, takes `{ headers }`). Injected in tests. */
+export type HeaderWebSocket = new (url: string, init: { headers: Record<string, string> }) => WebSocket;
+
+/** Streaming speech to text for a live call: one connection per call,
+ * audio frames in, partial and final transcripts out. The session goes on
+ * after a finalize, so every turn of the call reuses it.
+ * https://docs.x.ai/developers/model-capabilities/audio/speech-to-text */
+export function openTranscriptionStream(
+  key: string,
+  options: { language?: string; endpointingMs?: number },
+  handlers: TranscriptionHandlers,
+  Socket: HeaderWebSocket = WebSocket as unknown as HeaderWebSocket,
+): TranscriptionStream {
+  const query = new URLSearchParams({
+    model: "grok-voice-transcribe-2.0",
+    encoding: "pcm",
+    sample_rate: "16000",
+    interim_results: "true",
+    endpointing: String(Math.max(0, Math.min(5000, Math.round(options.endpointingMs ?? 700)))),
+  });
+  if (options.language) query.set("language", options.language);
+  const url = `${API.replace(/^http/, "ws")}/stt?${query}`;
+  let socket: WebSocket;
+  let closed = false;
+  let resolveReady!: () => void;
+  let rejectReady!: (error: Error) => void;
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  ready.catch(() => {});
+  const fail = (message: string) => {
+    if (closed) return;
+    closed = true;
+    rejectReady(new Error(message));
+    handlers.onError(message);
+    try { socket?.close(); } catch { /* already closed */ }
+    handlers.onClose();
+  };
+  try {
+    socket = new Socket(url, { headers: { authorization: `Bearer ${key}` } });
+  } catch {
+    queueMicrotask(() => fail("Could not reach Grok voice. Check your connection."));
+    return { ready, send() {}, finalize() {}, close() {} };
+  }
+  socket.binaryType = "arraybuffer";
+  socket.addEventListener("message", (event: MessageEvent) => {
+    if (typeof event.data !== "string") return;
+    let frame: Record<string, unknown>;
+    try { frame = JSON.parse(event.data) as Record<string, unknown>; } catch { return; }
+    if (frame.type === "transcript.created") resolveReady();
+    else if (frame.type === "transcript.partial" || frame.type === "transcript.done") {
+      handlers.onTranscript({
+        text: typeof frame.text === "string" ? frame.text : "",
+        final: frame.type === "transcript.done" || frame.is_final === true,
+        speechFinal: frame.type === "transcript.done" || frame.speech_final === true,
+      });
+    } else if (frame.type === "error") {
+      // xAI's message may echo request details; never pass it on verbatim
+      fail("Grok speech to text reported an error. Try again.");
+    }
+  });
+  socket.addEventListener("error", () => fail("Could not reach Grok voice. Check your connection."));
+  socket.addEventListener("close", () => {
+    if (closed) return;
+    closed = true;
+    rejectReady(new Error("closed"));
+    handlers.onClose();
+  });
+  return {
+    ready,
+    send(pcm) {
+      if (!closed && socket.readyState === 1) socket.send(pcm);
+    },
+    finalize() {
+      if (!closed && socket.readyState === 1) socket.send(JSON.stringify({ type: "finalize" }));
+    },
+    close() {
+      if (closed) return;
+      closed = true;
+      try {
+        if (socket.readyState === 1) socket.send(JSON.stringify({ type: "audio.done" }));
+        socket.close();
+      } catch { /* already closed */ }
+      handlers.onClose();
+    },
+  };
 }

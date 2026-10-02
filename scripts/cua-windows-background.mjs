@@ -2,7 +2,7 @@
 // Windows GUI-subsystem copy for that daemon; keep the upstream CLI unchanged
 // for the stdio MCP proxy. No executable section or entry point is modified.
 export function createBackgroundExecutable(source) {
-  const fail = () => { throw new Error("Unsupported CUA executable: expected a complete x64 PE32+ console image"); };
+  const fail = () => { throw new Error("Unsupported CUA executable: expected a complete x64 or arm64 PE32+ console image"); };
   if (!Buffer.isBuffer(source) || source.length < 64 || source.toString("ascii", 0, 2) !== "MZ") fail();
   const pe = source.readUInt32LE(60);
   if (pe < 64 || pe + 24 > source.length || source.toString("ascii", pe, pe + 4) !== "PE\0\0") fail();
@@ -10,7 +10,7 @@ export function createBackgroundExecutable(source) {
   const optionalSize = source.readUInt16LE(pe + 20);
   const sectionCount = source.readUInt16LE(pe + 6);
   const sectionTable = optional + optionalSize;
-  if (source.readUInt16LE(pe + 4) !== 0x8664 || optionalSize < 152 ||
+  if (![0x8664, 0xaa64].includes(source.readUInt16LE(pe + 4)) || optionalSize < 152 ||
       sectionTable + sectionCount * 40 > source.length || sectionCount === 0) fail();
   if (source.readUInt16LE(optional) !== 0x20b || source.readUInt16LE(optional + 68) !== 3 ||
       source.readUInt32LE(optional + 108) < 5) fail();

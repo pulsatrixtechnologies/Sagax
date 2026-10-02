@@ -17,7 +17,7 @@ function answer(auth: RequestAuth, method = "GET") {
     directory: () => null,
     bySubject: () => null,
     viewerRole: () => "member",
-    settings: () => ({ orgKeyConfigured: false }),
+    settings: () => ({ orgKeyConfigured: false, allowFullAccess: true }),
     pendingAdminApprovals: () => [],
     routineDelegation: {
       status: () => ({ state: "none" }),
@@ -43,7 +43,7 @@ const session = (overrides: Partial<SessionRecord> = {}): RequestAuth => ({
 });
 
 describe("/api/org/routine-delegation", () => {
-  it("answers 401 session_required to a local request under OMB_LOOPBACK_TRUST=owner", async () => {
+  it("answers 401 session_required to a local request under SAGAX_LOOPBACK_TRUST=owner", async () => {
     for (const method of ["GET", "POST", "DELETE"]) {
       expect(await answer({ kind: "loopback", scopes: ["admin", "client"] }, method)).toMatchObject({ status: 401, body: { code: "session_required" } });
     }
@@ -59,6 +59,8 @@ describe("/api/org/routine-delegation", () => {
   it("serves a person signed in with Pulsatrix, and DELETE keeps answering {revoked:true}", async () => {
     const alice = session({ principalId: "pr_alice", idp: { iss: "https://px.example.test", sub: "A1", grantRef: "g1" } } as Partial<SessionRecord>);
     expect(await answer(alice)).toMatchObject({ status: 200, body: { state: "none", suspended: 0 } });
+    // where the person revokes it: their own access page in the Perspicax console
+    expect((await answer(alice)).body).toMatchObject({ manageUrl: "https://px.example.test/console/me/access#sagax", principalId: "pr_alice" });
     expect(await answer(alice, "DELETE")).toMatchObject({ status: 200, body: { revoked: true } });
   });
 });

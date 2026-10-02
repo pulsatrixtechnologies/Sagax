@@ -1,5 +1,6 @@
 import { codexToolSurfaceArgs } from "./codex-tool-surface.ts";
-import { CODEX_WITHHELD_APPROVAL, codexHostToolArgs, codexHostToolRequest } from "./host-tools.ts";
+import { CODEX_WITHHELD_APPROVAL, CODEX_WITHHELD_FULL_APPROVAL, codexHostToolArgs, codexHostToolRequest } from "./host-tools.ts";
+import { networkProxyEnvironment } from "./network-proxy.ts";
 // Codex driver — upstream CodexDriver skeleton over agentcal's
 // drivers/codex.js runtime: the official `codex` CLI headless over its
 // app-server JSON-RPC protocol (newline-delimited JSON on stdio).
@@ -16,6 +17,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { codexConfigMcpServerNames, mountedMcpServerName } from "./codex-mcp-names.ts";
+import { probeCodexSkills } from "./harness-command-probe.ts";
 
 import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts";
 import { hostedWorkspaceConfigured } from "../enterprise.ts";
@@ -142,14 +144,14 @@ export function chatgptPlanCodexArgs(): string[] {
     "-c", 'model_provider="openai_chatgpt_plan"',
     "-c", 'model_providers.openai_chatgpt_plan.name="ChatGPT plan"',
     "-c", 'model_providers.openai_chatgpt_plan.base_url="https://api.openai.com/v1"',
-    "-c", 'model_providers.openai_chatgpt_plan.env_key="OPENMAUSBOT_CHATGPT_TOKEN"',
+    "-c", 'model_providers.openai_chatgpt_plan.env_key="SAGAX_CHATGPT_TOKEN"',
     "-c", 'model_providers.openai_chatgpt_plan.wire_api="responses"',
     "-c", "model_providers.openai_chatgpt_plan.requires_openai_auth=false",
     "-c", "model_providers.openai_chatgpt_plan.supports_websockets=false",
     "-c", 'cli_auth_credentials_store="ephemeral"',
     "-c", "features.tool_search=false",
     "-c", "shell_environment_policy.ignore_default_excludes=false",
-    "-c", 'shell_environment_policy.exclude=["OPENMAUSBOT_CHATGPT_TOKEN"]',
+    "-c", 'shell_environment_policy.exclude=["SAGAX_CHATGPT_TOKEN"]',
   ];
 }
 
@@ -173,7 +175,7 @@ export function managedCodexArgs(config: NonNullable<CodexConfig["managed"]>): s
     "-c", 'model_provider="openmaus_company"',
     "-c", 'model_providers.openmaus_company.name="Company"',
     "-c", `model_providers.openmaus_company.base_url=${JSON.stringify(config.url)}`,
-    "-c", 'model_providers.openmaus_company.env_key="OPENMAUSBOT_COMPANY_API_KEY"',
+    "-c", 'model_providers.openmaus_company.env_key="SAGAX_COMPANY_API_KEY"',
     "-c", 'model_providers.openmaus_company.wire_api="responses"',
     "-c", "model_providers.openmaus_company.requires_openai_auth=false",
     "-c", 'cli_auth_credentials_store="ephemeral"',
@@ -183,14 +185,14 @@ export function managedCodexArgs(config: NonNullable<CodexConfig["managed"]>): s
 
 /** Slice 4: a turn on the bot owner's own OpenAI key (kept in Perspicax,
  * read for this turn only). Same shape as managedCodexArgs: the key rides in
- * OMB_OWNER_OPENAI_API_KEY in the child environment, never argv or a file,
+ * SAGAX_OWNER_OPENAI_API_KEY in the child environment, never argv or a file,
  * and no login is stored. */
 export function ownerKeyCodexArgs(): string[] {
   return [
     "-c", 'model_provider="pulsa_owner"',
     "-c", 'model_providers.pulsa_owner.name="Owner key"',
     "-c", 'model_providers.pulsa_owner.base_url="https://api.openai.com/v1"',
-    "-c", 'model_providers.pulsa_owner.env_key="OMB_OWNER_OPENAI_API_KEY"',
+    "-c", 'model_providers.pulsa_owner.env_key="SAGAX_OWNER_OPENAI_API_KEY"',
     "-c", 'model_providers.pulsa_owner.wire_api="responses"',
     "-c", "model_providers.pulsa_owner.requires_openai_auth=false",
     "-c", 'cli_auth_credentials_store="ephemeral"',
@@ -205,12 +207,12 @@ export function codexAccessLaunch(env: Record<string, string | undefined>, acces
     env.CODEX_HOME = access.codexHome;
     return { ownerKey: false };
   }
-  if ((access.via === "owner-key" || access.via === "speaker-key") && access.codexOwnerKey && access.environment?.OMB_OWNER_OPENAI_API_KEY) {
+  if ((access.via === "owner-key" || access.via === "speaker-key") && access.codexOwnerKey && access.environment?.SAGAX_OWNER_OPENAI_API_KEY) {
     if (access.codexHome) {
       mkdirSync(access.codexHome, { recursive: true, mode: 0o700 });
       env.CODEX_HOME = access.codexHome;
     }
-    env.OMB_OWNER_OPENAI_API_KEY = access.environment.OMB_OWNER_OPENAI_API_KEY;
+    env.SAGAX_OWNER_OPENAI_API_KEY = access.environment.SAGAX_OWNER_OPENAI_API_KEY;
     return { ownerKey: true };
   }
   return { ownerKey: false };
@@ -593,7 +595,7 @@ function mountMcpServer(
     // remote servers are documented and exercised with; any other header
     // rides env_http_headers.
     appServerArgs.push("-c", `${prefix}.url=${JSON.stringify(server.url)}`);
-    const stem = `OMB_MCP_HEADER_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+    const stem = `SAGAX_MCP_HEADER_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
     const variables: Record<string, string> = {};
     Object.entries(server.headers).forEach(([header, value], index) => {
       const bearer = header.toLowerCase() === "authorization" ? /^Bearer\s+(\S+)$/i.exec(value) : null;
@@ -664,7 +666,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       // The harness process may hold workspace credentials (xai/box/voice
       // keys, env-injected at boot); none of them are this CLI's to see.
       stripWorkspaceCredentialEnv(env);
-      delete env.OPENMAUSBOT_CHATGPT_TOKEN;
+      delete env.SAGAX_CHATGPT_TOKEN;
       if (plan) env.CODEX_HOME = join(planDirectory, "codex");
       return env;
     };
@@ -753,8 +755,8 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         if (!config.managed.models.includes(turn.model)) {
           throw new Error("Company model access is unavailable: " + turn.model + " is not approved for your organization. Reconnect your organization; personal billing will not be used.");
         }
-        if (!input.environment.OPENMAUSBOT_COMPANY_API_KEY) {
-          throw new Error("Company model access is unavailable: OPENMAUSBOT_COMPANY_API_KEY is missing. Reconnect your organization; personal billing will not be used.");
+        if (!input.environment.SAGAX_COMPANY_API_KEY) {
+          throw new Error("Company model access is unavailable: SAGAX_COMPANY_API_KEY is missing. Reconnect your organization; personal billing will not be used.");
         }
         if (!input.environment.CODEX_HOME) {
           throw new Error("Company model access is unavailable: CODEX_HOME is missing. Reconnect your organization; personal billing will not be used.");
@@ -790,7 +792,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
 
       const launchAttempt = async (attempt: number): Promise<void> => {
         const env = childEnv();
-        if (planToken) env.OPENMAUSBOT_CHATGPT_TOKEN = planToken;
+        if (planToken) env.SAGAX_CHATGPT_TOKEN = planToken;
+        // Desktop bridge: this turn's network traffic leaves through the
+        // person's computer (never the model traffic: NO_PROXY).
+        if (turn.networkProxy) Object.assign(env, networkProxyEnvironment(turn.networkProxy, env));
         // An organization owner key (codexAccessLaunch) wins over a ChatGPT
         // plan sign-in, which wins over a managed or local provider.
         const launch = codexAccessLaunch(env, turn.access);
@@ -1566,7 +1571,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       // nothing streamed yet, and never for auth/shape errors or interrupts
       try {
         await request("initialize", {
-          clientInfo: { name: "openmausbot", title: "OpenMausBot", version: serverVersion() },
+          clientInfo: { name: "openmausbot", title: "Sagax", version: serverVersion() },
           // Named permission profiles are an experimental app-server field in
           // Codex 0.151. Negotiate them explicitly; older servers ignore this
           // capability and remain on the legacy Custom fallback below.
@@ -1626,7 +1631,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         }
         // Organization server: read-only and asking, every command or write
         // is then a request the handler below declines.
-        if (withholdHostTools) approvalParams = structuredClone(CODEX_WITHHELD_APPROVAL) as unknown as CodexApprovalParams;
+        // Full access there: never ask, still read-only on the server.
+        if (withholdHostTools) {
+          approvalParams = structuredClone(approvalMode === "full" ? CODEX_WITHHELD_FULL_APPROVAL : CODEX_WITHHELD_APPROVAL) as unknown as CodexApprovalParams;
+        }
         // Codex's `never` means "do not ask to escalate", not "grant every
         // requested permission". Only the user's explicit Sagax Full
         // mode may synthesize approvals; Custom must preserve the sandbox
@@ -1644,7 +1652,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         let startedModel: string | null = null;
         let resumedNativeThread = false;
         let rebuiltFromReplay = false;
-        let promptText = turn.text;
+        // A skill the person picked as a slash command: Codex reads it as
+        // `$name` with the skill's file (shared/harness-commands.ts).
+        const skill = turn.harnessCommand?.path ? turn.harnessCommand : undefined;
+        let promptText = skill ? `$${skill.name}${skill.args ? ` ${skill.args}` : ""}` : turn.text;
         if (cursor) {
           const resumeThread = () => request("thread/resume", {
             threadId: cursor,
@@ -1732,6 +1743,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         }
         emit({ ...base(threadId, turnId), type: "session.started", sessionId: codexThreadId, model: startedModel ?? turn.model ?? null, ...(rebuiltFromReplay ? { rebuilt: true } : {}) });
         const turnInput = [
+          ...(skill?.path ? [{ type: "skill" as const, name: skill.name, path: skill.path }] : []),
           ...(promptText ? [{ type: "text" as const, text: promptText }] : []),
           ...(turn.images ?? []).map((image) => ({ type: "localImage" as const, path: image.path })),
         ];
@@ -1830,7 +1842,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
     if (!version) return { state: "unavailable", reason: `\`${config.cli}\` CLI not found`, ...(plan ? { chatgptPlan: true } : {}) };
     if (planAuth) return { state: "available", version, chatgptPlan: true, billing: "subscription", ...await planAuth.snapshot(), update: await codexReleaseUpdate(version, config.cli),
       ...(planWarning ? { warning: { title: "Check ChatGPT connection", message: planWarning } } : {}) };
-    if (config.managed) return { state: "available", version, authenticated: Boolean(input.environment.OPENMAUSBOT_COMPANY_API_KEY && input.environment.CODEX_HOME), billing: "metered" };
+    if (config.managed) return { state: "available", version, authenticated: Boolean(input.environment.SAGAX_COMPANY_API_KEY && input.environment.CODEX_HOME), billing: "metered" };
     const authenticated = await new Promise<boolean>((resolve) => {
       execCli(config.cli, ["login", "status"], { timeout: 8000, env }, (err, stdout, stderr) =>
         resolve(!err && /^logged in\b/im.test(`${stdout}\n${stderr ?? ""}`)),
@@ -1931,6 +1943,19 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         listeners.add(listener);
         return () => listeners.delete(listener);
       },
+    },
+    // The skills a turn in this folder can use, from Codex itself; with the
+    // speaker's own subscription, from their CODEX_HOME (their user skills).
+    listCommands: (scope) => {
+      const env = childEnv();
+      if (scope.access?.via === "subscription") codexAccessLaunch(env, scope.access);
+      return probeCodexSkills({
+        cli: config.cli,
+        args: ["app-server"],
+        env: env as NodeJS.ProcessEnv,
+        cwd: scope.cwd ?? homedir(),
+        clientVersion: serverVersion(),
+      });
     },
     dispose: async () => {
       disposed = true;

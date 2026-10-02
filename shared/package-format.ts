@@ -18,6 +18,7 @@
 // free text are a separate problem, handled by redactPackageSecrets (export)
 // and packageSecretFindings (Admin upload).
 import { parse as parseYaml } from "yaml";
+import { MASCOT_COLOR_NAMES } from "./mascot-colors.ts";
 import { z } from "zod";
 
 import { BOT_PROFILE_LIMITS, fitsOnOneLine } from "./bot-profile.ts";
@@ -56,7 +57,7 @@ export class PackageFormatError extends Error {
   }
 }
 
-const COLORS = ["green", "blue", "red", "orange", "purple", "cyan", "pink", "yellow", "teal", "coral", "white", "black"] as const;
+const COLORS = MASCOT_COLOR_NAMES;
 const AVATAR_MIMES = ["image/png", "image/jpeg", "image/webp"] as const;
 const AVATAR_CROPS = ["circle", "rounded", "square"] as const;
 
@@ -217,7 +218,7 @@ const exampleSchema = z.object({
 // ── v1 (read only; upgraded on the way in, produced only by downgradeToV1) ─
 
 const packageDocumentV1Schema = z.object({
-  format: z.literal(PACKAGE_FORMAT, { error: "This is not an OpenMaus package" }),
+  format: z.literal(PACKAGE_FORMAT, { error: "This is not a Sagax package" }),
   version: z.literal(PACKAGE_V1_VERSION, { error: "Package version is not supported" }),
   package: z.object({
     id: requiredText(80).regex(/^[a-z0-9][a-z0-9-]*$/, { message: "must be a lowercase slug" }),
@@ -444,7 +445,7 @@ const connectionSchema = z.object({
 });
 
 export const packageDocumentSchema = z.object({
-  format: z.literal(PACKAGE_FORMAT, { error: "This is not an OpenMaus package" }),
+  format: z.literal(PACKAGE_FORMAT, { error: "This is not a Sagax package" }),
   version: z.literal(PACKAGE_VERSION, { error: "Package version is not supported" }),
   package: z.object({
     /** The package slug: its identity across releases. */
@@ -784,7 +785,7 @@ export function parsePackageDocument(value: unknown, options: { trust?: PackageT
     document = upgradeV1(parsePackageV1(value));
   } else {
     if (!value || typeof value !== "object" || Array.isArray(value) || (value as { format?: unknown }).format !== PACKAGE_FORMAT) {
-      throw new PackageFormatError("not_a_package", "This is not an OpenMaus package");
+      throw new PackageFormatError("not_a_package", "This is not a Sagax package");
     }
     const version = (value as { version?: unknown }).version;
     if (typeof version === "number" && Number.isInteger(version) && version > PACKAGE_VERSION) {

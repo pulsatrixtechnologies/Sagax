@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { schemaIssue, type JsonValue } from "./schema.ts";
 import type { MausColor } from "./store.ts";
+import { MASCOT_COLOR_NAMES } from "../shared/mascot-colors.ts";
 import { botMascotBody, type MascotBodyId } from "../shared/mascot-bodies.ts";
 import { takeImportName } from "../shared/import-name.ts";
 import { BOT_PROFILE_LIMITS } from "../shared/bot-profile.ts";
@@ -11,20 +12,7 @@ export const TEAM_MANIFEST_VERSION = 2 as const;
 export const LEGACY_TEAM_MANIFEST_VERSION = 1 as const;
 export const MAX_TEAM_MEMBERS = 200;
 
-const COLORS = [
-  "green",
-  "blue",
-  "red",
-  "orange",
-  "purple",
-  "cyan",
-  "pink",
-  "yellow",
-  "teal",
-  "coral",
-  "white",
-  "black",
-] as const satisfies readonly MausColor[];
+const COLORS = MASCOT_COLOR_NAMES satisfies readonly MausColor[];
 
 const requiredText = (max: number) =>
   z.string({ error: "must be text" }).trim().min(1, { message: "is required" }).max(max, { message: "is too long" });
@@ -76,7 +64,7 @@ const membersSchema = z
 
 const manifestSchema = z.discriminatedUnion("version", [
   z.object({
-    format: z.literal(TEAM_MANIFEST_FORMAT, { error: "This is not an OpenMaus team file" }),
+    format: z.literal(TEAM_MANIFEST_FORMAT, { error: "This is not a Sagax team file" }),
     version: z.literal(LEGACY_TEAM_MANIFEST_VERSION),
     team: z.object({
       name: requiredText(100),
@@ -90,7 +78,7 @@ const manifestSchema = z.discriminatedUnion("version", [
     }),
   }),
   z.object({
-    format: z.literal(TEAM_MANIFEST_FORMAT, { error: "This is not an OpenMaus team file" }),
+    format: z.literal(TEAM_MANIFEST_FORMAT, { error: "This is not a Sagax team file" }),
     version: z.literal(TEAM_MANIFEST_VERSION),
     team: z.object({
       name: requiredText(100),
@@ -254,7 +242,7 @@ export interface ImportedMemberProfile {
  *    leaving it unset is not safe.
  *
  * 2. No name captures. Display names are identity wherever bots address
- *    each other — @mention resolution in rooms, the Chief of Staff roster,
+ *    each other — @mention resolution in rooms, the Primary Bot roster,
  *    peer-approval prompts — so an imported member wearing an existing
  *    bot's name could be mentioned, granted, or listed as if it were that
  *    bot. A colliding name is therefore visibly numbered ("Scout" →

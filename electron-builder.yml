@@ -5,7 +5,7 @@ appId: com.openmausbot.app
 # "name" (openmausbot), which electron-builder copies as is; see
 # electron/user-data-location.mjs.
 productName: Sagax
-artifactName: PulsaBot-${version}-${arch}.${ext}
+artifactName: Sagax-${version}-${arch}.${ext}
 # Drives the Windows exe's VERSIONINFO LegalCopyright and (with package.json
 # "author") CompanyName; see NOTICE for the retained upstream OpenMausBot
 # attribution, which this packaging metadata does not replace.
@@ -13,7 +13,9 @@ copyright: Copyright © 2026 Pulsatrix Technologies Inc.
 
 protocols:
   - name: Sagax package install
-    schemes: [openmausbot]
+    # sagax:// is primary; openmausbot:// stays registered for one release
+    # (links already sent, older servers, the phone apps).
+    schemes: [sagax, openmausbot]
 
 # In-app auto-update reads latest-mac.yml + the .zip (macOS) or latest.yml +
 # the NSIS .exe (Windows) from the PUBLIC releases in this source repo.
@@ -61,13 +63,16 @@ asar: true
 extraResources:
   # Ship the app's own license terms in every desktop distribution.
   - from: LICENSE
-    to: licenses/PulsaBot-LICENSE.txt
+    to: licenses/Sagax-LICENSE.txt
+  - from: LICENSE-POLYFORM-NC.md
+    to: licenses/Sagax-PolyForm-Noncommercial-1.0.0.md
+  - from: LICENSE-APACHE
+    to: licenses/OpenMausBot-Apache-2.0-LICENSE.txt
   - from: NOTICE
-    to: licenses/PulsaBot-NOTICE.txt
-  # cloudflared is distributed under Apache-2.0 as a separate executable.
-  # Sagax itself uses the same full license text; ship another named
-  # copy so the third-party executable's terms remain unambiguous.
-  - from: LICENSE
+    to: licenses/Sagax-NOTICE.txt
+  # cloudflared is distributed under Apache-2.0 as a separate executable;
+  # ship the Apache text under its name so its terms remain unambiguous.
+  - from: LICENSE-APACHE
     to: licenses/cloudflared-LICENSE.txt
   - from: third_party/cloudflared/README.md
     to: licenses/cloudflared-README.md
@@ -129,7 +134,7 @@ mac:
     - from: dist-native/browser/darwin-${arch}
       to: browser-engine
   extendInfo:
-    NSMicrophoneUsageDescription: Sagax uses the microphone for voice dictation into the composer.
+    NSMicrophoneUsageDescription: Sagax uses the microphone for voice dictation into the composer and for voice mode with your bots.
     NSSpeechRecognitionUsageDescription: Sagax transcribes your voice on-device to type messages for you.
     NSAccessibilityUsageDescription: Sagax uses Accessibility when you let a bot control this Mac.
     NSScreenCaptureUsageDescription: Sagax uses Screen Recording so bots can see this Mac before acting.
@@ -143,31 +148,40 @@ dmg:
   # ${arch} is load-bearing: without it the x64 dmg silently overwrites
   # the arm64 one when both arches build (this section overrides both the
   # top-level and mac-level artifactName, so it must carry the arch itself)
-  artifactName: PulsaBot-${version}-${arch}.dmg
+  artifactName: Sagax-${version}-${arch}.dmg
 
 win:
+  # x64 and arm64. NSIS with two arches makes ONE installer carrying both
+  # (it installs the one matching the PC), so latest.yml keeps a single entry
+  # and the updater needs no per-arch feed. The portable zips are per arch.
   target:
     - target: nsis
-      arch: x64
+      arch: [x64, arm64]
     - target: zip
-      arch: x64
+      arch: [x64, arm64]
   icon: build/icon.ico
   # Distinct from the top-level artifactName (used by the mac zip), so the
-  # Windows zip never collides with the macOS Intel zip in the same release
-  # (both would otherwise be PulsaBot-${version}-x64.zip). The nsis target
+  # Windows zips never collide with the macOS zips in the same release
+  # (both would otherwise be Sagax-${version}-x64.zip). The nsis target
   # below keeps its own artifactName, which overrides this for the installer.
-  artifactName: PulsaBot-${version}-win-${arch}.${ext}
+  artifactName: Sagax-${version}-win-${arch}.${ext}
   extraResources:
-    - from: dist-native/cloudflared/win32-x64/cloudflared.exe
+    # cloudflared publishes no Windows arm64 build: prepare-cloudflared stages
+    # the pinned amd64 executable as win32-arm64 too (x64 emulation).
+    - from: dist-native/cloudflared/win32-${arch}/cloudflared.exe
       to: cloudflared/cloudflared.exe
+    # No Windows arm64 browser bundle exists (Chrome for Testing, agent-browser
+    # vendor build): both packages ship the x64 one, which Windows on Arm runs
+    # under x64 emulation (server/browser-engine.ts packagedBrowser).
     - from: dist-native/browser/win32-x64
       to: browser-engine
-    # CUA driver and SDK for Windows — must live outside ASAR for native modules
-    - from: dist-native/cua-win32-x64/cua-driver.exe
+    # CUA driver and SDK for Windows, per arch (prepare-cua-win stages both),
+    # outside ASAR for native modules
+    - from: dist-native/cua-win32-${arch}/cua-driver.exe
       to: cua-driver.exe
-    - from: dist-native/cua-win32-x64/cua-driver-background.exe
+    - from: dist-native/cua-win32-${arch}/cua-driver-background.exe
       to: cua-driver-background.exe
-    - from: dist-native/cua-win32-x64/cua-sdk
+    - from: dist-native/cua-win32-${arch}/cua-sdk
       to: cua-sdk
   # No signing config yet (would go under win.signtoolOptions or
   # win.azureSignOptions — eb 26 nests it, there is no top-level
@@ -185,10 +199,8 @@ nsis:
   # Start menu and desktop shortcut: the long name fits there.
   shortcutName: Pulsatrix Sagax
   uninstallDisplayName: Pulsatrix Sagax ${version}
-  # Versioned, like the .dmg. The README's /latest/download/ button needs a
-  # Versioned, like the .dmg. A stable download name can be copied beside it
-  # as PulsaBot-setup.exe, next to PulsaBot-${version}.dmg.
-  artifactName: PulsaBot-${version}-setup.${ext}
+  # Versioned, like the .dmg; one installer for x64 and arm64.
+  artifactName: Sagax-${version}-setup.${ext}
 
 linux:
   target:

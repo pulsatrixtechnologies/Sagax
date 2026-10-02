@@ -4,7 +4,7 @@
 // the accessibility tree — the same evidence a person would collect by hand.
 //
 // Needs the pinned agent-browser binary. It runs when one resolves (the tools
-// directory, OMB_AGENT_BROWSER_PATH or PATH) or when OMB_UI_E2E=1 asks for the
+// directory, SAGAX_AGENT_BROWSER_PATH or PATH) or when SAGAX_UI_E2E=1 asks for the
 // verified download; otherwise it is skipped with a printed reason.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
@@ -21,11 +21,11 @@ import { fixtureApi } from "./preview-fixture.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CLI = join(ROOT, "scripts", "control-omb.ts");
-const forced = process.env.OMB_UI_E2E === "1";
+const forced = process.env.SAGAX_UI_E2E === "1";
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
 const enabled = forced || Boolean(binary);
 if (!enabled) {
-  console.log(`skipping control-omb ui e2e: no agent-browser binary resolves (looked in ${UI_TOOLS_DIR}, OMB_AGENT_BROWSER_PATH and PATH); set OMB_UI_E2E=1 to install the pinned release`);
+  console.log(`skipping control-omb ui e2e: no agent-browser binary resolves (looked in ${UI_TOOLS_DIR}, SAGAX_AGENT_BROWSER_PATH and PATH); set SAGAX_UI_E2E=1 to install the pinned release`);
 }
 const run = enabled ? it : it.skip;
 // A cold run downloads the binary and Chrome; a warm one launches in seconds.
@@ -41,9 +41,9 @@ const TOOL_CALLS = JSON.stringify([
 ]);
 const REPLY = "hello from fake claude"; // the fake engine's default reply text
 const COMPOSER = `document.querySelector('textarea[aria-label="Message Pepper"]')`;
-// OMB_UI_EVIDENCE_DIR keeps the screenshot (CI uploads it); otherwise it is temporary.
-const evidenceDir = process.env.OMB_UI_EVIDENCE_DIR ? resolve(ROOT, process.env.OMB_UI_EVIDENCE_DIR) : mkdtempSync(join(tmpdir(), "omb-ui-evidence-"));
-const ownsEvidenceDir = !process.env.OMB_UI_EVIDENCE_DIR;
+// SAGAX_UI_EVIDENCE_DIR keeps the screenshot (CI uploads it); otherwise it is temporary.
+const evidenceDir = process.env.SAGAX_UI_EVIDENCE_DIR ? resolve(ROOT, process.env.SAGAX_UI_EVIDENCE_DIR) : mkdtempSync(join(tmpdir(), "omb-ui-evidence-"));
+const ownsEvidenceDir = !process.env.SAGAX_UI_EVIDENCE_DIR;
 
 interface Launched {
   child: ReturnType<typeof spawn>;
@@ -393,7 +393,7 @@ describe("control-omb ui drives the real renderer", () => {
     expect(logs.ok).toBe(true);
     expect((logs.messages as Array<{ type: string; text: string }>).filter((message) => message.type === "error")).toEqual([]);
     const title = await ui("eval", info.ui, "--js", "document.title");
-    expect(title).toMatchObject({ ok: true, result: "Isolated OpenMaus Chat" });
+    expect(title).toMatchObject({ ok: true, result: "Isolated Sagax Chat" });
 
     // Ctrl-C: browser, preview and fixture close; only the fixture's data goes.
     await waitForExit(launched.child, { signal: "SIGINT", graceMs: 30_000 });

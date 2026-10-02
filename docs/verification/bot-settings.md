@@ -53,10 +53,10 @@ Check these user paths:
     value, then replace it with ordinary instructions. History must explain
     why the redacted previous version cannot be restored, without an Undo
     button on that row. Exact safe rows must still offer Undo.
-11. After a fixture chat turn has usage, open the bot's settings, then click
-    the chat header's usage chip. Usage must expand without closing the panel.
-    Collapse Usage and click the header chip again; repeat after searching
-    for another section. The requested section must open and clear the search.
+11. After a fixture chat turn has usage, the chat header must show no cost
+    chip; open the bot's settings and expand Usage there. Usage must expand
+    without closing the panel; repeat after searching for another section.
+    The requested section must open and clear the search.
 
 The full-app automated regression covers those repeated external opens, plus
 role creation, optional setup, connected-app settings and failure recovery:
@@ -66,7 +66,7 @@ pnpm exec vitest run scripts/testing/bot-tools-ui.e2e.test.ts src/state/store.te
 ```
 
 It uses the disposable `control-omb ui` launcher, not the running app. Set
-`OMB_UI_E2E=1` to install the pinned browser if unavailable.
+`SAGAX_UI_E2E=1` to install the pinned browser if unavailable.
 
 This browser fixture verifies renderer interaction and persistence, not
 packaged Electron privileges, actual operating-system access, or the

@@ -17,7 +17,7 @@
 // every activity chip the harness narrates (`tool.spoken`) is read aloud as
 // it happens, which is why waiting feels like listening to someone work
 // rather than listening to nothing.
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { AudioLines, Loader2, PhoneOff, X } from "lucide-react";
 
 import { useStore, visibleMessages, type Bot } from "@/state/store";
@@ -33,17 +33,41 @@ import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPro
 import { track } from "@/lib/analytics";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { callCapabilityHelp } from "@/lib/call-capability";
+import { useVoiceModeCheck, useVoiceModeStatus } from "@/lib/voice-mode/api";
+import { managedProfile } from "@/lib/profile-management";
+import { VoiceModeCallButton } from "./voice-mode/VoiceModeCallButton";
+import { nativeSpeechEngine, type SpeechEngine } from "@/lib/voice-mode/engine";
+import { t } from "@/lib/i18n";
+import type { VoiceModeStatus } from "../../shared/voice-mode";
+import { LiveCall } from "./voice-mode/LiveCall";
 
-/** Spoken answers to a permission card. Anything else is read as a reply
- * to the bot, not as consent — an approval must never be granted by a
- * sentence that merely contained the word "sure". */
-const YES = /^(yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|allow|approve|approved|fine|please do)\b/i;
-const NO = /^(no|nope|don'?t|do not|stop|deny|denied|cancel|never|skip it)\b/i;
+import { NO, YES } from "@/lib/voice-mode/answers";
 
 type Phase = "listening" | "sending" | "working" | "speaking";
 const CALL_ENDPOINT_MS = 850;
 
+/** An organization server: the server says so in voice mode's status, and
+ * the session's viewer is managed by Perspicax. There, voice mode is the
+ * only call (VoiceModeCallButton) and the legacy gate never shows. */
+export function useOrganizationCall(botId?: string): boolean {
+  const { state } = useStore();
+  const check = useVoiceModeCheck(botId ?? "");
+  return (check.state === "ready" && check.status.organization === true) || managedProfile(state.config?.viewer) !== null;
+}
+
 export function CallButton({ bot }: { bot: Bot }) {
+  const voiceMode = useVoiceModeStatus(bot.id);
+  const organization = useOrganizationCall(bot.id);
+  if (organization) {
+    return (
+      <VoiceModeCallButton
+        targetId={bot.id}
+        targetName={bot.name}
+        botId={bot.id}
+        onStart={() => track("call_started", { driver: bot.modelSelection?.instanceId, voice: "xai" })}
+      />
+    );
+  }
   return (
     <CallTargetButton
       targetId={bot.id}
@@ -51,7 +75,8 @@ export function CallButton({ bot }: { bot: Bot }) {
       voices={[bot.voice]}
       setupBotId={bot.id}
       requireExplicitVoices={false}
-      onStart={() => track("call_started", { driver: bot.modelSelection?.instanceId })}
+      voiceMode={voiceMode}
+      onStart={() => track("call_started", { driver: bot.modelSelection?.instanceId, ...(voiceMode?.available ? { voice: "xai" } : {}) })}
     />
   );
 }
@@ -62,6 +87,7 @@ export function CallTargetButton({
   voices,
   setupBotId,
   requireExplicitVoices,
+  voiceMode,
   onStart,
 }: {
   targetId: string;
@@ -71,22 +97,34 @@ export function CallTargetButton({
   setupBotId?: string;
   /** Rooms cannot rely on one workspace fallback for multiple speakers. */
   requireExplicitVoices: boolean;
+  /** Voice mode with xAI (server/voice-mode.ts): when available it carries
+   * the call on any desktop (macOS, Windows) or browser, without the macOS
+   * dictation helper. */
+  voiceMode?: VoiceModeStatus | null;
   onStart: () => void;
 }) {
   const { state, dispatch } = useStore();
   const { capabilities, ready: capabilitiesReady } = useDesktopCapabilities();
   const active = useOnCall() === targetId;
-  const capabilityHelp = capabilitiesReady
+  const xaiVoice = voiceMode?.available === true;
+  const nativeHelp = capabilitiesReady
     ? callCapabilityHelp(capabilities, Boolean(window.ogb?.speechStart))
     : null;
-  const supported = capabilitiesReady && !capabilityHelp;
+  // No key for voice mode and no dictation here either: say what voice mode needs.
+  const capabilityHelp = xaiVoice
+    ? null
+    : nativeHelp && voiceMode && !voiceMode.available
+      ? { label: t("voiceMode.unavailableLabel"), reason: t("voiceMode.unavailableReason") }
+      : nativeHelp;
+  const supported = xaiVoice || (capabilitiesReady && !capabilityHelp);
   const localVoice = localSystemVoiceActive();
-  const configured = localVoice || Boolean(state.config?.tts?.configured);
+  const configured = xaiVoice || localVoice || Boolean(state.config?.tts?.configured);
   const everyTargetHasVoice = voices.length > 0 && voices.every((voice) => Boolean(voice));
   const voiceReady =
+    xaiVoice ||
     localVoice ||
     (configured && (requireExplicitVoices ? everyTargetHasVoice : Boolean(state.config?.tts?.ready || everyTargetHasVoice)));
-  const unavailable = !active && (!capabilitiesReady || !supported || !voiceReady);
+  const unavailable = !active && ((!capabilitiesReady && !xaiVoice) || !supported || !voiceReady);
   const voiceSetupRequired = capabilitiesReady && supported && !voiceReady;
   const [helpOpen, setHelpOpen] = useState(false);
   const helpMotion = useMenuMotion(Boolean(unavailable && helpOpen));
@@ -95,7 +133,9 @@ export function CallTargetButton({
   const helpId = useId();
   const label = active
     ? `Hang up on ${targetName}`
-    : !capabilitiesReady
+    : xaiVoice
+      ? t("voiceMode.start", { name: targetName })
+      : !capabilitiesReady
       ? "Checking call availability"
       : !supported
         ? capabilityHelp?.label ?? "Call unavailable"
@@ -105,7 +145,9 @@ export function CallTargetButton({
             ? "Pick a voice in an agent profile to make calls"
             : `Call ${targetName}`;
 
-  const reason = !capabilitiesReady
+  const reason = xaiVoice
+    ? ""
+    : !capabilitiesReady
     ? "Checking whether this device can make calls."
     : capabilityHelp
       ? capabilityHelp.reason
@@ -150,6 +192,8 @@ export function CallTargetButton({
         }}
         aria-expanded={unavailable ? helpOpen : undefined}
         aria-controls={unavailable ? helpId : undefined}
+        data-call-target={targetId}
+        data-voice-mode={xaiVoice ? "xai" : undefined}
         aria-label={label}
         title={label}
         className={cn(
@@ -207,12 +251,61 @@ export function CallTargetButton({
   );
 }
 
+/** The older call's full overlay. Voice mode docks its bar at the top of
+ * the chat column instead (VoiceCallDock). */
 export function CallOverlay({ bot }: { bot: Bot }) {
   const active = useOnCall() === bot.id;
-  if (!active) return null;
+  const voiceMode = useVoiceModeStatus(bot.id);
+  if (!active || voiceMode?.available === true) return null;
   return <Call bot={bot} />;
 }
 
+/** Same length as `--animate-call-dock-out` in styles.css. */
+const CALL_DOCK_EXIT_MS = 180;
+
+/** Voice mode (xAI): a live, full-duplex call (voice-mode/LiveCall.tsx),
+ * docked as a slim in-call banner at the top of the chat column. It sits in
+ * the layout, so the thread moves down while the call is on and back up
+ * when it ends (the bar's height folds away; the call itself is already
+ * over by then). */
+export function VoiceCallDock({ bot }: { bot: Bot }) {
+  const active = useOnCall() === bot.id;
+  const voiceMode = useVoiceModeStatus(bot.id);
+  const live = active && voiceMode?.available === true;
+  const motion = useMenuMotion(live);
+  const dock = useRef<HTMLDivElement>(null);
+  const height = useRef(0);
+  useEffect(() => {
+    const element = dock.current;
+    if (!live || !element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => (height.current = element.offsetHeight));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [live]);
+  if (live) {
+    return (
+      <div ref={dock} className="animate-call-dock-in grid" data-voice-call-dock>
+        <div className="min-h-0 overflow-hidden">
+          <LiveCall bot={bot} />
+        </div>
+      </div>
+    );
+  }
+  if (!motion.shown || height.current === 0) return null;
+  // The call has ended: only the room it took folds away, an empty picture
+  // of the bar (no controls, out of the accessibility tree).
+  return (
+    <div
+      aria-hidden
+      inert
+      data-voice-call-dock-exit
+      className="animate-call-dock-out pointer-events-none mx-3 mb-2 overflow-hidden rounded-2xl border border-hairline/50 bg-panel md:mx-5"
+      style={{ "--call-dock-h": `${Math.max(0, height.current - 8)}px`, animationDuration: `${CALL_DOCK_EXIT_MS}ms` } as CSSProperties}
+    />
+  );
+}
+
+/** The older call: the macOS dictation helper, half duplex. */
 function Call({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
   const speech = useSpeech();
@@ -220,6 +313,7 @@ function Call({ bot }: { bot: Bot }) {
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [heard, setHeard] = useState("");
   const [note, setNote] = useState<string | null>(null);
+  const engine: SpeechEngine = nativeSpeechEngine;
   const pushToTalk = usePushToTalk(bot.id, phase === "listening", () => {
     setNote("Push to talk couldn't start. Check Microphone and Speech Recognition access.");
   });
@@ -266,20 +360,20 @@ function Call({ bot }: { bot: Bot }) {
   }, []);
 
   const hush = useCallback(() => {
-    void window.ogb?.speechStop();
-  }, []);
+    void engine.stop();
+  }, [engine]);
 
   const listen = useCallback(() => {
     if (!alive.current || currentCall() !== bot.id) return;
     move("listening");
     setHeard("");
     setNote(null);
-    void window.ogb?.speechStart({ endpointMs: CALL_ENDPOINT_MS }).catch(() => {
+    void engine.start({ endpointMs: CALL_ENDPOINT_MS }).catch(() => {
       if (alive.current && currentCall() === bot.id) {
         setNote("The microphone couldn't start. Check Microphone and Speech Recognition access.");
       }
     });
-  }, [bot.id, move]);
+  }, [bot.id, engine, move]);
 
   /** Speak, with the microphone closed for the duration (see the header
    * comment — an open mic during playback is a feedback loop). */
@@ -291,7 +385,10 @@ function Call({ bot }: { bot: Bot }) {
       // never observe an old "listening" phase and reopen the mic.
       move("speaking");
       hush();
-      await speaker.speak(text, { botId: bot.id, voiceId: bot.voice });
+      await speaker.speak(text, {
+        botId: bot.id,
+        voiceId: bot.voice,
+      });
       return alive.current && currentCall() === bot.id && sayGeneration.current === mine;
     },
     [bot.id, bot.voice, hush, move],
@@ -322,9 +419,8 @@ function Call({ bot }: { bot: Bot }) {
 
   // ── the microphone ───────────────────────────────────────────────────
   useEffect(() => {
-    const bridge = window.ogb;
-    if (!bridge) return;
-    const offTranscript = bridge.onSpeechTranscript((line) => {
+    if (!window.ogb) return;
+    const offTranscript = engine.onTranscript((line) => {
       if (!alive.current || currentCall() !== bot.id || phaseRef.current !== "listening") return;
       if (line.error) {
         setNote("Dictation stopped unexpectedly. Check Microphone and Speech Recognition access.");
@@ -399,7 +495,7 @@ function Call({ bot }: { bot: Bot }) {
       move("sending");
       dispatch({ type: "send", botId: bot.id, text: said, threadId: bot.threadId });
     });
-    const offEnd = bridge.onSpeechEnd(({ code, reason }) => {
+    const offEnd = engine.onEnd(({ code, reason }) => {
       if (!alive.current || currentCall() !== bot.id) return;
       if (code === 2) {
         setNote("Calls need macOS dictation, which isn't available here yet.");
@@ -426,12 +522,12 @@ function Call({ bot }: { bot: Bot }) {
     return () => {
       offTranscript();
       offEnd();
-      void window.ogb?.speechStop();
+      void engine.stop();
     };
     // busy/approval are intentionally initial snapshots. Their live changes
     // are handled below without tearing down native event listeners.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bot.id, bot.threadId, dispatch, hush, listen, move, sayThenListen]);
+  }, [bot.id, bot.threadId, dispatch, engine, hush, listen, move, sayThenListen]);
 
   // ── narrate the work, speak the answer, read the approvals ───────────
   useEffect(() => {

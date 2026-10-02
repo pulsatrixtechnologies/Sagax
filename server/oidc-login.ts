@@ -1,6 +1,6 @@
 // "Sign in with Pulsatrix": the organization server's OpenID Connect login.
 //
-// OMB_IDENTITY=perspicax turns it on. The server then:
+// SAGAX_IDENTITY=perspicax turns it on. The server then:
 //   - answers GET /auth/oidc/start (302 to the Perspicax authorize page) and
 //     GET /auth/oidc/callback (code exchange and id_token check in
 //     server/oidc-rp.ts, then a Sagax session cookie and 302 to /);
@@ -14,22 +14,26 @@
 //     (server/idp-session.ts) and answers POST
 //     /api/auth/oidc/backchannel-logout (OpenID Connect Back-Channel Logout);
 //   - signs the desktop app and the phones in through the system browser:
-//     /auth/oidc/start?client=desktop|phone ends on an openmausbot:// link
+//     /auth/oidc/start?client=desktop|phone ends on a sagax:// (phone) or
+//     openmausbot:// / sagax:// (desktop) link
 //     carrying a two-minute, single-use pairing credential bound to the
-//     person (slice 2);
+//     person (slice 2); a phone that names `&return=sagax` gets the same
+//     invite on sagax://pair instead, and a refused sign-in on
+//     sagax://pair?error=<code> (the app's authentication sheet only ever
+//     sees its own scheme, never the web /pair page);
 //   - or, for the desktop app, on its loopback listener (RFC 8252 7.3):
 //     /auth/oidc/start?client=desktop&return=http://127.0.0.1:<port>/<state>
 //     ends on that address with the credential in the fragment, which a
 //     browser never sends to any server and so never reaches a log.
 //
 // Configuration (environment only, read once at boot):
-//   OMB_IDENTITY=perspicax
-//   OMB_PERSPICAX_ISSUER   issuer URL, e.g. https://px.example.com
-//   OMB_OIDC_CLIENT_ID     client id, default "pulsa-bot"
-//   OMB_PUBLIC_URL         this server's public origin; the redirect URI is
-//                          <OMB_PUBLIC_URL>/auth/oidc/callback and the login
+//   SAGAX_IDENTITY=perspicax
+//   SAGAX_PERSPICAX_ISSUER   issuer URL, e.g. https://px.example.com
+//   SAGAX_OIDC_CLIENT_ID     client id, default "pulsa-bot"
+//   SAGAX_PUBLIC_URL         this server's public origin; the redirect URI is
+//                          <SAGAX_PUBLIC_URL>/auth/oidc/callback and the login
 //                          access token's resource is this origin.
-//   OMB_PERSPICAX_INTERNAL_URL  optional origin (http or https, any host)
+//   SAGAX_PERSPICAX_INTERNAL_URL  optional origin (http or https, any host)
 //                          where this server reaches Perspicax from inside
 //                          the deployment: discovery, JWKS, token, revoke and
 //                          directory calls go there (slice 3).
@@ -75,7 +79,16 @@ export interface IdentityDescriptor {
    * (validLoopbackReturn), so the app that started the sign-in gets it back
    * whichever app owns openmausbot://. */
   loopbackReturn: true;
+  /** Schemes a native return may use: openmausbot://auth by default,
+   * sagax://auth when the desktop start names `return=<sagaxReturnLink>`. */
+  nativeReturnSchemes: readonly ["sagax", "openmausbot"];
+  /** Schemes a phone start may name with `&return=`: `sagax` ends on
+   * sagax://pair (success and refusal alike); none keeps openmausbot://pair. */
+  phoneReturnSchemes: readonly ["sagax", "openmausbot"];
 }
+
+/** The `return` a phone sign-in names to come back on sagax://pair. */
+export const PHONE_SAGAX_RETURN = "sagax";
 
 /** The loopback return a desktop sign-in may name: http on 127.0.0.1 or
  * [::1], an explicit port, and one path segment of 32 to 128 URL-safe
@@ -95,12 +108,12 @@ export function validLoopbackReturn(value: string | null | undefined): string | 
 /** Read the identity mode from the environment. A half-configured
  * organization server refuses to start rather than fall back to email codes. */
 export function identityConfigFromEnv(env: NodeJS.ProcessEnv = process.env): IdentityConfig {
-  const mode = env.OMB_IDENTITY?.trim().toLowerCase();
+  const mode = env.SAGAX_IDENTITY?.trim().toLowerCase();
   if (!mode || mode === "solo") return { kind: "solo" };
-  if (mode !== "perspicax") throw new Error(`OMB_IDENTITY="${mode.replace(/[^\w.-]/g, "").slice(0, 40)}" is not supported; use perspicax or leave it unset.`);
-  const issuer = validIssuer(env.OMB_PERSPICAX_ISSUER ?? "");
-  if (!issuer) throw new Error("OMB_IDENTITY=perspicax needs OMB_PERSPICAX_ISSUER: the Perspicax https URL (http only on this machine).");
-  const publicUrl = env.OMB_PUBLIC_URL?.trim().replace(/\/+$/, "");
+  if (mode !== "perspicax") throw new Error(`SAGAX_IDENTITY="${mode.replace(/[^\w.-]/g, "").slice(0, 40)}" is not supported; use perspicax or leave it unset.`);
+  const issuer = validIssuer(env.SAGAX_PERSPICAX_ISSUER ?? "");
+  if (!issuer) throw new Error("SAGAX_IDENTITY=perspicax needs SAGAX_PERSPICAX_ISSUER: the Perspicax https URL (http only on this machine).");
+  const publicUrl = env.SAGAX_PUBLIC_URL?.trim().replace(/\/+$/, "");
   let publicOrigin: string;
   try {
     const url = new URL(publicUrl ?? "");
@@ -109,19 +122,19 @@ export function identityConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Ide
     if (url.pathname !== "/" || url.search || url.hash || url.username || url.password) throw new Error("path");
     publicOrigin = url.origin;
   } catch {
-    throw new Error("OMB_IDENTITY=perspicax needs OMB_PUBLIC_URL: this server's public https origin (http only on this machine), with no path.");
+    throw new Error("SAGAX_IDENTITY=perspicax needs SAGAX_PUBLIC_URL: this server's public https origin (http only on this machine), with no path.");
   }
-  const clientId = env.OMB_OIDC_CLIENT_ID?.trim() || DEFAULT_OIDC_CLIENT_ID;
+  const clientId = env.SAGAX_OIDC_CLIENT_ID?.trim() || DEFAULT_OIDC_CLIENT_ID;
   let internalBase: string | undefined;
-  if (env.OMB_PERSPICAX_INTERNAL_URL?.trim()) {
-    internalBase = validInternalBase(env.OMB_PERSPICAX_INTERNAL_URL) ?? undefined;
-    if (!internalBase) throw new Error("OMB_PERSPICAX_INTERNAL_URL must be an http or https origin with no path, e.g. http://perspicax:8787.");
+  if (env.SAGAX_PERSPICAX_INTERNAL_URL?.trim()) {
+    internalBase = validInternalBase(env.SAGAX_PERSPICAX_INTERNAL_URL) ?? undefined;
+    if (!internalBase) throw new Error("SAGAX_PERSPICAX_INTERNAL_URL must be an http or https origin with no path, e.g. http://perspicax:8787.");
   }
   return { kind: "perspicax", issuer, clientId, publicOrigin, redirectUri: `${publicOrigin}${OIDC_CALLBACK_PATH}`, ...(internalBase ? { internalBase } : {}) };
 }
 
 export function identityDescriptor(config: IdentityConfig): IdentityDescriptor | undefined {
-  return config.kind === "perspicax" ? { kind: "perspicax", protocol: "oidc", issuer: config.issuer, loginPath: OIDC_START_PATH, nativeReturn: true, loopbackReturn: true } : undefined;
+  return config.kind === "perspicax" ? { kind: "perspicax", protocol: "oidc", issuer: config.issuer, loginPath: OIDC_START_PATH, nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"], phoneReturnSchemes: ["sagax", "openmausbot"] } : undefined;
 }
 
 /** Session scopes for a Perspicax role (spec section 3). No claim is an
@@ -270,8 +283,15 @@ function parseClient(value: string | null): OidcClientKind | null {
   return value === "desktop" || value === "phone" ? value : null;
 }
 
+/** The sagax:// return a desktop start may name instead of a loopback
+ * listener. Compared exactly: it can only ever point back at this server. */
+export function sagaxReturnLink(publicOrigin: string): string {
+  return `sagax://auth?origin=${encodeURIComponent(publicOrigin)}`;
+}
+
 /** The link the desktop app receives from the system browser: its loopback
- * listener when the sign-in named one, else openmausbot://auth. The
+ * listener or sagax:// return when the sign-in named one, else
+ * openmausbot://auth (a desktop that predates sagax://). The
  * credential always rides in the fragment. */
 export function desktopReturnLink(publicOrigin: string, outcome: { code: string } | { error: string }, returnTo?: string): string {
   const fragment = "code" in outcome ? `#code=${outcome.code}` : `#error=${encodeURIComponent(outcome.error)}`;
@@ -280,9 +300,17 @@ export function desktopReturnLink(publicOrigin: string, outcome: { code: string 
 }
 
 /** The link a phone's authentication sheet receives: the invite shape both
- * phone apps already parse (openmausbot://pair?address=&token=&name=). */
-export function phoneReturnLink(publicOrigin: string, credential: string, serverName: string): string {
-  return `openmausbot://pair?address=${encodeURIComponent(publicOrigin)}&token=${encodeURIComponent(credential)}&name=${encodeURIComponent(serverName)}`;
+ * phone apps parse (sagax://pair?address=&token=&name=). Every phone link
+ * is on sagax:// now; `returnTo` (`return=sagax`) is still accepted from
+ * older starts and changes nothing. */
+export function phoneReturnLink(publicOrigin: string, credential: string, serverName: string, _returnTo?: string): string {
+  return `sagax://pair?address=${encodeURIComponent(publicOrigin)}&token=${encodeURIComponent(credential)}&name=${encodeURIComponent(serverName)}`;
+}
+
+/** A refused phone sign-in that named `return=sagax`: the app's sheet ends
+ * on its own scheme with the reason, rather than on the web /pair page. */
+export function phoneErrorLink(publicOrigin: string, code: string): string {
+  return `sagax://pair?address=${encodeURIComponent(publicOrigin)}&error=${encodeURIComponent(code)}`;
 }
 
 function jsonAnswer(res: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}): void {
@@ -333,7 +361,9 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
   const origin = deps.config.publicOrigin;
   const revocations = deps.revocations ?? immediateRevocations((token, hint) => rp.revokeToken(token, hint), log, "oidc");
   const fail = (res: ServerResponse, code: string, cookies: string[] = [], client: OidcClientKind = "web", returnTo?: string) =>
-    redirect(res, client === "desktop" ? desktopReturnLink(origin, { error: code }, returnTo) : `/pair#signin_error=${encodeURIComponent(code)}`, cookies);
+    redirect(res, client === "desktop" ? desktopReturnLink(origin, { error: code }, returnTo)
+      : client === "phone" && returnTo === PHONE_SAGAX_RETURN ? phoneErrorLink(origin, code)
+      : `/pair#signin_error=${encodeURIComponent(code)}`, cookies);
   /** Logout token ids already honoured, until they expire (+60 s). */
   const seenJti = new Map<string, number>();
 
@@ -459,9 +489,12 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
       // A loopback return is the desktop app's only: anything else, or an
       // address that is not exactly a loopback listener, ends on /pair
       // (never on the address it named).
+      // A phone names only its app's scheme (`return=sagax`).
       const rawReturn = url.searchParams.get("return");
-      const returnTo = rawReturn === null ? undefined : validLoopbackReturn(rawReturn) ?? null;
-      if (returnTo === null || (returnTo && client !== "desktop")) {
+      const returnTo = rawReturn === null ? undefined
+        : client === "phone" ? (rawReturn === PHONE_SAGAX_RETURN ? rawReturn : null)
+        : rawReturn === sagaxReturnLink(origin) ? rawReturn : validLoopbackReturn(rawReturn) ?? null;
+      if (returnTo === null || (returnTo && client !== "desktop" && client !== "phone")) {
         log("oidc sign-in refused: a return address that is not this desktop's loopback listener");
         fail(res, "return");
         return true;
@@ -555,7 +588,7 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
       });
       redirect(res, client === "desktop"
         ? desktopReturnLink(origin, { code: pairing.credential }, returnTo)
-        : phoneReturnLink(origin, pairing.credential, deps.serverName()), [clearBinding]);
+        : phoneReturnLink(origin, pairing.credential, deps.serverName(), returnTo), [clearBinding]);
       return true;
     }
     const userAgent = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : undefined;

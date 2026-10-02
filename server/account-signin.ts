@@ -6,7 +6,8 @@
 //
 // Why through the control plane rather than a mail provider per server: a
 // self-hoster then needs no email credentials at all; the code arrives from
-// accounts.openmausbot.com. The exchange happens server-side, so a browser
+// the control plane in SAGAX_CONTROL_PLANE_URL (no hosted default in Sagax).
+// The exchange happens server-side, so a browser
 // only ever talks to this server, and a server with an empty allow-list does
 // not expose the routes.
 import { resolveCompanionControlPlaneURL } from "../electron/companion-account-service.mjs";
@@ -21,8 +22,8 @@ export interface SignInAllowList {
   members: string[];
 }
 
-export const ADMIN_EMAILS_ENV = "OMB_SIGNIN_EMAILS";
-export const MEMBER_EMAILS_ENV = "OMB_SIGNIN_MEMBER_EMAILS";
+export const ADMIN_EMAILS_ENV = "SAGAX_SIGNIN_EMAILS";
+export const MEMBER_EMAILS_ENV = "SAGAX_SIGNIN_MEMBER_EMAILS";
 
 /** Commas, spaces or newlines between entries; case does not matter. */
 export function parseAllowList(value: string | undefined | null): string[] {
@@ -69,7 +70,7 @@ export function createEmailSignIn(options: {
   const controlPlane = (): ControlPlaneClient => {
     if (client) return client;
     const url = resolveCompanionControlPlaneURL({ isPackaged: true, environment: env });
-    if (!url) throw new Error("OMB_CONTROL_PLANE_URL is set but is not an https address");
+    if (!url) throw new Error("Set SAGAX_CONTROL_PLANE_URL to your control plane's https address (Sagax has no hosted default)");
     client = createControlPlaneClient({ baseURL: url, fetchImpl: options.fetchImpl });
     return client;
   };

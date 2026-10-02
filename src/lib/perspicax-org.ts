@@ -15,7 +15,12 @@ export interface PerspicaxOrg {
   /** orgKeyConfigured: the server has a key for at least one engine (the
    * organization's key, used automatically after the speaker's own
    * subscription and key, 2026-10-01). */
-  settings: { orgKeyConfigured?: boolean; interimAttach?: { until: number | null; people: number } };
+  settings: {
+    orgKeyConfigured?: boolean;
+    interimAttach?: { until: number | null; people: number };
+    /** Whether bots may run with Full access (absent: allowed). */
+    allowFullAccess?: boolean;
+  };
 }
 
 export interface OrgDirectoryPerson {
@@ -27,6 +32,8 @@ export interface OrgDirectoryPerson {
   disabled: boolean;
   /** Their Perspicax avatar as this server serves it, when they have one. */
   avatarUrl?: string;
+  /** A Perspicax service account: never someone to write to. */
+  service?: true;
 }
 
 let peoplePending: Promise<Map<string, OrgDirectoryPerson>> | null = null;

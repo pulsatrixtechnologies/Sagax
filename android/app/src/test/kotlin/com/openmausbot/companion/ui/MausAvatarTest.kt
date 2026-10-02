@@ -29,7 +29,10 @@ class MausAvatarTest {
         assertEquals(0xFFD8A729.toInt(), MausPalette.argb("yellow"))
         assertEquals(0xFF01A492.toInt(), MausPalette.argb("teal"))
         assertEquals(0xFFE5634E.toInt(), MausPalette.argb("coral"))
-        assertEquals(10, MausPalette.names.size)
+        assertEquals(0xFF8B5E3C.toInt(), MausPalette.argb("brown"))
+        assertEquals(0xFFF2A51A.toInt(), MausPalette.argb("amber"))
+        assertEquals(0xFF8E949E.toInt(), MausPalette.argb("grey"))
+        assertEquals(50, MausPalette.names.size)
     }
 
     @Test

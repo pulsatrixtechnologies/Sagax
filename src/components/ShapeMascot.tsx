@@ -1,28 +1,44 @@
-// The original mascot shapes: a soft body in the bot's color with two small
-// eyes, in eight shapes (shared/mascot-look.ts) and six skins. Pure SVG and
-// CSS, so it costs nothing in the sidebar and the chat. It blinks, breathes,
-// looks up while thinking and bounces while working; reduced motion keeps it
-// still. The desktop mascot draws the same shapes and moves them itself.
+// The mascot shapes: a soft body in the bot's color with two small eyes, in
+// thirteen shapes (shared/mascot-look.ts, shape-art.ts) and thirteen skins,
+// four everyday and nine premium (skin-fx/shape-skins.tsx). Pure SVG and CSS.
+// Small avatars draw a skin's still look (no filter, nothing moving), so the
+// sidebar and the chat cost nothing; larger ones play its idle effect, its
+// equip animation and its move effects. It blinks, breathes, looks up while
+// thinking and bounces while working; reduced motion keeps it still. The
+// desktop mascot draws the same component and moves it itself.
 import "./shape-mascot.css";
-import { useId } from "react";
+import { useId, useRef } from "react";
 import { MAUS_COLORS } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
-import { MASCOT_SHAPES, SHAPE_SKINS, type MascotShape, type ShapeSkin } from "../../shared/mascot-look";
+import { MASCOT_SHAPES, SHAPE_SKIN_TIER, SHAPE_SKINS, type MascotShape, type ShapeSkin, type SkinTier } from "../../shared/mascot-look";
+import { EYES, SHAPE_ART } from "./shape-art";
+import { shapeSkinBase, shapeSkinLayers, tint, type ShapeSkinBase } from "./skin-fx/shape-skins";
+import { EquipFx, MoveFx } from "./skin-fx/SkinFx";
+import { fxDetail, fxPalette, useEquipBurst, useFxVisibility, useMoveBurst, useReducedMotion, type FxDetail, type FxMoveRequest } from "./skin-fx/skin-fx";
 
-/** Each shape's outline (viewBox 0 0 100 100) and where its eyes sit. */
-export const SHAPE_ART: Record<MascotShape, { d: string; eyes: [number, number]; gap: number }> = {
-  circle: { d: "M50 8a42 42 0 1 1 0 84a42 42 0 1 1 0-84z", eyes: [50, 52], gap: 11 },
-  // a bean, a little tilted, its bump to the left
-  blob: { d: "M30 22C40 10 62 8 76 18C90 28 94 50 86 66C78 82 58 92 40 88C22 84 8 70 10 54C11 46 17 42 22 38C26 34 24 28 30 22z", eyes: [54, 50], gap: 11 },
-  squircle: { d: "M30 10H70C82 10 90 18 90 30V70C90 82 82 90 70 90H30C18 90 10 82 10 70V30C10 18 18 10 30 10z", eyes: [50, 52], gap: 12 },
-  pill: { d: "M30 26H70C83 26 94 37 94 50C94 63 83 74 70 74H30C17 74 6 63 6 50C6 37 17 26 30 26z", eyes: [50, 50], gap: 12 },
-  triangle: { d: "M44 14C47 9 53 9 56 14L91 76C94 82 90 88 84 88H16C10 88 6 82 9 76z", eyes: [50, 64], gap: 10 },
-  hexagon: { d: "M44 9C48 7 52 7 56 9L84 25C88 27 90 31 90 35V65C90 69 88 73 84 75L56 91C52 93 48 93 44 91L16 75C12 73 10 69 10 65V35C10 31 12 27 16 25z", eyes: [50, 52], gap: 12 },
-  // three lobes on a flat base
-  cloud: { d: "M24 82C13 82 6 74 6 64C6 54 13 47 22 46C22 32 33 22 46 22C55 22 63 27 67 35C70 33 74 32 78 32C88 32 96 41 95 52C94 60 90 66 84 68C88 72 86 82 78 82z", eyes: [50, 58], gap: 12 },
-  // a teardrop, point up
-  drop: { d: "M50 6C58 22 82 42 82 62C82 80 68 92 50 92C32 92 18 80 18 62C18 42 42 22 50 6z", eyes: [50, 62], gap: 11 },
-};
+export { SHAPE_ART, EYES } from "./shape-art";
+
+/**
+ * The one face every shape wears (EYES, shape-art.ts): the same two slanted
+ * ovals on every shape, placed at the shape's face anchor. Sleeping and
+ * happy eyes are the same strokes on every shape too.
+ */
+export function ShapeEyes({ face, color, mood, look }: { face: [number, number]; color: string; mood: ShapeMood; look: number }) {
+  const eye = ([dx, dy]: readonly [number, number], key: string) => {
+    const x = face[0] + dx;
+    const y = face[1] + dy;
+    const transform = `rotate(${EYES.tilt} ${x} ${y})`;
+    if (mood === "sleeping") return <path key={key} d={`M${x - 5.5} ${y + 1}q5.5 4.6 11 0`} transform={transform} fill="none" stroke={color} strokeWidth={3.2} strokeLinecap="round" />;
+    if (mood === "happy") return <path key={key} d={`M${x - 5.5} ${y + 2}q5.5 -6 11 0`} transform={transform} fill="none" stroke={color} strokeWidth={3.4} strokeLinecap="round" />;
+    return <ellipse key={key} className="shape-eye" cx={x} cy={y + look} rx={EYES.rx} ry={EYES.ry} transform={transform} fill={color} />;
+  };
+  return (
+    <g className="shape-eyes">
+      {eye(EYES.left, "l")}
+      {eye(EYES.right, "r")}
+    </g>
+  );
+}
 
 export type ShapeMood = "idle" | "thinking" | "working" | "happy" | "sleeping";
 
@@ -35,63 +51,67 @@ export interface ShapeMascotProps {
   mood?: ShapeMood;
   /** Off draws a still frame (thumbnails, reduced motion). */
   animated?: boolean;
+  /** The skin's full effects or its cheap still look; by default full when animated and large enough (FX_FULL_MIN). */
+  detail?: FxDetail;
+  /** A one-shot move to show: its effect (and, with moveBody, the body's own motion). */
+  move?: FxMoveRequest | null;
+  /** The body plays the move itself (app avatars); the desktop mascot moves the body on its own. */
+  moveBody?: boolean;
   label?: string | null;
   className?: string;
 }
 
 const hexOf = (color: string) => (MAUS_COLORS as Record<string, string>)[color] ?? (/^#[0-9a-fA-F]{6}$/.test(color) ? color : MAUS_COLORS.green);
 
-/** Mixes a hex color toward white (amount 0..1). */
-export function tint(hex: string, amount: number): string {
-  const n = Number.parseInt(hex.slice(1), 16);
-  const mix = (c: number) => Math.round(c + (255 - c) * amount);
-  return `#${[(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => mix(c).toString(16).padStart(2, "0")).join("")}`;
+export { tint };
+
+/** How a skin paints a shape: its base fill, outline, eyes, tier and effect family. */
+export function shapeSkinPaint(skin: ShapeSkin, hex: string): ShapeSkinBase & { tier: SkinTier } {
+  const known = SHAPE_SKINS.includes(skin) ? skin : "plain";
+  return { ...shapeSkinBase(known, hex), tier: SHAPE_SKIN_TIER[known] };
 }
 
-/** How a skin paints a shape: its fill, its outline, its eyes, and an optional glow or shine. */
-export function shapeSkinPaint(skin: ShapeSkin, hex: string): { fill: string; stroke: string | null; strokeWidth: number; eyes: string; glow: string | null; shine: boolean } {
-  switch (skin) {
-    case "glossy":
-      return { fill: hex, stroke: null, strokeWidth: 0, eyes: "#1b1f27", glow: null, shine: true };
-    case "outline":
-      return { fill: tint(hex, 0.92), stroke: hex, strokeWidth: 6, eyes: "#1b1f27", glow: null, shine: false };
-    case "neon":
-      return { fill: "#14161c", stroke: tint(hex, 0.15), strokeWidth: 4, eyes: tint(hex, 0.35), glow: tint(hex, 0.1), shine: false };
-    case "pastel":
-      return { fill: tint(hex, 0.55), stroke: null, strokeWidth: 0, eyes: "#3a3f4b", glow: null, shine: false };
-    case "night":
-      return { fill: "#1c2236", stroke: hex, strokeWidth: 2.5, eyes: "#f6f1e8", glow: null, shine: false };
-    default:
-      return { fill: hex, stroke: null, strokeWidth: 0, eyes: "#1b1f27", glow: null, shine: false };
-  }
-}
-
-export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44, mood = "idle", animated = true, label = null, className }: ShapeMascotProps) {
+export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44, mood = "idle", animated = true, detail, move, moveBody = false, label = null, className }: ShapeMascotProps) {
   const art = SHAPE_ART[MASCOT_SHAPES.includes(shape) ? shape : "circle"];
-  const paint = shapeSkinPaint(SHAPE_SKINS.includes(skin) ? skin : "plain", hexOf(color));
+  const known: ShapeSkin = SHAPE_SKINS.includes(skin) ? skin : "plain";
+  const hex = hexOf(color);
+  const paint = shapeSkinPaint(known, hex);
+  const reduced = useReducedMotion();
+  const full = fxDetail(size, animated, detail) === "full";
+  const live = full && !reduced;
   const uid = `shape-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const [ex, ey] = art.eyes;
-  const look = mood === "thinking" ? -4 : mood === "sleeping" ? 2 : 0;
-  const eye = (x: number) =>
-    mood === "sleeping" ? (
-      <path key={x} d={`M${x - 4} ${ey + 1}q4 3 8 0`} fill="none" stroke={paint.eyes} strokeWidth={2.2} strokeLinecap="round" />
-    ) : mood === "happy" ? (
-      <path key={x} d={`M${x - 4} ${ey + 1}q4 -4 8 0`} fill="none" stroke={paint.eyes} strokeWidth={2.4} strokeLinecap="round" />
-    ) : (
-      <ellipse key={x} className="shape-eye" cx={x} cy={ey + look} rx={3.6} ry={4.6} fill={paint.eyes} />
-    );
+  const layers = shapeSkinLayers(known, art.d, hex, uid, full);
+  const root = useRef<HTMLSpanElement>(null);
+  useFxVisibility(root, live);
+  const equip = useEquipBurst(known, live);
+  const burst = useMoveBurst(move, live);
+  const look = mood === "thinking" ? -3 : 0;
+  const palette = fxPalette(paint.fx, hex);
   return (
     <span
-      className={cn("shape-mascot inline-flex shrink-0", animated && `shape-mascot-live shape-mood-${mood}`, className)}
+      ref={root}
+      className={cn("shape-mascot relative inline-flex shrink-0", animated && `shape-mascot-live shape-mood-${mood}`, live && "skin-fx-live", className)}
       style={{ width: size, height: size }}
       data-shape={shape}
-      data-shape-skin={skin}
+      data-shape-skin={known}
+      data-skin-tier={paint.tier}
+      data-fx={full ? "full" : "static"}
       role={label ? "img" : undefined}
       aria-label={label ?? undefined}
       aria-hidden={label ? undefined : true}
     >
-      <svg viewBox="0 0 100 100" width={size} height={size} style={{ overflow: "visible", display: "block" }}>
+      <svg
+        viewBox="0 0 100 100"
+        width={size}
+        height={size}
+        className={cn(burst && moveBody && `fx-body-move fx-body-${burst.move}`, equip && "fx-equip-pop")}
+        key={burst && moveBody ? burst.key : undefined}
+        style={{ overflow: "visible", display: "block" }}
+      >
         <defs>
+          <clipPath id={`${uid}-body`}>
+            <path d={art.d} />
+          </clipPath>
           {paint.shine && (
             <radialGradient id={`${uid}-shine`} cx="0.32" cy="0.26" r="0.75">
               <stop offset="0" stopColor="#ffffff" stopOpacity="0.55" />
@@ -99,32 +119,26 @@ export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44
               <stop offset="1" stopColor="#000000" stopOpacity="0.18" />
             </radialGradient>
           )}
-          {paint.glow && (
-            <filter id={`${uid}-glow`} x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="2.4" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          )}
+          {layers.defs}
         </defs>
+        {layers.under}
         <g className="shape-body">
           <path
             d={art.d}
-            fill={paint.fill}
-            stroke={paint.stroke ?? undefined}
-            strokeWidth={paint.stroke ? paint.strokeWidth : undefined}
+            fill={layers.fill}
+            stroke={!layers.ownEdge && paint.stroke ? paint.stroke : undefined}
+            strokeWidth={!layers.ownEdge && paint.stroke ? paint.strokeWidth : undefined}
             strokeLinejoin="round"
-            filter={paint.glow ? `url(#${uid}-glow)` : undefined}
           />
           {paint.shine && <path d={art.d} fill={`url(#${uid}-shine)`} />}
-          <g className="shape-eyes">
-            {eye(ex - art.gap / 2 - 4)}
-            {eye(ex + art.gap / 2 + 4)}
-          </g>
+          {layers.inner && <g clipPath={`url(#${uid}-body)`}>{layers.inner}</g>}
+          {layers.edge}
+          <ShapeEyes face={art.face} color={paint.eyes} mood={mood} look={look} />
         </g>
+        {layers.around && <g className="skin-fx-around">{layers.around}</g>}
       </svg>
+      {equip && <EquipFx key={equip} palette={palette} uid={`${uid}-eq`} />}
+      {burst && <MoveFx key={burst.key} move={burst.move} palette={palette} uid={`${uid}-mv`} path={art.d} />}
     </span>
   );
 }

@@ -38,6 +38,7 @@ import {
 } from "./brain";
 import { FloatingBotView, MASCOT_SIZE, type FloatingMover } from "./FloatingBotView";
 import { floatingContext } from "./context";
+import { useAppTheme } from "./theme";
 import { moodNow, raiseMood, readMoods, writeMoods, type MoodGain, type MoodRecord } from "./mood";
 import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type FloatingEvent, type FloatingSnapshot } from "./protocol";
 
@@ -157,6 +158,8 @@ export function FloatingBots() {
     });
   }, []);
   const retro = useRetroSkin();
+  // the desktop balloon wears the app's skin and accent, and follows a change at once
+  const theme = useAppTheme();
   const reduced = useReducedMotion();
   const bridge = useMemo(desktopBridge, []);
   const [sessions, setSessions] = useState<Record<string, FloatingSession>>({});
@@ -280,7 +283,7 @@ export function FloatingBots() {
     const entry = entries.find((candidate) => candidate.id === bot.id);
     const src = base ? (bridge ? avatarData[base.url] : base.url) : undefined;
     const avatar: FloatingAvatar | null = base && src ? { src, crop: base.crop, zoom: base.zoom, focusX: base.focusX, focusY: base.focusY } : null;
-    return {
+    const item = {
       bot,
       entry,
       snapshot: buildFloatingSnapshot({
@@ -300,6 +303,8 @@ export function FloatingBots() {
         context: floatingContext(bot.tasks?.find((task) => task.threadId === (session.threadId ?? bot.threadId))?.usage),
       }),
     };
+    if (theme) item.snapshot.theme = theme;
+    return item;
   });
 
   // Open a window per floated bot, close the ones taken back.

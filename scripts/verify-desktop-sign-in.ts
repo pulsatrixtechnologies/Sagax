@@ -27,14 +27,14 @@ const port = await freePortBlock([0, 1]);
 if ([18790, 5199, 8799].includes(port) || [18790, 5199, 8799].includes(port + 1)) throw new Error("reserved port, run again");
 const origin = `http://127.0.0.1:${port}`;
 const home = mkdtempSync(join(tmpdir(), "omb-verify-desktop-"));
-mkdirSync(join(home, ".openmausbot"), { recursive: true });
-writeFileSync(join(home, ".openmausbot", "config.json"), "{}");
+mkdirSync(join(home, ".sagax"), { recursive: true });
+writeFileSync(join(home, ".sagax", "config.json"), "{}");
 let serverLog = "";
 const server: ChildProcess = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "server", "index.ts")], {
   cwd: ROOT,
   env: {
-    PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
-    OMB_STATIC_DIR: join(ROOT, "dist"), OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: origin,
+    PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
+    SAGAX_STATIC_DIR: join(ROOT, "dist"), SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: idp.issuer, SAGAX_PUBLIC_URL: origin,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });

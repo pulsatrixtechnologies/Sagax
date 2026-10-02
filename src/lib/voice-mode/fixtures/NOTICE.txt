@@ -1,0 +1,13 @@
+speaker-*.wav are the first three seconds of the speaker recognition test
+recordings published with sherpa-onnx (k2-fsa/sherpa-onnx, release
+"speaker-recongition-models": fangjun-sr-1, fangjun-sr-2, fangjun-test-sr-1 as
+speaker-a; leijun-sr-1, leijun-test-sr-1 as speaker-b; liudehua-sr-1,
+liudehua-test-sr-1 as speaker-c), used under the Apache License 2.0
+(third_party/sherpa-onnx/LICENSE). They are test fixtures only and are not
+part of the built app.
+
+fbank-kaldi.json holds reference filter bank rows computed with
+kaldi-native-fbank (Apache License 2.0) from speaker-a-1.wav.
+
+Noise, music, keyboard, TV and echo fixtures are synthesized by the tests
+(vad.test.ts) from these recordings and from generated signals.

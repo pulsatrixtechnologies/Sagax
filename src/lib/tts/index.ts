@@ -15,6 +15,8 @@
 // server-computed approval key.
 
 import { localSystemVoiceActive, remoteSystemVoice, resolveLocalSystemVoice } from "@/lib/local-voice";
+import { prepareVoiceModeText, speakVoiceMode } from "@/lib/voice-mode/api";
+import type { VoiceModeSettings } from "../../../shared/voice-mode";
 
 export type SpeechStatus = "idle" | "preparing" | "speaking";
 
@@ -32,6 +34,10 @@ interface SpeakOptions {
   voiceId?: string;
   botId?: string;
   messageId?: string;
+  /** Voice mode (the floating voice bar): read through xAI with the
+   * person's Voice, Speed and Language (server/voice-mode.ts), on the
+   * speaker's or the organization's key. Needs botId. */
+  voiceMode?: { settings: VoiceModeSettings; threadId?: string };
 }
 
 type TtsPrepareBody = { ready?: boolean; utterances?: string[]; error?: string };
@@ -139,14 +145,17 @@ export class Speaker {
     const live = () => this.token === mine && !controller.signal.aborted;
 
     this.set({ status: "preparing", botId: opts.botId, messageId: opts.messageId });
-    if (localSystemVoiceActive()) {
+    const voiceMode = opts.voiceMode && opts.botId ? { ...opts.voiceMode, botId: opts.botId } : null;
+    if (!voiceMode && localSystemVoiceActive()) {
       await this.speakWithLocalSystem(text, opts, live);
       if (this.request === controller) this.request = null;
       return;
     }
     let utterances: string[];
     try {
-      utterances = await this.prepare(text, opts.voiceId, controller.signal);
+      utterances = voiceMode
+        ? await prepareVoiceModeText(voiceMode.botId, text, controller.signal)
+        : await this.prepare(text, opts.voiceId, controller.signal);
     } catch (e) {
       if (live()) this.set({ ...IDLE, error: e instanceof Error ? e.message : String(e) });
       if (this.request === controller) this.request = null;
@@ -164,7 +173,10 @@ export class Speaker {
     // turn — the only gap the listener hears is the first.
     type Rendered = { blob: Blob; error?: never } | { blob?: never; error: unknown };
     const render = (utterance: string): Promise<Rendered> =>
-      this.render(utterance, opts.voiceId, controller.signal).then(
+      (voiceMode
+        ? speakVoiceMode(voiceMode.botId, utterance, voiceMode.settings, voiceMode.threadId, controller.signal)
+        : this.render(utterance, opts.voiceId, controller.signal)
+      ).then(
         (blob) => ({ blob }),
         (error: unknown) => ({ error }),
       );

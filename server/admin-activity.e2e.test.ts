@@ -54,7 +54,7 @@ async function start() {
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -107,7 +107,7 @@ const month = () => new Date().toISOString().slice(0, 7);
 posixOnly("admin activity log", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-admin-activity-"));
-    data = join(home, ".openmausbot");
+    data = join(home, ".sagax");
     mkdirSync(join(data, "decisions"), { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({ signIn: { admins: [BOSS], members: [ADA] } }));
     // One card Ada answered earlier, as the decision log recorded it (#1708).
@@ -168,6 +168,8 @@ posixOnly("admin activity log", () => {
     const bot = await api("POST", "/api/bots", { name: "Audit Owl" }, BOSS);
     expect(bot.status).toBe(201);
     const botId = bot.body.bot.id as string;
+    // Ada reaches Boss's bot once he shares it with her (direct grants).
+    expect((await api("POST", `/api/bots/${botId}/direct-grants`, { userId: ADA }, BOSS)).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${botId}`, { visibility: { people: [ADA] } }, BOSS)).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${botId}`, { approvePeerComms: true }, BOSS)).status).toBe(200);
     // display-only and refused changes leave no row

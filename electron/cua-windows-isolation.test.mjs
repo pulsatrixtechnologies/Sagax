@@ -33,7 +33,7 @@ beforeEach(async () => {
     get(target, key) { return key === "platform" ? "win32" : key === "resourcesPath" ? fixture.home : Reflect.get(target, key); },
   }));
   vi.stubEnv("CUA_DRIVER_PATH", join(fixture.home, "cua-driver.exe"));
-  vi.stubEnv("OPENMAUSBOT_CUA_EMBEDDED", "");
+  vi.stubEnv("SAGAX_CUA_EMBEDDED", "");
   vi.resetModules();
   cua = await import("./cua.mjs");
 });
@@ -97,7 +97,7 @@ describe("Windows owned CUA host", () => {
 
   it("resolves the staged development executable without installing a foreign driver", () => {
     vi.stubEnv("CUA_DRIVER_PATH", "");
-    const stage = join(fixture.home, "dist-native", "cua-win32-x64");
+    const stage = join(fixture.home, "dist-native", `cua-win32-${process.arch}`);
     mkdirSync(stage, { recursive: true });
     writeFileSync(join(stage, "cua-driver.exe"), "inert fixture");
     expect(cua.resolveDriverBinary()).toBe(join(stage, "cua-driver.exe"));

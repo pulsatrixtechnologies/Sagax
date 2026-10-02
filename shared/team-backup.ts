@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MASCOT_COLOR_NAMES } from "./mascot-colors.ts";
 
 import { CONNECTOR_SLUG_PATTERN, CONNECTOR_TOOL_NAME_PATTERN } from "./wire.ts";
 
@@ -9,7 +10,7 @@ export const TEAM_BACKUP_EXCLUSIONS = "Files, images, custom avatars, account co
 const key = z.string().min(1).max(200);
 const name = z.string().trim().min(1).max(200);
 const timestamp = z.number().finite().nonnegative();
-const color = z.enum(["green", "blue", "red", "orange", "purple", "cyan", "pink", "yellow", "teal", "coral", "white", "black"]);
+const color = z.enum(MASCOT_COLOR_NAMES);
 const message = z.object({
   id: key,
   role: z.enum(["bot", "user"]),
@@ -153,7 +154,7 @@ export function parseTeamBackup(input: unknown): TeamBackup {
     if (!bot.chiefOfStaff) continue;
     // Persisted section identity is its exact trimmed display label.
     const section = bot.section?.trim() ?? "";
-    if (chiefs.has(section) || bot.hidden) throw new Error("Invalid backup: a section must have at most one visible Chief of Staff");
+    if (chiefs.has(section) || bot.hidden) throw new Error("Invalid backup: a section must have at most one visible Primary Bot");
     chiefs.add(section);
   }
   for (const group of backup.groups) {
