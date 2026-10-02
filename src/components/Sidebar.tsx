@@ -49,14 +49,31 @@ import { lastNonReceipt } from "@/lib/receipts";
 import { t } from "@/lib/i18n";
 import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
 import { PrimaryBotPicker } from "./PrimaryBotPicker";
-import { useOrgPeople, usePerspicaxOrg, type OrgSection } from "@/lib/perspicax-org";
+import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
 import { Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
 import { PersonAvatar } from "./MessageAuthor";
 import { OrgSectionMenuItems, SectionNameInput, orgSectionMenuItems, type OrgSectionMenuActions } from "./OrgSectionMenu";
-import { SectionMembersDialog } from "./SectionMembersDialog";
+import {
+  EMPTY_PERSONAL_SECTIONS,
+  assignToPersonalSection,
+  createPersonalSection,
+  deletePersonalSection,
+  editPersonalSections,
+  itemKey,
+  personalSectionNames,
+  personalSectionOf,
+  renamePersonalSection,
+  seedPersonalSections,
+  usePersonalSections,
+  withPersonalSections,
+  writePersonalSections,
+  type PersonalSections,
+  type SectionEditError,
+  type SectionItemKind,
+} from "@/lib/personal-sections";
 import { isRoutineProblemRun } from "@/lib/routines";
 import type { LocaleKey } from "@/locales";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -130,6 +147,8 @@ import { groupMemberBots } from "@/lib/group-members";
 
 
 const GENERAL_SECTION_ID = "builtin:general";
+/** A bot or a group dragged onto a section header or its rows. */
+const ITEM_DRAG_TYPE = "application/x-sagax-sidebar-item";
 const SIDEBAR_WIDTH_KEY = "omb-sidebar-width-v2";
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 400;
@@ -195,7 +214,7 @@ const SECTION_LABEL_KEYS: Record<string, LocaleKey> = {
 /** The four built-in section names come from the catalog; a section someone
  * named themselves is their text and stays exactly as typed. */
 function sectionLabel(id: string): string {
-  if (id === GENERAL_SECTION_ID) return "General";
+  if (id === GENERAL_SECTION_ID) return t("sidebar.section.general");
   const key = SECTION_LABEL_KEYS[id];
   return key ? t(key) : sidebarSectionLabel(id);
 }
@@ -606,6 +625,40 @@ const COMPOSE_DISMISS = new Set([
   "toggleAppSettings",
 ]);
 
+/** The bot or group a sidebar drag carries, or null. */
+export function parseItemDrag(raw: string): { kind: SectionItemKind; id: string } | null {
+  try {
+    const parsed = JSON.parse(raw) as { kind?: unknown; id?: unknown };
+    if ((parsed.kind === "bot" || parsed.kind === "group") && typeof parsed.id === "string" && parsed.id) return { kind: parsed.kind, id: parsed.id };
+  } catch {
+    /* not ours */
+  }
+  return null;
+}
+
+/** On an organization server the sidebar's sections are the viewer's own
+ * folders (src/lib/personal-sections.ts): they share nothing. Null on a
+ * solo server, where the server's sections are the one person's. */
+function usePersonalLayout(): PersonalSections | null {
+  const org = usePerspicaxOrg() !== null;
+  const stored = usePersonalSections();
+  return org ? stored ?? EMPTY_PERSONAL_SECTIONS : null;
+}
+
+function sectionEditMessage(code: SectionEditError): string {
+  if (code === "reserved") return t("sidebar.section.reserved");
+  if (code === "exists") return t("sidebar.section.exists");
+  if (code === "full") return t("sidebar.section.full");
+  return t("sidebar.section.namePlaceholder");
+}
+
+/** Files a bot or a group in one of the viewer's own sections ("" puts it
+ * back in General). An error text, or null. */
+function assignPersonalSection(kind: SectionItemKind, id: string, name: string, known?: ReadonlySet<string>): string | null {
+  const code = editPersonalSections((prefs) => assignToPersonalSection(prefs, itemKey(kind, id), name, known));
+  return code ? sectionEditMessage(code) : null;
+}
+
 /** Move-to-section popover: existing sections as chips (checkmark on the
  * target's current one), a create field, and a remove action. Serves bots
  * and channels alike — the caller supplies the assignment. Mirrors the
@@ -615,7 +668,10 @@ function SectionPicker({
   anchor,
   onClose,
   onAssign,
+  names,
 }: {
+  /** the viewer's own sections (organization server); else the server's */
+  names?: readonly string[] | undefined;
   /** the target's current section; undefined = none */
   current: string | undefined;
   anchor: { x: number; y: number } | null;
@@ -649,7 +705,7 @@ function SectionPicker({
 
   // Hidden bots can carry a stale assignment; don't offer it as a context.
   // Channels and bots share one namespace, so Work or Personal can hold both.
-  const sections = [
+  const sections = names ? [...names] : [
     ...new Set([
       ...(state.sections ?? []),
       ...state.bots.filter((b) => !b.hidden && b.section).map((b) => b.section!),
@@ -739,17 +795,18 @@ function SectionPicker({
 
 function MoveToSectionItem({ bot, onAssign }: { bot: Bot; onAssign: (section: string) => void }) {
   const { state } = useStore();
+  const personal = usePersonalLayout();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeTimer = useRef<number | null>(null);
-  const sections = [...new Set([
+  const sections = personal ? personalSectionNames(personal) : [...new Set([
     ...(state.sections ?? []),
     ...state.bots.flatMap((item) => item.section ? [item.section] : []),
     ...state.groups.flatMap((group) => group.section ? [group.section] : []),
   ])];
-  const current = bot.section?.trim() ?? "";
+  const current = (personal ? personalSectionOf(personal, itemKey("bot", bot.id)) : bot.section)?.trim() ?? "";
   const create = () => {
     const name = draft.trim();
     if (!name || name.length > 60) return;
@@ -892,6 +949,7 @@ export function BotContextMenu({
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
   const remoteClient = window.ogb?.remoteClient?.active === true;
+  const personal = usePersonalLayout();
   const bot = shown ? state.bots.find((b) => b.id === shown.botId) : undefined;
   const floating = useSyncExternalStore(subscribeFloatingBots, () => (shown ? isBotFloating(shown.botId) : false), () => false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1026,7 +1084,12 @@ export function BotContextMenu({
           key="move"
           bot={bot}
           onAssign={(section) => {
-            dispatch({ type: "updateBot", botId: bot.id, patch: { section: section || undefined } });
+            if (personal) {
+              const failed = assignPersonalSection("bot", bot.id, section);
+              if (failed) dispatch({ type: "error", message: failed });
+            } else {
+              dispatch({ type: "updateBot", botId: bot.id, patch: { section: section || undefined } });
+            }
             onClose();
           }}
         />,
@@ -1916,14 +1979,26 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     });
     if (keys.length) showInSidebar(keys);
   }, [sidebarHidden, state.bots, state.groups, state.config]);
-  const [orgSections, setOrgSections] = useState<OrgSection[]>([]);
   const [orgMenu, setOrgMenu] = useState<{ name: string | null; id: string | null; x: number; y: number } | null>(null);
   const [sectionEdit, setSectionEdit] = useState<{ mode: "new" } | { mode: "rename"; name: string } | null>(null);
-  const [membersFor, setMembersFor] = useState<OrgSection | null>(null);
-  const loadOrgSections = useCallback(() => {
-    void api<{ sections: OrgSection[] }>("/api/org/sections").then((body) => setOrgSections(body.sections ?? []), () => setOrgSections([]));
-  }, []);
-  useEffect(() => { if (orgMode) loadOrgSections(); }, [orgMode, state.sections, loadOrgSections]);
+  // Organization: the viewer's own sections (personal-sections.ts). The
+  // first time, they start from the sections the server gave their bots.
+  const personalStored = usePersonalSections();
+  const personal: PersonalSections | null = orgMode ? personalStored ?? EMPTY_PERSONAL_SECTIONS : null;
+  const loaded = state.config !== null && state.config !== undefined;
+  useEffect(() => {
+    if (!orgMode || personalStored !== null || !loaded) return;
+    if (!state.bots.length && !state.groups.length) return;
+    writePersonalSections(seedPersonalSections({ bots: state.bots, groups: state.groups, sections: state.sections ?? [], viewerId: orgViewerId(state) }));
+  }, [orgMode, personalStored, loaded, state.bots, state.groups, state.sections, state.config]);
+  // What the sidebar lays out: on an organization server each bot and group
+  // sits in the viewer's own section (undefined: General), whatever the
+  // server's section field says.
+  const personalView = personal ? withPersonalSections(state.bots, state.groups, personal) : null;
+  const layoutBots = personalView?.bots ?? state.bots;
+  const layoutGroups = personalView?.groups ?? state.groups;
+  const layoutSections = personal ? personalSectionNames(personal) : state.sections ?? [];
+  const knownItems = new Set([...state.bots.map((bot) => itemKey("bot", bot.id)), ...state.groups.map((group) => itemKey("group", group.id))]);
   const openOrgMenu = (event: React.MouseEvent<HTMLElement>, name: string | null, id: string | null) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1939,27 +2014,40 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     setOrgMenu(null);
   };
   const createOrgSection = async (name: string): Promise<string | null> => {
-    try {
-      await api("/api/org/sections", { method: "POST", body: JSON.stringify({ name }) });
-      setSectionEdit(null);
-      loadOrgSections();
-      return null;
-    } catch (cause) {
-      return cause instanceof Error ? cause.message : String(cause);
-    }
+    const code = editPersonalSections((prefs) => createPersonalSection(prefs, name));
+    if (code) return sectionEditMessage(code);
+    setSectionEdit(null);
+    return null;
   };
   const renameOrgSection = async (oldName: string, name: string): Promise<string | null> => {
-    const record = orgSections.find((section) => section.name === oldName);
-    if (!record) return t("sectionMembers.failed");
-    try {
-      await api(`/api/org/sections/${record.id}`, { method: "PATCH", body: JSON.stringify({ name }) });
-      setSectionEdit(null);
-      renamedTeam(oldName, name);
-      loadOrgSections();
-      return null;
-    } catch (cause) {
-      return cause instanceof Error ? cause.message : String(cause);
+    const code = editPersonalSections((prefs) => renamePersonalSection(prefs, oldName, name));
+    if (code) return sectionEditMessage(code);
+    setSectionEdit(null);
+    renamedTeam(oldName, name.trim());
+    return null;
+  };
+  /** Files a bot or a group in a section ("" = General): the viewer's own on
+   * an organization server, the server's otherwise. */
+  const assignSection = (kind: SectionItemKind, id: string, section: string) => {
+    if (personal) {
+      const failed = assignPersonalSection(kind, id, section, knownItems);
+      if (failed) setTeamFeedback({ error: true, text: failed });
+      return;
     }
+    if (kind === "group") {
+      dispatch({ type: "patchGroup", groupId: id, patch: { section } });
+      return;
+    }
+    if (!remoteClient) {
+      dispatch({ type: "updateBot", botId: id, patch: { section } });
+      return;
+    }
+    void api("/api/sidebar-sections", {
+      method: "POST",
+      body: JSON.stringify({ name: section, botIds: [id] }),
+    })
+      .then(({ bots }) => bots.forEach((bot: Bot) => dispatch({ type: "botPatched", bot })))
+      .catch((cause) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
   };
   const [roomMenu, setRoomMenu] = useState<{ groupId: string; x: number; y: number } | null>(null);
   const [roomSectionPicker, setRoomSectionPicker] = useState<{ groupId: string; x: number; y: number } | null>(null);
@@ -2134,8 +2222,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
 
   const viewerId = orgViewerId(state);
   const hiddenEntries = hiddenKeySet(sidebarHidden);
-  const sidebarShown = withoutHiddenEntries(state.bots, state.groups, hiddenEntries, viewerId);
-  const sidebarBots = sidebarListedBots(sidebarShown.bots, viewerId, orgMode, state.sections ?? []);
+  const sidebarShown = withoutHiddenEntries(layoutBots, layoutGroups, hiddenEntries, viewerId);
+  const sidebarBots = sidebarListedBots(sidebarShown.bots, viewerId, orgMode, layoutSections);
   const pinnedBots = sidebarBots.filter((bot) => !bot.hidden && bot.pinned);
   const matchingBots = sidebarBots
     .filter((b) => !b.hidden)
@@ -2157,7 +2245,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
 
   // User sections keep first-appearance order. The saved layout keeps an
   // empty section's former slot so it returns there when content comes back.
-  const sectionNames: string[] = (state.sections ?? []).filter((name) => !q || name.toLowerCase().includes(q.toLowerCase()));
+  const sectionNames: string[] = layoutSections.filter((name) => !q || name.toLowerCase().includes(q.toLowerCase()));
   for (const bot of sectionedBots) {
     if (!sectionNames.includes(bot.section!)) sectionNames.push(bot.section!);
   }
@@ -2182,7 +2270,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     ...teamMap.map((team) => (team.key ? userSectionId(team.key) : GENERAL_SECTION_ID)),
     ...(botChats.length > 0 ? [BOT_CHATS_SECTION_ID] : []),
   ];
-  const sectionIds = orderedSidebarSections(naturalSectionIds, sectionOrder);
+  const orderedSectionIds = orderedSidebarSections(naturalSectionIds, sectionOrder);
+  // Organization: General (what is in no section of yours) stays on top.
+  const generalOnTop = orgMode && orderedSectionIds.includes(GENERAL_SECTION_ID);
+  const sectionIds = generalOnTop ? [GENERAL_SECTION_ID, ...orderedSectionIds.filter((id) => id !== GENERAL_SECTION_ID)] : orderedSectionIds;
   const layoutInteractive = sidebarLayoutInteractive(density, q);
   const sectionCollapsed = (id: string) =>
     sidebarSectionCollapsed(id, collapsedSections, density, q);
@@ -2236,6 +2327,37 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     const next = { id, place };
     sectionDragRef.current.over = next;
     setDropTarget(next);
+  };
+
+  // Dragging a bot or a group onto a section files it there (General: in
+  // none). Bot-to-bot chats are a view, not something to file.
+  const [itemDropId, setItemDropId] = useState<string | null>(null);
+  const itemDragProps = (kind: SectionItemKind, itemId: string) => layoutInteractive ? {
+    draggable: true,
+    "data-sidebar-item-drag": kind,
+    onDragStart: (event: React.DragEvent<HTMLDivElement>) => {
+      if (event.target instanceof Element && event.target.closest("[data-sidebar-folder-row],[data-sidebar-folder-label]")) return;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData(ITEM_DRAG_TYPE, JSON.stringify({ kind, id: itemId }));
+    },
+    onDragEnd: () => setItemDropId(null),
+  } : {};
+  const acceptItemDrag = (event: React.DragEvent<HTMLDivElement>, id: string): boolean => {
+    if (!event.dataTransfer.types.includes(ITEM_DRAG_TYPE)) return false;
+    if (id === BOT_CHATS_SECTION_ID) return true;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (itemDropId !== id) setItemDropId(id);
+    return true;
+  };
+  const dropItem = (event: React.DragEvent<HTMLDivElement>, id: string, section: string): boolean => {
+    if (!event.dataTransfer.types.includes(ITEM_DRAG_TYPE)) return false;
+    event.preventDefault();
+    setItemDropId(null);
+    if (id === BOT_CHATS_SECTION_ID) return true;
+    const item = parseItemDrag(event.dataTransfer.getData(ITEM_DRAG_TYPE));
+    if (item) assignSection(item.kind, item.id, section);
+    return true;
   };
 
   const dropSection = (event: React.DragEvent<HTMLDivElement>) => {
@@ -2472,11 +2594,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               <div
                 key={id}
                 data-sidebar-section-id={id}
-                onDragOver={(event) => updateSectionDropTarget(event, id)}
-                onDrop={dropSection}
+                onDragOver={(event) => { if (!acceptItemDrag(event, id)) updateSectionDropTarget(event, id); }}
+                onDragLeave={(event) => { if (itemDropId === id && !event.currentTarget.contains(event.relatedTarget as Node | null)) setItemDropId(null); }}
+                onDrop={(event) => { if (!dropItem(event, id, team?.key ?? "")) dropSection(event); }}
+                data-item-drop={itemDropId === id ? "" : undefined}
                 className={cn(
                   "flex flex-col gap-1",
                   density !== "icons" && index > 0 && "pt-2.5",
+                  itemDropId === id && "rounded-lg bg-sidebar-hover/70 ring-1 ring-accent/50",
                 )}
               >
                 {dropTarget?.id === id && dropTarget.place === "before" && draggingSectionId !== id && (
@@ -2486,7 +2611,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <SectionNameInput initial={team.key} onSave={(name) => renameOrgSection(team.key!, name)} onCancel={() => setSectionEdit(null)} />
                 ) : density !== "icons" && (
                   <SidebarSectionHeader
-                    name={team?.name ?? sectionLabel(id)}
+                    name={team?.key || sectionLabel(id)}
                     onContextMenu={orgMode && layoutInteractive && id !== BOT_CHATS_SECTION_ID ? (event) => openOrgMenu(event, team?.key || null, id) : !remoteClient && layoutInteractive && sectionName ? (event) => {
                       event.preventDefault();
                       teamMenuReturn.current = event.currentTarget.querySelector<HTMLElement>("button") ?? event.currentTarget;
@@ -2515,44 +2640,47 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <div
                     data-sidebar-nest
                     role="group"
-                    aria-label={team?.name ?? sectionLabel(id)}
+                    aria-label={team?.key || sectionLabel(id)}
                     className={density === "icons" ? "flex flex-col gap-1" : "flex flex-col gap-0.5"}
                   >
                     {sectionChiefItems.map((bot) => (
-                      <BotListItem
-                        key={bot.id}
-                        bot={bot}
-                        density={density}
-                        quiet={quietRows}
-                        query={q}
-                        onMenu={setMenu}
-                        startRename={renameBotId === bot.id}
-                        onRenameStarted={() => setRenameBotId(null)}
-                        mine={orgMode}
-                      />
+                      <div key={bot.id} {...itemDragProps("bot", bot.id)}>
+                        <BotListItem
+                          bot={bot}
+                          density={density}
+                          quiet={quietRows}
+                          query={q}
+                          onMenu={setMenu}
+                          startRename={renameBotId === bot.id}
+                          onRenameStarted={() => setRenameBotId(null)}
+                          mine={orgMode}
+                        />
+                      </div>
                     ))}
                     {sectionGroupItems.map((group) => (
-                      <GroupListItem
-                        key={group.id}
-                        group={group}
-                        density={density}
-                        quiet={quietRows}
-                        query={q}
-                        onMenu={setRoomMenu}
-                      />
+                      <div key={group.id} {...(group.dm ? {} : itemDragProps("group", group.id))}>
+                        <GroupListItem
+                          group={group}
+                          density={density}
+                          quiet={quietRows}
+                          query={q}
+                          onMenu={setRoomMenu}
+                        />
+                      </div>
                     ))}
                     {sectionBotItems.map((bot) => (
-                      <BotListItem
-                        key={bot.id}
-                        bot={bot}
-                        density={density}
-                        quiet={quietRows}
-                        query={q}
-                        onMenu={setMenu}
-                        startRename={renameBotId === bot.id}
-                        onRenameStarted={() => setRenameBotId(null)}
-                        mine={orgMode}
-                      />
+                      <div key={bot.id} {...itemDragProps("bot", bot.id)}>
+                        <BotListItem
+                          bot={bot}
+                          density={density}
+                          quiet={quietRows}
+                          query={q}
+                          onMenu={setMenu}
+                          startRename={renameBotId === bot.id}
+                          onRenameStarted={() => setRenameBotId(null)}
+                          mine={orgMode}
+                        />
+                      </div>
                     ))}
                   </div>
                 )}
@@ -2661,30 +2789,27 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             navigateThreadMenu(event);
           }}>
           {(() => {
-            const record = orgMenu.name ? orgSections.find((section) => section.name === orgMenu.name) ?? null : null;
             const position = orgMenu.id ? sectionIds.indexOf(orgMenu.id) : -1;
             const anyExpanded = sectionIds.some((sid) => !collapsedSections.includes(sid));
             const actions: OrgSectionMenuActions = {
               onNew: () => { closeOrgMenu(); setSectionEdit({ mode: "new" }); },
               onRename: () => { closeOrgMenu(); if (orgMenu.name) setSectionEdit({ mode: "rename", name: orgMenu.name }); },
-              onMembers: () => { closeOrgMenu(); if (record) setMembersFor(record); },
               onMoveUp: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, -1); },
               onMoveDown: () => { closeOrgMenu(); if (orgMenu.id) moveSidebarSection(orgMenu.id, 1); },
               onCollapseAll: () => { closeOrgMenu(); setCollapsedSections([...sectionIds]); saveCollapsedSections([...sectionIds]); },
               onExpandAll: () => { closeOrgMenu(); setCollapsedSections([]); saveCollapsedSections([]); },
               onDelete: () => { closeOrgMenu(); if (orgMenu.name) setDeletingTeam(orgMenu.name); },
             };
-            const items = orgSectionMenuItems(record, {
+            const items = orgSectionMenuItems({
               named: Boolean(orgMenu.name),
-              canMoveUp: position > 0 && layoutInteractive,
-              canMoveDown: position >= 0 && position < sectionIds.length - 1 && layoutInteractive,
+              canMoveUp: position > (generalOnTop ? 1 : 0) && layoutInteractive,
+              canMoveDown: position >= (generalOnTop ? 1 : 0) && position < sectionIds.length - 1 && layoutInteractive,
               anyExpanded,
             });
             return <OrgSectionMenuItems items={items} actions={actions} />;
           })()}
         </div>
       </div>, document.body)}
-      {membersFor && <SectionMembersDialog section={membersFor} onClose={() => setMembersFor(null)} onSaved={() => loadOrgSections()} />}
       {teamMotion.shown && teamMotion.value && createPortal(<div className={cn("fixed inset-0 z-40", teamMotion.closing && "pointer-events-none")} onMouseDown={closeTeamMenu}>
         <div role="menu" aria-label={teamMotion.value.name} style={{ left: teamMotion.value.x, top: teamMotion.value.y }}
           className={cn("absolute w-[220px] min-w-[200px] rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px] text-ink", teamMotion.className)} {...teamMotion.exitProps}
@@ -2706,34 +2831,29 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         onCancel={() => { if (!teamDeleteRunning.current) setDeletingTeam(null); }} onConfirm={() => {
           const name = deletingTeam;
           if (!name || teamDeleteRunning.current) return;
+          // Organization: the viewer's own section goes, its bots, groups and
+          // conversations go back to General; nothing else changes.
+          if (personal) {
+            writePersonalSections(deletePersonalSection(personal, name));
+            setDeletingTeam(null);
+            return;
+          }
           teamDeleteRunning.current = true;
           setTeamDeletePending(true);
-          const orgRecord = orgMode ? orgSections.find((section) => section.name === name) : undefined;
-          void (orgRecord
-            ? api(`/api/org/sections/${orgRecord.id}`, { method: "DELETE" }).then(() => ({ sections: (state.sections ?? []).filter((section) => section !== name) }))
-            : api<{ sections: string[] }>(`/api/sidebar-sections?section=${encodeURIComponent(name)}`, { method: "DELETE" }))
-            .then(({ sections }) => { dispatch({ type: "sectionDeleted", section: name, sections }); setDeletingTeam(null); loadOrgSections(); })
+          void api<{ sections: string[] }>(`/api/sidebar-sections?section=${encodeURIComponent(name)}`, { method: "DELETE" })
+            .then(({ sections }) => { dispatch({ type: "sectionDeleted", section: name, sections }); setDeletingTeam(null); })
             .catch(cause => setTeamFeedback({ error: true, text: cause instanceof Error ? cause.message : String(cause) }))
             .finally(() => { teamDeleteRunning.current = false; setTeamDeletePending(false); });
         }} />
       {moveToTeam && <TeamDialog section={moveToTeam} onClose={() => setMoveToTeam(null)} />}
       {shareTeam !== null && <ShareTeamDialog team={shareTeam} onClose={() => setShareTeam(null)} />}
       <SectionPicker
-          current={sectionPicker ? state.bots.find((b) => b.id === sectionPicker.botId)?.section : undefined}
+          current={sectionPicker ? layoutBots.find((b) => b.id === sectionPicker.botId)?.section : undefined}
+          names={personal ? personalSectionNames(personal) : undefined}
           anchor={sectionPicker}
           onClose={() => setSectionPicker(null)}
           onAssign={(section) => {
-            if (!sectionPicker) return;
-            if (!remoteClient) {
-              dispatch({ type: "updateBot", botId: sectionPicker.botId, patch: { section } });
-              return;
-            }
-            void api("/api/sidebar-sections", {
-              method: "POST",
-              body: JSON.stringify({ name: section, botIds: [sectionPicker.botId] }),
-            })
-              .then(({ bots }) => bots.forEach((bot: Bot) => dispatch({ type: "botPatched", bot })))
-              .catch((cause) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+            if (sectionPicker) assignSection("bot", sectionPicker.botId, section);
           }}
         />
       <RoomContextMenu
@@ -2765,12 +2885,12 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         }}
       />
       <SectionPicker
-          current={roomSectionPicker ? state.groups.find((g) => g.id === roomSectionPicker.groupId)?.section : undefined}
+          current={roomSectionPicker ? layoutGroups.find((g) => g.id === roomSectionPicker.groupId)?.section : undefined}
+          names={personal ? personalSectionNames(personal) : undefined}
           anchor={roomSectionPicker}
           onClose={() => setRoomSectionPicker(null)}
           onAssign={(section) => {
-            if (!roomSectionPicker) return;
-            dispatch({ type: "patchGroup", groupId: roomSectionPicker.groupId, patch: { section } });
+            if (roomSectionPicker) assignSection("group", roomSectionPicker.groupId, section);
           }}
         />
       {!remoteClient && archivedBotsOpen && (

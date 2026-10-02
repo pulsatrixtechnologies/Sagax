@@ -7,6 +7,7 @@
 // line, the field grows to four lines, Escape closes. Trombi talks in the
 // Hibou 98 look (a 98 title bar to drag, a 98 grip).
 import { memo, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { Phone } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { BalloonMarkdown } from "./BalloonMarkdown";
 import type { FloatingBalloon, FloatingEvent } from "./protocol";
@@ -78,13 +79,72 @@ export function resizeBalloon(start: { w: number; h: number }, delta: { x: numbe
   };
 }
 
-/** A move from the header: only away from the mascot, and only as far as the room allows. */
-export function moveBalloon(start: { dx: number; dy: number }, delta: { x: number; y: number }, side: BalloonSide, room: { x: number; y: number }): { dx: number; dy: number } {
+/** The gap the root's flex layout keeps between the docked balloon and the mascot's stage, px. */
+export const BALLOON_GAP = 8;
+/** How far the balloon may overlap the character's box before it covers its face, px. */
+export const FACE_INSET = 12;
+
+/**
+ * What the balloon must not cover: the character's box in its stage (the
+ * stage itself is mostly transparent room for hops and spread wings, and the
+ * balloon may sit over it), and the balloon's own size.
+ */
+export interface BalloonNear {
+  stage: Size;
+  owl: { left: number; top: number; size: number };
+  balloon: { w: number; h: number };
+}
+
+/**
+ * Where the balloon may stand, as an offset from its docked spot: away from
+ * the mascot as far as the room on screen allows, and toward it right up to
+ * its character (over the stage's empty room, touching or slightly
+ * overlapping the character's box), never over its face. Without `near` it
+ * only moves away (the docked spot is then the closest).
+ */
+export function clampBalloon(offset: { dx: number; dy: number }, side: BalloonSide, room: { x: number; y: number }, near?: BalloonNear, from?: { dx: number; dy: number }): { dx: number; dy: number } {
   const awayX = side.right ? 1 : -1;
   const awayY = side.below ? 1 : -1;
-  // "+ 0" keeps a docked balloon at 0, not -0
-  const along = (value: number, away: number, limit: number) => Math.min(Math.max(0, limit), Math.max(0, value * away)) * away + 0;
-  return { dx: Math.round(along(start.dx + delta.x, awayX, room.x)), dy: Math.round(along(start.dy + delta.y, awayY, room.y)) };
+  // toward the mascot: along x the docked balloon already lines up with the stage's edge (the
+  // window's), along y it may come down over the whole stage
+  const towardY = near ? near.stage.height + BALLOON_GAP : 0;
+  const along = (value: number, away: number, limit: number, toward: number) => Math.min(Math.max(0, limit), Math.max(-toward, value * away)) * away + 0;
+  let dx = Math.round(along(offset.dx, awayX, room.x, 0));
+  let dy = Math.round(along(offset.dy, awayY, room.y, towardY));
+  if (!near) return { dx, dy };
+  const { stage, owl, balloon } = near;
+  // the balloon's box and the face's, in the stage's coordinates
+  const face = { left: owl.left + FACE_INSET, top: owl.top + FACE_INSET, right: owl.left + owl.size - FACE_INSET, bottom: owl.top + owl.size - FACE_INSET };
+  const boxAt = (x: number, y: number) => {
+    const left = (side.right ? 0 : stage.width - balloon.w) + x;
+    const top = (side.below ? stage.height + BALLOON_GAP : -BALLOON_GAP - balloon.h) + y;
+    return { left, top, overX: left < face.right && left + balloon.w > face.left, overY: top < face.bottom && top + balloon.h > face.top };
+  };
+  const at = boxAt(dx, dy);
+  if (!at.overX || !at.overY) return { dx, dy };
+  // over the face: step back, away from it, along the side it came from (else the shorter way)
+  const pushX = side.right ? face.right - at.left : at.left + balloon.w - face.left;
+  const pushY = side.below ? face.bottom - at.top : at.top + balloon.h - face.top;
+  const fitsX = dx * awayX + pushX <= Math.max(0, room.x);
+  const fitsY = dy * awayY + pushY <= Math.max(0, room.y);
+  const was = from ? boxAt(from.dx, from.dy) : null;
+  const sideways = was && was.overY && !was.overX ? true : was && was.overX && !was.overY ? false : pushX < pushY;
+  if (fitsX && (sideways || !fitsY)) dx += pushX * awayX;
+  else dy += pushY * awayY;
+  return { dx: Math.round(dx) + 0, dy: Math.round(dy) + 0 };
+}
+
+/** A move from the header: within the room left on screen, and right up to the mascot (clampBalloon). */
+export function moveBalloon(start: { dx: number; dy: number }, delta: { x: number; y: number }, side: BalloonSide, room: { x: number; y: number }, near?: BalloonNear): { dx: number; dy: number } {
+  return clampBalloon({ dx: start.dx + delta.x, dy: start.dy + delta.y }, side, room, near, start);
+}
+
+/** The part of an offset that goes away from the mascot (it grows the window) and the part toward it (drawn over the stage). */
+export function splitOffset(place: { dx?: number; dy?: number }, side: BalloonSide): { away: { dx: number; dy: number }; toward: { dx: number; dy: number } } {
+  const dx = place.dx ?? 0;
+  const dy = place.dy ?? 0;
+  const away = { dx: (side.right ? Math.max(0, dx) : Math.min(0, dx)) + 0, dy: (side.below ? Math.max(0, dy) : Math.min(0, dy)) + 0 };
+  return { away, toward: { dx: dx - away.dx + 0, dy: dy - away.dy + 0 } };
 }
 
 export interface BalloonProps {
@@ -100,8 +160,12 @@ export interface BalloonProps {
   wantsKeyboard?: (on: boolean) => void;
   /** Labels the window has no translations for. */
   pinLabel: string;
+  /** The call button's label, where voice mode serves this bot (absent: no button). */
+  callLabel?: string;
   /** The mascot's stage under the balloon, for the room the window holds. */
   stage?: Size;
+  /** The character's box in that stage: the balloon comes right up to it, never over its face. */
+  owl?: BalloonNear["owl"];
   /** Desktop: the room the balloon may take (null once closed); `exact` fits the window to it now. */
   onReserve?: (reserve: Size | null, exact: boolean) => void;
 }
@@ -119,7 +183,7 @@ const Earlier = memo(function Earlier({ asked, text }: { asked: string; text: st
   );
 });
 
-export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hover, wantsKeyboard, pinLabel, stage, onReserve }: BalloonProps) {
+export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hover, wantsKeyboard, pinLabel, callLabel, stage, owl, onReserve }: BalloonProps) {
   const [draft, setDraft] = useState("");
   const [place, setPlace] = useState<BalloonPlace>(() => readBalloonPlace(botId));
   const box = useRef<HTMLDivElement>(null);
@@ -135,7 +199,8 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
   const reserveFor = (range: "place" | "move" | "resize") => {
     if (!stage) return null;
     const grown = range === "resize" ? { ...place, w: Math.max(place.w ?? 0, room.w), h: Math.max(place.h ?? 0, room.h) } : place;
-    const moved = range === "move" ? { ...grown, dx: room.x, dy: room.y } : grown;
+    // only the part away from the mascot grows the window; toward it the balloon is drawn over the stage
+    const moved = range === "move" ? { ...grown, dx: room.x, dy: room.y } : { ...grown, ...splitOffset(grown, side).away };
     return balloonReserve({ stage, room, place: moved, maxWidth: BALLOON_MAX_W });
   };
   const reserveRef = useRef(reserveFor);
@@ -146,7 +211,17 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
     // after a gesture the window fits the balloon's new size and place again
     onReserve(reserveRef.current("place"), ended.current);
     ended.current = false;
-  }, [onReserve, stage, room.w, room.h, room.x, room.y, place]);
+  }, [onReserve, stage, room.w, room.h, room.x, room.y, place, side.right, side.below]);
+
+  // A place kept from another opening (another side, another screen) must not cover the face now
+  const nearFor = (size: { w: number; h: number }): BalloonNear | undefined => (stage && owl ? { stage, owl, balloon: size } : undefined);
+  useLayoutEffect(() => {
+    const node = box.current;
+    if (!node || !stage || !owl || gesture.current) return;
+    const fixed = clampBalloon({ dx: place.dx ?? 0, dy: place.dy ?? 0 }, side, room, nearFor({ w: node.offsetWidth, h: node.offsetHeight }));
+    if (fixed.dx !== (place.dx ?? 0) || fixed.dy !== (place.dy ?? 0)) setPlace((current) => ({ ...current, ...fixed }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [side.right, side.below, stage, owl, room.x, room.y, place.w, place.h]);
   useEffect(() => () => onReserve?.(null, true), [onReserve]);
 
   // Follow a streaming reply to its newest words; a finished one shows its start.
@@ -187,8 +262,9 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
     if (event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    const rect = box.current?.getBoundingClientRect();
-    gesture.current = { kind, x: event.screenX, y: event.screenY, start: { ...place, w0: rect?.width ?? BALLOON_MIN.w, h0: rect?.height ?? BALLOON_MIN.h } };
+    // the layout size, not the drawn one (the opening pop scales it for a moment)
+    const node = box.current;
+    gesture.current = { kind, x: event.screenX, y: event.screenY, start: { ...place, w0: node?.offsetWidth || BALLOON_MIN.w, h0: node?.offsetHeight || BALLOON_MIN.h } };
     // the window takes the gesture's whole range once, rather than a resize per step
     onReserve?.(reserveRef.current(kind), false);
   };
@@ -202,8 +278,11 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
       const size = resizeBalloon({ w: g.start.w ?? g.start.w0, h: g.start.h ?? g.start.h0 }, delta, side, { w: room.w, h: room.h });
       setPlace((current) => (current.w === size.w && current.h === size.h ? current : { ...current, ...size }));
     } else {
-      const offset = moveBalloon({ dx: g.start.dx ?? 0, dy: g.start.dy ?? 0 }, delta, side, room);
-      setPlace((current) => (current.dx === offset.dx && current.dy === offset.dy ? current : { ...current, ...offset }));
+      setPlace((current) => {
+        // stopped by the face, the balloon stays on the side it came from (the last frame's)
+        const offset = clampBalloon({ dx: (g.start.dx ?? 0) + delta.x, dy: (g.start.dy ?? 0) + delta.y }, side, room, nearFor({ w: g.start.w0, h: g.start.h0 }), { dx: current.dx ?? 0, dy: current.dy ?? 0 });
+        return current.dx === offset.dx && current.dy === offset.dy ? current : { ...current, ...offset };
+      });
     }
   };
   const onGestureMove = (event: ReactPointerEvent) => {
@@ -232,10 +311,14 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
   };
   const detached = Boolean(place.dx || place.dy);
 
-  // away from the mascot: a margin on the side facing it, so the window grows to hold both
+  // Away from the mascot: a margin on the side facing it, so the window grows to hold both.
+  // Toward it: drawn over the stage's empty room (`translate`, which the opening pop's
+  // transform leaves alone), inside the window it already has.
+  const { away, toward } = splitOffset(place, side);
   const offsetStyle: React.CSSProperties = {
-    ...(side.right ? { marginLeft: place.dx ?? 0 } : { marginRight: -(place.dx ?? 0) }),
-    ...(side.below ? { marginTop: place.dy ?? 0 } : { marginBottom: -(place.dy ?? 0) }),
+    ...(side.right ? { marginLeft: away.dx } : { marginRight: -away.dx }),
+    ...(side.below ? { marginTop: away.dy } : { marginBottom: -away.dy }),
+    ...(toward.dx || toward.dy ? { translate: `${toward.dx}px ${toward.dy}px` } : {}),
   };
   const sizeStyle: React.CSSProperties = {
     width: place.w ?? undefined,
@@ -268,6 +351,11 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
         {!detached && (retro ? <span className="r98-tail" aria-hidden="true" /> : <span className="fb-tail" aria-hidden="true" />)}
         <div className={cn("fb-head", retro && "r98-titlebar")} onPointerDown={startGesture("move")} data-drag-handle="">
           <strong className={retro ? "r98-titlebar-text" : "fb-name"}>{balloon.title ?? name}</strong>
+          {callLabel && (
+            <button type="button" className={retro ? "r98-titlebar-btn" : "fb-close fb-call-btn"} aria-label={callLabel} title={callLabel} data-call-start="" onPointerDown={(event) => event.stopPropagation()} onClick={() => onEvent({ type: "call", action: "start" })}>
+              <Phone size={retro ? 9 : 13} strokeWidth={2.25} aria-hidden="true" />
+            </button>
+          )}
           {detached && (
             <button type="button" className={retro ? "r98-titlebar-btn" : "fb-close"} aria-label={pinLabel} title={pinLabel} onPointerDown={(event) => event.stopPropagation()} onClick={pinBack}>
               ⌖

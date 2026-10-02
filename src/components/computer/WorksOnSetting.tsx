@@ -1,9 +1,10 @@
-// The bot's Works on, on an organization server, as one compact control
-// under the Computer tab's screen (it used to live in the bot's More >
-// Access, with a long explanation). Short labels; what each place means,
-// and why one is not available, is in its tooltip.
+// The bot's Works on, on an organization server, as its own item of the
+// bot panel's More tab ("Computer", between Access and Model), drawn like
+// the other items there: a card with a title, a one-line hint and the
+// control. Short labels; what each place means, and why one is not
+// available, is in its tooltip. (It sat under the Computer tab's screen
+// before; that tab now shows only the screen.)
 import { useState } from "react";
-import { Info } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -38,14 +39,10 @@ export function WorksOnControl({ value, onChange, disabled }: {
   disabled: Partial<Record<"local" | "browser", string>>;
 }) {
   return (
-    <section aria-labelledby="works-on-setting" className="flex flex-col gap-1.5" data-works-on-setting={value ?? "auto"}>
-      <div className="flex items-center gap-1 text-[12px] font-medium text-ink">
-        <span id="works-on-setting">{t("worksOn.section")}</span>
-        <span title={t("worksOn.sectionTip")} aria-label={t("worksOn.sectionTip")} className="text-ink-secondary">
-          <Info size={12} aria-hidden="true" />
-        </span>
-      </div>
-      <div role="radiogroup" aria-labelledby="works-on-setting" className="grid grid-cols-3 gap-0.5 rounded-lg bg-control p-0.5">
+    <section aria-labelledby="works-on-setting" aria-describedby="works-on-setting-hint" className="rounded-xl border border-hairline/40 p-4" data-works-on-setting={value ?? "auto"}>
+      <div id="works-on-setting" className="text-[13px] font-medium text-ink">{t("computer.worksOn")}</div>
+      <div id="works-on-setting-hint" className="mt-0.5 text-[13px] text-ink-secondary">{t("worksOn.sectionTip")}</div>
+      <div role="radiogroup" aria-labelledby="works-on-setting" className="mt-3 grid grid-cols-3 gap-0.5 rounded-lg bg-control p-0.5">
         {ORG_WORKS_ON_MODES.map((mode) => {
           const key = mode ?? "auto";
           const reason = mode === "local" || mode === "browser" ? disabled[mode] : undefined;

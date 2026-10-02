@@ -10,6 +10,7 @@ import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import type { BotOverview } from "@/lib/bot-overview-types";
 import { cn } from "@/lib/cn";
+import { useShowInspectorButton } from "@/lib/inspector-preferences";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { BOT_SECTIONS } from "./bot-settings/sections";
 import { useBotSettingsDerived } from "./bot-settings/useBotSettingsDerived";
@@ -22,6 +23,7 @@ import { MemorySection } from "./bot-settings/MemorySection";
 import { RoutinesSection } from "./bot-settings/RoutinesSection";
 import { AccessSection } from "./bot-settings/AccessSection";
 import { ModelSection } from "./bot-settings/ModelSection";
+import { WorksOnSetting } from "./computer/WorksOnSetting";
 import { PermissionsSection } from "./bot-settings/PermissionsSection";
 import { VoiceSection } from "./bot-settings/VoiceSection";
 import { HistorySection, type HistoryRow } from "./bot-settings/HistorySection";
@@ -34,7 +36,6 @@ import { FilesSection } from "./bot-settings/FilesSection";
 import { isMoreSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
 import { ActivitySection } from "./bot-settings/ActivitySection";
 import { InlineEditableText } from "./bot-settings/InlineEditableText";
-import { DescriptionInfo } from "./bot-settings/DescriptionInfo";
 import { PackageProvenance } from "./bot-settings/PackageProvenance";
 import { ProposalStatus } from "./bot-settings/ProposalStatus";
 import { BOT_PROFILE_LIMITS } from "../../shared/bot-profile";
@@ -68,6 +69,7 @@ function readSettingsWidth(): number {
 }
 
 export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpenVmWorkspace?: (botId: string) => void }) {
+  const showInspector = useShowInspectorButton();
   const { state, dispatch, flushBotPatches } = useStore();
   const { padClass } = useCaptionChrome();
   const { macInset, browser } = useMacInsetChrome();
@@ -118,7 +120,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
     .filter((entry) => entry.id !== "slack" || slackUrl !== null)
     .filter((entry) => entry.id !== "visibility" || (servedPage() && ownerOrAdmin === true && perspicaxOrg === null))
     .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null)
-    .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null);
+    .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null)
+    // On an organization server Works on is its own item (Access keeps it elsewhere).
+    .filter((entry) => entry.id !== "worksOn" || perspicaxOrg !== null);
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
 
   const [overview, setOverview] = useState<BotOverview | null>(null);
@@ -334,6 +338,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
         return <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />;
       case "access":
         return <AccessSection bot={bot} derived={derived} />;
+      case "worksOn":
+        return <WorksOnSetting bot={bot} />;
       case "model":
         return <ModelSection bot={bot} />;
       case "permissions":
@@ -434,7 +440,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
           ) : <span />}
           <div className="flex items-center gap-2">
             <ExportTranscriptMenu title={bot.name} messages={visibleMessages(bot)} botName={bot.name} />
-            <button
+            {showInspector && <button
               type="button"
               onClick={() => dispatch({ type: "toggleInspector", open: true })}
               aria-label={t("chat.inspector")}
@@ -442,7 +448,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
               className={CIRCLE_BUTTON}
             >
               <Bug size={18} strokeWidth={1.75} />
-            </button>
+            </button>}
             <button
               type="button"
               onClick={closePanel}
@@ -462,9 +468,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
           {/* Who this is, then the tabs */}
           <div className="flex shrink-0 flex-col items-center px-4 pb-3">
             <BotProfileAvatarCard bot={bot} activeState={derived.activeState} mascotMotion={derived.mascotMotion} onPatch={derived.patch} />
-            {/* Name and label are edited where they show; the description
-                sits behind the (i) beside the name. */}
-            <div className="mt-2 flex max-w-full items-center justify-center gap-0.5">
+            {/* Name, label and description are edited where they show; the
+                name stays centered on its own line. */}
+            <div className="mt-2 flex max-w-full items-center justify-center">
               <InlineEditableText
                 id="bot-settings-title"
                 value={bot.name}
@@ -473,14 +479,6 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
                 ariaLabel={t("botPanel.name.edit")}
                 onSave={(name) => derived.patch({ name })}
                 className="text-[17px] font-medium leading-6 text-ink"
-              />
-              <DescriptionInfo
-                value={bot.description}
-                maxLength={BOT_PROFILE_LIMITS.description}
-                label={t("botPanel.description.label")}
-                emptyText={t("botPanel.description.empty")}
-                placeholder={t("botPanel.description.placeholder")}
-                onSave={(description) => derived.patch({ description })}
               />
             </div>
             <InlineEditableText
@@ -491,6 +489,15 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
               onSave={(title) => derived.patch({ title })}
               muted
               className="mt-0.5 text-[12.5px] leading-4"
+            />
+            <InlineEditableText
+              value={bot.description ?? ""}
+              maxLength={BOT_PROFILE_LIMITS.description}
+              placeholder={t("botPanel.description.placeholder")}
+              ariaLabel={t("botPanel.description.label")}
+              onSave={(description) => derived.patch({ description })}
+              muted
+              className="mt-0.5 max-w-full text-[11.5px] leading-4"
             />
             <div className="mt-1 w-full max-w-full empty:hidden"><ProposalStatus bot={bot} kind="chief" /></div>
             <div

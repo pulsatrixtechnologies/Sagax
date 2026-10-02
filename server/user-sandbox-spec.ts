@@ -94,7 +94,7 @@ export const DEFAULT_SANDBOX_LIMITS: SandboxLimits = {
   nofile: 1024,
 };
 export const DEFAULT_MAX_RUNNING = 2;
-export const DEFAULT_IDLE_MINUTES = 15;
+export const DEFAULT_IDLE_MINUTES = 10;
 export const DEFAULT_SUBNET_POOL = "10.213.0.0/16";
 export const DEFAULT_SANDBOXD_PORT = 8791;
 

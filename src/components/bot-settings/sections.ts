@@ -5,7 +5,8 @@
 // organisation's Admin (BotSettingsDialog filters it out otherwise), and
 // "visibility" only to an admin in a browser (never in the desktop app), and
 // "sharing" only on a server signed in with Perspicax, where it replaces
-// "visibility"; "perspicax" (the MCP profiles the bot offers) only there too.
+// "visibility"; "perspicax" (the MCP profiles the bot offers) only there too,
+// and "worksOn" (the bot's computer, which Access holds elsewhere) as well.
 import {
   BookOpen,
   Brain,
@@ -15,6 +16,7 @@ import {
   Eye,
   History,
   LayoutDashboard,
+  Monitor,
   type LucideIcon,
   Mic,
   Network,
@@ -46,6 +48,7 @@ export const BOT_SECTIONS: Array<{
   { id: "memory", label: "Memory", icon: Brain, keywords: ["memory", "notes", "remember", "topics"] },
   { id: "routines", label: "Routines", icon: CalendarClock, keywords: ["schedule", "routines", "cron", "tasks"] },
   { id: "access", label: "Access", icon: Network, keywords: ["works on", "computer", "vm", "cloud", "vps", "folder", "workspace", "browser", "connected apps", "composio", "webhooks", "always allow", "grants"] },
+  { id: "worksOn", label: "Computer", labelKey: "worksOn.section", icon: Monitor, keywords: ["works on", "computer", "auto", "cloud", "local vm", "vm", "this computer", "browser", "off", "where it works"] },
   { id: "model", label: "Model", icon: Cpu, keywords: ["engine", "model", "provider", "cli", "effort"] },
   { id: "permissions", label: "Permissions", icon: ShieldCheck, keywords: ["auto mode", "approve", "auto approve", "review", "routine approvals", "peers", "contact", "coordination", "chief of staff", "section"] },
   { id: "voice", label: "Voice & alerts", icon: Mic, keywords: ["voice", "alerts", "notifications", "speak"] },

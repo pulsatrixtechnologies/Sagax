@@ -3308,6 +3308,7 @@ const retroAssistantWindow = createRetroAssistantWindow({
   BrowserWindow,
   screen,
   ipcMain,
+  Menu,
   getMainWindow: () => mainWindow,
   isTrustedMain: (event) => isDesktopUiSender(event),
   pageUrl: () => `${detachedPageOrigin()}/?${DETACHED_QUERY}`,

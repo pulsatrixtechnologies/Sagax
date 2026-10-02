@@ -53,10 +53,10 @@ describe("bot panel header and tabs", () => {
     expect(html).not.toContain("Label (optional)");
   });
 
-  it("keeps the description behind the (i) beside the name, not in a field", () => {
+  it("centers the name with no (i) beside it, and shows the description under the label", () => {
     const html = panel();
-    expect(html).toContain('data-description-info="button"');
-    expect(html).toContain('title="Sorts the inbox."');
+    expect(html).not.toContain('data-description-info="button"');
+    expect(html).toContain("Sorts the inbox.");
     expect(html).not.toContain('id="bot-instructions-bot-1"');
   });
 

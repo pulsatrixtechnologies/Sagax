@@ -259,29 +259,14 @@ posixOnly("Perspicax organization: engine slash commands per speaker", () => {
     expect((await roomReplies()).slice(repliesBefore).map((message) => message.from?.botId)).toEqual([y.id]);
   }, 60_000);
 
-  it("refuses the group list to a read-only section member and hides it from outsiders", async () => {
+  it("sections share nothing: the room of a team lists for its people and hides from outsiders", async () => {
     const section = await api("POST", "/api/org/sections", people.alice, { name: "Ventes" });
     expect(section.status, section.text).toBe(201);
     const sectionId = section.body.section.id as string;
-    expect((await api("PUT", `/api/org/sections/${sectionId}/bots`, people.alice, { add: [x.id] })).status).toBe(200);
-    const shared = await api("PUT", `/api/org/sections/${sectionId}/members`, people.alice, { members: [{ target: `team:${TEAM_U}`, role: "readonly" }], defaultLevel: "use" });
-    expect(shared.status, shared.text).toBe(200);
-    const roomId = shared.body.section.roomId as string;
-    const sectionRoom = ((await api("GET", "/api/bots", people.dave)).body.groups as Array<{ id: string; threadId: string }>).find((group) => group.id === roomId);
-    expect(sectionRoom).toBeTruthy();
+    expect((await api("PUT", `/api/org/sections/${sectionId}/members`, people.alice, { members: [{ target: `team:${TEAM_U}`, role: "readonly" }], defaultLevel: "use" })).status).toBe(410);
     const before = probeDirs().length;
-    // dave reads the room but may not post in it: no engine started for him
-    const refused = await api("GET", `/api/bots/${x.id}/harness-commands?groupId=${roomId}&threadId=${sectionRoom!.threadId}`, people.dave);
-    expect(refused.status, refused.text).toBe(403);
-    // bob is not in that section: the room does not exist for him
-    const hidden = await api("GET", `/api/bots/${x.id}/harness-commands?groupId=${roomId}&threadId=${sectionRoom!.threadId}`, people.bob);
-    expect(hidden.status, hidden.text).toBe(404);
-    // dave is not in alice's Ops room either
+    // dave is not in alice's Ops room: it does not exist for him
     expect((await api("GET", `/api/bots/${x.id}/harness-commands?groupId=${room.id}`, people.dave)).status).toBe(404);
     expect(probeDirs().length).toBe(before);
-    // as a participant he may post, so he may list
-    expect((await api("PUT", `/api/org/sections/${sectionId}/members`, people.alice, { members: [{ target: `team:${TEAM_U}`, role: "participant" }] })).status).toBe(200);
-    const allowed = await api("GET", `/api/bots/${x.id}/harness-commands?groupId=${roomId}&threadId=${sectionRoom!.threadId}`, people.dave);
-    expect(allowed.status, allowed.text).toBe(200);
   }, 60_000);
 });

@@ -9,7 +9,9 @@ import { describe, expect, it } from "vitest";
 import type { DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import { localVmView, parseLocalVmAnswer, runtimeSummaryKey, type DesktopLocalVmStatus } from "@/lib/desktop-local-vm";
 import { formatBytes, powerState } from "@/lib/server-environment";
+import { BOT_SECTIONS } from "../bot-settings/sections";
 import { OrgComputerSettings } from "../settings/OrgComputerSettings";
+import { controlsAlwaysShown, showsStateChip } from "./ComputerScreen";
 import { activeComputer, OrgComputerTab, setupProgress } from "./OrgComputerTab";
 import { SandboxDesktopModal } from "./SandboxDesktopModal";
 import { WorksOnControl, worksOnTip } from "./WorksOnSetting";
@@ -42,13 +44,16 @@ describe("Computer tab on an organization server", () => {
     }
   });
 
-  it("draws the bot's Works on under the screen when the panel passes it", () => {
-    const bare = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "auto", computerOff: false, botName: "Luna" }));
-    expect(bare).not.toContain('role="radiogroup"');
-    const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "auto", computerOff: false, botName: "Luna",
-      worksOn: createElement(WorksOnControl, { value: null, onChange: () => {}, disabled: {} }) }));
-    expect(markup.indexOf('role="radiogroup"')).toBeGreaterThan(markup.indexOf("data-computer-screen"));
-    expect(markup.indexOf('role="radiogroup"')).toBeLessThan(markup.indexOf("data-usage-toggle"));
+  it("shows only the screen: the bot's Works on is an item of the More tab, between Access and Model", () => {
+    for (const place of ["auto", "cloud", "vm", "local"] as const) {
+      const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place, computerOff: false, botName: "Luna" }));
+      expect(markup).not.toContain('role="radiogroup"');
+      expect(markup).not.toContain("data-works-on-setting");
+    }
+    const ids = BOT_SECTIONS.map((entry) => entry.id);
+    expect(ids.indexOf("worksOn")).toBe(ids.indexOf("access") + 1);
+    expect(ids.indexOf("model")).toBe(ids.indexOf("worksOn") + 1);
+    expect(BOT_SECTIONS.find((entry) => entry.id === "worksOn")?.labelKey).toBe("worksOn.section");
   });
 
   it("shows the owner's stale Local VM as an error with Repair, never raw JSON", () => {
@@ -76,12 +81,38 @@ describe("Computer tab on an organization server", () => {
     expect(missing).toContain(">Off<");
     expect(missing).toContain("Set up in one click");
   });
+
+  it("shows a state chip only when the state is not obvious from the screen", () => {
+    expect(showsStateChip("running")).toBe(false);
+    for (const state of ["off", "starting", "paused", "error"] as const) expect(showsStateChip(state)).toBe(true);
+    const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
+    expect(running).not.toContain("data-power=");
+    const paused = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status({ ...STALE, state: "paused", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
+    expect(paused).toContain('data-power="paused"');
+    const off = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "local", computerOff: false, botName: "Luna", initialLocal: status(null) }));
+    expect(off).toContain('data-power="off"');
+    const error = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status(STALE) }));
+    expect(error).toContain('data-power="error"');
+  });
+
+  it("hides Play / Pause / Stop until intent, except Play on a machine that is off", () => {
+    expect(controlsAlwaysShown("off")).toBe(true);
+    for (const state of ["running", "starting", "paused", "error"] as const) expect(controlsAlwaysShown(state)).toBe(false);
+    const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
+    expect(running).toContain('data-controls="hidden"');
+    expect(running).toMatch(/data-screen-controls="hidden"[^>]*pointer-events-none opacity-0/);
+    const off = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "local", computerOff: false, botName: "Luna", initialLocal: status(null) }));
+    expect(off).toContain('data-screen-controls="shown"');
+    expect(off).toMatch(/<button[^>]*aria-label="Start"/);
+  });
 });
 
-describe("the bot's Works on in the Computer tab", () => {
-  it("is one compact control with short labels, the meaning in each tooltip", () => {
+describe("the bot's Works on in the More tab", () => {
+  it("is a card like the other More items: title, one-line hint, short labels, the meaning in each tooltip", () => {
     const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: "cloud", onChange: () => {}, disabled: {} }));
-    expect(markup).toContain(">Computer<");
+    expect(markup).toContain('class="rounded-xl border border-hairline/40 p-4"');
+    expect(markup).toContain('<div id="works-on-setting" class="text-[13px] font-medium text-ink">Works on</div>');
+    expect(markup).toMatch(/id="works-on-setting-hint" class="mt-0.5 text-\[13px\] text-ink-secondary">Where this bot works\./);
     expect(markup.match(/role="radio"/g)).toHaveLength(6);
     for (const label of [">Auto<", ">Cloud<", ">Local VM<", ">This computer<", ">Browser<", ">Off<"]) expect(markup).toContain(label);
     expect(markup).toMatch(/aria-checked="true"[^>]*data-works-on-choice="cloud"/);

@@ -53,7 +53,6 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { requestSettingsCard } from "./SettingsPrimitives";
 import { OrgComputerTab } from "./computer/OrgComputerTab";
-import { WorksOnSetting } from "./computer/WorksOnSetting";
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
 
 /** Keep local failure copy translatable while it remains in panel state. */
@@ -1530,8 +1529,6 @@ export function ComputerPanel({
         place={livePlace}
         computerOff={livePlace === "off"}
         botName={bot.name}
-        // The profile default, not this conversation's resolved place.
-        worksOn={<WorksOnSetting bot={profileBot} />}
       />
       {!embedded && <div className="mt-6">
         <RoutinesSection key={bot.id} bot={bot} routines={botRoutines} runs={state.routineRuns} defaultRunOn={cloudRoutineReady ? "cloud" : "maus"} />

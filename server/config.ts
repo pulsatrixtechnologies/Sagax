@@ -48,9 +48,11 @@ export const DEFAULT_LOCAL_VM_MODE = "shared" as const;
 export const DEFAULT_LOCAL_VM_MAX_INSTANCES = 2;
 export const MIN_LOCAL_VM_MAX_INSTANCES = 1;
 export const MAX_LOCAL_VM_MAX_INSTANCES = 8;
-/** Idle window before a Local VM's disposable container is recycled. The
- * default keeps the historical 8-hour window for existing configs. */
-export const DEFAULT_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 480;
+/** Idle window before an unused Local VM is stopped: no turn on it, no
+ * open viewer, no running command. Stopping removes only the disposable
+ * container (this desktop image cannot safely resume); the durable folder
+ * is kept and the next use starts it again. */
+export const DEFAULT_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 10;
 export const MIN_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 5;
 export const MAX_LOCAL_VM_IDLE_TIMEOUT_MINUTES = 1_440;
 

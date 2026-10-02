@@ -86,6 +86,7 @@ import { CallOverlay, VoiceCallDock } from "./CallView";
 import { effectivePlace, toolPlace, type EffectivePlace } from "@/lib/place";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
+import { useShowInspectorButton } from "@/lib/inspector-preferences";
 import { activeLocale, t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { showPrivateConversationHint } from "@/lib/private-threads";
@@ -984,6 +985,7 @@ function PinnedBanner({
 }
 
 export function ChatView({ bot: profile }: { bot: Bot }) {
+  const showInspector = useShowInspectorButton();
   const bot = useMemo(() => currentTaskBot(profile), [profile]);
   const { state, dispatch } = useStore();
   const remoteClient = window.ogb?.remoteClient?.active === true;
@@ -1374,7 +1376,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           <TaskPicker bot={bot} />
           {/* Share, Inspector and the panel toggle move into the bot panel's
               top bar while it is open, the way Grok Bot's do. */}
-          {!remoteClient && !panelOpen && <button
+          {!remoteClient && !panelOpen && showInspector && <button
             onClick={() => dispatch({ type: "toggleInspector" })}
             aria-label={t("chat.inspector")}
             aria-pressed={state.inspectorOpen}

@@ -166,7 +166,7 @@ describe("configuration", () => {
     expect(config.maxRunning).toBe(2);
     expect(config.limits.memoryBytes).toBeGreaterThanOrEqual(1536 * 1024 ** 2);
     expect(config.limits.memoryBytes * config.maxRunning).toBeLessThanOrEqual(3 * 1024 ** 3);
-    expect(config.idleStopMs).toBe(15 * 60_000);
+    expect(config.idleStopMs).toBe(10 * 60_000);
     expect(config.requireEgressPolicy).toBe(true);
   });
 
