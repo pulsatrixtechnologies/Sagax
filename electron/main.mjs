@@ -613,12 +613,12 @@ let resolvedDesktopDataDir = null;
 function desktopDataDir() {
   // Match the historical desktop fallback for an unset or empty override,
   // then pass this exact resolved path to the utility child. server/config.ts
-  // intentionally treats an empty OMB_DATA_DIR differently, so inheriting it
+  // intentionally treats an empty SAGAX_DATA_DIR differently, so inheriting it
   // without normalization would lease one directory and write another.
   // Resolved once: the first call moves ~/.openmausbot to ~/.sagax when no
   // running copy holds it (legacy-names.mjs), and the answer must not change
   // under a running app.
-  resolvedDesktopDataDir ??= process.env.OMB_DATA_DIR || defaultDataDir({ home: app.getPath("home") });
+  resolvedDesktopDataDir ??= process.env.SAGAX_DATA_DIR || defaultDataDir({ home: app.getPath("home") });
   return resolvedDesktopDataDir;
 }
 
@@ -756,7 +756,7 @@ async function secureWorkspaceConfig() {
 // connections through a third party's service. Without the variable, the
 // app uses the workspace's own Composio project key (self-hosted mode).
 function composioBrokerUrl() {
-  return normalizeManagedComposioBrokerUrl(process.env.OMB_COMPOSIO_BROKER_URL?.trim() || "");
+  return normalizeManagedComposioBrokerUrl(process.env.SAGAX_COMPOSIO_BROKER_URL?.trim() || "");
 }
 
 // The packaged app has no terminal: everything about the server child's life
@@ -1568,23 +1568,23 @@ async function startServerOn(port) {
     // server gets only a private capability that validates that same live
     // owner; fallback-port children must not race to replace the parent lease.
     ...desktopDataDirLease.utilityServerLeaseEnvironment(),
-    OMB_DATA_DIR: desktopDataDir(),
+    SAGAX_DATA_DIR: desktopDataDir(),
     // A packaged utility child must never fall back to a descriptor inherited
     // from the launching shell. It starts fail-closed until this exact main
     // process sends the private in-memory connection after spawn.
-    OMB_DESKTOP_PARENT: "1",
-    OMB_STATIC_DIR: path.join(process.resourcesPath, "ui"),
-    OMB_RESOURCES_PATH: process.resourcesPath,
-    OMB_SKILLS_DIR: path.join(process.resourcesPath, "skills"),
-    OMB_PORT: String(port),
+    SAGAX_DESKTOP_PARENT: "1",
+    SAGAX_STATIC_DIR: path.join(process.resourcesPath, "ui"),
+    SAGAX_RESOURCES_PATH: process.resourcesPath,
+    SAGAX_SKILLS_DIR: path.join(process.resourcesPath, "skills"),
+    SAGAX_PORT: String(port),
     // the server advertises this to remote clients so version skew is visible
-    OMB_APP_VERSION: app.getVersion(),
-    OMB_USER_DATA: app.getPath("userData"),
+    SAGAX_APP_VERSION: app.getVersion(),
+    SAGAX_USER_DATA: app.getPath("userData"),
     ...(secureCredentials.composioApiKey
       ? { COMPOSIO_API_KEY: secureCredentials.composioApiKey }
       : {}),
     // "we could not read your keys" must not reach the UI as "you have none"
-    OMB_CREDENTIAL_STORE: credentialStoreUnavailable ? "unavailable" : "ok",
+    SAGAX_CREDENTIAL_STORE: credentialStoreUnavailable ? "unavailable" : "ok",
     // one env var per stored workspace secret (xai/box/voice/OpenCode Go);
     // the server prefers these over config.json, whose plaintext fields
     // the boot migration has deleted
@@ -1592,10 +1592,10 @@ async function startServerOn(port) {
     // The key of the server's encrypted MCP sign-in vault. It lives in
     // credentials.bin; without it the server refuses to invent another.
     ...(typeof secureCredentials.mcpOAuthKey === "string" && /^[0-9a-f]{64}$/.test(secureCredentials.mcpOAuthKey)
-      ? { OMB_MCP_OAUTH_KEY: secureCredentials.mcpOAuthKey }
+      ? { SAGAX_MCP_OAUTH_KEY: secureCredentials.mcpOAuthKey }
       : {}),
   });
-  delete childEnv.OMB_BROWSER_CONNECTION;
+  delete childEnv.SAGAX_BROWSER_CONNECTION;
   slog(`fork ${entry} port=${port}`);
   const proc = utilityProcess.fork(entry, [], {
     env: childEnv,
@@ -2169,10 +2169,10 @@ let bundledScheme = null;
 let currentBundledOrigin = null;
 function bundledUiStaticDir() {
   if (app.isPackaged) return path.join(process.resourcesPath, "ui");
-  return process.env.OMB_BUNDLED_UI_DIR || null;
+  return process.env.SAGAX_BUNDLED_UI_DIR || null;
 }
 function bundledUiDevOrigin() {
-  if (app.isPackaged || process.env.OMB_BUNDLED_UI_DIR) return null;
+  if (app.isPackaged || process.env.SAGAX_BUNDLED_UI_DIR) return null;
   return new URL(DEV_URL).origin;
 }
 const bundledUiHandler = bundledUiModule.createBundledUiHandler({
@@ -2789,14 +2789,14 @@ function createWindow({ deferNavigation = false } = {}) {
   // Packaged CI smoke hook. It validates the real renderer/preload bridge and
   // same-origin embedded server, then follows the normal window-close path.
   // No debugging port or sandbox override is needed.
-  if (process.env.OMB_SMOKE_TEST === "1") {
+  if (process.env.SAGAX_SMOKE_TEST === "1") {
     win.webContents.once("did-finish-load", async () => {
       try {
         const result = await win.webContents.executeJavaScript(`
           (async () => {
             if (!window.ogb?.getCapabilities) throw new Error("desktop preload bridge is unavailable");
             let crashPromise = null;
-            if (${JSON.stringify(process.env.OMB_SMOKE_CUA === "1")}) {
+            if (${JSON.stringify(process.env.SAGAX_SMOKE_CUA === "1")}) {
               crashPromise = new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => {
                   unsubscribe?.();
@@ -2852,7 +2852,7 @@ function createWindow({ deferNavigation = false } = {}) {
             `unexpected packaged renderer URL: ${result.location} (expected ${expectedLocation})`,
           );
         }
-        if (process.env.OMB_SMOKE_BUNDLED_CUA === "1") {
+        if (process.env.SAGAX_SMOKE_BUNDLED_CUA === "1") {
           const connection = await cuaReady;
           const expectedDriver = path.join(
             process.resourcesPath,
@@ -2890,7 +2890,7 @@ function createWindow({ deferNavigation = false } = {}) {
       } catch (error) {
         console.error(`[smoke] renderer-failed ${error?.stack ?? error}`);
       } finally {
-        if (process.env.OMB_SMOKE_KEEP_OPEN !== "1") win.close();
+        if (process.env.SAGAX_SMOKE_KEEP_OPEN !== "1") win.close();
       }
     });
   }

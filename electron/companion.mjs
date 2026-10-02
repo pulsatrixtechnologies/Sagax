@@ -221,13 +221,13 @@ async function start({ resourcesPath, harnessPort, mutationToken, hostedUrl = nu
   // an inherited value would bypass that gate and make Settings claim a dead
   // or attacker-selected route is ready.
   const childEnvironment = { ...process.env };
-  delete childEnvironment.OMB_COMPANION_HOSTED_URL;
-  delete childEnvironment.OMB_COMPANION_INTERNAL_ORIGIN;
-  delete childEnvironment.OMB_PHONE_SECRET_PUBLIC_KEY;
-  if (hostedUrl) childEnvironment.OMB_COMPANION_HOSTED_URL = hostedUrl;
-  childEnvironment.OMB_COMPANION_INTERNAL_ORIGIN = allocatedOrigin.socketPath;
+  delete childEnvironment.SAGAX_COMPANION_HOSTED_URL;
+  delete childEnvironment.SAGAX_COMPANION_INTERNAL_ORIGIN;
+  delete childEnvironment.SAGAX_PHONE_SECRET_PUBLIC_KEY;
+  if (hostedUrl) childEnvironment.SAGAX_COMPANION_HOSTED_URL = hostedUrl;
+  childEnvironment.SAGAX_COMPANION_INTERNAL_ORIGIN = allocatedOrigin.socketPath;
   if (/^[A-Za-z0-9_-]{87}$/.test(String(secretPublicKey ?? ""))) {
-    childEnvironment.OMB_PHONE_SECRET_PUBLIC_KEY = secretPublicKey;
+    childEnvironment.SAGAX_PHONE_SECRET_PUBLIC_KEY = secretPublicKey;
   }
 
   let child;
@@ -235,9 +235,9 @@ async function start({ resourcesPath, harnessPort, mutationToken, hostedUrl = nu
     child = utilityProcess.fork(resolved.entry, [], {
       env: {
         ...childEnvironment,
-        OMB_PORT: String(harnessPort),
-        OMB_COMPANION_PORT: String(COMPANION_PORT),
-        OMB_CONTROL_PORT: String(CONTROL_PORT),
+        SAGAX_PORT: String(harnessPort),
+        SAGAX_COMPANION_PORT: String(COMPANION_PORT),
+        SAGAX_CONTROL_PORT: String(CONTROL_PORT),
       },
       // how the TS-source fallback gets --experimental-strip-types; empty for
       // compiled entries

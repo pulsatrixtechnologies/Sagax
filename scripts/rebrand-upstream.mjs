@@ -130,6 +130,7 @@ const RULES = [
   [re(`${OLD.toUpperCase()}`), "SAGAX"],
   [re(`(?<![A-Za-z0-9_])OMB_`), "SAGAX_"],
   [re(`(?<=\\\\[nt])OMB_`), "SAGAX_"],
+  [re(`OpenMaus Bot`), "Sagax"],
   [re(`OpenMausBot`), "Sagax"],
   [re(`Openmausbot`), "Sagax"],
   [re(`OpenMaus`), "Sagax"],

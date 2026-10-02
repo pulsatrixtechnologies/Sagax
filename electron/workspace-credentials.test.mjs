@@ -14,7 +14,7 @@ describe("workspace credential migration", () => {
     } }, {});
     expect(result.credentials).toEqual({ openaiImageApiKey: "openai-only", customImageApiKey: "router-only" });
     expect(result.config.imageGen).toEqual({ provider: "custom", customUrl: "http://127.0.0.1:4000/v1", customModel: "local/image" });
-    expect(workspaceCredentialEnv(result.credentials)).toEqual({ OMB_OPENAI_IMAGE_KEY: "openai-only", OMB_CUSTOM_IMAGE_KEY: "router-only" });
+    expect(workspaceCredentialEnv(result.credentials)).toEqual({ SAGAX_OPENAI_IMAGE_KEY: "openai-only", SAGAX_CUSTOM_IMAGE_KEY: "router-only" });
   });
   it("moves every plaintext secret into the store and deletes the field", () => {
     const config = {
@@ -134,10 +134,10 @@ describe("workspace credential env", () => {
     ).toEqual({
       XAI_API_KEY: "xai-secret",
       BOX_TOKEN: "boat-secret",
-      OMB_TTS_KEY: "tts-secret",
-      OMB_FISH_AUDIO_API_KEY: "fish-secret",
+      SAGAX_TTS_KEY: "tts-secret",
+      SAGAX_FISH_AUDIO_API_KEY: "fish-secret",
       OPENCODE_API_KEY: "ocg-secret",
-      OMB_OPENAI_IMAGE_KEY: "image-secret",
+      SAGAX_OPENAI_IMAGE_KEY: "image-secret",
     });
   });
 
