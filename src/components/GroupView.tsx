@@ -38,7 +38,6 @@ import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 import { Composer } from "./Composer";
 import { ChatFindBar } from "./ChatFindBar";
 import { GroupTaskPicker } from "./TaskPicker";
-import { GroupUsageChip } from "./GroupUsageChip";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
@@ -1030,7 +1029,6 @@ export function GroupView({ group: stored }: { group: Group }) {
             isGroup
           />}
           {!group.dm && <GroupTaskPicker group={group} />}
-          <GroupUsageChip usage={group.usage} />
           {group.dm && memberMauses}
           {!group.dm && !panelOpen && <button
             type="button"
