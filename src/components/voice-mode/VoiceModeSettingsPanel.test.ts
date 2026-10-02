@@ -106,3 +106,43 @@ describe("VoiceModeSettingsPanel", () => {
     expect(html(props({ open: "voice", voices: null }))).toContain("Loading voices");
   });
 });
+
+describe("the live call's settings in the panel", () => {
+  const call = { input: "auto" as const, onlyMyVoice: true, earcons: true };
+
+  it("offers hands-free or push to talk, Only my voice with its enrollment, and call sounds", () => {
+    const markup = html(props({ call, enrollment: { state: "none" }, onCallChange: vi.fn(), onEnroll: vi.fn(), onForget: vi.fn() }));
+    expect(markup).toContain("data-voice-call-settings");
+    expect(markup).toContain('data-voice-input="auto"');
+    expect(markup).toContain('data-voice-input="push"');
+    expect(markup).toContain("Only my voice");
+    expect(markup).toContain("Record my voice");
+    expect(markup).toContain("Call sounds");
+    // not enrolled: the switch is off even though the setting is on
+    expect(markup).toMatch(/data-voice-toggle="only-my-voice"(?![^>]*checked)/);
+    expect(markup).toContain('data-voice-enrollment="none"');
+  });
+
+  it("turning Only my voice on without an enrollment starts one; enrolled shows Forget my voice", () => {
+    const onEnroll = vi.fn();
+    const onCallChange = vi.fn();
+    const tree = elements(VoiceModeSettingsPanel(props({ call, enrollment: { state: "none" }, onCallChange, onEnroll, onForget: vi.fn() })));
+    const toggle = tree.find((el) => el.props["data-voice-toggle"] === "only-my-voice")!;
+    (toggle.props.onChange as (e: { target: { checked: boolean } }) => void)({ target: { checked: true } });
+    expect(onEnroll).toHaveBeenCalledTimes(1);
+    expect(onCallChange).not.toHaveBeenCalled();
+    const enrolled = html(props({ call, enrollment: { state: "enrolled" }, onCallChange, onEnroll, onForget: vi.fn() }));
+    expect(enrolled).toContain("Forget my voice");
+    expect(enrolled).toContain("Record again");
+  });
+
+  it("shows the enrollment's progress while recording", () => {
+    const markup = html(props({ call, enrollment: { state: "recording", share: 0.42 }, onCallChange: vi.fn(), onEnroll: vi.fn(), onForget: vi.fn() }));
+    expect(markup).toContain("42%");
+    expect(markup).not.toContain("data-voice-enroll=");
+  });
+
+  it("without the call's props the panel is the voice only (previews outside a call)", () => {
+    expect(html(props())).not.toContain("data-voice-call-settings");
+  });
+});

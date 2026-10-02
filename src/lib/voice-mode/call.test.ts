@@ -125,7 +125,7 @@ async function setup(options: Setup = {}) {
     transcribe: upload,
     finalTimeoutMs: 200,
   });
-  const speech = vi.fn(async () => ({ body: new ReadableStream<Uint8Array>(), sampleRate: 24_000 }));
+  const speech = vi.fn(async (_botId: string, _text: string, _voice: unknown) => ({ body: new ReadableStream<Uint8Array>(), sampleRate: 24_000 }));
   const settings: CallSettings = { ...DEFAULT_CALL_SETTINGS, earcons: true, ...options.settings };
   const track = { enabled: true, stop: vi.fn() };
   const call = new VoiceCall({

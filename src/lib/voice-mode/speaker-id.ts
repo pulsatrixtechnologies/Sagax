@@ -56,7 +56,7 @@ function unit(vector: ArrayLike<number>): number[] {
 /** The voiceprint of several clips: the mean of their unit embeddings. */
 export function voiceprintOf(embeddings: ArrayLike<number>[], level: number, now = new Date()): Voiceprint {
   if (!embeddings.length) throw new Error("no clip");
-  const sum = new Array<number>(embeddings[0]!.length).fill(0);
+  const sum: number[] = Array.from({ length: embeddings[0]!.length }, () => 0);
   for (const embedding of embeddings) unit(embedding).forEach((value, i) => (sum[i] += value));
   return { version: 1, vector: unit(sum), clips: embeddings.length, level, createdAt: now.toISOString() };
 }
