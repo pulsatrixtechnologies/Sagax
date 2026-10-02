@@ -2,13 +2,14 @@
 // stored with the bot (bot.mascotLook, bot.color, bot.mascotSkin), so the
 // change shows everywhere the bot appears and on its desktop mascot.
 //
-//   Character: Owl, Shapes, Trombi (the registry, mascots.tsx), full width:
+//   Character: Owl, Shapes, Trombi, Bunbu (the registry, mascots.tsx), full width:
 //   the bot's avatar above the popover (the bot panel's header) is the
 //   preview, and plays the moves and the equip animation. Then that
 //   character's own options:
 //     Owl: color, skin, style 2D / 3D (preview)
 //     Shapes: shape, color, shape skin
 //     Trombi: Trombi skin
+//     Bunbu: color, Bunbu skin
 //   Colors show one palette at a time (Vivid, Pastel, Deep, Neon, Neutral),
 //   skins one rarity at a time (Common, Rare, Epic, Legendary), each tab
 //   opening on the current choice (editor-tabs.ts). Skin cards preview the
@@ -26,9 +27,10 @@ import { MAUS_COLORS, MAUS_WING_MOTIONS, swatchStyle, type MausColor, type MausM
 import { MausAvatar } from "@/components/Avatar";
 import { MASCOT_SKIN_IDS, OWL_SKIN_TIER, botMascotSkin, type MascotSkinId } from "../../../shared/mascot-skins";
 import type { MascotColorGroup } from "../../../shared/mascot-colors";
-import { completeMascotLook, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape, type ShapeSkin, type SkinTier } from "../../../shared/mascot-look";
+import { BUNBU_SKIN_TIER, BUNBU_SKINS, completeMascotLook, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape, type ShapeSkin, type SkinTier } from "../../../shared/mascot-look";
 import { ShapeMascot } from "@/components/ShapeMascot";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
+import { BunbuMascot } from "@/components/BunbuMascot";
 import "@/components/skin-fx/skin-fx.css";
 import type { MascotActivity } from "./behavior";
 import { colorTabFor, colorTabs, nextTab, skinTabFor, skinTierTabs } from "./editor-tabs";
@@ -54,6 +56,7 @@ export const CHARACTER_LABEL = {
   owl: "floatingBots.mascot.owl",
   shape: "floatingBots.mascot.body",
   trombi: "floatingBots.mascot.trombi",
+  bunbu: "floatingBots.mascot.bunbu",
 } satisfies Record<MascotCharacter, LocaleKey>;
 
 export const SHAPE_LABEL = {
@@ -98,6 +101,21 @@ export const TROMBI_SKIN_LABEL = {
   holo: "mascot.trombiSkin.holo",
   molten: "mascot.trombiSkin.molten",
 } satisfies Record<(typeof TROMBI_SKINS)[number], LocaleKey>;
+
+export const BUNBU_SKIN_LABEL = {
+  plain: "mascot.bunbuSkin.plain",
+  pastel: "mascot.bunbuSkin.pastel",
+  night: "mascot.bunbuSkin.night",
+  plush: "mascot.bunbuSkin.plush",
+  velvet: "mascot.bunbuSkin.velvet",
+  gold: "mascot.bunbuSkin.gold",
+  neon: "mascot.bunbuSkin.neon",
+  chrome: "mascot.bunbuSkin.chrome",
+  crystal: "mascot.bunbuSkin.crystal",
+  holo: "mascot.bunbuSkin.holo",
+  galaxy: "mascot.bunbuSkin.galaxy",
+  molten: "mascot.bunbuSkin.molten",
+} satisfies Record<(typeof BUNBU_SKINS)[number], LocaleKey>;
 
 export const SKIN_TIER_LABEL = {
   common: "mascot.tier.common",
@@ -357,13 +375,13 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove, on
   const moves: { id: string; label: string; clip: MascotActivity; owl?: (typeof MAUS_WING_MOTIONS)[number] }[] =
     look.character === "owl"
       ? MAUS_WING_MOTIONS.map((owlMove) => ({ id: owlMove, label: t(OWL_MOVE_LABEL[owlMove]), clip: OWL_MOVE_FX[owlMove], owl: owlMove }))
-      : mascotFor(look).moves.map((clip) => ({ id: clip, label: t(MOVE_LABEL[clip] ?? "floatingBots.move.hop"), clip }));
+      : mascotFor(look).moves.map((clip) => ({ id: clip, label: t(mascotFor(look).moveLabels?.[clip] ?? MOVE_LABEL[clip] ?? "floatingBots.move.hop"), clip }));
 
   return (
     <div data-mascot-look-editor="">
       {/* the character row, full width: the bot's avatar above is the preview */}
       <SectionHead title={t("mascot.character.title")} />
-      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label={t("mascot.character.title")} data-character-row="">
+      <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label={t("mascot.character.title")} data-character-row="">
         {MASCOTS.map((option) => (
           <button
             key={option.id}
@@ -469,6 +487,24 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove, on
             disabled={disabled}
             onSelect={(skin) => setLook({ skins: { ...look.skins, trombi: skin } })}
             preview={(skin) => <SkinnedTrombi skin={skin} pose="idle" size={40} width={30} detail="full" label={null} />}
+          />
+        </div>
+      )}
+
+      {look.character === "bunbu" && (
+        <div data-character-options="bunbu">
+          {colors}
+          <SkinPicker
+            key="bunbu"
+            skins={BUNBU_SKINS}
+            tierOf={BUNBU_SKIN_TIER}
+            selected={look.skins.bunbu}
+            labelOf={(skin) => t(BUNBU_SKIN_LABEL[skin])}
+            idPrefix="bunbu-skin"
+            dataKey="data-bunbu-skin-option"
+            disabled={disabled}
+            onSelect={(skin) => setLook({ skins: { ...look.skins, bunbu: skin } })}
+            preview={(skin) => <BunbuMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
           />
         </div>
       )}

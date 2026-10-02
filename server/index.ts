@@ -82,8 +82,9 @@ import {
   cleanupStaleAttachmentPartials,
   deleteAttachment,
   extensionForMime,
-  FILE_MAX_BYTES,
   IMAGE_MAX_BYTES,
+  isArchiveAttachment,
+  maxBytesForFileMime,
   parseAudioRange,
   readAttachment,
   saveAudio,
@@ -700,6 +701,7 @@ import { AUTO_COMPUTER_MCP_NAME, COMPUTER_SELECT_TOOL, autoComputerGuidance, aut
 import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
 import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
 import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAttachments, stagedName, SANDBOX_ATTACHMENTS_DIR, type StagingTarget, type TurnAttachedFile } from "./attachment-staging.ts";
+import { archiveNote, archiveSummary, extractedFolderName, localExtractedPath, prepareArchiveUpload, sandboxArchiveArgv, storedArchiveManifest } from "./attachment-archives.ts";
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
 import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
@@ -3555,17 +3557,38 @@ function decideWorkplace(input: { desktopTargeted: boolean; routine: boolean; pr
 /** The provider text for this turn with the speaker's own attachments
  * pointed where the tools run (server/attachment-staging.ts). Another
  * person's upload is left as is and never copied. */
-function workplaceTurnText(text: string, decision: WorkplaceDecision): { text: string; staging: TurnWorkplace["staging"] } {
-  if (IDENTITY.kind !== "perspicax") return { text, staging: null };
+function workplaceTurnText(text: string, decision: WorkplaceDecision): { text: string; staging: TurnWorkplace["staging"]; annotated: boolean } {
+  if (IDENTITY.kind !== "perspicax") return { ...soloArchiveText(text), staging: null };
   const person = decision.principal;
   const files = attachedFilesInText(text, ATTACHMENTS_DIR).filter((file) => person && attachmentIsTheirs(person, attachmentReferences(file.file)));
-  if (!files.length) return { text, staging: null };
+  if (!files.length) return { text, staging: null, annotated: false };
   const desktop = decision.target === "user-desktop" ? desktopBridges.current(person) : null;
   const target: StagingTarget | null = desktop
     ? { kind: "user-desktop", attachmentsDir: desktop.attachmentsDir, platform: desktop.platform }
     : decision.target === "user-sandbox" ? { kind: "user-sandbox" } : null;
-  const staged = stageTurnAttachments(text, files, target);
-  return { text: staged.text, staging: target && staged.staged.length ? { target, files: staged.staged } : null };
+  let annotated = false;
+  // An archive also gets its manifest, and the folder it is unpacked into
+  // next to its copy at the first tool call (server/attachment-archives.ts).
+  const staged = stageTurnAttachments(text, files, target, (file, where) => {
+    if (!isArchiveAttachment(file.file)) return null;
+    annotated = true;
+    const folder = where ? where.slice(0, where.length - stagedName(file).length) + extractedFolderName(stagedName(file)) : null;
+    return archiveNote({ name: file.name, manifest: storedArchiveManifest(file.file), extractedPath: folder, when: "first-tool" });
+  });
+  return { text: staged.text, staging: target && staged.staged.length ? { target, files: staged.staged } : null, annotated };
+}
+
+/** Solo: an attached archive was unpacked next to its upload on this
+ * machine; the bot gets its manifest and that folder after the tag. */
+function soloArchiveText(text: string): { text: string; annotated: boolean } {
+  const archives = attachedFilesInText(text, ATTACHMENTS_DIR).filter((file) => isArchiveAttachment(file.file));
+  if (!archives.length) return { text, annotated: false };
+  let out = text;
+  for (const file of [...archives].sort((a, b) => b.start - a.start)) {
+    const note = archiveNote({ name: file.name, manifest: storedArchiveManifest(file.file), extractedPath: localExtractedPath(file.serverPath), when: "ready" });
+    out = `${out.slice(0, file.end)}\n${note}${out.slice(file.end)}`;
+  }
+  return { text: out, annotated: true };
 }
 
 /** What the bot is told about where its tools run, when it matters: on the
@@ -3651,6 +3674,16 @@ function autoComputerSelectionFor(capability: { threadId: string; generation: st
   return workplace?.generation === capability.generation && workplace.auto?.auto ? workplace.auto : null;
 }
 
+/** The unpacker's one JSON line (sandboxArchiveArgv). */
+function parseArchiveOutcome(stdout: string): { extracted: boolean; reason?: string } | null {
+  try {
+    const value = JSON.parse(stdout.trim().split("\n").at(-1) ?? "") as { extracted?: unknown; reason?: unknown };
+    return { extracted: value.extracted === true, ...(typeof value.reason === "string" ? { reason: value.reason } : {}) };
+  } catch {
+    return null;
+  }
+}
+
 /** Copy the turn's pending attachments where its tools run, once, at its
  * first tool call (nothing is created for a turn that never uses a tool). */
 async function stagePendingAttachments(threadId: string, generation: string): Promise<void> {
@@ -3663,16 +3696,32 @@ async function stagePendingAttachments(threadId: string, generation: string): Pr
     try {
       if (target.kind === "user-sandbox" && userSandbox) {
         const path = `${SANDBOX_ATTACHMENTS_DIR}/${stagedName(file)}`;
-        // Linux keeps each environment string under 128 KiB: chunks of 48 KiB.
-        for (const chunk of attachmentChunks(file, 48 * 1024)) {
+        // Linux keeps each environment string under 128 KiB: chunks of 48 KiB
+        // (a multiple of 3, so their base64 pieces concatenate), up to 8 per
+        // call so an archive of tens of MB does not take thousands of calls.
+        const chunks = [...attachmentChunks(file, 48 * 1024)];
+        for (let first = 0; first < chunks.length; first += 8) {
+          const group = chunks.slice(first, first + 8);
+          const names = group.map((_, index) => `SAGAX_CONTENT_B64_${index}`);
+          const pieces = names.map((name) => `"$${name}"`).join(" ");
+          const env: Record<string, string> = { SAGAX_PATH: path };
+          group.forEach((chunk, index) => { env[names[index]!] = chunk.data.toString("base64"); });
           const result = await userSandbox.exec(person, {
-            argv: ["sh", "-c", chunk.offset === 0
-              ? 'mkdir -p -- "$(dirname -- "$SAGAX_PATH")" && printf %s "$SAGAX_CONTENT_B64" | base64 -d > "$SAGAX_PATH"'
-              : 'printf %s "$SAGAX_CONTENT_B64" | base64 -d >> "$SAGAX_PATH"'],
-            env: { SAGAX_PATH: path, SAGAX_CONTENT_B64: chunk.data.toString("base64") },
+            argv: ["sh", "-c", first === 0
+              ? `mkdir -p -- "$(dirname -- "$SAGAX_PATH")" && printf %s ${pieces} | base64 -d > "$SAGAX_PATH"`
+              : `printf %s ${pieces} | base64 -d >> "$SAGAX_PATH"`],
+            env,
             timeoutSec: 30,
           });
           if (result.exitCode !== 0) throw new Error(result.stderr.trim() || "copy failed");
+        }
+        const argv = isArchiveAttachment(file.file) && storedArchiveManifest(file.file)?.status === "ok"
+          ? sandboxArchiveArgv(path, `${SANDBOX_ATTACHMENTS_DIR}/${extractedFolderName(stagedName(file))}`)
+          : null;
+        if (argv) {
+          const result = await userSandbox.exec(person, { argv, timeoutSec: 300 });
+          const outcome = parseArchiveOutcome(result.stdout);
+          if (result.exitCode !== 0 || !outcome?.extracted) throw new Error(`unpack failed: ${outcome?.reason ?? (result.stderr.trim().slice(0, 200) || "no result")}`);
         }
       } else if (target.kind === "user-desktop") {
         const active = () => activeInternalGenerationByThread.get(threadId) === generation;
@@ -3681,6 +3730,13 @@ async function stagePendingAttachments(threadId: string, generation: string): Pr
             action: "stage_file", name: stagedName(file), content: chunk.data.toString("base64"), encoding: "base64", offset: chunk.offset, final: chunk.final,
           }, active) as { isError?: boolean; content?: { text?: string }[] } | null;
           if (result?.isError) throw new Error(result.content?.[0]?.text ?? "copy failed");
+        }
+        if (isArchiveAttachment(file.file) && storedArchiveManifest(file.file)?.status === "ok") {
+          // The desktop app unpacks it next to its copy with the same rules
+          // (electron/archive-extract.mjs); an older app answers that it does
+          // not know the action, and the bot was told to unpack it then.
+          const result = await desktopBridges.request(person, { action: "extract_archive", name: stagedName(file), timeout_seconds: 300 }, active) as { isError?: boolean; content?: { text?: string }[] } | null;
+          if (result?.isError) throw new Error(`unpack failed: ${result.content?.[0]?.text ?? "no result"}`);
         }
       }
       bridgeAudit.record({ person, botId: workplace.botId, threadId, target: target.kind, kind: "tool", detail: `attachment ${stagedName(file)}`, ok: true });
@@ -13931,10 +13987,11 @@ async function runGroupMemberTurn(
     roomCreatorPrincipalId: group.createdBy ?? group.humanIds?.[0],
   });
   let roomPlace = decideWorkplace({ desktopTargeted: false, routine: roomRoutine, principal: roomPrincipal, personAsked: Boolean(roomSpeakerId) });
-  const roomPlaced = latestUser && !cardContinuation && !latestInBurst && latestUser.sender?.id?.trim().toLowerCase() === roomPlace.principal
+  // (solo: no principal; an attached archive still gets its manifest)
+  const roomPlaced = latestUser && !cardContinuation && !latestInBurst && (IDENTITY.kind !== "perspicax" || latestUser.sender?.id?.trim().toLowerCase() === roomPlace.principal)
     ? workplaceTurnText(usesNativeImageInput ? resolvedLatestImages.text : latestUser.text ?? "", roomPlace)
-    : { text: null, staging: null };
-  const latestOverride = roomPlaced.text !== null && roomPlaced.staging !== null
+    : { text: null, staging: null, annotated: false };
+  const latestOverride = roomPlaced.text !== null && (roomPlaced.staging !== null || roomPlaced.annotated)
     ? roomPlaced.text
     : usesNativeImageInput ? resolvedLatestImages.text : null;
   const roomContext = serializeRoomContext(
@@ -23884,9 +23941,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         req.resume();
         return json(res, 400, { error: "content-length must be a non-negative integer" });
       }
-      if (declaredLength !== undefined && declaredLength > FILE_MAX_BYTES) {
+      const maxBytes = maxBytesForFileMime(rawType);
+      if (declaredLength !== undefined && declaredLength > maxBytes) {
         req.resume();
-        return json(res, 413, { error: `file exceeds ${FILE_MAX_BYTES} bytes` });
+        return json(res, 413, { error: `file exceeds ${maxBytes} bytes` });
       }
       try {
         // Returning from this iterator must not destroy the request socket:
@@ -23894,11 +23952,28 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // streamed byte count crosses the limit.
         const chunks = req.iterator({ destroyOnReturn: false }) as AsyncIterable<Buffer>;
         const saved = await saveFile(chunks, name, rawType ?? "", { uploadId, expectedBytes: declaredLength });
+        // An archive is listed here; solo also unpacks it next to the upload
+        // (this machine is where the bot works). An organization server never
+        // unpacks on its own host (server/attachment-archives.ts).
+        if (isArchiveAttachment(saved.path)) {
+          const manifest = await prepareArchiveUpload(saved.path, { extractHere: IDENTITY.kind !== "perspicax" });
+          return json(res, 201, { ...saved, archive: archiveSummary(manifest) });
+        }
         return json(res, 201, saved);
       } catch (error) {
         req.resume();
         throw error;
       }
+    }
+
+    // What an attached archive holds, for its chip ("Voir le contenu"). The
+    // visibility check above covers this sub-path like the file itself.
+    m = path.match(/^\/api\/attachments\/([\w.-]+)\/manifest$/);
+    if (m && method === "GET") {
+      const manifest = storedArchiveManifest(m[1]!);
+      if (!manifest) return json(res, 404, { error: "no such archive" });
+      res.setHeader("cache-control", "private, no-store");
+      return json(res, 200, archiveSummary(manifest));
     }
 
     // serving is name-locked to the attachments dir — readAttachment

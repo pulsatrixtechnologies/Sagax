@@ -23,7 +23,7 @@ import { dirname, extname, posix, resolve, win32 } from "node:path";
 
 import { fromMarkdown } from "mdast-util-from-markdown";
 
-import { FILE_MAX_BYTES } from "./attachments.ts";
+import { maxBytesForAttachment } from "./attachments.ts";
 
 const OWNED_FILE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-z0-9]{1,8}$/;
 const FILE_TAG = /^<attached-file[\t ]+path="([^"\r\n]*)"(?:[\t ]+name="([^"\r\n]*)")?[\t ]*\/>$/;
@@ -98,7 +98,7 @@ export function attachedFilesInText(text: string, attachmentsDir: string): TurnA
     if (!OWNED_FILE_NAME.test(file) || resolve(serverPath) !== resolve(attachmentsDir, file)) continue;
     try {
       const entry = lstatSync(resolve(attachmentsDir, file));
-      if (!entry.isFile() || entry.isSymbolicLink() || entry.size > FILE_MAX_BYTES) continue;
+      if (!entry.isFile() || entry.isSymbolicLink() || entry.size > maxBytesForAttachment(file)) continue;
       if (dirname(realpathSync(resolve(attachmentsDir, file))) !== canonicalRoot) continue;
       found.push({ start, end, file, serverPath: resolve(attachmentsDir, file), name: displayName(match[2] ? decodeAttribute(match[2]) : file, file), bytes: entry.size });
     } catch { /* gone */ }
@@ -109,12 +109,14 @@ export function attachedFilesInText(text: string, attachmentsDir: string): TurnA
 /** A name safe as one path component on every platform, keeping the
  * upload's real extension (the name never decides the type). */
 export function displayName(name: string, file: string): string {
-  const extension = extname(file).toLowerCase();
+  const stored = extname(file).toLowerCase();
+  // a tar.gz upload is stored as .tgz but keeps the name it was given
+  const extension = stored === ".tgz" && /\.tar\.gz$/i.test(name.trim()) ? ".tar.gz" : stored;
   const base = Array.from(name.normalize("NFKC").split(/[\\/]/).at(-1) ?? "", (character) => {
     const code = character.codePointAt(0) ?? 0;
     return code <= 31 || code === 127 || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069) || "<>:\"|?*".includes(character) ? "_" : character;
   }).join("").replace(/^\.+/, "").replace(/[.\s]+$/, "").trim();
-  const stem = (extname(base).toLowerCase() === extension ? base.slice(0, base.length - extension.length) : base).slice(0, 120) || "attachment";
+  const stem = (base.toLowerCase().endsWith(extension) ? base.slice(0, base.length - extension.length) : base).slice(0, 120) || "attachment";
   return `${stem}${extension}`;
 }
 
@@ -154,9 +156,16 @@ function inlineText(file: TurnAttachedFile): string | null {
 
 /** The provider-facing text: each of the speaker's own attachment tags
  * names the copy in the target and, for small text files, carries the
- * content. Tags for files that are not theirs are left untouched (and are
- * never copied). Returns the files to copy at the first tool call. */
-export function stageTurnAttachments(text: string, files: readonly TurnAttachedFile[], target: StagingTarget | null): { text: string; staged: TurnAttachedFile[] } {
+ * content; `annotate` may add a block after a tag (an archive's manifest,
+ * server/attachment-archives.ts). Tags for files that are not theirs are
+ * left untouched (and are never copied). Returns the files to copy at the
+ * first tool call. */
+export function stageTurnAttachments(
+  text: string,
+  files: readonly TurnAttachedFile[],
+  target: StagingTarget | null,
+  annotate?: (file: TurnAttachedFile, where: string | null) => string | null,
+): { text: string; staged: TurnAttachedFile[] } {
   if (!files.length) return { text, staged: [] };
   let out = text;
   let inlined = 0;
@@ -170,7 +179,8 @@ export function stageTurnAttachments(text: string, files: readonly TurnAttachedF
       ? `<attached-file path="${escapeAttribute(where)}" name="${escapeAttribute(file.name)}" />`
       : `<attached-file name="${escapeAttribute(file.name)}" />`;
     const body = fits ? `\n<attached-file-content name="${escapeAttribute(file.name)}">\n${content}\n</attached-file-content>` : "";
-    out = out.slice(0, file.start) + tag + body + out.slice(file.end);
+    const note = annotate?.(file, where);
+    out = out.slice(0, file.start) + tag + body + (note ? `\n${note}` : "") + out.slice(file.end);
     if (where) staged.unshift(file);
   }
   return { text: out, staged };

@@ -393,10 +393,19 @@ Electron restart (no HMR); launch-test them before committing.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
-- The character (owl, original shape, Trombi) and its look live with the bot
+- The character (owl, original shape, Trombi, Bunbu) and its look live with the bot
   (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
   in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
   every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
+- Bunbu is an original character of ours (a collectible-vinyl little monster:
+  long paddle ears, gumdrop body, five small teeth, a tummy heart). It is
+  inspired by the designer-toy genre, never a copy of an existing one: keep
+  its silhouette, name and palette our own (no Labubu or Pop Mart design,
+  name, logo or packaging). Its parts are SVG paths in `bunbu-art.ts`
+  (`BunbuMascot.tsx`), its skins in `skin-fx/bunbu-skins.tsx` (shared
+  finishes from `shape-skins.tsx` plus Plush and Velvet); its signature ear
+  flop is the `ruffle` clip (the registry's `moveLabels`). iOS shows the owl
+  for it until ported (`ios/README.md`).
 - Bot colors live in `shared/mascot-colors.ts` (palettes Vivid, Pastel, Deep,
   Neon, Neutral; the original fifteen ids keep their values) and every skin,
   the owl's included (`OWL_SKIN_TIER`, `LEGACY_OWL_SKINS`), has a rarity. The
@@ -554,6 +563,15 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 - Attachments of the CURRENT message are the speaker's only when the first
   message naming them is theirs; small text ones are inlined, all are copied
   where the tools run at the first tool call, and the tag names that path.
+- Archives (zip, tar, tar.gz, 7z; 90 MB per file): the server only LISTS
+  them (`server/attachment-archives.ts`); they are unpacked where the bot
+  works, next to the copy, at the first tool call (python3 in the server
+  environment, `extract_archive` on the desktop, `electron/archive-extract.mjs`;
+  solo: next to the upload). No links, nothing outside the folder, bomb limits
+  (5000 files, 512 MB, ratio 200, depth 24), an encrypted zip kept as is. The
+  message carries an `<attached-archive>` manifest. Tests:
+  `electron/archive-extract.node-test.mjs`, `server/attachment-archives.test.ts`,
+  `server/archive-attachments.e2e.test.ts`, `server/desktop-bridge.e2e.test.ts`.
 - The desktop never reads or writes the app's own data, its cookies or the
   person's credential stores through the bridge.
 
@@ -642,11 +660,15 @@ Routines (`ActivitySection`, `ActivityListModal`, `ActivityDetailModal`).
 Coding shows coding jobs only: the server marks an entry `coding` from its
 tool calls and folder (`server/activity-coding.ts`: source edits, git
 commit/push/worktree, pull requests, file changes inside a repository;
-never the title, and never the bot's own SOUL.md/MEMORY.md), the newest
-few of 7 days, See all opening the list filtered to coding. Activity holds
-everything else plus the sub-agents the listed threads started: running
-first (elapsed time, current step, Stop when `canStop`), then the last
-day's finished work, hidden when empty. A thread with no user turn is not
+never the title, never the bot's own SOUL.md/MEMORY.md or its folder, never
+a sub-agent's request or a heredoc's text quoting git; a sub-agent's own
+calls count like any other). Activity holds everything else plus the
+sub-agents the listed threads started. Both show live work only: running
+(elapsed time, current step, Stop when `canStop`), and an entry seen
+running that settled reads Finished for 5 s, fades and leaves
+(`LiveActivity`); with nothing running a section is its header and a quiet
+line. The section title opens the history (`ActivityListModal`: coding or
+other, newest first, running/finished/failed, search). A thread with no user turn is not
 listed. Both read
 `GET /api/bots/:id/activity` and `/activity/item`
 (`server/routes/bot-activity.ts`, types in `shared/bot-activity.ts`): every

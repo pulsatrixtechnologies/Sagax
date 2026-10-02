@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 import type { MascotActivity } from "../floating-bots/behavior";
 
 /** The family of effects a skin plays: its particles, its trails, its glow. */
-export type FxKind = "plain" | "ink" | "gold" | "neon" | "chrome" | "crystal" | "circuit" | "holo" | "molten" | "galaxy" | "glitch" | "retro";
+export type FxKind = "plain" | "ink" | "gold" | "neon" | "chrome" | "crystal" | "circuit" | "holo" | "molten" | "galaxy" | "glitch" | "retro" | "velvet";
 
 export type FxParticle = "dot" | "spark" | "ember" | "star" | "shard" | "bit" | "splat" | "streak";
 
@@ -55,6 +55,8 @@ export function fxPalette(kind: FxKind, hex: string): FxPalette {
       return { kind, a: "#b9a4ff", b: "#ffffff", glow: true, particle: "star", trail: true };
     case "glitch":
       return { kind, a: "#ff2bd6", b: "#22e6ff", glow: false, particle: "bit", trail: true };
+    case "velvet":
+      return { kind, a: mix("#ff9ccf", hex, 0.25), b: "#ffe3f1", glow: true, particle: "dot", trail: false };
     case "retro":
       return { kind, a: "#000080", b: "#c0c0c0", glow: false, particle: "bit", trail: false };
     default:

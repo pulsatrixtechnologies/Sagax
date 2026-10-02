@@ -60,6 +60,8 @@ export type DesktopSystemInfo = z.infer<typeof desktopSystemInfo>;
 export const DESKTOP_BRIDGE_ACTIONS = [
   "run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse",
   "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "stage_file",
+  // Unpack a staged archive next to it (electron/archive-extract.mjs).
+  "extract_archive",
   // The person's own Local VM from their Computer tab (desktop-bridge-routes.ts).
   "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot",
 ] as const;
@@ -82,7 +84,7 @@ export const desktopBridgeOperation = z.object({
   tool_name: z.string().max(100).optional(),
   arguments: z.record(z.string(), z.unknown()).optional(),
   container: z.string().max(200).optional(),
-  /** stage_file: the file name in the desktop's attachments folder. */
+  /** stage_file, extract_archive: the file name in the desktop's attachments folder. */
   name: z.string().max(255).optional(),
   final: z.boolean().optional(),
 }).strict();
@@ -92,7 +94,7 @@ export type DesktopBridgeOperation = z.infer<typeof desktopBridgeOperation>;
 export function desktopBridgeCapability(action: DesktopBridgeAction): keyof DesktopBridgeRegistration["capabilities"] {
   switch (action) {
     case "run_command": return "shell";
-    case "read_file": case "write_file": case "list_files": case "search_files": case "stage_file": return "files";
+    case "read_file": case "write_file": case "list_files": case "search_files": case "stage_file": case "extract_archive": return "files";
     case "fetch_url": return "fetch";
     case "browse": return "browser";
     case "computer_tools": case "computer_call": return "computer";

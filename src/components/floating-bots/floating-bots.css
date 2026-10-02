@@ -696,6 +696,10 @@ html[data-floating-bot] #root {
   --hx: 52%;
   --hy: 22%;
 }
+.fb-root .fb-fx[data-character="bunbu"] {
+  --hx: 50%;
+  --hy: 40%;
+}
 .fb-root .fb-fx .fb-thought {
   top: calc(var(--hy) - 26%);
   left: calc(var(--hx) - 36%);
