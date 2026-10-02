@@ -652,7 +652,12 @@ What changes:
   credential without a click: `/pair#code=...&auto=1` opened in an ordinary
   browser shows the code form. The phone apps offer **Sign in with Pulsatrix**
   for such a server: `?client=phone` ends on the same
-  `openmausbot://pair?address=...&token=...` link a pairing QR code carries.
+  `openmausbot://pair?address=...&token=...` link a pairing QR code carries,
+  and `?client=phone&return=sagax` (Sagax for iOS, when
+  `identity.phoneReturnSchemes` lists `sagax`) ends on
+  `sagax://pair?address=...&token=...` instead, a refused sign-in on
+  `sagax://pair?address=...&error=<code>`. Perspicax is unchanged for phones
+  too: the server is the OpenID Connect client.
   A signed-in member may also open a pairing code for their own device; the
   device acts as them and never gets more than their own scopes. Such a
   device has no grant of its own: it is served only while one of the
