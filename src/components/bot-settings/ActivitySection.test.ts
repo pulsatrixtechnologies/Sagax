@@ -8,9 +8,9 @@ vi.mock("@/state/store", () => ({
 }));
 
 import type { BotActivityDetail, BotActivityItem } from "../../../shared/bot-activity";
-import { ActivityList } from "./ActivitySection";
+import { ActivityFeed, ActivityList } from "./ActivitySection";
 import { ActivityDetailBody } from "./ActivityDetailModal";
-import { formatActivityDuration } from "@/lib/bot-activity";
+import { activityGroups, codingPreview, formatActivityDuration } from "@/lib/bot-activity";
 
 const NOW = 1_800_000_000_000;
 const running: BotActivityItem = {
@@ -42,7 +42,7 @@ describe("Coding list", () => {
   });
 
   it("says when there is nothing, when it loads and when it failed", () => {
-    expect(list([])).toContain("Nothing yet.");
+    expect(list([])).toContain("No coding jobs in the last 7 days.");
     expect(list(null)).toContain("Loading activity");
     expect(list(null, true)).toContain("Couldn&#x27;t load this bot&#x27;s activity.");
   });
@@ -132,5 +132,79 @@ describe("activity detail modal", () => {
     expect(formatActivityDuration(45_000)).toBe("45s");
     expect(formatActivityDuration(12 * 60_000)).toBe("12m");
     expect(formatActivityDuration(65 * 60_000)).toBe("1h 05m");
+  });
+});
+
+const DAY = 86_400_000;
+const job = (id: string, over: Partial<BotActivityItem> = {}): BotActivityItem => ({
+  id, kind: "session", botId: "pepper", title: id, status: "finished", startedAt: NOW - 60_000, endedAt: NOW - 30_000, updatedAt: NOW - 30_000, ...over,
+});
+
+describe("Coding preview", () => {
+  it("keeps coding jobs only, whatever their title says", () => {
+    const items = [
+      job("thread:fix", { coding: true, title: "Fix the build" }),
+      job("thread:soul", { title: "Import this as your directive, soul, identity" }),
+      job("thread:code-titled", { title: "Write code for the parser" }),
+      job("run:r1", { kind: "routine" }),
+    ];
+    expect(codingPreview(items, NOW).shown.map((item) => item.id)).toEqual(["thread:fix"]);
+  });
+
+  it("shows running first, then the newest few of the last 7 days, and counts the rest", () => {
+    const items = [
+      job("thread:old", { coding: true, updatedAt: NOW - 8 * DAY }),
+      job("thread:a", { coding: true, updatedAt: NOW - 3 * DAY }),
+      job("thread:b", { coding: true, updatedAt: NOW - 2 * DAY }),
+      job("thread:c", { coding: true, updatedAt: NOW - DAY }),
+      job("thread:d", { coding: true, updatedAt: NOW - 1_000 }),
+      job("thread:live", { coding: true, status: "running", updatedAt: NOW - 5 * DAY }),
+    ];
+    const { shown, total } = codingPreview(items, NOW, 4);
+    expect(shown.map((item) => item.id)).toEqual(["thread:live", "thread:d", "thread:c", "thread:b"]);
+    expect(total).toBe(5);
+  });
+});
+
+describe("Activity groups", () => {
+  const routine = job("run:r1", { kind: "routine", status: "running", endedAt: undefined, updatedAt: NOW - 2_000, currentStep: "cw_psa__query" });
+  const sub = job("thread:sub", { kind: "subagent", botName: "Echo", status: "running", endedAt: undefined, startedAt: NOW - 125_000, updatedAt: NOW - 125_000, canStop: true, threadId: "sub" });
+  const imported = job("thread:soul", { title: "Import this as your directive, soul, identity", endedAt: NOW - 3_600_000, updatedAt: NOW - 3_600_000 });
+  const failedHop = job("thread:hop", { kind: "hop", status: "failed", startedBy: { kind: "bot", name: "Echo" }, endedAt: NOW - 60_000, updatedAt: NOW - 60_000 });
+  const stale = job("thread:stale", { endedAt: NOW - 2 * DAY, updatedAt: NOW - 2 * DAY });
+  const coding = job("thread:code", { coding: true, status: "running", endedAt: undefined });
+
+  it("puts running workflows and sub-agents first, then the last day's finished work, never coding jobs", () => {
+    const groups = activityGroups([coding, routine, imported, failedHop, stale], [sub], NOW);
+    expect(groups.running.map((item) => item.id)).toEqual(["run:r1", "thread:sub"]);
+    expect(groups.recent.map((item) => item.id)).toEqual(["thread:hop", "thread:soul"]);
+  });
+
+  it("is empty (the section hides) when nothing ran lately", () => {
+    const groups = activityGroups([stale, job("thread:c2", { coding: true })], [], NOW);
+    expect(groups).toEqual({ running: [], recent: [] });
+    expect(renderToStaticMarkup(createElement(ActivityFeed, { groups, actions: { onOpen: () => {} } }))).toBe("");
+  });
+
+  it("draws live status: spinner, elapsed time, current step, and Stop where allowed", () => {
+    const groups = activityGroups([routine, imported], [sub], NOW);
+    const html = renderToStaticMarkup(createElement(ActivityFeed, { groups, actions: { onOpen: () => {}, onStop: () => {}, now: NOW } }));
+    expect(html).toContain('data-activity-group="running"');
+    expect(html).toContain('data-activity-group="recent"');
+    expect(html).toContain("Running now (2)");
+    expect(html).toContain("animate-spin");
+    expect(html).toContain("Running · 1m · Routine · cw_psa__query");
+    expect(html).toContain("Running · 2m · Echo");
+    expect(html).toContain('data-activity-stop="thread:sub"');
+    expect(html).not.toContain('data-activity-stop="run:r1"');
+    expect(html).toContain("Import this as your directive, soul, identity");
+  });
+
+  it("follows a live update: a finished sub-agent moves from running to recent", () => {
+    const before = activityGroups([], [sub], NOW);
+    expect(before.running).toHaveLength(1);
+    const after = activityGroups([], [{ ...sub, status: "finished", endedAt: NOW + 1_000, updatedAt: NOW + 1_000 }], NOW + 2_000);
+    expect(after.running).toHaveLength(0);
+    expect(after.recent.map((item) => item.id)).toEqual(["thread:sub"]);
   });
 });
