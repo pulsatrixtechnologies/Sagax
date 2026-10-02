@@ -28,7 +28,10 @@ final class ComputerController: ObservableObject {
     }
 
     let botId: String
-    let leaseId = ComputerControlLease.make()
+    /// One lease per bot on this phone, kept across launches: if the app is
+    /// killed while in control, the next launch takes the same hold back
+    /// instead of finding it held by "someone else".
+    let leaseId: String
 
     @Published private(set) var phase: ControlPhase = .idle
     @Published private(set) var image: UIImage?
@@ -61,6 +64,13 @@ final class ComputerController: ObservableObject {
     init(botId: String, client: @escaping @MainActor () -> CompanionClient?) {
         self.botId = botId
         self.clientProvider = client
+        let key = "companion.computer.lease.\(botId)"
+        if let saved = UserDefaults.standard.string(forKey: key), saved.count >= 16 {
+            leaseId = saved
+        } else {
+            leaseId = ComputerControlLease.make()
+            UserDefaults.standard.set(leaseId, forKey: key)
+        }
         updateGain()
     }
 

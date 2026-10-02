@@ -200,6 +200,10 @@ final class ComputerUITests: XCTestCase {
     @MainActor
     func testReleaseThenTakeControlFromTheMenu() throws {
         let app = try launch()
+        // The trackpad toast covers the menu button for its first seconds.
+        let toast = app.descendants(matching: .any)["computer-toast"]
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: toast)
+        wait(for: [gone], timeout: 10)
         let more = app.buttons["computer-more"]
         more.tap()
         app.buttons["Release control"].tap()
@@ -210,5 +214,36 @@ final class ComputerUITests: XCTestCase {
         take.tap()
         XCTAssertTrue(app.descendants(matching: .any)["computer-toast"].waitForExistence(timeout: 10))
         _ = try waitForEvents("pointer sync on retake") { $0.contains { $0.type == "moveTo" } }
+    }
+
+    /// Opt-in, against a real desktop: the fixture started with
+    /// `PARITY_COMPUTER_DOUBLE=0`, Ara's computer set to a running Local VM
+    /// with a terminal focused, and `TEST_RUNNER_PARITY_REAL_COMPUTER=1`.
+    /// The phone clicks and types a shell line; the caller checks the file
+    /// it writes inside the VM (and takes a screenshot of the desktop).
+    @MainActor
+    func testRealDesktopReceivesAClickAndTyping() throws {
+        guard ProcessInfo.processInfo.environment["PARITY_REAL_COMPUTER"] == "1" else {
+            throw XCTSkip("set TEST_RUNNER_PARITY_REAL_COMPUTER=1 with a real Local VM behind the fixture")
+        }
+        continueAfterFailure = false
+        session = try fixtureSession()
+        let app = XCUIApplication()
+        app.terminate()
+        var arguments = [
+            "-parityEndpoint", session.endpoint, "-parityToken", session.token, "-parityScreen", "13-computer",
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        ]
+        if let environment = session.environmentId { arguments += ["-parityEnvironment", environment] }
+        app.launchArguments = arguments
+        app.launch()
+        let pad = app.descendants(matching: .any)["computer-trackpad"]
+        XCTAssertTrue(pad.waitForExistence(timeout: 30))
+        Thread.sleep(forTimeInterval: 3)
+        pad.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        app.typeText("echo sagax-phone-e2e > /tmp/sagax-e2e.txt\n")
+        Thread.sleep(forTimeInterval: 4)
+        XCTAssertFalse(app.staticTexts["computer-notice"].exists, "no refusal: \(app.staticTexts["computer-notice"].label)")
     }
 }

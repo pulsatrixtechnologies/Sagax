@@ -168,11 +168,8 @@ struct ComputerView: View {
                 glyphSize: 20, weight: .regular
             ) { showingHelp = true }
                 .accessibilityIdentifier("computer-help")
-                // The toast grows out of these two while it shows.
-                .opacity(controller.showsToast ? 0 : 1)
             moreMenu
                 .padding(.leading, Theme.Computer.trailingGap)
-                .opacity(controller.showsToast ? 0 : 1)
         }
         .padding(.horizontal, Theme.Metric.screenEdge)
         .frame(height: Theme.Metric.glassLarge)
@@ -384,7 +381,8 @@ struct ComputerView: View {
             }
             .frame(width: Theme.Computer.toastSize.width, height: Theme.Computer.toastSize.height)
             .background(alignment: .leading) {
-                // The "?" circle melts into the toast's glass, as in the
+                // The toast covers "?" and "..." (it grows out of them); the
+                // "?" circle melts into the toast's glass, as in the
                 // reference: a lighter lens with the glyph showing through.
                 ZStack {
                     Circle()
@@ -398,6 +396,7 @@ struct ComputerView: View {
                 }
                 .offset(x: Theme.Computer.toastLensCentre - 22)
             }
+            .background(Theme.Computer.glassFill, in: Capsule())
             .themeGlass(Capsule(), fill: Theme.Computer.glassFill, interactive: false)
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.trailing, Theme.Computer.toastTrailing)
