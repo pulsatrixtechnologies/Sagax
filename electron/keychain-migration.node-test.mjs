@@ -24,32 +24,32 @@ function fakeSecurity(items) {
   return { run, calls };
 }
 
-test("reads the new entry first and leaves it alone when present", () => {
+test("reads the new entry first and leaves it alone when present", async () => {
   const items = new Map([["sagax Safe Storage", { account: "sagax Key", secret: "bmV3" }], ["openmausbot Safe Storage", { account: "openmausbot Key", secret: "b2xk" }]]);
   const { run, calls } = fakeSecurity(items);
-  assert.equal(migrateSafeStorageKeychain({ to: "sagax", platform: "darwin", run }), "present");
+  assert.equal(await migrateSafeStorageKeychain({ to: "sagax", platform: "darwin", run }), "present");
   assert.equal(calls.length, 1);
 });
 
-test("copies the old secret to the new name, on stdin, trusting the app", () => {
+test("copies the old secret to the new name, on stdin, trusting the app", async () => {
   const items = new Map([["openmausbot Safe Storage", { account: "openmausbot Key", secret: "c2VjcmV0LXZhbHVlPT0=" }]]);
   const { run, calls } = fakeSecurity(items);
-  assert.equal(migrateSafeStorageKeychain({ to: "sagax", platform: "darwin", run, trustedApp: "/Applications/Sagax.app" }), "copied");
+  assert.equal(await migrateSafeStorageKeychain({ to: "sagax", platform: "darwin", run, trustedApp: "/Applications/Sagax.app" }), "copied");
   assert.deepEqual(items.get("sagax Safe Storage"), { account: "sagax Key", secret: "c2VjcmV0LXZhbHVlPT0=", trusted: "/Applications/Sagax.app" });
   assert.equal(items.has("openmausbot Safe Storage"), true, "the old entry stays");
   for (const call of calls) assert.ok(!call.args.join(" ").includes("c2VjcmV0"), "the secret never rides in argv");
 });
 
-test("does nothing without an old entry, off macOS, or without a rename", () => {
+test("does nothing without an old entry, off macOS, or without a rename", async () => {
   const { run } = fakeSecurity(new Map());
-  assert.equal(migrateSafeStorageKeychain({ to: "sagax", platform: "darwin", run }), "none");
-  assert.equal(migrateSafeStorageKeychain({ to: "sagax", platform: "win32", run }), "unsupported");
-  assert.equal(migrateSafeStorageKeychain({ to: "openmausbot", platform: "darwin", run }), "same");
+  assert.equal(await migrateSafeStorageKeychain({ to: "sagax", platform: "darwin", run }), "none");
+  assert.equal(await migrateSafeStorageKeychain({ to: "sagax", platform: "win32", run }), "unsupported");
+  assert.equal(await migrateSafeStorageKeychain({ to: "openmausbot", platform: "darwin", run }), "same");
 });
 
-test("refuses a secret of an unexpected shape", () => {
+test("refuses a secret of an unexpected shape", async () => {
   const items = new Map([["openmausbot Safe Storage", { account: "openmausbot Key", secret: "bad\" -w x" }]]);
   const { run } = fakeSecurity(items);
-  assert.equal(migrateSafeStorageKeychain({ to: "sagax", platform: "darwin", run }), "failed");
+  assert.equal(await migrateSafeStorageKeychain({ to: "sagax", platform: "darwin", run }), "failed");
   assert.equal(items.has("sagax Safe Storage"), false);
 });

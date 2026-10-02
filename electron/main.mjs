@@ -106,7 +106,9 @@ keepUserDataInPlace(app);
 // Inert while the runtime name is still RUNTIME_NAME. Once it changes, the
 // new "<name> Safe Storage" keychain entry is copied from the old one before
 // safeStorage is first used (keychain-migration.mjs).
-if (app.getName() !== RUNTIME_NAME) migrateSafeStorageKeychain({ to: app.getName(), log: (line) => console.warn(line) });
+const keychainReady = app.getName() !== RUNTIME_NAME
+  ? migrateSafeStorageKeychain({ to: app.getName(), log: (line) => console.warn(line) }).catch(() => "failed")
+  : Promise.resolve("same");
 // The native About panel (macOS app menu, Linux) would say "openmausbot".
 app.setAboutPanelOptions({ applicationName: FULL_NAME });
 
@@ -652,6 +654,7 @@ const CREDENTIALS_FILE = path.join(app.getPath("userData"), "credentials.bin");
 let credentialStoreUnavailable = false;
 
 async function loadSecureCredentials() {
+  await keychainReady;
   const result = await readSecureCredentials({
     exists: () => fs.existsSync(CREDENTIALS_FILE),
     isAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
@@ -675,6 +678,7 @@ async function saveSecureCredentials(credentials) {
   if (credentialStoreUnavailable) {
     throw new Error("The operating-system credential store could not be read this launch");
   }
+  await keychainReady;
   if (!(await safeStorage.isAsyncEncryptionAvailable())) {
     throw new Error("The operating-system credential store is unavailable");
   }
@@ -1275,7 +1279,7 @@ function ensureCloudAccount() {
   if (!app.isPackaged || desktopRemoteAccess) throw new Error("OMB Cloud sign-in requires the local desktop app.");
   cloudAccount = createCloudAccountClient({
     store: createCloudAccountStore({ file: path.join(app.getPath("userData"), "cloud-account.bin"), encryption: {
-      available: async () => (await safeStorage.isAsyncEncryptionAvailable()) &&
+      available: async () => (await keychainReady, await safeStorage.isAsyncEncryptionAvailable()) &&
         (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text"),
       encrypt: value => safeStorage.encryptStringAsync(value), decrypt: value => safeStorage.decryptStringAsync(value),
     } }),
@@ -1297,7 +1301,7 @@ function ensureManagedDesktop() {
   if (managedDesktop) return managedDesktop;
   if (!app.isPackaged || desktopRemoteAccess) throw new Error("Organization sign-in requires the installed desktop app running on this computer.");
   const encryption = {
-    available: async () => (await safeStorage.isAsyncEncryptionAvailable()) &&
+    available: async () => (await keychainReady, await safeStorage.isAsyncEncryptionAvailable()) &&
       (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text"),
     encrypt: value => safeStorage.encryptStringAsync(value),
     decrypt: value => safeStorage.decryptStringAsync(value),

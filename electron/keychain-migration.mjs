@@ -9,7 +9,7 @@
 // Windows keeps the key in "Local State" inside userData (moved with the
 // folder); Linux secret services are not handled here (they fall back to a
 // fresh store, which credentials.bin reports as unavailable, never empty).
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 export const LEGACY_KEYCHAIN_NAME = "openmausbot";
 const SECURITY = "/usr/bin/security";
@@ -19,9 +19,23 @@ const SECRET = /^[A-Za-z0-9+/=]{8,256}$/;
 export const safeStorageService = (name) => `${name} Safe Storage`;
 export const safeStorageAccount = (name) => `${name} Key`;
 
+/** Runs `security` without blocking main; resolves { status, stdout }. */
 function defaultRun(args, input) {
-  const result = spawnSync(SECURITY, args, { input, encoding: "utf8", timeout: 10_000, stdio: ["pipe", "pipe", "ignore"] });
-  return { status: result.status ?? 1, stdout: result.stdout ?? "" };
+  return new Promise((resolve) => {
+    let stdout = "";
+    let child;
+    try {
+      child = spawn(SECURITY, args, { stdio: ["pipe", "pipe", "ignore"], timeout: 10_000 });
+    } catch {
+      resolve({ status: 1, stdout: "" });
+      return;
+    }
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.on("error", () => resolve({ status: 1, stdout: "" }));
+    child.on("close", (code) => resolve({ status: code ?? 1, stdout }));
+    child.stdin.end(input ?? "");
+  });
 }
 
 const quoted = (value) => `"${String(value).replace(/["\\]/g, "\\$&")}"`;
@@ -32,12 +46,13 @@ const quoted = (value) => `"${String(value).replace(/["\\]/g, "\\$&")}"`;
  * entry exists), "none" (no old entry either), "copied" or "failed".
  * `trustedApp` is added to the new entry's access list so the app reads it
  * without a keychain prompt. The secret is passed on stdin, never in argv.
+ * Asynchronous: main awaits it before its first safeStorage call.
  */
-export function migrateSafeStorageKeychain({ from = LEGACY_KEYCHAIN_NAME, to, platform = process.platform, run = defaultRun, trustedApp = process.execPath, log = () => {} }) {
+export async function migrateSafeStorageKeychain({ from = LEGACY_KEYCHAIN_NAME, to, platform = process.platform, run = defaultRun, trustedApp = process.execPath, log = () => {} }) {
   if (!to || to === from) return "same";
   if (platform !== "darwin") return "unsupported";
-  if (run(["find-generic-password", "-s", safeStorageService(to), "-a", safeStorageAccount(to)]).status === 0) return "present";
-  const old = run(["find-generic-password", "-s", safeStorageService(from), "-a", safeStorageAccount(from), "-w"]);
+  if ((await run(["find-generic-password", "-s", safeStorageService(to), "-a", safeStorageAccount(to)])).status === 0) return "present";
+  const old = await run(["find-generic-password", "-s", safeStorageService(from), "-a", safeStorageAccount(from), "-w"]);
   if (old.status !== 0) return "none";
   const secret = old.stdout.trim();
   if (!SECRET.test(secret)) {
@@ -45,7 +60,7 @@ export function migrateSafeStorageKeychain({ from = LEGACY_KEYCHAIN_NAME, to, pl
     return "failed";
   }
   const command = ["add-generic-password", "-s", quoted(safeStorageService(to)), "-a", quoted(safeStorageAccount(to)), "-T", quoted(trustedApp), "-w", quoted(secret)].join(" ");
-  const added = run(["-i"], `${command}\n`);
+  const added = await run(["-i"], `${command}\n`);
   if (added.status !== 0) {
     log("keychain: could not copy the safeStorage entry to its new name");
     return "failed";
