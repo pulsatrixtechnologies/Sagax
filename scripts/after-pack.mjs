@@ -86,7 +86,9 @@ export default async function afterPack(context) {
   if (hasBrowser || context.packager) {
     const arch = { 1: "x64", 3: "arm64" }[context.arch];
     if (!arch) throw new Error(`Unsupported desktop browser package architecture: ${context.arch}`);
-    await verifyBrowserBundle(browserRoot, `${context.electronPlatformName}-${arch}`);
+    // Windows arm64 ships the x64 bundle (no arm64 build exists; x64 emulation).
+    const browserArch = context.electronPlatformName === "win32" && arch === "arm64" ? "x64" : arch;
+    await verifyBrowserBundle(browserRoot, `${context.electronPlatformName}-${browserArch}`);
   }
 
   if (context.electronPlatformName !== "linux") return;

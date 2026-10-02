@@ -62,10 +62,10 @@ describe("updatePhase", () => {
 describe("updateLabel", () => {
   it("names the version it found and the one it is ready to install", () => {
     expect(updateLabel("available", state({ status: "available", version: "0.2.0" }))).toBe(
-      "Version 0.2.0 available — download",
+      "Version 0.2.0 available · Download",
     );
     expect(updateLabel("downloaded", state({ status: "downloaded", version: "0.2.0" }))).toBe(
-      "Version 0.2.0 ready — restart",
+      "Version 0.2.0 ready · Restart",
     );
   });
 
@@ -79,7 +79,7 @@ describe("updateLabel", () => {
     expect(updateLabel("installing", state({ status: "installing", message: "Restart is taking longer than expected." })))
       .toBe("Restart is taking longer than expected.");
     expect(updateLabel("downloaded", state({ status: "downloaded", version: "0.2.0", installMode: "handoff" })))
-      .toBe("Version 0.2.0 ready — install");
+      .toBe("Version 0.2.0 ready · Install");
     expect(updateLabel("installing", state({ status: "installing", installMode: "handoff" })))
       .toBe("Opening a terminal…");
   });
@@ -88,7 +88,7 @@ describe("updateLabel", () => {
     expect(updateLabel("error", state({ status: "error", message: "Network unreachable" }))).toBe(
       "Network unreachable",
     );
-    expect(updateLabel("error", state({ status: "error" }))).toBe("Update failed — try again");
+    expect(updateLabel("error", state({ status: "error" }))).toBe("Update failed. Try again");
   });
 
   it("points a hand-off at the terminal that finishes it", () => {

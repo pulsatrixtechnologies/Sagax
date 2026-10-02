@@ -142,7 +142,7 @@ export function resolveDriverBinary() {
   }
   if (process.platform === "darwin" && fs.existsSync(INSTALLED_DRIVER)) return INSTALLED_DRIVER;
   if (process.platform === "win32") {
-    const staged = path.join(app.getAppPath(), "dist-native", "cua-win32-x64", "cua-driver.exe");
+    const staged = path.join(app.getAppPath(), "dist-native", `cua-win32-${process.arch}`, "cua-driver.exe");
     return fs.existsSync(staged) ? staged : resolveWindowsDriver();
   }
   return null;
