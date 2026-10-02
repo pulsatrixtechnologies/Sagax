@@ -1157,6 +1157,7 @@ extension ChatListView {
             case .search?: showingSearch = true
             case .newGroupChat?: showingNewGroup = true
             case .createBot?: showingCreateBot = true
+            case .settingsTop?, .settingsBottom?, .plugins?, .account?, .botComputer?: showingSettings = true
             default: break
             }
         }
@@ -1474,14 +1475,7 @@ extension ChatListView {
         ZStack {
             if showingSettings {
                 CardSheetContainer(onDismiss: { showingSettings = false }) {
-                    NavigationStack {
-                        SettingsView()
-                            .toolbar {
-                                ToolbarItem(placement: .confirmationAction) {
-                                    Button("Done") { showingSettings = false }
-                                }
-                            }
-                    }
+                    SettingsView(close: { showingSettings = false })
                 }
                 .transition(.move(edge: .bottom))
                 .zIndex(1)

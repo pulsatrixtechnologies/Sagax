@@ -92,6 +92,9 @@ final class Session: ObservableObject {
     @Published private(set) var groupPinsSupported = true
 
     private var client: CompanionClient?
+    /// The live client, for the Settings sheet's own reads and writes
+    /// (SettingsModel); nil while nothing is paired.
+    var settingsClient: CompanionClient? { client }
     /// Ciphertext-only operations survive navigation and transient
     /// disconnects so a retry cannot accidentally reseal the same value with
     /// a different HPKE operation id. Nothing here is persisted to disk.
@@ -498,6 +501,9 @@ final class Session: ObservableObject {
     }
 
     func receiveURL(_ url: URL) {
+        // A plugin sign-in's return (sagax://oauth-done) belongs to the
+        // sign-in sheet that started it, not to pairing.
+        if url.scheme?.lowercased() == PluginSignIn.callbackScheme { return }
         guard let link = CompanionDeepLink.parse(url) else {
             actionError = "That pairing invitation is not valid. Start pairing again on your computer."
             return
@@ -608,6 +614,15 @@ final class Session: ObservableObject {
     /// Compatibility for the existing revoked-pairing and detail actions:
     /// sign out now means remove only the selected computer.
     func signOut() {
+#if DEBUG
+        // Parity harness: the fixture connection lives in memory only, so
+        // there is no saved pairing to forget; end the session in memory.
+        if ParityLaunch.current != nil {
+            connections = []
+            clearActiveConnection()
+            return
+        }
+#endif
         guard let id = connection?.id ?? registry.activeConnectionID else {
             clearActiveConnection()
             return

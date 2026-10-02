@@ -26,6 +26,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { randomUUID } from "node:crypto";
 import { deflateSync, crc32 } from "node:zlib";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -61,6 +62,7 @@ async function freePair() {
 // ── the server ──────────────────────────────────────────────────────────
 let home = "";
 let child = null;
+let enterpriseStub = "";
 
 function startServer(port, webhook) {
   const log = join(OUT, "server.log");
@@ -74,6 +76,9 @@ function startServer(port, webhook) {
       OMB_PORT: String(port),
       OMB_WEBHOOK_PORT: String(webhook),
       FAKE_CLAUDE_MODE: "happy",
+      // Settings > Usage reads the monthly budget, an enterprise feature: a
+      // stub layer (written by main()) grants "budgets" and nothing else.
+      ...(enterpriseStub ? { OMB_ENTERPRISE_DIR: enterpriseStub, OMB_LICENSE_KEY: "parity-fixture" } : {}),
       TZ: process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -198,6 +203,41 @@ const PREVIEWS = {
   ciel: "Résumé des trois articles lus aujourd'hui.",
   rigel: "Analyse terminée, aucun accès inhabituel détecté.",
 };
+
+// ── settings (12, 14, 15, 21) ──────────────────────────────────────────
+// Sixteen saved command rules ("Auto-review Rules 16"), spread over bots.
+const RULES = [
+  ["ara", "git status"], ["ara", "git log --oneline -20"], ["ara", "ls -la"], ["ara", "pnpm test"],
+  ["helios", "make ci"], ["helios", "df -h"], ["helix", "pnpm typecheck"], ["helix", "git diff --stat"],
+  ["keepler", "npm run build"], ["lux", "mkdocs build"], ["altair", "python3 scripts/report.py"],
+  ["rigel", "last -n 20"], ["rigel", "journalctl -u ssh --since today"], ["celeste", "curl -sI https://example.com"],
+  ["orion", "sqlite3 data.db .tables"], ["liora", "cat notes/priorites.md"],
+];
+
+function seedCommandRules(dataDir, seeded) {
+  const rules = RULES.map(([key, command]) => ({
+    id: randomUUID(), botId: seeded.ids[key].id, command, cwd: "/workspace/fixture", providerInstanceId: "claude",
+  }));
+  writeFileSync(join(dataDir, "command-allowlist.json"), JSON.stringify({ version: 1, rules }));
+}
+
+// Seventeen installed plugins ("17 installed"): servers the team added on
+// the computer. Addresses under .test never resolve, so nothing is called.
+const TEAM_SERVERS = [
+  "backup-monitor", "docs-wiki", "setup-helper", "ticket-desk", "time-sheets", "crm-notes", "endpoint-guard",
+  "password-vault", "network-map", "billing-desk", "asset-registry", "status-page", "file-share", "calendar-sync",
+  "mail-archive", "knowledge-base", "remote-tools",
+];
+
+function teamMcpServers() {
+  return Object.fromEntries(TEAM_SERVERS.map((name) => [name, { type: "http", url: `https://${name}.example.test/mcp`, enabled: true }]));
+}
+
+function writeEnterpriseStub(dir) {
+  mkdirSync(join(dir, "server"), { recursive: true });
+  writeFileSync(join(dir, "server", "index.ts"),
+    'export function register() { return { customer: "Parity fixture", features: ["budgets"], expiresAt: null }; }\n');
+}
 
 // ── tiny PNG writer (solid colour with a diagonal band) ─────────────────
 function png(width, height, [r, g, b]) {
@@ -391,8 +431,12 @@ async function main() {
   home = mkdtempSync(join(tmpdir(), "omb-parity-"));
   const dataDir = join(home, ".openmausbot");
   mkdirSync(dataDir, { recursive: true });
+  enterpriseStub = join(home, "enterprise-stub");
+  writeEnterpriseStub(enterpriseStub);
   writeFileSync(join(dataDir, "config.json"), JSON.stringify({
     profile: { name: "Parity Person", email: "parity@example.com" },
+    budgets: { monthlyUsd: 100 },
+    mcpServers: teamMcpServers(),
     instances: {
       claude: {
         driver: "claudeAgent",
@@ -413,9 +457,14 @@ async function main() {
   await stopServer(child);
 
   seedTranscripts(dataDir, seeded);
+  seedCommandRules(dataDir, seeded);
 
   child = startServer(port, webhook);
   await waitHealthy(base, child);
+  // Settings > Bot as in the reference: auto-review on, the zone automatic.
+  await api(base, "PUT", "/api/settings/bot", {
+    autoReviewDefault: true, timeZoneAuto: true, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  }).catch((error) => console.error(`[parity] bot settings: ${error.message}`));
   const session = await pair(base);
   const fleet = await fetch(`${base}/api/bots`, { headers: { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
   const record = {

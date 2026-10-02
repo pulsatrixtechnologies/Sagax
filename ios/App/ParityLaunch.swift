@@ -67,7 +67,8 @@ enum ParityScreen: String, CaseIterable {
     /// Screens the home opens itself: its "+" menu and its sheets.
     var opensFromHome: Bool {
         switch self {
-        case .home, .homePlusMenu, .search, .newGroupChat, .createBot: true
+        case .home, .homePlusMenu, .search, .newGroupChat, .createBot,
+             .settingsTop, .settingsBottom, .plugins, .account, .botComputer: true
         default: false
         }
     }
@@ -152,10 +153,6 @@ struct ParityScreenLauncher: ViewModifier {
             }
             .sheet(isPresented: sheetBinding) {
                 switch presented {
-                case .settingsTop, .settingsBottom:
-                    NavigationStack { SettingsView() }.environmentObject(session)
-                case .plugins:
-                    NavigationStack { ConnectedAppsView() }.environmentObject(session)
                 default:
                     EmptyView()
                 }
@@ -169,7 +166,7 @@ struct ParityScreenLauncher: ViewModifier {
             }
     }
 
-    private static let sheetScreens: Set<ParityScreen> = [.settingsTop, .settingsBottom, .plugins]
+    private static let sheetScreens: Set<ParityScreen> = []
 
     private var sheetBinding: Binding<Bool> {
         Binding(

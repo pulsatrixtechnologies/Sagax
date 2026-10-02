@@ -804,6 +804,7 @@
   },
   "15-plugins": {
     "rects": [
+      { "rect": [0, 54, 402, 70], "why": "home header behind the sheet (photo)" },
       {
         "rect": [
           226,
@@ -826,6 +827,8 @@
   },
   "16-account": {
     "rects": [
+      { "rect": [176, 568, 160, 13], "why": "brand name in the delete footer (Sagax vs reference brand)" },
+      { "rect": [0, 54, 402, 70], "why": "home header behind the sheet (photo)" },
       {
         "rect": [
           40,
@@ -1022,6 +1025,7 @@
   },
   "21-bot-computer": {
     "rects": [
+      { "rect": [0, 54, 402, 70], "why": "home header behind the sheet (photo)" },
       {
         "rect": [
           300,

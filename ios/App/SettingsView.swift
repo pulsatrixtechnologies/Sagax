@@ -1,21 +1,494 @@
-// Settings stays status-first. Network details and destructive pairing
-// controls live one level deeper so the everyday screen remains calm.
-import SwiftUI
+// Settings (iOS parity 12 and 14): the card sheet the home's photo opens.
+//
+// Account card and Usage, Plugins, the Bot section (auto-review default,
+// its rules, the time zone and the bot computer), the App section
+// (notifications, appearance, language, haptics), the Pulsatrix links,
+// Send Feedback, Sign Out and the Sagax footer. Everything the earlier
+// settings screen offered stays reachable under "Advanced" at the bottom.
+// Geometry: measure-settings.md §1 to §4.
 import CompanionCore
+import SwiftUI
 import UIKit
+import MessageUI
+
+/// The sheet's pages.
+enum SettingsRoute: Hashable {
+    case account, usage, plugins, rules, timeZone, botComputer, appearance, language, haptics, advanced
+}
 
 struct SettingsView: View {
     @EnvironmentObject private var session: Session
+    @StateObject private var model = SettingsModel()
+    @StateObject private var navigator = SettingsNavigator()
+    private let onConnect: (() -> Void)?
+    private let close: (() -> Void)?
+
+    /// `close` set: the card sheet, with an X. Otherwise pushed inside the
+    /// caller's navigation (onboarding), with a back circle.
+    ///
+    /// The sheet's pages slide in from its own small stack rather than a
+    /// NavigationStack: the card sheet sits over the home, whose stack would
+    /// take the pushes and draw them full screen.
+    init(onConnect: (() -> Void)? = nil, close: (() -> Void)? = nil) {
+        self.onConnect = onConnect
+        self.close = close
+    }
+
+    var body: some View {
+        ZStack {
+            SettingsRootPage(close: close, onConnect: onConnect)
+            ForEach(Array(navigator.routes.enumerated()), id: \.offset) { index, route in
+                SettingsRouteView(route: route, onConnect: onConnect, closeSheet: close)
+                    .environment(\.settingsPop, { navigator.pop() })
+                    .transition(.move(edge: .trailing))
+                    .zIndex(Double(index + 1))
+                    .gesture(
+                        DragGesture(minimumDistance: 20)
+                            .onEnded { value in
+                                if value.startLocation.x < 30, value.translation.width > 80 { navigator.pop() }
+                            }
+                    )
+            }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.92), value: navigator.routes)
+        .environmentObject(model)
+        .environmentObject(navigator)
+        .task {
+            model.attach(session)
+            if let route = Self.initialRoute, navigator.routes.isEmpty {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { navigator.routes = [route] }
+            }
+            await model.load()
+        }
+    }
+
+    /// The parity harness opens 15, 16 and 21 one level in.
+    private static var initialRoute: SettingsRoute? {
+#if DEBUG
+        switch ParityLaunch.current?.screen {
+        case .plugins?: return .plugins
+        case .account?: return .account
+        case .botComputer?: return .botComputer
+        default: return nil
+        }
+#else
+        return nil
+#endif
+    }
+}
+
+/// The sheet's page stack.
+@MainActor
+final class SettingsNavigator: ObservableObject {
+    @Published var routes: [SettingsRoute] = []
+
+    func push(_ route: SettingsRoute) { routes.append(route) }
+    func pop() { if !routes.isEmpty { routes.removeLast() } }
+}
+
+private struct SettingsPopKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    /// Back, for a page shown by the sheet's own stack.
+    var settingsPop: (() -> Void)? {
+        get { self[SettingsPopKey.self] }
+        set { self[SettingsPopKey.self] = newValue }
+    }
+}
+
+// MARK: - Root
+
+private struct SettingsRootPage: View {
+    let close: (() -> Void)?
+    let onConnect: (() -> Void)?
+
+    @EnvironmentObject private var session: Session
+    @EnvironmentObject private var model: SettingsModel
+    @Environment(\.locale) private var locale
+    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
+    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
+    @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
+    @AppStorage(PrefKey.haptics) private var haptics = true
+    @State private var link: URL?
+    @State private var composingMail = false
+    @State private var confirmingSignOut = false
     @State private var enablingNotifications = false
+
+    private var french: Bool {
+        (AppLanguage.resolved(language).locale ?? locale).language.languageCode?.identifier == "fr"
+    }
+
+    var body: some View {
+        SettingsPage(leading: close.map { .close($0) } ?? .back) {
+            accountCard
+            SettingsSpacer(SettingsMetrics.cardGap)
+            SettingsCard {
+                SettingsRow(title: "Plugins", subtitle: "Tools and skills for Sagax", accessory: .chevron, height: 61, identifier: "settings-plugins") {
+                    push(.plugins)
+                }
+            }
+            SettingsSectionLabel(text: "Bot")
+            botCard
+            SettingsSpacer(SettingsMetrics.cardGap)
+            appCard
+            SettingsSpacer(SettingsMetrics.cardGap)
+            linksCard
+            SettingsSpacer(SettingsMetrics.cardGap)
+            SettingsCard {
+                SettingsRow(title: "Send Feedback", accessory: .chevron, height: 44.67, identifier: "settings-feedback") { sendFeedback() }
+            }
+            SettingsSpacer(26.67)
+            SettingsCard {
+                SettingsRow(title: "Sign Out", style: .destructive, height: 44.67, identifier: "settings-sign-out") {
+                    confirmingSignOut = true
+                }
+            }
+            footer
+            SettingsCard {
+                SettingsRow(title: "Advanced", accessory: .chevron, height: 44.67, identifier: "settings-advanced") { showingAdvanced = true }
+            }
+#if DEBUG
+            if ParityLaunch.current?.screen == .settingsBottom {
+                // 14-settings-bottom: the Notifications card's top at y 197.
+                ScrollOffsetSetter(offset: 574).frame(width: 0, height: 0)
+            }
+#endif
+        }
+        .task { await session.refreshNotificationAuthorization() }
+        .sheet(isPresented: $showingAdvanced) {
+            NavigationStack {
+                AdvancedSettingsView(onConnect: onConnect, closeSheet: close)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingAdvanced = false }
+                        }
+                    }
+            }
+            .environmentObject(session)
+            .preferredColorScheme(.dark)
+        }
+        .sheet(item: Binding(get: { link.map(IdentifiedURL.init) }, set: { link = $0?.url })) { item in
+            SafariSheet(url: item.url).ignoresSafeArea()
+        }
+        .sheet(isPresented: $composingMail) {
+            MailComposeSheet(recipient: SettingsLinks.supportEmail, subject: feedbackSubject, body: feedbackBody) {
+                composingMail = false
+            }
+            .ignoresSafeArea()
+        }
+        .confirmationDialog("Sign out of this computer?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
+            Button("Sign Out", role: .destructive) {
+                close?()
+                session.signOut()
+            }
+            .accessibilityIdentifier("settings-sign-out-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This phone forgets this computer. Pair it again to come back.")
+        }
+        .alert("Settings", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(verbatim: model.error ?? "")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+            Task { await model.syncTimeZoneIfAutomatic() }
+        }
+    }
+
+    @EnvironmentObject private var navigator: SettingsNavigator
+    @State private var showingAdvanced = false
+
+    private func push(_ route: SettingsRoute) {
+        navigator.push(route)
+    }
+
+    // MARK: Cards
+
+    private var accountCard: some View {
+        SettingsCard {
+            AccountCardRow(name: model.displayName, detail: model.detail, photo: model.photo, chevron: true) { push(.account) }
+            if let percent = model.usagePercent {
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(title: "Usage", accessory: .valueChevron("\(percent)%"), height: 43.5, identifier: "settings-usage") { push(.usage) }
+            }
+        }
+    }
+
+    private var botCard: some View {
+        SettingsCard {
+            SettingsRow(
+                title: "Auto-review",
+                subtitle: "Require approval for risky shell, MCP, and computer actions.",
+                accessory: .toggle(Binding(get: { model.autoReview }, set: { on in Task { await model.setAutoReview(on) } })),
+                height: 75,
+                identifier: "settings-auto-review"
+            )
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Auto-review Rules", accessory: .valueChevron(model.rules.map { "\($0.total)" } ?? ""), height: 43.33, identifier: "settings-rules") {
+                push(.rules)
+            }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(
+                title: "Set Time Zone Automatically",
+                subtitle: "Your Bot's computer follows this device's time zone.",
+                accessory: .toggle(Binding(get: { model.timeZoneAuto }, set: { on in Task { await model.setTimeZoneAuto(on) } })),
+                height: 74,
+                identifier: "settings-time-zone-auto",
+                textTop: 13.07
+            )
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            if model.timeZoneAuto {
+                SettingsRow(title: "Time Zone", accessory: .value(model.timeZone ?? ""), height: 43.67, identifier: "settings-time-zone")
+            } else {
+                SettingsRow(title: "Time Zone", accessory: .valueChevron(model.timeZone ?? ""), height: 43.67, identifier: "settings-time-zone") {
+                    push(.timeZone)
+                }
+            }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Bot Computer", accessory: .chevron, height: 43.33, identifier: "settings-bot-computer") { push(.botComputer) }
+        }
+    }
+
+    private var notificationsOn: Bool {
+        switch session.notificationAuthorization {
+        case .authorized, .provisional, .ephemeral: true
+        default: false
+        }
+    }
+
+    private var appCard: some View {
+        SettingsCard {
+            SettingsRow(
+                title: "Notifications",
+                accessory: .toggle(Binding(get: { notificationsOn }, set: { on in setNotifications(on) })),
+                height: 53.67,
+                identifier: "settings-notifications"
+            )
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Appearance", accessory: .valueChevron(appearanceValue), height: 43.67, identifier: "settings-appearance") { push(.appearance) }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Language", accessory: .valueChevron(AppLanguage.resolved(language).shortLabel), height: 43.33, identifier: "settings-language") { push(.language) }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Haptics", accessory: .valueChevron(haptics ? String(localized: "On") : String(localized: "Off")), height: 43.67, identifier: "settings-haptics") { push(.haptics) }
+        }
+    }
+
+    private var appearanceValue: String {
+        let mode = AppearanceMode(rawValue: appearance) == .dark ? String(localized: "Dark") : String(localized: "System")
+        let shade = AppearanceTone(rawValue: tone) == .dim ? String(localized: "Dim") : String(localized: "Black")
+        return "\(mode) · \(shade)"
+    }
+
+    private var linksCard: some View {
+        SettingsCard {
+            SettingsRow(title: "Help Center", accessory: .chevron, height: 44.33, identifier: "settings-help") { link = SettingsLinks.helpCenter(french: french) }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Privacy Policy", accessory: .chevron, height: 43.33, identifier: "settings-privacy") { link = SettingsLinks.privacy(french: french) }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Terms of Service", accessory: .chevron, height: 43.67, identifier: "settings-terms") { link = SettingsLinks.terms(french: french) }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Sagax Terms", accessory: .chevron, height: 43.33, identifier: "settings-sagax-terms") { link = SettingsLinks.sagaxTerms }
+        }
+    }
+
+    /// The white Sagax owl over "Sagax": 60.67 pt below Sign Out.
+    private var footer: some View {
+        VStack(spacing: 0) {
+            OwlMascotView(color: "white", size: 47.67)
+                .frame(width: 47.67, height: 47.67)
+                .accessibilityHidden(true)
+            Text(verbatim: "Sagax")
+                .font(Theme.Font.appName)
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.top, 15.3)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60.67)
+        .padding(.bottom, 40)
+    }
+
+    // MARK: Actions
+
+    private func setNotifications(_ on: Bool) {
+        if on {
+            guard !enablingNotifications else { return }
+            enablingNotifications = true
+            Task {
+                await session.enableNotifications()
+                enablingNotifications = false
+            }
+        } else if let url = URL(string: UIApplication.openSettingsURLString) {
+            // iOS lets only the person turn an app's notifications off.
+            UIApplication.shared.open(url)
+        }
+    }
+
+    private var feedbackSubject: String { String(localized: "Sagax feedback") }
+
+    private var feedbackBody: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "\n\n—\nSagax iOS \(version) (\(build)), iOS \(UIDevice.current.systemVersion)"
+    }
+
+    private func sendFeedback() {
+        if MFMailComposeViewController.canSendMail() {
+            composingMail = true
+            return
+        }
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = SettingsLinks.supportEmail
+        components.queryItems = [URLQueryItem(name: "subject", value: feedbackSubject), URLQueryItem(name: "body", value: feedbackBody)]
+        if let url = components.url { UIApplication.shared.open(url) }
+    }
+}
+
+/// A route's page.
+struct SettingsRouteView: View {
+    let route: SettingsRoute
+    let onConnect: (() -> Void)?
+    let closeSheet: (() -> Void)?
+
+    var body: some View {
+        switch route {
+        case .account: AccountSettingsView(closeSheet: closeSheet)
+        case .usage: UsageSettingsView()
+        case .plugins: PluginsView()
+        case .rules: AutoReviewRulesView()
+        case .timeZone: TimeZonePickerView()
+        case .botComputer: BotComputerSettingsView()
+        case .appearance: AppearanceSettingsView()
+        case .language: LanguageSettingsView()
+        case .haptics: HapticsSettingsView()
+        case .advanced: AdvancedSettingsView(onConnect: onConnect, closeSheet: closeSheet)
+        }
+    }
+}
+
+/// Vertical space between cards.
+struct SettingsSpacer: View {
+    let height: CGFloat
+    init(_ height: CGFloat) { self.height = height }
+    var body: some View { Color.clear.frame(height: height) }
+}
+
+struct IdentifiedURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+// MARK: - Usage
+
+struct UsageSettingsView: View {
+    @EnvironmentObject private var model: SettingsModel
+
+    var body: some View {
+        SettingsPage(title: "Usage") {
+            SettingsCard {
+                SettingsRow(title: "This month", accessory: .value(model.usagePercent.map { "\($0)%" } ?? "—"), height: 44.33)
+                if let budget = model.usage?.budget {
+                    if let spent = budget.spentUsd {
+                        CardHairline(leadingInset: SettingsMetrics.rowInset)
+                        SettingsRow(title: "Spent", accessory: .value(Self.dollars(spent)), height: 43.67)
+                    }
+                    if let monthly = budget.monthlyUsd {
+                        CardHairline(leadingInset: SettingsMetrics.rowInset)
+                        SettingsRow(title: "Monthly budget", accessory: .value(Self.dollars(monthly)), height: 43.67)
+                    }
+                }
+            }
+            SettingsFooter(text: model.usage?.budget?.exceeded == true
+                ? "The monthly budget is used up. Bots pause new paid work until next month or until the budget is raised on the computer."
+                : "Spending on paid engines this month, against the budget set on the computer.")
+        }
+    }
+
+    private static func dollars(_ value: Double) -> String {
+        value.formatted(.currency(code: "USD").precision(.fractionLength(2)))
+    }
+}
+
+// MARK: - Appearance, language, haptics
+
+struct AppearanceSettingsView: View {
+    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
+    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
+
+    var body: some View {
+        SettingsPage(title: "Appearance") {
+            SettingsCard {
+                ForEach(Array(AppearanceMode.allCases.enumerated()), id: \.element) { index, mode in
+                    if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(title: mode.label, accessory: appearance == mode.rawValue ? .check : .none, identifier: "appearance.\(mode.rawValue)") {
+                        appearance = mode.rawValue
+                    }
+                }
+            }
+            SettingsSectionLabel(text: "Dark background")
+            SettingsCard {
+                ForEach(Array(AppearanceTone.allCases.enumerated()), id: \.element) { index, option in
+                    if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(title: option.label, accessory: tone == option.rawValue ? .check : .none, identifier: "tone.\(option.rawValue)") {
+                        tone = option.rawValue
+                    }
+                }
+            }
+            SettingsFooter(text: "System follows the phone; Dark keeps Sagax dark. Black is the deepest background, Dim a softer grey.")
+        }
+    }
+}
+
+struct LanguageSettingsView: View {
+    @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
+
+    var body: some View {
+        SettingsPage(title: "Language") {
+            SettingsCard {
+                ForEach(Array(AppLanguage.allCases.enumerated()), id: \.element) { index, option in
+                    if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(title: option.label, accessory: language == option.rawValue ? .check : .none, identifier: "language.\(option.rawValue)") {
+                        language = option.rawValue
+                    }
+                }
+            }
+            SettingsFooter(text: "Changes the language inside Sagax. Buttons drawn by iOS itself follow the phone's language.")
+        }
+    }
+}
+
+struct HapticsSettingsView: View {
+    @AppStorage(PrefKey.haptics) private var haptics = true
+
+    var body: some View {
+        SettingsPage(title: "Haptics") {
+            SettingsCard {
+                SettingsRow(title: "On", accessory: haptics ? .check : .none, identifier: "haptics.on") { haptics = true }
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(title: "Off", accessory: haptics ? .none : .check, identifier: "haptics.off") { haptics = false }
+            }
+            SettingsFooter(text: "Small taps when you press buttons, switch options and send.")
+        }
+    }
+}
+
+// MARK: - Advanced (the earlier settings, kept)
+
+struct AdvancedSettingsView: View {
+    let onConnect: (() -> Void)?
+    let closeSheet: (() -> Void)?
+
+    @EnvironmentObject private var session: Session
     @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
     @AppStorage(PrefKey.islandIntro) private var islandIntro = IslandIntro.oncePerBot.rawValue
-    @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
     @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
-    private let onConnect: (() -> Void)?
-
-    init(onConnect: (() -> Void)? = nil) {
-        self.onConnect = onConnect
-    }
+    @State private var showingUpdates = false
+    @State private var showingWalkieVoice = false
 
     var body: some View {
         Form {
@@ -34,35 +507,10 @@ struct SettingsView: View {
                     Button {
                         onConnect?()
                     } label: {
-                        ComputerSettingsRow(
-                            name: Text("Connect a computer"),
-                            status: Text("Not connected"),
-                            connected: false
-                        )
+                        ComputerSettingsRow(name: Text("Connect a computer"), status: Text("Not connected"), connected: false)
                     }
                     .disabled(onConnect == nil)
                 }
-            }
-
-            Section {
-                if notificationsAreEnabled {
-                    notificationRow
-                        .accessibilityHint(notificationAccessibilityHint)
-                } else {
-                    Button {
-                        enablingNotifications = true
-                        Task {
-                            await session.enableNotifications()
-                            enablingNotifications = false
-                        }
-                    } label: {
-                        notificationRow
-                    }
-                    .disabled(enablingNotifications)
-                    .accessibilityHint(notificationAccessibilityHint)
-                }
-            } footer: {
-                Text("Alerts arrive while OpenMausBot is open or was recently in the background. Closed-app delivery is not available yet.")
             }
 
             Section {
@@ -71,11 +519,7 @@ struct SettingsView: View {
                         Text(LocalizedStringKey(level.label)).tag(level.rawValue)
                     }
                 } label: {
-                    Label {
-                        Text("Activity")
-                    } icon: {
-                        SettingsIcon(symbol: "wrench.and.screwdriver.fill", color: .purple)
-                    }
+                    Label { Text("Activity") } icon: { SettingsIcon(symbol: "wrench.and.screwdriver.fill", color: .purple) }
                 }
 
                 Picker(selection: $islandIntro) {
@@ -83,21 +527,13 @@ struct SettingsView: View {
                         Text(LocalizedStringKey(option.label)).tag(option.rawValue)
                     }
                 } label: {
-                    Label {
-                        Text("Bot intro animation")
-                    } icon: {
-                        SettingsIcon(symbol: "sparkles", color: .pink)
-                    }
+                    Label { Text("Bot intro animation") } icon: { SettingsIcon(symbol: "sparkles", color: .pink) }
                 }
 
                 NavigationLink {
                     QuickRepliesEditor()
                 } label: {
-                    Label {
-                        Text("Quick Replies")
-                    } icon: {
-                        SettingsIcon(symbol: "bolt.fill", color: .yellow)
-                    }
+                    Label { Text("Quick Replies") } icon: { SettingsIcon(symbol: "bolt.fill", color: .yellow) }
                 }
             } header: {
                 Text("Chat")
@@ -106,8 +542,6 @@ struct SettingsView: View {
             }
 
             Section {
-                // Bound through the resolved value, so a stored value this
-                // build cannot read still shows the density actually in use.
                 Picker(selection: Binding(
                     get: { RosterDensity(stored: rosterDensity) },
                     set: { rosterDensity = $0.rawValue }
@@ -116,100 +550,68 @@ struct SettingsView: View {
                         Text(LocalizedStringKey(density.label)).tag(density)
                     }
                 } label: {
-                    Label {
-                        Text("List density")
-                    } icon: {
-                        SettingsIcon(symbol: "list.bullet", color: .indigo)
-                    }
+                    Label { Text("List density") } icon: { SettingsIcon(symbol: "list.bullet", color: .indigo) }
                 }
                 .accessibilityIdentifier("list-density")
             } footer: {
                 Text(LocalizedStringKey(RosterDensity(stored: rosterDensity).caption))
             }
 
-            Section {
-                Picker(selection: $language) {
-                    ForEach(AppLanguage.allCases) { option in
-                        Text(option.label).tag(option.rawValue)
-                    }
+            Section("Voice") {
+                Button {
+                    showingWalkieVoice = true
                 } label: {
-                    Label {
-                        Text("Language")
-                    } icon: {
-                        SettingsIcon(symbol: "globe", color: .teal)
-                    }
+                    Label { Text("Walkie voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
                 }
-            } footer: {
-                Text("Changes the language inside OpenMausMobile. Buttons drawn by iOS itself follow the phone's language, which you can set for this app in iOS Settings.")
+                .foregroundStyle(.primary)
             }
 
             if session.connection != nil {
                 Section("Workspace") {
+                    Button {
+                        showingUpdates = true
+                    } label: {
+                        Label { Text("Updates") } icon: { SettingsIcon(symbol: "bell.badge.fill", color: .red) }
+                    }
+                    .foregroundStyle(.primary)
+
                     NavigationLink {
                         TasksRoutinesView()
                     } label: {
-                        Label {
-                            Text("Threads & Routines")
-                        } icon: {
-                            SettingsIcon(symbol: "calendar.badge.clock", color: .orange)
-                        }
+                        Label { Text("Threads & Routines") } icon: { SettingsIcon(symbol: "calendar.badge.clock", color: .orange) }
                     }
 
-                    // Connecting apps needs the admin scope; a chat-only
-                    // server session leaves it to the owner, in the server's UI.
+                    // Composio accounts (Work, Personal, client accounts).
                     if session.canAdminister {
                         NavigationLink {
                             ConnectedAppsView()
                         } label: {
-                            Label {
-                                Text("Connected Apps")
-                            } icon: {
-                                SettingsIcon(symbol: "link", color: .blue)
-                            }
+                            Label { Text("Connected Apps") } icon: { SettingsIcon(symbol: "link", color: .blue) }
                         }
                     }
                 }
             }
         }
-        .navigationTitle("Settings")
+        .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await session.refreshNotificationAuthorization() }
-    }
-
-    private var notificationsAreEnabled: Bool {
-        switch session.notificationAuthorization {
-        case .authorized, .provisional, .ephemeral: return true
-        default: return false
-        }
-    }
-
-    private var notificationAccessibilityHint: LocalizedStringKey {
-        if notificationsAreEnabled { return "Notifications are enabled" }
-        if session.notificationAuthorization == .denied { return "Opens device Settings" }
-        return "Asks for permission to send notifications"
-    }
-
-    private var notificationRow: some View {
-        HStack(spacing: 12) {
-            SettingsIcon(symbol: "bell.fill", color: .red)
-            Text("Notifications")
-                .foregroundStyle(.primary)
-            Spacer()
-            if enablingNotifications {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Text(LocalizedStringKey(session.notificationStatusText))
-                    .foregroundStyle(.secondary)
+        .toolbar(.visible, for: .navigationBar)
+        .sheet(isPresented: $showingUpdates) {
+            UpdatesSheet { chat in
+                showingUpdates = false
+                closeSheet?()
+                session.openChat(threadId: chat.threadId)
             }
+            .environmentObject(session)
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showingWalkieVoice) {
+            WalkieVoiceSheet(onSample: {})
         }
     }
-
-    private var statusText: Text { session.status.settingsText }
 
     private var computerStatusText: Text {
-        guard session.connections.count > 1 else { return statusText }
-        return statusText + Text(verbatim: " · ") + Text("\(session.connections.count) saved")
+        guard session.connections.count > 1 else { return session.status.settingsText }
+        return session.status.settingsText + Text(verbatim: " · ") + Text("\(session.connections.count) saved")
     }
 }
 
