@@ -5556,7 +5556,10 @@
       "mascot.bunbuSkin.crystal": "b8c18c6a3877270cdab18312f839179e99b4cf06f355d29c473c76bdf665f0d9",
       "mascot.bunbuSkin.holo": "ec05517c7da0141b76ffc10ff82e36322ca3718d0cc0ab83ebab172736898261",
       "mascot.bunbuSkin.galaxy": "9b81c0353945995b0e907e78ae0dbc56feab6c54d9a78ede3bb4667a5fa4abd9",
-      "mascot.bunbuSkin.molten": "cb028df1c71f86875c523bb3f77aadeb0ab32b850e085fff9a7cab1e2e6f99bc"
+      "mascot.bunbuSkin.molten": "cb028df1c71f86875c523bb3f77aadeb0ab32b850e085fff9a7cab1e2e6f99bc",
+      "settings.inspectorButton.title": "16acdca1d45e5688c19be676798542bdeba83cb47869180b9f1c195d93f29c07",
+      "settings.inspectorButton.subtitle": "58bf005e9e7cbab35a16c9aea075780de087f3511942d00d4a53232aed83840a",
+      "settings.inspectorButton.show": "c7e153a4bac8e9fd5cb0d88156f8eee01f4739505c7688ad57e54ecc24fbee76"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
