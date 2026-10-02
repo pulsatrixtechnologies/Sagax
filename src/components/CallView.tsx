@@ -264,10 +264,11 @@ export function CallOverlay({ bot }: { bot: Bot }) {
 const CALL_DOCK_EXIT_MS = 180;
 
 /** Voice mode (xAI): a live, full-duplex call (voice-mode/LiveCall.tsx),
- * docked as a slim in-call banner at the top of the chat column. It sits in
- * the layout, so the thread moves down while the call is on and back up
- * when it ends (the bar's height folds away; the call itself is already
- * over by then). */
+ * shown as a compact pill centered at the top of the chat column, under the
+ * bot's name chip. The collapsed pill keeps its own small row in the layout
+ * (never covering a message); its expanded card (settings, transcript)
+ * hangs below that row over the thread. When the call ends the row folds
+ * away (the call itself is already over by then). */
 export function VoiceCallDock({ bot }: { bot: Bot }) {
   const active = useOnCall() === bot.id;
   const voiceMode = useVoiceModeStatus(bot.id);
@@ -284,8 +285,8 @@ export function VoiceCallDock({ bot }: { bot: Bot }) {
   }, [live]);
   if (live) {
     return (
-      <div ref={dock} className="animate-call-dock-in grid" data-voice-call-dock>
-        <div className="min-h-0 overflow-hidden">
+      <div ref={dock} className="animate-call-dock-in relative z-20 mb-2 h-12 px-3" data-voice-call-dock>
+        <div className="pointer-events-none absolute inset-x-3 top-0">
           <LiveCall bot={bot} />
         </div>
       </div>
@@ -299,8 +300,8 @@ export function VoiceCallDock({ bot }: { bot: Bot }) {
       aria-hidden
       inert
       data-voice-call-dock-exit
-      className="animate-call-dock-out pointer-events-none mx-3 mb-2 overflow-hidden rounded-2xl border border-hairline/50 bg-panel md:mx-5"
-      style={{ "--call-dock-h": `${Math.max(0, height.current - 8)}px`, animationDuration: `${CALL_DOCK_EXIT_MS}ms` } as CSSProperties}
+      className="animate-call-dock-out pointer-events-none mx-auto mb-2 w-[min(420px,calc(100%-24px))] overflow-hidden rounded-full border border-hairline-weak bg-elevated"
+      style={{ "--call-dock-h": `${height.current}px`, animationDuration: `${CALL_DOCK_EXIT_MS}ms` } as CSSProperties}
     />
   );
 }
