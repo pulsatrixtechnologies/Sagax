@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+Comment=A shell in /workspace
+Exec=sagax-desktop terminal
+Icon=utilities-terminal
+Terminal=false
