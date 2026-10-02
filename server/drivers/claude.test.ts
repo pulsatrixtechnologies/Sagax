@@ -2492,11 +2492,15 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     const threadId = "t-folded-steer";
     const { turnId } = await instance.adapter.sendTurn({ threadId, text: "first" });
     await recorder.until((e) => e.type === "item.completed" && e.itemType === "tool");
-    await expect(instance.adapter.steer!(threadId, "and also this")).resolves.toBe("steered");
+    await expect(instance.adapter.steer!(threadId, "and also this", { steerId: "steer-folded-0001" })).resolves.toBe("steered");
     await expect.poll(() => existsSync(received)).toBe(true);
     writeFileSync(finishGate, "finish");
     const completed = await recorder.until((e) => e.type === "turn.completed");
     expect(completed).toMatchObject({ turnId, ok: true });
+    // the harness learns the words were taken in, under the id it gave them
+    const taken = recorder.events.find((e) => e.type === "steer.received" && (e as { steerId: string }).steerId === "steer-folded-0001");
+    expect(taken).toMatchObject({ turnId });
+    expect(recorder.events.indexOf(taken!)).toBeLessThan(recorder.events.indexOf(completed));
     expect(recorder.events.filter((e) => e.type === "turn.completed")).toHaveLength(1);
     const nativeLog = readFileSync(join(NATIVE_DIR, `${threadId}.ndjson`), "utf8");
     expect(nativeLog).toContain('"isReplay":true');

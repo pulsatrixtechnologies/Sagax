@@ -184,12 +184,15 @@ export function LiveCall({ bot }: { bot: Bot }) {
       // a new turn: what the interrupted answer had left is never spoken
       dropOldReply.current = false;
       const language = readVoiceModeSettings().language;
+      // one id per utterance: the server delivers it once, whatever retries
+      const utteranceId = crypto.randomUUID();
       dispatch({
         type: "send",
         botId: current.id,
         text: said,
         threadId: current.threadId,
-        voiceCall: { callId, ...(interrupted ? { interrupted: true } : {}), ...(language && language !== "auto" ? { language } : {}) },
+        sendId: utteranceId,
+        voiceCall: { callId, utteranceId, ...(interrupted ? { interrupted: true } : {}), ...(language && language !== "auto" ? { language } : {}) },
       });
     },
     [call, callId, dispatch],

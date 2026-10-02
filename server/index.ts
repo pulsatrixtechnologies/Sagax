@@ -26685,9 +26685,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             });
             // steer was offered only when a live instance could take it;
             // the second check carries that fact to the type system.
+            const steerId = randomUUID();
             if (busyAdmission.action === "steer" && instance?.adapter.steer) {
               steered = await instance.adapter
-                .steer(threadId, voiceCallSteerPrompt(promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"), voiceCall))
+                .steer(threadId, voiceCallSteerPrompt(promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"), voiceCall), { steerId })
                 .catch((): SteerOutcome => "indeterminate");
             }
             // steer() is awaited adapter work. The turn can settle, the task can
@@ -26733,7 +26734,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                 ...(voiceCall ? { voiceCall } : {}),
               });
               // Offered to the next turn again unless the person stops this one.
-              handoffs.steered(threadId, steerTarget, instance?.instanceId, message.id);
+              handoffs.steered(threadId, steerTarget, instance?.instanceId, message.id, steerId);
               return { ok: true as const, steered: true as const, threadId, message };
             }
             if (!current.busy) {
@@ -26809,9 +26810,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const prompt = held.items.map((item) => voiceCallSteerPrompt(item.prompt, item.voiceCall)).join("\n\n");
       const steerTarget = handoffs.current(bot.threadId);
       let steered: SteerOutcome = "refused";
+      const steerId = randomUUID();
       if (currentAtStart?.busy && instance?.adapter.capabilities.queueing && instance.adapter.steer) {
         steered = await instance.adapter
-          .steer(bot.threadId, prompt)
+          .steer(bot.threadId, prompt, { steerId })
           .catch((): SteerOutcome => "indeterminate");
       }
       // The steer was awaited adapter work: re-read every ownership
@@ -26840,7 +26842,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ...(item.voiceCall ? { voiceCall: item.voiceCall } : {}),
         }));
         // Offered to the next turn again unless the person stops this one.
-        for (const message of messages) handoffs.steered(bot.threadId, steerTarget, instance?.instanceId, message.id);
+        // one steer carried them all: the engine taking it in takes them all
+        for (const message of messages) handoffs.steered(bot.threadId, steerTarget, instance?.instanceId, message.id, steerId);
         const queueIds = held.items.map((item) => item.messageId);
         settleHeldSteeredQueue(held);
         return json(res, 200, { ok: true, steered: true, threadId: bot.threadId, messages, queueIds });

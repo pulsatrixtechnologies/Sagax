@@ -2147,7 +2147,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             // --replay-user-messages: a model call took this stdin message in.
             // A steer echoed before its turn's `result` was folded into it.
             if (o.isReplay === true) {
-              if (typeof o.uuid === "string") session.turn?.pendingSteers.delete(o.uuid);
+              // a steer's words were taken in: the harness counts them received
+              // (the turn's own prompt is echoed too, and is not a steer)
+              if (typeof o.uuid === "string" && session.turn?.pendingSteers.delete(o.uuid)) {
+                emit({ ...base(threadId, currentTurnId()), type: "steer.received", steerId: o.uuid });
+              }
               break;
             }
             for (const b of Array.isArray(o.message?.content) ? o.message.content : []) {
@@ -2518,14 +2522,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
      * native turn, which this driver keeps inside the same logical turn.
      * "refused" when nothing is running here to steer or the stdin write
      * provably failed; the caller queues those words. */
-    const steer = async (threadId: string, text: string): Promise<SteerOutcome> => {
+    const steer = async (threadId: string, text: string, options?: { steerId?: string }): Promise<SteerOutcome> => {
       const s = sessions.get(threadId);
       if (!s || !s.turn || s.turn.settled || s.closing || s.child.exitCode !== null) return "refused";
       const turn = s.turn;
       // Counted before the write: a `result` read while the words are still
       // on their way must hold for them too. A failed write takes it back.
       // The uuid is what the CLI's echo names when a model call takes it in.
-      const id = randomUUID();
+      const id = options?.steerId && /^[\w-]{8,80}$/.test(options.steerId) ? options.steerId : randomUUID();
       turn.pendingSteers.add(id);
       if (!(await writeUser(s, threadId, { ...claudeUserMessage(text, undefined), uuid: id }))) {
         turn.pendingSteers.delete(id);

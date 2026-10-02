@@ -51,7 +51,7 @@ async function callFixture(env: Record<string, string> = {}) {
   const bot = (await api("POST", "/api/bots", { name: "Cryptic" }, 201)).bot;
   const thread = bot.threadId as string;
   const messages = async () => (await api("GET", `/api/threads/${thread}/messages?limit=200`)).messages as any[];
-  const busy = async () => Boolean((await api("GET", `/api/bots/${bot.id}`)).bot?.busy);
+  const busy = async () => Boolean((await api("GET", "/api/bots")).bots.find((entry: any) => entry.id === bot.id)?.busy);
   const send = (body: Record<string, unknown>, status = 202) => api("POST", `/api/bots/${bot.id}/messages`, { threadId: thread, ...body }, status);
   const open = (name: string) => writeFileSync(join(gates, name), "open");
   return { fixture, api, bot, thread, messages, busy, send, prompts, open };
@@ -85,6 +85,41 @@ it("marks every turn of a live call, typed or said, on every path", async () => 
     await expect.poll(replies, { timeout: 15_000 }).toBe(4);
     expect(t.prompts().at(-1)).not.toContain(VOICE_CALL_TURN_MARK);
     expect((await t.messages()).filter((m) => m.role === "user").at(-1)?.voiceCall).toBeUndefined();
+  } finally {
+    await t.fixture.close();
+  }
+}, 120_000);
+
+it("delivers words said while the bot works once: steered in, never handed back as maybe seen", async () => {
+  const t = await callFixture({ FAKE_CLAUDE_MODE: "slow" });
+  try {
+    await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
+    const replies = async () => (await t.messages()).filter((m) => m.role === "bot" && m.turnTerminal).length;
+    await t.send({ text: "[gate:one] take a good memory of when we are talking", sendId: "send-one-0000000001", voiceCall: { callId: CALL_ID, utteranceId: "utt-00000001" } });
+    await expect.poll(t.busy, { timeout: 15_000 }).toBe(true);
+    // said while the bot works: joins its turn
+    const steered = await t.send({ text: "give me a good prompt", sendId: "send-two-0000000002", voiceCall: { callId: CALL_ID, utteranceId: "utt-00000002" } });
+    expect(steered.steered).toBe(true);
+    // the same utterance again (a retry with a new send id): the first receipt
+    const again = await t.send({ text: "give me a good prompt", sendId: "send-two-retry-00000003", voiceCall: { callId: CALL_ID, utteranceId: "utt-00000002" } });
+    expect(again.message?.id).toBe(steered.message.id);
+    t.open("one");
+    await expect.poll(replies, { timeout: 15_000 }).toBe(1);
+    await expect.poll(t.busy, { timeout: 15_000 }).toBe(false);
+    t.open("two");
+    await t.send({ text: "[gate:two] and now", voiceCall: { callId: CALL_ID, utteranceId: "utt-00000003" } });
+    await expect.poll(replies, { timeout: 15_000 }).toBe(2);
+    const sent = t.prompts();
+    // the steer went into the first turn (its reply took it in); the next
+    // turn never gets it again
+    const first = (await t.messages()).find((m) => m.role === "bot" && m.kind === "text" && String(m.text).startsWith("reply to:"));
+    expect(first?.text).toContain("steered:");
+    expect(first?.text).toContain("give me a good prompt");
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).not.toContain("give me a good prompt");
+    expect(sent[1]).not.toContain("you may already have it");
+    const users = (await t.messages()).filter((m) => m.role === "user");
+    expect(users.filter((m) => m.text === "give me a good prompt")).toHaveLength(1);
   } finally {
     await t.fixture.close();
   }

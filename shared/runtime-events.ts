@@ -49,6 +49,9 @@ export type RuntimeEvent = RuntimeEventBase &
       }
     | { type: "session.model-variants"; model: string; variants: ModelVariantState }
     | { type: "session.exited"; reason?: string }
+    /** A model call took in input steered into the running turn (the
+     * `steerId` the harness gave Adapter.steer). */
+    | { type: "steer.received"; steerId: string }
     | { type: "turn.started" }
     | {
         type: "turn.retrying";

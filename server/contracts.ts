@@ -439,8 +439,13 @@ export interface ProviderAdapter {
    * - "indeterminate" — delivered, but the outcome is unknown (the RPC
    *   timed out after accept, transport failed, or the turn settled while
    *   the answer was in flight). The caller must NOT re-queue: the words
-   *   may already be running, and replaying them would execute them twice. */
-  steer?(threadId: ThreadId, text: string): Promise<SteerOutcome>;
+   *   may already be running, and replaying them would execute them twice.
+   *
+   * `steerId` names this input: a driver that learns when a model call takes
+   * it in (Claude's --replay-user-messages echo) emits `steer.received` with
+   * it, so the harness counts the words as received instead of offering
+   * them again on the next turn as a message "you may already have". */
+  steer?(threadId: ThreadId, text: string, options?: { steerId?: string }): Promise<SteerOutcome>;
   hasSession(threadId: ThreadId): boolean;
   stopAll(): Promise<void>;
   onEvent(listener: RuntimeEventListener): () => void;
