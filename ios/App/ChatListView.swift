@@ -25,6 +25,11 @@ struct ChatListView: View {
     @State private var showingWalkie = false
     @State private var showingNewGroup = false
     @State private var showingNewSection = false
+    @State private var showingPlusMenu = false
+    @State private var showingSearch = false
+    @State private var showingCreateBot = false
+    @State private var showingSettings = false
+    @AppStorage(CollapsedSections.key) private var collapsedRaw = "[]"
     @State private var expandedBots = Set<String>()
     @State private var collapsedFolders = Set<String>()
     @State private var creatingThreads = Set<String>()
@@ -41,7 +46,90 @@ struct ChatListView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            GeometryReader { geo in
+            homeContent
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: Chat.self) { ChatView(chat: $0) }
+            .onValueChange(of: session.notificationChat) { chat in
+                guard let chat else { return }
+                path.append(chat)
+                session.consumeNotificationChat()
+            }
+            .onValueChange(of: session.pendingChat) { chat in
+                guard let chat else { return }
+                path.append(chat)
+                session.consumePendingChat()
+            }
+            .task {
+                if let chat = session.notificationChat {
+                    path.append(chat)
+                    session.consumeNotificationChat()
+                }
+                if let chat = session.pendingChat {
+                    path.append(chat)
+                    session.consumePendingChat()
+                }
+            }
+#if DEBUG
+            // Preview-only routes let the screenshot harness reach screens
+            // that normally require a paired computer and a tap.
+            .task {
+                if ProcessInfo.processInfo.arguments.contains("-open-new-section") {
+                    showingNewSection = true
+                }
+                if ProcessInfo.processInfo.arguments.contains("-open-walkie") {
+                    showingWalkie = true
+                }
+                if ProcessInfo.processInfo.arguments.contains("-open-first"),
+                   path.isEmpty, let first = chats.first {
+                    path.append(first.chat)
+                }
+            }
+#endif
+            .sheet(isPresented: $showingUpdates) {
+                UpdatesSheet { chat in
+                    showingUpdates = false
+                    path.append(chat)
+                }
+            }
+            .fullScreenCover(isPresented: $showingWalkie) {
+                WalkieView { chat in
+                    showingWalkie = false
+                    path.append(chat)
+                }
+                .environmentObject(session)
+            }
+            .sheet(isPresented: $showingNewSection) {
+                NewSectionSheet()
+            }
+            .sheet(item: $managingThreads) { chat in
+                TaskManagerView(chat: chat) { threadId in
+                    guard let bot = session.state.bot(forThread: threadId) else { return }
+                    managingThreads = nil
+                    path.append(Chat.bot(bot))
+                }
+            }
+            .task(id: query) {
+                let expected = query
+                guard expected.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else {
+                    searchHits = []
+                    searching = false
+                    return
+                }
+                searching = true
+                defer {
+                    if query == expected { searching = false }
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled, query == expected else { return }
+                let hits = await session.search(expected)
+                guard !Task.isCancelled, query == expected else { return }
+                searchHits = hits
+            }
+        }
+    }
+
+    private var legacyHome: some View {
+            GeometryReader { _ in
             VStack(spacing: 0) {
                 header
                 StatusBanner()
@@ -121,91 +209,6 @@ struct ChatListView: View {
                 }
             }
             }
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: Chat.self) { ChatView(chat: $0) }
-            .onValueChange(of: session.notificationChat) { chat in
-                guard let chat else { return }
-                path.append(chat)
-                session.consumeNotificationChat()
-            }
-            .onValueChange(of: session.pendingChat) { chat in
-                guard let chat else { return }
-                path.append(chat)
-                session.consumePendingChat()
-            }
-            .task {
-                if let chat = session.notificationChat {
-                    path.append(chat)
-                    session.consumeNotificationChat()
-                }
-                if let chat = session.pendingChat {
-                    path.append(chat)
-                    session.consumePendingChat()
-                }
-            }
-#if DEBUG
-            // Preview-only routes let the screenshot harness reach screens
-            // that normally require a paired computer and a tap.
-            .task {
-                if ProcessInfo.processInfo.arguments.contains("-open-new-section") {
-                    showingNewSection = true
-                }
-                if ProcessInfo.processInfo.arguments.contains("-open-walkie") {
-                    showingWalkie = true
-                }
-                if ProcessInfo.processInfo.arguments.contains("-open-first"),
-                   path.isEmpty, let first = chats.first {
-                    path.append(first.chat)
-                }
-            }
-#endif
-            .sheet(isPresented: $showingUpdates) {
-                UpdatesSheet { chat in
-                    showingUpdates = false
-                    path.append(chat)
-                }
-            }
-            .fullScreenCover(isPresented: $showingWalkie) {
-                WalkieView { chat in
-                    showingWalkie = false
-                    path.append(chat)
-                }
-                .environmentObject(session)
-            }
-            .sheet(isPresented: $showingNewGroup) {
-                NewGroupSheet { room in
-                    showingNewGroup = false
-                    path.append(Chat.room(room))
-                }
-            }
-            .sheet(isPresented: $showingNewSection) {
-                NewSectionSheet()
-            }
-            .sheet(item: $managingThreads) { chat in
-                TaskManagerView(chat: chat) { threadId in
-                    guard let bot = session.state.bot(forThread: threadId) else { return }
-                    managingThreads = nil
-                    path.append(Chat.bot(bot))
-                }
-            }
-            .task(id: query) {
-                let expected = query
-                guard expected.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else {
-                    searchHits = []
-                    searching = false
-                    return
-                }
-                searching = true
-                defer {
-                    if query == expected { searching = false }
-                }
-                try? await Task.sleep(for: .milliseconds(250))
-                guard !Task.isCancelled, query == expected else { return }
-                let hits = await session.search(expected)
-                guard !Task.isCancelled, query == expected else { return }
-                searchHits = hits
-            }
-        }
     }
 
     // MARK: - Header
@@ -317,7 +320,7 @@ struct ChatListView: View {
             if !session.state.botChats.isEmpty {
                 channelsStrip(title: "Bot threads", rooms: session.state.botChats, showsCreate: false)
             }
-        case .compact:
+        case .compact, .standard:
             compactRoomsSection(
                 title: "Groups",
                 rooms: session.state.unsectionedChannels,
@@ -352,7 +355,7 @@ struct ChatListView: View {
                             .padding(.top, section.chiefs.isEmpty ? 0 : 8)
                             .padding(.bottom, section.bots.isEmpty ? 4 : 8)
                     }
-                case .compact:
+                case .compact, .standard:
                     sectionLabel(Text(verbatim: section.name))
                         .padding(.top, sectionSpacing)
                         .padding(.bottom, 4)
@@ -455,7 +458,7 @@ struct ChatListView: View {
     private func botRows(_ rows: [ChatSummary]) -> some View {
         switch density {
         case .comfortable: comfortableRows(rows)
-        case .compact: compactRows(rows)
+        case .compact, .standard: compactRows(rows)
         }
     }
 
@@ -1130,5 +1133,407 @@ enum RelativeStamp {
         if calendar.isDateInToday(date) { return "Today \(time)" }
         if calendar.isDateInYesterday(date) { return "Yesterday \(time)" }
         return "\(date.formatted(.dateTime.day().month(.abbreviated))) \(time)"
+    }
+}
+
+// MARK: - Standard home (reference 01, 18)
+
+extension ChatListView {
+    @ViewBuilder
+    var homeContent: some View {
+        Group {
+            if density == .standard {
+                standardHome
+            } else {
+                legacyHome
+            }
+        }
+        .overlay { homeOverlays }
+        .task(id: session.connection?.id) { await session.loadAccount() }
+#if DEBUG
+        .task {
+            switch ParityLaunch.current?.screen {
+            case .homePlusMenu?: showingPlusMenu = true
+            case .search?: showingSearch = true
+            case .newGroupChat?: showingNewGroup = true
+            case .createBot?: showingCreateBot = true
+            default: break
+            }
+        }
+#endif
+    }
+
+    private var collapsedSections: Set<String> { CollapsedSections.decode(collapsedRaw) }
+
+    private func toggleSection(_ key: String) {
+        var set = collapsedSections
+        if set.contains(key) { set.remove(key) } else { set.insert(key) }
+        collapsedRaw = CollapsedSections.encode(set)
+    }
+
+    private var standardHome: some View {
+        ZStack(alignment: .top) {
+            Theme.bg.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Color.clear.frame(height: HomeMetrics.headerTop + HomeMetrics.headerHeight + 8)
+                    StatusBanner()
+                        .frame(maxWidth: .infinity)
+                    if pinnedChats.isEmpty {
+                        Color.clear.frame(height: 12)
+                    } else {
+                        pinnedGrid
+                            .padding(.top, HomeMetrics.pinnedTop - HomeMetrics.headerTop - HomeMetrics.headerHeight - 8)
+                    }
+                    standardSections
+                }
+                .padding(.bottom, 32)
+            }
+            .refreshable { await session.refresh() }
+            .accessibilityIdentifier("roster-list")
+            .topScrollEdgeFade(height: HomeMetrics.headerTop + HomeMetrics.headerHeight + 8)
+            .overlay {
+                if rosterIsEmpty {
+                    EmptyStateView(
+                        "No bots yet",
+                        systemImage: "bubble.left.and.bubble.right",
+                        description: Text("Bots you create on your computer show up here.")
+                    )
+                }
+            }
+            standardHeader
+        }
+        .overlay(alignment: .top) {
+            if CompanionLayout.supportsIslandPresentation {
+                NeedsYouIsland(
+                    update: session.state.updates.first { $0.kind == .needsYou }
+                ) { chat in path.append(chat) }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    // MARK: Header
+
+    private var standardHeader: some View {
+        HStack(spacing: Theme.Metric.controlGap) {
+            HomeAccountButton { showingSettings = true }
+            Spacer(minLength: 0)
+            GlassCircleButton(systemImage: "magnifyingglass", accessibilityLabel: "Search") {
+                showingSearch = true
+            }
+            .accessibilityIdentifier("home-search")
+            GlassCircleButton(systemImage: "plus", accessibilityLabel: "Create") {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { showingPlusMenu = true }
+            }
+            .opacity(showingPlusMenu ? 0 : 1)
+            .contextMenu { plusLongPressMenu }
+            .accessibilityIdentifier("home-plus")
+        }
+        .padding(.horizontal, Theme.Metric.screenEdge)
+        .padding(.top, HomeMetrics.headerTop)
+    }
+
+    /// A long press on "+" reaches what the floating bar used to hold.
+    @ViewBuilder
+    private var plusLongPressMenu: some View {
+        Button {
+            showingUpdates = true
+        } label: {
+            Label("Updates", systemImage: "bell")
+        }
+        Button {
+            showingWalkie = true
+        } label: {
+            Label("Walkie", systemImage: "waveform")
+        }
+        if session.canAdminister {
+            Button {
+                showingNewSection = true
+            } label: {
+                Label("New section", systemImage: "folder.badge.plus")
+            }
+            .disabled(!hasVisibleBots)
+        }
+    }
+
+    // MARK: Pinned
+
+    /// The Chief of Staff (when it has no section), pinned bots, then
+    /// pinned groups.
+    private var pinnedChats: [Chat] {
+        var chats: [Chat] = []
+        if let chief = session.state.unsectionedChief { chats.append(.bot(chief)) }
+        chats += session.state.pinnedBots.sorted { $0.createdAt < $1.createdAt }.map(Chat.bot)
+        chats += session.state.rooms.filter { $0.dm != true && $0.pinned == true }.map(Chat.room)
+        return chats
+    }
+
+    private var pinnedGrid: some View {
+        let columns = Array(repeating: GridItem(.fixed(HomeMetrics.pinnedColumn), spacing: 0), count: 3)
+        return LazyVGrid(columns: columns, spacing: 0) {
+            ForEach(pinnedChats, id: \.id) { chat in
+                Button { openChat(chat) } label: {
+                    HomePinnedCell(chat: chat, state: MausState.forChat(chat, in: session.state))
+                }
+                .buttonStyle(.plain)
+                .contextMenu { chatMenu(chat) }
+                .accessibilityIdentifier("pinned.\(chat.id)")
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: Sections
+
+    @ViewBuilder
+    private var standardSections: some View {
+        // Unread already shows as dots on the rows; this lists only what
+        // waits on the person.
+        let waitingOnYou = attention.filter { $0.task.activity == "waiting-on-you" }
+        if !waitingOnYou.isEmpty {
+            section(key: "__attention", title: String(localized: "Needs attention")) {
+                ForEach(waitingOnYou) { entry in
+                    Button {
+                        Haptics.selection()
+                        openAttention(entry)
+                    } label: {
+                        AttentionRow(entry: entry)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, HomeMetrics.rowLeading)
+                }
+            }
+        }
+
+        ForEach(session.state.sidebarSections) { sidebar in
+            section(key: sidebar.name, title: sidebar.name, rename: true) {
+                homeRows(chats: sidebar.chiefs.map(Chat.bot)
+                    + sidebar.channels.filter { $0.pinned != true }.map(Chat.room)
+                    + sidebar.bots.map(Chat.bot))
+            }
+        }
+
+        let unsectioned = session.state.unsectionedBots
+        if !unsectioned.isEmpty {
+            section(key: "__bots", title: String(localized: "Bots")) {
+                homeRows(chats: unsectioned.map(Chat.bot))
+            }
+        }
+
+        let groups = session.state.unsectionedChannels.filter { $0.pinned != true }
+        if !groups.isEmpty {
+            section(key: "__groups", title: String(localized: "Group Chats")) {
+                homeRows(chats: groups.map(Chat.room))
+            }
+        }
+
+        if !session.state.botChats.isEmpty {
+            section(key: "__botchats", title: String(localized: "Bot threads")) {
+                homeRows(chats: session.state.botChats.map(Chat.room))
+            }
+        }
+    }
+
+    private func section<Rows: View>(key: String, title: String, rename: Bool = false, @ViewBuilder rows: () -> Rows) -> some View {
+        let collapsed = collapsedSections.contains(key)
+        return VStack(alignment: .leading, spacing: 0) {
+            HomeSectionHeader(title: title, collapsed: collapsed) { toggleSection(key) }
+                .contextMenu {
+                    Button {
+                        toggleSection(key)
+                    } label: {
+                        Label(collapsed ? "Expand" : "Collapse", systemImage: collapsed ? "chevron.down" : "chevron.up")
+                    }
+                    if session.canAdminister {
+                        Button {
+                            showingNewSection = true
+                        } label: {
+                            Label("New section", systemImage: "folder.badge.plus")
+                        }
+                        .disabled(!hasVisibleBots)
+                    }
+                }
+                .accessibilityIdentifier("section.\(key)")
+            if !collapsed {
+                rows()
+            }
+        }
+    }
+
+    /// Rows in the roster's order: unread first, then the most recent.
+    private func homeRows(chats: [Chat]) -> some View {
+        let ids = Set(chats.map(\.id))
+        let ordered = session.state.chatSummaries(activity: activity).filter { ids.contains($0.chat.id) }.map(\.chat)
+        let waiting = waitingChats
+        let queued = session.state.queuedThreadIds
+        return ForEach(ordered, id: \.id) { chat in
+            let messages = session.state.visibleTranscript(forThread: chat.threadId)
+            Button { openChat(chat) } label: {
+                HomeChatRow(
+                    chat: chat,
+                    preview: rosterPreviewLine(messages, detail: activity),
+                    stamp: RelativeStamp.list(messages.last?.at ?? 0),
+                    status: rowStatus(chat, waiting: waiting.contains(chat.id), queued: queued),
+                    state: MausState.forChat(chat, in: session.state)
+                )
+            }
+            .buttonStyle(.plain)
+            .contextMenu { chatMenu(chat) }
+            .accessibilityIdentifier("chat-row.\(chat.id)")
+        }
+    }
+
+    private func rowStatus(_ chat: Chat, waiting: Bool, queued: Set<String>) -> HomeRowStatus {
+        switch chat {
+        case let .bot(bot):
+            let row = CompactBotRow(bot: bot, hasPendingCard: waiting, queuedThreadIds: queued, creatingThread: creatingThreads.contains(bot.id))
+            return HomeRowStatus(waiting: row.showsWaiting, working: row.showsSpinner, threadCount: row.threadCount, unread: row.showsUnreadDot)
+        case let .room(room):
+            let busy = room.busyBotId != nil
+            return HomeRowStatus(waiting: waiting, working: busy, threadCount: 0, unread: room.unread && !busy)
+        }
+    }
+
+    private func openChat(_ chat: Chat) {
+        Haptics.selection()
+        path.append(session.threadSelection.restoringThread(chat, connectionID: session.connection?.id))
+    }
+
+    // MARK: Long press
+
+    @ViewBuilder
+    private func chatMenu(_ chat: Chat) -> some View {
+        switch chat {
+        case let .bot(bot):
+            if bot.chiefOfStaff != true {
+                Button {
+                    Task { await session.setPinned(bot, pinned: bot.pinned != true) }
+                } label: {
+                    Label(bot.pinned == true ? "Unpin" : "Pin", systemImage: bot.pinned == true ? "pin.slash" : "pin")
+                }
+            }
+            Button {
+                createThread(for: bot)
+            } label: {
+                Label("New thread", systemImage: "square.and.pencil")
+            }
+            .disabled(creatingThreads.contains(bot.id))
+            Button {
+                managingThreads = chat
+            } label: {
+                Label("Threads", systemImage: "list.bullet")
+            }
+            if session.canAdminister {
+                Menu {
+                    ForEach(session.state.sidebarSections.map(\.name).filter { $0 != bot.section }, id: \.self) { name in
+                        Button(name) {
+                            Task { await session.assignSection(name: name, botIds: [bot.id]) }
+                        }
+                    }
+                    Button {
+                        showingNewSection = true
+                    } label: {
+                        Label("New section", systemImage: "folder.badge.plus")
+                    }
+                } label: {
+                    Label("Move to section", systemImage: "folder")
+                }
+            }
+        case let .room(room):
+            if session.groupPinsSupported {
+                Button {
+                    Task { await session.setPinned(room, pinned: room.pinned != true) }
+                } label: {
+                    Label(room.pinned == true ? "Unpin" : "Pin", systemImage: room.pinned == true ? "pin.slash" : "pin")
+                }
+            }
+            Button {
+                managingThreads = chat
+            } label: {
+                Label("Threads", systemImage: "list.bullet")
+            }
+        }
+    }
+
+    private func createThread(for bot: Bot) {
+        guard !creatingThreads.contains(bot.id) else { return }
+        creatingThreads.insert(bot.id)
+        Task {
+            defer { creatingThreads.remove(bot.id) }
+            if let created = await session.createRosterThread(for: bot) {
+                path.append(Chat.bot(created))
+            }
+        }
+    }
+
+    // MARK: Overlays
+
+    @ViewBuilder
+    private var homeOverlays: some View {
+        ZStack {
+            if showingSettings {
+                CardSheetContainer(onDismiss: { showingSettings = false }) {
+                    NavigationStack {
+                        SettingsView()
+                            .toolbar {
+                                ToolbarItem(placement: .confirmationAction) {
+                                    Button("Done") { showingSettings = false }
+                                }
+                            }
+                    }
+                }
+                .transition(.move(edge: .bottom))
+                .zIndex(1)
+            }
+            if showingCreateBot {
+                CreateBotSheet(close: { showingCreateBot = false }) { bot in
+                    showingCreateBot = false
+                    path.append(Chat.bot(bot))
+                }
+                .transition(.move(edge: .bottom))
+                .zIndex(2)
+            }
+            if showingNewGroup {
+                NewGroupSheet(close: { showingNewGroup = false }) { room in
+                    showingNewGroup = false
+                    path.append(Chat.room(room))
+                }
+                .transition(.move(edge: .bottom))
+                .zIndex(3)
+            }
+            if showingSearch {
+                SearchSheet(close: { showingSearch = false }) { chat in
+                    showingSearch = false
+                    path.append(session.threadSelection.restoringThread(chat, connectionID: session.connection?.id))
+                } openHit: { hit in
+                    Task {
+                        if let chat = await session.open(hit) {
+                            showingSearch = false
+                            path.append(chat)
+                        }
+                    }
+                }
+                .transition(.move(edge: .bottom))
+                .zIndex(4)
+            }
+            if showingPlusMenu {
+                HomePlusMenu(canCreateBot: session.canAdminister) {
+                    showingPlusMenu = false
+                    showingCreateBot = true
+                } newGroup: {
+                    showingPlusMenu = false
+                    showingNewGroup = true
+                } dismiss: {
+                    withAnimation(.easeOut(duration: 0.18)) { showingPlusMenu = false }
+                }
+                .padding(.top, HomeMetrics.headerTop - 6)
+                .zIndex(5)
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingSearch)
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingNewGroup)
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingCreateBot)
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingSettings)
     }
 }

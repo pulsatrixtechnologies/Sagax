@@ -64,6 +64,14 @@ enum ParityScreen: String, CaseIterable {
 
     var opensComputer: Bool { self == .computer || self == .computerTrackpadToast }
 
+    /// Screens the home opens itself: its "+" menu and its sheets.
+    var opensFromHome: Bool {
+        switch self {
+        case .home, .homePlusMenu, .search, .newGroupChat, .createBot: true
+        default: false
+        }
+    }
+
     /// Today's profile sheet stands in for the profile screens until P4.
     var opensProfile: Bool {
         switch self {
@@ -136,7 +144,7 @@ struct ParityScreenLauncher: ViewModifier {
                     }
                     return
                 }
-                if screen == .home { return }
+                if screen.opensFromHome { return }
                 for _ in 0..<150 where session.state.bots.isEmpty {
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
@@ -148,8 +156,6 @@ struct ParityScreenLauncher: ViewModifier {
                     NavigationStack { SettingsView() }.environmentObject(session)
                 case .plugins:
                     NavigationStack { ConnectedAppsView() }.environmentObject(session)
-                case .newGroupChat:
-                    NewGroupSheet { _ in presented = nil }.environmentObject(session)
                 default:
                     EmptyView()
                 }
@@ -163,7 +169,7 @@ struct ParityScreenLauncher: ViewModifier {
             }
     }
 
-    private static let sheetScreens: Set<ParityScreen> = [.settingsTop, .settingsBottom, .plugins, .newGroupChat]
+    private static let sheetScreens: Set<ParityScreen> = [.settingsTop, .settingsBottom, .plugins]
 
     private var sheetBinding: Binding<Bool> {
         Binding(
@@ -174,7 +180,7 @@ struct ParityScreenLauncher: ViewModifier {
 
     private var coverBinding: Binding<Bool> {
         Binding(
-            get: { presented.map { !Self.sheetScreens.contains($0) && !$0.opensAraChat && $0 != .home } ?? false },
+            get: { presented.map { !Self.sheetScreens.contains($0) && !$0.opensAraChat && !$0.opensFromHome } ?? false },
             set: { if !$0 { presented = nil } }
         )
     }

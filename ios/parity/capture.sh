@@ -79,6 +79,12 @@ log "simulator $DEVICE_NAME ($UDID)"
 xcrun simctl boot "$UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$UDID" -b >/dev/null
 xcrun simctl ui "$UDID" appearance dark
+# The references' keyboard: French (Canada) with English, no swipe-typing
+# introduction, no dictation key.
+xcrun simctl spawn "$UDID" defaults write -g AppleKeyboards -array \
+  "fr_CA@sw=QWERTY-French-Canada;hw=Automatic" "en_US@sw=QWERTY;hw=Automatic" "emoji@sw=Emoji" >/dev/null 2>&1 || true
+xcrun simctl spawn "$UDID" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true >/dev/null 2>&1 || true
+xcrun simctl spawn "$UDID" defaults write com.apple.assistant.support "Dictation Enabled" -bool false >/dev/null 2>&1 || true
 xcrun simctl status_bar "$UDID" override --time "6:54" \
   --dataNetwork wifi --wifiMode active --wifiBars 3 \
   --cellularMode active --cellularBars 4 \

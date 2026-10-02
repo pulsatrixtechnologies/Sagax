@@ -856,6 +856,24 @@
           659
         ],
         "why": "row mascots 32"
+      },
+      {
+        "rect": [
+          0,
+          655,
+          402,
+          45
+        ],
+        "why": "system keyboard second row: the reference phone types French (Canada) with English (extra ´ key); the simulator's keyboard follows its own languages"
+      },
+      {
+        "rect": [
+          0,
+          770,
+          402,
+          104
+        ],
+        "why": "system keyboard bottom row: language label (FR EN) and dictation key follow the device's keyboard settings"
       }
     ]
   },
@@ -950,6 +968,24 @@
           17
         ],
         "why": "instructions lead (placeholder)"
+      },
+      {
+        "rect": [
+          0,
+          655,
+          402,
+          45
+        ],
+        "why": "system keyboard second row: the reference phone types French (Canada) with English (extra ´ key); the simulator's keyboard follows its own languages"
+      },
+      {
+        "rect": [
+          0,
+          770,
+          402,
+          104
+        ],
+        "why": "system keyboard bottom row: language label (FR EN) and dictation key follow the device's keyboard settings"
       }
     ]
   },
