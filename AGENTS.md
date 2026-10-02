@@ -392,7 +392,8 @@ server `sagax-desktop` (shell, files, search, fetch, offscreen browser,
 computer use, Local VM), and the engine's own network traffic leaves through
 it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 `server/desktop-egress.test.ts`, `server/attachment-staging.test.ts`,
-`electron/desktop-bridge.node-test.mjs` or `scripts/verify-desktop-bridge.ts`:
+`electron/local-vm.node-test.mjs`, `electron/desktop-bridge.node-test.mjs` or
+`scripts/verify-desktop-bridge.ts`:
 
 - Where tools run is decided once per turn by `resolveBotWorkplace`: the
   speaker's desktop when it is connected and their preference
@@ -414,6 +415,38 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
   and VPN, refuses its own loopback and link-local, and applies "local network
   only". Destinations (host:port only) go to `desktop-bridge-audit.jsonl` and
   the desktop's own activity log.
+- The OS proxy, per destination: `session.resolveProxy` (it evaluates a PAC
+  file the system names) gives the routes, tried in order (`proxyChain`,
+  `openConnection` in `electron/desktop-tunnel.mjs`): HTTP CONNECT, HTTPS
+  proxy, SOCKS4a and SOCKS5. A SOCKS5 user name and password comes from the
+  app's `ALL_PROXY`/`SOCKS_PROXY` (`socks5://user:password@host:port`), else
+  from what the person typed once in the app's own window when the proxy
+  asked (`electron/proxy-credentials.mjs`: kept per proxy host:port with
+  `safeStorage` in `proxy-passwords.bin`, Cancel not asked again until a
+  restart, a refused saved password forgotten). The OS's own proxy passwords
+  (Keychain, Credential Manager) are not read. A proxy that fails never turns
+  into a direct connection unless the answer lists DIRECT after it; a failed
+  system proxy lookup (PAC out of reach, script error) is direct and logged
+  as `direct (system proxy lookup failed)`. Behind a proxy, a name this
+  computer cannot resolve is the proxy's to resolve (never with "local
+  network only", never `localhost`). The activity log records the route
+  (`via`) and the detailed error; the server, the bot and the audit get only
+  a coarse reason (`coarseFailure`), never the proxy's address. Real
+  Electron: `pnpm exec electron scripts/verify-desktop-proxy.electron.mjs`.
+- Local VM creation (`local_vm` action `create`, operation `vm_create`):
+  only after the person's yes in the desktop app's own prompt
+  (`confirmBridgeLocalVm` in `electron/main.mjs`, the Local VM's
+  `confirmCreate`), the same one-click setup as the Computer tab from the
+  server's own recipe (`localVmDesktopSpec`, checked on the desktop by
+  `validLocalVmSpec`) on this app's `vm-home`. An existing VM is reported,
+  never recreated; a stale one is repaired from the Computer tab only. After
+  the yes (never before), steps go
+  to `/api/desktop-bridge/<id>/progress` (that desktop's live job only, 50
+  at most); the first one shows the bot's computer being set up to whoever
+  can see the bot (`computer` `provisioning`, then `ready`). The step text
+  is not shown live: it comes back in the tool's result. A turn that ends
+  does not stop a creation under way; the next `create` or `status` reports
+  it.
 - Attachments of the CURRENT message are the speaker's only when the first
   message naming them is theirs; small text ones are inlined, all are copied
   where the tools run at the first tool call, and the tag names that path.

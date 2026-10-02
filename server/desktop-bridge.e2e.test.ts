@@ -15,7 +15,7 @@
 //              told why; the person's status says not connected
 //   authz      Bob's session cannot poll or tunnel for Alice's desktop
 import { spawn, type ChildProcess } from "node:child_process";
-import { createServer, type Server } from "node:http";
+import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { localVmDesktopSpec } from "./container-computer.ts";
 import { SandboxdVerifier } from "./sandboxd-auth.ts";
 import { SandboxService } from "./sandboxd-core.ts";
 import { createSandboxdHandler } from "./sandboxd.ts";
@@ -122,6 +123,27 @@ async function upload(auth: Auth, name: string, body: string): Promise<{ path: s
   return await res.json() as { path: string; name: string };
 }
 
+/** An open /api/events stream (as the browser opens it): what it received. */
+async function openStream(auth: Auth): Promise<{ frames: () => Array<Record<string, any>>; close: () => void }> {
+  const { body } = await api("POST", "/api/auth/stream-ticket", auth);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
+  return new Promise((resolve, reject) => {
+    let received = "";
+    const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
+      expect(res.statusCode).toBe(200);
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => { received += chunk; });
+      res.on("error", () => {});
+      resolve({
+        frames: () => received.split("\n").filter((line) => line.startsWith("data: ")).map((line) => { try { return JSON.parse(line.slice(6)) as Record<string, any>; } catch { return {}; } }),
+        close: () => req.destroy(),
+      });
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 const lastPrompt = () => readFileSync(prompts, "utf8").trimEnd().split("\n").at(-1) ?? "";
 const dump = () => JSON.parse(readFileSync(mcpDump, "utf8")) as { servers: string[]; calls: { server: string; tool: string; ok: boolean; text: string }[] };
 
@@ -166,6 +188,7 @@ posixOnly("organization server: the desktop bridge", () => {
               { server: "sagax-environment", tool: "read_file", arguments: { path: "$ATTACHED_FILE" }, when: "read the attachment" },
               { server: "sagax-desktop", tool: "run_command", arguments: { command: "hostname" }, when: "run it" },
               { server: "sagax-environment", tool: "run_command", arguments: { command: "hostname" }, when: "run it" },
+              { server: "sagax-desktop", tool: "local_vm", arguments: { action: "create" }, when: "create the local vm" },
             ]),
             FAKE_CLAUDE_MCP_DUMP: mcpDump,
             FAKE_CLAUDE_PROMPTS: prompts,
@@ -209,6 +232,12 @@ posixOnly("organization server: the desktop bridge", () => {
     desktop = await connectFakeDesktop({
       base: BASE, cookie: alice.cookie!, name: "Alice's Mac", attachmentsDir: "/Users/alice/Library/Caches/Sagax/attachments",
       resolve: (host, port) => host === "intranet.test" ? { host: "127.0.0.1", port: intranetPort } : { host, port },
+      handle: async (operation, progress) => {
+        if (operation.action !== "vm_create") return { content: [{ type: "text", text: `desktop:${operation.action}` }] };
+        await progress("Downloading the Local VM desktop image");
+        await progress("Creating the Local VM");
+        return { content: [{ type: "text", text: "desktop:vm created" }] };
+      },
     });
     await desktop.tunnelOpen;
     aliceBot = await createBot(alice, "Xavier");
@@ -255,6 +284,29 @@ posixOnly("organization server: the desktop bridge", () => {
     const activity = (await api("GET", "/api/me/desktop-bridge", alice)).body.activity as Array<{ kind: string; detail: string; target: string }>;
     expect(activity.some((entry) => entry.kind === "network" && entry.detail === "intranet.test:80" && entry.target === "user-desktop")).toBe(true);
     expect(activity.some((entry) => entry.kind === "tool" && entry.detail === "read_file")).toBe(true);
+  }, 120_000);
+
+  it("creates the Local VM on the speaker's own computer, its progress taken for the turn", async () => {
+    // Alice sees her bot's computer being set up, then ready; Bob, who
+    // cannot see her bot, receives neither.
+    const aliceStream = await openStream(alice);
+    const bobStream = await openStream(bob);
+    const computerFrames = (stream: { frames: () => Array<Record<string, any>> }) => stream.frames().filter((frame) => frame.kind === "computer" && frame.botId === aliceBot.id).map((frame) => frame.state);
+    const reply = await turn(alice, aliceBot, "create the local vm");
+    await waitFor(async () => computerFrames(aliceStream).includes("ready"));
+    expect(computerFrames(aliceStream)).toEqual(["provisioning", "ready"]);
+    expect(computerFrames(bobStream)).toEqual([]);
+    expect(bobStream.frames().some((frame) => frame.botId === aliceBot.id)).toBe(false);
+    aliceStream.close();
+    bobStream.close();
+    expect(reply).toContain("mcp:local_vm:ok");
+    expect(dump().calls.find((call) => call.tool === "local_vm")?.text).toBe("desktop:vm created");
+    expect(desktop.operations.at(-1)).toEqual({ action: "vm_create", arguments: { spec: localVmDesktopSpec() }, timeout_seconds: 600 });
+    expect(desktop.progress).toEqual([
+      { message: "Downloading the Local VM desktop image", ok: true },
+      { message: "Creating the Local VM", ok: true },
+    ]);
+    expect(docker.containers.size).toBe(0);
   }, 120_000);
 
   it("never reaches Alice's computer for a teammate talking to her bot", async () => {

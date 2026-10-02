@@ -17,6 +17,11 @@
 //   localVmDesktopSpec, checked here), start it. Idempotent.
 // - Installs nothing by itself: an install opens the vendor's download page,
 //   or runs Homebrew, only after the person confirms in an OS dialog.
+// - A bot may ask to create the Local VM when none exists (`create`, the
+//   local_vm tool's create): the same setup from the server's recipe, only
+//   after the person said yes on this computer (`confirmCreate`, the desktop
+//   app's own prompt), with its steps sent to the turn. A stale VM is never
+//   repaired this way: the person repairs it from the Computer tab.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
@@ -267,6 +272,14 @@ export function startRuntimeArgv(product, { platform = process.platform, cli } =
 }
 
 const STEPS = ["runtime", "image", "container", "start"];
+/** What the turn sees for each setup step (Local VM creation by a bot). */
+const STEP_MESSAGES = {
+  runtime: "Checking the container runtime",
+  image: "Preparing the Local VM desktop image",
+  container: "Creating the Local VM",
+  start: "Starting the Local VM",
+};
+const failure = message => ({ ...text(message), isError: true });
 
 export function createLocalVm({
   exec = execArgv, dataDir = path.join(os.homedir(), ".openmausbot"), home = os.homedir(), platform = process.platform, env = process.env,
@@ -274,10 +287,12 @@ export function createLocalVm({
   makeTemp = async () => fs.promises.mkdtemp(path.join(os.tmpdir(), "sagax-local-vm-")), writeFile = (file, data) => fs.promises.writeFile(file, data, { mode: 0o600 }),
   removeDir = dir => fs.promises.rm(dir, { recursive: true, force: true }),
   confirm = async () => false, openExternal = async () => {}, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), startWaitMs = 120_000,
+  confirmCreate = null, pollMs = 1000,
 } = {}) {
   const workspace = path.join(dataDir, "vm-home");
   let job = null;
   let installJob = null;
+  let confirming = false;
   const runEnv = () => runtimeEnv(env, home, platform);
   const detect = () => detectRuntime({ exec, home, platform, env, exists });
   const run = (runtime, args, timeoutSeconds = 60) => exec([runtime.cli, ...args], { timeoutSeconds, env: runEnv() });
@@ -321,10 +336,16 @@ export function createLocalVm({
     ? `A container named ${vm.name} exists but was not created by Sagax; remove it in your container app.`
     : `This Local VM was made for another folder${vm.folder ? ` (${vm.folder})` : ""}${vm.stale === "missing_folder" ? " that no longer exists" : ""}. Repair it from the Computer tab: Sagax recreates it on ${workspace}.`;
 
-  const setupJob = (spec) => {
+  const setupJob = (spec, onStep = null) => {
     const steps = STEPS.map(id => ({ id, state: "pending", detail: "" }));
     const state = { id: randomBytes(6).toString("hex"), state: "running", steps, error: null, code: null, previousFolder: null, startedAt: Date.now() };
-    const step = (id, patch) => Object.assign(steps.find(entry => entry.id === id), patch);
+    const step = (id, patch) => {
+      const entry = Object.assign(steps.find(item => item.id === id), patch);
+      if (onStep && entry.state === "running" && (patch.state === "running" || patch.detail)) {
+        try { onStep(entry.detail ? `${STEP_MESSAGES[id]} (${entry.detail})` : STEP_MESSAGES[id]); } catch { /* best effort */ }
+      }
+      return entry;
+    };
     const fail = (id, message, code) => { step(id, { state: "error", detail: message }); state.state = "error"; state.error = message; state.code = code ?? null; };
     const work = async () => {
       // 1. The runtime: found, and its engine running (started if needed).
@@ -440,6 +461,49 @@ export function createLocalVm({
       if (job?.state === "running") return text({ setup: job });
       job = setupJob(spec);
       return text({ setup: job });
+    },
+    /** Create the Local VM here for a bot, after the person's yes on this
+     * computer. Nothing is reported to the turn before that yes; a turn that
+     * ends does not stop a setup already under way. */
+    async create({ spec, signal, progress = () => {} } = {}) {
+      const report = message => { try { progress(message); } catch { /* best effort */ } };
+      const settled = setup => new Promise(resolve => {
+        const finish = () => resolve(setup.state === "done"
+          ? text(`The Local VM ${spec.container} is ready on this computer.\n${setup.steps.map(entry => `- ${STEP_MESSAGES[entry.id]}`).join("\n")}`)
+          : failure(`Creating the Local VM failed: ${setup.error ?? "unknown error"}`));
+        const tick = () => {
+          if (signal?.aborted) return resolve(failure("The turn ended while the Local VM was being created. It keeps being created on this computer; ask for its status later."));
+          if (setup.state !== "running") return finish();
+          setTimeout(tick, pollMs);
+        };
+        tick();
+      });
+      const describe = setup => { const running = setup.steps.find(entry => entry.state === "running"); return running ? STEP_MESSAGES[running.id] : "starting"; };
+      if (!confirmCreate) throw new Error("This Sagax desktop app cannot create a Local VM here. Update it, or set the Local VM up from the Computer tab.");
+      if (!validLocalVmSpec(spec)) throw new Error("The server sent a Local VM recipe this app does not accept. Update the Sagax app.");
+      if (job?.state === "running") { report(`Already being created on this computer: ${describe(job)}`); return settled(job); }
+      const runtime = await detect();
+      if (!runtime.cli) throw new Error("No container runtime (Docker or Podman) on this computer. Install Docker Desktop or Podman, start it, then ask again.");
+      let needsImage = true;
+      if (runtime.daemonUp) {
+        const { vm } = await current(runtime);
+        if (vm) {
+          if (vm.stale) return failure(staleMessage(vm));
+          return text(vm.state === "running" ? `A Local VM already exists and is running on this computer: ${vm.name}.` : `A Local VM already exists on this computer: ${vm.name} (${vm.state}). Start it with the action start.`);
+        }
+        const image = await run(runtime, ["image", "inspect", spec.image], 30);
+        let labels = {};
+        try { labels = JSON.parse(image.stdout)[0]?.Config?.Labels ?? {}; } catch { /* missing */ }
+        needsImage = !(image.code === 0 && Object.entries(spec.imageLabels).every(([key, value]) => labels[key] === value));
+      }
+      if (confirming) throw new Error("A Local VM creation is already waiting for the person's answer on this computer.");
+      confirming = true;
+      let allowed;
+      try { allowed = await confirmCreate({ runtime: runtime.product ?? runtime.runtime, needsImage, signal }); } finally { confirming = false; }
+      if (signal?.aborted) return failure("The turn ended before the person answered. Nothing was created.");
+      if (!allowed) return failure("The person declined creating a Local VM on their computer. Nothing was created.");
+      if (job?.state !== "running") job = setupJob(spec, report);
+      return settled(job);
     },
     async install(choice) {
       const chosen = INSTALL_CHOICES[choice];

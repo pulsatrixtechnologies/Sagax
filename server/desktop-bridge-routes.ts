@@ -2,7 +2,7 @@
 // signed in to this server as a person, connects out:
 //
 //   POST /api/desktop-bridge/connect                 register this desktop
-//   POST /api/desktop-bridge/<id>/poll|lease|result|disconnect
+//   POST /api/desktop-bridge/<id>/poll|lease|progress|result|disconnect
 //   GET  /api/desktop-bridge/<id>/tunnel   (WebSocket) network egress
 //   GET  /api/me/desktop-bridge            the person's own status + activity
 //   POST /api/desktop-bridge/<id>/system   coarse OS, CPU, memory, disk facts
@@ -23,7 +23,7 @@ import { desktopBridgeRegistration, desktopSystemInfo, type DesktopBridgeOperati
 import type { DesktopTunnels } from "./desktop-egress.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 
-const ID_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/(poll|lease|result|disconnect|system)$/;
+const ID_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/(poll|lease|progress|result|disconnect|system)$/;
 const LOCAL_VM_ROUTE = "/api/me/desktop-bridge/local-vm";
 /** What the person's Computer tab may ask of their own Local VM. */
 const LOCAL_VM_ACTIONS: Record<string, DesktopBridgeOperation["action"]> = {
@@ -150,6 +150,7 @@ export function createDesktopBridgeRoutes(deps: {
         return json(res, 200, { job });
       }
       if (action === "lease") return json(res, 200, { active: deps.bridges.liveJob(id!, auth.session.id, secret, String(body?.jobId)) });
+      if (action === "progress") return json(res, 200, { ok: deps.bridges.progress(id!, auth.session.id, secret, String(body?.jobId), body?.message) });
       if (action === "result") deps.bridges.complete(id!, auth.session.id, secret, String(body?.jobId), body?.result);
       if (action === "disconnect") deps.bridges.disconnect(id!, auth.session.id, secret);
       if (action === "system") {
