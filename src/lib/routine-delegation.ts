@@ -10,7 +10,7 @@
 // session), so the consent cannot ride along unseen at sign-in. Instead it
 // starts once on its own, right after the person creates their first
 // routine (`ensureRoutineDelegation`), and is revoked in the Perspicax
-// console (the person's Sagax tab, `manageUrl`).
+// console (the person's own access page, `manageUrl`).
 import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
 
@@ -22,8 +22,11 @@ export interface RoutineDelegationStatus {
   renewedAt?: number;
   expiresAt?: number;
   suspended: number;
-  /** The person's Sagax tab in the Perspicax console, where it is revoked. */
+  /** The person's own access page in the Perspicax console
+   * (`<issuer>/console/me/access#sagax`), where they revoke it. */
   manageUrl?: string;
+  /** Whose status this is, so a shared browser asks each person once. */
+  principalId?: string;
 }
 
 /** The outcome a hash carries, or null when it carries none. */
@@ -115,7 +118,7 @@ export async function ensureRoutineDelegation(deps: EnsureDelegationDeps = {}): 
     return "unavailable";
   }
   if (status.state === "active") return "active";
-  const key = `${AUTO_CONSENT_KEY}:${status.manageUrl ?? "self"}`;
+  const key = `${AUTO_CONSENT_KEY}:${status.principalId ?? status.manageUrl ?? "self"}`;
   try {
     if (storage?.getItem(key)) return "skipped";
     storage?.setItem(key, String(Date.now()));

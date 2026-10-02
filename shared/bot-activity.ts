@@ -5,6 +5,7 @@
 // GET /api/bots/:id/activity (server/routes/bot-activity.ts), narrowed to
 // what the asking person may read: on an organization server their own
 // threads only, and the routines they may see (routineSeenBy).
+import type { WireAccessCard } from "./wire.ts";
 
 export type BotActivityKind = "session" | "routine" | "hop" | "subagent";
 
@@ -64,6 +65,11 @@ export interface BotActivityDetail extends BotActivityItem {
   note?: string;
   /** The viewer may stop it now. */
   canStop: boolean;
+  /** A failed routine run refused for lack of credentials (or paused): its
+   * access card, only when the viewer is in the card's audience
+   * (accessCardAudience). The bot's owner reads it here even when the run's
+   * thread is another person's private one; nothing else of that thread. */
+  access?: WireAccessCard;
 }
 
 export const BOT_ACTIVITY_LIMIT = 20;

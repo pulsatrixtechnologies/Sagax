@@ -86,6 +86,7 @@ import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
 import { createDesktopBridge } from "./desktop-bridge.mjs";
+import { createProxyCredentialStore, createProxyCredentials, proxyPasswordAnswerScript, proxyPasswordPage } from "./proxy-credentials.mjs";
 import { createLocalVm } from "./local-vm.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
 import { defaultDataDir, fetchEnvironmentDescriptor, URL_SCHEMES } from "./legacy-names.mjs";
@@ -2077,6 +2078,77 @@ async function bridgeBrowse(url, screenshot, signal) {
     stop();
   }
 }
+/** The person's yes, on this computer, before a bot creates the Local VM
+ * here through the desktop bridge (as solo mode asks in its settings). */
+async function confirmBridgeLocalVm({ runtime, needsImage, signal }) {
+  const env = serverModeEnvironment(environmentsState);
+  const french = /^fr\b/i.test(app.getLocale());
+  const server = env?.name ?? (french ? "votre serveur" : "your server");
+  const detail = french
+    ? [
+      `Un robot de ${server}, qui travaille pour vous, veut un bureau Linux (Local VM) sur cet ordinateur, avec ${runtime}.`,
+      needsImage ? "Sagax télécharge et construit d'abord l'image du bureau (quelques Go, plusieurs minutes)." : "L'image du bureau est déjà prête.",
+      "Le Local VM utilise jusqu'à 4 Go de mémoire et 2 processeurs, n'est joignable que depuis cet ordinateur et garde ses fichiers dans le dossier de Sagax. Vous pourrez le supprimer plus tard.",
+    ]
+    : [
+      `A bot on ${server}, working for you, wants a Linux desktop (Local VM) on this computer, with ${runtime}.`,
+      needsImage ? "Sagax first downloads and builds the desktop image (a few GB, several minutes)." : "The desktop image is already prepared.",
+      "The Local VM uses up to 4 GB of memory and 2 processors, is reachable from this computer only and keeps its files in Sagax's folder. You can remove it later.",
+    ];
+  const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+    type: "question",
+    message: french ? "Créer un Local VM sur cet ordinateur?" : "Create a Local VM on this computer?",
+    detail: detail.join("\n\n"),
+    buttons: french ? ["Créer", "Annuler"] : ["Create", "Cancel"],
+    defaultId: 1, cancelId: 1,
+    ...(signal ? { signal } : {}),
+  });
+  return response === 0 && !signal?.aborted;
+}
+
+/** The person's SOCKS5 user name and password for the system proxy, asked
+ * once in a small window of the app when the proxy asks and none is known
+ * (proxy-credentials.mjs). Resolves { username, password } or null. */
+async function askProxyPassword({ host, port }) {
+  const french = /^fr\b/i.test(app.getLocale());
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const win = new BrowserWindow({
+    parent, modal: Boolean(parent), width: 440, height: 330, resizable: false, minimizable: false, maximizable: false, show: false,
+    title: french ? "Mot de passe du proxy" : "Proxy password",
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: true, partition: "sagax-proxy-password" },
+  });
+  win.setMenuBarVisibility?.(false);
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event) => event.preventDefault());
+  const closed = new Promise((resolve) => win.once("closed", () => resolve(null)));
+  try {
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(proxyPasswordPage({ host, port, french }))}`);
+    win.show();
+    return await Promise.race([win.webContents.executeJavaScript(proxyPasswordAnswerScript, true), closed]);
+  } catch {
+    return null;
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+}
+
+let bridgeProxyCredentials = null;
+function desktopBridgeProxyCredentials() {
+  bridgeProxyCredentials ??= createProxyCredentials({
+    store: createProxyCredentialStore({
+      file: path.join(app.getPath("userData"), "proxy-passwords.bin"), fs, log: (message) => slog(message),
+      encryption: {
+        available: async () => (await safeStorage.isAsyncEncryptionAvailable()) &&
+          (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text"),
+        encrypt: (value) => safeStorage.encryptStringAsync(value),
+        decrypt: (buffer) => safeStorage.decryptStringAsync(buffer),
+      },
+    }),
+    prompt: askProxyPassword,
+  });
+  return bridgeProxyCredentials;
+}
+
 function desktopBridge() {
   desktopBridgeConnector ??= createDesktopBridge({
     environment: () => serverModeEnvironment(environmentsState),
@@ -2090,7 +2162,11 @@ function desktopBridge() {
     activityFile: path.join(app.getPath("userData"), "desktop-bridge-activity.jsonl"),
     // The person's own network: Chromium's stack, the OS proxy and the VPN.
     fetchUrl: (url, init) => session.fromPartition("sagax-bridge-net").fetch(url, init),
+    // The system proxy for each destination (a PAC file included), and the
+    // SOCKS5 password when the proxy asks: this app's environment, else what
+    // the person typed once here (kept encrypted by the OS).
     resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+    proxyCredentials: desktopBridgeProxyCredentials(),
     browse: bridgeBrowse,
     cuaConnection: async () => {
       const connection = await cuaReady.catch(() => null);
@@ -2102,6 +2178,8 @@ function desktopBridge() {
       dataDir: desktopDataDir(),
       home: app.getPath("home"),
       openExternal: (url) => shell.openExternal(url),
+      // A bot asking for a Local VM here: the person says yes on this computer.
+      confirmCreate: confirmBridgeLocalVm,
       confirm: async ({ product, method }) => {
         const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
         const message = method === "brew" ? `Install ${product} with Homebrew?` : `Open the ${product} download page?`;

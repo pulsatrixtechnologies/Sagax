@@ -58,7 +58,7 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
           Based on OpenMausBot {baseVersion()}
         </p>
         <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
-          An open-source desktop home for your agents. Apache 2.0 licensed.
+          A desktop home for your agents. © 2026 Pulsatrix Technologies inc. Free for noncommercial use (PolyForm Noncommercial 1.0.0).
         </p>
         <div className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-[13px]">
           <AboutLink href={APP_REPOSITORY} label="GitHub" />

@@ -669,7 +669,7 @@ import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } fro
 import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
 import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAttachments, stagedName, SANDBOX_ATTACHMENTS_DIR, type StagingTarget, type TurnAttachedFile } from "./attachment-staging.ts";
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -6757,16 +6757,21 @@ function privateRowHidden(message: unknown, viewer: ApprovalViewer): boolean {
   return !accessCardVisibleTo(message as Parameters<typeof accessCardVisibleTo>[0], viewer.userId);
 }
 
-/** The audience of a refused turn's notification: the access card's. */
-function accessNotificationAudience(access: WireAccessCard): { audience?: string[] } {
-  if (IDENTITY.kind !== "perspicax") return {};
-  const audience = accessCardAudience(access);
-  return audience ? { audience } : {};
-}
-
-/** Notify a refused turn to the access card's audience only. */
-function notifyAccess(notification: Notification | null, access: WireAccessCard): void {
-  notify(notification ? { ...notification, ...accessNotificationAudience(access) } : null);
+/** Notify a refused turn to the access card's audience only. A routine run
+ * (`routineRunId`) whose card sits in a thread part of that audience cannot
+ * read (the bot's owner, the run being another person's) sends them a copy
+ * that opens the run in the bot's Coding activity instead
+ * (routineAccessNotifications). */
+function notifyAccess(notification: Notification | null, access: WireAccessCard, routineRunId?: string): void {
+  if (!notification) return;
+  if (IDENTITY.kind !== "perspicax") return notify(notification);
+  const bot = store.bot(access.botId);
+  const inRoom = Boolean(store.groupByThread(notification.threadId));
+  const copies = routineAccessNotifications(notification, accessCardAudience(access), {
+    ...(routineRunId && bot && !inRoom ? { routineRunId } : {}),
+    readable: (principalId) => Boolean(bot) && botThreadReadable(bot!, notification.threadId, principalId, "thread.read"),
+  });
+  for (const copy of copies) notify(copy);
 }
 
 function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalViewer): T[] {
@@ -9293,7 +9298,7 @@ async function routineAdmission(run: RoutineRun, _routine: Routine | undefined):
 }
 /** Slice 6: one access card in the routine's results thread, and a
  * notification, when a routine is paused. */
-function routineSuspended(routine: Routine, _run: RoutineRun | null, reason: RoutineSuspendReason): void {
+function routineSuspended(routine: Routine, run: RoutineRun | null, reason: RoutineSuspendReason): void {
   const bot = store.bot(routine.botId);
   const runAs = effectiveRunAs(routine);
   const runAsPerson = runAs ? principals.byId(runAs) : null;
@@ -9318,7 +9323,7 @@ function routineSuspended(routine: Routine, _run: RoutineRun | null, reason: Rou
   } catch (error) {
     console.error(`routine: the pause card could not be written: ${error instanceof Error ? error.message : String(error)}`);
   }
-  notifyAccess(buildNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused, it cannot act in its person's name`), card);
+  notifyAccess(buildNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused, it cannot act in its person's name`), card, run?.id);
 }
 /** Slice 6: the audit rows of routine delegations and paused routines. */
 function routineAudit(action: string, principalId: string | undefined, extra: { routine?: Pick<Routine, "id" | "name">; reason?: string; auth?: RequestAuth } = {}): void {
@@ -10612,7 +10617,8 @@ async function startTurn(
       access: card,
     });
     const notice = engineAccessNotice(accessRefusal.reason, engine, accessRefusal);
-    notifyAccess(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }), card);
+    const refusedRun = routineLineage(speaker) ? activeRoutineRunForThread(threadId)?.id : undefined;
+    notifyAccess(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }), card, refusedRun);
     console.error(`[omb-turn] bot=${botId} refused: ${accessRefusal.reason}${accessRefusal.cause ? `/${accessRefusal.cause}` : ""} (${instance.instanceId})`);
     opts?.coordination?.settle({ ok: false, text: notice });
     opts?.onDispatchError?.(notice);
@@ -17006,7 +17012,37 @@ ROUTES.push(createBotActivityRoutes({
   children: (botId, threadId) => activityChildren(botId, threadId),
   personName: (principalId) => personDisplayName(principals.byId(principalId)) || "",
   organization: () => IDENTITY.kind === "perspicax",
+  runAccessCard: (run, viewerId) => routineRunAccessCard(run, viewerId),
 }));
+/** The access card a failed routine run left (refused for lack of
+ * credentials, or paused), as this viewer may see it: on an organization
+ * server only when they are in the card's audience (accessCardVisibleTo),
+ * the provider words per accessCardForViewer. Read from the run's own
+ * threads, between the run's creation and its end; nothing else of those
+ * threads leaves (the bot's owner reads the card of a run that ran as
+ * another person, never that person's thread). */
+function routineRunAccessCard(run: RoutineRun, viewerId: string | undefined): WireAccessCard | undefined {
+  if (run.status !== "failed") return undefined;
+  const from = run.createdAt;
+  const until = (run.finishedAt ?? Date.now()) + 5_000;
+  const threads = [...new Set([run.threadId, run.resultsThreadId, run.sourceThreadId].filter((id): id is string => Boolean(id)))];
+  let found: { at: number; access: WireAccessCard } | undefined;
+  for (const threadId of threads) {
+    for (const message of store.messagesTail(threadId, 50).messages) {
+      const access = message.kind === "access" ? message.access : undefined;
+      if (!access || message.at < from || message.at > until || access.botId !== run.botId) continue;
+      // a paused routine's card names its routine; any other card is a
+      // routine turn's (the owner pays), never a person's own message
+      if (access.reason === "routine_delegation" ? access.routineId !== run.routineId : access.reason === "no_access" && !access.routine) continue;
+      if (IDENTITY.kind === "perspicax" && !accessCardVisibleTo(message, viewerId)) continue;
+      if (!found || message.at >= found.at) found = { at: message.at, access };
+    }
+  }
+  if (!found) return undefined;
+  if (!viewerId) return found.access;
+  const person = principals.byId(viewerId);
+  return accessCardForViewer({ access: found.access }, { principalId: viewerId, admin: person?.local === true || person?.orgRole === "admin" }).access;
+}
 /** The sub-agents a direct thread started: coordinate_bots work (room
  * handoffs whose parent is this thread) and legacy delegations in flight. */
 function activityChildren(botId: string, threadId: string): ActivityChildRef[] {
@@ -20009,8 +20045,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const detail = operation.action === "fetch_url" || operation.action === "browse"
               ? `${operation.action} ${(() => { try { return new URL(operation.url ?? "").host; } catch { return ""; } })()}`
               : operation.action;
+            // Local VM creation on the person's computer reports its steps
+            // once the person said yes there (never before): the conversation
+            // shows the bot's computer being set up, as in solo mode. The
+            // step text itself comes back in the tool's result, not live.
+            let provisioning = false;
+            const onProgress = operation.action === "vm_create" ? () => {
+              if (provisioning || !active()) return;
+              provisioning = true;
+              broadcast({ kind: "computer", botId: internalCapability.botId, state: "provisioning" });
+            } : undefined;
             try {
-              const answer = await desktopBridges.request(person, operation, active);
+              const answer = await desktopBridges.request(person, operation, active, onProgress).finally(() => {
+                if (provisioning) broadcast({ kind: "computer", botId: internalCapability.botId, state: "ready" });
+              });
               bridgeAudit.record({ person, botId: internalCapability.botId, threadId: internalCapability.threadId, target: "user-desktop", kind: "tool", detail, ok: (answer as { isError?: boolean } | null)?.isError !== true });
               return answer;
             } catch (error) {

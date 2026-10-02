@@ -247,8 +247,10 @@ commits and screenshots.
 
 - No DCO sign-off is required. Submit only code you wrote or have the right
   to contribute under the applicable project license.
-- This distribution has no `enterprise/` directory. Contributions are under
-  Apache 2.0. See [LICENSING.md](LICENSING.md). No CLA is required.
+- Sagax is licensed under the PolyForm Noncommercial License 1.0.0 by
+  Pulsatrix Technologies inc. Outside contributions need the signed
+  contributor agreement in [CLA.md](CLA.md) before they are merged. See
+  [LICENSING.md](LICENSING.md).
 - The cloud seam and the licensing files have code owners; a maintainer
   review is required there.
 
@@ -285,5 +287,4 @@ Provider fakes under `server/testing/fake-*.ts` must stay dependency-free: they 
 - [ ] macOS-only code is platform-gated; nothing breaks the packaged app
 - [ ] UI changes include before/after screenshots
 
-By contributing you agree your contributions are licensed under the
-[Apache License, Version 2.0](LICENSE).
+By contributing you agree to the contribution terms in [CLA.md](CLA.md).

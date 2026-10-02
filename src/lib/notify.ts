@@ -6,7 +6,7 @@ import { notificationSoundsEnabled } from "./notification-preferences";
 
 export type NotifyFrame = Notification;
 
-export type NotificationTarget = Pick<NotifyFrame, "botId" | "threadId">;
+export type NotificationTarget = Pick<NotifyFrame, "botId" | "threadId" | "routineRunId">;
 
 /** Ask while handling the settings click. Browsers may reject permission
  * requests that are triggered later by an incoming SSE frame. */
@@ -47,7 +47,7 @@ export function showNotification(
 
   const open = () => {
     window.focus();
-    onOpen({ botId: frame.botId, threadId: frame.threadId });
+    onOpen({ botId: frame.botId, threadId: frame.threadId, ...(frame.routineRunId ? { routineRunId: frame.routineRunId } : {}) });
   };
 
   if (Notification.permission === "granted") {
