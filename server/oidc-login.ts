@@ -14,7 +14,8 @@
 //     (server/idp-session.ts) and answers POST
 //     /api/auth/oidc/backchannel-logout (OpenID Connect Back-Channel Logout);
 //   - signs the desktop app and the phones in through the system browser:
-//     /auth/oidc/start?client=desktop|phone ends on an openmausbot:// link
+//     /auth/oidc/start?client=desktop|phone ends on a sagax:// (phone) or
+//     openmausbot:// / sagax:// (desktop) link
 //     carrying a two-minute, single-use pairing credential bound to the
 //     person (slice 2);
 //   - or, for the desktop app, on its loopback listener (RFC 8252 7.3):
@@ -290,9 +291,9 @@ export function desktopReturnLink(publicOrigin: string, outcome: { code: string 
 }
 
 /** The link a phone's authentication sheet receives: the invite shape both
- * phone apps already parse (openmausbot://pair?address=&token=&name=). */
+ * phone apps parse (sagax://pair?address=&token=&name=). */
 export function phoneReturnLink(publicOrigin: string, credential: string, serverName: string): string {
-  return `openmausbot://pair?address=${encodeURIComponent(publicOrigin)}&token=${encodeURIComponent(credential)}&name=${encodeURIComponent(serverName)}`;
+  return `sagax://pair?address=${encodeURIComponent(publicOrigin)}&token=${encodeURIComponent(credential)}&name=${encodeURIComponent(serverName)}`;
 }
 
 function jsonAnswer(res: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}): void {

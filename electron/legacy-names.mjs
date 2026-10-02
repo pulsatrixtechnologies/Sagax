@@ -297,9 +297,9 @@ export async function fetchEnvironmentDescriptor(origin, init = {}, fetchImpl = 
 
 // ── URL scheme ───────────────────────────────────────────────────────────
 //
-// The desktop registers both; links it makes use sagax://. Links the server
-// makes for the phone apps (pair invites) keep openmausbot:// until the
-// phone apps register sagax:// too.
+// The desktop registers both; links it makes use sagax://. Links made for
+// the phone apps (pair invites, the phone sign-in return) use sagax:// too:
+// the iOS app registers only sagax://, the Android app both.
 
 export const URL_SCHEME = "sagax";
 export const LEGACY_URL_SCHEME = "openmausbot";

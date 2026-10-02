@@ -86,7 +86,7 @@ describe("openmausbot command line", () => {
 
   describe("the two links one pairing window has", () => {
     const url = "https://mini.example/pair#code=ABCD-EFGH-JKLM";
-    const invite = `openmausbot://pair?address=https%3A%2F%2Fmini.example&token=omb_pair_${"a".repeat(43)}&name=mini`;
+    const invite = `sagax://pair?address=https%3A%2F%2Fmini.example&token=omb_pair_${"a".repeat(43)}&name=mini`;
     const block = (over: Record<string, unknown> = {}) =>
       pairingBlock({ code: "ABCD-EFGH-JKLM", url, inviteUrl: invite, expiresAt: Date.now() + 60_000, ...over });
 

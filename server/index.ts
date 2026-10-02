@@ -19623,7 +19623,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // credential encoding because those scanners cannot take a typed code.
       const serverName = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED }).label;
       const invite = base
-        ? `openmausbot://pair?address=${encodeURIComponent(base)}&token=${encodeURIComponent(opened.credential)}&name=${encodeURIComponent(serverName)}`
+        ? `sagax://pair?address=${encodeURIComponent(base)}&token=${encodeURIComponent(opened.credential)}&name=${encodeURIComponent(serverName)}`
         : null;
       return json(res, 200, {
         id: opened.id,

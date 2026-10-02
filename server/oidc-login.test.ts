@@ -311,7 +311,7 @@ describe("the sign-in routes (in process)", () => {
   it("ends a phone sign-in on the invite link both phone apps already parse", async () => {
     const { location } = await walk("phone");
     const url = new URL(location);
-    expect(url.protocol).toBe("openmausbot:");
+    expect(url.protocol).toBe("sagax:");
     expect(url.host).toBe("pair");
     expect(url.searchParams.get("address")).toBe(base);
     expect(url.searchParams.get("name")).toBe("Acme & Co bots");
