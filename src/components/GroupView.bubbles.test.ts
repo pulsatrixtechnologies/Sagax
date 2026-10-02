@@ -84,7 +84,7 @@ describe("group chat bubbles", () => {
   it("names each other person once per run, from the directory, with an avatar", () => {
     const markup = render(conversation, memberConfig);
     expect(markup.match(/data-testid="room-person"/g)).toHaveLength(2);
-    expect(markup.match(/Zachary Sellam/g)).toHaveLength(1);
+    expect(markup.match(/>Zachary Sellam</g)).toHaveLength(1);
     expect(markup).toContain('src="/api/people/pr_zack/avatar?v=1"');
     expect(markup).toContain(">MR<");
     expect(markup.indexOf("Zachary Sellam")).toBeLessThan(markup.indexOf("Test zack"));
