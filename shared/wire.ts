@@ -438,6 +438,23 @@ export interface WireAccessCard {
 
 /** One transcript line. Serialized as stored — the durable delivery
  * identity (roomRequest) rides the wire unchanged. */
+/** WireMessage.voiceCall: a person's words said on a voice call. */
+export interface VoiceCallMark {
+  callId: string;
+  /** the person cut the bot's previous answer to say this */
+  interrupted?: boolean;
+  /** the call's language when one is set */
+  language?: string;
+  /** one spoken utterance (idempotency across retries and the steer queue) */
+  utteranceId?: string;
+  /** on a barge-in: what the person actually heard of the cut answer */
+  heard?: string;
+  /** on a barge-in: what they did not hear (kept for the transcript) */
+  unheard?: string;
+  /** these words complete the previous utterance, which was cut short */
+  continues?: boolean;
+}
+
 export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
@@ -539,7 +556,7 @@ export interface WireMessage {
    * which call, whether the person cut the bot's previous answer to say it,
    * and the call's language when one is set. The turn it starts gets the
    * hidden phone-call instruction (server/voice-call-prompt.ts). */
-  voiceCall?: { callId: string; interrupted?: boolean; language?: string };
+  voiceCall?: VoiceCallMark;
   /** group threads: which member said this (sender attribution). */
   from?: { botId: string; name: string; color: string };
   /** Set on a room message a bot pushed in with post_to_room. */

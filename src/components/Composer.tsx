@@ -74,6 +74,7 @@ import {
 import { BusySendChooser, moveBusyChoice } from "./BusySendChooser";
 import { useParallelApprovals } from "./parallel-approvals";
 import { useBusySendPreference } from "@/lib/busy-send";
+import { useOnCall } from "@/lib/call";
 import { suggestBusySendMode, type BusySendMode } from "../../shared/parallel-tasks";
 import { skillAuthoringEnabled } from "@/lib/feature-flags";
 import { useRetroSkin } from "./RetroChromeHost";
@@ -175,7 +176,9 @@ export function Composer({
   // A send while this 1:1 conversation works: join, parallel task or after
   // (shared/parallel-tasks.ts). "ask" offers the choice; null = closed.
   const busySendPreference = useBusySendPreference();
-  const offersBusyChoice = Boolean(bot && !group && busy);
+  // on a voice call the words join the running turn: no chooser
+  const onCall = useOnCall();
+  const offersBusyChoice = Boolean(bot && !group && busy && onCall !== bot.id);
   const [busyChoice, setBusyChoice] = useState<BusySendMode | null>(null);
   useEffect(() => {
     if (!offersBusyChoice) setBusyChoice(null);

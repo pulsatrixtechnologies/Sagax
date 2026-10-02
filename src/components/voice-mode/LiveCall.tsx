@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore, useStreaming, visibleMessages, type Bot } from "@/state/store";
 import { clearVoiceCallId, currentCall, endCall, setVoiceCallId } from "@/lib/call";
 import { NO, YES } from "@/lib/voice-mode/answers";
+import { voiceCallSession } from "@/lib/voice-mode/api";
 import { VoiceCall, type BargeInMetrics, type TurnMetrics } from "@/lib/voice-mode/call";
 import { readCallSettings } from "@/lib/voice-mode/call-settings";
 import type { CallState } from "@/lib/voice-mode/call-machine";
@@ -53,6 +54,20 @@ export function LiveCall({ bot }: { bot: Bot }) {
     setVoiceCallId(bot.id, callId);
     return () => clearVoiceCallId(bot.id, callId);
   }, [bot.id, callId]);
+  // the server knows the thread is on a call: any send to it while the call
+  // lasts is a call turn (typed words, a queued line, a retry), and the
+  // call's tools stay the same from turn to turn
+  const callThread = bot.threadId;
+  useEffect(() => {
+    const language = readVoiceModeSettings().language;
+    const call = { callId, threadId: callThread, ...(language && language !== "auto" ? { language } : {}) };
+    void voiceCallSession(bot.id, "start", call);
+    const alive = setInterval(() => void voiceCallSession(bot.id, "alive", call), 5 * 60_000);
+    return () => {
+      clearInterval(alive);
+      void voiceCallSession(bot.id, "end", call);
+    };
+  }, [bot.id, callThread, callId]);
 
   const messages = visibleMessages(bot);
   const approval = pendingApprovals(messages)[0];

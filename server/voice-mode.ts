@@ -8,6 +8,7 @@
 //   POST /api/bots/<id>/voice/transcribe  raw audio/wav (?language=&threadId=) -> {text}
 //   POST /api/bots/<id>/voice/stream      {text, voice?, speed?, language?, threadId?} -> raw PCM as xAI makes it
 //   GET  /api/bots/<id>/voice/listen      WebSocket (?language=&threadId=): PCM frames in, transcripts out
+//   POST /api/bots/<id>/voice/call        {threadId, callId, state: start|alive|end, language?}: the thread is on a call
 //
 // A live call (src/lib/voice-mode/call.ts) uses the last two: the person's
 // audio streams to xAI's streaming speech to text while they speak, and each
@@ -62,8 +63,9 @@ import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 import type { Audio, Voice } from "./tts/elevenlabs.ts";
 
-const ROUTE = /^\/api\/bots\/([\w-]+)\/voice\/(status|voices|prepare|speak|transcribe|stream|listen)$/;
-type Action = "status" | "voices" | "prepare" | "speak" | "transcribe" | "stream" | "listen";
+const ROUTE = /^\/api\/bots\/([\w-]+)\/voice\/(status|voices|prepare|speak|transcribe|stream|listen|call)$/;
+type Action = "status" | "voices" | "prepare" | "speak" | "transcribe" | "stream" | "listen" | "call";
+const CALL_ID = /^[A-Za-z0-9_-]{8,80}$/;
 /** The most audio one live call may stream (16 kHz 16-bit mono: 2 hours). */
 export const VOICE_LISTEN_MAX_BYTES = 16_000 * 2 * 60 * 60 * 2;
 const LISTEN_READY_MS = 8_000;
@@ -134,6 +136,12 @@ export interface VoiceModeDeps {
   upgrade?(req: IncomingMessage): { socket: Duplex; head: Buffer; release(): void } | undefined;
   utterances(text: string): string[];
   recordUsage(usage: VoiceUsage): void;
+  /** The thread is on a live call (server/voice-call-session.ts): every
+   * send to it while the call lasts is a call turn. */
+  callSession?: {
+    start(target: VoiceTarget, callId: string, language?: string): void;
+    end(target: VoiceTarget, callId: string): void;
+  };
   now?: () => number;
 }
 
@@ -310,13 +318,28 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     const speaker = deps.speaker(auth);
     if (!speaker || (deps.organization && !speaker.principalId)) return json(res, 403, { error: "sign in as a person first", code: "sign_in" });
 
-    const jsonBody = action === "prepare" || action === "speak" || action === "stream";
+    const jsonBody = action === "prepare" || action === "speak" || action === "stream" || action === "call";
     const body = jsonBody ? await readBody(req).catch(() => null) : null;
     if (jsonBody && (!body || typeof body !== "object")) return json(res, 400, { error: "a JSON body is required" });
     const rawThread = action === "transcribe" || action === "listen" ? url.searchParams.get("threadId") ?? undefined : (body as Record<string, unknown> | null)?.threadId;
     if (rawThread !== undefined && rawThread !== null && (typeof rawThread !== "string" || !THREAD_ID.test(rawThread))) return json(res, 400, { error: "threadId must be a task id" });
     const target = deps.target(auth, botId, typeof rawThread === "string" ? rawThread : undefined);
     if ("status" in target) return json(res, target.status, { error: target.error });
+
+    // the call's start and end need no key: they only say the thread is on a call
+    if (action === "call") {
+      const record = body as Record<string, unknown>;
+      const callId = record.callId;
+      const state = record.state;
+      if (typeof callId !== "string" || !CALL_ID.test(callId)) return json(res, 400, { error: "callId must be a call id" });
+      if (state !== "start" && state !== "alive" && state !== "end") return json(res, 400, { error: "state must be start, alive or end" });
+      const language = record.language === undefined ? undefined : record.language;
+      if (language !== undefined && !isVoiceModeLanguage(language)) return json(res, 400, { error: "unknown language" });
+      if (!deps.callSession) return json(res, 404, { error: "call sessions are not available" });
+      if (state === "end") deps.callSession.end(target, callId);
+      else deps.callSession.start(target, callId, language as string | undefined);
+      return json(res, 200, { ok: true });
+    }
 
     const keysUrl = deps.keysUrl?.();
     const admin = deps.isAdmin?.(auth) === true;

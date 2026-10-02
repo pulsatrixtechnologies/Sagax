@@ -23,6 +23,8 @@ export interface ContextMessage {
   /** written into a turn that was already running: that turn may have read it
    * before it ended, and no provider says whether it did */
   steered?: boolean;
+  /** a person's words said on a voice call (Message.voiceCall) */
+  spoken?: boolean;
 }
 
 /** What one native session has been handed on a task. */
@@ -114,7 +116,7 @@ export function renderUnseen(unseen: readonly UnseenMessage[]): { block: string;
       "",
       ...(deferred > 0 ? [`(${deferred} older unseen message${deferred === 1 ? " is" : "s are"} not shown in this turn.)`, ""] : []),
       ...(earlier > 0 ? [`(The first ${earlier === 1 ? "message is" : `${earlier} messages are`} older than messages you have already seen.)`, ""] : []),
-      ...shown.map((m) => `${m.role === "user" ? "User" : "Assistant"}${m.steered ? " (sent while an earlier turn was running; you may already have it)" : ""}: ${m.text}`),
+      ...shown.map((m) => `${m.role === "user" ? "User" : "Assistant"}${m.spoken ? " (said on the phone call)" : ""}${m.steered ? " (sent while an earlier turn was running; you may already have it)" : ""}: ${m.text}`),
     ].join("\n");
   };
   let taken = 0;

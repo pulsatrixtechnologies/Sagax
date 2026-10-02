@@ -551,7 +551,8 @@ import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
-import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt } from "./voice-call-prompt.ts";
+import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
+import { VoiceCallSessions } from "./voice-call-session.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
@@ -9744,6 +9745,7 @@ function directContext(bot: BotRecord, threadId: string, messages: Message[]): C
               : transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"),
     keep: m.roomRequest?.phase === "result" || Boolean(m.peerAsk) || (m.role !== "user" && Boolean(m.from)),
     ...(m.steered ? { steered: true } : {}),
+    ...(m.role === "user" && m.voiceCall ? { spoken: true } : {}),
   }));
 }
 
@@ -9811,6 +9813,9 @@ async function compactConversation(input: {
     if (compactionControllers.get(threadId)?.generation === generation) compactionControllers.delete(threadId);
   }
 }
+
+/** Threads on a live voice call (server/voice-call-session.ts). */
+const voiceCalls = new VoiceCallSessions();
 
 const handoffs = new Handoffs({
   order: (threadId) => store.activePath(threadId).filter(isContextMessage).map((m) => m.id),
@@ -11002,6 +11007,12 @@ async function startTurn(
     personAsked: !routineLineage(speaker) && Boolean(orgSpeakerPrincipal(bot, speaker)),
   });
   const turnAuto = autoComputerStateFor(turnPlace, turnWorksOn(plan, opts?.runOn === "cloud" || Boolean(inheritedTeamComputer(bot))), routineLineage(speaker));
+  // Each call turn's words carry the call mark themselves: a live session
+  // gets the volatile call section only when it changed, so from the second
+  // call turn on the section alone never reached the engine.
+  if (userMessage.voiceCall && !opts.cardContinuation && !opts.commsDepth && !userMessage.peerAsk) {
+    providerText = voiceCallTurnPrompt(providerText, userMessage.voiceCall);
+  }
   const placedText = opts.cardContinuation ? { text: providerText, staging: null } : workplaceTurnText(providerText, turnPlace);
   providerText = withWorkplaceNote(placedText.text, turnPlace, turnAuto);
   // A compaction summarizes with the bot's engine too, so it is gated like
@@ -19427,6 +19438,10 @@ ROUTES.push(createVoiceModeRoutes({
   },
   upgrade: (req) => desktopViewer.upgradeOf(req),
   utterances: toUtterances,
+  callSession: {
+    start: (target, callId, language) => voiceCalls.start(target.threadId, callId, language),
+    end: (target, callId) => { voiceCalls.end(target.threadId, callId); },
+  },
   recordUsage: (usage) => {
     const bot = store.bot(usage.target.botId);
     const row: UsageRow = {
@@ -26497,8 +26512,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const text = String(body.text ?? "").trim();
       if (!text) return json(res, 400, { error: "text required" });
       // words said on a voice call: the turn gets the phone-call instruction
-      const voiceCall = parseVoiceCallMeta(body.voiceCall);
-      if (voiceCall && "error" in voiceCall) return json(res, 400, { error: voiceCall.error });
+      const sentVoiceCall = parseVoiceCallMeta(body.voiceCall);
+      if (sentVoiceCall && "error" in sentVoiceCall) return json(res, 400, { error: sentVoiceCall.error });
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
       requirePinnedClientThread(bot.id, body.threadId);
@@ -26512,6 +26527,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const threadId = routeThreadId(bot, body.threadId);
       const notYours = cloudGuestSendRefusal(auth, threadId);
       if (notYours) return json(res, 403, { error: notYours });
+      // While the thread is on a live call, every send to it is a call turn,
+      // marked or not (typed words, a retry, an old page): server state,
+      // not only the page's mark (server/voice-call-session.ts).
+      const voiceCall = guarded ? sentVoiceCall : voiceCalls.markFor(threadId, sentVoiceCall);
       // An engine command the chat cannot run is refused before it is
       // recorded (server/harness-commands.ts).
       if (text.startsWith("/")) {
@@ -26538,7 +26557,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!store.taskByThread(bot.id, threadId)) {
         return json(res, 409, { error: "the bot switched tasks before it could receive the message" });
       }
-      const sendId = parseSendId(body.sendId);
+      let sendId = parseSendId(body.sendId);
+      // One spoken utterance is delivered once: a second send of it (a retry
+      // with a new send id) answers with the first one's receipt.
+      if (voiceCall?.utteranceId && sendId) {
+        const claim = voiceCalls.claimUtterance(threadId, voiceCall.callId, voiceCall.utteranceId, sendId);
+        if (!claim.first) sendId = claim.sendId;
+      }
       const replyTo = resolveReplyTarget(threadId, body.replyToId);
       // What a send to a busy conversation does (shared/parallel-tasks.ts):
       // join the running turn (steer, the default), run as its own task in
@@ -26546,7 +26571,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.busyMode !== undefined && !isBusySendMode(body.busyMode)) {
         return json(res, 400, { error: "busyMode must be steer, parallel or after" });
       }
-      const busyMode: BusySendMode = guardedBody ? "steer" : (body.busyMode ?? "steer");
+      // On a call, words said while the bot works always join its turn: a
+      // phone has no "run this in parallel" (and no chooser asks).
+      const busyMode: BusySendMode = guardedBody || voiceCall ? "steer" : (body.busyMode ?? "steer");
       const receipt = await sendSequencer.run(
         sendId ? `bot:${bot.id}:${threadId}:${sendId}` : undefined,
         sendFingerprint(text, replyTo?.id),
@@ -26778,7 +26805,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const currentAtStart = store.projectBotForTask(bot.id, bot.threadId);
       const instance = currentAtStart?.busy ? runningTurnInstance(currentAtStart, bot.threadId) : undefined;
-      const prompt = held.items.map((item) => item.prompt).join("\n\n");
+      // words said on a call keep their call mark when they join the turn
+      const prompt = held.items.map((item) => voiceCallSteerPrompt(item.prompt, item.voiceCall)).join("\n\n");
       const steerTarget = handoffs.current(bot.threadId);
       let steered: SteerOutcome = "refused";
       if (currentAtStart?.busy && instance?.adapter.capabilities.queueing && instance.adapter.steer) {
@@ -26809,6 +26837,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           peerAsk: item.peerAsk,
           steered: true,
           sender: item.sender,
+          ...(item.voiceCall ? { voiceCall: item.voiceCall } : {}),
         }));
         // Offered to the next turn again unless the person stops this one.
         for (const message of messages) handoffs.steered(bot.threadId, steerTarget, instance?.instanceId, message.id);

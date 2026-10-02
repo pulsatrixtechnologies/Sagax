@@ -122,6 +122,27 @@ export async function streamVoiceModeSpeech(
   return { body: res.body, sampleRate: Number(res.headers.get("x-voice-sample-rate")) || 24_000 };
 }
 
+/** Tell the server the thread is on a call (POST /voice/call): every send
+ * to it while the call lasts is a call turn, whatever path it takes. Best
+ * effort: an old server without the route still gets each turn's mark. */
+export async function voiceCallSession(
+  botId: string,
+  state: "start" | "alive" | "end",
+  call: { callId: string; threadId?: string; language?: string },
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${base(botId)}/call`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state, callId: call.callId, ...(call.threadId ? { threadId: call.threadId } : {}), ...(call.language ? { language: call.language } : {}) }),
+      keepalive: state === "end",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** The live call's streaming speech to text socket (GET /voice/listen). */
 export function voiceModeListenUrl(botId: string, language: string, threadId?: string, origin = typeof location === "undefined" ? "http://localhost" : location.origin): string {
   const query = new URLSearchParams({ language, ...(threadId ? { threadId } : {}) });
