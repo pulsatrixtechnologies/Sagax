@@ -662,7 +662,7 @@ it after an upstream merge instead of renaming by hand.
   `chiefOfStaff` (the Primary Bot, see above).
 - The native apps (`ios/`, `android/`): bundle ids, keychain services and
   package names change only with a store release of their own.
-- Legal and history: `LICENSE`, `NOTICE`, `CLA.md`, the README attribution,
+- Legal and history: `LICENSE-APACHE`, the OpenMausBot lines of `NOTICE`, the README attribution,
   About's "Based on OpenMausBot", "Where work goes" and "Upstream sync" below.
 
 ## Upstream sync

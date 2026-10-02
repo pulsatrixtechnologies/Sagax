@@ -25,6 +25,8 @@ cpSync(join(root, "dist-server"), join(out, "dist-server"), { recursive: true })
 cpSync(join(root, "dist"), join(out, "dist"), { recursive: true });
 if (existsSync(join(root, "skills"))) cpSync(join(root, "skills"), join(out, "skills"), { recursive: true });
 cpSync(join(root, "LICENSE"), join(out, "LICENSE"));
+cpSync(join(root, "LICENSE-POLYFORM-NC.md"), join(out, "LICENSE-POLYFORM-NC.md"));
+cpSync(join(root, "LICENSE-APACHE"), join(out, "LICENSE-APACHE"));
 if (existsSync(join(root, "NOTICE"))) copyFileSync(join(root, "NOTICE"), join(out, "NOTICE"));
 
 // The bin lives next to the bundle so serverEntry() finds index.js by path.
@@ -37,10 +39,10 @@ writeFileSync(
       name: "openmausbot",
       version: app.version,
       description: "Run the Sagax server anywhere and pair your devices to it",
-      license: "Apache-2.0",
+      license: "SEE LICENSE IN LICENSE",
       type: "module",
       bin: { openmausbot: "cli.js" },
-      files: ["cli.js", "dist-server", "dist", "skills", "LICENSE", "NOTICE", "README.md"],
+      files: ["cli.js", "dist-server", "dist", "skills", "LICENSE", "LICENSE-POLYFORM-NC.md", "LICENSE-APACHE", "NOTICE", "README.md"],
       engines: { node: ">=24" },
       repository: { type: "git", url: "https://github.com/pulsatrixtechnologies/pulsa-bot.git" },
       homepage: "https://github.com/pulsatrixtechnologies/pulsa-bot#readme",
