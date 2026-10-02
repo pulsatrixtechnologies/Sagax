@@ -5387,7 +5387,21 @@
       "personPanel.noSharedGroups": "dd805d391dc10bb4cac06df97ac69682c8ae73658f1f64128244b7b162bfa2f1",
       "personPanel.sharedBots": "1db25549cda97afc35f1791bfe720e87df0278fe0e7617f5f6d396c550caf053",
       "personPanel.noSharedBots": "c1197ea04c421a10092c4b711f0c5dbcc86dd632c9370413ed320323679743cf",
-      "personPanel.manage": "6b8a7f811c7cf362b232d64ae462e95edc9c5fafa8316016def505954afebac9"
+      "personPanel.manage": "6b8a7f811c7cf362b232d64ae462e95edc9c5fafa8316016def505954afebac9",
+      "newBot.quickCreate": "2edb827c6d150fe3980949b0ea8e9af5de6b6e8350a967672bfe8931c8844dd8",
+      "settings.appIcon.title": "56244b12a99280f9174ced62cb16167a2361dc1e5e3a6f609ea12e21d8af6ab7",
+      "settings.appIcon.subtitle": "b81051798be7abd57da05fcd42580bf0ef4128294591525c8634f20ca0521abe",
+      "settings.appIcon.default": "b8fb6e1d1ac570f8bd638bd0f41e175570022056e25fb1d00c5fd40c10ca6f2e",
+      "settings.appIcon.upload": "93fd11c1bb442579aa80bb4e28d72c897078d2d23144f2b15c8c3d4a1bece52f",
+      "settings.appIcon.uploadAction": "ffe4df6c7ca600c4761b70965d53b6217a83e5d01337d9a384734662a54103a5",
+      "settings.appIcon.uploadFailed": "1c6f71dbb9d4162683c75688e0468cb2e2025ee25660f6340270bcfd62c1f13e",
+      "settings.appIcon.reset": "daee7606b339f3c339076fe2c9f372a3ff40c8ee896005d829c7481b64ca5303",
+      "settings.appIcon.hintMac": "5926da26e25a6367bf89c70e169be892315b95cd92cccd14da4d91781fe0e5bf",
+      "settings.appIcon.hintWindows": "76504dd3d89520c232e3a89a5b15e332a4ba420efaa0dae229f9f4833b513f03",
+      "settings.appIcon.hintLinux": "b3f5397a5d8f66fd9e17f4099d8742b0c409da90ab53ba8bd378a0576055ad72",
+      "settings.appIcon.glyph.blob": "e0e492707f85ff1f9c23155494a54382b52bf34888091adc7a6bb338ef78f88d",
+      "settings.appIcon.glyph.spark": "529bc3b07127ecb7e53a4dcf1991d9152c24537d919178022b2c42657f79a26b",
+      "settings.appIcon.glyph.cube": "67a9f6a6b5b7269d0bfd4b6f313ee77abb040d78dedc1473b04b911154eb1ac8"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
