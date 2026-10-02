@@ -9,7 +9,6 @@ import { APP_ICON_CHOICES } from "@/lib/app-icon-choices";
 import { BotAvatar } from "@/components/Avatar";
 import { BUNBU_DEFAULT_COLOR, BUNBU_SKIN_TIER, BUNBU_SKINS, botMascotLook, CHARACTER_PAINT, completeMascotLook, LEGACY_BUNBU_SKINS, mascotLookSchema } from "../../shared/mascot-look";
 import { MASCOT_COLOR_HEX } from "../../shared/mascot-colors";
-import { mascotLook as windowMascotLook } from "../../electron/floating-bot-window.mjs";
 import { BUNBU_ART, BUNBU_SILHOUETTE, bunbuLipY } from "./bunbu-art";
 import { BUNBU_EARFLOP_CLIP, BunbuMascot, bunbuSkinId, bunbuSkinPaint } from "./BunbuMascot";
 import { bunbuActionFor, bunbuMoodFor, MASCOTS, mascotFor } from "./floating-bots/mascots";
@@ -37,12 +36,6 @@ describe("Bunbu's look", () => {
     for (const [old, current] of Object.entries(LEGACY_BUNBU_SKINS)) expect(botMascotLook({ character: "bunbu", skins: { bunbu: old } }).skins?.bunbu).toBe(current);
     expect(botMascotLook({ character: "bunbu", skins: { bunbu: "rainbow-unicorn" } })).toEqual({ character: "bunbu" });
     expect(mascotLookSchema.safeParse({ character: "bunbu", skins: { bunbu: "nope" } }).success).toBe(false);
-  });
-
-  it("passes the desktop window's own validator, legacy names included", () => {
-    for (const skin of BUNBU_SKINS) expect(windowMascotLook({ character: "bunbu", skins: { bunbu: skin } })).toEqual({ character: "bunbu", skins: { bunbu: skin } });
-    expect(windowMascotLook({ character: "bunbu", skins: { bunbu: "lava" } })).toEqual({ character: "bunbu", skins: { bunbu: "molten" } });
-    expect(windowMascotLook({ character: "bunbu", skins: { bunbu: "junk" } })).toEqual({ character: "bunbu" });
   });
 });
 
