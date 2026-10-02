@@ -1519,6 +1519,21 @@ function optimisticUserMessage(
  * "Open in the app"); that view then signs in or connects by itself. */
 export const CLOUD_LINK_SETTINGS = { type: "toggleAppSettings", open: true, section: "cloudAccount", cloudLink: true } as const satisfies Action;
 
+/** The right panel follows the selection, the way the bot panel does: with
+ * a person's or a bot's panel open, selecting a direct conversation with a
+ * person shows that person, and selecting a bot or a group shows its own
+ * panel. With no panel open, nothing opens. */
+export function panelFollowsSelection(state: Pick<AppState, "personPanelId" | "settingsOpen" | "groups" | "config">, id: string): Partial<Pick<AppState, "personPanelId" | "settingsOpen">> {
+  if (!state.personPanelId && !state.settingsOpen) return {};
+  const group = state.groups.find((candidate) => candidate.id === id);
+  if (group?.peopleDm) {
+    const me = state.config?.viewer?.principalId?.trim().toLowerCase();
+    const other = (group.humanIds ?? []).find((human) => human.trim().toLowerCase() !== me);
+    return other ? { personPanelId: other, settingsOpen: false } : {};
+  }
+  return state.personPanelId ? { personPanelId: null, settingsOpen: !group?.dm } : {};
+}
+
 export function reducer(state: AppState, action: Action): AppState {
   if (action.type === "messageAdded" || action.type === "messagePatched" || action.type === "threadActive" || action.type === "optimisticMessageRemoved") {
     const owner = state.bots.find((bot) => (bot.threadId !== action.threadId || bot.awaitingThreadSnapshot) && bot.tasks?.some((task) => task.threadId === action.threadId));
@@ -1709,6 +1724,7 @@ export function reducer(state: AppState, action: Action): AppState {
       if (state.groups.some((g) => g.id === action.id)) {
         return {
           ...state,
+          ...panelFollowsSelection(state, action.id),
           activeView: "chat",
           selectedId: action.id,
           botSettingsSection: action.id !== state.selectedId ? "overview" : state.botSettingsSection,
@@ -1719,6 +1735,7 @@ export function reducer(state: AppState, action: Action): AppState {
         withMascotMotion(
           {
             ...state,
+            ...panelFollowsSelection(state, action.id),
             activeView: "chat",
             selectedId: action.id,
             botSettingsSection: action.id !== state.selectedId ? "overview" : state.botSettingsSection,

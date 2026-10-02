@@ -37,6 +37,8 @@ export function ChannelMembers(props: {
   onAddHuman?: () => void;
   onAddBot?: () => void;
   onRemoveHuman?: (id: string) => void;
+  /** Open a person's panel from their row (organization server). */
+  onOpenHuman?: (id: string) => void;
   onRemoveBot?: (id: string) => void;
   /** The add row's label: "Ajouter mon robot" for a member who does not own the room. */
   addBotLabel?: string;
@@ -53,15 +55,26 @@ export function ChannelMembers(props: {
             const label = human.label || human.id;
             return (
               <li key={human.id} className="flex items-center gap-3 border-b border-hairline/30 px-3 py-2 last:border-b-0">
-                {human.avatarUrl ? (
-                  <img src={human.avatarUrl} alt="" width={32} height={32} className="size-8 shrink-0 rounded-full object-cover" />
-                ) : (
-                  <InitialsAvatar initials={initialsFor(label)} size={32} />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[14px] font-medium text-ink">{label}</div>
-                  {human.detail && <div className="truncate text-[12px] text-ink-secondary">{human.detail}</div>}
-                </div>
+                {(() => {
+                  const face = (
+                    <>
+                      {human.avatarUrl ? (
+                        <img src={human.avatarUrl} alt="" width={32} height={32} className="size-8 shrink-0 rounded-full object-cover" />
+                      ) : (
+                        <InitialsAvatar initials={initialsFor(label)} size={32} />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[14px] font-medium text-ink">{label}</div>
+                        {human.detail && <div className="truncate text-[12px] text-ink-secondary">{human.detail}</div>}
+                      </div>
+                    </>
+                  );
+                  return props.onOpenHuman ? (
+                    <button type="button" data-open-person={human.id} onClick={() => props.onOpenHuman?.(human.id)} className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left hover:[&_div:first-child]:underline">
+                      {face}
+                    </button>
+                  ) : face;
+                })()}
                 {human.removable && (
                   <button
                     type="button"

@@ -78,7 +78,7 @@ describe("/api/org/directory manageUrl (person panel)", () => {
       }) as never,
       bySubject: () => ({ id: "pr_ada" }) as never,
       viewerRole: () => role,
-      settings: () => ({}),
+      settings: () => ({ orgKeyConfigured: false, allowFullAccess: true }),
       pendingAdminApprovals: () => [],
     });
     const ctx = {
