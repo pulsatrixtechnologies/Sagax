@@ -51,9 +51,12 @@ the contract between the two repositories.
 
 ## Desktop in the server environment (Sagax PR feat/sandbox-desktop)
 
-Patch to make on the Perspicax side (`pulsatrix-v3`, `infra/`), not in this
-repository. Nothing changes in the security model: the sandbox spec, the
-egress helper and the provisioner's mounts stay as they are.
+No Perspicax patch is needed for GOX: its compose does not pin any
+`SAGAX_SANDBOX_*` limit (the defaults come from this code) and its Caddy
+`reverse_proxy` passes WebSockets. The points below are what to check if a
+deployment does pin them or filters the proxy. Nothing changes in the
+security model: the sandbox spec, the egress helper and the provisioner's
+mounts stay as they are.
 
 1. **Image.** `build-push.sh` keeps building `deploy/sandbox/Dockerfile`; it
    now carries the desktop (Xvnc, openbox, xdotool, scrot, xterm, pcmanfm)
