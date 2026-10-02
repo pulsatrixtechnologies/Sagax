@@ -438,6 +438,10 @@ const appConfigSchema = z.object({
      * (server/interim-attach-routes.ts), written at the first organization
      * start that found any. */
     interimAttach: z.object({ since: z.number().finite().nonnegative(), days: z.number().int().min(0).max(90) }).optional(),
+    /** Whether bots of the organization may run with Full access
+     * (server/org-full-access.ts). Absent means allowed; an admin turns it
+     * off in Settings > Organization. */
+    allowFullAccess: z.boolean().optional(),
   }).optional(),
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt: z.number().optional(),
@@ -650,7 +654,7 @@ export interface AppConfig {
   signIn?: { admins?: string[]; members?: string[] };
 
   /** Organization server settings (slice 3); see appConfigSchema. */
-  organization?: { interimAttach?: { since: number; days: number } };
+  organization?: { interimAttach?: { since: number; days: number }; allowFullAccess?: boolean };
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt?: number;
   /** When every bot thread got its owner (server/thread-privacy.ts). */

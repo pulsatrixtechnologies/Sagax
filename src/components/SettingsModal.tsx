@@ -61,6 +61,7 @@ import { setNotificationSounds, useNotificationSounds } from "@/lib/notification
 import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
+import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
 
 // `labelKey`, not a label: t() reads the active pack when it is called, so a
@@ -595,6 +596,19 @@ function ShowThreadsRow() {
         checked={enabled}
         aria-label={t("settings.threadDisplay.show")}
         onClick={() => setShowThreads(!enabled)}
+      />
+    </SettingRow>
+  );
+}
+
+function SidebarLogoRow() {
+  const enabled = useShowSidebarLogo();
+  return (
+    <SettingRow title={t("settings.sidebarLogo.title")} subtitle={t("settings.sidebarLogo.subtitle")}>
+      <Switch
+        checked={enabled}
+        aria-label={t("settings.sidebarLogo.show")}
+        onClick={() => setShowSidebarLogo(!enabled)}
       />
     </SettingRow>
   );
@@ -1160,6 +1174,7 @@ export function SettingsModal() {
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <FontRow />
                   <SidebarDensityRow />
+                  <SidebarLogoRow />
                   <ShowThreadsRow />
                   <NotificationSoundsRow />
                   <FloatingFlyAwayRow />

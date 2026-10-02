@@ -134,7 +134,7 @@ describe("PATCH /api/org/settings interimAttachDays", () => {
     const route = createPerspicaxOrgRoutes({
       issuer: "https://px.test", orgName: "Acme", directory: () => null, bySubject: () => null,
       viewerRole: (auth) => (auth.kind === "loopback" ? "admin" : "member"),
-      settings: () => ({ orgKeyConfigured: false, interimAttach: { until: null, people: 1 } }),
+      settings: () => ({ orgKeyConfigured: false, allowFullAccess: true, interimAttach: { until: null, people: 1 } }),
       saveInterimAttachDays: (days) => saved.push({ days }),
       pendingAdminApprovals: () => [],
     });

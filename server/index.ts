@@ -647,6 +647,7 @@ import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type PendingAdminApproval } from "./perspicax-org-routes.ts";
+import { orgFullAccessAllowed, orgFullAccessGrantRefusal, orgFullAccessHolds, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgBotForceRoutes } from "./org-bot-force.ts";
@@ -4492,9 +4493,14 @@ async function botOverview(bot: BotRecord): Promise<BotOverview> {
  * threads it delegates Full too (delegatedFullAccess), so the grant the
  * person gave the Primary Bot covers the work the Primary Bot hands out. */
 const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = bot.threadId): ApprovalMode => {
-  // A member's bot on an organization server never runs unasked (JC rule
-  // until per-owner containers): its tasks' Custom or Full are Ask here.
-  if (memberOwnedInOrg(bot)) return "ask";
+  // Organization server: Full runs as Full only while the organization
+  // allows it and the bot's current owner confirmed it (org-full-access.ts);
+  // otherwise Ask. Host tools stay withheld either way (withholdHostTools).
+  const stored = approvalModeFor(bot);
+  if (stored === "full" && orgDeniesFull(bot)) return "ask";
+  // A member's bot on an organization server never runs unasked otherwise
+  // (JC rule until per-owner containers): its Custom or Auto are Ask here.
+  if (memberOwnedInOrg(bot) && stored !== "full") return "ask";
   // On a Cloud home a turn a guest drives runs in Ask, whatever the bot's
   // own level. Judged by the conversation the turn runs in (a room's, for a
   // room turn), never by whichever of the bot's conversations is active.
@@ -4535,7 +4541,9 @@ function delegatedFullAccess(from: BotRecord, fromThreadId: string, target: BotR
     senderHasFullAccess: fullAccessForSource(from.id, fromThreadId),
     sameBot: from.id === target.id,
     recipientDriverKind: registry.cliTarget(target.modelSelection.instanceId)?.driverKind,
-    recipientMemberOwned: memberOwnedInOrg(target),
+    // Organization server: only a bot whose owner allowed Full access (and
+    // while the organization allows it) inherits a Primary Bot's Full.
+    recipientMemberOwned: orgDeniesFull(target),
   });
 }
 
@@ -4561,9 +4569,9 @@ function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: 
   const handoff = orchestration?.roomHandoffId ? roomHandoffs.nodes.get(orchestration.roomHandoffId) : undefined;
   const source = handoff?.parentId ? roomHandoffs.nodes.get(handoff.parentId) : undefined;
   const from = source ? store.bot(source.botId) : undefined;
-  // A member's bot on an organization server never runs Full, not even for
-  // a Full Primary Bot's handoff (JC rule until per-owner containers).
-  if (memberOwnedInOrg(bot)) return "ask";
+  // On an organization server a bot runs Full, even for a Full Primary
+  // Bot's handoff, only when its owner allowed it and the organization does.
+  if (memberOwnedInOrg(bot) && orgDeniesFull(bot)) return "ask";
   if (from && source && delegatedFullAccess(from, source.threadId, bot)) return "full";
   return approvalModeForTurn(bot, Boolean(orchestration?.roomHandoffId), threadId);
 }
@@ -4620,7 +4628,12 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
       } else if (bot.approvalGrant.threadId) {
         store.patchTask(botId, bot.approvalGrant.threadId, { approvalMode: mode, autoApprove: false });
       }
-      if (bot.approvalGrant) store.patchBot(botId, { approvalGrant: undefined });
+      const committedThread = bot.approvalGrant.threadId;
+      // The person confirmed the warning in the desktop app: remember it for
+      // this bot, so the next grant asks no more (org-full-access.ts).
+      store.patchBot(botId, { approvalGrant: undefined,
+        ...(mode === "full" ? { fullAccessConsent: { principalId: localPrincipalId().trim().toLowerCase(), at: Date.now() } } : {}) });
+      auditApprovalModeChange(null, botId, "ask", mode, committedThread);
       postDesktopPrivateMessage({ type: "approval-trusted-mode-commit-result", requestId, ok: true, bot: wireBot(store.bot(botId)!) });
     } else if (bot?.approvalGrant?.requestId === requestId) {
       clearGrant(bot);
@@ -11609,7 +11622,7 @@ async function startTurn(
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         refreshSystemPrompt: true,
         images: turnImages,
-        approvalMode: approvalModeForTurn(bot, commsDepth > 0, threadId),
+        approvalMode: auditFullAccessTurn(bot, threadId, approvalModeForTurn(bot, commsDepth > 0, threadId)),
         ...(guestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         model,
         effort,
@@ -12032,6 +12045,17 @@ async function stopBotForEmergencyApprovalDowngrade(botId: string): Promise<void
   }
 
   await directStop;
+}
+
+/** Whether the bot is working now: what forceStopBot would interrupt (a
+ * turn in one of its threads, its routine run, a room turn). */
+function botRunning(botId: string): boolean {
+  const bot = store.bot(botId);
+  if (!bot) return false;
+  if (store.tasks(botId).some((task) => task.busy || directTurnDispatchClaims.has(task.threadId) || roomHandoffs.activeDirect(task.threadId))) return true;
+  if (threadBusy(botId, bot.threadId)) return true;
+  if (routines?.activeBotRunForBot(botId) || routines?.activeRunForBot(botId)) return true;
+  return activeGroupTurnForBot(botId) !== null;
 }
 
 /** An organization admin's "Forcer l'arrêt" (server/org-bot-force.ts):
@@ -14060,7 +14084,7 @@ async function runGroupMemberTurn(
         text: withRecalled(roomRecalled, text),
         refreshSystemPrompt: true,
         images: turnImages,
-        approvalMode: roomTurnApprovalMode(readyBot, threadId, orchestration),
+        approvalMode: auditFullAccessTurn(readyBot, threadId, roomTurnApprovalMode(readyBot, threadId, orchestration)),
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         system: roomSystem.text,
         systemStable: roomSystem.stable,
@@ -17070,6 +17094,60 @@ function botOwnerOrgRole(bot: { ownerUserId?: unknown }): "admin" | "member" | u
 function memberOwnedInOrg(bot: { ownerUserId?: unknown }): boolean {
   return memberOwnedBot({ identity: IDENTITY.kind, ownerOrgRole: botOwnerOrgRole(bot) });
 }
+/** Organization server (org-full-access.ts): the admin policy, on unless
+ * an admin turned it off in Settings > Organization. */
+function orgFullAccessPolicy(): boolean {
+  return orgFullAccessAllowed(cfg.organization);
+}
+/** Organization server: a stored Full that may not run as Full now (the
+ * policy is off, or the bot's current owner never confirmed it). Never on
+ * a solo server, where the desktop's private channel grants Full. */
+function orgDeniesFull(bot: { ownerUserId?: unknown; fullAccessConsent?: unknown }): boolean {
+  return IDENTITY.kind === "perspicax" &&
+    !orgFullAccessHolds({ policyAllowed: orgFullAccessPolicy(), ownerPrincipalId: effectiveBotOwner(bot), consent: bot.fullAccessConsent });
+}
+/** The signed-in person making a request; null for loopback or a service. */
+function sessionPrincipal(auth: RequestAuth): string | null {
+  return auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null;
+}
+/** Organization server: why this request may not turn Full on for a bot,
+ * or null. The caller must be the bot's owner, signed in. */
+function orgFullAccessRefusalFor(auth: RequestAuth, bot: BotRecord, confirmed: boolean) {
+  return orgFullAccessGrantRefusal({
+    policyAllowed: orgFullAccessPolicy(),
+    callerPrincipalId: sessionPrincipal(auth),
+    ownerPrincipalId: effectiveBotOwner(bot),
+    confirmed,
+    consent: bot.fullAccessConsent,
+  });
+}
+/** Audit: a bot's or thread's approval level changed (visible to admins in
+ * the activity log). */
+function auditApprovalModeChange(auth: RequestAuth | null, botId: string, before: ApprovalMode, after: ApprovalMode, threadId?: string): void {
+  if (before === after) return;
+  appendAdminAction(DATA_DIR, {
+    category: "approval",
+    action: "approval.mode",
+    target: auditBotTarget(botId),
+    changed: ["approvalMode"],
+    before: { approvalMode: before },
+    after: { approvalMode: after, ...(threadId ? { threadId } : {}) },
+    actor: auth ? (IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth)) : { kind: "loopback" },
+  });
+}
+/** Audit: one turn ran with Full access. */
+function auditFullAccessTurn(bot: BotRecord, threadId: string, mode: ApprovalMode): ApprovalMode {
+  if (mode === "full") {
+    appendAdminAction(DATA_DIR, {
+      category: "approval",
+      action: "approval.full_access_turn",
+      target: auditBotTarget(bot.id),
+      after: { threadId, ...(IDENTITY.kind === "perspicax" ? { owner: effectiveBotOwner(bot) } : {}) },
+      actor: { kind: "worker" },
+    });
+  }
+  return mode;
+}
 /** An organization admin: the operator at this computer, or a person
  * signed in with Perspicax whose role is admin (their session holds admin). */
 function orgAdminCaller(auth: RequestAuth): boolean {
@@ -17083,9 +17161,10 @@ function orgAdminCaller(auth: RequestAuth): boolean {
 function orgKeyConfigured(): boolean {
   return Object.entries(instanceConfigs(cfg)).some(([instanceId, entry]) => driverKeyBacked(cfg, entry.driver, instanceId));
 }
-function orgSettings(): { orgKeyConfigured: boolean; interimAttach?: { until: number | null; people: number } } {
+function orgSettings(): { orgKeyConfigured: boolean; interimAttach?: { until: number | null; people: number }; allowFullAccess: boolean } {
   return {
     orgKeyConfigured: orgKeyConfigured(),
+    allowFullAccess: orgFullAccessPolicy(),
     ...(IDENTITY.kind === "perspicax"
       ? { interimAttach: { until: interimWindowUntil(cfg.organization?.interimAttach, Date.now()), people: principals.listInterim().length } }
       : {}),
@@ -17831,6 +17910,10 @@ if (IDENTITY.kind === "perspicax") {
         ...(bot.section ? { section: bot.section } : {}),
         engine: engineOfBot(bot),
         grants: wireGrants(shown ?? facts.grants, describeGrantTarget),
+        // Its public look (as a group shows it) and whether it is working
+        // now, so the list draws the avatar and the force-stop state.
+        look: botPublicProfile(bot),
+        running: botRunning(bot.id),
       }];
     });
     res.setHeader("cache-control", "no-store");
@@ -18195,6 +18278,19 @@ if (IDENTITY.kind === "perspicax") {
       orgAudit({
         category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["interimAttachDays"],
         before: { interimAttachDays: before?.days ?? null }, after: { interimAttachDays: days },
+        actor: orgAuditActor(auth),
+      });
+    },
+    // Allow or refuse Full access for every bot of the organization
+    // (org-full-access.ts). Turning it off makes stored Full run as Ask and
+    // refuses new turns asking Full; nothing is rewritten.
+    saveAllowFullAccess: (allowed, auth) => {
+      const before = orgFullAccessPolicy();
+      saveConfig({ organization: { ...cfg.organization, allowFullAccess: allowed } });
+      cfg.organization = { ...cfg.organization, allowFullAccess: allowed };
+      orgAudit({
+        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowFullAccess"],
+        before: { allowFullAccess: before }, after: { allowFullAccess: allowed },
         actor: orgAuditActor(auth),
       });
     },
@@ -24282,6 +24378,32 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         return json(res, 400, { error: "body must be a JSON object" });
       }
+      // Organization server: the bot's owner, signed in, turns Full on as
+      // the bot's default (its new threads and routines) while the
+      // organization allows it (org-full-access.ts). A request of its own:
+      // nothing else rides along.
+      if (IDENTITY.kind === "perspicax" && body.approvalMode === "full") {
+        const target = store.bot(m[1]);
+        if (!target) return json(res, 404, { error: "no such bot" });
+        if (Object.keys(body).some((key) => key !== "approvalMode" && key !== "confirmFullAccess") ||
+          (body.confirmFullAccess !== undefined && typeof body.confirmFullAccess !== "boolean")) {
+          return json(res, 400, { error: "send { approvalMode: \"full\", confirmFullAccess } alone" });
+        }
+        const refusal = orgFullAccessRefusalFor(auth, target, body.confirmFullAccess === true);
+        if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code });
+        if (target.busy) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
+        if (target.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
+        if (!supportsApprovalMode(target.modelSelection, "full")) return json(res, 400, { error: "This provider does not support Full access" });
+        const before = approvalModeFor(target);
+        const updated = store.patchBot(target.id, {
+          approvalMode: "full", autoApprove: false, alwaysAllow: [],
+          fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() },
+        })!;
+        auditApprovalModeChange(auth, target.id, before, "full");
+        const visible = wireBot(updated);
+        broadcast({ kind: "bot", bot: visible });
+        return json(res, 200, { bot: visible });
+      }
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
         const target = store.bot(m[1]);
         const own = Boolean(target && memberOwnsBot(auth, target));
@@ -25312,6 +25434,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (!store.taskByThread(currentAtStart.id, threadId)) {
             throw Object.assign(new Error("the target task no longer exists"), { status: 409 });
           }
+          // Organization server: a turn asking Full access is refused while
+          // the organization does not allow it (org-full-access.ts). The
+          // person picks another level; the turn never runs elevated.
+          if (IDENTITY.kind === "perspicax" && approvalModeFor(currentAtStart) === "full" && !orgFullAccessPolicy()) {
+            throw Object.assign(new Error(ORG_FULL_ACCESS_DISABLED.error), { status: ORG_FULL_ACCESS_DISABLED.status, code: ORG_FULL_ACCESS_DISABLED.code });
+          }
 
           if (guarded) {
             // There is no await between these checks and startTurn's
@@ -26028,7 +26156,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
       const current = store.projectBotForTask(m[1], m[2]);
       if (!current) return json(res, 404, { error: "no such task" });
-      const allowed = new Set(["title", "projectId", "modelSelection", "updateBotDefault", "resetApprovalToAsk", "approvalMode", "autoApprove", "requireAvailableModel", "pinnedMessageId", "acknowledgeLocalAuto", "archivedAt", "pinned", "snoozedUntil", "surface"]);
+      const allowed = new Set(["title", "projectId", "modelSelection", "updateBotDefault", "resetApprovalToAsk", "approvalMode", "autoApprove", "requireAvailableModel", "pinnedMessageId", "acknowledgeLocalAuto", "confirmFullAccess", "archivedAt", "pinned", "snoozedUntil", "surface"]);
       if (Object.keys(body).some((key) => !allowed.has(key))) return json(res, 400, { error: "unsupported thread setting" });
       const notYours = cloudThreadRefusal(auth, m[2]);
       if (notYours) return json(res, 403, { error: notYours });
@@ -26039,7 +26167,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         (body.approvalMode !== undefined || body.autoApprove !== undefined || body.acknowledgeLocalAuto !== undefined || body.updateBotDefault === true)) {
         return json(res, 403, { error: "On this Cloud only its owner can change how a bot asks for approval, or its default model." });
       }
-      for (const key of ["requireAvailableModel", "acknowledgeLocalAuto", "updateBotDefault", "resetApprovalToAsk"] as const) {
+      for (const key of ["requireAvailableModel", "acknowledgeLocalAuto", "confirmFullAccess", "updateBotDefault", "resetApprovalToAsk"] as const) {
         if (body[key] !== undefined && typeof body[key] !== "boolean") return json(res, 400, { error: `${key} must be a boolean` });
       }
       if (body.requireAvailableModel === true && body.modelSelection === undefined) return json(res, 400, { error: "requireAvailableModel requires modelSelection" });
@@ -26049,6 +26177,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "resetApprovalToAsk requires a model selection and cannot be combined with another approval mode" });
       }
       const patch: Parameters<typeof store.patchTask>[2] = {};
+      let orgFullGrant = false;
       if (body.projectId !== undefined) {
         if (body.projectId === null) patch.projectId = undefined;
         else if (typeof body.projectId === "string" && store.project(current.id, body.projectId)) patch.projectId = body.projectId;
@@ -26099,10 +26228,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.approvalMode !== undefined || body.autoApprove !== undefined) {
         if (body.autoApprove !== undefined && typeof body.autoApprove !== "boolean") return json(res, 400, { error: "autoApprove must be a boolean" });
         const mode = body.approvalMode ?? (body.autoApprove ? "auto" : "ask");
-        if ((mode === "full" || mode === "custom") && memberOwnedInOrg(current)) return json(res, 409, MEMBER_BOT_FULL_ACCESS);
+        // Organization server: the bot's owner, signed in, turns Full on
+        // over HTTP while the organization allows it (org-full-access.ts).
+        if (mode === "full" && IDENTITY.kind === "perspicax") {
+          const refusal = orgFullAccessRefusalFor(auth, current, body.confirmFullAccess === true);
+          if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code });
+          orgFullGrant = true;
+        }
+        if (!orgFullGrant && (mode === "full" || mode === "custom") && memberOwnedInOrg(current)) return json(res, 409, MEMBER_BOT_FULL_ACCESS);
         // Elevated modes still require the trusted desktop transition. A
         // thread settings PATCH cannot manufacture that grant.
-        if (mode !== "ask" && mode !== "auto" && mode !== "edits") return json(res, 403, { error: "Full and Custom access require trusted desktop confirmation" });
+        if (!orgFullGrant && mode !== "ask" && mode !== "auto" && mode !== "edits") return json(res, 403, { error: "Full and Custom access require trusted desktop confirmation" });
         if (approvalModeFor(current) === "custom") return json(res, 403, { error: "Leaving Custom approval requires confirmation in the packaged desktop app" });
         if (!supportsApprovalMode(patch.modelSelection ?? current.modelSelection, mode)) {
           return json(res, 400, { error: "This provider does not support the selected approval level" });
@@ -26117,6 +26253,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         patch.approvalMode = mode;
         patch.autoApprove = mode === "auto";
+        if (orgFullGrant) patch.alwaysAllow = [];
       }
       if (patch.modelSelection) {
         const checked = checkedTaskModelSwitch({ ...current,
@@ -26124,10 +26261,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }, patch.modelSelection, body.updateBotDefault === true, body.resetApprovalToAsk === true, body.requireAvailableModel === true);
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
       }
+      const modeBefore = approvalModeFor(current);
+      if (orgFullGrant) store.patchBot(m[1], { fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() } });
       const task = patch.modelSelection
         ? store.switchTaskModel(m[1], m[2], patch.modelSelection, body.updateBotDefault === true, body.resetApprovalToAsk === true,
           { ...patch, ...hostedModels?.resetTask(current.modelSelection, patch.modelSelection) })!
         : store.patchTask(m[1], m[2], patch)!;
+      if (patch.approvalMode) auditApprovalModeChange(auth, m[1], modeBefore, patch.approvalMode, m[2]);
       const fresh = botWithThread(store.bot(m[1])!);
       broadcast({ kind: "bot", bot: fresh });
       return json(res, 200, { task: wireTask(task), bot: projectBotTranscript(fresh, viewerForApproval(auth)) });
@@ -28237,7 +28377,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   } catch (e) {
     const status = (e as any)?.status ?? 500;
     const candidateCode = (e as { code?: unknown })?.code;
-    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked"].includes(candidateCode)
+    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "org_full_access_disabled"].includes(candidateCode)
       ? candidateCode : undefined;
     return json(res, status, { error: e instanceof Error ? e.message : String(e), ...(code ? { code } : {}) });
   } finally {
