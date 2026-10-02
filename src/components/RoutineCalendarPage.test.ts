@@ -22,7 +22,7 @@ vi.mock("./DesktopCapabilities", async (importOriginal) => ({
 vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 
 const { initialState } = await import("@/state/store");
-const { RoutinesPage } = await import("./RoutineCalendarPage");
+const { RoutinesPage, RoutineEditor } = await import("./RoutineCalendarPage");
 
 const bot: Bot = {
   id: "runner", threadId: "execution", name: "Runner", title: "", description: "", color: "green",
@@ -104,5 +104,22 @@ describe("routine failure indicators", () => {
     expect(markup).toContain("Stale digest");
     expect(markup).not.toContain("Fine brief");
     expect(markup).toContain('<option value="problems" selected="">Problems</option>');
+  });
+});
+
+describe("routine setup", () => {
+  function editorMarkup() {
+    function Capture() { return createElement(RoutineEditor, { bots: [bot], lockedBotId: bot.id, onClose: vi.fn() }); }
+    return renderToStaticMarkup(createElement(Capture));
+  }
+  it("runs on the bot's current setup without offering a runner choice", () => {
+    const html = editorMarkup();
+    expect(html).not.toContain("current setup");
+    expect(html).not.toContain("Boat-hosted agent");
+    expect(html).not.toContain("data-routine-run-on");
+  });
+  it("offers the Boat runner only behind the experimental Boat flag", () => {
+    fixture.state = { ...fixture.state!, config: { ...fixture.state!.config, features: { boatComputer: true }, box: { configured: false } } as unknown as AppState["config"] };
+    expect(editorMarkup()).toContain("Boat-hosted agent");
   });
 });

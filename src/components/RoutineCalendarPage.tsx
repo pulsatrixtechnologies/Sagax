@@ -1,4 +1,5 @@
 import { cloudRunner } from "@/lib/remote-desktop";
+import { boatComputerEnabled } from "@/lib/feature-flags";
 import {
   useCallback,
   useEffect,
@@ -961,8 +962,11 @@ function EventEditor({
             </div>}
           </div>
 
-          {kind === "routine" && (
-            <div className="flex items-start gap-4">
+          {/* Routines run on the bot's current setup. The Boat runner is
+              offered only behind the experimental Boat flag (or to switch a
+              routine already set to it back). */}
+          {kind === "routine" && (isRoomGoal || boatComputerEnabled(state.config) || runOn === "cloud") && (
+            <div className="flex items-start gap-4" data-routine-run-on>
               {isRoomGoal ? <Target size={18} className="mt-2.5 shrink-0 text-ink-secondary" /> : runOn === "cloud" ? <Cloud size={18} className="mt-2.5 shrink-0 text-ink-secondary" /> : <Laptop size={18} className="mt-2.5 shrink-0 text-ink-secondary" />}
               <div className="min-w-0 flex-1">
                 {isRoomGoal ? (
