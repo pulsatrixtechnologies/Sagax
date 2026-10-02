@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createProxyHandler } from "../src/proxy.ts";
+import { denyReason } from "../src/routes.ts";
 import { createConnectedDeviceTracker } from "../src/connected-devices.ts";
 import type { CompanionEndpoint } from "../src/endpoints.ts";
 
@@ -322,9 +323,10 @@ describe("the sidecar in front of an unmodified harness", () => {
   it("lets a device answer an approval, and manage its own chats", async () => {
     // The approval path is the product: a card raised on the computer,
     // answered on the phone, and the bot carries on. What is checked here is
-    // that the allowlist carries these routes to the harness at all — the
-    // harness's own "no such pending request" is proof it arrived, and is a
-    // far better signal than a 403 from the sidecar would be.
+    // that the allowlist carries these routes to the harness at all. The
+    // harness answers an unknown request with its own 403 (an approval it
+    // cannot find is refused, fail closed), so its message, not the status,
+    // is the proof the request arrived.
     //
     // Worth pinning separately from sending a message, because these are the
     // routes a default-deny allowlist is most likely to omit by accident.
@@ -337,11 +339,17 @@ describe("the sidecar in front of an unmodified harness", () => {
       ["POST", `/api/bots/${bot.id}/interrupt`, undefined],
       ["POST", `/api/bots/${bot.id}/read`, undefined],
     ] as const) {
+      expect(denyReason({ method, path, authenticated: true }), `${method} ${path} is not on the allowlist`).toBeNull();
       const res = await device(method, path, payload ? { body: payload } : {});
       // whatever the harness decides, the sidecar must not be the one saying no
-      expect(res.status, `${method} ${path} was blocked by the sidecar`).not.toBe(403);
+      if (res.status === 403) {
+        expect(String(res.body?.error ?? ""), `${method} ${path} was blocked by the sidecar`).not.toMatch(/^(forbidden|cloud desktop access|pair this device)/);
+      }
       expect(res.status, `${method} ${path} never reached the harness`).not.toBe(404);
     }
+    // The approval answer reached the harness: this is its refusal, not the sidecar's.
+    const answer = await device("POST", `/api/threads/${bot.threadId}/respond`, { body: { requestId: "nope", behavior: "allow" } });
+    expect(answer.body.error).toBe("Only the bot owner can answer this approval.");
   });
 
   it("files bots through only the narrow atomic organizer route", async () => {

@@ -270,9 +270,11 @@ describe("independent bot tasks through the isolated control surface", () => {
     const background = await paired("GET", `/api/threads/${threadB}/messages?limit=50`);
     expect(background.body.messages.some((message: any) => message.card?.requestId === "phone-approval-b" && !message.card.answered)).toBe(true);
 
-    // A stale island's immutable A target must never authorize B's request.
+    // A stale island's immutable A target must never authorize B's request:
+    // a request that is not on the addressed thread is refused (fail closed).
     const stale = await paired("POST", `/api/threads/${threadA}/respond`, { requestId: "phone-approval-b", behavior: "allow" });
-    expect(stale.body.outcome).toBe("unavailable");
+    expect(stale.status).toBe(403);
+    expect(stale.body.outcome).toBeUndefined();
     expect(answersA).toEqual([]);
     expect(answersB).toEqual([]);
     const answered = await paired("POST", `/api/threads/${threadB}/respond`, { requestId: "phone-approval-b", behavior: "allow" });
@@ -281,7 +283,7 @@ describe("independent bot tasks through the isolated control surface", () => {
     await expect.poll(() => answersB.some((answer) => answer.id === "phone-approval-b")).toBe(true);
     expect(answersA).toEqual([]);
     expect((await botState(botId)).tasks.find((task: any) => task.taskId === threadA)?.activity).toBe("waiting-on-you");
-    evidence.push({ phoneApproval: { botId, threadA, threadB, backgroundActivity: "waiting-on-you", staleOutcome: stale.body.outcome, displayedOutcome: answered.body.outcome } });
+    evidence.push({ phoneApproval: { botId, threadA, threadB, backgroundActivity: "waiting-on-you", staleStatus: stale.status, displayedOutcome: answered.body.outcome } });
     await control(["interrupt", "--bot", botId, "--task", threadA]);
     await control(["interrupt", "--bot", botId, "--task", threadB]);
   }, 45_000);
