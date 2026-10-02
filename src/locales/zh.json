@@ -88,7 +88,7 @@
   "sidebar.aria": "机器人与导航",
   "sidebar.search": "搜索",
   "sidebar.searchAria": "搜索机器人和消息",
-  "sidebar.searchPlaceholder": "搜索…",
+  "sidebar.search": "搜索",
   "sidebar.noMatch": "没有与“{query}”匹配的内容",
   "sidebar.preview.waiting": "等待你的回应…",
   "sidebar.preview.working": "工作中…",
