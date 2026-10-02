@@ -26,6 +26,14 @@ describe("per-person preference store", () => {
     if (process.platform !== "win32") expect(statSync(join(dir, "user-preferences.json")).mode & 0o777).toBe(0o600);
     expect(() => store.get("local-owner")).toThrow(/not a person/);
   });
+
+  it("keeps each person's own sidebar sections apart", () => {
+    const store = createUserPreferenceStore(mkdtempSync(join(tmpdir(), "omb-prefs-")), () => 1000);
+    store.put(ADA, { "sagax.sidebarSections.v1": JSON.stringify({ sections: [{ name: "Ventes", items: ["bot:b1"] }] }) });
+    store.put(BOB, { "sagax.sidebarSections.v1": JSON.stringify({ sections: [{ name: "Mine", items: ["bot:b1"] }] }) });
+    expect(JSON.parse(store.get(ADA).preferences["sagax.sidebarSections.v1"]!).sections[0].name).toBe("Ventes");
+    expect(JSON.parse(store.get(BOB).preferences["sagax.sidebarSections.v1"]!).sections[0].name).toBe("Mine");
+  });
 });
 
 type Answer = { status: number; body: unknown };

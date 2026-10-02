@@ -244,11 +244,10 @@ describe("slice 4: levels, teams and the section menu", () => {
     expect(markup).toContain("Remove");
   });
 
-  it("the section menu hides what the caller may not do; General only creates", () => {
-    const section = { id: "sec_1", name: "Ventes", ownerPrincipalId: OWNER, members: [], defaultLevel: "use" as const, viewerRole: "participant" as const, canModerate: false };
-    expect(orgSectionMenuItems(null, { named: false, canMoveUp: false, canMoveDown: true, anyExpanded: true })).toEqual(["onNew", "onMoveDown", "onCollapseAll"]);
-    expect(orgSectionMenuItems(section, { named: true, canMoveUp: true, canMoveDown: false, anyExpanded: false })).toEqual(["onNew", "onMembers", "onMoveUp", "onExpandAll"]);
-    expect(orgSectionMenuItems({ ...section, canModerate: true }, { named: true, canMoveUp: false, canMoveDown: false, anyExpanded: true })).toEqual(["onNew", "onRename", "onMembers", "onCollapseAll", "onDelete"]);
+  it("the section menu is personal: no members or sharing item; General creates, moves and folds", () => {
+    expect(orgSectionMenuItems({ named: false, canMoveUp: false, canMoveDown: true, anyExpanded: true })).toEqual(["onNew", "onMoveDown", "onCollapseAll"]);
+    expect(orgSectionMenuItems({ named: true, canMoveUp: true, canMoveDown: false, anyExpanded: false })).toEqual(["onNew", "onRename", "onMoveUp", "onExpandAll", "onDelete"]);
+    expect(orgSectionMenuItems({ named: true, canMoveUp: false, canMoveDown: false, anyExpanded: true })).not.toContain("onMembers");
   });
 
   it("says what a person's own turns use on an engine, and links to the keys page", () => {

@@ -583,7 +583,7 @@ import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.t
 import { OrgTeams } from "./org-teams.ts";
 import { keyVia, materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
-import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels } from "./section-channels.ts";
+import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { createBotPerspicaxRoutes } from "./bot-perspicax.ts";
 import { applyIdentityMigration, principalIdFor, rewritePeopleForAttach } from "./identity-migration.ts";
@@ -640,7 +640,7 @@ import {
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
-import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
+import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, levelRank, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
@@ -18135,14 +18135,11 @@ function roomSectionAccess(group: { id?: unknown; section?: unknown }): SectionA
   if (IDENTITY.kind !== "perspicax" || typeof group.section !== "string" || !group.section || typeof group.id !== "string") return null;
   return sectionChannels?.accessForRoom(group.section, group.id) ?? null;
 }
-/** Owner, grants and shared section of a bot, for server/authz.ts. */
+/** Owner and grants of a bot, for server/authz.ts. Sections are personal:
+ * a bot takes no access from one (the legacy shared sections became bot
+ * grants at boot, section-channels.ts header). */
 function botFacts(bot: { id?: unknown; ownerUserId?: unknown; grants?: unknown; directGrants?: unknown; section?: unknown; createdAt?: unknown }): BotFacts {
-  const ownerPrincipalId = effectiveBotOwner(bot);
-  // Only with the bot owner's consent (section-channels.ts header).
-  const section = IDENTITY.kind === "perspicax" && typeof bot.section === "string" && bot.section && typeof bot.id === "string"
-    ? sectionChannels?.accessForBot(bot.section, { id: bot.id, ownerPrincipalId }) ?? null
-    : null;
-  return { ownerPrincipalId, grants: botGrants(bot), sections: section ? [section] : [] };
+  return { ownerPrincipalId: effectiveBotOwner(bot), grants: botGrants(bot), sections: [] };
 }
 /** A person's teams, for the manager rules. */
 function principalTeams(principalId: string): TeamRef[] {
@@ -18994,6 +18991,39 @@ function sectionMigrationOwner(name: string): string {
   const firstAdmin = principals.list().filter((person) => person.orgRole === "admin" && person.subject && person.disabledAt === undefined).sort((a, b) => a.createdAt - b.createdAt)[0]?.id ?? localPrincipalId();
   return migrationOwner(bots, firstAdmin);
 }
+/** Sections are personal (section-channels.ts header): once, every legacy
+ * shared section becomes the bot grants it stood for, so nobody loses a bot
+ * they opened through it. A grant already as high is kept as it is; the
+ * records stay on disk. */
+function migrateSectionSharesToBotGrants(channels: SectionChannels): void {
+  if (channels.botSharesMigrated()) return;
+  const wanted = sectionShareGrants(channels, store.bots.map((bot) => ({ id: bot.id, section: sectionKey(bot.section) || undefined, ownerPrincipalId: effectiveBotOwner(bot) })));
+  const sections = new Set(wanted.map((grant) => grant.section));
+  const botIds = new Set(wanted.map((grant) => grant.botId));
+  let added = 0;
+  let raised = 0;
+  for (const botId of botIds) {
+    const bot = store.bot(botId);
+    if (!bot) continue;
+    const next = [...botGrants(bot)];
+    let changed = false;
+    for (const grant of wanted.filter((entry) => entry.botId === botId)) {
+      const index = next.findIndex((entry) => entry.target === grant.target);
+      if (index < 0) {
+        next.push({ target: grant.target, level: grant.level, by: grant.by, at: Date.now() });
+        added += 1;
+        changed = true;
+      } else if (levelRank(next[index]!.level) < levelRank(grant.level)) {
+        next[index] = { ...next[index]!, level: grant.level };
+        raised += 1;
+        changed = true;
+      }
+    }
+    if (changed) store.setBotGrants(botId, next);
+  }
+  channels.markBotSharesMigrated();
+  console.log(`sections: sections are personal; ${sections.size} shared section(s) became bot shares on ${botIds.size} bot(s) (${added} added, ${raised} raised)`);
+}
 /** The store's section names, every one with its record. */
 function orgSectionNames(): string[] {
   const names = store.sections;
@@ -19017,14 +19047,13 @@ if (sectionChannels) {
   // private record (no member): nothing is shared without someone's action.
   const created = sectionChannels.migrate(store.sections, sectionMigrationOwner);
   if (created) console.log(`sections: ${created} existing section(s) became private channels`);
+  migrateSectionSharesToBotGrants(sectionChannels);
   const channels = sectionChannels;
   ROUTES.push(createSectionChannelRoutes({
     channels,
     viewer: authzViewerFor,
     principalId: (auth) => (auth.kind === "session" ? auth.session.principalId?.trim() || "" : localPrincipalId()),
     teamsOf: principalTeams,
-    resolvePerson: resolveOrgGrantee,
-    teamKnown: (id) => orgTeams.has(id) || principals.membersOfTeam(id).length > 0,
     sections: orgSectionNames,
     createSection: (name) => {
       const result = store.setBotsSection([], name);
@@ -19032,33 +19061,6 @@ if (sectionChannels) {
     },
     renameSection: (name, nextName) => store.renameSection(name, nextName, teamComputers),
     deleteSection: (name) => (teamComputers.forSection(name) ? "Unassign this section's computer before deleting it" : store.deleteSection(name)),
-    moveBots: (name, add, remove) => {
-      const result = store.updateTeamMembers(name, add, remove);
-      return result.ok ? undefined : "One or more bots are unavailable";
-    },
-    botExists: (id) => Boolean(store.bot(id)),
-    botSection: (id) => sectionKey(store.bot(id)?.section) || undefined,
-    botOwner: (id) => {
-      const bot = store.bot(id);
-      return bot ? effectiveBotOwner(bot) : "";
-    },
-    managesBot: (auth, id) => {
-      const bot = store.bot(id);
-      return Boolean(bot) && atLeast(viewerBotLevel(auth, bot!), "manage");
-    },
-    createRoom: (name) => {
-      try {
-        // Only the bots the section opens: their owner consented.
-        const botIds = store.bots
-          .filter((bot) => sectionKey(bot.section) === name && !bot.hidden && channels.accessForBot(name, { id: bot.id, ownerPrincipalId: effectiveBotOwner(bot) }))
-          .map((bot) => bot.id);
-        return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" } }, []).id;
-      } catch (error) {
-        console.error(`sections: the conversation of a shared section could not be created: ${error instanceof Error ? error.message : String(error)}`);
-        return null;
-      }
-    },
-    roomExists: (id) => Boolean(store.group(id)),
     onChanged: () => {
       broadcast({ kind: "sections", sections: store.sections });
       audienceChanged();
