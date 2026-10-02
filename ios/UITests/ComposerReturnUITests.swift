@@ -40,14 +40,22 @@ final class ComposerReturnUITests: XCTestCase {
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
             "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
-            "-companion.onboarding.notificationsSeen", "YES"
+            "-companion.onboarding.notificationsSeen", "YES",
+            // The compact list: its rows carry the threads toggle. The
+            // install default is the standard home (HomeUITests).
+            "-companion.prefs.rosterDensity", "compact"
         ]
         app.launch()
-        if app.buttons["Connect computer"].exists {
+        // The first launch after an install can restore a prewarmed scene
+        // without the preview arguments (an empty, unpaired home: "Connect
+        // computer" before the parity home, "No bots yet" since). Restart
+        // only that wrong route, once.
+        let pepper = app.buttons["threads-toggle.preview-pepper"]
+        if !pepper.waitForExistence(timeout: 10) {
             app.terminate()
             app.launch()
         }
-        XCTAssertTrue(app.buttons["threads-toggle.preview-pepper"].waitForExistence(timeout: 10))
+        XCTAssertTrue(pepper.waitForExistence(timeout: 10))
         return app
     }
 

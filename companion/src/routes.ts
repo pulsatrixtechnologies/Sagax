@@ -53,6 +53,15 @@ export const CLOUD_DESKTOP_CONTROL_ROUTE = {
   path: /^\/api\/bots\/[\w-]+\/computer\/(?:control|screenshot|viewer-close)$/,
 } as const;
 
+/** The phone's native remote control (pointer, keys, text, clipboard). It is
+ * full desktop control like a viewer join, so it rides the same per-device
+ * capability; the harness also requires the person to hold control. */
+export const CLOUD_DESKTOP_INPUT_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/computer\/input$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/computer\/clipboard$/ },
+  { method: "PUT", path: /^\/api\/bots\/[\w-]+\/computer\/clipboard$/ },
+];
+
 export function isCloudDesktopJoin(method: string, path: string): boolean {
   return method === CLOUD_DESKTOP_JOIN_ROUTE.method && CLOUD_DESKTOP_JOIN_ROUTE.path.test(path);
 }
@@ -63,7 +72,8 @@ export function isMessageFileDownload(method: string, path: string): boolean {
 
 export function isCloudDesktopAccess(method: string, path: string): boolean {
   return isCloudDesktopJoin(method, path)
-    || (method === CLOUD_DESKTOP_CONTROL_ROUTE.method && CLOUD_DESKTOP_CONTROL_ROUTE.path.test(path));
+    || (method === CLOUD_DESKTOP_CONTROL_ROUTE.method && CLOUD_DESKTOP_CONTROL_ROUTE.path.test(path))
+    || CLOUD_DESKTOP_INPUT_ROUTES.some((route) => route.method === method && route.path.test(path));
 }
 
 /** Every request the iOS app makes, and nothing else.
@@ -129,6 +139,54 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   CLOUD_DESKTOP_JOIN_ROUTE,
 
   CLOUD_DESKTOP_CONTROL_ROUTE,
+  ...CLOUD_DESKTOP_INPUT_ROUTES,
+
+  // iOS visual parity (docs/ios-companion.md). Who is signed in (on a
+  // personal computer: its owner's name, never an address).
+  { method: "GET", path: /^\/api\/auth\/session$/ },
+  // The owner's bot edits from the profile: the harness holds a companion
+  // request to the member fields (look, framing, name, instructions,
+  // notifications, model), never where the bot runs or what it may do.
+  { method: "PATCH", path: /^\/api\/bots\/[\w-]+$/ },
+  // The profile's Links, Media and Files tabs, the files' thumbnails and
+  // downloads, and Share as Template (a package without secrets).
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/(?:links|files)$/ },
+  { method: "GET", path: /^\/api\/threads\/[\w-]+\/files$/ },
+  { method: "GET", path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/export$/ },
+  // Settings: auto-review default and time zone, saved command rules.
+  { method: "GET", path: /^\/api\/settings\/bot$/ },
+  { method: "PUT", path: /^\/api\/settings\/bot$/ },
+  { method: "GET", path: /^\/api\/auto-review\/rules$/ },
+  { method: "DELETE", path: /^\/api\/auto-review\/rules\/[\w.-]+$/ },
+  // Bot Computer: this computer's local container (status, update, reset).
+  { method: "GET", path: /^\/api\/computer\/status$/ },
+  { method: "POST", path: /^\/api\/computer\/(?:update|reset)$/ },
+  // Plugins: the catalog, what is installed, adding one and its sign-in.
+  { method: "GET", path: /^\/api\/plugins\/(?:search|installed)$/ },
+  { method: "POST", path: /^\/api\/plugins\/install$/ },
+  { method: "POST", path: /^\/api\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}\/oauth\/start$/ },
+  { method: "GET", path: /^\/api\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}\/oauth\/status$/ },
+  // Account: a personal computer answers personal_server (the phone forgets the pairing).
+  { method: "DELETE", path: /^\/api\/me$/ },
+  // The rest of the phone's screens, each held by the harness to the owner
+  // (or an admin) as for a server-paired phone: usage %, the bot's standing
+  // instructions, deleting a bot, the MCP servers listing (names, addresses
+  // and header names only, never values), a bot's saved command rules, the
+  // person's own preferences and server environment (an organization server
+  // only; a personal computer answers 404), and pinning a room.
+  { method: "GET", path: /^\/api\/usage$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/soul$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+$/ },
+  { method: "GET", path: /^\/api\/mcp\/servers$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/command-allowlist$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/command-allowlist\/[\w-]+$/ },
+  { method: "GET", path: /^\/api\/me\/preferences$/ },
+  { method: "PUT", path: /^\/api\/me\/preferences$/ },
+  { method: "GET", path: /^\/api\/me\/server-environment$/ },
+  { method: "POST", path: /^\/api\/me\/server-environment\/(?:reset|update)$/ },
+  { method: "PATCH", path: /^\/api\/groups\/[\w-]+$/ },
+
   // rooms — making one, and talking in one
   { method: "POST", path: /^\/api\/groups$/ },
   { method: "POST", path: /^\/api\/groups\/[\w-]+\/messages$/ },
@@ -241,6 +299,10 @@ export function denyReason({ path, method, authenticated }: RouteRequest): Denia
   // exactly the person it was for — which reads as "broken" rather than
   // "unpaired". It discloses nothing a port scan would not.
   if (method === "GET" && path === "/api/health") return null;
+  // An MCP server's sign-in returns here from the phone's browser sheet,
+  // which carries no device token: the single-use state bound to the
+  // pending sign-in is its authorization, as on the harness itself.
+  if (method === "GET" && path === "/api/mcp-oauth/callback") return null;
 
   if (!authenticated) {
     return { status: 401, error: "pair this device from Remote access settings on the host computer" };

@@ -9,6 +9,7 @@ import {
   BASE_IMAGE,
   CUA_DRIVER_VERSION,
   CUA_SOCKET,
+  DISPLAY,
   IMAGE as CUA_IMAGE,
   cuaExecArgs,
   dockerSecurityIsHardened,
@@ -1392,6 +1393,31 @@ export function vpsDriverError(driverKind: string, computerMcp: boolean): string
     return "This model cannot mount a self-hosted VPS computer — choose Claude or an ACP model provider";
   }
   return null;
+}
+
+/** One desktop script for the phone's remote input (server/computer-input.ts)
+ * in the bot's VPS container, as the desktop user on its X display. The
+ * container name is derived from the bot id, never taken from a request. */
+export async function vpsDesktopScript(
+  cfg: AppConfig,
+  botId: string,
+  script: string,
+  runner: VpsCommandRunner = defaultRunner,
+): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  cfg = snapshotVpsConfig(cfg);
+  const alias = vpsSshAlias(cfg);
+  if (!alias) throw Object.assign(new Error("VPS is not configured"), { status: 409 });
+  try {
+    const out = await runner(vpsDockerArgs(alias, [
+      "exec", "-u", "cua", "-e", "HOME=/home/cua", "-e", `DISPLAY=${DISPLAY}`,
+      vpsContainerName(botId), "sh", "-c", script,
+    ]), { timeoutMs: 20_000 });
+    return { ok: true, stdout: out.stdout, stderr: out.stderr.slice(-2000) };
+  } catch (error) {
+    const status = (error as { status?: unknown })?.status;
+    if (typeof status === "number") throw error;
+    return { ok: false, stdout: "", stderr: error instanceof Error ? error.message.slice(-2000) : "" };
+  }
 }
 
 export async function vpsComputerScreenshot(

@@ -17,7 +17,7 @@ import UIKit
 /// Stream lifecycle, in Console.app and the Xcode console. A companion that
 /// is silently not connected looks exactly like one with nothing to say, so
 /// the transitions are worth being able to read.
-private let log = Logger(subsystem: "com.openmausbot.companion", category: "stream")
+private let log = Logger(subsystem: "ca.pulsatrix.sagax", category: "stream")
 
 private final class CachedAttachmentDownload: NSObject {
     let value: DownloadedFile
@@ -84,8 +84,29 @@ final class Session: ObservableObject {
     /// A chat a deep link asked for, consumed by the roster's
     /// NavigationStack the same way a notification response is.
     @Published private(set) var pendingChat: Chat?
+    /// Who this phone is signed in as (`GET /api/auth/session`), for the
+    /// home's photo. Nil until loaded, or when the server does not say.
+    @Published private(set) var account: AuthSession?
+    /// False once the server showed it has no group pins: the home then
+    /// stops offering to pin a group.
+    @Published private(set) var groupPinsSupported = true
+    /// The app is showing the demo (`DemoServer`): local made-up data, no
+    /// network, nothing saved. Leaving it returns to the welcome screen.
+    @Published private(set) var isDemo = false
+    private var demoServer: DemoServer?
+    /// Which way the connect screen opened: a computer (QR, nearby,
+    /// address and code) or an organization (Sign in with Pulsatrix).
+    @Published private(set) var connectMode: ConnectMode = .computer
+
+    enum ConnectMode: Equatable {
+        case computer
+        case organization
+    }
 
     private var client: CompanionClient?
+    /// The live client, for the Settings sheet's own reads and writes
+    /// (SettingsModel); nil while nothing is paired.
+    var settingsClient: CompanionClient? { client }
     /// Ciphertext-only operations survive navigation and transient
     /// disconnects so a retry cannot accidentally reseal the same value with
     /// a different HPKE operation id. Nothing here is persisted to disk.
@@ -179,7 +200,21 @@ final class Session: ObservableObject {
             Task { @MainActor in await self?.openNotification(target) }
         }
 #if DEBUG
+        // Parity harness: a fixture server, held in memory only (ParityLaunch.swift).
+        if let parity = ParityLaunch.current {
+            let fixture = parity.connection
+            connections = [fixture]
+            configureActiveConnection(fixture, token: parity.token)
+            Task { await refreshNotificationAuthorization() }
+            return
+        }
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-reset-pairings") {
+            // UI tests start each case from a fresh install's state.
+            for saved in SagaxSharedConnectionStore.loadRegistry().connections { Keychain.remove(saved.id) }
+            SagaxSharedConnectionStore.saveRegistry(CompanionConnectionRegistry())
+            UserDefaults.standard.removeObject(forKey: OrgServerMemory.key)
+        }
         if (arguments.contains("-store-preview") || arguments.contains("-computer-switcher-preview")),
            let url = Bundle.main.url(
                forResource: arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : "StorePreview",
@@ -279,6 +314,12 @@ final class Session: ObservableObject {
                 // earlier run on the same simulator may have saved a choice.
                 UserDefaults.standard.removeObject(forKey: PrefKey.rosterDensity)
             }
+            if let index = arguments.firstIndex(of: "-set-list-density"), index + 1 < arguments.count {
+                // Saved like a choice made in Settings, so Settings can still
+                // change it (a `-companion.prefs.rosterDensity` argument would
+                // pin the value for the whole launch).
+                UserDefaults.standard.set(arguments[index + 1], forKey: PrefKey.rosterDensity)
+            }
             status = .live
             return
         }
@@ -299,7 +340,7 @@ final class Session: ObservableObject {
     /// only the first should ever send someone back to the pairing screen.
     private func restore() {
         restorePending = false
-        registry = OpenMausSharedConnectionStore.loadRegistry()
+        registry = SagaxSharedConnectionStore.loadRegistry()
         connections = registry.connections
         // The Share extension can target any saved computer, not only the
         // one active at launch. Move every inactive pre-extension token into
@@ -440,7 +481,7 @@ final class Session: ObservableObject {
                 )
             }
         } saveConnection: {
-            OpenMausSharedConnectionStore.saveRegistry(updatedRegistry)
+            SagaxSharedConnectionStore.saveRegistry(updatedRegistry)
         }
 
         stopActiveRuntime()
@@ -478,12 +519,15 @@ final class Session: ObservableObject {
             _ = try await probe.environment()
         } catch APIError.status(404, _) {
             throw APIError.transport(
-                "\(connection.displayAddress) isn't an OpenMausBot server. Check the address and try again."
+                "\(connection.displayAddress) isn't a Sagax server. Check the address and try again."
             )
         }
     }
 
     func receiveURL(_ url: URL) {
+        // A plugin sign-in's return (sagax://oauth-done) belongs to the
+        // sign-in sheet that started it, not to pairing.
+        if url.scheme?.lowercased() == PluginSignIn.callbackScheme { return }
         guard let link = CompanionDeepLink.parse(url) else {
             actionError = "That pairing invitation is not valid. Start pairing again on your computer."
             return
@@ -512,8 +556,57 @@ final class Session: ObservableObject {
         pendingChat = nil
     }
 
-    func beginPairing() {
+    /// Open the connect screen; `mode` picks its first page (nil keeps the
+    /// current one).
+    func beginPairing(_ mode: ConnectMode? = nil) {
+        if let mode { connectMode = mode }
         pairingRequested = true
+    }
+
+    // MARK: - Demo
+
+    /// Open the demo: the full app on `DemoServer`'s made-up workspace.
+    /// Nothing reaches the Keychain, the saved connections or the network.
+    func enterDemo() {
+        stopActiveRuntime()
+        let server = DemoServer(now: DemoLaunch.clock ?? Date())
+        server.onFrame = { [weak self] frame in
+            // One serial queue keeps the server's order.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.applyDemoFrame(frame) }
+            }
+        }
+        demoServer = server
+        isDemo = true
+        pairingRequested = false
+        connection = server.connection
+        connections = [server.connection]
+        client = server.makeClient()
+        var demoState = CompanionState()
+        demoState.hydrate(server.fleet)
+        if let png = DemoScreen.pngBase64() {
+            demoState.apply(.screen(botId: "demo-forge", png: png, mime: "image/png"))
+        }
+        state = demoState
+        status = .live
+    }
+
+    private func applyDemoFrame(_ frame: Frame) {
+        guard isDemo else { return }
+        state.apply(frame)
+    }
+
+    /// Leave the demo for the welcome screen (or the saved pairing, if one
+    /// exists): everything the demo held is dropped.
+    func exitDemo() {
+        guard isDemo else { return }
+        demoServer?.stop()
+        demoServer = nil
+        isDemo = false
+        connections = []
+        clearActiveConnection()
+        restore()
+        if connection != nil { connect() }
     }
 
     func endPairing() {
@@ -559,6 +652,7 @@ final class Session: ObservableObject {
     }
 
     func forgetConnection(id: String) {
+        if isDemo { exitDemo(); return }
         guard let forgotten = registry.connection(id: id) else { return }
         let wasActive = registry.activeConnectionID == id
         // A server session is ended on the server too, best effort: the
@@ -570,6 +664,7 @@ final class Session: ObservableObject {
         if wasActive { stopActiveRuntime() }
         preparedPhoneCredentials = preparedPhoneCredentials.filter { $0.value.connectionID != id }
         Keychain.remove(id)
+        BrandMascotCache.forget(id)
         registry.remove(id: id)
         persistRegistry()
         connections = registry.connections
@@ -594,6 +689,16 @@ final class Session: ObservableObject {
     /// Compatibility for the existing revoked-pairing and detail actions:
     /// sign out now means remove only the selected computer.
     func signOut() {
+        if isDemo { exitDemo(); return }
+#if DEBUG
+        // Parity harness: the fixture connection lives in memory only, so
+        // there is no saved pairing to forget; end the session in memory.
+        if ParityLaunch.current != nil {
+            connections = []
+            clearActiveConnection()
+            return
+        }
+#endif
         guard let id = connection?.id ?? registry.activeConnectionID else {
             clearActiveConnection()
             return
@@ -659,7 +764,7 @@ final class Session: ObservableObject {
     }
 
     private func persistRegistry() {
-        OpenMausSharedConnectionStore.saveRegistry(registry)
+        SagaxSharedConnectionStore.saveRegistry(registry)
     }
 
     private func persistActiveConnection(_ updated: Connection) {
@@ -673,6 +778,8 @@ final class Session: ObservableObject {
 
     /// Called when the app comes to the front, and once at launch.
     func connect() {
+        // The demo has no stream: its server hands frames over directly.
+        if isDemo { return }
         // A restore that found the keychain locked left `client` nil on
         // purpose. Coming to the front is the moment worth retrying on: the
         // app is on screen, so the phone is in someone's hand and unlocked.
@@ -767,6 +874,7 @@ final class Session: ObservableObject {
     /// the island. After that, iOS suspends us anyway; disconnect cleanly so
     /// the cursor is written down at a known point.
     func linger() {
+        if isDemo { return }
         guard streamTask != nil, lingerTask == .invalid else { disconnect(); return }
         // A previous request can leave a sleeper behind when iOS refuses the
         // background assertion. Never let it outlive the assertion it belongs
@@ -1060,7 +1168,7 @@ final class Session: ObservableObject {
                 do {
                     capable = try await client.imageCapableInstanceIDs()
                 } catch APIError.status(code: 404, message: _) {
-                    actionError = "Update OpenMausBot on this computer before sending images."
+                    actionError = "Update Sagax on this computer before sending images."
                     return false
                 }
                 guard imageSupported(by: chat, capableInstances: capable) else {
@@ -1343,7 +1451,7 @@ final class Session: ObservableObject {
     ) throws -> DownloadedFile {
         let manager = FileManager.default
         let root = manager.temporaryDirectory
-            .appendingPathComponent("OpenMausBotFilePreviews", isDirectory: true)
+            .appendingPathComponent("SagaxFilePreviews", isDirectory: true)
         let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try Task.checkCancellation()
         try manager.createDirectory(
@@ -1377,7 +1485,7 @@ final class Session: ObservableObject {
 
     private static func removeStaleFilePreviews() {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenMausBotFilePreviews", isDirectory: true)
+            .appendingPathComponent("SagaxFilePreviews", isDirectory: true)
         try? FileManager.default.removeItem(at: root)
     }
 
@@ -1620,6 +1728,71 @@ final class Session: ObservableObject {
         }
     }
 
+    /// Make a bot with the create sheet's name and look, fold it in, and
+    /// hand it back so it can be opened.
+    @discardableResult
+    func createBot(_ draft: NewBotDraft) async -> Bot? {
+        guard let client else { return nil }
+        do {
+            let bot = try await client.createBot(draft)
+            state.apply(.bot(bot))
+            return bot
+        } catch {
+            actionError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Pin or unpin a bot on the home row. The row moves at once and moves
+    /// back if the server refuses.
+    func setPinned(_ bot: Bot, pinned: Bool) async {
+        guard let client else { return }
+        var moved = bot
+        moved.pinned = pinned
+        state.apply(.bot(moved))
+        do {
+            let updated = try await client.setPinned(botId: bot.id, pinned: pinned)
+            state.apply(.bot(updated))
+        } catch {
+            if let current = state.bot(bot.id) {
+                var back = current
+                back.pinned = bot.pinned
+                state.apply(.bot(back))
+            }
+            actionError = error.localizedDescription
+        }
+    }
+
+    /// Pin or unpin a group. A server without group pins turns the option
+    /// off for the rest of the session instead of showing an error.
+    func setPinned(_ room: Room, pinned: Bool) async {
+        guard let client, groupPinsSupported else { return }
+        do {
+            let updated = try await client.setGroupPinned(groupId: room.id, pinned: pinned)
+            state.apply(.room(updated))
+        } catch let error as APIError where error.isUnauthorized {
+            status = .unauthorized
+        } catch {
+            groupPinsSupported = false
+        }
+    }
+
+    /// Load who this phone is signed in as, quietly: the home falls back to
+    /// an initial or the computer's mascot when it cannot.
+    func loadAccount() async {
+        guard let client else { return }
+        if let session = try? await client.authSession() { account = session }
+    }
+
+    /// The person's photo bytes, when the session names one.
+    func accountPhotoData() async -> Data? {
+        guard let path = account?.avatarUrl, let client else { return nil }
+        if let url = URL(string: path), let scheme = url.scheme, scheme == "https" || scheme == "http" {
+            return try? await URLSession.shared.data(from: url).0
+        }
+        return try? await client.avatar(path: path)
+    }
+
     /// Create a sidebar section by assigning its complete starting set in one
     /// request. The server commits the batch before returning, then these
     /// folds make the roster move immediately instead of waiting for SSE.
@@ -1639,6 +1812,10 @@ final class Session: ObservableObject {
     func interrupt(bot: Bot) async {
         await perform { try await $0.interrupt(botId: bot.id, threadId: bot.threadId) }
     }
+
+    /// The live client for the computer viewer's input, clipboard and control
+    /// calls (ComputerView), which handle their own refusals. Nil offline.
+    var computerClient: CompanionClient? { client }
 
     /// Ask for one fresh cloud viewer URL. Unlike ordinary actions this
     /// returns the value to a browser sheet and never writes it to app state.
@@ -2065,6 +2242,13 @@ final class Session: ObservableObject {
     }
 
     // MARK: - Routines
+
+    /// The bot profile's own calls (`App/Profile/`, `ClientProfile.swift`).
+    var profileClient: CompanionClient? { client }
+
+    /// Fold a bot the profile just saved, or drop one it deleted.
+    func applyProfileBot(_ bot: Bot) { state.apply(.bot(bot)) }
+    func applyBotDeleted(_ botId: String) { state.apply(.botDeleted(botId: botId)) }
 
     func loadRoutines() async -> (routines: [Routine], runs: [RoutineRun]) {
         guard let client else { return ([], []) }

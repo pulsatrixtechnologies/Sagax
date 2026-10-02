@@ -11,6 +11,7 @@ import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import type { RoutineRequestOperation } from "../shared/routine-request.ts";
 import { normalizeCronSchedule, nextCronRuns, type RoutineCronSchedule } from "../shared/routine-schedule.ts";
 import { isRoutineProblemRun } from "../shared/routines.ts";
+import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
 import { ROUTINE_PARTS, type PartPair, type RoutinePart } from "./package-parts.ts";
 
 export interface RoutineIntervalWindow {
@@ -330,6 +331,9 @@ export interface RoutineManagerOptions {
    * for, who owns its thread on an organization server
    * (server/thread-privacy.ts); else the bot owner. */
   createTask: (botId: string, title: string, activate?: boolean, routineId?: string, runAs?: string) => { threadId: string } | null;
+  /** The zone a routine's daily times, windows and weekdays are read in (the
+   * person's on an organization server), or undefined for the default. */
+  timeZoneFor?: (routine: { botId?: string; runAs?: string }) => string | undefined;
   /** When set, run this bot's routine in that existing conversation instead of
    * a new hidden task. Room goals never use it. */
   joinConversation?: (run: RoutineRun) => string | null;
@@ -712,12 +716,37 @@ function intervalHasRestrictions(schedule: RoutineIntervalSchedule): boolean {
   return schedule.weekdays !== undefined || schedule.window !== undefined || schedule.endsAt !== undefined;
 }
 
-function intervalAllowsOccurrence(schedule: RoutineIntervalSchedule, at: number): boolean {
-  if (schedule.endsAt !== undefined && at > schedule.endsAt) return false;
+// ── the zone routines read wall clocks in ──────────────────────────────
+// Daily times, interval windows and weekdays are wall-clock rules. They are
+// read in the zone the person chose (server/bot-settings.ts) when there is
+// one, else in the host's, as they always were. Cron schedules carry their
+// own zone and never use this.
+let routineZoneResolver: () => string | undefined = () => undefined;
+/** Set by the server: the configured zone, or undefined for the host's. */
+export function setRoutineTimeZone(resolver: () => string | undefined): void {
+  routineZoneResolver = resolver;
+}
+const HOST_ZONE = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+/** The zone to read a schedule in, or undefined for the host's own clock. */
+function scheduleZone(zone: string | undefined): string | undefined {
+  const chosen = zone ?? routineZoneResolver();
+  if (!chosen || chosen === HOST_ZONE()) return undefined;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: chosen }).format(0); }
+  catch { return undefined; }
+  return chosen;
+}
+function wallClock(at: number, zone: string | undefined): { year: number; month: number; day: number; hour: number; minute: number; weekday: number } {
+  if (zone) return zonedParts(at, zone);
   const date = new Date(at);
-  if (schedule.weekdays && !schedule.weekdays.includes(date.getDay())) return false;
+  return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(), hour: date.getHours(), minute: date.getMinutes(), weekday: date.getDay() };
+}
+
+function intervalAllowsOccurrence(schedule: RoutineIntervalSchedule, at: number, zone?: string): boolean {
+  if (schedule.endsAt !== undefined && at > schedule.endsAt) return false;
+  const clock = wallClock(at, scheduleZone(zone));
+  if (schedule.weekdays && !schedule.weekdays.includes(clock.weekday)) return false;
   if (schedule.window) {
-    const minute = date.getHours() * 60 + date.getMinutes();
+    const minute = clock.hour * 60 + clock.minute;
     const start = clockMinutes(schedule.window.start)!;
     const end = clockMinutes(schedule.window.end)!;
     if (minute < start || minute >= end) return false;
@@ -725,10 +754,11 @@ function intervalAllowsOccurrence(schedule: RoutineIntervalSchedule, at: number)
   return true;
 }
 
-function isSameLocalDay(left: number, right: number): boolean {
-  const a = new Date(left);
-  const b = new Date(right);
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+function isSameLocalDay(left: number, right: number, zone?: string): boolean {
+  const resolved = scheduleZone(zone);
+  const a = wallClock(left, resolved);
+  const b = wallClock(right, resolved);
+  return a.year === b.year && a.month === b.month && a.day === b.day;
 }
 
 function nextAlignedInterval(schedule: RoutineIntervalSchedule, after: number): number | null {
@@ -739,8 +769,10 @@ function nextAlignedInterval(schedule: RoutineIntervalSchedule, after: number): 
   return Number.isSafeInteger(candidate) && candidate <= MAX_DATE_MS ? candidate : null;
 }
 
-/** Next occurrence strictly after `after`: cron uses its saved zone, daily uses the host zone. */
-export function nextOccurrence(schedule: RoutineSchedule, after: number): number | null {
+/** Next occurrence strictly after `after`: cron uses its saved zone; daily
+ * times, windows and weekdays use `zone`, else the configured routine zone
+ * (setRoutineTimeZone), else the host's. */
+export function nextOccurrence(schedule: RoutineSchedule, after: number, zone?: string): number | null {
   if (schedule.type === "once") return schedule.at > after ? schedule.at : null;
   if (schedule.type === "cron") return nextCronRuns(schedule, after, 1)[0] ?? null;
   if (schedule.type === "interval") {
@@ -750,7 +782,7 @@ export function nextOccurrence(schedule: RoutineSchedule, after: number): number
     const maxCandidates = Math.ceil(INTERVAL_RESTRICTION_SEARCH_MS / intervalMs) + 2;
     for (let checked = 0; candidate !== null && checked < maxCandidates; checked++) {
       if (schedule.endsAt !== undefined && candidate > schedule.endsAt) return null;
-      if (intervalAllowsOccurrence(schedule, candidate)) return candidate;
+      if (intervalAllowsOccurrence(schedule, candidate, zone)) return candidate;
       const next = candidate + intervalMs;
       candidate = Number.isSafeInteger(next) && next <= MAX_DATE_MS ? next : null;
     }
@@ -758,6 +790,16 @@ export function nextOccurrence(schedule: RoutineSchedule, after: number): number
   }
   const [hour, minute] = schedule.time.split(":").map(Number);
   const weekdays = new Set(cleanDays(schedule.weekdays));
+  const resolved = scheduleZone(zone);
+  if (resolved) {
+    const today = zonedParts(after, resolved);
+    for (let offset = 0; offset <= 8; offset++) {
+      const date = new Date(Date.UTC(today.year, today.month - 1, today.day + offset));
+      const at = zonedTimeToUtc(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), hour!, minute!, resolved);
+      if (at > after && weekdays.has(date.getUTCDay())) return at;
+    }
+    return null;
+  }
   for (let offset = 0; offset <= 8; offset++) {
     const d = new Date(after);
     d.setDate(d.getDate() + offset);
@@ -770,6 +812,7 @@ export function nextOccurrence(schedule: RoutineSchedule, after: number): number
 function latestIntervalOccurrence(
   schedule: RoutineIntervalSchedule,
   at: number,
+  zone?: string,
 ): number | null {
   const intervalMs = schedule.everyMinutes * 60_000;
   const ceiling = Math.min(at, schedule.endsAt ?? at);
@@ -778,7 +821,7 @@ function latestIntervalOccurrence(
   if (!intervalHasRestrictions(schedule)) return candidate;
   const maxCandidates = Math.ceil(INTERVAL_RESTRICTION_SEARCH_MS / intervalMs) + 2;
   for (let checked = 0; checked < maxCandidates; checked++) {
-    if (intervalAllowsOccurrence(schedule, candidate)) return candidate;
+    if (intervalAllowsOccurrence(schedule, candidate, zone)) return candidate;
     const previous = candidate - intervalMs;
     if (!Number.isSafeInteger(previous) || previous < schedule.anchorAt) return null;
     candidate = previous;
@@ -1125,7 +1168,7 @@ export class RoutineManager {
     const at = this.now();
     const clean = validInput(input, at);
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
-    const nextRunAt = clean.enabled ? this.initialOccurrence(clean.schedule, at) : null;
+    const nextRunAt = clean.enabled ? this.initialOccurrence(clean.schedule, at, clean) : null;
     if (clean.schedule.type === "interval" && clean.enabled && nextRunAt === null) {
       throw new Error("This interval has no future runs. Choose a later end date or turn it off.");
     }
@@ -1185,7 +1228,7 @@ export class RoutineManager {
     const enabledChanged = clean.enabled !== routine.enabled;
     // Definition-only edits retain due work and offline catch-up.
     const nextRunAt = !clean.enabled ? null : scheduleChanged || enabledChanged
-      ? this.initialOccurrence(clean.schedule, now)
+      ? this.initialOccurrence(clean.schedule, now, { ...routine, ...clean })
       : routine.nextRunAt;
     if (clean.schedule.type === "interval" && clean.enabled && nextRunAt === null) {
       throw new Error("This interval has no future runs. Choose a later end date or turn it off.");
@@ -1565,7 +1608,7 @@ export class RoutineManager {
             const pendingAt = routine.nextRunAt!;
             const late = now - pendingAt;
             const scheduledFor = routine.schedule.type === "interval" && late <= CATCH_UP_MS
-              ? latestIntervalOccurrence(routine.schedule, now) ?? pendingAt
+              ? latestIntervalOccurrence(routine.schedule, now, this.zoneOf(routine)) ?? pendingAt
               : pendingAt;
             // Frequent recurring work must not build an unbounded queue of stale
             // copies. Elapsed intervals keep their phase; cron keeps its calendar.
@@ -1587,7 +1630,7 @@ export class RoutineManager {
               routine.lastSkippedAt = scheduledFor;
             }
             routine.nextRunAt =
-              routine.schedule.type === "once" ? null : nextOccurrence(routine.schedule, Math.max(now, scheduledFor));
+              routine.schedule.type === "once" ? null : nextOccurrence(routine.schedule, Math.max(now, scheduledFor), this.zoneOf(routine));
             // `updatedAt` is the optimistic definition revision carried by
             // routine confirmation cards. Moving the scheduler cursor is runtime
             // progress, not a definition edit, so recurring ticks must not make a
@@ -1630,7 +1673,8 @@ export class RoutineManager {
           ? this.routines.find((routine) => routine.id === run.routineId)
           : undefined;
         if (definition?.schedule.type === "interval") {
-          const latest = latestIntervalOccurrence(definition.schedule, now);
+          const zone = this.zoneOf(definition);
+          const latest = latestIntervalOccurrence(definition.schedule, now, zone);
           if (latest !== null && latest > run.scheduledFor) {
             run.scheduledFor = latest;
             this.save();
@@ -1638,10 +1682,10 @@ export class RoutineManager {
           }
           const requiresCurrentDayOccurrence =
             definition.schedule.weekdays !== undefined || definition.schedule.window !== undefined;
-          const mayDispatch = intervalAllowsOccurrence(definition.schedule, now) &&
-            (!requiresCurrentDayOccurrence || (latest !== null && isSameLocalDay(latest, now)));
+          const mayDispatch = intervalAllowsOccurrence(definition.schedule, now, zone) &&
+            (!requiresCurrentDayOccurrence || (latest !== null && isSameLocalDay(latest, now, zone)));
           if (!mayDispatch) {
-            if (nextOccurrence(definition.schedule, now) === null) {
+            if (nextOccurrence(definition.schedule, now, zone) === null) {
               this.missQueuedRun(run, "The routine ended before this scheduled run could start");
             }
             continue;
@@ -1941,7 +1985,7 @@ export class RoutineManager {
       if (!routine.suspended || !CONSENT_REASONS.has(routine.suspended.reason)) continue;
       if ((routine.runAs ?? ownerOf(cloneRoutine(routine))) !== principalId) continue;
       delete routine.suspended;
-      if (routine.enabled && routine.schedule.type !== "once") routine.nextRunAt = this.initialOccurrence(routine.schedule, now);
+      if (routine.enabled && routine.schedule.type !== "once") routine.nextRunAt = this.initialOccurrence(routine.schedule, now, routine);
       resumed.push(routine);
     }
     if (!resumed.length) return [];
@@ -1993,7 +2037,33 @@ export class RoutineManager {
       : "The assigned bot no longer exists";
   }
 
-  private initialOccurrence(schedule: RoutineSchedule, now: number): number | null {
+  /** The zone this routine's wall-clock rules are read in (timeZoneFor), or
+   * undefined for the server's default (setRoutineTimeZone, else the host). */
+  private zoneOf(routine: { botId?: string; runAs?: string }): string | undefined {
+    return this.options.timeZoneFor?.(routine);
+  }
+
+  /** Recompute when each wall-clock routine runs next, after its time zone
+   * changed (Settings > Bot > Time Zone). Cron and one-time routines keep
+   * their times; a routine already due keeps its due run. */
+  rescheduleWallClock(filter: (routine: { botId?: string; runAs?: string }) => boolean = () => true): number {
+    const now = this.now();
+    let changed = 0;
+    for (const routine of this.routines) {
+      if (!routine.enabled || routine.suspended || routine.schedule.type === "once" || routine.schedule.type === "cron") continue;
+      if (routine.nextRunAt !== null && routine.nextRunAt !== undefined && routine.nextRunAt <= now) continue;
+      if (!filter(routine)) continue;
+      const next = nextOccurrence(routine.schedule, now, this.zoneOf(routine));
+      if (next === routine.nextRunAt) continue;
+      routine.nextRunAt = next;
+      changed++;
+      this.emitRoutine(routine);
+    }
+    if (changed) this.save();
+    return changed;
+  }
+
+  private initialOccurrence(schedule: RoutineSchedule, now: number, routine?: { botId?: string; runAs?: string }): number | null {
     // Return the original time, not max(at, now): tick() already decides
     // whether a stale "once" run fires or is recorded as "missed" based on
     // how far past the scheduled time it is. Clamping to now here hides the
@@ -2001,7 +2071,7 @@ export class RoutineManager {
     // instead of the time the user chose) and prevents the 12-hour missed
     // threshold from ever triggering for a "once" routine created late.
     if (schedule.type === "once") return schedule.at;
-    return nextOccurrence(schedule, now);
+    return nextOccurrence(schedule, now, routine ? this.zoneOf(routine) : undefined);
   }
 
   private newRun(

@@ -36,6 +36,8 @@ extension View {
 /// system layout, spacing and colour. On 16 it is a plain centred stack, which
 /// is what the system view looks like anyway.
 struct EmptyStateView<Actions: View>: View {
+    /// English source text (or an already localized string), looked up in
+    /// the catalog when drawn.
     let title: String
     let systemImage: String
     var description: Text?
@@ -44,7 +46,7 @@ struct EmptyStateView<Actions: View>: View {
     var body: some View {
         if #available(iOS 17.0, *) {
             ContentUnavailableView {
-                Label(title, systemImage: systemImage)
+                Label(LocalizedStringKey(title), systemImage: systemImage)
             } description: {
                 description
             } actions: {
@@ -55,7 +57,7 @@ struct EmptyStateView<Actions: View>: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 44, weight: .regular))
                     .foregroundStyle(.secondary)
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.title3.weight(.semibold))
                     .multilineTextAlignment(.center)
                 description?
@@ -123,7 +125,10 @@ extension View {
     /// generators are driven by hand, which is what the modifier does anyway.
     @ViewBuilder
     func feedback<T: Equatable>(_ kind: FeedbackKind, trigger: T) -> some View {
-        if #available(iOS 17.0, *) {
+        // Settings > App > Haptics off: no generator, declarative or not.
+        if !Haptics.isEnabled {
+            self
+        } else if #available(iOS 17.0, *) {
             switch kind {
             case .selection: sensoryFeedback(.selection, trigger: trigger)
             case .warning: sensoryFeedback(.warning, trigger: trigger)

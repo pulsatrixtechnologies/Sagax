@@ -82,6 +82,9 @@ public struct CompanionState: Sendable {
     /// bounded tombstone list, so a slow response cannot re-add a row for a
     /// message that is already in the transcript.
     public var drainedQueueIds: [String] = []
+    /// The server's section order (`GET /api/bots` `sections`). Sections it
+    /// names come first in that order; any other follows in natural order.
+    public var sectionOrder: [String] = []
 
     public init() {}
 
@@ -172,6 +175,14 @@ public struct CompanionState: Sendable {
         for raw in sectionBots.map(\.section) + sectionChiefs.map(\.section) + visibleChannels.map(\.section) {
             guard let name = Self.sectionName(raw), !names.contains(name) else { continue }
             names.append(name)
+        }
+        if !sectionOrder.isEmpty {
+            let rank = Dictionary(sectionOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+            names = names.enumerated().sorted { left, right in
+                let l = rank[left.element] ?? (sectionOrder.count + left.offset)
+                let r = rank[right.element] ?? (sectionOrder.count + right.offset)
+                return l < r
+            }.map(\.element)
         }
         return names.map { name in
             SidebarSection(
@@ -272,6 +283,7 @@ public struct CompanionState: Sendable {
     public mutating func hydrate(_ fleet: Fleet, waitingThreads: [String: ThreadPage] = [:]) {
         bots = fleet.bots
         rooms = fleet.groups
+        if let order = fleet.sections { sectionOrder = order }
         messages.removeAll()
         hasMore.removeAll()
         activeLeafIds.removeAll()

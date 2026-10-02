@@ -1,36 +1,44 @@
 # XcodeGen spec. The .xcodeproj is generated, not committed — a project
 # file is a merge-conflict machine and nothing in it is worth reviewing.
 #
-#   brew install xcodegen && cd ios && xcodegen generate && open OpenMausCompanion.xcodeproj
+#   brew install xcodegen && cd ios && xcodegen generate && open Sagax.xcodeproj
 #
 # XcodeGen is a development tool, not a dependency of the app: the app
 # itself has none. If you'd rather not install it, make an iOS App target
 # in Xcode by hand, add the App/ folder, and add the local CompanionCore
 # package — the Info.plist keys below are the part that is easy to miss.
-name: OpenMausCompanion
+name: Sagax
 options:
-  bundleIdPrefix: com.openmausbot
+  bundleIdPrefix: ca.pulsatrix
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
+
+# Pulsatrix Technologies (owner of ca.pulsatrix.sagax in App Store Connect).
+# Automatic signing: archive with -allowProvisioningUpdates and the App Store
+# Connect API key, never with a forced distribution certificate.
+settings:
+  base:
+    DEVELOPMENT_TEAM: PP546MZVHZ
+    CODE_SIGN_STYLE: Automatic
 
 packages:
   CompanionCore:
     path: .
 
 schemes:
-  OpenMausCompanion:
+  Sagax:
     build:
       targets:
-        OpenMausCompanion: all
-        OpenMausCompanionUITests: [test]
+        Sagax: all
+        SagaxUITests: [test]
     test:
       config: Debug
       targets:
-        - OpenMausCompanionUITests
+        - SagaxUITests
 
 targets:
-  OpenMausCompanion:
+  Sagax:
     type: application
     platform: iOS
     sources:
@@ -40,46 +48,49 @@ targets:
     dependencies:
       - package: CompanionCore
         product: CompanionCore
-      - target: OpenMausCompanionWidgets
-      - target: OpenMausShareExtension
+      - target: SagaxWidgetExtension
+      - target: SagaxShareExtension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.openmausbot.app
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "6"
+        PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax
+        MARKETING_VERSION: "0.4.0"
+        CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         # The catalog lives in App/, which is already a source path.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     entitlements:
-      path: App/OpenMausCompanion.entitlements
+      path: App/Sagax.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.openmausbot.shared
+          - group.ca.pulsatrix.sagax
         keychain-access-groups:
-          - $(AppIdentifierPrefix)com.openmausbot.app
-          - $(AppIdentifierPrefix)group.com.openmausbot.shared
+          - $(AppIdentifierPrefix)ca.pulsatrix.sagax
+          - $(AppIdentifierPrefix)group.ca.pulsatrix.sagax
     info:
       path: App/Info.plist
       properties:
         # What appears under the icon. This MUST stay close to the App Store
-        # listing name ("MausBot") or review rejects the build under
-        # guideline 2.3.8: a person who installs "MausBot" has to be able to
-        # find it on the home screen. The desktop app is "Sagax", which
-        # is near enough to read as the same family and still tell them apart.
-        CFBundleDisplayName: MausBot
+        # listing name ("Sagax") or review rejects the build under
+        # guideline 2.3.8.
+        CFBundleDisplayName: Sagax
+        CFBundleName: Sagax
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.productivity
         ITSAppUsesNonExemptEncryption: false
-        OpenMausKeychainAccessGroup: $(AppIdentifierPrefix)group.com.openmausbot.shared
+        SagaxKeychainAccessGroup: $(AppIdentifierPrefix)group.ca.pulsatrix.sagax
         # The bot's Live Activity — its face and ask in the Dynamic Island
         # and on the lock screen.
         NSSupportsLiveActivities: true
         CFBundleURLTypes:
-          - CFBundleURLName: com.openmausbot.companion.pairing
+          # sagax:// only. Servers and desktops from 0.4.0 emit it for
+          # every phone link (pairing QR, sign-in return, widgets), and
+          # plugin sign-in returns on sagax://oauth-done, which
+          # ASWebAuthenticationSession catches before the app does.
+          - CFBundleURLName: ca.pulsatrix.sagax
             CFBundleURLSchemes:
-              - openmausbot
+              - sagax
         # REQUIRED, and easy to lose. Without a launch screen iOS runs the
         # app in compatibility scaling: letterboxed inside black bars, with
         # everything drawn oversized, on every modern iPhone. An empty
@@ -108,9 +119,9 @@ targets:
           Sagax uses the camera only to scan a pairing QR code shown on
           your computer.
         NSMicrophoneUsageDescription: >-
-          OpenMausMobile listens while you dictate a message to a bot.
+          Sagax listens while you dictate a message to a bot.
         NSSpeechRecognitionUsageDescription: >-
-          OpenMausMobile converts your speech into text so you can send it
+          Sagax converts your speech into text so you can send it
           to a bot. Recognition runs on this phone when it can.
         NSBonjourServices:
           - _openmausbot._tcp
@@ -134,26 +145,26 @@ targets:
               NSExceptionAllowsInsecureHTTPLoads: true
 
   # Native navigation coverage uses bundled synthetic data and no pairing.
-  OpenMausCompanionUITests:
+  SagaxUITests:
     type: bundle.ui-testing
     platform: iOS
     sources:
       - path: UITests
     dependencies:
-      - target: OpenMausCompanion
+      - target: Sagax
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.openmausbot.app.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.uitests
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
-        TEST_TARGET_NAME: OpenMausCompanion
+        TEST_TARGET_NAME: Sagax
 
   # The system share sheet can send a link, text, image, or document straight
   # to a paired bot without first opening the containing app. Connection
   # metadata lives in the App Group; the bearer remains in the shared
   # Keychain access group.
-  OpenMausShareExtension:
+  SagaxShareExtension:
     type: app-extension
     platform: iOS
     sources:
@@ -164,27 +175,27 @@ targets:
         product: CompanionCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.openmausbot.app.share
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "6"
+        PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.share
+        MARKETING_VERSION: "0.4.0"
+        CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: true
     entitlements:
-      path: ShareExtension/OpenMausShareExtension.entitlements
+      path: ShareExtension/SagaxShareExtension.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.openmausbot.shared
+          - group.ca.pulsatrix.sagax
         keychain-access-groups:
-          - $(AppIdentifierPrefix)group.com.openmausbot.shared
+          - $(AppIdentifierPrefix)group.ca.pulsatrix.sagax
     info:
       path: ShareExtension/Info.plist
       properties:
-        CFBundleDisplayName: MausBot
+        CFBundleDisplayName: Sagax
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        OpenMausKeychainAccessGroup: $(AppIdentifierPrefix)group.com.openmausbot.shared
+        SagaxKeychainAccessGroup: $(AppIdentifierPrefix)group.ca.pulsatrix.sagax
         # ATS is evaluated for URLSession work performed by the extension too.
         # Mirror the containing app's narrow local/Tailscale exceptions so a
         # share can reach the same already-paired routes. Local-network privacy
@@ -209,7 +220,7 @@ targets:
   # The Live Activity lives in a widget extension, alongside the home-screen
   # widgets. It shares the mascot's drawing and data with the app, and the
   # activity contract in Shared/.
-  OpenMausCompanionWidgets:
+  SagaxWidgetExtension:
     type: app-extension
     platform: iOS
     # Live Activities and the Dynamic Island arrived in 16.1, so this
@@ -223,22 +234,30 @@ targets:
       # answer intent resolves tokens through the same shared connection
       # store the Share extension uses.
       - path: AppShared
-      - path: App/MausAvatar.swift
-      - path: App/MausFaceData.swift
+      # The Sagax characters, drawn still: everything in App/Mascots except
+      # BotMascotView, which loads pictures through the app's Session.
+      - path: App/Mascots/MascotPaint.swift
+      - path: App/Mascots/MausState.swift
+      - path: App/Mascots/MascotCharacterView.swift
+      - path: App/Mascots/MascotComets.swift
+      - path: App/Mascots/OwlMascotView.swift
+      - path: App/Mascots/OwlSkinFx.swift
+      - path: App/Mascots/ShapeMascotView.swift
+      - path: App/Mascots/TrombiMascotView.swift
       # MascotState resolves the face for the post-answer refresh a widget
       # performs; it is self-contained above Core, so it rides along.
       - path: App/MascotState.swift
     dependencies:
-      # MausAvatar draws whichever body a bot wears, and the body catalog and
-      # its path parser live in CompanionCore. The extension shares the
-      # drawing with the app, so it has to share the catalog too.
+      # The mascots' art, its path parser and the bot's look live in
+      # CompanionCore. The extension shares the drawing with the app, so it
+      # has to share the art too.
       - package: CompanionCore
         product: CompanionCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.openmausbot.app.widgets
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "6"
+        PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.widgets
+        MARKETING_VERSION: "0.4.0"
+        CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -248,18 +267,18 @@ targets:
     # keychain access group carries the tokens its answer intent will ask
     # for.
     entitlements:
-      path: Widgets/OpenMausCompanionWidgets.entitlements
+      path: Widgets/SagaxWidgets.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.openmausbot.shared
+          - group.ca.pulsatrix.sagax
         keychain-access-groups:
-          - $(AppIdentifierPrefix)group.com.openmausbot.shared
+          - $(AppIdentifierPrefix)group.ca.pulsatrix.sagax
     info:
       path: Widgets/Info.plist
       properties:
-        CFBundleDisplayName: MausBot
+        CFBundleDisplayName: Sagax
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        OpenMausKeychainAccessGroup: $(AppIdentifierPrefix)group.com.openmausbot.shared
+        SagaxKeychainAccessGroup: $(AppIdentifierPrefix)group.ca.pulsatrix.sagax
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension

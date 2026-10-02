@@ -172,6 +172,57 @@ public func rosterPreview(_ messages: [Message], detail: ActivityDetail) -> Stri
     }
 }
 
+/// The leading icon of a home preview line (`paperclip`, `paperplane`).
+public enum RosterPreviewKind: String, Hashable, Sendable {
+    /// Text only: no icon.
+    case plain
+    /// The last line carries a file or an image, either way.
+    case attachment
+    /// A message this bot sent to another bot.
+    case sentToBot
+}
+
+/// A roster preview with the kind that picks its icon.
+public struct RosterPreviewLine: Hashable, Sendable {
+    public var text: String
+    public var kind: RosterPreviewKind
+
+    public init(text: String, kind: RosterPreviewKind) {
+        self.text = text
+        self.kind = kind
+    }
+}
+
+/// `rosterPreview` plus the icon kind, folded by the same rules.
+public func rosterPreviewLine(_ messages: [Message], detail: ActivityDetail) -> RosterPreviewLine {
+    let text = rosterPreview(messages, detail: detail)
+    let visible = messages.filter { $0.kind != .digest }
+    guard case let .message(last)? = transcriptRows(visible, detail: detail).last else {
+        return RosterPreviewLine(text: text, kind: .plain)
+    }
+    let kind = rosterPreviewKind(of: last)
+    guard kind == .attachment, last.kind == .text, last.role == .user else {
+        return RosterPreviewLine(text: text, kind: kind)
+    }
+    // A person's upload is stored as a transport tag: show the words, or the
+    // file's name when the message was only the file.
+    let parsed = AttachedMessageContent.parse(last.text ?? "")
+    let words = parsed.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    return RosterPreviewLine(text: words.isEmpty ? (parsed.attachments.first?.name ?? text) : words, kind: kind)
+}
+
+/// Which icon one message earns in a roster row.
+public func rosterPreviewKind(of message: Message) -> RosterPreviewKind {
+    if message.comm != nil { return .sentToBot }
+    if message.kind == .activity, message.threadRef != nil, message.role == .bot { return .sentToBot }
+    if !(message.attachments ?? []).isEmpty { return .attachment }
+    if message.kind == .text, let text = message.text,
+       !AttachedMessageContent.parse(text).attachments.isEmpty {
+        return .attachment
+    }
+    return .plain
+}
+
 /// What a single message reads as in a roster row.
 func previewText(of message: Message) -> String {
     switch message.kind {

@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>MausBot</string>
+	<string>Sagax</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,7 +25,7 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.widgetkit-extension</string>
 	</dict>
-	<key>OpenMausKeychainAccessGroup</key>
-	<string>$(AppIdentifierPrefix)group.com.openmausbot.shared</string>
+	<key>SagaxKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)group.ca.pulsatrix.sagax</string>
 </dict>
 </plist>

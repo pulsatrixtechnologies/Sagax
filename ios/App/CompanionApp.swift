@@ -16,10 +16,11 @@ struct CompanionApp: App {
     @State private var liveActivities = LiveActivityBridge()
     @State private var widgetSync = WidgetSyncBridge.makeAppGroupBridge()
     @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
+    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            MascotGalleryGate { RootView() }
                 .environmentObject(session)
                 // One modifier is the whole language seam. SwiftUI resolves a
                 // `LocalizedStringKey` against the environment's locale, so
@@ -39,8 +40,12 @@ struct CompanionApp: App {
                 // person changes deliberately and almost never. `session` lives
                 // on the App, not here, so the connection survives.
                 .id(language)
+                // Settings > App > Appearance: System follows the device, Dark forces it.
+                .preferredColorScheme((AppearanceMode(rawValue: appearance) ?? .system).colorScheme)
+                // Settings > App > Appearance: Black or Dim, everywhere.
+                .modifier(ThemeToneRefresh())
                 .onAppear {
-                    OpenMausSharedInbox.removeDirectories(olderThan: 60 * 60)
+                    SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
                     session.connect()
                     liveActivities.attach(to: session)
                     widgetSync.attach(to: session)
@@ -49,12 +54,12 @@ struct CompanionApp: App {
                 .onValueChange(of: scenePhase) { phase in
                     switch phase {
                     case .active:
-                        OpenMausSharedInbox.removeDirectories(olderThan: 60 * 60)
+                        SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
                         session.connect()
                         Task { await session.refreshNotificationAuthorization() }
                     case .background:
                         session.linger()
-                        widgetSync.flush(session.state, connectionID: session.connection?.id)
+                        if !session.isDemo { widgetSync.flush(session.state, connectionID: session.connection?.id) }
                     case .inactive: break
                     @unknown default: break
                     }
@@ -76,25 +81,27 @@ struct RootView: View {
     var body: some View {
         Group {
             switch route {
-            case .welcome:
-                CompanionWelcomeView(
-                    onConnect: startPairing,
-                    onSkip: {
-                        hasSeenWelcome = true
-                        session.endPairing()
-                    }
-                )
+            case .welcome, .unpairedHome:
+                welcome
             case .pairing:
-                PairingView {
-                    hasSeenWelcome = true
-                    session.endPairing()
+                Group {
+                    switch session.connectMode {
+                    case .organization:
+                        OrgSignInView(onBack: backToWelcome, onDone: {
+                            hasSeenWelcome = true
+                            session.endPairing()
+                        })
+                    case .computer:
+                        PairingView(onCancel: {
+                            hasSeenWelcome = true
+                            session.endPairing()
+                        }, onBack: session.connection == nil ? backToWelcome : nil)
+                    }
                 }
                 .onAppear {
                     hasSeenWelcome = true
                     session.beginPairing()
                 }
-            case .unpairedHome:
-                UnpairedHomeView(onConnect: startPairing)
             case .notificationPrompt:
                 NotificationOnboardingView {
                     hasSeenNotificationPrompt = true
@@ -104,6 +111,7 @@ struct RootView: View {
                 .onAppear { hasSeenWelcome = true }
             case .chats:
                 ChatListView()
+                    .parityLauncher()
                     .onAppear {
                         hasSeenWelcome = true
                         // This is either an existing pairing or a new pairing
@@ -130,9 +138,18 @@ struct RootView: View {
         .onValueChange(of: session.pairingInvite) { invite in
             guard invite != nil else { return }
             hasSeenWelcome = true
-            session.beginPairing()
+            if session.isDemo { session.exitDemo() }
+            session.beginPairing(.computer)
         }
-        .onAppear { reconcileNotificationOnboarding() }
+        .onAppear {
+            reconcileNotificationOnboarding()
+            if DemoLaunch.opensAtLaunch, session.connection == nil { session.enterDemo() }
+        }
+        // The Primary Bot's look, kept for an offline launch (never the demo's).
+        .onValueChange(of: session.brandMascot) { mascot in
+            guard !session.isDemo else { return }
+            BrandMascotCache.save(mascot, connectionID: session.connection?.id)
+        }
         .onValueChange(of: session.notificationAuthorizationResolved) { _ in
             reconcileNotificationOnboarding()
         }
@@ -181,6 +198,7 @@ struct RootView: View {
         // Store-preview runs are deterministic screenshot fixtures, not a
         // first pairing, and must keep landing on the requested chat surface.
         if ProcessInfo.processInfo.arguments.contains("-store-preview") { return .determined }
+        if ParityLaunch.current != nil { return .determined }
         #endif
         guard session.notificationAuthorizationResolved else { return .unresolved }
         return session.notificationAuthorization == .notDetermined ? .notDetermined : .determined
@@ -196,7 +214,27 @@ struct RootView: View {
 
     private func startPairing() {
         hasSeenWelcome = true
-        session.beginPairing()
+        session.beginPairing(.computer)
+    }
+
+    private var welcome: some View {
+        SagaxWelcomeView(
+            onOrganization: {
+                hasSeenWelcome = true
+                session.beginPairing(.organization)
+            },
+            onComputer: startPairing,
+            onDemo: {
+                hasSeenWelcome = true
+                session.enterDemo()
+            }
+        )
+    }
+
+    /// Back from a connect page to the three choices.
+    private func backToWelcome() {
+        hasSeenWelcome = true
+        session.endPairing()
     }
 }
 

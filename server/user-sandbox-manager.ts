@@ -211,6 +211,23 @@ export class UserSandboxManager {
     return this.status(principalId);
   }
 
+  /** Rebuild the environment from the server's current image and keep
+   * /workspace: the container and its network are replaced, the workspace
+   * volume stays. Only the person themselves asks for this. */
+  async update(principalId: string): Promise<UserSandboxView> {
+    this.refuseIfOut(principalId);
+    const key = this.keyFor(principalId);
+    await this.options.client.remove(key, { keepWorkspace: true });
+    await this.options.client.ensure(key);
+    return this.status(principalId);
+  }
+
+  /** Delete the environment and its /workspace now (account deletion). */
+  async removeNow(principalId: string): Promise<void> {
+    await this.options.client.remove(this.keyFor(principalId));
+    if (this.pending.delete(principalId)) this.persist();
+  }
+
   /** Perspicax signed the person out: stop now, delete after the grace. */
   async personOut(principalId: string): Promise<void> {
     if (!this.pending.has(principalId)) {

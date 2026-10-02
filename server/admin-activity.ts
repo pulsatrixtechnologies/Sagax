@@ -23,7 +23,7 @@ import { actorLabel, boundRetentionDays, pruneMonthFiles, type DecisionActor, ty
 import { redactSecrets } from "./redact.ts";
 import { csvCell } from "./usage-ledger.ts";
 
-export const ADMIN_ACTIVITY_CATEGORIES = ["config", "people", "session", "webhook", "mcp", "engine", "bot", "budget", "visibility", "rights", "section", "org", "approval"] as const;
+export const ADMIN_ACTIVITY_CATEGORIES = ["config", "people", "session", "webhook", "mcp", "engine", "bot", "budget", "visibility", "rights", "section", "org", "approval", "computer"] as const;
 export type AdminActivityCategory = typeof ADMIN_ACTIVITY_CATEGORIES[number];
 
 /** Who acted: as on a decision row, plus the command line, plus (slice 7) a

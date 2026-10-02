@@ -37,7 +37,7 @@ export const BASE_IMAGE = `${BASE_IMAGE_REPOSITORY}@${BASE_IMAGE_DIGEST}`;
 // Image and container labels below remain the authoritative compatibility
 // check, not the mutable tag.
 export const IMAGE_REPOSITORY = "localhost/openmausbot/cua-local-vm";
-export const IMAGE_LAYER_VERSION = "5";
+export const IMAGE_LAYER_VERSION = "6";
 export const IMAGE_LAYER_LABEL = "com.openmausbot.image-layer";
 export const IMAGE = `${IMAGE_REPOSITORY}:driver-${CUA_DRIVER_VERSION}-v${IMAGE_LAYER_VERSION}`;
 /** A test run's own namespace (`SAGAX_LOCAL_VM_TEST_NAMESPACE`): its Local VM
@@ -210,6 +210,14 @@ RUN set -eux; \\
     install -D -m 0755 "$driver_bin" ${CUA_EXECUTABLE}; \\
     install -d -o cua -g cua -m 0700 ${VM_WORKSPACE_GUEST}; \\
     test "$(${CUA_EXECUTABLE} --version)" = "cua-driver ${CUA_DRIVER_VERSION}"
+# The phone's native remote control (server/computer-input.ts) drives the
+# desktop with xdotool and the clipboard with xclip, like the Boat.
+RUN set -eux; \\
+    apt-get update; \\
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xdotool xclip; \\
+    rm -rf /var/lib/apt/lists/*; \\
+    command -v xdotool; \\
+    command -v xclip
 # Install before XFCE starts so the panel and window manager see the font too.
 # Noto Sans CJK JP is distributed under the SIL Open Font License 1.1.
 RUN set -eux; \\

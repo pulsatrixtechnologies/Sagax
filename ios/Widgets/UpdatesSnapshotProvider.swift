@@ -126,14 +126,14 @@ struct UpdatesSnapshotProvider: TimelineProvider {
 }
 
 /// Where a widget tap lands: the chat the row is about. The shape is the
-/// one the app's CompanionDeepLink parses — openmausbot://chat/<id> —
+/// one the app's CompanionDeepLink parses — sagax://chat/<id> —
 /// with the id encoded so strictly that no thread id can smuggle a path
 /// or a query of its own.
 enum WidgetChatLink {
     static func url(threadId: String) -> URL? {
         guard let encoded = threadId.addingPercentEncoding(withAllowedCharacters: unreserved) else { return nil }
         var components = URLComponents()
-        components.scheme = "openmausbot"
+        components.scheme = CompanionURLScheme.name
         components.host = "chat"
         components.path = "/" + encoded
         return components.url

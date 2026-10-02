@@ -257,6 +257,10 @@ export interface WireBot {
   soulHash?: string;
   /** The SOUL.md mirror differed from soul at the last turn dispatch. */
   soulDrift?: boolean;
+  /** Server-computed: the first non-empty line of `soul` without heading
+   * marks, at most 140 characters (shared/instructions-lead.ts). Absent when
+   * the bot has no instructions. */
+  instructionsLead?: string;
   notifications: boolean;
   color: MausColor;
   mascotExpression?: MausExpression | null;
@@ -676,6 +680,8 @@ export interface WireGroup {
   /** The room's shared instructions. */
   bulletin: string;
   unread: boolean;
+  /** Kept in the home's pinned row (the phone's, like a bot's `pinned`). */
+  pinned?: boolean;
   createdAt: number;
   /** Organization server: the principal who created the room. A bot's
    * follow-up no person asked for runs in this person's server environment

@@ -16,6 +16,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     /// language setting at all would do.
     case system
     case english = "en"
+    case french = "fr"
     case portugueseBrazil = "pt-BR"
 
     var id: String { rawValue }
@@ -27,7 +28,18 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         // is currently in still has to be able to find their own in this list,
         // so these two are marked `shouldTranslate: false` in the catalog.
         case .english: "English"
+        case .french: "Français"
         case .portugueseBrazil: "Português (Brasil)"
+        }
+    }
+
+    /// The Settings row's value: "System", or the language's own name.
+    var shortLabel: String {
+        switch self {
+        case .system: String(localized: "System")
+        case .english: "English"
+        case .french: "Français"
+        case .portugueseBrazil: "Português"
         }
     }
 

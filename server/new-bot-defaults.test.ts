@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newBotDefaultsSchema } from "./new-bot-defaults.ts";
+import { newBotDefaultsSchema, resolveBotCreationDefaults } from "./new-bot-defaults.ts";
 import { parseConfigPatch } from "./config.ts";
 
 describe("new-bot templates", () => {
@@ -42,5 +42,13 @@ describe("new-bot templates", () => {
   it("bounds the complete template, including multiple individually valid files", () => {
     const memory = Object.fromEntries(Array.from({ length: 10 }, (_, index) => [`memory/file${index}.md`, "x".repeat(262_144)]));
     expect(newBotDefaultsSchema.safeParse({ memory }).success).toBe(false);
+  });
+
+  it("takes the look sent beside the name at creation (iOS create sheet) and validates it", () => {
+    const look = { character: "shape", shape: "hexagon", skins: { shape: "neon" } };
+    const resolved = resolveBotCreationDefaults(undefined, { name: "Scout", useDefaults: false, settings: { color: "teal" }, mascotLook: look, mascotSkin: "frost" });
+    expect(resolved.profile).toMatchObject({ name: "Scout", color: "teal", mascotLook: look, mascotSkin: "frost" });
+    expect(() => resolveBotCreationDefaults(undefined, { name: "Scout", mascotLook: { character: "dragon" } })).toThrow();
+    expect(() => resolveBotCreationDefaults(undefined, { name: "Scout", mascotSkin: "plaid" })).toThrow();
   });
 });

@@ -7,7 +7,7 @@
 // and the one that quietly stopped being true once before.
 import { describe, expect, it } from "vitest";
 
-import { denyReason } from "../src/routes.ts";
+import { denyReason, isCloudDesktopAccess } from "../src/routes.ts";
 
 const ask = (method: string, path: string, authenticated = true) =>
   denyReason({ method, path, authenticated });
@@ -201,12 +201,17 @@ describe("what it may not", () => {
   // and deleting a bot are the same path.
   it("allows a path only for the methods it was allowed for", () => {
     expect(allowed("GET", "/api/bots")).toBe(true);
-    expect(allowed("DELETE", "/api/bots/bot_123")).toBe(false);
+    // Deleting a bot crosses for the phone's profile (the harness checks the owner).
+    expect(allowed("DELETE", "/api/bots/bot_123")).toBe(true);
+    expect(allowed("PUT", "/api/bots/bot_123/soul")).toBe(false);
     expect(allowed("POST", "/api/threads/th_1/messages")).toBe(false);
     expect(allowed("GET", "/api/threads/th_1/messages/msg_2/file")).toBe(false);
     expect(allowed("POST", "/api/threads/th_1/messages/msg_2/file/extra")).toBe(false);
     expect(allowed("GET", "/api/groups/room-1")).toBe(false);
-    expect(allowed("PATCH", "/api/bots/bot_123")).toBe(false);
+    // iOS parity: the bot PATCH crosses (the harness holds a companion
+    // request to the member fields), but nothing below or beside it.
+    expect(allowed("PATCH", "/api/bots/bot_123")).toBe(true);
+    expect(allowed("PUT", "/api/bots/bot_123")).toBe(false);
     expect(allowed("GET", "/api/bots/bot_123/model")).toBe(false);
     expect(allowed("POST", "/api/bots/bot_123/model")).toBe(false);
     expect(allowed("PATCH", "/api/bots/bot_123/model/extra")).toBe(false);
@@ -229,7 +234,10 @@ describe("what it may not", () => {
     expect(allowed("DELETE", "/api/connectors/slack/accounts/ca_123")).toBe(true);
     expect(allowed("DELETE", "/api/connectors/slack/accounts/../gmail")).toBe(false);
     expect(allowed("POST", "/api/bots/bot_123/secret-cards/msg_2/provided")).toBe(false);
-    expect(allowed("PATCH", "/api/groups/room-1")).toBe(false);
+    // A room's PATCH crosses for pinning and renaming; the harness holds a
+    // companion request to the member fields (clientGroupPatchViolation).
+    expect(allowed("PATCH", "/api/groups/room-1")).toBe(true);
+    expect(allowed("PUT", "/api/groups/room-1")).toBe(false);
   });
 
   // Patterns are anchored, so a path that merely starts right is still a
@@ -267,5 +275,50 @@ describe("what it may not", () => {
       expect(allowed("POST", path), path).toBe(false);
       expect(allowed("DELETE", path), path).toBe(false);
     }
+  });
+});
+
+describe("iOS parity routes", () => {
+  it("crosses the phone's new reads and owner actions, method by method", () => {
+    for (const [method, path] of [
+      ["GET", "/api/auth/session"],
+      ["GET", "/api/bots/bot_1/links"], ["GET", "/api/bots/bot_1/files"],
+      ["GET", "/api/threads/th_1/files"], ["GET", `/api/threads/th_1/files/${"a".repeat(24)}`],
+      ["POST", "/api/bots/bot_1/export"],
+      ["GET", "/api/settings/bot"], ["PUT", "/api/settings/bot"],
+      ["GET", "/api/auto-review/rules"], ["DELETE", "/api/auto-review/rules/command.bot_1.0b1c"],
+      ["GET", "/api/computer/status"], ["POST", "/api/computer/update"], ["POST", "/api/computer/reset"],
+      ["GET", "/api/plugins/search"], ["GET", "/api/plugins/installed"], ["POST", "/api/plugins/install"],
+      ["POST", "/api/mcp/servers/notion/oauth/start"], ["GET", "/api/mcp/servers/notion/oauth/status"],
+      ["DELETE", "/api/me"],
+      ["GET", "/api/usage"], ["GET", "/api/bots/bot_1/soul"], ["DELETE", "/api/bots/bot_1"], ["GET", "/api/mcp/servers"],
+      ["GET", "/api/bots/bot_1/command-allowlist"], ["DELETE", "/api/bots/bot_1/command-allowlist/0b1c-2d"],
+      ["GET", "/api/me/preferences"], ["PUT", "/api/me/preferences"],
+      ["GET", "/api/me/server-environment"], ["POST", "/api/me/server-environment/reset"], ["POST", "/api/me/server-environment/update"],
+      ["PATCH", "/api/groups/room_1"], ["POST", "/api/bots"],
+      ["POST", "/api/bots/bot_1/computer/input"], ["GET", "/api/bots/bot_1/computer/clipboard"], ["PUT", "/api/bots/bot_1/computer/clipboard"],
+    ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(true);
+    for (const [method, path] of [
+      ["POST", "/api/auth/session"], ["DELETE", "/api/bots/bot_1/links"], ["GET", "/api/bots/bot_1/export"],
+      ["DELETE", "/api/settings/bot"], ["POST", "/api/auto-review/rules"], ["POST", "/api/computer/status"],
+      ["POST", "/api/mcp/servers/notion/oauth/disconnect"], ["POST", "/api/mcp/servers"], ["DELETE", "/api/mcp/servers/notion"], ["GET", "/api/me"],
+      ["POST", "/api/usage"], ["GET", "/api/usage.csv"], ["PATCH", "/api/bots/bot_1/soul"], ["POST", "/api/bots/bot_1/command-allowlist"],
+      ["DELETE", "/api/me/preferences"], ["DELETE", "/api/groups/room_1"], ["POST", "/api/me/server-environment/delete"],
+      ["GET", "/api/bots/bot_1/computer/input"], ["POST", "/api/bots/bot_1/computer/clipboard"],
+      ["GET", `/api/threads/th_1/files/${"a".repeat(24)}/extra`],
+    ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(false);
+  });
+
+  it("puts remote input under the per-phone desktop capability", () => {
+    expect(isCloudDesktopAccess("POST", "/api/bots/bot_1/computer/input")).toBe(true);
+    expect(isCloudDesktopAccess("GET", "/api/bots/bot_1/computer/clipboard")).toBe(true);
+    expect(isCloudDesktopAccess("PUT", "/api/bots/bot_1/computer/clipboard")).toBe(true);
+    expect(isCloudDesktopAccess("GET", "/api/bots/bot_1/links")).toBe(false);
+  });
+
+  it("lets the MCP sign-in return without a device token, and nothing else", () => {
+    expect(denyReason({ method: "GET", path: "/api/mcp-oauth/callback", authenticated: false })).toBeNull();
+    expect(denyReason({ method: "POST", path: "/api/mcp-oauth/callback", authenticated: false })?.status).toBe(401);
+    expect(denyReason({ method: "GET", path: "/api/plugins/installed", authenticated: false })?.status).toBe(401);
   });
 });

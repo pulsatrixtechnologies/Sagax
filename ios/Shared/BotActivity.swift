@@ -17,6 +17,13 @@ struct BotActivityAttributes: ActivityAttributes {
     var name: String
     /// MausPalette colour name.
     var color: String
+    /// The bot's character and owl skin, so the island draws its own
+    /// mascot. Optional: activities started by an older build decode
+    /// without them and draw the owl.
+    var mascotLook: MascotLook?
+    var mascotSkin: MascotSkin?
+
+    var look: CompleteMascotLook { (mascotLook ?? .owl).complete }
 }
 
 /// Answer from the island or the lock screen. A `LiveActivityIntent` runs in

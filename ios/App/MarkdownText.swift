@@ -51,7 +51,7 @@ struct MarkdownText: View {
 
     var body: some View {
         let blocks = Markdown.blocks(source)
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Chat.paragraphSpacing) {
             let firstTable = blocks.firstIndex { if case .table = $0 { return true }; return false }
             ForEach(Array(blocks.enumerated()), id: \.offset) { item in
                 view(
@@ -71,19 +71,21 @@ struct MarkdownText: View {
         switch block {
         case let .paragraph(text):
             inline(text, tail: tail)
-                .font(.system(size: 17))
+                .font(Theme.Font.body)
+                .lineSpacing(Theme.bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
 
         case let .heading(level, text):
             // Three sizes, not six. A chat bubble is not a document, and an
             // h4 that looks exactly like body text is a heading that failed.
             inline(text, tail: tail)
-                .font(.system(size: level <= 1 ? 21 : level == 2 ? 19 : 17, weight: .semibold))
+                .font(.system(size: level <= 1 ? 17 : level == 2 ? 15.5 : 14, weight: .semibold))
+                .lineSpacing(Theme.bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
 
         case let .bullet(indent, text):
-            marker("•", indent: indent, text: text, tail: tail)
+            bullet(indent: indent, text: text, tail: tail)
 
         case let .ordered(indent, number, text):
             marker("\(number).", indent: indent, text: text, tail: tail)
@@ -100,7 +102,8 @@ struct MarkdownText: View {
                     .fill(Color.secondary.opacity(0.4))
                     .frame(width: 3)
                 inline(text, tail: tail)
-                    .font(.system(size: 17))
+                    .font(Theme.Font.body)
+                    .lineSpacing(Theme.bodyLineSpacing)
                     .foregroundStyle(Color.secondary)
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -117,7 +120,8 @@ struct MarkdownText: View {
                 // indentation is most of what a snippet is saying.
                 ScrollView(.horizontal, showsIndicators: false) {
                     (Text(text) + caretText(tail))
-                        .font(.system(size: 14, design: .monospaced))
+                        .font(Theme.Font.code)
+                        .lineSpacing(Theme.bodyLineSpacing)
                         .textSelection(.enabled)
                 }
             }
@@ -140,20 +144,20 @@ struct MarkdownText: View {
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
             if let number {
                 Text("\(number).")
-                    .font(.system(size: 17))
+                    .font(Theme.Font.body)
                     .foregroundStyle(Color.secondary)
                     .frame(minWidth: 16, alignment: .trailing)
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 17))
+                    .font(Theme.Font.body)
                     .foregroundStyle(Color.secondary)
-                inline(text, tail: tail).font(.system(size: 17))
+                inline(text, tail: tail).font(Theme.Font.body).lineSpacing(Theme.bodyLineSpacing)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
         }
-        .padding(.leading, CGFloat(indent) * 14)
+        .padding(.leading, CGFloat(indent) * Theme.Chat.bulletIndent)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -274,14 +278,38 @@ struct MarkdownText: View {
     }
 
     private func marker(_ symbol: String, indent: Int, text: String, tail: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(symbol)
-                .font(.system(size: 17))
-                .foregroundStyle(Color.secondary)
-                .frame(minWidth: 16, alignment: .trailing)
-            inline(text, tail: tail).font(.system(size: 17))
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.bulletDot)
+                .frame(width: Theme.Chat.bulletIndent - 6, alignment: .trailing)
+                .padding(.trailing, 6)
+            inline(text, tail: tail)
+                .font(Theme.Font.body)
+                .lineSpacing(Theme.bodyLineSpacing)
         }
-        .padding(.leading, CGFloat(indent) * 14)
+        .padding(.leading, CGFloat(indent) * Theme.Chat.bulletIndent)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// A list item (reference 02): a 5 pt dot 5 pt in from the text column,
+    /// centred on the first line's x-height, and the text 26 pt in. Wrapped
+    /// lines align with the first.
+    private func bullet(indent: Int, text: String, tail: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Circle()
+                .fill(Theme.bulletDot)
+                .frame(width: Theme.Chat.bulletDot, height: Theme.Chat.bulletDot)
+                // dot bottom sits 0.9 pt above the baseline
+                .alignmentGuide(.firstTextBaseline) { d in d.height + 0.9 }
+                .padding(.leading, Theme.Chat.bulletDotInset)
+                .padding(.trailing, Theme.Chat.bulletIndent - Theme.Chat.bulletDotInset - Theme.Chat.bulletDot)
+                .accessibilityHidden(true)
+            inline(text, tail: tail)
+                .font(Theme.Font.body)
+                .lineSpacing(Theme.bodyLineSpacing)
+        }
+        .padding(.leading, CGFloat(indent) * Theme.Chat.bulletIndent)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -294,10 +322,14 @@ struct MarkdownText: View {
     /// sent so far, not vanish until it closes the bracket.
     private func inline(_ text: String, tail: Bool = false) -> Text {
         let rendered: Text
-        if let attributed = try? AttributedString(
+        if var attributed = try? AttributedString(
             markdown: text,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) {
+            // Code spans: SF Mono 12 on the bubble itself, no chip.
+            for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
+                attributed[run.range].font = Theme.Font.code
+            }
             rendered = Text(attributed)
         } else {
             rendered = Text(text)

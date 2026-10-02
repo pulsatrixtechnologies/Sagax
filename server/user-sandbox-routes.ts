@@ -4,6 +4,7 @@
 //
 //   GET  /api/me/server-environment         status, resources, last used
 //   POST /api/me/server-environment/reset   recreate it ({ confirm: true })
+//   POST /api/me/server-environment/update  rebuild it from the current image, keeping /workspace
 //   POST /api/me/server-environment/power   { action: start|shutdown|pause|resume,
 //                                             confirm? } (the Computer tab)
 //   GET  /api/me/server-environment/stats   CPU, memory, disk, OS (usage panel)
@@ -11,7 +12,7 @@ import { PASS, type RouteHandler } from "./routes/table.ts";
 import type { UserSandboxManager } from "./user-sandbox-manager.ts";
 import { UserSandboxUnavailable } from "./user-sandbox-manager.ts";
 
-const PATHS = new Set(["/api/me/server-environment", "/api/me/server-environment/reset", "/api/me/server-environment/power", "/api/me/server-environment/stats"]);
+const PATHS = new Set(["/api/me/server-environment", "/api/me/server-environment/reset", "/api/me/server-environment/update", "/api/me/server-environment/power", "/api/me/server-environment/stats"]);
 const POWER_ACTIONS = new Set(["start", "shutdown", "pause", "resume"]);
 
 export function createUserSandboxRoutes(deps: {
@@ -44,6 +45,14 @@ export function createUserSandboxRoutes(deps: {
     }
     if (method !== "POST") return json(res, 405, { error: "method not allowed" });
     if (!manager) return json(res, 409, { error: "This server has no server environments.", code: "not_configured" });
+    if (path === "/api/me/server-environment/update") {
+      try {
+        return json(res, 200, { configured: true, ...(await manager.update(principalId)) });
+      } catch (error) {
+        if (error instanceof UserSandboxUnavailable) return json(res, 409, { error: error.message, code: error.code });
+        return json(res, 502, { error: "The server environment could not be updated.", code: "unavailable" });
+      }
+    }
     if (path === "/api/me/server-environment/power") {
       const body = await readBody(req) as Record<string, unknown> | null;
       const action = typeof body?.action === "string" && POWER_ACTIONS.has(body.action) ? body.action as "start" | "shutdown" | "pause" | "resume" : null;

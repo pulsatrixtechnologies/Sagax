@@ -121,6 +121,34 @@ final class ProfileClientTests: XCTestCase {
         XCTAssertGreaterThan(request.timeoutInterval, 120)
     }
 
+    /// The profile's Upload: the picked bytes go to /api/attachments as they
+    /// are, and the stored file comes back as the bot's avatar URL.
+    func testUploadAvatarPostsTheBytesAndReturnsTheStoredPath() async throws {
+        ProfileRequestStub.responseBody = Data(
+            #"{"path":"/Users/me/.openmausbot/attachments/123e4567-e89b-12d3-a456-426614174000.png","mime":"image/png","bytes":11}"#.utf8
+        )
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3])
+
+        let url = try await client.uploadAvatar(data: bytes, mime: "image/PNG")
+
+        XCTAssertEqual(url, "/api/attachments/123e4567-e89b-12d3-a456-426614174000.png")
+        let request = try XCTUnwrap(ProfileRequestStub.capturedRequest)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/api/attachments")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "image/png")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer paired-token")
+        XCTAssertEqual(ProfileRequestStub.capturedBody, bytes)
+    }
+
+    func testUploadAvatarRefusesANonImageBeforeAnyRequest() async {
+        do {
+            _ = try await client.uploadAvatar(data: Data("hello".utf8), mime: "text/plain")
+            XCTFail("a text file is not a picture")
+        } catch {
+            XCTAssertNil(ProfileRequestStub.capturedRequest)
+        }
+    }
+
     private static let botJSON = """
     {
       "id":"avatar-bot","threadId":"avatar-thread","name":"Scout","title":"Researcher",

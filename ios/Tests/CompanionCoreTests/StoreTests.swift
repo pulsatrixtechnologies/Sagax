@@ -178,6 +178,12 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(state.unsectionedBots.isEmpty)
         XCTAssertEqual(state.pinnedBots.map(\.id), ["research-2", "pinned-only"])
         XCTAssertEqual(state.unsectionedChannels.map(\.id), ["general-channel"])
+
+        // The server's own order wins; a section it does not name follows.
+        state.sectionOrder = ["Personal", "Research"]
+        XCTAssertEqual(state.sidebarSections.map(\.name), ["Personal", "Research"])
+        state.sectionOrder = ["Elsewhere", "Personal"]
+        XCTAssertEqual(state.sidebarSections.map(\.name), ["Personal", "Research"])
         XCTAssertEqual(state.botChats.map(\.id), ["direct-chat"])
     }
 

@@ -46,23 +46,23 @@ struct WidgetAnswerIntent: AppIntent {
             )
         else { return .result(dialog: "This request has changed. Open the chat to review it.") }
 
-        guard let connection = OpenMausSharedConnectionStore.loadRegistry()
+        guard let connection = SagaxSharedConnectionStore.loadRegistry()
             .connection(id: snapshot.connectionID)
         else { return .result(dialog: "This request has changed. Open the chat to review it.") }
 
         let token: String
         do {
-            guard let paired = try OpenMausSharedKeychain.token(for: connection.id) else {
+            guard let paired = try SagaxSharedKeychain.token(for: connection.id) else {
                 return .result(dialog: "This request has changed. Open the chat to review it.")
             }
             token = paired
-        } catch let error as OpenMausSharedKeychainError where error.isLocked {
+        } catch let error as SagaxSharedKeychainError where error.isLocked {
             // errSecInteractionNotAllowed: the phone is locked and the
             // pairing is protected. Name the one thing that unblocks the
             // person instead of wearing a network error's clothes.
             return .result(dialog: "Unlock iPhone, then answer again.")
         } catch {
-            return .result(dialog: "Open MausBot to answer.")
+            return .result(dialog: "Open Sagax to answer.")
         }
 
         do {
@@ -103,7 +103,7 @@ struct WidgetAnswerIntent: AppIntent {
             await WidgetSnapshotRefresh.refresh(connection: connection, token: token, store: store)
             return .result(dialog: dialog)
         } catch {
-            return .result(dialog: "Open MausBot to answer.")
+            return .result(dialog: "Open Sagax to answer.")
         }
     }
 }

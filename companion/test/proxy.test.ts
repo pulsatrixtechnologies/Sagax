@@ -311,11 +311,15 @@ describe("the sidecar in front of an unmodified harness", () => {
     expect((await device("GET", "/api/config")).status).toBe(200);
 
     // General-purpose PATCH routes can change execution policy, connected
-    // apps, working directories and computer targets. The phone gets narrow
-    // verbs instead, so a stolen device token cannot smuggle those fields.
+    // apps, working directories and computer targets. The bot PATCH crosses
+    // for the phone's profile edits, but the harness holds a companion
+    // request to the owner's member fields, so a stolen device token cannot
+    // smuggle those fields.
     const { body } = await device("GET", "/api/bots");
     const botId = body.bots[0].id;
-    expect((await device("PATCH", `/api/bots/${botId}`, { body: { autoApprove: true } })).status).toBe(404);
+    for (const smuggled of [{ autoApprove: true }, { approvalMode: "full" }, { cwd: "/" }, { computer: "local" }, { mcpServers: [] }]) {
+      expect((await device("PATCH", `/api/bots/${botId}`, { body: smuggled })).status, JSON.stringify(smuggled)).toBe(403);
+    }
     expect((await device("PATCH", `/api/groups/not-a-room`, { body: { unread: false } })).status).toBe(404);
   });
 
@@ -387,7 +391,11 @@ describe("the sidecar in front of an unmodified harness", () => {
     expect(after).toHaveLength(before.length + 1);
     expect(after.some((bot: { id: string }) => bot.id === id)).toBe(true);
     expect((await device("GET", "/api/bot-defaults")).status).toBe(404);
-    expect((await device("PATCH", `/api/bots/${id}`, { body: { soul: "not permitted" } })).status).toBe(404);
+    // The owner's profile fields from the phone (iOS parity); never a host setting.
+    const edited = await device("PATCH", `/api/bots/${id}`, { body: { soul: "Keep replies short.", notifications: false, avatarZoom: 1.5, mascotSkin: "frost" } });
+    expect(edited.status).toBe(200);
+    expect(edited.body.bot).toMatchObject({ soul: "Keep replies short.", instructionsLead: "Keep replies short.", notifications: false, avatarZoom: 1.5, mascotSkin: "frost" });
+    expect((await device("PATCH", `/api/bots/${id}`, { body: { browserProfile: "guest" } })).status).toBe(403);
   });
 
   it("only remembers an always-allow key carried by a pending card", async () => {

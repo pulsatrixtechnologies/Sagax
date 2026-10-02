@@ -146,14 +146,14 @@ enum ChatIdentityStore {
         guard all[entity.id] != entity else { return }
         all[entity.id] = entity
         guard let directory = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: OpenMausSharedConfiguration.appGroupIdentifier
+            forSecurityApplicationGroupIdentifier: SagaxSharedConfiguration.appGroupIdentifier
         ), let data = try? JSONEncoder().encode(Array(all.values)) else { return }
         try? data.write(to: directory.appendingPathComponent(fileName), options: .atomic)
     }
 
     static func saved() -> [String: ChatEntity] {
         guard let directory = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: OpenMausSharedConfiguration.appGroupIdentifier
+            forSecurityApplicationGroupIdentifier: SagaxSharedConfiguration.appGroupIdentifier
         ), let data = try? Data(contentsOf: directory.appendingPathComponent(fileName)) else { return [:] }
         let identities = (try? JSONDecoder().decode([ChatEntity].self, from: data)) ?? []
         return Dictionary(uniqueKeysWithValues: identities.map { ($0.id, $0) })
@@ -269,13 +269,13 @@ struct BotWidgetView: View {
         Group {
             switch (entry.state, entry.entity) {
             case (.unpaired, _):
-                Placeholder(icon: "qrcode", message: "Open MausBot to pair")
+                Placeholder(icon: "qrcode", message: "Open Sagax to pair")
             case (_, nil):
-                Placeholder(icon: "person.crop.circle", message: "Open MausBot first")
+                Placeholder(icon: "person.crop.circle", message: "Open Sagax first")
             case (.quiet, let entity?), (.fresh, let entity?), (.stale, let entity?):
                 content(for: entity)
             default:
-                Placeholder(icon: "person.crop.circle", message: "Open MausBot first")
+                Placeholder(icon: "person.crop.circle", message: "Open Sagax first")
             }
         }
         // The widget is about one chat; every state it can show opens
@@ -287,7 +287,8 @@ struct BotWidgetView: View {
     private func content(for entity: ChatEntity) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                MausFaceStill(
+                MascotStill(
+                    chat: entry.row?.chat,
                     color: entry.row?.chat.color ?? entity.color,
                     state: MausState(rawValue: entry.row?.face ?? entity.face) ?? .idle,
                     size: 28

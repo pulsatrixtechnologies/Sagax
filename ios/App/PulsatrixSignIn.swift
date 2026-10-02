@@ -1,10 +1,12 @@
-// "Sign in with Pulsatrix" on an organization server (slice 2): the server's
-// own sign-in runs in the system authentication sheet, sharing Safari's
-// cookies so a person already signed in to Perspicax is not asked again. The
-// server ends it on `openmausbot://pair?address=...&token=...`, the same
-// invite a pairing QR code carries, and the app redeems it through the
-// existing pairing path (`POST /api/pair`). No Perspicax token reaches the
-// phone: the server is the OpenID Connect client.
+// "Sign in with Pulsatrix" on an organization server: the server's own
+// sign-in runs in the system authentication sheet, sharing Safari's cookies
+// and passkeys, so a person already signed in to Perspicax is not asked
+// again. The server ends it on `sagax://pair?address=...&token=...` (or
+// `openmausbot://pair` on a server that predates the phone return), the
+// same invite a pairing QR code carries, and the app redeems it through the
+// existing pairing path (`POST /api/pair`). A refusal ends on
+// `sagax://pair?error=<code>`. No Perspicax token reaches the phone: the
+// server is the OpenID Connect client (CompanionCore/OrgSignIn.swift).
 import AuthenticationServices
 import CompanionCore
 import SwiftUI
@@ -17,21 +19,33 @@ final class PulsatrixWebSignIn: NSObject, ObservableObject, ASWebAuthenticationP
     @Published private(set) var running = false
     private var session: ASWebAuthenticationSession?
 
-    /// Open the sign-in; `completion` gets the invite, or nil when the person
-    /// closed the sheet or the server answered with something else.
-    func start(origin: URL, completion: @escaping (PairingInvite?) -> Void) {
-        guard !running, let url = PulsatrixSignIn.startURL(base: origin) else { return }
-        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: PulsatrixSignIn.callbackScheme) { [weak self] callback, _ in
+    /// Open the sign-in on `origin`, asking for `scheme` (`sagax` when the
+    /// server advertises it). `completion` always runs, with what the sheet
+    /// ended on: an invite, a refusal, a cancel or something unexpected.
+    func start(origin: URL, scheme: String, completion: @escaping (PulsatrixSignInOutcome) -> Void) {
+        guard !running, let url = PulsatrixSignIn.startURL(base: origin, returnScheme: scheme) else {
+            completion(.unexpected)
+            return
+        }
+        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { [weak self] callback, error in
             Task { @MainActor in
                 self?.running = false
                 self?.session = nil
-                completion(callback.flatMap { PulsatrixSignIn.invite(from: $0, expectedOrigin: origin) })
+                if callback == nil, let error, (error as? ASWebAuthenticationSessionError)?.code != .canceledLogin {
+                    completion(.unexpected)
+                    return
+                }
+                completion(PulsatrixSignIn.outcome(from: callback, expectedOrigin: origin))
             }
         }
         session.prefersEphemeralWebBrowserSession = false
         session.presentationContextProvider = self
         self.session = session
         running = session.start()
+        if !running {
+            self.session = nil
+            completion(.unexpected)
+        }
     }
 
     nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {

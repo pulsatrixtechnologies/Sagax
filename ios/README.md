@@ -96,6 +96,9 @@ ios/
     SSE.swift                    line parser + URLSession event stream
     Client.swift                 every call the phone is allowed to make
     Store.swift                  the fold: frames → state
+    OrgSignIn.swift              organization sign-in outcomes, errors, connect state machine
+    Demo.swift, DemoFixture.swift  the demo's in-memory server and made-up workspace
+    BrandMascot.swift            which mascot stands for the app
     SectionSelection.swift       pure swipe/dwell selection state + grid hit testing
     Dictation.swift              composer text + transcript join
   Tests/CompanionCoreTests/
@@ -110,8 +113,12 @@ ios/
     Session.swift                connection, lifecycle, actions
     Discovery.swift              NWBrowser for _openmausbot._tcp
     Keychain.swift               the device token
-    MausAvatar.swift             the mascot face, in the desktop's palette
+    Mascots/                     the Sagax characters (owl, shapes, Trombi), the picture crop,
+                                 group faces, and a DEBUG gallery (-mascotGallery owl|shape|trombi|group)
     PairingView.swift            QR handoff, discovery, address and code fallback
+    Onboarding/                  welcome (three ways in), organization sign-in, shared page chrome
+    Demo/                        demo launch options, drawn computer screen, home banner
+    BrandMascotView.swift        the Sagax owl, or the Primary Bot once connected
     PairingScanner.swift         native QR camera, permission and recovery UI
     Glass.swift                  the one material the chrome is made of (Liquid Glass on 26+)
     SpeechBubble.swift           the bubble shape; the tail is the reference vector, scaled
@@ -141,7 +148,7 @@ The app needs Xcode. The `.xcodeproj` is generated rather than committed:
 
 ```sh
 brew install xcodegen
-cd ios && xcodegen generate && open OpenMausCompanion.xcodeproj
+cd ios && xcodegen generate && open Sagax.xcodeproj
 ```
 
 **Re-run `xcodegen generate` after pulling any change that adds a file to
@@ -227,7 +234,7 @@ the host computer remain unreachable through the companion.
   the bot's role beside its name (quiet text in compact, a chip in
   comfortable), timestamps that say "Yesterday"
   rather than a date, and a gap-based separator in the transcript instead of a
-  stamp on every message. The palette in `MausAvatar.swift` is copied verbatim
+  stamp on every message. The palette in `CompanionCore/MascotLook.swift` is copied verbatim
   from `src/lib/mascot.ts`: a bot the user knows as "the orange one" should be
   the same orange on both screens.
 - **Return sends, Shift+Return breaks the line**, via `.onKeyPress`. Returning
@@ -268,3 +275,22 @@ transcript sharing, reactions, and edit/version controls use narrow companion
 routes and the computer remains the source of truth. Tailscale is supported
 through manual MagicDNS entry; it is not a dependency and Sagax does not
 operate a cloud copy of local data.
+
+## Legacy wire identifiers
+
+The app is Sagax everywhere a person can see it (`ca.pulsatrix.sagax`,
+`sagax://` only, display and bundle name "Sagax"). A few upstream spellings
+stay inside the binary because the server protocol requires them; nobody
+sees them:
+
+- `_openmausbot._tcp`: the Bonjour service type the desktop advertises.
+- `/.well-known/openmausbot/environment`: the environment probe every
+  released server answers (`/.well-known/sagax/` exists only from 0.4.0).
+- The health body's `app: "openmausbot"`.
+- `omb_pair_`: the pairing credential prefix.
+- `openmausbot-phone-credential-v1` and `OpenMausBot phone credential v1`:
+  the phone credential encryption labels (#63). Changing them breaks
+  credential entry.
+
+`scripts/check-ios-bundle-names.sh path/to/Sagax.app` fails on any other
+"openmaus" in the built bundle; CI runs it after the simulator build.
