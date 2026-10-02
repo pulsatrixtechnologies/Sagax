@@ -13,6 +13,7 @@ import { createWindowPilot } from "./pilot";
 import type { BalloonSide } from "./Balloon";
 import { isFloatingSnapshot, mascotFields, type FloatingEvent, type FloatingSnapshot, type FloatingWindowBridge } from "./protocol";
 import { applyFloatingTheme, cleanTheme } from "./theme";
+import { activeLocale, setLocale } from "@/lib/i18n";
 import { createMoveCoalescer, nextWindowSize, type Size } from "./window-frame";
 
 /**
@@ -128,6 +129,8 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
       if (isFloatingSnapshot(value)) {
         // the app's theme first, so the balloon never draws a frame in the old one
         applyFloatingTheme(cleanTheme(value.theme));
+        // the call pill speaks the app's language (the balloon's texts come translated)
+        if (value.locale && value.locale !== activeLocale()) setLocale(value.locale);
         setSnapshot({ ...value, ...mascotFields(value) });
       }
       // main's log shows it (console errors of this page are forwarded)
@@ -220,6 +223,10 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   }, [bridge]);
   // the mascot flies its own window off while its bot works, and back
   const pilot = useMemo(() => createWindowPilot(bridge), [bridge]);
+  // the menu opens natively, right at the pointer (an older preload: the drawn menu)
+  const menuAt = useMemo(() => (bridge?.popupMenu ? (x: number, y: number) => bridge.popupMenu!(x, y) : undefined), [bridge]);
+  // the voice call's levels, straight from main (an older preload has none)
+  const onLevels = useMemo(() => (bridge?.onLevel ? (listener: Parameters<NonNullable<FloatingWindowBridge["onLevel"]>>[0]) => bridge.onLevel!(listener) : undefined), [bridge]);
 
   if (!snapshot) return blank ? <PlainOwl color="green" rootRef={root} bridge={bridge} /> : <div ref={root} className="fb-root fb-window" />;
   return (
@@ -235,6 +242,8 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
       pilot={pilot}
       onSide={onSide}
       onReserve={onReserve}
+      onLevels={onLevels}
+      menuAt={menuAt}
     />
     </Fallback>
   );

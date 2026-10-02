@@ -33,6 +33,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { StagedOrgImport } from "@/components/OrgImportDialog";
 import { RetroAssistantHost } from "@/components/RetroAssistantHost";
 import { FloatingBotsHost } from "@/components/FloatingBotsHost";
+import { CallEngineHost } from "@/components/CallView";
 import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LocalVmWorkspace } from "@/components/LocalVmWorkspace";
@@ -406,6 +407,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       <CommandPalette onOpenChange={setPaletteOpen} />
       <StagedOrgImport />
       <RetroAssistantHost />
+      <CallEngineHost />
       <FloatingBotsHost />
       <RetroBootSlot />
       </div>

@@ -192,6 +192,28 @@ export function useVoiceModeCheck(botId: string): VoiceModeCheck {
   return voiceModeCheckNow(botId);
 }
 
+/** Which of these bots voice mode serves now (each asked when first needed): the desktop mascots' call buttons. */
+export function useVoiceModeAvailable(botIds: string[]): Record<string, boolean> {
+  const [, setTick] = useState(0);
+  const key = botIds.join("|");
+  useEffect(() => {
+    const watcher = () => setTick((tick) => tick + 1);
+    checkWatchers.add(watcher);
+    for (const botId of key ? key.split("|") : []) {
+      const entry = checks.get(botId);
+      const stale = !entry || (!entry.pending && (entry.check.state !== "ready" || Date.now() - entry.at > READY_TTL_MS));
+      if (stale && typeof fetch === "function") void refreshVoiceMode(botId);
+    }
+    return () => {
+      checkWatchers.delete(watcher);
+    };
+  }, [key]);
+  return Object.fromEntries(botIds.map((botId) => {
+    const check = voiceModeCheckNow(botId);
+    return [botId, check.state === "ready" && check.status.available === true];
+  }));
+}
+
 /** The status alone (null while unknown or unanswered). */
 export function useVoiceModeStatus(botId: string): VoiceModeStatus | null {
   const check = useVoiceModeCheck(botId);

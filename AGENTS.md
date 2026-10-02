@@ -386,7 +386,34 @@ Electron restart (no HMR); launch-test them before committing.
   wander, no flight while its bot works), draws at 30 fps at most and the
   skin's loops rest. Measure with `node scripts/verify-mascot-chat.mjs`
   (isolated real Electron: open latency, window moves, clipped and dropped
-  frames, mascot jumps, position writes, theme).
+  frames, mascot jumps, position writes, the balloon's gap to the
+  character and click-through of the transparent parts, theme).
+- The balloon has no shield: dragged by its header it comes right up to
+  the character from any side (over the stage's empty room, touching its
+  box), never over its face (`clampBalloon` in `Balloon.tsx`). Only the part
+  of its offset away from the mascot grows the window; the part toward it is
+  a `translate` inside the window it has. It sits above the art (z-index 2),
+  under the effects (z-index 3).
+- Voice calls with the mascot reuse the app's call, never a second one: the
+  engine (`LiveCallEngine`) runs once in the app page (`CallEngineHost` in
+  App, for the bot `useOnCall()` names) and publishes the call
+  (`src/lib/voice-mode/live-call-store.ts`); the app's pill (`LiveCall`) and
+  the mascot only show and drive it. The mascot's call button (balloon header,
+  `hints.call`, and the menu's "call") starts that same call for its bot
+  (`mascot-call.ts`, `runMascotCallEvent`): one call at a time across app and
+  mascots (`lib/call.ts`). The brain sends `snapshot.call` (`FloatingCall`)
+  and the levels on their own channel (`floating-bots:level`, 20 Hz, rounded);
+  the window draws `MascotCall.tsx` (the pill under the mascot's feet, inside
+  the stage's room; the card where the balloon goes) and the mascot bounces
+  (`--fb-voice`) and leans in (`data-call`), never under reduced motion. The
+  microphone is the app page's (its permission), never the mascot window's.
+  Main sanitizes `call`, its events and their settings patches. Measured in
+  `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
+- The desktop mascot's menu (right click, long press, the menu key) is main's
+  native menu, popped exactly at the pointer (`floating-bots:menu`,
+  `menuPopupPoint`: the page's CSS pixels times its zoom, kept inside the work
+  area of the display under it); the drawn `.fb-menu` stays for the in-app
+  overlay and an older preload.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.

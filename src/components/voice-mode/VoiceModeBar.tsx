@@ -15,7 +15,7 @@ import { t } from "@/lib/i18n";
 import { speaker } from "@/lib/tts";
 import { fetchVoiceModeVoices, type VoiceOption } from "@/lib/voice-mode/api";
 import type { VoiceCall } from "@/lib/voice-mode/call";
-import type { CallPhase, CallState } from "@/lib/voice-mode/call-machine";
+import type { CallState } from "@/lib/voice-mode/call-machine";
 import { notifyCallSettings, useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
 import { useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
@@ -23,6 +23,9 @@ import type { VoiceModeRefusalCause } from "../../../shared/voice-mode";
 import { BotAvatar } from "../Avatar";
 import { requestSettingsCard } from "../SettingsPrimitives";
 import type { CallMetrics } from "./LiveCall";
+import { formatCallTime, phaseLabel } from "@/lib/voice-mode/call-labels";
+
+export { formatCallTime, phaseLabel };
 import { VoiceModeSettingsPanel, type Enrollment, type VoiceModeList } from "./VoiceModeSettingsPanel";
 
 /** The access card of a refused voice turn: shown in the speaker's own bar
@@ -57,6 +60,8 @@ export interface VoiceModeBarProps {
   metrics?: CallMetrics;
   onRetry(): void;
   onEnd(): void;
+  /** when the call started (Date.now()); the bar's opening when absent */
+  startedAt?: number;
   /** the card open at first (tests draw each state with it) */
   defaultPanel?: "settings" | "transcript";
 }
@@ -64,40 +69,15 @@ export interface VoiceModeBarProps {
 const DOT = 4; // px between dot columns and rows (CSS pixels)
 const ROWS = 5; // dots in the tallest column
 
-/** The call's running time, as a phone shows it: m:ss, then h:mm:ss.
- * Exported for tests. */
-export function formatCallTime(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = String(total % 60).padStart(2, "0");
-  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
-}
-
-/** Time since the bar opened (the call's start), ticking once a second. */
-function useCallElapsed(): number {
-  const [started] = useState(() => Date.now());
+/** Time since the call started (or the bar opened), ticking once a second. */
+function useCallElapsed(startedAt?: number): number {
+  const [started] = useState(() => startedAt ?? Date.now());
   const [now, setNow] = useState(started);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
   return now - started;
-}
-
-/** What the bar says for each state of the call. Exported for tests. */
-export function phaseLabel(phase: CallPhase, muted: boolean): string {
-  if (phase === "held") return t("voiceMode.phase.held");
-  if (muted) return t("voiceMode.muted");
-  switch (phase) {
-    case "connecting": return t("voiceMode.phase.connecting");
-    case "listening": return t("voiceMode.listening");
-    case "hearing": return t("voiceMode.phase.hearing");
-    case "thinking": return t("voiceMode.phase.thinking");
-    case "speaking": return t("voiceMode.phase.speaking");
-    case "interrupted": return t("voiceMode.phase.interrupted");
-    default: return "";
-  }
 }
 
 function amplitude(analyser: AnalyserNode | null, data: Uint8Array<ArrayBuffer>, bars: number): number[] {
@@ -172,7 +152,7 @@ const ROUND = "flex size-8 shrink-0 items-center justify-center rounded-full bg-
 type Panel = "settings" | "transcript" | null;
 
 export function VoiceModeBar(props: VoiceModeBarProps) {
-  const { bot, call, state, heard, caption, note, notice, refusal, transcript, metrics, onRetry, onEnd, defaultPanel } = props;
+  const { bot, call, state, heard, caption, note, notice, refusal, transcript, metrics, onRetry, onEnd, defaultPanel, startedAt } = props;
   const { dispatch } = useStore();
   const settings = useVoiceModeSettings();
   const callSettings = useCallSettings();
@@ -183,7 +163,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
   const [voices, setVoices] = useState<VoiceOption[] | null>(null);
   const [voicesError, setVoicesError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<{ id: string; loading: boolean } | null>(null);
-  const elapsed = useCallElapsed();
+  const elapsed = useCallElapsed(startedAt);
   const [enrollment, setEnrollment] = useState<Enrollment>(call.enrolled ? { state: "enrolled" } : { state: "none" });
   const pill = useRef<HTMLElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
