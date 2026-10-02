@@ -11,8 +11,10 @@
 //         the bots shared with them, creates, imports, edits and deletes none
 //         (even their own, even with an edit grant), schedules no routine;
 //         back to "manage" restores it; an admin is never narrowed
+//   MA-4  create_bot on the internal capability belongs to the Primary Bot's
+//         person (not the operator); sagax_bots "use" refuses that path too
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -255,4 +257,49 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect((await api("PATCH", `/api/bots/${shared.id}`, uma, { name: "Edited by Uma" })).status).toBe(200);
     expect((await api("DELETE", `/api/bots/${own.id}`, uma)).status).toBe(200);
   }, 120_000);
+
+  it("MA-4: create_bot belongs to the Primary Bot's person; use refuses it", async () => {
+    let uma = await signIn(UMA);
+    const chief = await createBot(uma, "Uma Chief", "claude");
+    expect((await api("POST", `/api/bots/${chief.id}/primary`, uma, {})).status).toBe(200);
+
+    const tokenOf = async () => {
+      if (existsSync(dump)) unlinkSync(dump);
+      expect((await api("POST", `/api/bots/${chief.id}/messages`, uma, { text: "prepare a specialist" })).status).toBe(202);
+      const dumped = await waitFor(() => {
+        try {
+          const token = (JSON.parse(readFileSync(dump, "utf8")) as { mcpConfig?: { mcpServers?: { agents?: { env?: { SAGAX_COMMS_TOKEN?: string } } } } })
+            .mcpConfig?.mcpServers?.agents?.env?.SAGAX_COMMS_TOKEN;
+          return token || null;
+        } catch {
+          return null;
+        }
+      }, 20_000);
+      return dumped;
+    };
+    const createSpecialist = async (token: string, name: string) => {
+      const res = await fetch(`${BASE}/api/internal/create-bot`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          fromBotId: chief.id, fromThreadId: chief.threadId, name,
+          role: "Ops", instructions: "Help Uma.",
+        }),
+      });
+      return { status: res.status, body: await res.json() as { id?: string; error?: string } };
+    };
+
+    const made = await createSpecialist(await tokenOf(), "Uma Scout");
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const orgBots = (await api("GET", "/api/org/bots", alice)).body.bots as Array<{ name: string; ownerPrincipalId: string }>;
+    expect(orgBots.find((bot) => bot.name === "Uma Scout")?.ownerPrincipalId).toBe(ids.uma);
+    expect((await api("POST", `/api/bots/${chief.id}/interrupt`, uma)).status).toBe(200);
+
+    setUma("use");
+    uma = await signIn(UMA);
+    const refused = await createSpecialist(await tokenOf(), "Uma Denied");
+    expect(refused.status).toBe(403);
+    expect(refused.body.error).toBe(READ_ONLY);
+    expect((await api("GET", "/api/org/bots", alice)).body.bots.some((bot: { name: string }) => bot.name === "Uma Denied")).toBe(false);
+  }, 90_000);
 });
