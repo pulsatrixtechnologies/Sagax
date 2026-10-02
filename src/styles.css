@@ -1331,11 +1331,11 @@ body {
   from { transform: scale(1) translateY(0); opacity: 1; }
   to { transform: scale(0.96) translateY(6px); opacity: 0; }
 }
-/* voice mode's in-call banner (CallView.tsx VoiceCallDock): it opens its
-   room at the top of the chat column, and folds it away when the call ends */
+/* voice mode's call pill (CallView.tsx VoiceCallDock): it drops in under
+   the name chip, and its row folds away when the call ends */
 @keyframes call-dock-in {
-  from { grid-template-rows: 0fr; opacity: 0; transform: translateY(-4px); }
-  to { grid-template-rows: 1fr; opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes call-dock-out {
   from { height: var(--call-dock-h); margin-bottom: 8px; opacity: 1; }
