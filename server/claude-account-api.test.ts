@@ -267,4 +267,23 @@ describe("Claude account HTTP API", () => {
     }
     expect(saved().instances[target.id].displayName).toBe("Validation account");
   });
+
+  it("gives a client session the engines catalogue, never the host's accounts, paths or commands", async () => {
+    const account = await addAccount("Catalogue account");
+    const admin = (await api("GET", "/api/instances")).body.instances.find((row: any) => row.instanceId === account.id);
+    expect(admin.snapshot.account.email).toContain("@example.test");
+    const listing = await api("GET", "/api/instances", undefined, { authorization: `Bearer ${clientToken}` });
+    expect(listing.status).toBe(200);
+    const row = listing.body.instances.find((entry: any) => entry.instanceId === account.id);
+    expect(row).toMatchObject({ instanceId: account.id, driverKind: "claudeAgent", displayName: "Catalogue account", readOnly: true, snapshot: { state: "available", authenticated: true } });
+    expect(row.models.options.length).toBeGreaterThan(0);
+    for (const entry of listing.body.instances) {
+      for (const key of ["cli", "cliDefault", "cliCandidates", "install", "authentication", "claudeAccount"]) expect(entry, `${entry.instanceId}.${key}`).not.toHaveProperty(key);
+      expect(entry.snapshot ?? {}).not.toHaveProperty("account");
+    }
+    const text = JSON.stringify(listing.body);
+    expect(text).not.toContain(account.dir);
+    expect(text).not.toContain(cli);
+    expect(text).not.toMatch(/@example\.test|CLAUDE_CODE_OAUTH_TOKEN|fixture-base-secret/);
+  });
 });

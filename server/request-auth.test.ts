@@ -9,6 +9,7 @@ import {
   clientBotPatchViolation,
   memberBotFieldViolation,
   clientGroupPatchViolation,
+  clientInstanceView,
   healthDetail,
   ipcPeer,
   isAllowedOrigin,
@@ -110,6 +111,8 @@ describe("scopes", () => {
       ["PATCH", "/api/bots/x"], ["PATCH", "/api/bots/x/profile"], ["POST", "/api/attachments"],
       ["GET", "/api/attachments/a.png"], ["POST", "/api/routines"], ["POST", "/api/routines/r/run"],
       ["POST", "/api/routine-runs/seen-all"],
+      // desktop remote-client parity: steer (bot and room) and the engines catalogue (redacted)
+      ["POST", "/api/bots/x/queue/q/steer"], ["POST", "/api/groups/g/queue/q/steer"], ["GET", "/api/instances"],
       ["GET", "/api/bots"], ["GET", "/api/groups"], ["GET", "/api/threads/t/messages"], ["GET", "/api/search"], ["GET", "/api/events"],
       ["GET", "/api/config"], ["GET", "/api/webhooks"], ["POST", "/api/tts/speak"],
       ["GET", "/api/auth/session"], ["POST", "/api/auth/stream-ticket"], ["POST", "/api/auth/logout"],
@@ -125,7 +128,13 @@ describe("scopes", () => {
       ["GET", "/api/threads/t/files"], ["GET", `/api/threads/t/files/${"a1".repeat(12)}`],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
-      ["POST", "/api/cli-test"], ["GET", "/api/cli-candidates"], ["GET", "/api/instances"], ["PATCH", "/api/instances/claude"],
+      ["POST", "/api/cli-test"], ["GET", "/api/cli-candidates"], ["PATCH", "/api/instances/claude"],
+      ["GET", "/api/instances/claude"], ["POST", "/api/instances/claude/refresh-models"], ["GET", "/api/instances/extra/x"],
+      ["GET", "/api/bots/x/queue/q/steer"], ["POST", "/api/bots/x/queue/q/steer/extra"],
+      // the desktop remote client hides these, or their handler has no per-viewer check:
+      // folders, team filing, room setup (it sets the room's folder), overview and usage
+      ["POST", "/api/bots/x/projects"], ["PATCH", "/api/bots/x/projects/order"], ["DELETE", "/api/bots/x/projects/p"],
+      ["POST", "/api/sidebar-sections"], ["GET", "/api/bots/x/overview"], ["GET", "/api/usage"],
       ["POST", "/api/bots/x/computer/exec"], ["POST", "/api/bots/x/computer/join"], ["POST", "/api/local-computer/run"],
       ["GET", "/api/computers/boxes"], ["POST", "/api/computers/boxes/bx_23456789/delete"],
       ["POST", "/api/webhooks"], ["POST", "/api/webhooks/w/rotate"], ["POST", "/api/bots/x/skills"], ["PATCH", "/api/bots/x/skills/s"],
@@ -139,6 +148,30 @@ describe("scopes", () => {
       ["GET", "/api/mail/settings"], ["PUT", "/api/mail/settings"], ["POST", "/api/mail/test"], // mail transport: admin only
       ["GET", "/api/something-new"], // anything unlisted is admin until listed
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
+  });
+
+  it("gives a client session the engines catalogue without how the host is set up", () => {
+    const view = clientInstanceView({
+      instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude",
+      models: { default: "opus", options: [{ id: "opus", label: "Opus" }] },
+      capabilities: { queueing: true }, access: "subscription", icon: "claude",
+      snapshot: {
+        state: "available", authenticated: true, billing: "subscription", version: "2.1.0",
+        account: { email: "owner@example.test", organization: "Owner Inc" },
+        update: { title: "Update", message: "m", command: "claude update" },
+      },
+      cli: "/opt/bin/claude", cliDefault: "claude", cliCandidates: ["/usr/local/bin/claude"],
+      install: { signInCommand: "claude login" }, authentication: { method: "browser" },
+      claudeAccount: { configDir: "/Users/owner/.claude", signInCommand: "x" }, freeUpSpace: true,
+      somethingNew: "unlisted",
+    });
+    expect(view).toEqual({
+      readOnly: true, instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude",
+      models: { default: "opus", options: [{ id: "opus", label: "Opus" }] },
+      capabilities: { queueing: true }, access: "subscription", icon: "claude",
+      snapshot: { state: "available", authenticated: true, billing: "subscription" },
+    });
+    expect(JSON.stringify(view)).not.toMatch(/owner@|\/opt\/bin|\/Users\/owner|claude login|claude update/);
   });
 
   it("limits a client's bot and room edits to display fields, naming the field it refused", () => {

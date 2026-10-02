@@ -531,6 +531,7 @@ import {
   clientBotPatchViolation,
   memberBotFieldViolation,
   clientGroupPatchViolation,
+  clientInstanceView,
   isLoopbackHost,
   isProxied,
   healthDetail,
@@ -23300,6 +23301,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const group = store.group(m[1]);
       if (!group) return json(res, 404, { error: "no such room" });
+      // Steering posts into the room's running turn: a read-only member of a
+      // shared section may not, exactly as they may not post.
+      if (IDENTITY.kind === "perspicax" && !groupPostAllowed(group, channelViewerId(auth))) {
+        return json(res, 403, { error: "you may read this channel, not post in it", code: "read_only" });
+      }
       const targetThreadId = threadId ?? group.threadId;
       const ownsThread = group.dm
         ? group.threadId === targetThreadId
@@ -25145,6 +25151,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       requirePinnedClientThread(m[1], body?.threadId);
       const bot = requestedTaskBot(m[1], body?.threadId);
+      // Steered words reach the running turn like a sent line, so a Cloud
+      // guest steers only in a conversation it started (as it sends).
+      const steerRefusal = cloudGuestSendRefusal(auth, bot.threadId);
+      if (steerRefusal) return json(res, 403, { error: steerRefusal });
       // Pressing Steer folds the queued words into the running turn. It does
       // not re-book that turn to whoever pressed it, and the words keep the
       // sender they were queued with.
@@ -26447,7 +26457,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Windows never pushes PATH changes into a live process, so without
       // this the answer is frozen at boot and "check again" is a no-op.
       resetPathCache();
-      return json(res, 200, { instances: await describeInstances() });
+      const instances = await describeInstances();
+      // A client session (a paired phone or tablet, a member's browser) reads
+      // the catalogue its model picker needs, not how the host is set up.
+      const clientOnly = auth.kind === "session" && !auth.scopes.includes("admin");
+      return json(res, 200, { instances: clientOnly ? instances.map(clientInstanceView) : instances });
     }
     const companyMutation = /^\/api\/instances\/(company\.[\w.-]+)(?:\/|$)/.exec(path);
     if (hostedModels && path.startsWith("/api/instances/") && method !== "GET") return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });
