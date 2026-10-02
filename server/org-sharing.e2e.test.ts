@@ -231,7 +231,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect(Array.isArray((await api("GET", "/api/health", bob)).body.engines)).toBe(true);
     const bare = await api("GET", "/api/health");
     expect(bare.status).toBe(200);
-    expect(bare.body).toEqual({ app: "openmausbot" });
+    expect(bare.body).toEqual({ app: "openmausbot", product: "sagax" });
   });
 
   it("S3-4 (B): shared with bob, answered with the org key; dave sees none of it", async () => {

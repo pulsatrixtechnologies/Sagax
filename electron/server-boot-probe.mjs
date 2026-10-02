@@ -19,6 +19,7 @@
 //   async `spawn` event, so a value grabbed right after fork() is still
 //   undefined and our own freshly-bound child would fail the identity match
 //   and be reaped as a "foreign owner" on its very first health answer.
+import { isOwnHealth } from "./legacy-names.mjs";
 
 export const BOOT_PROBE_INTERVAL_MS = 500;
 
@@ -76,7 +77,7 @@ export async function pollServerIdentity({
     const identified =
       res.ok &&
       expectedPid !== undefined &&
-      body?.app === "openmausbot" &&
+      isOwnHealth(body) &&
       body.pid === expectedPid &&
       body.static;
     if (!identified) return { outcome: "foreign-owner" };

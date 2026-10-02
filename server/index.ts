@@ -4,7 +4,7 @@
 // First of all, SAGAX_* settings onto the names the code reads (step 1 of
 // the rename, electron/legacy-names.mjs).
 import "../electron/legacy-env-boot.mjs";
-import { ENVIRONMENT_PATHS } from "../electron/legacy-names.mjs";
+import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
 // First, before any module that could start a process: a Cloud home's
 // secrets off the launcher's pipe (cloud-secrets-boot.ts).
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
@@ -18391,7 +18391,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // A stranger learns only the app name; pid (the desktop boot probe keys
     // on it) and the static flag stay behind the gate below.
     if (method === "GET" && path === "/api/health" && !gate.auth) {
-      return json(res, 200, { app: "openmausbot" });
+      return json(res, 200, { ...HEALTH_IDENTITY });
     }
     // The brand is public too: the sign-in page must carry the deployment's
     // name and icon before anyone has a session, and it holds nothing secret.
@@ -25811,8 +25811,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Slice 7: /api/org/admin/* answers the Perspicax console.
         ...(IDENTITY.kind === "perspicax" ? { orgAdminApi: 1 } : {}),
       };
-      if (detail === "app") return json(res, 200, { app: "openmausbot" });
-      if (detail === "capabilities") return json(res, 200, { app: "openmausbot", capabilities });
+      if (detail === "app") return json(res, 200, { ...HEALTH_IDENTITY });
+      if (detail === "capabilities") return json(res, 200, { ...HEALTH_IDENTITY, capabilities });
       // The engines installed on this server (slice 3, D16), from the CLI
       // probes: refreshed here when stale, within a bounded wait.
       const stale = !engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS)
@@ -25823,7 +25823,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const engines = [...engineProbes.values()]
         .map(({ instanceId, driver, installed, version }) => ({ instanceId, driver, installed, ...(version ? { version } : {}) }))
         .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
-      return json(res, 200, { app: "openmausbot", pid: process.pid, static: Boolean(STATIC_DIR), capabilities, engines });
+      // app: "openmausbot" stays one release beside product: "sagax" (deployed
+      // health checks grep the body for it; legacy-names.mjs HEALTH_IDENTITY).
+      return json(res, 200, { ...HEALTH_IDENTITY, pid: process.pid, static: Boolean(STATIC_DIR), capabilities, engines });
     }
     // The bots' browser engine: install it on this machine (agent-browser +
     // a Chrome for Testing, a one-time download), or ask how that is going.

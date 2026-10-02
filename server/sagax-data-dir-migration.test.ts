@@ -83,4 +83,11 @@ describe("the same server under both names", () => {
     expect(fresh.environmentId).toMatch(/^[0-9a-f-]{36}$/);
     expect(old).toEqual(fresh);
   });
+
+  it("answers health with the word deployed checks grep for and the new name", async () => {
+    const text = await (await fetch(`http://127.0.0.1:${PORT}/api/health`)).text();
+    expect(text).toContain("openmausbot");
+    expect(text).toContain("sagax");
+    expect(JSON.parse(text)).toMatchObject({ app: "openmausbot", product: "sagax" });
+  });
 });
