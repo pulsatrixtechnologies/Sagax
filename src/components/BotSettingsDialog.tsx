@@ -36,7 +36,6 @@ import { FilesSection } from "./bot-settings/FilesSection";
 import { isMoreSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
 import { ActivitySection } from "./bot-settings/ActivitySection";
 import { InlineEditableText } from "./bot-settings/InlineEditableText";
-import { DescriptionInfo } from "./bot-settings/DescriptionInfo";
 import { PackageProvenance } from "./bot-settings/PackageProvenance";
 import { ProposalStatus } from "./bot-settings/ProposalStatus";
 import { BOT_PROFILE_LIMITS } from "../../shared/bot-profile";
@@ -469,9 +468,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
           {/* Who this is, then the tabs */}
           <div className="flex shrink-0 flex-col items-center px-4 pb-3">
             <BotProfileAvatarCard bot={bot} activeState={derived.activeState} mascotMotion={derived.mascotMotion} onPatch={derived.patch} />
-            {/* Name and label are edited where they show; the description
-                sits behind the (i) beside the name. */}
-            <div className="mt-2 flex max-w-full items-center justify-center gap-0.5">
+            {/* Name, label and description are edited where they show; the
+                name stays centered on its own line. */}
+            <div className="mt-2 flex max-w-full items-center justify-center">
               <InlineEditableText
                 id="bot-settings-title"
                 value={bot.name}
@@ -480,14 +479,6 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
                 ariaLabel={t("botPanel.name.edit")}
                 onSave={(name) => derived.patch({ name })}
                 className="text-[17px] font-medium leading-6 text-ink"
-              />
-              <DescriptionInfo
-                value={bot.description}
-                maxLength={BOT_PROFILE_LIMITS.description}
-                label={t("botPanel.description.label")}
-                emptyText={t("botPanel.description.empty")}
-                placeholder={t("botPanel.description.placeholder")}
-                onSave={(description) => derived.patch({ description })}
               />
             </div>
             <InlineEditableText
@@ -498,6 +489,15 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
               onSave={(title) => derived.patch({ title })}
               muted
               className="mt-0.5 text-[12.5px] leading-4"
+            />
+            <InlineEditableText
+              value={bot.description ?? ""}
+              maxLength={BOT_PROFILE_LIMITS.description}
+              placeholder={t("botPanel.description.placeholder")}
+              ariaLabel={t("botPanel.description.label")}
+              onSave={(description) => derived.patch({ description })}
+              muted
+              className="mt-0.5 max-w-full text-[11.5px] leading-4"
             />
             <div className="mt-1 w-full max-w-full empty:hidden"><ProposalStatus bot={bot} kind="chief" /></div>
             <div
