@@ -4,6 +4,13 @@
 // Read-only; built from the bot's threads, the work bots hand each other
 // (room handoffs, delegations) and its routine runs.
 //
+// Each thread entry says whether it is coding work (`coding`,
+// server/activity-coding.ts: read off its tool calls and folder, never its
+// title), so the panel lists coding jobs under Coding and everything else
+// under Activity. `?filter=coding|other` narrows the list the same way, and
+// the list also carries `subagents`: the sub-agents its listed threads
+// started, running or recent.
+//
 // Authorization (shared/bot-activity.ts): the gate in index.ts already hides
 // a bot the viewer cannot see. Here every thread passes `threadReadable`
 // (on an organization server: the viewer's own threads only), every routine
@@ -29,6 +36,7 @@ import {
   type BotActivityStep,
 } from "../../shared/bot-activity.ts";
 import { PASS, type RouteHandler } from "./table.ts";
+import { addCodingSignal, isCodingWork, type CodingSignals } from "../activity-coding.ts";
 
 export interface ActivityBot {
   id: string;
@@ -50,6 +58,8 @@ export interface ActivityTask {
   ownerPrincipalId?: string;
   openedBy?: { botId: string; name: string; at: number; delegationId?: string; kind?: string };
   modelSelection?: { instanceId: string; model: string } | null;
+  /** The folder its turns run in, pinned on its first turn. */
+  cwd?: string | null;
 }
 
 export interface ActivityMessage {
@@ -61,7 +71,7 @@ export interface ActivityMessage {
   status?: string;
   turnSucceeded?: boolean;
   requestCancelled?: boolean;
-  tool?: { name: string; ok?: boolean; summary?: string; itemId?: string; files?: string[]; setup?: boolean };
+  tool?: { name: string; ok?: boolean; summary?: string; itemId?: string; files?: string[]; setup?: boolean; input?: unknown };
   digest?: { access?: { via: BotActivityDetail["via"] & string; payer: BotActivityDetail["payer"] & string } };
   sender?: { name?: string } | null;
 }
@@ -93,10 +103,23 @@ export interface BotActivityRouteDeps {
   /** The access card a failed run left, as this viewer may see it (in the
    * card's audience only); undefined when there is none for them. */
   runAccessCard?(run: RoutineRun, viewerId: string | undefined): WireAccessCard | undefined;
+  /** The folder is inside a git repository (or worktree) on this server. */
+  inRepository?(cwd: string): boolean;
   now?: () => number;
 }
 
+/** How far back a thread's tool calls are read to tell coding work. */
+const CODING_SCAN = 500;
+/** What a running entry is doing now is read off its newest messages. */
+const CURRENT_SCAN = 30;
+const SUBAGENT_LIMIT = 20;
+const LIST_MAX = 50;
+
 const ACTIVE_RUN = new Set(["queued", "running", "waiting"]);
+
+function newestRunningFirst(a: BotActivityItem, b: BotActivityItem): number {
+  return Number(activityStatusActive(b.status)) - Number(activityStatusActive(a.status)) || b.updatedAt - a.updatedAt;
+}
 
 function runStatus(status: RoutineRun["status"]): BotActivityStatus {
   switch (status) {
@@ -151,6 +174,8 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       ? task.turnStartedAt ?? run?.startedAt ?? task.createdAt
       : run?.startedAt ?? task.createdAt;
     const children = deps.children(bot.id, task.threadId);
+    const active = activityStatusActive(status);
+    const current = active ? currentStep(task.threadId, run) : undefined;
     return {
       id: `thread:${task.threadId}`,
       kind: run || task.routineRunId ? "routine" : task.openedBy && task.openedBy.botId !== bot.id ? "hop" : "session",
@@ -164,7 +189,46 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       ...(deps.threadReadable(bot.id, task.threadId, viewerId) ? { threadId: task.threadId } : {}),
       ...(startedBy(task, run) ? { startedBy: startedBy(task, run) } : {}),
       ...(children.length ? { childCount: children.length } : {}),
+      ...(codingThread(task) ? { coding: true } : {}),
+      ...(current ? { currentStep: current } : {}),
+      ...(active && deps.threadWritable(bot.id, task.threadId, viewerId) ? { canStop: true } : {}),
     };
+  }
+
+  /** Coding work is sticky: once a thread committed or edited code it stays
+   * coding, and a settled thread is read once per change. */
+  const codingCache = new Map<string, { at: number; signals: CodingSignals; coding: boolean }>();
+  function codingThread(task: ActivityTask): boolean {
+    const at = task.updatedAt ?? task.createdAt;
+    const cached = codingCache.get(task.threadId);
+    if (cached && (cached.coding || (cached.at === at && !task.busy))) return cached.coding;
+    const signals: CodingSignals = { edits: 0, codeFiles: 0, vcs: false };
+    for (const message of deps.messages(task.threadId, CODING_SCAN).messages) {
+      if (message.tool) addCodingSignal(signals, message.tool);
+    }
+    const inRepository = Boolean(task.cwd && signals.edits > 0 && deps.inRepository?.(task.cwd));
+    const coding = isCodingWork(signals, inRepository);
+    if (codingCache.size > 2_000) codingCache.clear();
+    codingCache.set(task.threadId, { at, signals, coding });
+    return coding;
+  }
+
+  /** A running entry's current step: the tool call in flight, else the
+   * newest one, else what a waiting run asks. */
+  function currentStep(threadId: string, run: RoutineRun | undefined): string | undefined {
+    if (run?.status === "waiting" && run.attention) return run.attention.slice(0, 160);
+    const tail = deps.messages(threadId, CURRENT_SCAN).messages;
+    let latest: string | undefined;
+    for (let index = tail.length - 1; index >= 0; index--) {
+      const message = tail[index]!;
+      if (message.role === "user") break;
+      const tool = message.tool;
+      if (!tool || tool.setup) continue;
+      const label = (tool.summary?.trim() || tool.name).slice(0, 160);
+      if (tool.ok === undefined) return label;
+      latest ??= label;
+    }
+    return latest;
   }
 
   function runItem(bot: ActivityBot, run: RoutineRun): BotActivityItem {
@@ -210,8 +274,23 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       items.push(runItem(bot, run));
     }
     return items
-      .sort((a, b) => Number(activityStatusActive(b.status)) - Number(activityStatusActive(a.status)) || b.updatedAt - a.updatedAt)
+      .sort(newestRunningFirst)
       .slice(0, limit);
+  }
+
+  /** The sub-agents the listed threads started: running ones, and those
+   * started within the window. Their parents passed threadReadable; an
+   * unreadable child still shows no request text (childItems). */
+  function subagents(bot: ActivityBot, threads: readonly BotActivityItem[], viewerId: string | undefined): BotActivityItem[] {
+    const since = now() - BOT_ACTIVITY_WINDOW_MS;
+    const out: BotActivityItem[] = [];
+    for (const parent of threads) {
+      if (!parent.threadId || parent.kind === "subagent") continue;
+      for (const child of childItems(bot, parent.threadId, viewerId)) {
+        if (activityStatusActive(child.status) || child.startedAt >= since) out.push({ ...child, parentId: parent.id });
+      }
+    }
+    return out.sort(newestRunningFirst).slice(0, SUBAGENT_LIMIT);
   }
 
   function childItems(bot: ActivityBot, threadId: string, viewerId: string | undefined): BotActivityItem[] {
@@ -307,8 +386,12 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     const viewerId = deps.viewerId(auth);
     if (!match[2]) {
       const requested = Number(url.searchParams.get("limit"));
-      const limit = Number.isFinite(requested) && requested > 0 ? Math.min(requested, 50) : BOT_ACTIVITY_LIMIT;
-      return json(res, 200, { items: list(bot, viewerId, limit) });
+      const limit = Number.isFinite(requested) && requested > 0 ? Math.min(requested, LIST_MAX) : BOT_ACTIVITY_LIMIT;
+      const asked = url.searchParams.get("filter");
+      const filter = asked === "coding" || asked === "other" ? asked : undefined;
+      const all = list(bot, viewerId, LIST_MAX);
+      const items = all.filter((item) => !filter || (filter === "coding") === Boolean(item.coding)).slice(0, limit);
+      return json(res, 200, { items, subagents: filter === "coding" ? [] : subagents(bot, all, viewerId) });
     }
     const threadId = url.searchParams.get("threadId");
     const runId = url.searchParams.get("runId");

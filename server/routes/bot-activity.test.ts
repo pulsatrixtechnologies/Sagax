@@ -85,7 +85,7 @@ async function serve(routeDeps: BotActivityRouteDeps = deps()): Promise<string> 
 
 const get = async (base: string, path: string, viewer?: string) => {
   const res = await fetch(`${base}${path}`, { headers: viewer ? { "x-viewer": viewer } : {} });
-  return { status: res.status, body: await res.json() as { items?: BotActivityItem[]; item?: BotActivityDetail } };
+  return { status: res.status, body: await res.json() as { items?: BotActivityItem[]; subagents?: BotActivityItem[]; item?: BotActivityDetail } };
 };
 
 describe("bot activity API", () => {
@@ -192,6 +192,51 @@ describe("bot activity API", () => {
     expect(list.body.items!.map((item) => item.id)).toEqual(["thread:t-alice", "thread:t-bob", "thread:t-routine"]);
     const detail = await get(base, "/api/bots/pepper/activity/item?threadId=t-alice");
     expect(detail.body.item!.steps.every((step) => !("where" in step))).toBe(true);
+  });
+
+  it("marks coding work from tool calls, not titles, and filters on it", async () => {
+    const base = await serve();
+    const alice = await get(base, "/api/bots/pepper/activity", "alice");
+    expect(alice.body.items![0]).toMatchObject({ id: "thread:t-alice", coding: true, currentStep: "Edit", canStop: true });
+    expect(alice.body.items![1]).not.toHaveProperty("coding");
+    expect((await get(base, "/api/bots/pepper/activity?filter=coding", "alice")).body.items!.map((item) => item.id)).toEqual(["thread:t-alice"]);
+    expect((await get(base, "/api/bots/pepper/activity?filter=other", "alice")).body.items!.map((item) => item.id)).toEqual(["thread:t-routine"]);
+    // bob's own view: not coding, not his to stop when it is not running
+    const bob = await get(base, "/api/bots/pepper/activity?filter=coding", "bob");
+    expect(bob.body.items).toEqual([]);
+  });
+
+  it("calls profile imports not coding, and file changes inside a repository coding", async () => {
+    const extra: ActivityTask[] = [
+      { threadId: "t-soul", title: "Import this as your directive, soul, identity", createdAt: NOW - 9_000, updatedAt: NOW - 8_000, ownerPrincipalId: "alice", cwd: "/repo" },
+      { threadId: "t-docs", title: "Tidy up", createdAt: NOW - 9_000, updatedAt: NOW - 7_000, ownerPrincipalId: "alice", cwd: "/repo" },
+    ];
+    const extraMessages: Record<string, ActivityMessage[]> = {
+      "t-soul": [{ id: "s1", role: "bot", kind: "activity", at: NOW - 8_500, tool: { name: "Write", ok: true, files: ["/home/pepper/SOUL.md"] } }],
+      "t-docs": [{ id: "s2", role: "bot", kind: "activity", at: NOW - 7_500, tool: { name: "Write", ok: true, files: ["/repo/docs/guide.md"] } }],
+    };
+    const base = await serve(deps({
+      tasks: (botId) => (botId === "pepper" ? [...tasks, ...extra] : []),
+      threadReadable: (_botId, threadId, viewerId) => !viewerId || [...tasks, ...extra].find((task) => task.threadId === threadId)?.ownerPrincipalId === viewerId,
+      messages: (threadId, limit) => ({ messages: (extraMessages[threadId] ?? messages[threadId] ?? []).slice(-limit), hasMore: false }),
+      inRepository: (cwd) => cwd === "/repo",
+    }));
+    const coding = await get(base, "/api/bots/pepper/activity?filter=coding", "alice");
+    expect(coding.body.items!.map((item) => item.id)).toEqual(["thread:t-alice", "thread:t-docs"]);
+    const other = await get(base, "/api/bots/pepper/activity?filter=other", "alice");
+    expect(other.body.items!.map((item) => item.id)).toEqual(["thread:t-soul", "thread:t-routine"]);
+  });
+
+  it("lists the sub-agents a person's own threads started, without others' request text", async () => {
+    const base = await serve();
+    const alice = await get(base, "/api/bots/pepper/activity", "alice");
+    expect(alice.body.subagents).toEqual([expect.objectContaining({ kind: "subagent", botName: "Echo", title: "Write the tests", status: "running", parentId: "thread:t-alice", threadId: "t-echo-alice" })]);
+    const bob = await get(base, "/api/bots/pepper/activity", "bob");
+    expect(bob.body.subagents).toEqual([expect.objectContaining({ title: "Echo", status: "finished", parentId: "thread:t-bob" })]);
+    expect(JSON.stringify(bob.body)).not.toContain("private ask");
+    expect(JSON.stringify(bob.body)).not.toContain("Write the tests");
+    // the coding filter carries no sub-agents
+    expect((await get(base, "/api/bots/pepper/activity?filter=coding", "alice")).body.subagents).toEqual([]);
   });
 
   it("refuses writes and a detail without a target", async () => {

@@ -1,5 +1,5 @@
 // What a bot is doing and did lately, as its side panel lists it (Details >
-// Coding): its conversations' engine sessions (Claude Code, Codex, ...), the
+// Coding and Activity): its conversations' engine sessions (Claude Code, Codex, ...), the
 // work other bots handed it (coordinate_bots, delegations), the sub-agents
 // it handed to other bots, and its routine runs. Served by
 // GET /api/bots/:id/activity (server/routes/bot-activity.ts), narrowed to
@@ -36,6 +36,24 @@ export interface BotActivityItem {
   startedBy?: BotActivityActor;
   /** Sub-agents and hops this one started, counted for the card. */
   childCount?: number;
+  /** Coding work (server/activity-coding.ts): it edited code, ran version
+   * control or changed files inside a repository. Read off its tool calls
+   * and folder, never its title. Absent for everything else. */
+  coding?: boolean;
+  /** While it runs: the tool call in flight (or the newest), or what a
+   * waiting run asks. */
+  currentStep?: string;
+  /** While it runs: the viewer may stop it (thread.post on its thread). */
+  canStop?: boolean;
+  /** A listed sub-agent: the entry that started it. */
+  parentId?: string;
+}
+
+/** GET /api/bots/:id/activity: the entries (`?filter=coding|other`), and
+ * the sub-agents their threads started, running or recent. */
+export interface BotActivityList {
+  items: BotActivityItem[];
+  subagents: BotActivityItem[];
 }
 
 export interface BotActivityStep {
