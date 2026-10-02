@@ -8,6 +8,7 @@ import SwiftUI
 import CompanionCore
 
 struct NewGroupSheet: View {
+    @Environment(\.themePalette) var themePalette
     let close: () -> Void
     let created: (Room) -> Void
 
@@ -103,16 +104,16 @@ struct NewGroupSheet: View {
                 } else {
                     Text(step == .members ? "Next" : "Create")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(canContinue ? Color.black : Theme.disabledCapsuleText)
+                        .foregroundStyle(canContinue ? Theme.primaryInk : Theme.disabledCapsuleText)
                 }
             }
             .padding(.horizontal, 12)
             .frame(minWidth: 59.67)
             .frame(height: Theme.Metric.glassLarge)
-            .background(canContinue ? Color.white : Theme.disabledCapsule, in: Capsule())
+            .background(canContinue ? Theme.primaryFill : Theme.disabledCapsule, in: Capsule())
             .overlay(
                 Capsule().strokeBorder(
-                    LinearGradient(colors: [Color(hex: 0xC9C9C9), Theme.disabledCapsule, Color(hex: 0xC9C9C9)], startPoint: .top, endPoint: .bottom),
+                    LinearGradient(colors: [Theme.parity(Color(hex: 0xC9C9C9), Theme.hairline), Theme.disabledCapsule, Theme.parity(Color(hex: 0xC9C9C9), Theme.hairline)], startPoint: .top, endPoint: .bottom),
                     lineWidth: 1
                 )
             )
@@ -152,7 +153,7 @@ struct NewGroupSheet: View {
         HStack(spacing: 0) {
             Text("To:")
                 .font(.system(size: 13.75))
-                .foregroundStyle(Color(hex: 0x6B6B6D))
+                .foregroundStyle(Theme.parity(Color(hex: 0x6B6B6D), Theme.placeholder))
                 .padding(.leading, 14.67)
                 .padding(.trailing, 6)
             HStack(spacing: 4) {
@@ -167,11 +168,11 @@ struct NewGroupSheet: View {
                     Button { toggle(bot) } label: {
                         Text(verbatim: bot.name)
                             .font(.system(size: 14))
-                            .foregroundStyle(Theme.textPrimary)
+                            .foregroundStyle(Theme.accentInk)
                             .lineLimit(1)
                             .padding(.horizontal, 8)
                             .frame(height: 26)
-                            .background(Theme.blue, in: Capsule())
+                            .background(Theme.accent, in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .fixedSize()
@@ -181,7 +182,7 @@ struct NewGroupSheet: View {
                     if query.isEmpty && picked.isEmpty {
                         Text("Search Bots")
                             .font(.system(size: 14))
-                            .foregroundStyle(Color(hex: 0x6B6B6D))
+                            .foregroundStyle(Theme.parity(Color(hex: 0x6B6B6D), Theme.placeholder))
                             .padding(.leading, 1.4)
                             .allowsHitTesting(false)
                     }
@@ -254,7 +255,7 @@ struct NewGroupSheet: View {
                 if name.isEmpty {
                     Text("Group name (optional)")
                         .font(.system(size: 17.5, weight: .medium))
-                        .foregroundStyle(Color(hex: 0x5E5E60))
+                        .foregroundStyle(Theme.parity(Color(hex: 0x5E5E60), Theme.placeholder))
                         .allowsHitTesting(false)
                 }
                 TextField("", text: $name)

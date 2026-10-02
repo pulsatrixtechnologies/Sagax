@@ -57,6 +57,7 @@ enum WalkieVoiceKey {
 }
 
 struct WalkieVoiceSheet: View {
+    @Environment(\.themePalette) var themePalette
     /// Play a short sample with the current settings.
     let onSample: () -> Void
 
@@ -102,12 +103,14 @@ struct WalkieVoiceSheet: View {
                 } footer: {
                     Text("Replies are spoken by ElevenLabs straight from this phone. The key stays in this phone's Keychain. Get one at elevenlabs.io, then Developers, then API keys.")
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 if let problem {
                     Section {
                         Label(problem, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Color.orange)
+                            .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
                     }
+                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
 
                 if hasKey {
@@ -125,8 +128,11 @@ struct WalkieVoiceSheet: View {
                     } footer: {
                         Text("Agents with an ElevenLabs voice picked on your computer use it when this is on. Everyone else uses the voice above.")
                     }
+                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.parity(Color(uiColor: .systemGroupedBackground), Theme.bg))
             .navigationTitle("Walkie voice")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -1,7 +1,12 @@
 import SwiftUI
+import CompanionCore
 
 struct ShareRootView: View {
     @ObservedObject var model: ShareViewModel
+    @Environment(\.colorScheme) private var scheme
+
+    /// The app's skin, from the app group (SharedTheme).
+    private var p: SkinPalette { SharedTheme.palette(for: SharedTheme.pinnedScheme ?? scheme) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,7 +35,9 @@ struct ShareRootView: View {
             Divider()
             footer
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .foregroundStyle(p.textPrimary.color)
+        .tint(p.accent.color)
+        .background(p.bg.color.ignoresSafeArea())
         .task { await model.start() }
     }
 
@@ -40,7 +47,7 @@ struct ShareRootView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 32, height: 32)
-                    .background(.thinMaterial, in: Circle())
+                    .background(p.glassFill.color, in: Circle())
             }
             .buttonStyle(.plain)
             .disabled(!model.canCancel)
@@ -52,20 +59,20 @@ struct ShareRootView: View {
                     .font(.headline)
                 Text(headerSubtitle)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(p.textSecondary.color)
             }
             Spacer()
             if model.phase == .sending {
                 ProgressView().controlSize(.small)
             } else if model.phase == .sent {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(p.success.color)
                     .font(.title3)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(p.card.color)
     }
 
     private var headerSubtitle: String {
@@ -84,7 +91,7 @@ struct ShareRootView: View {
             HStack(spacing: 12) {
                 ProgressView()
                 Text("Reading shared content")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(p.textSecondary.color)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
@@ -93,7 +100,7 @@ struct ShareRootView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Sharing", systemImage: "square.and.arrow.up")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(p.textSecondary.color)
                     .textCase(.uppercase)
                 FlowLayout(spacing: 8) {
                     if model.preview.linkCount > 0 {
@@ -117,7 +124,7 @@ struct ShareRootView: View {
                          ? "1 unsupported item was left out."
                          : "\(model.preview.ignoredCount) unsupported items were left out.")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(p.warning.color)
                 }
             }
             .padding(16)
@@ -129,7 +136,7 @@ struct ShareRootView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Computer")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(p.textSecondary.color)
                 .textCase(.uppercase)
             Menu {
                 ForEach(model.computers) { computer in
@@ -147,16 +154,16 @@ struct ShareRootView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "laptopcomputer")
                         .font(.title3)
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(p.accentText.color)
                         .frame(width: 30)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.selectedComputer?.name ?? "Choose a computer")
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(p.textPrimary.color)
                         if let routeLabel = model.selectedComputer?.routeLabel {
                             Text(routeLabel)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(p.textSecondary.color)
                                 .lineLimit(1)
                         }
                     }
@@ -166,7 +173,7 @@ struct ShareRootView: View {
                     } else if model.computers.count > 1 {
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(p.textTertiary.color)
                     }
                 }
                 .padding(14)
@@ -184,7 +191,7 @@ struct ShareRootView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Send to")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(p.textSecondary.color)
                 .textCase(.uppercase)
             Menu {
                 let bots = model.destinations.filter { $0.kind == .bot }
@@ -199,33 +206,33 @@ struct ShareRootView: View {
                 HStack(spacing: 12) {
                     Image(systemName: destinationIcon)
                         .font(.title3)
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(p.accentText.color)
                         .frame(width: 30)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 7) {
                             Text(model.selectedDestination?.name ?? "Choose a bot or channel")
                                 .font(.body.weight(.semibold))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(p.textPrimary.color)
                             if model.isRememberedSelection {
                                 Text("LAST USED")
                                     .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(.tint)
+                                    .foregroundStyle(p.accentText.color)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 3)
-                                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                                    .background(p.accent.color.opacity(0.12), in: Capsule())
                             }
                         }
                         if let subtitle = model.selectedDestination?.subtitle {
                             Text(subtitle)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(p.textSecondary.color)
                                 .lineLimit(1)
                         }
                     }
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(p.textTertiary.color)
                 }
                 .padding(14)
                 .cardStyle()
@@ -254,7 +261,7 @@ struct ShareRootView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Instruction (optional)")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(p.textSecondary.color)
                 .textCase(.uppercase)
             TextField(
                 "For example: summarize this and list the next steps",
@@ -274,7 +281,7 @@ struct ShareRootView: View {
                 .font(.subheadline.weight(.semibold))
             Text(message)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(p.textSecondary.color)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 model.retry()
@@ -285,10 +292,10 @@ struct ShareRootView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+        .background(p.warning.color.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
         .overlay {
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+                .stroke(p.warning.color.opacity(0.25), lineWidth: 1)
         }
     }
 
@@ -296,15 +303,15 @@ struct ShareRootView: View {
         Label {
             Text(message)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(p.textSecondary.color)
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "photo.badge.exclamationmark")
-                .foregroundStyle(.orange)
+                .foregroundStyle(p.warning.color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+        .background(p.warning.color.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var footer: some View {
@@ -312,11 +319,12 @@ struct ShareRootView: View {
             model.send()
         } label: {
             HStack(spacing: 8) {
-                if model.phase == .sending { ProgressView().tint(.white) }
+                if model.phase == .sending { ProgressView().tint(p.accentInk.color) }
                 Text(model.phase == .sending ? "Sending…" : "Send")
                     .fontWeight(.semibold)
                 if model.phase != .sending { Image(systemName: "arrow.up") }
             }
+            .foregroundStyle(p.accentInk.color)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
         }
@@ -324,7 +332,7 @@ struct ShareRootView: View {
         .buttonBorderShape(.roundedRectangle(radius: 14))
         .disabled(!model.canSend)
         .padding(16)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(p.card.color)
     }
 
     private var destinationIcon: String {
@@ -339,7 +347,7 @@ struct ShareRootView: View {
             .frame(maxWidth: 220, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+            .background(p.inset.color, in: Capsule())
     }
 
     private func icon(for name: String) -> String {
@@ -354,10 +362,20 @@ struct ShareRootView: View {
 
 private extension View {
     func cardStyle() -> some View {
-        background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        modifier(ShareCardStyle())
+    }
+}
+
+private struct ShareCardStyle: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        let p = SharedTheme.palette(for: SharedTheme.pinnedScheme ?? scheme)
+        content
+            .background(p.card.color, in: RoundedRectangle(cornerRadius: 16))
             .overlay {
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                    .stroke(p.hairline.color, lineWidth: 1)
             }
     }
 }

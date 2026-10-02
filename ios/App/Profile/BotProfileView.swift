@@ -13,6 +13,7 @@ import SwiftUI
 import UIKit
 
 struct BotProfileView: View {
+    @Environment(\.themePalette) var themePalette
     enum Tab: String, CaseIterable, Identifiable {
         case info, links, media, files
         var id: String { rawValue }
@@ -127,7 +128,6 @@ struct BotProfileView: View {
         .navigationBarBackButtonHidden(true)
         .background(SwipeBackBridge())
         .persistentSystemOverlays(.hidden)
-        .preferredColorScheme(.dark)
         .navigationDestination(isPresented: $showingInstructions) {
             InstructionView(bot: current)
         }
@@ -238,7 +238,7 @@ struct BotProfileView: View {
                 ProfileDivider(leading: Theme.Profile.textInset)
                 Text(role)
                     .font(.system(size: 13))
-                    .foregroundStyle(Color(hex: 0x9B9BA2))
+                    .foregroundStyle(Theme.parity(Color(hex: 0x9B9BA2), Theme.textSecondary))
                     .lineLimit(1)
                     .padding(.horizontal, Theme.Profile.textInset)
                     .frame(maxWidth: .infinity)
@@ -264,7 +264,7 @@ struct BotProfileView: View {
                             .foregroundStyle(tab == item ? Theme.textPrimary : Theme.textTertiary)
                             .frame(height: 30)
                         Rectangle()
-                            .fill(tab == item ? Color.white : Color.clear)
+                            .fill(tab == item ? Theme.textPrimary : Color.clear)
                             .frame(width: Theme.Profile.tabUnderline, height: 2)
                     }
                     .frame(maxWidth: .infinity)
@@ -591,7 +591,7 @@ struct BotProfileView: View {
                 menuOpen = true
             }
         case .routineDetail, .routineInstruction:
-            try? await Task.sleep(nanoseconds: 900_000_000)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             if let first = botRoutines.first(where: { $0.schedule.type == .cron }) ?? botRoutines.first {
                 parityRoutineInstruction = screen == .routineInstruction
                 openRoutine = first

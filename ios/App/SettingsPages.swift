@@ -7,6 +7,7 @@ import SwiftUI
 // MARK: - Account (16)
 
 struct AccountSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     let closeSheet: (() -> Void)?
 
     @EnvironmentObject private var session: Session
@@ -138,6 +139,7 @@ enum ParityMode {
 // MARK: - Bot Computer (21)
 
 struct BotComputerSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var status: ComputerStatus?
     @State private var loadError: String?
@@ -262,6 +264,7 @@ struct BotComputerSettingsView: View {
 // MARK: - Auto-review Rules
 
 struct AutoReviewRulesView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var model: SettingsModel
 
     var body: some View {
@@ -316,6 +319,7 @@ struct AutoReviewRulesView: View {
     }
 
     private struct RuleRow: View {
+        @Environment(\.themePalette) var themePalette
         let rule: AutoReviewRule
 
         var body: some View {
@@ -338,6 +342,7 @@ struct AutoReviewRulesView: View {
 // MARK: - Time zone
 
 struct TimeZonePickerView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var model: SettingsModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.settingsPop) private var settingsPop
@@ -395,6 +400,7 @@ struct TimeZonePickerView: View {
 
 /// The glass search capsule: magnifier, field, measured at 40.67 pt.
 struct SettingsSearchField: View {
+    @Environment(\.themePalette) var themePalette
     let prompt: LocalizedStringKey
     @Binding var text: String
     var identifier: String
@@ -403,8 +409,8 @@ struct SettingsSearchField: View {
         HStack(spacing: 7.67) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15.3, weight: .medium))
-                .foregroundStyle(Color(hex: 0x6B6B6D))
-            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Color(hex: 0x6C6B6F)).tracking(SettingsMetrics.tracking135))
+                .foregroundStyle(Theme.parity(Color(hex: 0x6B6B6D), Theme.placeholder))
+            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Theme.parity(Color(hex: 0x6C6B6F), Theme.placeholder)).tracking(SettingsMetrics.tracking135))
                 .font(Theme.Font.rowTitle)
                 .foregroundStyle(Theme.textPrimary)
                 .textInputAutocapitalization(.never)

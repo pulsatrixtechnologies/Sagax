@@ -36,6 +36,7 @@ struct PluginGlyph {
 }
 
 struct PluginIconTile: View {
+    @Environment(\.themePalette) var themePalette
     var key: String?
     var remote: String?
     var size: CGFloat = 38.5
