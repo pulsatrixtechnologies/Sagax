@@ -319,6 +319,28 @@ function UpdatesRow() {
   );
 }
 
+/** Opt-in to pre-release versions. Updates only ever come from Sagax's own
+ * GitHub releases (electron/update-feed.mjs); this only widens the channel. */
+function PrereleaseRow() {
+  const s = useUpdaterState();
+  const setPrereleases = window.ogb?.updater?.setPrereleases;
+  if (!setPrereleases) return null;
+  const on = s?.allowPrerelease === true;
+  return (
+    <SettingRow
+      title={t("settings.updates.prerelease.title")}
+      subtitle={t("settings.updates.prerelease.short")}
+      help={t("settings.updates.prerelease.subtitle")}
+    >
+      <Switch
+        checked={on}
+        aria-label={t("settings.updates.prerelease.aria")}
+        onClick={() => void setPrereleases(!on)}
+      />
+    </SettingRow>
+  );
+}
+
 /** The effort every new bot starts with. The server skips a level the new
  * bot's engine does not offer, and a bot's own choice always wins. */
 function NewBotEffortRow() {
@@ -1054,6 +1076,7 @@ export function SettingsModal() {
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
+                  <PrereleaseRow />
                   <DiagnosticsRow />
                 </div>
               </>

@@ -306,6 +306,8 @@ const bridge = {
     check: () => ipcRenderer.invoke("update:check"),
     download: () => ipcRenderer.invoke("update:download"),
     install: () => ipcRenderer.invoke("update:install"),
+    /** Opt in or out of pre-release versions (our GitHub releases only). */
+    setPrereleases: (enabled) => ipcRenderer.invoke("update:set-prereleases", enabled === true),
     onState: (cb) => {
       ipcRenderer
         .invoke("update:get-state")

@@ -2748,6 +2748,10 @@
       "computer.addBoatKey": "fcf349af3c05d6750fdc7ebdaac778bfcf27f8514faf5084c3882479c084cc36"
     },
     "fr": {
+      "settings.updates.prerelease.title": "a524f78a25e5f7ce4ba914f792918be5285a43cb779fb5960dffaebd0c3961d7",
+      "settings.updates.prerelease.short": "322cec81f7675db09bac79b9fe4160b2e9216c899d1a60e8a7a574ed361742da",
+      "settings.updates.prerelease.subtitle": "4c2da784c5b81e318669791b478a062c2fd163528f4531df33ee7b55d26ee21c",
+      "settings.updates.prerelease.aria": "2c5f1e39c7aaa229cbc1d430715b187920b012739c76531ea3b53e2aef4a1dfc",
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
       "noEngines.intro": "771dc420a107df9c9df61b2ee02d2bd30860060d482e9b7918e67082a28744fe",
       "engines.cloud": "b977b950c1ae31e5aeb9ef778cc20a66fc034eb81e738e0206104b677962c465",

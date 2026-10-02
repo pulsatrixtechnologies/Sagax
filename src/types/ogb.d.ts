@@ -357,6 +357,8 @@ const __SAGAX_DEFAULT_SERVER__: string;
         download(): Promise<void>;
         /** apply the download: quit-and-install, or copy the command and open a terminal */
         install(): Promise<void>;
+        /** opt in or out of pre-release versions from Sagax's GitHub releases */
+        setPrereleases?(enabled: boolean): Promise<UpdaterState>;
         onState(cb: (s: UpdaterState) => void): () => void;
       };
     };
@@ -392,6 +394,8 @@ export interface UpdaterState {
   version?: string;
   percent?: number;
   message?: string;
+  /** pre-release versions are offered (opt-in, this computer only) */
+  allowPrerelease?: boolean;
   /** native work may still be running; recovery requires an app restart */
   retryable?: boolean;
   /**
