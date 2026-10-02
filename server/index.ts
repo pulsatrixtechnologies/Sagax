@@ -31,6 +31,7 @@ import { BOT_PROFILE_LIMITS } from "../shared/bot-profile.ts";
 import { CLOUD_COMPUTER_BUSY_ERROR } from "../shared/computer-contention.ts";
 import {
   approvalModeFor,
+  hasNativeAutoReview,
   modelSwitchNeedsAsk,
   isEmergencyApprovalDowngrade,
   isApprovalMode,
@@ -438,7 +439,7 @@ import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts
 import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
-import { RoutineManager, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
+import { RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT } from "./browser-engine.ts";
@@ -617,6 +618,8 @@ import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotLibraryRoutes } from "./routes/bot-library.ts";
+import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
+import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bot-settings.ts";
 import { createComputerInputRoutes } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
@@ -828,6 +831,7 @@ if (CLOUD_HOME && Object.keys(CLOUD_SECRETS).length === 0) {
 // Who each thread is for, when a signed-in person can be named (server-private).
 const threadStarters = new ThreadStarters(join(DATA_DIR, "thread-starters.json"));
 const commandAllowlist = new CommandAllowlistStore(join(DATA_DIR, "command-allowlist.json"));
+const botSettings = createBotSettingsStore(DATA_DIR);
 const SESSION_COOKIE = sessionCookieName(PORT, ENVIRONMENT_ID);
 const HOSTED_WORKSPACE = hostedWorkspaceConfigured();
 let workspaceAccess: WorkspaceAccess | null = null;
@@ -1478,6 +1482,25 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
   const known = [threadStarters.get(threadId), cardRequesterKey(threadId, requestId)].filter((person): person is string => Boolean(person));
   if (!known.length || known.includes(personKey(auth.session)) || known.includes(legacyPersonKey(auth.session))) return null;
   return "Only the person who started this conversation or sent this request, or a workspace admin, can answer this card.";
+}
+
+/** Settings > Bot > Auto-review (server/bot-settings.ts): when the caller
+ * (their own setting on an organization server, the server's elsewhere) has
+ * it on, a conversation they just opened starts in the reviewed level. */
+function applyAutoReviewDefault(auth: RequestAuth, botId: string, threadId: string): void {
+  const principalId = IDENTITY.kind === "perspicax" && auth.kind === "session" ? auth.session.principalId : undefined;
+  const settings = principalId && isPrincipalId(principalId) ? botSettings.person(principalId) : botSettings.server();
+  if (!settings.autoReviewDefault) return;
+  if (CLOUD_HOME && !cloudOwnerSession(auth)) return;
+  const thread = store.projectBotForTask(botId, threadId);
+  if (!thread || thread.approvalGrant) return;
+  const mode = autoReviewThreadMode({
+    current: approvalModeFor(thread),
+    nativeReviewer: hasNativeAutoReview(registry.cliTarget(thread.modelSelection.instanceId)?.driverKind),
+    supportsAuto: supportsApprovalMode(thread.modelSelection, "auto"),
+    thisComputer: thread.computer === "local",
+  });
+  if (mode) store.patchTask(botId, threadId, { approvalMode: mode, autoApprove: mode === "auto" });
 }
 
 function canManageCommandAllowlist(auth: RequestAuth): boolean {
@@ -11687,7 +11710,16 @@ const commsBus: CommsBus = {
 };
 _loadPending();
 
+// Settings > Bot (server/bot-settings.ts): the zone routines read wall
+// clocks in, the server's by default and, on an organization server, each
+// routine's person's own when they chose one.
+setRoutineTimeZone(() => botSettings.server().timeZone ?? undefined);
 routines = new RoutineManager({
+  timeZoneFor: (routine) => {
+    if (IDENTITY.kind !== "perspicax" || !routine.botId) return undefined;
+    const person = effectiveRunAs({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) });
+    return (person && isPrincipalId(person) ? botSettings.person(person).timeZone : null) ?? undefined;
+  },
   emit: (payload) => broadcast(payload.kind === "routine" && payload.routine && typeof payload.routine === "object"
     ? { ...payload, routine: routineOnWire(payload.routine as Routine) }
     : payload),
@@ -12385,7 +12417,7 @@ async function resolveAndSendTeamSetup(res: ServerResponse, args: { botId: strin
   return true;
 }
 const ROUTINE_WEEKDAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
-const routineTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+const routineTimeZone = () => botSettings.server().timeZone ?? hostTimeZone();
 const routineTimestamp = (value: number | undefined) =>
   value !== undefined && Number.isFinite(value) ? new Date(value).toISOString() : null;
 const agentRoutine = (
@@ -16547,6 +16579,16 @@ ROUTES.push(createComputerInputRoutes<BotRecord>({
     if (adminActivityRecording()) {
       appendAdminAction(DATA_DIR, { category: "computer", action: `computer.${action}`, target: { kind: "bot", id: bot.id, name: bot.name }, after: detail, actor });
     }
+  },
+}));
+// Settings > Bot: auto-review default and time zone (server/bot-settings.ts).
+ROUTES.push(createBotSettingsRoutes({
+  store: botSettings,
+  organization: () => IDENTITY.kind === "perspicax",
+  changed: (scope) => {
+    routines?.rescheduleWallClock(scope.kind === "server"
+      ? () => true
+      : (routine) => Boolean(routine.botId) && effectiveRunAs({ botId: routine.botId!, ...(routine.runAs ? { runAs: routine.runAs } : {}) }) === scope.principalId);
   },
 }));
 // The people of a solo server: its email sign-in list and the invitations
@@ -25368,6 +25410,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const ownerCreates = !creator || viewerBotLevel(auth, bot) === "owner";
       const task = store.createTask(bot.id, typeof body.title === "string" ? body.title : undefined, ownerCreates, body.projectId, undefined, body.approvalMode, creator && isPrincipalId(creator) ? creator : undefined);
       if (!task) return json(res, 500, { error: "couldn't create that task" });
+      // Settings > Bot > Auto-review: a new conversation starts reviewed.
+      if (body.approvalMode === undefined) applyAutoReviewDefault(auth, bot.id, task.threadId);
       if (creator) selectViewerThread(bot.id, creator, task.threadId);
       // Who opened it decides who may answer its cards on a shared workspace.
       if (auth.kind === "session") threadStarters.set(task.threadId, actorKey(auth));
@@ -25375,7 +25419,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the bot as seen from that thread.
       const fresh = botWithThread(ownerCreates ? store.bot(bot.id)! : store.projectBotForTask(bot.id, task.threadId) ?? store.bot(bot.id)!);
       broadcast({ kind: "bot", bot: fresh });
-      return json(res, 201, { bot: projectBotTranscript(fresh, viewerForApproval(auth)), task: wireTask(task) });
+      return json(res, 201, { bot: projectBotTranscript(fresh, viewerForApproval(auth)), task: wireTask(store.taskByThread(bot.id, task.threadId) ?? task) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/tasks\/([\w-]+)$/);
     if (m && method === "POST") {
