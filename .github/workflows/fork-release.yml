@@ -55,7 +55,7 @@ jobs:
             release/latest-mac.yml
 
   win:
-    name: Windows x64
+    name: Windows x64 + arm64
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
@@ -81,6 +81,7 @@ jobs:
           path: |
             release/*.exe
             release/*.exe.blockmap
+            release/*.zip
             release/latest.yml
 
   publish:
@@ -106,7 +107,7 @@ jobs:
           find dist-release -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.blockmap' -o -name '*.yml' \) -exec cp {} out/ \;
           ls -lh out
           notes=$(cat <<EOF
-          Pulsa Bot $fork is a trial build of this fork.
+          Sagax $fork is a trial build of this fork.
 
           The official base stays OpenMausBot $base. Fork versioning starts at 0.1.0.
 
@@ -116,4 +117,4 @@ jobs:
           This is not an official OpenMausBot release.
           EOF
           )
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" ${{ inputs.prerelease && '--prerelease' || '' }} --title "Pulsa Bot $fork" --notes "$notes" out/*
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" ${{ inputs.prerelease && '--prerelease' || '' }} --title "Sagax $fork" --notes "$notes" out/*

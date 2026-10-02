@@ -324,6 +324,14 @@ describe("finding the browser engine", () => {
     expect(resolveAgentBrowserBinary({ ...options, env: { ...env, SAGAX_AGENT_BROWSER_PATH: external } })).toBe(external);
   });
 
+  it("uses the x64 desktop bundle on Windows on Arm (emulated)", () => {
+    const env = { SAGAX_RESOURCES_PATH: join(tmpdir(), "OMB resources"), PATH: "" };
+    const bundle = browserBundlePaths(join(env.SAGAX_RESOURCES_PATH, "browser-engine"), "win32-x64");
+    const files = new Set([bundle.directory, bundle.engine, bundle.chrome, bundle.manifest, bundle.licenses]);
+    const options = { env, platform: "win32" as NodeJS.Platform, arch: "arm64", exists: (p: string) => files.has(p) };
+    expect(resolveAgentBrowserBinary(options)).toBe(bundle.engine);
+  });
+
   it("mounts the bundled browser with no download and keeps explicit Chrome overrides", async () => {
     const resources = mkdtempSync(join(tmpdir(), "omb-browser-resources-"));
     scratch.push(resources);
