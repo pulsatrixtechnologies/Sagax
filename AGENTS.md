@@ -397,11 +397,28 @@ engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
   with its reason and refused at send (409).
 - `scripts/smoke-harness-commands.ts` checks the real CLIs.
 
+## Bot panel
+
+The bot's side panel (`src/components/BotSettingsDialog.tsx`, tabs in
+`bot-settings/panel-tabs.ts`) shows Details | Library | Computer | More. The
+name and label are edited where they show (`InlineEditableText`), the
+description behind the (i) beside the name (`DescriptionInfo`); there are no
+Name, Label or Description fields. Details lists Coding first
+(`ActivitySection`, `ActivityDetailModal`), then Routines. Coding reads
+`GET /api/bots/:id/activity` and `/activity/item`
+(`server/routes/bot-activity.ts`, types in `shared/bot-activity.ts`): every
+thread passes `botThreadReadable`, every routine run `routineSeenBy`; a run
+seen without its thread has no steps or thread link, and a sub-agent on
+someone else's thread shows no request text. Tests:
+`server/routes/bot-activity.test.ts`, `ActivitySection.test.ts`,
+`InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`.
+
 ## Group settings
 
 A group has no setup dialog and no pending setup state. Every group setting
 lives in its side panel (`src/components/GroupPanel.tsx`, the bot panel
-shell): Details holds the name, people and bots; Instructions holds the
+shell): the name is edited in place at its top (its owner) and the (i)
+beside it shows the instructions; Details holds the people and bots; Instructions holds the
 group instructions (`bulletin`); Advanced holds the default responder (a
 specific lead, Auto with Jev, everyone, or only when mentioned) and the
 working folder (empty means each bot's own folder). Keep these rules:

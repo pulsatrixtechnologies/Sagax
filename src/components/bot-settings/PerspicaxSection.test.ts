@@ -1,4 +1,4 @@
-// The Perspicax tools section of bot settings (slice 5): which profiles the
+// The Perspicax Profiles section of bot settings (slice 5): which profiles the
 // editor shows, the ones not held, the refusal messages, the section rail.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
 import { BOT_SECTIONS } from "./sections";
-import { isAdvancedSection } from "./panel-tabs";
+import { isMoreSection } from "./panel-tabs";
 import { PerspicaxSection, perspicaxErrorKey, perspicaxRows, type PerspicaxAnswer } from "./PerspicaxSection";
 
 const DISPATCH = { id: "P1", slug: "dispatch", name: "Dispatch", description: "Tickets" };
@@ -51,9 +51,9 @@ describe("PerspicaxSection rows", () => {
   it("is an Advanced section, labelled in English and Quebec French", () => {
     const entry = BOT_SECTIONS.find((section) => section.id === "perspicax");
     expect(entry?.labelKey).toBe("botSettings.perspicax.title");
-    expect(isAdvancedSection("perspicax")).toBe(true);
-    expect(en["botSettings.perspicax.title"]).toBe("Perspicax tools");
-    expect(fr["botSettings.perspicax.title"]).toBe("Outils Perspicax");
+    expect(isMoreSection("perspicax")).toBe(true);
+    expect(en["botSettings.perspicax.title"]).toBe("Perspicax Profiles");
+    expect(fr["botSettings.perspicax.title"]).toBe("Profils Perspicax");
     expect(fr["botSettings.perspicax.notHeld"]).toBe("Vous ne détenez pas ce profil");
     for (const key of Object.keys(en).filter((name) => name.startsWith("botSettings.perspicax."))) {
       expect(fr, key).toHaveProperty([key]);

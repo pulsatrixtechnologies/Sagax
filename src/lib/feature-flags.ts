@@ -1,7 +1,7 @@
 import { t } from "./i18n";
 
 export interface FeatureFlagConfig {
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; templates?: boolean };
   browserEngine?: { kind: "engine" | "unavailable"; reason?: string; installable?: boolean; installing?: boolean; installError?: string };
 }
 
@@ -42,6 +42,13 @@ export function showToolCallsEnabled(config: FeatureFlagConfig | null | undefine
  * Off by default — the run stays in a hidden thread and the chat only gets the card. */
 export function routinesInConversationEnabled(config: FeatureFlagConfig | null | undefined): boolean {
   return config?.features?.routinesInConversation === true;
+}
+
+/** The sidebar's Templates entry (the team library). Experimental: off
+ * until switched on in Settings > Experimental features; mirrors the
+ * server's templatesEnabled. */
+export function templatesEnabled(config: FeatureFlagConfig | null | undefined): boolean {
+  return config?.features?.templates === true;
 }
 
 /** Opt-in computer sharing — lending this desktop's folders, terminal or

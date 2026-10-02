@@ -88,7 +88,7 @@
   "sidebar.aria": "ボットとナビゲーション",
   "sidebar.search": "検索",
   "sidebar.searchAria": "ボットとメッセージを検索",
-  "sidebar.searchPlaceholder": "検索…",
+  "sidebar.search": "検索",
   "sidebar.noMatch": "「{query}」に一致するものはありません",
   "sidebar.preview.waiting": "あなたの返答待ち…",
   "sidebar.preview.working": "作業中…",

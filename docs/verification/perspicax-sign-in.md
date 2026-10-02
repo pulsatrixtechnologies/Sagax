@@ -440,7 +440,7 @@ slice 5 acceptance:
    token itself, a missing Basic header, a console `pxat1.`, an ordinary
    `/mcp` token, a profile not held and a foreign resource are refused with
    the codes in the plan; `token_exchanged` in auth_events.
-3. The "Outils Perspicax" section of bot settings in headless Chrome at
+3. The "Profils Perspicax" section of bot settings in headless Chrome at
    1280 and 390 px; the edit rules above by API.
 4. Scenario E: bob (`use` on X) sends "ping"; the reply has
    `mcp:api_list:ok`; Perspicax's journal has the rows under bob, none
