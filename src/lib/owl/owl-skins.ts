@@ -12,6 +12,9 @@ export type OwlSkinId = MascotSkinId;
 
 export { botMascotSkin as owlSkinId };
 
+/** How rare each skin is (the picker's tab and card). */
+export { OWL_SKIN_TIER } from "../../../shared/mascot-skins";
+
 export interface OwlSkinLook {
   /** The aura behind the owl: its core color and how strong it is (0..1). */
   aura: { color: string; strength: number } | null;
@@ -95,6 +98,79 @@ export function owlSkinPalette(skin: OwlSkinId, base: OwlPalette, hex: string): 
         iris: "#C8F3FF",
         pupil: "#0B2536",
       };
+    case "snowy":
+      // the snowy owl: white plumage barred with dark flecks, a yellow eye
+      return {
+        ...base,
+        plumage: "#E8E6E0",
+        wingNear: "#C9C5BC",
+        socket: "#3A3836",
+        cream: "#FFFFFF",
+        grey: "#3E3C42",
+        greyDark: "#57544F",
+        iris: "#F8CA48",
+      };
+    case "barn":
+      // the barn owl: golden buff back, the pale heart face, a warm eye
+      return {
+        ...base,
+        plumage: "#C9985A",
+        wingNear: "#A8783D",
+        socket: "#3B2A1A",
+        cream: "#FBF3E6",
+        grey: "#7A6450",
+        greyDark: "#CDB79E",
+        iris: "#F2B33D",
+      };
+    case "chrome":
+      return {
+        ...base,
+        plumage: "#9AA6B4",
+        wingNear: "#6E7A88",
+        socket: "#1F262D",
+        cream: "#EEF3F8",
+        grey: "#D6DEE8",
+        greyDark: "#4A5562",
+        iris: "#BFE9FF",
+        pupil: "#0D1319",
+      };
+    case "holo":
+      return {
+        ...base,
+        plumage: "#E3E0F6",
+        wingNear: "#C6BEEC",
+        socket: "#2A2140",
+        cream: "#FFFFFF",
+        grey: "#B9A7F0",
+        greyDark: "#6B5E9A",
+        iris: "#9BF6FF",
+        pupil: "#1B1430",
+      };
+    case "galaxy":
+      return {
+        ...base,
+        plumage: "#1A1140",
+        wingNear: "#110B2C",
+        socket: "#07041A",
+        cream: "#E6E0FF",
+        grey: "#C9B8FF",
+        greyDark: "#4A3D85",
+        iris: "#FFE27A",
+        pupil: "#140A2E",
+      };
+    case "spirit":
+      // a friendly ghost: pale, cool and translucent-looking, never menacing
+      return {
+        ...base,
+        plumage: "#A9DCEB",
+        wingNear: "#82C4D9",
+        socket: "#1D3F52",
+        cream: "#F2FBFF",
+        grey: "#E3F6FB",
+        greyDark: "#6FA3B5",
+        iris: "#E8FFFF",
+        pupil: "#0B2A38",
+      };
     case "carbon":
       return {
         ...base,
@@ -126,6 +202,18 @@ export function owlSkinLook(skin: OwlSkinId, hex: string): OwlSkinLook {
       return { aura: { color: "#7DD3FC", strength: 0.5 }, eyeGlow: "#E0F7FF", rim: "rgba(186,236,255,0.75)" };
     case "carbon":
       return { aura: null, eyeGlow: null, rim: "rgba(200,210,225,0.4)" };
+    case "snowy":
+      return { aura: null, eyeGlow: null, rim: "rgba(150,160,175,0.45)" };
+    case "barn":
+      return { aura: null, eyeGlow: null, rim: "rgba(255,236,200,0.5)" };
+    case "chrome":
+      return { aura: { color: "#CFE3FF", strength: 0.3 }, eyeGlow: null, rim: "rgba(235,242,250,0.75)" };
+    case "holo":
+      return { aura: { color: "#F5A8FF", strength: 0.4 }, eyeGlow: "#9BF6FF", rim: "rgba(255,255,255,0.8)" };
+    case "galaxy":
+      return { aura: { color: "#8B6CFF", strength: 0.5 }, eyeGlow: "#FFE27A", rim: "rgba(185,164,255,0.7)" };
+    case "spirit":
+      return { aura: { color: "#7FF0FF", strength: 0.45 }, eyeGlow: "#C8FFFF", rim: "rgba(200,250,255,0.8)" };
     default:
       return { aura: null, eyeGlow: null, rim: null };
   }
