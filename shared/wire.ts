@@ -675,6 +675,11 @@ export interface WireGroup {
    * follow-up no person asked for runs in this person's server environment
    * (server/user-sandbox-routing.ts). Absent on older rooms. */
   createdBy?: string;
+  /** Organization server: who owns the room's settings (its creator, else
+   * the first person listed; null when its organization admins do). Only
+   * the owner changes them (server/group-ownership.ts). Absent on a solo
+   * server. */
+  ownerId?: string | null;
   /** true for auto-created bot-bot channels. */
   dm?: boolean;
   /** transient: the member currently running a turn. */
@@ -691,7 +696,7 @@ export interface WireGroup {
   pinnedMessageId?: string;
   /** sidebar section heading this room is filed under. */
   section?: string;
-  /** New user-created rooms start with setup pending. */
+  /** Set at creation: rooms have no pending setup step any more. */
   setupCompletedAt?: number | null;
   setupSkippedAt?: number | null;
   /** The narrowest audience this room has ever had (see

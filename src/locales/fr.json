@@ -1092,6 +1092,8 @@
   "groupPanel.instructions": "Instructions du groupe",
   "groupPanel.instructionsDetail": "Un brief partagé que chaque membre voit à chaque tour. Vous pourrez le modifier plus tard.",
   "groupPanel.instructionsPlaceholder": "Objectifs, ton, responsabilités, contraintes…",
+  "groupPanel.ownerOnly": "Seul le propriétaire du groupe peut modifier ces réglages.",
+  "groupPanel.leave": "Quitter le groupe",
   "room.members.manage": "Gérer les membres",
   "room.members.ariaOne": "Gérer les membres — 1 bot dans ce groupe",
   "room.members.ariaMany": "Gérer les membres — {count} bots dans ce groupe",

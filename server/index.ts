@@ -4,6 +4,7 @@
 // First, before any module that could start a process: a Cloud home's
 // secrets off the launcher's pipe (cloud-secrets-boot.ts).
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
+import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, type GroupActor } from "./group-ownership.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync } from "node:fs";
@@ -5449,7 +5450,9 @@ function publicGroupState(record: GroupRecord): WireGroup {
   const { installedPackage: _installedPackage, ...group } = record;
   let usage: WireGroup["usage"];
   try { usage = groupUsageReader.forThread(group.threadId); } catch { /* accounting must not block chat */ }
-  return { ...group, usage: usage ?? null, working: groupIsWorking(group) || [...roomHandoffs.nodes.values()].some(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status)) };
+  // Organization server: who owns the group's settings (null: its admins).
+  const owner = IDENTITY.kind === "perspicax" && !group.dm ? { ownerId: groupOwnerId(group) } : {};
+  return { ...group, ...owner, usage: usage ?? null, working: groupIsWorking(group) || [...roomHandoffs.nodes.values()].some(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status)) };
 }
 
 function beginGroupTurnOperation(
@@ -17130,7 +17133,16 @@ function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already
   return null;
 }
 
-function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly string[] = []): string | null {
+/** Organization server: a person's request falls under the group owner rule
+ * (server/group-ownership.ts). The server's own services do not. */
+function groupOwnerRuleApplies(auth: RequestAuth): boolean {
+  return IDENTITY.kind === "perspicax" && !(auth.kind === "loopback" && auth.trust === "service");
+}
+function groupActor(auth: RequestAuth): GroupActor {
+  return { id: channelActorId(auth), email: actorEmail(auth), orgAdmin: channelActorRole(auth) === "admin" || channelActorRole(auth) === "owner" };
+}
+
+function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly string[] = [], ownerChecked = false): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   if (!Object.prototype.hasOwnProperty.call(body, "humanIds")) return null;
   const after = (body as { humanIds?: unknown }).humanIds;
@@ -17142,6 +17154,8 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly stri
       if (!/^[0-9A-Za-z]{1,64}$/.test(id) || !(orgTeams.has(id) || principals.membersOfTeam(id).length)) return "unknown team: choose a team from the organization directory";
     }
   }
+  // Organization server: the group's owner rule already decided (group-ownership.ts).
+  if (ownerChecked) return null;
   const role = channelActorRole(auth);
   if (role && canEditHumans(role)) return null;
   // A team manager changes the entries of their teams and members; adding
@@ -22646,10 +22660,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const placed = refusePlacedBots(auth, body.memberIds, new Set(existingGroup.memberIds));
         if (placed) return json(res, 403, { error: placed });
       }
-      const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? []);
+      // Organization server: only the group's owner changes its settings;
+      // anyone listed may still leave it (server/group-ownership.ts).
+      const ownerRule = Boolean(existingGroup && !existingGroup.dm && groupOwnerRuleApplies(auth));
+      if (existingGroup && ownerRule) {
+        const refusal = groupPatchOwnerRefusal(existingGroup, body, groupActor(auth));
+        if (refusal) return json(res, 403, { error: refusal, code: "not_group_owner" });
+      }
+      const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? [], ownerRule);
       if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
-        const field = clientGroupPatchViolation(body);
+        // The owner of an organization group also picks its default responder.
+        const field = clientGroupPatchViolation(body, ownerRule ? ["defaultResponder"] : []);
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
       }
       const movesSection = existingGroup && body && typeof body === "object" && !Array.isArray(body) && "section" in body;
@@ -22680,6 +22702,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "DELETE") {
       const group = store.group(m[1]);
       if (!group) return json(res, 404, { error: "no such room" });
+      if (groupOwnerRuleApplies(auth) && !group.dm) {
+        // The owner, or an organization admin moderating.
+        if (!mayDeleteGroup(group, groupActor(auth))) return json(res, 403, { error: "forbidden: only the group's owner can delete it", code: "not_group_owner" });
+      } else if (auth.kind === "session" && !auth.scopes.includes("admin")) {
+        return json(res, 403, { error: "forbidden: deleting a channel needs the admin scope" });
+      }
       if (phoneSecretSubmissions.hasGroup(group.id)) {
         return json(res, 409, { error: "this channel is securely saving a credential — try again when it finishes" });
       }

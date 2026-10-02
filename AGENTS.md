@@ -278,6 +278,28 @@ working folder (empty means each bot's own folder). Keep these rules:
   `setup` (`bulletin`, `defaultResponder`) to create a group in one call.
 - A remote client sees no Advanced tab and the instructions read-only.
 
+### Group owner (organization server)
+
+On an organization server (`OMB_IDENTITY=perspicax`) only a group's owner
+changes its settings (`server/group-ownership.ts`, client
+`src/lib/group-owner.ts`; covered by `server/group-ownership.test.ts` and
+PT-4 in `server/org-private-threads.e2e.test.ts`):
+
+- The owner is `createdBy`, else the first person in `humanIds`, else
+  nobody, and then the organization admins act as owner. The wire group
+  carries it as `ownerId` (absent on a solo server, where nothing changes).
+- Only the owner changes the name, instructions, working folder, default
+  responder, bots and people (`PATCH /api/groups/:id` answers 403
+  `not_group_owner`). Anyone listed may remove only themselves (leave).
+  Marking read, pins and section moves are not settings.
+- An admin has no override on content. `DELETE /api/groups/:id` is the
+  owner's, or an admin's for moderation (`channel.moderate` on a room in
+  `server/authz.ts`). A client-scope session may delete only there.
+- The owner of a client-scope session also picks the default responder;
+  the working folder still needs the admin scope.
+- The panel shows the settings read-only to everyone else, with "Seul le
+  propriétaire du groupe peut modifier ces réglages", and a Leave button.
+
 ## Upstream sync
 
 Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at

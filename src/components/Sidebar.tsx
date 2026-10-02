@@ -35,6 +35,7 @@ import {
 import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
+import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
@@ -440,6 +441,8 @@ function RoomContextMenu({
 
   if (!motion.shown || !group || !shown) return null;
   const isBotChat = Boolean(group.dm);
+  const ownsRoom = viewerOwnsGroup(group, state.config);
+  const mayDelete = viewerMayDeleteGroup(group, state.config);
   const saveRename = () => {
     const name = nextRename(group.name, draft);
     if (name) dispatch({ type: "patchGroup", groupId: group.id, patch: { name } });
@@ -454,7 +457,7 @@ function RoomContextMenu({
       style={{ top, left }}
       className={cn("fixed z-40 w-[228px] min-w-[200px] overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
-      {!remoteClient && (renaming ? (
+      {!remoteClient && ownsRoom && (renaming ? (
         <div className="flex items-center gap-1 px-0.5 py-0.5">
           <input
             autoFocus
@@ -528,7 +531,7 @@ function RoomContextMenu({
         <ClipboardCopy size={16} className="text-ink" />
         {t("sidebar.copyConversationId")}
       </button>
-      {!remoteClient && <button
+      {!remoteClient && mayDelete && <button
         onClick={() => {
           onClose();
           onDelete(group.id);

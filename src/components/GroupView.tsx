@@ -25,6 +25,7 @@ import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
 import { viewerActorId } from "@/lib/viewer";
+import { viewerOwnsGroup } from "@/lib/group-owner";
 import { RoomPersonLabel } from "./MessageAuthor";
 import { continuesRun, roomAuthor, runCorners } from "@/lib/room-authors";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
@@ -491,7 +492,7 @@ export function RoutedByLine({ routedBy }: { routedBy: NonNullable<Message["rout
   );
 }
 
-export function DefaultResponderSelect({ group, members }: { group: Group; members: Bot[] }) {
+export function DefaultResponderSelect({ group, members, disabled = false }: { group: Group; members: Bot[]; disabled?: boolean }) {
   const { state, dispatch } = useStore();
   const jevOn = jevRoomRoutingOn(state.config);
   const responder = effectiveDefaultResponder(group, members);
@@ -523,6 +524,7 @@ export function DefaultResponderSelect({ group, members }: { group: Group; membe
       <select
         aria-label={t("room.responder.aria")}
         value={value}
+        disabled={disabled}
         onChange={(event) => change(event.target.value)}
         className="h-8 w-full appearance-none truncate rounded-lg border border-hairline/40 bg-raised/60 py-1 pl-3 pr-7 text-[12.5px] font-medium text-ink outline-none hover:bg-raised focus:border-accent"
       >
@@ -555,7 +557,7 @@ export function DefaultResponderSelect({ group, members }: { group: Group; membe
  * under a room that already worked somewhere). The PATCH is made directly
  * rather than through patchGroup: the server validates the path and a
  * rejected folder must not stick in local state. */
-function RoomWorkingFolder({ group }: { group: Group }) {
+function RoomWorkingFolder({ group, disabled = false }: { group: Group; disabled?: boolean }) {
   const { capabilities } = useDesktopCapabilities();
   const home = capabilities.host.homeDir;
   const [draft, setDraft] = useState<string | null>(null);
@@ -587,14 +589,16 @@ function RoomWorkingFolder({ group }: { group: Group }) {
     <div className="rounded-xl bg-card p-4">
       <div className="text-[15px] font-medium text-ink">{t("room.folder.title")}</div>
       <div className="mt-0.5 text-[13px] text-ink-secondary">{t("room.folder.detail")}</div>
-      {locked ? (
+      {locked || disabled ? (
         <div className="mt-3">
           <div className="truncate rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12.5px] text-ink" title={shownCwd}>
             {shownCwd ? shortPath(shownCwd, home) : <span className="text-ink-secondary">{t("room.folder.own")}</span>}
           </div>
-          <div className="mt-2 text-[12px] text-ink-secondary">
-            {t("room.folder.locked")}
-          </div>
+          {locked && (
+            <div className="mt-2 text-[12px] text-ink-secondary">
+              {t("room.folder.locked")}
+            </div>
+          )}
         </div>
       ) : canPick ? (
         <div className="mt-3 flex items-center gap-2">
@@ -713,6 +717,21 @@ export function GroupView({ group }: { group: Group }) {
   // the remote client's own lookup, else the operator.
   const viewer = state.config?.viewer;
   const viewerId = viewerActorId(state.config);
+  // Organization server: only the group's owner edits its settings; the
+  // others read them and may leave (src/lib/group-owner.ts).
+  const ownsRoom = viewerOwnsGroup(group, state.config);
+  const editable = !remoteClient && ownsRoom;
+  const viewerListed = (group.humanIds ?? []).some((id) => {
+    const entry = id.trim().toLowerCase();
+    return entry === viewerId || (Boolean(viewerEmail) && entry === viewerEmail);
+  });
+  const leaveGroup = () => {
+    const humanIds = (group.humanIds ?? []).filter((id) => {
+      const entry = id.trim().toLowerCase();
+      return entry !== viewerId && !(viewerEmail && entry === viewerEmail);
+    });
+    dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
+  };
   // On an organization server each person reads as their Perspicax display
   // name with their avatar (the directory); elsewhere the stored id, as before.
   const viewerAvatar = personAvatarSrc(state.config?.profile?.avatarUrl);
@@ -726,7 +745,7 @@ export function GroupView({ group }: { group: Group }) {
         // list knows them; otherwise the directory label (teams, user: ids).
         const row = channelHumanRow(id.replace(/^user:/, ""), orgPeople);
         const known = row.label !== row.id;
-        return { ...row, id, label: known ? row.label : groupHumanLabel(id, orgDirectory), removable: true };
+        return { ...row, id, label: known ? row.label : groupHumanLabel(id, orgDirectory), removable: ownsRoom };
       }),
   ];
   const actorId = viewer ? viewerId : remoteClient ? remoteActor.id : viewerId;
@@ -734,6 +753,7 @@ export function GroupView({ group }: { group: Group }) {
     actorRole: viewer ? viewer.role : remoteClient ? remoteActor.role : "owner",
     actorId,
     bots: state.bots,
+    ownsRoom,
   });
   const speaker = members.find((b) => b.id === group.busyBotId);
 
@@ -1049,9 +1069,9 @@ export function GroupView({ group }: { group: Group }) {
           </div>
         ) : (
           <button
-            disabled={remoteClient}
-            onClick={() => { if (!remoteClient) setBulletinOpen(true); }}
-            className={cn("mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left", !remoteClient && "hover:bg-raised/40")}
+            disabled={!editable}
+            onClick={() => { if (editable) setBulletinOpen(true); }}
+            className={cn("mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left", editable && "hover:bg-raised/40")}
             title={t("room.bulletin.title")}
           >
             <Pin size={12} className="shrink-0 text-ink-secondary" />
@@ -1258,7 +1278,8 @@ export function GroupView({ group }: { group: Group }) {
           key={`panel:${group.id}`}
           group={group}
           members={members}
-          canEdit={!remoteClient}
+          canEdit={editable}
+          readOnlyNote={!remoteClient && !ownsRoom}
           details={
             <>
               <section>
@@ -1308,7 +1329,7 @@ export function GroupView({ group }: { group: Group }) {
                     return { id, name: bot?.name || id, title: bot?.title, color: bot?.color, avatarUrl: bot?.avatarUrl, mascotBody: bot?.mascotBody };
                   })}
                   {...roster}
-                  onRemoveBot={(id) => {
+                  onRemoveBot={!ownsRoom ? undefined : (id) => {
                     dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
                   }}
                   onAddBot={() => {
@@ -1320,7 +1341,7 @@ export function GroupView({ group }: { group: Group }) {
                     });
                   }}
                 />
-                {!remoteClient && (
+                {editable && (
                   <button
                     ref={membersTriggerRef}
                     type="button"
@@ -1331,6 +1352,15 @@ export function GroupView({ group }: { group: Group }) {
                   </button>
                 )}
               </section>
+              {!remoteClient && !ownsRoom && viewerListed && (
+                <button
+                  type="button"
+                  onClick={leaveGroup}
+                  className="self-start rounded-lg px-3 py-2 text-[13px] text-danger hover:bg-hover"
+                >
+                  {t("groupPanel.leave")}
+                </button>
+              )}
             </>
           }
           advanced={
@@ -1338,11 +1368,11 @@ export function GroupView({ group }: { group: Group }) {
               <>
                 <section>
                   <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.responder.aria")}</h3>
-                  <DefaultResponderSelect group={group} members={members} />
+                  <DefaultResponderSelect group={group} members={members} disabled={!ownsRoom} />
                 </section>
                 <section>
                   <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.folder.title")}</h3>
-                  <RoomWorkingFolder group={group} />
+                  <RoomWorkingFolder group={group} disabled={!ownsRoom} />
                 </section>
               </>
             )

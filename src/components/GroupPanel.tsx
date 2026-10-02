@@ -68,6 +68,7 @@ export function GroupPanel({
   details,
   advanced,
   canEdit,
+  readOnlyNote = false,
 }: {
   group: Group;
   members: Bot[];
@@ -75,8 +76,10 @@ export function GroupPanel({
   details: ReactNode;
   /** Default responder and working folder, rendered by GroupView; null for a remote client. */
   advanced: ReactNode;
-  /** Rename and instructions need the owner's (admin) session. */
+  /** Rename and instructions: the group's owner, never a remote client. */
   canEdit: boolean;
+  /** Organization server: someone else owns the group; say why it is read-only. */
+  readOnlyNote?: boolean;
 }) {
   const { dispatch } = useStore();
   const { padClass } = useCaptionChrome();
@@ -223,6 +226,10 @@ export function GroupPanel({
             ))}
           </div>
         </div>
+
+        {readOnlyNote && (
+          <p role="note" className="mx-4 mb-3 rounded-lg bg-card px-3 py-2 text-[12px] text-ink-secondary">{t("groupPanel.ownerOnly")}</p>
+        )}
 
         {tab === "details" && (
           <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
