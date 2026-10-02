@@ -16,6 +16,7 @@ import {
 } from "react";
 import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, ServerFrame, GroupThreadUsage, SteerQueueReason } from "../../shared/wire";
 import type { TurnDigest } from "../../shared/digest";
+import type { BusySendMode, ParallelTaskRef, TaskParallelOf } from "../../shared/parallel-tasks";
 import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-events";
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
@@ -214,6 +215,8 @@ export interface Message {
   comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: MausColor };
   /** thread chips: "Opened thread #Title on Bot" linking to that thread */
   threadRef?: { botId: string; threadId: string; title: string };
+  /** A parallel task this line belongs to (shared/parallel-tasks.ts). */
+  parallelTask?: ParallelTaskRef;
   /** sent while the bot was mid-turn; auto-sends when the turn settles.
    * Rendered only while the bot is busy, so a flag stranded by a server
    * restart never shows a promise nothing will keep. */
@@ -343,6 +346,8 @@ export interface Task {
   /** set when a bot (not the person) started this thread — its own or a
    * teammate's; the sidebar shows a quiet "opened by <name>" under the title */
   openedBy?: ThreadOpener;
+  /** A parallel task: the conversation and request it answers. */
+  parallelOf?: TaskParallelOf;
   /** set when a bot closed this thread with close_thread; the sidebar folds
    * it out of the default list (still under "show all", never deleted) and
    * the server clears it when a new turn starts there */
@@ -669,7 +674,7 @@ export interface ConfigStatus {
   rooms: { turnTimeoutMinutes: number };
   /** Workspace defaults for new bots; absent effort = no level is sent. */
   newBots?: { effort?: EffortLevel };
-  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
+  threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
   localVm: { mode: "shared" | "per-bot" | "pool"; maxInstances: number; idleTimeoutMinutes?: number };
   opencodeGo?: { configured: boolean };
@@ -1214,8 +1219,12 @@ export type Action =
       threadId?: string;
       /** said on a voice call (Message.voiceCall): the turn is a phone turn */
       voiceCall?: { callId: string; interrupted?: boolean; language?: string };
+      /** while the conversation works: join, run in parallel or wait
+       * (shared/parallel-tasks.ts); absent = join (the server default) */
+      busyMode?: BusySendMode;
       onError?: () => void;
     }
+  | { type: "stopParallelTask"; botId: string; threadId: string }
   | { type: "pendingQueued"; threadId: string; queueId: string; text: string; reason?: SteerQueueReason }
   | { type: "consumePendingQueued"; threadId: string; queueId: string }
   | { type: "cancelQueued"; botId: string; queueId: string; threadId?: string; onCancelled?: () => void }
@@ -2307,6 +2316,8 @@ export function reducer(state: AppState, action: Action): AppState {
       else delete pendingQueued[action.threadId];
       return { ...state, pendingQueued, consumedQueueIds: rememberConsumedQueueId(state.consumedQueueIds, action.queueId) };
     }
+    case "stopParallelTask":
+      return state;
     case "cancelQueued": {
       const bot = state.bots.find((candidate) => candidate.id === action.botId);
       if (!bot) return state;
@@ -3284,7 +3295,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           void waitForExecutionSettings(botBeforeSend ? [botBeforeSend] : [], threadId)
             .then(() => api(`/api/bots/${action.botId}/messages`, {
                 method: "POST",
-                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}) }),
+                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}), ...(action.busyMode ? { busyMode: action.busyMode } : {}) }),
               }))
             .then((body) => {
               if (body?.message && typeof body.threadId === "string") {
@@ -3318,6 +3329,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             });
           break;
         }
+        case "stopParallelTask":
+          api(`/api/bots/${action.botId}/parallel/${action.threadId}/stop`, { method: "POST", body: "{}" }).catch(showError);
+          break;
         case "editMessage": {
           const threadId =
             action.threadId ?? stateRef.current.bots.find((bot) => bot.id === action.botId)?.threadId;

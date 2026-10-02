@@ -42,6 +42,8 @@ export const USER_PREFERENCE_KEYS = [
   "sagax.botWorkplace.v1",
   // voice mode: the xAI voice, speed and language (shared/voice-mode.ts)
   "omb.voiceMode.v1",
+  // what a message sent to a busy conversation does (shared/parallel-tasks.ts)
+  "sagax.busySend.v1",
 ] as const;
 
 export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number];

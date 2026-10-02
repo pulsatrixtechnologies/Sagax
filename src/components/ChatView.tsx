@@ -53,6 +53,7 @@ import { liveActivityLabel } from "@/lib/live-activity";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
+import { ParallelResultLabel, ParallelTaskCard } from "./ParallelTaskCard";
 import { ThreadChip } from "./ThreadChip";
 import { VerifyCard } from "./VerifyCard";
 import { askText, runSteps, runSummary, showRun, skillPrompt, skillStaged } from "@/lib/verify-steps";
@@ -886,6 +887,7 @@ const MessagesList = memo(function MessagesList({
                   />
                 );
               }
+              if (m.parallelTask?.role === "card") return <ParallelTaskCard message={m} botId={bot.id} />;
               if (!showToolCalls && !m.comm && !m.threadRef) return null;
               return <ActivityChip message={m} place={place} />;
             }
@@ -901,6 +903,8 @@ const MessagesList = memo(function MessagesList({
               return m.png ? <ScreenFrame png={m.png} mime={m.mime} /> : null;
             default:
               return (
+                <>
+                {m.parallelTask?.role === "result" && <ParallelResultLabel message={m} />}
                 <Bubble
                   bot={bot}
                   message={m}
@@ -915,6 +919,7 @@ const MessagesList = memo(function MessagesList({
                   replyTarget={m.replyToId ? bot.messages.find((candidate) => candidate.id === m.replyToId) : undefined}
                   onReply={() => onReply(m)}
                 />
+                </>
               );
           }
         })();
