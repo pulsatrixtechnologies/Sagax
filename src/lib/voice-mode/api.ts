@@ -100,6 +100,34 @@ export async function speakVoiceMode(
   return res.blob();
 }
 
+/** One sentence of the bot's answer, spoken as xAI makes it
+ * (POST /voice/stream): raw 16-bit PCM, its rate in `x-voice-sample-rate`.
+ * null when there is nothing to say (204). */
+export async function streamVoiceModeSpeech(
+  botId: string,
+  text: string,
+  settings: VoiceModeSettings,
+  threadId?: string,
+  signal?: AbortSignal,
+): Promise<{ body: ReadableStream<Uint8Array>; sampleRate: number } | null> {
+  const res = await fetch(`${base(botId)}/stream`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text, voice: settings.voice, speed: settings.speed, language: settings.language, ...(threadId ? { threadId } : {}) }),
+    signal,
+  });
+  if (res.status === 204) return null;
+  if (!res.ok) throw await failure(res);
+  if (!res.body) throw new Error("the voice service returned no audio");
+  return { body: res.body, sampleRate: Number(res.headers.get("x-voice-sample-rate")) || 24_000 };
+}
+
+/** The live call's streaming speech to text socket (GET /voice/listen). */
+export function voiceModeListenUrl(botId: string, language: string, threadId?: string, origin = typeof location === "undefined" ? "http://localhost" : location.origin): string {
+  const query = new URLSearchParams({ language, ...(threadId ? { threadId } : {}) });
+  return `${origin.replace(/^http/, "ws")}${base(botId)}/listen?${query}`;
+}
+
 export async function transcribeVoiceMode(
   botId: string,
   audio: Blob,

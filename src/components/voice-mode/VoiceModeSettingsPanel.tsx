@@ -1,8 +1,12 @@
-// The voice bar's settings (the gear): Voice, Speed and Language. Stateless:
+// The voice bar's settings (the gear): Voice, Speed and Language, then the
+// call's own settings on this computer (hands-free or push to talk, "Only my
+// voice" with its enrollment, call sounds). Stateless:
 // the bar holds which list is open and what the voices are, so this draws
 // the same thing for the same props and the tests can read it directly.
 import type { ReactNode } from "react";
 import { Check, ChevronDown, Loader2, Play, Square } from "lucide-react";
+
+import type { CallSettings } from "@/lib/voice-mode/call-settings";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -11,6 +15,9 @@ import { languageLabel, speedLabel } from "@/lib/voice-mode/settings";
 import { VOICE_MODE_LANGUAGES, VOICE_MODE_SPEEDS, type VoiceModeSettings } from "../../../shared/voice-mode";
 
 export type VoiceModeList = "voice" | "speed" | "language";
+
+/** Where "Only my voice" stands on this computer. */
+export type Enrollment = { state: "none" } | { state: "recording"; share: number } | { state: "enrolled" } | { state: "failed" };
 
 export interface VoiceModeSettingsPanelProps {
   settings: VoiceModeSettings;
@@ -22,6 +29,78 @@ export interface VoiceModeSettingsPanelProps {
   onOpen(list: VoiceModeList | null): void;
   onChange(patch: Partial<VoiceModeSettings>): void;
   onPreview(voiceId: string): void;
+  /** the live call's settings (absent: the panel shows the voice only) */
+  call?: CallSettings;
+  enrollment?: Enrollment;
+  onCallChange?(patch: Partial<CallSettings>): void;
+  onEnroll?(): void;
+  onForget?(): void;
+}
+
+function Toggle({ label, checked, onChange, data }: { label: string; checked: boolean; onChange(next: boolean): void; data: string }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-3 py-1.5">
+      <span className="text-[13px] text-ink-secondary">{label}</span>
+      <input type="checkbox" role="switch" checked={checked} onChange={(event) => onChange(event.target.checked)} data-voice-toggle={data} className="size-4 accent-[var(--color-accent)]" />
+    </label>
+  );
+}
+
+function CallSection({ call, enrollment, onCallChange, onEnroll, onForget }: Required<Pick<VoiceModeSettingsPanelProps, "call" | "enrollment" | "onCallChange" | "onEnroll" | "onForget">>) {
+  const recording = enrollment.state === "recording";
+  const mac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
+  return (
+    <div className="mt-1 border-t border-hairline/50 pt-1.5" data-voice-call-settings>
+      <div className="flex items-center justify-between gap-3 py-1.5">
+        <span className="text-[13px] text-ink-secondary">{t("voiceMode.call.input")}</span>
+        <div className="flex rounded-lg bg-raised p-0.5 text-[12.5px]" role="radiogroup" aria-label={t("voiceMode.call.input")}>
+          {(["auto", "push"] as const).map((input) => (
+            <button
+              key={input}
+              type="button"
+              role="radio"
+              aria-checked={call.input === input}
+              data-voice-input={input}
+              onClick={() => onCallChange({ input })}
+              className={cn("rounded-md px-2.5 py-1", call.input === input ? "bg-panel text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}
+            >
+              {input === "auto" ? t("voiceMode.call.handsFree") : t("voiceMode.call.push")}
+            </button>
+          ))}
+        </div>
+      </div>
+      <Toggle label={t("voiceMode.call.onlyMyVoice")} checked={call.onlyMyVoice && enrollment.state === "enrolled"} data="only-my-voice" onChange={(onlyMyVoice) => {
+        if (onlyMyVoice && enrollment.state !== "enrolled") onEnroll();
+        else onCallChange({ onlyMyVoice });
+      }} />
+      <p className="pb-1 text-[11.5px] leading-snug text-ink-tertiary">{t("voiceMode.call.onlyMyVoiceHelp")}</p>
+      <div className="flex flex-wrap items-center gap-2 pb-1.5" data-voice-enrollment={enrollment.state}>
+        {recording ? (
+          <div className="flex w-full flex-col gap-1">
+            <span className="text-[12.5px] text-ink">{t("voiceMode.call.enrolling", { percent: Math.round(enrollment.share * 100) })}</span>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-raised">
+              <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.round(enrollment.share * 100)}%` }} />
+            </div>
+          </div>
+        ) : (
+          <>
+            {enrollment.state === "enrolled" && <span className="text-[12.5px] text-ink">{t("voiceMode.call.enrolled")}</span>}
+            {enrollment.state === "failed" && <span className="text-[12.5px] text-warning">{t("voiceMode.call.enrollFailed")}</span>}
+            <button type="button" data-voice-enroll onClick={onEnroll} className="rounded-lg bg-raised px-2.5 py-1 text-[12.5px] text-ink hover:brightness-110">
+              {enrollment.state === "enrolled" ? t("voiceMode.call.enrollAgain") : t("voiceMode.call.enroll")}
+            </button>
+            {enrollment.state === "enrolled" && (
+              <button type="button" data-voice-forget onClick={onForget} className="rounded-lg px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink">
+                {t("voiceMode.call.forget")}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      <Toggle label={t("voiceMode.call.earcons")} checked={call.earcons} data="earcons" onChange={(earcons) => onCallChange({ earcons })} />
+      {mac && <p className="pb-1 text-[11.5px] leading-snug text-ink-tertiary">{t("voiceMode.call.voiceIsolation")}</p>}
+    </div>
+  );
 }
 
 function Row({ label, value, list, open, onOpen }: { label: string; value: string; list: VoiceModeList; open: VoiceModeList | null; onOpen(list: VoiceModeList | null): void }) {
@@ -62,7 +141,7 @@ function Option({ selected, label, onSelect, children, value }: { selected: bool
 }
 
 export function VoiceModeSettingsPanel(props: VoiceModeSettingsPanelProps) {
-  const { settings, voices, voicesError, open, previewing, onOpen, onChange, onPreview } = props;
+  const { settings, voices, voicesError, open, previewing, onOpen, onChange, onPreview, call, enrollment, onCallChange, onEnroll, onForget } = props;
   const voiceName = settings.voice ? voices?.find((voice) => voice.id === settings.voice)?.label ?? settings.voice : t("voiceMode.notSet");
   const select = (patch: Partial<VoiceModeSettings>) => {
     onChange(patch);
@@ -119,6 +198,9 @@ export function VoiceModeSettingsPanel(props: VoiceModeSettingsPanelProps) {
             />
           ))}
         </ul>
+      )}
+      {call && enrollment && onCallChange && onEnroll && onForget && (
+        <CallSection call={call} enrollment={enrollment} onCallChange={onCallChange} onEnroll={onEnroll} onForget={onForget} />
       )}
     </div>
   );

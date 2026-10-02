@@ -1,7 +1,6 @@
-// Pure audio helpers for voice mode: resampling the microphone to 16 kHz,
-// a WAV file for xAI speech to text, and a small endpointer that decides
-// when the person has finished speaking. No browser API here, so the unit
-// tests cover every rule.
+// Pure audio helpers for voice mode: resampling to 16 kHz 16-bit PCM and a
+// WAV file for xAI speech to text (a whole-turn upload). No browser API here.
+// When a turn ends is turns.ts's job.
 
 export const TARGET_RATE = 16_000;
 
@@ -60,73 +59,4 @@ export function rms(frame: Float32Array): number {
   let sum = 0;
   for (let i = 0; i < frame.length; i++) sum += frame[i]! * frame[i]!;
   return Math.sqrt(sum / frame.length);
-}
-
-export interface EndpointerOptions {
-  /** silence after speech that ends the turn */
-  endpointMs: number;
-  /** speech shorter than this is a click or a cough, not a turn */
-  minSpeechMs?: number;
-  /** the longest turn; it ends there even mid-sentence */
-  maxTurnMs?: number;
-  /** the quietest level that counts as speech, over the noise floor */
-  minLevel?: number;
-}
-
-export type EndpointState = "waiting" | "speaking" | "ended";
-
-/** Feed it one level per audio frame; it says when the turn ends. The noise
- * floor adapts while nobody speaks, so a fan or a busy room does not read
- * as an endless sentence. */
-export class Endpointer {
-  private readonly endpointMs: number;
-  private readonly minSpeechMs: number;
-  private readonly maxTurnMs: number;
-  private readonly minLevel: number;
-  private floor = 0.004;
-  private speechMs = 0;
-  private silenceMs = 0;
-  private turnMs = 0;
-  state: EndpointState = "waiting";
-
-  constructor(options: EndpointerOptions) {
-    this.endpointMs = options.endpointMs;
-    this.minSpeechMs = options.minSpeechMs ?? 250;
-    this.maxTurnMs = options.maxTurnMs ?? 45_000;
-    this.minLevel = options.minLevel ?? 0.012;
-  }
-
-  /** Whether frames so far hold speech worth sending. */
-  get heardSpeech(): boolean {
-    return this.speechMs >= this.minSpeechMs;
-  }
-
-  feed(level: number, frameMs: number): EndpointState {
-    if (this.state === "ended") return this.state;
-    const threshold = Math.max(this.minLevel, this.floor * 3);
-    const loud = level >= threshold;
-    if (this.state === "waiting") {
-      if (loud) {
-        this.speechMs += frameMs;
-        if (this.speechMs >= this.minSpeechMs) {
-          this.state = "speaking";
-          this.silenceMs = 0;
-        }
-      } else {
-        this.speechMs = Math.max(0, this.speechMs - frameMs);
-        // follow the room's level slowly while it is quiet
-        this.floor = this.floor * 0.95 + level * 0.05;
-      }
-      return this.state;
-    }
-    this.turnMs += frameMs;
-    if (loud) {
-      this.speechMs += frameMs;
-      this.silenceMs = 0;
-    } else {
-      this.silenceMs += frameMs;
-    }
-    if (this.silenceMs >= this.endpointMs || this.turnMs >= this.maxTurnMs) this.state = "ended";
-    return this.state;
-  }
 }

@@ -17,3 +17,18 @@ describe("voice access card", () => {
     expect(voiceAccessCardText({ cause: "payer_disabled", admin: true })).toEqual(["Your account is disabled: voice mode can't run."]);
   });
 });
+
+import { phaseLabel } from "./VoiceModeBar";
+
+describe("the call's states, as on a phone", () => {
+  it("names every state; hold wins over mute, mute over the rest", () => {
+    expect(phaseLabel("connecting", "Cryptic", false)).toBe("Connecting");
+    expect(phaseLabel("listening", "Cryptic", false)).toBe("Listening");
+    expect(phaseLabel("hearing", "Cryptic", false)).toBe("Listening to you");
+    expect(phaseLabel("thinking", "Cryptic", false)).toBe("Thinking");
+    expect(phaseLabel("speaking", "Cryptic", false)).toBe("Cryptic");
+    expect(phaseLabel("interrupted", "Cryptic", false)).toBe("Interrupted");
+    expect(phaseLabel("held", "Cryptic", true)).toBe("On hold");
+    expect(phaseLabel("speaking", "Cryptic", true)).toBe("Muted");
+  });
+});

@@ -1,0 +1,18 @@
+silero-vad-v5.onnx: Silero VAD v5, Copyright (c) 2020-present Silero Team,
+https://github.com/snakers4/silero-vad (src/silero_vad/data/silero_vad.onnx),
+unmodified, MIT License (third_party/silero-vad/LICENSE).
+SHA-256 1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3
+
+campplus-sv-en-int8.onnx: the 3D-Speaker CAM++ speaker verification model
+trained on VoxCeleb (iic/speech_campplus_sv_en_voxceleb_16k), in the ONNX
+export published by sherpa-onnx
+(3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx), with its weights
+quantized to int8 per channel by this project (onnxruntime
+quantize_dynamic, QInt8, per_channel). 3D-Speaker, Copyright Alibaba Group
+(modelscope/3D-Speaker), and sherpa-onnx (k2-fsa/sherpa-onnx), both under the
+Apache License 2.0 (third_party/3d-speaker/LICENSE,
+third_party/sherpa-onnx/LICENSE). Modified: weights quantized.
+SHA-256 6606e0fae853be698d23cc5409aa2f57c606dbf41ec37fe35821e88cd3dd8dbc
+
+Both run on this computer with onnxruntime-web (Microsoft, MIT License,
+third_party/onnxruntime-web/LICENSE). No audio leaves the computer for them.

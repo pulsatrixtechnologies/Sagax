@@ -2,7 +2,8 @@
 // in server mode: the bundled-UI handler for the organization server's
 // origin, the preload, and main's permission policy (app-permissions.mjs)
 // with the server's origin allowed the microphone only. Chromium's fake
-// capture device plays the launcher's WAV as the microphone.
+// capture device plays the launcher's WAV (a recorded sentence, then
+// silence, looped) as the microphone.
 import { app, BrowserWindow, ipcMain, net, session } from "electron";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -182,6 +183,7 @@ app.whenReady().then(async () => {
   const button = await callButton();
   check("the call button asks the server again on click (it still shows the old answer)", button?.voiceMode === "unavailable", JSON.stringify(button));
 
+  await win.webContents.executeJavaScript(`localStorage.setItem("omb.voiceCall.debug", "1"); true`);
   // Open the bar, muted first, then choose Voice, Speed and Language in its panel.
   await win.webContents.executeJavaScript(`document.querySelector('[data-call-target="${bot.id}"]').click(); true`);
   await until("the voice bar", async () => win.webContents.executeJavaScript(`Boolean(document.querySelector("[data-voice-bar]"))`));
@@ -221,17 +223,68 @@ app.whenReady().then(async () => {
   check("a preview asks xAI for speech with voice ara, speed 1.25, language fr", tts?.json?.voice_id === "ara" && tts.json.speed === 1.25 && tts.json.language === "fr", JSON.stringify(tts?.json));
   check("xAI received the organization's key from the server", tts?.authorization === `Bearer ${fakeKey}`);
 
-  // Unmute: the microphone hears a turn, the server transcribes it with xAI, the bot gets it.
+  // Unmute: the microphone hears a turn, its audio streams to xAI's streaming
+  // speech to text through the server, and the words reach the bot as the person.
+  // In the page, "the bot" answers the moment the words are sent (an instant
+  // engine), so the time to first audio is the voice pipeline's own.
+  await win.webContents.executeJavaScript(`(() => {
+    const call = window.__sagaxVoiceCall;
+    window.__voiceTurns = [];
+    call.on("utterance", (text) => {
+      window.__voiceTurns.push({ text, at: performance.now() });
+      if (window.__voiceTurns.length === 1) {
+        // a long answer: three sentences of about four seconds each
+        void call.replyDone("Here is the first part of a long answer. Here is the second part of it. And here is the third part.");
+      }
+    });
+    return true;
+  })()`);
   await click("[data-voice-gear]");
   await click("[data-voice-mute]");
-  const stt = await until("xAI's transcription request", async () => (await xaiRequests()).find((r) => r.path === "/v1/stt") ?? null, 30_000).catch(() => null);
-  check("the turn reached xAI speech to text as WAV with the language hint fr", stt?.fileHead === "RIFF" && stt?.fields?.language === "fr", JSON.stringify(stt?.fields ?? null));
+  const firstTurn = await until("the first spoken turn", async () => win.webContents.executeJavaScript(`window.__voiceTurns[0] ?? null`), 30_000).catch(() => null);
+  check("the person's first turn is heard (Silero VAD on this computer, streaming speech to text)", firstTurn?.text === "Hello Cryptic from voice mode", JSON.stringify(firstTurn));
+  const models = await win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voiceModels ?? null`);
+  check("the on-device models loaded from the app's bundle (no CDN)", models === "on-device", String(models));
+  const socket = await until("xAI's streaming socket", async () => (await xaiRequests()).find((r) => r.websocket && r.path === "/v1/stt" && r.query?.language === "fr" && r.finalizes > 0) ?? null, 10_000).catch(() => null);
+  check("the turn streamed to xAI speech to text (wss /v1/stt) with the language hint fr, on the server's key", Boolean(socket) && socket.query?.language === "fr" && socket.audioBytes > 16_000 && socket.authorization === `Bearer ${fakeKey}`, JSON.stringify(socket && { query: socket.query, audioBytes: socket.audioBytes, finalizes: socket.finalizes }));
   const sent = await until("the spoken message on the thread", async () => {
     const page = await win.webContents.executeJavaScript(`fetch("/api/threads/${bot.threadId}/messages").then(r => r.json()).catch(() => null)`);
     const list = Array.isArray(page) ? page : page?.messages ?? [];
     return list.find((message) => message.role === "user" && String(message.text ?? "").includes("Hello Cryptic from voice mode")) ?? null;
   }, 20_000).catch(() => null);
-  check("what was said reaches the bot's thread as the signed-in person", Boolean(sent) && Boolean(sent.sender?.id), sent ? `sender ${sent.sender?.name ?? sent.sender?.id}` : "none");
+  check("what was said reaches the bot's thread as the signed-in person (the normal send route)", Boolean(sent) && Boolean(sent.sender?.id), sent ? `sender ${sent.sender?.name ?? sent.sender?.id}` : "none");
+  const latency = await until("the first audio of the answer", async () => win.webContents.executeJavaScript(`(() => {
+    const bar = document.querySelector("[data-voice-bar]");
+    return bar?.dataset.voiceFirstAudioMs ? { firstAudio: Number(bar.dataset.voiceFirstAudioMs), sent: Number(bar.dataset.voiceSentMs), endpoint: Number(bar.dataset.voiceEndpointMs) } : null;
+  })()`), 15_000).catch(() => null);
+  check("first audio of the answer under 1.5 s after the person stopped talking (instant engine)", Boolean(latency) && latency.firstAudio < 1500, JSON.stringify(latency));
+  const streamed = (await xaiRequests()).filter((r) => r.path === "/v1/tts" && r.json?.output_format?.codec === "pcm");
+  check("the answer is spoken sentence by sentence with streamed PCM, with Ara, 1.25x, fr", streamed.length >= 1 && streamed.every((r) => r.json.voice_id === "ara" && r.json.speed === 1.25 && r.json.language === "fr"), `${streamed.length} sentence(s)`);
+  const speaking = await until("the bot speaking", async () => win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePhase === "speaking"`), 10_000).catch(() => false);
+  check("the bar says the bot is speaking", speaking);
+
+  // Barge-in: the microphone's next sentence comes while the bot is still talking.
+  const barge = await until("the barge-in", async () => win.webContents.executeJavaScript(`(() => {
+    const bar = document.querySelector("[data-voice-bar]");
+    return bar?.dataset.voiceBargeinMs ? { duck: Number(bar.dataset.voiceDuckMs), cancel: Number(bar.dataset.voiceBargeinMs), phase: bar.dataset.voicePhase } : null;
+  })()`), 30_000).catch(() => null);
+  check("talking over the bot ducks it at once and cuts it within 250 ms of the first voiced frame", Boolean(barge) && barge.duck <= 50 && barge.cancel <= 250, JSON.stringify(barge));
+  const secondTurn = await until("the turn after the barge-in", async () => win.webContents.executeJavaScript(`window.__voiceTurns[1] ?? null`), 20_000).catch(() => null);
+  check("the words said over the bot become the next turn", secondTurn?.text === "Hello Cryptic from voice mode", JSON.stringify(secondTurn));
+  const ttsAfter = (await xaiRequests()).filter((r) => r.path === "/v1/tts" && r.json?.output_format?.codec === "pcm").length;
+  check("the rest of the cut answer was not synthesized again", ttsAfter <= 3, `${ttsAfter} sentence request(s)`);
+
+  // Hold: silence both ways, then resume.
+  await click("[data-voice-hold]");
+  const held = await until("on hold", async () => win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePhase === "held"`), 5_000).catch(() => false);
+  check("hold puts the call on hold", held);
+  await click("[data-voice-hold]");
+  const resumed = await until("resumed", async () => win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePhase !== "held"`), 5_000).catch(() => false);
+  check("resume takes it off hold", resumed);
+
+  const other = (await xaiRequests()).filter((r) => !["/v1/tts", "/v1/tts/voices", "/v1/stt"].includes(r.path));
+  check("xAI was never asked to answer (only speech to text and text to speech)", other.length === 0, JSON.stringify(other.map((r) => r.path)));
+  console.log(`[voice-mode] metrics ${JSON.stringify({ latency, barge })}`);
 
   // The key never reaches the page.
   const page = await win.webContents.executeJavaScript(`JSON.stringify({ html: document.documentElement.outerHTML, local: { ...localStorage }, session: { ...sessionStorage } })`);
