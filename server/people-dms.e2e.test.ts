@@ -78,7 +78,7 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
 
 async function openStream(auth: Auth): Promise<{ text: () => string; close: () => void }> {
   const { body } = await api("POST", "/api/auth/stream-ticket", auth);
-  expect(body.ticket).toMatch(/^omb_tick_/);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
   return new Promise((resolve, reject) => {
     let received = "";
     const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
