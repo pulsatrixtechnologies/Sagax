@@ -49,8 +49,12 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   off hides the sidebar entry, the Settings > API keys card and the tour's
   apps steps. The claude.ai connectors status then shows in Settings > Model
   providers (`HarnessConnectorsSection placement="settings"`).
-- A person's own subscription sign-in lives in Settings > Model providers
-  (`MyEngines`, organization server only), no longer under Organization.
+- A person's own access lives on each engine card of Settings > Model
+  providers (organization server only, 2026-10-02): who pays for their
+  turns, their own Claude/Codex subscription sign-in (`MyEngineAccess`), one
+  "Manage my keys in Perspicax" link; no separate "My subscriptions and
+  keys" card, no engine missing from the server, never the server's own
+  account (it serves no one's turns there).
 - Routines in my name is read-only: allowed by default, revoked in the
   Perspicax console (`manageUrl`, the person's Sagax tab). Perspicax has no
   silent authorization, so `ensureRoutineDelegation` starts the consent once,
@@ -60,6 +64,10 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   the bot's name): admin scope, `orgAdminCaller`, audited
   (`bot.force_stop`, `bot.force_delete`), the owner notified (`admin-action`,
   `audience` the owner). A solo server answers 403 `identity_perspicax`.
+- Sharing in the organization is one compact row per bot (avatar, owner,
+  sharing count, running or idle from `/api/org/bots` `look`/`running`);
+  the grants open inline, the force actions sit in an admin-only row menu
+  and their result is a toast (`src/components/settings/OrgSharing.test.ts`).
 
 ## Profile on an organization server
 
