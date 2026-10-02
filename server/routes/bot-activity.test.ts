@@ -50,7 +50,7 @@ function deps(overrides: Partial<BotActivityRouteDeps> = {}): BotActivityRouteDe
     tasks: (botId) => (botId === "pepper" ? tasks : []),
     viewerId: (auth) => (auth.kind === "session" ? auth.session.principalId : undefined),
     threadReadable: (botId, threadId, viewerId) => !viewerId || (botId === "echo" ? threadId === "t-echo-alice" && viewerId === "alice" : tasks.find((task) => task.threadId === threadId)?.ownerPrincipalId === viewerId),
-    threadWritable: (botId, threadId, viewerId) => !viewerId || tasks.find((task) => task.threadId === threadId)?.ownerPrincipalId === viewerId,
+    threadWritable: (_botId, threadId, viewerId) => !viewerId || tasks.find((task) => task.threadId === threadId)?.ownerPrincipalId === viewerId,
     runs: (botId) => runs.filter((run) => run.botId === botId),
     runSeen: (_run, viewerId) => !viewerId || viewerId === "alice" || viewerId === "carol",
     messages: (threadId, limit) => ({ messages: (messages[threadId] ?? []).slice(-limit), hasMore: false }),
