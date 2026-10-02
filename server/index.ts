@@ -663,6 +663,7 @@ import { UserSandboxManager, UserSandboxUnavailable, userSandboxSettingsFromEnv 
 import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
 import { sandboxPrincipalForTurn, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 import { handleUserSandboxMcp } from "./user-sandbox-tools.ts";
+import { SANDBOX_CONTROL_REFUSAL, SandboxControlHolds } from "./sandbox-control.ts";
 import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeOperation, type WorkplaceDecision } from "./desktop-bridge.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
@@ -3476,6 +3477,9 @@ function workplaceTurnText(text: string, decision: WorkplaceDecision): { text: s
 function withWorkplaceNote(text: string, decision: WorkplaceDecision): string {
   if (decision.target === "user-desktop" && decision.reason === "desktop") {
     return `${text}\n\n<workplace>Your ${DESKTOP_BRIDGE_MCP_NAME} tools run on this person's own computer, through their Sagax desktop app: their files, apps, network and Local VM, as if you were on their machine.</workplace>`;
+  }
+  if (decision.target === "user-desktop" && decision.reason === "pinned-desktop") {
+    return `${text}\n\n<workplace>This bot works on this person's own computer (Works on: Local VM or This computer), but their Sagax desktop app is not connected, so you have no computer this turn. Tell them to open the Sagax app on their computer, signed in to this server, or to set Works on to Cloud to use their server environment.</workplace>`;
   }
   if (decision.fallback && decision.target === "user-sandbox") {
     return `${text}\n\n<workplace>This person's computer is not connected (their Sagax desktop app is closed or signed out), so your tools run in their server environment instead. Their own files and local network are not reachable from there; tell them so if they ask for them.</workplace>`;
@@ -6333,6 +6337,8 @@ function audienceChanged(): void {
     }
   }
 }
+// The person drives their server environment desktop: bots' clicks there wait.
+const sandboxControlHolds = new SandboxControlHolds();
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
@@ -6343,7 +6349,7 @@ const desktopViewer = createDesktopViewer({
       // The caller's own server environment desktop, never anyone else's.
       const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : "";
       if (IDENTITY.kind !== "perspicax" || !userSandbox || !principalId) return;
-      return sandboxDesktopTarget(userSandbox, principalId);
+      return sandboxDesktopTarget(userSandbox, principalId, (person) => sandboxControlHolds.hold(person));
     }
     if (id.startsWith("vps/")) {
       const botId = id.slice(4);
@@ -6553,7 +6559,13 @@ function approvalCallerUserId(auth: RequestAuth): string {
 function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: string): string | null {
   const refusal = "Only the bot owner can answer this approval.";
   const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
-  if (!message) return refusal;
+  if (!message) {
+    // A request that is no longer open (or never was): the thread's bot owner
+    // still gets the plain "unavailable" or 404 answer, anyone else the 403.
+    const bot = botForApproval(threadId, {});
+    const audience = bot ? approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) }) : null;
+    return approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403 ? refusal : null;
+  }
   const question = Boolean(message.card && typeof message.card === "object" && message.card.questionRequest);
   if (question) return null;
   if (!isApprovalCardMessage(message)) return refusal;
@@ -8094,6 +8106,9 @@ function turnProvider(bot: BotRecord, runOn?: RoutineRunOn, threadId?: string): 
   const wants = turnSurfacePlan(bot, runOn, threadId).computer;
   if (wants !== undefined && wants !== "cloud") return null;
   if (registry.get(bot.modelSelection.instanceId)?.adapter.capabilities.remoteAgent === true) return "box";
+  // Organization server: Cloud is the person's server environment, reached
+  // through the turn's workplace, never a Boat or VPS of this server.
+  if (IDENTITY.kind === "perspicax") return null;
   return bot.cloudBackend === "vps" ? "vps" : wants === "cloud" ? "box" : null;
 }
 
@@ -10592,7 +10607,7 @@ async function startTurn(
   // once (server/desktop-bridge.ts); the speaker's own attachments are
   // pointed there and small text ones given inline.
   const turnPlace = decideWorkplace({
-    desktopTargeted: plan.computer === "local",
+    desktopTargeted: plan.computer === "local" || plan.computer === "vm",
     routine: routineLineage(speaker),
     principal: sandboxPrincipalForTurn({
       botOwnerPrincipalId: effectiveBotOwner(bot),
@@ -10988,7 +11003,13 @@ async function startTurn(
       if (plan.computer !== undefined && plan.computer !== "cloud" && instance.adapter.capabilities.remoteAgent === true) {
         throw new Error("the Computer engine works on the cloud computer — set Works on to Cloud, or choose another engine");
       }
-      const wants = plan.computer;
+      // Organization server: the person's computers are reached through
+      // turnPlace (their server environment, or their own computer through
+      // the desktop app), never the server's own machine nor a Boat or VPS
+      // of the server: Auto, Cloud, Local VM and This computer claim nothing
+      // here. A team computer or a cloud routine keeps its own Boat.
+      const wants = IDENTITY.kind === "perspicax" && !teamComputer && opts?.runOn !== "cloud" && plan.computer !== "off"
+        ? "off" : plan.computer;
       mountUserSandbox(integrations, {
         botId: bot.id, threadId, generation: dispatchClaimId,
         customMcp: instance.adapter.capabilities.customMcp === true,
@@ -20012,6 +20033,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const toolName = (frame?.params as { name?: unknown } | undefined)?.name;
           if (rpcMethod === "tools/call" && (toolName === "computer_use" || toolName === "computer_list_tools") && store.bot(internalCapability.botId)?.computer === "off") {
             return json(res, 200, { result: { content: [{ type: "text", text: "This bot has no computer. Change its Computer setting to use the screen." }], isError: true } });
+          }
+          if (rpcMethod === "tools/call" && toolName === "computer_use" && sandboxControlHolds.held(ownerId)) {
+            return json(res, 200, { result: { content: [{ type: "text", text: SANDBOX_CONTROL_REFUSAL }], isError: true } });
           }
           const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
             exec: (input) => userSandbox.exec(ownerId, input),

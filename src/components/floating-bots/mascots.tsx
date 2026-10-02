@@ -6,12 +6,16 @@
 // and Trombi have no wings, so a flight is a bouncing hop across. The
 // character and its look come from the bot (bot.mascotLook); the desktop
 // draws a skin's full effects, and its move effects with each move.
-import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState, type ComponentType } from "react";
+import { MAUS_COLORS } from "@/lib/mascot";
+import { owlSkinId } from "@/lib/owl/owl-skins";
+import { owlFxPalette } from "@/components/OwlSkinFx";
+import { EquipFx, MoveFx } from "@/components/skin-fx/SkinFx";
 import { OwlAvatar } from "@/components/OwlAvatar";
 import { ShapeMascot, type ShapeMood } from "@/components/ShapeMascot";
 import type { TrombiPose } from "@/components/retro-assistant/Trombi";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
-import { fxMoveFor, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
+import { fxMoveFor, useEquipBurst, useMoveBurst, useReducedMotion, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
 import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
 import { createFrameSmoother, type MascotActivity, type MascotFrame } from "./behavior";
 import Owl25D, { flatTilt, flatTurn } from "./Owl25D";
@@ -123,9 +127,31 @@ function Motion25D({ size, frame, fps, onHitTest, children }: Pick<MascotRenderP
 // the 3D owl and three.js: their own chunk, fetched only when a bot's owl is set to 3D
 const Owl3D = lazy(() => import("./owl3d/Owl3D"));
 
+/** The owl skin's equip animation and its move effects, over the desktop owl (the rarity set's effects). */
+function OwlSkinBursts({ color, skin, activity }: { color: string; skin: string; activity: MascotActivity }) {
+  const reduced = useReducedMotion();
+  const skinId = owlSkinId(skin);
+  const uid = `owlfx-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const equip = useEquipBurst(skinId, !reduced);
+  const burst = useMoveBurst(useClipFx(activity), !reduced);
+  const hex = (MAUS_COLORS as Record<string, string>)[color] ?? color;
+  if (!equip && !burst) return null;
+  return (
+    <>
+      {equip && <EquipFx key={equip} palette={owlFxPalette(skinId, hex)} uid={`${uid}-eq`} />}
+      {burst && <MoveFx key={burst.key} move={burst.move} palette={owlFxPalette(skinId, hex)} uid={`${uid}-mv`} />}
+    </>
+  );
+}
+
 function OwlRender({ color, skin, size, frame, fps, onHitTest, look, activity, stage }: MascotRenderProps) {
   const [flat, setFlat] = useState(false);
-  const owl2d = <Owl25D color={color} skin={skin} size={size} frame={frame} fps={fps} onHitTest={onHitTest} />;
+  const owl2d = (
+    <span style={{ position: "relative", display: "block", width: size, height: size }}>
+      <Owl25D color={color} skin={skin} size={size} frame={frame} fps={fps} onHitTest={onHitTest} />
+      <OwlSkinBursts color={color} skin={skin} activity={activity} />
+    </span>
+  );
   if (look.style !== "3d" || !stage || flat) return owl2d;
   return (
     <Suspense fallback={owl2d}>

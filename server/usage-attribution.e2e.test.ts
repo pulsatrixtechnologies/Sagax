@@ -29,6 +29,7 @@ posixOnly("usage attribution e2e", () => {
   let finishGate: string;
   let codexSteerGate: string;
   let costState: string;
+  let acpRpcLog: string;
 
   type Reply = { status: number; body: any };
   const request = async (headers: Record<string, string>, method: string, path: string, body?: unknown): Promise<Reply> => {
@@ -72,6 +73,12 @@ posixOnly("usage attribution e2e", () => {
     await api("PATCH", `/api/bots/${created.id}`, { modelSelection: { instanceId, model } });
     return created as { id: string; threadId: string };
   };
+  /** Prompts the hanging ACP engine holds. "busy" turns true before the
+   * prompt reaches the engine; an interrupt before that stops a turn that
+   * never ran, which spends nothing and books nothing. */
+  const acpPrompts = () => existsSync(acpRpcLog)
+    ? readFileSync(acpRpcLog, "utf8").split("\n").filter((line) => line.includes('"method":"session/prompt"')).length
+    : 0;
   const owner = { kind: "owner" };
   const person = { kind: "user", label: PERSON };
 
@@ -82,6 +89,7 @@ posixOnly("usage attribution e2e", () => {
     finishGate = join(home, "finish-steered-turn.gate");
     codexSteerGate = join(home, "codex-steer-refused.gate");
     costState = join(home, "claude-cost-state");
+    acpRpcLog = join(home, "acp-rpc.jsonl");
     mkdirSync(costState);
     writeFileSync(
       join(home, ".sagax", "config.json"),
@@ -100,7 +108,7 @@ posixOnly("usage attribution e2e", () => {
             config: { cli: FAKE_CLAUDE, permissionMode: "bypassPermissions" },
           },
           // no live session: a message while busy waits in the server-side queue
-          acp: { driver: "grokAgent", environment: { FAKE_ACP_MODE: "hang" }, config: { cli: FAKE_ACP, fullAuto: true } },
+          acp: { driver: "grokAgent", environment: { FAKE_ACP_MODE: "hang", FAKE_ACP_RPC_APPEND_FILE: acpRpcLog }, config: { cli: FAKE_ACP, fullAuto: true } },
           // reports tokens (10 in, 5 out) but no price, like every engine but Claude
           acpHappy: { driver: "grokAgent", config: { cli: FAKE_ACP, fullAuto: true } },
           codexRace: {
@@ -165,8 +173,10 @@ posixOnly("usage attribution e2e", () => {
 
   it("a queued message leaves the running turn with its starter, and its own turn is booked to its sender", async () => {
     const bot = await newBot("acp", "fake-model");
+    const prompts = acpPrompts();
     expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "owner's work" })).status).toBe(202);
     await waitFor(async () => (await getBot(bot.id)).busy === true, "the owner's turn to start");
+    await waitFor(() => acpPrompts() > prompts, "the owner's prompt to reach the engine");
     const asPaired = await asPerson();
     const queued = await asPaired("POST", `/api/bots/${bot.id}/messages`, { text: "person's follow-up" });
     expect(queued.body.queued).toBe(true);
@@ -234,6 +244,7 @@ posixOnly("usage attribution e2e", () => {
 
   it("a room's queued message leaves the running room turn with its starter", async () => {
     const bot = await newBot("acp", "fake-model");
+    const prompts = acpPrompts();
     const room = (await api("POST", "/api/groups", {
       name: "Attribution room",
       memberIds: [bot.id],
@@ -242,6 +253,7 @@ posixOnly("usage attribution e2e", () => {
     const working = async () => (await api("GET", "/api/bots?messages=30")).body.groups.find((g: any) => g.id === room.id);
     expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "owner's room turn" })).status).toBe(202);
     await waitFor(async () => (await working())?.busyBotId === bot.id, "the room turn to start");
+    await waitFor(() => acpPrompts() > prompts, "the room prompt to reach the engine");
     const asPaired = await asPerson();
     expect((await asPaired("POST", `/api/groups/${room.id}/messages`, { text: "person's room follow-up" })).body.queued).toBe(true);
 

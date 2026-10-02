@@ -142,16 +142,23 @@ describe("the avatar popover's Bot tab", () => {
     const html = render(undefined);
     for (const id of ["owl", "shape", "trombi"]) expect(html).toContain(`data-character-option="${id}"`);
     expect(html).toContain('data-character-options="owl"');
-    expect(html).toContain('data-mascot-skin-option="frost"');
+    // the skins open on the current one's rarity (none: Common), one tab per rarity
+    for (const skin of ["none", "snowy", "barn", "carbon"]) expect(html).toContain(`data-mascot-skin-option="${skin}"`);
+    expect(html).not.toContain('data-mascot-skin-option="frost"');
+    for (const tier of ["common", "rare", "epic", "legendary"]) expect(html).toMatch(new RegExp(`role="tab"[^>]*data-tab="${tier}"`));
+    expect(html).toContain("data-color-tabs");
     expect(html).toContain('data-character-style="3d"');
     expect(html).toContain('data-character-move="spread-wings"');
     expect(html).not.toContain("data-character-shape");
   });
 
-  it("offers a shape its eight shapes, colors, six skins and its own moves, and nothing of the owl", () => {
+  it("offers a shape its shapes, colors, skins by rarity and its own moves, and nothing of the owl", () => {
     const html = render({ character: "shape", shape: "cloud" });
     for (const shape of MASCOT_SHAPES) expect(html).toContain(`data-character-shape="${shape}"`);
-    for (const skin of SHAPE_SKINS) expect(html).toContain(`data-shape-skin-option="${skin}"`);
+    for (const skin of SHAPE_SKINS) {
+      const open = render({ character: "shape", shape: "cloud", skins: { shape: skin } });
+      expect(open, skin).toContain(`data-shape-skin-option="${skin}"`);
+    }
     expect(html).not.toContain("data-mascot-skin-option");
     expect(html).not.toContain('data-character-move="spread-wings"');
     expect(html).toContain('data-character-move="dance"');
@@ -159,7 +166,7 @@ describe("the avatar popover's Bot tab", () => {
 
   it("offers Trombi his skins and moves only, no colors", () => {
     const html = render({ character: "trombi" });
-    for (const skin of TROMBI_SKINS) expect(html).toContain(`data-trombi-skin-option="${skin}"`);
+    for (const skin of TROMBI_SKINS) expect(render({ character: "trombi", skins: { trombi: skin } })).toContain(`data-trombi-skin-option="${skin}"`);
     expect(html).not.toContain("mascot color");
     expect((html.match(/data-character-move=/g) ?? []).length).toBe(MASCOTS.find((entry) => entry.id === "trombi")!.moves.length);
   });

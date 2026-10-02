@@ -353,7 +353,7 @@ describe("optional Company cloud backup settings", () => {
     vi.mocked(bridge.state).mockResolvedValueOnce(scheduleOff);
     await ready();
     expect(render().html).toContain('aria-checked="false"');
-    expect(render().html).toContain("Off — no scheduled uploads");
+    expect(render().html).toContain("Off: no scheduled uploads");
     expect(bridge.configureSchedule).not.toHaveBeenCalled();
     expect(passwords()).toHaveLength(0);
     expect(bridge.create).not.toHaveBeenCalled();

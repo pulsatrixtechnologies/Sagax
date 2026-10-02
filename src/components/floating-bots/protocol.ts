@@ -5,6 +5,7 @@
 import type { Liveliness, MascotTask } from "./behavior";
 import type { FloatingContext } from "./gauge";
 import type { MascotLook } from "../../../shared/mascot-look";
+import type { FloatingTheme } from "./theme";
 
 export type FloatingPose = "idle" | "think" | "speak" | "celebrate" | "alert" | "sleep";
 export type { MascotTask };
@@ -75,6 +76,8 @@ export interface FloatingSnapshot {
   context?: FloatingContext | null;
   /** The character this bot wears on the desktop (mascots.tsx); the owl when absent. */
   mascot?: MascotLook;
+  /** The app's theme (skin and brand accent), for the balloon; the window's default when absent. */
+  theme?: FloatingTheme;
 }
 
 

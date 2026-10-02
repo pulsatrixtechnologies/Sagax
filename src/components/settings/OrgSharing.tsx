@@ -195,7 +195,7 @@ export function OrgSharing({ initial = null, admin = false, initialDirectory = n
                 <h4 className="flex items-center gap-1.5 px-1 pb-0.5 pt-1.5 text-[11.5px] font-medium text-ink-secondary">
                   {ownerAvatar(group.ownerId, group.owner, 14)}
                   <span className="truncate">{group.owner}</span>
-                  <span className="text-ink-secondary/70">{group.bots.length}</span>
+                  <span className="text-ink-tertiary">{group.bots.length}</span>
                 </h4>
                 <ul className="flex flex-col">{group.bots.map((bot) => row(bot, false))}</ul>
               </section>

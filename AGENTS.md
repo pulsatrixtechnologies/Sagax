@@ -15,6 +15,27 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Tests
+
+`pnpm test` runs every vitest file in one serial process (about 45 minutes),
+then the broker, Electron and packaged-server checks. For day-to-day work use
+the sharded runner `scripts/testing/vitest-shards.mjs`, which runs N vitest
+processes at once (default: half the cores, at most 8), prints one summary
+and exits 1 on any failure:
+
+- `pnpm test:unit`: files that never boot the real server (about 2.5 minutes).
+- `pnpm test:e2e`: `*.e2e.test.ts` plus any test that spawns
+  `server/index.ts` or calls `launchVerificationServer(` (about 11 minutes).
+- `pnpm test:shards`: both groups. Options: `--shards N`, `--logs DIR`,
+  `--list`, and vitest flags after `--`.
+
+The groups come from `scripts/testing/test-groups.mjs` (no hand-kept list;
+covered by `test-groups.test.mjs`). The e2e files are slow because each test
+boots its own server and drives fake engines through real turns; keep that
+isolation rather than sharing a server between tests. Suites pick free ports
+with `server/testing/ports.ts` and each vitest process gets its own Local VM
+namespace, so shards do not collide.
+
 ## Mail settings
 
 Settings > Email (`src/components/MailSettings.tsx`, `server/mail-routes.ts`,
@@ -327,6 +348,20 @@ Electron restart (no HMR); launch-test them before committing.
 - `fit.ts` sizes the stage for the widest pose; `pilot.ts` moves the window
   (flights, walks) through `floating-bots:geometry`, `move-to` and
   `autopilot`; main clamps every move and never saves spots flown to.
+- The chat stays smooth (`window-frame.ts`): while the balloon is open the
+  window holds the balloon's room and only grows, so streaming, resizing or
+  moving the balloon never resizes the window per frame; it fits again when
+  the balloon closes or a gesture ends. Drags move the window once a frame
+  (`setPosition`, one request in flight); main saves a spot once the window
+  stands still and only calls `setIgnoreMouseEvents`, `setFocusable` and
+  `focus` on a change. With the balloon open the mascot stays home (no
+  wander, no flight while its bot works), draws at 30 fps at most and the
+  skin's loops rest. Measure with `node scripts/verify-mascot-chat.mjs`
+  (isolated real Electron: open latency, window moves, clipped and dropped
+  frames, mascot jumps, position writes, theme).
+- The balloon wears the app's theme: the brain sends `theme` (the skin and
+  the brand accent, `theme.ts`, followed live) and the window stamps it;
+  Trombi keeps its Hibou 98 balloon whatever the theme.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
@@ -334,6 +369,12 @@ Electron restart (no HMR); launch-test them before committing.
   (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
   in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
   every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
+- Bot colors live in `shared/mascot-colors.ts` (palettes Vivid, Pastel, Deep,
+  Neon, Neutral; the original fifteen ids keep their values) and every skin,
+  the owl's included (`OWL_SKIN_TIER`, `LEGACY_OWL_SKINS`), has a rarity. The
+  popover shows one palette and one rarity at a time (`editor-tabs.ts`,
+  covered by `editor-tabs.test.ts`); a renamed skin id goes in the legacy
+  table, never removed.
 - Per device:, the mood (`omb.floatingBots.mood.v1`, never punishing),
   and the settings "Fly away during tasks" and "Activity level"
   (`omb.floatingBots.prefs.v1`, Settings > Appearance and the right-click
@@ -391,7 +432,12 @@ Keep these rules, each covered by `server/user-sandbox*.test.ts`,
   from the caller's own session principal, never an id; read-only by default
   (view-only VNC password), `?control=1` for control; its WebSocket starts
   nothing and reaches the VNC port only through the provisioner's signed
-  upgrade (`/v1/sandboxes/<key>/desktop`). The Computer tab's power and usage
+  upgrade (`/v1/sandboxes/<key>/desktop`). While a control view is open,
+  the bots' `computer_use` there is refused with `SANDBOX_CONTROL_REFUSAL`
+  (`server/sandbox-control.ts`, test `server/sandbox-control.test.ts`). The
+  desktop starts openbox, a background and a tint2 launcher bar (Chromium,
+  Terminal, Files); a change there needs the sandbox image rebuilt. The
+  Computer tab's power and usage
   routes (`/api/me/server-environment/power|stats`) act on the caller's own
   environment only; shutdown and pause under a running turn need `confirm`.
   Tests: `server/user-sandbox-desktop.test.ts`, `server/sandboxd.test.ts`;
@@ -410,11 +456,12 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 `electron/local-vm.node-test.mjs`, `electron/desktop-bridge.node-test.mjs` or
 `scripts/verify-desktop-bridge.ts`:
 
-- Where tools run is decided once per turn by `resolveBotWorkplace`: the
-  speaker's desktop when it is connected and their preference
-  (`sagax.botWorkplace.v1`, Settings > Organization > Where bots work) is
-  "computer" (the default); else their server environment, and the bot and
-  the composer say so. Routines use the owner's desktop only when it is
+- Where tools run is decided once per turn by `resolveBotWorkplace` from
+  the bot's Works on (or the conversation's pin): Local VM or This computer,
+  the speaker's desktop (when it is not connected, nothing runs there and
+  the bot and the composer say so); Auto and Cloud, their server
+  environment. The `place` of `sagax.botWorkplace.v1` no longer decides.
+  Routines use the owner's desktop only when the bot works on it, it is
   connected AND the owner allowed it (off by default). Rooms: the person
   whose message triggered the turn; a follow-up nobody asked for never.
 - A bridge is bound to the person of the session that registered it and to
@@ -569,16 +616,28 @@ of that thread. The owner's notification of such a run names no thread, only
 
 The Computer tab (`src/components/computer/OrgComputerTab.tsx`) draws the
 solo screen: one rounded screen (`ComputerScreen.tsx`) with Play / Pause /
-Stop on it and "<Bot>'s screen" below, the "Where this bot works" selector
-(the person's `sagax.botWorkplace.v1`, with the reason the current computer
-is used) and a usage panel. States are words (Off, Starting, Running, Paused,
-Error); never show the desktop's raw answer. Settings > Computer holds the
-same choice, the Local VM card and the compact server environment card
-(`settings/OrgComputerSettings.tsx`); Settings > Organization no longer has
-the server environment. VPS Computer and Boat Computer are experimental
-flags (`features.vpsComputer`, `features.boatComputer`, off): off hides
-their cards, the Cloud place and backend choices. Tests:
-`OrgComputerTab.test.ts`, `experimental-computers.test.ts`.
+Stop on it and "<Bot>'s screen" below, one line naming the computer the
+bot's Works on uses with a link to change it (no selector there), and a
+usage panel that keeps polling while the environment is off. States are
+words (Off, Starting, Running, Paused, Error); never show the desktop's raw
+answer. The server environment's live view is view-only with "Take control"
+in the middle of the screen and a "Release control" chip while in control.
+
+On an organization server the bot's Works on (or the conversation's pin)
+decides where it runs, never a per-person switch (2026-10-02,
+`resolveBotWorkplace`, `orgComputerFor` in `src/lib/place.ts`): Auto and
+Cloud ("Cloud (server environment)") run in the person's server
+environment, Local VM and This computer on their own computer through the
+desktop app; no Boat, VPS or host computer is claimed there. Settings >
+Computer says so and holds the Local VM card and the compact server
+environment card (`settings/OrgComputerSettings.tsx`). VPS Computer and
+Boat Computer are experimental flags (`features.vpsComputer`,
+`features.boatComputer`, off): off hides their cards and backend choices
+and, on a solo server only, the Cloud place; they never hide the
+organization's Cloud nor the local places (`placeOffered(place, config,
+organization)`). Tests: `OrgComputerTab.test.ts`,
+`experimental-computers.test.ts`, `PlaceChip.test.ts`,
+`AccessSection.test.ts`, `server/desktop-bridge.test.ts`.
 
 The Local VM in server mode lives on the person's computer
 (`electron/local-vm.mjs`, `POST /api/me/desktop-bridge/local-vm`):

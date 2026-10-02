@@ -21,22 +21,24 @@ function logs(props: Partial<Parameters<typeof RoutineLogs>[0]> = {}) {
 
 afterEach(() => vi.useRealTimers());
 
+// The list is the compact Sagax layout (8a563e929, 1e6839895): a row per
+// routine with its name, its state and a pause switch. Latest results, skips
+// and failure streaks live in the routine's detail and in the run logs.
 describe("routine list", () => {
-  it("shows saved skips and recent failure streaks without claiming all offline occurrences were counted", () => {
+  it("shows each routine's name, state and pause switch, nothing more", () => {
     const markup = list({ routines: [{ ...routine, skippedRuns: 3, lastSkippedAt: 100, failureStreak: 2 }] });
-    expect(markup).toContain("Scheduled occurrences skipped while busy: 3");
-    expect(markup).toContain("Recent consecutive failures: 2");
-    expect(markup).toContain("Last:");
-    expect(list()).not.toContain("Recent consecutive failures:");
-    expect(list()).not.toContain("Scheduled occurrences skipped while busy:");
+    expect(markup).toContain("Morning brief");
+    expect(markup).toContain(">Active<");
+    expect(markup).toContain('aria-label="Pause"');
+    expect(markup).not.toContain("Brief prepared.");
+    expect(markup).not.toContain("Scheduled occurrences skipped while busy");
   });
-  it("retains visible records and latest results during a failed refresh", () => {
+
+  it("retains visible records during a failed refresh", () => {
     const markup = list({ error: true });
     expect(markup).toContain('role="alert"');
     expect(markup).toContain("Retrying…");
     expect(markup).toContain("Morning brief");
-    expect(markup).toContain("Brief prepared.");
-    expect(markup).toContain('aria-label="Run logs for Morning brief"');
   });
 
   it("does not show the empty state before hydration or on transport failure", () => {
@@ -46,15 +48,13 @@ describe("routine list", () => {
     expect(list({ routines: [], runs: [] })).toContain("No schedules yet.");
   });
 
-  it("distinguishes a finished one-shot schedule from a successful run", () => {
+  it("calls a consumed one-shot finished rather than paused", () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);
     const markup = list({ routines: [{ ...routine, schedule: { type: "once", at: 10 }, enabled: false, nextRunAt: null }], runs: [{ ...run, status: "failed", error: "Provider disconnected." }] });
-    expect(markup).toContain("Finished schedule");
     expect(markup.match(/Finished schedule/g)).toHaveLength(1);
-    expect(markup).toContain("Latest: Failed");
-    expect(markup).toContain("Provider disconnected.");
-    expect(markup).not.toContain("Latest: Completed");
+    expect(markup).not.toContain(">Paused<");
+    expect(markup).toContain('aria-label="Resume"');
   });
 
   it("never advertises a stale next timestamp for a paused routine", () => {
@@ -62,11 +62,17 @@ describe("routine list", () => {
     expect(list({ routines: [{ ...routine, enabled: false }] })).not.toContain("Next Jan");
   });
 
+  it("lists enabled routines first, then by next run and name", () => {
+    const later = { ...routine, id: "later", name: "Later brief", nextRunAt: 7_200_000 };
+    const paused = { ...routine, id: "paused", name: "A paused brief", enabled: false };
+    const markup = list({ routines: [paused, later, routine] });
+    const order = ["Morning brief", "Later brief", "A paused brief"].map((name) => markup.indexOf(name));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
   it("chooses a new pending run ahead of an older run that finished later", () => {
     const pending = { ...run, id: "new", createdAt: 200, scheduledFor: 200, status: "waiting" as const, attention: "Waiting for delegated work to finish" };
     expect(latestRoutineRun(routine.id, [{ ...run, finishedAt: 300 }, pending])).toBe(pending);
-    expect(list({ runs: [run, pending] })).toContain("Latest: Waiting");
-    expect(list({ runs: [run, pending] })).toContain("Waiting for delegated work to finish");
   });
 });
 

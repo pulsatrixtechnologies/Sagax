@@ -2,7 +2,9 @@
 // mode), live in the Computer panel: what bots doing computer use there see.
 // Only the owner reaches it (/api/desktop-viewer/sandbox/me builds the target
 // from the session). Read-only by default: the server hands the VNC server's
-// view-only password; "Prendre le contrôle" asks for the full one. Nothing
+// view-only password; "Prendre le contrôle" (a button in the middle of the
+// screen) asks for the full one, and while that view is open the server
+// refuses the bots' clicks there (server/sandbox-control.ts). Nothing
 // starts until the person asks to see it, and the view closes when the
 // environment idles out.
 import { useEffect, useRef, useState } from "react";
@@ -76,8 +78,26 @@ export function SandboxDesktopView({ onConnected, embedded = false }: { onConnec
 
   if (embedded) {
     return (
-      <div data-sandbox-desktop={state} className="absolute inset-0">
+      <div data-sandbox-desktop={state} data-control={control ? "1" : "0"} className="group/desk absolute inset-0">
         <div ref={screen} role="application" aria-label={t("sandboxDesktop.screen")} className="h-full w-full" />
+        {live && !control && (
+          // View-only: one button in the middle of the screen to take the
+          // wheel (the server then refuses the bots' clicks there).
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <button type="button" onClick={toggleControl} data-take-control
+              className="pointer-events-auto flex min-h-[44px] items-center gap-2 rounded-full bg-black/65 px-4 py-2 text-[13px] font-medium text-white shadow-md backdrop-blur-sm transition-opacity hover:bg-black/80 md:min-h-0 md:opacity-80 md:group-hover/desk:opacity-100 focus-visible:opacity-100 touch:opacity-100">
+              <Hand size={15} aria-hidden="true" />
+              {t("sandboxDesktop.takeControl")}
+            </button>
+          </div>
+        )}
+        {live && control && (
+          <button type="button" onClick={toggleControl} data-release-control title={t("sandboxDesktop.controlHint")}
+            className="absolute right-2 top-2 flex items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[11.5px] font-medium text-accent-ink shadow-sm hover:brightness-110">
+            <Hand size={12} aria-hidden="true" />
+            {t("sandboxDesktop.releaseControl")}
+          </button>
+        )}
         {!live && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-[12px] text-ink-secondary">
             {state === "connecting" && <Loader2 size={16} aria-hidden="true" className="animate-spin" />}
