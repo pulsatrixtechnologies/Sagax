@@ -10,7 +10,7 @@ export function renderAppIcon(
   template: AppIconTemplate,
   size: number,
   art: IconArt | null,
-  options: { background: readonly [string, string]; fit: "contain" | "cover" },
+  options: { background: readonly [string, string]; fit: "contain" | "cover"; rotate?: number; fill?: number },
 ): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -42,8 +42,16 @@ export function renderAppIcon(
   if (art) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
-    const rect = artworkRect(template, size, art, options.fit);
+    const rect = artworkRect(template, size, art, options.fit, options.fill);
+    if (options.rotate) {
+      const cx = rect.x + rect.width / 2;
+      const cy = rect.y + rect.height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((options.rotate * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+    }
     ctx.drawImage(art.image, rect.x, rect.y, rect.width, rect.height);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
   // light from above, as on the system's icons
   const sheen = ctx.createLinearGradient(0, top, 0, top + (bottom - top) * 0.55);
@@ -96,7 +104,15 @@ export async function svgElementToArt(svg: SVGSVGElement, size: number): Promise
     // Freeze any running animation on its current frame.
     target.style.setProperty("animation", "none");
   });
+  // Room around the drawing: a skin's aura and glow spill past the
+  // mascot's viewBox, and a hard edge would show inside the icon.
   const box = svg.viewBox?.baseVal;
+  if (box && box.width && box.height) {
+    const padX = box.width * 0.15;
+    const padY = box.height * 0.15;
+    clone.setAttribute("viewBox", `${box.x - padX} ${box.y - padY} ${box.width + 2 * padX} ${box.height + 2 * padY}`);
+    clone.setAttribute("overflow", "visible");
+  }
   const ratio = box && box.width && box.height ? box.width / box.height : 1;
   const width = ratio >= 1 ? size : Math.round(size * ratio);
   const height = ratio >= 1 ? Math.round(size / ratio) : size;

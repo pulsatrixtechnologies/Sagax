@@ -191,7 +191,7 @@ export function artworkRect(
   size: number,
   art: { width: number; height: number },
   fit: "contain" | "cover",
-  fill = fit === "cover" ? 1 : 0.74,
+  fill: number = fit === "cover" ? 1 : 0.9,
 ): { x: number; y: number; width: number; height: number } {
   const scale = size / template.canvas;
   const box = template.body * scale * fill;

@@ -5367,7 +5367,10 @@
       "settings.appIcon.reset": "daee7606b339f3c339076fe2c9f372a3ff40c8ee896005d829c7481b64ca5303",
       "settings.appIcon.hintMac": "5926da26e25a6367bf89c70e169be892315b95cd92cccd14da4d91781fe0e5bf",
       "settings.appIcon.hintWindows": "76504dd3d89520c232e3a89a5b15e332a4ba420efaa0dae229f9f4833b513f03",
-      "settings.appIcon.hintLinux": "b3f5397a5d8f66fd9e17f4099d8742b0c409da90ab53ba8bd378a0576055ad72"
+      "settings.appIcon.hintLinux": "b3f5397a5d8f66fd9e17f4099d8742b0c409da90ab53ba8bd378a0576055ad72",
+      "settings.appIcon.glyph.blob": "e0e492707f85ff1f9c23155494a54382b52bf34888091adc7a6bb338ef78f88d",
+      "settings.appIcon.glyph.spark": "529bc3b07127ecb7e53a4dcf1991d9152c24537d919178022b2c42657f79a26b",
+      "settings.appIcon.glyph.cube": "67a9f6a6b5b7269d0bfd4b6f313ee77abb040d78dedc1473b04b911154eb1ac8"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

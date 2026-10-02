@@ -10,6 +10,7 @@ import {
   pathToSvg,
 } from "./app-icon-template";
 import { appIconHintKey, appIconTargets, APP_ICON_CHOICES, DEFAULT_APP_ICON_ID, primaryBotChoice, UPLOAD_APP_ICON } from "../src/lib/app-icon-choices";
+import { appIconGlyphSvg } from "../src/lib/app-icon-glyphs";
 
 const bounds = (points: Array<[number, number]>) => ({
   minX: Math.min(...points.map((p) => p[0])),
@@ -112,10 +113,21 @@ describe("app icon choices", () => {
   it("starts with the default and offers owl skins, a shape and Trombi", () => {
     expect(APP_ICON_CHOICES[0].id).toBe(DEFAULT_APP_ICON_ID);
     const kinds = new Set(APP_ICON_CHOICES.map((choice) => choice.art.kind));
-    for (const kind of ["default", "owl", "shape", "trombi"]) expect(kinds.has(kind as never)).toBe(true);
+    for (const kind of ["default", "owl", "shape", "trombi", "glyph"]) expect(kinds.has(kind as never)).toBe(true);
     const ids = APP_ICON_CHOICES.map((choice) => choice.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of [...ids, UPLOAD_APP_ICON.id, "primary"]) expect(id).toMatch(/^[a-z0-9][a-z0-9:._-]{0,63}$/);
+  });
+
+  it("draws the white glyphs as standalone SVG", () => {
+    for (const glyph of ["spark", "cube"] as const) {
+      const markup = appIconGlyphSvg(glyph);
+      expect(markup).toMatch(/^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" viewBox="0 0 100 100"/);
+      expect(markup).not.toMatch(/NaN|undefined/);
+    }
+    // the white Shape is the Shapes circle itself, drawn by ShapeMascot
+    expect(APP_ICON_CHOICES.find((choice) => choice.id === "shape:circle-white")?.art).toEqual({ kind: "shape", shape: "circle", skin: "plain", color: "white" });
+    expect(appIconGlyphSvg("spark").match(/<path/g)).toHaveLength(10);
   });
 
   it("adds the Primary Bot only when there is one", () => {

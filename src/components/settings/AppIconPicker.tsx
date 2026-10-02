@@ -21,6 +21,7 @@ import {
   type AppIconArt,
   type AppIconChoice,
 } from "@/lib/app-icon-choices";
+import { appIconGlyphSvg } from "@/lib/app-icon-glyphs";
 import { elementToArt, fileToArt, loadImage, renderAppIcon, type IconArt } from "@/lib/app-icon-render";
 
 const STAGE = 256;
@@ -105,6 +106,10 @@ export function AppIconPicker() {
     if (choice.art.kind === "default") {
       const image = await loadImage("/app-icon.svg");
       return { image, width: 1024, height: 1024 };
+    }
+    if (choice.art.kind === "glyph") {
+      const image = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(appIconGlyphSvg(choice.art.glyph))}`);
+      return { image, width: 512, height: 512 };
     }
     if (choice.art.kind === "upload") return arts.current[choice.id] ?? null;
     const node = stage.current[choice.id];

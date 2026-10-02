@@ -7,6 +7,7 @@ import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { MascotShape, ShapeSkin, TrombiSkin } from "../../shared/mascot-look";
 import type { MascotColorName } from "../../shared/mascot-colors";
 import type { LocaleKey } from "@/locales";
+import type { AppIconGlyph } from "./app-icon-glyphs";
 import { APP_ICON_TEMPLATES, appIconPlatform, type AppIconTemplate } from "../../shared/app-icon-template";
 
 export type AppIconArt =
@@ -14,6 +15,7 @@ export type AppIconArt =
   | { kind: "owl"; color: MascotColorName; skin: MascotSkinId }
   | { kind: "shape"; shape: MascotShape; skin: ShapeSkin; color: MascotColorName }
   | { kind: "trombi"; skin: TrombiSkin }
+  | { kind: "glyph"; glyph: AppIconGlyph }
   | { kind: "primary"; botId: string }
   | { kind: "upload" };
 
@@ -27,6 +29,10 @@ export type AppIconChoice = {
   art: AppIconArt;
   /** How the art sits in the body: a character keeps a margin, a picture fills it. */
   fit: "contain" | "cover";
+  /** Turn the art this many degrees (the white Shape leans a little). */
+  rotate?: number;
+  /** How much of the body the art box takes (default 0.9; the art keeps a margin inside it). */
+  fill?: number;
 };
 
 /** The default: the bundle's own icon. Choosing it resets. */
@@ -52,6 +58,11 @@ export const APP_ICON_CHOICES: readonly AppIconChoice[] = [
   owl("galaxy", "purple", ["#1A1440", "#07051A"]),
   { id: "shape:sparkle", labelKey: "mascot.shape.sparkle", background: ["#FDFEFF", "#DCE5F2"], art: { kind: "shape", shape: "sparkle", skin: "glossy", color: "blue" }, fit: "contain" },
   { id: "shape:flower", labelKey: "mascot.shape.flower", background: ["#FFF5F8", "#F4D2DD"], art: { kind: "shape", shape: "flower", skin: "pastel", color: "pink" }, fit: "contain" },
+  // minimal white glyphs on dark plates
+  // the Shapes circle itself (ShapeMascot), white with its two dark eyes
+  { id: "shape:circle-white", labelKey: "settings.appIcon.glyph.blob", background: ["#3B3B40", "#141416"], art: { kind: "shape", shape: "circle", skin: "plain", color: "white" }, fit: "contain", rotate: -12, fill: 1.08 },
+  { id: "glyph:spark", labelKey: "settings.appIcon.glyph.spark", background: ["#22305A", "#0A1024"], art: { kind: "glyph", glyph: "spark" }, fit: "contain" },
+  { id: "glyph:cube", labelKey: "settings.appIcon.glyph.cube", background: ["#34353A", "#0E0F11"], art: { kind: "glyph", glyph: "cube" }, fit: "contain" },
   { id: "trombi:classic", labelKey: "floatingBots.mascot.trombi", background: ["#13A0A0", "#006666"], art: { kind: "trombi", skin: "classic" }, fit: "contain" },
 ];
 
