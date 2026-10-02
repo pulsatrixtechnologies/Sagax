@@ -88,7 +88,7 @@ final class ThemeStore: ObservableObject {
             }
         }
         #endif
-        writeShared()
+        writeShared(reload: false)
     }
 
     /// What decides the look now (a launch override wins in DEBUG).
@@ -205,10 +205,12 @@ final class ThemeStore: ObservableObject {
     }
 
     /// The widgets, the Live Activity and the share extension read this.
-    private func writeShared() {
+    /// At launch it is only written (the widgets already drew with it);
+    /// a change also asks WidgetKit to draw them again.
+    private func writeShared(reload: Bool = true) {
         let e = effective
         SharedThemeKeys.write(e, resolvedFixed: e.pinsAppearance ? e.skin(deviceDark: true) : nil, to: OpenMausSharedConfiguration.sharedDefaults)
-        WidgetCenter.shared.reloadAllTimelines()
+        if reload { WidgetCenter.shared.reloadAllTimelines() }
     }
 }
 

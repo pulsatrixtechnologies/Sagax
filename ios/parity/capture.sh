@@ -4,7 +4,7 @@
 #   ios/parity/capture.sh                       build, seed, capture every screen
 #   ios/parity/capture.sh --skip-build          reuse the last build
 #   ios/parity/capture.sh 02-chat 13-computer   only these screens
-#   PARITY_WAIT=10 ios/parity/capture.sh         seconds to wait per screen
+#   PARITY_WAIT=14 ios/parity/capture.sh         seconds to wait per screen (10)
 #   PARITY_SKIN=lagoon ios/parity/capture.sh     wear a skin (DEBUG -paritySkin;
 #                                                "system" follows the simulator)
 #   PARITY_APPEARANCE=light ios/parity/capture.sh  the simulator's appearance
@@ -31,7 +31,7 @@ APPEARANCE="${PARITY_APPEARANCE:-dark}"
 BUILD="$HERE/build"
 DEVICE_NAME="${PARITY_DEVICE:-parity-17pro}"
 BUNDLE_ID="com.openmausbot.app"
-WAIT="${PARITY_WAIT:-7}"
+WAIT="${PARITY_WAIT:-10}"
 
 SKIP_BUILD=0
 SCREENS=()
