@@ -68,6 +68,26 @@ it("lists the engine's commands and passes a typed one through verbatim", async 
     const history = (await api(`/api/threads/${thread}/messages`, undefined, "GET")).messages.map((message: any) => message.text);
     expect(history).toContain("/compact keep the plan");
     expect(history).not.toContain("/model opus");
+
+    // In a group a command reaches ONE bot: the one the message starts by
+    // naming, even when the room answers with everyone.
+    const helper = (await cli("new-bot", "--name", "Helper")).bot;
+    const group = (await api("/api/groups", { name: "Ops", memberIds: [bot.id, helper.id], setup: { bulletin: "", defaultResponder: { kind: "everyone" } } })).group;
+    const groupListed = await api(`/api/bots/${helper.id}/harness-commands?groupId=${group.id}&threadId=${group.threadId}`, undefined, "GET");
+    expect(groupListed.available).toBe(true);
+    expect(groupListed.commands.map((command: any) => command.name)).toContain("compact");
+    await expect(api(`/api/bots/${helper.id}/harness-commands?groupId=nope`, undefined, "GET")).rejects.toThrow(/no such group/);
+    const before = sent().length;
+    await api(`/api/groups/${group.id}/messages`, { text: "@Helper /compact keep what @Commander planned" });
+    const roomReplies = async () => (await api(`/api/threads/${group.threadId}/messages`, undefined, "GET")).messages
+      .filter((message: any) => message.role === "bot" && message.kind === "text");
+    for (let tries = 0; tries < 200 && (await roomReplies()).length === 0; tries++) await new Promise((resolve) => setTimeout(resolve, 100));
+    // let any other member that would (wrongly) answer show up
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const roomTurns = sent().slice(before);
+    expect(roomTurns).toEqual(["/compact keep what @Commander planned"]);
+    expect((await roomReplies()).map((message: any) => message.from?.botId)).toEqual([helper.id]);
+    await expect(api(`/api/groups/${group.id}/messages`, { text: "@Helper /model opus" })).rejects.toThrow(/managed by Sagax/);
   } finally {
     await session.close();
   }

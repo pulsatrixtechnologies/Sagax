@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { HarnessCommand } from "../../shared/harness-commands";
 import {
   composerCommandMenu,
+  composerGroupCommandMenu,
+  composerGroupSlashTrigger,
+  composerMenuSection,
   composerSlashTrigger,
   engineCommandInsertion,
+  groupCommandTargets,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
   type ComposerSlashCommand,
@@ -84,5 +88,56 @@ describe("composer command menu (Sagax and the engine)", () => {
     expect(composerSlashTrigger("/mcp__git", 9)?.query).toBe("mcp__git");
     const item = composerCommandMenu(sagax, engine, "engine:goal")[0];
     expect(item?.kind === "engine" && engineCommandInsertion(item)).toBe("/engine:goal ");
+  });
+});
+
+describe("group slash commands (per bot)", () => {
+  const members = [
+    { id: "scout", name: "Scout" },
+    { id: "pixel", name: "Pixel" },
+    { id: "old", name: "Old", hidden: true },
+  ];
+  const compact: HarnessCommand = { name: "compact", description: "Compact", group: "engine" };
+  const review: HarnessCommand = { name: "review", description: "Review", group: "plugins" };
+
+  it("opens at the start, or right after a leading mention of a member", () => {
+    expect(composerGroupSlashTrigger("/co", 3, members)).toEqual({ trigger: { query: "co", start: 0, end: 3 } });
+    expect(composerGroupSlashTrigger("@Pixel /co", 10, members)).toEqual({ trigger: { query: "co", start: 7, end: 10 }, botId: "pixel" });
+    expect(composerGroupSlashTrigger("@Pixel /compact now", 19, members)).toBeNull();
+    expect(composerGroupSlashTrigger("@Pixel/co", 9, members)).toBeNull();
+    expect(composerGroupSlashTrigger("@Nobody /co", 11, members)).toBeNull();
+    expect(composerGroupSlashTrigger("@Old /co", 8, members)).toBeNull();
+    expect(composerGroupSlashTrigger("hi @Pixel /co", 13, members)).toBeNull();
+  });
+
+  it("lists the mentioned bot, else the lead, else every active member with a mention", () => {
+    expect(groupCommandTargets({ botId: "pixel" }, members, { kind: "everyone" })).toEqual([{ bot: members[1], mention: false }]);
+    expect(groupCommandTargets({}, members, { kind: "member", botId: "scout" })).toEqual([{ bot: members[0], mention: false }]);
+    expect(groupCommandTargets({}, members, { kind: "auto" })).toEqual([
+      { bot: members[0], mention: true },
+      { bot: members[1], mention: true },
+    ]);
+  });
+
+  it("groups engine commands under each bot and adds the mention a pick needs", () => {
+    const goal: ComposerSlashCommand = { id: "goal", label: "/goal", description: "Goal" };
+    const items = composerGroupCommandMenu([goal], [
+      { bot: { id: "scout", name: "Scout" }, commands: [compact], mention: true },
+      { bot: { id: "pixel", name: "Pixel" }, commands: [compact, review], mention: true },
+    ], "");
+    expect(items.map((item) => item.key)).toEqual([
+      "sagax:goal",
+      "bot:scout:engine:compact",
+      "bot:pixel:engine:compact",
+      "bot:pixel:engine:review",
+    ]);
+    expect(items.map(composerMenuSection)).toEqual(["sagax", "bot:scout", "bot:pixel", "bot:pixel"]);
+    const pixelCompact = items[2]!;
+    if (pixelCompact.kind !== "engine") throw new Error("engine item expected");
+    expect(engineCommandInsertion(pixelCompact)).toBe("@Pixel /compact ");
+    const lead = composerGroupCommandMenu([], [{ bot: { id: "scout", name: "Scout" }, commands: [compact], mention: false }], "comp")[0]!;
+    if (lead.kind !== "engine") throw new Error("engine item expected");
+    expect(engineCommandInsertion(lead)).toBe("/compact ");
+    expect(lead.bot).toEqual({ id: "scout", name: "Scout" });
   });
 });

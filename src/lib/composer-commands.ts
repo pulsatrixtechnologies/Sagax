@@ -1,5 +1,8 @@
 import {
   engineCommandLabel,
+  leadingMention,
+  type GroupCommandMember,
+  type GroupCommandResponder,
   type HarnessCommand,
   type HarnessCommandGroup,
   type HarnessCommandUnavailable,
@@ -61,6 +64,10 @@ export type ComposerMenuItem =
     argumentHint?: string;
     unavailable?: HarnessCommandUnavailable;
     command: HarnessCommand;
+    /** In a group: the bot whose engine lists it (the menu groups by bot). */
+    bot?: { id: string; name: string };
+    /** In a group that names no single bot: the mention picking it adds. */
+    mentionPrefix?: string;
   };
 
 export const COMPOSER_MENU_GROUPS = ["sagax", "engine", "plugins", "mcp"] as const;
@@ -117,7 +124,88 @@ export function composerCommandMenu(
 }
 
 /** What picking an engine command puts in the draft: its label and a space
- * for its arguments. */
+ * for its arguments, after the bot's mention when the group needs one. */
 export function engineCommandInsertion(item: Extract<ComposerMenuItem, { kind: "engine" }>): string {
-  return `${item.label} `;
+  return `${item.mentionPrefix ?? ""}${item.label} `;
+}
+
+// ── groups ───────────────────────────────────────────────────────────────
+
+/** The "/" being typed in a group: at the very start, or right after a
+ * leading `@Bot ` (that bot's engine commands only). */
+export interface ComposerGroupSlash {
+  trigger: ComposerSlashTrigger;
+  /** The bot the draft starts by mentioning. */
+  botId?: string;
+}
+
+export function composerGroupSlashTrigger(
+  text: string,
+  caretInput: number,
+  members: readonly GroupCommandMember[],
+): ComposerGroupSlash | null {
+  const plain = composerSlashTrigger(text, caretInput);
+  if (plain) return { trigger: plain };
+  const caret = Math.max(0, Math.min(text.length, Math.floor(caretInput)));
+  const mention = leadingMention(text, members);
+  if (!mention || mention.rest > caret || !/\s/u.test(text[mention.rest - 1] ?? "")) return null;
+  const match = /^\/([\w.:-]*)$/.exec(text.slice(mention.rest, caret));
+  if (!match) return null;
+  return { trigger: { query: match[1] ?? "", start: mention.rest, end: caret }, botId: mention.member.id };
+}
+
+/** Whose engine commands a group's "/" menu lists: the mentioned bot, else
+ * the lead when it answers alone, else every active member, each picked
+ * command then starting with that bot's mention so it reaches it only. */
+export function groupCommandTargets<T extends GroupCommandMember>(
+  slash: Pick<ComposerGroupSlash, "botId">,
+  members: readonly T[],
+  defaultResponder: GroupCommandResponder,
+): Array<{ bot: T; mention: boolean }> {
+  const available = members.filter((member) => !member.hidden);
+  if (slash.botId) {
+    const bot = available.find((member) => member.id === slash.botId);
+    return bot ? [{ bot, mention: false }] : [];
+  }
+  if (defaultResponder.kind === "member") {
+    const lead = available.find((member) => member.id === defaultResponder.botId);
+    if (lead) return [{ bot: lead, mention: false }];
+  }
+  return available.map((bot) => ({ bot, mention: true }));
+}
+
+export interface GroupEngineCommands {
+  bot: { id: string; name: string };
+  commands: readonly HarnessCommand[];
+  /** Picking one adds `@Name ` in front. */
+  mention: boolean;
+}
+
+/** A group's "/" menu: Sagax's commands, then each bot's engine commands
+ * under that bot's name, ranked as in a 1:1. */
+export function composerGroupCommandMenu(
+  sagax: readonly ComposerSlashCommand[],
+  sets: readonly GroupEngineCommands[],
+  query: string,
+): ComposerMenuItem[] {
+  const items: ComposerMenuItem[] = composerCommandMenu(sagax, [], query);
+  for (const set of sets) {
+    if (items.length >= MENU_LIMIT) break;
+    for (const item of composerCommandMenu([], set.commands, query)) {
+      if (item.kind !== "engine") continue;
+      items.push({
+        ...item,
+        key: `bot:${set.bot.id}:${item.key}`,
+        bot: set.bot,
+        ...(set.mention ? { mentionPrefix: `@${set.bot.name} ` } : {}),
+      });
+      if (items.length >= MENU_LIMIT) break;
+    }
+  }
+  return items;
+}
+
+/** The heading a menu row starts under: its bot in a group, else its group. */
+export function composerMenuSection(item: ComposerMenuItem): string {
+  return item.kind === "engine" && item.bot ? `bot:${item.bot.id}` : item.group;
 }

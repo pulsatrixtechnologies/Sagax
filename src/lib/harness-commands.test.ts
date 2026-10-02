@@ -29,5 +29,15 @@ describe("loadHarnessCommands", () => {
 
   it("builds the path", () => {
     expect(harnessCommandsPath("b 1", undefined)).toBe("/api/bots/b%201/harness-commands");
+    expect(harnessCommandsPath("b1", "t1", false, "g1")).toBe("/api/bots/b1/harness-commands?threadId=t1&groupId=g1");
+  });
+
+  it("keeps a group member's list apart from its 1:1 list", async () => {
+    const fetcher = vi.fn(async () => answer);
+    await loadHarnessCommands(fetcher, "b1", "t1", { now: 0 });
+    await loadHarnessCommands(fetcher, "b1", "t1", { now: 0, groupId: "g1" });
+    await loadHarnessCommands(fetcher, "b1", "t1", { now: 0, groupId: "g1" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenLastCalledWith("/api/bots/b1/harness-commands?threadId=t1&groupId=g1");
   });
 });

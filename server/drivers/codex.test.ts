@@ -314,6 +314,10 @@ describe("CodexDriver turns (fake app-server)", () => {
       const listed = JSON.parse(readFileSync(dump, "utf8")) as { calls: Array<{ method: string; params: any }> };
       expect(listed.calls.find((call) => call.method === "skills/list")?.params).toEqual({ cwds: [scratch] });
       expect(listed.calls.some((call) => call.method === "turn/start")).toBe(false);
+      // a speaker's own subscription lists from their CODEX_HOME (their skills)
+      const home = join(scratch, "principals", "p1", "codex");
+      await instance.listCommands?.({ cwd: scratch, access: { via: "subscription", identity: "subscription:p1", codexHome: home } });
+      expect((JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env.CODEX_HOME).toBe(home);
       await instance.adapter.sendTurn({
         threadId: "t-skill", text: "/release-notes 1.2.0", system: "You are Testy.", model: "gpt-5.6-sol", approvalMode: "ask",
         harnessCommand: { name: "release-notes", args: "1.2.0", path: join(scratch, "SKILL.md") },

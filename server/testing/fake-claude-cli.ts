@@ -911,10 +911,11 @@ process.stdin.on("data", (c) => {
     // The control request `initialize` lists the slash commands and starts
     // no turn (server/drivers/harness-command-probe.ts).
     // FAKE_CLAUDE_COMMANDS: path of a JSON array of commands to answer with.
-    // FAKE_CLAUDE_COMMANDS_DUMP: path to write {argv, cwd} of that launch.
+    // FAKE_CLAUDE_COMMANDS_DUMP: path to write {argv, cwd, env} of that
+    // launch (env: the account and connector switches only, no secret).
     const control = prompt && typeof prompt === "object" && !Array.isArray(prompt) ? prompt as Record<string, any> : null;
     if (control?.type === "control_request" && control.request?.subtype === "initialize") {
-      if (process.env.FAKE_CLAUDE_COMMANDS_DUMP) writeFileSync(process.env.FAKE_CLAUDE_COMMANDS_DUMP, JSON.stringify({ argv, cwd: process.cwd() }));
+      if (process.env.FAKE_CLAUDE_COMMANDS_DUMP) writeFileSync(process.env.FAKE_CLAUDE_COMMANDS_DUMP, JSON.stringify({ argv, cwd: process.cwd(), env: { CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? null, ENABLE_CLAUDEAI_MCP_SERVERS: process.env.ENABLE_CLAUDEAI_MCP_SERVERS ?? null } }));
       const commands = process.env.FAKE_CLAUDE_COMMANDS ? JSON.parse(readFileSync(process.env.FAKE_CLAUDE_COMMANDS, "utf8")) : [{ name: "compact", description: "Compact", argumentHint: "", builtin: true }];
       out({ type: "control_response", response: { subtype: "success", request_id: control.request_id, response: { commands } } });
       continue;

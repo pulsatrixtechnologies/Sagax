@@ -76,14 +76,18 @@ import { mentionChoicesForQuery } from "@/lib/mentions";
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
 import {
   composerCommandMenu,
+  composerGroupCommandMenu,
+  composerGroupSlashTrigger,
   composerSlashTrigger,
   engineCommandInsertion,
+  groupCommandTargets,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
   type ComposerMenuItem,
   type ComposerSlashCommand,
+  type GroupEngineCommands,
 } from "@/lib/composer-commands";
-import { useHarnessCommands } from "@/lib/harness-commands";
+import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-commands";
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
 import { WorkplaceNotice } from "./WorkplaceNotice";
 
@@ -309,11 +313,22 @@ export function Composer({
   const engineSupportsImages = imageTargetsSupport(effectiveText, effectiveChannelMode);
 
   // ── Slash commands and @mentions ─────────────────────────────────────
-  const slash = composerSlashTrigger(text, caret);
+  // In a group "/" also opens right after a leading @mention: that bot's
+  // engine commands only (shared/harness-commands.ts groupCommandTarget).
+  const groupSlash = group && !group.dm ? composerGroupSlashTrigger(text, caret, members ?? []) : null;
+  const slash = group && !group.dm ? groupSlash?.trigger ?? null : composerSlashTrigger(text, caret);
   const locale = activeLocale();
   // The engine's own commands (Claude Code, Codex) for a 1:1 conversation,
   // read the first time "/" is typed there (src/lib/harness-commands.ts).
   const engineCommands = useHarnessCommands(api, !group ? bot?.id : undefined, threadId || undefined, Boolean(slash) && !group);
+  // In a group: the commands of the bot(s) the command would reach, per bot.
+  const groupSlashOpen = Boolean(groupSlash);
+  const groupSlashBotId = groupSlash?.botId;
+  const groupTargets = useMemo(
+    () => groupSlashOpen && group ? groupCommandTargets({ botId: groupSlashBotId }, members ?? [], group.defaultResponder) : [],
+    [groupSlashOpen, groupSlashBotId, group, members],
+  );
+  const groupEngineCommands = useGroupHarnessCommands(api, groupTargets.map((target) => target.bot.id), group && !group.dm ? group.id : undefined, threadId || undefined, groupSlashOpen);
   const commandListRef = useRef<HTMLDivElement>(null);
   const commandCandidates = useMemo((): ComposerMenuItem[] => {
     if (!slash || slash.start === dismissedSlashAt) return [];
@@ -347,8 +362,17 @@ export function Composer({
       label: "/setup",
       description: t("composer.command.setupDesc"),
     });
-    return composerCommandMenu(available, group ? [] : engineCommands.answer?.commands ?? [], slash.query);
-  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer]);
+    if (group) {
+      // after a leading mention only that bot's engine commands make sense
+      const sets: GroupEngineCommands[] = groupTargets.map((target) => ({
+        bot: { id: target.bot.id, name: target.bot.name },
+        commands: groupEngineCommands.lists.find((list) => list.botId === target.bot.id)?.answer.commands ?? [],
+        mention: target.mention,
+      }));
+      return composerGroupCommandMenu(groupSlashBotId ? [] : available, sets, slash.query);
+    }
+    return composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query);
+  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   // Tag another bot; the agent reaches it via ask_bot.
@@ -868,8 +892,10 @@ export function Composer({
             exitProps={commandMotion.exitProps}
             items={commandCandidates}
             highlight={highlight}
-            loading={!group && engineCommands.loading}
-            onRefresh={!group && engineCommands.answer?.available ? engineCommands.refresh : undefined}
+            loading={group ? groupEngineCommands.loading : engineCommands.loading}
+            onRefresh={group
+              ? groupEngineCommands.lists.some((list) => list.answer.available) ? groupEngineCommands.refresh : undefined
+              : engineCommands.answer?.available ? engineCommands.refresh : undefined}
             onPick={pickCommand}
             onHighlight={setHighlight}
           />
