@@ -51,3 +51,12 @@ export const CODEX_WITHHELD_APPROVAL = {
   thread: { approvalPolicy: "on-request", approvalsReviewer: "user", sandbox: "read-only" },
   turn: { approvalPolicy: "on-request", approvalsReviewer: "user", sandboxPolicy: { type: "readOnly" } },
 } as const;
+
+/** A withheld Codex turn in Full access: Codex never asks (`never`) and its
+ * own sandbox stays read-only, so nothing runs or writes on the Sagax server
+ * (the target there is the person's environment or desktop, reached through
+ * Sagax's MCP tools, which Full lets through without a prompt). */
+export const CODEX_WITHHELD_FULL_APPROVAL = {
+  thread: { approvalPolicy: "never", approvalsReviewer: "user", sandbox: "read-only" },
+  turn: { approvalPolicy: "never", approvalsReviewer: "user", sandboxPolicy: { type: "readOnly" } },
+} as const;

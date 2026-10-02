@@ -1,171 +1,150 @@
-// Settings > Model providers > My subscriptions and keys, on a server signed
-// in with Perspicax (slice 4; it was Settings > Organization > My engines
-// until 2026-10-01): for each engine, whether it is installed, what my own turns on
-// it run with (my subscription, my key, the organization's key: on my bots
-// and on bots shared with me, 2026-10-01), my own subscription sign-in
-// (Claude, Codex) and the link to my model keys in Perspicax. Keys are
-// never set here: they live in Perspicax.
+// Settings > Model providers on a server signed in with Perspicax (slice 4):
+// each engine card carries the person's own access (2026-10-02; the separate
+// "My subscriptions and keys" card is gone): what their own turns on it run
+// with (their subscription, their key, the organization's key: on their bots
+// and on bots shared with them), their own subscription sign-in (Claude,
+// Codex), never the server's, and one link to their model keys in Perspicax.
+// Keys are never set here: they live in Perspicax.
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Loader2 } from "lucide-react";
 
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
-import { myTurnsText, perspicaxKeysUrl, type MyEngine } from "@/lib/perspicax-org";
-import { Card } from "../SettingsPrimitives";
+import { perspicaxKeysUrl, reloadMyEngines, type MyEngine } from "@/lib/perspicax-org";
 
 interface LoginState {
-  instanceId: string;
   flowId: string | null;
   authorizationUrl: string | null;
   userCode?: string;
   phase: string;
 }
 
+/** The one "Manage my keys in Perspicax" link of the page. */
+export function ManageMyKeysLink({ issuer }: { issuer: string }) {
+  return (
+    <a href={perspicaxKeysUrl(issuer)} target="_blank" rel="noreferrer noopener" data-my-keys-link
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-2 text-[12px] font-medium text-ink-secondary hover:bg-control hover:text-ink">
+      <ExternalLink size={13} aria-hidden="true" />
+      {t("myEngines.manageKeys")}
+    </a>
+  );
+}
 
-export function MyEngines({ issuer, initial = null }: { issuer: string; initial?: MyEngine[] | null }) {
-  const [engines, setEngines] = useState<MyEngine[] | null>(initial);
+/** One engine's own subscription sign-in for the signed-in person (Claude,
+ * Codex): sign in, paste the code or follow the link, sign out. */
+export function MyEngineAccess({ engine, onChanged = () => { void reloadMyEngines(); } }: { engine: MyEngine; onChanged?: () => void }) {
   const [login, setLogin] = useState<LoginState | null>(null);
   const [code, setCode] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const load = async () => {
-    try {
-      setEngines((await api<{ engines: MyEngine[] }>("/api/me/engines")).engines ?? []);
-    } catch {
-      setEngines([]);
-    }
-  };
-  useEffect(() => {
-    void load();
-    return () => { if (poll.current) clearInterval(poll.current); };
-  }, []);
+  const id = engine.instanceId;
 
   const stopPolling = () => {
     if (poll.current) clearInterval(poll.current);
     poll.current = null;
   };
-  const watch = (instanceId: string, flowId: string) => {
+  useEffect(() => stopPolling, []);
+  const watch = (flowId: string) => {
     stopPolling();
     poll.current = setInterval(() => {
-      void api<{ auth: { phase: string } }>(`/api/me/engines/${instanceId}/login/status?flowId=${encodeURIComponent(flowId)}`)
+      void api<{ auth: { phase: string } }>(`/api/me/engines/${id}/login/status?flowId=${encodeURIComponent(flowId)}`)
         .then(({ auth }) => {
           if (auth.phase === "waiting") return;
           stopPolling();
           setLogin(null);
           if (auth.phase !== "succeeded") setError(t("myEngines.failed"));
-          void load();
+          onChanged();
         })
         .catch(() => { stopPolling(); setLogin(null); setError(t("myEngines.failed")); });
     }, 1500);
   };
+  const post = (action: string, body: unknown = {}) =>
+    api<{ auth?: LoginState }>(`/api/me/engines/${id}/login/${action}`, { method: "POST", body: JSON.stringify(body) });
 
-  const post = (instanceId: string, action: string, body: unknown = {}) =>
-    api<{ auth?: LoginState }>(`/api/me/engines/${instanceId}/login/${action}`, { method: "POST", body: JSON.stringify(body) });
-
-  const signIn = async (engine: MyEngine) => {
-    setBusy(engine.instanceId);
+  const signIn = async () => {
+    setBusy(true);
     setError("");
     try {
-      const { auth } = await post(engine.instanceId, "start");
+      const { auth } = await post("start");
       if (!auth || auth.phase === "succeeded") {
-        await load();
+        onChanged();
         return;
       }
-      setLogin({ ...auth, instanceId: engine.instanceId });
-      if (auth.flowId) watch(engine.instanceId, auth.flowId);
+      setLogin(auth);
+      if (auth.flowId) watch(auth.flowId);
     } catch {
       setError(t("myEngines.failed"));
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
   const complete = async () => {
     if (!login?.flowId || !code.trim()) return;
-    setBusy(login.instanceId);
+    setBusy(true);
     try {
-      await post(login.instanceId, "complete", { flowId: login.flowId, code: code.trim() });
+      await post("complete", { flowId: login.flowId, code: code.trim() });
       setCode("");
     } catch {
       setError(t("myEngines.failed"));
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
   const cancel = async () => {
     if (!login) return;
     stopPolling();
-    try { await post(login.instanceId, "cancel", { flowId: login.flowId }); } catch { /* the flow ends anyway */ }
+    try { await post("cancel", { flowId: login.flowId }); } catch { /* the flow ends anyway */ }
     setLogin(null);
   };
-  const signOut = async (engine: MyEngine) => {
-    setBusy(engine.instanceId);
+  const signOut = async () => {
+    setBusy(true);
     try {
-      await post(engine.instanceId, "sign-out");
-      await load();
+      await post("sign-out");
+      onChanged();
     } catch {
       setError(t("myEngines.failed"));
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
+  if (!engine.installed || !engine.subscription.supported) return null;
   return (
-    <Card cardId="organization.myEngines" title={t("myEngines.title")}>
-      <div className="flex flex-col gap-3 text-[13px]" data-my-engines>
-        <a href={perspicaxKeysUrl(issuer)} target="_blank" rel="noreferrer noopener" className="ui-button flex w-fit items-center gap-1.5">
-          <ExternalLink size={13} aria-hidden="true" />
-          {t("myEngines.manageKeys")}
-        </a>
-        {engines === null ? (
-          <Loader2 size={14} className="animate-spin text-ink-secondary" aria-hidden="true" />
+    <div className="flex min-w-0 flex-col gap-2 text-[13px]" data-my-engine={id}>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-[12px] text-ink-secondary">{engine.subscription.signedIn ? t("myEngines.signedIn") : null}</span>
+        {engine.subscription.signedIn ? (
+          <button type="button" className="ui-button" disabled={busy} onClick={() => void signOut()}>{t("myEngines.signOut")}</button>
         ) : (
-          <ul className="flex flex-col divide-y divide-hairline/40">
-            {engines.map((engine) => (
-              <li key={engine.instanceId} className="flex min-w-0 flex-col gap-1.5 py-2" data-my-engine={engine.instanceId}>
-                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                  <span className="truncate text-ink">{engine.displayName}</span>
-                  {engine.installed && engine.subscription.supported && (
-                    engine.subscription.signedIn ? (
-                      <button type="button" className="ui-button" disabled={busy !== null} onClick={() => void signOut(engine)}>{t("myEngines.signOut")}</button>
-                    ) : (
-                      <button type="button" className="ui-button" disabled={busy !== null || login !== null} onClick={() => void signIn(engine)}>
-                        {busy === engine.instanceId ? <Loader2 size={12} className="animate-spin" /> : null}
-                        {t("myEngines.signIn")}
-                      </button>
-                    )
-                  )}
-                </div>
-                <span className="text-[12px] text-ink-secondary" data-my-turns={engine.myTurns}>{myTurnsText(engine)}</span>
-                {engine.subscription.signedIn && <span className="text-[12px] text-ink-secondary">{t("myEngines.signedIn")}</span>}
-                {login?.instanceId === engine.instanceId && (
-                  <div className="flex flex-col gap-2 rounded-lg border border-hairline/40 p-3">
-                    {login.userCode && <span className="font-mono text-[13px] text-ink">{t("myEngines.code", { code: login.userCode })}</span>}
-                    {login.authorizationUrl && (
-                      <a href={login.authorizationUrl} target="_blank" rel="noreferrer noopener" className="text-[12px] text-accent underline">{t("myEngines.openLink")}</a>
-                    )}
-                    {!login.userCode && (
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          value={code}
-                          onChange={(event) => setCode(event.target.value)}
-                          placeholder={t("myEngines.pasteCode")}
-                          aria-label={t("myEngines.pasteCode")}
-                          className="min-w-0 flex-1 rounded-lg border border-hairline/40 bg-inset px-3 py-1.5 text-[13px] text-ink"
-                        />
-                        <button type="button" className="ui-button" disabled={!code.trim() || busy !== null} onClick={() => void complete()}>{t("myEngines.complete")}</button>
-                      </div>
-                    )}
-                    <button type="button" className="ui-button w-fit" onClick={() => void cancel()}>{t("myEngines.cancel")}</button>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
+          <button type="button" className="ui-button flex items-center gap-1.5" disabled={busy || login !== null} onClick={() => void signIn()}>
+            {busy ? <Loader2 size={12} className="animate-spin" aria-hidden="true" /> : null}
+            {t("myEngines.signIn")}
+          </button>
         )}
-        {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
       </div>
-    </Card>
+      {login && (
+        <div className="flex flex-col gap-2 rounded-lg border border-hairline/40 p-3">
+          {login.userCode && <span className="font-mono text-[13px] text-ink">{t("myEngines.code", { code: login.userCode })}</span>}
+          {login.authorizationUrl && (
+            <a href={login.authorizationUrl} target="_blank" rel="noreferrer noopener" className="text-[12px] text-accent underline">{t("myEngines.openLink")}</a>
+          )}
+          {!login.userCode && (
+            <div className="flex flex-wrap gap-2">
+              <input
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                placeholder={t("myEngines.pasteCode")}
+                aria-label={t("myEngines.pasteCode")}
+                className="min-w-0 flex-1 rounded-lg border border-hairline/40 bg-inset px-3 py-1.5 text-[13px] text-ink"
+              />
+              <button type="button" className="ui-button" disabled={!code.trim() || busy} onClick={() => void complete()}>{t("myEngines.complete")}</button>
+            </div>
+          )}
+          <button type="button" className="ui-button w-fit" onClick={() => void cancel()}>{t("myEngines.cancel")}</button>
+        </div>
+      )}
+      {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+    </div>
   );
 }

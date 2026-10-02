@@ -913,6 +913,18 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     }
   });
 
+  it("maps Full to bypassPermissions on an organization server and still denies the host tools", async () => {
+    await create();
+    const dump = join(scratch, "org-full.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const { turnId } = await instance.adapter.sendTurn({ threadId: "t-org-full", text: "hello", approvalMode: "full", withholdHostTools: true });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv[seen.argv.indexOf("--permission-mode") + 1]).toBe("bypassPermissions");
+    const denied = String(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).split(",");
+    for (const tool of ["Bash", "Read", "Write", "Edit", "WebFetch"]) expect(denied).toContain(tool);
+  });
+
   it("keeps questions answerable in per-bot Full access", async () => {
     await create("hang");
     await instance.adapter.sendTurn({ threadId: "t-full-question", text: "go", approvalMode: "full" });

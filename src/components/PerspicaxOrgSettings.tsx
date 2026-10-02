@@ -11,6 +11,8 @@
 // Since 2026-10-01 a person's own engine sign-in (My engines) lives in
 // Settings > Model providers, and "Bring bots from a solo Sagax" is hidden
 // (the desktop's join flow still copies bots through POST /api/org/import).
+// An admin also allows or refuses Full access for every bot (2026-10-01,
+// OrgFullAccessPolicy, server/org-full-access.ts).
 // People, teams and invitations live in Perspicax, never here.
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
@@ -24,6 +26,7 @@ import { MyServerEnvironment } from "./settings/MyServerEnvironment";
 import { OrgSharing } from "./settings/OrgSharing";
 import { InterimPeople } from "./settings/InterimPeople";
 import { BotWorkplaceSettings } from "./settings/BotWorkplaceSettings";
+import { OrgFullAccessPolicy } from "./settings/OrgFullAccessPolicy";
 
 interface PendingAdminApproval {
   botId: string;
@@ -123,6 +126,7 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
       <BotWorkplaceSettings />
       <MyServerEnvironment />
       <OrgSharing admin={admin} />
+      {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
       {admin && (
         <Card cardId="organization.adminApprovals" title={t("organization.adminApprovals.title")} summary={approvals?.length ? String(approvals.length) : ""}>
           {!approvals?.length ? (
