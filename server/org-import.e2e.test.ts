@@ -98,7 +98,7 @@ function startServer(home: string, port: number, env: Record<string, string>) {
 }
 
 function auditRows(): Array<{ action: string; actor?: unknown; target?: unknown; after?: Record<string, unknown> }> {
-  const dir = join(orgHome, ".openmausbot", "admin-activity");
+  const dir = join(orgHome, ".sagax", "admin-activity");
   let files: string[] = [];
   try { files = readdirSync(dir); } catch { return []; }
   return files.flatMap((file) => readFileSync(join(dir, file), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
@@ -121,7 +121,7 @@ posixOnly("slice 8: copy a solo Sagax's bots into an organization", () => {
     SOLO = `http://127.0.0.1:${PORT + 2}`;
     orgHome = mkdtempSync(join(tmpdir(), "omb-org-import-org-"));
     soloHome = mkdtempSync(join(tmpdir(), "omb-org-import-solo-"));
-    mkdirSync(join(orgHome, ".openmausbot"), { recursive: true });
+    mkdirSync(join(orgHome, ".sagax"), { recursive: true });
     mkdirSync(join(orgHome, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(orgHome, "link", "pulsabot.json"), JSON.stringify({
       version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: ORG, link_token: idp.linkToken,
@@ -150,8 +150,8 @@ posixOnly("slice 8: copy a solo Sagax's bots into an organization", () => {
     boltId = bolt.body.bot.id;
     const soul = await call(SOLO, "PATCH", `/api/bots/${atlasId}`, undefined, { description: `deploy key ${SECRET}` });
     expect(soul.status, soul.text).toBe(200);
-    mkdirSync(join(soloHome, ".openmausbot", "workspaces", atlasId), { recursive: true, mode: 0o700 });
-    writeFileSync(join(soloHome, ".openmausbot", "workspaces", atlasId, "MEMORY.md"), "Remember the deploy window is Friday.\n", { mode: 0o600 });
+    mkdirSync(join(soloHome, ".sagax", "workspaces", atlasId), { recursive: true, mode: 0o700 });
+    writeFileSync(join(soloHome, ".sagax", "workspaces", atlasId, "MEMORY.md"), "Remember the deploy window is Friday.\n", { mode: 0o600 });
     const room = await call(SOLO, "POST", "/api/groups", undefined, { name: "Atlas and Bolt", memberIds: [atlasId, boltId] });
     expect(room.status, room.text).toBe(201);
     const routine = await call(SOLO, "POST", "/api/routines", undefined, { name: "Hourly", prompt: "check", botId: atlasId, enabled: true, schedule: { type: "interval", everyMinutes: 60, anchorAt: 0 } });

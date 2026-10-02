@@ -97,7 +97,7 @@ async function until<T>(check: () => T | undefined, ms = 5_000): Promise<T | und
 posixOnly("an organization member's identity and bots", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-member-identity-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({
       profile: { name: OWNER_NAME, email: OWNER_EMAIL, aboutMe: OWNER_ABOUT },

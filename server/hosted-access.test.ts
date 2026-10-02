@@ -96,7 +96,7 @@ beforeAll(async () => {
   PORT = await freePortBlock([0, 1], 35_000, 5_000);
   home = mkdtempSync(join(tmpdir(), "omb-hosted-server-"));
   stateFile = join(home, "portal-fixture.json"); state();
-  const data = join(home, ".openmausbot");
+  const data = join(home, ".sagax");
   const layer = join(home, "enterprise");
   mkdirSync(join(layer, "server"), { recursive: true });
   mkdirSync(join(home, "static"));
@@ -247,7 +247,7 @@ describe.skipIf(!enterpriseAdapterPresent)("hosted bridge in the full server", (
   it("uses explicit portal membership without local allow-list synchronization and still revokes quiet streams", async () => {
     await waitForExit(child, { signal: "SIGTERM" });
     state();
-    writeFileSync(join(home, ".openmausbot", "config.json"), JSON.stringify({ signIn: { admins: [], members: [] }, instances: INSTANCES }));
+    writeFileSync(join(home, ".sagax", "config.json"), JSON.stringify({ signIn: { admins: [], members: [] }, instances: INSTANCES }));
     child = spawn(process.execPath, [join(ROOT, "server/index.ts")], { cwd: ROOT, env: { ...fixtureEnv, OMB_ADMIN_MEMBERSHIP: "portal" }, stdio: ["ignore", "pipe", "pipe"] });
     child.stderr?.on("data", (chunk) => log += chunk);
     await expect.poll(async () => {

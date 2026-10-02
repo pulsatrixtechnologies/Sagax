@@ -125,12 +125,12 @@ async function pairingCode(scopes?: string[]): Promise<{ code: string; credentia
 beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-remote-test-"));
   const staticDir = join(home, "static");
-  mkdirSync(join(home, ".openmausbot"), { recursive: true });
+  mkdirSync(join(home, ".sagax"), { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });
   writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>Served UI</title>");
   // Avoid probing whatever agent CLIs happen to be installed on the test
   // machine; remote-session behavior does not depend on an engine.
-  writeFileSync(join(home, ".openmausbot", "config.json"), JSON.stringify({
+  writeFileSync(join(home, ".sagax", "config.json"), JSON.stringify({
     instances: { fixture: { driver: "remote-session-test-shadow" } },
     profile: { name: "Security fixture", email: "private@example.invalid" },
     vps: { sshAlias: "fixture-private-host" },

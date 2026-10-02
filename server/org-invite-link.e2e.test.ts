@@ -65,7 +65,7 @@ async function until<T>(check: () => T | undefined, ms = 5_000): Promise<T | und
 posixOnly("org invite links", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-org-invite-link-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" } }));
     captureFile = join(home, "mail-capture.jsonl");
@@ -184,7 +184,7 @@ posixOnly("org invite links", () => {
     const org = await api("GET", "/api/org/invites");
     expect(org.body.people).toContainEqual({ id: ADA, role: "member", email: ADA });
     expect(org.body.pendingInvites).toEqual([]);
-    const config = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+    const config = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(config.signIn.members).toEqual([ZARA, ADA]);
     const link = /token=([0-9a-f]+)/.exec(invite.body.link)![1]!;
     expect((await api("GET", `/api/org/invites/${link}/preview`, { headers: REMOTE })).body).toEqual({ status: "used" });

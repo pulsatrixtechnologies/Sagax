@@ -104,7 +104,7 @@ beforeAll(async () => {
   chmodSync(FAKE_CLAUDE, 0o755);
   chmodSync(FAKE_ACP, 0o755);
   home = mkdtempSync(join(tmpdir(), "omb-notification-routing-"));
-  const data = join(home, ".openmausbot");
+  const data = join(home, ".sagax");
   mkdirSync(data, { recursive: true });
   dumpFile = join(home, "quick-dump.json");
   writeFileSync(join(data, "config.json"), JSON.stringify({

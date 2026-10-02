@@ -82,7 +82,7 @@ await import(${JSON.stringify(pathToFileURL(join(SERVER_DIR, "testing", fake)).h
 
 beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-cloud-guest-shell-"));
-  const dataDir = join(home, ".openmausbot");
+  const dataDir = join(home, ".sagax");
   mkdirSync(dataDir, { recursive: true });
   const codex = probing("codex", "fake-codex-app-server.ts", `process.env.FAKE_CODEX_DUMP = ${JSON.stringify(join(home, "codex.json"))};`);
   // A Claude whose turns hold until the test writes the release file; each
@@ -155,7 +155,7 @@ const newBot = async (name: string, instanceId: string) =>
 async function leftBehind(of: { threadId?: string; routineId?: string }) {
   for (const proxy of proxies.splice(0)) proxy.kill();
   await waitForExit(child, { signal: "SIGTERM" });
-  markLeftBehind(join(home, ".openmausbot"), { threadIds: of.threadId ? [of.threadId] : [], routineIds: of.routineId ? [of.routineId] : [] });
+  markLeftBehind(join(home, ".sagax"), { threadIds: of.threadId ? [of.threadId] : [], routineIds: of.routineId ? [of.routineId] : [] });
   await boot();
 }
 /** A conversation a guest opened with a bot before the Cloud was personal. */

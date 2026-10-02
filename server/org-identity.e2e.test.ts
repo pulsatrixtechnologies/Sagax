@@ -116,7 +116,7 @@ const principalsFile = () => JSON.parse(readFileSync(join(data, "principals.json
 posixOnly("org identity", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-org-identity-"));
-    data = join(home, ".openmausbot");
+    data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" } }));
     // Zara is a person this server knows by address, with a device bound to
@@ -261,7 +261,7 @@ posixOnly("org identity", () => {
 posixOnly("slice 8: a solo server keeps email sign-in, without an organization", () => {
   it("keeps the email routes, invitations and both sessions, refuses an organization and ignores the old org key", async () => {
     const home2 = mkdtempSync(join(tmpdir(), "omb-interim-removed-"));
-    const data2 = join(home2, ".openmausbot");
+    const data2 = join(home2, ".sagax");
     mkdirSync(data2, { recursive: true });
     writeFileSync(join(data2, "config.json"), JSON.stringify({
       profile: { name: "JC", email: "jc@gox.ca" },

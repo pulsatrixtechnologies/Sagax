@@ -64,7 +64,7 @@ async function boot(fixture: Fixture): Promise<void> {
 
 async function launch(name: "desktop" | "cloud"): Promise<Fixture> {
   const home = mkdtempSync(join(tmpdir(), `omb-move-${name}-`));
-  const dataDir = join(home, ".openmausbot");
+  const dataDir = join(home, ".sagax");
   mkdirSync(dataDir, { recursive: true });
   const cli = join(home, "fixture-claude.mjs");
   writeFileSync(cli, `#!/usr/bin/env node

@@ -35,7 +35,7 @@ describe.skipIf(process.platform === "win32" || process.getuid?.() === 0)("fleet
     fixture.account = "";
     fixture.calls = [];
     mkdirSync(fixture.home, { mode: 0o700 });
-    data = join(fixture.home, ".openmausbot");
+    data = join(fixture.home, ".sagax");
     file = join(data, "config.json");
   });
   afterEach(async () => { await removeTempDir(root); });

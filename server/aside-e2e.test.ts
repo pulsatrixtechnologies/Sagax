@@ -77,10 +77,10 @@ posixOnly("peer aside lane e2e", () => {
     chmodSync(FAKE_CLAUDE, 0o755);
     chmodSync(FAKE_ACP, 0o755);
     home = mkdtempSync(join(tmpdir(), "omb-aside-"));
-    mkdirSync(join(home, ".openmausbot"), { recursive: true });
+    mkdirSync(join(home, ".sagax"), { recursive: true });
     finishGate = join(home, "finish-aside-turn.gate");
     writeFileSync(
-      join(home, ".openmausbot", "config.json"),
+      join(home, ".sagax", "config.json"),
       JSON.stringify({
         instances: {
           // the busy target: a slow fake claude turn parked in its

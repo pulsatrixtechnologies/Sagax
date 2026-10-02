@@ -60,7 +60,7 @@ const CLI_OWNER = "cli-owner-token-0123456789abcdefghijklmnopq";
 const LEGACY_BEARER = "omb_sess_legacy-device-paired-before-the-organization-0001";
 /** A session as the server keeps it (sessions.json): the person behind it. */
 const storedSession = (id: string): { principalId?: string; scopes: string[] } | undefined => {
-  const doc = JSON.parse(readFileSync(join(home, ".openmausbot", "sessions.json"), "utf8")) as { sessions?: Array<{ id: string; principalId?: string; scopes: string[] }> };
+  const doc = JSON.parse(readFileSync(join(home, ".sagax", "sessions.json"), "utf8")) as { sessions?: Array<{ id: string; principalId?: string; scopes: string[] }> };
   return doc.sessions?.find((s) => s.id === id);
 };
 
@@ -165,7 +165,7 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-oidc-session-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     const now = Date.now();
     writeFileSync(join(data, "sessions.json"), JSON.stringify({ version: 1, sessions: [{

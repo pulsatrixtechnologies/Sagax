@@ -124,11 +124,11 @@ beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-people-invite-"));
   captureFile = join(home, "mail-capture.jsonl");
   const staticDir = join(home, "static");
-  mkdirSync(join(home, ".openmausbot"), { recursive: true });
+  mkdirSync(join(home, ".sagax"), { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });
   writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>Served UI</title>");
   // No sign-in list on disk and none in the environment: nobody is welcome yet.
-  writeFileSync(join(home, ".openmausbot", "config.json"), JSON.stringify({ instances: { fixture: { driver: "people-invite-test-shadow" } } }));
+  writeFileSync(join(home, ".sagax", "config.json"), JSON.stringify({ instances: { fixture: { driver: "people-invite-test-shadow" } } }));
   child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
     cwd: ROOT,
     env: {

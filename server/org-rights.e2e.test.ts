@@ -169,7 +169,7 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-rights-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
@@ -356,7 +356,7 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     await waitFor(async () => (await api("GET", `/api/me/engines/codex/login/status?flowId=${encodeURIComponent(flowId)}`, erin)).body.auth?.phase === "succeeded", 20_000);
     const engines = (await api("GET", "/api/me/engines", erin)).body.engines as Array<{ instanceId: string; subscription: { signedIn: boolean }; myTurns: string }>;
     expect(engines.find((e) => e.instanceId === "codex")).toMatchObject({ subscription: { supported: true, signedIn: true }, myTurns: "subscription" });
-    const dir = join(home, ".openmausbot", "principals", ids.erin!, "codex");
+    const dir = join(home, ".sagax", "principals", ids.erin!, "codex");
     expect(statSync(dir).mode & 0o777).toBe(0o700);
     expect(statSync(join(dir, ".pulsabot-login.json")).mode & 0o777).toBe(0o600);
     // another person's session cannot read erin's flow, and no engine without personal sign-in

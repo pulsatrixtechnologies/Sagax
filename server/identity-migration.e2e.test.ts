@@ -97,7 +97,7 @@ function identitySnapshot() {
 posixOnly("identity migration at boot", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-identity-migration-"));
-    data = join(home, ".openmausbot");
+    data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     write("config.json", { profile: { name: "JC", email: "jc@gox.ca" } });
     // A first boot only builds a valid bot and channel; they are then

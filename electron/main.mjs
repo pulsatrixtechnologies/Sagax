@@ -86,6 +86,7 @@ import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
+import { defaultDataDir } from "./legacy-names.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
 import { cloudHomeConnectUrl, withCloudHome } from "./cloud-home.mjs";
@@ -94,12 +95,18 @@ import { cloudPageSenderAllowed, createCloudMove, parseCloudMoveStatus } from ".
 import { createOrgLibrary } from "./org-library.mjs";
 import { createCompanyBackups } from "./company-backups.mjs";
 import { createCompanyBackupSchedule } from "./company-backup-schedule.mjs";
-import { keepUserDataInPlace } from "./user-data-location.mjs";
+import { keepUserDataInPlace, RUNTIME_NAME } from "./user-data-location.mjs";
+import { migrateSafeStorageKeychain } from "./keychain-migration.mjs";
 import { FULL_NAME } from "./app-name.mjs";
 
-// Before anything reads userData: the on-screen name (Sagax) must never move
-// the data folder or the keychain secret (see user-data-location.mjs).
+// Before anything reads userData: the folder is pinned (moved once from
+// "openmausbot" to "sagax"), never derived from the on-screen name, and the
+// keychain secret keeps its name (see user-data-location.mjs).
 keepUserDataInPlace(app);
+// Inert while the runtime name is still RUNTIME_NAME. Once it changes, the
+// new "<name> Safe Storage" keychain entry is copied from the old one before
+// safeStorage is first used (keychain-migration.mjs).
+if (app.getName() !== RUNTIME_NAME) migrateSafeStorageKeychain({ to: app.getName(), log: (line) => console.warn(line) });
 // The native About panel (macOS app menu, Linux) would say "openmausbot".
 app.setAboutPanelOptions({ applicationName: FULL_NAME });
 
@@ -598,12 +605,17 @@ const serverSupervisor = createServerSupervisor({
   log: slog,
 });
 
+let resolvedDesktopDataDir = null;
 function desktopDataDir() {
   // Match the historical desktop fallback for an unset or empty override,
   // then pass this exact resolved path to the utility child. server/config.ts
   // intentionally treats an empty OMB_DATA_DIR differently, so inheriting it
   // without normalization would lease one directory and write another.
-  return process.env.OMB_DATA_DIR || path.join(app.getPath("home"), ".openmausbot");
+  // Resolved once: the first call moves ~/.openmausbot to ~/.sagax when no
+  // running copy holds it (legacy-names.mjs), and the answer must not change
+  // under a running app.
+  resolvedDesktopDataDir ??= process.env.OMB_DATA_DIR || defaultDataDir({ home: app.getPath("home") });
+  return resolvedDesktopDataDir;
 }
 
 async function stopUtilityServer(proc, timeoutMs = UTILITY_SERVER_STOP_TIMEOUT_MS) {
@@ -3015,7 +3027,7 @@ ipcMain.handle("desktop:export-diagnostics", localOnly("desktop:export-diagnosti
 // copy of the chat UI instead of the file. Ask where to put it and copy it
 // there instead: a save dialog tells the user the file landed somewhere and
 // where, which a silent copy into ~/Downloads does not. The path is
-// renderer-controlled, so it must resolve inside ~/.openmausbot and be a
+// renderer-controlled, so it must resolve inside the data folder and be a
 // regular file — never a symlink escape or directory.
 ipcMain.handle("desktop:save-file", localOnly("desktop:save-file", async (event, rawPath) => {
   return withSavableFile(rawPath, { home: os.homedir() }, async ({ defaultName, copyTo }) => {

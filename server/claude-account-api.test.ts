@@ -58,7 +58,7 @@ async function idle(id: string) {
 
 beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-claude-account-api-"));
-  dataDir = join(home, ".openmausbot");
+  dataDir = join(home, ".sagax");
   mkdirSync(dataDir, { recursive: true });
   cli = join(home, "fixture-claude.mjs");
   // The official-style auth probe stays synthetic; turns reuse the repository

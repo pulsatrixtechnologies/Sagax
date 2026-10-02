@@ -107,7 +107,7 @@ const month = () => new Date().toISOString().slice(0, 7);
 posixOnly("admin activity log", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-admin-activity-"));
-    data = join(home, ".openmausbot");
+    data = join(home, ".sagax");
     mkdirSync(join(data, "decisions"), { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({ signIn: { admins: [BOSS], members: [ADA] } }));
     // One card Ada answered earlier, as the decision log recorded it (#1708).

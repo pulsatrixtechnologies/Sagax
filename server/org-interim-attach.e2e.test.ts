@@ -100,7 +100,7 @@ posixOnly("slice 8: people from before Perspicax are attached by an admin, never
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-interim-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     // Before Perspicax: a solo server with a bot and a room.
     await start({});
@@ -180,9 +180,9 @@ posixOnly("slice 8: people from before Perspicax are attached by an admin, never
     const orgBots = (await call("GET", "/api/org/bots", alice)).body.bots as Array<{ id: string; ownerPrincipalId: string }>;
     expect(orgBots.find((bot) => bot.id === legacyId)?.ownerPrincipalId).toBe(ids.eve);
     expect(await call("POST", "/api/org/interim-people/attach", alice, { interimPrincipalId: INTERIM, principalId: ids.eve })).toMatchObject({ status: 400, body: { code: "not_interim" } });
-    const principals = JSON.parse(readFileSync(join(home, ".openmausbot", "principals.json"), "utf8")).principals as Array<{ id: string; mergedInto?: string }>;
+    const principals = JSON.parse(readFileSync(join(home, ".sagax", "principals.json"), "utf8")).principals as Array<{ id: string; mergedInto?: string }>;
     expect(principals.find((person) => person.id === INTERIM)?.mergedInto).toBe(ids.eve);
-    const dir = join(home, ".openmausbot", "admin-activity");
+    const dir = join(home, ".sagax", "admin-activity");
     const rows = readdirSync(dir).flatMap((file) => readFileSync(join(dir, file), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
     const row = rows.find((entry: { action: string }) => entry.action === "person.attach_interim");
     expect(row).toMatchObject({ category: "org", before: { principalId: INTERIM }, after: { principalId: ids.eve } });

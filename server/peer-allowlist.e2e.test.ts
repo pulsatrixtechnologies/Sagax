@@ -58,7 +58,7 @@ const fixture = (displayName: string, dump?: string) => ({
 
 beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-peer-allowlist-"));
-  const data = join(home, ".openmausbot");
+  const data = join(home, ".sagax");
   const staticDir = join(home, "static");
   mkdirSync(data, { recursive: true });
   mkdirSync(staticDir, { recursive: true });

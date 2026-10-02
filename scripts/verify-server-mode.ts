@@ -30,8 +30,8 @@ const port = await freePortBlock([0, 1]);
 if (RESERVED.includes(port) || RESERVED.includes(port + 1)) throw new Error("reserved port, run again");
 const origin = `http://127.0.0.1:${port}`;
 const home = mkdtempSync(join(tmpdir(), "omb-verify-servermode-"));
-mkdirSync(join(home, ".openmausbot"), { recursive: true });
-writeFileSync(join(home, ".openmausbot", "config.json"), "{}");
+mkdirSync(join(home, ".sagax"), { recursive: true });
+writeFileSync(join(home, ".sagax", "config.json"), "{}");
 // The server's own page: what a remote environment used to show.
 const decoy = mkdtempSync(join(tmpdir(), "omb-verify-servermode-decoy-"));
 writeFileSync(join(decoy, "index.html"), "<!doctype html><title>SERVER IMAGE UI</title><p>served by the server</p>");

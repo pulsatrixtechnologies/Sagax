@@ -68,7 +68,7 @@ async function api(method: string, path: string, options: { body?: unknown; remo
 
 beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-cloud-home-server-"));
-  const dataDir = join(home, ".openmausbot");
+  const dataDir = join(home, ".sagax");
   mkdirSync(dataDir, { recursive: true });
   // A signed-in Claude Code whose turns record the environment they were given.
   // While the hang marker exists, a new turn records itself elsewhere and
@@ -155,7 +155,7 @@ it("offers the included computers, voice and decisions with no key, and never sh
   expect(status.body.box).toEqual({ configured: true, included: true });
   expect(status.body.tts).toMatchObject({ configured: true, ready: true, provider: "elevenlabs", voice: "preset0voice0id", included: true });
   expect(status.body.decider).toEqual({ provider: "jev", configured: true, included: true, enabled: true, jobs: { roomRouting: true } });
-  const saved = readFileSync(join(home, ".openmausbot", "config.json"), "utf8");
+  const saved = readFileSync(join(home, ".sagax", "config.json"), "utf8");
   for (const includedToken of includedTokens) {
     expect(JSON.stringify(status.body)).not.toContain(includedToken);
     expect(saved).not.toContain(includedToken);
@@ -345,7 +345,7 @@ it("records when a bot's turn first finished here, once, in the Cloud's own sett
   const first = async () => (await api("GET", "/api/config")).body.onboarding?.firstTurnAt as string | undefined;
   await expect.poll(first, { timeout: 15_000 }).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   const recorded = await first();
-  expect(JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8")).onboarding.firstTurnAt).toBe(recorded);
+  expect(JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8")).onboarding.firstTurnAt).toBe(recorded);
   // A later turn leaves it as it was.
   const created = await api("POST", "/api/bots", { body: {
     name: "Second fixture", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" }, requireAvailableModel: true,

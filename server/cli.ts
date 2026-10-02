@@ -46,6 +46,7 @@ import { explainTailscaleFailure, tailscaleServe, tailscaleServeOff, tailscaleSt
 import { defaultSetupIo, SetupCancelled, type SetupIo } from "./cli-prompts.ts";
 import { normalizePhoneOrigin, phonePairingInstructions, runPhoneSetup } from "./cli-phone-setup.ts";
 import type { AppConfig } from "./config.ts";
+import { defaultDataDir } from "../electron/legacy-names.mjs";
 import {
   cleanupTunnelOrigin,
   createTunnelAccount,
@@ -67,6 +68,8 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 export interface CliOptions {
+  /** No --data-dir and no OMB_DATA_DIR / SAGAX_DATA_DIR: ~/.sagax (or an old ~/.openmausbot). */
+  dataDirIsDefault?: boolean;
   command: "setup" | "start" | "serve" | "pair" | "sessions" | "status" | "login" | "logout" | "access" | "service" | "browser" | "fleet" | "help";
   port: number;
   dataDir: string;
@@ -125,7 +128,8 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   const options: CliOptions = {
     command: command === "--help" || command === "-h" ? "help" : (command as CliOptions["command"]),
     port: Number(env.OMB_PORT || 8799),
-    dataDir: env.OMB_DATA_DIR || join(homedir(), ".openmausbot"),
+    dataDir: env.OMB_DATA_DIR || defaultDataDir({ home: homedir(), migrate: false }),
+    ...(env.OMB_DATA_DIR ? {} : { dataDirIsDefault: true }),
     tailscale: false,
     tunnel: false,
     client: false,
@@ -144,7 +148,10 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     };
     try {
       if (arg === "--port") options.port = Number(value());
-      else if (arg === "--data-dir") options.dataDir = resolve(value());
+      else if (arg === "--data-dir") {
+        options.dataDir = resolve(value());
+        delete options.dataDirIsDefault;
+      }
       else if (arg === "--label") options.label = value();
       else if (arg === "--public-url") options.publicUrl = value().replace(/\/+$/, "");
       else if (arg === "--tailscale") options.tailscale = true;
@@ -1117,6 +1124,9 @@ export async function runOnboardingCommand(
     io.error("Setup needs an interactive terminal. Run `npx openmausbot setup` in a terminal, then use `npx openmausbot serve` for unattended starts.");
     return 1;
   }
+  // The default folder moves from ~/.openmausbot to ~/.sagax here, once,
+  // unless a running copy holds it; a folder named on purpose never moves.
+  if (options.dataDirIsDefault) options.dataDir = defaultDataDir({ home: homedir() });
   process.env.OMB_DATA_DIR = options.dataDir;
   if (options.command !== "setup" && await (flow.running ?? isWorkspaceRunning)(options)) {
     if (options.local || options.tunnel || options.tailscale || options.publicUrl) {
@@ -1159,7 +1169,7 @@ export async function runOnboardingCommand(
     }
     if (options.command === "setup") {
       io.log("\nAll set. Start with: openmausbot (or npx openmausbot without a global install).");
-      if (options.dataDir !== join(homedir(), ".openmausbot") || options.port !== 8799) {
+      if (!options.dataDirIsDefault || options.port !== 8799) {
         io.log(`Use the same --data-dir (${options.dataDir}) and --port (${options.port}) options when starting.`);
       }
       return 0;

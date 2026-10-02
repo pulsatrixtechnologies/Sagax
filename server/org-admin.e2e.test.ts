@@ -146,7 +146,7 @@ posixOnly("Perspicax organization, slice 7: the console admin API", () => {
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-admin-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
@@ -309,7 +309,7 @@ posixOnly("Perspicax organization, slice 7: the console admin API", () => {
       return { id, answer: () => answer };
     };
     try {
-      const data = realpathSync(join(home, ".openmausbot"));
+      const data = realpathSync(join(home, ".sagax"));
       // a server command of a member's bot: an admin card
       const command = await ask("Bash", { command: "cat /proc/1/environ" });
       // a file in its own workspace: the owner's card

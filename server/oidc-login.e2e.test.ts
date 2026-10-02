@@ -111,7 +111,7 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-oidc-login-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: { grok: { driver: "grokAgent", config: { cli: FAKE_CLI, fullAuto: false } } },
@@ -153,14 +153,14 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
     expect(session.body.principalId).toMatch(/^pr_/);
     ids.principal = session.body.principalId;
     // the person is keyed by (iss, sub); the email is an attribute
-    const principals = JSON.parse(readFileSync(join(home, ".openmausbot", "principals.json"), "utf8")).principals as any[];
+    const principals = JSON.parse(readFileSync(join(home, ".sagax", "principals.json"), "utf8")).principals as any[];
     expect(principals.find((p) => p.id === ids.principal)).toMatchObject({ subject: { iss: idp.issuer, sub: ADMIN.sub }, email: "alice@example.test", orgRole: "admin" });
     // slice 2 keeps the grant, sealed: nothing from the provider reaches the
     // stored sessions, and the vault holds no readable token
     expect(idp.revoked).toEqual([]);
-    const stored = readFileSync(join(home, ".openmausbot", "sessions.json"), "utf8");
+    const stored = readFileSync(join(home, ".sagax", "sessions.json"), "utf8");
     expect(stored).not.toMatch(/pxlr1\.|pxlo1\.|eyJ/);
-    expect(readFileSync(join(home, ".openmausbot", "idp-grants.enc"), "utf8")).not.toMatch(/pxlr1\./);
+    expect(readFileSync(join(home, ".sagax", "idp-grants.enc"), "utf8")).not.toMatch(/pxlr1\./);
   });
 
   it("scenario A: the admin creates a bot on the server and gets its answer; another browser reads the thread", async () => {
@@ -242,7 +242,7 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
 
   it("keeps email solo: a sign-in list and mail on disk change nothing on an organization server", async () => {
     // As if an older build or `openmausbot access add` had written them.
-    const file = join(home, ".openmausbot", "config.json");
+    const file = join(home, ".sagax", "config.json");
     let current: Record<string, unknown> = {};
     try { current = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>; } catch { /* none yet */ }
     writeFileSync(file, JSON.stringify({

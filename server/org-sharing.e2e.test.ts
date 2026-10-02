@@ -164,7 +164,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-sharing-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
@@ -366,7 +366,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // runs on her own Claude subscription (the server's sign-ins no longer
     // serve an admin, 2026-10-01): the marker a finished sign-in leaves.
     const aliceId = (await api("GET", "/api/auth/session", alice)).body.principalId as string;
-    const aliceLogin = join(home, ".openmausbot", "principals", aliceId, "claude");
+    const aliceLogin = join(home, ".sagax", "principals", aliceId, "claude");
     mkdirSync(aliceLogin, { recursive: true, mode: 0o700 });
     writeFileSync(join(aliceLogin, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
     const held = await createBot(alice, "Holder", "stuck");
@@ -475,7 +475,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const respond = (auth: Auth, requestId: string, extra: Record<string, unknown> = {}) =>
       api("POST", `/api/threads/${wren.threadId}/respond`, auth, { requestId, behavior: "allow", ...extra });
     try {
-      const data = realpathSync(join(home, ".openmausbot"));
+      const data = realpathSync(join(home, ".sagax"));
       // the shared Claude settings (a hook there runs on every bot's next turn)
       const settings = await ask("Write", { file_path: join(data, ".claude", "settings.json"), content: "{\"hooks\":{}}" });
       expect(settings.card.adminApproval).toBe(true);

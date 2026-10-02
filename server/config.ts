@@ -18,6 +18,7 @@ import { isRemoteMcpServer, parseStoredMcpServer } from "./mcp-registry.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 import { CLOUD_SEAT_IDLE_STOP_MS } from "./cloud-overflow.ts";
 import { cloudHomeConfigured } from "./cloud-home.ts";
+import { defaultDataDir } from "../electron/legacy-names.mjs";
 
 const optionalText = z.string().optional();
 const SSH_ALIAS = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -1041,8 +1042,10 @@ export function providerReloadKeys(patch: object): string[] {
   return Object.keys(patch).filter((key) => !FLEET_NEUTRAL_KEYS.has(key));
 }
 
-// OMB_DATA_DIR isolates test/soak rigs from the user's real fleet.
-export const DATA_DIR = process.env.OMB_DATA_DIR ?? join(homedir(), ".openmausbot");
+// OMB_DATA_DIR (SAGAX_DATA_DIR) isolates test/soak rigs from the user's real
+// fleet. The default is ~/.sagax; a first start moves ~/.openmausbot there
+// unless a running copy still holds it (electron/legacy-names.mjs).
+export const DATA_DIR = process.env.OMB_DATA_DIR ?? defaultDataDir({ home: homedir() });
 const LEGACY_DATA_DIR = join(homedir(), ".opengrokbot");
 export const EVENTS_DIR = join(DATA_DIR, "events");
 export const NATIVE_DIR = join(DATA_DIR, "native");

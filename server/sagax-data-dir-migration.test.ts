@@ -1,14 +1,14 @@
-// A user upgrading from the pre-rename data dir (~/.opengrokbot) must find
-// everything in ~/.sagax after the first boot. Anything that touches
-// the new dir before ensureDirs() runs would make that rename a no-op and
-// boot the user into an empty workspace — this test pins the order.
+// A user upgrading from ~/.openmausbot (before Sagax) must find everything in
+// ~/.sagax after the first boot, with a breadcrumb and the old path linking
+// to the new folder (electron/legacy-names.mjs defaultDataDir).
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { MIGRATION_BREADCRUMB } from "../electron/legacy-names.mjs";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
@@ -21,8 +21,8 @@ let child: ChildProcess;
 let stderr = "";
 
 beforeAll(async () => {
-  home = mkdtempSync(join(tmpdir(), "omb-legacy-test-"));
-  const legacy = join(home, ".opengrokbot");
+  home = mkdtempSync(join(tmpdir(), "sagax-openmausbot-migration-"));
+  const legacy = join(home, ".openmausbot");
   mkdirSync(legacy, { recursive: true });
   // A non-product shadow keeps startup deterministic: an empty map selects
   // the user's full default engine fleet, whose installed CLI probes are not
@@ -63,11 +63,15 @@ afterAll(async () => {
   await removeTempDir(home);
 });
 
-describe("legacy data dir", () => {
-  it("is renamed to the new name on first boot, with its contents and a fresh environment id", () => {
+describe("openmausbot data dir", () => {
+  it("is moved to ~/.sagax on first boot, with its contents, a breadcrumb and a link back", () => {
     const fresh = join(home, ".sagax");
-    expect(existsSync(join(home, ".opengrokbot"))).toBe(false);
     expect(readFileSync(join(fresh, "keep-me.txt"), "utf8")).toBe("carried over");
     expect(readFileSync(join(fresh, "environment-id"), "utf8").trim()).toMatch(/^[0-9a-f-]{36}$/);
+    const crumb = JSON.parse(readFileSync(join(fresh, MIGRATION_BREADCRUMB), "utf8"));
+    expect(crumb).toMatchObject({ from: join(home, ".openmausbot"), to: fresh });
+    expect(lstatSync(join(home, ".openmausbot")).isSymbolicLink()).toBe(true);
+    expect(readFileSync(join(home, ".openmausbot", "keep-me.txt"), "utf8")).toBe("carried over");
+    expect(existsSync(`${fresh}.migrating.lock`)).toBe(false);
   });
 });

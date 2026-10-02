@@ -133,7 +133,7 @@ const bots = async () => (await api("GET", "/api/bots?messages=0")).body.bots as
 const botState = async (botId: string) => (await bots()).find((bot) => bot.id === botId);
 const taskOf = async (botId: string, threadId: string) => (await botState(botId))?.tasks.find((task: any) => task.threadId === threadId);
 const messages = async (threadId: string) => (await api("GET", `/api/threads/${threadId}/messages?limit=100`)).body.messages as any[];
-const handoffs = (): any[] => JSON.parse(readFileSync(join(home, ".openmausbot", "room-handoffs.json"), "utf8"));
+const handoffs = (): any[] => JSON.parse(readFileSync(join(home, ".sagax", "room-handoffs.json"), "utf8"));
 const coordinated = async (headers: Record<string, string>, botId: string, message: string, requestKey: string) => {
   const response = await api("POST", "/api/internal/coordinate-bots", { botIds: [botId], message, requestKey }, headers);
   expect(response.status, JSON.stringify(response.body)).toBe(200);
@@ -158,7 +158,7 @@ beforeAll(async () => {
   chmodSync(FAKE_ACP, 0o755);
   home = mkdtempSync(join(tmpdir(), "omb-thread-aware-"));
   gates = join(home, "gates");
-  const data = join(home, ".openmausbot");
+  const data = join(home, ".sagax");
   mkdirSync(data, { recursive: true });
   mkdirSync(gates, { recursive: true });
   // Every turn holds until its gate exists, and dumps its argv/env/prompt
