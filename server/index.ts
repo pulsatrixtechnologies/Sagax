@@ -4540,7 +4540,7 @@ function delegatedFullAccess(from: BotRecord, fromThreadId: string, target: BotR
     sameBot: from.id === target.id,
     recipientDriverKind: registry.cliTarget(target.modelSelection.instanceId)?.driverKind,
     // Organization server: only a bot whose owner allowed Full access (and
-    // while the organization allows it) inherits a Chief's Full.
+    // while the organization allows it) inherits a Primary Bot's Full.
     recipientMemberOwned: orgDeniesFull(target),
   });
 }
