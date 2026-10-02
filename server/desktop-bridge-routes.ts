@@ -108,7 +108,18 @@ export function createDesktopBridgeRoutes(deps: {
         return json(res, 200, { ok: true, person });
       }
       const [, id, action] = ID_ROUTE.exec(path)!;
-      if (action === "poll") return json(res, 200, { job: await deps.bridges.poll(id!, auth.session.id, secret) });
+      if (action === "poll") {
+        let open = true;
+        res.once("close", () => { open = false; });
+        req.once("aborted", () => { open = false; });
+        const job = await deps.bridges.poll(id!, auth.session.id, secret, undefined, () => open && !res.destroyed);
+        if (!open || res.destroyed) {
+          // Nobody is listening: a job taken now would be lost, so put it back.
+          if (job) deps.bridges.requeue(id!, auth.session.id, secret, job.id);
+          return;
+        }
+        return json(res, 200, { job });
+      }
       if (action === "lease") return json(res, 200, { active: deps.bridges.liveJob(id!, auth.session.id, secret, String(body?.jobId)) });
       if (action === "result") deps.bridges.complete(id!, auth.session.id, secret, String(body?.jobId), body?.result);
       if (action === "disconnect") deps.bridges.disconnect(id!, auth.session.id, secret);

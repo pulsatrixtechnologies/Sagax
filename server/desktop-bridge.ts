@@ -203,7 +203,9 @@ export class DesktopBridges {
     }));
   }
 
-  async poll(id: string, session: string, secret: string, wait = POLL_MS) {
+  /** `listening`: the desktop's request is still open. A poll the desktop
+   * gave up on (app closed, network gone) does not count as seen. */
+  async poll(id: string, session: string, secret: string, wait = POLL_MS, listening: () => boolean = () => true) {
     const entry = this.authorize(id, session, secret);
     if (entry.wake) throw failure("A poll is already running for this desktop");
     entry.seen = this.now();
@@ -221,8 +223,19 @@ export class DesktopBridges {
       entry.wake = () => { clearTimeout(timer); entry.wake = undefined; resolve(); };
     });
     this.authorize(id, session, secret);
+    if (!listening()) return null;
     entry.seen = this.now();
     return next();
+  }
+
+  /** A job handed to a poll whose desktop was gone before the answer left:
+   * it was never seen, so it may be handed out again. */
+  requeue(id: string, session: string, secret: string, jobId: string) {
+    try {
+      const entry = this.authorize(id, session, secret);
+      const job = entry.jobs.get(jobId);
+      if (job) job.sent = false;
+    } catch { /* the bridge is gone; its jobs fail with it */ }
   }
 
   liveJob(id: string, session: string, secret: string, jobId: string) {

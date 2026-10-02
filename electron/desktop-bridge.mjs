@@ -325,7 +325,7 @@ const describe = operation => {
  * server while the app is in server mode and signed in. */
 export function createDesktopBridge({
   environment, fetch: fetchImpl, cookieHeader, home = os.homedir(), attachmentsDir, protectedPaths = [], activityFile,
-  fetchUrl = globalThis.fetch, browse, cuaConnection, hostControl, resolveProxy, lookup, WebSocketImpl = globalThis.WebSocket,
+  fetchUrl = globalThis.fetch, browse, cuaConnection, hostControl, resolveProxy, lookup, tunnelConnect, WebSocketImpl = globalThis.WebSocket,
   platform = process.platform, hostname = os.hostname(), onChange = () => {}, localVm = createLocalVm(), retryMs = 5000,
 }) {
   const roots = [...protectedPaths, ...personalSecretPaths(home)];
@@ -355,6 +355,7 @@ export function createDesktopBridge({
     const signal = abort.signal;
     let tunnel = null;
     let cua = null;
+    let registered = null;
     const loop = async () => {
       while (!signal.aborted) {
         const id = randomUUID();
@@ -369,6 +370,7 @@ export function createDesktopBridge({
             id, name: hostname.slice(0, 120) || "Computer", platform: ["darwin", "win32", "linux"].includes(platform) ? platform : "linux", attachmentsDir,
             capabilities: { shell: true, files: true, fetch: true, browser: Boolean(browse), computer: Boolean(cuaConnection), localVm: true },
           }, signal, secret);
+          registered = { id, secret };
           set({ connected: true, error: undefined });
           const preferences = async () => {
             try {
@@ -387,7 +389,7 @@ export function createDesktopBridge({
               tunnel = openDesktopTunnel({
                 url: `${env.origin.replace(/^http/, "ws")}/api/desktop-bridge/${id}/tunnel`,
                 headers: { cookie: await cookieHeader(env.origin), origin: env.origin, "x-sagax-bridge-secret": secret },
-                network: () => network, resolveProxy, lookup, WebSocketImpl,
+                network: () => network, resolveProxy, lookup, WebSocketImpl, ...(tunnelConnect ? { connect: tunnelConnect } : {}),
                 record: ({ host, port, ok, error }) => activity.record({ env, action: "network", detail: `${host}:${port}`, ok, error }),
               });
               live.addEventListener("abort", () => tunnel?.close(), { once: true });
@@ -458,6 +460,9 @@ export function createDesktopBridge({
         abort.abort();
         tunnel?.close();
         cua?.close();
+        // Say goodbye so the server stops routing here at once (best effort).
+        if (registered) void request(env, `/api/desktop-bridge/${registered.id}/disconnect`, {}, undefined, registered.secret).catch(() => {});
+        registered = null;
         set({ connected: false, tunnel: false });
       },
     };
