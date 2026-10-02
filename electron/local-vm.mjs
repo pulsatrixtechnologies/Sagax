@@ -1,0 +1,491 @@
+// The Local VM on this computer, desktop side (server mode): the Sagax Linux
+// desktop container the person's bots can use, reached through the desktop
+// bridge (electron/desktop-bridge.mjs, server/desktop-bridge-routes.ts).
+//
+// What it does, and what it never does:
+// - Finds the container runtime this computer has (Docker Desktop, OrbStack,
+//   Colima, Rancher Desktop, Podman, plain Docker), even when the app was
+//   opened from the Dock with a bare PATH, and says which one it found.
+// - Only ever touches containers labeled com.openmausbot.local-vm=1.
+// - Never starts a container bound to another folder than this app's data
+//   dir (`<data>/vm-home`) or to a folder that no longer exists (a test's
+//   deleted temp home once left one like that): it is "stale", and setup
+//   recreates it, keeping the files of the folder it was bound to.
+// - Setup (one click) runs in the background with visible steps: start the
+//   runtime if it is installed but stopped, prepare the image, create the
+//   container from the server's own recipe (server/container-computer.ts
+//   localVmDesktopSpec, checked here), start it. Idempotent.
+// - Installs nothing by itself: an install opens the vendor's download page,
+//   or runs Homebrew, only after the person confirms in an OS dialog.
+import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+export const LOCAL_VM_LABEL = "com.openmausbot.local-vm";
+export const WORKSPACE_PATH_LABEL = "com.openmausbot.workspace-path";
+export const TEST_RUN_LABEL = "com.openmausbot.test-run";
+export const REAL_CONTAINER = "openmausbot-computer";
+const WORKSPACE_PLACEHOLDER = "__SAGAX_WORKSPACE__";
+const PASSWORD_PLACEHOLDER = "__SAGAX_VNC_PW__";
+const CUA_EXECUTABLE = "/usr/local/libexec/openmausbot/cua-driver";
+const CUA_SOCKET = "/run/user/1000/openmausbot-cua.sock";
+const OUTPUT_LIMIT = 256 * 1024;
+
+const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
+
+/** Run one program with arguments (never a shell line). */
+export function execArgv(argv, { timeoutSeconds = 60, env = process.env } = {}) {
+  return new Promise(resolve => {
+    let child;
+    try {
+      child = spawn(argv[0], argv.slice(1), { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    } catch (error) {
+      resolve({ code: -1, stdout: "", stderr: String(error?.message ?? error) });
+      return;
+    }
+    const out = []; const err = []; let bytes = 0;
+    const take = target => chunk => { bytes += chunk.length; if (bytes <= OUTPUT_LIMIT * 8) target.push(chunk); };
+    child.stdout.on("data", take(out));
+    child.stderr.on("data", take(err));
+    const timer = setTimeout(() => child.kill("SIGKILL"), timeoutSeconds * 1000);
+    child.once("error", error => { clearTimeout(timer); resolve({ code: -1, stdout: "", stderr: String(error?.message ?? error) }); });
+    child.once("close", code => {
+      clearTimeout(timer);
+      resolve({ code: code ?? -1, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") });
+    });
+  });
+}
+
+/** Where container CLIs live when PATH does not say (an app opened from the
+ * Dock gets /usr/bin:/bin only). */
+export function runtimeCandidates({ home = os.homedir(), platform = process.platform } = {}) {
+  if (platform === "win32") {
+    const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+    return [
+      { runtime: "docker", cli: "docker" },
+      { runtime: "docker", cli: path.win32.join(programFiles, "Docker", "Docker", "resources", "bin", "docker.exe") },
+      { runtime: "docker", cli: path.win32.join(programFiles, "Rancher Desktop", "resources", "resources", "win32", "bin", "docker.exe") },
+      { runtime: "podman", cli: "podman" },
+      { runtime: "podman", cli: path.win32.join(programFiles, "RedHat", "Podman", "podman.exe") },
+    ];
+  }
+  return [
+    { runtime: "docker", cli: "docker" },
+    { runtime: "docker", cli: "/usr/local/bin/docker" },
+    { runtime: "docker", cli: "/opt/homebrew/bin/docker" },
+    { runtime: "docker", cli: path.join(home, ".orbstack", "bin", "docker") },
+    { runtime: "docker", cli: "/Applications/OrbStack.app/Contents/MacOS/xbin/docker" },
+    { runtime: "docker", cli: "/Applications/Docker.app/Contents/Resources/bin/docker" },
+    { runtime: "docker", cli: path.join(home, ".rd", "bin", "docker") },
+    { runtime: "docker", cli: "/usr/bin/docker" },
+    { runtime: "podman", cli: "podman" },
+    { runtime: "podman", cli: "/opt/podman/bin/podman" },
+    { runtime: "podman", cli: "/opt/homebrew/bin/podman" },
+    { runtime: "podman", cli: "/usr/local/bin/podman" },
+    { runtime: "podman", cli: "/usr/bin/podman" },
+  ];
+}
+
+/** Sockets and apps that show a runtime is installed even when its CLI is
+ * not found or its engine is stopped. */
+export function runtimeFootprints({ home = os.homedir(), platform = process.platform, env = process.env } = {}) {
+  const list = [];
+  if (env.DOCKER_HOST) list.push({ product: productFromEndpoint(env.DOCKER_HOST) ?? "Docker", path: env.DOCKER_HOST, kind: "socket" });
+  if (platform === "win32") {
+    const programFiles = env.ProgramFiles || "C:\\Program Files";
+    list.push(
+      { product: "Docker Desktop", path: path.win32.join(programFiles, "Docker", "Docker", "Docker Desktop.exe"), kind: "app" },
+      { product: "Rancher Desktop", path: path.win32.join(programFiles, "Rancher Desktop", "Rancher Desktop.exe"), kind: "app" },
+      { product: "Podman", path: path.win32.join(programFiles, "RedHat", "Podman", "podman.exe"), kind: "app" },
+    );
+    return list;
+  }
+  list.push(
+    { product: "Docker Desktop", path: path.join(home, ".docker", "run", "docker.sock"), kind: "socket" },
+    { product: "OrbStack", path: path.join(home, ".orbstack", "run", "docker.sock"), kind: "socket" },
+    { product: "Colima", path: path.join(home, ".colima", "default", "docker.sock"), kind: "socket" },
+    { product: "Rancher Desktop", path: path.join(home, ".rd", "docker.sock"), kind: "socket" },
+    { product: "Docker", path: "/var/run/docker.sock", kind: "socket" },
+  );
+  if (platform === "darwin") {
+    list.push(
+      { product: "Docker Desktop", path: "/Applications/Docker.app", kind: "app" },
+      { product: "OrbStack", path: "/Applications/OrbStack.app", kind: "app" },
+      { product: "Rancher Desktop", path: "/Applications/Rancher Desktop.app", kind: "app" },
+      { product: "Podman", path: "/Applications/Podman Desktop.app", kind: "app" },
+      { product: "Colima", path: "/opt/homebrew/bin/colima", kind: "app" },
+      { product: "Colima", path: "/usr/local/bin/colima", kind: "app" },
+    );
+  }
+  return list;
+}
+
+/** Which product serves a Docker endpoint (a context's host or DOCKER_HOST). */
+export function productFromEndpoint(endpoint, osName = "") {
+  const value = String(endpoint ?? "").toLowerCase();
+  const name = String(osName ?? "").toLowerCase();
+  if (value.includes("orbstack") || name.includes("orbstack")) return "OrbStack";
+  if (value.includes(".colima") || name.includes("colima")) return "Colima";
+  if (value.includes("/.rd/") || value.includes("rancher") || name.includes("rancher")) return "Rancher Desktop";
+  if (value.includes("podman") || name.includes("podman")) return "Podman";
+  if (value.includes(".docker/run/docker.sock") || value.includes("docker_engine") || value.includes("docker-desktop") || name.includes("docker desktop")) return "Docker Desktop";
+  if (value) return "Docker";
+  return null;
+}
+
+/** The runtime this computer has: its CLI, whether its engine answers, the
+ * product, and what else is installed. */
+export async function detectRuntime({ exec = execArgv, home = os.homedir(), platform = process.platform, env = process.env, exists = fs.existsSync } = {}) {
+  const footprints = runtimeFootprints({ home, platform, env }).filter(item => item.kind === "socket" && item.path.includes("://") ? true : exists(item.path));
+  const installed = [...new Set(footprints.map(item => item.product))];
+  let firstCli = null;
+  for (const candidate of runtimeCandidates({ home, platform })) {
+    if (path.isAbsolute(candidate.cli) && !exists(candidate.cli)) continue;
+    const version = await exec([candidate.cli, "version", "--format", "{{.Client.Version}}"], { timeoutSeconds: 15, env: runtimeEnv(env, home, platform) });
+    if (version.code !== 0 && !/^\d/.test(version.stdout.trim())) continue;
+    firstCli ??= candidate;
+    const info = candidate.runtime === "docker"
+      ? await exec([candidate.cli, "info", "--format", "{{.OperatingSystem}}"], { timeoutSeconds: 20, env: runtimeEnv(env, home, platform) })
+      : await exec([candidate.cli, "info", "--format", "{{.Host.Os}}"], { timeoutSeconds: 20, env: runtimeEnv(env, home, platform) });
+    let endpoint = env.DOCKER_HOST || "";
+    if (!endpoint && candidate.runtime === "docker") {
+      const context = await exec([candidate.cli, "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"], { timeoutSeconds: 10, env: runtimeEnv(env, home, platform) });
+      if (context.code === 0) endpoint = context.stdout.trim();
+    }
+    const daemonUp = info.code === 0;
+    const product = candidate.runtime === "podman" ? "Podman" : productFromEndpoint(endpoint, daemonUp ? info.stdout.trim() : "") ?? installed[0] ?? "Docker";
+    if (daemonUp) return { found: true, runtime: candidate.runtime, cli: candidate.cli, product, endpoint, daemonUp: true, installed };
+  }
+  if (firstCli) {
+    const product = firstCli.runtime === "podman" ? "Podman" : installed.find(item => item !== "Docker") ?? installed[0] ?? "Docker";
+    return { found: true, runtime: firstCli.runtime, cli: firstCli.cli, product, endpoint: env.DOCKER_HOST || "", daemonUp: false, installed };
+  }
+  return { found: installed.length > 0, runtime: null, cli: null, product: installed[0] ?? null, endpoint: "", daemonUp: false, installed };
+}
+
+/** PATH with the runtimes' own bin folders, so credential helpers resolve. */
+export function runtimeEnv(env = process.env, home = os.homedir(), platform = process.platform) {
+  if (platform === "win32") return env;
+  const extra = ["/usr/local/bin", "/opt/homebrew/bin", path.join(home, ".orbstack", "bin"), "/Applications/Docker.app/Contents/Resources/bin", path.join(home, ".rd", "bin"), "/opt/podman/bin"];
+  const current = String(env.PATH ?? "").split(":").filter(Boolean);
+  return { ...env, PATH: [...current, ...extra.filter(dir => !current.includes(dir))].join(":") };
+}
+
+function samePath(a, b, platform) {
+  const clean = value => {
+    let out = String(value ?? "").replace(/^\/host_mnt(?=\/)/, "");
+    if (platform === "darwin") out = out.replace(/^\/private(?=\/)/, "");
+    out = out.replace(/[\\/]+$/, "");
+    return platform === "win32" || platform === "darwin" ? out.toLowerCase() : out;
+  };
+  return clean(a) === clean(b);
+}
+
+/** One container as `docker inspect` describes it, judged against this
+ * app's workspace folder. */
+export function judgeContainer(detail, { workspace, platform = process.platform, exists = fs.existsSync, image } = {}) {
+  const labels = detail?.Config?.Labels ?? {};
+  const state = detail?.State ?? {};
+  const mounts = Array.isArray(detail?.Mounts) ? detail.Mounts.filter(mount => mount?.Type === "bind") : [];
+  const mountSource = mounts[0]?.Source ? String(mounts[0].Source).replace(/^\/host_mnt(?=\/)/, "") : null;
+  const labelPath = typeof labels[WORKSPACE_PATH_LABEL] === "string" ? labels[WORKSPACE_PATH_LABEL] : null;
+  const managed = labels[LOCAL_VM_LABEL] === "1";
+  let stale = null;
+  if (!managed) stale = "foreign";
+  else if (labels[TEST_RUN_LABEL]) stale = "test_container";
+  else if (mounts.some(mount => mount?.Source && !exists(String(mount.Source).replace(/^\/host_mnt(?=\/)/, "")))) stale = "missing_folder";
+  else if ((labelPath && !samePath(labelPath, workspace, platform)) || (mountSource && !samePath(mountSource, workspace, platform))) stale = "other_folder";
+  else if (!mountSource) stale = "missing_folder";
+  else if (image && detail?.Config?.Image && detail.Config.Image !== image) stale = "old_image";
+  return {
+    name: String(detail?.Name ?? "").replace(/^\//, ""),
+    state: state.Paused ? "paused" : state.Running ? "running" : state.Restarting ? "starting" : String(state.Status ?? "exited"),
+    managed,
+    stale,
+    folder: mountSource,
+    folderExists: mountSource ? exists(mountSource) : false,
+  };
+}
+
+/** The server's recipe, checked before anything runs from it: the Sagax
+ * image, the fixed name, one bind mount of this app's folder, loopback-only
+ * viewer, no privilege. */
+export function validLocalVmSpec(spec) {
+  if (!spec || typeof spec !== "object" || spec.version !== 1) return false;
+  if (spec.container !== REAL_CONTAINER) return false;
+  if (typeof spec.image !== "string" || !/^localhost\/openmausbot\/cua-local-vm:[\w.-]+$/.test(spec.image)) return false;
+  if (typeof spec.baseImage !== "string" || !/^docker\.io\/trycua\/[\w.-]+@sha256:[a-f0-9]{64}$/.test(spec.baseImage)) return false;
+  if (typeof spec.dockerfile !== "string" || spec.dockerfile.length > 64_000 || !spec.dockerfile.startsWith(`FROM ${spec.baseImage}\n`)) return false;
+  if (!spec.imageLabels || typeof spec.imageLabels !== "object" || spec.imageLabels[LOCAL_VM_LABEL] !== "1") return false;
+  if (!Object.entries(spec.imageLabels).every(([key, value]) => key.startsWith("com.openmausbot.") && typeof value === "string")) return false;
+  for (const runtime of ["docker", "podman"]) {
+    const args = spec.run?.[runtime];
+    if (!Array.isArray(args) || !args.every(arg => typeof arg === "string" && arg.length < 1000)) return false;
+    if (args[0] !== "run" || args.at(-1) !== spec.image) return false;
+    const name = args.indexOf("--name");
+    if (name < 0 || args[name + 1] !== REAL_CONTAINER) return false;
+    if (args.some(arg => ["--privileged", "-v", "--volume", "--volumes-from", "--device"].includes(arg) || /^--(network|net|pid|ipc|uts|userns)=host$/.test(arg))) return false;
+    for (let index = 0; index < args.length - 1; index++) {
+      const next = args[index + 1];
+      if (["--network", "--net", "--pid", "--uts"].includes(args[index]) && next === "host") return false;
+      if (["-p", "--publish"].includes(args[index]) && !next.startsWith("127.0.0.1:")) return false;
+      if (args[index] === "-e" && next !== `VNC_PW=${PASSWORD_PLACEHOLDER}`) return false;
+      if (args[index] === "--label" && !next.startsWith("com.openmausbot.")) return false;
+      if (args[index] === "--cap-add" && !["SETUID", "SETGID", "SYS_CHROOT"].includes(next)) return false;
+    }
+    const mounts = args.filter((arg, index) => args[index - 1] === "--mount");
+    if (mounts.length !== 1 || !mounts[0].startsWith(`type=bind,source=${WORKSPACE_PLACEHOLDER},`)) return false;
+    if (!args.includes(`${LOCAL_VM_LABEL}=1`) || !args.includes(`${WORKSPACE_PATH_LABEL}=${WORKSPACE_PLACEHOLDER}`)) return false;
+  }
+  return true;
+}
+
+/** The URL or command each install choice uses (never run without the
+ * person's OS-level confirmation). */
+export const INSTALL_CHOICES = {
+  "orbstack-download": { url: "https://orbstack.dev/download", product: "OrbStack" },
+  "docker-download": { url: "https://www.docker.com/products/docker-desktop/", product: "Docker Desktop" },
+  "docker-windows": { url: "https://docs.docker.com/desktop/setup/install/windows-install/", product: "Docker Desktop" },
+  "podman-download": { url: "https://podman-desktop.io/downloads", product: "Podman Desktop" },
+  "orbstack-brew": { brew: ["install", "--cask", "orbstack"], product: "OrbStack" },
+};
+
+/** How to start an installed runtime whose engine is stopped. */
+export function startRuntimeArgv(product, { platform = process.platform, cli } = {}) {
+  if (platform === "darwin") {
+    if (product === "Docker Desktop" || product === "Docker") return ["open", "-a", "Docker"];
+    if (product === "OrbStack") return ["open", "-a", "OrbStack"];
+    if (product === "Rancher Desktop") return ["open", "-a", "Rancher Desktop"];
+    if (product === "Colima") return ["colima", "start"];
+    if (product === "Podman" && cli) return [cli, "machine", "start"];
+  }
+  if (platform === "win32" && product === "Docker Desktop") return ["cmd.exe", "/c", "start", "", "Docker Desktop"];
+  if (product === "Podman" && cli) return [cli, "machine", "start"];
+  return null;
+}
+
+const STEPS = ["runtime", "image", "container", "start"];
+
+export function createLocalVm({
+  exec = execArgv, dataDir = path.join(os.homedir(), ".openmausbot"), home = os.homedir(), platform = process.platform, env = process.env,
+  exists = fs.existsSync, mkdir = dir => fs.promises.mkdir(dir, { recursive: true, mode: 0o700 }),
+  makeTemp = async () => fs.promises.mkdtemp(path.join(os.tmpdir(), "sagax-local-vm-")), writeFile = (file, data) => fs.promises.writeFile(file, data, { mode: 0o600 }),
+  removeDir = dir => fs.promises.rm(dir, { recursive: true, force: true }),
+  confirm = async () => false, openExternal = async () => {}, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), startWaitMs = 120_000,
+} = {}) {
+  const workspace = path.join(dataDir, "vm-home");
+  let job = null;
+  let installJob = null;
+  const runEnv = () => runtimeEnv(env, home, platform);
+  const detect = () => detectRuntime({ exec, home, platform, env, exists });
+  const run = (runtime, args, timeoutSeconds = 60) => exec([runtime.cli, ...args], { timeoutSeconds, env: runEnv() });
+  const need = async () => {
+    const runtime = await detect();
+    if (!runtime.cli) throw new Error("No container runtime (Docker or Podman) on this computer, so there is no Local VM here.");
+    if (!runtime.daemonUp) throw new Error(`${runtime.product ?? runtime.runtime} is installed but not running. Start it, then try again.`);
+    return runtime;
+  };
+  const list = async runtime => {
+    const answer = await run(runtime, ["ps", "-a", "--filter", `label=${LOCAL_VM_LABEL}=1`, "--format", "{{.Names}}\t{{.State}}"], 30);
+    if (answer.code !== 0) throw new Error("The container runtime did not answer.");
+    return answer.stdout.split("\n").map(line => line.trim()).filter(Boolean).map(line => { const [name, state] = line.split("\t"); return { name, state }; }).filter(entry => /^[\w.-]+$/.test(entry.name ?? ""));
+  };
+  const inspect = async (runtime, name, image) => {
+    const answer = await run(runtime, ["inspect", name], 30);
+    if (answer.code !== 0) return null;
+    try { return judgeContainer(JSON.parse(answer.stdout)[0], { workspace, platform, exists, image }); } catch { return null; }
+  };
+  // The person's VM: the real name first, else the first labeled one that
+  // is not a test's.
+  const current = async runtime => {
+    const all = await list(runtime);
+    const named = all.find(entry => entry.name === REAL_CONTAINER) ?? all.find(entry => !/^openmausbot-test-/.test(entry.name)) ?? null;
+    return { all, vm: named ? await inspect(runtime, named.name) : null };
+  };
+  const pick = async (runtime, container) => {
+    const { all, vm } = await current(runtime);
+    const none = "No Local VM exists on this computer yet. Set it up from the Computer tab (Set up in one click).";
+    if (!all.length) throw new Error(none);
+    if (container && container !== vm?.name) {
+      if (!all.some(entry => entry.name === container)) throw new Error("That Local VM does not exist on this computer.");
+      const other = await inspect(runtime, container);
+      if (!other) throw new Error("That Local VM does not exist on this computer.");
+      return other;
+    }
+    if (!vm) throw new Error(none);
+    return vm;
+  };
+  const staleMessage = vm => vm.stale === "foreign"
+    ? `A container named ${vm.name} exists but was not created by Sagax; remove it in your container app.`
+    : `This Local VM was made for another folder${vm.folder ? ` (${vm.folder})` : ""}${vm.stale === "missing_folder" ? " that no longer exists" : ""}. Repair it from the Computer tab: Sagax recreates it on ${workspace}.`;
+
+  const setupJob = (spec) => {
+    const steps = STEPS.map(id => ({ id, state: "pending", detail: "" }));
+    const state = { id: randomBytes(6).toString("hex"), state: "running", steps, error: null, code: null, previousFolder: null, startedAt: Date.now() };
+    const step = (id, patch) => Object.assign(steps.find(entry => entry.id === id), patch);
+    const fail = (id, message, code) => { step(id, { state: "error", detail: message }); state.state = "error"; state.error = message; state.code = code ?? null; };
+    const work = async () => {
+      // 1. The runtime: found, and its engine running (started if needed).
+      step("runtime", { state: "running" });
+      let runtime = await detect();
+      if (!runtime.cli) return fail("runtime", runtime.installed.length ? `${runtime.installed[0]} is installed but its command line tools were not found.` : "No container runtime on this computer.", "no_runtime");
+      if (!runtime.daemonUp) {
+        const argv = startRuntimeArgv(runtime.product, { platform, cli: runtime.cli });
+        if (!argv) return fail("runtime", `Start ${runtime.product}, then try again.`, "runtime_stopped");
+        step("runtime", { detail: `Starting ${runtime.product}` });
+        await exec(argv, { timeoutSeconds: 120, env: runEnv() });
+        const deadline = Date.now() + startWaitMs;
+        while (!runtime.daemonUp && Date.now() < deadline) {
+          await wait(3000);
+          runtime = await detect();
+        }
+        if (!runtime.daemonUp) return fail("runtime", `${runtime.product} did not start. Open it, then try again.`, "runtime_stopped");
+      }
+      step("runtime", { state: "done", detail: runtime.product });
+      // 2. The image.
+      step("image", { state: "running" });
+      const image = await run(runtime, ["image", "inspect", spec.image], 30);
+      let labels = {};
+      try { labels = JSON.parse(image.stdout)[0]?.Config?.Labels ?? {}; } catch { /* missing */ }
+      const imageReady = image.code === 0 && Object.entries(spec.imageLabels).every(([key, value]) => labels[key] === value);
+      if (!imageReady) {
+        step("image", { detail: "Downloading" });
+        const pulled = await run(runtime, ["pull", spec.baseImage], 1800);
+        if (pulled.code !== 0) return fail("image", `Download failed: ${lastLine(pulled.stderr)}`, "pull_failed");
+        step("image", { detail: "Preparing" });
+        const context = await makeTemp();
+        try {
+          await writeFile(path.join(context, "Dockerfile"), spec.dockerfile);
+          const built = await run(runtime, ["build", "-t", spec.image, context], 1800);
+          if (built.code !== 0) return fail("image", `Preparing the image failed: ${lastLine(built.stderr)}`, "build_failed");
+        } finally {
+          await removeDir(context).catch(() => {});
+        }
+      }
+      step("image", { state: "done", detail: "" });
+      // 3. The container: kept when healthy, recreated when stale, stopped
+      // (this desktop image cannot safely resume) or of an older image.
+      step("container", { state: "running" });
+      const existing = await inspect(runtime, spec.container, spec.image);
+      let create = !existing;
+      if (existing) {
+        if (existing.stale === "foreign") return fail("container", staleMessage(existing), "foreign_container");
+        if (existing.stale || !["running", "paused"].includes(existing.state)) {
+          if (existing.stale && existing.folder && existing.folderExists && !samePath(existing.folder, workspace, platform)) state.previousFolder = existing.folder;
+          step("container", { detail: existing.stale ? "Repairing" : "Recreating" });
+          const removed = await run(runtime, ["rm", "-f", spec.container], 120);
+          if (removed.code !== 0) return fail("container", `Could not remove the old Local VM: ${lastLine(removed.stderr)}`, "remove_failed");
+          create = true;
+        }
+      }
+      if (create) {
+        await mkdir(workspace);
+        const password = randomBytes(9).toString("base64url");
+        const args = spec.run[runtime.runtime].map(arg => arg.replaceAll(WORKSPACE_PLACEHOLDER, workspace).replaceAll(PASSWORD_PLACEHOLDER, password));
+        const created = await run(runtime, args, 300);
+        if (created.code !== 0) return fail("container", `Creating the Local VM failed: ${lastLine(created.stderr)}`, "create_failed");
+      }
+      step("container", { state: "done", detail: "" });
+      // 4. Running.
+      step("start", { state: "running" });
+      const now = await inspect(runtime, spec.container, spec.image);
+      if (now?.state === "paused") await run(runtime, ["unpause", spec.container], 60);
+      else if (now?.state !== "running") {
+        const started = await run(runtime, ["start", spec.container], 120);
+        if (started.code !== 0) return fail("start", `Starting the Local VM failed: ${lastLine(started.stderr)}`, "start_failed");
+      }
+      step("start", { state: "done" });
+      state.state = "done";
+    };
+    work().catch(error => {
+      const running = steps.find(entry => entry.state === "running") ?? steps[0];
+      fail(running.id, String(error?.message ?? error), "failed");
+    });
+    return state;
+  };
+
+  return {
+    workspace,
+    async status() {
+      const runtime = await detect();
+      let vm = null; let all = [];
+      if (runtime.cli && runtime.daemonUp) ({ all, vm } = await current(runtime).catch(() => ({ all: [], vm: null })));
+      return text({ runtime, workspace, vm, localVms: all, setup: job, install: installJob });
+    },
+    async start(container) {
+      const runtime = await need();
+      const vm = await pick(runtime, container);
+      if (vm?.stale) throw new Error(staleMessage(vm));
+      if (vm.state === "running") return text(`${vm.name} is already running`);
+      const answer = await run(runtime, [vm.state === "paused" ? "unpause" : "start", vm.name], 120);
+      if (answer.code !== 0) throw new Error(`Starting the Local VM failed: ${lastLine(answer.stderr)}`);
+      return text(`${vm.name} started`);
+    },
+    async power(action) {
+      const runtime = await need();
+      const vm = await pick(runtime);
+      if (vm.stale === "foreign") throw new Error(staleMessage(vm));
+      const args = action === "pause" ? ["pause", vm.name] : action === "resume" ? ["unpause", vm.name] : ["stop", vm.name];
+      if (action === "pause" && vm.state !== "running") throw new Error("The Local VM is not running.");
+      if (action === "resume" && vm.state !== "paused") throw new Error("The Local VM is not paused.");
+      if (action === "stop" && !["running", "paused"].includes(vm.state)) return text(`${vm.name} is already stopped`);
+      const answer = await run(runtime, args, 120);
+      if (answer.code !== 0) throw new Error(`The Local VM did not ${action}: ${lastLine(answer.stderr)}`);
+      return text(`${vm.name}: ${action} done`);
+    },
+    async setup(spec) {
+      if (!validLocalVmSpec(spec)) throw new Error("The server sent a Local VM recipe this app does not accept. Update the Sagax app.");
+      if (job?.state === "running") return text({ setup: job });
+      job = setupJob(spec);
+      return text({ setup: job });
+    },
+    async install(choice) {
+      const chosen = INSTALL_CHOICES[choice];
+      if (!chosen) throw new Error("Unknown install choice.");
+      if (chosen.brew) {
+        const brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].find(file => exists(file));
+        if (!brew) throw new Error("Homebrew is not installed on this computer; download the app instead.");
+        if (!(await confirm({ product: chosen.product, method: "brew" }))) throw new Error("Install cancelled.");
+        installJob = { product: chosen.product, state: "running", error: null };
+        const current = installJob;
+        void exec([brew, ...chosen.brew], { timeoutSeconds: 1800, env: runEnv() }).then(answer => {
+          current.state = answer.code === 0 ? "done" : "error";
+          current.error = answer.code === 0 ? null : lastLine(answer.stderr);
+        });
+        return text({ install: installJob });
+      }
+      if (!(await confirm({ product: chosen.product, method: "download", url: chosen.url }))) throw new Error("Install cancelled.");
+      await openExternal(chosen.url);
+      return text({ install: { product: chosen.product, state: "opened", error: null } });
+    },
+    async screenshot() {
+      const runtime = await need();
+      const vm = await pick(runtime);
+      if (vm.stale || vm.state !== "running") throw new Error("The Local VM is not running.");
+      const file = "/tmp/openmausbot-preview.png";
+      const env = ["-u", "cua", "-e", "HOME=/home/cua", "-e", "DISPLAY=:1", "-e", "CUA_DRIVER_INSTALL_CHANNEL=python_package", "-e", "CUA_DRIVER_RS_TELEMETRY_ENABLED=0"];
+      const shot = await run(runtime, ["exec", ...env, vm.name, CUA_EXECUTABLE, "call", "get_desktop_state", "{}", "--socket", CUA_SOCKET, "--screenshot-out-file", file], 30);
+      if (shot.code !== 0) throw new Error("The Local VM's screen is not ready yet.");
+      const data = await run(runtime, ["exec", vm.name, "base64", "-w0", file], 30);
+      const png = data.stdout.trim();
+      if (data.code !== 0 || !/^[A-Za-z0-9+/=]+$/.test(png) || png.length > 2_800_000) throw new Error("The Local VM's screen could not be read.");
+      return { content: [{ type: "image", data: png, mimeType: "image/png" }] };
+    },
+    async exec(container, command, options) {
+      const runtime = await need();
+      const vm = await pick(runtime, container);
+      if (vm.stale) throw new Error(staleMessage(vm));
+      if (vm.state !== "running") throw new Error(`${vm.name} is not running; start it first`);
+      const answer = await run(runtime, ["exec", "-u", "cua", vm.name, "bash", "-lc", command], Math.min(600, options?.timeoutSeconds ?? 120));
+      const out = `${answer.stdout}${answer.stderr ? `${answer.stdout ? "\n" : ""}[stderr]\n${answer.stderr}` : ""}\n[exit ${answer.code}]`.trimStart();
+      return { ...text(out.slice(0, OUTPUT_LIMIT)), ...(answer.code === 0 ? {} : { isError: true }) };
+    },
+  };
+}
+
+function lastLine(value) {
+  const lines = String(value ?? "").trim().split("\n").filter(Boolean);
+  return (lines.at(-1) ?? "unknown error").slice(0, 400);
+}

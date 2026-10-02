@@ -60,6 +60,8 @@ export type DesktopSystemInfo = z.infer<typeof desktopSystemInfo>;
 export const DESKTOP_BRIDGE_ACTIONS = [
   "run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse",
   "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "stage_file",
+  // The person's own Local VM from their Computer tab (desktop-bridge-routes.ts).
+  "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot",
 ] as const;
 export type DesktopBridgeAction = (typeof DESKTOP_BRIDGE_ACTIONS)[number];
 
@@ -94,7 +96,8 @@ export function desktopBridgeCapability(action: DesktopBridgeAction): keyof Desk
     case "fetch_url": return "fetch";
     case "browse": return "browser";
     case "computer_tools": case "computer_call": return "computer";
-    case "vm_status": case "vm_start": case "vm_run_command": return "localVm";
+    case "vm_status": case "vm_start": case "vm_run_command":
+    case "vm_stop": case "vm_pause": case "vm_resume": case "vm_setup": case "vm_install": case "vm_screenshot": return "localVm";
   }
 }
 
