@@ -26,7 +26,7 @@ import { type CallSettings } from "./call-settings";
 import { INITIAL_CALL, step, type CallEffect, type CallEvent, type CallState } from "./call-machine";
 import { EchoGuard } from "./echo";
 import { loadOrt } from "./onnx";
-import { PcmPlayer, type Sentence } from "./player";
+import { PcmPlayer, type PlaybackCut, type Sentence } from "./player";
 import { SentenceStream } from "./sentences";
 import { spokenPart } from "./spoken";
 import { judge, readVoiceprint, saveVoiceprint, SpeakerEmbedder, voiceprintOf, type Voiceprint } from "./speaker-id";
@@ -37,6 +37,30 @@ import type { VoiceModeSettings } from "../../../shared/voice-mode";
 
 const RATE = 16_000;
 const PREROLL_FRAMES = 10; // 320 ms before the first voiced frame
+/** A turn that starts this soon after the last one ended, before the bot
+ * said anything, continues it: one utterance cut by a pause. */
+export const CONTINUATION_MS = 1_500;
+/** xAI confidence under which a turn of a word or two is noise. */
+const NOISE_CONFIDENCE = 0.45;
+/** Short words a person really says alone on a call (not noise). */
+const SHORT_WORDS = new Set([
+  "yes", "yeah", "yep", "no", "nope", "ok", "okay", "stop", "wait", "hi", "hey", "bye", "thanks", "sure", "go", "next", "why", "how", "what", "who", "when", "where", "right", "cool", "nice", "great",
+  "oui", "non", "ouais", "nan", "merci", "salut", "allo", "bonjour", "attends", "arrete", "vas", "go", "quoi", "comment", "pourquoi", "parfait", "super", "bien", "daccord",
+]);
+
+/** Words that are a sound, not speech: a single short token no one says
+ * alone on a call ("dwad", "hm"), anything under two letters, or a word or
+ * two xAI itself doubts. */
+export function isNoiseFragment(text: string, confidence?: number): boolean {
+  const words = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f']/g, "").match(/[a-z0-9]+/g) ?? [];
+  const letters = words.join("").length;
+  if (letters < 2) return true;
+  if (words.length <= 2 && confidence !== undefined && confidence < NOISE_CONFIDENCE) return true;
+  if (words.length !== 1) return false;
+  const word = words[0]!;
+  if (/^\d+$/.test(word) || SHORT_WORDS.has(word)) return false;
+  return word.length <= 5;
+}
 
 export interface TurnMetrics {
   /** the person's last voiced frame (performance.now()) */
@@ -69,11 +93,12 @@ export interface VoiceCallEvents {
   /** an accepted turn: send it to the bot. `interrupted`: the person cut
    * the bot (talked over it, or over its running turn, or pressed
    * interrupt) since the last turn sent; the bot is told (Message.voiceCall). */
-  utterance(text: string, metrics: TurnMetrics, turn: { interrupted: boolean }): void;
+  utterance(text: string, metrics: TurnMetrics, turn: { interrupted: boolean; cut?: PlaybackCut; continues?: boolean }): void;
   /** stop the bot's running turn on the server */
   "interrupt-bot"(): void;
-  /** the bot's speech was cut (barge-in, interrupt, hold, end) */
-  "speech-cancelled"(): void;
+  /** the bot's speech was cut (barge-in, interrupt, hold, end), with what
+   * the person heard of it and what they did not */
+  "speech-cancelled"(cut: PlaybackCut): void;
   /** a turn from another voice was ignored */
   rejected(reason: "other-voice" | "empty"): void;
   /** the sentence now audible */
@@ -156,6 +181,14 @@ export class VoiceCall {
   private bargeIn: BargeInMetrics | null = null;
   /** the person cut the bot since the last turn sent */
   private cutBot = false;
+  /** what they heard of the answer they cut (told to the bot) */
+  private lastCut: PlaybackCut | null = null;
+  /** the answer's text so far, as last handed to replyProgress */
+  private replyText = "";
+  /** the last utterance sent, and whether the bot has spoken since */
+  private lastSent: { text: string; endedAt: number; botSpoke: boolean } | null = null;
+  /** the turn being heard continues the last one (it was cut by a pause) */
+  private continuing = false;
   private enrolling: { frames: Float32Array[]; levels: number[]; done: (frames: Float32Array[] | null) => void; until: number } | null = null;
   /** the on-device models loaded (else the level detector serves) */
   modelsReady = false;
@@ -183,7 +216,11 @@ export class VoiceCall {
       },
       onError: () => this.emit("error", "speech-failed"),
     };
-    this.transcriber.onPartial((text) => this.emit("partial", text));
+    this.transcriber.onPartial((text) => {
+      // the words so far move the endpoint: an unfinished clause waits longer
+      if (this.turns.active) this.turns.hint(text);
+      this.emit("partial", text);
+    });
     if (this.voiceprint?.level) this.turns.nearLevel = this.voiceprint.level;
   }
 
@@ -309,7 +346,8 @@ export class VoiceCall {
   replyProgress(text: string): void {
     if (this.state.phase === "held" || this.state.phase === "ended") return;
     this.reply ??= new SentenceStream();
-    for (const sentence of this.reply.feed(spokenPart(text))) this.enqueue(sentence);
+    this.replyText = spokenPart(text);
+    for (const sentence of this.reply.feed(this.replyText)) this.enqueue(sentence);
   }
 
   /** The answer (or this block of it) is complete. */
@@ -499,6 +537,7 @@ export class VoiceCall {
 
   private async process(frame: Float32Array): Promise<void> {
     if (this.closed || this.state.muted || this.state.phase === "held") return;
+    this.turns.setPause(this.o.settings().pause ?? "normal");
     const level = rms(frame);
     const probability = await this.vad.probability(frame);
     const playback = this.player.level();
@@ -572,6 +611,15 @@ export class VoiceCall {
   // ── the state machine's effects ────────────────────────────────────────
 
   private dispatch(event: CallEvent): void {
+    // A turn that starts right after the last one, before the bot said a
+    // word, is the same utterance cut by a pause: it is sent whole, and the
+    // turn the fragment started is cancelled.
+    if (event.type === "speech-start" && !this.state.botAudible && this.lastSent && !this.lastSent.botSpoke &&
+      this.now() - this.lastSent.endedAt <= CONTINUATION_MS) {
+      this.continuing = true;
+      if (this.state.botBusy) this.emit("interrupt-bot");
+    }
+    if (event.type === "bot-audio-start" && this.lastSent) this.lastSent.botSpoke = true;
     const { state, effects } = step(this.state, event);
     const changed = state !== this.state;
     this.state = state;
@@ -593,8 +641,16 @@ export class VoiceCall {
         this.bargeIn = null;
         return;
       case "cancel-speech": {
+        // what played by the audio clock, plus what the bot had written but
+        // not yet handed to the voice: the person heard none of that
+        const played = this.player.playback(this.o.voice().speed);
+        const unwritten = this.reply ? this.replyText.slice(this.reply.position).trim() : "";
+        const cut: PlaybackCut = { heard: played.heard, unheard: [played.unheard, unwritten].filter(Boolean).join(" ") };
+        if (cut.heard || cut.unheard) this.lastCut = cut;
+        this.player.resetLedger();
         void this.player.cancel();
         this.reply = null;
+        this.replyText = "";
         if (this.bargeIn) {
           this.bargeIn.cancelledAt = this.now();
           this.emit("metrics", this.turn, this.bargeIn);
@@ -602,20 +658,32 @@ export class VoiceCall {
         const waiters = this.speechWaiters;
         this.speechWaiters = [];
         for (const resolve of waiters) resolve(false);
-        this.emit("speech-cancelled");
+        this.emit("speech-cancelled", cut);
         return;
       }
       case "interrupt-bot":
         this.emit("interrupt-bot");
         return;
-      case "send":
+      case "send": {
         if (this.turn) {
           this.turn.sentAt = this.now();
           this.emit("metrics", this.turn, this.bargeIn);
         }
-        this.emit("utterance", effect.text, this.turn ?? { stoppedAt: this.now(), endedAt: this.now() }, { interrupted: this.cutBot });
+        const continues = this.continuing && this.lastSent !== null;
+        const text = continues ? `${this.lastSent!.text} ${effect.text}` : effect.text;
+        this.continuing = false;
+        this.lastSent = { text, endedAt: this.turn?.endedAt ?? this.now(), botSpoke: false };
+        this.emit("utterance", text, this.turn ?? { stoppedAt: this.now(), endedAt: this.now() }, {
+          interrupted: this.cutBot,
+          ...(this.cutBot && this.lastCut ? { cut: this.lastCut } : {}),
+          ...(continues ? { continues: true } : {}),
+        });
         this.cutBot = false;
+        this.lastCut = null;
+        // a new answer starts: what it plays is measured from here
+        this.player.resetLedger();
         return;
+      }
       case "finalize-stt":
         void this.finishTurn();
         return;
@@ -641,7 +709,8 @@ export class VoiceCall {
   private async finishTurn(): Promise<void> {
     const audio = this.transcriber.audio();
     const speechLevel = this.turnLevel.frames ? this.turnLevel.sum / this.turnLevel.frames : 0;
-    const [text, verdict] = await Promise.all([this.transcriber.finish(), this.verify(audio)]);
+    const [heard, verdict] = await Promise.all([this.transcriber.finishHeard(), this.verify(audio)]);
+    const text = heard.text;
     if (this.closed) return;
     if (this.turn) this.turn.transcribedAt = this.now();
     if (!verdict) {
@@ -649,7 +718,9 @@ export class VoiceCall {
       this.dispatch({ type: "utterance-rejected", reason: "other-voice" });
       return;
     }
-    if (!text.trim()) {
+    // nothing, or a sound the recognizer spelled ("dwad"): never a turn
+    if (!text.trim() || isNoiseFragment(text, heard.confidence)) {
+      this.continuing = false;
       this.dispatch({ type: "utterance-rejected", reason: "empty" });
       return;
     }

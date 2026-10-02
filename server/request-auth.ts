@@ -430,7 +430,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/tts\/speak$/ },
   // voice mode (server/voice-mode.ts): the speaker's own turn on a bot they may use; never the key
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:status|voices|listen)$/ },
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe|stream)$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe|stream|call)$/ },
   // routines: a scheduled message; the input carries no cwd or permission field
   { methods: ["GET"], path: /^\/api\/routines$/ },
   { methods: ["POST"], path: /^\/api\/routines$/ },

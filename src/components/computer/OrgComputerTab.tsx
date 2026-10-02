@@ -10,13 +10,13 @@
 //   (src/lib/desktop-local-vm.ts, electron/local-vm.mjs), set up, repaired or
 //   started from the screen itself.
 //
-// Under it, the bot's Works on as one compact control (WorksOnSetting, moved
-// here from the bot's Access settings), and the usage of that computer
-// (disk, CPU, memory, OS) behind a small Details toggle.
+// Under it, only the usage of that computer (disk, CPU, memory, OS) behind
+// a small Details toggle. The bot's Works on is an item of the panel's More
+// tab (WorksOnSetting).
 //
 // Every action is the signed-in person's own (the server takes the person
 // from the session); nothing here names a bot or another person.
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, Cpu, HardDrive, Info, Laptop, MemoryStick, Server } from "lucide-react";
 
 import { currentDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
@@ -56,14 +56,11 @@ export function activeComputer(bridge: DesktopBridgeStatus, place: EffectivePlac
   return { source: "server", reason: "none" };
 }
 
-export function OrgComputerTab({ bridge, place, computerOff, botName, worksOn, initialLocal = null }: {
+export function OrgComputerTab({ bridge, place, computerOff, botName, initialLocal = null }: {
   bridge: DesktopBridgeStatus;
   /** The bot's Works on (Auto when unset). */
   place: EffectivePlace;
   computerOff: boolean; botName: string;
-  /** The bot's compact Works on setting, drawn under the screen
-   * (WorksOnSetting; the panel passes it, tests may leave it out). */
-  worksOn?: ReactNode;
   /** Tests: the desktop's Local VM status to start from. */
   initialLocal?: DesktopLocalVmStatus | null;
 }) {
@@ -76,7 +73,6 @@ export function OrgComputerTab({ bridge, place, computerOff, botName, worksOn, i
         ? <ServerComputerScreen caption={t("computer.screenOf", { name: botName })} />
         : <LocalComputerScreen bridge={bridge} caption={t("computer.screenOf", { name: botName })} initial={initialLocal} />}
       {computerOff && <p role="note" className="-mt-1 text-center text-[12px] text-ink-secondary">{t("computer.phase.off")}</p>}
-      {worksOn}
       <div className="flex flex-col gap-1.5">
         <button type="button" onClick={() => setDetails((open) => !open)} aria-expanded={details} data-usage-toggle
           className="flex items-center gap-1 self-start text-[12px] text-ink-secondary hover:text-ink">

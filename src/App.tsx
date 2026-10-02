@@ -35,6 +35,7 @@ import { RetroAssistantHost } from "@/components/RetroAssistantHost";
 import { AchievementToaster } from "@/components/achievements/AchievementToaster";
 import { reportAchievement } from "@/lib/achievements";
 import { FloatingBotsHost } from "@/components/FloatingBotsHost";
+import { CallEngineHost } from "@/components/CallView";
 import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { LocalVmWorkspace } from "@/components/LocalVmWorkspace";
@@ -416,6 +417,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       <StagedOrgImport />
       <RetroAssistantHost />
       <AchievementToaster />
+      <CallEngineHost />
       <FloatingBotsHost />
       <RetroBootSlot />
       </div>

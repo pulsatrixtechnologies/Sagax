@@ -552,7 +552,9 @@ import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
-import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt } from "./voice-call-prompt.ts";
+import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
+import { VoiceCallSessions } from "./voice-call-session.ts";
+import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
@@ -583,7 +585,7 @@ import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.t
 import { OrgTeams } from "./org-teams.ts";
 import { keyVia, materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
-import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels } from "./section-channels.ts";
+import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { createBotPerspicaxRoutes } from "./bot-perspicax.ts";
 import { applyIdentityMigration, principalIdFor, rewritePeopleForAttach } from "./identity-migration.ts";
@@ -640,7 +642,7 @@ import {
 } from "./phone-secret.ts";
 import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
-import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
+import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, levelRank, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
@@ -3268,6 +3270,42 @@ function requestedTaskBot(botId: string, rawThreadId: unknown): BotRecord {
   const task = store.projectBotForTask(botId, threadId);
   if (!task) throw Object.assign(new Error("no such task"), { status: 404 });
   return task;
+}
+
+/** Threads whose turn a person is stopping, until it settles: words sent
+ * meanwhile wait for the next turn instead of joining the dying one, where
+ * the stop withdrew them and they got no answer. */
+const stoppingThreads = new Map<string, ReturnType<typeof setTimeout>>();
+/** When a person last stopped each thread's turn (the call watchdog). */
+const threadStoppedAt = new Map<string, number>();
+
+function markThreadStopping(threadId: string): void {
+  const previous = stoppingThreads.get(threadId);
+  if (previous) clearTimeout(previous);
+  threadStoppedAt.set(threadId, Date.now());
+  // a turn that never reports settling must not hold its words forever
+  const timer = setTimeout(() => {
+    if (stoppingThreads.get(threadId) !== timer) return;
+    stoppingThreads.delete(threadId);
+    drainQueuedSends();
+  }, 30_000);
+  timer.unref?.();
+  stoppingThreads.set(threadId, timer);
+}
+
+function clearThreadStopping(threadId: string): void {
+  const timer = stoppingThreads.get(threadId);
+  if (!timer) return;
+  clearTimeout(timer);
+  stoppingThreads.delete(threadId);
+}
+
+/** A person stops a thread's turn: what they sent into it is withdrawn,
+ * and words sent while it stops wait for the next turn. */
+async function stopDirectThreadByPerson(botId: string, threadId: string): Promise<void> {
+  if (threadBusy(botId, threadId)) markThreadStopping(threadId);
+  handoffs.stoppedByPerson(threadId);
+  await interruptDirectThread(botId, threadId);
 }
 
 async function interruptDirectThread(botId: string, threadId: string): Promise<void> {
@@ -9280,6 +9318,8 @@ bus.subscribe((event: RuntimeEvent) => {
           }
           releaseTurnResources(resourceOwner);
           if (!isCurrent()) return;
+          clearThreadStopping(event.threadId);
+          scheduleVoiceCallWatchdog(bot.id, event.threadId);
           if (store.taskByThread(bot.id, event.threadId)?.activity !== "dead") {
             store.setTaskActivity(bot.id, event.threadId, "idle");
           }
@@ -9852,6 +9892,7 @@ function directContext(bot: BotRecord, threadId: string, messages: Message[]): C
               : transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"),
     keep: m.roomRequest?.phase === "result" || Boolean(m.peerAsk) || (m.role !== "user" && Boolean(m.from)),
     ...(m.steered ? { steered: true } : {}),
+    ...(m.role === "user" && m.voiceCall ? { spoken: true } : {}),
   }));
 }
 
@@ -9919,6 +9960,9 @@ async function compactConversation(input: {
     if (compactionControllers.get(threadId)?.generation === generation) compactionControllers.delete(threadId);
   }
 }
+
+/** Threads on a live voice call (server/voice-call-session.ts). */
+const voiceCalls = new VoiceCallSessions();
 
 const handoffs = new Handoffs({
   order: (threadId) => store.activePath(threadId).filter(isContextMessage).map((m) => m.id),
@@ -10241,6 +10285,39 @@ bus.subscribe((event: RuntimeEvent) => {
   drainQueuedSends();
   drainDelegationWakes();
 });
+
+/** Call words already retried once by the watchdog (message ids). */
+const voiceCallRetried = new Set<string>();
+
+/** A moment after a direct turn settles on a thread on a live call: words
+ * said on the call with no answer after them run once more
+ * (server/voice-call-watchdog.ts). */
+function scheduleVoiceCallWatchdog(botId: string, threadId: string): void {
+  if (!voiceCalls.active(threadId)) return;
+  const timer = setTimeout(() => {
+    try {
+      if (!voiceCalls.active(threadId) || threadBusy(botId, threadId) || hasQueuedSteeredMessages(botId, threadId)) return;
+      if (stoppingThreads.has(threadId) || activeGroupTurnForBot(botId) || botAtThreadCapacity(botId)) return;
+      const bot = store.projectBotForTask(botId, threadId);
+      if (!bot || !store.taskByThread(botId, threadId)) return;
+      const words = unansweredCallMessage(store.activePath(threadId), { stoppedAt: threadStoppedAt.get(threadId), retried: voiceCallRetried });
+      if (!words) return;
+      voiceCallRetried.add(words.id);
+      if (voiceCallRetried.size > 5_000) voiceCallRetried.delete(voiceCallRetried.values().next().value!);
+      console.warn(`[voice-call] thread ${threadId}: no answer to the words said on the call; running the turn again`);
+      void startTurn(botId, voiceCallRecoveryPrompt(words.text ?? ""), {
+        threadId,
+        userMessage: words,
+        // the words ride in the prompt: not twice through the replay
+        excludeMessageIds: [words.id],
+        ...(words.sender ? { sender: words.sender } : {}),
+      }).catch((error) => console.warn(`[voice-call] thread ${threadId}: the retry could not start: ${error instanceof Error ? error.message : String(error)}`));
+    } catch (error) {
+      console.warn("[voice-call] watchdog failed", error);
+    }
+  }, VOICE_CALL_WATCHDOG_MS);
+  timer.unref?.();
+}
 
 function drainQueuedSends() {
   if (!followupsReady) return;
@@ -11110,6 +11187,12 @@ async function startTurn(
     personAsked: !routineLineage(speaker) && Boolean(orgSpeakerPrincipal(bot, speaker)),
   });
   const turnAuto = autoComputerStateFor(turnPlace, turnWorksOn(plan, opts?.runOn === "cloud" || Boolean(inheritedTeamComputer(bot))), routineLineage(speaker));
+  // Each call turn's words carry the call mark themselves: a live session
+  // gets the volatile call section only when it changed, so from the second
+  // call turn on the section alone never reached the engine.
+  if (userMessage.voiceCall && !opts.cardContinuation && !opts.commsDepth && !userMessage.peerAsk) {
+    providerText = voiceCallTurnPrompt(providerText, userMessage.voiceCall);
+  }
   const placedText = opts.cardContinuation ? { text: providerText, staging: null } : workplaceTurnText(providerText, turnPlace);
   providerText = withWorkplaceNote(placedText.text, turnPlace, turnAuto);
   // A compaction summarizes with the bot's engine too, so it is gated like
@@ -11431,6 +11514,11 @@ async function startTurn(
         const perspicax = await perspicaxTurnIntegration({ bot, threadId, generation: dispatchClaimId, speaker, taken: Object.keys(integrations.custom ?? {}) });
         if (Object.keys(perspicax.custom).length) integrations.custom = { ...integrations.custom, ...perspicax.custom };
         perspicaxPrompt = perspicax.prompt;
+      }
+      // a call's tools should not come and go between its turns: say so when they do
+      const callMcp = voiceCalls.noteMcp(threadId, Object.keys(integrations.custom ?? {}));
+      if (callMcp.added.length || callMcp.removed.length) {
+        console.warn(`[voice-call] thread ${threadId}: MCP servers changed between call turns${callMcp.added.length ? `; added ${callMcp.added.join(", ")}` : ""}${callMcp.removed.length ? `; missing ${callMcp.removed.join(", ")}` : ""}`);
       }
       // CLI engines work inside the bot's own workspace directory rather
       // than the user's home: a bot with file tools and acceptEdits gets a
@@ -18194,14 +18282,11 @@ function roomSectionAccess(group: { id?: unknown; section?: unknown }): SectionA
   if (IDENTITY.kind !== "perspicax" || typeof group.section !== "string" || !group.section || typeof group.id !== "string") return null;
   return sectionChannels?.accessForRoom(group.section, group.id) ?? null;
 }
-/** Owner, grants and shared section of a bot, for server/authz.ts. */
+/** Owner and grants of a bot, for server/authz.ts. Sections are personal:
+ * a bot takes no access from one (the legacy shared sections became bot
+ * grants at boot, section-channels.ts header). */
 function botFacts(bot: { id?: unknown; ownerUserId?: unknown; grants?: unknown; directGrants?: unknown; section?: unknown; createdAt?: unknown }): BotFacts {
-  const ownerPrincipalId = effectiveBotOwner(bot);
-  // Only with the bot owner's consent (section-channels.ts header).
-  const section = IDENTITY.kind === "perspicax" && typeof bot.section === "string" && bot.section && typeof bot.id === "string"
-    ? sectionChannels?.accessForBot(bot.section, { id: bot.id, ownerPrincipalId }) ?? null
-    : null;
-  return { ownerPrincipalId, grants: botGrants(bot), sections: section ? [section] : [] };
+  return { ownerPrincipalId: effectiveBotOwner(bot), grants: botGrants(bot), sections: [] };
 }
 /** A person's teams, for the manager rules. */
 function principalTeams(principalId: string): TeamRef[] {
@@ -19053,6 +19138,39 @@ function sectionMigrationOwner(name: string): string {
   const firstAdmin = principals.list().filter((person) => person.orgRole === "admin" && person.subject && person.disabledAt === undefined).sort((a, b) => a.createdAt - b.createdAt)[0]?.id ?? localPrincipalId();
   return migrationOwner(bots, firstAdmin);
 }
+/** Sections are personal (section-channels.ts header): once, every legacy
+ * shared section becomes the bot grants it stood for, so nobody loses a bot
+ * they opened through it. A grant already as high is kept as it is; the
+ * records stay on disk. */
+function migrateSectionSharesToBotGrants(channels: SectionChannels): void {
+  if (channels.botSharesMigrated()) return;
+  const wanted = sectionShareGrants(channels, store.bots.map((bot) => ({ id: bot.id, section: sectionKey(bot.section) || undefined, ownerPrincipalId: effectiveBotOwner(bot) })));
+  const sections = new Set(wanted.map((grant) => grant.section));
+  const botIds = new Set(wanted.map((grant) => grant.botId));
+  let added = 0;
+  let raised = 0;
+  for (const botId of botIds) {
+    const bot = store.bot(botId);
+    if (!bot) continue;
+    const next = [...botGrants(bot)];
+    let changed = false;
+    for (const grant of wanted.filter((entry) => entry.botId === botId)) {
+      const index = next.findIndex((entry) => entry.target === grant.target);
+      if (index < 0) {
+        next.push({ target: grant.target, level: grant.level, by: grant.by, at: Date.now() });
+        added += 1;
+        changed = true;
+      } else if (levelRank(next[index]!.level) < levelRank(grant.level)) {
+        next[index] = { ...next[index]!, level: grant.level };
+        raised += 1;
+        changed = true;
+      }
+    }
+    if (changed) store.setBotGrants(botId, next);
+  }
+  channels.markBotSharesMigrated();
+  console.log(`sections: sections are personal; ${sections.size} shared section(s) became bot shares on ${botIds.size} bot(s) (${added} added, ${raised} raised)`);
+}
 /** The store's section names, every one with its record. */
 function orgSectionNames(): string[] {
   const names = store.sections;
@@ -19076,14 +19194,13 @@ if (sectionChannels) {
   // private record (no member): nothing is shared without someone's action.
   const created = sectionChannels.migrate(store.sections, sectionMigrationOwner);
   if (created) console.log(`sections: ${created} existing section(s) became private channels`);
+  migrateSectionSharesToBotGrants(sectionChannels);
   const channels = sectionChannels;
   ROUTES.push(createSectionChannelRoutes({
     channels,
     viewer: authzViewerFor,
     principalId: (auth) => (auth.kind === "session" ? auth.session.principalId?.trim() || "" : localPrincipalId()),
     teamsOf: principalTeams,
-    resolvePerson: resolveOrgGrantee,
-    teamKnown: (id) => orgTeams.has(id) || principals.membersOfTeam(id).length > 0,
     sections: orgSectionNames,
     createSection: (name) => {
       const result = store.setBotsSection([], name);
@@ -19091,33 +19208,6 @@ if (sectionChannels) {
     },
     renameSection: (name, nextName) => store.renameSection(name, nextName, teamComputers),
     deleteSection: (name) => (teamComputers.forSection(name) ? "Unassign this section's computer before deleting it" : store.deleteSection(name)),
-    moveBots: (name, add, remove) => {
-      const result = store.updateTeamMembers(name, add, remove);
-      return result.ok ? undefined : "One or more bots are unavailable";
-    },
-    botExists: (id) => Boolean(store.bot(id)),
-    botSection: (id) => sectionKey(store.bot(id)?.section) || undefined,
-    botOwner: (id) => {
-      const bot = store.bot(id);
-      return bot ? effectiveBotOwner(bot) : "";
-    },
-    managesBot: (auth, id) => {
-      const bot = store.bot(id);
-      return Boolean(bot) && atLeast(viewerBotLevel(auth, bot!), "manage");
-    },
-    createRoom: (name) => {
-      try {
-        // Only the bots the section opens: their owner consented.
-        const botIds = store.bots
-          .filter((bot) => sectionKey(bot.section) === name && !bot.hidden && channels.accessForBot(name, { id: bot.id, ownerPrincipalId: effectiveBotOwner(bot) }))
-          .map((bot) => bot.id);
-        return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" } }, []).id;
-      } catch (error) {
-        console.error(`sections: the conversation of a shared section could not be created: ${error instanceof Error ? error.message : String(error)}`);
-        return null;
-      }
-    },
-    roomExists: (id) => Boolean(store.group(id)),
     onChanged: () => {
       broadcast({ kind: "sections", sections: store.sections });
       audienceChanged();
@@ -19543,6 +19633,12 @@ ROUTES.push(createVoiceModeRoutes({
   },
   upgrade: (req) => desktopViewer.upgradeOf(req),
   utterances: toUtterances,
+  callSession: {
+    start: (target, callId, language) => voiceCalls.start(target.threadId, callId, language),
+    end: (target, callId) => {
+      if (voiceCalls.end(target.threadId, callId)) void perspicaxMcp?.endWarm(target.threadId);
+    },
+  },
   recordUsage: (usage) => {
     const bot = store.bot(usage.target.botId);
     const row: UsageRow = {
@@ -19866,6 +19962,8 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
   perspicaxMcp = new PerspicaxMcp({
     issuer,
     link: () => directory,
+    // a live call keeps its Perspicax tools mounted from turn to turn
+    keepWarm: (threadId) => Boolean(voiceCalls.active(threadId)),
     subjectOf: (principalId) => {
       const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;
       return person?.subject ? { iss: person.subject.iss, sub: person.subject.sub, disabled: person.disabledAt !== undefined } : null;
@@ -26643,8 +26741,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const text = String(body.text ?? "").trim();
       if (!text) return json(res, 400, { error: "text required" });
       // words said on a voice call: the turn gets the phone-call instruction
-      const voiceCall = parseVoiceCallMeta(body.voiceCall);
-      if (voiceCall && "error" in voiceCall) return json(res, 400, { error: voiceCall.error });
+      const sentVoiceCall = parseVoiceCallMeta(body.voiceCall);
+      if (sentVoiceCall && "error" in sentVoiceCall) return json(res, 400, { error: sentVoiceCall.error });
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
       requirePinnedClientThread(bot.id, body.threadId);
@@ -26658,6 +26756,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const threadId = routeThreadId(bot, body.threadId);
       const notYours = cloudGuestSendRefusal(auth, threadId);
       if (notYours) return json(res, 403, { error: notYours });
+      // While the thread is on a live call, every send to it is a call turn,
+      // marked or not (typed words, a retry, an old page): server state,
+      // not only the page's mark (server/voice-call-session.ts).
+      const voiceCall = guarded ? sentVoiceCall : voiceCalls.markFor(threadId, sentVoiceCall);
       // An engine command the chat cannot run is refused before it is
       // recorded (server/harness-commands.ts).
       if (text.startsWith("/")) {
@@ -26684,7 +26786,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!store.taskByThread(bot.id, threadId)) {
         return json(res, 409, { error: "the bot switched tasks before it could receive the message" });
       }
-      const sendId = parseSendId(body.sendId);
+      let sendId = parseSendId(body.sendId);
+      // One spoken utterance is delivered once: a second send of it (a retry
+      // with a new send id) answers with the first one's receipt.
+      if (voiceCall?.utteranceId && sendId) {
+        const claim = voiceCalls.claimUtterance(threadId, voiceCall.callId, voiceCall.utteranceId, sendId);
+        if (!claim.first) sendId = claim.sendId;
+      }
       const replyTo = resolveReplyTarget(threadId, body.replyToId);
       // What a send to a busy conversation does (shared/parallel-tasks.ts):
       // join the running turn (steer, the default), run as its own task in
@@ -26692,7 +26800,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.busyMode !== undefined && !isBusySendMode(body.busyMode)) {
         return json(res, 400, { error: "busyMode must be steer, parallel or after" });
       }
-      const busyMode: BusySendMode = guardedBody ? "steer" : (body.busyMode ?? "steer");
+      // On a call, words said while the bot works always join its turn: a
+      // phone has no "run this in parallel" (and no chooser asks).
+      const busyMode: BusySendMode = guardedBody || voiceCall ? "steer" : (body.busyMode ?? "steer");
       const receipt = await sendSequencer.run(
         sendId ? `bot:${bot.id}:${threadId}:${sendId}` : undefined,
         sendFingerprint(text, replyTo?.id),
@@ -26800,13 +26910,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               engineCanSteer: Boolean(instance?.adapter.capabilities.queueing && instance.adapter.steer)
                 // someone else's words never join a running turn on an
                 // organization server: they wait and get the gate
-                && orgJoinsRunningTurn(currentAtStart, threadId, speakerFor(auth)),
+                && orgJoinsRunningTurn(currentAtStart, threadId, speakerFor(auth))
+                // a turn being stopped takes no new words: they would be
+                // withdrawn with it and never answered; they wait instead
+                && !stoppingThreads.has(threadId),
             });
             // steer was offered only when a live instance could take it;
             // the second check carries that fact to the type system.
+            const steerId = randomUUID();
             if (busyAdmission.action === "steer" && instance?.adapter.steer) {
               steered = await instance.adapter
-                .steer(threadId, voiceCallSteerPrompt(promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"), voiceCall))
+                .steer(threadId, voiceCallSteerPrompt(promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"), voiceCall), { steerId })
                 .catch((): SteerOutcome => "indeterminate");
             }
             // steer() is awaited adapter work. The turn can settle, the task can
@@ -26823,6 +26937,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const delivered = steered !== "refused";
             if (delivered) {
               if (steered === "steered" && !current.busy) {
+                // Said on a call, the words must get an answer: the turn
+                // they were written into ended first, so they start the
+                // next one (a phone has no composer to resend from).
+                if (voiceCall) {
+                  return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall);
+                }
                 throw Object.assign(
                   new Error("the running turn ended before the steered message could be recorded"),
                   { status: 409 },
@@ -26852,7 +26972,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                 ...(voiceCall ? { voiceCall } : {}),
               });
               // Offered to the next turn again unless the person stops this one.
-              handoffs.steered(threadId, steerTarget, instance?.instanceId, message.id);
+              handoffs.steered(threadId, steerTarget, instance?.instanceId, message.id, steerId);
               return { ok: true as const, steered: true as const, threadId, message };
             }
             if (!current.busy) {
@@ -26925,12 +27045,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const currentAtStart = store.projectBotForTask(bot.id, bot.threadId);
       const instance = currentAtStart?.busy ? runningTurnInstance(currentAtStart, bot.threadId) : undefined;
-      const prompt = held.items.map((item) => item.prompt).join("\n\n");
+      // words said on a call keep their call mark when they join the turn
+      const prompt = held.items.map((item) => voiceCallSteerPrompt(item.prompt, item.voiceCall)).join("\n\n");
       const steerTarget = handoffs.current(bot.threadId);
       let steered: SteerOutcome = "refused";
+      const steerId = randomUUID();
       if (currentAtStart?.busy && instance?.adapter.capabilities.queueing && instance.adapter.steer) {
         steered = await instance.adapter
-          .steer(bot.threadId, prompt)
+          .steer(bot.threadId, prompt, { steerId })
           .catch((): SteerOutcome => "indeterminate");
       }
       // The steer was awaited adapter work: re-read every ownership
@@ -26956,9 +27078,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           peerAsk: item.peerAsk,
           steered: true,
           sender: item.sender,
+          ...(item.voiceCall ? { voiceCall: item.voiceCall } : {}),
         }));
         // Offered to the next turn again unless the person stops this one.
-        for (const message of messages) handoffs.steered(bot.threadId, steerTarget, instance?.instanceId, message.id);
+        // one steer carried them all: the engine taking it in takes them all
+        for (const message of messages) handoffs.steered(bot.threadId, steerTarget, instance?.instanceId, message.id, steerId);
         const queueIds = held.items.map((item) => item.messageId);
         settleHeldSteeredQueue(held);
         return json(res, 200, { ok: true, steered: true, threadId: bot.threadId, messages, queueIds });
@@ -27290,10 +27414,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const own = routeThreadId(bot, body.threadId);
         const run = routines!.activeBotRunForBot(bot.id);
         if (run?.threadId === own) await routines!.cancelRun(run.id);
-        else {
-          handoffs.stoppedByPerson(own);
-          await interruptDirectThread(bot.id, own);
-        }
+        else await stopDirectThreadByPerson(bot.id, own);
         return json(res, 200, { ok: true });
       }
       if (stopper && body.threadId !== undefined) routeThreadId(bot, body.threadId);
@@ -27306,10 +27427,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (typeof expectedThreadId === "string" && store.taskByThread(bot.id, expectedThreadId)) {
         const routine = routines!.activeBotRunForBot(bot.id);
         if (routine?.threadId === expectedThreadId) await routines!.cancelRun(routine.id);
-        else {
-          handoffs.stoppedByPerson(expectedThreadId);
-          await interruptDirectThread(bot.id, expectedThreadId);
-        }
+        else await stopDirectThreadByPerson(bot.id, expectedThreadId);
         return json(res, 200, { ok: true });
       }
       const directClaim = directTurnDispatchClaims.get(bot.threadId);
@@ -27347,8 +27465,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       ) {
         return json(res, 409, { error: "the bot switched tasks before it could be interrupted" });
       }
-      handoffs.stoppedByPerson(expectedThreadId ?? bot.threadId);
-      await interruptDirectThread(bot.id, expectedThreadId ?? bot.threadId);
+      await stopDirectThreadByPerson(bot.id, expectedThreadId ?? bot.threadId);
       return json(res, 200, { ok: true });
     }
 

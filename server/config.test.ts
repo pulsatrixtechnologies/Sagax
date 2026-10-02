@@ -613,8 +613,8 @@ describe("configuration boundaries", () => {
   });
 
   it("keeps the 8-hour Local VM idle timeout by default and accepts a bounded override", () => {
-    expect(localVmIdleTimeoutMinutes({})).toBe(480);
-    expect(localVmIdleTimeoutMinutes({ localVm: { mode: "per-bot" } })).toBe(480);
+    expect(localVmIdleTimeoutMinutes({})).toBe(10);
+    expect(localVmIdleTimeoutMinutes({ localVm: { mode: "per-bot" } })).toBe(10);
     // Config files written before the setting existed still load unchanged.
     expect(parseStoredConfig({ localVm: { mode: "per-bot", maxInstances: 3 } })).toMatchObject({
       localVm: { mode: "per-bot", maxInstances: 3 },

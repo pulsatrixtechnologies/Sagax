@@ -474,6 +474,7 @@ const bridge = {
     setAlwaysOnTop: (botId, on) => ipcRenderer.invoke("floating-bots:set-top", { botId: String(botId), on: on === true }),
     list: () => ipcRenderer.invoke("floating-bots:list"),
     update: (botId, snapshot) => ipcRenderer.send("floating-bots:update", { botId: String(botId), snapshot }),
+    level: (botId, levels) => ipcRenderer.send("floating-bots:level", { botId: String(botId), levels }),
     onWant: cb => {
       const handler = (_event, value) => cb(value);
       ipcRenderer.on("floating-bots:want", handler);

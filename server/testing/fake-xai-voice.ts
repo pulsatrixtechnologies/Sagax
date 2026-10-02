@@ -41,6 +41,8 @@ export interface FakeXaiOptions {
   ttsFirstChunkMs?: number;
   /** delay between finalize and the final transcript */
   sttFinalizeMs?: number;
+  /** a confidence on each final transcript, like xAI may report */
+  sttConfidence?: number;
   /** seconds of tone per streamed sentence */
   ttsSeconds?: number;
 }
@@ -173,7 +175,7 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
           record.finalizes = (record.finalizes ?? 0) + 1;
           const text = transcripts.shift() ?? options.transcript ?? "Hello from voice mode";
           setTimeout(() => {
-            if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "transcript.partial", text, is_final: true, speech_final: true, start: 0, duration: 1 }));
+            if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "transcript.partial", text, is_final: true, speech_final: true, start: 0, duration: 1, ...(options.sttConfidence !== undefined ? { confidence: options.sttConfidence } : {}) }));
           }, options.sttFinalizeMs ?? 80);
         } else if (message.type === "audio.done") {
           ws.send(JSON.stringify({ type: "transcript.done", text: "" }));

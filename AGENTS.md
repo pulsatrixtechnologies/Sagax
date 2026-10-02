@@ -168,6 +168,24 @@ onboarding tests:
   it at `/api/people/<principalId>/avatar?v=<version>`. Without those
   Perspicax fields everyone keeps their initials.
 
+## Settings layout: one card level, sub-pages for long settings
+
+Settings draws one level of card: what sits inside a card is flat (no
+bordered box in a bordered box; `ManagedProfileIdentity flat` in General).
+A setting too long for a card gets a sub-page instead of a growing card
+(`src/components/SettingsSubPage.tsx`): the section shows a
+`SettingsSubPageRow` (title, one-line summary, Edit) and the page replaces
+the section with a back arrow and the breadcrumb "General > About me".
+Back, the breadcrumb and Escape return to the section (Escape is taken in
+the capture phase, so it never closes Settings from a sub-page). The open
+page is `appSettingsSubPage` in the store (`toggleAppSettings` with
+`subPage`; any other navigation clears it); register a page in `SUB_PAGES`
+in `SettingsModal.tsx`. About me is the first: a full-height editor that
+saves as you type, a character count (24,000 max, `server/config.ts`), a
+short guide with an outline, and the block bots read
+(`userProfileSystemPrompt`). Tests: `src/components/SettingsSubPage.test.ts`,
+`src/components/SettingsModal.serverMode.test.ts`.
+
 ## Group memory and direct messages between people
 
 A user-created group keeps one shared memory (`server/group-memory.ts`,
@@ -217,8 +235,11 @@ Server mode (the launch screen's Server) is exclusive: `serverModeId` in
 organization server. While it is set nothing switches to Local or another
 server (`withActive`, `switchEnvironment`, `requireNotServerMode`), the
 packaged app starts no local server, and the only way out is `leaveServerMode`
-in `electron/main.mjs` (Settings > General > Server > Change, Server > Change
-server…), which signs out and returns to the launch screen. Tests:
+in `electron/main.mjs` (Settings > General > Server > Sign out, Server > Change
+server…), which asks in a native dialog ("Sign out of <name>?"), signs out
+and returns to the launch screen. That Server card names the server's
+address in bold, the organization and the signed-in person
+(`ServerModeCard`, test `src/components/SettingsModal.serverMode.test.ts`). Tests:
 `electron/server-mode.node-test.mjs`, `electron/environments.node-test.mjs`.
 
 An organization server (`org: true`, set by org-join after its probe) is
@@ -386,7 +407,34 @@ Electron restart (no HMR); launch-test them before committing.
   wander, no flight while its bot works), draws at 30 fps at most and the
   skin's loops rest. Measure with `node scripts/verify-mascot-chat.mjs`
   (isolated real Electron: open latency, window moves, clipped and dropped
-  frames, mascot jumps, position writes, theme).
+  frames, mascot jumps, position writes, the balloon's gap to the
+  character and click-through of the transparent parts, theme).
+- The balloon has no shield: dragged by its header it comes right up to
+  the character from any side (over the stage's empty room, touching its
+  box), never over its face (`clampBalloon` in `Balloon.tsx`). Only the part
+  of its offset away from the mascot grows the window; the part toward it is
+  a `translate` inside the window it has. It sits above the art (z-index 2),
+  under the effects (z-index 3).
+- Voice calls with the mascot reuse the app's call, never a second one: the
+  engine (`LiveCallEngine`) runs once in the app page (`CallEngineHost` in
+  App, for the bot `useOnCall()` names) and publishes the call
+  (`src/lib/voice-mode/live-call-store.ts`); the app's pill (`LiveCall`) and
+  the mascot only show and drive it. The mascot's call button (balloon header,
+  `hints.call`, and the menu's "call") starts that same call for its bot
+  (`mascot-call.ts`, `runMascotCallEvent`): one call at a time across app and
+  mascots (`lib/call.ts`). The brain sends `snapshot.call` (`FloatingCall`)
+  and the levels on their own channel (`floating-bots:level`, 20 Hz, rounded);
+  the window draws `MascotCall.tsx` (the pill under the mascot's feet, inside
+  the stage's room; the card where the balloon goes) and the mascot bounces
+  (`--fb-voice`) and leans in (`data-call`), never under reduced motion. The
+  microphone is the app page's (its permission), never the mascot window's.
+  Main sanitizes `call`, its events and their settings patches. Measured in
+  `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
+- The desktop mascot's menu (right click, long press, the menu key) is main's
+  native menu, popped exactly at the pointer (`floating-bots:menu`,
+  `menuPopupPoint`: the page's CSS pixels times its zoom, kept inside the work
+  area of the display under it); the drawn `.fb-menu` stays for the in-app
+  overlay and an older preload.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.
@@ -754,6 +802,29 @@ and groups by default, bots only when the person turns it on. Archive stays
 the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `src/lib/person-panel.test.ts`, `PersonPanel.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
+
+## Sidebar sections are personal
+
+On an organization server a sidebar section is one person's folder and
+shares nothing (JC, 2026-10-02). Keep these rules, covered by
+`src/lib/personal-sections.test.ts`, `server/section-channels.test.ts` and
+`src/components/bot-settings/SharingSection.test.ts`:
+
+- The sections live in the person's preference `sagax.sidebarSections.v1`
+  (`src/lib/personal-sections.ts`, synced per person through
+  `/api/me/preferences`); the sidebar overlays them on `bot.section` and
+  `group.section`, which it never writes in organization mode. A solo
+  server keeps the server's sections (one person).
+- The menu creates, renames, moves, folds and deletes; no members or
+  sharing item. A bot is shared from its own panel; a group has its people.
+- General (what is in none of my sections: my bots, bots shared with me,
+  groups, conversations with people) is always shown, on top. Deleting a
+  section puts its items back in General and never deletes anything.
+- Server: bots take no access from a section. At boot each legacy shared
+  section became bot grants once (`sectionShareGrants`, marker
+  `botSharesMigratedAt` in `section-channels.json`); the records stay and
+  rooms keep reading them. `PUT /api/org/sections/:id/members|bots` answers
+  410 `sections_are_personal`.
 
 ## Computer tab and Local VM on an organization server
 

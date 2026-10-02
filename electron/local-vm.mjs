@@ -32,6 +32,8 @@ export const LOCAL_VM_LABEL = "com.openmausbot.local-vm";
 export const WORKSPACE_PATH_LABEL = "com.openmausbot.workspace-path";
 export const TEST_RUN_LABEL = "com.openmausbot.test-run";
 export const REAL_CONTAINER = "openmausbot-computer";
+/** An unused Local VM stops after 10 minutes (its folder stays). */
+export const LOCAL_VM_IDLE_STOP_MS = 10 * 60_000;
 const WORKSPACE_PLACEHOLDER = "__SAGAX_WORKSPACE__";
 const PASSWORD_PLACEHOLDER = "__SAGAX_VNC_PW__";
 const CUA_EXECUTABLE = "/usr/local/libexec/openmausbot/cua-driver";
@@ -288,11 +290,32 @@ export function createLocalVm({
   removeDir = dir => fs.promises.rm(dir, { recursive: true, force: true }),
   confirm = async () => false, openExternal = async () => {}, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), startWaitMs = 120_000,
   confirmCreate = null, pollMs = 1000,
+  idleStopMs = LOCAL_VM_IDLE_STOP_MS, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout,
 } = {}) {
   const workspace = path.join(dataDir, "vm-home");
   let job = null;
   let installJob = null;
   let confirming = false;
+  // Idle stop: the VM is stopped (not deleted: vm-home stays) once nothing
+  // used it for idleStopMs. Use is a bot command or computer call, an open
+  // view of its screen (the Computer tab grabs a frame every few seconds),
+  // a start, setup or creation. A command still running defers the stop.
+  let inUse = 0;
+  let idleTimer = null;
+  let lastUse = now();
+  const idleBusy = () => inUse > 0 || confirming || job?.state === "running";
+  const armIdle = delay => {
+    if (!idleStopMs) return;
+    if (idleTimer) clearTimer(idleTimer);
+    idleTimer = setTimer(() => void idleExpire(), Math.max(0, delay));
+    idleTimer?.unref?.();
+  };
+  const touch = () => { lastUse = now(); armIdle(idleStopMs); };
+  const using = async work => {
+    inUse += 1;
+    touch();
+    try { return await work(); } finally { inUse -= 1; touch(); }
+  };
   const runEnv = () => runtimeEnv(env, home, platform);
   const detect = () => detectRuntime({ exec, home, platform, env, exists });
   const run = (runtime, args, timeoutSeconds = 60) => exec([runtime.cli, ...args], { timeoutSeconds, env: runEnv() });
@@ -427,15 +450,39 @@ export function createLocalVm({
     return state;
   };
 
-  return {
+  async function idleExpire() {
+    idleTimer = null;
+    if (idleBusy()) return touch();
+    try {
+      const runtime = await detect();
+      if (!runtime.cli || !runtime.daemonUp) return;
+      const { vm } = await current(runtime);
+      if (!vm || vm.stale || !["running", "paused"].includes(vm.state)) return;
+      // Used while the runtime answered: wait out the rest of the window.
+      if (idleBusy() || now() - lastUse < idleStopMs) return armIdle(lastUse + idleStopMs - now());
+      const answer = await run(runtime, ["stop", vm.name], 120);
+      if (answer.code !== 0) touch();
+    } catch {
+      // A runtime hiccup must not disable the backstop: try again later.
+      touch();
+    }
+  }
+  // A VM left running by an earlier session of the app stops too.
+  touch();
+
+  const api = {
     workspace,
+    idleStopMs,
     async status() {
+      // Reading the status is not use; it only re-arms a spent backstop.
+      if (!idleTimer) touch();
       const runtime = await detect();
       let vm = null; let all = [];
       if (runtime.cli && runtime.daemonUp) ({ all, vm } = await current(runtime).catch(() => ({ all: [], vm: null })));
       return text({ runtime, workspace, vm, localVms: all, setup: job, install: installJob });
     },
     async start(container) {
+      touch();
       const runtime = await need();
       const vm = await pick(runtime, container);
       if (vm?.stale) throw new Error(staleMessage(vm));
@@ -445,6 +492,7 @@ export function createLocalVm({
       return text(`${vm.name} started`);
     },
     async power(action) {
+      touch();
       const runtime = await need();
       const vm = await pick(runtime);
       if (vm.stale === "foreign") throw new Error(staleMessage(vm));
@@ -458,6 +506,7 @@ export function createLocalVm({
     },
     async setup(spec) {
       if (!validLocalVmSpec(spec)) throw new Error("The server sent a Local VM recipe this app does not accept. Update the Sagax app.");
+      touch();
       if (job?.state === "running") return text({ setup: job });
       job = setupJob(spec);
       return text({ setup: job });
@@ -547,6 +596,12 @@ export function createLocalVm({
       return { ...text(out.slice(0, OUTPUT_LIMIT)), ...(answer.code === 0 ? {} : { isError: true }) };
     },
   };
+  // Commands, creations and screen grabs are use, held for as long as they run.
+  for (const name of ["create", "exec", "screenshot"]) {
+    const work = api[name];
+    api[name] = (...args) => using(() => work(...args));
+  }
+  return api;
 }
 
 function lastLine(value) {
