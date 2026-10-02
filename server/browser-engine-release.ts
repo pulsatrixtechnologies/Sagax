@@ -48,6 +48,7 @@ const RELEASES = new Map<string, AgentBrowserReleaseAsset>([
     {
       // Upstream 0.37.0 still lacks PR #1781's Windows cold-start fix.
       // Retain the native-verified revision until its replacement is tested.
+      // Hosted on our own vendor release (docs/browser-packaging.md).
       target: "win32-x64", version: "0.36.0-omb.1",
       asset: "agent-browser-win32-x64-0.36.0-omb.1.exe",
       url: "https://github.com/pulsatrixtechnologies/pulsa-bot/releases/download/browser-engine-v0.36.0-omb.1/agent-browser-win32-x64-0.36.0-omb.1.exe",

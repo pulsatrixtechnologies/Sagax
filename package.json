@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.92",
   "baseVersion": "0.1.92",
-  "forkVersion": "0.3.0",
+  "forkVersion": "0.4.0",
   "description": "Pulsatrix Sagax: a local-first chat app for running a team of AI agents.",
   "homepage": "https://github.com/pulsatrixtechnologies/pulsa-bot",
   "repository": {
@@ -71,6 +71,7 @@
     "package:win": "pnpm package:prepare && pnpm build:cua:win && electron-builder --win --publish never",
     "package:fork:mac": "pnpm package:prepare && pnpm build:speech && pnpm build:cua && node scripts/package-fork.mjs mac",
     "package:fork:win": "pnpm package:prepare && pnpm build:cua:win && node scripts/package-fork.mjs win",
+    "package:fork:win:cross": "pnpm package:prepare && node scripts/prepare-win-cross.mjs && node scripts/package-fork.mjs win",
     "package:linux": "pnpm package:prepare && pnpm build:cua:linux && electron-builder --linux --x64 --publish never",
     "package:linux:offline": "pnpm package:prepare && pnpm build:cua:linux:offline && electron-builder --linux --x64 --publish never",
     "smoke:deb-command": "node scripts/smoke-deb-command.mjs",

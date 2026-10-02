@@ -9,9 +9,13 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const platformNames = { darwin: "darwin", linux: "linux", win32: "win32" };
 const archiveNames = { darwin: "darwin", linux: "linux", win32: "windows" };
-const platform = platformNames[process.platform];
-const archive = archiveNames[process.platform];
-if (!platform || !archive) throw new Error(`Android Platform Tools are unsupported on ${process.platform}`);
+// SAGAX_ANDROID_TOOLS_PLATFORM=win32 stages the Windows tools from macOS or
+// Linux for an electron-builder cross build.
+const targetPlatform = process.env.SAGAX_ANDROID_TOOLS_PLATFORM || process.platform;
+const platform = platformNames[targetPlatform];
+const archive = archiveNames[targetPlatform];
+if (!platform || !archive) throw new Error(`Android Platform Tools are unsupported on ${targetPlatform}`);
+const adbName = targetPlatform === "win32" ? "adb.exe" : "adb";
 
 const finalDir = join(root, "dist-native", "android-platform-tools", platform);
 const override = process.env.SAGAX_ANDROID_PLATFORM_TOOLS_SOURCE;
@@ -20,7 +24,7 @@ const staged = join(temporary, platform);
 
 try {
   if (override) {
-    if (!existsSync(join(override, process.platform === "win32" ? "adb.exe" : "adb"))) {
+    if (!existsSync(join(override, adbName))) {
       throw new Error(`SAGAX_ANDROID_PLATFORM_TOOLS_SOURCE has no adb: ${override}`);
     }
     cpSync(override, staged, { recursive: true });
@@ -54,7 +58,7 @@ try {
     cpSync(join(extraction, "platform-tools"), staged, { recursive: true });
   }
 
-  const adb = join(staged, process.platform === "win32" ? "adb.exe" : "adb");
+  const adb = join(staged, adbName);
   if (!existsSync(adb)) throw new Error("Downloaded Android Platform Tools do not contain adb");
   mkdirSync(dirname(finalDir), { recursive: true });
   rmSync(finalDir, { recursive: true, force: true });

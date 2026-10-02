@@ -324,6 +324,7 @@ pnpm test               # unit, server, desktop and packaged-server tests
 pnpm build              # typecheck and production build
 pnpm package:fork:mac   # Sagax build for macOS into release/
 pnpm package:fork:win   # Sagax build for Windows into release/
+pnpm package:fork:win:cross  # Windows x64 + arm64 from macOS (no Windows runner)
 ```
 
 `package.json` keeps three versions: `forkVersion` is the Sagax version used
