@@ -18,13 +18,16 @@
 //               then pauses no_right when he loses `run`
 //   owner pays  a routine a shared editor rewrote or started is refused,
 //               with the owner's card, when the owner has no credentials,
-//               and when the owner is disabled
+//               and when the owner is disabled; the owner's notification
+//               opens the run in the bot's Coding activity, where the card
+//               (hers alone) is, never bob's private thread
 //   subject     a consent finished as another account is refused and revoked
 //   transient   Perspicax unreachable: the run fails, the routine is kept
 //   person out  a disable pauses the routine person_out; no runs follow
 //   disk        no refresh or access token is ever written in clear
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -127,6 +130,35 @@ async function runNow(auth: Auth, routineId: string): Promise<Run> {
   const id = started.body.run.id as string;
   return waitFor(async () => (await runsOf(auth, routineId)).find((r) => r.id === id && ["completed", "failed", "cancelled"].includes(r.status)), 60_000);
 }
+/** An open /api/events stream: everything it received so far. */
+async function openStream(auth: Auth): Promise<{ text: () => string; close: () => void }> {
+  const { body } = await api("POST", "/api/auth/stream-ticket", auth);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
+  return new Promise((resolve, reject) => {
+    let received = "";
+    const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
+      expect(res.statusCode).toBe(200);
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => { received += chunk; });
+      resolve({ text: () => received, close: () => req.destroy() });
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+type Notified = { kind: string; botId: string; threadId: string; audience?: string[]; routineRunId?: string };
+/** The notifications a stream received. */
+const notificationsIn = (text: string): Notified[] => text.split("\n")
+  .filter((line) => line.startsWith("data: "))
+  .flatMap((line) => { try { return [JSON.parse(line.slice(6)) as { kind?: string; notification?: Notified }]; } catch { return []; } })
+  .filter((frame) => frame.kind === "notify" && frame.notification)
+  .map((frame) => frame.notification!);
+type ActivityDetail = { id: string; kind: string; status: string; threadId?: string; steps: unknown[]; access?: Message["access"] };
+async function runActivity(auth: Auth, botId: string, runId: string): Promise<{ status: number; item?: ActivityDetail }> {
+  const got = await api("GET", `/api/bots/${botId}/activity/item?runId=${encodeURIComponent(runId)}`, auth);
+  return { status: got.status, item: got.body.item as ActivityDetail | undefined };
+}
+
 async function cardsFor(auth: Auth, threadId: string, routineId: string): Promise<Message[]> {
   const messages = ((await api("GET", `/api/threads/${threadId}/messages`, auth)).body.messages ?? []) as Message[];
   return messages.filter((m) => m.kind === "access" && m.access?.reason === "routine_delegation" && m.access.routineId === routineId);
@@ -433,6 +465,8 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     alice = await signIn(ALICE);
     await waitFor(async () => (await api("GET", "/api/me/engines", alice)).body.engines?.find((e: { instanceId: string }) => e.instanceId === "claude")?.myKey === false);
     if (existsSync(dump)) rmSync(dump);
+    const aliceStream = await openStream(alice);
+    const bobStream = await openStream(bob);
     const refused = await runNow(bob, r2);
     expect(refused.status).toBe("failed");
     expect(existsSync(dump)).toBe(false);
@@ -445,6 +479,32 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     expect(stored).toMatchObject({ payer: "owner", payerPrincipalId: ids.alice, routine: true, cause: "no_credentials" });
     const bobView = ((await api("GET", `/api/threads/${thread}/messages`, bob)).body.messages ?? []) as Message[];
     expect(bobView.some((m) => m.kind === "access" && m.access?.reason === "no_access")).toBe(false);
+    // alice still cannot read bob's private thread
+    const aliceThread = await api("GET", `/api/threads/${thread}/messages`, alice);
+    expect(((aliceThread.body.messages ?? []) as Message[]).some((m) => m.kind === "access")).toBe(false);
+    // her notification names no thread, only the run: it opens the bot's
+    // Coding activity; bob, not in the card's audience, gets none
+    const notified = await waitFor(async () => notificationsIn(aliceStream.text()).find((n) => n.routineRunId === refused.id) ?? null, 15_000);
+    expect(notified).toMatchObject({ kind: "turn-failed", botId: x.id, threadId: "", audience: [ids.alice] });
+    expect(notificationsIn(aliceStream.text()).some((n) => n.threadId === thread)).toBe(false);
+    expect(notificationsIn(bobStream.text()).some((n) => n.routineRunId === refused.id || (n.kind === "turn-failed" && n.threadId === thread))).toBe(false);
+    aliceStream.close();
+    bobStream.close();
+    // there, the run carries her card with its actions (her subscription,
+    // her key in Perspicax), and nothing of bob's thread
+    const ownerView = await runActivity(alice, x.id, refused.id);
+    expect(ownerView.status).toBe(200);
+    expect(ownerView.item).toMatchObject({ id: `run:${refused.id}`, kind: "routine", status: "failed", steps: [] });
+    expect(ownerView.item!.threadId).toBeUndefined();
+    expect(ownerView.item!.access).toMatchObject({ reason: "no_access", payer: "owner", payerPrincipalId: ids.alice, routine: true, cause: "no_credentials", subscriptionSignIn: true, keysUrl: expect.any(String) });
+    // bob reads his run (and his thread) without her card
+    const runAsView = await runActivity(bob, x.id, refused.id);
+    expect(runAsView.status).toBe(200);
+    expect(runAsView.item!.threadId).toBe(thread);
+    expect(runAsView.item!.access).toBeUndefined();
+    // carol, who neither owns the bot nor runs the routine, does not see the run
+    const carol = await signIn(CAROL);
+    expect((await runActivity(carol, x.id, refused.id)).status).not.toBe(200);
     // the key is back for what follows
     idp.providerKeys.set(`${ALICE.sub}/anthropic`, ALICE_KEY);
     alice = await signIn(ALICE);

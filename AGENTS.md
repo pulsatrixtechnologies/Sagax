@@ -506,9 +506,16 @@ Name, Label or Description fields. Details lists Coding first
 (`server/routes/bot-activity.ts`, types in `shared/bot-activity.ts`): every
 thread passes `botThreadReadable`, every routine run `routineSeenBy`; a run
 seen without its thread has no steps or thread link, and a sub-agent on
-someone else's thread shows no request text. Tests:
+someone else's thread shows no request text. A failed routine run carries
+its access card (`access`, `routineRunAccessCard`) for the card's audience
+only: the bot's owner reads the card of a run refused on their credentials
+in another person's private thread there, with its actions, and nothing else
+of that thread. The owner's notification of such a run names no thread, only
+`routineRunId` (`routineAccessNotifications`), and opens the run there
+(`openBotActivity`); the run's person keeps the thread link. Tests:
 `server/routes/bot-activity.test.ts`, `ActivitySection.test.ts`,
-`InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`.
+`InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
+`server/org-routines.e2e.test.ts` (owner pays).
 
 ## Computer tab and Local VM on an organization server
 

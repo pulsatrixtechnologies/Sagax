@@ -10,8 +10,12 @@
 // run `runSeen` (routineSeenBy: the person it runs as, the bot's owner, or
 // anyone holding the run level), and a sub-agent's conversation on another
 // bot is linked only when that thread is readable too. A run seen without
-// its thread lists no steps and no thread.
+// its thread lists no steps and no thread. A failed run's access card
+// (`runAccessCard`) reaches the card's audience only: the bot's owner reads
+// the card of a run refused on their credentials even when the run's thread
+// is another person's private one, and nothing else of that thread.
 import type { RequestAuth } from "../request-auth.ts";
+import type { WireAccessCard } from "../../shared/wire.ts";
 import type { RoutineRun } from "../../shared/routines.ts";
 import {
   BOT_ACTIVITY_LIMIT,
@@ -86,6 +90,9 @@ export interface BotActivityRouteDeps {
   children(botId: string, threadId: string): ActivityChildRef[];
   personName(principalId: string): string;
   organization(): boolean;
+  /** The access card a failed run left, as this viewer may see it (in the
+   * card's audience only); undefined when there is none for them. */
+  runAccessCard?(run: RoutineRun, viewerId: string | undefined): WireAccessCard | undefined;
   now?: () => number;
 }
 
@@ -229,7 +236,7 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     });
   }
 
-  function threadDetail(bot: ActivityBot, task: ActivityTask, viewerId: string | undefined): BotActivityDetail {
+  function threadDetail(bot: ActivityBot, task: ActivityTask, viewerId: string | undefined, askedRun?: RoutineRun): BotActivityDetail {
     const runs = deps.runs(bot.id).filter((run) => deps.runSeen(run, viewerId));
     const item = threadItem(bot, task, new Map(runs.map((run) => [run.id, run])), viewerId);
     const page = deps.messages(task.threadId, BOT_ACTIVITY_STEPS);
@@ -253,9 +260,11 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
         ...(tool.files?.length ? { files: tool.files } : {}),
       });
     }
-    const run = task.routineRunId ? runs.find((entry) => entry.id === task.routineRunId) : undefined;
+    // the run asked for by id: its thread no longer names it once it ended
+    const run = askedRun ?? (task.routineRunId ? runs.find((entry) => entry.id === task.routineRunId) : undefined);
     const selection = task.modelSelection ?? bot.modelSelection ?? undefined;
     const note = run?.status === "waiting" ? run.attention : run?.status === "failed" ? run.error : undefined;
+    const card = run ? runCard(run, viewerId) : undefined;
     return {
       ...item,
       ...(selection ? { engine: { instanceId: selection.instanceId, model: selection.model } } : {}),
@@ -266,11 +275,17 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       children: childItems(bot, task.threadId, viewerId),
       ...(note ? { note } : {}),
       canStop: activityStatusActive(item.status) && deps.threadWritable(bot.id, task.threadId, viewerId),
+      ...(card ? { access: card } : {}),
     };
   }
 
-  function runDetail(bot: ActivityBot, run: RoutineRun): BotActivityDetail {
+  function runCard(run: RoutineRun, viewerId: string | undefined): WireAccessCard | undefined {
+    return run.status === "failed" ? deps.runAccessCard?.(run, viewerId) : undefined;
+  }
+
+  function runDetail(bot: ActivityBot, run: RoutineRun, viewerId: string | undefined): BotActivityDetail {
     const note = run.status === "waiting" ? run.attention : run.status === "failed" ? run.error : undefined;
+    const card = runCard(run, viewerId);
     return {
       ...runItem(bot, run),
       steps: [],
@@ -279,6 +294,7 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       children: [],
       ...(note ? { note } : {}),
       canStop: false,
+      ...(card ? { access: card } : {}),
     };
   }
 
@@ -307,8 +323,8 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       if (!run || !deps.runSeen(run, viewerId)) return json(res, 404, { error: "no such activity" });
       const thread = run.threadId ?? run.executionThreadId;
       const task = thread ? deps.tasks(bot.id).find((entry) => entry.threadId === thread) : undefined;
-      if (task && deps.threadReadable(bot.id, task.threadId, viewerId)) return json(res, 200, { item: threadDetail(bot, task, viewerId) });
-      return json(res, 200, { item: runDetail(bot, run) });
+      if (task && deps.threadReadable(bot.id, task.threadId, viewerId)) return json(res, 200, { item: threadDetail(bot, task, viewerId, run) });
+      return json(res, 200, { item: runDetail(bot, run, viewerId) });
     }
     return json(res, 400, { error: "threadId or runId is required" });
   };

@@ -2,6 +2,8 @@
 // engine and model and whose credentials paid (organization server), the
 // tool steps with where each ran (your computer or the server environment),
 // files touched and the sub-agents it started, with Stop and Open thread.
+// A failed routine run refused for lack of credentials carries its access
+// card (audience only), with the same actions as in the thread.
 // The server decides what this person may read (server/routes/bot-activity.ts):
 // a routine run seen without its thread comes with no steps and no thread.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -21,6 +23,7 @@ import {
   type BotActivityItem,
 } from "@/lib/bot-activity";
 import { ActivityCard, ActivityStatusIcon } from "./ActivityCard";
+import { AccessCard, type AccessViewer } from "../AccessCard";
 
 const POLL_MS = 3_000;
 
@@ -38,8 +41,12 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 /** The body, without fetching: tests render it with a fixed detail. */
-export function ActivityDetailBody({ item, detail, error, now, engineName, onStop, onOpenThread, onOpenChild, stopping = false }: {
+export function ActivityDetailBody({ item, detail, error, now, engineName, onStop, onOpenThread, onOpenChild, stopping = false, viewer, onSignIn }: {
   item: BotActivityItem;
+  /** Who reads the access card of a refused run (the server already sent
+   * it to its audience only). */
+  viewer?: AccessViewer;
+  onSignIn?: () => void;
   detail: BotActivityDetail | null;
   error: boolean;
   now: number;
@@ -64,6 +71,11 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
         {detail === null && error && <p role="alert" className="py-2 text-[12.5px] text-danger">{t("botPanel.activity.error")}</p>}
         {detail?.note && <p className="mb-2 rounded-lg bg-warning/10 px-3 py-2 text-[12.5px] text-ink">{detail.note}</p>}
+        {detail?.access && (
+          <div data-activity-access className="mb-2">
+            <AccessCard access={detail.access} viewer={viewer ?? { principalId: null, admin: false }} onSignIn={onSignIn} />
+          </div>
+        )}
         <dl className="divide-y divide-hairline-weak">
           <Fact label={t("botPanel.activity.started")}>{formatTime(shown.startedAt)}</Fact>
           {shown.endedAt !== undefined && <Fact label={t("botPanel.activity.ended")}>{formatTime(shown.endedAt)}</Fact>}
@@ -256,6 +268,8 @@ export function ActivityDetailModal({ item, onClose, onChanged }: {
           onOpenThread={openThread}
           onOpenChild={(child) => { if (child.threadId) setCurrent(child); }}
           stopping={stopping}
+          viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
+          onSignIn={() => { onClose(); dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); }}
         />
       </div>
     </dialog>
