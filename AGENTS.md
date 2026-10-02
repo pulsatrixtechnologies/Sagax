@@ -275,11 +275,13 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 
 ## Voice mode (xAI)
 
-The call button on a bot opens the voice call bar
-(`src/components/voice-mode/`), a slim in-call banner docked at the top of
-the chat column (`VoiceCallDock`, first in ChatView's banner stack; it
-pushes the thread down, never floats over it; layout pinned by
-`VoiceModeBar.layout.test.ts`), when `GET /api/bots/<id>/voice/status` says
+The call button on a bot opens the voice call pill
+(`src/components/voice-mode/`), a compact pill centered at the top of the
+chat column under the name chip (`VoiceCallDock`, first in ChatView's banner
+stack: collapsed it keeps its own 48px row, never covering a message;
+Settings or Transcript expand it into a card over the thread that closes on
+Escape or a click outside; hold lives in the settings card; states pinned
+by `VoiceModeBar.layout.test.ts`), when `GET /api/bots/<id>/voice/status` says
 xAI voice mode serves the person; otherwise a solo Mac keeps the older call
 (macOS dictation helper). Keep these rules, each covered by
 `server/voice-mode.test.ts`, `src/lib/voice-mode/voice-mode.test.ts`,

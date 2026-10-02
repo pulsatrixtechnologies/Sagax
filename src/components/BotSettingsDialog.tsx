@@ -416,7 +416,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
               return next;
             });
           }}
-          className="app-resize-handle absolute inset-y-0 -left-1.5 z-10 hidden w-3 cursor-col-resize focus-visible:bg-accent/40 lg:block"
+          className="app-resize-handle -left-[3px] hidden lg:block"
         />
         {(macInset || browser) && <div className="content-topbar-strip" />}
         {/* Top bar: only the controls, the way Grok Bot's panel opens. On

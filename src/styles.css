@@ -1121,23 +1121,41 @@
   background: var(--color-app);
 }
 
-/* The sidebar's and the docked panel's own resize handles: an unfocused
-   `focus-visible:bg-accent/40` reads as a stray bright blue line sitting
-   on navy on both sides of it, and the app-wide `:focus-visible { outline:
-   2px solid var(--color-focus) }` rule (below) draws a second, brighter one
-   right on top of it. Invisible at rest in this skin; a subtle hairline
-   (not the brand accent, for either) on hover, drag or keyboard focus says
-   "draggable" without shouting. */
-[data-skin="pulsatrix-light"] .app-resize-handle {
+/* Every column resize handle (sidebar edge, docked settings panels, the
+   computer panel). Invisible at rest: the column's own 0.5px hairline border
+   is the edge. A 6px hit area centred on that border; a 2px accent line
+   shows only on hover, drag (`:active`, `[data-resizing]`) or keyboard focus,
+   never the app-wide 2px focus outline on top of it. No `display` here, so a
+   `hidden lg:block` on the element still decides where it exists. */
+.app-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
   background-color: transparent;
 }
-[data-skin="pulsatrix-light"] .app-resize-handle:hover,
-[data-skin="pulsatrix-light"] .app-resize-handle:active,
-[data-skin="pulsatrix-light"] .app-resize-handle:focus-visible {
-  background-color: var(--color-sidebar-hairline);
+.app-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background-color: transparent;
+  transition: background-color 120ms ease-out;
 }
-[data-skin="pulsatrix-light"] .app-resize-handle:focus-visible {
-  outline-color: var(--color-sidebar-hairline);
+.app-resize-handle:hover::after,
+.app-resize-handle:active::after,
+.app-resize-handle[data-resizing]::after,
+.app-resize-handle:focus-visible::after {
+  background-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+.app-resize-handle:focus-visible {
+  outline: none;
 }
 
 /* The Perspicax mark shows the file that reads on the sidebar's ground
@@ -1313,11 +1331,11 @@ body {
   from { transform: scale(1) translateY(0); opacity: 1; }
   to { transform: scale(0.96) translateY(6px); opacity: 0; }
 }
-/* voice mode's in-call banner (CallView.tsx VoiceCallDock): it opens its
-   room at the top of the chat column, and folds it away when the call ends */
+/* voice mode's call pill (CallView.tsx VoiceCallDock): it drops in under
+   the name chip, and its row folds away when the call ends */
 @keyframes call-dock-in {
-  from { grid-template-rows: 0fr; opacity: 0; transform: translateY(-4px); }
-  to { grid-template-rows: 1fr; opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes call-dock-out {
   from { height: var(--call-dock-h); margin-bottom: 8px; opacity: 1; }
@@ -2194,4 +2212,25 @@ button:disabled.bg-danger {
 
 ::highlight(omb-citation-source) {
   background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+/* "Paid with" stays out of the way: it shows while the pointer is on its
+   reply (the message row just above it) or on the chip itself, and for
+   keyboard focus. */
+[data-testid="turn-access-chip"] {
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 120ms ease, max-height 120ms ease;
+}
+[data-mid]:hover > [data-testid="turn-access-chip"],
+[data-mid]:hover + [data-mid] > [data-testid="turn-access-chip"],
+[data-mid]:focus-within > [data-testid="turn-access-chip"],
+[data-mid]:hover + [data-mid] [data-testid="turn-access-chip"],
+[data-mid]:hover [data-testid="turn-access-chip"] {
+  opacity: 1;
+  max-height: 40px;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-testid="turn-access-chip"] { transition: none; }
 }

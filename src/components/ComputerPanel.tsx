@@ -1563,7 +1563,7 @@ export function ComputerPanel({
         onPointerMove={onResizeMove}
         onPointerUp={onResizeEnd}
         onPointerCancel={onResizeEnd}
-        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize hover:bg-accent/40 focus-visible:bg-accent/60 max-md:hidden"
+        className="app-resize-handle -left-[3px] max-md:hidden"
       />
       {/* Header */}
       <div className={cn("relative flex h-11 shrink-0 items-center justify-center px-12", padClass)}>

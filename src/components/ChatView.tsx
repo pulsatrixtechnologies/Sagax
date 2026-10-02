@@ -1394,8 +1394,9 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       {/* Banners sit below the floating header; the wrapper vanishes when
           none is showing so the transcript can run to the top. */}
       <div className="chat-banners pt-[52px] empty:hidden">
-      {/* Voice mode's in-call banner: first in the stack, right under the
-          header, so it pushes the thread down instead of floating over it */}
+      {/* Voice mode's call pill: first in the stack, centered right under
+          the name chip; collapsed it keeps its own small row, expanded its
+          card hangs over the thread */}
       <VoiceCallDock bot={bot} />
       <BotActivityPicker bot={bot} />
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
