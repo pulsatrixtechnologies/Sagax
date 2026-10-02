@@ -23974,7 +23974,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               : `forbidden: this session may change how a bot looks, not "${field}" (needs the admin scope)`,
           });
         }
-        if (!own && !editor && target && botEditsNeedOwner(auth) && Object.keys(body).some((key) => key === "color" || key.startsWith("mascot"))) {
+        if (!own && !editor && target && botEditsNeedOwner(auth) && Object.keys(body).some((key) => key === "color" || key.startsWith("mascot") || key.startsWith("avatar"))) {
           return json(res, 403, { error: "forbidden: only the bot owner can change how it looks" });
         }
       }
