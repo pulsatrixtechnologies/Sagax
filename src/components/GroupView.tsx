@@ -26,7 +26,8 @@ import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
 import { viewerActorId } from "@/lib/viewer";
-import { RoomPersonLabel } from "./MessageAuthor";
+import { PersonAvatar, RoomPersonLabel } from "./MessageAuthor";
+import { peopleDmPeer } from "@/lib/people-dm";
 import { continuesRun, roomAuthor, runCorners } from "@/lib/room-authors";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
@@ -1137,8 +1138,14 @@ export function RoomSetupDialog({
   return createPortal(content, document.body);
 }
 
-export function GroupView({ group }: { group: Group }) {
+export function GroupView({ group: stored }: { group: Group }) {
+  // A direct conversation between two people (server/people-dms.ts) runs on
+  // the single-thread path of a bot-to-bot channel: no panel, no tasks, no
+  // setup. It reads as the other person.
+  const group = useMemo(() => (stored.peopleDm ? { ...stored, dm: true } : stored), [stored]);
   const { state, dispatch } = useStore();
+  const directPeople = useOrgPeople();
+  const peer = peopleDmPeer(stored, viewerActorId(state.config), directPeople);
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const [remoteActor, setRemoteActor] = useState<{ id: string; role: "owner" | "admin" | "member" | null }>({ id: "", role: null });
   useEffect(() => {
@@ -1481,8 +1488,8 @@ export function GroupView({ group }: { group: Group }) {
         <div className="absolute left-1/2 top-1/2 flex max-w-[50%] -translate-x-1/2 -translate-y-1/2 items-center gap-2" style={headerNoDragStyle}>
           {group.dm ? (
             <span className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px]">
-              <GroupAvatarStack members={members} size={24} />
-              <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
+              {peer ? <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} /> : <GroupAvatarStack members={members} size={24} />}
+              <span className="truncate text-[14px] font-medium leading-5 text-ink">{peer?.name ?? group.name}</span>
             </span>
           ) : (
             <button
@@ -1543,7 +1550,7 @@ export function GroupView({ group }: { group: Group }) {
       )}
 
       {/* Bulletin: one pinned line; click to edit */}
-      {!setupPending && <div className="w-full px-5">
+      {!setupPending && !stored.peopleDm && <div className="w-full px-5">
         {bulletinOpen ? (
           <div className="mb-1 rounded-lg border border-hairline/40 bg-panel p-2">
             <textarea

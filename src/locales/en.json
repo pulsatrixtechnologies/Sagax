@@ -3932,5 +3932,19 @@
   "harnessConnectors.unavailable.key": "Connect your Claude subscription to use your connectors. An API key brings none.",
   "harnessConnectors.unavailable.unknown": "Claude Code did not answer. Check that it is installed and signed in.",
   "harnessConnectors.codex": "Codex: ChatGPT connectors do not reach bots in Sagax.",
-  "harnessConnectors.adminToggle": "Allow Claude connectors on this server"
+  "harnessConnectors.adminToggle": "Allow Claude connectors on this server",
+  "compose.directMessage": "Direct message",
+  "groupPanel.tab.memory": "Memory",
+  "groupMemory.loading": "Loading the group memory…",
+  "groupMemory.title": "Group memory",
+  "groupMemory.detail": "Notes every bot of this group reads at each turn here, and writes when it learns something the whole group should keep. A bot's own memory stays private and never lands here on its own.",
+  "groupMemory.switch": "Let the bots of this group use its memory",
+  "groupMemory.readOnly": "Only the owner of this group can change its memory.",
+  "groupMemory.off": "Off: the bots neither read nor write it. The notes stay here.",
+  "groupMemory.placeholder": "- A fact the whole group should keep",
+  "groupMemory.empty": "Nothing yet.",
+  "groupMemory.conflict": "A bot changed the group memory while you were editing. Nothing was saved.",
+  "groupMemory.reload": "Reload",
+  "groupMemory.overwrite": "Overwrite with mine",
+  "groupMemory.save": "Save"
 }

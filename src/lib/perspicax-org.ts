@@ -27,6 +27,8 @@ export interface OrgDirectoryPerson {
   disabled: boolean;
   /** Their Perspicax avatar as this server serves it, when they have one. */
   avatarUrl?: string;
+  /** A Perspicax service account: never someone to write to. */
+  service?: true;
 }
 
 let peoplePending: Promise<Map<string, OrgDirectoryPerson>> | null = null;

@@ -11,11 +11,12 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { BotAvatar } from "./Avatar";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
+import { GroupMemoryTab } from "./GroupMemoryTab";
 import { inputCls } from "./bot-settings/field";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { normalizeState } from "@/lib/mascot";
 
-export const GROUP_PANEL_TABS = ["details", "instructions", "advanced"] as const;
+export const GROUP_PANEL_TABS = ["details", "instructions", "memory", "advanced"] as const;
 export type GroupPanelTab = (typeof GROUP_PANEL_TABS)[number];
 
 // The bot panel's width is the user's panel width: one remembered size.
@@ -33,7 +34,7 @@ function readSettingsWidth(): number {
 }
 
 const tabLabel = (tab: GroupPanelTab) =>
-  tab === "instructions" ? t("groupPanel.tab.instructions") : t(`botPanel.tab.${tab}`);
+  tab === "instructions" ? t("groupPanel.tab.instructions") : tab === "memory" ? t("groupPanel.tab.memory") : t(`botPanel.tab.${tab}`);
 
 /** Up to three member faces overlapped in a square, the group's avatar. */
 export function GroupAvatarStack({ members, size }: { members: Bot[]; size: number }) {
@@ -261,6 +262,8 @@ export function GroupPanel({
             />
           </div>
         )}
+
+        {tab === "memory" && <GroupMemoryTab groupId={group.id} />}
 
         {tab === "advanced" && (
           <div className="mx-4 mb-6 overflow-hidden rounded-xl border border-hairline-weak">

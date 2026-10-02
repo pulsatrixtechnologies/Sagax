@@ -245,6 +245,10 @@ export interface Group {
   createdAt: number;
   /** auto-created bot⇄bot channel (ask_bot exchanges mirror here) */
   dm?: boolean;
+  /** A direct conversation between two people (server/people-dms.ts). */
+  peopleDm?: boolean;
+  /** The group's shared memory; absent = on. */
+  memoryEnabled?: boolean;
   busyBotId?: string | null;
   /** when the busy member's turn started — the group-side twin of a task's
    * turnStartedAt; stamped by the server when the speaker claims the turn */
@@ -1145,6 +1149,9 @@ export type Action =
   | { type: "groupPatched"; group: Partial<Group> & { id: string } }
   | { type: "groupDeleted"; groupId: string }
   | { type: "createGroup"; memberIds: string[]; name?: string; section?: string }
+  /** Open (or create) the direct conversation with another person of the
+   * organization (server/people-dms.ts). */
+  | { type: "openPeopleDm"; principalId: string }
   | {
       type: "sendGroup";
       groupId: string;
@@ -2381,6 +2388,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "reorderProjects":
     case "interrupt":
     case "createGroup":
+    case "openPeopleDm":
     case "deleteGroup":
     case "interruptGroup":
     case "steerGroupQueued":
@@ -3446,6 +3454,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 : {}),
             }),
           })
+            .then(({ group }) => {
+              rawDispatch({ type: "groupPatched", group });
+              rawDispatch({ type: "select", id: group.id });
+            })
+            .catch(showError);
+          break;
+        case "openPeopleDm":
+          api(`/api/people-dms`, { method: "POST", body: JSON.stringify({ principalId: action.principalId }) })
             .then(({ group }) => {
               rawDispatch({ type: "groupPatched", group });
               rawDispatch({ type: "select", id: group.id });
