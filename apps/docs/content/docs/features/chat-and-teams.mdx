@@ -40,11 +40,11 @@ Right-click a named team heading in the sidebar and choose **Rename team**, or u
 
 ## Deleting a team
 
-To delete a team, right-click its name in the sidebar and choose **Delete team**, or use its **Manage** menu in Team map. The confirmation explains that bots (including archived bots) and group chats move to General with their conversations intact. The team's shared instructions are removed; General's instructions stay unchanged. Stop active work and unassign any team computer first. If moving the team's Chief would conflict with General's Chief, move or change one of those Chiefs before deleting the team.
+To delete a team, right-click its name in the sidebar and choose **Delete team**, or use its **Manage** menu in Team map. The confirmation explains that bots (including archived bots) and group chats move to General with their conversations intact. The team's shared instructions are removed; General's instructions stay unchanged. Stop active work and unassign any team computer first.
 
 ## Team membership
 
-Every named team keeps an **Add bots** button in the sidebar. Once it has members, the button reads **Add or remove bots**. The dialog lists current members as checked alongside other available bots. Check a bot to move it into the team; uncheck one to move it to General, then save. Conversations stay with the bots. A move that would put two Chiefs of Staff in the same team is refused.
+Every named team keeps an **Add bots** button in the sidebar. Once it has members, the button reads **Add or remove bots**. The dialog lists current members as checked alongside other available bots. Check a bot to move it into the team; uncheck one to move it to General, then save. Conversations stay with the bots.
 
 Choose **New bot** inside this dialog to open bot creation for that team. The new bot is created directly in the selected team and appears checked when you return to the membership list. Creating it does not discard your other unsaved checkbox edits.
 
@@ -54,9 +54,9 @@ Bots can hand work to other bots. Delegated runs carry explicit status back into
 
 ### Creating a specialist with a chosen model
 
-A Chief of Staff can create a specialist in its own team with `create_bot`. Ask for a particular engine, model and reasoning effort if you want to choose them. The Chief can look up exact available choices with `list_team_setup` and pass `modelSelection` with `instanceId`, `model`, and optionally `effort` or a supported `variant` (not both).
+A Primary Bot can create a specialist in its own team with `create_bot`. Ask for a particular engine, model and reasoning effort if you want to choose them. The Primary Bot can look up exact available choices with `list_team_setup` and pass `modelSelection` with `instanceId`, `model`, and optionally `effort` or a supported `variant` (not both).
 
-When no model selection is supplied, the new bot uses the workspace's default model selection, including its reasoning effort; it does not copy the Chief's model. An invalid explicit choice is rejected rather than silently replaced. The new bot starts with connected apps and automatic approvals disabled, and existing bots and threads keep their own models. Combined team changes still use the reviewed team-setup flow.
+When no model selection is supplied, the new bot uses the workspace's default model selection, including its reasoning effort; it does not copy the Primary Bot's model. An invalid explicit choice is rejected rather than silently replaced. The new bot starts with connected apps and automatic approvals disabled, and existing bots and threads keep their own models. Combined team changes still use the reviewed team-setup flow.
 
 ## Rewind and branches
 
