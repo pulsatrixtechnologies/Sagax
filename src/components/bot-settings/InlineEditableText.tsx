@@ -110,7 +110,7 @@ export function InlineEditableText({
       )}
     >
       <span className={cn("min-w-0 truncate", (!shown || muted) && "text-ink-secondary")}>{shown || placeholder}</span>
-      <Pencil size={11} aria-hidden="true" className="shrink-0 text-ink-secondary opacity-0 transition-opacity group-hover/inline:opacity-100 group-focus-visible/inline:opacity-100" />
+      <Pencil size={11} aria-hidden="true" className="shrink-0 text-ink-secondary opacity-0 transition-opacity group-hover/inline:opacity-100 group-focus-within/inline:opacity-100 touch:opacity-100" />
     </button>
   );
 }
