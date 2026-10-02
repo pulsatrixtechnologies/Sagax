@@ -247,7 +247,7 @@ function groupPreview(group: Group, bots: Bot[]): string {
 }
 
 /** A small member stack identifies a group without turning it into a card. */
-function StackedMauses({ members, density }: { members: Bot[]; density: SidebarDensity }) {
+export function StackedMauses({ members, density, viewerId }: { members: Bot[]; density: SidebarDensity; viewerId: string }) {
   const iconOnly = density === "icons";
   // Same footprint as a bot row's avatar (BotListItem: 28 compact, 36
   // comfortable) so group and bot names share one left edge.
@@ -257,7 +257,7 @@ function StackedMauses({ members, density }: { members: Bot[]; density: SidebarD
     const b = members[0];
     return (
       <div className={cn("flex shrink-0 items-center justify-center", slotSize)}>
-        {b ? <BotAvatar bot={b} state="happy" size={singleSize} animated={false} /> : <Users size={24} className="text-ink-secondary" />}
+        {b ? <BotAvatar bot={b} primary={isViewersPrimaryBot(b, viewerId)} primaryRingClassName="ring-sidebar" state="happy" size={singleSize} animated={false} /> : <Users size={24} className="text-ink-secondary" />}
       </div>
     );
   }
@@ -272,7 +272,7 @@ function StackedMauses({ members, density }: { members: Bot[]; density: SidebarD
           hover and selected rows. The faces simply overlap. */}
       {shown.map((b, index) => (
         <span key={b.id} className={cn("absolute rounded-full", spots[index])}>
-          <BotAvatar bot={b} state="idle" size={face} animated={false} />
+          <BotAvatar bot={b} primary={isViewersPrimaryBot(b, viewerId)} primaryRingClassName="ring-sidebar" state="idle" size={face} animated={false} />
         </span>
       ))}
     </div>
@@ -346,7 +346,7 @@ export function GroupListItem({
     >
       {peer
         ? <span className={cn("flex shrink-0 items-center justify-center", density === "icons" ? "size-12" : density === "compact" ? "size-7" : "size-9")}><PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={density === "icons" ? 44 : density === "compact" ? 28 : 36} /></span>
-        : <StackedMauses members={members} density={density} />}
+        : <StackedMauses members={members} density={density} viewerId={viewerActorId(state.config)} />}
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
           <span className={cn("truncate text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>{rowName}</span>
@@ -2423,7 +2423,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   aria-current={selected ? "page" : undefined}
                   className={cn("flex w-20 min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 pb-1 pt-1.5", selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover")}
                 >
-                  <BotAvatar bot={bot} state="idle" size={density === "icons" ? 36 : 72} animated={false} />
+                  <BotAvatar bot={bot} primary={isViewersPrimaryBot(bot, viewerId)} primaryRingClassName="ring-sidebar" state="idle" size={density === "icons" ? 36 : 72} animated={false} />
                   {density !== "icons" && <span className="w-full truncate text-center text-[11px] leading-4 tracking-[.005em] text-sidebar-ink">{bot.name}</span>}
                   {density !== "icons" && title ? (
                     <span className="max-w-full truncate rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1.5 text-[10px] leading-4 text-sidebar-ink-secondary">{title}</span>
