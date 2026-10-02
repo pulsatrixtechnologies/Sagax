@@ -293,6 +293,14 @@ app.whenReady().then(async () => {
   if (process.env.VERIFY_SHOT_DIR) {
     const { mkdirSync, writeFileSync } = await import("node:fs");
     mkdirSync(process.env.VERIFY_SHOT_DIR, { recursive: true });
+    // The bar in the layout, wide then in a narrow window (about 530px).
+    writeFileSync(path.join(process.env.VERIFY_SHOT_DIR, "voice-bar-wide.png"), (await win.webContents.capturePage()).toPNG());
+    const [width, height] = win.getContentSize();
+    win.setContentSize(530, height);
+    await wait(600);
+    writeFileSync(path.join(process.env.VERIFY_SHOT_DIR, "voice-bar-narrow.png"), (await win.webContents.capturePage()).toPNG());
+    win.setContentSize(width, height);
+    await wait(400);
     await click("[data-voice-gear]");
     await click('[data-voice-list="voice"]');
     await wait(600);

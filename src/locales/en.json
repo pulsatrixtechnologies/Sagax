@@ -4250,6 +4250,8 @@
   "voiceMode.phase.thinking": "Thinking",
   "voiceMode.phase.interrupted": "Interrupted",
   "voiceMode.phase.held": "On hold",
+  "voiceMode.phase.speaking": "Speaking",
+  "voiceMode.callWith": "Voice call with {name}",
   "voiceMode.hold": "Put the call on hold",
   "voiceMode.resume": "Resume the call",
   "voiceMode.pushToTalk": "Hold to talk",

@@ -2599,6 +2599,8 @@
   "voiceMode.phase.thinking": "Réflexion",
   "voiceMode.phase.interrupted": "Interrompu",
   "voiceMode.phase.held": "En attente",
+  "voiceMode.phase.speaking": "Parle",
+  "voiceMode.callWith": "Appel vocal avec {name}",
   "voiceMode.hold": "Mettre l'appel en attente",
   "voiceMode.resume": "Reprendre l'appel",
   "voiceMode.pushToTalk": "Maintenir pour parler",
