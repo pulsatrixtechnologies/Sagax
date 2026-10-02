@@ -133,7 +133,7 @@ async function runNow(auth: Auth, routineId: string): Promise<Run> {
 /** An open /api/events stream: everything it received so far. */
 async function openStream(auth: Auth): Promise<{ text: () => string; close: () => void }> {
   const { body } = await api("POST", "/api/auth/stream-ticket", auth);
-  expect(body.ticket).toMatch(/^omb_tick_/);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
   return new Promise((resolve, reject) => {
     let received = "";
     const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
