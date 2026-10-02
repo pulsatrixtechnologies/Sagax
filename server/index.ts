@@ -696,6 +696,7 @@ import { handleUserSandboxMcp } from "./user-sandbox-tools.ts";
 import { SANDBOX_CONTROL_REFUSAL, SandboxControlHolds } from "./sandbox-control.ts";
 import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeOperation, type WorkplaceDecision } from "./desktop-bridge.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
+import { AUTO_COMPUTER_MCP_NAME, COMPUTER_SELECT_TOOL, autoComputerGuidance, autoComputerReason, autoComputerToolRefusal, selectAutoComputer, type AutoComputerState, type FixedWorksOn } from "./auto-computer.ts";
 import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
 import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
 import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAttachments, stagedName, SANDBOX_ATTACHMENTS_DIR, type StagingTarget, type TurnAttachedFile } from "./attachment-staging.ts";
@@ -853,6 +854,9 @@ type TurnWorkplace = {
   decision: WorkplaceDecision;
   /** The speaker's own attachments still to copy where the tools run. */
   staging: { target: StagingTarget; files: TurnAttachedFile[] } | null;
+  /** Works on and, when Auto, the computer the bot chose with
+   * computer_select (server/auto-computer.ts). Absent on a solo server. */
+  auto?: AutoComputerState;
 };
 const turnWorkplaces = new Map<string, TurnWorkplace>();
 let egressProxy: EgressProxy | null = null;
@@ -2449,7 +2453,7 @@ type InternalCapability = {
   threadId: string;
   generation: string;
   depth: number;
-  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox" | "desktop";
+  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox" | "desktop" | "workplace";
   /** Slice 5: the one Perspicax profile a "perspicax" capability relays for. */
   perspicaxProfile?: string;
   /** A "sandbox" capability: whose server environment it runs in. */
@@ -3490,6 +3494,49 @@ function userDesktopIntegration(botId: string, threadId: string, generation: str
   };
 }
 
+/** computer_select for one turn ("sagax-computer", server/auto-computer.ts):
+ * the same stdio proxy, holding only a turn-scoped capability that can do
+ * nothing but choose among the computers this turn already may reach. */
+function workplaceIntegration(botId: string, threadId: string, generation: string) {
+  const token = mintInternalCapability({
+    botId, threadId, generation, depth: 0, kind: "workplace", skillAuthoring: false, createdBots: 0, openedThreads: 0,
+  });
+  return {
+    command: process.execPath,
+    args: [SPAWNED_PROXIES.userSandbox],
+    env: { ...AGENTS_NODE_FLAG, SAGAX_SANDBOX_TOKEN: token, SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`, SAGAX_TOOL_SERVER: AUTO_COMPUTER_MCP_NAME },
+  };
+}
+
+/** A turn's Works on as computer_select reads it: Auto, or the fixed place. */
+function turnWorksOn(plan: { computer: ReturnType<typeof resolveSurface>["computer"]; browser: boolean; pinned: ReturnType<typeof resolveSurface>["pinned"] }, forced: boolean): { auto: boolean; fixed?: FixedWorksOn } {
+  if (forced) return { auto: false, fixed: "cloud" };
+  if (plan.computer === undefined) return { auto: true };
+  if (plan.computer === "off") return { auto: false, fixed: plan.browser || plan.pinned === "browser" ? "browser" : "off" };
+  return { auto: false, fixed: plan.computer };
+}
+
+/** Organization server: the Auto computer state of one turn (who may be
+ * reached, where it starts), or null when no person is known. Auto starts
+ * in the person's server environment, as before (resolveBotWorkplace); the
+ * desktop tools are mounted beside it only when their app is connected now
+ * (and, for a routine, the owner allowed routines on their computer). */
+function autoComputerStateFor(decision: WorkplaceDecision, worksOn: { auto: boolean; fixed?: FixedWorksOn }, routine: boolean): AutoComputerState | null {
+  if (IDENTITY.kind !== "perspicax" || !decision.principal) return null;
+  if (decision.reason === "no-person" || decision.reason === "unknown") return null;
+  const routinesAllowed = workplacePreference(decision.principal).routines;
+  const desktopMounted = worksOn.auto && desktopBridges.connected(decision.principal) && (!routine || routinesAllowed);
+  return {
+    auto: worksOn.auto,
+    ...(worksOn.fixed ? { fixed: worksOn.fixed } : {}),
+    selected: worksOn.auto && decision.target === "user-sandbox" ? "cloud" : null,
+    routine,
+    sandboxConfigured: Boolean(userSandbox),
+    desktopMounted,
+    routinesAllowed,
+  };
+}
+
 /** Where this turn's tools run and for whom (server/desktop-bridge.ts
  * resolveBotWorkplace), from the person's preference and whether their
  * desktop app is connected right now. */
@@ -3526,7 +3573,8 @@ function workplaceTurnText(text: string, decision: WorkplaceDecision): { text: s
 /** What the bot is told about where its tools run, when it matters: on the
  * person's own computer, or in their server environment because their
  * computer is not connected (the UI says so too). Provider text only. */
-function withWorkplaceNote(text: string, decision: WorkplaceDecision): string {
+function withWorkplaceNote(text: string, decision: WorkplaceDecision, auto?: AutoComputerState | null): string {
+  if (auto?.auto) return `${text}\n\n${autoComputerGuidance(auto, Boolean(decision.principal && desktopBridges.connected(decision.principal)))}`;
   if (decision.target === "user-desktop" && decision.reason === "desktop") {
     return `${text}\n\n<workplace>Your ${DESKTOP_BRIDGE_MCP_NAME} tools run on this person's own computer, through their Sagax desktop app: their files, apps, network and Local VM, as if you were on their machine.</workplace>`;
   }
@@ -3577,16 +3625,32 @@ function turnNetworkProxy(threadId: string, botId: string, decision: WorkplaceDe
  * own computer (desktop bridge) or their server environment. */
 function mountUserSandbox(
   integrations: NonNullable<SendTurnInput["integrations"]>,
-  input: { botId: string; threadId: string; generation: string; customMcp: boolean; decision: WorkplaceDecision; staging: TurnWorkplace["staging"] },
+  input: { botId: string; threadId: string; generation: string; customMcp: boolean; decision: WorkplaceDecision; staging: TurnWorkplace["staging"]; auto?: AutoComputerState | null },
 ): void {
   const { decision } = input;
-  turnWorkplaces.set(input.threadId, { generation: input.generation, botId: input.botId, decision, staging: input.staging });
+  const auto = input.auto ?? undefined;
+  turnWorkplaces.set(input.threadId, { generation: input.generation, botId: input.botId, decision, staging: input.staging, ...(auto ? { auto } : {}) });
   if (!input.customMcp || !decision.principal) return;
   if (decision.target === "user-sandbox") {
     integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation, decision.principal) };
   } else if (decision.target === "user-desktop" && desktopBridges.connected(decision.principal)) {
     integrations.custom = { ...integrations.custom, [DESKTOP_BRIDGE_MCP_NAME]: userDesktopIntegration(input.botId, input.threadId, input.generation, decision.principal) };
   }
+  // Auto: the bot picks the computer per step (computer_select); a fixed
+  // Works on gets the tool too, and it says the setting is fixed.
+  if (auto) {
+    integrations.custom = { ...integrations.custom, [AUTO_COMPUTER_MCP_NAME]: workplaceIntegration(input.botId, input.threadId, input.generation) };
+    if (auto.auto && auto.desktopMounted && !integrations.custom[DESKTOP_BRIDGE_MCP_NAME]) {
+      integrations.custom = { ...integrations.custom, [DESKTOP_BRIDGE_MCP_NAME]: userDesktopIntegration(input.botId, input.threadId, input.generation, decision.principal) };
+    }
+  }
+}
+
+/** The Auto selection of the turn a capability belongs to, or null when the
+ * turn is not Auto (a fixed Works on routes as before). */
+function autoComputerSelectionFor(capability: { threadId: string; generation: string }): AutoComputerState | null {
+  const workplace = turnWorkplaces.get(capability.threadId);
+  return workplace?.generation === capability.generation && workplace.auto?.auto ? workplace.auto : null;
 }
 
 /** Copy the turn's pending attachments where its tools run, once, at its
@@ -8862,6 +8926,7 @@ bus.subscribe((event: RuntimeEvent) => {
           options: event.choices?.length ? event.choices : permission ? ["Allow", "Deny"] : [],
           requestId: event.requestId,
           tool: permission ? event.tool : undefined,
+          toolInput: permission ? event.input : undefined,
           questionRequest: questions
             ? { version: 1, questions, ...(event.origin === "output" ? { origin: "output" as const } : {}) }
             : undefined,
@@ -10937,8 +11002,9 @@ async function startTurn(
     }),
     personAsked: !routineLineage(speaker) && Boolean(orgSpeakerPrincipal(bot, speaker)),
   });
+  const turnAuto = autoComputerStateFor(turnPlace, turnWorksOn(plan, opts?.runOn === "cloud" || Boolean(inheritedTeamComputer(bot))), routineLineage(speaker));
   const placedText = opts.cardContinuation ? { text: providerText, staging: null } : workplaceTurnText(providerText, turnPlace);
-  providerText = withWorkplaceNote(placedText.text, turnPlace);
+  providerText = withWorkplaceNote(placedText.text, turnPlace, turnAuto);
   // A compaction summarizes with the bot's engine too, so it is gated like
   // a turn, and so is a fresh delegated turn (a hop, as ask_bot's is); other
   // card continuations resume a turn already admitted.
@@ -11334,7 +11400,7 @@ async function startTurn(
       mountUserSandbox(integrations, {
         botId: bot.id, threadId, generation: dispatchClaimId,
         customMcp: instance.adapter.capabilities.customMcp === true,
-        decision: turnPlace, staging: placedText.staging,
+        decision: turnPlace, staging: placedText.staging, auto: turnAuto,
       });
       // A place the organisation disallows, or a Cloud home never offers, is
       // refused before anything is prepared; Auto below simply skips them.
@@ -20525,6 +20591,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? "sandbox"
         : path === "/api/internal/desktop/mcp"
         ? "desktop"
+        : path === "/api/internal/workplace/mcp"
+        ? "workplace"
         : path === "/api/internal/perspicax/mcp"
         ? "perspicax"
         : path.startsWith("/api/internal/connectors/")
@@ -20741,6 +20809,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (rpcMethod === "tools/call" && toolName === "computer_use" && sandboxControlHolds.held(ownerId)) {
             return json(res, 200, { result: { content: [{ type: "text", text: SANDBOX_CONTROL_REFUSAL }], isError: true } });
           }
+          // Auto: the bot chose another computer for this step (computer_select).
+          const autoState = rpcMethod === "tools/call" ? autoComputerSelectionFor(internalCapability) : null;
+          const autoRefusal = autoState && autoComputerToolRefusal(autoState.selected, USER_SANDBOX_MCP_NAME, String(toolName ?? ""));
+          if (autoRefusal) return json(res, 200, { result: { content: [{ type: "text", text: autoRefusal }], isError: true } });
           const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
             exec: (input) => userSandbox.exec(ownerId, input),
             overQuota: () => userSandbox.workspaceOverQuota(ownerId),
@@ -20764,6 +20836,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!person) return json(res, 403, { error: "this capability has no computer" });
         const active = () => internalCapabilityIsActive(internalCapability);
         try {
+          // Auto: the bot chose another computer for this step (computer_select).
+          const autoState = rpcMethod === "tools/call" ? autoComputerSelectionFor(internalCapability) : null;
+          const autoRefusal = autoState && autoComputerToolRefusal(autoState.selected, DESKTOP_BRIDGE_MCP_NAME,
+            String((frame?.params as { name?: unknown } | undefined)?.name ?? ""));
+          if (autoRefusal) return json(res, 200, { result: { content: [{ type: "text", text: autoRefusal }], isError: true } });
           if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
           const result = await handleDesktopBridgeMcp(rpcMethod, frame?.params, async (operation: DesktopBridgeOperation) => {
             // The bot's own "no computer" setting holds on the person's screen too.
@@ -20800,6 +20877,40 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const status = (error as { status?: number }).status;
           return json(res, status === 400 || status === 404 ? status : 502, { error: error instanceof Error ? error.message : "your computer could not be reached" });
         }
+      }
+      if (method === "POST" && path === "/api/internal/workplace/mcp") {
+        // computer_select (server/auto-computer.ts): Auto turns choose where
+        // their next tool calls run; a fixed Works on is only reported.
+        if (IDENTITY.kind !== "perspicax") return json(res, 404, { error: "unknown internal endpoint" });
+        const frame = await readInternalBody() as { method?: unknown; params?: unknown } | null;
+        const rpcMethod = typeof frame?.method === "string" ? frame.method : "";
+        if (rpcMethod === "tools/list") return json(res, 200, { result: { tools: [COMPUTER_SELECT_TOOL] } });
+        if (rpcMethod !== "tools/call") return json(res, 404, { error: "method not found" });
+        const call = (frame?.params ?? {}) as { name?: unknown; arguments?: unknown };
+        if (call.name !== COMPUTER_SELECT_TOOL.name) return json(res, 200, { result: { content: [{ type: "text", text: `unknown tool ${String(call.name)}` }], isError: true } });
+        const args = call.arguments && typeof call.arguments === "object" && !Array.isArray(call.arguments) ? call.arguments as Record<string, unknown> : {};
+        requireActiveInternalCapability();
+        const workplace = turnWorkplaces.get(internalCapability.threadId);
+        if (!workplace?.auto || workplace.generation !== internalCapability.generation) {
+          return json(res, 200, { result: { content: [{ type: "text", text: "This turn has no computer to choose." }], isError: true } });
+        }
+        const person = workplace.decision.principal;
+        const answer = selectAutoComputer(workplace.auto, { target: args.target, reason: args.reason }, Boolean(person && desktopBridges.connected(person)));
+        if (answer.ok && answer.target && answer.changed) {
+          workplace.auto = { ...workplace.auto, selected: answer.target };
+          const reason = autoComputerReason(args.reason);
+          appendAdminAction(DATA_DIR, {
+            category: "computer",
+            action: "computer.switch",
+            target: auditBotTarget(internalCapability.botId),
+            changed: ["computer"],
+            before: { computer: answer.from ?? null },
+            after: { computer: answer.target, threadId: internalCapability.threadId, by: "bot", ...(reason ? { reason } : {}), ...(workplace.auto.routine ? { routine: true } : {}) },
+            // The bot acted for this person (the speaker, or the routine's owner).
+            actor: person ? { kind: "person", principalId: person, via: "sagax" } : { kind: "worker" },
+          });
+        }
+        return json(res, 200, { result: { content: [{ type: "text", text: answer.text }], ...(answer.ok ? {} : { isError: true }) } });
       }
       if (method === "POST" && path === "/api/internal/phone/claim") {
         // Lazy phone exclusivity (issue #1663): the turn holds computer:phone

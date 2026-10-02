@@ -16,11 +16,13 @@ function failure(id: RpcId, method: unknown, message: string, code = -32603): un
     : { jsonrpc: "2.0", id, error: { code, message } };
 }
 
-/** Which tool server this proxy is: the person's server environment, or their
- * own computer through the desktop bridge (server/desktop-bridge.ts). */
+/** Which tool server this proxy is: the person's server environment, their
+ * own computer through the desktop bridge (server/desktop-bridge.ts), or the
+ * Auto computer choice (server/auto-computer.ts). */
 export const PROXIED_TOOL_SERVERS = {
   "sagax-environment": { endpoint: "/api/internal/sandbox/mcp", unavailable: "The server environment is not connected. Start a new bot turn from Sagax.", interrupted: "The connection to the server environment was interrupted. Check the result before repeating the action." },
   "sagax-desktop": { endpoint: "/api/internal/desktop/mcp", unavailable: "Your computer is not connected through Sagax. Start a new bot turn from Sagax.", interrupted: "The connection to your computer was interrupted. Check the result before repeating the action." },
+  "sagax-computer": { endpoint: "/api/internal/workplace/mcp", unavailable: "Computer selection is not available. Start a new bot turn from Sagax.", interrupted: "The connection to Sagax was interrupted. Call computer_select again." },
 } as const;
 export type ProxiedToolServer = keyof typeof PROXIED_TOOL_SERVERS;
 

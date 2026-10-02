@@ -4,7 +4,7 @@ import type { Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { placeLabelKey, type Place } from "@/lib/place";
-import { toolExecutionTarget } from "../../shared/execution-target";
+import { computerSelectTarget, toolExecutionTarget } from "../../shared/execution-target";
 import { nameIsCommand } from "@/lib/verify-steps";
 import { PlaceIcon } from "./PlaceIcon";
 import { WorkingDots } from "./WorkingIndicator";
@@ -17,6 +17,17 @@ import { WorkingDots } from "./WorkingIndicator";
 export function ToolActivity({ tool, place = null }: { tool: NonNullable<Message["tool"]>; place?: Place | null }) {
   const [expanded, setExpanded] = useState(false);
   const failed = tool.ok === false;
+  // Auto Works on: the bot chose where it works from this step on.
+  const switched = tool.ok === true ? computerSelectTarget(tool.name, tool.input) : null;
+  if (switched) {
+    const label = t(switched === "cloud" ? "toolTarget.cloud" : switched === "local_vm" ? "toolTarget.localVm" : "toolTarget.myComputer");
+    return (
+      <span className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-full bg-inset px-2 py-0.5 text-[12px] text-ink-secondary" data-testid="tool-computer-switch" data-target={switched}>
+        <PlaceIcon place={switched === "cloud" ? "cloud" : switched === "local_vm" ? "vm" : "local"} size={12} className="shrink-0 opacity-70" aria-hidden="true" />
+        {t("toolTarget.workingOn", { place: label })}
+      </span>
+    );
+  }
   // Where the tool ran: the person's server environment or their own computer.
   const target = toolExecutionTarget(tool.name, place);
   const status = tool.ok === undefined ? t("toolDetail.running") : failed ? t("toolDetail.failed") : t("toolDetail.completed");
