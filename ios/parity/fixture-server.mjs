@@ -125,21 +125,25 @@ const owl = (skin) => ({ look: { character: "owl" }, skin });
 const shape = (s, skin = "plain") => ({ look: { character: "shape", shape: s, skins: { shape: skin } } });
 const trombi = (skin = "classic") => ({ look: { character: "trombi", skins: { trombi: skin } } });
 
+// Created in this order because the server lists bots newest first, which
+// is the order of New Group Chat's list (17): Orion, Liora, Aurora, Sirius,
+// Vera, Celeste, Ciel. Sections keep their first-created order
+// (Administration, then Transformation Numérique, then Sécurité).
 const BOTS = [
   { key: "ara", name: "Ara", title: "Admin", color: "purple", pinned: true, ...owl() },
   { key: "helios", name: "Helios", title: "Operations", color: "orange", pinned: true, ...shape("hexagon") },
-  { key: "aurora", name: "Aurora", title: "Finance Manager", color: "red", section: "Administration", ...shape("circle") },
   { key: "helix", name: "Helix", title: "Bot Designer", color: "blue", section: "Administration", ...owl("frost") },
-  { key: "liora", name: "Liora", title: "Department Manager", color: "green", section: "Transformation Numérique", ...shape("squircle") },
   { key: "keepler", name: "Keepler", title: "Project Manager", color: "blue", section: "Transformation Numérique", ...shape("pill") },
   { key: "lux", name: "Lux", title: "Documentation", color: "yellow", section: "Transformation Numérique", ...trombi() },
   { key: "altair", name: "Altair", title: "Sales", color: "teal", section: "Transformation Numérique", ...shape("cloud") },
-  { key: "celeste", name: "Celeste", title: "Ticket Worker", color: "blue", section: "Transformation Numérique", ...shape("drop") },
-  { key: "orion", name: "Orion", title: "Analyst", color: "coral", section: "Transformation Numérique", ...owl("gold") },
-  { key: "sirius", name: "Sirius", title: "Support", color: "cyan", section: "Transformation Numérique", ...shape("triangle") },
-  { key: "vera", name: "Vera", title: "Recruiter", color: "pink", section: "Transformation Numérique", ...shape("blob", "glossy") },
+  { key: "rigel", name: "Rigel", title: "Security", color: "black", section: "Sécurité", ...trombi("retro98") },
   { key: "ciel", name: "Ciel", title: "Researcher", color: "white", section: "Transformation Numérique", ...owl("carbon") },
-  { key: "rigel", name: "Rigel", title: "Security", color: "black", section: "Transformation Numérique", ...trombi("retro98") },
+  { key: "celeste", name: "Celeste", title: "Ticket Worker", color: "blue", section: "Transformation Numérique", ...shape("drop") },
+  { key: "vera", name: "Vera", title: "Recruiter", color: "pink", section: "Transformation Numérique", ...shape("blob", "glossy") },
+  { key: "sirius", name: "Sirius", title: "Support", color: "cyan", section: "Transformation Numérique", ...shape("triangle") },
+  { key: "aurora", name: "Aurora", title: "Finance Manager", color: "red", section: "Administration", ...shape("circle") },
+  { key: "liora", name: "Liora", title: "Department Manager", color: "green", section: "Transformation Numérique", ...shape("squircle") },
+  { key: "orion", name: "Orion", title: "Analyst", color: "coral", section: "Transformation Numérique", ...owl("gold") },
 ];
 
 const GROUP = { name: "Peer Managers", members: ["ara", "helios", "liora"] };
@@ -256,6 +260,11 @@ async function seedThroughAPI(base) {
     memberIds: GROUP.members.map((key) => ids[key].id),
   });
   const group = room.group ?? room.room ?? room;
+  // Pinned on the home row, as in the reference, where the server has group
+  // pins; an older server ignores or refuses it and the group stays listed.
+  await api(base, "PATCH", `/api/groups/${group.id}`, { pinned: true }).catch(() => {});
+  // Ara carries the unread dot in the reference.
+  await api(base, "PATCH", `/api/bots/${ids.ara.id}`, { unread: true }).catch(() => {});
 
   const ara = ids.ara.id;
   const cron = await api(base, "POST", "/api/routines", {
@@ -346,7 +355,9 @@ function seedTranscripts(dataDir, seeded) {
     { role: "bot", at: now - DAY, text: PREVIEWS.helix },
   ]);
   write(ids.helios.threadId, [{ role: "bot", at: today(9, 12), text: PREVIEWS.helios }]);
-  const older = ["liora", "keepler", "lux", "altair", "celeste", "orion", "sirius", "vera", "ciel", "rigel"];
+  // Rigel spoke this afternoon: search lists it right after the group (19).
+  write(ids.rigel.threadId, [{ role: "bot", at: today(16, 20), text: PREVIEWS.rigel }]);
+  const older = ["liora", "keepler", "lux", "altair", "celeste", "orion", "sirius", "vera", "ciel"];
   older.forEach((key, index) => {
     write(ids[key].threadId, [
       { role: "user", at: now - (2 + index) * DAY - 600_000, text: "Un résumé, s'il te plaît." },
@@ -354,7 +365,7 @@ function seedTranscripts(dataDir, seeded) {
     ]);
   });
   if (seeded.groupThreadId) {
-    write(seeded.groupThreadId, [{ role: "bot", at: today(14, 5), text: "Réunion des gestionnaires déplacée à jeudi." }]);
+    write(seeded.groupThreadId, [{ role: "bot", at: today(16, 30), text: "Réunion des gestionnaires déplacée à jeudi." }]);
   }
   db.close();
 }

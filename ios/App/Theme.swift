@@ -240,6 +240,8 @@ struct GlassCircleButton: View {
     var size: Size = .large
     var fill: Color = Theme.glassFill
     var accessibilityLabel: LocalizedStringKey?
+    /// The references draw the X lighter than the other glyphs.
+    var weight: Font.Weight?
     let action: () -> Void
 
     var body: some View {
@@ -248,7 +250,7 @@ struct GlassCircleButton: View {
             action()
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: size.glyph, weight: .medium))
+                .font(.system(size: size.glyph, weight: weight ?? (systemImage == "xmark" ? .regular : .medium)))
                 .foregroundStyle(Theme.textPrimary)
                 .frame(width: size.rawValue, height: size.rawValue)
                 .contentShape(Circle())
@@ -503,13 +505,16 @@ struct Footer: View {
 /// The role beside a name: 19 pt high, radius 6.3, not a capsule.
 struct RoleChip: View {
     let text: String
+    /// The home list's chips ink a touch narrower than 12 pt medium.
+    var font: Font = Theme.Font.roleChip
+    var horizontalPadding: CGFloat = 6.7
 
     var body: some View {
         Text(text)
-            .font(Theme.Font.roleChip)
+            .font(font)
             .foregroundStyle(Theme.chipText)
             .lineLimit(1)
-            .padding(.horizontal, 6.7)
+            .padding(.horizontal, horizontalPadding)
             .frame(height: Theme.Metric.chipHeight)
             .background(Theme.chip, in: RoundedRectangle(cornerRadius: Theme.Metric.chipRadius, style: .continuous))
     }

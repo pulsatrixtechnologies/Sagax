@@ -84,6 +84,12 @@ final class Session: ObservableObject {
     /// A chat a deep link asked for, consumed by the roster's
     /// NavigationStack the same way a notification response is.
     @Published private(set) var pendingChat: Chat?
+    /// Who this phone is signed in as (`GET /api/auth/session`), for the
+    /// home's photo. Nil until loaded, or when the server does not say.
+    @Published private(set) var account: AuthSession?
+    /// False once the server showed it has no group pins: the home then
+    /// stops offering to pin a group.
+    @Published private(set) var groupPinsSupported = true
 
     private var client: CompanionClient?
     /// Ciphertext-only operations survive navigation and transient
@@ -1626,6 +1632,71 @@ final class Session: ObservableObject {
             actionError = error.localizedDescription
             return nil
         }
+    }
+
+    /// Make a bot with the create sheet's name and look, fold it in, and
+    /// hand it back so it can be opened.
+    @discardableResult
+    func createBot(_ draft: NewBotDraft) async -> Bot? {
+        guard let client else { return nil }
+        do {
+            let bot = try await client.createBot(draft)
+            state.apply(.bot(bot))
+            return bot
+        } catch {
+            actionError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Pin or unpin a bot on the home row. The row moves at once and moves
+    /// back if the server refuses.
+    func setPinned(_ bot: Bot, pinned: Bool) async {
+        guard let client else { return }
+        var moved = bot
+        moved.pinned = pinned
+        state.apply(.bot(moved))
+        do {
+            let updated = try await client.setPinned(botId: bot.id, pinned: pinned)
+            state.apply(.bot(updated))
+        } catch {
+            if let current = state.bot(bot.id) {
+                var back = current
+                back.pinned = bot.pinned
+                state.apply(.bot(back))
+            }
+            actionError = error.localizedDescription
+        }
+    }
+
+    /// Pin or unpin a group. A server without group pins turns the option
+    /// off for the rest of the session instead of showing an error.
+    func setPinned(_ room: Room, pinned: Bool) async {
+        guard let client, groupPinsSupported else { return }
+        do {
+            let updated = try await client.setGroupPinned(groupId: room.id, pinned: pinned)
+            state.apply(.room(updated))
+        } catch let error as APIError where error.isUnauthorized {
+            status = .unauthorized
+        } catch {
+            groupPinsSupported = false
+        }
+    }
+
+    /// Load who this phone is signed in as, quietly: the home falls back to
+    /// an initial or the computer's mascot when it cannot.
+    func loadAccount() async {
+        guard let client else { return }
+        if let session = try? await client.authSession() { account = session }
+    }
+
+    /// The person's photo bytes, when the session names one.
+    func accountPhotoData() async -> Data? {
+        guard let path = account?.avatarUrl, let client else { return nil }
+        if let url = URL(string: path), let scheme = url.scheme, scheme == "https" || scheme == "http" {
+            return try? await URLSession.shared.data(from: url).0
+        }
+        return try? await client.avatar(path: path)
     }
 
     /// Create a sidebar section by assigning its complete starting set in one

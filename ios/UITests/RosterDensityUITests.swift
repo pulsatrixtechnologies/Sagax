@@ -6,7 +6,7 @@ import XCTest
 /// and the preview has no API client, so nothing can be sent anywhere.
 final class RosterDensityUITests: XCTestCase {
     @MainActor
-    func testCompactIsTheDefault() {
+    func testCompactRoster() {
         let app = launchRoster(density: nil)
         let pepper = app.buttons["threads-toggle.roster-pepper"]
         XCTAssertTrue(pepper.waitForExistence(timeout: 10))
@@ -184,15 +184,15 @@ final class RosterDensityUITests: XCTestCase {
         "-companion.onboarding.notificationsSeen", "YES",
     ]
 
-    /// `nil` starts from the install default: a density saved by an earlier
-    /// run on this simulator is removed first.
+    /// `nil` is compact: the install default is now the standard home
+    /// (HomeUITests), and these tests cover the compact and comfortable lists.
     @MainActor
     private func launchRoster(density: String?) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.terminate()
         app.launchArguments = Self.baseArguments
-            + (density.map { ["-companion.prefs.rosterDensity", $0] } ?? ["-reset-list-density"])
+            + ["-companion.prefs.rosterDensity", density ?? "compact"]
         app.launch()
         if app.buttons["Connect computer"].exists {
             app.terminate()
