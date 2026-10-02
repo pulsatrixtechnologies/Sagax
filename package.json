@@ -105,7 +105,6 @@
     "mdast-util-from-markdown": "^2.0.3",
     "mermaid": "^12.0.0",
     "nodemailer": "^7.0.13",
-    "posthog-js": "^1.415.6",
     "qrcode-terminal": "0.12.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.1.0",
